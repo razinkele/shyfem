@@ -1,0 +1,25 @@
+#!/bin/sh 
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# finds name of simulation in .str file
+# ... awk extracts title block
+# ... sed extracts name of simulation
+#
+# 26.11.2010	ggu	eliminate trailing blanks
+#
+#-----------------------------------------------------------
+
+awk '/\$title|\&title/,/\$end|\&end/{print $0}' $1 | \
+		sed -n 3p | \
+		sed -e 's/^[ 	]*//' | \
+		sed -e 's/[ 	]*$//'
+
+#-----------------------------------------------------------
+

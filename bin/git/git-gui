@@ -1,0 +1,134 @@
+#!/bin/bash
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# GUI for "git status" to diff and edit files
+#
+#----------------------------------------------------------------
+
+ShowDate()
+{
+  for file in $files
+  do
+    echo $file
+    grep -P '^[cC!]\s+\d\d\.\d\d\.\d\d\d\d\s+' $file | tail -1
+  done
+}
+
+WaitForInput()
+{
+  read -p "any input: " input
+  #echo "input: $input"
+}
+
+#----------------------------------------------------------------
+
+command dialog > /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  echo "dialog not available... exiting"
+  exit 1
+fi
+
+gui="YES"			#use gui for diffing
+showdate="NO"			#use gui for diffing
+tool=""
+if [ "$1" = "-h" -o "$1" = "-help" ]; then
+  echo "Usage: git-gui [-h|-help] [-nogui|-showdate|-tool tool] [branch]"
+  exit 0
+elif [ "$1" = "-nogui" ]; then
+  gui="NO"
+  shift
+elif [ "$1" = "-showdate" ]; then
+  showdate="YES"
+  shift
+elif [ "$1" = "-tool" ]; then
+  tool="-tool $2"
+  shift
+  shift
+fi
+branch=$1
+
+#files=$( git s|grep modified:|sed -e 's/\s*modified:\s*//'|sed -e 's/#//' )
+if [ -z "$branch" ]; then
+  files=$( git s --short | grep -E '^.M' | sed -E 's/^.M\s*//' )
+else
+  echo "diffing with branch $branch"
+  files=$( git-diff -quiet $branch )
+fi
+
+if [ $showdate = "YES" ]; then
+  ShowDate
+  exit 0
+fi
+
+n=0
+for file in $files
+do
+  n=$(( n+1 ))
+  list="$list $n $file"
+  #echo $n $file
+  array[$n]=$file
+done
+
+w=50
+h=$(( n+10 ))
+buttons="--extra-button --extra-label edit \
+		--ok-label diff --cancel-label exit"
+
+choice=0
+
+if [ $n -eq 0 ]; then
+  echo "no changes found... exiting"
+  exit 0
+fi
+
+#------------------------------------------------------------
+# diff:0  edit:3  exit:1
+#------------------------------------------------------------
+
+while :
+do
+
+  default="--default-item $choice"
+
+  choice=$( dialog $buttons $default \
+		--menu "Choose file:" \
+		$h $w $n $list 3>&2 2>&1 1>&3 )
+
+  status=$?
+  clear
+
+  #echo "exit status = $status"
+  #echo "choice = $choice"
+
+  if [ $status -eq 1 ]; then
+    break
+  elif [ $status -eq 0 ]; then
+    file=${array[$choice]}
+    echo "diffing $file"
+    if [ $gui = "YES" ]; then
+      git-diff $tool $branch $file
+    else
+      git diff $file | less
+    fi
+    status=$?	#not working
+    if [ $status -ne 0 ]; then
+      echo "error diffing..."
+      WaitForInput
+    fi
+  elif [ $status -eq 3 ]; then
+    file=${array[$choice]}
+    echo "editing $file"
+    vi $file
+  fi
+
+done
+
+#------------------------------------------------------------
+

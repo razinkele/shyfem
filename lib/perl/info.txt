@@ -1,0 +1,27 @@
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+
+add multiple directories to @INC:
+
+use lib ("$ENV{SHYFEMDIR}/lib/perl","$ENV{HOME}/shyfem/lib/perl");
+
+$FEMDIR=$ENV{SHYFEMDIR}?$ENV{SHYFEMDIR}:$ENV{HOME}/shyfem;
+
+
+or (to avoid warnings):
+
+BEGIN { $::SFD = ( defined $ENV{SHYFEMDIR} ? $ENV{SHYFEMDIR} : "unknown" ); }
+use lib ("$::SFD/lib/perl","$ENV{HOME}/shyfem/lib/perl");
+
+to install packages:
+
+shell> perl -MCPAN -e shell
+cpan> install MP3::Tag
+

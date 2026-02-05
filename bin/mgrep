@@ -1,0 +1,25 @@
+#!/bin/sh
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+if [ $# -eq 0 ]; then
+  echo "Usage: mgrep what"
+  exit 0
+fi
+
+what=$1
+
+dirs="fem3d femplot femadj"
+cd ..
+
+for dir in $dirs
+do
+  grep $what $dir/*.f
+done
+

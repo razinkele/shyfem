@@ -1,0 +1,21 @@
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+
+# create new branch with unstaged files
+
+git stash
+git checkout -b new_branch
+git stash apply
+
+git stash
+git stash apply
+git stash list
+git stash drop
+

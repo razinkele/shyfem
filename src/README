@@ -1,0 +1,22 @@
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2023  The SHYFEM team
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+this directory contains all the source to compile the model and its tools
+
+contents:
+
+shyfem		the SHYFEM model
+utils		libraries that SHYFEM depends on
+tools		utilities for the SHYFEM framework
+contrib		various contributions loosely connected to shyfem
+external	external code and libraries
+obsolete	files not needed anymore
+
+#------------------------------------------------------------------------
+

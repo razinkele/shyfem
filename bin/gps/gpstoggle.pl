@@ -1,0 +1,18 @@
+#!/usr/bin/perl -pi
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# toggles landscape - portrait
+
+if( /^%%Orientation: Portrait/ ) {
+  s/Portrait/Landscape/;
+} elsif( /^%%Orientation: Landscape/ ) {
+  s/Landscape/Portrait/;
+}
+

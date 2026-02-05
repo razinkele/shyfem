@@ -1,0 +1,5 @@
+        np       nkn       nel
+         2      4359      7842
+    domain      area     nodes   percent  elements     ghost   percent
+         0         1      2181     50.03      3789        33      0.87
+         1         2      2178     49.97      4086        33      0.81

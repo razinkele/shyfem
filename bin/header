@@ -1,0 +1,16 @@
+#!/bin/sh
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# makes complete header files
+
+getheaders.sh $* > head.html
+h2t.pl head.html > head.txt
+rvlog.pl head.txt > revlog.txt
+

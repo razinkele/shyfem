@@ -1,0 +1,17 @@
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+
+$Id: TODO,v 1.4 2007-03-20 13:19:42 georg Exp $
+
+grades for boundary floating
+
+compute condition numbers for grids
+
+

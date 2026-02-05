@@ -1,0 +1,328 @@
+#!/bin/bash
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# computes differences of files relative to a different directory
+#
+################################################################
+#
+version="2.16"
+#
+# version 2.16	08.04.2020	use printfile with dir
+# version 2.15	08.04.2020	small updates
+# version 2.14	02.03.2020	print file without slash
+# version 2.13	31.10.2019	no error when comparing dirs (not existing)
+# version 2.12	01.10.2019	make recursive -R work
+# version 2.11	16.07.2019	new option -g (use gui to show diff)
+# version 2.10	16.07.2019	new option -R (recurse into directories)
+# version 2.03	08.06.2009	new option -O
+# version 2.02	06.04.2009	invert file and status in output
+# version 2.01	06.04.2009	include files in "" for Windows
+#
+################################################################
+
+FEMDIR=${SHYFEMDIR:=$HOME/shyfem}
+
+all="YES"
+ok="NO"
+diff="NO"
+noex="NO"
+size="NO"
+realdiff="NO"
+guidiff="NO"
+update="NO"
+confirm="NO"
+rcs="NO"
+debug="NO"
+nodir="NO"
+recurse="NO"
+showdir="NO"
+
+bindir=$(dirname "${BASH_SOURCE[0]}")
+bindir=$( cd $bindir; pwd -P )
+#echo "diffs script executed from directory $bindir"
+guiprogram="tkdiff -w"
+dplus="$bindir/d+.pl"
+
+################################################################ functions
+
+Usage()
+{
+  echo "Usage: diffs [-h|-help] [-options] dir [files]"
+}
+
+Version()
+{
+  echo "Version: $version"
+}
+
+Help()
+{
+  echo
+  Usage
+  echo
+  echo "  dir        remote directory to compare to"
+  echo "  files      list of files to compare (none for all)"
+  echo
+  echo "Options:"
+  echo
+  echo "  -h|-help     show this help screen"
+  echo "  -v|-version  show this help screen"
+  echo "  -debug       show debug information"
+  echo "  -nodir       do not compare directories"
+  echo "  -o           show only files that are identical"
+  echo "  -O           show only files that are not identical"
+  echo "  -d           show only file that differ"
+  echo "  -n           show only files that do not exist in dir"
+  echo "  -S           show directories if in recursive mode"
+  echo "  -s           if files differ show size of difference"
+  echo "  -r           do not show differences due to rcs $Id: line"
+  echo "  -R           recurse into sub-directories"
+  echo "  -D           if files differ show difference"
+  echo "  -g           if files differ show difference with gui"
+  echo "  -u           update remote dir with differing or missing" \
+			  "files from local dir"
+  echo "  -U           update local dir with differing or missing" \
+			  "files from remote dir"
+  echo "  -C           confirm before updating"
+  echo
+}
+
+ErrorOption()
+{
+  echo "Error: No such option $1"
+}
+
+Update()
+{
+  if [ $1 = "LOCAL" ]; then
+    if [ -f $remdir/$2 ]; then
+      echo "updating  $locdir  with  $remdir/$2"
+      cp $remdir/$2 $locdir
+    fi
+  elif [ $1 = "REMOTE" ]; then
+    if [ -f $locdir/$2 ]; then
+      echo "updating  $remdir  with  $2"
+      cp $locdir/$2 $remdir
+    fi
+  fi
+}
+
+Compare()
+{
+  if [ $size = "YES" -a -x $dplus ]; then
+    #echo -n "$1: " 
+    echo -n "$printfile: " 
+    diff -wn $remdir/$1 $locdir/$1 | $dplus
+  elif [ $realdiff = "YES" ]; then
+    #echo "$1: " 
+    echo -n "$printfile: " 
+    diff -w $remdir/$1 $locdir/$1
+  elif [ $guidiff = "YES" ]; then
+    $guiprogram $remdir/$1 $locdir/$1
+  else
+    #echo $1 
+    echo "$printfile" 
+  fi
+}
+
+CompareDir()
+{
+  files=$( ls $cml_files 2> /dev/null )
+
+  #[ -z "$dir" ] && dir="./"
+  [ -z "$dir" ] && dir="."
+
+  for file in $files
+  do
+    printfile="$dir/$file"
+    #echo "ggguuu1 printfile: $printfile $dir"
+    if [ $nodir = "YES" ]; then		# only compare files, not dirs
+      if [ ! -f $locdir/$file ]; then
+        continue
+      fi
+    fi
+
+    if [ $rcs = "NO" ]; then
+      cmp $locdir/$file $remdir/$file > /dev/null 2>&1
+      status=$?
+    else
+      diff -I '$Id:' $locdir/$file $remdir/$file > /dev/null 2>&1
+      status=$?
+    fi
+    #echo "$printfile: $status"
+
+    case $status in
+	0)	if [ $ok   = "YES" ]; then Ok $file; fi;;
+	1)	if [ $diff = "YES" ]; then Differing $file; fi;;
+	2)	if [ $noex = "YES" ]; then Nonexisting $file; fi;;
+    esac
+    if [ $all = "YES" ]; then
+      echo $file $status
+      if [ $status -ne 0 ]; then
+        Update $update $file
+      fi
+    fi
+  done
+}
+
+CompareDirs()
+{
+  dirs=$( FindDirectories )
+  locorig=$locdir
+  remorig=$remdir
+  printremorig=$printremdir
+  for dir in $dirs
+  do
+    locdir=$locorig/$dir
+    remdir=$remorig/$dir
+    printremdir=$printremorig/$dir
+    if [ $debug = "YES" ]; then
+      echo "comparing directories $locdir $remdir"
+      continue
+    fi 
+    if [ ! -d $remdir ]; then
+      #echo "*** no such directory on remote: $remdir"
+      printremdir=$( echo $printremdir | sed -e 's/\/\.\//\//' )
+      echo "*** no such directory on remote: $printremdir"
+      continue
+    fi
+    #echo "=== dir: $dir  $locdir  $remdir"
+    [ $showdir = "YES" ] && echo "dir: $dir"
+    cd $locdir
+    CompareDir
+    cd $locorig
+  done
+}
+
+################################################################ end
+
+FindDirectories()
+{
+  du | sed -E 's/^[0-9]*//' | sed -E 's/[ \t]*//'
+}
+
+################################################################
+
+YesNo()
+{
+  echo -n "Ok ? (y/n) : " | cat >&2
+  read yesno
+  echo "$yesno"
+}
+
+Confirm()		#must confirm before anything else
+{
+  if [ $confirm = "NO" ]; then
+    return
+  fi
+
+  if [ $update = "LOCAL" ]; then
+      echo "updating  $locdir  with files from  $remdir"
+  elif [ $update = "REMOTE" ]; then
+      echo "updating  $remdir  with files from  $locdir"
+  else
+      return
+  fi
+
+  ok=`YesNo`
+
+  if [ "$ok" = "y" ]; then
+    echo "updating..."
+    return
+  else
+    echo "aborting..."
+    exit 1
+  fi
+}
+
+Ok()
+{
+  #echo $1
+  echo $printfile
+}
+
+Differing()
+{
+  Compare $1
+  Update $update $1
+}
+
+Nonexisting()
+{
+  [ ! -f $locdir/$1 ] && return
+  echo $printfile
+  Update $update $1
+}
+
+################################################################ options
+
+while [ $# -gt 0 ]
+do
+  case $1 in
+	-o)		ok="YES";all="NO";;
+	-O)		diff="YES";noex="YES";all="NO";;
+	-d)		diff="YES";all="NO";;
+	-n)		noex="YES";all="NO";;
+	-s)		size="YES";diff="YES";all="NO";;
+	-S)		showdir="YES";;
+	-r)		rcs="YES";;
+	-R)		recurse="YES";;
+	-D)		realdiff="YES";diff="YES";all="NO";;
+	-g)		guidiff="YES";diff="YES";all="NO";;
+	-u)		update="REMOTE";;
+	-U)		update="LOCAL";;
+	-C)		confirm="YES";;
+	-nodir)		nodir="YES";;
+	-debug)		debug="YES";;
+	-h|-help)	Help; exit 0;;
+	-v|-version)	Version; exit 0;;
+	-*)		ErrorOption $1; Usage; exit 1;;
+	*)		break;;
+  esac
+  shift
+done
+
+################################################################ need help ?
+
+if [ $# -lt 1 ]; then
+  Usage
+  exit 1
+else
+  locdir=`pwd -P`
+  cd $1
+  printremdir=$1
+  remdir=`pwd -P`
+  cd $locdir
+  shift
+  cml_files=$*
+fi
+
+if [ $debug = "YES" ]; then
+  echo "ok=$ok   diff=$diff  noex=$noex  size=$size  update=$update"
+  echo "confirm=$confirm  debug=$debug  all=$all  remdir=$remdir"
+fi
+
+################################################################ confirm
+
+Confirm
+
+################################################################ compare
+
+#echo "directories: $locdir $remdir"
+#echo "files: $files"
+
+if [ $recurse = "YES" ]; then
+  CompareDirs
+else
+  CompareDir
+fi
+
+################################################################ end
+

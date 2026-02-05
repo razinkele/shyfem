@@ -1,0 +1,66 @@
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+
+18.07.2014
+
+	ids	pass to scalar advection
+	subwwm	wstress
+	BFM	bnds_init0 is not compiling
+
+-------------------------------------------------------------
+
+nosextr_nodes.f
+finish subdry.f
+finish beta handling
+
+idtcon	no write without sync
+plot 2D filed of 3D simulation
+smagorinski to manual
+check code for 32/64 bit conversion
+check if gotm is run in 2D (shearfv gives NaN)
+
+color handling
+	colsetup
+	set_color_table
+	set_default_color_table
+
+force fvl opening even with extension
+femplot -> plot dry areas (auto)
+
+symlink not in distribution
+
+ar not working (problem with tmporary file) -> check $TMPDIR
+
+-------------------------------------------------------------
+
+repository:
+
+
+https://github.com/SHYFEM-model/shyfem/releases
+https://github.com/SHYFEM-model/shyfem/tags
+
+-------------------------------------------------------------
+
+15.07.2023
+
+	modified:   Rules.make
+	modified:   fem3d/Makefile
+	modified:   fem3d/shyparts_dummy.f
+	modified:   fem3d/subqfxt.f
+	modified:   fem3d/subsys.f
+	modified:   femplot/shyplot.f
+	modified:   femplot/supsim.f
+
+Untracked files:
+	fem3d/mod_connect.f
+	fem3d/mod_flood.f
+	fem3d/queue.f
+	fem3d/subcolor.f
+

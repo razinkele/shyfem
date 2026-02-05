@@ -1,0 +1,45 @@
+#!/bin/sh
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+FEMDIR=${SHYFEMDIR:=$HOME/shyfem}
+BINDIR=$FEMDIR/fem3d
+
+str=$1
+strfile=`basename $str .str`
+strfile=$strfile.str
+
+if [ $# -eq 0 ]; then
+  echo "Usage: strnodes str-file"
+  exit 0
+fi
+if [ ! -f $strfile ]; then
+  echo "No such file: $strfile"
+  echo "Usage: strnodes str-file"
+  exit 0
+fi
+
+getstrnodes.pl $strfile > nodes_s.lst
+
+basin=`strtitle -b $strfile`
+
+#echo "$basin   $strfile"
+
+if [ ! -x $BINDIR/bastreat ]; then
+  act=`pwd`
+  cd $BINDIR
+  make bastreat
+  cd $act
+fi
+
+$BINDIR/bastreat <<EOI
+$basin
+4
+EOI
+

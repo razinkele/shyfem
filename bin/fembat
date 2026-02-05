@@ -1,0 +1,125 @@
+#!/bin/bash
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# fembat : runs FEM model
+#
+####################################################
+
+FEMDIR=${SHYFEMDIR:=$HOME/shyfem}
+
+#---------------------------------------------------
+# check command line options
+#---------------------------------------------------
+
+#if [ $# -ne 3 ]; then
+#	echo "Usage : $0   tmpfile   HP-routine   STR-file"
+#	echo "$#: $*"
+#	exit 1
+#fi
+
+profile=$HOME/.bash_profile
+[ -f $profile ] && . $profile		# for curonian
+
+tmpfile=$1
+shift
+strfile="${@: -1}"
+command=$*
+
+date=$( date +%Y-%m-%d )
+time=$( date +%H:%M:%S )
+datetime=$date::$time
+starttime=$datetime
+
+for arg
+do
+  [ $arg = $strfile ] && break
+  program="$program $arg"
+done
+
+#---------------------------------------------------
+# set parameters
+#---------------------------------------------------
+
+timecommand="time"
+infodir=$HOME/tmp/hp/hpinfo
+host=`hostname`
+actdir=`pwd`
+
+#---------------------------------------------------
+# test time command
+#---------------------------------------------------
+
+$timecommand ls > /dev/null 2>&1
+status=$?
+[ $status -ne 0 ] && timecommand=""
+
+#---------------------------------------------------
+# set some variables
+#---------------------------------------------------
+
+mkdir -p $infodir
+
+auxfile=`basename $tmpfile`
+infofile=$infodir/$auxfile
+echo "creating info file $infofile"
+cp -f $tmpfile $infofile
+
+#---------------------------------------------------
+# write to terminal
+#---------------------------------------------------
+
+echo " "
+echo "simulation time:   $starttime - $host"
+echo " "
+echo "actual directory     :  $actdir"
+echo " "
+echo "FEM routine          :  $program"
+echo "input parameter file :  $strfile"
+echo " "
+echo "compiler version     :"
+$FEMDIR/femcheck/identify_compiler.sh
+echo " "
+
+#strings $program | grep -i "intel fortran" | head -1
+
+#---------------------------------------------------
+# some extra stuff
+#---------------------------------------------------
+
+ulimit -s unlimited
+
+#---------------------------------------------------
+# run program
+#---------------------------------------------------
+
+$timecommand $program $strfile
+
+date=$( date +%Y-%m-%d )
+time=$( date +%H:%M:%S )
+datetime=$date::$time
+endtime=$datetime
+
+echo " "
+echo "simulation time:   $endtime - $host"
+echo " "
+echo "simulation start:  $starttime"
+echo "simulation end:    $endtime"
+echo " "
+
+#---------------------------------------------------
+# clean up
+#---------------------------------------------------
+
+rm -f $infofile $tmpfile
+
+#---------------------------------------------------
+# end of routine
+#---------------------------------------------------
+

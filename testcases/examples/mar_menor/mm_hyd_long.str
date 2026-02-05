@@ -1,0 +1,23 @@
+$title
+        2D sim for Mar Menor - Long run
+        mm_hyd_long
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-15'
+        idt = '300s'
+        idtout = '6h'
+        idtext = '300s'
+
+        date = 20090101
+
+        ilin = 1
+$end
+
+$extra
+        128     'sea boundary'
+        58      'inlet'
+        868     'center of lagoon'
+        441     'border of lagoon'
+$end

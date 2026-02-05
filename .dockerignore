@@ -1,0 +1,9 @@
+.git/
+*.o
+*.mod
+*.a
+lib/mod/
+tmp/
+examples/*/out.*
+examples/*/*.ts
+examples/*/*.shy

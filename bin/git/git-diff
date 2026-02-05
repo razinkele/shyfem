@@ -1,0 +1,178 @@
+#!/bin/bash
+#
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# shell for diffing
+#
+#--------------------------------------------------
+
+#git difftool --tool=tkdiff --no-prompt $*
+
+what=diff
+options=""
+files=""
+file="NO"
+prog=""
+nowhite="NO"
+zip="NO"
+quiet="NO"
+tool=""
+
+tools="tkdiff xxdiff kdiff3 vimdiff diff"
+
+mkdir -p $HOME/tmp
+
+#-------------------------------------------------
+
+Help()
+{
+  echo "Usage: git-diff [-h|-help] [options] [tag(s)] [file]"
+}
+
+FullHelp()
+{
+  Help
+
+  echo "  git-diff                  diff stats between actual and last commit"
+  echo "  git-diff branch           diff stats between this and given branch"
+  echo "  git-diff tag              diff stats between actual and tag"
+  echo "  git-diff tag1 tag2        diff stats between tag1 and tag2"
+  echo "  git-diff file             difference of file to last commit"
+  echo "  git-diff tag file         difference of file to commit tag"
+  echo "  git-diff tag1 tag2 file   difference of file between commit tag1 tag2"
+  echo "  options:"
+  echo "    -h|-help               this help screen"
+  echo "    -w                     do not show difference in white space"
+  echo "    -name                  only show name of files that differ"
+  echo "    -zip                   zip all changed files to changed.zip"
+  echo "    -tool tool             use routine tool for comparing"
+  echo "    -tools                 show available diff tools"
+  echo "    -nogui                 use diff instead of graphical tool"
+  echo "    -quiet                 only print file names"
+  echo "  tag can be origin to see diff between fetch and pull"
+  echo "  tag can be HEAD-# to see diff between last # tag (HEAD-0 is actual)"
+  echo "  possible tools for comparing: $tools"
+}
+
+ShowDiffTools()
+{
+  for tool in $tools
+  do
+    if [ -n "$( which $tool 2>/dev/null)" ]; then
+      echo "tool is available: $tool"
+    fi
+  done
+}
+
+SetDiffTool()
+{
+  if [ -n "$tool" ]; then	#tool given
+    return
+  fi
+
+  for tool in $tools
+  do
+    [ -n "$( which $tool 2>/dev/null)" ] && return
+    echo "...no $tool available... looking for alternatives..."
+  done
+
+  echo "...no suitable difftool found... using diff..."
+  tool="diff"
+}
+
+HandleFiles()
+{
+  if [ -f $1 ]; then
+    files="$files -- $1"
+    what=difftool
+    file="YES"
+  elif [ $1 = "origin" ]; then
+    files="$files $1/$branch"
+  elif [[ $1 =~ ^HEAD-* ]]; then
+    tag=$( GetTagFromHead $1 )
+    files="$files $tag"
+  else
+    files="$files $1"
+  fi
+}
+
+GetTagFromHead()
+{
+  tagnumber=$( echo $1 | sed -e 's/HEAD-//' )
+  tagnumber=$(( tagnumber + 1 ))
+  tag=$( git-tags | tail -$tagnumber | head -1 | cut -d " " -f 1 )
+  #echo "tagnumber: $tagnumber  tag: $tag"
+  echo $tag
+}
+
+#-------------------------------------------------
+
+while [ -n "$1" ]
+do
+   case $1 in
+        -h)             FullHelp; exit 0;;
+        -help)          FullHelp; exit 0;;
+	-w)		nowhite="YES";;
+	-name)		options="$options --name-only";;
+	-zip)		zip="YES";;
+        -tool)          tool=$2; shift;;
+        -tools)         ShowDiffTools; exit 0;;
+        -nogui)         tool=diff;;
+        -quiet)         quiet="YES";;
+        --*)            options="$options $1";;
+        *)              HandleFiles $1;;
+  esac
+  shift
+done
+
+branch=`git branch | grep '*' | sed -e 's/^\* //'`
+[ $quiet = "NO" ] && echo "We are on branch: $branch"
+
+SetDiffTool
+[ $quiet = "NO" ] && echo "difftool used: $tool"
+[ $tool = "tkdiff" ] && tool="tkdiff -d -w"
+
+if [ -z "$files" ]; then
+  Help
+fi
+
+if [ $file = "YES" ]; then
+  what=difftool
+else
+  options="$options --stat"
+fi
+
+[ $quiet = "NO" ] && echo "what:$what  tool:$tool  options:$options  files: $files"
+
+if [ $quiet = "YES" ]; then
+  :
+fi
+  
+#-------------------------------------------------
+
+if [ $file = "YES" ]; then		# we do compare one file, not only tags
+  if [ $nowhite = "YES" ]; then
+    git $what $options -x "$tool -w" $files
+  else
+    git $what $options -x "$tool" $files
+  fi
+elif [ $zip = "YES" ]; then
+  zipfiles=$( git $what $options --name-only $files )
+  zip changed.zip $zipfiles
+  echo "files have been zipped to changed.zip"
+else
+  if [ $quiet = "NO" ]; then
+    git $what $options $files
+  else # this pops the last line and the stats of differences
+    git $what $options $files | head -n -1 | sed -e 's/|.*//'
+  fi
+fi
+
+#-------------------------------------------------
+
