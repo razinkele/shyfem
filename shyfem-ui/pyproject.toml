@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shyfem-ui"
+version = "0.1.0"
+description = "Python Shiny web interface for SHYFEM hydrodynamic simulation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "GPL-3.0"}
+authors = [
+    {name = "SHYFEM Team"}
+]
+keywords = ["shyfem", "hydrodynamic", "simulation", "shiny", "web-ui"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Hydrology",
+]
+
+dependencies = [
+    "shiny>=0.6.0",
+    "shinyswatch>=0.4.0",
+    "sqlalchemy>=2.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "matplotlib>=3.7",
+    "plotly>=5.15",
+    "xarray>=2023.0",
+    "netCDF4>=1.6",
+    "aiofiles>=23.0",
+    "numpy>=1.24",
+    "pandas>=2.0",
+]
+
+[project.optional-dependencies]
+server = [
+    "celery>=5.3",
+    "redis>=4.5",
+    "psycopg2-binary>=2.9",
+    "gunicorn>=21.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "black>=23.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+shyfem-ui = "shyfem_ui.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["shyfem_ui*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

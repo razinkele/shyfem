@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # SHYFEM UI Web Application
+  shyfem-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount SHYFEM installation (read-only)
+      - ${SHYFEM_DIR:-/home/razinka/shyfem}:/shyfem:ro
+      # Persistent data
+      - shyfem-projects:/data/projects
+      - shyfem-db:/data/db
+    environment:
+      - SHYFEM_UI_SHYFEM_DIR=/shyfem
+      - SHYFEM_UI_DEPLOYMENT_MODE=server
+      - SHYFEM_UI_USE_CELERY=${USE_CELERY:-false}
+      - SHYFEM_UI_REDIS_URL=redis://redis:6379/0
+      - SHYFEM_UI_DATABASE_URL=sqlite:////data/db/shyfem_ui.db
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # Redis for Celery job queue (optional)
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    profiles:
+      - server
+
+  # Celery worker for distributed job execution (optional)
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A shyfem_ui.services.job_celery worker --loglevel=info
+    volumes:
+      - ${SHYFEM_DIR:-/home/razinka/shyfem}:/shyfem:ro
+      - shyfem-projects:/data/projects
+    environment:
+      - SHYFEM_UI_SHYFEM_DIR=/shyfem
+      - SHYFEM_UI_REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+    profiles:
+      - server
+
+volumes:
+  shyfem-projects:
+  shyfem-db:
+  redis-data:
