@@ -1102,7 +1102,6 @@
 
 	call shympi_barrier_internal
 	call shympi_finalize_internal
-	stop 'finalizing...'
 
 	end subroutine shympi_finalize
 

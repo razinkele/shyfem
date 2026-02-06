@@ -749,10 +749,9 @@
 	!call pripar(15)
 	!call prifnm(15)
 
-	!call shympi_finalize
 	call shympi_barrier
-	call shympi_exit(99)
-	call exit(99)
+	call shympi_finalize
+	call exit(0)
 
         end subroutine shyfem_finalize
 

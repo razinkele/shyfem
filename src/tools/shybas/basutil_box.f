@@ -106,7 +106,8 @@ c-----------------------------------------------------------------
 c write index file boxes.txt
 c-----------------------------------------------------------------
 
-	open(newunit=iu,file='boxes.txt',form='formatted',status='unknown')
+	open(newunit=iu,file='boxes.txt',form='formatted'
+     +			,status='unknown')
 
 	call write_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,bnew)
 	call sort_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,neib
@@ -894,7 +895,8 @@ c area code 0 is not allowed !!!!
 	  stop 'error stop basboxgrd: no index file given'
 	end if
 
-	open(newunit=iu,file=index_file,status='old',form='formatted',iostat=ios)
+	open(newunit=iu,file=index_file,status='old'
+     +			,form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'cannot open file: ',trim(index_file)
 	  stop 'error stop basboxgrd: no such index file'

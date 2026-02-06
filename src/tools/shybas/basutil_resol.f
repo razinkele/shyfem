@@ -234,7 +234,8 @@ c***************************************************************
 
 	rtot = sum(ic)
 
-	open(newunit=iu,file='histo.txt',status='unknown',form='formatted')
+	open(newunit=iu,file='histo.txt',status='unknown'
+     +			,form='formatted')
 	do i=0,nr
 	  r = (dr/2.) * (i+i+1)
 	  perc = 100. * ic(i) / rtot

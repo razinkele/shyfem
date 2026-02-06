@@ -871,7 +871,8 @@ c-----------------------------------------------------------------
 
 	write(6,*) 'total area/vol for freq curve: ',area,vol
 
-	open(newunit=iu,file='areavol.dat',status='unknown',form='formatted')
+	open(newunit=iu,file='areavol.dat',status='unknown'
+     +			,form='formatted')
 
 	do i=0,imax
 	  z = -hmax + i*dh
@@ -1470,8 +1471,10 @@ c*******************************************************************
         integer ie,ii,k,iu1,iu2
         double precision xm,ym,hm
 
-	open(newunit=iu1,file='depth.grd',status='unknown',form='formatted')
-	open(newunit=iu2,file='depth.xyz',status='unknown',form='formatted')
+	open(newunit=iu1,file='depth.grd',status='unknown'
+     +			,form='formatted')
+	open(newunit=iu2,file='depth.xyz',status='unknown'
+     +			,form='formatted')
 
         do ie=1,nel
 
