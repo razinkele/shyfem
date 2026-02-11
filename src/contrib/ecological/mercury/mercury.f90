@@ -117,6 +117,7 @@
 	use mercury
 	use femtime
  
+	use para
 	implicit none
 
 !	integer it	!time in seconds
@@ -172,7 +173,6 @@
         real qrad
         real dtday
         real area,vol
-        real getpar
         logical has_output_d,next_output_d
 
         integer mode
@@ -700,7 +700,6 @@
 
         integer nvar,id
         logical has_output_d
-        real getpar
 
         call init_output_d('itmcon','idtcon',da_out)
         if( has_output_d(da_out) ) then

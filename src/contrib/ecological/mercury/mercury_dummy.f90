@@ -63,12 +63,12 @@
 
 ! general interface to mercury module
 
+        use para
         implicit none
 
         integer, save :: icall = 0
 
 	integer imerc
-	real getpar
 
         if( icall .le. -1 ) return
 

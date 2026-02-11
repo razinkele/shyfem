@@ -113,13 +113,13 @@
 
 	use timlim
 
+        use para
         implicit none
 
 	integer iauto
 	integer itanf,itend
 	double precision atanf,atend
 
-	double precision dgetpar
 
 	iauto = nint(dgetpar('iauto'))
 	if( iauto .le. 0 ) then

@@ -108,8 +108,6 @@
 ! function
 	integer iround
 	integer wfout,wrout,ifileo
-	real getpar
-	double precision dgetpar
 	integer ifemop
 	logical has_output_d,is_over_output_d,next_output_d
 ! save
@@ -284,7 +282,6 @@
 	real aux(nlvdi,nkn)
 	character*20 aline
 ! function
-	real getpar
 	logical has_output_d,is_over_output_d,next_output_d
 ! save
 	double precision, save, allocatable :: rms(:,:)

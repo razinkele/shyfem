@@ -109,7 +109,6 @@
 	double precision dtoff,tmoff,toff
 	integer, save :: iwhat = 0
         integer ifemop, ifileo
-	real getpar
 
 	if( icall .lt. 0 ) return
 

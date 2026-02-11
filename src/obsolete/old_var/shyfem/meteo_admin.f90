@@ -125,7 +125,6 @@
 
 	integer k,ievap
         double precision racum,eacum
-	real getpar
 
 	ievap = nint(getpar('ievap'))
 
@@ -155,7 +154,6 @@
 	integer k
 	real dragco
 
-	real getpar
 
 	dragco = getpar('dragco')
 

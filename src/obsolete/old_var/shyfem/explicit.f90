@@ -129,7 +129,6 @@
         logical bbarcl
         integer ilin,itlin,ibarcl
 	real rlin
-        real getpar
 	logical bnohyd
 
 !-------------------------------------------
@@ -414,7 +413,6 @@
 	real viv(nlv_global)
 
 	integer ieext,ieint
-	real getpar
 
 	call get_timestep(dt)
 
@@ -517,7 +515,6 @@
 	logical bnoslip,bdebug
 
 	integer ieext,ieint
-	real getpar
 
 	call get_timestep(dt)
 
@@ -711,7 +708,6 @@
         real f,h
 	real xadv,yadv
 	real area,vol
-        real getpar
         real wlay,dzbb,dz,dztt,ubot,utop,vbot,vtop
 	real rdist,rcomp,ruseterm
 

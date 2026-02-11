@@ -63,10 +63,10 @@
         use levels !DWNH
         use basin !DWNH
 
+        use para
 	implicit none
 
 	integer inohyd
-	real getpar
 
 	inohyd = nint(getpar('inohyd'))
 
@@ -117,6 +117,7 @@
         use mod_bound_dynamic
         use mod_system
 
+        use para
         implicit none
 
 ! local
@@ -124,7 +125,6 @@
         integer iw,inhadj
         real aq
         real qvmax
-        real getpar
 
 !        non-hydrostatic semi-implicit weight
         aq = getpar('aqpar')
@@ -221,6 +221,7 @@
 	use pkonst
 	use femtime
 
+        use para
         implicit none
 
 ! parameters
@@ -255,7 +256,6 @@
         real wgam(nlv),wsol(nlv)
         real wl(0:nlv,3)
         real hdn,hdpn,hdo,hdpo
-        real getpar
 
 !--------------------------------------------------------
 ! initialize parameters	
@@ -536,6 +536,7 @@
         use basin
 	use pkonst
 
+        use para
         implicit none
         
 
@@ -547,7 +548,6 @@
         real qpo,qpn
         real b,c
         real aq,aqt
-        real getpar
 
 !        non-hydrostatic semi-implicit weight       
         aq = getpar('aqpar')
@@ -607,6 +607,7 @@
 	use pkonst
 	use mkonst
 
+	use para
 	implicit none
 
 	real pvar(nlvdi,nkn)
@@ -630,7 +631,6 @@
 	real volnode
 
 	integer locsps,loclp,iround
-	real getpar
 	integer loccoo3d 
 
         if(trim(solver_type)=='PETSc')then
@@ -770,6 +770,7 @@
         use basin
 	use pkonst
 
+        use para
         implicit none
 
 ! local
@@ -778,7 +779,6 @@
         real b(3),c(3)
         real dt
         real uqaux,vqaux,zqaux
-        real getpar
         real aq
 
 !        non-hydrostatic semi-implicit weight  
@@ -830,6 +830,7 @@
 
 	subroutine nh_handle_output(dtime)
 
+	use para
 	implicit none
 
 	double precision dtime
@@ -839,7 +840,6 @@
 	integer, save :: icall = 0
 	integer, save :: iwvel,iqpnv
 
-	real getpar
 
 !       --------------------------------------------
 !	initialize output files
@@ -884,7 +884,6 @@
 
 	integer nvar,id
 	logical has_output_d
-	real getpar
 
 	nvar = 0
 	if( iwvel .gt. 0 ) nvar = nvar + 1
@@ -910,6 +909,7 @@
 	use mod_hydro_print
 	use mod_nohyd
 
+	use para
 	implicit none
 
 	double precision dtime
@@ -921,7 +921,6 @@
 
 	integer id,l
 	logical next_output_d
-	real getpar
 
 	inhwrt = nint(getpar('inhwrt'))
 
@@ -976,6 +975,7 @@
 
 	use basin
 
+	use para
 	implicit none
 
         real qdist(nkn)
@@ -991,7 +991,6 @@
 
 	integer iapini,ipint
         integer nbnds,itybnd,nkbnds,kbnds
-        real getpar
 
 !-----------------------------------------------------------------
 ! get parameters

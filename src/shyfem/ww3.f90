@@ -107,6 +107,7 @@
 	subroutine ww3_init_internal
 	USE w3cplshyfem 
 
+	use para
 	implicit none
 
 	integer ier, idsi, idso, idss, idst, idse
@@ -115,7 +116,6 @@
 	integer iwave, nvar, id
 	character(len=30) :: ifname = 'ww3_multi.nml'
 
-	real getpar
 
 	iwave = nint(getpar('iwave'))
 	bww3 = ( iwave == 11 )
@@ -427,7 +427,6 @@
 		save bwind
 		real wfact,wspeed
 		save wfact
-		real getpar
 		logical next_output_d
 		integer id, nvar, ierr, ios
 		double precision dtime
@@ -663,7 +662,6 @@
 		save bwind
 		real wfact,wspeed
 		save wfact
-		real getpar
 		logical next_output_d
 		integer id, nvar, ios
 		double precision dtime

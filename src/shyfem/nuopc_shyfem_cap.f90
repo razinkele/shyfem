@@ -528,6 +528,7 @@
 	!! inside SHYFEM, through a quite complex chain of commands. Then we advance 
 	!! SHYFEM.
 	subroutine Advance(model, rc)
+	  use para
 	  type(ESMF_GridComp)  :: model
 	  integer, intent(out) :: rc
 
@@ -550,7 +551,6 @@
 	  integer                     :: currYear, currMonth, currDay, &
      &                                   currHour, currMinute, &
      &                                   currSecond, currTimeSec
-	  real, external              :: getpar	  
 	  integer                     :: idtatm
 
 	  integer, save               :: iuinfo = 0
@@ -834,6 +834,7 @@
 	!! With this is mind let's have a look to the subroutine that get SHYFEM mesh.
 	subroutine SHYFEM_MeshGet(SHYFEM_mesh, rc)
 
+          use para
           type(ESMF_Mesh), intent(out)    :: SHYFEM_mesh
           integer, intent(out) 		  :: rc
 
@@ -854,7 +855,6 @@
 
 	  integer                         :: i, ie
 	  integer                         :: ierr
-          real, external                  :: getpar
 
 	  rc = ESMF_SUCCESS
 

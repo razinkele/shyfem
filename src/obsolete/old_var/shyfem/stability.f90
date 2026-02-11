@@ -139,7 +139,6 @@
 	real ddt
         integer isact,istot
 
-        real getpar
 
 !----------------------------------------------------------------
 ! set parameters
@@ -419,7 +418,6 @@
 	real, allocatable :: sauxe3(:)
 	real, allocatable :: sauxe(:,:)
 
-	real getpar
 	logical is_i_nan
   
 	if( iuinfo == 0 ) then
@@ -597,7 +595,6 @@
 	integer, save :: icall = 0
 	double precision, save :: da_out(4)
 
-	real getpar
 
 	if( icall .lt. 0 ) return
 
@@ -672,7 +669,6 @@
 	integer, save :: icall = 0
 	double precision, save :: da_out(4)
 
-	real getpar
 
 !	idtsti = 3600
 !	idtsti = 0
@@ -754,7 +750,6 @@
 	real,save,allocatable :: dist(:)
         real, parameter :: high = 1.e+30
 
-	real getpar
 
 	gindex = 0.
 	garray = 0.

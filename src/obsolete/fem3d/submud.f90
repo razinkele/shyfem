@@ -88,7 +88,6 @@
   
 
         integer iround
-        real getpar
 
         save nk, innode, ounode
 
@@ -619,7 +618,7 @@
         integer nlvdi,nkn               !number of level and nodes
         double precision d              !grain size
         double precision visk           !molecular viskosity 
-        real getpar,vismol
+        real vismol
 
         integer l,k,lmax
 
@@ -1734,7 +1733,6 @@
         integer icall, lthick                   !Initialization parameter
         save icall, lthick
         save innode,ounode,nk,nnode
-        real getpar
         data icall /0/
 
 ! ----------------------------------------------------------

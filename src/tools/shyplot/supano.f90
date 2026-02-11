@@ -538,6 +538,7 @@
 
 !  creates legend (north wheel and scale bar)
 
+	use para
 	implicit none
 
 	real x0,y0,x1,y1	!dimension of legend on plot
@@ -555,7 +556,6 @@
 
 	integer iround,istell
 	real rnext
-	real getpar
 
 	logical bblank
 
@@ -655,6 +655,7 @@
 
 	use color
 
+	use para
 	implicit none
 
 	character*80 line
@@ -665,7 +666,6 @@
 	real x0,y0,x1,y1
 
 	integer iround
-	real getpar
 	logical inboxdim
 
 	if( .not. inboxdim('col',x0,y0,x1,y1) ) then
@@ -698,6 +698,7 @@
 
 	use plot_fonts
 
+	use para
 	implicit none
 
 	character*(*) title
@@ -744,7 +745,6 @@
 	logical bdebug,blog
 	integer iround,isoget,ialfa,ideci
 	real getcolval
-	real getpar
 
 	call qcomm('Plotting colorbar')
         call qfont('Times-Roman')
@@ -1357,6 +1357,7 @@
 
 !  plots wind vector
 
+        use para
         implicit none
 
         real x,y
@@ -1386,7 +1387,6 @@
         character*40 wtext,wunit
         save wtext,wunit
 
-	real getpar
 
         integer icall
         save icall
@@ -1501,6 +1501,7 @@
 
 !  plots date legend
 
+        use para
         implicit none
 
         integer it,iday,ihour
@@ -1521,8 +1522,6 @@
         save icall
         data icall /0/
 
-	real getpar
-	double precision dgetpar
 
 	if( icall .eq. -1 ) return
 
@@ -1615,6 +1614,7 @@
 
 	use mod_bash
 
+	use para
 	implicit none
 
 	character*(*) title,unit
@@ -1638,7 +1638,6 @@
 
 	integer iround,istell,ialfa
 	real rnext
-	real getpar
 
 	logical bblank,bdebug
 
@@ -1721,6 +1720,7 @@
 !  ivel = 3      wind
 !  ivel = 4      waves
 
+	use para
 	implicit none
 
 	integer ivel
@@ -1734,7 +1734,6 @@
 	logical bdebug
 
 	integer iround
-	real getpar
 	logical inboxdim
 
 	bdebug = .false.
@@ -1841,6 +1840,7 @@
 
 !  gets dimension of box
 
+	use para
 	implicit none
 
 	character*(*) name
@@ -1848,7 +1848,6 @@
 
 	character*10 x0var,y0var,x1var,y1var
 
-	real getpar
 
 	x0var = 'x0' // name
 	y0var = 'y0' // name

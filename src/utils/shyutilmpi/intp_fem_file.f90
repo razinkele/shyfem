@@ -2547,6 +2547,7 @@
 
 	use shympi
 
+	use para
 	integer id
 	double precision t
 	integer ivar
@@ -2570,7 +2571,6 @@
 	character*80 string
 	character*80 strings(pinfo(id)%nvar)
 
-	real getpar
 
         nintp = pinfo(id)%nintp
         lexp = max(1,pinfo(id)%lexp)

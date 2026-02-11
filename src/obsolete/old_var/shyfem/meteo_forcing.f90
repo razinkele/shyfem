@@ -934,7 +934,6 @@
 	character*60 string
 
         logical string_is_this_short
-	real getpar
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1023,7 +1022,6 @@
 	character*60 string
 
         logical string_is_this_short
-	real getpar
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1197,7 +1195,6 @@
 	character*80 vapor,vshort
 
 	logical string_is_this_short
-        real getpar  
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1586,7 +1583,6 @@
 	save ievap
 	data ievap /-1/
 
-	real getpar
 
         if( ievap .eq. -1 ) ievap = nint(getpar('ievap'))
 

@@ -300,6 +300,7 @@
         use mod_zeta_system, only : solver_type
 	use mod_trace_point
 
+	use para
 	implicit none
 
 	logical boff,bdebout
@@ -314,7 +315,6 @@
 	real dzeta(nkn)
 	double precision dtime
 
-	real getpar
 	logical bnohyd
 
         real epseps
@@ -518,6 +518,7 @@
 	use mod_subset
 !$	use omp_lib
 
+	use para
 	implicit none
 
 	real, intent(in) :: vqv(nkn)
@@ -561,7 +562,6 @@
 	data amatr / 4.,0.,0.,0.,4.,0.,0.,0.,4. /	!lumped
 
         integer locsps,loclp
-	real getpar
 	logical iseout
         iseout(ie) = iwegv(ie).ne.0
 
@@ -889,6 +889,7 @@
 	use pkonst
 !$	use omp_lib
 
+	use para
 	implicit none
 
 	integer ie
@@ -913,7 +914,6 @@
 	double precision tempo
 	double precision openmp_get_wtime
 	!integer openmp_get_num_threads,openmp_get_thread_num
-	real getpar
 
 	integer, save :: icall = 0
 	integer, save :: ibaroc_c, itlin_c, ilin_c
@@ -1590,6 +1590,7 @@
 	use pkonst
 	use mkonst
 
+	use para
 	implicit none
 
 	logical bcolin,bdebug
@@ -1604,7 +1605,6 @@
 	double precision du,dv
 	double precision rfix,rcomp
 ! function
-	real getpar
 
 	integer, save :: icall = 0
 	logical, save :: bcolin_c

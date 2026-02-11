@@ -85,7 +85,6 @@
 
 	implicit none
 
-	real getpar
 	logical boff
 
 	integer iturb
@@ -149,7 +148,6 @@
 	real diftur,vistur
 	real a,b,alpha,beta
 
-	real getpar
 
 	integer icall
 	save icall
@@ -289,7 +287,6 @@
 	real ubot,vbot,rr
 
 	real dtreal
-	real getpar
 	integer ipext
 
 	logical bwave,has_waves,bgotm,bdeb

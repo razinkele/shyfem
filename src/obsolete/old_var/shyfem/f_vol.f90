@@ -58,7 +58,6 @@
 
 	integer k,l,lmax,id,nvar,idc
 
-	real getpar
 	logical has_output_d,next_output_d
 	real saux(nlvdi,nkn)
 	double precision dtime

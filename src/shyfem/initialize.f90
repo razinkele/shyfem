@@ -262,12 +262,12 @@
 	use levels, only : nlvdi,nlv
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
 
 	integer k,l
 	real vistur,diftur
 
-	real getpar
 
 !------------------------------------------------------------------
 ! get parameters
@@ -391,6 +391,7 @@
 
 	use basin
 
+	use para
 	implicit none
 
 	integer, intent(inout) :: nlv_est	!nlv_read on entry, estimate on return
@@ -400,7 +401,6 @@
 	integer nsigma,nreg
 	real hsigma,dzreg
 
-	real getpar
 
 	dzreg = getpar('dzreg')
 	call get_sigma(nsigma,hsigma)
@@ -443,6 +443,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
 	real, intent(in) :: hmax
@@ -452,7 +453,6 @@
 	real dzreg,hl,fact,hsigma
 	real hbot,htop
 
-	real getpar
 
 	write(6,*) 'adjust layer structure'
 
@@ -983,6 +983,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
 	logical bwrite
@@ -1000,7 +1001,6 @@
 	!double precision hm
 
 	integer ieext
-	real getpar
 
 	bwrite = .false.
 
@@ -1173,6 +1173,7 @@
 	use pkonst
 	use mkonst
 
+	use para
 	implicit none
 
 	real omega2	!double frequency of earth rotation
@@ -1186,7 +1187,6 @@
 	integer isphe
 	real yc,ym,y,ymin,ymax,dlat
 	real aux1,aux2,rad
-	real getpar
 	real, dimension(nkn)	:: yaux
 
 ! if coordinates are cartesian (isphe=0) then icor determines 
@@ -1641,10 +1641,10 @@
 
 	subroutine set_spherical
 
+	use para
 	implicit none
 
 	integer isphe
-	real getpar
 
 	isphe = nint(getpar('isphe'))
 	if( isphe == -1 ) return	!no info given

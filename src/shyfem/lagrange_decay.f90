@@ -52,11 +52,11 @@
 
 	use femtime
 
+        use para
         implicit none
         
         integer n
         
-        real getpar
         
         integer lcall
         save lcall

@@ -137,6 +137,7 @@
 	use shympi
 	use femtime
 
+	use para
 	implicit none
 
         double precision, save		:: dtlanf,dtlend
@@ -145,7 +146,6 @@
 	real, save			:: ldecay
 
         integer				:: ifemop
-        real 				:: getpar
 
 	logical				:: brelease
         character*20 			:: aline
@@ -386,9 +386,9 @@
 	use mod_lagrange
 	use levels
 
+	use para
 	implicit none
 
-	real getpar
 	integer ifemop
 
         artype=getpar('artype')	!store special type in common block

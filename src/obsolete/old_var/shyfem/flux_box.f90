@@ -400,8 +400,6 @@
 	integer nbnds,nkbnd
 	integer ifemop
 	integer ipext
-	real getpar
-	double precision dgetpar
 	logical has_output_d,is_over_output_d,next_output_d
 	logical is_first_output_d
 

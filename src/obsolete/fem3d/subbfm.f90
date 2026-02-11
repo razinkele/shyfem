@@ -138,7 +138,7 @@
 	integer it
 	real dt
 
-	real getpar,areaele
+	real areaele
 
 	integer, save :: ibfm = 0
         
@@ -408,7 +408,6 @@
 ! function
 	logical has_restart
 
-	real getpar
 	integer iround
  
 	real difmol,rkpar

@@ -352,8 +352,6 @@
 	real az,rr
 
 	integer iround,ideffi
-	real getpar
-	double precision dgetpar
 	logical has_output_d,next_output_d,is_over_output_d
 
 	real vol(iscdim)

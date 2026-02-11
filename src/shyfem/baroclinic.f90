@@ -211,6 +211,7 @@
 	use mod_trace_point
 	use mod_info_output
 
+	use para
 	implicit none
 !
 ! arguments
@@ -257,7 +258,6 @@
 	character*256 format
 ! functions
 !	real sigma
-	real getpar
 	double precision dq
 	integer iround
 	integer nbnds
@@ -929,6 +929,7 @@
 	subroutine ts_nudge(dtime,nlvddi,nlv,nkn,tobsv,sobsv &
      &					,ttauv,stauv)
 
+	use para
 	implicit none
 
 	double precision, intent(in) :: dtime
@@ -948,7 +949,6 @@
 	integer, save :: idttau,idstau
 	integer, save :: icall = 0
 
-	real getpar
 
 	call getfnm('tempobs',tempf)
 	call getfnm('saltobs',saltf)

@@ -256,6 +256,7 @@
 	use basin
 	use pkonst
 
+	use para
 	implicit none
 
 	real, parameter :: drittl = 1./3.
@@ -267,7 +268,7 @@
 	real uso,vso,uv,uuvv
 	real rfric,rcd,rr,ss,rho0
 
-	real getpar,cdf
+	real cdf
 	real uvmin
 
 !-------------------------------------------------------------------
@@ -612,6 +613,7 @@
 	use chezy
 	use shympi
 
+	use para
 	implicit none
 
 	logical bchange,bstop,blocaldebug
@@ -625,7 +627,6 @@
 	integer, save :: iczv = 0
 	integer, save :: icall = 0
 
-	real getpar
 
 	if( icall == -1 ) return
 
@@ -900,6 +901,7 @@
 	use chezy
 	use shympi
 
+	use para
 	implicit none
 
 	integer i,knode,knodeh,ireib,nczmax
@@ -909,7 +911,6 @@
 	real czdef
 
 	integer ipint
-	real getpar
 
 	bstop = .false.
 

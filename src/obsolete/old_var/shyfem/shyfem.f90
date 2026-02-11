@@ -255,7 +255,6 @@
 	character*80 strfile
 	character*80 mpi_code,omp_code
 
-	real getpar
 
 	call cpu_time(time1)
 	call cpu_time_init
@@ -847,7 +846,6 @@
 
 	implicit none
 	
-	real getpar
 	
 	integer :: nscal,itemp,isalt,iconz,itvd
 	

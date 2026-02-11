@@ -45,7 +45,6 @@
         implicit none
 
 	integer ibfm,ibio
-	real getpar
 
 	integer, save :: icall = 0
 

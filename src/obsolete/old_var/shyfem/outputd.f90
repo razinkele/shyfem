@@ -410,7 +410,6 @@
 	character*30 text
 	logical bdebug
 
-	double precision dgetpar
 
 	bdebug = .true.
 	bdebug = .false.
@@ -463,7 +462,6 @@
 	character*40 text
 	logical bdebug
 
-	double precision dgetpar
 
 	bdebug = .true.
 	bdebug = .false.

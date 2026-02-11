@@ -467,6 +467,7 @@
 
 ! converts date to relative time
 
+	use para
 	implicit none
 
 	character*(*), intent(in) :: name
@@ -478,7 +479,6 @@
 	character*30 text
 	logical bdebug
 
-	double precision dgetpar
 
 	bdebug = .false.
 
@@ -521,6 +521,7 @@
 
 ! converts time period to relative time difference
 
+	use para
 	implicit none
 
 	character*(*), intent(in) :: name
@@ -530,7 +531,6 @@
 	character*40 text
 	logical bdebug
 
-	double precision dgetpar
 
 	bdebug = .false.
 

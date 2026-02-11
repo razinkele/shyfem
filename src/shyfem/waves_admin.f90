@@ -154,10 +154,10 @@
 
 	use mod_waves
 
+	use para
 	implicit none
 
 	integer itdrag		!drag coefficient type
-	real getpar		!get parameter function
 	integer k,ie,l
 	integer nvar
 	integer id
@@ -307,6 +307,7 @@
 	use pkonst
 	use mod_physical_constants, only : pi => pi_sp, &
      &			deg2rad => deg2rad_sp
+	use para
 
         implicit none
 
@@ -333,7 +334,6 @@
 	save bwind
 	real wfact,wspeed
 	save wfact
-        real getpar
         logical next_output_d
 	integer id
 	double precision dtime
@@ -1189,6 +1189,7 @@
 	use basin
 	use mod_parwaves
 
+        use para
         implicit none
 
 ! --- aux variable
@@ -1204,7 +1205,6 @@
 	double precision dtime
 	integer ierr
 
-        real getpar
         real depele             !element depth function [m]
 
         logical has_output_d,next_output_d

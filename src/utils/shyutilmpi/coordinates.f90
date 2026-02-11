@@ -104,11 +104,11 @@
 
         use basin
 
+        use para
         implicit none
 
         integer 			:: mode,i
         double precision, dimension(9)	:: c_param
-        real				:: getpar
 
         mode = 1	!from cartesian to lat/lon
 
@@ -288,11 +288,11 @@
         use coordinates
 	use shympi
 
+        use para
         implicit none
 
         logical 	:: bspheric
         logical 	:: is_spherical
-	real		:: getpar
 
         bspheric = is_spherical()
         iproj = nint(getpar('iproj'))

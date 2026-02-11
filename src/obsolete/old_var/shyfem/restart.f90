@@ -548,8 +548,6 @@
         character*80 name
         character*20 aline
 
-        real getpar
-	double precision dgetpar
         integer ifileo
 	logical rst_is_set
 
@@ -843,8 +841,6 @@
 	double precision atime
 	double precision dtanf,dtend
 
-        real getpar
-        double precision dgetpar
         integer ifemop
 	!integer fsync
 	logical has_output_d,next_output_d
@@ -965,8 +961,6 @@
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
 
-	real getpar
-        double precision dgetpar
 
         nvers = nvmax
 	b3d = nlv_global > 1

@@ -168,6 +168,7 @@
       use mod_sedtrans05
       use mod_bstress, only : taubot
 
+      use para
       implicit none
 
 ! -------------------------------------------------------------
@@ -233,7 +234,6 @@
 	
 ! function
       integer 		:: ifemop
-      real		:: getpar
       logical		:: has_output_d
 
 ! ----------------------------------------------------------
@@ -718,8 +718,6 @@
 
         implicit none
 
-        real		  :: getpar
-        double precision  :: dgetpar
         integer 	  :: i
         integer		  :: nrs	!number of grainsize classes
         integer 	  :: npi	!

@@ -79,6 +79,7 @@
 	use basin
 	use shympi
 
+	use para
 	implicit none
 
         real redist(nel)
@@ -100,7 +101,6 @@
 
 	integer iapini,ipint,ipext
         integer nbnds,itybnd,nkbnds,kbnds
-        real getpar
         integer ierr
 
 !-----------------------------------------------------------------

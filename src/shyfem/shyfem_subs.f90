@@ -984,9 +984,9 @@
 	
 	use mod_bfm
 
+	use para
 	implicit none
 	
-	real getpar
 	
 	integer :: nscal,itemp,isalt,iconz,itvd
 	
@@ -1039,10 +1039,10 @@
 
 	use shympi
 
+	use para
 	implicit none
 
 	real pqual
-	real getpar
 
 	pqual = nint(getpar("pqual"))
 

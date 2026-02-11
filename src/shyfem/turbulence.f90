@@ -83,9 +83,9 @@
 
 ! administers turbulence closure
 
+	use para
 	implicit none
 
-	real getpar
 	logical boff
 
 	integer iturb
@@ -129,6 +129,7 @@
 	use pkonst
 	use femtime
 
+	use para
 	implicit none
 
 !---------------------------------------------------------------
@@ -147,7 +148,6 @@
 	real ri,vis,dif
 	real a,b,alpha,beta
 
-	real getpar
 
 	integer, save :: icall = 0
 	real, save :: vistur_c = 0.
@@ -247,6 +247,7 @@
 	use pkonst
 	use femtime
 
+	use para
 	implicit none
 
 	double precision dt
@@ -291,7 +292,6 @@
 	real ubot,vbot,rr
 
 	real dtreal
-	real getpar
 	integer ipext
 
 	logical bwave,has_waves,bgotm,bdeb

@@ -100,11 +100,11 @@
 	use shyice_model
 	use basin
 
+	use para
 	implicit none
 
 	logical bicefile
 	integer k
-	double precision dgetpar
 
 	icemod = nint(dgetpar('icemod'))
 	idtice = dgetpar('idtice')

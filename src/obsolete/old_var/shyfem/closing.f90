@@ -233,7 +233,6 @@
         character*80 file       !closure file name
         integer idfile          !closure file unit
 
-	real getpar
 
 	logical, save :: binit = .false.
 

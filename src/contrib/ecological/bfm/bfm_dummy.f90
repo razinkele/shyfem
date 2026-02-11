@@ -46,7 +46,7 @@
 !==================================================================
 
 	subroutine bfm_init
-	real getpar
+	use para
 	ibfm = nint(getpar('ibfm'))
 	call bfm_init_internal(ibfm)
 	end

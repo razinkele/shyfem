@@ -165,7 +165,6 @@
 	real aj,zm,hm
 	real vv(nkn)
 ! function
-	real getpar
 	integer iround
 !
 	bcolin=iround(getpar('iclin')).ne.0

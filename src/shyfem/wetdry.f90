@@ -161,6 +161,7 @@
 	use evgeom
 	use basin
 
+        use para
         implicit none
 
 ! arguments
@@ -175,7 +176,6 @@
 	real hzlim,hztot
 	character*10 text
 ! functions
-        real getpar
 !	integer ieint,iround,ipint
 ! aux
 	logical debug,bnodry
@@ -366,6 +366,7 @@
 	use evgeom
 	use basin
 
+        use para
         implicit none
 !
 ! local
@@ -388,7 +389,6 @@
 	integer, save :: icall = 0
 	real, save :: hzmin_c
 ! functions
-        real getpar
         integer ieext
         logical iseout
         iseout(ie) = iwegv(ie).gt.0

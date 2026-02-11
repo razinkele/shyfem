@@ -247,10 +247,10 @@
 
 ! checks arrays for sanity
 
+	use para
 	implicit none
 
         integer levdbg
-        real getpar
 
         levdbg = nint(getpar('levdbg'))
 
@@ -437,7 +437,6 @@
 	real b,c
 	real dt,az,azt,azpar
 
-	real getpar
 	integer ipext,ieext
 	integer ierr
 
@@ -707,6 +706,7 @@
 	use mkonst
 	use mod_info_output
 
+	use para
 	implicit none
 
 	logical berror,bdebug
@@ -729,7 +729,7 @@
 	real, allocatable :: vf(:,:)
 	real, allocatable :: va(:,:)
 
-	real volnode,areanode,getpar
+	real volnode, areanode
 
 	integer, save :: iuinfo = 0
 

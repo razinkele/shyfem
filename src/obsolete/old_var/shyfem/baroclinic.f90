@@ -250,7 +250,6 @@
 	character*4 what
 ! functions
 !	real sigma
-	real getpar
 	double precision scalcont,dq
 	integer iround
 	integer nbnds
@@ -910,7 +909,6 @@
 	integer, save :: idttau,idstau
 	integer, save :: icall = 0
 
-	real getpar
 
 	call getfnm('tempobs',tempf)
 	call getfnm('saltobs',saltf)

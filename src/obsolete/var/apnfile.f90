@@ -266,7 +266,6 @@
 	logical bcompat
 	integer nmode,iauto
 
-	real getpar
 
 	bcompat = .false.	!set to .true. for compatibility
 

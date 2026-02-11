@@ -185,6 +185,7 @@
 	use evgeom
 	use basin
 
+        use para
         implicit none
 
 	logical bdebug,berror
@@ -199,7 +200,6 @@
 	double precision wacu_aux(3)
 	double precision wacu,wacu_max
 
-	real getpar
 
 !-----------------------------------------------------------------
 ! initialization
@@ -492,6 +492,7 @@
 	use basin, only : nkn,nel,ngr,mbw
 	use shympi
 
+        use para
         implicit none
 
         character*256 file,title
@@ -503,7 +504,6 @@
 	real v1v(nkn)
 	real v2v(nkn)
 
-        real getpar
 
         real parmax
         save parmax

@@ -408,7 +408,7 @@
 	implicit none		
 
 	integer lmin,nzadapt
-	real getpar,rzmov,testz
+	real rzmov, testz
 
         allocate(nadapt_com(4,nel))
         allocate(hadapt_com(4,nel))	

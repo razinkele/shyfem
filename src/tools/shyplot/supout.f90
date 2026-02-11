@@ -216,12 +216,12 @@
         use basin
 	use mod_hydro_plot
 
+        use para
         implicit none
 
 	logical bset
         integer ie,ii,k
         integer ianopl,iadopl,ia
-	real getpar
 
         ianopl = nint(getpar('ianopl'))		!do not plot here
         iadopl = nint(getpar('iadopl'))		!only plot here
@@ -271,6 +271,7 @@
 	use mod_hydro
 	use levels
 
+	use para
 	implicit none
 
 	logical bshowdry
@@ -280,7 +281,6 @@
 	logical fvl_is_available
 	logical ous_is_available
 	integer getlev
-	real getpar
 
 ! ---------------------------------------------------
 !  set up mask of water points

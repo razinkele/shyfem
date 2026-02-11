@@ -335,7 +335,6 @@
 	double precision dtime
 	double precision rr
 ! function
-	real getpar
 	logical has_output_d,is_over_output_d,next_output_d
 ! save
 	double precision, save, allocatable :: tacu(:,:)

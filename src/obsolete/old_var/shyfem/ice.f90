@@ -101,7 +101,6 @@
 
 	logical bicefile
 	integer k
-	double precision dgetpar
 
 	icemod = nint(dgetpar('icemod'))
 	idtice = dgetpar('idtice')

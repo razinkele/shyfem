@@ -784,7 +784,6 @@
 	real dt
 	integer nbnds,itybnd
 	integer ifemopa
-	real getpar
 
 	logical bfill
 	integer ndim

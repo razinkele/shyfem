@@ -98,9 +98,9 @@
 	use connectivity
 	use mod_lagrange
 
+	use para
 	implicit none
 	
-	double precision dgetpar
 
         call sctpar('connect')          !sets default section
         call sctfnm('connect')

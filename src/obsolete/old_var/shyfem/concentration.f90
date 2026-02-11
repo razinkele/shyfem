@@ -624,7 +624,6 @@
 	double precision dtime
 	character*20 aline
 ! function
-	real getpar
 	integer ipint
 
 !-------------------------------------------------------------
@@ -1708,7 +1707,6 @@
 ! functions
 	logical is_zeta_bound,openmp_in_parallel,openmp_is_master
 	logical has_output_d,next_output_d
-	real getpar
 
         if(nlv.ne.nlev) stop 'error stop conzstab: nlv/=nlev'
 
@@ -2219,7 +2217,6 @@
 
 	integer ipext
 	logical is_zeta_bound
-	real getpar
 
 	bwrite = .true.		! write every violation
 	bwrite = .false.		! write every violation
@@ -2417,7 +2414,6 @@
 	real limit0,limit1
 	integer ic
 	real thresh
-	real getpar
 
 	if( icall == 0 ) then
 	  icall = 1

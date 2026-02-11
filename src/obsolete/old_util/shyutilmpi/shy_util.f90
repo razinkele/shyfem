@@ -605,7 +605,6 @@
 	real hzmin,hzoff,nzadapt
 	character*80 title
 	character*80 femver
-	double precision dgetpar
 
 	if( id <= 0 ) return
 

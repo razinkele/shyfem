@@ -126,6 +126,7 @@
 	use mod_tvd
 	use shympi
 
+        use para
         implicit none
 
 	integer itvd
@@ -134,7 +135,6 @@
 	logical, save :: bdebug = .true.
 	logical :: btvd2
 
-	real getpar
 
 	if( icall .ne. 0 ) return
 	icall = 1

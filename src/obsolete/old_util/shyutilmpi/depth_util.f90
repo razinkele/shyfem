@@ -503,7 +503,6 @@
 	implicit none
 
 	real hmin,hmax,href
-	real getpar
 
 !       call bocche     !FIXME
 

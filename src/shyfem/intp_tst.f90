@@ -783,6 +783,7 @@
 	use mod_hydro
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
 
         integer ie,ii,k
@@ -793,7 +794,6 @@
 	real dt
 	integer nbnds,itybnd
 	integer ifemopa
-	real getpar
 
 	logical bfill
 	integer ndim

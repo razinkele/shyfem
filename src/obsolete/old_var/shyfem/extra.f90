@@ -289,7 +289,6 @@
 	character*80 strings(knausm)
 
 	integer ideffi,ipext
-	real getpar
 	logical has_output_d,next_output_d
 
 	double precision, save :: da_out(4) = 0

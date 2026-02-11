@@ -311,7 +311,6 @@
 	real dzeta(nkn)
 	double precision dtime
 
-	real getpar
 	logical bnohyd
 
         real epseps
@@ -535,7 +534,6 @@
 	data amatr / 4.,0.,0.,0.,4.,0.,0.,0.,4. /	!lumped
 
         integer locsps,loclp
-	real getpar
 	!logical iskbnd,iskout,iseout
 	logical iskbnd,iseout
         iskbnd(k) = inodv(k).ne.0 .and. inodv(k).ne.-2
@@ -760,7 +758,6 @@
 	double precision tempo
 	double precision openmp_get_wtime
 	!integer openmp_get_num_threads,openmp_get_thread_num
-	real getpar
 
 !-------------------------------------------------------------
 ! initialize
@@ -1466,7 +1463,6 @@
 	double precision du,dv
 	double precision rfix,rcomp
 ! function
-	real getpar
 
 !-------------------------------------------------------------
 ! initialize

@@ -57,11 +57,11 @@
 
 ! manages release of particles
 
+	use para
 	implicit none
 
 	character*256 line,traj
 	integer npoints
-	real getpar
 
 	npoints = nint(getpar('nbdy'))
 	if( npoints <= 0 ) return
@@ -163,6 +163,7 @@
 
         use mod_lagrange
 
+        use para
 	implicit none
 
 	double precision, intent(in)	:: dtime
@@ -182,7 +183,6 @@
 	double precision, save		:: dtlast
         character*256 traj
         integer ifileo
-        real getpar
 
         if( icall == -1 ) return
 

@@ -125,11 +125,11 @@
 	use mod_bound_dynamic
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
 
 	integer k,ievap,irain
         double precision racum,eacum
-	real getpar
 
 	ievap = nint(getpar('ievap'))
         irain = nint(getpar('irain'))
@@ -155,12 +155,12 @@
 	use mod_meteo
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
 
 	integer k
 	real dragco
 
-	real getpar
 
 	dragco = getpar('dragco')
 

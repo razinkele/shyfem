@@ -417,11 +417,11 @@ end module aquabc_II_layers_data
        ! bdens(nlbdim,nkn) - bed dry bulk density of bottom sediments, kg/m^3
  
        
+       use para
        implicit none
        
       logical bsedim
       
-      real getpar !function for obtaining parameters values defined in *.str file
       
       !integer, parameter :: nlbdim  = 20 ! maximum number of sediment levels in sedtrans model
                                          ! It should be the same as in sed_param.h. Temporary solution 

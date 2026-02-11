@@ -709,7 +709,6 @@
 	integer			:: n_ext     	!particles exited the domain
 	real			:: x,y,z,s
 	real 			:: hl,ht,hr
-	real 			:: getpar
 	double precision 	:: xx,yy
         double precision 	:: xi(3)
         double precision 	:: tt
@@ -717,7 +716,6 @@
 	integer, allocatable	:: list_new(:)
 	integer, allocatable	:: list_ins(:)
 	integer, allocatable	:: list_ext(:)
-        double precision dgetpar
         integer, save 		:: icall = 0
 
 !----------------------------------------------------------------

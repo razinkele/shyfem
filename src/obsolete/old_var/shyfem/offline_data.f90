@@ -100,7 +100,6 @@
 	character*60 name
 	double precision dtoff,tmoff,toff
         integer ifemop, ifileo
-	real getpar
 
 	if( icall .lt. 0 ) return
 

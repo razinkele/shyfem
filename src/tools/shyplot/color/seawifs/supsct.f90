@@ -301,7 +301,6 @@
 	real col(ndim),riso(ndim-1)
 
 	real rnexta,rnext
-	real getpar
 
 	bdebug = .false.
 

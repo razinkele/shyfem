@@ -97,7 +97,6 @@
         real albed0,albed4
         save albed0,albed4
 
-        double precision dgetpar
 
         integer icall
         save icall

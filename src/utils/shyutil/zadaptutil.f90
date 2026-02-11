@@ -415,10 +415,11 @@
         use basin, only : nkn,nel		
 	use zadapt
 
+	use para
 	implicit none		
 
 	integer lmin,nzadapt,ierr
-	real getpar,rzmov,testz
+	real rzmov, testz
 
         allocate(nadapt_com(4,nel),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'

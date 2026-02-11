@@ -504,10 +504,10 @@
 
 ! adjusts depth values - only hm3v is changed
 
+	use para
 	implicit none
 
 	real hmin,hmax,href
-	real getpar
 
         hmin=getpar('hmin')
         hmax=getpar('hmax')

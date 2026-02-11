@@ -90,6 +90,7 @@
 	use color
 	use mod_hydro_plot
 
+	use para
 	implicit none
 
 !  argument
@@ -107,7 +108,6 @@
 	integer isoinp
 	integer icsave
 
-        real getpar
 !        logical is_r_nan
 
 ! --------------------------------------------------------------------
@@ -234,6 +234,7 @@
 	use basin
 	use color
 
+	use para
 	implicit none
 
 !  argument
@@ -255,7 +256,6 @@
 	real x0,y0,dx,dy
 	real, allocatable :: femval(:)
 
-        real getpar
 !        logical is_r_nan
 
 ! --------------------------------------------------------------------

@@ -56,7 +56,6 @@
 
         integer n
         
-        real getpar
         
         integer lcall
         save lcall

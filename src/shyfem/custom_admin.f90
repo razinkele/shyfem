@@ -168,12 +168,12 @@
 
 ! custom routines
 
+	use para
 	implicit none
 
 	double precision, intent(in) :: dtime
 
 	integer it
-	real getpar
 
 	integer, save :: icall = 0
 
@@ -369,11 +369,11 @@
 	use mod_depth
 	use basin
 
+	use para
 	implicit none
 
 	integer ie,ii,itype
 	real hm,h,hlido,hmala,hchio
-	real getpar
 
 
 	write(6,*) 'adjusting depth at inlets...'
@@ -1071,6 +1071,7 @@
 	use basin, only : nkn,nel,ngr,mbw
 	use femtime
 
+	use para
 	implicit none
 
         integer ie,ii,k
@@ -1082,7 +1083,6 @@
 	real dt
 	integer nbnds,itybnd
 	integer ifemopa
-	real getpar
 
 	logical bfill
 	integer ndim
@@ -1399,6 +1399,7 @@
 	use femtime
 	use mod_custom_channel_units
 
+        use para
         implicit none
 
 
@@ -1418,7 +1419,6 @@
 	real resmed,resstd
 	real v1v(nkn)
 
-	real getpar
 
 	integer iu,it0,ndata
 	save iu,it0,ndata
@@ -1820,7 +1820,6 @@
         double precision dtime
 
         real volnode,depnode
-	double precision dgetpar
         logical next_output_d,is_over_output_d
 
 	double precision, save :: da_out(4)
@@ -2503,6 +2502,7 @@
 	use levels, only : nlvdi,nlv
 	use femtime
 
+	use para
 	implicit none
 
 	integer ndim
@@ -2520,7 +2520,6 @@
 	character*256 file
 
 	integer ipint
-	real getpar
 
 	save ct0
 
@@ -3032,6 +3031,7 @@
 	use femtime
 	use mod_physical_constants, only : pi => pi_sp
 
+	use para
 	implicit none
 
 	integer, intent(in) :: mode
@@ -3042,7 +3042,6 @@
 	real caux(nlvdi)
 	save it0
 
-	real getpar
 
 	integer icall
 	save icall
@@ -3859,6 +3858,7 @@
 	use basin
 	use femtime
 
+	use para
 	implicit none
 
 	logical binit,blast
@@ -3885,7 +3885,6 @@
 
 	integer, save :: icall = 0
 
-	real getpar
 	integer ifemop
 
 	binit = .false.

@@ -628,7 +628,6 @@
 	double precision dtime
 
 	real ampar
-	real getpar
 
 	call get_act_dtime(dtime)
 	azpar=getpar('azpar')
@@ -653,7 +652,6 @@
 
 	double precision dtime
 
-	real getpar
 
 	call get_act_dtime(dtime)
 	azpar=getpar('azpar')
@@ -759,7 +757,6 @@
 
 	logical bm
 	integer n,nomp
-	real getpar
 	logical openmp_is_parallel
 
 	call openmp_get_max_threads(n)

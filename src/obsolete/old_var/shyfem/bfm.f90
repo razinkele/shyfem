@@ -167,7 +167,6 @@
 
 	logical has_restart,has_output,has_output_d
 	integer nbnds
-	real getpar
 
 !-------------------------------------------------------------
 ! initialization of module

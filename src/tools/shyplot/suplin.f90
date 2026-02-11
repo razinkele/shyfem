@@ -98,6 +98,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
 	logical bvel			!plot velocities
@@ -176,7 +177,6 @@
 	logical inboxdim_noabs
 	logical bdebug,bdebug_scalar
 	integer ialfa,ichanm
-	real getpar
 	real hlog,divdist,roundm
 	integer bsmt
 
@@ -1697,6 +1697,7 @@
 
 	subroutine plot_date_on_sect
 
+	use para
 	implicit none
 
 	integer idate,sdate
@@ -1704,7 +1705,6 @@
 	real xdate,ydate,tzshow
 	character*20 line
 
-	real getpar
 
         idate = nint(getpar('idate'))
 	if( idate .le. 0 ) return
