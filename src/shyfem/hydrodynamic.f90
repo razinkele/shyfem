@@ -1757,7 +1757,6 @@
 	real, allocatable :: va(:,:)
 ! statement functions
 
-	logical is_zeta_bound
 	integer ipint
 	real volnode
 
@@ -1878,13 +1877,10 @@
 	  end do
 	end do
 
-! set w to zero at open boundary nodes (new 14.08.1998)
-!
-! FIXME	-> only for ibtyp = 1,2 !!!!
+! set w to zero at external boundary nodes (ibtyp=1,2)
 
 	do k=1,nkn
-          !if( is_external_boundary(k) ) then	!bug fix 10.03.2010
-          if( is_zeta_bound(k) ) then
+          if( iopbnd(k) > 0 ) then	!external boundary (ibtyp=1,2)
 	    wlnv(:,k) = 0.
 	    dzeta(k) = 0.
           end if
