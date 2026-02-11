@@ -245,9 +245,9 @@
 	    return
 	  end if
 
-	  !if( shympi_is_parallel() ) then
-	  !  stop 'error stop renewal_time: not ready for mpi'
-	  !end if
+	  if( shympi_is_parallel() ) then
+	    write(6,*) 'WARNING: renewal time not fully tested with MPI'
+	  end if
 
 	  iadim = maxval(iarv)
 	  if( .not. bresarea ) iadim = -1

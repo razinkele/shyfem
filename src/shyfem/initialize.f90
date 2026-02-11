@@ -233,55 +233,6 @@
 
 !**************************************************************
 
-	subroutine exchange_vertical(nlv,hlv)
-
-! exchanges vertical structure between domains
-!
-! to be deleted...
-! should be really deleted... is never called FIXME
-
-	use shympi
-
-	implicit none
-
-	integer, intent(in) :: nlv
-	real, intent(in) :: hlv(nlv)
-
-	integer ia
-	integer ierr
-	real, parameter :: flag = -1.35472E+10
-	real, allocatable :: hlvs(:,:)
-
-        nlv_global = shympi_max(nlv)
-
-	allocate(hlv_global(nlv_global),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(hlvs(nlv_global,n_threads),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-
-	hlv_global = flag
-	hlv_global(1:nlv) = hlv
-	call shympi_gather(hlv_global,hlvs)
-
-	do ia=1,n_threads
-	  if( hlvs(nlv_global,ia) /= flag ) exit
-	end do
-	if( ia > n_threads ) then
-	  write(6,*) 'error setting global nlv'
-	  write(6,*) nlv_global,nlv
-	  write(6,*) hlvs
-	  stop 'error stop exchange_vertical: global nlv'
-	end if
-
-	hlv_global = hlvs(:,ia)
-
-	!write(6,*) 'exchange_vertical: global nlv set: ',nlv,nlv_global
-	!write(6,*) hlv_global
-
-	end
-
-!**************************************************************
-
 	subroutine init_others
 
 ! set up various arrays (coriolis, eddy)

@@ -187,7 +187,7 @@
 
         call nknel(nnkn,nnel,nnbn,nnli,nnis,nnod)
 
-! shympi - FIXME - next two calls might not work properly
+! shympi - setnar/setwnk not valid in MPI (routine disabled above)
 
         call setnar(nnar)	!number of areas
         call setwnk(wink)	!total angle at boundary nodes

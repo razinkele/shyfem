@@ -252,7 +252,7 @@
 	  end if
 
 !	  -------------------------------
-!	  get normal direction (might be wrong in case of domain border)
+!	  get normal direction (domain border nodes use dx=dy=0 fallback)
 !	  -------------------------------
 
 	  if( inext .gt. 0 .and. ilast .gt. 0 ) then	!inner node in OB

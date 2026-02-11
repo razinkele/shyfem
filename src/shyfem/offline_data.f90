@@ -150,9 +150,9 @@
 
 	  ioff_mode = iwhat
 
-	  !if( shympi_is_parallel() ) then
-	  !  stop 'error stop offline: not ready for mpi'
-	  !end if
+	  if( shympi_is_parallel() ) then
+	    write(6,*) 'WARNING: offline mode not fully tested with MPI'
+	  end if
 
 	  call mod_offline_init(nkn,nel,nlvdi)
 	  call off_init_vertical(nkn,nel,ilhv,ilhkv)
@@ -167,9 +167,9 @@
 	    iuoff = iu
 	    if( bwrite ) write(6,*) 'Start writing offline file'
 	  else					! reading offline
-	    !if( shympi_is_parallel() ) then
-	    !  stop 'error stop offline: reading not ready for mpi'
-	    !end if
+	    if( shympi_is_parallel() ) then
+	      write(6,*) 'WARNING: offline reading not fully tested with MPI'
+	    end if
             call getfnm('offlin',name)
 	    if( name == ' ' ) then
               write(6,*) '*** No offline file given'
