@@ -95,7 +95,15 @@
 
 	real ggrand
 
-        if( ldecay .le. 0. ) return !FIXME
+	integer, save :: iwarn1 = 0
+
+        if( ldecay .le. 0. ) then
+          if( iwarn1 == 0 ) then
+            write(6,*) 'lagrange_decay: ldecay <= 0, decay disabled'
+            iwarn1 = 1
+          end if
+          return
+        end if
 
         do i=1,nbdy
           age=it-lgr_ar(i)%init%time
@@ -133,7 +141,15 @@
 
 	real ggrand
 
-        if( tdecay .le. 0. ) return !FIXME
+	integer, save :: iwarn2 = 0
+
+        if( tdecay .le. 0. ) then
+          if( iwarn2 == 0 ) then
+            write(6,*) 'lagr_decay: tdecay <= 0, decay disabled'
+            iwarn2 = 1
+          end if
+          return
+        end if
 
         dt=it-lgr_ar(n)%init%time
         tdd=exp(dt/tdecay)

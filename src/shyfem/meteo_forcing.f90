@@ -1366,7 +1366,7 @@
 	do i=1,nvar
 	  call iff_get_var_description(id,i,strings(i))
 	end do
-	call adjust_humidity_string(strings(3))		!FIXME
+	call adjust_humidity_string(strings(3))		! field 3 = humidity (fixed: srad,tair,humidity,cc)
 
         ihtype = nint(getpar('ihtype'))
 	if( ihtype == 1 ) then
@@ -1432,7 +1432,7 @@
 	  write(6,*) 'content: '
 	  do i=1,nvar
 	    call iff_get_var_description(id,i,string)
-	    if( i == 3 ) call adjust_humidity_string(string)		!FIXME
+	    if( i == 3 ) call adjust_humidity_string(string)		! field 3 = humidity
 	    write(6,*) i,'    ',trim(string)
 	  end do
 	end if
