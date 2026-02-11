@@ -8,9 +8,6 @@ FEMBIN    = $(FEMDIR)/fembin
 
 include ../../Rules.make
 
-ifeq ($(FORTRAN_COMPILER),GNU_G77)
-  FORTRAN_COMPILER=G77
-endif
 ifeq ($(FORTRAN_COMPILER),GNU_GFORTRAN)
   FORTRAN_COMPILER=GFORTRAN
 endif

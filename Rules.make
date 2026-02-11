@@ -47,7 +47,6 @@ COMPILER_PROFILE = NORMAL
 #
 # Available options for the Fortran compiler are:
 #
-# GNU_G77		->	g77
 # GNU_GFORTRAN		->	gfortran
 # INTEL			->	ifort
 # PORTLAND		->	pgf90
@@ -63,7 +62,6 @@ COMPILER_PROFILE = NORMAL
 #
 ##############################################
 
-#FORTRAN_COMPILER = GNU_G77
 FORTRAN_COMPILER = GNU_GFORTRAN
 #FORTRAN_COMPILER = INTEL
 #FORTRAN_COMPILER = PORTLAND
@@ -423,21 +421,6 @@ LIBX = -L/usr/X11/lib -L/usr/lib/X11  -lX11
 RULES_MAKE_PARAMETERS = RULES_MAKE_OK
 RULES_MAKE_MESSAGE = ""
 
-ifeq ($(FORTRAN_COMPILER),GNU_G77)
-  ifeq ($(GOTM),true)
-    RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
-    RULES_MAKE_MESSAGE = "g77 compiler and GOTM=true are incompatible"
-  endif
-  ifeq ($(PARALLEL_OMP),true)
-    RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
-    RULES_MAKE_MESSAGE = "g77 and PARALLEL_OMP=true are incompatible"
-  endif
-  ifneq ($(PARALLEL_MPI),NONE)
-    RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
-    RULES_MAKE_MESSAGE = "g77 and PARALLEL_MPI/=NONE are incompatible"
-  endif
-endif
-
 ifeq ($(SOLVER),)
   RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
   RULES_MAKE_MESSAGE = "No solver chosen. Please set SOLVER"
@@ -615,7 +598,7 @@ endif
 
 ##############################################
 #
-# GNU compiler (g77, f77 or gfortran)
+# GNU compiler (gfortran)
 #
 ##############################################
 #
@@ -735,19 +718,6 @@ ifeq ($(PARALLEL_OMP),true)
 endif
 
 #----------------------------------
-
-ifeq ($(FORTRAN_COMPILER),GNU_G77)
-  FGNU		= g77
-  FGNU95	= g95
-  F77		= $(FGNU)
-  F95		= $(FGNU95)
-  LINKER	= $(F77)
-  LFLAGS	= $(FGNU_OPT) $(FGNU_PROFILE) $(FGNU_OMP)
-  FFLAGS	= $(LFLAGS) $(FGNU_NOOPT) $(FGNU_WARNING)
-  FFLAG_SPECIAL	= $(LFLAGS) $(FGNU_WARNING) $(FGNU_allow-argument-mismatch)
-  FINFOFLAGS	= --version
-  MAJOR 	= $(GMV)
-endif
 
 ifeq ($(FORTRAN_COMPILER),GNU_GFORTRAN)
   FGNU		= gfortran
@@ -1121,46 +1091,6 @@ endif
 #
 ##############################################
 
-
-##############################################
-#
-# lahey
-#
-#	help for options :
-#		f77l3
-#		386link
-#		up l32 /help
-#	remove kernel :
-#		os386 /remove
-#	compiler switches :
-#		/R	remember local variables
-#		/H	hardcopy listing
-#		/S	create sold file .sld
-#		/L	line-number traceback table
-#		/O	output options
-#
-# compiler (all versions)
-# 
-# FLC             = f77l3
-# FLFLAGS         = /nO /nS /L /nR /nH
-# 
-# linker lahey 3.01
-# 
-# LLINKER         = up l32
-# LDFLAGS         = /nocommonwarn /stack:5004
-# LDMAP           = nul
-# LLIBS		=
-# LDEXTRA		= ,$@,$(LDMAP),$(LLIBS) $(LDFLAGS);
-# EXE		= exp
-# 
-# linker lahey 5.20
-# 
-# LLINKER		= 386link
-# LDFLAGS		= -stack 2000000 -fullsym
-# LDEXTRA		= $(LDFLAGS)
-# EXE    		= exe
-#
-##############################################
 
 ##############################################
 # Private stuff
