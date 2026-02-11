@@ -472,9 +472,6 @@
 
         !call simple_sedi_bottom_stress(taubot)  !claurent-OGS: get friction coefficient array only once for all nodes
         call bottom_stress(taubot)  !claurent-OGS: get friction coefficient array only once for all nodes
-!       questa call è nel loop, il taub viene letto ad ogni passo.
-!       mettere fuori? FIXME
-        
         call init_crit_thre_erosion(tcek)
 
 	do k=1,nkn		!loop on nodes
@@ -483,8 +480,6 @@
 	  call get_light(k,qrad)
           tau=taubot(k)    !claurent-OGS: get friction coeff at current k node
           etau(k)=tau      !claurent-OGS: store value to write 2Dfield in output
-!       FIXME conz è letta fuori dal ciclo sui livelli, è la conz(lmax)
- 
           call get_wind(k,wx,wy)
           uws=(wx*wx+wy*wy)**(1./2.)
                 
@@ -513,8 +508,7 @@
             epela(:) = emp(l,k,:)
             esolw(:) = emsolw(l,k,:)
 
-            boxtype=.true.                
-!      FIXME conz(l) da leggere nel ciclo sui livelli
+            boxtype=.true.
 
 
         call sed4merc_water(bbottom,dtday,tday,vol,d,k,t,s,tau &
