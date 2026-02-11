@@ -1,4 +1,6 @@
 
+.PHONY: default twister
+
 default:
 
 twister:

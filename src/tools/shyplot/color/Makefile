@@ -8,6 +8,8 @@
 #------------------------------------------------------------------------
 
 
+.PHONY: default prep colormap clean
+
 default:
 
 prep: colormap

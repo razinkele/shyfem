@@ -74,6 +74,8 @@ DATA = $(HOME)/work/nc2fem/data
 
 #--------------------------------------------------------------
 
+.PHONY: default all link data run compile_test depend clean cleanzip cleanall zip save
+
 default: $(EXES)
 
 all: link $(EXES)

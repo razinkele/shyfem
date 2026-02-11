@@ -60,6 +60,8 @@ EXES = nc_include nc_mod
 
 #--------------------------------------------------
 
+.PHONY: default test test_netcdf clean cleanall
+
 default: $(EXES)
 
 test: test_netcdf

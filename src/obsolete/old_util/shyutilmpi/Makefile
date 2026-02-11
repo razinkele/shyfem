@@ -51,6 +51,9 @@ SPECIAL =       Makefile
 
 LIB = $(LIBDIR)/lib$(LIBNAME).a
 
+.PHONY: default all fem lib nothing test main_dummy cleanall clean \
+	cleanobj cleanvar cleanlib check list save zip
+
 default: lib
 all:	lib
 fem: lib

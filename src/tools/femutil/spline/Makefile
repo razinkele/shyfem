@@ -36,6 +36,8 @@ ZIPFILES   = *.[fFh] $(SPECIAL)
 
 #------------------------------------------------------
 
+.PHONY: default all fem nothing list depend clean cleanall cleangrd zip save
+
 default: fem
 
 all: $(EXES) nothing

@@ -8,6 +8,9 @@
 #------------------------------------------------------------------------
 
 
+.PHONY: default all fem nothing anim gif avi clean cleanmore cleanall \
+	cleantotal save zip list depend
+
 default:
 	@echo "targets: gif avi clean cleanmore cleanall cleantotal zip"
 	@./makeanim.sh -h

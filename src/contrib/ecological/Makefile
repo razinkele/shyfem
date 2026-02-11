@@ -14,6 +14,8 @@ SUBDIRS = bfm mercury aquabc weutro
 
 #------------------------------------------------------------------------
 
+.PHONY: default fem shyfem test regress status list depend clean cleanall save zip nothing
+
 default: fem
 
 shyfem: fem

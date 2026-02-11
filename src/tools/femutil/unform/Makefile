@@ -20,6 +20,8 @@ EXES = unfnos unf_diff unf_info unf_joel \
 
 #------------------------------------------------------
 
+.PHONY: default all fortran_test save zip clean cleanall
+
 default: all
 
 all: $(EXES)

@@ -18,6 +18,8 @@ SUBDIRS = \
 
 #------------------------------------------------------------------------
 
+.PHONY: default fem shyfem test regress status list depend clean cleanall save zip nothing
+
 default: fem
 
 #fem: shyfem

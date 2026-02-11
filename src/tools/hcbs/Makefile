@@ -45,6 +45,9 @@ MAKEDEPEND = $(FEMBIN)/mkdp.pl
 
 #------------------------
 
+.PHONY: default fem nothing all libs list diff param depend \
+	cleanall clean cleanlib cleanexe cleanobj cleanvar cleanzip save zip
+
 default: fem
 
 fem: grappa nothing

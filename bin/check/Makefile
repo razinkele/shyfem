@@ -10,6 +10,8 @@
 
 DIR = femcheck
 
+.PHONY: default fem nothing check setup install links list depend save clean cleanall
+
 default: nothing
 
 fem: nothing

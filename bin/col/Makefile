@@ -1,4 +1,6 @@
 
+.PHONY: default clean cleanall
+
 default:
 
 clean:

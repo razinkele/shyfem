@@ -14,6 +14,8 @@ SUBDIRS = ecological paralution
 
 #------------------------------------------------------------------------
 
+.PHONY: default fem shyfem test regress status list libmod depend clean cleanall save zip nothing
+
 default: fem
 
 shyfem: fem

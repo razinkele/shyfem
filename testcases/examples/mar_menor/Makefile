@@ -15,6 +15,9 @@ GRID1  = MM_coarse_smooth
 
 #-----------------------------------------------------------
 
+.PHONY: default fem nothing list depend init run_all clean cleanall \
+	cleanbas cleanfigs cleansims cleanzip zip
+
 default:
 	@echo "possible targets:"
 	@echo "  init      initializes the bas file"

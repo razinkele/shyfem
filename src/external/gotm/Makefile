@@ -128,6 +128,8 @@ internal_wave.o
 
 #---------------------------------------------------------------------
 
+.PHONY: all doc clean realclean distclean fem shyfem nothing list depend cleanall cleanmod
+
 all: $(MOD) $(OBJ) $(EXTRAOBJ) $(LIB) nothing
 
 $(LIB): $(MOD) $(OBJ)

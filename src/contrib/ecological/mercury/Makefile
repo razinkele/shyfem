@@ -45,6 +45,9 @@ MAKEDEPEND = $(FEMBIN)/mkdp.pl
 
 #--------------------------------------------- EXES
 
+.PHONY: default fem nothing objs cleanall clean cleanobj cleanlinks \
+	cleanexe cleanvar cleanzip cleangrd depend list save zip strip
+
 default: fem
 fem:	$(OBJ) nothing
 

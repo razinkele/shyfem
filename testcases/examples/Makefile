@@ -17,6 +17,8 @@ SUBDIRS = mar_menor
 
 #-----------------------------------------------------------
 
+.PHONY: default fem nothing list depend clean cleanall
+
 default: nothing
 
 fem: nothing

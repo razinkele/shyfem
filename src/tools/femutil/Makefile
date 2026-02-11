@@ -15,6 +15,8 @@ FEMDIRS   = femfiles mpi stab
 
 #-----------------------------------------------------------------------
 
+.PHONY: default fem regress list depend clean cleanall save zip
+
 default:
 
 fem:

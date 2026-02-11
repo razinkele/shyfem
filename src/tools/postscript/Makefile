@@ -47,6 +47,10 @@ MAKEDEPEND = $(FEMBIN)/mkdp.pl
 
 #---------------------------
 
+.PHONY: default fem all nothing libs docs latex tex ps diff depend \
+	cleanall clean cleanlib cleanexe cleanobj cleanvar cleantex \
+	cleandiff cleanzip cvschange list zip save
+
 default: fem
 
 fem: libs demopost nothing

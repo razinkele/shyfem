@@ -8,6 +8,8 @@
 #------------------------------------------------------------------------
 
 
+.PHONY: default femtime clean cleanall
+
 default:
 
 femtime:

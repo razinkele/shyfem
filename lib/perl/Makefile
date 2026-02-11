@@ -8,6 +8,8 @@
 #------------------------------------------------------------------------
 
 
+.PHONY: default fem regress status list clean cleanall save zip nothing
+
 default: nothing
 
 fem: nothing

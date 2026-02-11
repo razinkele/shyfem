@@ -16,6 +16,8 @@ LIB     = $(LIBDIR)/libparalution.a
 
 #-----------------------------------------------------------
 
+.PHONY: default fem nothing list depend clean cleanall
+
 default: nothing
 
 fem: nothing

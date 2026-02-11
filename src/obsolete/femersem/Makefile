@@ -4,6 +4,8 @@
 
 RELEASE=bfm-2.5e-system-2.1
 
+.PHONY: fem clean cleanall all distclean sources runenv list depend nothing
+
 fem:
 	cd src; make fem
 cleanall: clean

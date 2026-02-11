@@ -14,6 +14,8 @@ SUBDIRS = generic modules shyutil shympi shyutilmpi
 
 #------------------------------------------------------------------------
 
+.PHONY: default fem shyfem test regress status list depend clean cleanall save zip nothing
+
 default: shyfem
 
 fem: shyfem
