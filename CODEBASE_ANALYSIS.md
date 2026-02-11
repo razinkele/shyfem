@@ -2,10 +2,10 @@
 
 **Project:** SHYFEM (System of HydroDYnamic Finite Element Modules) v8.1.1
 **Analysis Date:** 2026-02-04
-**Last Updated:** 2026-02-05
+**Last Updated:** 2026-02-11
 **Scope:** Full codebase (~1,087 Fortran files, ~285 C files, 84 Makefiles, 44MB total)
 
-> **Implementation Status:** Phases 1-3 COMPLETE. Phase 4 mostly complete. See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for architecture documentation.
+> **Implementation Status:** All phases COMPLETE (PRs #1-5 merged). See [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) for architecture documentation.
 
 ---
 
@@ -707,7 +707,7 @@ Replace all `stop 'error stop ...'` in `src/utils/shympi/` and `src/shyfem/` wit
 
 ---
 
-### Phase 3: Performance Optimization (Medium Priority) - ✅ MOSTLY COMPLETE
+### Phase 3: Performance Optimization (Medium Priority) - ✅ COMPLETE
 
 | # | Task | Files | Status |
 |---|------|-------|--------|
@@ -752,40 +752,41 @@ end do
 
 ---
 
-### Phase 4: Code Quality Modernization (Lower Priority) - 🟡 MOSTLY COMPLETE
+### Phase 4: Code Quality Modernization (Lower Priority) - ✅ COMPLETE
 
 | # | Task | Files | Status |
 |---|------|-------|--------|
 | 4.1 | Create `mod_physical_constants` module | `mod_physical_constants.f90` | ✅ Done |
-| 4.2 | Add `only` clauses to `use` statements | All 721 bare `use` sites | Pending |
-| 4.3 | Create module interface for `getpar` | New module + 47 files | Pending |
+| 4.2 | Add `only` clauses to `use` statements | All 721 bare `use` sites | ⏭️ Skipped (too large, low ROI) |
+| 4.3 | Move `getpar`/`dgetpar` into `module para` | `para.f90` + 163 caller files | ✅ Done (PR #5) |
 | 4.4 | Remove debug artifacts (`bdebug=.true.;.false.`) | 20+ files | ✅ Done (~22) |
-| 4.5 | Remove dead code and GOTO statements | 13 files | Pending |
-| 4.6 | Add `.PHONY` declarations to all Makefiles | 26+ Makefiles | Pending |
+| 4.5 | Remove GOTO statements (non-LINPACK) | 14 files, 87 GOTOs removed | ✅ Done (PR #5) |
+| 4.6 | Add `.PHONY` declarations to all Makefiles | 68 Makefiles | ✅ Done (PR #5) |
 | 4.7 | Replace hardcoded unit numbers with `newunit=` | 50+ locations | ✅ Done |
-| 4.8 | Modernize save/data patterns | Multiple files | Pending |
+| 4.8 | Modernize save/data patterns | 36 files, 246 statements | ✅ Done (PR #5) |
 | 4.9 | Replace `character*80` with longer strings | 31 files | ✅ Done |
-| 4.10 | Remove DOS/Lahey/g77 remnants from build | `Rules.make`, 20 Makefiles | Pending |
+| 4.10 | Remove DOS/Lahey/g77 remnants from build | `Rules.make`, obsolete Makefiles | ✅ Done (PR #5) |
 | 4.11 | Create `.dockerignore` | New file | ✅ Done |
 | 4.12 | Add multi-stage Docker build | `Dockerfile` | ✅ Done |
 
-**Implementation details for Phase 4:**
+**Implementation details for Phase 4 (PR #5, merged 2026-02-11, 254 files changed):**
 
-**4.1 -- Physical constants module:**
-```fortran
-module mod_physical_constants
-  implicit none
-  double precision, parameter :: pi = 3.14159265358979323846d0
-  double precision, parameter :: twopi = 2.d0 * pi
-  double precision, parameter :: deg2rad = pi / 180.d0
-  double precision, parameter :: grav = 9.80665d0       ! standard gravity
-  double precision, parameter :: vonkarman = 0.4d0       ! von Karman constant
-  double precision, parameter :: stefan_boltzmann = 5.670374419d-8
-  double precision, parameter :: seconds_per_day = 86400.d0
-  real, parameter :: grav_sp = 9.80665        ! single precision version
-  real, parameter :: pi_sp = 3.14159265358979
-end module
-```
+**4.3 -- getpar/dgetpar module interface:**
+Moved `getpar` and `dgetpar` from external functions into `module para ... contains` section in `src/utils/generic/para.f90`. Removed `real getpar` / `double precision dgetpar` external declarations from 163 caller files and ensured each has `use para`. Added `intent(in)` to name argument.
+
+**4.5 -- GOTO removal (87 GOTOs from 14 files):**
+Transformation patterns used: error-path `goto 99` → inline if/then, read-loop `goto 1` → `do ... exit ... end do`, skip-section → if/else restructuring, search-exit → found flag + exit, retry-loop → `do ... exit ... end do`. Files: chezy.f90, stability.f90, wetdry.f90, waves_admin.f90, restart.f90, turbine.f90, lagrange_init.f90, lagrange_dif.f90, lagrange_connect.f90, lagrange_inout.f90, lagrange_vertical.f90, lagrange_util_tr.f90, intp_tst.f90, rd_ts.f90. Excluded: matrix_inv.f90 (LINPACK), sedim_util.f90 (LINPACK), initialize.f90 (too tangled).
+
+**4.6 -- .PHONY in 68 Makefiles:**
+Added `.PHONY:` declarations with appropriate target lists (default, fem, clean, cleanall, depend, test, etc.) to all Makefiles missing them.
+
+**4.8 -- save/data modernization (246 statements, 36 files):**
+Converted three-line `integer icall / save icall / data icall /0/` patterns to single-line `integer, save :: icall = 0`. Largest files: custom_admin.f90 (37 patterns), dts.f90/subdts.f90, supano.f90.
+
+**4.10 -- Build remnant cleanup:**
+Removed g77 compiler option blocks, compatibility checks, and config from Rules.make. Removed Lahey comment block (~35 lines). Cleaned Lahey targets from obsolete Makefiles.
+
+**Runtime verification:** mar_menor test case passed in both serial (3.14s) and MPI 4P (2.05s) modes, 1152/1152 timesteps, no errors or NaN.
 
 ---
 
