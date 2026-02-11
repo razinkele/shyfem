@@ -351,11 +351,12 @@
 !	  initial conditions from file (only for pelagic part)
 !         --------------------------------------------------
 
-! this is still not working FIXME
-!	  nvar = npstate
-!	  call mercury_init_file(dtime0,nvar,nlvdi,nlv,nkn,epinit,emp)
-!	  nvar = nsolw
-!	  call mercury_init_file(dtime0,nvar,nlvdi,nlv,nkn,esolwinit,esolw)
+	  nvar = npstate
+	  call mercury_init_file('mercury pelagic','mercin' &
+     &			,dtime0,nvar,nlvdi,nlv,nkn,epinit,emp)
+	  nvar = nsolwst
+	  call mercury_init_file('mercury solids','mercsolin' &
+     &			,dtime0,nvar,nlvdi,nlv,nkn,esolwinit,emsolw)
 
 !         --------------------------------------------------
 !	  set boundary conditions for all state variables
@@ -671,21 +672,24 @@
 
 !*************************************************************
 
-	subroutine mercury_init_file(dtime,nvar,nlvddi,nlv,nkn,val0,val)
+	subroutine mercury_init_file(what,file_init &
+     &				,dtime,nvar,nlvddi,nlv,nkn,val0,val)
 
 ! initialization of mercury from file
 
         implicit none
 
-        double precision dtime
-        integer nvar    !npstate+nsstate, mercury in water & sed
-        integer nlvddi
-        integer nlv
-        integer nkn
-        real val0(nvar)
-        real val(nlvddi,nkn,nvar)
+	character*(*), intent(in) :: what
+	character*(*), intent(in) :: file_init
+        double precision, intent(in) :: dtime
+        integer, intent(in) :: nvar
+        integer, intent(in) :: nlvddi
+        integer, intent(in) :: nlv
+        integer, intent(in) :: nkn
+        real, intent(in) :: val0(nvar)
+        real, intent(inout) :: val(nlvddi,nkn,nvar)
 
-        call tracer_file_init('mercury init','mercin',dtime &
+        call tracer_file_init(what,file_init,dtime &
      &                          ,nvar,nlvddi,nlv,nkn,val0,val)
 
         end

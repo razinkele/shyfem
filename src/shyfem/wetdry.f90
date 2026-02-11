@@ -300,8 +300,7 @@
 	    hztot = hztot / 3.
 	    !binclude = hztot .ge. hzon
 	    binclude = hztot .ge. hzon .and. -iwetv(ie) .gt. iwait
-! %%%%%%%%% this is wrong -> test also for iweg > 0	!FIXME
-	    if( bnewalg .and. binclude ) then		!new algorithm
+	    if( bnewalg .and. binclude .and. iweg > 0 ) then	!new algorithm
 	      iweg = 0
               if(bdebug) then
                       write(iu,*) 'setweg 3a: ',ie,iweg,hztot

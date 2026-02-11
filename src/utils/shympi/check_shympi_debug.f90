@@ -131,10 +131,9 @@
 	end if
 
 	if( ierr > 0 ) then
-	  if( ierr == 99 ) ierr = 100	!terrible hack - FIXME
 	  call exit(ierr)
 	else
-	  call exit(99)
+	  call exit(0)
 	end if
 
 	end
