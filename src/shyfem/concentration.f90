@@ -721,8 +721,8 @@
 ! set up flux boundary conditions (temporary) -> put in sbflux
 !-------------------------------------------------------------
 
-	ssurface = 0.	!FIXME - HACK
-	if( what .eq. 'temp' ) ssurface = -999.
+	ssurface = 0.
+	if( what .eq. 'temp' ) ssurface = flag	! sentinel: use ambient value
 
 ! make_scal_flux has been moved inside time loop of isact (see below)
 ! to increase stability when treating outflow flux boundary

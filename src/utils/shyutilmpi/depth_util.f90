@@ -509,8 +509,6 @@
 	real hmin,hmax,href
 	real getpar
 
-!       call bocche     !FIXME
-
         hmin=getpar('hmin')
         hmax=getpar('hmax')
         href=getpar('href')
@@ -674,7 +672,6 @@
 
         call make_hev
         call make_hkv
-        !call set_last_layer		!FIXME
 
 	call shympi_exchange_2d_node(hkv)
 
@@ -700,7 +697,6 @@
 	end do
 
         call make_hkv
-        !call set_last_layer		!FIXME
 
 	end
 
