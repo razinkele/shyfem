@@ -1477,10 +1477,10 @@
                 psigma = psigma + (rhoup-rhop)/hint
 		htot = hm3v(ii,ie) 
                 if (bsigma) then 
-		   hsigma = htot !min(htot,hsigma)	  !FIXME lrp: this should be the min(htot,hsigma)
+		   hsigma = min(htot,hsigma)
 		   hdep = hsigma + zov(k)
                    hhk = -htint * hdep
-                   zk = -(hhk) !- zov(k))                 !FIXME lrp: add free-surface
+                   zk = -(hhk - zov(k))
 		else        
 		  if (l.le.(nadapt(ii)+lmin-1)) then 
  		    hdep = hadapt(ii) + zov(k)

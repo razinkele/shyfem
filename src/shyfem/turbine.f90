@@ -594,17 +594,14 @@
            Re=e(1)
         endif
 
-!FIXME not defined: h(j-1), e(t-1), B(t-1,j-1), ...
-! please run compilation with compiler flag -Wdo-subscript
-
-        do j= 1, ic
+        do j= 2, ic
                                                    
           if (angolo.ge.h(j-1).and.angolo.lt.h(j).or.     &
      &  angolo.gt.h(j-1).and.angolo.le.h(j))then    
          f_alpha=(angolo-h(j-1))/(h(j)-h(j-1))  
          
-        do t= 1, ir
- 
+        do t= 2, ir
+
           if (Re.ge.e(t-1).and.Re.lt.e(t).or. &
      &  Re.gt.e(t-1).and.Re.le.e(t))then
         f_Re=(Re-e(t-1))/(e(t)-e(t-1))
@@ -788,13 +785,10 @@
         cls(i)=segno*Cl_st      
 !	linear lift coefficient 
         cl0s(i)=cl_alpha*al(i)
-        if(i.eq.0) then 	!FIXME i is never 0, arrays at i-1 not defined
+        if(i.eq.1) then
                 cld(i)=cls(i)
                 cl_vort(i)=0
                 cl_shed(i)=0
-                if(abs(cld(i)).gt.100)then
-                write(6,*)'check A',cld(i),cld(i-1)
-                endif                    
         else
                 if(abs(al(i)).gt.abs(al(i-1)))then !increasing alpha
                  reattached=0        
