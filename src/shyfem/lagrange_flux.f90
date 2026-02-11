@@ -80,9 +80,7 @@
 	real x1,x2,y1,y2,dx,dy,ddx,ddy,d
 	integer ie,k,i1,i2,p1,p2
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .ne. 0 ) return
 

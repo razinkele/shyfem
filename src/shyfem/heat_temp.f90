@@ -95,13 +95,9 @@
         real temp       !water temperature
         real albedo     !albedo
 
-        real albed0,albed4
-        save albed0,albed4
+        real, save :: albed0, albed4
 
-
-        integer icall
-        save icall
-        data icall /0/
+        integer, save :: icall = 0
 
         if( icall .eq. 0 ) then
           albed0 = dgetpar('albedo')

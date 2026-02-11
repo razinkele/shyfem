@@ -330,18 +330,15 @@
 	double precision tmpval
 	integer itdrag
 	integer it
-	logical bwind
-	save bwind
-	real wfact,wspeed
-	save wfact
+	logical, save :: bwind
+	real, save :: wfact
+	real wspeed
         logical next_output_d
 	integer id
 	double precision dtime
-        integer icall           	!initialization parameter
-        save icall
-        data icall /0/
-	real tramp,alpha
-	save tramp
+        integer, save :: icall = 0	!initialization parameter
+	real, save :: tramp
+	real alpha
 	integer ierr
 	integer ios
 

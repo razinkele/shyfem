@@ -50,9 +50,7 @@
         double precision xi(3)
 
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  rlinit = 0.

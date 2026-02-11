@@ -423,19 +423,16 @@
 		double precision tmpval
 		integer itdrag, ilev, ivar
 		integer it, ip
-		logical bwind
-		save bwind
-		real wfact,wspeed
-		save wfact
+		logical, save :: bwind
+		real, save :: wfact
+		real wspeed
 		logical next_output_d
 		integer id, nvar, ierr, ios
 		double precision dtime
 		double precision daux
-		integer icall             !initialization parameter                        
-		save icall
-		data icall /0/
-		real tramp,alpha
-		save tramp
+		integer, save :: icall = 0   !initialization parameter
+		real, save :: tramp
+		real alpha
 		logical has_output_d
 
 !------------------------------------------------------
@@ -453,7 +450,7 @@
 		it = dtime
 
 !-------------------------------------------------------------
-! set coupling time step 
+! set coupling time step
 !-------------------------------------------------------------
 
 		call convert_time_d('dtwave',daux)
@@ -464,7 +461,7 @@
 !         -----------------------------------------------
 !         compute stress and wave characteristics
 !         -----------------------------------------------
-      !if (myrank == 0) write(*,*) 'wave coupling param.', bww3, iwave 
+      !if (myrank == 0) write(*,*) 'wave coupling param.', bww3, iwave
 			call w3cplrdstr2d
 			call w3cplparam
 
@@ -482,12 +479,12 @@
 
 			!write(*,*) 'rad 1', sum(SXX3DLWW3), SUM(SXY3DLWW3), SUM(SYY3DLWW3)
 
-!         integral wave parameter ... 
+!         integral wave parameter ...
 
 			do ivar = 1, nvarsww3
 				call get_global_array_ww3(outvarww3(ivar,:), &
-                 outvargl(ivar,:)) 
-			enddo 
+                 outvargl(ivar,:))
+			enddo
 
 !         -----------------------------------------------
 !         compute local arrays for shyfem
@@ -658,19 +655,16 @@
 		double precision tmpval
 		integer itdrag, ilev, ivar
 		integer it, ip
-		logical bwind
-		save bwind
-		real wfact,wspeed
-		save wfact
+		logical, save :: bwind
+		real, save :: wfact
+		real wspeed
 		logical next_output_d
 		integer id, nvar, ios
 		double precision dtime
 		double precision daux
-		integer icall             !initialization parameter                        
-		save icall
-		data icall /0/
-		real tramp,alpha
-		save tramp
+		integer, save :: icall = 0   !initialization parameter
+		real, save :: tramp
+		real alpha
 		logical has_output_d
 
 !------------------------------------------------------

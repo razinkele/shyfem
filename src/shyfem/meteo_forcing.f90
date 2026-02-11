@@ -1735,9 +1735,7 @@
 	real e			!evaporation [m/s]
 	real eeff		!effective evaporation [m/s] - used in model
 
-	integer ievap
-	save ievap
-	data ievap /-1/
+	integer, save :: ievap = -1
 
 
         if( ievap .eq. -1 ) ievap = nint(getpar('ievap'))

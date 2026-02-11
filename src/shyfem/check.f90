@@ -443,9 +443,7 @@
 	integer, save :: netot
 	integer, save, allocatable :: kinf(:,:)
 
-	integer kmem
-	save kmem
-	data kmem / 0 /
+	integer, save :: kmem = 0
 
 	if( k == 0 ) then
 	  allocate(kinf(2,ngr),stat=ierr)
@@ -1014,9 +1012,8 @@
 
 	implicit none
 
-	integer icrc,iucrc
-	save iucrc
-	data iucrc /0/		! unit
+	integer icrc
+	integer, save :: iucrc = 0	! unit
 
 	integer ifemop
 

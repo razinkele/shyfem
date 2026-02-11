@@ -915,9 +915,8 @@
 	double precision dtime
 	double precision da_out(4)
 	integer iwvel,iqpnv
-        integer iwrt,inhwrt
-        save iwrt
-        data iwrt /1/
+        integer, save :: iwrt = 1
+        integer inhwrt
 
 	integer id,l
 	logical next_output_d

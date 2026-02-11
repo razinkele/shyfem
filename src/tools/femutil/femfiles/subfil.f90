@@ -116,9 +116,7 @@
 	external ichanm0
 	integer ichanm0
 
-        integer iustd
-        save iustd
-        data iustd / 20 /
+        integer, save :: iustd = 20
 
 !----------------------------------------------------------------
 ! initialize basic things
@@ -433,9 +431,9 @@
 
 	integer ndim,i
 
-        character*1 blank,tab
+        character*1, save :: blank = ' '
+        character*1 tab
         character*1 char
-        data blank /' '/
 
         tab=char(9)
 

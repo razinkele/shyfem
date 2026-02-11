@@ -102,10 +102,8 @@
         real in_d,ou_d
 	integer in_dm,in_dx,ou_dm,ou_dx
 	
-        integer idum ! seme f(x) random
-
 ! variabili di servizio
-	
+
 	integer pb(3),ip,i,exi(2),ipb(2),exio(2)
 	real nwdist,distance ! funzione per il calcolo del nwdist
         real dxx,dyy,ddxx,ddyy,ddd
@@ -124,12 +122,9 @@
 	real gf !precision along the side
 	real htot,htotz
         integer pbdx,gbdx ! numero interno dell'estremo piu vicino e piu lontano dal body
-        integer ps,ng,nl,nnm,i1,i2
-	data nnm/0/
-	data pb/3*0/
-        data idum/76342/
-        save nnm
-        save idum
+        integer ps,ng,nl,i1,i2
+	integer, save :: nnm = 0
+        integer, save :: idum = 76342
 
 ! inizializzazione parametri
 
@@ -707,9 +702,6 @@
 	real in_d,ou_d
         integer in_dm,in_dx,ou_dm,ou_dx
 
-        integer idum ! seme f(x) random
-                        
-
 ! variabili di servizio
 	
 	integer pb(3),ip,i,exi(2),ipb(2),exio(2)
@@ -730,8 +722,7 @@
         real gf !precision along the side
 	real htot,htotz
 ! inizializzazione parametri
-        data idum/947437/
-        save idum
+        integer, save :: idum = 947437
         
         fsum=0
 	nl = 0

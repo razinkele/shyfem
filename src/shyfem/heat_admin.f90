@@ -164,9 +164,7 @@
 
 	implicit none
 
-	integer icall
-	save    icall
-	data    icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  ifunit = 0
@@ -247,9 +245,7 @@
 	integer ifileo
 	real rt,rtt
 
-	integer itmany
-	save    itmany
-	data    itmany / 0 /
+	integer, save :: itmany = 0
 
 ! itperiod - periodic radiation conditions - see subqfx.h
 !
@@ -371,9 +367,7 @@
 	integer iunit
 	real raux
 
-	integer itold
-	save itold
-	data itold / 0 /
+	integer, save :: itold = 0
 
 	bhumid = irhumid .gt. 0
 

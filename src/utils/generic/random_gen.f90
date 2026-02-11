@@ -61,9 +61,8 @@
 
 ! works for initialization and normal call
 
-	integer icall,idum
-	save icall,idum
-	data icall,idum / 0 , 99 /
+	integer, save :: icall = 0
+	integer, save :: idum = 99
 
 	if( icall .eq. 0 .or. init .lt. 0 ) then
 	  icall = 1
@@ -271,9 +270,7 @@
 	integer i,j
 	real grand
 
-	integer iseed
-	save iseed
-	data iseed / -346723 /
+	integer, save :: iseed = -346723
 
 	do i=1,ndim
 	  icount(i) = 0

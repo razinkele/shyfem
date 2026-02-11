@@ -900,9 +900,7 @@
 
         integer :: lati,index
 
-        character(20) :: bands
-        save bands
-        data bands /'CDEFGHJKLMNPQRSTUVWX'/
+        character(20), save :: bands = 'CDEFGHJKLMNPQRSTUVWX'
 
         if( lat < -80. .OR. lat > 84. ) then
             write(6,*) 'lat = ',lat
@@ -1573,14 +1571,11 @@
         integer :: ndim
         parameter (ndim=97)
 
-        integer :: ix1,ix2,ix3
-        real :: r(ndim)
-        save ix1,ix2,ix3,r
+        integer, save :: ix1,ix2,ix3
+        real, save :: r(ndim)
         integer :: j
 
-        integer :: iff
-        save iff
-        data iff /0/
+        integer, save :: iff = 0
 
         if ( idum < 0 .OR. iff == 0 ) then
             iff=1

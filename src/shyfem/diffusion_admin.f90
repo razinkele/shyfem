@@ -505,14 +505,10 @@
 	real v2v(nkn)
 
 
-        real parmax
-        save parmax
-        integer idhtyp
-        save idhtyp
+        real, save :: parmax
+        integer, save :: idhtyp
 
-        integer icall
-        save icall
-        data icall /0/
+        integer, save :: icall = 0
 
 !------------------------------------------------------------------
 ! set params

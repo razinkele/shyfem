@@ -2279,19 +2279,16 @@
         integer ndim
         parameter (ndim=100)
 
-        integer ns
-        integer ks(ndim)
-        real us(ndim),vs(ndim)
-        real xs(ndim),ys(ndim)
-        save ns,ks,us,vs,xs,ys
+        integer, save :: ns
+        integer, save :: ks(ndim)
+        real, save :: us(ndim),vs(ndim)
+        real, save :: xs(ndim),ys(ndim)
 
         logical berror
         integer i,k
         real xn,yn,dist
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
         if( icall .lt. 0 ) return
         if( icall .eq. 0 ) then

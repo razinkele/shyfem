@@ -383,9 +383,7 @@
 	character*20 aline
 	logical berror_z, berror_uv
 ! save
-        real eps
-        save eps
-        data eps /1.e-5/
+        real, save :: eps = 1.e-5
 	integer, save :: icall = 0
 	real, save :: hzmin_c
 ! functions

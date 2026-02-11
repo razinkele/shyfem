@@ -1269,10 +1269,8 @@
 ! local
 	integer k1,k2
 	double precision x21,y21,xn,yn
-	double precision scal,eps
-! save
-	save eps
-	data eps /1.e-13/
+	double precision scal
+	double precision, save :: eps = 1.d-13
 
 	intri=0
 
@@ -1308,10 +1306,8 @@
 ! local
 	integer k1,k2
 	double precision x21,y21,xn,yn
-	double precision scal,eps
-! save
-	save eps
-	data eps /1.e-13/
+	double precision scal
+	double precision, save :: eps = 1.d-13
 
 	intrid=0
 
@@ -1348,10 +1344,7 @@
 	integer i,k1,k2
 	double precision xs,ys,x12,y12
 	double precision det,detlam,rlamb
-	double precision eps
-! save
-	save eps
-	data eps /1.e-13/
+	double precision, save :: eps = 1.d-13
 !
 	xs=0.
 	ys=0.

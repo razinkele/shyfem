@@ -43,9 +43,7 @@
 
 	include 'vsect.h'
 
-	logical binit
-	save binit
-	data binit /.false./
+	logical, save :: binit = .false.
 
 	if( binit ) return
 

@@ -1466,20 +1466,18 @@
 	integer ndim
 	parameter (ndim=30000)
 
-	integer nx,ny,nz,n,iu
+	integer nx,ny,nz,iu
 	integer idum,i,ios
 	integer ierr
 	real xx,yy
 	real fact,afact
 	real xmin,xmax,ymin,ymax
-	real dx,dy,dxy
 	real fplus
 	real, allocatable, save :: x(:),y(:),rf(:)
-	save n,dx,dy,dxy
+	integer, save :: n
+	real, save :: dx,dy,dxy
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .eq. -1 ) return
 

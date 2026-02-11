@@ -719,9 +719,7 @@
         real a,b,cf
         real nmb 
         real shygasdev
-        integer idum
-        data idum/387/
-        save idum
+        integer, save :: idum = 387
         cf=sqrt(2*k*ttime) 
 	cf=sqrt(6*k*ttime)  !new formula 3d
         
@@ -739,10 +737,9 @@
 
         INTEGER idum
         REAL shygasdev
-        INTEGER iset
-        REAL fac,gset,rsq,v1,v2,shyran1
-        SAVE iset,gset
-        DATA iset/0/
+        INTEGER, save :: iset = 0
+        REAL fac,rsq,v1,v2,shyran1
+        REAL, save :: gset
 
         if (idum.lt.0) iset=0
         if (iset.eq.0) then

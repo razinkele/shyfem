@@ -692,9 +692,7 @@
 
 	implicit none
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( bdebug_out ) then
 	  write(6,*) 'debug_out: femini'

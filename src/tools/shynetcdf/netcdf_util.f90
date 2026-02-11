@@ -173,9 +173,7 @@
 	integer nfreq		! frequency of output
 	logical bwrite		! write output? (return)
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	icall = icall + 1
 

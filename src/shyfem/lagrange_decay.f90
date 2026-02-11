@@ -58,9 +58,7 @@
         integer n
         
         
-        integer lcall
-        save lcall
-        data lcall / 0 /
+        integer, save :: lcall = 0
 
         if( lcall .lt. 0 ) return
 
@@ -176,9 +174,7 @@
 
         real time,a,b,c,di
 
-        real m 
-        save m
-        data m / 150000 /	!mg/l
+        real, save :: m = 150000	!mg/l
 
         if(it.le.lgr_ar(i)%init%time) return
 
@@ -201,14 +197,10 @@
 
         implicit none
 
-	integer icount
-	data icount /0/
-	save icount
+	integer, save :: icount = 0
 
 	integer i
-	integer icall
-	data icall /0/
-	save icall	
+	integer, save :: icall = 0
 
 	real t	    !time of simulation
 	real ts	    !start time of particle

@@ -965,9 +965,7 @@
 
         implicit none
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .ne. 0 ) return
 	icall = 1
@@ -1207,9 +1205,7 @@
 
 	integer getisec
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	call legini
 	if( nlegdi .ne. legdim ) call legerr
@@ -1378,19 +1374,12 @@
 
 	integer, save :: idwind = 0
 
-        real array(ndim)
-        save array
-        real xwind,ywind,lwwind,scwind,xtwind,ytwind
-        save xwind,ywind,lwwind,scwind,xtwind,ytwind
-        integer iwtype,stwind
-        save iwtype,stwind
-        character*40 wtext,wunit
-        save wtext,wunit
+        real, save :: array(ndim)
+        real, save :: xwind,ywind,lwwind,scwind,xtwind,ytwind
+        integer, save :: iwtype,stwind
+        character*40, save :: wtext,wunit
 
-
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 	if( icall .eq. -1 ) return
 
@@ -1510,17 +1499,13 @@
         character*25 line
         character*3 name
 
-        real xdate,ydate
-        save xdate,ydate
-        integer sdate,idate
-        save sdate,idate
+        real, save :: xdate,ydate
+        integer, save :: sdate,idate
 
 	real, save :: tzshow
 	integer itl
 
-        integer icall
-        save icall
-        data icall /0/
+        integer, save :: icall = 0
 
 
 	if( icall .eq. -1 ) return
@@ -2148,9 +2133,7 @@
 	real x,y,dx,dy
 	real x0,y0,x1,y1
 
-	integer ijq(2,2)	!qudrante
-	save ijq
-	data ijq /1,2,4,3/
+	integer, save :: ijq(2,2) = reshape((/1,2,4,3/),(/2,2/))	!qudrante
 
 	bwrite = bbverb
 	bwrite = .false.

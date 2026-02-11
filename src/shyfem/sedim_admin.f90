@@ -3908,10 +3908,8 @@
 	real bdhrst(nkn)
 	integer nkk,nv,iv,iu
         character*256 name
-	integer icall
+	integer, save :: icall = 1
 	integer ios
-        save icall
-        data icall /1/
 
 !       -------------------------------------------------------------------
 !       Read restart bed elevation change
