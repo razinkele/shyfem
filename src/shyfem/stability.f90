@@ -96,7 +96,7 @@
 !				momentum_viscous_stability	newexpl
 !				gravity_wave_stability		newstab
 !
-! saux is never computed in conzstab - may be a bug		!FIXME
+! saux is now passed as output parameter to conzstab
 !
 !*****************************************************************
 
@@ -168,7 +168,7 @@
         call conzstab( &
      &          ddt,robs,rtauv,wsink,wsinkv,rkpar,difhv,difv &
      &		,difmol,azpar,adpar_c,aapar_c &
-     &          ,rindex,istot,isact,nlvdi,nlv)
+     &          ,rindex,istot,isact,nlvdi,nlv,saux)
 
 !----------------------------------------------------------------
 ! propagate to all domains

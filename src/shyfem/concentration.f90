@@ -79,7 +79,7 @@
 !     +                  ,adpar,aapar
 !     +                  ,sindex
 !     +                  ,istot,isact
-!     +                  ,nlvddi,nlv)
+!     +                  ,nlvddi,nlv,saux)
 !
 !-------------------------------------------------------------
 !
@@ -1604,7 +1604,7 @@
      &			,adpar,aapar &
      &                  ,sindex &
      &			,istot,isact &
-     &			,nlvddi,nlev)
+     &			,nlvddi,nlev,saux)
 
 ! checks stability
 !
@@ -1674,6 +1674,7 @@
 	real, intent(in) :: wsinkv(0:nlvddi,nkn)
 	real, intent(out) :: sindex
 	integer, intent(out) :: istot,isact
+	real, intent(out) :: saux(nlvddi,nkn)
 ! common
 ! local
 	logical bdebug,bdebug1
@@ -1713,7 +1714,6 @@
 	double precision, allocatable :: chigh(:,:)
         real, allocatable :: cwrite(:,:)
         real, allocatable :: c2write(:)
-        real, allocatable :: saux(:,:)
 !------------------------------------------------------------
 ! end of big arrays
 !------------------------------------------------------------
@@ -1754,10 +1754,10 @@
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(cwrite(nlvddi,nkn),saux(nlvddi,nkn),stat=ierr)
+	allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(c2write(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+
+	saux = 0.
 
 !-----------------------------------------------------------------
 ! global initialization
@@ -2079,8 +2079,16 @@
 	  end do
 	end do
 
-	raux = stabind			!FIXME - SHYFEM_FIXME
+	raux = stabind
         stabind = shympi_max(raux)
+	raux = stabadv
+	stabadv = shympi_max(raux)
+	raux = stabdiff
+	stabdiff = shympi_max(raux)
+	raux = stabvert
+	stabvert = shympi_max(raux)
+	raux = stabpoint
+	stabpoint = shympi_max(raux)
 
 !-----------------------------------------------------------------
 ! in stabind is stability index (advection and diffusion)
@@ -2117,7 +2125,7 @@
 
 	deallocate(cn,co,cdiag)
 	deallocate(clow,chigh)
-	deallocate(cwrite,saux)
+	deallocate(cwrite)
 
 !-----------------------------------------------------------------
 ! end of routine
@@ -2154,11 +2162,9 @@
 	double precision sum,masstot
 	real volnode
 
-!SHYMPI_ELEM - should be total nodes to use - FIXME shympi
-
         masstot = 0.
 
-        do k=1,nkn
+        do k=1,nkn_unique
 	  lmax = ilhkv(k)
 	  lmin = jlhkv(k)
           sum = 0.
@@ -2172,8 +2178,6 @@
 	mass = masstot
 
         mass = shympi_sum(mass)
-        !call shympi_comment('massconc: shympi_sum(masstot)')
-	!shympi on elems FIXME
 
 	end
 
