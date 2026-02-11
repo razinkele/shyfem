@@ -1393,43 +1393,44 @@
           dep = daf(ie)
           depe = depele(ie,+1)
           dep = depele(ie,+1)
-10        continue
 
-!         -----------------------------------------------------------------
-!	  calculate wave height, period and direction
-!         -----------------------------------------------------------------
+          do while( .true. )
 
-	  wis = winds(ie)
-	  wid = windd(ie)
+!           ---------------------------------------------------------------
+!	    calculate wave height, period and direction
+!           ---------------------------------------------------------------
 
-!         -----------------------------------------------------------------
-!	  method of SPM
-!         -----------------------------------------------------------------
+	    wis = winds(ie)
+	    wid = windd(ie)
 
-	  if( wis > 0. ) then
-            gh = (g*dep)/(wis**2.)
-            gx = (g*fet(ie))/(wis**2.)
-            hg = dep / (g*wis**2.)
-            auxh = ah2*gh**eh1
-            auxh1 = ah2*hg**eh1
-            auxt = at2*gh**et1
-            auxt1 = ah2*gx**eh1
+!           ---------------------------------------------------------------
+!	    method of SPM
+!           ---------------------------------------------------------------
 
-            waeh(ie) = (tanh(auxh))**eh4
-            waeh(ie) = (ah3*gx**eh3) / waeh(ie)
-            waeh(ie) = (tanh(waeh(ie)))**eh2
-            waeh(ie) = ah1*tanh(auxh)*waeh(ie)
-            waeh(ie) = waeh(ie) * wis**2 / g
-          
-            waep(ie) = (tanh(auxt))**et4
-            waep(ie) = (at3*gx**et3) / waep(ie)
-            waep(ie) = (tanh(waep(ie)))**et2
-            waep(ie) = at1*tanh(auxt)*waep(ie)
-            waep(ie) = waep(ie) * wis / g
-	  else
-	    waeh(ie) = 0.
-	    waep(ie) = 0.
-	  end if
+	    if( wis > 0. ) then
+              gh = (g*dep)/(wis**2.)
+              gx = (g*fet(ie))/(wis**2.)
+              hg = dep / (g*wis**2.)
+              auxh = ah2*gh**eh1
+              auxh1 = ah2*hg**eh1
+              auxt = at2*gh**et1
+              auxt1 = ah2*gx**eh1
+
+              waeh(ie) = (tanh(auxh))**eh4
+              waeh(ie) = (ah3*gx**eh3) / waeh(ie)
+              waeh(ie) = (tanh(waeh(ie)))**eh2
+              waeh(ie) = ah1*tanh(auxh)*waeh(ie)
+              waeh(ie) = waeh(ie) * wis**2 / g
+
+              waep(ie) = (tanh(auxt))**et4
+              waep(ie) = (at3*gx**et3) / waep(ie)
+              waep(ie) = (tanh(waep(ie)))**et2
+              waep(ie) = at1*tanh(auxt)*waep(ie)
+              waep(ie) = waep(ie) * wis / g
+	    else
+	      waeh(ie) = 0.
+	      waep(ie) = 0.
+	    end if
 
 !          waeh(ie) = 0.283 * tanh(0.530*(gh**(3./4.)))*
 !     %            tanh((0.00565*(gx**0.5))/
@@ -1440,51 +1441,52 @@
 !     %            (tanh(0.833*(gh**(3./8.)))))*(wis/g)
 !
 
-!         -----------------------------------------------------------------
-!	  method of hurdle and stive
-!         -----------------------------------------------------------------
+!           ---------------------------------------------------------------
+!	    method of hurdle and stive
+!           ---------------------------------------------------------------
 
 !          waeh(ie) = (tanh(auxh))**eh4
 !          waeh(ie) = (ah3*gx**eh3) / waeh(ie)
 !          waeh(ie) = (tanh(waeh(ie)))**eh2
 !          waeh(ie) = ah1*tanh(auxh)*waeh(ie)
 !          waeh(ie) = waeh(ie) * wis**2 / g
-         
+
 !          waep(ie) = (tanh(auxt1))**et4
 !          waep(ie) = (at3*gx**et3) / waep(ie)
 !          waep(ie) = (tanh(waep(ie)))**et2
 !          waep(ie) = at1*tanh(auxt)*waep(ie)
 !          waep(ie) = waep(ie) * wis / g
 
-          waed(ie) = wid
+            waed(ie) = wid
 
-!         -----------------------------------------------------------------
-!	  limiting wave height
-!         -----------------------------------------------------------------
+!           ---------------------------------------------------------------
+!	    limiting wave height
+!           ---------------------------------------------------------------
 
-          hbr = 0.50*depe
-          if( waeh(ie).gt.hbr ) then
-            if (icount.gt.1) then
-              waeh(ie) = hbr
-              go to 20
+            hbr = 0.50*depe
+            if( waeh(ie) .gt. hbr ) then
+              if( icount .gt. 1 ) then
+                waeh(ie) = hbr
+                exit
+              end if
+              dep = depe
+              icount = 2
+            else
+              exit
             end if
-            dep = depe
-            icount = 2
-            goto 10
-          end if 
-20        continue
+
+          end do
 
 	  call wave_spm(wis,wid,fet(ie),dep,waeh1,waep1,waed1)
-	  if( waeh1 /= waeh(ie) ) goto 99
-	  if( waep1 /= waep(ie) ) goto 99
-	  if( waed1 /= waed(ie) ) goto 99
+	  if( waeh1 /= waeh(ie) .or. &
+     &        waep1 /= waep(ie) .or. &
+     &        waed1 /= waed(ie) ) then
+	    write(6,*) waeh1 , waeh(ie)
+	    write(6,*) waep1 , waep(ie)
+	    write(6,*) waed1 , waed(ie)
+	    stop 'error stop compute_waves_on_element: error in computation'
+	  end if
 
-	return
-   99	continue
-	write(6,*) waeh1 , waeh(ie)
-	write(6,*) waep1 , waep(ie)
-	write(6,*) waed1 , waed(ie)
-	stop 'error stop compute_waves_on_element: error in computation'
         end
 
 !**************************************************************
@@ -1740,38 +1742,38 @@
           x4=x0(iii)
           y4=y0(iii)
 
-2         continue
-          iint = segsegint(x,y,xf,yf,x3,y3,x4,y4,xi,yi)
+          do while( .true. )
+            iint = segsegint(x,y,xf,yf,x3,y3,x4,y4,xi,yi)
 
-          ienew = ieltv(i,iie)
-	
-	  if( bdebug ) then
-	    write(156,*) i,iint,iie,ienew,ieold
-	  end if
+            ienew = ieltv(i,iie)
 
-          if(iint.gt.0.and.ienew.ne.ieold)then	!intersection
-            if(iint.eq.3)then	 		!intersection with node
-              !x = x + 1.
-              !y = y + 1.
-	      call random_number(rx)
-	      call random_number(ry)
-              x = x + 10.*(rx-0.5)
-              y = y + 10.*(ry-0.5)
-	      if( bdebug ) then
-	  	write(156,*) 9,0,0,0,0
-		write(156,*) 'warning: node intersection: ',i,x,y
-	      end if
-              go to 2
-            else
-	      if( bdebug .and. ien .gt. 0 ) then
-	  	write(156,*) 9,0,0,0,0
-		write(156,*) 'warning: ien already set: ',ien,xn,yn
-	      end if
-              xn = xi
-              yn = yi
-              ien = ienew
+	    if( bdebug ) then
+	      write(156,*) i,iint,iie,ienew,ieold
+	    end if
+
+            if(iint.gt.0.and.ienew.ne.ieold)then	!intersection
+              if(iint.eq.3)then	 		!intersection with node
+	        call random_number(rx)
+	        call random_number(ry)
+                x = x + 10.*(rx-0.5)
+                y = y + 10.*(ry-0.5)
+	        if( bdebug ) then
+	  	  write(156,*) 9,0,0,0,0
+		  write(156,*) 'warning: node intersection: ',i,x,y
+	        end if
+                cycle
+              else
+	        if( bdebug .and. ien .gt. 0 ) then
+	  	  write(156,*) 9,0,0,0,0
+		  write(156,*) 'warning: ien already set: ',ien,xn,yn
+	        end if
+                xn = xi
+                yn = yi
+                ien = ienew
+              end if
             end if
-          end if
+            exit
+          end do
 
         end do
 

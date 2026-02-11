@@ -271,7 +271,18 @@
               end if
             end do
             if(iweg.gt.0) then		!case h1/h2
-	      if( bnodry ) goto 77
+	      if( bnodry ) then
+	        write(6,*) 'drying is not allowed...'
+	        write(6,*) iweich,ie,iwh,iwegv(ie)
+	        write(6,*) hzmin,hzoff,hzon,volmin
+	        do ii=1,3
+	          k = nen3v(ii,ie)
+	          hzg = znv(k) + hm3v(ii,ie)
+	          write(6,*) ii,k,znv(k),hzg
+	          write(6,*) '     ',zenv(ii,ie),hm3v(ii,ie)
+	        end do
+	        stop 'error stop setweg'
+	      end if
               !if(iwegv(ie).gt.0 .and.iweich.eq.1) goto 78	case h1out
               if(iwegv(ie).eq.0) then	!element was inside - case h1/h2in
 		iwh=iwh+1
@@ -336,18 +347,6 @@
 	  !write(iu,*) '++++ ',iweich,iw,iwegv(19417),iwegv(19428)
 	end if
 
-        return
-   77	continue
-	write(6,*) 'drying is not allowed...'
-	write(6,*) iweich,ie,iwh,iwegv(ie)
-	write(6,*) hzmin,hzoff,hzon,volmin
-        do ii=1,3
-	  k = nen3v(ii,ie)
-          hzg = znv(k) + hm3v(ii,ie)
-	  write(6,*) ii,k,znv(k),hzg
-	  write(6,*) '     ',zenv(ii,ie),hm3v(ii,ie)
-	end do
-	stop 'error stop setweg'
         end
 
 !****************************************************************
@@ -381,6 +380,7 @@
         integer nnn,itmin
 	double precision dtime
 	character*20 aline
+	logical berror_z, berror_uv
 ! save
         real eps
         save eps
@@ -413,6 +413,9 @@
               i4=0
                 i5=0    !two nodes in element with mean too low
                   i6=0  !node is drying with computed velocity
+
+        berror_z = .false.
+        berror_uv = .false.
 
         do ie=1,nel
         if( iseout(ie) ) then
@@ -459,12 +462,12 @@
             i8=i8+1
             z(i1)=hzmin-hm3v(i1,ie)
             z(i2)=3.*zmed-z(i1)-z(isum)
-!            if(z(i2)+hm3v(i2,ie).lt.hzmin-eps) goto 99 !$$99
+!            if(z(i2)+hm3v(i2,ie).lt.hzmin-eps) berror_z = .true. !$$99
           else if(z(i2)+zm*0.5+hm3v(i2,ie).lt.hzmin) then !$$eps0
             i3=i3+1
             z(i2)=hzmin-hm3v(i2,ie)
             z(i1)=3.*zmed-z(i2)-z(isum)
-!            if(z(i1)+hm3v(i1,ie).lt.hzmin-eps) goto 99  !$$99
+!            if(z(i1)+hm3v(i1,ie).lt.hzmin-eps) berror_z = .true. !$$99
           else
             i4=i4+1
             z(i1)=z(i1)+0.5*zm
@@ -474,21 +477,27 @@
           i5=i5+1
           i1=6-isum
           z(i1)=z(i1)+zm
-!          if(z(i1)+hm3v(i1,ie).lt.hzmin-eps) goto 99  !$$99
+!          if(z(i1)+hm3v(i1,ie).lt.hzmin-eps) berror_z = .true. !$$99
         else
-          goto 99
+          berror_z = .true.
         end if
 !
 ! control, leave in any case
 !
-        isum=-1
-        zm=0.
-        do ii=1,3
-          zm=zm+z(ii)
-          if(z(ii)+hm3v(ii,ie).lt.hzmin-eps) goto 99
-        end do
-        isum=-2		!$$isum
-        if(abs(zm-3.*zmed).gt.eps) goto 99
+        if( .not. berror_z ) then
+          isum=-1
+          zm=0.
+          do ii=1,3
+            zm=zm+z(ii)
+            if(z(ii)+hm3v(ii,ie).lt.hzmin-eps) berror_z = .true.
+          end do
+        end if
+        if( .not. berror_z ) then
+          isum=-2		!$$isum
+          if(abs(zm-3.*zmed).gt.eps) berror_z = .true.
+        end if
+
+        if( berror_z ) exit
 !
 ! now compute velocities
 !						!$$azpar
@@ -546,9 +555,15 @@
           zm=zm+zz
         end do
         isum=-3		!$$isum
-        if(abs(zm-3.*zmed).gt.eps) goto 99
+        if(abs(zm-3.*zmed).gt.eps) then
+          berror_z = .true.
+          exit
+        end if
 !
-        if(itot.gt.0) goto 97
+        if(itot.gt.0) then
+          berror_uv = .true.
+          exit
+        end if
 
         unv(ie)=u	!put back to new barotropic velocities
         vnv(ie)=v
@@ -558,46 +573,48 @@
 
 !        write(88,*) i7,i8,i3,i4,i5,i6
 !
-        return
+        if( berror_z ) then
+          call get_act_dtime(dtime)
+          call get_timeline(dtime,aline)
+          write(6,*) '---------------------'
+          write(6,*) 'error log setuvd (z computation)'
+          write(6,*) 'time: ',dtime,'  ',aline
+          write(6,*) 'element number (int/ext): ',ie,ieext(ie)
+          write(6,*) ie,itot,isum
+          write(6,*) zmed,zm,hzmin
+          write(6,*) (hm3v(ii,ie),ii=1,3)
+          write(6,*) (zenv(ii,ie),ii=1,3)
+          write(6,*) (z(ii),ii=1,3)
+          write(6,*) '---------------------'
+          call check_set_unit(6)
+          call check_elem(ie)
+          call check_nodes_in_elem(ie)
+          write(6,*) '---------------------'
+          stop 'error stop setuvd : z computation'
+        end if
 
-   99   continue  !use isum to decide which branch has been taken
-	call get_act_dtime(dtime)
-	call get_timeline(dtime,aline)
-        write(6,*) '---------------------'
-	write(6,*) 'error log setuvd (z computation)'
-        write(6,*) 'time: ',dtime,'  ',aline
-        write(6,*) 'element number (int/ext): ',ie,ieext(ie)
-        write(6,*) ie,itot,isum
-        write(6,*) zmed,zm,hzmin
-        write(6,*) (hm3v(ii,ie),ii=1,3)
-        write(6,*) (zenv(ii,ie),ii=1,3)
-        write(6,*) (z(ii),ii=1,3)
-        write(6,*) '---------------------'
-	call check_set_unit(6)
-	call check_elem(ie)
-	call check_nodes_in_elem(ie)
-        write(6,*) '---------------------'
-        stop 'error stop setuvd : z computation'
-   97   continue
-	call get_act_dtime(dtime)
-	call get_timeline(dtime,aline)
-        write(6,*) '---------------------'
-	write(6,*) 'error log setuvd (u/v computation)'
-        write(6,*) 'time: ',dtime,'  ',aline
-        write(6,*) 'element number (int/ext): ',ie,ieext(ie)
-        write(6,*) ie,itot,isum
-        write(6,*) zmed,zm,hzmin
-        write(6,*) uo,vo,u,v
-        write(6,*) (hm3v(ii,ie),ii=1,3)
-        write(6,*) (zenv(ii,ie),ii=1,3)
-        write(6,*) (z(ii),ii=1,3)
-        write(6,*) (zn(ii),ii=1,3)
-        write(6,*) '---------------------'
-	call check_set_unit(6)
-	call check_elem(ie)
-	call check_nodes_in_elem(ie)
-        write(6,*) '---------------------'
-        stop 'error stop setuvd : u/v computation'
+        if( berror_uv ) then
+          call get_act_dtime(dtime)
+          call get_timeline(dtime,aline)
+          write(6,*) '---------------------'
+          write(6,*) 'error log setuvd (u/v computation)'
+          write(6,*) 'time: ',dtime,'  ',aline
+          write(6,*) 'element number (int/ext): ',ie,ieext(ie)
+          write(6,*) ie,itot,isum
+          write(6,*) zmed,zm,hzmin
+          write(6,*) uo,vo,u,v
+          write(6,*) (hm3v(ii,ie),ii=1,3)
+          write(6,*) (zenv(ii,ie),ii=1,3)
+          write(6,*) (z(ii),ii=1,3)
+          write(6,*) (zn(ii),ii=1,3)
+          write(6,*) '---------------------'
+          call check_set_unit(6)
+          call check_elem(ie)
+          call check_nodes_in_elem(ie)
+          write(6,*) '---------------------'
+          stop 'error stop setuvd : u/v computation'
+        end if
+
         end
 !
 !****************************************************************
@@ -718,10 +735,6 @@
 ! end of routine
 !-------------------------------------------------------------
 
-	return
-   99	continue
-	write(6,*) 'ie,ii,k,z,znv(k) ',ie,ii,k,z,znv(k)
-	stop 'error stop setznv: nodal value not unique'
         end
 !
 !****************************************************************

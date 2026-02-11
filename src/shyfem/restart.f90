@@ -200,7 +200,10 @@
 
         iunit = ifileo(1,name,'unformatted','old')
         if( iunit .le. 0 ) then
-          if( ityrst .le. 0 ) goto 98
+          if( ityrst .le. 0 ) then
+            write(6,*) 'no such file : ',name
+            stop 'error stop rst_perform_restart: Cannot read restart file'
+          end if
           write(6,*) '*** Cannot find restart file ...'
           write(6,*) '*** Continuing with cold start...'
           return
@@ -210,7 +213,11 @@
         call rst_read_restart_file(iunit,atime,iflag_avail_rst,ierr)
 
         if( ierr .gt. 0 ) then
-          if( ityrst .le. 1 ) goto 97
+          if( ityrst .le. 1 ) then
+            call dts_format_abs_time(atrst,aline)
+            write(6,*) 'no record found for time = ',aline
+            stop 'error stop rst_perform_restart: Cannot find time record'
+          end if
           if( ierr .eq. 95 ) then	!file is empty
             write(6,*) '*** No data in restart file ...'
             write(6,*) '*** Continuing with cold start...'
@@ -276,13 +283,6 @@
 !-----------------------------------------------------------------
 
         return
-   97   continue
-	call dts_format_abs_time(atrst,aline)
-        write(6,*) 'no record found for time = ',aline
-        stop 'error stop rst_perform_restart: Cannot find time record'
-   98   continue
-        write(6,*) 'no such file : ',name
-        stop 'error stop rst_perform_restart: Cannot read restart file'
         end
 
 !*******************************************************************
@@ -311,7 +311,11 @@
 
         do
           call rst_read_record(iunit,atime,iflag,ierr)
-          if( ierr .gt. 0 ) goto 94
+          if( ierr .gt. 0 ) then
+            write(6,*) 'error reading restart file: ',ierr
+            ierr = 94
+            return
+          end if
           if( ierr .lt. 0 ) exit
           irec = irec + 1
 	  if( .not. blast .and. atime .ge. atrst ) exit
@@ -330,29 +334,18 @@
 
         if( ierr .ne. 0 ) then          !EOF
           if( irec .eq. 0 ) then        !no data found
-                goto 95
-          else                          !last record in file has smaller time
-                goto 97
+            write(6,*) 'reading restart file... '
+            write(6,*) 'no records in file (file is empty)'
+            ierr = 95
+            return
           end if
-        else                            !read past desired time
-                goto 97
         end if
 
-        return
-   94   continue
-        write(6,*) 'error reading restart file: ',ierr
-        ierr = 94
-	return
-   95   continue
+        !either EOF with irec>0, or read past desired time
         write(6,*) 'reading restart file... '
-        write(6,*) 'no records in file (file is empty)'
-        ierr = 95
-        return
-   97   continue
-        write(6,*) 'reading restart file... '
-	call dts_format_abs_time(atime,aline)
+        call dts_format_abs_time(atime,aline)
         write(6,*) 'last record read at time = ',atime,aline
-	call dts_format_abs_time(atrst,aline)
+        call dts_format_abs_time(atrst,aline)
         write(6,*) 'no record found for time = ',atrst,aline
         ierr = 97
         return
@@ -501,7 +494,9 @@
 
 	  if( .not. bonce ) then
             iunit = ifemop('.rst','unformatted','new')
-            if( iunit .le. 0 ) goto 98
+            if( iunit .le. 0 ) then
+              stop 'error stop rst_write_restart: Cannot open rst file'
+            end if
 	    da_out(4) = iunit
 	  end if
 
@@ -522,7 +517,9 @@
 	    write(6,*) 'writing single restart record'
 	  end if
           iunit = ifemop('.rst','unformatted','new')
-          if( iunit .le. 0 ) goto 98
+          if( iunit .le. 0 ) then
+            stop 'error stop rst_write_restart: Cannot open rst file'
+          end if
           call rst_write_record(atime,iunit)
 	  close(iunit)
 	else
@@ -539,8 +536,6 @@
 !-----------------------------------------------------
 
         return
-   98   continue
-        stop 'error stop rst_write_restart: Cannot open rst file'
         end
 
 !*******************************************************************
@@ -676,7 +671,7 @@
 	double precision atime
 	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm
 	integer idfile
-	integer date,time,it,id
+	integer date,time,it,id,ios
 
 	integer, allocatable :: ival(:)
 	real, allocatable :: rval2d(:)
@@ -689,7 +684,15 @@
 	iuout = 0
 	brewrite = iuout > 0
 
-	read(iunit,end=2,err=3) idfile,nvers,nrec
+	read(iunit,iostat=ios) idfile,nvers,nrec
+	if( ios < 0 ) then
+	  ierr = -1
+	  return
+	else if( ios > 0 ) then
+	  write(6,*) 'rst_skip_record: error in reading restart file'
+	  ierr = 1
+	  return
+	end if
 
         ierr = 0
 
@@ -708,7 +711,10 @@
 	  if( date > 0 ) call dts_to_abs_time(date,time,atime)
 	  atime = atime + it
 	else if( idfile /= idfrst ) then
-	  goto 7
+	  write(6,*) 'idfile,idfrst: ',idfile,idfrst
+	  write(6,*) 'rst_skip_record: error in idfrst... no restart format'
+	  ierr = 7
+	  return
 	end if
 
         read(iunit) nkn,nel,nlv
@@ -855,19 +861,6 @@
 
 	ierr = 0
 	return
-
-    2	continue
-	ierr = -1
-	return
-    3	continue
-	write(6,*) 'rst_skip_record: error in reading restart file'
-	ierr = 1
-	return
-    7	continue
-	write(6,*) 'idfile,idfrst: ',idfile,idfrst
-	write(6,*) 'rst_skip_record: error in idfrst... no restart format'
-	ierr = 7
-	return
 	end
 
 !*******************************************************************
@@ -895,7 +888,7 @@
         integer iflag		!available data, not necessarily read data
         integer ierr            !error code - different from 0 if error
 
-	integer it,idfile,id
+	integer it,idfile,id,ios
         integer ii,l,ie,k,i
         integer nvers,nversaux,nrec
         integer nknaux,nelaux,nlvaux
@@ -908,8 +901,19 @@
 
 	logical rst_want_restart
 
-        read(iunit,end=97) idfile,nvers,nrec
-        if( nvers .lt. 3 ) goto 98
+        read(iunit,iostat=ios) idfile,nvers,nrec
+        if( ios < 0 ) then
+          ierr = -1
+          return
+        else if( ios > 0 ) then
+          write(6,*) 'error reading header of restart file...'
+          stop 'error stop rst_read_record: cannot read header'
+        end if
+        if( nvers .lt. 3 ) then
+          write(6,*) 'error reading restart file...'
+          write(6,*) 'nvers: ',nvers
+          stop 'error stop rst_read_record: cannot read this version'
+        end if
 
         ierr = 0
 
@@ -928,13 +932,22 @@
 	  if( date > 0 ) call dts_to_abs_time(date,time,atime)
 	  atime = atime + it
 	else if( idfile /= idfrst ) then
-	  goto 7
+	  write(6,*) 'rst_read_record: error in idfrst... ' &
+     &                // 'no restart format'
+	  ierr = 7
+	  return
 	end if
 
           read(iunit) nknaux,nelaux,nlvaux
-          if( nknaux .ne. nkn_global ) goto 99
-          if( nelaux .ne. nel_global ) goto 99
-          if( nlvaux .ne. nlv_global ) goto 99
+          if( nknaux .ne. nkn_global .or. &
+     &        nelaux .ne. nel_global .or. &
+     &        nlvaux .ne. nlv_global ) then
+            write(6,*) 'error reading restart file...'
+            write(6,*) 'nkn,nel,nlv:'
+            write(6,*) 'shyfem:  ',nkn,nel,nlv
+            write(6,*) 'rstfile: ',nknaux,nelaux,nlvaux
+            stop 'error stop rst_read_record: incompatible parameters'
+          end if
 
 	  call rst_read_vertical(iunit,nvers,nkn,nel,nlv)
 
@@ -1068,26 +1081,6 @@
           end if
 
         return
-    7	continue
-	write(6,*) 'rst_read_record: error in idfrst... ' // 'no restart format'
-	ierr = 7
-	return
-   96   continue
-        write(6,*) 'error reading header of restart file...'
-        stop 'error stop rst_read_record: cannot read header'
-   97   continue
-        ierr = -1
-        return
-   98   continue
-        write(6,*) 'error reading restart file...'
-        write(6,*) 'nvers: ',nvers
-        stop 'error stop rst_read_record: cannot read this version'
-   99   continue
-        write(6,*) 'error reading restart file...'
-        write(6,*) 'nkn,nel,nlv:'
-        write(6,*) 'shyfem:  ',nkn,nel,nlv
-        write(6,*) 'rstfile: ',nknaux,nelaux,nlvaux
-        stop 'error stop rst_read_record: incompatible parameters'
         end
 
 !*******************************************************************
@@ -1151,29 +1144,29 @@
 	integer ilhv(nel)
 	integer ilhkv(nkn)
 
-	if( nkn <= 0 .or. nel <= 0 .or. nlv <= 0 ) goto 98
+	if( nkn <= 0 .or. nel <= 0 .or. nlv <= 0 ) then
+	  write(6,*) 'nkn,nel,nlv: ',nkn,nel,nlv
+	  stop 'error stop rst_get_hlv: error in parameters'
+	end if
 
 	if( .not. allocated(hlvrst) ) then
 	  stop 'error stop rst_get_hlv: hlvrst not allocated'
 	end if
-	if( nlv /= size(hlvrst) ) goto 99
-	if( nkn /= size(ilhkrst) ) goto 99
-	if( nel /= size(ilhrst) ) goto 99
+	if( nlv /= size(hlvrst) .or. &
+     &      nkn /= size(ilhkrst) .or. &
+     &      nel /= size(ilhrst) ) then
+	  write(6,*) 'nkn: ',nkn,size(ilhkrst)
+	  write(6,*) 'nel: ',nel,size(ilhrst)
+	  write(6,*) 'nlv: ',nlv,size(hlvrst)
+	  stop 'error stop rst_get_hlv: arrays not compatible'
+	end if
 
 	hlv = hlvrst
 	ilhv = ilhrst
 	ilhkv = ilhkrst
 
 	return
-   98	continue
-	write(6,*) 'nkn,nel,nlv: ',nkn,nel,nlv
-	stop 'error stop rst_get_hlv: error in parameters'
-   99	continue
-	write(6,*) 'nkn: ',nkn,size(ilhkrst)
-	write(6,*) 'nel: ',nel,size(ilhrst)
-	write(6,*) 'nlv: ',nlv,size(hlvrst)
-	stop 'error stop rst_get_hlv: arrays not compatible'
-	end 
+	end
 
 !*******************************************************************
 
@@ -1233,7 +1226,11 @@
 
 	open(newunit=iu,file=file,status='old',form='unformatted',iostat=ios)
 	if( ios /= 0 ) return
-	read(iu,end=3,err=3) idfile,nvers,nrec
+	read(iu,iostat=ios) idfile,nvers,nrec
+	if( ios /= 0 ) then
+	  close(iu)
+	  return
+	end if
 	close(iu)
 
 	if( nvers <= 10 ) then
@@ -1245,7 +1242,6 @@
 	rst_is_rst_file = .true.
 
 	return
-    3	continue
 	end
 
 !*******************************************************************

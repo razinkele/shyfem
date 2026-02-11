@@ -281,7 +281,7 @@
 	real paux(nfore)
 
 	integer iunit
-	integer j,ip,i
+	integer j,ip,i,ios
 	integer it,i1,i2,i3,i4,i5,if
 	real ps
 	integer ifileo
@@ -294,8 +294,9 @@
 
 	if = 10
 	n = 0
-    1	continue
-	  read(iunit,*,end=2) it,ps
+	do
+	  read(iunit,*,iostat=ios) it,ps
+	  if( ios /= 0 ) exit
 
 	  n = n + 1
 	  if( if .gt. nfore ) stop 'error stop init_prev: nfore'
@@ -307,8 +308,7 @@
 	    pp(j,n) = ps
 	  end do
 
-	  goto 1
-    2	continue
+	end do
 
 	write(6,*) 'init_ps: records read ',n
 
@@ -339,7 +339,7 @@
 	real paux(nfore)
 
 	integer iunit
-	integer j
+	integer j,ios
 	integer it,i1,i2,i3,i4,i5,if
 	integer ifileo
 	character*256 file
@@ -358,8 +358,9 @@
 ! if	fill
 
 	n = 0
-    1	continue
-	  read(iunit,*,end=2) it,i1,i2,i3,i4,i5,if,(paux(j),j=1,if)
+	do
+	  read(iunit,*,iostat=ios) it,i1,i2,i3,i4,i5,if,(paux(j),j=1,if)
+	  if( ios /= 0 ) exit
 
 	  n = n + 1
 	  if( if .gt. nfore ) stop 'error stop init_prev: nfore'
@@ -371,8 +372,7 @@
 	    pp(j,n) = 0.01 * paux(j)
 	  end do
 
-	  goto 1
-    2	continue
+	end do
 
 	write(6,*) 'init_prev: records read ',n
 

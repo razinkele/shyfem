@@ -202,11 +202,11 @@
           ierr = 0
           iunit=ifileo(0,traj,'form','old')
           do while( ierr .eq. 0 )
-            read(iunit,*,iostat=ierr,end=98)
+            read(iunit,*,iostat=ierr)
             if( ierr /= 0 ) exit
             nt = nt + 1
           end do
- 98       close(iunit)
+          close(iunit)
           allocate(dtimet(nt),stat=ierr)
           if( ierr /= 0 ) stop 'error stop: allocation failed'
           allocate(xt(nt),stat=ierr)
@@ -219,7 +219,7 @@
           ierr = 0
           iunit=ifileo(0,traj,'form','old')
           do while( ierr .eq. 0 )
-            read(iunit,*,iostat=ierr,end=99) line,x,y
+            read(iunit,*,iostat=ierr) line,x,y
             if( ierr /= 0 ) exit
             nt = nt + 1
             call dts_string2time(line,atime,ierrp)
@@ -227,7 +227,7 @@
             xt(nt) = x
             yt(nt) = y
           end do
- 99       close(iunit)
+          close(iunit)
 
           dtlast = dtimet(nt)
 
@@ -349,7 +349,7 @@
 	integer, intent(out) :: n
 	real, intent(out) :: x(ndim),y(ndim)
 
-	integer iflag
+	integer iflag,ios
 	real xa,ya
 
 	integer isave,iline
@@ -372,15 +372,18 @@
 	  y(n) = ysave
 	end if
 
-    1	continue
-	  read(iunit,*,end=2) xa,ya,iflag
-	  if( iflag .ne. 0 .and. n .gt. 0 ) goto 2	!not 1.point on 1.line
+	do
+	  read(iunit,*,iostat=ios) xa,ya,iflag
+	  if( ios /= 0 ) then
+	    iflag = 0	!EOF or error reached, not start of new line
+	    exit
+	  end if
+	  if( iflag .ne. 0 .and. n .gt. 0 ) exit	!not 1.point on 1.line
 	  n = n + 1
 	  if( n .gt. ndim ) stop 'error stop lagbound_read_next: ndim'
 	  x(n) = xa
 	  y(n) = ya
-	  goto 1
-    2	continue
+	end do
 
 	if( iflag .ne. 0 ) then	!start of new line -> save for next call
 	  xsave = xa
@@ -480,32 +483,32 @@
         do ie=1,nel
 
 	  ifl = ieflag(ie)
-	  if( ifl .eq. -1 ) goto 1
+	  if( ifl .ne. -1 ) then
 
-          call xy_and_minmax(ie,xe,ye,xmin,xmax,ymin,ymax)
+            call xy_and_minmax(ie,xe,ye,xmin,xmax,ymin,ymax)
 
-          imin=(xmin-x0)/dxy + 0
-          imax=(xmax-x0)/dxy + 2
-          jmin=(ymin-y0)/dxy + 0
-          jmax=(ymax-y0)/dxy + 2
+            imin=(xmin-x0)/dxy + 0
+            imax=(xmax-x0)/dxy + 2
+            jmin=(ymin-y0)/dxy + 0
+            jmax=(ymax-y0)/dxy + 2
 
-          do i=imin,imax
-            do j=jmin,jmax
-              xp=i*dxy+x0
-              yp=j*dxy+y0
+            do i=imin,imax
+              do j=jmin,jmax
+                xp=i*dxy+x0
+                yp=j*dxy+y0
 
-              iin=intri(xe,ye,xp,yp)
+                iin=intri(xe,ye,xp,yp)
 
-              if( iin .ne. 0 ) then
-		if( ifl .eq. 1 .or. inpoly(n,x,y,xp,yp) ) then
-                  np = np + 1
-                  call insert_particle_3d(ie,iln,0.,xp,yp)
-		end if
-              end if
+                if( iin .ne. 0 ) then
+		  if( ifl .eq. 1 .or. inpoly(n,x,y,xp,yp) ) then
+                    np = np + 1
+                    call insert_particle_3d(ie,iln,0.,xp,yp)
+		  end if
+                end if
+              end do
             end do
-          end do
 
-    1	  continue
+	  end if
         end do
 
 !-----------------------------------------------------------------

@@ -298,21 +298,17 @@
 	  write(6,*) 'lgr_diff_vert end debugging'
 	end if
 
-	if( z < 0. .or. z > 1. ) goto 98
+	if( z < 0. .or. z > 1. ) then
+	  write(6,*) 'id,iel ',id,iel
+	  write(6,*) 'tv,t ',tv,t
+	  write(6,*) 'dz,w,hd: ',dz,w,hd
+	  write(6,*) 'z,lb,lmax ',z,lb,lmax
+	  stop 'error stop lgr_diff_vert: internal error (2)'
+	end if
 
 	!-----------------------------------------------
 	! end of routine
 	!-----------------------------------------------
-
-	return 
-   98	continue
-	write(6,*) 'id,iel ',id,iel
-	write(6,*) 'tv,t ',tv,t
-	write(6,*) 'dz,w,hd: ',dz,w,hd
-	write(6,*) 'z,lb,lmax ',z,lb,lmax
-	stop 'error stop lgr_diff_vert: internal error (2)'
-   99	continue
-	stop 'error stop lgr_diff_vert: internal error (1)'
 
 	end subroutine lgr_diff_vert
 
@@ -367,7 +363,10 @@
 	  hle(l) = hle(l-1) + hl(l)
 	end do
 
-        if( lb > lmax ) goto 99
+        if( lb > lmax ) then
+          write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
+          stop 'error stop diff_get_vert: no such layer'
+        end if
 
 	!-----------------------------------------------
 	! get derivative of diffusivity on layer lb
@@ -409,11 +408,6 @@
 	  rs = rnd*sqrt(dt)
 	  wd = -0.5*dwd*(rs*rs)/dt - 0.5*dwd + rs*sqrt(2.*wdzp)/dt
 	end if
-
-        return
-   99   continue
-        write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
-        stop 'error stop diff_get_vert: no such layer'
 
         end subroutine diff_get_vert
 
@@ -752,10 +746,12 @@
 
         if (idum.lt.0) iset=0
         if (iset.eq.0) then
-1        v1=2.*shyran1(idum)-1.
-         v2=2.*shyran1(idum)-1.
-         rsq=v1**2+v2**2
-         if(rsq.ge.1..or.rsq.eq.0.)goto 1
+         do
+           v1=2.*shyran1(idum)-1.
+           v2=2.*shyran1(idum)-1.
+           rsq=v1**2+v2**2
+           if(rsq.lt.1..and.rsq.ne.0.) exit
+         end do
          fac=sqrt(-2.*log(rsq)/rsq)
          gset=v1*fac
          shygasdev=v2*fac

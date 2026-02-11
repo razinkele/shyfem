@@ -189,7 +189,11 @@
 	  if( icall < 0 ) return
 
 	  call lagr_connect_get_coords(nconnect_dim,np,xp,yp)
-	  if( np /= np_station ) goto 99
+	  if( np /= np_station ) then
+	    write(6,*) 'stations declared and stations read are different: '
+	    write(6,*) np_station,np
+	    stop 'error stop lagr_connect_continuous_points: np_station'
+	  end if
 	  call lagr_connect_find_elems(np,xp,yp,iep)
 
 	  call lagr_connect_init(np,xp,yp,iep)
@@ -226,11 +230,6 @@
 !	  call lagr_connect_reset(np)
 	end if
 
-	return
-   99	continue
-	write(6,*) 'stations declared and stations read are different: '
-	write(6,*) np_station,np
-	stop 'error stop lagr_connect_continuous_points: np_station'
 	end
 
 !*******************************************************************
@@ -440,7 +439,12 @@
 
 	!write(6,*)'raggi',r2,d2
 	  if( d2 .le. r2 ) then
-	    if( i_connect_elems(ie) .gt. 0 ) goto 99
+	    if( i_connect_elems(ie) .gt. 0 ) then
+	      write(6,*) 'element is in more than one station: ',ie
+	      write(6,*) 'radius probably too high, overlapping circles: ',r
+	      write(6,*) 'stations old/new: ',i_connect_elems(ie),ip
+	      stop 'error stop lagr_connect_mark_elems: non unique station'
+	    end if
 	    i_connect_elems(ie) = ip
 	    a_connect_area(ip) = a_connect_area(ip) + areaele(ie)
 
@@ -448,23 +452,22 @@
 	    write(6,*)'mark_elem: ',ip,ie,ieext(ie),itmpc
 	    !write(66,*)ip,ie,ieext(ie),itmpc
 	  end if
-	!endif 
+	!endif
 	end do
-	
+
 	  if(itmpc.eq.0)then
-	    if( i_connect_elems(ie) .gt. 0 ) goto 99
+	    if( i_connect_elems(ie) .gt. 0 ) then
+	      write(6,*) 'element is in more than one station: ',ie
+	      write(6,*) 'radius probably too high, overlapping circles: ',r
+	      write(6,*) 'stations old/new: ',i_connect_elems(ie),ip
+	      stop 'error stop lagr_connect_mark_elems: non unique station'
+	    end if
 	    i_connect_elems(iep) = ip
 	    a_connect_area(ip) = a_connect_area(ip) + areaele(iep)
 	    write(6,*)'mark_elem staz only 1 elem',ip,iep,ieext(iep),itmpc
-	    
+
 	  endif
 
-	return
-   99	continue
-	write(6,*) 'element is in more than one station: ',ie
-	write(6,*) 'radius probably too high, overlapping circles: ',r 
-	write(6,*) 'stations old/new: ',i_connect_elems(ie),ip
-	stop 'error stop lagr_connect_mark_elems: non unique station'
 	end
 
 !*******************************************************************
@@ -897,14 +900,25 @@
         np=0
 	file = lagr_connect_station_file
 
-        open(newunit=iu,file=file,status='old',err=99,iostat=ios)
+        open(newunit=iu,file=file,status='old',iostat=ios)
+        if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',file
+	  stop 'error stop lagr_connect_get_coords: no such file'
+        end if
 
 	do
           read(iu,*,iostat=ios) xx,yy
 	  if( ios < 0 ) exit
-	  if( ios > 0 ) goto 98
+	  if( ios > 0 ) then
+	    write(6,*) 'error reading file: ',file
+	    stop 'error stop lagr_connect_get_coords: read error'
+	  end if
           np = np +1
-          if (np.gt.ndim) goto 97
+          if (np.gt.ndim) then
+	    write(6,*) 'error reading file: ',file
+	    write(6,*) 'np,ndim: ',np,ndim
+	    stop 'error stop lagr_connect_get_coords: dimension error'
+          end if
           xp(np)=xx
           yp(np)=yy
 	end do
@@ -916,17 +930,6 @@
           write(6,*) xp(i),yp(i)
         end do
 
-        return
-97      continue
-	write(6,*) 'error reading file: ',file
-	write(6,*) 'np,ndim: ',np,ndim
-	stop 'error stop lagr_connect_get_coords: dimension error'
-98      continue
-	write(6,*) 'error reading file: ',file
-	stop 'error stop lagr_connect_get_coords: read error'
-99      continue
-	write(6,*) 'error opening file: ',file
-	stop 'error stop lagr_connect_get_coords: no such file'
         end
 
 !******************************************************************

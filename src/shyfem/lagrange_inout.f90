@@ -109,7 +109,12 @@
 	nbdy = nbdy + 1
 	idbdy = idbdy + 1
 
-	if( nbdymax > 0 .and. nbdy .gt. nbdymax ) goto 99
+	if( nbdymax > 0 .and. nbdy .gt. nbdymax ) then
+	  write(6,*) 'nbdymax = ',nbdymax
+	  write(6,*) 'Cannot insert more than nbdymax particles'
+	  write(6,*) 'Please change nbdymax in STR file'
+	  stop 'error stop insert_particle: nbdy'
+	end if
 	call mod_lagrange_handle_alloc(nbdy)
 
         lgr_ar(nbdy)%init%time = t_act - dt_act*(1.-rtime)
@@ -165,12 +170,6 @@
 
 ! ..............
 
-	return
-   99	continue
-	write(6,*) 'nbdymax = ',nbdymax
-	write(6,*) 'Cannot insert more than nbdymax particles'
-	write(6,*) 'Please change nbdymax in STR file'
-	stop 'error stop insert_particle: nbdy'
 	end
 
 !*******************************************************************
@@ -395,18 +394,17 @@
 	  if( hbot >= hact ) exit
 	  htop = hbot
 	end do
-	if( l > lmax ) goto 99
+	if( l > lmax ) then
+	  write(6,*) 'lmax,hbot,hact: ',lmax,hbot,hact
+	  write(6,*) hl
+	  stop 'error stop find_vertical_position: hact > hbot'
+	end if
 
 	lb = l
 	z = (hact-htop)/(hbot-htop) 	!relative position
 
 	!write(6,*) 'lb,z,hl: ',lb,z,hl
 
-	return
-   99	continue
-	write(6,*) 'lmax,hbot,hact: ',lmax,hbot,hact
-	write(6,*) hl
-	stop 'error stop find_vertical_position: hact > hbot'
 	end
 
 !*******************************************************************
@@ -600,7 +598,10 @@
           call lgr_skip_block(iu,n_aux,ncust)
         end do
 
-        if( ditime /= dtlgin ) goto 95
+        if( ditime /= dtlgin ) then
+	  write(6,*) 'cannot find time record: ',dtlgin
+	  stop 'error stop lgr_input_shell: no such time record'
+        end if
 
         call get_act_dtime(dtime)
 
@@ -609,7 +610,12 @@
 	write(6,*) 'time = ',aline
 
 	ntot = nbdy + n_act
-	if( nbdymax > 0 .and. ntot > nbdymax ) goto 94
+	if( nbdymax > 0 .and. ntot > nbdymax ) then
+	  write(6,*) 'nbdymax = ',nbdymax
+	  write(6,*) 'Cannot insert more than nbdymax particles'
+	  write(6,*) 'Please change nbdymax in STR file'
+	  stop 'error stop lgr_input_shell: nbdy'
+	end if
 	call mod_lagrange_handle_alloc(ntot)
 
 	do i=1,n_act
@@ -645,21 +651,6 @@
 
 	write(6,*) 'finished initializing lagrangian from file'
 
-	return
-   94	continue
-	write(6,*) 'nbdymax = ',nbdymax
-	write(6,*) 'Cannot insert more than nbdymax particles'
-	write(6,*) 'Please change nbdymax in STR file'
-	stop 'error stop lgr_input_shell: nbdy'
-   95	continue
-	write(6,*) 'cannot find time record: ',dtlgin
-	stop 'error stop lgr_input_shell: no such time record'
-   96	continue
-	write(6,*) 'error reading file: ',iu
-	stop 'error stop lgr_input_shell: read error'
-   99	continue
-	write(6,*) 'cannot open lgr file: ',trim(ifile)
-	stop 'error stop lgr_input_shell: open file'
 	end
 
 !*******************************************************************

@@ -180,8 +180,10 @@
 	call get_sigma_info(nlev,nsigma,hsigma)
         call get_zadapt_info(ie,nadapt,hadapt) 
 	lmax_act = ilhv(ie)
-	if( lmax_act > lmax ) goto 99
-	if( lmax_act > nlev ) goto 99
+	if( lmax_act > lmax .or. lmax_act > nlev ) then
+	  write(6,*) 'nlev,lmax,lmax_act: ',nlev,lmax,lmax_act
+	  stop 'error stop lagr_layer_thickness: incompatible layers'
+	end if
 	lmax = lmax_act
 
 	h = hev(ie)
@@ -196,10 +198,6 @@
 	htot = h
 	htotz = h + z
 
-	return
-   99	continue
-	write(6,*) 'nlev,lmax,lmax_act: ',nlev,lmax,lmax_act
-	stop 'error stop lagr_layer_thickness: incompatible layers'
 	end
 
 !*******************************************************************
@@ -462,7 +460,11 @@
 	else if( th > t ) then		!body remains in element
 	  ds = (1.-s)*t/th
 	  s = s + ds
-	  if( s > 1. ) goto 97
+	  if( s > 1. ) then
+	    write(6,*) 's,t,th: ',s,t,th
+	    write(6,*) 'ds,sorig: ',ds,s-ds
+	    stop 'error stop track_xi: internal error (3)'
+	  end if
 	  xi = (1.-s)*xis + s*xie
 	  call track_xi_check('after advection track_xi 1',id,xi)
 	else				!body reaches border of element
@@ -546,29 +548,18 @@
 	  write(6,*) 'track_xi end debugging'
 	end if
 
-	if( z < 0. .or. z > 1. ) goto 98
+	if( z < 0. .or. z > 1. ) then
+	  write(6,*) 'id,iel ',id,iel
+	  write(6,*) 'tv,t ',tv,t
+	  write(6,*) 'dz,w,hd: ',dz,w,hd
+	  write(6,*) 'z,lb,lmax ',z,lb,lmax
+	  stop 'error stop track_xi: internal error (2)'
+	end if
 
 	!-----------------------------------------------
 	! end of routine
 	!-----------------------------------------------
 
-	return 
-   97	continue
-	write(6,*) 's,t,th: ',s,t,th
-	write(6,*) 'ds,sorig: ',ds,s-ds
-	stop 'error stop track_xi: internal error (3)'
-   98	continue
-	write(6,*) 'id,iel ',id,iel
-	write(6,*) 'tv,t ',tv,t
-	write(6,*) 'dz,w,hd: ',dz,w,hd
-	write(6,*) 'z,lb,lmax ',z,lb,lmax
-	stop 'error stop track_xi: internal error (2)'
-   99	continue
-	write(6,*) 'id,iel ',id,iel
-	write(6,*) 'vel,iflux ',vel,iflux
-	write(6,*) 'dz,w,hd: ',dz,w,hd
-	write(6,*) 'z,lb,lmax ',z,lb,lmax
-	stop 'error stop track_xi: internal error (1)'
 	end
 
 !************************************************************
@@ -653,8 +644,11 @@
 	! sanity checks (may be removed)
 	!---------------------------------------
 
-	if( xi(ia1) /= 0. ) goto 99
-	if( abs(xi(ia2)+xi(ia3)-1.) > eps ) goto 99
+	if( xi(ia1) /= 0. .or. abs(xi(ia2)+xi(ia3)-1.) > eps ) then
+	  write(6,*) ie,in,it,ia1
+	  write(6,*) xi
+	  stop 'error stop track_xi_next_element: erroneous xi sanity'
+	end if
 
 	!---------------------------------------
 	! look for neighboring element
@@ -677,7 +671,12 @@
 	do ii=1,3
 	  if( ieltv(ii,ieb) == ie ) exit
 	end do
-	if( ii > 3 ) goto 99
+	if( ii > 3 ) then
+	  write(6,*) ie,in,it,ia1,ieb
+	  write(6,*) xi
+	  write(6,*) (ieltv(ii,ieb),ii=1,3)
+	  stop 'error stop track_xi_next_element: erroneous ieltv'
+	end if
 
 	!---------------------------------------
 	! copy xi to new elements
@@ -699,12 +698,6 @@
 	! end of routine
 	!---------------------------------------
 
-	return
-   99	continue
-	write(6,*) ie,in,it,ia1,ieb
-	write(6,*) xi
-	write(6,*) (ieltv(ii,ieb),ii=1,3)
-	stop 'error stop track_xi_next_element: erroneous ieltv'
 	end
 
 !************************************************************
@@ -829,65 +822,72 @@
 
 	lmax1 = nlv
 	call lagr_layer_thickness(ie1,lmax1,hl1,htot1,htotz1)
-	if( lb1 > lmax1 ) goto 99
-	if( z1 < 0. .or. z1 > 1. ) goto 99
 
-	hd = 0.
-	do l=1,lb1-1
-	  hd = hd + hl1(l)
-	end do
-	hp1 = hd + hl1(lb1)*z1
-
-	lmax2 = nlv
-	call lagr_layer_thickness(ie2,lmax2,hl2,htot2,htotz2)
-
-	hp2 = hp1 * (htotz2/htotz1)
-
-	if( hp2 < 0 .or. hp2 > htot2 ) goto 99
-
-	hd = 0.
-	do l=1,lmax2
-	  if( hd + hl2(l) >= hp2 ) exit
-	  hd = hd + hl2(l)
-	end do
-
-	lb2 = l
-	if( lb2 > lmax2 ) then	!HACK
-	  z2 = -1.
-	else
-	  z2 = (hp2-hd)/hl2(l)
-	end if
-
-	if( lb2 > lmax2 .and. abs(z1-1.) < eps ) then
-	  lb2 = lmax2
-	  z2 = 0.
-	else if( z2 > 1. .and. abs(z1-1.) < eps ) then
-	  z2 = 1.
-	end if
-	if( z2 > 1. .and. abs(z2-1.) < eps ) z2 = 1.
-
-	if( z2 < 0. .or. z2 > 1. ) goto 99
-	if( lb2 > lmax2 ) goto 99
-	!if( bdebug ) goto 99
-
-	return
-   99	continue
 	ierror = 0
-	write(6,*) 'debug track_new_vert_pos: ',id
-	write(6,*) ie1,lb1,lmax1,z1
-	write(6,*) ie2,lb2,lmax2,z2
-	write(6,*) (hl1(l),l=1,lmax1)
-	write(6,*) (hl2(l),l=1,lmax2)
-	write(6,*) hd
-	write(6,*) hp1,htot1,htotz1
-	write(6,*) hp2,htot2,htotz2
-	if( lb1 > lmax1 .or. lb2 > lmax2 ) ierror = 1
-	if( hp1 < 0. .or. hp1 > htotz1 ) ierror = 2
-	if( hp2 < 0. .or. hp2 > htotz2 ) ierror = 2
-	if( z1 < 0. .or. z1 > 1. ) ierror = 3
-	if( z2 < 0. .or. z2 > 1. ) ierror = 3
-	write(6,*) 'internal error: ',ierror
-	stop 'error stop track_new_vert_pos: internal error'
+
+	if( lb1 > lmax1 .or. z1 < 0. .or. z1 > 1. ) then
+	  ierror = 1
+	else
+	  hd = 0.
+	  do l=1,lb1-1
+	    hd = hd + hl1(l)
+	  end do
+	  hp1 = hd + hl1(lb1)*z1
+
+	  lmax2 = nlv
+	  call lagr_layer_thickness(ie2,lmax2,hl2,htot2,htotz2)
+
+	  hp2 = hp1 * (htotz2/htotz1)
+
+	  if( hp2 < 0 .or. hp2 > htot2 ) then
+	    ierror = 2
+	  else
+	    hd = 0.
+	    do l=1,lmax2
+	      if( hd + hl2(l) >= hp2 ) exit
+	      hd = hd + hl2(l)
+	    end do
+
+	    lb2 = l
+	    if( lb2 > lmax2 ) then	!HACK
+	      z2 = -1.
+	    else
+	      z2 = (hp2-hd)/hl2(l)
+	    end if
+
+	    if( lb2 > lmax2 .and. abs(z1-1.) < eps ) then
+	      lb2 = lmax2
+	      z2 = 0.
+	    else if( z2 > 1. .and. abs(z1-1.) < eps ) then
+	      z2 = 1.
+	    end if
+	    if( z2 > 1. .and. abs(z2-1.) < eps ) z2 = 1.
+
+	    if( z2 < 0. .or. z2 > 1. ) ierror = 3
+	    if( lb2 > lmax2 ) ierror = 3
+	  end if
+	end if
+
+	if( ierror /= 0 ) then
+	  write(6,*) 'debug track_new_vert_pos: ',id
+	  write(6,*) ie1,lb1,lmax1,z1
+	  write(6,*) ie2,lb2,lmax2,z2
+	  if( ierror > 1 ) then
+	    write(6,*) (hl1(l),l=1,lmax1)
+	    write(6,*) (hl2(l),l=1,lmax2)
+	    write(6,*) hd
+	    write(6,*) hp1,htot1,htotz1
+	    write(6,*) hp2,htot2,htotz2
+	  end if
+	  if( lb1 > lmax1 .or. lb2 > lmax2 ) ierror = 1
+	  if( hp1 < 0. .or. hp1 > htotz1 ) ierror = 2
+	  if( hp2 < 0. .or. hp2 > htotz2 ) ierror = 2
+	  if( z1 < 0. .or. z1 > 1. ) ierror = 3
+	  if( z2 < 0. .or. z2 > 1. ) ierror = 3
+	  write(6,*) 'internal error: ',ierror
+	  stop 'error stop track_new_vert_pos: internal error'
+	end if
+
 	end
 
 !************************************************************
@@ -1039,7 +1039,10 @@
 	lmax = nlv
 	call lagr_layer_thickness(iel,lmax,hl,htot,htotz)
 
-	if( lb > lmax ) goto 99
+	if( lb > lmax ) then
+	  write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
+	  stop 'error stop track_xi_get_vertical: no such layer'
+	end if
 
 	hd = hl(lb)
 
@@ -1053,10 +1056,6 @@
 
 	w = w / 12.
 
-	return
-   99	continue
-	write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
-	stop 'error stop track_xi_get_vertical: no such layer'
 	end
 
 !************************************************************

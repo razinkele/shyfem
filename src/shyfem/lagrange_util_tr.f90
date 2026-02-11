@@ -68,22 +68,20 @@
 	 cx=0
 	 b=y2
 	 cy=1
-	 goto 332
 	elseif(x2.eq.x1)then
 	 cx=1
 	 b=-x2
 	 cy=0
-	 goto 332
-	endif	
-	ax=x2-x1
-	ay=y2-y1
-	
-	cy=1/ay
-	cx=1/ax
-        b1=y2/ay
-        b2=x2/ax
-	b=b1-b2
-332	continue
+	else
+	 ax=x2-x1
+	 ay=y2-y1
+
+	 cy=1/ay
+	 cx=1/ax
+         b1=y2/ay
+         b2=x2/ax
+	 b=b1-b2
+	endif
 
 	end
 
@@ -172,31 +170,27 @@
 	 elseif(y1.ge.y2)then
 	  yn=y1-(rr*abs(ay))
 	 endif
-	 goto 222
-	endif
-        
-	a=cy/cx
-	
-	if(a.ge.0)then
-	 if(x2.gt.x1)then
-	  xn=x1+(rr*abs(ax))
-          yn=y1+(rr*abs(ay))
-	 elseif(x1.ge.x2)then
-	  xn=x1-(rr*abs(ax))
-          yn=y1-(rr*abs(ay))
-	 endif
-	elseif(a.lt.0)then
-	 if(x2.gt.x1)then
-	  xn=x1+(rr*abs(ax))
-          yn=y1-(rr*abs(ay))
-	 elseif(x1.ge.x2)then
-	  xn=x1-(rr*abs(ax))
-	  yn=y1+(rr*abs(ay))
-	 endif
+	else
+	 a=cy/cx
+
+	 if(a.ge.0)then
+	  if(x2.gt.x1)then
+	   xn=x1+(rr*abs(ax))
+           yn=y1+(rr*abs(ay))
+	  elseif(x1.ge.x2)then
+	   xn=x1-(rr*abs(ax))
+           yn=y1-(rr*abs(ay))
+	  endif
+	 elseif(a.lt.0)then
+	  if(x2.gt.x1)then
+	   xn=x1+(rr*abs(ax))
+           yn=y1-(rr*abs(ay))
+	  elseif(x1.ge.x2)then
+	   xn=x1-(rr*abs(ax))
+	   yn=y1+(rr*abs(ay))
+	  endif
+	 end if
 	end if
-              
-              
-222	continue
 
 ! calcolo coefficiente angolare del fascio di rette
 
@@ -244,26 +238,23 @@
          ia=cx/cy
          cc=ib/cy
          y=(ia*x)+cc
-         goto 223
         elseif(cy.eq.0)then
 	 x=-(ib/cx)
 	 ia=nx/ny
          cc=b/ny
          y=(ia*x)+cc
-         goto 223
+	else
+	 a=nx/ny
+	 ia=cx/cy
+	 b1=b/ny
+	 b2=ib/cy
+         aa=a-ia
+         ab=b2-b1
+         aab=a*ab
+         x=ab/aa
+         y=(aab/aa)+b1
 	endif
-	a=nx/ny
-	ia=cx/cy
-	b1=b/ny
-	b2=ib/cy	
-        aa=a-ia
-        ab=b2-b1
-        aab=a*ab
-        x=ab/aa
-        y=(aab/aa)+b1
 
-223     continue
-	
 	end
 
 !**********************************************************************
@@ -359,31 +350,30 @@
         if(ny.eq.0)then
 	 xn=x2
 	 if(y2.gt.y1)then
-	  yn=y1+d	 
+	  yn=y1+d
 	 elseif(y2.lt.y1)then
 	  yn=y1-d
 	 end if
-         goto 444 
-	end if 
-	a=nx/ny
-        if(a.ge.0)then
-         if(x2.gt.x1)then
-          xn=((d/dd)*(abs(x2-x1)))+x1
-          yn=((d/dd)*(abs(y2-y1)))+y1
-         elseif(x1.ge.x2)then
-          xn=x1-((d/dd)*(abs(x2-x1)))
-          yn=y1-((d/dd)*(abs(y2-y1)))
-         endif
-        elseif(a.lt.0)then
-         if(x2.gt.x1)then
-	  xn=((d/dd)*(abs(x2-x1)))+x1
-          yn=y1-((d/dd)*(abs(y2-y1)))
-         elseif(x1.ge.x2)then
-          xn=x1-((d/dd)*(abs(x2-x1)))
-          yn=((d/dd)*(abs(y2-y1)))+y1
-         endif
-        end if
-444     continue	
+	else
+	 a=nx/ny
+         if(a.ge.0)then
+          if(x2.gt.x1)then
+           xn=((d/dd)*(abs(x2-x1)))+x1
+           yn=((d/dd)*(abs(y2-y1)))+y1
+          elseif(x1.ge.x2)then
+           xn=x1-((d/dd)*(abs(x2-x1)))
+           yn=y1-((d/dd)*(abs(y2-y1)))
+          endif
+         elseif(a.lt.0)then
+          if(x2.gt.x1)then
+	   xn=((d/dd)*(abs(x2-x1)))+x1
+           yn=y1-((d/dd)*(abs(y2-y1)))
+          elseif(x1.ge.x2)then
+           xn=x1-((d/dd)*(abs(x2-x1)))
+           yn=((d/dd)*(abs(y2-y1)))+y1
+          endif
+         end if
+	end if
 	end
 
 !**********************************************************************

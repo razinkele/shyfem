@@ -691,6 +691,7 @@
 	real am,az
 	real hz,ri
 
+	logical berror
 	integer, save :: icall = 0
 	real,save,allocatable :: dist(:)
         real, parameter :: high = 1.e+30
@@ -705,18 +706,28 @@
 	if( icall == 0 ) then
 	  az = getpar('azpar')
 	  am = getpar('ampar')
+	  berror = .false.
 	  if( az >= 0.5 .and. am >= 0.5 ) then
 	    if( az == am ) then	!unconditionally stable
 	      icall = -1
 	    else
-	      goto 99
+	      berror = .true.
 	    end if
 	  else if( az == 0. .and. am == 1. ) then
 	    !ok
 	  else if( az == 1. .and. am == 0. ) then
 	    !ok
 	  else
-	    goto 99
+	    berror = .true.
+	  end if
+	  if( berror ) then
+	    write(6,*) 'azpar,ampar: ',az,am
+	    write(6,*) 'this combination of parameters is not allowed'
+	    write(6,*) 'for explicit runs please use'
+	    write(6,*) '  either az=1 and am=0 or az=0 and am=1'
+	    write(6,*) 'for (semi-)implicit runs please use'
+	    write(6,*) '  az==am and az>=0.5'
+	    stop 'error stop gravity_wave_stability: az and am'
 	  end if
 	  if( icall < 0 ) return
 	  icall = 1
@@ -752,15 +763,6 @@
 	!write(6,*) nel,gindex,1./gindex
 	!stop
 
-	return
-   99	continue
-	write(6,*) 'azpar,ampar: ',az,am
-	write(6,*) 'this combination of parameters is not allowed'
-	write(6,*) 'for explicit runs please use'
-	write(6,*) '  either az=1 and am=0 or az=0 and am=1'
-	write(6,*) 'for (semi-)implicit runs please use'
-	write(6,*) '  az==am and az>=0.5'
-	stop 'error stop gravity_wave_stability: az and am'
 	end
 
 !*****************************************************************
