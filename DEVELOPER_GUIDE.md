@@ -1,7 +1,7 @@
 # SHYFEM Developer Guide
 
 **Project:** SHYFEM (System of HydroDYnamic Finite Element Modules) v8.1.1
-**Last Updated:** 2026-02-05
+**Last Updated:** 2026-02-11
 
 This guide provides a comprehensive overview of the SHYFEM codebase for developers who want to understand, maintain, or extend the model.
 
@@ -509,12 +509,12 @@ call myprocess_run(dt) ! In time loop
 
 ### 8.3 Adding Runtime Parameters
 
-Parameters are read via `getpar()` from the STR file:
+Parameters are read via `getpar()` from the STR file. `getpar` and `dgetpar` are module functions in `module para`:
 
 ```fortran
-real :: myparam
-real :: getpar
+use para
 
+real :: myparam
 myparam = getpar('myparam')  ! Read from STR section
 ```
 
@@ -570,6 +570,16 @@ call shympi_check_3d_elem_r(array, 'array_name')
       real, intent(in) :: a, b
       real, intent(out) :: result
   ```
+- **Modern variable initialization** (not separate `save`/`data` statements):
+  ```fortran
+  integer, save :: icall = 0
+  real, save :: cached_param = 0.0
+  ```
+- **Module functions** for `getpar`/`dgetpar` (use `use para`, not `real getpar`):
+  ```fortran
+  use para
+  value = getpar('param_name')
+  ```
 - **Error checking** on allocations:
   ```fortran
   allocate(array(n), stat=ierr)
@@ -584,6 +594,8 @@ call shympi_check_3d_elem_r(array, 'array_name')
       return
   end if
   ```
+- **No GOTO statements** -- use `do/exit/cycle`, `if/then/else`, or `select case`
+- **`.PHONY` declarations** in all Makefiles for non-file targets
 
 ### 10.2 Naming Conventions
 
@@ -642,9 +654,14 @@ call shympi_check_3d_elem_r(array, 'array_name')
 ### 11.4 Code Quality (Phase 4)
 
 - **Physical constants module:** Centralized `pi`, `grav`, etc.
-- **`newunit=` for file I/O:** 50 hardcoded unit numbers replaced
+- **`newunit=` for file I/O:** 50+ hardcoded unit numbers replaced
 - **Debug artifact cleanup:** ~22 dead `bdebug` assignments removed
 - **OpenMP in hydrodynamics:** `hydro_zeta` now parallelized
+- **`getpar`/`dgetpar` module interface:** Moved into `module para`; 163 caller files updated to use module instead of external declarations
+- **GOTO removal:** 87 GOTOs eliminated from 14 files using structured control flow (`do/exit`, `if/else`, `select case`)
+- **`.PHONY` in Makefiles:** Added to 68 Makefiles across the project
+- **Save/data modernization:** 246 three-line `save`/`data` patterns converted to single-line initializers across 36 files
+- **Build cleanup:** Removed DOS/Lahey/g77 compiler remnants from `Rules.make` and obsolete Makefiles
 
 ---
 
@@ -654,7 +671,7 @@ call shympi_check_3d_elem_r(array, 'array_name')
 
 ```fortran
 ! Get runtime parameter
-real :: getpar
+use para
 value = getpar('param_name')
 
 ! Loop over local elements (MPI-safe)
@@ -716,6 +733,7 @@ if (bdebug) write(6,*) 'routine_name: entering'
 | Ghost exchange | `src/utils/shympi/mpi_ghost.f90` |
 | Mesh partitioning | `src/utils/shympi/shyparts_metis.f90` |
 | Physical constants | `src/shyfem/mod_physical_constants.f90` |
+| Runtime parameters | `src/utils/generic/para.f90` (module `para`: `getpar`, `dgetpar`) |
 
 ### By Variable
 
