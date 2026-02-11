@@ -199,7 +199,6 @@
 	double precision wacu_aux(3)
 	double precision wacu,wacu_max
 
-	real getpar
 
 !-----------------------------------------------------------------
 ! initialization
@@ -503,7 +502,6 @@
 	real v1v(nkn)
 	real v2v(nkn)
 
-        real getpar
 
         real parmax
         save parmax

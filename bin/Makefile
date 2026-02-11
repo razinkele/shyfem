@@ -23,6 +23,9 @@ SPECIAL = Makefile CR
 
 #----------------------------------------------------------
 
+.PHONY: all fem nothing links clean cleanall cleantotal cleanlinks \
+	save zip list depend exe noexe femsave update diffs-remote diffs
+
 all: fem
 fem: nothing
 nothing:

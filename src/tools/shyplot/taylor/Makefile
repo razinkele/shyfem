@@ -38,6 +38,9 @@ ALLEXES    = taylor_test taylor
 
 #----------------
 
+.PHONY: fem all data cleanall clean cleanobj cleanexe cleanvar cleanzip \
+	list rcs save zip strip
+
 fem: all
 
 all: $(EXES) data

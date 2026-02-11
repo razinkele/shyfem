@@ -98,7 +98,6 @@
         integer icsave
 	real lw
 	real pmin,pmax,flag
-	real getpar
 
 	integer ir
 
@@ -180,7 +179,6 @@
         character*(*) title
 
         real pmin,pmax,flag
-        real getpar
 
         call qstart
         call annotes(title)

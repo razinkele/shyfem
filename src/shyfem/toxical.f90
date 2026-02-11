@@ -81,6 +81,7 @@
 	use basin
 	use mkonst
 
+	use para
 	implicit none
 
 	integer, parameter :: nlvdim = 1
@@ -119,7 +120,6 @@
 	real dtt,dttday
 	real area,vol
 	real oxysat
-	real getpar
 	integer iround
 	integer ieint,ipint
 	integer nvar
@@ -399,6 +399,7 @@
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
 
 ! parameter
@@ -413,7 +414,6 @@
 	double precision dtime
 	double precision rr
 ! function
-	real getpar
 	logical has_output_d,is_over_output_d,next_output_d
 ! save
         double precision, save :: da_out(4)

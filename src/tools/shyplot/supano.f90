@@ -538,6 +538,7 @@
 
 !  creates legend (north wheel and scale bar)
 
+	use para
 	implicit none
 
 	real x0,y0,x1,y1	!dimension of legend on plot
@@ -555,7 +556,6 @@
 
 	integer iround,istell
 	real rnext
-	real getpar
 
 	logical bblank
 
@@ -655,6 +655,7 @@
 
 	use color
 
+	use para
 	implicit none
 
 	character*80 line
@@ -665,7 +666,6 @@
 	real x0,y0,x1,y1
 
 	integer iround
-	real getpar
 	logical inboxdim
 
 	if( .not. inboxdim('col',x0,y0,x1,y1) ) then
@@ -698,6 +698,7 @@
 
 	use plot_fonts
 
+	use para
 	implicit none
 
 	character*(*) title
@@ -744,7 +745,6 @@
 	logical bdebug,blog
 	integer iround,isoget,ialfa,ideci
 	real getcolval
-	real getpar
 
 	call qcomm('Plotting colorbar')
         call qfont('Times-Roman')
@@ -965,9 +965,7 @@
 
         implicit none
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .ne. 0 ) return
 	icall = 1
@@ -1207,9 +1205,7 @@
 
 	integer getisec
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	call legini
 	if( nlegdi .ne. legdim ) call legerr
@@ -1357,6 +1353,7 @@
 
 !  plots wind vector
 
+        use para
         implicit none
 
         real x,y
@@ -1377,20 +1374,12 @@
 
 	integer, save :: idwind = 0
 
-        real array(ndim)
-        save array
-        real xwind,ywind,lwwind,scwind,xtwind,ytwind
-        save xwind,ywind,lwwind,scwind,xtwind,ytwind
-        integer iwtype,stwind
-        save iwtype,stwind
-        character*40 wtext,wunit
-        save wtext,wunit
+        real, save :: array(ndim)
+        real, save :: xwind,ywind,lwwind,scwind,xtwind,ytwind
+        integer, save :: iwtype,stwind
+        character*40, save :: wtext,wunit
 
-	real getpar
-
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 	if( icall .eq. -1 ) return
 
@@ -1501,6 +1490,7 @@
 
 !  plots date legend
 
+        use para
         implicit none
 
         integer it,iday,ihour
@@ -1509,20 +1499,14 @@
         character*25 line
         character*3 name
 
-        real xdate,ydate
-        save xdate,ydate
-        integer sdate,idate
-        save sdate,idate
+        real, save :: xdate,ydate
+        integer, save :: sdate,idate
 
 	real, save :: tzshow
 	integer itl
 
-        integer icall
-        save icall
-        data icall /0/
+        integer, save :: icall = 0
 
-	real getpar
-	double precision dgetpar
 
 	if( icall .eq. -1 ) return
 
@@ -1615,6 +1599,7 @@
 
 	use mod_bash
 
+	use para
 	implicit none
 
 	character*(*) title,unit
@@ -1638,7 +1623,6 @@
 
 	integer iround,istell,ialfa
 	real rnext
-	real getpar
 
 	logical bblank,bdebug
 
@@ -1721,6 +1705,7 @@
 !  ivel = 3      wind
 !  ivel = 4      waves
 
+	use para
 	implicit none
 
 	integer ivel
@@ -1734,7 +1719,6 @@
 	logical bdebug
 
 	integer iround
-	real getpar
 	logical inboxdim
 
 	bdebug = .false.
@@ -1841,6 +1825,7 @@
 
 !  gets dimension of box
 
+	use para
 	implicit none
 
 	character*(*) name
@@ -1848,7 +1833,6 @@
 
 	character*10 x0var,y0var,x1var,y1var
 
-	real getpar
 
 	x0var = 'x0' // name
 	y0var = 'y0' // name
@@ -2149,9 +2133,7 @@
 	real x,y,dx,dy
 	real x0,y0,x1,y1
 
-	integer ijq(2,2)	!qudrante
-	save ijq
-	data ijq /1,2,4,3/
+	integer, save :: ijq(2,2) = reshape((/1,2,4,3/),(/2,2/))	!qudrante
 
 	bwrite = bbverb
 	bwrite = .false.

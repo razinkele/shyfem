@@ -244,7 +244,6 @@
 	implicit none
 
         integer levdbg
-        real getpar
 
         levdbg = nint(getpar('levdbg'))
 
@@ -431,7 +430,6 @@
 	real b,c
 	real dt,az,azt,azpar
 
-	real getpar
 	integer ipext,ieext
 
 	integer, save :: netot
@@ -710,7 +708,7 @@
 	real, allocatable :: vf(:,:)
 	real, allocatable :: va(:,:)
 
-	real volnode,areanode,getpar
+	real volnode, areanode
 
 	integer, save :: iuinfo = 0
 

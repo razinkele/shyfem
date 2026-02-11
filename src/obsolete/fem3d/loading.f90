@@ -91,7 +91,6 @@
 	real fact,rlfact
 	real load,vol
 
-	real getpar
 
 ! loading is kg/day
 !

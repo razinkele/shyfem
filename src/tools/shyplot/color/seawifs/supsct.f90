@@ -43,9 +43,7 @@
 
 	include 'vsect.h'
 
-	logical binit
-	save binit
-	data binit /.false./
+	logical, save :: binit = .false.
 
 	if( binit ) return
 
@@ -301,7 +299,6 @@
 	real col(ndim),riso(ndim-1)
 
 	real rnexta,rnext
-	real getpar
 
 	bdebug = .false.
 

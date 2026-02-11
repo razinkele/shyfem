@@ -181,6 +181,7 @@
         use mod_depth
         use mod_geom
         use mod_hydro_plot
+        use para
 
 	implicit none
 
@@ -251,8 +252,6 @@
 	character*80 line
         logical bhasbasin,bcolplot
 	integer isphe
-        real getpar
-        double precision dgetpar
 	integer id,idold,npr,nvar,ftype
 
 	integer isub
@@ -787,6 +786,7 @@
         use mod_hydro_vel
         use mod_hydro_print
 
+        use para
 	implicit none
 
 	real, allocatable :: cv2(:)
@@ -830,7 +830,6 @@
 	integer iapini
 	integer ifem_open_file
 	integer getisec
-	real getpar
 
 !--------------------------------------------------------------
 ! initialize everything
@@ -1201,6 +1200,7 @@
         use mod_geom
         use mod_hydro_plot
 
+        use para
 	implicit none
 
 	logical bhasbasin,bregdata,bvect,bvel
@@ -1234,7 +1234,6 @@
         character*80, allocatable :: strings(:)
 
 	integer getisec
-	real getpar
 
         !--------------------------------------------------------------
         ! set command line parameters
@@ -1717,11 +1716,11 @@
 
 	use plotutil
 
+        use para
         implicit none
 
         integer icolor,icoltab
 	real lgrcol
-        real getpar
 	logical has_color_table
 
         call colsetup

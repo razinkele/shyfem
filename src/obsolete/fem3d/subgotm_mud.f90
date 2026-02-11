@@ -62,7 +62,7 @@
 
 	implicit none
 
-	real getpar,areaele
+	real areaele
 
 	integer iturb
 	save iturb
@@ -124,7 +124,6 @@
 	real diftur,vistur
 	real a,b,alpha,beta
 
-	real getpar
 
 	integer icall
 	save icall
@@ -285,7 +284,7 @@
 
 	double precision tmp(nlvdim)
 	real dtreal
-	real getpar,areaele
+	real areaele
 	real*8 rhop,tau0
 
 
@@ -1119,7 +1118,7 @@
 
 
 	integer k,ie,ii,n,nlev,imud
-	real aj,taubot,getpar
+	real aj, taubot
 
 	real areaele
 

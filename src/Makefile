@@ -13,6 +13,8 @@ SUBDIRS = external utils contrib shyfem tools
 
 #------------------------------------------------------------------------
 
+.PHONY: default fem shyfem test regress status list libmod depend clean cleanall save zip nothing
+
 default: shyfem
 
 fem: shyfem

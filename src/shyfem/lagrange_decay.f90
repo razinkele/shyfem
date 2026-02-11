@@ -52,15 +52,13 @@
 
 	use femtime
 
+        use para
         implicit none
         
         integer n
         
-        real getpar
         
-        integer lcall
-        save lcall
-        data lcall / 0 /
+        integer, save :: lcall = 0
 
         if( lcall .lt. 0 ) return
 
@@ -95,7 +93,15 @@
 
 	real ggrand
 
-        if( ldecay .le. 0. ) return !FIXME
+	integer, save :: iwarn1 = 0
+
+        if( ldecay .le. 0. ) then
+          if( iwarn1 == 0 ) then
+            write(6,*) 'lagrange_decay: ldecay <= 0, decay disabled'
+            iwarn1 = 1
+          end if
+          return
+        end if
 
         do i=1,nbdy
           age=it-lgr_ar(i)%init%time
@@ -133,7 +139,15 @@
 
 	real ggrand
 
-        if( tdecay .le. 0. ) return !FIXME
+	integer, save :: iwarn2 = 0
+
+        if( tdecay .le. 0. ) then
+          if( iwarn2 == 0 ) then
+            write(6,*) 'lagr_decay: tdecay <= 0, decay disabled'
+            iwarn2 = 1
+          end if
+          return
+        end if
 
         dt=it-lgr_ar(n)%init%time
         tdd=exp(dt/tdecay)
@@ -160,9 +174,7 @@
 
         real time,a,b,c,di
 
-        real m 
-        save m
-        data m / 150000 /	!mg/l
+        real, save :: m = 150000	!mg/l
 
         if(it.le.lgr_ar(i)%init%time) return
 
@@ -185,14 +197,10 @@
 
         implicit none
 
-	integer icount
-	data icount /0/
-	save icount
+	integer, save :: icount = 0
 
 	integer i
-	integer icall
-	data icall /0/
-	save icall	
+	integer, save :: icall = 0
 
 	real t	    !time of simulation
 	real ts	    !start time of particle

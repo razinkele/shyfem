@@ -93,21 +93,14 @@
 	real zp,zold,znew
 	integer ifileo
 	integer year,date,time
-	character*256 line
-
-	integer iuin,iuout,itp,np,iep
-	double precision xdp,ydp
+	integer, save :: iuin,iuout,itp,np,iep
+	double precision, save :: xdp,ydp
 	double precision dtime,ddt
-	real xp,yp
+	real, save :: xp,yp
 	real uv(4)
-	save iuin,iuout,itp,np,iep
-	save xp,yp
-	save xdp,ydp
-	save line
+	character*256, save :: line
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .eq. -1 ) return
 
@@ -208,15 +201,13 @@
 	logical bnearpoint
 	logical bnodry
 	real zold,znew
-	integer iepold,k
-	real xold,yold
-	save xold,yold,iepold
+	integer k
+	real, save :: xold,yold
+	integer, save :: iepold
 
 	integer get_nearest_point
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 ! bnearpoint	if true find closest point and use this value
 ! bintmiss	if true use last good value
@@ -381,9 +372,7 @@
 	!parameter (usedts=.true.)
 	parameter (usedts=.false.)
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( usedts ) then
 	  read(iuin,*,iostat=ierr) year,month,day,hour,min,sec,np,xdp,ydp

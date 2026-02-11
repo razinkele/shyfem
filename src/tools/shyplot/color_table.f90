@@ -99,7 +99,6 @@
 	double precision dvalue
 
 	integer nrdpar
-	real getpar
 
 	call colini
 

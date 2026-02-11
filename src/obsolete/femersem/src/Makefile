@@ -8,9 +8,8 @@ FEMBIN    = $(FEMDIR)/fembin
 
 include ../../Rules.make
 
-ifeq ($(FORTRAN_COMPILER),GNU_G77)
-  FORTRAN_COMPILER=G77
-endif
+.PHONY: fem bfm all create_dirs distclean clean cleanall depend
+
 ifeq ($(FORTRAN_COMPILER),GNU_GFORTRAN)
   FORTRAN_COMPILER=GFORTRAN
 endif

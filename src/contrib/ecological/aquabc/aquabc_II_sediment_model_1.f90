@@ -495,6 +495,7 @@ end subroutine INIT_BSED_MODEL_CONSTANTS
 !*******************************************************************
 
 subroutine SEDIMENT_MODEL_1 &
+           use para
            (nkn,INIT_SED_STATE_VARS, SED_DEPTHS , SED_POROSITIES,  &
             SED_DENSITIES          , PART_MIXING_COEFFS         ,  &
             SED_DIFFUSIONS         , SURF_MIXLEN, SED_BURRIALS  ,  &
@@ -867,7 +868,6 @@ subroutine SEDIMENT_MODEL_1 &
     integer :: CONSIDER_CO2_REARATION
     !End of new variables for DIC and ALK
 
-    real getpar    !function to getn isedi value
     integer isedi  !indicator if sediment transport model is used
 
     real(kind = DBL_PREC), dimension(nkn,NUM_SED_LAYERS) :: PH_CORR_DOC_MIN

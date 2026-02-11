@@ -594,17 +594,14 @@
            Re=e(1)
         endif
 
-!FIXME not defined: h(j-1), e(t-1), B(t-1,j-1), ...
-! please run compilation with compiler flag -Wdo-subscript
-
-        do j= 1, ic
+        do j= 2, ic
                                                    
           if (angolo.ge.h(j-1).and.angolo.lt.h(j).or.     &
      &  angolo.gt.h(j-1).and.angolo.le.h(j))then    
          f_alpha=(angolo-h(j-1))/(h(j)-h(j-1))  
          
-        do t= 1, ir
- 
+        do t= 2, ir
+
           if (Re.ge.e(t-1).and.Re.lt.e(t).or. &
      &  Re.gt.e(t-1).and.Re.le.e(t))then
         f_Re=(Re-e(t-1))/(e(t)-e(t-1))
@@ -659,6 +656,7 @@
         real segno, cl_alpha, ka, kf
         real, save :: al(4000),cl_fin(4000)
         integer imem, imem2
+        logical found
         real foo, foo1, A_amp, A_med
         real rapp_incr,delta_alpha
         real  tau_omega_6
@@ -788,13 +786,10 @@
         cls(i)=segno*Cl_st      
 !	linear lift coefficient 
         cl0s(i)=cl_alpha*al(i)
-        if(i.eq.0) then 	!FIXME i is never 0, arrays at i-1 not defined
+        if(i.eq.1) then
                 cld(i)=cls(i)
                 cl_vort(i)=0
                 cl_shed(i)=0
-                if(abs(cld(i)).gt.100)then
-                write(6,*)'check A',cld(i),cld(i-1)
-                endif                    
         else
                 if(abs(al(i)).gt.abs(al(i-1)))then !increasing alpha
                  reattached=0        
@@ -907,84 +902,93 @@
                 segno=-1
                 end if
                  
+           found = .false.
            if(al_in.ge.(A_med+A_amp))then
                 foo=clmax
-                goto 108 
+                found = .true.
            else if (al_in.le.(A_med-A_amp))then
                 foo=clmin
-                goto 108 
+                found = .true.
            else if(al_in.ge.0)then
-!-----------------------------------------        
-! UPSTROKE: 
+!-----------------------------------------
+! UPSTROKE:
 !-----------------------------------------
              if(al_in.ge.al_in0)then
-                
-               do i=nt_in, (nt_in+(nt-nt_in)/2) 
+
+               do i=nt_in, (nt_in+(nt-nt_in)/2)
                     if(al(i-1).le.al_in.and.al(i).gt.al_in)then
         foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
         foo=foo1+cl_fin(i-1)
-                    goto 108
+                    found = .true.
+                    exit
                     end if
                 end do
-                do i=(nt_in+(nt-nt_in)*3/4), nt 
+                if (.not. found) then
+                do i=(nt_in+(nt-nt_in)*3/4), nt
                     if(al(i-1).le.al_in.and.al(i).gt.al_in)then
         foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
         foo=foo1+cl_fin(i-1)
-                    goto 108
+                    found = .true.
+                    exit
                    end if
                 end do
-!-----------------------------------------        
-! DOWNSTROKE: 
+                end if
+!-----------------------------------------
+! DOWNSTROKE:
 !-----------------------------------------
              else if(al_in.lt.al_in0)then
 
                do i=(nt_in+(nt-nt_in)/4), (nt_in+(nt-nt_in)*3/4)
-                        
+
                   if(al(i-1).ge.al_in.and.al(i).lt.al_in)then
         foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
         foo=foo1+cl_fin(i-1)
-                  goto 108
+                  found = .true.
+                  exit
                   end if
                end do
              end if !relative to upstroke or downstroke
           elseif(al_in.lt.0)then
-!-----------------------------------------        
-! UPSTROKE: 
-!-----------------------------------------	        
+!-----------------------------------------
+! UPSTROKE:
+!-----------------------------------------
                if(al_in.le.al_in0)then
 
                 do i=(nt_in+(nt-nt_in)/2),nt
                     if(al(i).le.al_in.and.al(i-1).gt.al_in)then
         foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
         foo=foo1+cl_fin(i-1)
-                   goto 108
-                   end if                          
-                  end do       
-!-----------------------------------------        
-! DOWNSTROKE: 
-!-----------------------------------------      
+                   found = .true.
+                   exit
+                   end if
+                  end do
+!-----------------------------------------
+! DOWNSTROKE:
+!-----------------------------------------
                elseif(al_in.gt.al_in0)then
                    do i=(nt_in+(nt-nt_in)/2), nt
-                 
+
                     if(al(i).gt.al_in.and.al(i-1).le.al_in)then
         foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
         foo=foo1+cl_fin(i-1)
-                    goto 108
-                    end if                              
-                   end do                                 
-                        
-                   do i=nt_in, (nt_in+(nt-nt_in)/2)
-                   
-                    if(al(i).gt.al_in.and.al(i-1).le.al_in)then
-        foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
-        foo=foo1+cl_fin(i-1)
-                    goto 108
+                    found = .true.
+                    exit
                     end if
-                  end do                                
-!108     continue   !mic                          
-               end if !relative to upstroke or downstroke   
-          end if      !relative to al_in>0 or <0
-108     continue   !mic            
+                   end do
+
+                   if (.not. found) then
+                   do i=nt_in, (nt_in+(nt-nt_in)/2)
+
+                    if(al(i).gt.al_in.and.al(i-1).le.al_in)then
+        foo1=(cl_fin(i)-cl_fin(i-1))/(al(i)-al(i-1))*(al_in-al(i-1))
+        foo=foo1+cl_fin(i-1)
+                    found = .true.
+                    exit
+                    end if
+                  end do
+                  end if
+               end if !relative to upstroke or downstroke
+          end if      !relative to al_in>0 or <0            
         if(abs(foo).gt.100)then  
         write(6,*)'ERRORE abs(FOO)>100'
         foo=0.1

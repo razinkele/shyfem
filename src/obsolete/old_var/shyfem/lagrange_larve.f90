@@ -51,7 +51,6 @@
         double precision xx,yy
         double precision xi(3)
 
-	real getpar
 
 	integer icall
 	save icall

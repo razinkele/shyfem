@@ -95,9 +95,9 @@
 
         use mod_bstress
 
+        use para
         implicit none
 
-        real 		:: getpar             !get parameter function
         logical 	:: has_output_d
         integer 	:: id,nvar
 	integer		:: isedi

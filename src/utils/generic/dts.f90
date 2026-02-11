@@ -431,9 +431,7 @@
 	integer week,month,year
 	parameter (week=7*86400,month=61*43200,year=365*86400)
 
-	integer facts(7)
-	save facts
-	data facts /1,60,3600,86400,week,month,year/
+	integer, save :: facts(7) = (/1,60,3600,86400,week,month,year/)
 
 	integer n,i,m,s,j
 	integer num,fact,sign
@@ -1045,9 +1043,8 @@
 
         logical bises
 
-        integer jmm(0:12)
-        save jmm
-        data jmm /0,31,59,90,120,151,181,212,243,273,304,334,365/
+        integer, save :: jmm(0:12) = &
+     &          (/0,31,59,90,120,151,181,212,243,273,304,334,365/)
 
         jdmon=jmm(month)
 
@@ -1068,9 +1065,8 @@
 
         logical bises
 
-        integer imm(0:12)
-        save imm
-        data imm /0,31,28,31,30,31,30,31,31,30,31,30,31/
+        integer, save :: imm(0:12) = &
+     &          (/0,31,28,31,30,31,30,31,31,30,31,30,31/)
 
         idmon=imm(month)
 
@@ -1136,17 +1132,15 @@
         integer lang            !1=it  2=de  else=en
         parameter (lang=0)
 
-        character*3 months_en(12),months_it(12),months_de(12)
-        save months_en,months_it,months_de
-        data months_en                                   &
-     &          /'Jan','Feb','Mar','Apr','May','Jun'     &
-     &          ,'Jul','Aug','Sep','Oct','Nov','Dec'/
-        data months_it                                   &
-     &          /'Gen','Feb','Mar','Apr','Mag','Giu'     &
-     &          ,'Lug','Ago','Set','Ott','Nov','Dic'/
-        data months_de                                   &
-     &          /'Jan','Feb','Mar','Apr','Mai','Jun'     &
-     &          ,'Jul','Aug','Sep','Okt','Nov','Dez'/
+        character*3, save :: months_en(12) =                &
+     &          (/'Jan','Feb','Mar','Apr','May','Jun'    &
+     &          ,'Jul','Aug','Sep','Oct','Nov','Dec'/)
+        character*3, save :: months_it(12) =             &
+     &          (/'Gen','Feb','Mar','Apr','Mag','Giu'    &
+     &          ,'Lug','Ago','Set','Ott','Nov','Dic'/)
+        character*3, save :: months_de(12) =             &
+     &          (/'Jan','Feb','Mar','Apr','Mai','Jun'    &
+     &          ,'Jul','Aug','Sep','Okt','Nov','Dez'/)
 
         if( im .lt. 1 .or. im .gt. 12 ) then
           write(6,*) 'error in month : ',im
@@ -1177,11 +1171,9 @@
         character*3 name
         integer i
 
-        character*3 months(12)
-        save months
-        data months                                      &
-     &          /'jan','feb','mar','apr','may','jun'     &
-     &          ,'jul','aug','sep','oct','nov','dec'/
+        character*3, save :: months(12) =                  &
+     &          (/'jan','feb','mar','apr','may','jun'    &
+     &          ,'jul','aug','sep','oct','nov','dec'/)
 
         name = month_name
         call make_lower_case(name)

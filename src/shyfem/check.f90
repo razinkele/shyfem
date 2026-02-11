@@ -247,10 +247,10 @@
 
 ! checks arrays for sanity
 
+	use para
 	implicit none
 
         integer levdbg
-        real getpar
 
         levdbg = nint(getpar('levdbg'))
 
@@ -437,16 +437,13 @@
 	real b,c
 	real dt,az,azt,azpar
 
-	real getpar
 	integer ipext,ieext
 	integer ierr
 
 	integer, save :: netot
 	integer, save, allocatable :: kinf(:,:)
 
-	integer kmem
-	save kmem
-	data kmem / 0 /
+	integer, save :: kmem = 0
 
 	if( k == 0 ) then
 	  allocate(kinf(2,ngr),stat=ierr)
@@ -707,6 +704,7 @@
 	use mkonst
 	use mod_info_output
 
+	use para
 	implicit none
 
 	logical berror,bdebug
@@ -729,7 +727,7 @@
 	real, allocatable :: vf(:,:)
 	real, allocatable :: va(:,:)
 
-	real volnode,areanode,getpar
+	real volnode, areanode
 
 	integer, save :: iuinfo = 0
 
@@ -1014,9 +1012,8 @@
 
 	implicit none
 
-	integer icrc,iucrc
-	save iucrc
-	data iucrc /0/		! unit
+	integer icrc
+	integer, save :: iucrc = 0	! unit
 
 	integer ifemop
 

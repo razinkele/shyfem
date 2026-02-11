@@ -155,7 +155,6 @@
 	double precision dtime
 
 	integer it
-	real getpar
 
 	integer, save :: icall = 0
 
@@ -361,7 +360,6 @@
 
 	integer ie,ii,itype
 	real hm,h,hlido,hmala,hchio
-	real getpar
 
 
 	include 'param.h'
@@ -1070,7 +1068,6 @@
 	real dt
 	integer nbnds,itybnd
 	integer ifemopa
-	real getpar
 
 	logical bfill
 	integer ndim
@@ -1414,7 +1411,6 @@
 	real resmed,resstd
 	real v1v(nkn)
 
-	real getpar
 
 	integer iu,it0,ndata
 	save iu,it0,ndata
@@ -1818,7 +1814,6 @@
         double precision dtime
 
         real volnode,depnode
-	double precision dgetpar
         logical next_output_d,is_in_output_d
 
 	double precision, save :: da_out(4)
@@ -2530,7 +2525,6 @@
 	character*80 file
 
 	integer ipint
-	real getpar
 
 	save ct0
 
@@ -3068,7 +3062,6 @@
 	real caux(nlvdi)
 	save it0
 
-	real getpar
 
 	integer icall
 	save icall
@@ -3929,7 +3922,6 @@
 
 	integer, save :: icall = 0
 
-	real getpar
 	integer ifemop
 
 	binit = .false.

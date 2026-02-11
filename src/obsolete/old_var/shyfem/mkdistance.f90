@@ -100,7 +100,6 @@
 
 	integer iapini,ipint,ipext
         integer nbnds,itybnd,nkbnds,kbnds
-        real getpar
 
 !-----------------------------------------------------------------
 ! get parameters

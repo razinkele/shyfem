@@ -113,10 +113,10 @@
         use basin
         use coordinates, only : iproj
 
+        use para
         implicit none
 
         integer  	 :: isphe      !if = 1  coordinates are in spherical system
-        double precision :: dgetpar
 
         zeqv = 0.
 	vvk  = 0.d0

@@ -477,8 +477,6 @@
 	double precision atime0,atime
 
 	integer ifemop,ipext
-	real getpar
-	double precision dgetpar
 	logical has_output_d,next_output_d,is_over_output_d
 
         double precision, save :: trm,trs,trt,trc,trsc
@@ -726,7 +724,6 @@
 
 	integer ifemop,ipext
 	logical has_output_d,next_output_d,is_over_output_d
-	double precision dgetpar
 
 !-----------------------------------------------------------------
 ! start of code

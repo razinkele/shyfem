@@ -309,7 +309,6 @@
 	integer k,l
 	real vistur,diftur
 
-	real getpar
 
 !------------------------------------------------------------------
 ! get parameters
@@ -442,7 +441,6 @@
 	integer nsigma,nreg
 	real hsigma,dzreg
 
-	real getpar
 
 	dzreg = getpar('dzreg')
 	call get_sigma(nsigma,hsigma)
@@ -494,7 +492,6 @@
 	real dzreg,hl,fact,hsigma
 	real hbot,htop
 
-	real getpar
 
 	write(6,*) 'adjust layer structure'
 
@@ -1042,7 +1039,6 @@
 	!double precision hm
 
 	integer ieext
-	real getpar
 
 	bwrite = .false.
 
@@ -1229,7 +1225,6 @@
 	integer isphe
 	real yc,ym,y,ymin,ymax,dlat
 	real aux1,aux2,rad
-	real getpar
 	real, dimension(nkn)	:: yaux
 
 ! if coordinates are cartesian (isphe=0) then icor determines 
@@ -1675,7 +1670,6 @@
 	implicit none
 
 	integer isphe
-	real getpar
 
 	isphe = nint(getpar('isphe'))
 	call set_coords_ev(isphe)

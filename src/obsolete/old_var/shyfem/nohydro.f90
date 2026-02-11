@@ -66,7 +66,6 @@
 	implicit none
 
 	integer inohyd
-	real getpar
 
 	inohyd = nint(getpar('inohyd'))
 
@@ -124,7 +123,6 @@
         integer iw,inhadj
         real aq
         real qvmax
-        real getpar
 
 !        non-hydrostatic semi-implicit weight
         aq = getpar('aqpar')
@@ -255,7 +253,6 @@
         real wgam(nlv),wsol(nlv)
         real wl(0:nlv,3)
         real hdn,hdpn,hdo,hdpo
-        real getpar
 
 !--------------------------------------------------------
 ! initialize parameters	
@@ -548,7 +545,6 @@
         real qpo,qpn
         real b,c
         real aq,aqt
-        real getpar
 
 !        non-hydrostatic semi-implicit weight       
         aq = getpar('aqpar')
@@ -632,7 +628,6 @@
 	real volnode
 
 	integer locsps,loclp,iround
-	real getpar
 	integer loccoo3d 
 
         if(trim(solver_type)=='PETSc')then
@@ -781,7 +776,6 @@
         real b(3),c(3)
         real dt
         real uqaux,vqaux,zqaux
-        real getpar
         real aq
 
 !        non-hydrostatic semi-implicit weight  
@@ -842,7 +836,6 @@
 	integer, save :: icall = 0
 	integer, save :: iwvel,iqpnv
 
-	real getpar
 
 !       --------------------------------------------
 !	initialize output files
@@ -887,7 +880,6 @@
 
 	integer nvar,id
 	logical has_output_d
-	real getpar
 
 	nvar = 0
 	if( iwvel .gt. 0 ) nvar = nvar + 1
@@ -924,7 +916,6 @@
 
 	integer id,l
 	logical next_output_d
-	real getpar
 
 	inhwrt = nint(getpar('inhwrt'))
 
@@ -994,7 +985,6 @@
 
 	integer iapini,ipint
         integer nbnds,itybnd,nkbnds,kbnds
-        real getpar
 
 !-----------------------------------------------------------------
 ! get parameters

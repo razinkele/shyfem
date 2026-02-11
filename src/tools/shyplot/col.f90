@@ -124,6 +124,7 @@
 
 !  sets up color table after read from $color section
 
+	use para
 	logical bdebug
 	integer niso,nisomx,nisodf
 	integer icolor,ipllog
@@ -131,7 +132,6 @@
 	real colmin,colmax,valmin,valmax,dval
 	logical bisord,bcolrd,bfunc,blog
 
-	real getpar
 
 	bdebug = .false.
 
@@ -337,6 +337,7 @@
 
 !  sets up color table in automatic mode
 
+	use para
 	implicit none
 
 	real valmin,valmax		!min/max for array of values
@@ -351,7 +352,6 @@
         integer ndec,idec,ipllog
 	real rfiso,ddval
 
-	real getpar
 	real rnext,rnexta
 
 	bdebug = .false.

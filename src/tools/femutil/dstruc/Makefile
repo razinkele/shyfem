@@ -19,6 +19,8 @@ F77 = gfortran
 
 #------------------------------------------------------
 
+.PHONY: default all test compact clean cleanzip cleanall save zip copy
+
 default: all
 
 all: $(EXES)

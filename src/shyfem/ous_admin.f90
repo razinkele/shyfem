@@ -86,8 +86,6 @@
 	double precision dtime
 	character*80 file
 
-	real getpar
-	double precision dgetpar
 	integer ifemop
 	logical has_output_d,next_output_d
 

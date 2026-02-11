@@ -108,7 +108,7 @@
 ! look out for
 !	is_external_boundary and mpi
 !	itvd==1 is working in mpi
-!	itvd==2 is not working in mpi: must get adjacent element information
+!	itvd==2 has MPI support via tvd_upwind_init_mpi but may be incomplete
 !
 !*****************************************************************
 !*****************************************************************
@@ -126,6 +126,7 @@
 	use mod_tvd
 	use shympi
 
+        use para
         implicit none
 
 	integer itvd
@@ -134,7 +135,6 @@
 	logical, save :: bdebug = .true.
 	logical :: btvd2
 
-	real getpar
 
 	if( icall .ne. 0 ) return
 	icall = 1
@@ -149,6 +149,8 @@
 
 	if( btvd2 ) then
           if( shympi_is_parallel() ) then
+	    write(6,*) 'WARNING: itvd==2 with MPI may be incomplete'
+	    write(6,*) 'WARNING: consider using itvd==1 for parallel runs'
 	    call tvd_upwind_init_mpi
 	    call tvd_mpi_init
 	  else

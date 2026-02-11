@@ -183,6 +183,7 @@
 	use heat_const
 	use meteo_forcing_module, only : iatm
 
+	use para
 	implicit none
 
 	double precision dtime
@@ -248,7 +249,7 @@
 	integer itdrag
 
 ! functions
-	real depnode,areanode,getpar
+	real depnode, areanode
 	integer ifemopa,ipext
 	logical is_dry_node
 ! save
@@ -797,6 +798,7 @@
 
 	use basin
 
+	use para
 	implicit none
 
 	double precision dtime
@@ -809,7 +811,6 @@
 	integer id,iskin
 
 	logical has_output_d,next_output_d
-	real getpar
 
 	if( icall < 0 ) return
 

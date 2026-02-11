@@ -83,14 +83,12 @@
 
 ! administers turbulence closure
 
+	use para
 	implicit none
 
-	real getpar
 	logical boff
 
-	integer iturb
-	save iturb
-	data iturb / 0 /
+	integer, save :: iturb = 0
 
 	if( iturb .lt. 0 ) return
 
@@ -129,6 +127,7 @@
 	use pkonst
 	use femtime
 
+	use para
 	implicit none
 
 !---------------------------------------------------------------
@@ -147,7 +146,6 @@
 	real ri,vis,dif
 	real a,b,alpha,beta
 
-	real getpar
 
 	integer, save :: icall = 0
 	real, save :: vistur_c = 0.
@@ -247,6 +245,7 @@
 	use pkonst
 	use femtime
 
+	use para
 	implicit none
 
 	double precision dt
@@ -275,8 +274,7 @@
 	integer laux
 	integer nlev,flev,numOfLev
 	real g
-	real czdef
-	save czdef
+	real, save :: czdef
 
 	real h(nlvdi)
 	double precision depth		!total depth [m]
@@ -291,11 +289,10 @@
 	real ubot,vbot,rr
 
 	real dtreal
-	real getpar
 	integer ipext
 
-	logical bwave,has_waves,bgotm,bdeb
-	save bwave
+	logical, save :: bwave
+	logical has_waves,bgotm,bdeb
 
 	character*256 fn
 	integer, save :: icall = 0
@@ -1256,9 +1253,7 @@
 	real dtreal,dt
 	real taus,taub
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  call keps_init

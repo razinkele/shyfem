@@ -903,38 +903,28 @@
 	end subroutine para_put_string
 
 !==================================================================
-	end module para
-!==================================================================
-
-
-!**************************************************************
-!**************************************************************
-!**************************************************************
-
-
-!***********************************************************
-!***********************************************************
-!***********************************************************
 
 	function getpar(name)
-	use para
 	implicit none
 	real getpar
-	character*(*) name
+	character*(*), intent(in) :: name
 	double precision value
 	call para_get_value(name,value)
 	getpar = value
-	end
+	end function getpar
 
 	function dgetpar(name)
-	use para
 	implicit none
 	double precision dgetpar
-	character*(*) name
+	character*(*), intent(in) :: name
 	double precision value
 	call para_get_value(name,value)
 	dgetpar = value
-	end
+	end function dgetpar
+
+!==================================================================
+	end module para
+!==================================================================
 
 	subroutine getfnm(name,string)
 	use para

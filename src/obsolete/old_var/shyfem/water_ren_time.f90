@@ -196,7 +196,6 @@
 
 	integer, save :: iadim,narea
 
-        double precision dgetpar
 
 	double precision, allocatable, save :: massa(:)
 	double precision, allocatable, save :: massa0(:)
@@ -967,7 +966,6 @@
 	double precision conz,conze,rconv,corr,cc0,wrt
 	double precision secs_in_day
 
-	double precision dgetpar
 
 !---------------------------------------------------------------
 ! set parameters

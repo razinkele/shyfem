@@ -266,7 +266,7 @@
 	real uso,vso,uv,uuvv
 	real rfric,rcd,rr,ss,rho0
 
-	real getpar,cdf
+	real cdf
 	real uvmin
 
 !-------------------------------------------------------------------
@@ -626,7 +626,6 @@
 	integer, save :: iczv = 0
 	integer, save :: icall = 0
 
-	real getpar
 
 	if( icall == -1 ) return
 
@@ -891,7 +890,6 @@
 	real czdef
 
 	integer ipint
-	real getpar
 
 	bstop = .false.
 

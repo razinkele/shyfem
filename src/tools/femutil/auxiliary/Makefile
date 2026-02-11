@@ -9,6 +9,8 @@
 
 EXES = mkgeom
 
+.PHONY: default mkgeom clean cleanall
+
 default:
 
 mkgeom:

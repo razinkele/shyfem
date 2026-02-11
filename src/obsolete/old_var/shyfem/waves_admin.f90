@@ -157,7 +157,6 @@
 	implicit none
 
 	integer itdrag		!drag coefficient type
-	real getpar		!get parameter function
 	integer k,ie,l
 	integer nvar
 	integer id
@@ -316,7 +315,6 @@
 	save bwind
 	real wfact,wspeed
 	save wfact
-        real getpar
         logical next_output_d
 	integer id
 	double precision dtime
@@ -1160,7 +1158,6 @@
         parameter(et2=1.,at3=0.0379,et3=1./3.,et4=1.)
 !------------------------------------------------------
 
-        real getpar
 
         logical has_output_d,next_output_d
 

@@ -74,11 +74,11 @@
 
 ! returns bsigma which is true if sigma layers are used
 
+	use para
 	implicit none
 
 	logical bsigma
 
-	real getpar
 
 	bsigma = nint(getpar('nsigma')) .gt. 0
 
@@ -88,12 +88,12 @@
 
 	subroutine get_sigma(nsigma,hsigma)
 
+	use para
 	implicit none
 
 	integer nsigma
 	real hsigma
 
-	real getpar
 
 	nsigma = nint(getpar('nsigma'))
 	hsigma = getpar('hsigma')
@@ -109,7 +109,6 @@
 	integer nsigma
 	real hsigma
 
-	real getpar
 
 	call putpar('nsigma',float(nsigma))
 	call putpar('hsigma',hsigma)

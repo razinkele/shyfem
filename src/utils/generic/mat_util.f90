@@ -332,9 +332,7 @@
 	character*120 line,lineh,linen
 	integer i,j,nc
 
-	character*10 numbers
-	save numbers
-	data numbers /'0123456789'/
+	character*10, save :: numbers = '0123456789'
 
 	nc = min(n,ndim)
 

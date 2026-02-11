@@ -47,7 +47,7 @@
 	integer naux
 	parameter(naux=100)
 
-	integer iunit,i,it
+	integer iunit,i,it,ios
 	real aux(naux)
 	integer ifileo
 
@@ -58,16 +58,16 @@
         if( iunit .le. 0 ) stop 'error stop read_ts: no such file'
 
 	n = 0
-    1	continue
-	  read(iunit,*,end=2) it,(aux(i),i=1,nvar)
+	do
+	  read(iunit,*,iostat=ios) it,(aux(i),i=1,nvar)
+	  if( ios /= 0 ) exit
 	  n = n + 1
 	  if( n .gt. ndim ) stop 'error stop read_ts: ndim'
 	  itime(n) = it
 	  do i=1,nvar
 	    array(n,i) = aux(i)
 	  end do
-	goto 1
-    2	continue
+	end do
 
 	close(iunit)
 

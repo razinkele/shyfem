@@ -233,55 +233,6 @@
 
 !**************************************************************
 
-	subroutine exchange_vertical(nlv,hlv)
-
-! exchanges vertical structure between domains
-!
-! to be deleted...
-! should be really deleted... is never called FIXME
-
-	use shympi
-
-	implicit none
-
-	integer, intent(in) :: nlv
-	real, intent(in) :: hlv(nlv)
-
-	integer ia
-	integer ierr
-	real, parameter :: flag = -1.35472E+10
-	real, allocatable :: hlvs(:,:)
-
-        nlv_global = shympi_max(nlv)
-
-	allocate(hlv_global(nlv_global),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(hlvs(nlv_global,n_threads),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-
-	hlv_global = flag
-	hlv_global(1:nlv) = hlv
-	call shympi_gather(hlv_global,hlvs)
-
-	do ia=1,n_threads
-	  if( hlvs(nlv_global,ia) /= flag ) exit
-	end do
-	if( ia > n_threads ) then
-	  write(6,*) 'error setting global nlv'
-	  write(6,*) nlv_global,nlv
-	  write(6,*) hlvs
-	  stop 'error stop exchange_vertical: global nlv'
-	end if
-
-	hlv_global = hlvs(:,ia)
-
-	!write(6,*) 'exchange_vertical: global nlv set: ',nlv,nlv_global
-	!write(6,*) hlv_global
-
-	end
-
-!**************************************************************
-
 	subroutine init_others
 
 ! set up various arrays (coriolis, eddy)
@@ -311,12 +262,12 @@
 	use levels, only : nlvdi,nlv
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
 
 	integer k,l
 	real vistur,diftur
 
-	real getpar
 
 !------------------------------------------------------------------
 ! get parameters
@@ -440,6 +391,7 @@
 
 	use basin
 
+	use para
 	implicit none
 
 	integer, intent(inout) :: nlv_est	!nlv_read on entry, estimate on return
@@ -449,7 +401,6 @@
 	integer nsigma,nreg
 	real hsigma,dzreg
 
-	real getpar
 
 	dzreg = getpar('dzreg')
 	call get_sigma(nsigma,hsigma)
@@ -492,6 +443,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
 	real, intent(in) :: hmax
@@ -501,7 +453,6 @@
 	real dzreg,hl,fact,hsigma
 	real hbot,htop
 
-	real getpar
 
 	write(6,*) 'adjust layer structure'
 
@@ -1032,6 +983,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
 	logical bwrite
@@ -1049,7 +1001,6 @@
 	!double precision hm
 
 	integer ieext
-	real getpar
 
 	bwrite = .false.
 
@@ -1222,6 +1173,7 @@
 	use pkonst
 	use mkonst
 
+	use para
 	implicit none
 
 	real omega2	!double frequency of earth rotation
@@ -1235,7 +1187,6 @@
 	integer isphe
 	real yc,ym,y,ymin,ymax,dlat
 	real aux1,aux2,rad
-	real getpar
 	real, dimension(nkn)	:: yaux
 
 ! if coordinates are cartesian (isphe=0) then icor determines 
@@ -1690,10 +1641,10 @@
 
 	subroutine set_spherical
 
+	use para
 	implicit none
 
 	integer isphe
-	real getpar
 
 	isphe = nint(getpar('isphe'))
 	if( isphe == -1 ) return	!no info given

@@ -146,7 +146,6 @@
         double precision mass,masss
         double precision dtime,dtime0
         real volnode,depnode
-	real getpar
 	real caux(nlvdi)
 	real taubot(nkn)
 	real fflux(nkn)

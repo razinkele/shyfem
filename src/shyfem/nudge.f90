@@ -538,6 +538,7 @@
 	use basin
 	use shympi
 
+	use para
 	implicit none
 
 	integer nvar,nintp,ibc
@@ -551,7 +552,6 @@
 	integer nodes(1)
 
 
-	real getpar
 
 	call get_first_dtime(dtime0)
 

@@ -81,7 +81,6 @@
 	real fact,rlfact
 	real seed,vol
 
-	real getpar
 
         data areaseed/ 24., 2., 3. /
 
@@ -249,7 +248,6 @@
 	real fact,rlfact
 	real seed,vol
 
-	real getpar
 
         data areaseed/ 0.05, 35. /
 

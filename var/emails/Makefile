@@ -1,4 +1,6 @@
 
+.PHONY: default addresses send_mail dry_run
+
 default:
 	@echo "possible targets:"
 	@echo "  addresses"

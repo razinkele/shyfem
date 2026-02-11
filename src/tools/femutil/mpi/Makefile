@@ -15,6 +15,8 @@ FEMDIRS   = mpi
 
 #-----------------------------------------------------------------------
 
+.PHONY: default fem mpi regress list depend clean cleanall save zip
+
 default: mpi
 
 fem: mpi

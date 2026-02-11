@@ -173,7 +173,6 @@
 	real hzlim,hztot
 	character*10 text
 ! functions
-        real getpar
 !	integer ieint,iround,ipint
 ! aux
 	logical debug,bnodry
@@ -380,7 +379,6 @@
         save eps
         data eps /1.e-5/
 ! functions
-        real getpar
         integer ieext
         logical iseout
         iseout(ie) = iwegv(ie).gt.0

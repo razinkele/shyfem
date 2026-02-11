@@ -60,6 +60,9 @@ TCCOPT = -O -G -Z -w -d -mh
 
 #----------------------
 
+.PHONY: default all fem links diff depend clean cleanall cleanlinks cleanobj \
+	cleanexe cleanvar cleanarc cleangrd cleandiff cleanzip zip save list
+
 default: fem
 all: depend $(EXES)
 fem: mesh exgrd links

@@ -104,7 +104,6 @@
 	integer iv_in,iv_read,isub
 	integer iunit
 	character*80 str_read,str_in,str_file
-	real getpar
 
 	logical compare_svars
 

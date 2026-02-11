@@ -166,6 +166,7 @@
 	use custom_dates
 	use simul
 
+        use para
         implicit none
 
         logical, save :: bnoret,bstir,blog,badj
@@ -202,7 +203,6 @@
 
 	integer, save :: iadim,narea
 
-        double precision dgetpar
 
 	double precision, allocatable, save :: massa(:)
 	double precision, allocatable, save :: massa0(:)
@@ -245,9 +245,9 @@
 	    return
 	  end if
 
-	  !if( shympi_is_parallel() ) then
-	  !  stop 'error stop renewal_time: not ready for mpi'
-	  !end if
+	  if( shympi_is_parallel() ) then
+	    write(6,*) 'WARNING: renewal time not fully tested with MPI'
+	  end if
 
 	  iadim = maxval(iarv)
 	  if( .not. bresarea ) iadim = -1
@@ -976,7 +976,6 @@
 	double precision conz,conze,rconv,corr,cc0,wrt
 	double precision secs_in_day
 
-	double precision dgetpar
 
 !---------------------------------------------------------------
 ! set parameters

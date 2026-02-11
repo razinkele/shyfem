@@ -164,10 +164,10 @@
 	use mkonst
 	use befor_after
 
+	use para
 	implicit none
 
 	integer ibarcl
-        real getpar
         integer nkbnd
 
 ! parameters read from STR file
@@ -351,6 +351,7 @@
 
 	subroutine handle_grid_read(grid_file,bquiet,bsilent)
 
+	use para
 	implicit none
 
 	character*(*) grid_file
@@ -362,7 +363,6 @@
 	real eps_area
 	character*256 grdpart
 
-	real getpar
 
 	ibasin = nint(getpar('ibasin'))
 
@@ -399,11 +399,11 @@
 
 	use pkonst
 
+	use para
 	implicit none
 
 	real dlat
 
-	real getpar
 
 	call bas_get_geom(dcor,dirn)	! from basin
 

@@ -586,6 +586,7 @@
 	use shympi_debug
 	use mkonst
 
+	use para
 	implicit none
 
 ! arguments
@@ -636,7 +637,6 @@
 	double precision dtime,dtime_act
 	character*20 aline
 ! function
-	real getpar
 	integer ipint
 
 !-------------------------------------------------------------
@@ -721,8 +721,8 @@
 ! set up flux boundary conditions (temporary) -> put in sbflux
 !-------------------------------------------------------------
 
-	ssurface = 0.	!FIXME - HACK
-	if( what .eq. 'temp' ) ssurface = -999.
+	ssurface = 0.
+	if( what .eq. 'temp' ) ssurface = flag	! sentinel: use ambient value
 
 ! make_scal_flux has been moved inside time loop of isact (see below)
 ! to increase stability when treating outflow flux boundary
@@ -1660,6 +1660,7 @@
 	use shympi
 	use mkonst
 
+	use para
 	implicit none
 !
 ! arguments
@@ -1742,7 +1743,6 @@
 ! functions
 	logical is_zeta_bound,openmp_in_parallel,openmp_is_master
 	logical has_output_d,next_output_d
-	real getpar
 
         if(nlv.ne.nlev) stop 'error stop conzstab: nlv/=nlev'
 
@@ -2240,6 +2240,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
         real, intent(in) :: cnv(nlvdi,nkn)			!new concentration
@@ -2259,7 +2260,6 @@
 
 	integer ipext
 	logical is_zeta_bound
-	real getpar
 
 	bwrite = .true.		! write every violation
 	bwrite = .false.		! write every violation
@@ -2429,6 +2429,7 @@
 	use levels
 	use basin
 
+	use para
 	implicit none
 
 	character*(*), intent(in) :: what
@@ -2450,7 +2451,6 @@
 	real limit0,limit1
 	integer ic,ierr
 	real thresh
-	real getpar
 
 	if( icall == 0 ) then
 	  icall = 1

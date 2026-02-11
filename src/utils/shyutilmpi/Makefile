@@ -60,6 +60,9 @@ MAKEDEPEND = $(FEMBIN)/mkdp.pl
 
 LIB = $(LIBDIR)/lib$(LIBNAME).a
 
+.PHONY: default all fem shyfem lib nothing test main_dummy cleanall clean \
+	cleanobj cleanvar cleanlib depend check list save zip
+
 default: lib
 all:	lib
 fem: shyfem

@@ -126,6 +126,7 @@
 	use levels, only : nlvdi,nlv
 	use basin, only : nkn,nel,ngr,mbw
 
+	use para
 	implicit none
         
 	integer ie,l
@@ -134,7 +135,6 @@
         integer ilin,itlin,ibarcl
 	double precision dtime
 	real rlin
-        real getpar
 	logical bnohyd
 
 !-------------------------------------------
@@ -398,6 +398,7 @@
 	use shympi
 	use shympi_tripple
 
+	use para
 	implicit none
 
 	integer ie,ii,iei,l,lmax,lmaxi
@@ -417,7 +418,6 @@
 	real viv(nlv_global)
 
 	integer ieext,ieint
-	real getpar
 
 	integer, save :: icall = 0
 	real, save :: ahpar_cached = 0.
@@ -515,6 +515,7 @@
 	use basin, only : nkn,nel,ngr,mbw
 	use shympi
 
+	use para
 	implicit none
 
 	integer ie,ii,iei,l,lmax,lmaxi
@@ -529,7 +530,6 @@
 	logical bnoslip,bdebug
 
 	integer ieext,ieint
-	real getpar
 
 	integer, save :: icall = 0
 	real, save :: ahpar_cached = 0.
@@ -716,6 +716,7 @@
 	use basin
 	use shympi
 
+        use para
         implicit none
 
 	real, intent(in) :: rlin		!strength of advection terms - normally 1
@@ -733,7 +734,6 @@
         real f,h
 	real xadv,yadv
 	real area,vol
-        real getpar
         real wlay,dzbb,dz,dztt,ubot,utop,vbot,vtop
 	real rdist,rcomp,ruseterm
 
@@ -1477,10 +1477,10 @@
                 psigma = psigma + (rhoup-rhop)/hint
 		htot = hm3v(ii,ie) 
                 if (bsigma) then 
-		   hsigma = htot !min(htot,hsigma)	  !FIXME lrp: this should be the min(htot,hsigma)
+		   hsigma = min(htot,hsigma)
 		   hdep = hsigma + zov(k)
                    hhk = -htint * hdep
-                   zk = -(hhk) !- zov(k))                 !FIXME lrp: add free-surface
+                   zk = -(hhk - zov(k))
 		else        
 		  if (l.le.(nadapt(ii)+lmin-1)) then 
  		    hdep = hadapt(ii) + zov(k)

@@ -61,7 +61,6 @@
 
 	character*80 line,traj
 	integer npoints
-	real getpar
 
 	npoints = nint(getpar('nbdy'))
 	if( npoints <= 0 ) return
@@ -182,7 +181,6 @@
 	double precision, save		:: dtlast
         character*80 traj
         integer ifileo
-        real getpar
 
         if( icall == -1 ) return
 

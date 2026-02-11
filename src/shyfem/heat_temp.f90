@@ -89,19 +89,15 @@
 
         subroutine make_albedo(temp,albedo)
 
+        use para
         implicit none
 
         real temp       !water temperature
         real albedo     !albedo
 
-        real albed0,albed4
-        save albed0,albed4
+        real, save :: albed0, albed4
 
-        double precision dgetpar
-
-        integer icall
-        save icall
-        data icall /0/
+        integer, save :: icall = 0
 
         if( icall .eq. 0 ) then
           albed0 = dgetpar('albedo')

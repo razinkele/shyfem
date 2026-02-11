@@ -184,7 +184,6 @@
 	integer nrdpar
 	logical ball
 
-	real getpar
 
 !------------------------------------------------------
 ! add new elements to boundary arrays
@@ -1416,7 +1415,6 @@
 	real value
 	character*6 name
 
-	real getpar
 
 	do id=1,nbvdim
 	  call get_bnd_par_name(id,name)

@@ -9,6 +9,8 @@
 
 EXES = ncgrid
 
+.PHONY: default compile clean cleanall
+
 default: ncgrid
 
 ncgrid: compile

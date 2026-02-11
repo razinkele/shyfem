@@ -12,6 +12,8 @@ DIR = profile
 
 OBJSF = subfemfile.f subfil.f subdts.f
 
+.PHONY: default all clean cleanall zip
+
 default: profile
 
 all: profile

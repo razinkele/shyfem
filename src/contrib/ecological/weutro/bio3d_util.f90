@@ -72,7 +72,6 @@
 	double precision dtime
 
 	logical next_output_d
-        real getpar
 
         integer, save :: icall = 0
 	double precision, save :: da_out(4)
@@ -173,6 +172,7 @@
 
 	use basin
 
+	use para
 	implicit none
 
 ! parameter
@@ -187,7 +187,6 @@
 	integer id,nvar,idc,is,nstate
 	double precision :: dtime,rr
 ! function
-	real getpar
         logical has_output_d,is_over_output_d,next_output_d
 ! save
 	double precision, save :: da_out(4)
@@ -284,6 +283,7 @@
 
 	use basin
 
+	use para
 	implicit none
 
 ! parameter
@@ -298,7 +298,6 @@
 	integer id,nvar,nstate,is,idc
 	double precision :: dtime,rr
 ! function
-	real getpar
 	logical has_output_d,is_over_output_d,next_output_d
 ! save
 	double precision, save :: da_out(4)

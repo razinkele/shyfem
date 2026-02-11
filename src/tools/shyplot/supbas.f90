@@ -188,6 +188,7 @@
 ! then call with desired mode
 ! must be called with mode == 2 before closing the plot
 
+	use para
 	implicit none
 
 	integer mode
@@ -198,7 +199,6 @@
 	real dxygrd,x,y
 	real cgray
 	character*80 file
-	real getpar
 	logical bverb
 	logical inboxdim
         logical is_spherical
@@ -339,6 +339,7 @@
 	use mod_bash
 	use mod_hydro_plot
 
+	use para
 	implicit none
 
 	integer mode
@@ -346,7 +347,6 @@
 	integer ie,kn,ii,k
 	real gray
 
-	real getpar
 
 	call basinit
 
@@ -773,6 +773,7 @@
 	use basin, only : nkn,nel,ngr,mbw
 	use mod_bash
 
+	use para
 	implicit none
 
 	integer ie
@@ -782,7 +783,7 @@
 	real dxygrd
 	double precision acu
 
-	real getpar,aomega_elem
+	real aomega_elem
 
 	acu = 0.
 	do ie=1,nel
@@ -904,7 +905,6 @@
 	real y,pi,rad
 	real x0,y0,x1,y1
 
-	real getpar
 	logical is_spherical
 
 	fact = 1.
@@ -1021,6 +1021,7 @@
 
 	use mod_bash
 
+	use para
 	implicit none
 
 	integer ngrid
@@ -1029,7 +1030,6 @@
 	real dreg
 	integer imicro
 
-	real getpar
 
 	if( bbverb ) write(6,*) 'starting plot_reg_grid...'
 
@@ -1062,6 +1062,7 @@
 	use plot_fonts
 	use mod_bash
 
+	use para
 	implicit none
 
 	integer nx,ny,n,i,nc
@@ -1076,7 +1077,6 @@
 	character*10 string
 	logical bdebug
 
-	real getpar
 	real rround
 	integer ialfa
 
@@ -1466,20 +1466,18 @@
 	integer ndim
 	parameter (ndim=30000)
 
-	integer nx,ny,nz,n,iu
+	integer nx,ny,nz,iu
 	integer idum,i,ios
 	integer ierr
 	real xx,yy
 	real fact,afact
 	real xmin,xmax,ymin,ymax
-	real dx,dy,dxy
 	real fplus
 	real, allocatable, save :: x(:),y(:),rf(:)
-	save n,dx,dy,dxy
+	integer, save :: n
+	real, save :: dx,dy,dxy
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .eq. -1 ) return
 

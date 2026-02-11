@@ -117,7 +117,6 @@
 	integer iapini
 	real eps
 	real sflag
-	real getpar
 
 ! ----------------------------------------------
 !  copyright
@@ -247,7 +246,6 @@
 	character*20 string
 	integer iwhat,iauto,isub
 	integer ideflt
-	real getpar
 
 	character*10 whats(0:ndim)
 	save whats
@@ -307,7 +305,6 @@
 	implicit none
 
 	integer icolor
-	real getpar
 
 	call colsetup
 	icolor = nint(getpar('icolor'))
@@ -323,7 +320,6 @@
         implicit none
 
         integer icolor
-        real getpar
         logical has_color_table
 
         call colsetup
@@ -347,7 +343,6 @@
 
         integer date,time
 
-        double precision dgetpar
 
         date = nint(dgetpar('date'))
         time = nint(dgetpar('time'))

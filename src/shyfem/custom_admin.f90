@@ -168,12 +168,12 @@
 
 ! custom routines
 
+	use para
 	implicit none
 
 	double precision, intent(in) :: dtime
 
 	integer it
-	real getpar
 
 	integer, save :: icall = 0
 
@@ -308,10 +308,12 @@
 	integer ipint,ieint
 	integer n,ibase
 
-	integer icall,k1,k2,ie1,ie2,ie3
-	save icall,k1,k2,ie1,ie2,ie3
-!	data icall,k1,k2,ie1,ie2,ie3 /0,556,555,777,788,788/
-	data icall,k1,k2,ie1,ie2,ie3 /0,337,368,513,514,511/
+	integer, save :: icall = 0
+	integer, save :: k1 = 337
+	integer, save :: k2 = 368
+	integer, save :: ie1 = 513
+	integer, save :: ie2 = 514
+	integer, save :: ie3 = 511
 
 	if( icall .eq. 0 ) then
 	  write(97,*) k1,k2,ie1,ie2,ie3
@@ -351,9 +353,7 @@
 	parameter(ndim=5)
 
 
-	integer nodes(ndim)
-	save nodes
-	data nodes /5,59,113,167,221/
+	integer, save :: nodes(ndim) = (/5,59,113,167,221/)
 
 	rit = it/3600.
 	write(97,'(6f12.5)') rit,(tempv(1,nodes(i)),i=1,ndim)
@@ -369,11 +369,11 @@
 	use mod_depth
 	use basin
 
+	use para
 	implicit none
 
 	integer ie,ii,itype
 	real hm,h,hlido,hmala,hchio
-	real getpar
 
 
 	write(6,*) 'adjusting depth at inlets...'
@@ -419,10 +419,7 @@
 
 	integer it1,it2
 	real r
-	double precision d
-
-	save d
-	data d /1./
+	double precision, save :: d = 1.
 
 	it1 = 30000000
 	it2 = 60000000
@@ -469,14 +466,11 @@
 	integer i
 	real czmin,czact,czmax
 	real czin,czout
-	real czp(0:100),czm(0:100)
-	save czp,czm
-	integer nareas
-	save nareas
+	real, save :: czp(0:100)
+	real, save :: czm(0:100)
+	integer, save :: nareas
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	itmax = 600000
 	itdt = 7200
@@ -551,13 +545,8 @@
 
 	integer ndim
 	parameter( ndim = 3 )
-	integer nodes(ndim)
-	save nodes
-	integer icall
-	save icall
-
-	data nodes / 25 , 28 , 31 /
-	data icall / 0 /
+	integer, save :: nodes(ndim) = (/25, 28, 31/)
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  icall = 1
@@ -658,16 +647,11 @@
 
 	integer ndim
 	parameter(ndim=5)
-	integer iesp,iisp
-	save iesp,iisp
-	integer iespv(ndim),iispv(ndim)
-	save iespv,iispv
-	integer icall
-	save icall
-
-	data iesp / 7106 /
-	data iespv / 100 , 6941 , 1989 , 4284 , 6237 /
-	data icall / 0 /
+	integer, save :: iesp = 7106
+	integer, save :: iisp
+	integer, save :: iespv(ndim) = (/100, 6941, 1989, 4284, 6237/)
+	integer, save :: iispv(ndim)
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  iisp = ieint(iesp)
@@ -721,19 +705,12 @@
 	integer ndim,ndim1
 	parameter(ndim=5,ndim1=1)
 
-	integer k1(ndim),k2(ndim),k3(ndim1),k4(ndim1)
-	save k1,k2,k3,k4
+	integer, save :: k1(ndim) = (/45,34,23,12,1/)
+	integer, save :: k2(ndim) = (/203, 228, 253, 278, 303/)
+	integer, save :: k3(ndim1) = (/253/)
+	integer, save :: k4(ndim1) = (/558/)
 
-	integer icall
-	save icall
-
-	data icall / 0 /
-	data k1 / 45,34,23,12,1 /
-	!data k2 / 11,22,33,44,55 /
-	data k2 / 203 , 228 , 253 , 278 , 303 /
-	!data k3 / 28 /
-	data k3 / 253 /
-	data k4 / 558 /
+	integer, save :: icall = 0
 
 	b1 = .false.
 	b2 = .true.
@@ -830,12 +807,8 @@
 	real conz
 	real res
 
-	integer icall
-	save icall
-	integer kn(5)
-	save kn
-	data icall / 0 /
-	data kn / 3186,2729,2507,2371,2180 /
+	integer, save :: icall = 0
+	integer, save :: kn(5) = (/3186,2729,2507,2371,2180/)
 
 	if( icall .eq. 0 ) then
 
@@ -923,9 +896,7 @@
 
         integer ifemopa
 
-        integer iunit
-        save iunit
-        data iunit / 0 /
+        integer, save :: iunit = 0
 
         if( iunit .le. 0 ) then
           iunit = ifemopa('Opening Hakata file','.hak','f','new')
@@ -1030,9 +1001,7 @@
 	integer nbnds,itybnd
 	integer ifemopa
 
-	integer iunit
-	save iunit
-	data iunit / 0 /
+	integer, save :: iunit = 0
 
 	if( iunit .eq. 0 ) then
 	  iunit = ifemopa('','.ccc','form','new')
@@ -1071,6 +1040,7 @@
 	use basin, only : nkn,nel,ngr,mbw
 	use femtime
 
+	use para
 	implicit none
 
         integer ie,ii,k
@@ -1082,14 +1052,12 @@
 	real dt
 	integer nbnds,itybnd
 	integer ifemopa
-	real getpar
 
 	logical bfill
 	integer ndim
 	parameter(ndim=200)
 	real vals(ndim)
 	integer icl,nbcc,iclose,n,ih,iclass,itcl
-	integer itotal,ittot,iclose_old
 	integer nbc
 	real psv,dsv,zrise,zextra,zsalv,zbound,zfranco
 	real zmax,wmax,rmax
@@ -1098,11 +1066,12 @@
 	character*4 class
 	real zvbnds
 
-	save itotal,ittot,iclose_old
+	integer, save :: itotal
+	integer, save :: ittot
+	integer, save :: iclose_old
 
-	integer iunit,i66
-	save iunit,i66
-	data iunit / 0 /
+	integer, save :: iunit = 0
+	integer, save :: i66
 
         integer icm
         icm(t) = nint(100.*t)
@@ -1200,12 +1169,8 @@
 
 	integer ndim
 	parameter(ndim=4)
-	integer nodes(ndim)
-        integer iunit
-        save iunit
-        save nodes
-        data iunit / 0 /
-        data nodes / 901, 178, 1032, 231 /
+	integer, save :: nodes(ndim) = (/901, 178, 1032, 231/)
+        integer, save :: iunit = 0
 
         if( iunit .le. 0 ) then
           iunit = ifemopa('Opening out3d','.o3d','f','new')
@@ -1290,11 +1255,8 @@
 	integer ndim
 	parameter (ndim=3)
 	real vel(ndim)
-	integer icall
-	integer nodes(ndim)
-	save nodes,icall
-	data nodes /1020,2021,2527/
-	data icall /0/
+	integer, save :: icall = 0
+	integer, save :: nodes(ndim) = (/1020,2021,2527/)
 
 	if( icall .eq. 0 ) then
 	  icall = 1
@@ -1399,6 +1361,7 @@
 	use femtime
 	use mod_custom_channel_units
 
+        use para
         implicit none
 
 
@@ -1418,20 +1381,18 @@
 	real resmed,resstd
 	real v1v(nkn)
 
-	real getpar
 
-	integer iu,it0,ndata
-	save iu,it0,ndata
-	double precision remint,remlog,remtim
-	save remint,remlog,remtim
-	double precision rsum,rsumsq
-	save rsum,rsumsq
-        double precision mass0
-        save mass0
+	integer, save :: iu
+	integer, save :: it0
+	integer, save :: ndata
+	double precision, save :: remint
+	double precision, save :: remlog
+	double precision, save :: remtim
+	double precision, save :: rsum
+	double precision, save :: rsumsq
+        double precision, save :: mass0
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 !------------------------------------------------------------
 ! parameters
@@ -1736,18 +1697,17 @@
 	real remnant,rlast
 	real resmed,resstd
 
-	integer iu,it0,ndata
-	save iu,it0,ndata
-	double precision remint,remlog,remtim
-	save remint,remlog,remtim
-	double precision rsum,rsumsq
-	save rsum,rsumsq
-        double precision mass0
-        save mass0
+	integer, save :: iu
+	integer, save :: it0
+	integer, save :: ndata
+	double precision, save :: remint
+	double precision, save :: remlog
+	double precision, save :: remtim
+	double precision, save :: rsum
+	double precision, save :: rsumsq
+        double precision, save :: mass0
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 	itmin = 0
 	idtreset = 0
@@ -1820,7 +1780,6 @@
         double precision dtime
 
         real volnode,depnode
-	double precision dgetpar
         logical next_output_d,is_over_output_d
 
 	double precision, save :: da_out(4)
@@ -1953,9 +1912,7 @@
 
 	real kenerg,penerg,tenerg
 
-	integer icall
-	data icall /0/
-	save icall
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  icall = 1
@@ -1995,9 +1952,7 @@
 
 	real kenerg,penerg,tenerg
 
-	integer icall
-	data icall /0/
-	save icall
+	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  icall = 1
@@ -2147,13 +2102,9 @@
 
         integer edim
         parameter(edim = 20) !20!number of element near the open boundary
-        integer elese(edim)!elements near the boundary
-!  !      data elese / 290,321,326,335,308,2112,324,336,334,325,
-! !    +     2118,2113,328,295,2119,2116,333,2121,2120,2114
-!!     +      /                                                !grid chao0_primapubb.grd
-        data elese / 3002,3001,2902,2901,2802,2801,2702,2701, &
-     &  2602,2601,3004,3003,2904,2903,2804,2803,2704,2703,2604,2603 &
-     &      /    !grid chao0_ordinato.grd
+        integer, save :: elese(edim) = (/3002,3001,2902,2901, &
+     &  2802,2801,2702,2701,2602,2601, &
+     &  3004,3003,2904,2903,2804,2803,2704,2703,2604,2603/) !grid chao0_ordinato.grd
 !     !   data elese /382,381,380,379,378,377,376,375,374,373,372,371,
 !     !+  369,368,367,366,365,364,363,362,361,360,359,358,357,356,
 !     !+  355,354,353
@@ -2230,13 +2181,9 @@
 
         integer edim
         parameter(edim = 20) !number of element near the open boundary
-        integer elese(edim)!elements near the boundary
-!!        data elese / 290,321,326,335,308,2112,324,336,334,325,
-!!     +     2118,2113,328,295,2119,2116,333,2121,2120,2114
-!!     +      /                                                !grid chao0_primapubb.grd
-          data elese / 3002,3001,2902,2901,2802,2801,2702,2701, &
-     &  2602,2601,3004,3003,2904,2903,2804,2803,2704,2703,2604,2603  &
-     &  /    !grid chao0_ordinato.grd
+        integer, save :: elese(edim) = (/3002,3001,2902,2901, &
+     &  2802,2801,2702,2701,2602,2601, &
+     &  3004,3003,2904,2903,2804,2803,2704,2703,2604,2603/) !grid chao0_ordinato.grd
 !    !   data elese /382,381,380,379,378,377,376,375,374,373,372,371,
 !    ! +  369,368,367,366,365,364,363,362,361,360,359,358,357,356,
 !    ! +  355,354,353
@@ -2317,9 +2264,7 @@
 
 	integer, intent(in) :: it
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .gt. 0 ) return
 	if( it .lt. 258000 ) return
@@ -2347,9 +2292,7 @@
 	integer ie,k,i,l
         integer itype
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
         if(icall .gt. 0) return
 
@@ -2388,9 +2331,7 @@
 	real zav,dz
 	real x,y,r,z
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .gt. 0 ) return
 
@@ -2446,16 +2387,11 @@
 	logical berror
 
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	integer ndim
 	parameter (ndim=5)
-	integer nodes(ndim)
-	save nodes
-	!data nodes / 984, 4860, 4636, 4585 /
-	data nodes / 984, 4860, 4636, 4585 , 3452 /
+	integer, save :: nodes(ndim) = (/984, 4860, 4636, 4585, 3452/)
 
 	if( icall .eq. 0 ) then
 	  icall = 1
@@ -2503,6 +2439,7 @@
 	use levels, only : nlvdi,nlv
 	use femtime
 
+	use para
 	implicit none
 
 	integer ndim
@@ -2511,7 +2448,7 @@
 	integer k,k0,i,kin,n
 	integer kmin,kmax,kstep
 	integer itt,idtfrq,it0
-	real c0,ctot,ct0,c
+	real c0,ctot,c
 	real dx,rk
 	real depth
 	real caux(ndim)
@@ -2520,13 +2457,10 @@
 	character*256 file
 
 	integer ipint
-	real getpar
 
-	save ct0
+	real, save :: ct0
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 !----------------------------------------------------------
 ! initialization
@@ -2938,9 +2872,7 @@
 	real c0,cmed
 	real caux(25)
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 !----------------------------------------------------------
 ! initialization
@@ -3032,21 +2964,17 @@
 	use femtime
 	use mod_physical_constants, only : pi => pi_sp
 
+	use para
 	implicit none
 
 	integer, intent(in) :: mode
 
 	integer k,i,l,lc,lmax
-	integer it0
 	real c0,cmed,a,t,aux,x2,cc,dc
 	real caux(nlvdi)
-	save it0
+	integer, save :: it0
 
-	real getpar
-
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 ! C(x,t) =  1/sqrt(4*pi*a*t) * exp( -x**2/(4*a*t) )
 
@@ -3156,9 +3084,7 @@
 	integer nkbnds,kbnds,ipext,nbnds
 	logical bproj
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 !----------------------------------------------------------
 ! do only at first call
@@ -3290,9 +3216,7 @@
 
 	integer ks
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 	ks = 4312
         if( icall .eq. 0 .and. nkn .ge. ks .and. ks > 0 ) then
@@ -3319,11 +3243,10 @@
 	integer ndim
 	parameter (ndim=2000)
 
-	integer nelems
-	integer iel(ndim)
-	real conz(ndim)
-	real yco(ndim)
-	save nelems,iel,conz,yco
+	integer, save :: nelems
+	integer, save :: iel(ndim)
+	real, save :: conz(ndim)
+	real, save :: yco(ndim)
 
 
 	integer i,ii,ie,k,ien
@@ -3333,9 +3256,7 @@
 	real cc(3)
 	real ccc,cmin,cmax
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 	dy = 100.
 	x0 = 1100.
@@ -3456,9 +3377,7 @@
 
 	real tauv(nkn)
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .ne. 0 ) return
 	icall = 1
@@ -3716,9 +3635,7 @@
 
 	integer ks,lmax,l
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .eq. -1 ) return
 
@@ -3800,9 +3717,7 @@
 	integer l,k,lmax,ks
 	real qs,ta,rh,wb,uw,cc,p
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	integer ipint
 
@@ -3859,6 +3774,7 @@
 	use basin
 	use femtime
 
+	use para
 	implicit none
 
 	logical binit,blast
@@ -3885,7 +3801,6 @@
 
 	integer, save :: icall = 0
 
-	real getpar
 	integer ifemop
 
 	binit = .false.
@@ -4067,19 +3982,17 @@
 
 	integer ndim
         parameter (ndim=22)     !must be at least the number of layers used
-        real tobs(ndim)
-        real sobs(ndim)
-        data tobs /7.4,7.35,7.3,7.4,7.35,7.2,7.3,7.25,7.25,7.25,     &
-     &  7.15,7.15,7.15,7.,7.55,7.5,7.55,7.45,7.5,7.55,7.55,7.85/
-        data sobs /35.278,35.452,35.626,35.8,35.974,36.148,36.2995,     &
-     &  36.451,36.6025,36.754,36.9055,37.057,37.1324,37.2078,37.2832,     &
-     &  37.3586,37.434,37.5094,37.5848,37.6602,37.7356,37.811/
+        real, save :: tobs(ndim) = (/7.4,7.35,7.3,7.4,7.35,7.2, &
+     &  7.3,7.25,7.25,7.25,7.15,7.15,7.15,7.,7.55,7.5, &
+     &  7.55,7.45,7.5,7.55,7.55,7.85/)
+        real, save :: sobs(ndim) = (/35.278,35.452,35.626,35.8, &
+     &  35.974,36.148,36.2995,36.451,36.6025,36.754,36.9055, &
+     &  37.057,37.1324,37.2078,37.2832,37.3586,37.434, &
+     &  37.5094,37.5848,37.6602,37.7356,37.811/)
 
 	integer l,k,lmax
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .ne. 0 ) return
 	icall = 1
@@ -4120,9 +4033,7 @@
 
 	integer k,l,lmax
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 	if( icall .eq. 10 ) then
 	  write(6,*) '********** fluid mud concentration initialized'
@@ -4155,9 +4066,7 @@
 
 	integer iunit
 
-	integer icall
-	save icall
-	data icall /0/
+	integer, save :: icall = 0
 
 	if( icall .ne. 0 ) return
 	icall = 1
@@ -4302,10 +4211,8 @@
         implicit none
 
 	integer k,l,lmax
-        integer icall
-        save icall
-        data icall / 0 /
-        real salval /1.3592/
+        integer, save :: icall = 0
+        real, save :: salval = 1.3592
 
         if( icall .gt. 0 ) return
         icall = icall+1

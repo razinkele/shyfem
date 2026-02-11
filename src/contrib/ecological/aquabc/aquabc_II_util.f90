@@ -296,7 +296,6 @@
 
 	integer ifemop,ipext
 	logical has_output_d,next_output_d,is_over_output_d
-	double precision dgetpar
 
 !-----------------------------------------------------------------
 ! start of code

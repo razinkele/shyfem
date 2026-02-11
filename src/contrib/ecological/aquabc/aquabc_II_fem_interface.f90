@@ -261,6 +261,7 @@
       use aquabc_II_vars   !instead of aquabc_II_h
       use aquabc_II_sed_ini
 
+      use para
       implicit none
 
       include 'aquabc_II_aout.h' !variables and parameters for output to ASCII file
@@ -394,7 +395,6 @@
       save rkpar,difmol
 
 !     function names
-      real getpar       !obtains parameters values
       integer iround
       integer nbnds
 
@@ -1654,7 +1654,6 @@
 	real fact,rlfact
 	real hdep,vol,load
 
-	real getpar
 
 
 !	ADDED BY ALI

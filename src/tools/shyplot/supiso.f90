@@ -90,6 +90,7 @@
 	use color
 	use mod_hydro_plot
 
+	use para
 	implicit none
 
 !  argument
@@ -107,7 +108,6 @@
 	integer isoinp
 	integer icsave
 
-        real getpar
 !        logical is_r_nan
 
 ! --------------------------------------------------------------------
@@ -234,6 +234,7 @@
 	use basin
 	use color
 
+	use para
 	implicit none
 
 !  argument
@@ -255,7 +256,6 @@
 	real x0,y0,dx,dy
 	real, allocatable :: femval(:)
 
-        real getpar
 !        logical is_r_nan
 
 ! --------------------------------------------------------------------
@@ -447,9 +447,7 @@
 	integer i1,i2
 	integer inull,isum
 !  save
-	real epsp
-	save epsp
-	data epsp /1.e-10/
+	real, save :: epsp = 1.e-10
 
 !  get min/max
 
@@ -601,9 +599,7 @@
 
 !        logical is_r_nan
 
-	real eps
-	save eps
-	data eps /1.e-5/	!befor eps=0	!$$ALPHA - ERROR
+	real, save :: eps = 1.e-5	!befor eps=0	!$$ALPHA - ERROR
 
 !  find min/max %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

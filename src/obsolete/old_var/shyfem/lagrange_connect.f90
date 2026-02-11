@@ -100,7 +100,6 @@
 
 	implicit none
 	
-	double precision dgetpar
 
         call sctpar('connect')          !sets default section
         call sctfnm('connect')

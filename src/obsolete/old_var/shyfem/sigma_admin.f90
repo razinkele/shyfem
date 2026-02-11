@@ -78,7 +78,6 @@
 
 	logical bsigma
 
-	real getpar
 
 	bsigma = nint(getpar('nsigma')) .gt. 0
 
@@ -93,7 +92,6 @@
 	integer nsigma
 	real hsigma
 
-	real getpar
 
 	nsigma = nint(getpar('nsigma'))
 	hsigma = getpar('hsigma')
@@ -109,7 +107,6 @@
 	integer nsigma
 	real hsigma
 
-	real getpar
 
 	call putpar('nsigma',float(nsigma))
 	call putpar('hsigma',hsigma)

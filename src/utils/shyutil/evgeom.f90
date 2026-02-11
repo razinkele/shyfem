@@ -475,9 +475,7 @@
 	real bmax,cmax,bs,cs,b,c
 	real alpha,atria
 
-	real eps
-	save eps
-	data eps /1.e-5/
+	real, save :: eps = 1.e-5
 
 	write(6,*) 'testing setup of ev...'
 

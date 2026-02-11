@@ -71,7 +71,6 @@
 
 	implicit none
 
-	real getpar
 
 	ipoiss = nint(getpar('ipoiss'))
 
@@ -179,7 +178,6 @@
 	real b(3),c(3),z(3)
 
 	integer locsps,loclp,iround
-	real getpar
 
 !-------------------------------------------------------------
 ! loop over elements

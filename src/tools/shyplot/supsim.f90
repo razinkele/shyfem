@@ -718,7 +718,6 @@
 
 	integer nflag
 	real pmin,pmax,flag
-	real getpar
 
         call get_flag(flag)
 
@@ -759,7 +758,6 @@
         character*(*) title
 
 	real pmin,pmax,flag
-	real getpar
 
         call get_flag(flag)
 
@@ -792,6 +790,7 @@
 
 	use mod_hydro_plot
 
+	use para
 	implicit none
 
 	integer n
@@ -804,7 +803,6 @@
 	real pmin,pmax,flag
 	integer color(n)
 	real pa(n)
-	real getpar
 
 	bmincol = .true.
 
@@ -863,7 +861,7 @@
 	double precision, allocatable :: xa(:)
 	double precision, allocatable :: ya(:)
 
-	real getpar,area_elem
+	real area_elem
 
 	call set_plotleg(0)
 
@@ -1113,6 +1111,7 @@
 	use basin
 	use plotutil
 
+	use para
 	implicit none
 
 	integer ivel			!what to plot
@@ -1157,7 +1156,7 @@
      &						,'velocity     ' &
      &						/)
 
-	real getpar,getcol
+	real getcol
 	integer getlev
 
 ! ------------------------------------------------------------------
@@ -1581,12 +1580,12 @@
 	use basin
 	use mod_hydro_plot
 
+	use para
 	implicit none
 
 	logical bnumber,belem,bbox
         real pmin,pmax
 
-	real getpar
 
 	!bnumber = .true.	! plot node and element numbers
 	!bnumber = .false.
@@ -2280,19 +2279,16 @@
         integer ndim
         parameter (ndim=100)
 
-        integer ns
-        integer ks(ndim)
-        real us(ndim),vs(ndim)
-        real xs(ndim),ys(ndim)
-        save ns,ks,us,vs,xs,ys
+        integer, save :: ns
+        integer, save :: ks(ndim)
+        real, save :: us(ndim),vs(ndim)
+        real, save :: xs(ndim),ys(ndim)
 
         logical berror
         integer i,k
         real xn,yn,dist
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
         if( icall .lt. 0 ) return
         if( icall .eq. 0 ) then
@@ -2449,13 +2445,13 @@
 	use mod_hydro_plot
 	use basin
 
+	use para
 	implicit none
 
 	integer ie
 	real dgray,hgray,h
 	real x(3),y(3)
 
-	double precision dgetpar
 
 	dgray = dgetpar('dgray')
 	hgray = dgetpar('hgray')
@@ -2481,6 +2477,7 @@
 
 	subroutine init_regular
 
+	use para
 	implicit none
 
 	integer nx,ny
@@ -2489,7 +2486,6 @@
 	real x0,y0,x1,y1
 
 	logical inboxdim
-	real getpar
 
         call setgeo(0.,0.,0.,0.,-999.)
 

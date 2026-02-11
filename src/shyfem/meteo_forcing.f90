@@ -308,6 +308,7 @@
 	use basin, only : nkn,nel,ngr,mbw
 	use shympi
 
+	use para
 	character*60 windfile,heatfile,rainfile,icefile
 	character*4 what
 
@@ -328,7 +329,6 @@
 
 	logical bbspline	!interpolate wind with 4th order bspline
 	logical bbwrite		!write spline output to file fort.77
-	real getpar
 
 !------------------------------------------------------------------
 ! batm is true if first ocean timestep of coupled atm-oce timestep
@@ -593,6 +593,7 @@
 	use mod_meteo
 	use shympi
 
+	use para
 	integer			:: id
 	integer			:: nvar_act
 	integer			:: ierr
@@ -606,7 +607,6 @@
 
 	logical has_output_d,next_output_d
 	integer bit10_extract_value
-	real getpar
 
 	if( da_met(4) < 0 ) return
 
@@ -694,6 +694,7 @@
 !          dir = 0  -> wind from north   dir = 90 -> wind from east
 ! iwtype = 4 wind data in format (speed,dir) (speed in nodes)
 
+	use para
 	integer id
 	integer nvar
 
@@ -702,7 +703,6 @@
 	character*10 dir,unit
 
 	logical string_is_this_short
-	real, external :: getpar
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1042,13 +1042,13 @@
 
 	subroutine meteo_set_rain_data(id,nvar)
 
+	use para
 	integer id
 	integer nvar
 
 	character*60 string
 
         logical string_is_this_short
-	real getpar
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1144,13 +1144,13 @@
 
 	subroutine meteo_set_ice_data(id,nvar)
 
+	use para
 	integer id
 	integer nvar
 
 	character*60 string
 
         logical string_is_this_short
-	real getpar
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1325,6 +1325,7 @@
 
 	use shyfem_strings
 
+	use para
 	integer id
 	integer nvar
 
@@ -1333,7 +1334,6 @@
 	character*256 vapor,vshort
 
 	logical string_is_this_short
-        real getpar  
 
 !	---------------------------------------------------------
 !	check nvar and get parameters
@@ -1366,7 +1366,7 @@
 	do i=1,nvar
 	  call iff_get_var_description(id,i,strings(i))
 	end do
-	call adjust_humidity_string(strings(3))		!FIXME
+	call adjust_humidity_string(strings(3))		! field 3 = humidity (fixed: srad,tair,humidity,cc)
 
         ihtype = nint(getpar('ihtype'))
 	if( ihtype == 1 ) then
@@ -1432,7 +1432,7 @@
 	  write(6,*) 'content: '
 	  do i=1,nvar
 	    call iff_get_var_description(id,i,string)
-	    if( i == 3 ) call adjust_humidity_string(string)		!FIXME
+	    if( i == 3 ) call adjust_humidity_string(string)		! field 3 = humidity
 	    write(6,*) i,'    ',trim(string)
 	  end do
 	end if
@@ -1727,6 +1727,7 @@
 
 	use mod_meteo
 
+	use para
 	implicit none
 
 	integer k
@@ -1734,11 +1735,8 @@
 	real e			!evaporation [m/s]
 	real eeff		!effective evaporation [m/s] - used in model
 
-	integer ievap
-	save ievap
-	data ievap /-1/
+	integer, save :: ievap = -1
 
-	real getpar
 
         if( ievap .eq. -1 ) ievap = nint(getpar('ievap'))
 

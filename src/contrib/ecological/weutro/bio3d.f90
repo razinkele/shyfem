@@ -210,6 +210,7 @@
 	use eutro
 	use mkonst
 
+	use para
 	implicit none
 
         character*10 what,whataux
@@ -250,7 +251,6 @@
 	real dtday
 	real area,vol
 	real oxysat
-	real getpar
 	integer iround
 	integer ieint,ipint
 
@@ -681,6 +681,7 @@
 	use basin
 	use levels
 
+	use para
 	implicit none
 
 ! parameter
@@ -695,7 +696,6 @@
 	integer id,nvar,idc,is
 	double precision dtime,rr
 ! function
-	real getpar
 	logical has_output_d,is_over_output_d,next_output_d
 ! save
 	double precision, save :: da_out(4)

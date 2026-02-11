@@ -68,7 +68,6 @@
         integer, save :: icall = 0
 
 	integer imerc
-	real getpar
 
         if( icall .le. -1 ) return
 

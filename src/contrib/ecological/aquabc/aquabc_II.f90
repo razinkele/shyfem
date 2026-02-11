@@ -129,12 +129,13 @@ subroutine AQUABC_II(nkn,lmax_fast, nlayers, &
     !
     !cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
     use aquabc_II_sed_ini
-    use aquabc_II_para_aqua       
-             
+    use aquabc_II_para_aqua
+
     use levels, only: nlvdi
     use basin, only: ipv, nkndi
     use aquabc_II_pel_state_var_indexes
     use aquabc_II_layers_data
+    use para
 
     implicit none
 
@@ -381,7 +382,6 @@ subroutine AQUABC_II(nkn,lmax_fast, nlayers, &
     !save  fluxes_to_next
 
     integer isedi ! sediment transport on(>0), off(==0)
-    real getpar !function for obtaining parameters values defined in *.str file
 
     ! For debugging purposes
     integer ix, iy, iz, error
@@ -663,7 +663,7 @@ subroutine AQUABC_II(nkn,lmax_fast, nlayers, &
 
     !SEDIMENT_TYPE_fast(:)=0    !should be switched of when grid will be prepared with sediment types: fixme
 
-    !Loop on state vaíables
+    !Loop on state vaï¿½ables
     do i=1,nstate
         where     (SEDIMENT_TYPE_fast .eq. 0 .or. SEDIMENT_TYPE_fast .eq. 6) 
                                                
@@ -681,7 +681,7 @@ subroutine AQUABC_II(nkn,lmax_fast, nlayers, &
             FRACTION_OF_DEPOSITION_fast(:,i) = 0.D+0
         end where
     end do
-    !End of loop on state vaíables
+    !End of loop on state vaï¿½ables
     
           
     ! 10 - the area type where no sediment transport takes place (Nemunas delta)

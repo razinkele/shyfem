@@ -143,6 +143,7 @@
 	use basin
 	use simple_sediments
 
+        use para
         implicit none
 
         integer ie,ii,k,lmax,l,ia
@@ -152,7 +153,6 @@
         double precision mass,masss
         double precision dtime,dtime0
         real volnode,depnode
-	real getpar
 	real caux(nlvdi)
 	real taubot(nkn)
 	real fflux(nkn)
@@ -380,7 +380,6 @@
 	  h = hdenv(lmax,ie)
 	  r = dt/h
 	  tce = 0.1
-	  !if( ia == 0 ) tce = 10.0	!FIXME
 	  do ii=1,3
 	    k = nen3v(ii,ie)
 	    conz = cnv(lmax,k)

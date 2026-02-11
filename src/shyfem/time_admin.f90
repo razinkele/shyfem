@@ -138,6 +138,7 @@
 	use shympi
 	use femtime
 
+	use para
 	implicit none
 
         integer nit1,nit2,naver
@@ -151,7 +152,6 @@
 	character*20 dline
 	character*9 frac
 	character*4 atext
-	double precision dgetpar
 	logical dts_has_date
 
 	integer, parameter :: MyLongIntType = selected_int_kind (12)
@@ -310,13 +310,13 @@
 
 	use femtime
 
+	use para
 	implicit none
 
 	integer date,time
 	double precision didtm,atime,didt
 	character*20 dline
 
-	double precision dgetpar
 
 	call dts_get_date(date,time)
 	call dts_to_abs_time(date,time,atime0)
@@ -374,6 +374,7 @@
 
 ! setup and check date parameter
 
+	use para
 	implicit none
 
 	integer date,time
@@ -381,7 +382,6 @@
 	integer year,month,day,hour,min,sec
 	integer ierr
 	character*20 text
-	double precision dgetpar
 
 	call getfnm('date',text)
 	if( text .ne. ' ' ) then	!string value given
@@ -430,11 +430,11 @@
 
 	subroutine get_date_time(date,time)
 
+	use para
 	implicit none
 
 	integer date,time
 
-	double precision dgetpar
 
 	date = nint(dgetpar('date'))
 	time = nint(dgetpar('time'))
@@ -469,6 +469,7 @@
 	use femtime
 	use mod_info_output
 
+        use para
         implicit none
 
         double precision :: dtmax	!maximum time for run (normally dtend)
@@ -493,7 +494,6 @@
         integer, save :: iuinfo = 0
         integer, save :: icall = 0
 
-	double precision dgetpar
 
 	bdebug = .false.
 

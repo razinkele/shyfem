@@ -1088,7 +1088,7 @@ options:
 
 #---------------------------------------------------
 
-clean: cleanobj cleanexe cleanvar cleantex cleanlahey cleanexport cleandoc \
+clean: cleanobj cleanexe cleanvar cleantex cleanexport cleandoc \
 	cleanifc cleanlinks
 
 cleanall: clean cleanzip cleanlib cleanextra cleandiff cleanmod
@@ -1116,9 +1116,6 @@ cleandoc:
 
 cleantex:
 	-rm -f *.dvi *.aux
-
-cleanlahey:
-	-rm -fr lahey
 
 cleanexport:
 	-rm -fr export
@@ -1160,15 +1157,6 @@ cleanextra:
 	-rm -f LASTZIP
 
 #--------------------------------------------------
-
-lahey:	cleanall
-	bin/mklahey.sh
-	cp $(SPECIAL) lahey
-	bin/mklmake.pl Makefile > lahey/Makefile
-	cp Makefile lahey/Makefile.org
-	bin/unix2other.pl -lahey lahey/*.for
-	cd lahey; rm -f *.for.bak
-	cd lahey; zip -l lahey *
 
 export:	cleanall
 	bin/mkexport.sh

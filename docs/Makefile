@@ -1,6 +1,8 @@
 
 MANUAL = shyfem_main042025
 
+.PHONY: default manual docs clean cleanall
+
 default:
 
 manual: docs

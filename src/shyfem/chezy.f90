@@ -256,6 +256,7 @@
 	use basin
 	use pkonst
 
+	use para
 	implicit none
 
 	real, parameter :: drittl = 1./3.
@@ -267,7 +268,7 @@
 	real uso,vso,uv,uuvv
 	real rfric,rcd,rr,ss,rho0
 
-	real getpar,cdf
+	real cdf
 	real uvmin
 
 !-------------------------------------------------------------------
@@ -514,15 +515,14 @@
 	integer, intent(in) :: iar
 	real, intent(out) :: valin,valout
 
-	if( iar .gt. nczdum ) goto 99
+	if( iar .gt. nczdum ) then
+	  write(6,*) 'iar,nczdum: ',iar,nczdum
+	  stop 'error stop get_chezy_values'
+	end if
 
 	valin = czdum(1,iar)
 	valout = czdum(2,iar)
 
-	return
-   99	continue
-	write(6,*) 'iar,nczdum: ',iar,nczdum
-	stop 'error stop get_chezy_values'
 	end
 
 !***********************************************************
@@ -536,15 +536,14 @@
 	integer, intent(in) :: iar
 	real, intent(in) :: valin,valout
 
-	if( iar .gt. nczdum ) goto 99
+	if( iar .gt. nczdum ) then
+	  write(6,*) 'iar,nczdum: ',iar,nczdum
+	  stop 'error stop set_chezy_values'
+	end if
 
 	czdum(1,iar) = valin
 	czdum(2,iar) = valout
 
-	return
-   99	continue
-	write(6,*) 'iar,nczdum: ',iar,nczdum
-	stop 'error stop set_chezy_values'
 	end
 
 !***********************************************************
@@ -614,6 +613,7 @@
 	use chezy
 	use shympi
 
+	use para
 	implicit none
 
 	logical bchange,bstop,blocaldebug
@@ -627,7 +627,6 @@
 	integer, save :: iczv = 0
 	integer, save :: icall = 0
 
-	real getpar
 
 	if( icall == -1 ) return
 
@@ -759,35 +758,54 @@
 
 	do i=0,nczdum
 	  cz = czdum(1,i)
-	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) goto 99
+	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
+	    write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
+	    write(6,*) (czdum(j,i),j=0,ncztot)
+	    stop 'error stop check_chezy: error in values (2)'
+	  end if
 	  cz = czdum(2,i)
-	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) goto 99
+	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
+	    write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
+	    write(6,*) (czdum(j,i),j=0,ncztot)
+	    stop 'error stop check_chezy: error in values (2)'
+	  end if
 	  if( cz .gt. 0. ) then
 	    k = nint(czdum(3,i))
-	    if( k .lt. 0. .or. k .gt. nkn ) goto 99
+	    if( k .lt. 0. .or. k .gt. nkn ) then
+	      write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
+	      write(6,*) (czdum(j,i),j=0,ncztot)
+	      stop 'error stop check_chezy: error in values (2)'
+	    end if
 	    k = nint(czdum(4,i))
-	    if( k .lt. 0. .or. k .gt. nkn ) goto 99
+	    if( k .lt. 0. .or. k .gt. nkn ) then
+	      write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
+	      write(6,*) (czdum(j,i),j=0,ncztot)
+	      stop 'error stop check_chezy: error in values (2)'
+	    end if
 	  end if
 	  cz = czdum(iczact,i)
-	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) goto 99
+	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
+	    write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
+	    write(6,*) (czdum(j,i),j=0,ncztot)
+	    stop 'error stop check_chezy: error in values (2)'
+	  end if
 	end do
 
 	do ie=1,nel
 	    iar=iarv(ie)
-	    if( iar .gt. nczdum ) goto 98
+	    if( iar .gt. nczdum ) then
+	      write(6,*) 'ie,iar,nczdum,cz: ',ie,iar,nczdum,cz
+	      write(6,*) (czdum(j,iar),j=0,ncztot)
+	      stop 'error stop check_chezy: error in values (1)'
+	    end if
 	    cz=czdum(iczact,iar)
-	    if( cz .lt. 0. .or. cz .gt. 1.e+10 ) goto 98
+	    if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
+	      write(6,*) 'ie,iar,nczdum,cz: ',ie,iar,nczdum,cz
+	      write(6,*) (czdum(j,iar),j=0,ncztot)
+	      stop 'error stop check_chezy: error in values (1)'
+	    end if
 	end do
 
-	return
-   98	continue
-	write(6,*) 'ie,iar,nczdum,cz: ',ie,iar,nczdum,cz
-	write(6,*) (czdum(j,iar),j=0,ncztot)
-	stop 'error stop check_chezy: error in values (1)'
-   99	continue
-	write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
-	write(6,*) (czdum(j,i),j=0,ncztot)
-	stop 'error stop check_chezy: error in values (2)'
 	end
 
 !***********************************************************
@@ -842,8 +860,16 @@
 	  ianz = iscanf(line,f,10)
 	  if( ianz .gt. 0 ) then
 	    iar = nint(f(1))
-            if(iar.lt.0) goto 88
-	    if( ianz .gt. 7 ) goto 86
+            if(iar.lt.0) then
+              write(6,*) 'Negative area code = ',iar,' not allowed'
+              write(6,*) line
+              stop 'error stop : rdarea'
+            end if
+	    if( ianz .gt. 7 ) then
+              write(6,*) 'Too much data on line'
+              write(6,*) line
+              stop 'error stop : rdarea'
+            end if
             if(iar.gt.nczdum) then
 	      write(6,*) 'warning: no such area code... ignoring ',iar
 	      cycle
@@ -852,7 +878,9 @@
 	      czdum(i-1,iar) = f(i)
 	    end do
 	  else if( ianz .lt. 0 ) then
-			goto 98
+            write(6,*) 'Read error in line :'
+            write(6,*) line
+            stop 'error stop : rdarea'
 	  end if
 	end do
 
@@ -861,19 +889,6 @@
 	  deallocate(cz_lines)	!we dont need it anymore
 	end if
 
-	return
-   86   continue
-        write(6,*) 'Too much data on line'
-        write(6,*) line
-        stop 'error stop : rdarea'
-   88   continue
-        write(6,*) 'Negative area code = ',iar,' not allowed'
-        write(6,*) line
-        stop 'error stop : rdarea'
-   98   continue
-        write(6,*) 'Read error in line :'
-	write(6,*) line
-        stop 'error stop : rdarea'
 	end
 
 !***********************************************************
@@ -886,6 +901,7 @@
 	use chezy
 	use shympi
 
+	use para
 	implicit none
 
 	integer i,knode,knodeh,ireib,nczmax
@@ -895,7 +911,6 @@
 	real czdef
 
 	integer ipint
-	real getpar
 
 	bstop = .false.
 

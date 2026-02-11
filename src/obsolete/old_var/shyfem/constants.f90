@@ -167,7 +167,6 @@
 	include 'pkonst.h'
 
 	integer ibarcl
-        real getpar
         integer nkbnd
 
 ! parameters read from STR file
@@ -275,7 +274,6 @@
 
 	real dlat
 
-	real getpar
 
 	call bas_get_geom(dcor,dirn)	! from basin
 

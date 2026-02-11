@@ -214,6 +214,7 @@
 	use shympi
 	use mkonst
 
+	use para
 	implicit none
 
 	integer mode
@@ -242,7 +243,7 @@
 	real conzdf,tempdf,saltdf
 !	real dz
 	real rmu,rmv
-	real getpar,rwint
+	real rwint
 	real conz3,temp3,salt3
 	real tramp,alpha
 	real rmin,rmax
@@ -794,7 +795,6 @@
 	real roinv,f,ginv,dx,dy,taux,tauy
 	real taux1,taux2,tauy1,tauy2,wx,wy
 	real u,v,z,h,p1,p2,b,hh,ztilt
-	real getpar
 	integer iround,itybnd,nbnds
 
 	roinv=1./rowass
@@ -1241,7 +1241,6 @@
 	integer k,l,lmax,lmin,ks
 	real flux,conz
 	real surf_flux
-	real getpar
 	integer ipext
 
 	ks = 2827

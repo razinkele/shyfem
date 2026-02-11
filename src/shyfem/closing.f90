@@ -214,6 +214,7 @@
 	use close
 	use basin
 
+	use para, only: getpar
 	implicit none
 
 	logical belem
@@ -236,7 +237,6 @@
         character*256 file       !closure file name
         integer idfile          !closure file unit
 
-	real getpar
 
 	logical, save :: binit = .false.
 

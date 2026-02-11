@@ -95,7 +95,6 @@
 
 	integer ivar
 	character*80 name,vsect
-	real getpar
 
 	if( icall > 0 ) return
 

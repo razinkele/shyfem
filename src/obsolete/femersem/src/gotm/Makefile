@@ -5,6 +5,8 @@
 
 include ../../Rules.make
 
+.PHONY: all doc clean realclean distclean
+
 LIB     = $(LIBDIR)/libbio$(buildtype).a
 
 ifeq ($(BFM),true)

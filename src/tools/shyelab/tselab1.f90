@@ -411,9 +411,7 @@
 
 	integer i
 
-        integer icall
-	save icall
-	data icall /0/
+        integer, save :: icall = 0
 
 	if( icall == 0 ) then
 	  icall = 1
