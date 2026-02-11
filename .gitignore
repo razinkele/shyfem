@@ -164,3 +164,49 @@ amgx-c-wrapper/Makefile
 amgx-c-wrapper/README.md
 amgx-c-wrapper/src/
 
+#-----------------------------------------------
+# Build artifacts
+#-----------------------------------------------
+
+*_genmod.f90
+*.exe
+*.dvi
+*.toc
+*.bbl
+*.blg
+*.stb
+core
+fort.*
+nohup.out
+mon.out
+.memory
+
+#-----------------------------------------------
+# Runtime/simulation output (in working dirs)
+#-----------------------------------------------
+
+*.nos
+bndo_info.dat
+rkdiff.nos
+dist.nos
+
+#-----------------------------------------------
+# IDE and editor files
+#-----------------------------------------------
+
+*.swn
+*.swo
+*~
+.vscode/
+.idea/
+*.code-workspace
+
+#-----------------------------------------------
+# Python/venv (shyfem-ui)
+#-----------------------------------------------
+
+__pycache__/
+*.pyc
+venv/
+.env
+
