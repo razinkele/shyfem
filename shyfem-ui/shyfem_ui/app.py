@@ -18,7 +18,7 @@ except ImportError:
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
-from shyfem_ui.pages import grid_prep, home, partitioning, postprocess, run, simulation, visualize
+from shyfem_ui.pages import compare, ensemble, grid_prep, home, partitioning, postprocess, run, simulation, visualize
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 
 
@@ -144,6 +144,8 @@ def _build_ui(config: Config) -> ui.Tag:
         ui.nav_panel("Run", run.run_ui("run")),
         ui.nav_panel("Post-Process", postprocess.postprocess_ui("postprocess")),
         ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
+        ui.nav_panel("Compare", compare.compare_ui("compare")),
+        ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
     ]
 
     # Add spacer and info
@@ -194,6 +196,8 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     run.run_server("run", config, job_queue)
     postprocess.postprocess_server("postprocess", config)
     visualize.visualize_server("visualize", config)
+    compare.compare_server("compare", config, job_queue)
+    ensemble.ensemble_server("ensemble", config, job_queue)
 
 
 def main():

@@ -17,6 +17,7 @@ from typing import Optional
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
@@ -199,6 +200,10 @@ def postprocess_ui():
                     ui.output_ui("batch_progress"),
                 ),
                 ui.nav_panel(
+                    "Time Series Preview",
+                    timeseries_ui("ts_preview"),
+                ),
+                ui.nav_panel(
                     "Log",
                     log_viewer_ui("command_log"),
                 ),
@@ -225,8 +230,14 @@ def postprocess_server(
     scanned_layers = reactive.value([])
     batch_results = reactive.value([])
 
+    # Time series preview data
+    ts_preview_data = reactive.value(None)
+
     # Initialize log viewer
     log_viewer_server("command_log", log_content)
+
+    # Initialize timeseries preview component
+    timeseries_server("ts_preview", ts_preview_data, config=config)
 
     @render.ui
     def operation_description():
@@ -708,6 +719,54 @@ def postprocess_server(
                 class_="table table-sm table-bordered",
             ),
         )
+
+    @reactive.effect
+    def _auto_load_timeseries():
+        """Auto-detect and load time series files after shyelab runs."""
+        files = generated_files.get()
+        if not files:
+            return
+
+        ts_files = [
+            f for f in files
+            if f.endswith((".ts", ".ext", ".csv"))
+        ]
+        if not ts_files:
+            return
+
+        # Load the first time series file found
+        ts_path = Path(ts_files[0])
+        if not ts_path.exists():
+            return
+
+        try:
+            data = []
+            columns = []
+            with open(ts_path) as fh:
+                for i, line in enumerate(fh):
+                    parts = line.strip().split()
+                    if not parts:
+                        continue
+                    # Check if first line is a header
+                    if i == 0 and not parts[0].replace(".", "").replace("-", "").replace("+", "").replace("e", "").replace("E", "").isdigit():
+                        columns = parts
+                        continue
+                    try:
+                        data.append([float(p) for p in parts])
+                    except ValueError:
+                        continue
+
+            if data:
+                if not columns:
+                    columns = [f"col{j}" for j in range(len(data[0]))]
+                    if columns:
+                        columns[0] = "time"
+                ts_preview_data.set({
+                    "columns": columns,
+                    "data": data,
+                })
+        except Exception:
+            pass
 
     return {
         "generated_files": generated_files,

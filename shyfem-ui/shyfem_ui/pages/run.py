@@ -20,6 +20,8 @@ from shyfem_ui.components.job_status import format_datetime, format_duration, ge
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
+from shyfem_ui.services.report import generate_job_report
+from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
 
 
 @module.ui
@@ -122,6 +124,90 @@ def run_ui():
                     ui.nav_panel(
                         "Log",
                         log_viewer_ui("job_log"),
+                    ),
+                    ui.nav_panel(
+                        "Workflows",
+                        ui.div(
+                            ui.h5("Workflow Templates"),
+                            ui.p("Chain multiple SHYFEM tools into automated pipelines.",
+                                 class_="text-muted small"),
+                            ui.div(
+                                ui.div(
+                                    ui.input_select(
+                                        "wf_template",
+                                        "Template",
+                                        choices={
+                                            k: v["name"]
+                                            for k, v in WORKFLOW_TEMPLATES.items()
+                                        },
+                                    ),
+                                    class_="col-6",
+                                ),
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_name",
+                                        "Workflow Name",
+                                        placeholder="my_workflow",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                class_="row mb-2",
+                            ),
+                            ui.output_ui("wf_template_info"),
+                            ui.hr(),
+                            ui.h6("Parameters"),
+                            ui.div(
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_input_str",
+                                        "Input STR File",
+                                        placeholder="/path/to/input.str",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_input_grd",
+                                        "Input GRD File",
+                                        placeholder="/path/to/input.grd",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                class_="row",
+                            ),
+                            ui.div(
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_working_dir",
+                                        "Working Directory",
+                                        placeholder="/path/to/workdir",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                ui.div(
+                                    ui.input_numeric(
+                                        "wf_mpi_np",
+                                        "MPI Processes",
+                                        value=4,
+                                        min=1,
+                                        max=128,
+                                    ),
+                                    class_="col-6",
+                                ),
+                                class_="row",
+                            ),
+                            ui.input_action_button(
+                                "wf_launch_btn",
+                                "Launch Workflow",
+                                class_="btn-primary mt-2",
+                            ),
+                            ui.hr(),
+                            ui.output_ui("wf_progress"),
+                            ui.hr(),
+                            ui.h6("Workflow History"),
+                            ui.output_ui("wf_history"),
+                            class_="p-2",
+                        ),
                     ),
                 ),
             ),
@@ -581,6 +667,11 @@ def run_server(
                 "View Log",
                 class_="btn-sm btn-outline-primary me-2",
             ),
+            ui.input_action_button(
+                "generate_report_btn",
+                "Generate Report",
+                class_="btn-sm btn-outline-success",
+            ),
             class_="mt-3",
         )
 
@@ -590,6 +681,11 @@ def run_server(
                     "view_log_btn",
                     "View Log",
                     class_="btn-sm btn-outline-primary me-2",
+                ),
+                ui.input_action_button(
+                    "generate_report_btn",
+                    "Generate Report",
+                    class_="btn-sm btn-outline-success me-2",
                 ),
                 ui.input_action_button(
                     "cancel_selected_btn",
@@ -638,6 +734,227 @@ def run_server(
             await _refresh_jobs()
         except Exception as e:
             ui.notification_show(f"Error: {e}", type="error")
+
+    # --- Generate Report handler ---
+
+    @reactive.effect
+    @reactive.event(input.generate_report_btn)
+    def _generate_report():
+        job = selected_job.get()
+        if job is None:
+            ui.notification_show("Select a job first", type="warning")
+            return
+
+        try:
+            report_path = generate_job_report(job_info=job)
+            ui.notification_show(
+                f"Report generated: {report_path}",
+                type="message",
+                duration=8,
+            )
+        except Exception as e:
+            ui.notification_show(f"Report generation failed: {e}", type="error")
+
+    # --- Workflow engine ---
+
+    workflow_engine = WorkflowEngine(job_queue)
+    active_workflow_id = reactive.value(None)
+
+    @render.ui
+    def wf_template_info():
+        try:
+            key = input.wf_template()
+        except Exception:
+            return None
+
+        tpl = WORKFLOW_TEMPLATES.get(key)
+        if not tpl:
+            return None
+
+        steps_list = [
+            ui.li(
+                ui.code(step.tool_name),
+                ui.span(f" - {step.name}", class_="text-muted"),
+            )
+            for step in tpl["steps"]
+        ]
+
+        return ui.div(
+            ui.p(tpl["description"], class_="text-muted small"),
+            ui.strong("Steps:"),
+            ui.tags.ol(*steps_list, class_="small mb-0"),
+            class_="p-2 bg-light rounded",
+        )
+
+    @reactive.effect
+    @reactive.event(input.wf_launch_btn)
+    async def _launch_workflow():
+        template_key = input.wf_template()
+        wf_name = input.wf_name() or None
+        input_str = input.wf_input_str()
+        input_grd = input.wf_input_grd()
+        working_dir = input.wf_working_dir()
+        mpi_np = input.wf_mpi_np()
+
+        if not working_dir:
+            ui.notification_show("Working directory is required", type="error")
+            return
+
+        try:
+            validated_workdir = config.validate_path(working_dir)
+        except ValueError as e:
+            ui.notification_show(str(e), type="error")
+            return
+
+        validated_workdir.mkdir(parents=True, exist_ok=True)
+
+        params = {}
+        if input_str:
+            params["input_str"] = input_str
+        if input_grd:
+            params["input_grd"] = input_grd
+        if mpi_np:
+            params["mpi_np"] = str(mpi_np)
+
+        try:
+            wf_id = await workflow_engine.create_workflow(
+                template_key=template_key,
+                working_dir=validated_workdir,
+                params=params,
+                name=wf_name,
+            )
+            active_workflow_id.set(wf_id)
+            ui.notification_show(f"Workflow launched: {wf_id[:8]}", type="message")
+        except Exception as e:
+            ui.notification_show(f"Failed to launch workflow: {e}", type="error")
+
+    @render.ui
+    def wf_progress():
+        wf_id = active_workflow_id.get()
+        if not wf_id:
+            return ui.p("Launch a workflow to see progress.", class_="text-muted small")
+
+        wf = workflow_engine.get_workflow(wf_id)
+        if not wf:
+            return ui.p("Workflow not found.", class_="text-muted")
+
+        # Auto-refresh while active
+        if wf.is_active:
+            reactive.invalidate_later(2)
+
+        # Status badge
+        status_colors = {
+            WorkflowStatus.PENDING: "bg-secondary",
+            WorkflowStatus.RUNNING: "bg-primary",
+            WorkflowStatus.COMPLETED: "bg-success",
+            WorkflowStatus.FAILED: "bg-danger",
+            WorkflowStatus.CANCELLED: "bg-warning",
+            WorkflowStatus.PAUSED: "bg-info",
+        }
+        badge_class = status_colors.get(wf.status, "bg-secondary")
+
+        # Progress bar
+        progress_pct = int(wf.progress * 100)
+
+        # Step-by-step status
+        step_items = []
+        for i, step in enumerate(wf.steps):
+            if i < wf.current_step_index:
+                step_badge = ui.span("Done", class_="badge bg-success ms-2")
+            elif i == wf.current_step_index and wf.status == WorkflowStatus.RUNNING:
+                step_badge = ui.span("Running", class_="badge bg-primary ms-2")
+            elif wf.status == WorkflowStatus.FAILED and i == wf.current_step_index:
+                step_badge = ui.span("Failed", class_="badge bg-danger ms-2")
+            else:
+                step_badge = ui.span("Pending", class_="badge bg-secondary ms-2")
+
+            step_items.append(
+                ui.div(
+                    ui.span(f"{i + 1}. ", class_="fw-bold"),
+                    ui.code(step.tool_name),
+                    ui.span(f" ({step.name})", class_="text-muted small"),
+                    step_badge,
+                    class_="mb-1",
+                )
+            )
+
+        error_section = None
+        if wf.error_message:
+            error_section = ui.div(
+                ui.strong("Error: ", class_="text-danger"),
+                ui.span(wf.error_message, class_="text-danger small"),
+                class_="mt-2",
+            )
+
+        return ui.div(
+            ui.h6("Active Workflow"),
+            ui.div(
+                ui.span(wf.name, class_="fw-bold me-2"),
+                ui.span(wf.status.value.upper(), class_=f"badge {badge_class}"),
+                class_="mb-2",
+            ),
+            ui.div(
+                ui.div(
+                    ui.div(
+                        f"{progress_pct}%",
+                        class_="progress-bar progress-bar-striped"
+                        + (" progress-bar-animated" if wf.is_active else "")
+                        + (" bg-success" if wf.status == WorkflowStatus.COMPLETED else ""),
+                        style=f"width: {max(progress_pct, 2)}%",
+                        role="progressbar",
+                    ),
+                    class_="progress mb-2",
+                    style="height: 20px;",
+                ),
+            ),
+            *step_items,
+            error_section,
+        )
+
+    @render.ui
+    def wf_history():
+        # Trigger re-render when workflow state changes
+        active_workflow_id.get()
+
+        workflows = workflow_engine.list_workflows(limit=10)
+        if not workflows:
+            return ui.p("No workflows yet.", class_="text-muted small")
+
+        rows = []
+        for wf in workflows:
+            status_colors = {
+                WorkflowStatus.COMPLETED: "bg-success",
+                WorkflowStatus.FAILED: "bg-danger",
+                WorkflowStatus.RUNNING: "bg-primary",
+                WorkflowStatus.CANCELLED: "bg-warning",
+            }
+            badge_class = status_colors.get(wf.status, "bg-secondary")
+
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(ui.code(wf.id[:8], class_="small")),
+                    ui.tags.td(wf.name),
+                    ui.tags.td(ui.span(wf.status.value, class_=f"badge {badge_class}")),
+                    ui.tags.td(f"{int(wf.progress * 100)}%"),
+                    ui.tags.td(
+                        format_duration(wf.duration) if wf.duration else "-"
+                    ),
+                )
+            )
+
+        return ui.tags.table(
+            ui.tags.thead(
+                ui.tags.tr(
+                    ui.tags.th("ID"),
+                    ui.tags.th("Name"),
+                    ui.tags.th("Status"),
+                    ui.tags.th("Progress"),
+                    ui.tags.th("Duration"),
+                ),
+            ),
+            ui.tags.tbody(*rows),
+            class_="table table-sm table-bordered",
+        )
 
     # Latest progress data from callbacks, polled by _auto_refresh
     _latest_progress: dict[str, tuple[float, str]] = {}

@@ -269,6 +269,36 @@
 
 ---
 
+## Phase 8: Wire Up Orphaned Backend Features to UI
+
+- [x] **8.1** Add Compare & Ensemble pages to main navigation in `app.py`
+  - Imported compare and ensemble pages
+  - Added nav_panels after Visualize tab
+  - Added compare_server and ensemble_server in _build_server
+- [x] **8.2** Export WorkflowEngine from services in `services/__init__.py`
+  - Added WorkflowEngine, WORKFLOW_TEMPLATES, generate_comparison_report to exports
+- [x] **8.3** Add Workflows tab to Run page in `pages/run.py`
+  - Template selector dropdown populated from WORKFLOW_TEMPLATES
+  - Template info display with description and step list
+  - Parameter inputs: STR file, GRD file, working directory, MPI processes, workflow name
+  - "Launch Workflow" button with WorkflowEngine integration
+  - Workflow progress display with step-by-step status badges and progress bar
+  - Workflow history table (last 10 workflows)
+- [x] **8.4** Add per-job "Generate Report" button to Run page in `pages/run.py`
+  - Added "Generate Report" button in selected job details (both active and completed)
+  - Handler calls generate_job_report and shows notification with output path
+- [x] **8.5** Add "Generate Comparison Report" button to Compare page in `pages/compare.py`
+  - Added report button in sidebar below existing controls
+  - Handler calls generate_comparison_report with selected jobs
+- [x] **8.6** Add Time Series Preview tab to Post-Process page in `pages/postprocess.py`
+  - Imported timeseries_ui and timeseries_server from components.timeseries
+  - Added "Time Series Preview" nav_panel
+  - Wired timeseries_server with ts_preview_data reactive
+  - Auto-detect and load .ts/.ext/.csv output files after shyelab runs
+- [x] **8.7** Update TODO.md with Phase 8 section
+
+---
+
 ## Implementation Order
 
 ```

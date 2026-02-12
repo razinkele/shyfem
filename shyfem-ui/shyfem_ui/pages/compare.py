@@ -19,6 +19,7 @@ from shyfem_ui.components.job_status import format_datetime, format_duration, ge
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
+from shyfem_ui.services.report import generate_comparison_report
 
 
 @module.ui
@@ -65,6 +66,13 @@ def compare_ui():
                     "compare_ts_btn",
                     "Compare Time Series",
                     class_="btn-outline-primary btn-sm w-100",
+                ),
+                ui.hr(),
+                ui.h5("Report"),
+                ui.input_action_button(
+                    "generate_report_btn",
+                    "Generate Comparison Report",
+                    class_="btn-outline-success btn-sm w-100",
                 ),
                 width=300,
             ),
@@ -379,6 +387,35 @@ def compare_server(
             return ui.p("Run comparisons to see a summary.", class_="text-muted text-center")
 
         return ui.div(*parts)
+
+    @reactive.effect
+    @reactive.event(input.generate_report_btn)
+    def _generate_comparison_report():
+        jobs = selected_jobs.get()
+        if len(jobs) < 2:
+            ui.notification_show(
+                "Select and compare at least two jobs first",
+                type="warning",
+            )
+            return
+
+        try:
+            output_dir = Path(config.work_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir / f"comparison_{jobs[0].id[:8]}_{jobs[1].id[:8]}.html"
+
+            report_path = generate_comparison_report(
+                jobs=jobs,
+                title=f"Comparison: {jobs[0].name} vs {jobs[1].name}",
+                output_path=output_path,
+            )
+            ui.notification_show(
+                f"Report generated: {report_path}",
+                type="message",
+                duration=8,
+            )
+        except Exception as e:
+            ui.notification_show(f"Report generation failed: {e}", type="error")
 
     return {}
 
