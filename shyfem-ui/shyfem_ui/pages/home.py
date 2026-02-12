@@ -119,75 +119,6 @@ def home_ui():
                 ),
             ),
         ),
-        # New project modal
-        ui.modal(
-            ui.input_text("project_name", "Project Name", placeholder="my_simulation"),
-            ui.input_text_area(
-                "project_description",
-                "Description (optional)",
-                placeholder="Brief description of the project",
-            ),
-            ui.input_text(
-                "project_dir",
-                "Project Directory",
-                placeholder="/path/to/project",
-            ),
-            title="Create New Project",
-            footer=ui.div(
-                ui.input_action_button(
-                    "create_project_btn",
-                    "Create",
-                    class_="btn-primary",
-                ),
-                ui.input_action_button(
-                    "cancel_create_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
-            ),
-            id="new_project_modal",
-        ),
-        # Tutorial modal
-        ui.modal(
-            ui.p(
-                "Set up a guided tutorial project using the Mar Menor lagoon "
-                "example. This copies the example grid and input files into a "
-                "new project so you can work through the 6 tutorial phases."
-            ),
-            ui.input_text(
-                "tutorial_project_name",
-                "Project Name",
-                value="mar_menor_tutorial",
-            ),
-            ui.hr(),
-            ui.h6("Tutorial Phases"),
-            ui.tags.ol(
-                *[
-                    ui.tags.li(
-                        ui.span(phase, class_="fw-bold"),
-                        ui.span(f" — {desc}", class_="text-muted"),
-                        ui.br(),
-                        ui.code(", ".join(f"{f}.str" for f in files), class_="small"),
-                    )
-                    for phase, desc, files in TUTORIAL_PHASES
-                ],
-                class_="small",
-            ),
-            title="Mar Menor Tutorial",
-            footer=ui.div(
-                ui.input_action_button(
-                    "confirm_tutorial_btn",
-                    "Create Tutorial Project",
-                    class_="btn-success",
-                ),
-                ui.input_action_button(
-                    "cancel_tutorial_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
-            ),
-            id="tutorial_modal",
-        ),
     )
 
 
@@ -333,15 +264,40 @@ def home_server(
     @reactive.effect
     @reactive.event(input.new_project_btn)
     def _show_new_project_modal():
-        # Set default directory
         default_dir = str(config.work_dir / f"project_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        ui.update_text("project_dir", value=default_dir)
-        ui.modal_show("new_project_modal")
+        m = ui.modal(
+            ui.input_text("project_name", "Project Name", placeholder="my_simulation"),
+            ui.input_text_area(
+                "project_description",
+                "Description (optional)",
+                placeholder="Brief description of the project",
+            ),
+            ui.input_text(
+                "project_dir",
+                "Project Directory",
+                value=default_dir,
+            ),
+            title="Create New Project",
+            easy_close=True,
+            footer=ui.div(
+                ui.input_action_button(
+                    "create_project_btn",
+                    "Create",
+                    class_="btn-primary",
+                ),
+                ui.input_action_button(
+                    "cancel_create_btn",
+                    "Cancel",
+                    class_="btn-secondary ms-2",
+                ),
+            ),
+        )
+        ui.modal_show(m)
 
     @reactive.effect
     @reactive.event(input.cancel_create_btn)
     def _hide_modal():
-        ui.modal_remove("new_project_modal")
+        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.create_project_btn)
@@ -382,7 +338,7 @@ def home_server(
                 db.add(project)
 
             ui.notification_show(f"Project '{name}' created successfully", type="message")
-            ui.modal_remove("new_project_modal")
+            ui.modal_remove()
             _refresh_projects()
 
         except Exception as e:
@@ -392,13 +348,52 @@ def home_server(
     @reactive.effect
     @reactive.event(input.tutorial_btn)
     def _show_tutorial_modal():
-        ui.update_text("tutorial_project_name", value="mar_menor_tutorial")
-        ui.modal_show("tutorial_modal")
+        m = ui.modal(
+            ui.p(
+                "Set up a guided tutorial project using the Mar Menor lagoon "
+                "example. This copies the example grid and input files into a "
+                "new project so you can work through the 6 tutorial phases."
+            ),
+            ui.input_text(
+                "tutorial_project_name",
+                "Project Name",
+                value="mar_menor_tutorial",
+            ),
+            ui.hr(),
+            ui.h6("Tutorial Phases"),
+            ui.tags.ol(
+                *[
+                    ui.tags.li(
+                        ui.span(phase, class_="fw-bold"),
+                        ui.span(f" — {desc}", class_="text-muted"),
+                        ui.br(),
+                        ui.code(", ".join(f"{f}.str" for f in files), class_="small"),
+                    )
+                    for phase, desc, files in TUTORIAL_PHASES
+                ],
+                class_="small",
+            ),
+            title="Mar Menor Tutorial",
+            easy_close=True,
+            footer=ui.div(
+                ui.input_action_button(
+                    "confirm_tutorial_btn",
+                    "Create Tutorial Project",
+                    class_="btn-success",
+                ),
+                ui.input_action_button(
+                    "cancel_tutorial_btn",
+                    "Cancel",
+                    class_="btn-secondary ms-2",
+                ),
+            ),
+        )
+        ui.modal_show(m)
 
     @reactive.effect
     @reactive.event(input.cancel_tutorial_btn)
     def _hide_tutorial_modal():
-        ui.modal_remove("tutorial_modal")
+        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.confirm_tutorial_btn)
@@ -468,7 +463,7 @@ def home_server(
             ui.notification_show(
                 f"Tutorial project '{name}' created successfully!", type="message"
             )
-            ui.modal_remove("tutorial_modal")
+            ui.modal_remove()
             _refresh_projects()
 
         except Exception as e:
