@@ -1,6 +1,5 @@
 """File browser component for selecting and uploading files."""
 
-from pathlib import Path
 from typing import Callable, Optional
 
 from shiny import module, reactive, render, ui
@@ -79,67 +78,3 @@ def file_browser_server(
         return ui.div(*items)
 
     return selected_files
-
-
-def create_directory_browser(
-    id: str,
-    label: str = "Select Directory",
-    initial_path: Optional[Path] = None,
-) -> ui.Tag:
-    """Create a directory browser component.
-
-    Note: True directory selection is not supported in web browsers.
-    This provides a text input for path entry with path validation.
-    """
-    initial_value = str(initial_path) if initial_path else ""
-
-    return ui.div(
-        ui.input_text(
-            f"{id}_path",
-            label,
-            value=initial_value,
-            placeholder="/path/to/directory",
-        ),
-        ui.output_ui(f"{id}_validation"),
-        class_="directory-browser-component",
-    )
-
-
-def validate_path(path_str: str, must_exist: bool = True) -> tuple[bool, str]:
-    """Validate a file/directory path.
-
-    Returns:
-        Tuple of (is_valid, message)
-    """
-    if not path_str:
-        return False, "Path is empty"
-
-    path = Path(path_str)
-
-    if must_exist and not path.exists():
-        return False, f"Path does not exist: {path_str}"
-
-    if must_exist and not (path.is_file() or path.is_dir()):
-        return False, f"Path is not a file or directory: {path_str}"
-
-    return True, "Valid path"
-
-
-def get_file_icon(filename: str) -> str:
-    """Get an appropriate icon for a file type."""
-    ext = Path(filename).suffix.lower()
-
-    icons = {
-        ".grd": "📐",
-        ".bas": "🗄️",
-        ".str": "📝",
-        ".shy": "💧",
-        ".ext": "📊",
-        ".nc": "🌐",
-        ".png": "🖼️",
-        ".pdf": "📄",
-        ".txt": "📃",
-        ".log": "📋",
-    }
-
-    return icons.get(ext, "📁")

@@ -18,6 +18,7 @@ class LocalJobQueue(JobQueue):
     """
 
     MAX_STORED_JOBS = 500
+    TEMP_FILE_RETENTION_SECS = 3600  # Clean temp files 1 hour after job completion
 
     def __init__(
         self,
@@ -72,6 +73,23 @@ class LocalJobQueue(JobQueue):
         if self._semaphore is None:
             self._semaphore = asyncio.Semaphore(self.max_workers)
         return self._semaphore
+
+    def _schedule_temp_cleanup(self, job: JobInfo) -> None:
+        """Schedule removal of stdout/stderr temp files after retention period."""
+        def _cleanup():
+            for file_path in [job.stdout_file, job.stderr_file]:
+                if file_path:
+                    try:
+                        Path(file_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+
+        try:
+            loop = asyncio.get_event_loop()
+            loop.call_later(self.TEMP_FILE_RETENTION_SECS, _cleanup)
+        except RuntimeError:
+            # No running event loop; clean up immediately
+            _cleanup()
 
     async def submit(self, spec: JobSpec) -> str:
         """Submit a job for execution."""
@@ -143,12 +161,11 @@ class LocalJobQueue(JobQueue):
             try:
                 if spec.tool_name == "shyfem" and spec.mpi_enabled and spec.mpi_np > 1:
                     # MPI execution needs special handling (mpirun wrapper)
-                    mpi_np = spec.metadata.get("mpi_np", spec.mpi_np)
                     result = await self.wrapper.run_shyfem(
                         spec.args[-1] if spec.args else "",
                         spec.working_dir,
                         mpi_enabled=True,
-                        mpi_np=mpi_np,
+                        mpi_np=spec.mpi_np,
                         mpirun_path="mpirun",
                         options=spec.args[:-1] if len(spec.args) > 1 else None,
                         progress_callback=progress_callback,
@@ -192,6 +209,8 @@ class LocalJobQueue(JobQueue):
                 self._running_count -= 1
                 # Clean up task reference
                 self._tasks.pop(job_id, None)
+                # Schedule temp file cleanup after retention period
+                self._schedule_temp_cleanup(job)
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a running job."""

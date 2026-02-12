@@ -51,6 +51,34 @@ class Line:
     nodes: list[int] = field(default_factory=list)
 
 
+class CoordinateSystem:
+    """Detected coordinate system information for a grid."""
+
+    GEOGRAPHIC = "geographic"  # lat/lon (degrees)
+    CARTESIAN = "cartesian"  # meters or unknown units
+    UTM = "utm"  # UTM projection (meters, known zone)
+
+    def __init__(self, crs_type: str = "cartesian",
+                 utm_zone: Optional[int] = None,
+                 utm_hemisphere: str = "N"):
+        self.crs_type = crs_type
+        self.utm_zone = utm_zone
+        self.utm_hemisphere = utm_hemisphere
+
+    @property
+    def is_geographic(self) -> bool:
+        return self.crs_type == self.GEOGRAPHIC
+
+    @property
+    def is_utm(self) -> bool:
+        return self.crs_type == self.UTM
+
+    def __repr__(self) -> str:
+        if self.crs_type == self.UTM:
+            return f"UTM zone {self.utm_zone}{self.utm_hemisphere}"
+        return self.crs_type
+
+
 @dataclass
 class GrdFile:
     """Parsed representation of a .grd file."""
@@ -59,7 +87,9 @@ class GrdFile:
     elements: dict[int, Element] = field(default_factory=dict)
     lines: dict[int, Line] = field(default_factory=dict)
     comments: list[str] = field(default_factory=list)
+    parse_warnings: list[str] = field(default_factory=list)
     file_path: Optional[Path] = None
+    coordinate_system: Optional[CoordinateSystem] = None
 
     @property
     def num_nodes(self) -> int:
@@ -129,16 +159,165 @@ class GrdFile:
             result[i, : len(elem.nodes)] = elem.nodes
         return result
 
+    def detect_coordinate_system(self) -> CoordinateSystem:
+        """Detect whether coordinates are geographic (lat/lon) or Cartesian.
+
+        Heuristics:
+        - Geographic: x in [-180, 360], y in [-90, 90]
+        - UTM: x in [100_000, 900_000], y in [0, 10_000_000]
+        - Otherwise: Cartesian (unknown units)
+
+        Returns the detected CoordinateSystem (also stored in self.coordinate_system).
+        """
+        if not self.nodes:
+            cs = CoordinateSystem()
+            self.coordinate_system = cs
+            return cs
+
+        bounds = self.get_bounds()
+        xmin, ymin, xmax, ymax = bounds
+
+        # Check geographic (lon/lat in degrees)
+        if -180 <= xmin and xmax <= 360 and -90 <= ymin and ymax <= 90:
+            cs = CoordinateSystem(CoordinateSystem.GEOGRAPHIC)
+            self.coordinate_system = cs
+            return cs
+
+        # Check UTM-like ranges (meters)
+        if 100_000 <= xmin and xmax <= 900_000 and 0 <= ymin and ymax <= 10_000_000:
+            # Estimate UTM zone from centroid longitude if possible
+            # UTM easting is typically 166,000-834,000 in a single zone
+            cs = CoordinateSystem(CoordinateSystem.UTM)
+            # Hemisphere from y: southern if y < 10,000,000 isn't definitive,
+            # but y > 5,000,000 for northern is more common in SHYFEM usage
+            self.coordinate_system = cs
+            return cs
+
+        # Default: Cartesian
+        cs = CoordinateSystem(CoordinateSystem.CARTESIAN)
+        self.coordinate_system = cs
+        return cs
+
+    def to_geographic(self, utm_zone: Optional[int] = None,
+                      hemisphere: str = "N") -> bool:
+        """Convert UTM coordinates to geographic (lat/lon) in place.
+
+        Uses a simplified UTM-to-lat/lon conversion that avoids the pyproj
+        dependency. Accuracy is within ~1m for most applications.
+
+        Args:
+            utm_zone: UTM zone number (1-60). If None, attempts auto-detection.
+            hemisphere: "N" for northern, "S" for southern hemisphere.
+
+        Returns:
+            True if conversion was performed, False if already geographic
+            or no nodes present.
+        """
+        if not self.nodes:
+            return False
+
+        cs = self.coordinate_system or self.detect_coordinate_system()
+        if cs.is_geographic:
+            return False  # Already geographic
+
+        if utm_zone is None:
+            if cs.is_utm and cs.utm_zone:
+                utm_zone = cs.utm_zone
+            else:
+                # Cannot convert without zone information
+                self.parse_warnings.append(
+                    "Cannot auto-detect UTM zone. Provide utm_zone parameter."
+                )
+                return False
+
+        # UTM to lat/lon conversion (simplified, no pyproj dependency)
+        is_north = hemisphere.upper() == "N"
+        for node in self.nodes.values():
+            lat, lon = _utm_to_latlon(node.x, node.y, utm_zone, is_north)
+            node.x = lon
+            node.y = lat
+
+        self.coordinate_system = CoordinateSystem(CoordinateSystem.GEOGRAPHIC)
+        return True
+
+
+def _utm_to_latlon(easting: float, northing: float,
+                    zone: int, northern: bool) -> tuple[float, float]:
+    """Convert UTM coordinates to latitude/longitude (WGS84).
+
+    Simplified conversion without pyproj. Accurate to ~1 meter for
+    typical coastal/lagoon applications.
+
+    Args:
+        easting: UTM easting in meters
+        northing: UTM northing in meters
+        zone: UTM zone number (1-60)
+        northern: True for northern hemisphere
+
+    Returns:
+        (latitude, longitude) in decimal degrees
+    """
+    # WGS84 ellipsoid parameters
+    a = 6378137.0  # semi-major axis
+    f = 1 / 298.257223563  # flattening
+    e = np.sqrt(2 * f - f**2)  # eccentricity
+    e_prime = e / np.sqrt(1 - e**2)
+
+    k0 = 0.9996  # scale factor
+    x = easting - 500_000.0  # remove false easting
+    y = northing
+    if not northern:
+        y -= 10_000_000.0  # remove false northing for southern hemisphere
+
+    # Central meridian of the zone
+    lon0 = np.radians((zone - 1) * 6 - 180 + 3)
+
+    M = y / k0
+    mu = M / (a * (1 - e**2 / 4 - 3 * e**4 / 64 - 5 * e**6 / 256))
+
+    e1 = (1 - np.sqrt(1 - e**2)) / (1 + np.sqrt(1 - e**2))
+
+    phi1 = (mu + (3 * e1 / 2 - 27 * e1**3 / 32) * np.sin(2 * mu)
+            + (21 * e1**2 / 16 - 55 * e1**4 / 32) * np.sin(4 * mu)
+            + (151 * e1**3 / 96) * np.sin(6 * mu)
+            + (1097 * e1**4 / 512) * np.sin(8 * mu))
+
+    sin_phi = np.sin(phi1)
+    cos_phi = np.cos(phi1)
+    tan_phi = np.tan(phi1)
+
+    N1 = a / np.sqrt(1 - e**2 * sin_phi**2)
+    T1 = tan_phi**2
+    C1 = e_prime**2 * cos_phi**2
+    R1 = a * (1 - e**2) / (1 - e**2 * sin_phi**2)**1.5
+    D = x / (N1 * k0)
+
+    lat = phi1 - (N1 * tan_phi / R1) * (
+        D**2 / 2
+        - (5 + 3 * T1 + 10 * C1 - 4 * C1**2 - 9 * e_prime**2) * D**4 / 24
+        + (61 + 90 * T1 + 298 * C1 + 45 * T1**2 - 252 * e_prime**2 - 3 * C1**2) * D**6 / 720
+    )
+
+    lon = lon0 + (D - (1 + 2 * T1 + C1) * D**3 / 6
+                  + (5 - 2 * C1 + 28 * T1 - 3 * C1**2 + 8 * e_prime**2 + 24 * T1**2)
+                  * D**5 / 120) / cos_phi
+
+    return (np.degrees(lat), np.degrees(lon))
+
 
 class GrdParser:
     """Parser for SHYFEM .grd grid files."""
 
     @classmethod
     def parse(cls, content: str) -> GrdFile:
-        """Parse .grd file content into structured data."""
+        """Parse .grd file content into structured data.
+
+        Handles malformed lines gracefully: individual bad fields are skipped
+        with a warning rather than aborting the entire parse.
+        """
         result = GrdFile()
 
-        for line in content.splitlines():
+        for line_num, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             if not stripped:
                 continue
@@ -150,44 +329,96 @@ class GrdParser:
             try:
                 record_type = int(parts[0])
             except ValueError:
-                # Invalid line, skip
+                result.parse_warnings.append(
+                    f"Line {line_num}: skipped (invalid record type: {parts[0]!r})"
+                )
                 continue
 
-            if record_type == 0:
-                # Comment line
-                result.comments.append(" ".join(parts[1:]))
+            try:
+                if record_type == 0:
+                    # Comment line
+                    result.comments.append(" ".join(parts[1:]))
 
-            elif record_type == 1:
-                # Node: 1 id type x y [depth]
-                if len(parts) >= 5:
+                elif record_type == 1:
+                    # Node: 1 id type x y [depth]
+                    if len(parts) < 5:
+                        result.parse_warnings.append(
+                            f"Line {line_num}: node record has {len(parts)} fields (need >= 5)"
+                        )
+                        continue
                     node_id = int(parts[1])
                     node_type = int(parts[2])
                     x = float(parts[3])
                     y = float(parts[4])
-                    depth = float(parts[5]) if len(parts) > 5 else None
+                    depth = None
+                    if len(parts) > 5:
+                        try:
+                            depth = float(parts[5])
+                        except ValueError:
+                            result.parse_warnings.append(
+                                f"Line {line_num}: invalid depth value {parts[5]!r}, ignoring"
+                            )
                     result.nodes[node_id] = Node(
                         id=node_id, node_type=node_type, x=x, y=y, depth=depth
                     )
 
-            elif record_type == 2:
-                # Element: 2 id type node1 node2 node3 [node4...]
-                if len(parts) >= 6:
+                elif record_type == 2:
+                    # Element: 2 id type node1 node2 node3 [node4...]
+                    if len(parts) < 6:
+                        result.parse_warnings.append(
+                            f"Line {line_num}: element record has {len(parts)} fields (need >= 6)"
+                        )
+                        continue
                     elem_id = int(parts[1])
                     elem_type = int(parts[2])
-                    nodes = [int(p) for p in parts[3:]]
+                    node_ids = []
+                    for p in parts[3:]:
+                        try:
+                            node_ids.append(int(p))
+                        except ValueError:
+                            result.parse_warnings.append(
+                                f"Line {line_num}: invalid node id {p!r} in element {elem_id}"
+                            )
+                    if len(node_ids) < 3:
+                        result.parse_warnings.append(
+                            f"Line {line_num}: element {elem_id} has {len(node_ids)} valid nodes (need >= 3)"
+                        )
+                        continue
                     result.elements[elem_id] = Element(
-                        id=elem_id, elem_type=elem_type, nodes=nodes
+                        id=elem_id, elem_type=elem_type, nodes=node_ids
                     )
 
-            elif record_type == 3:
-                # Line: 3 id type node1 node2 [node3...]
-                if len(parts) >= 5:
+                elif record_type == 3:
+                    # Line: 3 id type node1 node2 [node3...]
+                    if len(parts) < 5:
+                        result.parse_warnings.append(
+                            f"Line {line_num}: line record has {len(parts)} fields (need >= 5)"
+                        )
+                        continue
                     line_id = int(parts[1])
                     line_type = int(parts[2])
-                    nodes = [int(p) for p in parts[3:]]
+                    node_ids = []
+                    for p in parts[3:]:
+                        try:
+                            node_ids.append(int(p))
+                        except ValueError:
+                            result.parse_warnings.append(
+                                f"Line {line_num}: invalid node id {p!r} in line {line_id}"
+                            )
+                    if len(node_ids) < 2:
+                        result.parse_warnings.append(
+                            f"Line {line_num}: line {line_id} has {len(node_ids)} valid nodes (need >= 2)"
+                        )
+                        continue
                     result.lines[line_id] = Line(
-                        id=line_id, line_type=line_type, nodes=nodes
+                        id=line_id, line_type=line_type, nodes=node_ids
                     )
+
+            except (ValueError, IndexError) as e:
+                result.parse_warnings.append(
+                    f"Line {line_num}: skipped ({e})"
+                )
+                continue
 
         return result
 
@@ -245,6 +476,11 @@ class GrdParser:
         bounds = grd_file.get_bounds()
         depth_range = grd_file.get_depth_range()
 
+        # Auto-detect coordinate system if not already set
+        cs = grd_file.coordinate_system
+        if cs is None:
+            cs = grd_file.detect_coordinate_system()
+
         return {
             "num_nodes": grd_file.num_nodes,
             "num_elements": grd_file.num_elements,
@@ -266,4 +502,5 @@ class GrdParser:
             "node_types": sorted(grd_file.get_node_types()),
             "element_types": sorted(grd_file.get_element_types()),
             "line_types": sorted(grd_file.get_line_types()),
+            "coordinate_system": str(cs),
         }

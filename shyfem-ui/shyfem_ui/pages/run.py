@@ -1,15 +1,27 @@
-"""Job execution page - submit and monitor simulations."""
+"""Job execution page - submit and monitor simulations.
+
+Features:
+- Submit jobs with tool selection, MPI options, working directory
+- Live progress dashboard with real-time progress bars, timestep, ETA
+- Multi-job sortable table with status badges
+- Job dependency visualization
+- Auto-refresh for active jobs
+"""
 
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
+from shinywidgets import output_widget, render_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge, job_list_table
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
+from shyfem_ui.services.report import generate_job_report
+from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
 
 
 @module.ui
@@ -68,6 +80,14 @@ def run_ui():
                             ),
                         ),
                     ),
+                    # Job dependency (optional)
+                    ui.hr(),
+                    ui.h6("Dependencies (optional)"),
+                    ui.input_text(
+                        "depends_on",
+                        "Wait for Job ID",
+                        placeholder="job-id-to-wait-for",
+                    ),
                     ui.hr(),
                     ui.input_action_button(
                         "submit_btn",
@@ -82,6 +102,10 @@ def run_ui():
                 8,
                 ui.navset_card_tab(
                     ui.nav_panel(
+                        "Dashboard",
+                        ui.output_ui("dashboard"),
+                    ),
+                    ui.nav_panel(
                         "Active Jobs",
                         ui.output_ui("active_jobs"),
                     ),
@@ -90,12 +114,100 @@ def run_ui():
                         ui.output_ui("job_history"),
                     ),
                     ui.nav_panel(
+                        "Job Timeline",
+                        output_widget("timeline_chart"),
+                    ),
+                    ui.nav_panel(
                         "Selected Job",
                         ui.output_ui("selected_job_details"),
                     ),
                     ui.nav_panel(
                         "Log",
                         log_viewer_ui("job_log"),
+                    ),
+                    ui.nav_panel(
+                        "Workflows",
+                        ui.div(
+                            ui.h5("Workflow Templates"),
+                            ui.p("Chain multiple SHYFEM tools into automated pipelines.",
+                                 class_="text-muted small"),
+                            ui.div(
+                                ui.div(
+                                    ui.input_select(
+                                        "wf_template",
+                                        "Template",
+                                        choices={
+                                            k: v["name"]
+                                            for k, v in WORKFLOW_TEMPLATES.items()
+                                        },
+                                    ),
+                                    class_="col-6",
+                                ),
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_name",
+                                        "Workflow Name",
+                                        placeholder="my_workflow",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                class_="row mb-2",
+                            ),
+                            ui.output_ui("wf_template_info"),
+                            ui.hr(),
+                            ui.h6("Parameters"),
+                            ui.div(
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_input_str",
+                                        "Input STR File",
+                                        placeholder="/path/to/input.str",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_input_grd",
+                                        "Input GRD File",
+                                        placeholder="/path/to/input.grd",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                class_="row",
+                            ),
+                            ui.div(
+                                ui.div(
+                                    ui.input_text(
+                                        "wf_working_dir",
+                                        "Working Directory",
+                                        placeholder="/path/to/workdir",
+                                    ),
+                                    class_="col-6",
+                                ),
+                                ui.div(
+                                    ui.input_numeric(
+                                        "wf_mpi_np",
+                                        "MPI Processes",
+                                        value=4,
+                                        min=1,
+                                        max=128,
+                                    ),
+                                    class_="col-6",
+                                ),
+                                class_="row",
+                            ),
+                            ui.input_action_button(
+                                "wf_launch_btn",
+                                "Launch Workflow",
+                                class_="btn-primary mt-2",
+                            ),
+                            ui.hr(),
+                            ui.output_ui("wf_progress"),
+                            ui.hr(),
+                            ui.h6("Workflow History"),
+                            ui.output_ui("wf_history"),
+                            class_="p-2",
+                        ),
                     ),
                 ),
             ),
@@ -135,12 +247,26 @@ def run_server(
     selected_job = reactive.value(None)
     log_content = reactive.value("")
 
-    # Initialize log viewer
-    log_viewer_server("job_log", log_content)
+    # Initialize log viewer with auto-refresh callback
+    async def _refresh_log():
+        job = selected_job.get()
+        if job is None:
+            return
+        try:
+            stdout = await job_queue.get_output(job.id, "stdout", tail=500)
+            stderr = await job_queue.get_output(job.id, "stderr", tail=100)
+            log_content.set(f"=== STDOUT ===\n{stdout}\n\n=== STDERR ===\n{stderr}")
+        except Exception as e:
+            log_content.set(f"Error fetching log: {e}")
 
-    # Refresh jobs periodically
+    log_viewer_server("job_log", log_content, on_refresh=lambda: None)
+
+    # Refresh jobs periodically: poll every 2 seconds while there are active jobs
     @reactive.effect
-    async def _initial_refresh():
+    async def _auto_refresh():
+        active = active_jobs_data.get()
+        if active:
+            reactive.invalidate_later(2)
         await _refresh_jobs()
 
     @reactive.effect
@@ -154,6 +280,11 @@ def run_server(
         _update_job_lists(jobs)
 
     def _update_job_lists(jobs: list[JobInfo]):
+        # Apply any buffered progress updates from callbacks
+        for job in jobs:
+            if job.id in _latest_progress:
+                job.progress, job.progress_message = _latest_progress[job.id]
+
         all_jobs_data.set(jobs)
         active = [j for j in jobs if j.is_active]
         active_jobs_data.set(active)
@@ -194,6 +325,12 @@ def run_server(
 
         # Build job spec
         args = [str(validated_input)]
+        metadata = {}
+
+        # Check dependency
+        depends_on = input.depends_on()
+        if depends_on:
+            metadata["depends_on"] = depends_on
 
         spec = JobSpec(
             name=name,
@@ -202,6 +339,7 @@ def run_server(
             working_dir=validated_workdir,
             mpi_enabled=input.mpi_enabled() if tool == "shyfem" else False,
             mpi_np=input.mpi_np() if (tool == "shyfem" and input.mpi_enabled()) else 1,
+            metadata=metadata,
         )
 
         try:
@@ -213,6 +351,87 @@ def run_server(
             ui.notification_show(f"Failed to submit job: {e}", type="error")
 
     @render.ui
+    def dashboard():
+        """Live progress dashboard for all active jobs."""
+        active = active_jobs_data.get()
+        all_jobs = all_jobs_data.get()
+
+        # Summary stats
+        total = len(all_jobs)
+        running = sum(1 for j in all_jobs if j.status == JobStatus.RUNNING)
+        queued = sum(1 for j in all_jobs if j.status in (JobStatus.PENDING, JobStatus.QUEUED))
+        completed = sum(1 for j in all_jobs if j.status == JobStatus.COMPLETED)
+        failed = sum(1 for j in all_jobs if j.status == JobStatus.FAILED)
+
+        stat_cards = ui.div(
+            _stat_card("Running", str(running), "bg-primary"),
+            _stat_card("Queued", str(queued), "bg-info"),
+            _stat_card("Completed", str(completed), "bg-success"),
+            _stat_card("Failed", str(failed), "bg-danger"),
+            class_="d-flex gap-2 mb-3",
+        )
+
+        if not active:
+            return ui.div(
+                stat_cards,
+                ui.p("No active jobs. Submit a new job to get started.", class_="text-muted text-center mt-3"),
+            )
+
+        # Build progress cards for each active job
+        progress_cards = []
+        for job in active:
+            progress_pct = int(job.progress * 100)
+            eta_str = _estimate_eta(job)
+
+            progress_cards.append(
+                ui.div(
+                    ui.div(
+                        ui.div(
+                            ui.span(job.name, class_="fw-bold"),
+                            ui.span(f"({job.tool_name})", class_="text-muted small ms-2"),
+                            get_status_badge(job.status),
+                            class_="d-flex align-items-center gap-2",
+                        ),
+                        ui.div(
+                            ui.div(
+                                ui.div(
+                                    f"{progress_pct}%",
+                                    class_="progress-bar progress-bar-striped progress-bar-animated"
+                                    + (" bg-success" if progress_pct > 90 else ""),
+                                    style=f"width: {max(progress_pct, 2)}%",
+                                    role="progressbar",
+                                ),
+                                class_="progress mt-2",
+                                style="height: 20px;",
+                            ),
+                        ),
+                        ui.div(
+                            ui.span(
+                                job.progress_message or "Starting...",
+                                class_="small text-muted",
+                            ),
+                            ui.span(f"ETA: {eta_str}", class_="small text-muted ms-auto")
+                            if eta_str else None,
+                            class_="d-flex justify-content-between mt-1",
+                        ),
+                        ui.div(
+                            ui.span(f"Started: {format_datetime(job.started_at)}", class_="small text-muted me-3"),
+                            ui.span(f"ID: {job.id[:8]}...", class_="small text-muted"),
+                            class_="mt-1",
+                        ),
+                        class_="card-body py-2",
+                    ),
+                    class_="card mb-2",
+                    style="cursor: pointer;",
+                )
+            )
+
+        return ui.div(
+            stat_cards,
+            *progress_cards,
+        )
+
+    @render.ui
     def active_jobs():
         jobs = active_jobs_data.get()
         if not jobs:
@@ -221,9 +440,13 @@ def run_server(
                 ui.p("Submit a new job to get started.", class_="text-center"),
             )
 
+        # Build job selection dropdown + cards
+        job_choices = {job.id: f"{job.name} ({job.tool_name})" for job in jobs}
+
         job_cards = []
         for job in jobs:
             progress_pct = int(job.progress * 100)
+            is_selected = job.id == selected_job_id.get()
 
             job_cards.append(
                 ui.div(
@@ -247,23 +470,61 @@ def run_server(
                             ui.span(job.progress_message or "", class_="small text-muted ms-2"),
                             class_="mt-1",
                         ),
-                        ui.input_action_button(
-                            f"view_job_{job.id}",
-                            "View Details",
-                            class_="btn-sm btn-outline-primary mt-2 me-2",
-                        ),
-                        ui.input_action_button(
-                            f"cancel_job_{job.id}",
-                            "Cancel",
-                            class_="btn-sm btn-outline-danger mt-2",
-                        ),
                         class_="card-body",
                     ),
-                    class_="card mb-2",
+                    class_=f"card mb-2 {'border-primary' if is_selected else ''}",
                 )
             )
 
-        return ui.div(*job_cards)
+        return ui.div(
+            ui.div(
+                ui.input_select(
+                    "active_job_select",
+                    "Select Job",
+                    choices=job_choices,
+                    selected=selected_job_id.get(),
+                    width="100%",
+                ),
+                ui.div(
+                    ui.input_action_button(
+                        "view_active_job_btn",
+                        "View Details",
+                        class_="btn-sm btn-outline-primary me-2",
+                    ),
+                    ui.input_action_button(
+                        "cancel_active_job_btn",
+                        "Cancel",
+                        class_="btn-sm btn-outline-danger",
+                    ),
+                    class_="mt-2 mb-3",
+                ),
+            ),
+            *job_cards,
+        )
+
+    @reactive.effect
+    @reactive.event(input.view_active_job_btn)
+    async def _view_active_job():
+        job_id = input.active_job_select()
+        if job_id:
+            selected_job_id.set(job_id)
+            await _refresh_jobs()
+
+    @reactive.effect
+    @reactive.event(input.cancel_active_job_btn)
+    async def _cancel_active_job():
+        job_id = input.active_job_select()
+        if not job_id:
+            return
+        try:
+            success = await job_queue.cancel(job_id)
+            if success:
+                ui.notification_show("Job cancelled", type="message")
+            else:
+                ui.notification_show("Failed to cancel job", type="error")
+            await _refresh_jobs()
+        except Exception as e:
+            ui.notification_show(f"Error: {e}", type="error")
 
     @render.ui
     def job_history():
@@ -275,11 +536,70 @@ def run_server(
 
         return job_list_table(completed)
 
+    @render_widget
+    def timeline_chart():
+        """Plotly timeline/Gantt chart of job execution."""
+        jobs = all_jobs_data.get()
+        if not jobs:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No jobs to display",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font_size=16, font_color="gray",
+            )
+            fig.update_layout(height=400)
+            return fig
+
+        # Build Gantt-style chart
+        status_colors = {
+            JobStatus.PENDING: "#6c757d",
+            JobStatus.QUEUED: "#17a2b8",
+            JobStatus.RUNNING: "#0d6efd",
+            JobStatus.COMPLETED: "#198754",
+            JobStatus.FAILED: "#dc3545",
+            JobStatus.CANCELLED: "#ffc107",
+        }
+
+        fig = go.Figure()
+        for i, job in enumerate(reversed(jobs[:20])):  # Show last 20
+            start = job.started_at or job.created_at
+            end = job.completed_at or datetime.now()
+            color = status_colors.get(job.status, "#6c757d")
+
+            fig.add_trace(go.Bar(
+                x=[(end - start).total_seconds()],
+                y=[job.name],
+                orientation="h",
+                marker_color=color,
+                text=f"{job.tool_name} - {job.status.value}",
+                textposition="inside",
+                hovertemplate=(
+                    f"<b>{job.name}</b><br>"
+                    f"Tool: {job.tool_name}<br>"
+                    f"Status: {job.status.value}<br>"
+                    f"Duration: {format_duration(job.duration)}<br>"
+                    f"<extra></extra>"
+                ),
+                showlegend=False,
+            ))
+
+        fig.update_layout(
+            title="Job Timeline (last 20 jobs)",
+            xaxis_title="Duration (seconds)",
+            yaxis_title="",
+            height=max(300, len(jobs[:20]) * 35 + 100),
+            barmode="stack",
+            showlegend=False,
+        )
+        return fig
+
     @render.ui
     def selected_job_details():
         job = selected_job.get()
         if job is None:
             return ui.p("Select a job to view details", class_="text-muted text-center")
+
+        eta_str = _estimate_eta(job)
 
         details = [
             ("Job ID", ui.code(job.id)),
@@ -294,12 +614,20 @@ def run_server(
         if job.started_at:
             details.append(("Started", format_datetime(job.started_at)))
 
+        if eta_str:
+            details.append(("ETA", eta_str))
+
         if job.completed_at:
             details.append(("Completed", format_datetime(job.completed_at)))
             details.append(("Duration", format_duration(job.duration)))
 
         if job.return_code is not None:
             details.append(("Return Code", str(job.return_code)))
+
+        # Dependency info
+        depends_on = job.metadata.get("depends_on")
+        if depends_on:
+            details.append(("Depends On", ui.code(depends_on)))
 
         detail_rows = [
             ui.div(
@@ -339,6 +667,11 @@ def run_server(
                 "View Log",
                 class_="btn-sm btn-outline-primary me-2",
             ),
+            ui.input_action_button(
+                "generate_report_btn",
+                "Generate Report",
+                class_="btn-sm btn-outline-success",
+            ),
             class_="mt-3",
         )
 
@@ -348,6 +681,11 @@ def run_server(
                     "view_log_btn",
                     "View Log",
                     class_="btn-sm btn-outline-primary me-2",
+                ),
+                ui.input_action_button(
+                    "generate_report_btn",
+                    "Generate Report",
+                    class_="btn-sm btn-outline-success me-2",
                 ),
                 ui.input_action_button(
                     "cancel_selected_btn",
@@ -372,8 +710,8 @@ def run_server(
             return
 
         try:
-            stdout = await job_queue.get_output(job.id, "stdout", tail=200)
-            stderr = await job_queue.get_output(job.id, "stderr", tail=50)
+            stdout = await job_queue.get_output(job.id, "stdout", tail=500)
+            stderr = await job_queue.get_output(job.id, "stderr", tail=100)
 
             log_text = f"=== STDOUT ===\n{stdout}\n\n=== STDERR ===\n{stderr}"
             log_content.set(log_text)
@@ -397,14 +735,232 @@ def run_server(
         except Exception as e:
             ui.notification_show(f"Error: {e}", type="error")
 
-    # Set progress callback
+    # --- Generate Report handler ---
+
+    @reactive.effect
+    @reactive.event(input.generate_report_btn)
+    def _generate_report():
+        job = selected_job.get()
+        if job is None:
+            ui.notification_show("Select a job first", type="warning")
+            return
+
+        try:
+            report_path = generate_job_report(job_info=job)
+            ui.notification_show(
+                f"Report generated: {report_path}",
+                type="message",
+                duration=8,
+            )
+        except Exception as e:
+            ui.notification_show(f"Report generation failed: {e}", type="error")
+
+    # --- Workflow engine ---
+
+    workflow_engine = WorkflowEngine(job_queue)
+    active_workflow_id = reactive.value(None)
+
+    @render.ui
+    def wf_template_info():
+        try:
+            key = input.wf_template()
+        except Exception:
+            return None
+
+        tpl = WORKFLOW_TEMPLATES.get(key)
+        if not tpl:
+            return None
+
+        steps_list = [
+            ui.li(
+                ui.code(step.tool_name),
+                ui.span(f" - {step.name}", class_="text-muted"),
+            )
+            for step in tpl["steps"]
+        ]
+
+        return ui.div(
+            ui.p(tpl["description"], class_="text-muted small"),
+            ui.strong("Steps:"),
+            ui.tags.ol(*steps_list, class_="small mb-0"),
+            class_="p-2 bg-light rounded",
+        )
+
+    @reactive.effect
+    @reactive.event(input.wf_launch_btn)
+    async def _launch_workflow():
+        template_key = input.wf_template()
+        wf_name = input.wf_name() or None
+        input_str = input.wf_input_str()
+        input_grd = input.wf_input_grd()
+        working_dir = input.wf_working_dir()
+        mpi_np = input.wf_mpi_np()
+
+        if not working_dir:
+            ui.notification_show("Working directory is required", type="error")
+            return
+
+        try:
+            validated_workdir = config.validate_path(working_dir)
+        except ValueError as e:
+            ui.notification_show(str(e), type="error")
+            return
+
+        validated_workdir.mkdir(parents=True, exist_ok=True)
+
+        params = {}
+        if input_str:
+            params["input_str"] = input_str
+        if input_grd:
+            params["input_grd"] = input_grd
+        if mpi_np:
+            params["mpi_np"] = str(mpi_np)
+
+        try:
+            wf_id = await workflow_engine.create_workflow(
+                template_key=template_key,
+                working_dir=validated_workdir,
+                params=params,
+                name=wf_name,
+            )
+            active_workflow_id.set(wf_id)
+            ui.notification_show(f"Workflow launched: {wf_id[:8]}", type="message")
+        except Exception as e:
+            ui.notification_show(f"Failed to launch workflow: {e}", type="error")
+
+    @render.ui
+    def wf_progress():
+        wf_id = active_workflow_id.get()
+        if not wf_id:
+            return ui.p("Launch a workflow to see progress.", class_="text-muted small")
+
+        wf = workflow_engine.get_workflow(wf_id)
+        if not wf:
+            return ui.p("Workflow not found.", class_="text-muted")
+
+        # Auto-refresh while active
+        if wf.is_active:
+            reactive.invalidate_later(2)
+
+        # Status badge
+        status_colors = {
+            WorkflowStatus.PENDING: "bg-secondary",
+            WorkflowStatus.RUNNING: "bg-primary",
+            WorkflowStatus.COMPLETED: "bg-success",
+            WorkflowStatus.FAILED: "bg-danger",
+            WorkflowStatus.CANCELLED: "bg-warning",
+            WorkflowStatus.PAUSED: "bg-info",
+        }
+        badge_class = status_colors.get(wf.status, "bg-secondary")
+
+        # Progress bar
+        progress_pct = int(wf.progress * 100)
+
+        # Step-by-step status
+        step_items = []
+        for i, step in enumerate(wf.steps):
+            if i < wf.current_step_index:
+                step_badge = ui.span("Done", class_="badge bg-success ms-2")
+            elif i == wf.current_step_index and wf.status == WorkflowStatus.RUNNING:
+                step_badge = ui.span("Running", class_="badge bg-primary ms-2")
+            elif wf.status == WorkflowStatus.FAILED and i == wf.current_step_index:
+                step_badge = ui.span("Failed", class_="badge bg-danger ms-2")
+            else:
+                step_badge = ui.span("Pending", class_="badge bg-secondary ms-2")
+
+            step_items.append(
+                ui.div(
+                    ui.span(f"{i + 1}. ", class_="fw-bold"),
+                    ui.code(step.tool_name),
+                    ui.span(f" ({step.name})", class_="text-muted small"),
+                    step_badge,
+                    class_="mb-1",
+                )
+            )
+
+        error_section = None
+        if wf.error_message:
+            error_section = ui.div(
+                ui.strong("Error: ", class_="text-danger"),
+                ui.span(wf.error_message, class_="text-danger small"),
+                class_="mt-2",
+            )
+
+        return ui.div(
+            ui.h6("Active Workflow"),
+            ui.div(
+                ui.span(wf.name, class_="fw-bold me-2"),
+                ui.span(wf.status.value.upper(), class_=f"badge {badge_class}"),
+                class_="mb-2",
+            ),
+            ui.div(
+                ui.div(
+                    ui.div(
+                        f"{progress_pct}%",
+                        class_="progress-bar progress-bar-striped"
+                        + (" progress-bar-animated" if wf.is_active else "")
+                        + (" bg-success" if wf.status == WorkflowStatus.COMPLETED else ""),
+                        style=f"width: {max(progress_pct, 2)}%",
+                        role="progressbar",
+                    ),
+                    class_="progress mb-2",
+                    style="height: 20px;",
+                ),
+            ),
+            *step_items,
+            error_section,
+        )
+
+    @render.ui
+    def wf_history():
+        # Trigger re-render when workflow state changes
+        active_workflow_id.get()
+
+        workflows = workflow_engine.list_workflows(limit=10)
+        if not workflows:
+            return ui.p("No workflows yet.", class_="text-muted small")
+
+        rows = []
+        for wf in workflows:
+            status_colors = {
+                WorkflowStatus.COMPLETED: "bg-success",
+                WorkflowStatus.FAILED: "bg-danger",
+                WorkflowStatus.RUNNING: "bg-primary",
+                WorkflowStatus.CANCELLED: "bg-warning",
+            }
+            badge_class = status_colors.get(wf.status, "bg-secondary")
+
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(ui.code(wf.id[:8], class_="small")),
+                    ui.tags.td(wf.name),
+                    ui.tags.td(ui.span(wf.status.value, class_=f"badge {badge_class}")),
+                    ui.tags.td(f"{int(wf.progress * 100)}%"),
+                    ui.tags.td(
+                        format_duration(wf.duration) if wf.duration else "-"
+                    ),
+                )
+            )
+
+        return ui.tags.table(
+            ui.tags.thead(
+                ui.tags.tr(
+                    ui.tags.th("ID"),
+                    ui.tags.th("Name"),
+                    ui.tags.th("Status"),
+                    ui.tags.th("Progress"),
+                    ui.tags.th("Duration"),
+                ),
+            ),
+            ui.tags.tbody(*rows),
+            class_="table table-sm table-bordered",
+        )
+
+    # Latest progress data from callbacks, polled by _auto_refresh
+    _latest_progress: dict[str, tuple[float, str]] = {}
+
     def on_progress(job_id: str, progress: float, message: str):
-        if job_id == selected_job_id.get():
-            job = selected_job.get()
-            if job:
-                job.progress = progress
-                job.progress_message = message
-                selected_job.set(job)
+        _latest_progress[job_id] = (progress, message)
 
     job_queue.set_progress_callback(on_progress)
 
@@ -412,3 +968,38 @@ def run_server(
         "job_queue": job_queue,
         "selected_job": selected_job,
     }
+
+
+def _stat_card(label: str, value: str, bg_class: str) -> ui.Tag:
+    """Create a small stat card."""
+    return ui.div(
+        ui.span(value, class_="fs-4 fw-bold"),
+        ui.br(),
+        ui.span(label, class_="small"),
+        class_=f"text-center text-white px-3 py-2 rounded {bg_class}",
+        style="min-width: 80px;",
+    )
+
+
+def _estimate_eta(job: JobInfo) -> str:
+    """Estimate time remaining for a running job."""
+    if job.status != JobStatus.RUNNING or not job.started_at:
+        return ""
+    if job.progress <= 0:
+        return "calculating..."
+
+    elapsed = (datetime.now() - job.started_at).total_seconds()
+    if elapsed <= 0:
+        return ""
+
+    estimated_total = elapsed / job.progress
+    remaining = estimated_total - elapsed
+
+    if remaining < 60:
+        return f"{int(remaining)}s"
+    elif remaining < 3600:
+        return f"{int(remaining // 60)}m {int(remaining % 60)}s"
+    else:
+        h = int(remaining // 3600)
+        m = int((remaining % 3600) // 60)
+        return f"{h}h {m}m"

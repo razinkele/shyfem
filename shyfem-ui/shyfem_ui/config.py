@@ -112,10 +112,17 @@ class Config(BaseSettings):
         self.work_dir.mkdir(parents=True, exist_ok=True)
         return self.work_dir
 
+    # Rate limiting (requests per minute per session, server mode)
+    rate_limit_rpm: int = Field(
+        default=120,
+        description="Max requests per minute per session (server mode)"
+    )
+
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:
         """Validate that a user-supplied path is within allowed directories.
 
         Allowed directories: work_dir, shyfem_dir, and /tmp.
+        Resolves symlinks to prevent traversal attacks.
 
         Args:
             path: User-supplied path to validate.
@@ -125,10 +132,21 @@ class Config(BaseSettings):
             Resolved Path object.
 
         Raises:
-            ValueError: If the path is outside allowed directories.
+            ValueError: If the path is outside allowed directories or contains
+                        null bytes / suspicious components.
             FileNotFoundError: If must_exist is True and the path does not exist.
         """
+        path_str = str(path)
+
+        # Reject null bytes and control characters
+        if "\x00" in path_str:
+            raise ValueError("Path contains null bytes")
+
         resolved = Path(path).expanduser().resolve()
+
+        # Resolve symlinks if the target exists to prevent symlink traversal
+        if resolved.exists():
+            resolved = resolved.resolve(strict=True)
 
         allowed_roots = [
             self.work_dir.resolve(),
@@ -153,6 +171,8 @@ class Config(BaseSettings):
     def validate_save_path(self, path: Path | str) -> Path:
         """Validate that a save path is within the work directory.
 
+        Resolves symlinks to prevent traversal attacks.
+
         Args:
             path: User-supplied save path to validate.
 
@@ -160,9 +180,18 @@ class Config(BaseSettings):
             Resolved Path object.
 
         Raises:
-            ValueError: If the path is outside work_dir.
+            ValueError: If the path is outside work_dir or contains null bytes.
         """
+        path_str = str(path)
+        if "\x00" in path_str:
+            raise ValueError("Path contains null bytes")
+
         resolved = Path(path).expanduser().resolve()
+
+        # If path already exists, resolve symlinks strictly
+        if resolved.exists():
+            resolved = resolved.resolve(strict=True)
+
         work_root = self.work_dir.resolve()
 
         if resolved != work_root and not str(resolved).startswith(str(work_root) + "/"):

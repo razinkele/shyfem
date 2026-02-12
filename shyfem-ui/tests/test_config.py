@@ -1,0 +1,207 @@
+"""Tests for configuration management."""
+
+import os
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+from shyfem_ui.config import Config, get_config, set_config
+
+
+class TestConfigDefaults:
+    """Tests for default configuration values."""
+
+    def test_default_deployment_mode(self):
+        """Test default deployment mode is local."""
+        config = Config()
+        assert config.deployment_mode == "local"
+
+    def test_default_host(self):
+        """Test default host binding."""
+        config = Config()
+        assert config.host == "127.0.0.1"
+
+    def test_default_port(self):
+        """Test default port."""
+        config = Config()
+        assert config.port == 8000
+
+    def test_default_max_workers(self):
+        """Test default max workers."""
+        config = Config()
+        assert config.max_workers == 4
+
+    def test_default_mpi_settings(self):
+        """Test default MPI configuration."""
+        config = Config()
+        assert config.mpi_enabled is True
+        assert config.mpi_default_np == 4
+        assert config.mpirun_path == "mpirun"
+
+    def test_default_auth_disabled(self):
+        """Test auth is disabled by default."""
+        config = Config()
+        assert config.auth_enabled is False
+
+    def test_default_theme(self):
+        """Test default UI theme."""
+        config = Config()
+        assert config.theme == "flatly"
+
+    def test_default_celery_disabled(self):
+        """Test Celery is disabled by default."""
+        config = Config()
+        assert config.use_celery is False
+
+    def test_default_rate_limit(self):
+        """Test default rate limit."""
+        config = Config()
+        assert config.rate_limit_rpm == 120
+
+
+class TestConfigProperties:
+    """Tests for Config properties."""
+
+    def test_bin_dir(self):
+        """Test bin_dir property returns correct path."""
+        config = Config()
+        assert config.bin_dir == config.shyfem_dir / "bin"
+
+    def test_testcases_dir(self):
+        """Test testcases_dir property."""
+        config = Config()
+        assert config.testcases_dir == config.shyfem_dir / "testcases" / "examples"
+
+    def test_get_executable(self, tmp_path):
+        """Test get_executable returns bin path."""
+        config = Config(shyfem_dir=tmp_path)
+        (tmp_path / "bin").mkdir()
+        (tmp_path / "bin" / "shyfem").touch()
+
+        exe = config.get_executable("shyfem")
+        assert exe == tmp_path / "bin" / "shyfem"
+
+    def test_ensure_work_dir(self, tmp_path):
+        """Test ensure_work_dir creates directory."""
+        config = Config(work_dir=tmp_path / "new_work")
+        result = config.ensure_work_dir()
+        assert result.exists()
+        assert result == tmp_path / "new_work"
+
+
+class TestPathValidation:
+    """Tests for path validation security."""
+
+    @pytest.fixture
+    def config(self, tmp_path):
+        """Create config with known directories."""
+        work = tmp_path / "work"
+        work.mkdir()
+        shyfem = tmp_path / "shyfem"
+        shyfem.mkdir()
+        return Config(work_dir=work, shyfem_dir=shyfem)
+
+    def test_validate_path_within_work_dir(self, config):
+        """Test valid path within work directory."""
+        valid = config.work_dir / "project1" / "output.txt"
+        result = config.validate_path(valid)
+        assert isinstance(result, Path)
+
+    def test_validate_path_within_shyfem_dir(self, config):
+        """Test valid path within SHYFEM directory."""
+        valid = config.shyfem_dir / "bin" / "shyfem"
+        result = config.validate_path(valid)
+        assert isinstance(result, Path)
+
+    def test_validate_path_within_tmp(self, config):
+        """Test valid path within /tmp."""
+        result = config.validate_path("/tmp/test.txt")
+        assert isinstance(result, Path)
+
+    def test_validate_path_outside_allowed(self, config):
+        """Test path outside allowed directories raises ValueError."""
+        with pytest.raises(ValueError, match="outside allowed directories"):
+            config.validate_path("/etc/passwd")
+
+    def test_validate_path_null_bytes(self, config):
+        """Test null bytes in path are rejected."""
+        with pytest.raises(ValueError, match="null bytes"):
+            config.validate_path("/tmp/test\x00.txt")
+
+    def test_validate_path_must_exist(self, config):
+        """Test must_exist flag raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            config.validate_path(
+                config.work_dir / "nonexistent.txt",
+                must_exist=True,
+            )
+
+    def test_validate_path_must_exist_ok(self, config):
+        """Test must_exist with existing file succeeds."""
+        f = config.work_dir / "exists.txt"
+        f.write_text("test")
+        result = config.validate_path(f, must_exist=True)
+        assert result.exists()
+
+    def test_validate_save_path_within_work(self, config):
+        """Test valid save path within work directory."""
+        path = config.work_dir / "output.html"
+        result = config.validate_save_path(path)
+        assert isinstance(result, Path)
+
+    def test_validate_save_path_outside_work(self, config):
+        """Test save path outside work directory raises ValueError."""
+        with pytest.raises(ValueError, match="must be within work directory"):
+            config.validate_save_path("/etc/test.txt")
+
+    def test_validate_save_path_null_bytes(self, config):
+        """Test null bytes in save path are rejected."""
+        with pytest.raises(ValueError, match="null bytes"):
+            config.validate_save_path("/tmp/test\x00.html")
+
+
+class TestConfigGlobal:
+    """Tests for global config get/set functions."""
+
+    def test_get_config_returns_instance(self):
+        """Test get_config returns a Config instance."""
+        # Reset global state
+        set_config(None)
+        config = get_config()
+        assert isinstance(config, Config)
+
+    def test_set_config(self, tmp_path):
+        """Test set_config overrides global config."""
+        custom = Config(port=9999, work_dir=tmp_path / "custom")
+        set_config(custom)
+
+        retrieved = get_config()
+        assert retrieved.port == 9999
+
+        # Clean up
+        set_config(None)
+
+    def test_get_config_caches(self):
+        """Test get_config returns same instance on repeated calls."""
+        set_config(None)
+        c1 = get_config()
+        c2 = get_config()
+        assert c1 is c2
+
+        # Clean up
+        set_config(None)
+
+
+class TestPathResolver:
+    """Tests for path resolution validator."""
+
+    def test_resolve_string_path(self):
+        """Test that string paths are resolved to Path objects."""
+        config = Config(shyfem_dir="/tmp/test_shyfem")
+        assert isinstance(config.shyfem_dir, Path)
+
+    def test_resolve_tilde_path(self, tmp_path):
+        """Test that ~ is expanded in paths."""
+        # This tests the validator runs, actual expansion depends on env
+        config = Config(work_dir=tmp_path)
+        assert config.work_dir.is_absolute()

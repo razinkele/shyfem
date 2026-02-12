@@ -194,3 +194,131 @@ class TestCommandResult:
         assert result.success is False
         assert result.return_code == 1
         assert result.stderr == "error message"
+
+    def test_result_default_fields(self):
+        """Test CommandResult default field values."""
+        result = CommandResult(
+            success=True,
+            return_code=0,
+            stdout="",
+            stderr="",
+            command="test",
+            working_dir="/tmp",
+        )
+        assert result.duration == 0.0
+        assert result.output_files == []
+
+
+class TestShyfemWrapperExtended:
+    """Extended tests for MPI, timeout, and error cases."""
+
+    @pytest.fixture
+    def wrapper(self, tmp_path):
+        """Create a wrapper with temporary SHYFEM directory."""
+        shyfem_dir = tmp_path / "shyfem"
+        shyfem_dir.mkdir()
+        (shyfem_dir / "bin").mkdir()
+        return ShyfemWrapper(shyfem_dir)
+
+    def test_find_output_files_multiple_extensions(self, wrapper, tmp_path):
+        """Test finding output files for shyfem (multiple extension types)."""
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        (work_dir / "out.shy").touch()
+        (work_dir / "out.ext").touch()
+        (work_dir / "out.flx").touch()
+        (work_dir / "unrelated.txt").touch()
+
+        files = wrapper._find_output_files("shyfem", work_dir)
+        found_names = [Path(f).name for f in files]
+
+        assert "out.shy" in found_names
+        assert "out.ext" in found_names
+        assert "out.flx" in found_names
+        assert "unrelated.txt" not in found_names
+
+    def test_find_output_files_shyelab(self, wrapper, tmp_path):
+        """Test finding output files for shyelab."""
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        (work_dir / "out.nc").touch()
+        (work_dir / "out.txt").touch()
+
+        files = wrapper._find_output_files("shyelab", work_dir)
+        found_names = [Path(f).name for f in files]
+        assert "out.nc" in found_names
+        assert "out.txt" in found_names
+
+    def test_find_output_files_empty_dir(self, wrapper, tmp_path):
+        """Test finding output files in empty directory."""
+        work_dir = tmp_path / "empty"
+        work_dir.mkdir()
+
+        files = wrapper._find_output_files("shypre", work_dir)
+        assert files == []
+
+    def test_find_output_files_unknown_tool(self, wrapper, tmp_path):
+        """Test finding output files for unknown tool returns empty."""
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        (work_dir / "file.xyz").touch()
+
+        files = wrapper._find_output_files("unknown_tool", work_dir)
+        assert files == []
+
+    def test_parse_progress_shyfem_various_formats(self, wrapper):
+        """Test shyfem progress parsing with different output formats."""
+        # Standard format
+        assert wrapper._parse_progress("shyfem", "time = 5000.0 of 10000.0") == pytest.approx(0.5)
+        # Full progress
+        assert wrapper._parse_progress("shyfem", "time = 10000.0 of 10000.0") == pytest.approx(1.0)
+        # Start
+        assert wrapper._parse_progress("shyfem", "time = 0.0 of 10000.0") == pytest.approx(0.0)
+
+    def test_parse_progress_shyelab_various(self, wrapper):
+        """Test shyelab progress with various record counts."""
+        assert wrapper._parse_progress("shyelab", "processing record 1 of 100") == pytest.approx(0.01)
+        assert wrapper._parse_progress("shyelab", "processing record 100 of 100") == pytest.approx(1.0)
+
+    @pytest.mark.asyncio
+    async def test_run_command_with_stderr(self, wrapper, tmp_path):
+        """Test running a command that produces stderr."""
+        exe = wrapper.bin_dir / "stderr_tool"
+        exe.write_text("#!/bin/bash\necho 'error output' >&2\nexit 0")
+        exe.chmod(0o755)
+
+        result = await wrapper.run_command("stderr_tool", [], tmp_path)
+        assert result.success is True
+        assert "error output" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_run_command_nonexistent_tool(self, wrapper, tmp_path):
+        """Test running a tool that doesn't exist raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            await wrapper.run_command("nonexistent_tool", [], tmp_path)
+
+    @pytest.mark.asyncio
+    async def test_run_command_measures_duration(self, wrapper, tmp_path):
+        """Test that command duration is measured."""
+        exe = wrapper.bin_dir / "slow_tool"
+        exe.write_text("#!/bin/bash\nsleep 0.1\necho done")
+        exe.chmod(0o755)
+
+        result = await wrapper.run_command("slow_tool", [], tmp_path)
+        assert result.duration >= 0.05
+
+    def test_output_extensions_mapping(self, wrapper):
+        """Test that OUTPUT_EXTENSIONS covers expected tools."""
+        assert "shypre" in ShyfemWrapper.OUTPUT_EXTENSIONS
+        assert "shyfem" in ShyfemWrapper.OUTPUT_EXTENSIONS
+        assert "shyelab" in ShyfemWrapper.OUTPUT_EXTENSIONS
+        assert ".bas" in ShyfemWrapper.OUTPUT_EXTENSIONS["shypre"]
+
+    def test_check_available_multiple_tools(self, wrapper):
+        """Test checking availability for multiple tools."""
+        (wrapper.bin_dir / "shypre").touch()
+        (wrapper.bin_dir / "shyfem").touch()
+
+        assert wrapper.check_available("shypre") is True
+        assert wrapper.check_available("shyfem") is True
+        assert wrapper.check_available("shyplot") is False

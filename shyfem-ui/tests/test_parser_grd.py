@@ -2,7 +2,15 @@
 
 import numpy as np
 import pytest
-from shyfem_ui.services.parser_grd import Element, GrdFile, GrdParser, Line, Node
+from shyfem_ui.services.parser_grd import (
+    CoordinateSystem,
+    Element,
+    GrdFile,
+    GrdParser,
+    Line,
+    Node,
+    _utm_to_latlon,
+)
 
 
 class TestGrdParser:
@@ -235,3 +243,191 @@ class TestGrdParser:
         assert result.num_elements == 0
         assert result.num_lines == 0
         assert result.get_bounds() == (0.0, 0.0, 0.0, 0.0)
+
+
+class TestGrdParserEdgeCases:
+    """Tests for malformed files, mixed elements, and edge cases."""
+
+    def test_parse_mixed_triangles_and_quads(self):
+        """Test grid with both triangles and quads."""
+        content = """
+1 1 0 0.0 0.0
+1 2 0 1.0 0.0
+1 3 0 1.0 1.0
+1 4 0 0.0 1.0
+1 5 0 2.0 0.5
+2 1 0 1 2 3
+2 2 0 1 3 4
+2 3 0 1 2 5 3
+"""
+        result = GrdParser.parse(content)
+
+        assert result.num_elements == 3
+        assert result.num_triangles == 2
+        assert result.num_quads == 1
+
+    def test_parse_blank_lines(self):
+        """Test that blank lines are handled gracefully."""
+        content = """
+1 1 0 100.0 200.0
+
+1 2 0 150.0 200.0
+
+2 1 0 1 2 1
+"""
+        result = GrdParser.parse(content)
+        assert result.num_nodes == 2
+
+    def test_parse_large_node_ids(self):
+        """Test nodes with large IDs."""
+        content = """
+1 100000 0 10.0 20.0
+1 100001 0 11.0 20.0
+1 100002 0 10.5 21.0
+2 50000 0 100000 100001 100002
+"""
+        result = GrdParser.parse(content)
+        assert 100000 in result.nodes
+        assert 50000 in result.elements
+        assert result.elements[50000].nodes == [100000, 100001, 100002]
+
+    def test_parse_multiple_line_types(self):
+        """Test grid with multiple boundary line types."""
+        content = """
+1 1 0 0.0 0.0
+1 2 0 1.0 0.0
+1 3 0 2.0 0.0
+3 1 1 1 2
+3 2 2 2 3
+3 3 3 1 3
+"""
+        result = GrdParser.parse(content)
+        assert result.num_lines == 3
+        assert result.lines[1].line_type == 1
+        assert result.lines[2].line_type == 2
+        assert result.lines[3].line_type == 3
+
+    def test_parse_file_roundtrip(self, tmp_path):
+        """Test parse_file and generate round-trip via disk."""
+        content = """0 Test grid
+1 1 0 100.000000 200.000000 5.000000
+1 2 0 150.000000 200.000000 6.000000
+2 1 0 1 2 1
+"""
+        f = tmp_path / "test.grd"
+        f.write_text(content)
+
+        parsed = GrdParser.parse_file(f)
+        assert parsed.num_nodes == 2
+
+        generated = GrdParser.generate(parsed)
+        reparsed = GrdParser.parse(generated)
+        assert reparsed.num_nodes == 2
+        assert reparsed.nodes[1].x == pytest.approx(100.0)
+
+    def test_statistics_depth_range(self):
+        """Test get_statistics returns correct depth min/max."""
+        content = """
+1 1 0 0.0 0.0 2.0
+1 2 0 1.0 0.0 4.0
+1 3 0 0.5 1.0 6.0
+"""
+        result = GrdParser.parse(content)
+        stats = GrdParser.get_statistics(result)
+        assert stats["depth"]["min"] == pytest.approx(2.0)
+        assert stats["depth"]["max"] == pytest.approx(6.0)
+
+
+class TestCoordinateSystem:
+    """Tests for coordinate system detection and conversion."""
+
+    def test_coordinate_system_defaults(self):
+        """Test default CoordinateSystem is cartesian."""
+        cs = CoordinateSystem()
+        assert cs.crs_type == "cartesian"
+        assert not cs.is_geographic
+        assert not cs.is_utm
+
+    def test_coordinate_system_geographic(self):
+        """Test geographic coordinate system."""
+        cs = CoordinateSystem("geographic")
+        assert cs.is_geographic
+        assert not cs.is_utm
+
+    def test_coordinate_system_utm(self):
+        """Test UTM coordinate system."""
+        cs = CoordinateSystem("utm", utm_zone=33, utm_hemisphere="N")
+        assert cs.is_utm
+        assert cs.utm_zone == 33
+        assert "33N" in repr(cs)
+
+    def test_detect_geographic(self):
+        """Test detection of geographic coordinates."""
+        content = """
+1 1 0 12.5 45.3
+1 2 0 12.7 45.5
+1 3 0 12.6 45.4
+"""
+        grd = GrdParser.parse(content)
+        cs = grd.detect_coordinate_system()
+        assert cs.is_geographic
+
+    def test_detect_utm(self):
+        """Test detection of UTM coordinates."""
+        content = """
+1 1 0 500000.0 5000000.0
+1 2 0 500100.0 5000100.0
+1 3 0 500050.0 5000050.0
+"""
+        grd = GrdParser.parse(content)
+        cs = grd.detect_coordinate_system()
+        assert cs.is_utm
+
+    def test_detect_cartesian(self):
+        """Test detection of generic cartesian coordinates."""
+        content = """
+1 1 0 0.0 0.0
+1 2 0 50000.0 50000.0
+"""
+        grd = GrdParser.parse(content)
+        cs = grd.detect_coordinate_system()
+        assert cs.crs_type == "cartesian"
+
+    def test_detect_empty_grid(self):
+        """Test coordinate detection on empty grid."""
+        grd = GrdFile()
+        cs = grd.detect_coordinate_system()
+        assert cs.crs_type == "cartesian"
+
+    def test_utm_to_latlon_basic(self):
+        """Test basic UTM to lat/lon conversion."""
+        # UTM zone 33N, roughly Venice area
+        lat, lon = _utm_to_latlon(300000.0, 5000000.0, 33, True)
+        # Should be in reasonable range for Europe
+        assert 40.0 < lat < 50.0
+        assert 10.0 < lon < 20.0
+
+    def test_to_geographic_already_geographic(self):
+        """Test to_geographic on already-geographic grid returns False."""
+        content = """
+1 1 0 12.5 45.3
+1 2 0 12.7 45.5
+"""
+        grd = GrdParser.parse(content)
+        grd.detect_coordinate_system()
+        assert grd.to_geographic() is False
+
+    def test_to_geographic_converts_utm(self):
+        """Test to_geographic converts UTM nodes in place."""
+        content = """
+1 1 0 500000.0 5000000.0
+1 2 0 500100.0 5000100.0
+"""
+        grd = GrdParser.parse(content)
+        grd.detect_coordinate_system()
+        result = grd.to_geographic(utm_zone=33, hemisphere="N")
+        assert result is True
+        # After conversion, coordinates should be in geographic range
+        for node in grd.nodes.values():
+            assert -180 <= node.x <= 360
+            assert -90 <= node.y <= 90
