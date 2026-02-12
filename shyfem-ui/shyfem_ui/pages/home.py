@@ -1,5 +1,6 @@
 """Home/Dashboard page for SHYFEM UI."""
 
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -8,8 +9,42 @@ from shiny import module, reactive, render, ui
 
 from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
-from shyfem_ui.models.project import Job, Project
+from shyfem_ui.models.project import Grid, Job, Project, Simulation
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
+
+# Tutorial phases: (phase_name, description, list of .str file basenames)
+TUTORIAL_PHASES = [
+    (
+        "1. Basic Hydrodynamics",
+        "Minimal setup, output, wind forcing, friction",
+        ["mm_hyd_00", "mm_hyd_01", "mm_hyd_02", "mm_hyd_03"],
+    ),
+    (
+        "2. Tidal Boundaries",
+        "Sea level boundary conditions",
+        ["mm_hyd_11", "mm_hyd_12", "mm_hyd_13"],
+    ),
+    (
+        "3. Coriolis & Rivers",
+        "Coriolis force, advection, river discharge",
+        ["mm_hyd_21", "mm_hyd_22", "mm_hyd_23"],
+    ),
+    (
+        "4. Salinity (3D)",
+        "Baroclinic salinity transport",
+        ["mm_hyd_31"],
+    ),
+    (
+        "5. Temperature (3D)",
+        "Full 3D with temperature and turbulence",
+        ["mm_hyd_41", "mm_hyd_42"],
+    ),
+    (
+        "6. Advanced Numerics",
+        "Non-linear free surface, Smagorinsky diffusion",
+        ["mm_hyd_43"],
+    ),
+]
 
 
 @module.ui
@@ -44,7 +79,14 @@ def home_ui():
                     ui.input_action_button(
                         "import_grid_btn",
                         "Import Grid",
-                        class_="btn-outline-secondary w-100",
+                        class_="btn-outline-secondary w-100 mb-2",
+                    ),
+                    ui.hr(),
+                    ui.h6("Tutorials", class_="text-muted"),
+                    ui.input_action_button(
+                        "tutorial_btn",
+                        "Mar Menor Tutorial",
+                        class_="btn-success w-100",
                     ),
                     class_="card p-3",
                 ),
@@ -104,6 +146,47 @@ def home_ui():
                 ),
             ),
             id="new_project_modal",
+        ),
+        # Tutorial modal
+        ui.modal(
+            ui.p(
+                "Set up a guided tutorial project using the Mar Menor lagoon "
+                "example. This copies the example grid and input files into a "
+                "new project so you can work through the 6 tutorial phases."
+            ),
+            ui.input_text(
+                "tutorial_project_name",
+                "Project Name",
+                value="mar_menor_tutorial",
+            ),
+            ui.hr(),
+            ui.h6("Tutorial Phases"),
+            ui.tags.ol(
+                *[
+                    ui.tags.li(
+                        ui.span(phase, class_="fw-bold"),
+                        ui.span(f" — {desc}", class_="text-muted"),
+                        ui.br(),
+                        ui.code(", ".join(f"{f}.str" for f in files), class_="small"),
+                    )
+                    for phase, desc, files in TUTORIAL_PHASES
+                ],
+                class_="small",
+            ),
+            title="Mar Menor Tutorial",
+            footer=ui.div(
+                ui.input_action_button(
+                    "confirm_tutorial_btn",
+                    "Create Tutorial Project",
+                    class_="btn-success",
+                ),
+                ui.input_action_button(
+                    "cancel_tutorial_btn",
+                    "Cancel",
+                    class_="btn-secondary ms-2",
+                ),
+            ),
+            id="tutorial_modal",
         ),
     )
 
@@ -304,6 +387,95 @@ def home_server(
 
         except Exception as e:
             ui.notification_show(f"Failed to create project: {e}", type="error")
+
+    # Tutorial handlers
+    @reactive.effect
+    @reactive.event(input.tutorial_btn)
+    def _show_tutorial_modal():
+        ui.update_text("tutorial_project_name", value="mar_menor_tutorial")
+        ui.modal_show("tutorial_modal")
+
+    @reactive.effect
+    @reactive.event(input.cancel_tutorial_btn)
+    def _hide_tutorial_modal():
+        ui.modal_remove("tutorial_modal")
+
+    @reactive.effect
+    @reactive.event(input.confirm_tutorial_btn)
+    def _create_tutorial_project():
+        name = input.tutorial_project_name().strip()
+        if not name:
+            ui.notification_show("Project name is required", type="error")
+            return
+
+        # Check source directory exists
+        mar_menor_src = config.testcases_dir / "mar_menor"
+        if not mar_menor_src.is_dir():
+            ui.notification_show(
+                f"Tutorial source not found: {mar_menor_src}", type="error"
+            )
+            return
+
+        # Create project directory
+        project_path = config.work_dir / name
+        try:
+            config.ensure_work_dir()
+            if project_path.exists():
+                ui.notification_show(
+                    f"Directory already exists: {project_path}", type="error"
+                )
+                return
+            shutil.copytree(mar_menor_src, project_path)
+        except Exception as e:
+            ui.notification_show(f"Failed to copy tutorial files: {e}", type="error")
+            return
+
+        # Create database records
+        try:
+            with db_session() as db:
+                project = Project(
+                    name=name,
+                    description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
+                    work_dir=str(project_path),
+                )
+                db.add(project)
+                db.flush()
+
+                grid = Grid(
+                    project_id=project.id,
+                    name="MM_coarse",
+                    description="Mar Menor coarse grid",
+                    grd_file="GRID/MM_coarse.grd",
+                    bas_file="GRID/MM_coarse.bas",
+                )
+                db.add(grid)
+                db.flush()
+
+                for phase_name, phase_desc, str_files in TUTORIAL_PHASES:
+                    for basename in str_files:
+                        str_path = project_path / f"{basename}.str"
+                        if not str_path.exists():
+                            continue
+                        sim = Simulation(
+                            project_id=project.id,
+                            grid_id=grid.id,
+                            name=basename,
+                            description=f"{phase_name}: {phase_desc}",
+                            str_file=f"{basename}.str",
+                        )
+                        db.add(sim)
+
+            ui.notification_show(
+                f"Tutorial project '{name}' created successfully!", type="message"
+            )
+            ui.modal_remove("tutorial_modal")
+            _refresh_projects()
+
+        except Exception as e:
+            # Clean up copied directory on DB failure
+            if project_path.exists():
+                shutil.rmtree(project_path, ignore_errors=True)
+            ui.notification_show(f"Failed to create tutorial project: {e}", type="error")
 
     return {
         "projects": projects,
