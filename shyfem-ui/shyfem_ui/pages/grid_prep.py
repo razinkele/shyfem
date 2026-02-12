@@ -7,6 +7,7 @@ from typing import Optional
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.file_browser import file_browser_server, file_browser_ui
+from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
 from shyfem_ui.config import Config
@@ -70,12 +71,20 @@ def grid_prep_ui():
             # Main content
             ui.navset_card_tab(
                 ui.nav_panel(
-                    "Grid Preview",
+                    "Interactive Map",
+                    grid_map_ui("grid_map"),
+                ),
+                ui.nav_panel(
+                    "Static Plot",
                     plot_widget_ui("grid_plot"),
                 ),
                 ui.nav_panel(
                     "Statistics",
                     ui.output_ui("grid_stats"),
+                ),
+                ui.nav_panel(
+                    "Node Inspector",
+                    ui.output_ui("node_inspector"),
                 ),
                 ui.nav_panel(
                     "Log",
@@ -106,6 +115,7 @@ def grid_prep_server(
     file_browser_server("grd_file", on_file_selected=_handle_file_upload)
     log_viewer_server("command_log", log_content)
     plot_widget_server("grid_plot", current_grd)
+    grid_map_server("grid_map", grd_file=current_grd)
 
     def _handle_file_upload(files):
         """Handle uploaded .grd file."""
@@ -321,6 +331,62 @@ def grid_prep_server(
             ui.p(", ".join(str(t) for t in stats['element_types']) or "None"),
             ui.h6("Line Types", class_="mt-3"),
             ui.p(", ".join(str(t) for t in stats['line_types']) or "None"),
+        )
+
+    @render.ui
+    def node_inspector():
+        grd = current_grd.get()
+        if grd is None:
+            return ui.p("Load a grid file to inspect nodes and elements.", class_="text-muted")
+
+        # Build a searchable node/element summary
+        return ui.div(
+            ui.h5("Node & Element Inspector"),
+            ui.p("Use the Interactive Map tab with 'Nodes' enabled to hover/inspect.",
+                 class_="text-muted small"),
+            ui.row(
+                ui.column(6,
+                    ui.h6("Sample Nodes (first 20)"),
+                    ui.tags.table(
+                        ui.tags.thead(
+                            ui.tags.tr(
+                                ui.tags.th("ID"), ui.tags.th("X"), ui.tags.th("Y"),
+                                ui.tags.th("Depth"), ui.tags.th("Type"),
+                            ),
+                        ),
+                        ui.tags.tbody(
+                            *[ui.tags.tr(
+                                ui.tags.td(str(nid)),
+                                ui.tags.td(f"{n.x:.4f}"),
+                                ui.tags.td(f"{n.y:.4f}"),
+                                ui.tags.td(f"{n.depth:.2f}" if n.depth is not None else "-"),
+                                ui.tags.td(str(n.node_type)),
+                            ) for nid, n in list(grd.nodes.items())[:20]]
+                        ),
+                        class_="table table-sm table-striped",
+                    ),
+                ),
+                ui.column(6,
+                    ui.h6("Sample Elements (first 20)"),
+                    ui.tags.table(
+                        ui.tags.thead(
+                            ui.tags.tr(
+                                ui.tags.th("ID"), ui.tags.th("Type"),
+                                ui.tags.th("Nodes"), ui.tags.th("Shape"),
+                            ),
+                        ),
+                        ui.tags.tbody(
+                            *[ui.tags.tr(
+                                ui.tags.td(str(eid)),
+                                ui.tags.td(str(e.elem_type)),
+                                ui.tags.td(" ".join(str(n) for n in e.nodes)),
+                                ui.tags.td("Tri" if e.is_triangle else "Quad" if e.is_quad else f"{len(e.nodes)}-gon"),
+                            ) for eid, e in list(grd.elements.items())[:20]]
+                        ),
+                        class_="table table-sm table-striped",
+                    ),
+                ),
+            ),
         )
 
     return {

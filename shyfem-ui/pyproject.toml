@@ -24,18 +24,21 @@ classifiers = [
 ]
 
 dependencies = [
-    "shiny>=0.6.0",
-    "shinyswatch>=0.4.0",
+    "shiny>=1.2.0",
+    "shinyswatch>=0.7.0",
     "sqlalchemy>=2.0",
     "pydantic>=2.0",
     "pydantic-settings>=2.0",
     "matplotlib>=3.7",
-    "plotly>=5.15",
-    "xarray>=2023.0",
+    "plotly>=5.24",
+    "xarray>=2024.6",
     "netCDF4>=1.6",
     "aiofiles>=23.0",
     "numpy>=1.24",
     "pandas>=2.0",
+    "ipyleaflet>=0.18",
+    "shinywidgets>=0.3",
+    "scipy>=1.12",
 ]
 
 [project.optional-dependencies]

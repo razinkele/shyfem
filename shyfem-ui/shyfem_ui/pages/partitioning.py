@@ -3,11 +3,18 @@
 from pathlib import Path
 from typing import Optional
 
+import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
+from shinywidgets import output_widget, render_widget
 
+from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
+from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+# Reuse the partition color palette from grid_map
+from shyfem_ui.components.grid_map import PARTITION_COLORS
 
 
 @module.ui
@@ -25,9 +32,14 @@ def partitioning_ui():
                     "Basin File (.bas)",
                     placeholder="/path/to/basin.bas",
                 ),
+                ui.input_text(
+                    "grd_path",
+                    "Grid File (.grd) for visualization",
+                    placeholder="/path/to/grid.grd (optional)",
+                ),
                 ui.input_action_button(
-                    "browse_bas_btn",
-                    "Browse...",
+                    "load_grid_btn",
+                    "Load Grid",
                     class_="btn-outline-secondary btn-sm mb-3",
                 ),
                 ui.hr(),
@@ -76,6 +88,14 @@ def partitioning_ui():
             # Main content
             ui.navset_card_tab(
                 ui.nav_panel(
+                    "Partition Map",
+                    grid_map_ui("partition_map"),
+                ),
+                ui.nav_panel(
+                    "Load Balance",
+                    output_widget("balance_chart"),
+                ),
+                ui.nav_panel(
                     "Partition Info",
                     ui.output_ui("partition_info"),
                 ),
@@ -106,9 +126,34 @@ def partitioning_server(
     log_content = reactive.value("")
     partition_files = reactive.value([])
     partition_stats_data = reactive.value(None)
+    current_grd = reactive.value(None)
+    partition_map_data = reactive.value(None)  # {elem_id: partition_index}
 
     # Initialize child modules
     log_viewer_server("command_log", log_content)
+    grid_map_server("partition_map", grd_file=current_grd, partition_map=partition_map_data)
+
+    @reactive.effect
+    @reactive.event(input.load_grid_btn)
+    def _load_grid():
+        grd_path = input.grd_path()
+        if not grd_path:
+            log_content.set("Error: No grid file path specified")
+            return
+        try:
+            path = config.validate_path(grd_path, must_exist=True)
+        except (ValueError, FileNotFoundError) as e:
+            log_content.set(f"Error: {e}")
+            return
+        try:
+            grd = GrdParser.parse_file(path)
+            current_grd.set(grd)
+            log_content.set(
+                f"Loaded grid: {path.name}\n"
+                f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}\n"
+            )
+        except Exception as e:
+            log_content.set(f"Error loading grid: {e}")
 
     @reactive.effect
     @reactive.event(input.run_shyparts_btn)
@@ -133,9 +178,9 @@ def partitioning_server(
             return
         output_path.mkdir(parents=True, exist_ok=True)
 
-        np = input.num_partitions()
+        np_val = input.num_partitions()
 
-        log_content.set(f"Running shyparts with {np} partitions...\n")
+        log_content.set(f"Running shyparts with {np_val} partitions...\n")
         log_content.set(log_content.get() + f"Input: {bas_file}\n")
         log_content.set(log_content.get() + f"Output: {output_path}\n\n")
 
@@ -147,7 +192,7 @@ def partitioning_server(
             result = await wrapper.run_shyparts(
                 bas_file,
                 output_path,
-                np=np,
+                np=np_val,
                 output_callback=update_log,
             )
 
@@ -158,7 +203,7 @@ def partitioning_server(
                     f"Output files: {', '.join(result.output_files)}\n"
                 )
                 partition_files.set(result.output_files)
-                _analyze_partitions(output_path, np)
+                _analyze_partitions(output_path, np_val)
             else:
                 log_content.set(
                     log_content.get() +
@@ -169,28 +214,38 @@ def partitioning_server(
         except Exception as e:
             log_content.set(log_content.get() + f"\nError: {e}\n")
 
-    def _analyze_partitions(output_dir: Path, np: int):
-        """Analyze partition files for statistics."""
+    def _analyze_partitions(output_dir: Path, np_val: int):
+        """Analyze partition files for statistics and build partition map."""
         stats = {
-            "num_partitions": np,
+            "num_partitions": np_val,
             "partition_files": [],
             "elements_per_partition": [],
         }
 
-        # Look for partition files
-        for i in range(np):
+        pmap = {}
+        for i in range(np_val):
             par_file = output_dir / f"partition.{i:04d}.par"
             if par_file.exists():
                 stats["partition_files"].append(str(par_file))
-                # Count elements (simple line count)
                 try:
                     with open(par_file) as f:
-                        lines = sum(1 for _ in f)
-                    stats["elements_per_partition"].append(lines)
+                        elem_lines = f.readlines()
+                    stats["elements_per_partition"].append(len(elem_lines))
+                    # Build partition map: each line contains an element ID
+                    for line in elem_lines:
+                        line = line.strip()
+                        if line:
+                            try:
+                                elem_id = int(line.split()[0])
+                                pmap[elem_id] = i
+                            except (ValueError, IndexError):
+                                continue
                 except Exception:
                     stats["elements_per_partition"].append(0)
 
         partition_stats_data.set(stats)
+        if pmap:
+            partition_map_data.set(pmap)
 
     @reactive.effect
     @reactive.event(input.validate_btn)
@@ -217,6 +272,64 @@ def partitioning_server(
                 )
 
         log_content.set(log_content.get() + "\nValidation complete.\n")
+
+    @render_widget
+    def balance_chart():
+        """Plotly bar chart showing elements per partition."""
+        stats = partition_stats_data.get()
+        if stats is None:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="Run shyparts to see load balance",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font_size=16, font_color="gray",
+            )
+            fig.update_layout(height=500)
+            return fig
+
+        elements = stats.get("elements_per_partition", [])
+        if not elements:
+            fig = go.Figure()
+            fig.add_annotation(
+                text="No partition data available",
+                xref="paper", yref="paper", x=0.5, y=0.5,
+                showarrow=False, font_size=16, font_color="gray",
+            )
+            fig.update_layout(height=500)
+            return fig
+
+        n_parts = len(elements)
+        avg = sum(elements) / n_parts if n_parts > 0 else 0
+        labels = [f"P{i}" for i in range(n_parts)]
+        colors = [PARTITION_COLORS[i % len(PARTITION_COLORS)] for i in range(n_parts)]
+
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=labels,
+            y=elements,
+            marker_color=colors,
+            text=[f"{c:,}" for c in elements],
+            textposition="auto",
+            hovertemplate="Partition %{x}<br>Elements: %{y:,}<extra></extra>",
+        ))
+        # Average line
+        fig.add_hline(
+            y=avg,
+            line_dash="dash",
+            line_color="red",
+            annotation_text=f"Avg: {avg:,.0f}",
+            annotation_position="top right",
+        )
+
+        imbalance = (max(elements) - min(elements)) / avg * 100 if avg > 0 else 0
+        fig.update_layout(
+            title=f"Load Balance ({n_parts} partitions, imbalance: {imbalance:.1f}%)",
+            xaxis_title="Partition",
+            yaxis_title="Elements",
+            height=500,
+            showlegend=False,
+        )
+        return fig
 
     @render.ui
     def partition_info():
@@ -260,25 +373,6 @@ def partitioning_server(
         max_el = max(elements) if elements else 0
         imbalance = (max_el - min_el) / avg * 100 if avg > 0 else 0
 
-        # Create bar chart representation
-        bars = []
-        for i, count in enumerate(elements):
-            width_pct = count / max_el * 100 if max_el > 0 else 0
-            bars.append(
-                ui.div(
-                    ui.span(f"P{i}", class_="me-2 small"),
-                    ui.div(
-                        ui.div(
-                            style=f"width: {width_pct}%; height: 20px; background-color: #0d6efd;",
-                        ),
-                        class_="flex-grow-1",
-                        style="background-color: #e9ecef; height: 20px;",
-                    ),
-                    ui.span(f"{count:,}", class_="ms-2 small"),
-                    class_="d-flex align-items-center mb-1",
-                )
-            )
-
         return ui.div(
             ui.h5("Partition Statistics"),
             ui.tags.table(
@@ -313,8 +407,6 @@ def partitioning_server(
                 ),
                 class_="table table-sm",
             ),
-            ui.h6("Elements per Partition", class_="mt-3"),
-            ui.div(*bars, class_="mt-2"),
         )
 
     return {

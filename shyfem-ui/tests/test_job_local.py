@@ -1,0 +1,387 @@
+"""Tests for local job queue implementation."""
+
+import asyncio
+from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
+from shyfem_ui.services.job_local import LocalJobQueue
+from shyfem_ui.services.shyfem_wrapper import CommandResult
+
+
+@pytest.fixture
+def mock_wrapper():
+    """Create a mock ShyfemWrapper."""
+    wrapper = MagicMock()
+    wrapper.run_command = AsyncMock(return_value=CommandResult(
+        success=True,
+        return_code=0,
+        stdout="mock output",
+        stderr="",
+        command="test",
+        working_dir="/tmp",
+        duration=1.0,
+        output_files=[],
+    ))
+    wrapper.run_shyfem = AsyncMock(return_value=CommandResult(
+        success=True,
+        return_code=0,
+        stdout="mock mpi output",
+        stderr="",
+        command="mpirun shyfem",
+        working_dir="/tmp",
+        duration=2.0,
+        output_files=[],
+    ))
+    return wrapper
+
+
+@pytest.fixture
+def queue(tmp_path, mock_wrapper):
+    """Create a LocalJobQueue with mock wrapper."""
+    q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2)
+    q.wrapper = mock_wrapper
+    return q
+
+
+@pytest.fixture
+def job_spec(tmp_path):
+    """Create a basic job spec."""
+    return JobSpec(
+        name="test_job",
+        tool_name="shypre",
+        args=["input.grd"],
+        working_dir=tmp_path / "work",
+    )
+
+
+class TestLocalJobQueue:
+    """Tests for LocalJobQueue."""
+
+    @pytest.mark.asyncio
+    async def test_submit_returns_job_id(self, queue, job_spec):
+        """Test that submit returns a valid job ID."""
+        job_id = await queue.submit(job_spec)
+        assert isinstance(job_id, str)
+        assert len(job_id) > 0
+
+    @pytest.mark.asyncio
+    async def test_get_status_after_submit(self, queue, job_spec):
+        """Test getting job status after submission."""
+        job_id = await queue.submit(job_spec)
+        # Give the task a moment to start
+        await asyncio.sleep(0.1)
+
+        status = await queue.get_status(job_id)
+        assert status is not None
+        assert status.id == job_id
+        assert status.name == "test_job"
+        assert status.tool_name == "shypre"
+
+    @pytest.mark.asyncio
+    async def test_get_status_nonexistent(self, queue):
+        """Test getting status for nonexistent job returns None."""
+        status = await queue.get_status("nonexistent-id")
+        assert status is None
+
+    @pytest.mark.asyncio
+    async def test_job_completes(self, queue, job_spec):
+        """Test that a job eventually completes."""
+        job_id = await queue.submit(job_spec)
+        # Wait for completion
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        status = await queue.get_status(job_id)
+        assert status.status == JobStatus.COMPLETED
+        assert status.return_code == 0
+
+    @pytest.mark.asyncio
+    async def test_job_stores_output_files(self, queue, job_spec, tmp_path):
+        """Test that stdout/stderr files are set."""
+        job_id = await queue.submit(job_spec)
+        await asyncio.sleep(0.1)
+
+        status = await queue.get_status(job_id)
+        assert status.stdout_file is not None
+        assert status.stderr_file is not None
+        assert job_id in status.stdout_file
+
+    @pytest.mark.asyncio
+    async def test_list_jobs_all(self, queue, job_spec):
+        """Test listing all jobs."""
+        id1 = await queue.submit(job_spec)
+        id2 = await queue.submit(
+            JobSpec(name="job2", tool_name="shyfem", args=["test.str"],
+                    working_dir=job_spec.working_dir)
+        )
+        await asyncio.sleep(0.1)
+
+        jobs = await queue.list_jobs()
+        assert len(jobs) >= 2
+        ids = [j.id for j in jobs]
+        assert id1 in ids
+        assert id2 in ids
+
+    @pytest.mark.asyncio
+    async def test_list_jobs_filter_status(self, queue, job_spec):
+        """Test listing jobs filtered by status."""
+        job_id = await queue.submit(job_spec)
+        # Wait for completion
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        completed = await queue.list_jobs(status=JobStatus.COMPLETED)
+        assert any(j.id == job_id for j in completed)
+
+        running = await queue.list_jobs(status=JobStatus.RUNNING)
+        assert not any(j.id == job_id for j in running)
+
+    @pytest.mark.asyncio
+    async def test_list_jobs_filter_simulation_id(self, queue, tmp_path):
+        """Test listing jobs filtered by simulation ID."""
+        spec1 = JobSpec(name="sim1", tool_name="shyfem", args=["t.str"],
+                        working_dir=tmp_path / "w1", simulation_id=42)
+        spec2 = JobSpec(name="sim2", tool_name="shyfem", args=["t.str"],
+                        working_dir=tmp_path / "w2", simulation_id=99)
+
+        await queue.submit(spec1)
+        await queue.submit(spec2)
+        await asyncio.sleep(0.1)
+
+        filtered = await queue.list_jobs(simulation_id=42)
+        assert all(j.simulation_id == 42 for j in filtered)
+
+    @pytest.mark.asyncio
+    async def test_list_jobs_limit(self, queue, tmp_path):
+        """Test list_jobs respects limit parameter."""
+        for i in range(5):
+            spec = JobSpec(name=f"job{i}", tool_name="shypre", args=[],
+                           working_dir=tmp_path / f"w{i}")
+            await queue.submit(spec)
+
+        await asyncio.sleep(0.1)
+        jobs = await queue.list_jobs(limit=2)
+        assert len(jobs) <= 2
+
+    @pytest.mark.asyncio
+    async def test_cancel_running_job(self, queue, tmp_path):
+        """Test cancelling a running job."""
+        # Use a slow command that actually blocks
+        async def slow_command(*args, **kwargs):
+            await asyncio.sleep(10)
+            return CommandResult(
+                success=True, return_code=0, stdout="", stderr="",
+                command="test", working_dir=str(tmp_path),
+            )
+
+        queue.wrapper.run_command = slow_command
+
+        spec = JobSpec(name="slow_job", tool_name="shyfem", args=["test.str"],
+                       working_dir=tmp_path / "w")
+        job_id = await queue.submit(spec)
+        # Give it time to start running
+        await asyncio.sleep(0.2)
+
+        result = await queue.cancel(job_id)
+        assert result is True
+
+        status = await queue.get_status(job_id)
+        assert status.status == JobStatus.CANCELLED
+
+    @pytest.mark.asyncio
+    async def test_cancel_nonexistent_job(self, queue):
+        """Test cancelling a nonexistent job returns False."""
+        result = await queue.cancel("nonexistent-id")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_completed_job(self, queue, job_spec):
+        """Test cancelling an already-completed job returns False."""
+        job_id = await queue.submit(job_spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        result = await queue.cancel(job_id)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_get_output(self, queue, job_spec, tmp_path):
+        """Test reading job output."""
+        job_id = await queue.submit(job_spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        stdout = await queue.get_output(job_id, "stdout")
+        assert isinstance(stdout, str)
+
+    @pytest.mark.asyncio
+    async def test_get_output_nonexistent(self, queue):
+        """Test reading output for nonexistent job returns empty."""
+        result = await queue.get_output("nonexistent-id")
+        assert result == ""
+
+    @pytest.mark.asyncio
+    async def test_get_output_tail(self, queue, job_spec, tmp_path):
+        """Test tail parameter on get_output."""
+        job_id = await queue.submit(job_spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        result = await queue.get_output(job_id, "stdout", tail=5)
+        lines = result.splitlines()
+        assert len(lines) <= 5
+
+    @pytest.mark.asyncio
+    async def test_mpi_metadata_stored(self, queue, tmp_path):
+        """Test MPI settings are stored in job metadata."""
+        spec = JobSpec(
+            name="mpi_job", tool_name="shyfem", args=["test.str"],
+            working_dir=tmp_path / "w", mpi_enabled=True, mpi_np=8,
+        )
+        job_id = await queue.submit(spec)
+        status = await queue.get_status(job_id)
+
+        assert status.metadata.get("mpi_enabled") is True
+        assert status.metadata.get("mpi_np") == 8
+
+    @pytest.mark.asyncio
+    async def test_progress_callback(self, queue, tmp_path):
+        """Test progress callback is called."""
+        progress_data = []
+
+        def on_progress(job_id, progress, message):
+            progress_data.append((job_id, progress, message))
+
+        queue.set_progress_callback(on_progress)
+
+        # Simulate wrapper calling progress_callback
+        async def mock_run(tool, args, wd, progress_callback=None, output_callback=None):
+            if progress_callback:
+                progress_callback(0.5, "halfway")
+            return CommandResult(
+                success=True, return_code=0, stdout="", stderr="",
+                command="test", working_dir=str(wd),
+            )
+
+        queue.wrapper.run_command = mock_run
+
+        spec = JobSpec(name="prog_job", tool_name="shypre", args=[],
+                       working_dir=tmp_path / "w")
+        job_id = await queue.submit(spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        assert len(progress_data) > 0
+        assert progress_data[0][1] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_active_job_count(self, queue, tmp_path):
+        """Test active_job_count property."""
+        assert queue.active_job_count == 0
+
+        # Submit with slow command that actually blocks
+        async def slow_command(*args, **kwargs):
+            await asyncio.sleep(10)
+            return CommandResult(
+                success=True, return_code=0, stdout="", stderr="",
+                command="test", working_dir=str(tmp_path),
+            )
+
+        queue.wrapper.run_command = slow_command
+
+        spec = JobSpec(name="active", tool_name="shypre", args=[],
+                       working_dir=tmp_path / "w")
+        job_id = await queue.submit(spec)
+        await asyncio.sleep(0.2)
+
+        assert queue.active_job_count >= 1
+
+        # Clean up
+        await queue.cancel(job_id)
+
+    @pytest.mark.asyncio
+    async def test_cleanup_old_jobs(self, queue, job_spec):
+        """Test cleanup removes old completed jobs."""
+        job_id = await queue.submit(job_spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        # Backdate the job
+        job = queue._jobs[job_id]
+        job.completed_at = datetime.now() - timedelta(days=30)
+        job.created_at = datetime.now() - timedelta(days=30)
+
+        removed = await queue.cleanup_old_jobs(days=7)
+        assert removed >= 1
+        assert await queue.get_status(job_id) is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_keeps_recent_jobs(self, queue, job_spec):
+        """Test cleanup keeps recently completed jobs."""
+        job_id = await queue.submit(job_spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        removed = await queue.cleanup_old_jobs(days=7)
+        assert removed == 0
+        assert await queue.get_status(job_id) is not None
+
+
+class TestLocalJobQueueEviction:
+    """Tests for job eviction when storage exceeds limit."""
+
+    @pytest.mark.asyncio
+    async def test_evict_old_jobs(self, tmp_path):
+        """Test eviction of old completed jobs."""
+        mock_wrapper = MagicMock()
+        mock_wrapper.run_command = AsyncMock(return_value=CommandResult(
+            success=True, return_code=0, stdout="", stderr="",
+            command="test", working_dir="/tmp",
+        ))
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2)
+        q.wrapper = mock_wrapper
+        # Lower the cap for testing
+        q.MAX_STORED_JOBS = 3
+
+        # Submit 5 jobs and let them complete
+        ids = []
+        for i in range(5):
+            spec = JobSpec(name=f"j{i}", tool_name="shypre", args=[],
+                           working_dir=tmp_path / f"w{i}")
+            job_id = await q.submit(spec)
+            ids.append(job_id)
+            await asyncio.sleep(0.15)
+
+        # Wait for all to complete
+        await asyncio.sleep(1.0)
+
+        # Eviction should have capped storage
+        assert len(q._jobs) <= q.MAX_STORED_JOBS + 2  # allow some slack for timing

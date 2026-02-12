@@ -1,6 +1,8 @@
 """UI pages for SHYFEM UI application."""
 
 from shyfem_ui.pages import (
+    compare,
+    ensemble,
     grid_prep,
     home,
     partitioning,
@@ -18,4 +20,6 @@ __all__ = [
     "run",
     "postprocess",
     "visualize",
+    "compare",
+    "ensemble",
 ]

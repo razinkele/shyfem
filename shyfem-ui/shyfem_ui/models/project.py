@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shyfem_ui.db.base import Base
@@ -131,6 +131,11 @@ class Job(Base):
     """A job representing execution of a SHYFEM tool."""
 
     __tablename__ = "jobs"
+    __table_args__ = (
+        Index("ix_jobs_status", "status"),
+        Index("ix_jobs_created_at", "created_at"),
+        Index("ix_jobs_simulation_id", "simulation_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     simulation_id: Mapped[Optional[int]] = mapped_column(

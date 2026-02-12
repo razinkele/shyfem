@@ -1,7 +1,6 @@
 """Plot widget component for displaying grid and simulation results."""
 
-from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 import matplotlib
 matplotlib.use("Agg")  # Use non-interactive backend
@@ -60,7 +59,7 @@ def plot_widget_server(
     output,
     session,
     grd_file: reactive.Value[Optional[GrdFile]],
-    on_export: Optional[callable] = None,
+    on_export: Optional[Callable[[plt.Figure], None]] = None,
 ):
     """Plot widget component server logic.
 
