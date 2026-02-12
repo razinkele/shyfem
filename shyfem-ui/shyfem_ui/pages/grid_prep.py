@@ -111,12 +111,6 @@ def grid_prep_server(
     log_content = reactive.value("")
     output_files = reactive.value([])
 
-    # Initialize child modules
-    file_browser_server("grd_file", on_file_selected=_handle_file_upload)
-    log_viewer_server("command_log", log_content)
-    plot_widget_server("grid_plot", current_grd)
-    grid_map_server("grid_map", grd_file=current_grd)
-
     def _handle_file_upload(files):
         """Handle uploaded .grd file."""
         if not files:
@@ -133,6 +127,12 @@ def grid_prep_server(
                           f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}")
         except Exception as e:
             log_content.set(f"Error loading grid: {e}")
+
+    # Initialize child modules
+    file_browser_server("grd_file", on_file_selected=_handle_file_upload)
+    log_viewer_server("command_log", log_content)
+    plot_widget_server("grid_plot", current_grd)
+    grid_map_server("grid_map", grd_file=current_grd)
 
     @reactive.effect
     @reactive.event(input.load_path_btn)
