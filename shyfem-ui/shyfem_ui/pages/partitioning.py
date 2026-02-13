@@ -1,7 +1,6 @@
 """Mesh partitioning page - shyparts interface."""
 
 from pathlib import Path
-from typing import Optional
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
@@ -10,7 +9,7 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
-from shyfem_ui.services.parser_grd import GrdFile, GrdParser
+from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 # Reuse the partition color palette from grid_map
@@ -20,7 +19,7 @@ from shyfem_ui.components.grid_map import PARTITION_COLORS
 @module.ui
 def partitioning_ui():
     """Mesh partitioning page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Mesh Partitioning"),
         ui.p("Partition mesh for MPI parallel execution using METIS.", class_="text-muted"),
         ui.layout_sidebar(

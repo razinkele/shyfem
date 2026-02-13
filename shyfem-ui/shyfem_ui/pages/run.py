@@ -9,7 +9,6 @@ Features:
 """
 
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 import plotly.graph_objects as go
@@ -27,7 +26,7 @@ from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, Work
 @module.ui
 def run_ui():
     """Job execution page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Run Simulation"),
         ui.p("Submit and monitor SHYFEM simulation jobs.", class_="text-muted"),
         ui.row(
@@ -261,22 +260,38 @@ def run_server(
 
     log_viewer_server("job_log", log_content, on_refresh=lambda: None)
 
-    # Refresh jobs periodically: poll every 2 seconds while there are active jobs
+    # Single unified poll loop: refresh every 2s while jobs or workflows are active
     @reactive.effect
     async def _auto_refresh():
-        active = active_jobs_data.get()
-        if active:
-            reactive.invalidate_later(2)
-        await _refresh_jobs()
+        try:
+            active = active_jobs_data.get()
+            wf_id = active_workflow_id.get()
+            wf_active = False
+            if wf_id:
+                wf = workflow_engine.get_workflow(wf_id)
+                wf_active = wf.is_active if wf else False
+
+            if active or wf_active:
+                reactive.invalidate_later(2)
+                _refresh_tick.set(_refresh_tick.get() + 1)
+            await _refresh_jobs()
+        except Exception:
+            # Silently retry on next cycle — avoid killing the poll loop
+            reactive.invalidate_later(5)
 
     @reactive.effect
     @reactive.event(input.refresh_btn)
     async def _manual_refresh():
-        await _refresh_jobs()
+        try:
+            await _refresh_jobs()
+        except Exception as e:
+            ui.notification_show(f"Refresh failed: {e}", type="error")
 
     async def _refresh_jobs():
         """Refresh job lists."""
-        jobs = await job_queue.list_jobs(limit=50)
+        # In server mode, only show jobs from this session
+        sid = _session_id if _is_server_mode else None
+        jobs = await job_queue.list_jobs(limit=50, session_id=sid)
         _update_job_lists(jobs)
 
     def _update_job_lists(jobs: list[JobInfo]):
@@ -325,7 +340,7 @@ def run_server(
 
         # Build job spec
         args = [str(validated_input)]
-        metadata = {}
+        metadata = {"session_id": _session_id}
 
         # Check dependency
         depends_on = input.depends_on()
@@ -357,7 +372,6 @@ def run_server(
         all_jobs = all_jobs_data.get()
 
         # Summary stats
-        total = len(all_jobs)
         running = sum(1 for j in all_jobs if j.status == JobStatus.RUNNING)
         queued = sum(1 for j in all_jobs if j.status in (JobStatus.PENDING, JobStatus.QUEUED))
         completed = sum(1 for j in all_jobs if j.status == JobStatus.COMPLETED)
@@ -759,6 +773,7 @@ def run_server(
 
     workflow_engine = WorkflowEngine(job_queue)
     active_workflow_id = reactive.value(None)
+    _refresh_tick = reactive.value(0)  # bumped by _auto_refresh to trigger wf_progress re-render
 
     @render.ui
     def wf_template_info():
@@ -830,6 +845,7 @@ def run_server(
 
     @render.ui
     def wf_progress():
+        _refresh_tick.get()  # subscribe to poll cycle for auto re-render
         wf_id = active_workflow_id.get()
         if not wf_id:
             return ui.p("Launch a workflow to see progress.", class_="text-muted small")
@@ -838,9 +854,8 @@ def run_server(
         if not wf:
             return ui.p("Workflow not found.", class_="text-muted")
 
-        # Auto-refresh while active
-        if wf.is_active:
-            reactive.invalidate_later(2)
+        # Re-render is triggered by the unified _auto_refresh poll loop
+        # (reads active_workflow_id which changes on each refresh cycle)
 
         # Status badge
         status_colors = {
@@ -962,7 +977,16 @@ def run_server(
     def on_progress(job_id: str, progress: float, message: str):
         _latest_progress[job_id] = (progress, message)
 
-    job_queue.set_progress_callback(on_progress)
+    # Session ID for multi-user isolation and per-session callbacks
+    _session_id = str(id(session))
+    _is_server_mode = config.deployment_mode == "server"
+
+    job_queue.add_progress_callback(_session_id, on_progress)
+
+    # Clean up callback when session ends
+    @session.on_ended
+    async def _cleanup_session():
+        job_queue.remove_progress_callback(_session_id)
 
     return {
         "job_queue": job_queue,

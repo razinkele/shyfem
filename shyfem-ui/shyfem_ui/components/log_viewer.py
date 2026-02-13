@@ -10,7 +10,6 @@ Features:
 """
 
 import html
-import re
 from typing import Callable, Optional
 
 from shiny import module, reactive, render, ui

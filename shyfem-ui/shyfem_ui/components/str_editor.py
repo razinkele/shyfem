@@ -10,7 +10,6 @@ from shyfem_ui.services.parser_str import (
     COMMON_SECTIONS,
     StrFile,
     StrParser,
-    get_param_info,
 )
 
 
@@ -305,10 +304,18 @@ def str_editor_server(
             class_=f"alert {'alert-success' if is_success else 'alert-warning'} mt-2 py-2",
         )
 
+    def set_content_text(text: str) -> None:
+        """Update the editor content from an external caller.
+
+        This avoids the parent having to know the internal input ID.
+        """
+        ui.update_text_area("editor_content", value=text)
+
     return {
         "content": content,
         "parsed_file": parsed_file,
         "is_modified": is_modified,
+        "set_content": set_content_text,
     }
 
 

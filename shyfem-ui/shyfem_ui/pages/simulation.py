@@ -1,8 +1,5 @@
 """Simulation configuration page - .str file editor."""
 
-from pathlib import Path
-from typing import Optional
-
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
@@ -14,7 +11,7 @@ from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrFil
 @module.ui
 def simulation_ui():
     """Simulation configuration page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Simulation Configuration"),
         ui.p("Edit .str parameter files for SHYFEM simulations.", class_="text-muted"),
         ui.layout_sidebar(
@@ -163,8 +160,10 @@ def simulation_server(
         editor_parsed = editor_state["parsed_file"].get()
         if editor_parsed is not None and not _syncing.get():
             _syncing.set(True)
-            parsed_str.set(editor_parsed)
-            _syncing.set(False)
+            try:
+                parsed_str.set(editor_parsed)
+            finally:
+                _syncing.set(False)
 
     # Sync simulation -> editor: when parsed_str changes (e.g. from templates/quick settings),
     # update the editor content via the text area
@@ -173,9 +172,11 @@ def simulation_server(
         str_file = parsed_str.get()
         if str_file is not None and not _syncing.get():
             _syncing.set(True)
-            text = StrParser.generate(str_file)
-            ui.update_text_area("str_editor-editor_content", value=text)
-            _syncing.set(False)
+            try:
+                text = StrParser.generate(str_file)
+                editor_state["set_content"](text)
+            finally:
+                _syncing.set(False)
 
     @reactive.effect
     @reactive.event(input.load_btn)
@@ -202,12 +203,14 @@ def simulation_server(
     @reactive.effect
     @reactive.event(input.new_btn)
     def _new_file():
-        # Create a new template
-        template = generate_template("basic_2d")
-        new_str = StrParser.parse(template)
-        parsed_str.set(new_str)
-        current_file_path.set(None)
-        ui.notification_show("Created new parameter file", type="message")
+        try:
+            template = generate_template("basic_2d")
+            new_str = StrParser.parse(template)
+            parsed_str.set(new_str)
+            current_file_path.set(None)
+            ui.notification_show("Created new parameter file", type="message")
+        except Exception as e:
+            ui.notification_show(f"Error creating new file: {e}", type="error")
 
     @reactive.effect
     @reactive.event(input.save_as_btn)
@@ -256,32 +259,35 @@ def simulation_server(
     @reactive.effect
     @reactive.event(input.apply_quick_btn)
     def _apply_quick_settings():
-        str_file = parsed_str.get()
-        if str_file is None:
-            str_file = StrFile()
+        try:
+            str_file = parsed_str.get()
+            if str_file is None:
+                str_file = StrFile()
 
-        # Get quick settings
-        start = input.quick_start()
-        end = input.quick_end()
-        dt = input.quick_dt()
-        output_int = input.quick_output()
+            # Get quick settings
+            start = input.quick_start()
+            end = input.quick_end()
+            dt = input.quick_dt()
+            output_int = input.quick_output()
 
-        # Update para section (strip existing quotes to avoid double-quoting)
-        def quote_value(val: str) -> str:
-            val = val.strip().strip("'\"")
-            return f"'{val}'"
+            # Update para section (strip existing quotes to avoid double-quoting)
+            def quote_value(val: str) -> str:
+                val = val.strip().strip("'\"")
+                return f"'{val}'"
 
-        if start:
-            str_file.set_param("para", "itanf", quote_value(start))
-        if end:
-            str_file.set_param("para", "itend", quote_value(end))
-        if dt:
-            str_file.set_param("para", "idt", quote_value(dt))
-        if output_int:
-            str_file.set_param("para", "idtout", quote_value(output_int))
+            if start:
+                str_file.set_param("para", "itanf", quote_value(start))
+            if end:
+                str_file.set_param("para", "itend", quote_value(end))
+            if dt:
+                str_file.set_param("para", "idt", quote_value(dt))
+            if output_int:
+                str_file.set_param("para", "idtout", quote_value(output_int))
 
-        parsed_str.set(str_file)
-        ui.notification_show("Applied quick settings", type="message")
+            parsed_str.set(str_file)
+            ui.notification_show("Applied quick settings", type="message")
+        except Exception as e:
+            ui.notification_show(f"Error applying settings: {e}", type="error")
 
     @render.ui
     def template_preview():
@@ -328,14 +334,17 @@ def simulation_server(
         if not template_name:
             return
 
-        template = generate_template(template_name)
-        str_file = StrParser.parse(template)
-        parsed_str.set(str_file)
-        current_file_path.set(None)
-        ui.notification_show(f"Loaded template: {template_name}", type="message")
+        try:
+            template = generate_template(template_name)
+            str_file = StrParser.parse(template)
+            parsed_str.set(str_file)
+            current_file_path.set(None)
+            ui.notification_show(f"Loaded template: {template_name}", type="message")
 
-        # Reset dropdown
-        ui.update_select("template_select", selected="")
+            # Reset dropdown
+            ui.update_select("template_select", selected="")
+        except Exception as e:
+            ui.notification_show(f"Error loading template: {e}", type="error")
 
     @render.ui
     def sections_view():

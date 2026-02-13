@@ -1,0 +1,48 @@
+# SHYFEM UI - Conda/Micromamba environment definition
+# This is the single source of truth for the runtime environment.
+# Install: micromamba create -f environment.yml
+# Update:  micromamba update -f environment.yml
+name: shiny
+channels:
+  - conda-forge
+
+dependencies:
+  # Python runtime
+  - python=3.12
+
+  # --- Core application ---
+  - pip
+
+  # Scientific stack (use conda-forge for binary packages)
+  - numpy>=1.24
+  - scipy>=1.12
+  - pandas>=2.0
+  - xarray>=2024.6
+  - netcdf4>=1.6
+  - matplotlib>=3.7
+
+  # Install remaining packages via pip (pure-Python or PyPI-only)
+  - pip:
+      - shiny>=1.2.0
+      - shinyswatch>=0.7.0
+      - shinywidgets>=0.3
+      - sqlalchemy>=2.0
+      - pydantic>=2.0
+      - pydantic-settings>=2.0
+      - plotly>=5.24
+      - ipyleaflet>=0.18
+      - aiofiles>=23.0
+
+      # Dev / testing
+      - pytest>=7.0
+      - pytest-asyncio>=0.21
+      - pytest-cov>=4.0
+      - playwright>=1.50
+      - black>=23.0
+      - ruff>=0.1.0
+
+      # Server mode (optional — uncomment for production deployments)
+      # - celery>=5.3
+      # - redis>=4.5
+      # - psycopg2-binary>=2.9
+      # - gunicorn>=21.0

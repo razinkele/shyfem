@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from shiny import module, reactive, render, ui
 
-from shyfem_ui.services.parser_grd import GrdFile, GrdParser
+from shyfem_ui.services.parser_grd import GrdFile
 
 
 @module.ui
@@ -103,7 +103,6 @@ def plot_widget_server(
         if grd is None:
             return None
 
-        bounds = grd.get_bounds()
         depth_range = grd.get_depth_range()
 
         stats = [

@@ -96,8 +96,9 @@ class JobQueue(ABC):
         status: Optional[JobStatus] = None,
         simulation_id: Optional[int] = None,
         limit: int = 100,
+        session_id: Optional[str] = None,
     ) -> list[JobInfo]:
-        """List jobs, optionally filtered by status or simulation."""
+        """List jobs, optionally filtered by status, simulation, or session."""
         pass
 
     @abstractmethod
@@ -111,8 +112,42 @@ class JobQueue(ABC):
     def set_progress_callback(
         self, callback: Callable[[str, float, str], None]
     ) -> None:
-        """Set callback for progress updates: callback(job_id, progress, message)."""
+        """Set callback for progress updates: callback(job_id, progress, message).
+
+        Deprecated: Use add_progress_callback/remove_progress_callback for
+        multi-session support.  This still works but overwrites all previous
+        callbacks registered via add_progress_callback.
+        """
         pass
+
+    def add_progress_callback(
+        self,
+        callback_id: str,
+        callback: Callable[[str, float, str], None],
+    ) -> None:
+        """Register a named progress callback (multi-session safe).
+
+        Args:
+            callback_id: Unique identifier (e.g. session id).
+            callback: Called with (job_id, progress, message).
+        """
+        if not hasattr(self, "_progress_callbacks"):
+            self._progress_callbacks: dict[str, Callable[[str, float, str], None]] = {}
+        self._progress_callbacks[callback_id] = callback
+
+    def remove_progress_callback(self, callback_id: str) -> None:
+        """Remove a previously registered progress callback."""
+        if hasattr(self, "_progress_callbacks"):
+            self._progress_callbacks.pop(callback_id, None)
+
+    def _notify_progress(self, job_id: str, progress: float, message: str) -> None:
+        """Invoke all registered progress callbacks."""
+        if hasattr(self, "_progress_callbacks"):
+            for cb in list(self._progress_callbacks.values()):
+                try:
+                    cb(job_id, progress, message)
+                except Exception:
+                    pass
 
     @abstractmethod
     async def cleanup_old_jobs(self, days: int = 7) -> int:

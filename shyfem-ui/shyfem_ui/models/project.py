@@ -135,12 +135,19 @@ class Job(Base):
         Index("ix_jobs_status", "status"),
         Index("ix_jobs_created_at", "created_at"),
         Index("ix_jobs_simulation_id", "simulation_id"),
+        Index("ix_jobs_job_uuid", "job_uuid", unique=True),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    job_uuid: Mapped[str] = mapped_column(
+        String(36), nullable=False, unique=True
+    )  # UUID string from JobQueue
     simulation_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("simulations.id"), nullable=True
     )
+    session_id: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )  # Shiny session ID for multi-user filtering
 
     # Job identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -149,7 +156,7 @@ class Job(Base):
     )  # shypre, shybas, shyparts, shyfem, shyelab, shyplot
 
     # Command execution
-    command: Mapped[str] = mapped_column(Text, nullable=False)
+    command: Mapped[str] = mapped_column(Text, nullable=False, default="")
     working_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
 
     # Status tracking

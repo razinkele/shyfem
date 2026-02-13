@@ -2,14 +2,13 @@
 
 import shutil
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
-from shyfem_ui.models.project import Grid, Job, Project, Simulation
+from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 
 # Tutorial phases: (phase_name, description, list of .str file basenames)
@@ -50,7 +49,7 @@ TUTORIAL_PHASES = [
 @module.ui
 def home_ui():
     """Dashboard page UI."""
-    return ui.page_fluid(
+    return ui.div(
         # Header
         ui.div(
             ui.h2("SHYFEM Workbench"),
@@ -137,8 +136,11 @@ def home_server(
     # Load initial data
     @reactive.effect
     async def _load_data():
-        _refresh_projects()
-        await _refresh_jobs()
+        try:
+            _refresh_projects()
+            await _refresh_jobs()
+        except Exception as e:
+            ui.notification_show(f"Error loading data: {e}", type="error")
 
     def _refresh_projects():
         with db_session() as db:

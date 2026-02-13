@@ -4,22 +4,19 @@ import argparse
 import base64
 import hashlib
 import hmac
-import sys
+import logging
 from pathlib import Path
 from typing import Optional
 
-from shiny import App, reactive, ui
-
-try:
-    import shinyswatch
-    HAS_SHINYSWATCH = True
-except ImportError:
-    HAS_SHINYSWATCH = False
+import shinyswatch
+from shiny import App, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import compare, ensemble, grid_prep, home, partitioning, postprocess, run, simulation, visualize
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(config: Optional[Config] = None) -> App:
@@ -61,17 +58,57 @@ def create_app(config: Optional[Config] = None) -> App:
 
     app = App(app_ui, server)
 
+    # Debug: wrap with WebSocket logging middleware (only when debug=True)
+    if config.debug:
+        app = _WsDebugMiddleware(app)
+
     # Wrap with basic auth middleware in server mode
     if config.auth_enabled and config.auth_password:
         app = BasicAuthMiddleware(app, config.auth_username, config.auth_password)
     elif config.deployment_mode == "server" and not config.auth_enabled:
-        print(
-            "WARNING: Running in server mode without authentication. "
+        logger.warning(
+            "Running in server mode without authentication. "
             "Set SHYFEM_UI_AUTH_ENABLED=true and SHYFEM_UI_AUTH_PASSWORD=<password> "
             "to enable basic auth."
         )
 
     return app
+
+
+class _WsDebugMiddleware:
+    """Temporary ASGI middleware to debug WebSocket messages."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":
+            logger.debug("WebSocket connection: path=%s", scope.get("path"))
+            msg_count = 0
+
+            async def debug_receive():
+                nonlocal msg_count
+                msg = await receive()
+                msg_count += 1
+                msg_type = msg.get("type", "unknown")
+                if msg_type == "websocket.receive":
+                    text = msg.get("text", "")
+                    logger.debug("WS recv #%d: %s", msg_count, text[:300])
+                else:
+                    logger.debug("WS recv #%d: type=%s", msg_count, msg_type)
+                return msg
+
+            async def debug_send(msg):
+                msg_type = msg.get("type", "unknown")
+                if msg_type == "websocket.send":
+                    text = msg.get("text", "")
+                    logger.debug("WS send: %s", text[:300])
+                else:
+                    logger.debug("WS send: type=%s", msg_type)
+                return await send(msg)
+
+            return await self.app(scope, debug_receive, debug_send)
+        return await self.app(scope, receive, send)
 
 
 class BasicAuthMiddleware:
@@ -135,53 +172,23 @@ class BasicAuthMiddleware:
 
 def _build_ui(config: Config) -> ui.Tag:
     """Build the application UI."""
-    # Navigation bar with pages
-    nav_items = [
-        ui.nav_panel("Dashboard", home.home_ui("home")),
-        ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
-        ui.nav_panel("Partitioning", partitioning.partitioning_ui("partitioning")),
-        ui.nav_panel("Simulation", simulation.simulation_ui("simulation")),
-        ui.nav_panel("Run", run.run_ui("run")),
-        ui.nav_panel("Post-Process", postprocess.postprocess_ui("postprocess")),
-        ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
-        ui.nav_panel("Compare", compare.compare_ui("compare")),
-        ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
-    ]
+    # Build page with theme
+    theme = getattr(shinyswatch.theme, config.theme, shinyswatch.theme.flatly)
 
-    # Add spacer and info
-    nav_items.append(ui.nav_spacer())
-    nav_items.append(
-        ui.nav_menu(
-            "Help",
-            ui.nav_control(
-                ui.a(
-                    "Documentation",
-                    href="https://shyfem.readthedocs.io/",
-                    target="_blank",
-                    class_="dropdown-item",
-                )
-            ),
-            ui.nav_control(
-                ui.a(
-                    "About SHYFEM",
-                    href="https://github.com/shyfem/shyfem",
-                    target="_blank",
-                    class_="dropdown-item",
-                )
-            ),
-        )
-    )
-
-    # Build page with optional theme
-    theme = None
-    if HAS_SHINYSWATCH:
-        theme = getattr(shinyswatch.theme, config.theme, shinyswatch.theme.flatly)
-
-    return ui.page_navbar(
-        *nav_items,
+    return ui.page_fillable(
+        ui.navset_tab(
+            ui.nav_panel("Dashboard", home.home_ui("home")),
+            ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
+            ui.nav_panel("Partitioning", partitioning.partitioning_ui("partitioning")),
+            ui.nav_panel("Simulation", simulation.simulation_ui("simulation")),
+            ui.nav_panel("Run", run.run_ui("run")),
+            ui.nav_panel("Post-Process", postprocess.postprocess_ui("postprocess")),
+            ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
+            ui.nav_panel("Compare", compare.compare_ui("compare")),
+            ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
+            id="main_navbar",
+        ),
         title="SHYFEM Workbench",
-        id="main_navbar",
-        fillable=True,
         theme=theme,
     )
 
@@ -278,12 +285,12 @@ Environment variables (can be used instead of arguments):
     port = args.port or config.port
 
     # Create and run app
-    print(f"Starting SHYFEM Workbench...")
-    print(f"  Mode: {config.deployment_mode}")
-    print(f"  SHYFEM Dir: {config.shyfem_dir}")
-    print(f"  Work Dir: {config.work_dir}")
-    print(f"  URL: http://{host}:{port}")
-    print()
+    logging.basicConfig(level=logging.DEBUG if config.debug else logging.INFO)
+    logger.info("Starting SHYFEM Workbench...")
+    logger.info("  Mode: %s", config.deployment_mode)
+    logger.info("  SHYFEM Dir: %s", config.shyfem_dir)
+    logger.info("  Work Dir: %s", config.work_dir)
+    logger.info("  URL: http://%s:%s", host, port)
 
     app = create_app(config)
 

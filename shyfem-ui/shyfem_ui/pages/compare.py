@@ -7,7 +7,6 @@ Features:
 - Output file comparison
 """
 
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -15,9 +14,9 @@ import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
-from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
+from shyfem_ui.components.job_status import format_datetime, format_duration
 from shyfem_ui.config import Config
-from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
+from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.report import generate_comparison_report
 
@@ -25,7 +24,7 @@ from shyfem_ui.services.report import generate_comparison_report
 @module.ui
 def compare_ui():
     """Job comparison page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Compare Simulations"),
         ui.p("Compare parameters, runtime, and results across simulations.",
              class_="text-muted"),
@@ -125,8 +124,11 @@ def compare_server(
     # Load jobs on init
     @reactive.effect
     async def _load_jobs():
-        jobs = await job_queue.list_jobs(limit=100)
-        all_jobs.set(jobs)
+        try:
+            jobs = await job_queue.list_jobs(limit=100)
+            all_jobs.set(jobs)
+        except Exception as e:
+            ui.notification_show(f"Failed to load jobs: {e}", type="error")
 
     @render.ui
     def job_selector():
@@ -273,7 +275,7 @@ def compare_server(
         if not diff["rows"]:
             return ui.div(
                 ui.p("No parameter differences found.", class_="text-success text-center mt-3"),
-                ui.p(f"Both files have identical parameters in compared sections.",
+                ui.p("Both files have identical parameters in compared sections.",
                      class_="text-muted small text-center"),
             )
 

@@ -14,6 +14,16 @@ from typing import Optional
 import numpy as np
 
 
+class GridParseError(Exception):
+    """Raised when a .grd file cannot be parsed at all.
+
+    Individual malformed lines produce warnings (accumulated in
+    ``GrdFile.parse_warnings``) rather than raising this exception.
+    This exception is reserved for catastrophic failures such as
+    file-not-found or completely unreadable content.
+    """
+
+
 @dataclass
 class Node:
     """A grid node."""
@@ -424,9 +434,18 @@ class GrdParser:
 
     @classmethod
     def parse_file(cls, file_path: Path | str) -> GrdFile:
-        """Parse a .grd file from disk."""
+        """Parse a .grd file from disk.
+
+        Raises:
+            GridParseError: If the file cannot be read.
+        """
         file_path = Path(file_path)
-        content = file_path.read_text(encoding="utf-8", errors="replace")
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except FileNotFoundError:
+            raise GridParseError(f"Grid file not found: {file_path}")
+        except OSError as e:
+            raise GridParseError(f"Cannot read grid file {file_path}: {e}")
         result = cls.parse(content)
         result.file_path = file_path
         return result
@@ -457,7 +476,7 @@ class GrdParser:
             lines.append(f"2 {elem.id} {elem.elem_type} {nodes_str}")
 
         # Lines
-        for ln in sorted(grd_file.lines.values(), key=lambda l: l.id):
+        for ln in sorted(grd_file.lines.values(), key=lambda ln_: ln_.id):
             nodes_str = " ".join(str(n) for n in ln.nodes)
             lines.append(f"3 {ln.id} {ln.line_type} {nodes_str}")
 

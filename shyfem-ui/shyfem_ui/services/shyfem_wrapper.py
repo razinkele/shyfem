@@ -82,6 +82,7 @@ class ShyfemWrapper:
         progress_callback: Optional[Callable[[float, str], None]] = None,
         output_callback: Optional[Callable[[str], None]] = None,
         env: Optional[dict[str, str]] = None,
+        command_prefix: Optional[list[str]] = None,
     ) -> CommandResult:
         """Run a SHYFEM command asynchronously.
 
@@ -92,6 +93,7 @@ class ShyfemWrapper:
             progress_callback: Called with (progress_fraction, message)
             output_callback: Called with each line of output
             env: Additional environment variables
+            command_prefix: Optional prefix for the command (e.g. ["mpirun", "-np", "4"])
 
         Returns:
             CommandResult with execution details
@@ -107,7 +109,10 @@ class ShyfemWrapper:
             run_env.update(env)
 
         # Build command
-        cmd = [str(exe)] + args
+        if command_prefix:
+            cmd = command_prefix + [str(exe)] + args
+        else:
+            cmd = [str(exe)] + args
         cmd_str = " ".join(cmd)
 
         start_time = datetime.now()
@@ -291,83 +296,18 @@ class ShyfemWrapper:
             mpirun_path: Path to mpirun executable
             options: Additional options
         """
-        exe = self.get_executable("shyfem")
         args_list = options or []
         args_list.append(str(str_file))
 
+        prefix = None
         if mpi_enabled and mpi_np > 1:
-            # Run with mpirun
-            full_cmd = [mpirun_path, "-np", str(mpi_np), str(exe)] + args_list
-            cmd_str = " ".join(full_cmd)
+            prefix = [mpirun_path, "-np", str(mpi_np)]
 
-            working_dir = Path(working_dir)
-            working_dir.mkdir(parents=True, exist_ok=True)
-
-            run_env = os.environ.copy()
-            run_env["SHYFEMDIR"] = str(self.shyfem_dir)
-
-            start_time = datetime.now()
-            stdout_lines = []
-            stderr_lines = []
-
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *full_cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    cwd=working_dir,
-                    env=run_env,
-                )
-
-                async def read_stream(stream, lines_list, is_stderr=False):
-                    while True:
-                        line = await stream.readline()
-                        if not line:
-                            break
-                        decoded = line.decode("utf-8", errors="replace").rstrip()
-                        lines_list.append(decoded)
-                        if output_callback:
-                            output_callback(decoded)
-                        if progress_callback and not is_stderr:
-                            progress = self._parse_progress("shyfem", decoded)
-                            if progress is not None:
-                                progress_callback(progress, decoded)
-
-                await asyncio.gather(
-                    read_stream(proc.stdout, stdout_lines),
-                    read_stream(proc.stderr, stderr_lines, is_stderr=True),
-                )
-
-                await proc.wait()
-
-                end_time = datetime.now()
-                duration = (end_time - start_time).total_seconds()
-                output_files = self._find_output_files("shyfem", working_dir)
-
-                return CommandResult(
-                    success=proc.returncode == 0,
-                    return_code=proc.returncode,
-                    stdout="\n".join(stdout_lines),
-                    stderr="\n".join(stderr_lines),
-                    command=cmd_str,
-                    working_dir=str(working_dir),
-                    duration=duration,
-                    output_files=output_files,
-                )
-
-            except Exception as e:
-                return CommandResult(
-                    success=False,
-                    return_code=-1,
-                    stdout="",
-                    stderr=str(e),
-                    command=cmd_str,
-                    working_dir=str(working_dir),
-                )
-        else:
-            return await self.run_command(
-                "shyfem", args_list, working_dir, progress_callback, output_callback
-            )
+        return await self.run_command(
+            "shyfem", args_list, working_dir,
+            progress_callback, output_callback,
+            command_prefix=prefix,
+        )
 
     async def run_shyelab(
         self,

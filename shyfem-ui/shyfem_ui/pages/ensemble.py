@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
@@ -27,7 +26,7 @@ from shyfem_ui.services.parser_str import StrFile, StrParser
 @module.ui
 def ensemble_ui():
     """Ensemble / parameter sweep page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Ensemble / Parameter Sweep"),
         ui.p("Vary simulation parameters across multiple runs and compare results.",
              class_="text-muted"),
@@ -518,19 +517,23 @@ def ensemble_server(
         if not state:
             return
 
-        jobs = []
-        any_active = False
-        for jid in state["job_ids"]:
-            info = await job_queue.get_status(jid)
-            if info:
-                jobs.append(info)
-                if info.is_active:
-                    any_active = True
+        try:
+            jobs = []
+            any_active = False
+            for jid in state["job_ids"]:
+                info = await job_queue.get_status(jid)
+                if info:
+                    jobs.append(info)
+                    if info.is_active:
+                        any_active = True
 
-        ensemble_jobs.set(jobs)
+            ensemble_jobs.set(jobs)
 
-        if any_active:
-            reactive.invalidate_later(3)
+            if any_active:
+                reactive.invalidate_later(3)
+        except Exception:
+            # Silently retry on next cycle
+            reactive.invalidate_later(5)
 
     @render.ui
     def ensemble_progress():

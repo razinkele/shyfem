@@ -290,12 +290,6 @@ def build_mesh_figure(
         dragmode="pan",
     )
 
-    config = dict(
-        scrollZoom=True,
-        displayModeBar=True,
-        modeBarButtonsToAdd=["select2d", "lasso2d"],
-    )
-
     return fig
 
 

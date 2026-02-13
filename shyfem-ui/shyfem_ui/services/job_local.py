@@ -1,20 +1,23 @@
 """Local multiprocessing job queue implementation."""
 
 import asyncio
+import logging
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
-from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+logger = logging.getLogger(__name__)
 
 
 class LocalJobQueue(JobQueue):
     """Local job queue using asyncio for concurrent execution.
 
     Jobs are executed in the same process using asyncio tasks,
-    with configurable concurrency limits.
+    with configurable concurrency limits.  Completed jobs are
+    persisted to the database so they survive server restarts.
     """
 
     MAX_STORED_JOBS = 500
@@ -31,11 +34,13 @@ class LocalJobQueue(JobQueue):
             shyfem_dir: Path to SHYFEM installation
             max_workers: Maximum concurrent jobs
         """
+        from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
         self.shyfem_dir = shyfem_dir or Path(__file__).resolve().parents[3]
         self.max_workers = max_workers
         self.wrapper = ShyfemWrapper(self.shyfem_dir)
 
-        # Job storage (in-memory, capped at MAX_STORED_JOBS)
+        # Job storage (in-memory for active jobs, DB for history)
         self._jobs: OrderedDict[str, JobInfo] = OrderedDict()
         self._tasks: dict[str, asyncio.Task] = {}
 
@@ -43,8 +48,97 @@ class LocalJobQueue(JobQueue):
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._running_count = 0
 
-        # Callbacks
+        # Callbacks (legacy single + multi-session)
         self._progress_callback: Optional[Callable[[str, float, str], None]] = None
+
+        # Load completed jobs from DB into memory cache
+        self._load_history_from_db()
+
+    # ------------------------------------------------------------------
+    # Database persistence helpers
+    # ------------------------------------------------------------------
+
+    def _load_history_from_db(self) -> None:
+        """Load recent completed jobs from the database into the in-memory cache."""
+        try:
+            from shyfem_ui.db.base import db_session
+            from shyfem_ui.models.project import Job
+
+            with db_session() as db:
+                rows = (
+                    db.query(Job)
+                    .order_by(Job.created_at.desc())
+                    .limit(self.MAX_STORED_JOBS)
+                    .all()
+                )
+                for row in reversed(rows):  # oldest first so OrderedDict order is correct
+                    if row.job_uuid in self._jobs:
+                        continue
+                    self._jobs[row.job_uuid] = self._db_row_to_job_info(row)
+        except Exception:
+            # DB may not be initialised yet at import time — that's fine
+            logger.debug("Could not load job history from DB", exc_info=True)
+
+    @staticmethod
+    def _db_row_to_job_info(row) -> JobInfo:
+        """Convert a Job ORM row to a JobInfo dataclass."""
+        return JobInfo(
+            id=row.job_uuid,
+            name=row.name,
+            tool_name=row.job_type,
+            args=[],
+            working_dir=row.working_dir,
+            status=row.status,
+            progress=row.progress or 0.0,
+            progress_message=row.progress_message or "",
+            created_at=row.created_at,
+            queued_at=row.queued_at,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            return_code=row.return_code,
+            error_message=row.error_message,
+            stdout_file=row.stdout_file,
+            stderr_file=row.stderr_file,
+            simulation_id=row.simulation_id,
+            metadata={"session_id": row.session_id} if row.session_id else {},
+        )
+
+    def _persist_job(self, job: JobInfo) -> None:
+        """Write or update a job row in the database."""
+        try:
+            from shyfem_ui.db.base import db_session
+            from shyfem_ui.models.project import Job
+
+            with db_session() as db:
+                row = db.query(Job).filter(Job.job_uuid == job.id).first()
+                if row is None:
+                    row = Job(
+                        job_uuid=job.id,
+                        name=job.name,
+                        job_type=job.tool_name,
+                        command=" ".join(job.args),
+                        working_dir=job.working_dir,
+                        simulation_id=job.simulation_id,
+                        session_id=job.metadata.get("session_id"),
+                    )
+                    db.add(row)
+
+                row.status = job.status
+                row.progress = job.progress
+                row.progress_message = job.progress_message
+                row.queued_at = job.queued_at
+                row.started_at = job.started_at
+                row.completed_at = job.completed_at
+                row.return_code = job.return_code
+                row.error_message = job.error_message
+                row.stdout_file = job.stdout_file
+                row.stderr_file = job.stderr_file
+        except Exception:
+            logger.debug("Could not persist job %s to DB", job.id, exc_info=True)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     def _evict_old_jobs(self) -> None:
         """Remove oldest completed jobs when storage exceeds MAX_STORED_JOBS."""
@@ -59,14 +153,7 @@ class LocalJobQueue(JobQueue):
                 break
 
         for job_id in to_remove:
-            job = self._jobs.pop(job_id, None)
-            if job:
-                for file_path in [job.stdout_file, job.stderr_file]:
-                    if file_path:
-                        try:
-                            Path(file_path).unlink(missing_ok=True)
-                        except Exception:
-                            pass
+            self._jobs.pop(job_id, None)
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """Get or create the semaphore (must be called from async context)."""
@@ -74,22 +161,9 @@ class LocalJobQueue(JobQueue):
             self._semaphore = asyncio.Semaphore(self.max_workers)
         return self._semaphore
 
-    def _schedule_temp_cleanup(self, job: JobInfo) -> None:
-        """Schedule removal of stdout/stderr temp files after retention period."""
-        def _cleanup():
-            for file_path in [job.stdout_file, job.stderr_file]:
-                if file_path:
-                    try:
-                        Path(file_path).unlink(missing_ok=True)
-                    except Exception:
-                        pass
-
-        try:
-            loop = asyncio.get_event_loop()
-            loop.call_later(self.TEMP_FILE_RETENTION_SECS, _cleanup)
-        except RuntimeError:
-            # No running event loop; clean up immediately
-            _cleanup()
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     async def submit(self, spec: JobSpec) -> str:
         """Submit a job for execution."""
@@ -122,8 +196,9 @@ class LocalJobQueue(JobQueue):
         job_info.stdout_file = str(output_dir / f"{job_id}.stdout")
         job_info.stderr_file = str(output_dir / f"{job_id}.stderr")
 
-        # Store job
+        # Store job in memory and persist to DB
         self._jobs[job_id] = job_info
+        self._persist_job(job_info)
 
         # Start execution task
         task = asyncio.create_task(self._execute_job(job_id, spec))
@@ -140,27 +215,31 @@ class LocalJobQueue(JobQueue):
         # Wait for available slot
         job.status = JobStatus.QUEUED
         job.queued_at = datetime.now()
+        self._persist_job(job)
 
         async with self._get_semaphore():
             self._running_count += 1
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now()
+            self._persist_job(job)
 
             stdout_lines = []
-            stderr_lines = []
 
             def progress_callback(progress: float, message: str):
                 job.progress = progress
                 job.progress_message = message
+                # Legacy single callback
                 if self._progress_callback:
                     self._progress_callback(job_id, progress, message)
+                # Multi-session callbacks
+                self._notify_progress(job_id, progress, message)
 
             def output_callback(line: str):
                 stdout_lines.append(line)
 
             try:
                 if spec.tool_name == "shyfem" and spec.mpi_enabled and spec.mpi_np > 1:
-                    # MPI execution needs special handling (mpirun wrapper)
+                    # MPI execution
                     result = await self.wrapper.run_shyfem(
                         spec.args[-1] if spec.args else "",
                         spec.working_dir,
@@ -172,7 +251,6 @@ class LocalJobQueue(JobQueue):
                         output_callback=output_callback,
                     )
                 else:
-                    # All tools use run_command uniformly
                     result = await self.wrapper.run_command(
                         spec.tool_name,
                         spec.args,
@@ -209,8 +287,8 @@ class LocalJobQueue(JobQueue):
                 self._running_count -= 1
                 # Clean up task reference
                 self._tasks.pop(job_id, None)
-                # Schedule temp file cleanup after retention period
-                self._schedule_temp_cleanup(job)
+                # Persist final state to DB
+                self._persist_job(job)
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a running job."""
@@ -231,6 +309,7 @@ class LocalJobQueue(JobQueue):
 
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now()
+        self._persist_job(job)
         return True
 
     async def get_status(self, job_id: str) -> Optional[JobInfo]:
@@ -242,6 +321,7 @@ class LocalJobQueue(JobQueue):
         status: Optional[JobStatus] = None,
         simulation_id: Optional[int] = None,
         limit: int = 100,
+        session_id: Optional[str] = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
         jobs = list(self._jobs.values())
@@ -253,6 +333,10 @@ class LocalJobQueue(JobQueue):
         # Filter by simulation
         if simulation_id is not None:
             jobs = [j for j in jobs if j.simulation_id == simulation_id]
+
+        # Filter by session (for multi-user isolation)
+        if session_id is not None:
+            jobs = [j for j in jobs if j.metadata.get("session_id") == session_id]
 
         # Sort by creation time (newest first)
         jobs.sort(key=lambda j: j.created_at, reverse=True)

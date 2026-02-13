@@ -10,7 +10,6 @@ Provides:
 """
 
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 import plotly.graph_objects as go
@@ -39,7 +38,7 @@ COLORMAPS = {
 @module.ui
 def visualize_ui():
     """Visualization page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Visualization"),
         ui.p("Create interactive plots from SHYFEM results and grid files.",
              class_="text-muted"),
@@ -298,7 +297,8 @@ def visualize_server(
             elif dtype == "netcdf":
                 try:
                     import xarray as xr
-                    ds = xr.open_dataset(path)
+                    # Use lazy loading — data stays on disk until accessed
+                    ds = xr.open_dataset(path, chunks="auto")
                     if is_compare:
                         compare_data.set(ds)
                         compare_type.set("netcdf")
@@ -426,9 +426,6 @@ def visualize_server(
                                showarrow=False)
             fig.update_layout(height=500)
             return fig
-
-        var = data[var_name]
-        dims = list(var.dims)
 
         try:
             px = int(input.profile_x())

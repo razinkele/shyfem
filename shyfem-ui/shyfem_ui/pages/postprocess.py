@@ -10,7 +10,6 @@ Features:
 """
 
 import re
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -99,7 +98,7 @@ PRESETS = {
 @module.ui
 def postprocess_ui():
     """Post-processing page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Post-Processing"),
         ui.p("Process SHYFEM output files using shyelab.", class_="text-muted"),
         ui.layout_sidebar(

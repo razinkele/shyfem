@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 import uuid
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus

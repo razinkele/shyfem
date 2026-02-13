@@ -72,6 +72,12 @@ class Config(BaseSettings):
     auth_username: str = Field(default="admin", description="Basic auth username")
     auth_password: str = Field(default="", description="Basic auth password (required if auth_enabled)")
 
+    # Debug settings
+    debug: bool = Field(
+        default=False,
+        description="Enable debug mode (verbose WebSocket logging, etc.)"
+    )
+
     # UI settings
     theme: str = Field(default="flatly", description="Shinyswatch theme name")
     log_refresh_interval: int = Field(

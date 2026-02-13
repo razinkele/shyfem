@@ -2,7 +2,6 @@
 
 import shutil
 from pathlib import Path
-from typing import Optional
 
 from shiny import module, reactive, render, ui
 
@@ -11,14 +10,14 @@ from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
 from shyfem_ui.config import Config
-from shyfem_ui.services.parser_grd import GrdFile, GrdParser
+from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 
 @module.ui
 def grid_prep_ui():
     """Grid preparation page UI."""
-    return ui.page_fluid(
+    return ui.div(
         ui.h3("Grid Preparation"),
         ui.p("Convert .grd files to .bas format and analyze grid quality.", class_="text-muted"),
         ui.layout_sidebar(
@@ -254,7 +253,7 @@ def grid_prep_server(
             if result.success:
                 log_content.set(
                     log_content.get() +
-                    f"\n*** shybas completed successfully ***\n"
+                    "\n*** shybas completed successfully ***\n"
                 )
             else:
                 log_content.set(

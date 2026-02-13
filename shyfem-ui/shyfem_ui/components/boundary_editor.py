@@ -8,12 +8,11 @@ Provides a structured UI for defining $bound sections in .str files:
 - Auto-generate $bound section text
 """
 
-from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Callable, Optional
 
 from shiny import module, reactive, render, ui
 
-from shyfem_ui.services.parser_str import StrFile, StrParser
+from shyfem_ui.services.parser_str import StrFile
 
 
 @module.ui

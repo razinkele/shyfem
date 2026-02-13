@@ -8,54 +8,62 @@ import pytest
 from shyfem_ui.config import Config, get_config, set_config
 
 
+def _clean_config(**overrides) -> Config:
+    """Create a Config isolated from host environment variables.
+
+    Strips all SHYFEM_UI_* env vars so tests always see defaults.
+    """
+    return Config(_env_file=None, **overrides)
+
+
 class TestConfigDefaults:
     """Tests for default configuration values."""
 
     def test_default_deployment_mode(self):
         """Test default deployment mode is local."""
-        config = Config()
+        config = _clean_config()
         assert config.deployment_mode == "local"
 
     def test_default_host(self):
         """Test default host binding."""
-        config = Config()
+        config = _clean_config()
         assert config.host == "127.0.0.1"
 
     def test_default_port(self):
         """Test default port."""
-        config = Config()
+        config = _clean_config()
         assert config.port == 8000
 
     def test_default_max_workers(self):
         """Test default max workers."""
-        config = Config()
+        config = _clean_config()
         assert config.max_workers == 4
 
     def test_default_mpi_settings(self):
         """Test default MPI configuration."""
-        config = Config()
+        config = _clean_config()
         assert config.mpi_enabled is True
         assert config.mpi_default_np == 4
         assert config.mpirun_path == "mpirun"
 
     def test_default_auth_disabled(self):
         """Test auth is disabled by default."""
-        config = Config()
+        config = _clean_config()
         assert config.auth_enabled is False
 
     def test_default_theme(self):
         """Test default UI theme."""
-        config = Config()
+        config = _clean_config()
         assert config.theme == "flatly"
 
     def test_default_celery_disabled(self):
         """Test Celery is disabled by default."""
-        config = Config()
+        config = _clean_config()
         assert config.use_celery is False
 
     def test_default_rate_limit(self):
         """Test default rate limit."""
-        config = Config()
+        config = _clean_config()
         assert config.rate_limit_rpm == 120
 
 

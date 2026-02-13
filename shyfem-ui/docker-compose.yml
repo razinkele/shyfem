@@ -20,8 +20,13 @@ services:
       - SHYFEM_UI_USE_CELERY=${USE_CELERY:-false}
       - SHYFEM_UI_REDIS_URL=redis://redis:6379/0
       - SHYFEM_UI_DATABASE_URL=sqlite:////data/db/shyfem_ui.db
+      # Uncomment to enable authentication (strongly recommended):
+      # - SHYFEM_UI_AUTH_ENABLED=true
+      # - SHYFEM_UI_AUTH_PASSWORD=changeme
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+        required: false
     restart: unless-stopped
 
   # Redis for Celery job queue (optional)

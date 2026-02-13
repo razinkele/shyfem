@@ -275,7 +275,7 @@ class CeleryJobQueue(JobQueue):
         _store_job_info(rc, job_info)
 
         # Dispatch to Celery worker
-        app = self._get_celery_app()
+        self._get_celery_app()
         self._task.apply_async(
             args=[job_id, self.redis_url, str(self.shyfem_dir)],
             task_id=job_id,
@@ -311,6 +311,7 @@ class CeleryJobQueue(JobQueue):
         status: Optional[JobStatus] = None,
         simulation_id: Optional[int] = None,
         limit: int = 100,
+        session_id: Optional[str] = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
         rc = self._get_redis_client()
@@ -329,6 +330,9 @@ class CeleryJobQueue(JobQueue):
                 continue
 
             if simulation_id is not None and job_info.simulation_id != simulation_id:
+                continue
+
+            if session_id is not None and job_info.metadata.get("session_id") != session_id:
                 continue
 
             jobs.append(job_info)

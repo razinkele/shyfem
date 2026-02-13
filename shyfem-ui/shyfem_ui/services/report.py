@@ -11,12 +11,9 @@ Reports are standalone HTML files with inline CSS and JS (no external deps).
 """
 
 import html
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
-
-import numpy as np
 
 
 class ReportBuilder:
@@ -184,7 +181,6 @@ class ReportBuilder:
         rows = []
         for fp in files:
             path = Path(fp)
-            name = path.name
             suffix = path.suffix.lower()
 
             # File type badge
