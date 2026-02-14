@@ -1,271 +1,404 @@
-# SHYFEM-UI — Next Phase Improvement Plan
+# SHYFEM-UI — Round 2 Improvement Plan
 
-**Created:** 2026-02-13
-**Baseline:** Phases 1–8 complete (200 passing, 1 failing, 94 skipped tests)
-**Scope:** Code health, hardening, Docker, performance, accessibility, CI/CD
-
----
-
-## Phase 9: Fix Failing Test & Test Environment Isolation
-
-> The test suite has **1 failure** caused by an environment variable leaking
-> into the test process, and **94 skipped** Playwright tests that never run.
-
-- [x] **9.1** Fix `test_config.py::test_default_deployment_mode` failure
-  - Root cause: the host machine has `SHYFEM_UI_DEPLOYMENT_MODE=server` set
-    in the shell environment. `Config()` (Pydantic) picks it up automatically.
-  - Fix: in `tests/conftest.py` add a session-scoped autouse fixture that
-    patches `os.environ` to remove all `SHYFEM_UI_` prefixed variables (or
-    sets `SHYFEM_UI_DEPLOYMENT_MODE=local`) before any test runs.
-  - Alternatively, update `test_config.py` tests to explicitly use
-    `Config(_env_file=None, deployment_mode="local")` so they don't depend
-    on the host environment.
-  - File: `tests/test_config.py` (~line 17)
-
-- [x] **9.2** Make Playwright E2E tests runnable in CI
-  - 94 tests are currently skipped because `playwright` browsers aren't
-    installed. Add a `conftest.py` marker/condition that auto-installs
-    browsers in CI or clarifies the skip reason.
-  - Add `playwright install chromium --with-deps` to the CI pipeline / a
-    Makefile target.
-  - Document: `README.md` should include a "Run E2E tests" section.
-
-- [x] **9.3** Add `pytest-cov` coverage report to test run
-  - Add `--cov=shyfem_ui --cov-report=term-missing` to `pytest.ini_options`.
-  - Goal: establish baseline coverage percentage (currently estimated ~40%
-    because pages/components have zero unit-test coverage).
+**Created:** 2026-02-14
+**Baseline:** Phases 1–17 complete (404 collected, 387 passing, 17 pre-existing failures)
+**Scope:** Security, test coverage, features, performance, multi-user, polish
+**Design:** [docs/plans/2026-02-14-round2-improvements-design.md](docs/plans/2026-02-14-round2-improvements-design.md)
 
 ---
 
-## Phase 10: Lint & Code Hygiene Cleanup
+## Phase 18: Error Handling Audit
 
-> Ruff reports **77 issues** (28 unused imports, 7 unused variables, 35 long
-> lines, 4 import-ordering, 2 empty f-strings, 1 ambiguous variable name).
+> 40+ silent `except Exception: pass` blocks across 8 files hide bugs and
+> make debugging impossible. Replace with logged handlers + graceful fallbacks.
 
-- [x] **10.1** Remove 28 unused imports (auto-fixable: `ruff check --fix`)
-  - Files affected: `app.py`, `boundary_editor.py`, `log_viewer.py`,
-    `plot_widget.py`, `str_editor.py`, `timeseries.py`, `compare.py`,
-    `ensemble.py`, `grid_prep.py`, `home.py`, `partitioning.py`,
-    `postprocess.py`, `run.py`, `simulation.py`, `visualize.py`,
-    `job_local.py`, `report.py`, `workflow.py`
+- [ ] **18.1** Fix silent exceptions in `components/str_editor.py`
+  - Line 146: `except Exception: pass` — add logger.warning, fall back to raw string
+  - Line 171: `except Exception: continue` — log skipped parameter conversion
 
-- [x] **10.2** Fix 7 unused local variables
-  - `components/grid_map.py:293` – `config` dict never used
-  - `components/grid_map.py:106` – `bounds` assigned but never read
-  - `pages/run.py:376` – `total` computed but never rendered
-  - `pages/visualize.py:432` – `dims` assigned but not consumed
-  - `services/job_celery.py:278` – `app` result not used
-  - `services/shyfem_wrapper.py:228` – `stderr_lines` never read
-  - `services/report.py:187` – `name` shadowed and unused
+- [ ] **18.2** Fix silent exceptions in `components/timeseries.py`
+  - Lines 170, 276, 385: silent fallbacks to default columns — add logger.debug
+  - Line 433: silent whitespace parse fallback — log and notify
 
-- [x] **10.3** Fix 2 f-strings with no placeholders (`F541`)
-  - Inspect and convert to plain strings or add intended variables.
+- [ ] **18.3** Fix silent exceptions in `pages/ensemble.py`
+  - Line 565: `except Exception: pass` — log retry failure
+  - Line 836: `except Exception: return []` — log and return empty with context
 
-- [x] **10.4** Fix 4 module-level import ordering issues (`E402` in `app.py`)
-  - Move logger assignment below all imports, or restructure the import block.
+- [ ] **18.4** Fix silent exceptions in `pages/postprocess.py`
+  - Lines 378, 386, 776: `except Exception: pass` — add logger.warning
 
-- [x] **10.5** Address `E741` ambiguous variable name (1 occurrence)
-  - Rename single-letter variable (likely `l` → `layer` or similar).
+- [ ] **18.5** Fix silent exceptions in `pages/run.py`
+  - Lines 301, 565, 813: silent catches — add logger.exception
 
-- [x] **10.6** Migrate ruff config from deprecated top-level keys
-  - `pyproject.toml`: move `select`, `ignore` under `[tool.ruff.lint]`.
+- [ ] **18.6** Fix silent exceptions in `pages/compare.py`
+  - Audit all exception handlers, add logging where missing
 
----
+- [ ] **18.7** Fix unlogged rollback in `db/base.py`
+  - Line 112: `except Exception:` rollback — add `logger.exception("DB error")`
 
-## Phase 11: Dockerfile & Deployment Hardening
-
-> The Dockerfile references a deleted `requirements.txt` and uses `pip`
-> instead of the conda/micromamba environment. Docker-compose has issues too.
-
-- [x] **11.1** Fix Dockerfile — references non-existent `requirements.txt`
-  - Stage 1 runs `COPY requirements.txt .` and `pip install -r requirements.txt`.
-    This file was deleted per Phase 2 recommendations.
-  - Options: (a) use `pip install .` with `pyproject.toml`, or (b) use
-    `mambaorg/micromamba` base image and `COPY environment.yml`.
-  - Recommended: option (b) to align with the micromamba deployment strategy
-    documented in `CODEBASE_ANALYSIS.md`.
-
-- [x] **11.2** Pin Python version consistently
-  - `environment.yml` specifies `python=3.13`, `Dockerfile` uses
-    `python:3.11-slim`, `pyproject.toml` classifiers list 3.10–3.12.
-  - Standardize on **Python 3.12** across all three artifacts.
-
-- [x] **11.3** Docker Compose: fix unconditional `depends_on: redis`
-  - The `shyfem-ui` service always depends on `redis`, but redis uses
-    `profiles: [server]` meaning it won't start in default mode.
-  - Fix: either remove the dependency or make `shyfem-ui` also conditional.
-
-- [x] **11.4** Add `.dockerignore` file
-  - Exclude: `__pycache__/`, `.git/`, `*.egg-info/`, `tests/`, `.env`,
-    `*.pyc`, `.ruff_cache/`, `.mypy_cache/`.
-
-- [x] **11.5** Add non-root user to Dockerfile
-  - Currently runs as root. Add `RUN useradd -m appuser` and
-    `USER appuser` for security hardening.
-
-- [x] **11.6** Add `SHYFEM_UI_AUTH_ENABLED=true` and a placeholder password
-  to Docker Compose environment block with a warning comment.
+- [ ] **18.8** Audit `services/job_celery.py` exception handlers
+  - Lines 169, 179: asyncio.run() error handling — ensure exceptions propagate
 
 ---
 
-## Phase 12: Unit Tests for UI Components & Pages
+## Phase 19: File Upload & Input Validation
 
-> Currently **zero unit tests** for any file under `pages/` or `components/`.
-> Only service-layer code is tested. Pages contain significant business logic
-> (parsing, file I/O, data transformation) that can be tested without a live
-> Shiny server.
+> File uploads have no size limits. An attacker or careless user can upload
+> a multi-GB file and exhaust server memory.
 
-- [x] **12.1** Test helper functions extracted from `pages/run.py`
-  - `_format_eta()`, progress calculation logic, `_build_job_timeline()`
-    Plotly figure builder — extract into testable pure functions if needed.
+- [ ] **19.1** Add `max_upload_size_mb` config option
+  - Default: 500 MB. Add to Config class with `SHYFEM_UI_MAX_UPLOAD_SIZE_MB` env var.
 
-- [x] **12.2** Test helper functions in `pages/postprocess.py`
-  - `_parse_shyelab_info()` — provide sample Fortran output and assert
-    parsed structure.
+- [ ] **19.2** Add file size validation to grid_prep.py upload handler
+  - Check `file_info["size"]` before reading. Show notification if too large.
+  - File: `pages/grid_prep.py` (~line 128)
 
-- [x] **12.3** Test helper functions in `pages/visualize.py`
-  - `_build_vertical_profile()`, `_build_transect()`, `_compare_netcdf()`
-    — these return Plotly figures; test they produce valid `go.Figure`
-    objects with expected trace counts.
+- [ ] **19.3** Add filename extension validation
+  - Reject uploads that don't match expected extensions (.grd, .bas, .str, .csv).
+  - Apply to all file upload handlers across pages.
 
-- [x] **12.4** Test `components/grid_map.py` → `build_mesh_figure()`
-  - Provide a small synthetic `GrdFile`, assert figure has correct trace
-    count (mesh, boundary, labels), axes labels, etc.
-
-- [x] **12.5** Test `components/timeseries.py` → `compute_statistics()`
-  - Pure function — test with known DataFrame, assert min/max/mean/std/
-    percentile values.
-
-- [x] **12.6** Test `components/boundary_editor.py` CSV parsing logic
-  - Test the CSV import code that splits rows into node list, type, file,
-    scale factor, interpolation.
-
-- [x] **12.7** Test `services/job_celery.py` health_check/worker_info
-  - Mock Redis connection and Celery `app.control` to test without infra.
+- [ ] **19.4** Add Content-Length ASGI middleware
+  - Reject HTTP requests with Content-Length exceeding configured max.
+  - Server mode only, with configurable limit.
 
 ---
 
-## Phase 13: Database & Model Improvements
+## Phase 20: Proxy & CSRF Hardening
 
-- [x] **13.1** Add Alembic migrations
-  - Currently `Base.metadata.create_all()` creates tables on startup.
-    This works for development but breaks on schema changes in production
-    (columns added → old SQLite DB is incompatible).
-  - Init Alembic: `alembic init migrations`, generate initial revision.
-  - Update `init_db()` to run `alembic upgrade head` instead of
-    `create_all()`.
+> Rate limiter uses raw client IP, which fails behind reverse proxies.
+> No CSRF protection exists for state-changing operations.
 
-- [x] **13.2** Add `Job.output_files` JSON column
-  - Currently `output_files` lives only in the in-memory `JobInfo` dataclass.
-    Persisting it to the DB allows post-restart output file browsing.
+- [ ] **20.1** Add `trusted_proxies` config option
+  - List of CIDR ranges (default: empty). When set, extract client IP from
+    `X-Forwarded-For` header instead of ASGI `scope["client"]`.
 
-- [x] **13.3** Add cascading session cleanup
-  - When a user session disconnects, mark orphaned RUNNING jobs as
-    CANCELLED. Currently jobs run indefinitely if the browser closes.
-  - Implement via `session.on_ended` callback in `_build_server`.
+- [ ] **20.2** Update RateLimitMiddleware to use forwarded IP
+  - Parse `X-Forwarded-For`, validate against trusted_proxies list.
+  - Fall back to raw client IP if header is missing or proxy untrusted.
 
----
-
-## Phase 14: Performance & Scalability
-
-- [x] **14.1** Add reactive caching for parsed grid files
-  - `GrdParser.parse()` re-reads from disk on every reactive invalidation.
-  - Wrap with `@reactive.calc` memoization keyed on file path + mtime.
-
-- [x] **14.2** Lazy-load page modules
-  - Importing all 9 page modules at startup increases cold-start time.
-  - Use `importlib.import_module()` inside `_build_ui` / `_build_server` to
-    defer loading until the tab is visited.
-
-- [x] **14.3** Add WebSocket keepalive / reconnection handling
-  - Long-running simulations (hours) may outlive WebSocket timeout.
-  - Add `reconnect: true` option to the Shiny client or implement a
-    heartbeat in `_WsDebugMiddleware`.
-
-- [x] **14.4** Rate-limit implementation
-  - `Config.rate_limit_rpm` is defined (120 req/min) but never enforced.
-  - Add ASGI middleware that tracks requests per session and returns 429.
+- [ ] **20.3** Add CSRF token middleware for server mode
+  - Generate per-session CSRF token. Inject into HTML forms via `ui.head_content`.
+  - Validate on state-changing requests (POST, PUT, DELETE).
+  - Skip for WebSocket connections (already session-authenticated).
 
 ---
 
-## Phase 15: UX Polish & Accessibility
+## Phase 21: Middleware & Infrastructure Tests
 
-- [x] **15.1** Add keyboard navigation to tab bar
-  - `ui.navset_tab` should support arrow-key navigation between tabs.
-  - Test with Playwright that Tab/ArrowRight cycles through pages.
+> Rate limiter, auth middleware, session cleanup, and Alembic migrations
+> have zero unit tests. These are critical infrastructure.
 
-- [x] **15.2** Add loading spinners for long operations
-  - Grid parsing, file loading, job submission currently show no feedback.
-  - Use `ui.busy_indicators.use()` or add explicit `ui.output_ui` spinners.
+- [ ] **21.1** Test RateLimitMiddleware
+  - Test: requests under limit pass through (200)
+  - Test: requests at limit return 429 with Retry-After header
+  - Test: sliding window resets after 60 seconds
+  - Test: WebSocket connections bypass rate limiting
+  - Test: different clients have independent limits
 
-- [x] **15.3** Add user-facing error boundaries
-  - Unhandled exceptions in reactive functions crash the session silently.
-  - Wrap key server blocks with try/except → `ui.notification_show(type="error")`.
+- [ ] **21.2** Test BasicAuthMiddleware
+  - Test: valid credentials return 200
+  - Test: invalid credentials return 401 with WWW-Authenticate
+  - Test: missing Authorization header returns 401
+  - Test: WebSocket with bad auth returns close code 4001
+  - Test: non-http/websocket scopes pass through
 
-- [x] **15.4** Add favicon and meta tags
-  - No `<link rel="icon">` or `<meta name="description">` in the HTML head.
-  - Use `ui.head_content(ui.tags.link(rel="icon", href="..."))`.
+- [ ] **21.3** Test session cleanup callback
+  - Mock job_queue.list_jobs and cancel, verify orphaned jobs cancelled
+  - Test: exceptions in cleanup are logged, not raised
 
-- [x] **15.5** Add dark mode toggle
-  - `shinyswatch` supports dark themes (e.g., `darkly`). Add a toggle in
-    the navbar that switches `config.theme` and re-renders.
-
----
-
-## Phase 16: CI/CD Pipeline
-
-- [x] **16.1** Create GitHub Actions workflow: `.github/workflows/ci.yml`
-  - Steps: checkout → setup micromamba → install environment → lint →
-    unit tests → coverage report.
-  - Use `mamba-org/setup-micromamba@v2` action.
-
-- [x] **16.2** Add E2E test job to CI
-  - Install Playwright browsers, start app, run Playwright tests.
-  - Runs only on PRs touching `shyfem_ui/` or `tests/`.
-
-- [x] **16.3** Add Docker build check to CI
-  - `docker build --target builder .` to catch Dockerfile regressions.
-
-- [x] **16.4** Add pre-commit hooks
-  - Create `.pre-commit-config.yaml` with ruff, black, trailing whitespace.
+- [ ] **21.4** Test Alembic migrations
+  - Test: upgrade from empty DB creates all tables
+  - Test: downgrade removes all tables
+  - Test: existing DB without alembic_version gets stamped
 
 ---
 
-## Phase 17: Documentation & Developer Experience
+## Phase 22: Component Test Coverage
 
-- [x] **17.1** Add `CONTRIBUTING.md`
-  - Dev setup instructions, code style guide, PR checklist.
+> 4 components have zero unit tests: job_status, file_browser, log_viewer,
+> plot_widget. These contain testable pure functions.
 
-- [x] **17.2** Add `Makefile` with common targets
-  - `make install`, `make test`, `make lint`, `make format`, `make e2e`,
-    `make docker-build`, `make docker-run`.
+- [ ] **22.1** Test `components/job_status.py`
+  - `format_duration()` — None, 0s, 30s, 90s, 3600s, negative
+  - `format_datetime()` — None, datetime objects, timezone handling
+  - `get_status_badge()` — all JobStatus enum values return valid HTML
+  - `job_list_table()` — empty list, single job, multiple jobs
 
-- [x] **17.3** Add inline architecture diagram to README
-  - Mermaid diagram showing: App → Pages → Components → Services → DB.
+- [ ] **22.2** Test `components/file_browser.py`
+  - Path validation edge cases (empty, None, non-existent)
+  - Extension filtering logic
+  - File selection callback invocation
 
-- [x] **17.4** Add API docstrings to all `__init__.py` public exports
-  - Currently exports are listed but not documented.
+- [ ] **22.3** Test `components/log_viewer.py`
+  - Content truncation for very long logs
+  - Empty content rendering
+  - Reactive value updates
+
+- [ ] **22.4** Test `components/plot_widget.py`
+  - `plot_mesh()` returns valid matplotlib Figure with expected axes
+  - `plot_depth_contour()` with synthetic GrdFile
+  - `plot_boundaries()` with known boundary data
+  - `plot_element_quality()` produces figure with colorbar
+
+---
+
+## Phase 23: Page Logic Tests
+
+> Compare, ensemble, and visualize pages contain complex pure logic buried
+> inside reactive handlers. Extract and test independently.
+
+- [ ] **23.1** Extract and test `pages/compare.py` logic
+  - Parameter diff computation (two .str configs → diff dict)
+  - Timeline alignment for overlaying two job timelines
+  - Statistics comparison (runtime, memory, return codes)
+
+- [ ] **23.2** Extract and test `pages/ensemble.py` logic
+  - Sweep combination generation (grid mode vs zip mode)
+  - Parameter substitution into .str template
+  - Result aggregation (min/max envelope, mean, std)
+
+- [ ] **23.3** Extract and test `pages/visualize.py` logic
+  - `_load_timeseries()` — CSV/TSV parsing with header detection
+  - `_plotly_netcdf()` — contour/heatmap/surface figure generation
+  - `_build_vertical_profile()` and `_build_transect()` — NetCDF slicing
+
+---
+
+## Phase 24: Fix Pre-Existing Test Failures
+
+> 17 tests in test_workflow.py (6) and test_wrapper.py (11) fail due to
+> async event loop issues. These have been failing since the test suite
+> was created.
+
+- [ ] **24.1** Fix test_workflow.py async failures
+  - Root cause: `asyncio.run()` inside tests that already have an event loop
+  - Fix: use `pytest-asyncio` `@pytest.mark.asyncio` decorator consistently
+  - 6 tests: stores_step_results, custom_name, cancel_workflow,
+    cancel_nonexistent, list_workflows, workflow lifecycle
+
+- [ ] **24.2** Fix test_wrapper.py async failures
+  - Root cause: similar event loop conflict with `asyncio.run()`
+  - Fix: refactor to use `await` directly in async test functions
+  - 11 tests: run_command_success/failure/callback/args/stderr/
+    nonexistent/duration
+
+- [ ] **24.3** Add pytest markers for selective test runs
+  - `@pytest.mark.slow` for tests > 5 seconds
+  - `@pytest.mark.e2e` for Playwright tests (already in separate files)
+  - Update pyproject.toml `[tool.pytest.ini_options]` with marker definitions
+  - Target: 0 failures, 430+ passing
+
+---
+
+## Phase 25: Real-Time Log Streaming
+
+> Log viewer polls at a fixed interval (default 5s). For long-running
+> simulations, users want instant feedback as lines are written.
+
+- [ ] **25.1** Create `LogBroadcaster` service
+  - Watches a log file path with `asyncio` file polling (100ms interval)
+  - Pushes new lines to registered callbacks via reactive invalidation
+  - Auto-stops when file hasn't changed for 30 seconds
+
+- [ ] **25.2** Integrate LogBroadcaster into Run page
+  - Replace polling `@reactive.poll` with push-based LogBroadcaster
+  - Fall back to polling if broadcaster fails (graceful degradation)
+  - Show "Live" indicator when streaming is active
+
+- [ ] **25.3** Add configurable streaming interval
+  - `SHYFEM_UI_LOG_STREAM_INTERVAL_MS` (default: 100)
+  - Throttle at the UI level to avoid flooding WebSocket with rapid updates
+
+---
+
+## Phase 26: Data Export
+
+> Users cannot download plots, data, or reports from the UI. Everything
+> is view-only.
+
+- [ ] **26.1** Add plot export buttons to Visualize page
+  - Client-side "Download PNG" and "Download SVG" buttons using
+    `Plotly.downloadImage()` JavaScript call
+  - Add to main_plot and profile_plot outputs
+
+- [ ] **26.2** Add CSV export for time series data
+  - "Download CSV" button that serializes the loaded DataFrame
+  - Use `shiny.render.download` handler to serve the file
+
+- [ ] **26.3** Add report download to Run page
+  - "Download Report" button on completed jobs
+  - Calls `generate_job_report()` and serves HTML via download handler
+
+- [ ] **26.4** Add grid statistics JSON export
+  - "Export Stats" button on Grid Prep page
+  - Serializes `GrdParser.get_statistics()` output as formatted JSON
+
+---
+
+## Phase 27: NetCDF Variable Explorer
+
+> NetCDF files can contain dozens of variables across multiple dimensions.
+> Currently users must know variable names in advance.
+
+- [ ] **27.1** Add variable list panel to Visualize page
+  - When NetCDF is loaded, show table: variable name, dimensions, dtype,
+    units (from attrs), min/max preview
+  - Clickable rows auto-select the variable for plotting
+
+- [ ] **27.2** Add dimension slicing controls
+  - Time step slider (for time dimension)
+  - Depth layer slider (for vertical dimension)
+  - Bind to plot updates via reactive values
+
+- [ ] **27.3** Add variable metadata display
+  - Show `attrs` dict (long_name, units, valid_range) in sidebar panel
+  - Display coordinate reference system if available
+
+---
+
+## Phase 28: Database Query Optimization
+
+> Dashboard loads all projects with all grids and simulations, causing
+> N+1 queries. Job listing is hardcoded to 100.
+
+- [ ] **28.1** Add eager loading for Dashboard queries
+  - Use `joinedload(Project.grids)` and `joinedload(Project.simulations)`
+  - Reduces query count from O(N) to O(1) for project listing
+
+- [ ] **28.2** Add pagination to job listing
+  - Replace `limit=100` with configurable page size (default 50)
+  - Add "Load More" or page navigation to Run page job history
+
+- [ ] **28.3** Add connection pool configuration
+  - Expose `pool_size`, `max_overflow` as Config options for PostgreSQL
+  - SQLite: keep current `check_same_thread=False` approach
+
+---
+
+## Phase 29: Frontend Bundle Optimization
+
+> Static assets have no cache headers. Tab content renders eagerly even
+> when hidden.
+
+- [ ] **29.1** Add static asset cache headers
+  - ASGI middleware that adds `Cache-Control: public, max-age=86400` for
+    CSS, JS, and font files served by Shiny
+
+- [ ] **29.2** Add lazy tab content rendering
+  - Use `ui.nav_panel(..., value=...)` with conditional rendering so
+    heavy tabs (Visualize, Ensemble) only render when selected
+
+- [ ] **29.3** Optimize Plotly figure serialization
+  - Reduce decimal precision for large mesh coordinates (6 → 2 decimals
+    for display-only plots)
+  - Use `plotly.io.to_json(fig, engine="json")` for faster serialization
+
+---
+
+## Phase 30: Session Isolation
+
+> In server mode, all users see all jobs and projects. No filtering by
+> session or user identity.
+
+- [ ] **30.1** Add session_id to project and job creation
+  - Store `session.id` when creating projects and submitting jobs
+  - Add `session_id` column to Project model (nullable for backwards compat)
+
+- [ ] **30.2** Filter queries by session in server mode
+  - `list_jobs()`, project listing, job history — filter by current session
+  - In local mode, show everything (no filtering)
+
+- [ ] **30.3** Add "My Jobs" / "All Jobs" toggle
+  - Toggle switch on Run page and Dashboard
+  - "All Jobs" only available when auth is enabled (admin view)
+
+---
+
+## Phase 31: Health & Monitoring
+
+> No way to check if the app is healthy or monitor performance in production.
+
+- [ ] **31.1** Add `/health` HTTP endpoint
+  - Bypass auth middleware. Return JSON: `{"status": "ok", "version": "0.1.0",
+    "uptime_seconds": N, "database": "ok|error", "queue_depth": N}`
+  - Implement as ASGI middleware that intercepts `/health` path
+
+- [ ] **31.2** Add structured JSON logging
+  - `SHYFEM_UI_LOG_FORMAT=json` config option
+  - Use `python-json-logger` or custom formatter
+  - Fields: timestamp, level, logger, message, extra context
+
+- [ ] **31.3** Add `/metrics` Prometheus endpoint
+  - Server mode only. Expose: requests_total, request_duration_seconds,
+    active_websocket_connections, job_queue_depth, job_status_counts
+  - Use `prometheus_client` library (optional dependency)
+
+---
+
+## Phase 32: STR Template Library Expansion
+
+> Only 3 simulation templates exist. SHYFEM supports many more scenarios.
+
+- [ ] **32.1** Add Wind-Driven Circulation template
+  - Pre-filled: wind forcing, Coriolis, constant depth, 2D barotropic
+
+- [ ] **32.2** Add Tidal Estuary template
+  - Pre-filled: tidal boundary, river inflow, salinity transport, 3D baroclinic
+
+- [ ] **32.3** Add Sediment Transport template
+  - Pre-filled: sediment module, settling velocity, erosion/deposition params
+
+- [ ] **32.4** Add Water Quality template
+  - Pre-filled: oxygen, nutrients, temperature, biological modules
+
+- [ ] **32.5** Add Storm Surge template
+  - Pre-filled: atmospheric pressure, wind fields, wetting/drying, high resolution
+
+---
+
+## Phase 33: Project Import/Export
+
+> No way to share simulation setups between users or back up projects.
+
+- [ ] **33.1** Add "Export Project" button to Dashboard
+  - ZIP archive containing: work_dir files, project metadata JSON,
+    grid and simulation records, job history summary
+
+- [ ] **33.2** Add "Import Project" handler
+  - Upload ZIP, extract to work_dir, create DB records from metadata JSON
+  - Validate paths and file integrity before importing
+
+- [ ] **33.3** Add project clone functionality
+  - "Clone Project" button that duplicates work_dir and DB records
+  - Useful for parameter variations without re-uploading files
 
 ---
 
 ## Implementation Priority
 
 ```
-Phase 9  (Test fixes)         ~0.5 day   — Immediate (broken test)
-Phase 10 (Lint cleanup)       ~0.5 day   — Quick wins, auto-fixable
-Phase 11 (Docker)             ~1 day     — Blocks deployment
-Phase 12 (Component tests)    ~2 days    — Quality gate
-Phase 13 (DB migrations)      ~1 day     — Prevents data loss
-Phase 14 (Performance)        ~1 day     — Scalability
-Phase 15 (UX)                 ~1 day     — User-facing polish
-Phase 16 (CI/CD)              ~1 day     — Automation
-Phase 17 (Docs)               ~0.5 day   — Developer onboarding
+Phase 18 (Error handling audit)        ~0.5 day   — Immediate (silent failures)
+Phase 19 (File upload validation)      ~0.5 day   — Immediate (security)
+Phase 20 (Proxy & CSRF)               ~1 day     — High (server security)
+Phase 21 (Middleware tests)            ~1 day     — High (untested infra)
+Phase 22 (Component test coverage)     ~1 day     — High (4 untested components)
+Phase 23 (Page logic tests)            ~1.5 days  — Medium (extract & test)
+Phase 24 (Fix test failures)           ~0.5 day   — Medium (clean baseline)
+Phase 25 (Real-time log streaming)     ~1 day     — Medium (UX)
+Phase 26 (Data export)                 ~1 day     — Medium (user-facing)
+Phase 27 (NetCDF variable explorer)    ~1 day     — Medium (feature)
+Phase 28 (Database optimization)       ~0.5 day   — Lower (scalability)
+Phase 29 (Frontend optimization)       ~0.5 day   — Lower (performance)
+Phase 30 (Session isolation)           ~1 day     — Lower (multi-user)
+Phase 31 (Health & monitoring)         ~1 day     — Lower (production ops)
+Phase 32 (STR template expansion)      ~1 day     — Lower (content)
+Phase 33 (Project import/export)       ~1.5 days  — Lower (feature)
 ```
 
 ## Verification Checklist (per phase)
 
-1. `python3 -m pytest tests/ -v` — **0 failures, 0 unexpected skips**
-2. `ruff check shyfem_ui/` — **0 errors**
-3. `python3 -m shyfem_ui.app` — app launches without warnings
-4. `docker build -t shyfem-ui .` — builds successfully
+1. `make lint` — **0 errors**
+2. `make test` — **0 new failures**
+3. `make coverage` — **coverage does not decrease**
+4. `python -m shyfem_ui.app` — app launches without warnings
 5. Navigate all 9 tabs in browser — no console errors
