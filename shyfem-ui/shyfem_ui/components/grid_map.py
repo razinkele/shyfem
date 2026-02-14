@@ -302,7 +302,7 @@ def grid_map_ui(height: str = "600px"):
             ui.div(
                 ui.tags.label("View", class_="form-label small mb-0"),
                 ui.input_select(
-                    "map_mode", None,
+                    "map_mode", "",
                     choices={
                         "mesh": "Mesh",
                         "depth": "Depth",
@@ -316,7 +316,7 @@ def grid_map_ui(height: str = "600px"):
             ui.div(
                 ui.tags.label("Colors", class_="form-label small mb-0"),
                 ui.input_select(
-                    "colorscale", None,
+                    "colorscale", "",
                     choices={
                         "Viridis": "Viridis",
                         "Plasma": "Plasma",

@@ -69,14 +69,14 @@ def str_editor_ui(height: str = "500px"):
             ui.span("|", class_="mx-2 text-muted"),
             ui.input_select(
                 "insert_section",
-                None,
+                "",
                 choices={"": "Insert Section...", **COMMON_SECTIONS},
                 width="200px",
             ),
             ui.span("|", class_="mx-2 text-muted"),
             ui.input_radio_buttons(
                 "view_mode",
-                None,
+                "",
                 choices={"split": "Split", "raw": "Raw", "form": "Form"},
                 selected="split",
                 inline=True,
@@ -245,7 +245,7 @@ def str_editor_server(
         raw_panel = ui.div(
             ui.input_text_area(
                 "editor_content",
-                None,
+                "",
                 height="500px",
                 resize="vertical",
             ),
@@ -375,7 +375,7 @@ def _build_form_panel(parsed: Optional[StrFile]) -> ui.Tag:
                         ui.div(
                             label,
                             ui.input_select(
-                                field_id, None,
+                                field_id, "",
                                 choices=choices,
                                 selected=str(param_val),
                                 width="100%",
@@ -388,7 +388,7 @@ def _build_form_panel(parsed: Optional[StrFile]) -> ui.Tag:
                         ui.div(
                             label,
                             ui.input_text(
-                                field_id, None,
+                                field_id, "",
                                 value=str(param_val),
                             ),
                             class_="mb-2",
@@ -400,7 +400,7 @@ def _build_form_panel(parsed: Optional[StrFile]) -> ui.Tag:
                     ui.div(
                         ui.span(param_name, class_="fw-bold small"),
                         ui.input_text(
-                            field_id, None,
+                            field_id, "",
                             value=str(param_val),
                         ),
                         class_="mb-2",

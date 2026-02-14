@@ -108,28 +108,6 @@ def simulation_ui():
                 ),
             ),
         ),
-        # Save As modal
-        ui.modal(
-            ui.input_text(
-                "save_path",
-                "Save Path",
-                placeholder="/path/to/new_simulation.str",
-            ),
-            title="Save As",
-            footer=ui.div(
-                ui.input_action_button(
-                    "confirm_save_btn",
-                    "Save",
-                    class_="btn-primary",
-                ),
-                ui.input_action_button(
-                    "cancel_save_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
-            ),
-            id="save_as_modal",
-        ),
     )
 
 
@@ -151,32 +129,17 @@ def simulation_server(
     # Initialize boundary editor
     boundary_editor_server("boundary_editor", parsed_str=parsed_str)
 
-    # Guard to prevent infinite sync loops between editor and simulation state
-    _syncing = reactive.value(False)
-
-    # Sync editor -> simulation: when the editor's parsed_file changes, update parsed_str
+    # One-way sync: editor -> parsed_str.
+    # Handlers that modify parsed_str directly (templates, quick settings)
+    # must also call editor_state["set_content"]() to update the editor.
+    # This avoids the infinite reactive loop that bidirectional sync causes
+    # (Shiny effects are scheduled asynchronously, so flag-based guards
+    # cannot prevent the cycle).
     @reactive.effect
     def _sync_editor_to_simulation():
         editor_parsed = editor_state["parsed_file"].get()
-        if editor_parsed is not None and not _syncing.get():
-            _syncing.set(True)
-            try:
-                parsed_str.set(editor_parsed)
-            finally:
-                _syncing.set(False)
-
-    # Sync simulation -> editor: when parsed_str changes (e.g. from templates/quick settings),
-    # update the editor content via the text area
-    @reactive.effect
-    def _sync_simulation_to_editor():
-        str_file = parsed_str.get()
-        if str_file is not None and not _syncing.get():
-            _syncing.set(True)
-            try:
-                text = StrParser.generate(str_file)
-                editor_state["set_content"](text)
-            finally:
-                _syncing.set(False)
+        if editor_parsed is not None:
+            parsed_str.set(editor_parsed)
 
     @reactive.effect
     @reactive.event(input.load_btn)
@@ -207,6 +170,7 @@ def simulation_server(
             template = generate_template("basic_2d")
             new_str = StrParser.parse(template)
             parsed_str.set(new_str)
+            editor_state["set_content"](template)
             current_file_path.set(None)
             ui.notification_show("Created new parameter file", type="message")
         except Exception as e:
@@ -221,13 +185,34 @@ def simulation_server(
             suggested = str(current.parent / f"{current.stem}_copy.str")
         else:
             suggested = str(config.work_dir / "simulation.str")
-        ui.update_text("save_path", value=suggested)
-        ui.modal_show("save_as_modal")
+        m = ui.modal(
+            ui.input_text(
+                "save_path",
+                "Save Path",
+                value=suggested,
+                placeholder="/path/to/new_simulation.str",
+            ),
+            title="Save As",
+            easy_close=True,
+            footer=ui.div(
+                ui.input_action_button(
+                    "confirm_save_btn",
+                    "Save",
+                    class_="btn-primary",
+                ),
+                ui.input_action_button(
+                    "cancel_save_btn",
+                    "Cancel",
+                    class_="btn-secondary ms-2",
+                ),
+            ),
+        )
+        ui.modal_show(m)
 
     @reactive.effect
     @reactive.event(input.cancel_save_btn)
     def _cancel_save():
-        ui.modal_remove("save_as_modal")
+        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.confirm_save_btn)
@@ -251,7 +236,7 @@ def simulation_server(
                 StrParser.save(str_file, path)
             current_file_path.set(path)
             ui.update_text("str_path", value=str(path))
-            ui.modal_remove("save_as_modal")
+            ui.modal_remove()
             ui.notification_show(f"Saved: {path.name}", type="message")
         except Exception as e:
             ui.notification_show(f"Error saving file: {e}", type="error")
@@ -285,6 +270,7 @@ def simulation_server(
                 str_file.set_param("para", "idtout", quote_value(output_int))
 
             parsed_str.set(str_file)
+            editor_state["set_content"](StrParser.generate(str_file))
             ui.notification_show("Applied quick settings", type="message")
         except Exception as e:
             ui.notification_show(f"Error applying settings: {e}", type="error")
@@ -338,6 +324,7 @@ def simulation_server(
             template = generate_template(template_name)
             str_file = StrParser.parse(template)
             parsed_str.set(str_file)
+            editor_state["set_content"](template)
             current_file_path.set(None)
             ui.notification_show(f"Loaded template: {template_name}", type="message")
 

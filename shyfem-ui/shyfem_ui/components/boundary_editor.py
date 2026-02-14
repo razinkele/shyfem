@@ -248,7 +248,7 @@ def boundary_editor_server(
                             ui.column(6,
                                 ui.div(
                                     ui.span("Nodes", class_="small fw-bold"),
-                                    ui.input_text(f"bound_nodes_{bid}", None,
+                                    ui.input_text(f"bound_nodes_{bid}", "",
                                                   value=b["nodes"],
                                                   placeholder="1 2 3 or 1-10"),
                                 ),
@@ -256,7 +256,7 @@ def boundary_editor_server(
                             ui.column(6,
                                 ui.div(
                                     ui.span("Type", class_="small fw-bold"),
-                                    ui.input_select(f"bound_type_{bid}", None,
+                                    ui.input_select(f"bound_type_{bid}", "",
                                                     choices=type_choices,
                                                     selected=str(b["ibtyp"])),
                                 ),
@@ -266,7 +266,7 @@ def boundary_editor_server(
                             ui.column(6,
                                 ui.div(
                                     ui.span("Time series file", class_="small fw-bold"),
-                                    ui.input_text(f"bound_file_{bid}", None,
+                                    ui.input_text(f"bound_file_{bid}", "",
                                                   value=b["boundn"],
                                                   placeholder="INPUT/boundary.txt"),
                                 ),
@@ -274,14 +274,14 @@ def boundary_editor_server(
                             ui.column(3,
                                 ui.div(
                                     ui.span("Scale factor", class_="small fw-bold"),
-                                    ui.input_text(f"bound_zfact_{bid}", None,
+                                    ui.input_text(f"bound_zfact_{bid}", "",
                                                   value=str(b["zfact"])),
                                 ),
                             ),
                             ui.column(3,
                                 ui.div(
                                     ui.span("Interpolation", class_="small fw-bold"),
-                                    ui.input_select(f"bound_intpol_{bid}", None,
+                                    ui.input_select(f"bound_intpol_{bid}", "",
                                                     choices=intpol_choices,
                                                     selected=str(b["intpol"])),
                                 ),
@@ -306,7 +306,7 @@ def boundary_editor_server(
                  class_="text-muted small"),
             ui.input_text_area(
                 "csv_input",
-                None,
+                "",
                 placeholder="1 2 3, 1, INPUT/tide.txt, 1.0, 1\n4 5 6, 3, INPUT/river.txt, 1.0, 1",
                 height="100px",
             ),
