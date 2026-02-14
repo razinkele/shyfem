@@ -1,0 +1,87 @@
+name: SHYFEM UI CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shyfem-ui/**"
+      - ".github/workflows/ui-ci.yml"
+  pull_request:
+    paths:
+      - "shyfem-ui/**"
+      - ".github/workflows/ui-ci.yml"
+
+defaults:
+  run:
+    working-directory: shyfem-ui
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: shyfem-ui/environment.yml
+          cache-environment: true
+      - name: Ruff check
+        shell: micromamba-shell {0}
+        run: python -m ruff check shyfem_ui/
+      - name: Black check
+        shell: micromamba-shell {0}
+        run: python -m black --check shyfem_ui/
+
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: shyfem-ui/environment.yml
+          cache-environment: true
+      - name: Install package
+        shell: micromamba-shell {0}
+        run: pip install -e ".[dev]"
+      - name: Run tests with coverage
+        shell: micromamba-shell {0}
+        run: |
+          python -m pytest tests/ -v \
+            --ignore=tests/test_playwright_*.py \
+            --cov=shyfem_ui --cov-report=term-missing \
+            --cov-report=xml:coverage.xml
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: shyfem-ui/coverage.xml
+
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: shyfem-ui/environment.yml
+          cache-environment: true
+      - name: Install package
+        shell: micromamba-shell {0}
+        run: pip install -e ".[dev]"
+      - name: Install Playwright browsers
+        shell: micromamba-shell {0}
+        run: python -m playwright install chromium --with-deps
+      - name: Run E2E tests
+        shell: micromamba-shell {0}
+        run: python -m pytest tests/test_playwright_*.py -v --timeout=120
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Docker image (builder stage)
+        run: docker build --target builder -t shyfem-ui-test .

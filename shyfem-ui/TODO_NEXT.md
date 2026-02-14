@@ -214,19 +214,19 @@
 
 ## Phase 16: CI/CD Pipeline
 
-- [ ] **16.1** Create GitHub Actions workflow: `.github/workflows/ci.yml`
+- [x] **16.1** Create GitHub Actions workflow: `.github/workflows/ci.yml`
   - Steps: checkout → setup micromamba → install environment → lint →
     unit tests → coverage report.
   - Use `mamba-org/setup-micromamba@v2` action.
 
-- [ ] **16.2** Add E2E test job to CI
+- [x] **16.2** Add E2E test job to CI
   - Install Playwright browsers, start app, run Playwright tests.
   - Runs only on PRs touching `shyfem_ui/` or `tests/`.
 
-- [ ] **16.3** Add Docker build check to CI
+- [x] **16.3** Add Docker build check to CI
   - `docker build --target builder .` to catch Dockerfile regressions.
 
-- [ ] **16.4** Add pre-commit hooks
+- [x] **16.4** Add pre-commit hooks
   - Create `.pre-commit-config.yaml` with ruff, black, trailing whitespace.
 
 ---
