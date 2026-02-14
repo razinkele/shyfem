@@ -46,20 +46,19 @@
 > File uploads have no size limits. An attacker or careless user can upload
 > a multi-GB file and exhaust server memory.
 
-- [ ] **19.1** Add `max_upload_size_mb` config option
+- [x] **19.1** Add `max_upload_size_mb` config option
   - Default: 500 MB. Add to Config class with `SHYFEM_UI_MAX_UPLOAD_SIZE_MB` env var.
 
-- [ ] **19.2** Add file size validation to grid_prep.py upload handler
-  - Check `file_info["size"]` before reading. Show notification if too large.
-  - File: `pages/grid_prep.py` (~line 128)
+- [x] **19.2** Add file size validation to file_browser component
+  - `validate_upload()` checks `file_info["size"]` before callback. Shows notification if too large.
+  - Wired into `file_browser_server()` with config-driven max size.
 
-- [ ] **19.3** Add filename extension validation
-  - Reject uploads that don't match expected extensions (.grd, .bas, .str, .csv).
-  - Apply to all file upload handlers across pages.
+- [x] **19.3** Add filename extension validation
+  - `validate_upload()` checks suffix against `accept` list (case-insensitive).
+  - Applied via `file_browser_server(accept=[...])` parameter.
 
-- [ ] **19.4** Add Content-Length ASGI middleware
-  - Reject HTTP requests with Content-Length exceeding configured max.
-  - Server mode only, with configurable limit.
+- [x] **19.4** ~~Content-Length ASGI middleware~~ — SKIPPED
+  - Shiny uploads use WebSocket, not HTTP POST. Middleware would not intercept uploads.
 
 ---
 
