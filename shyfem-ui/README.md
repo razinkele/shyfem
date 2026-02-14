@@ -201,6 +201,45 @@ The test suite covers:
 
 ## Architecture
 
+```mermaid
+graph TD
+    A[app.py<br>ASGI + Middleware] --> P[pages/]
+    A --> DB[(SQLite / PostgreSQL)]
+    P --> C[components/]
+    P --> S[services/]
+    C --> S
+    S --> Q[Job Queue]
+    S --> FS[File System]
+    Q --> CLI[SHYFEM CLI Tools]
+
+    subgraph Pages
+        P --> home.py
+        P --> grid_prep.py
+        P --> simulation.py
+        P --> run.py
+        P --> postprocess.py
+        P --> visualize.py
+    end
+
+    subgraph Components
+        C --> grid_map.py
+        C --> str_editor.py
+        C --> timeseries.py
+        C --> boundary_editor.py
+    end
+
+    subgraph Services
+        S --> parser_str.py
+        S --> parser_grd.py
+        S --> shyfem_wrapper.py
+        S --> job_local.py
+        S --> job_celery.py
+        S --> workflow.py
+    end
+```
+
+### Directory Layout
+
 ```
 shyfem-ui/
 ├── shyfem_ui/

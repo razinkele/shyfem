@@ -233,17 +233,17 @@
 
 ## Phase 17: Documentation & Developer Experience
 
-- [ ] **17.1** Add `CONTRIBUTING.md`
+- [x] **17.1** Add `CONTRIBUTING.md`
   - Dev setup instructions, code style guide, PR checklist.
 
-- [ ] **17.2** Add `Makefile` with common targets
+- [x] **17.2** Add `Makefile` with common targets
   - `make install`, `make test`, `make lint`, `make format`, `make e2e`,
     `make docker-build`, `make docker-run`.
 
-- [ ] **17.3** Add inline architecture diagram to README
+- [x] **17.3** Add inline architecture diagram to README
   - Mermaid diagram showing: App → Pages → Components → Services → DB.
 
-- [ ] **17.4** Add API docstrings to all `__init__.py` public exports
+- [x] **17.4** Add API docstrings to all `__init__.py` public exports
   - Currently exports are listed but not documented.
 
 ---

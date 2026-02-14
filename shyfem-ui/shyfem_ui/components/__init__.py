@@ -1,4 +1,18 @@
-"""Reusable UI components for SHYFEM UI."""
+"""Reusable UI components for SHYFEM UI.
+
+Each component is a Shiny module with a ``_ui()`` function (returns UI elements)
+and a ``_server()`` function (registers reactive logic).
+
+Widgets:
+    boundary_editor_ui / boundary_editor_server: CSV-based boundary condition editor.
+    file_browser_ui / file_browser_server: File upload and path selection widget.
+    grid_map_ui / grid_map_server: Interactive Plotly mesh map with zoom, pan, hover.
+    job_status_ui / job_status_server: Job progress badges, duration, status formatting.
+    log_viewer_ui / log_viewer_server: Real-time log output viewer with auto-scroll.
+    str_editor_ui / str_editor_server: Rich STR parameter editor (split/form views).
+    plot_widget_ui / plot_widget_server: General-purpose Plotly figure container.
+    timeseries_ui / timeseries_server: Interactive time series with statistics overlay.
+"""
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
 from shyfem_ui.components.file_browser import file_browser_server, file_browser_ui
