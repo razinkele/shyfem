@@ -116,6 +116,20 @@ def boundary_editor_server(
         _next_id.set(bid + 1)
         boundaries.set(current)
 
+    # Dynamic remove handlers for remove_bound_{bid} buttons
+    @reactive.effect
+    def _register_remove_handlers():
+        bounds = boundaries.get()
+        for b in bounds:
+            _make_remove_bound(b["id"])
+
+    def _make_remove_bound(bid: int):
+        @reactive.effect
+        @reactive.event(input[f"remove_bound_{bid}"])
+        def _remove():
+            current = boundaries.get()
+            boundaries.set([x for x in current if x["id"] != bid])
+
     @reactive.effect
     @reactive.event(input.import_csv_btn)
     def _toggle_csv_import():
