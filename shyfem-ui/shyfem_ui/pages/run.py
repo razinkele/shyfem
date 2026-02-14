@@ -299,7 +299,7 @@ def run_server(
                 _refresh_tick.set(_refresh_tick.get() + 1)
             await _refresh_jobs()
         except Exception:
-            # Silently retry on next cycle — avoid killing the poll loop
+            logger.debug("Auto-refresh poll failed, retrying in 5s", exc_info=True)
             reactive.invalidate_later(5)
 
     @reactive.effect
@@ -811,6 +811,7 @@ def run_server(
         try:
             key = input.wf_template()
         except Exception:
+            logger.debug("Workflow template selection unavailable")
             return None
 
         tpl = WORKFLOW_TEMPLATES.get(key)
