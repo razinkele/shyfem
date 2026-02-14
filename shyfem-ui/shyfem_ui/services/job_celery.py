@@ -357,19 +357,9 @@ class CeleryJobQueue(JobQueue):
         if not file_path:
             return ""
 
-        path = Path(file_path)
-        if not path.exists():
-            return ""
+        from shyfem_ui.services.file_utils import tail_file
 
-        try:
-            content = path.read_text()
-            if tail > 0:
-                lines = content.splitlines()
-                return "\n".join(lines[-tail:])
-            return content
-        except Exception:
-            logger.warning("Failed to read output file %s", path, exc_info=True)
-            return ""
+        return tail_file(file_path, tail=tail)
 
     def set_progress_callback(
         self, callback: Callable[[str, float, str], None]
