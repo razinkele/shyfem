@@ -7,6 +7,7 @@ Features:
 - Output file comparison
 """
 
+import logging
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -18,6 +19,8 @@ from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.report import generate_comparison_report
+
+logger = logging.getLogger(__name__)
 
 
 @module.ui
@@ -163,6 +166,7 @@ def compare_server(
             job_a_id = input.job_a()
             job_b_id = input.job_b()
         except Exception:
+            logger.debug("Job ID inputs unavailable, skipping comparison")
             return
 
         if not job_a_id or not job_b_id:
@@ -464,5 +468,6 @@ def _load_ts(path: Path) -> list[list[float]]:
             try:
                 data.append([float(p) for p in parts])
             except ValueError:
+                logger.debug("Skipping non-numeric line in time series")
                 continue
     return data
