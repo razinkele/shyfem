@@ -238,6 +238,22 @@ def ensemble_server(
         updated = list(current) + [{"section": "para", "param": "", "values": ""}]
         param_variations.set(updated)
 
+    # Dynamic remove handlers for remove_var_{i} buttons
+    @reactive.effect
+    def _register_remove_var_handlers():
+        variations = param_variations.get()
+        for i in range(1, len(variations)):  # i=0 has no remove button
+            _make_remove_var(i)
+
+    def _make_remove_var(index: int):
+        @reactive.effect
+        @reactive.event(input[f"remove_var_{index}"])
+        def _remove():
+            current = list(param_variations.get())
+            if index < len(current):
+                current.pop(index)
+                param_variations.set(current)
+
     @reactive.effect
     @reactive.event(input.preset_friction)
     def _preset_friction():
