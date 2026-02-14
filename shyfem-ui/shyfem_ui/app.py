@@ -209,6 +209,19 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     def nav_to(tab_name: str):
         ui.update_navs("main_navbar", selected=tab_name, session=session)
 
+    # Cancel orphaned running jobs when the browser session disconnects
+    async def _on_session_ended():
+        try:
+            jobs = await job_queue.list_jobs(limit=100)
+            for job in jobs:
+                if job.is_active:
+                    logger.info("Session ended — cancelling orphaned job %s", job.id)
+                    await job_queue.cancel(job.id)
+        except Exception as exc:
+            logger.warning("Session cleanup failed: %s", exc)
+
+    session.on_ended(_on_session_ended)
+
     # Initialize page servers
     home.home_server("home", config, job_queue,
                      active_project=active_project, nav_callback=nav_to)

@@ -147,7 +147,7 @@
 
 ## Phase 13: Database & Model Improvements
 
-- [ ] **13.1** Add Alembic migrations
+- [x] **13.1** Add Alembic migrations
   - Currently `Base.metadata.create_all()` creates tables on startup.
     This works for development but breaks on schema changes in production
     (columns added → old SQLite DB is incompatible).
@@ -155,11 +155,11 @@
   - Update `init_db()` to run `alembic upgrade head` instead of
     `create_all()`.
 
-- [ ] **13.2** Add `Job.output_files` JSON column
+- [x] **13.2** Add `Job.output_files` JSON column
   - Currently `output_files` lives only in the in-memory `JobInfo` dataclass.
     Persisting it to the DB allows post-restart output file browsing.
 
-- [ ] **13.3** Add cascading session cleanup
+- [x] **13.3** Add cascading session cleanup
   - When a user session disconnects, mark orphaned RUNNING jobs as
     CANCELLED. Currently jobs run indefinitely if the browser closes.
   - Implement via `session.on_ended` callback in `_build_server`.

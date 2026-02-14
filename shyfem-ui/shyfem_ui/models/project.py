@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shyfem_ui.db.base import Base
@@ -171,6 +171,7 @@ class Job(Base):
     stderr_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     return_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_files: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
