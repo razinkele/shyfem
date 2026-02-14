@@ -4,7 +4,7 @@ import pytest
 
 from tests.conftest import _dismiss_modals
 
-pytestmark = pytest.mark.usefixtures("live_server")
+pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
 # Shiny modals get the .show class when visible
 _MODAL = ".modal.show"
