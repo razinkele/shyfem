@@ -168,21 +168,21 @@
 
 ## Phase 14: Performance & Scalability
 
-- [ ] **14.1** Add reactive caching for parsed grid files
+- [x] **14.1** Add reactive caching for parsed grid files
   - `GrdParser.parse()` re-reads from disk on every reactive invalidation.
   - Wrap with `@reactive.calc` memoization keyed on file path + mtime.
 
-- [ ] **14.2** Lazy-load page modules
+- [x] **14.2** Lazy-load page modules
   - Importing all 9 page modules at startup increases cold-start time.
   - Use `importlib.import_module()` inside `_build_ui` / `_build_server` to
     defer loading until the tab is visited.
 
-- [ ] **14.3** Add WebSocket keepalive / reconnection handling
+- [x] **14.3** Add WebSocket keepalive / reconnection handling
   - Long-running simulations (hours) may outlive WebSocket timeout.
   - Add `reconnect: true` option to the Shiny client or implement a
     heartbeat in `_WsDebugMiddleware`.
 
-- [ ] **14.4** Rate-limit implementation
+- [x] **14.4** Rate-limit implementation
   - `Config.rate_limit_rpm` is defined (120 req/min) but never enforced.
   - Add ASGI middleware that tracks requests per session and returns 429.
 

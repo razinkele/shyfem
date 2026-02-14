@@ -7,10 +7,13 @@
 - Type 3: Lines/Boundaries - "3 line_id type node1 node2 [node3...]"
 """
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class GridParseError(Exception):
@@ -431,23 +434,52 @@ class GrdParser:
 
         return result
 
+    # File-level cache: (resolved_path, mtime_ns, size) -> GrdFile
+    _file_cache: dict[tuple, "GrdFile"] = {}
+    _FILE_CACHE_MAX = 8
+
     @classmethod
     def parse_file(cls, file_path: Path | str) -> GrdFile:
-        """Parse a .grd file from disk.
+        """Parse a .grd file from disk, with caching by path+mtime+size.
+
+        Returns a cached result if the file hasn't changed since last parse.
 
         Raises:
             GridParseError: If the file cannot be read.
         """
         file_path = Path(file_path)
         try:
-            content = file_path.read_text(encoding="utf-8", errors="replace")
+            stat = file_path.stat()
         except FileNotFoundError as exc:
             raise GridParseError(f"Grid file not found: {file_path}") from exc
         except OSError as exc:
             raise GridParseError(f"Cannot read grid file {file_path}: {exc}") from exc
+
+        cache_key = (str(file_path.resolve()), stat.st_mtime_ns, stat.st_size)
+        if cache_key in cls._file_cache:
+            logger.debug("Grid cache hit: %s", file_path)
+            return cls._file_cache[cache_key]
+
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise GridParseError(f"Cannot read grid file {file_path}: {exc}") from exc
+
         result = cls.parse(content)
         result.file_path = file_path
+
+        # Evict oldest entries if cache is full
+        if len(cls._file_cache) >= cls._FILE_CACHE_MAX:
+            oldest_key = next(iter(cls._file_cache))
+            del cls._file_cache[oldest_key]
+        cls._file_cache[cache_key] = result
+        logger.debug("Grid cached: %s (%d nodes)", file_path, result.num_nodes)
         return result
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Clear the parsed file cache."""
+        cls._file_cache.clear()
 
     @classmethod
     def generate(cls, grd_file: GrdFile) -> str:

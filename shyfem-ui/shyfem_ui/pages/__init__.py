@@ -1,16 +1,10 @@
-"""UI pages for SHYFEM UI application."""
+"""UI pages for SHYFEM UI application.
 
-from shyfem_ui.pages import (
-    compare,
-    ensemble,
-    grid_prep,
-    home,
-    partitioning,
-    postprocess,
-    run,
-    simulation,
-    visualize,
-)
+Page modules are lazy-loaded on first access to avoid importing heavy
+dependencies (plotly, numpy, shinywidgets) at startup.
+"""
+
+import importlib
 
 __all__ = [
     "home",
@@ -23,3 +17,13 @@ __all__ = [
     "compare",
     "ensemble",
 ]
+
+_modules: dict = {}
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        if name not in _modules:
+            _modules[name] = importlib.import_module(f"shyfem_ui.pages.{name}")
+        return _modules[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

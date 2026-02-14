@@ -5,6 +5,8 @@ import base64
 import hashlib
 import hmac
 import logging
+import time
+from collections import defaultdict
 from pathlib import Path
 
 import shinyswatch
@@ -80,6 +82,10 @@ def create_app(config: Config | None = None) -> App:
             "Set SHYFEM_UI_AUTH_ENABLED=true and SHYFEM_UI_AUTH_PASSWORD=<password> "
             "to enable basic auth."
         )
+
+    # Rate limiting (server mode only)
+    if config.deployment_mode == "server" and config.rate_limit_rpm > 0:
+        app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm)
 
     return app
 
@@ -179,12 +185,76 @@ class BasicAuthMiddleware:
         )
 
 
+class RateLimitMiddleware:
+    """ASGI middleware that enforces per-client request rate limits."""
+
+    def __init__(self, app, rpm: int = 120):
+        self.app = app
+        self.rpm = rpm
+        self._window = 60.0  # 1 minute sliding window
+        self._requests: dict[str, list[float]] = defaultdict(list)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        client = scope.get("client", ("unknown", 0))
+        client_key = f"{client[0]}:{client[1]}"
+        now = time.monotonic()
+
+        # Prune old entries outside the window
+        timestamps = self._requests[client_key]
+        cutoff = now - self._window
+        self._requests[client_key] = [t for t in timestamps if t > cutoff]
+        timestamps = self._requests[client_key]
+
+        if len(timestamps) >= self.rpm:
+            body = b"Rate limit exceeded. Try again later."
+            await send({
+                "type": "http.response.start",
+                "status": 429,
+                "headers": [
+                    [b"content-type", b"text/plain"],
+                    [b"content-length", str(len(body)).encode()],
+                    [b"retry-after", b"60"],
+                ],
+            })
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        timestamps.append(now)
+        return await self.app(scope, receive, send)
+
+
+_WS_RECONNECT_JS = ui.tags.script("""
+(function() {
+  var maxRetries = 5, retryDelay = 2000;
+  var origWS = window.WebSocket;
+  window.WebSocket = function(url, protocols) {
+    var ws = protocols ? new origWS(url, protocols) : new origWS(url);
+    var retries = 0;
+    ws.addEventListener('close', function(e) {
+      if (e.code !== 1000 && e.code !== 1001 && retries < maxRetries) {
+        retries++;
+        var delay = retryDelay * retries;
+        console.log('[SHYFEM] WebSocket closed (' + e.code + '), reconnecting in ' + delay + 'ms...');
+        setTimeout(function() { window.location.reload(); }, delay);
+      }
+    });
+    return ws;
+  };
+  window.WebSocket.prototype = origWS.prototype;
+})();
+""")
+
+
 def _build_ui(config: Config) -> ui.Tag:
     """Build the application UI."""
     # Build page with theme
     theme = getattr(shinyswatch.theme, config.theme, shinyswatch.theme.flatly)
 
     return ui.page_fillable(
+        ui.head_content(_WS_RECONNECT_JS),
         ui.navset_tab(
             ui.nav_panel("Dashboard", home.home_ui("home")),
             ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
