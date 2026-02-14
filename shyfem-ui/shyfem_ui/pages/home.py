@@ -2,6 +2,7 @@
 
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from shiny import module, reactive, render, ui
@@ -554,6 +555,112 @@ def home_server(
         @reactive.event(input[f"project_{pid}"])
         def _click():
             _activate_project(pid)
+
+    # --- Import grid handlers ---
+
+    @reactive.effect
+    @reactive.event(input.import_grid_btn)
+    def _show_import_grid_modal():
+        project_data = projects.get()
+        if not project_data:
+            ui.notification_show(
+                "Create a project first before importing a grid", type="warning"
+            )
+            return
+
+        choices = {str(p["id"]): p["name"] for p in project_data}
+
+        m = ui.modal(
+            ui.input_select("import_project_id", "Target Project", choices=choices),
+            ui.input_text(
+                "import_grd_path",
+                "Grid File Path (.grd)",
+                placeholder="/path/to/grid.grd",
+            ),
+            ui.input_text(
+                "import_grid_name",
+                "Grid Name (optional)",
+                placeholder="Leave blank to use filename",
+            ),
+            title="Import Grid",
+            easy_close=True,
+            footer=ui.div(
+                ui.input_action_button(
+                    "import_confirm_btn", "Import", class_="btn-primary"
+                ),
+                ui.input_action_button(
+                    "import_cancel_btn", "Cancel", class_="btn-secondary ms-2"
+                ),
+            ),
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    @reactive.event(input.import_cancel_btn)
+    def _cancel_import():
+        ui.modal_remove()
+
+    @reactive.effect
+    @reactive.event(input.import_confirm_btn)
+    def _do_import_grid():
+        grd_path_str = input.import_grd_path()
+        project_id_str = input.import_project_id()
+        grid_name = input.import_grid_name().strip()
+
+        if not grd_path_str:
+            ui.notification_show("Grid file path is required", type="error")
+            return
+        if not project_id_str:
+            ui.notification_show("Select a target project", type="error")
+            return
+
+        # Validate source file
+        try:
+            src_path = config.validate_path(grd_path_str, must_exist=True)
+        except (ValueError, FileNotFoundError) as e:
+            ui.notification_show(str(e), type="error")
+            return
+
+        # Look up project work_dir
+        project_id = int(project_id_str)
+        from shyfem_ui.services.project_context import load_project_context
+
+        ctx = load_project_context(project_id)
+        if ctx is None:
+            ui.notification_show("Project not found", type="error")
+            return
+
+        work_dir = Path(ctx["work_dir"])
+        grid_dir = work_dir / "GRID"
+        grid_dir.mkdir(parents=True, exist_ok=True)
+
+        dest_path = grid_dir / src_path.name
+        if not grid_name:
+            grid_name = src_path.stem
+
+        try:
+            shutil.copy2(src_path, dest_path)
+        except Exception as e:
+            ui.notification_show(f"Failed to copy grid file: {e}", type="error")
+            return
+
+        # Create DB record
+        try:
+            with db_session() as db:
+                grid = Grid(
+                    project_id=project_id,
+                    name=grid_name,
+                    grd_file=f"GRID/{src_path.name}",
+                )
+                db.add(grid)
+
+            ui.notification_show(
+                f"Imported grid '{grid_name}' into project", type="message"
+            )
+            ui.modal_remove()
+            _refresh_projects()
+        except Exception as e:
+            ui.notification_show(f"Failed to create grid record: {e}", type="error")
 
     return {
         "projects": projects,
