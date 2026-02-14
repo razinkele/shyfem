@@ -25,6 +25,29 @@ from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 
 logger = logging.getLogger(__name__)
 
+# Plotly modebar config — enables SVG export, better filenames, no logo
+PLOTLY_CONFIG = {
+    "displaylogo": False,
+    "toImageButtonOptions": {
+        "format": "svg",
+        "filename": "shyfem_plot",
+        "scale": 1,
+    },
+    "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+}
+
+
+def _with_export_config(fig: go.Figure, filename: str = "shyfem_plot") -> go.Figure:
+    """Apply standard export config to a Plotly figure."""
+    fig.update_layout(
+        modebar=dict(
+            orientation="v",
+            bgcolor="rgba(0,0,0,0)",
+        ),
+    )
+    return fig
+
+
 COLORMAPS = {
     "Viridis": "Viridis",
     "Plasma": "Plasma",
@@ -369,13 +392,13 @@ def visualize_server(
                 if show_grid:
                     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
                     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
-                return fig
+                return _with_export_config(fig, "shyfem_main_plot")
             elif dtype == "timeseries":
-                return _plotly_timeseries(data, plot_type, show_grid)
+                return _with_export_config(_plotly_timeseries(data, plot_type, show_grid), "shyfem_main_plot")
             elif dtype == "netcdf":
                 if plot_type in ("profile", "transect"):
-                    return _plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input)
-                return _plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input)
+                    return _with_export_config(_plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input), "shyfem_main_plot")
+                return _with_export_config(_plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input), "shyfem_main_plot")
             else:
                 fig = go.Figure()
                 fig.add_annotation(text="Unsupported data type",
@@ -460,9 +483,9 @@ def visualize_server(
 
         try:
             if plot_type == "transect":
-                return _build_transect(data, var_name, py, input)
+                return _with_export_config(_build_transect(data, var_name, py, input), "shyfem_profile")
             else:
-                return _build_vertical_profile(data, var_name, px, py, input)
+                return _with_export_config(_build_vertical_profile(data, var_name, px, py, input), "shyfem_profile")
         except Exception as exc:
             logger.exception("Error rendering profile plot")
             ui.notification_show(f"Profile plot error: {exc}", type="error")
@@ -519,11 +542,11 @@ def visualize_server(
             return fig
 
         if dtype == "grid":
-            return _compare_grids(primary, secondary, input.colormap())
+            return _with_export_config(_compare_grids(primary, secondary, input.colormap()), "shyfem_comparison")
         elif dtype == "timeseries":
-            return _compare_timeseries(primary, secondary)
+            return _with_export_config(_compare_timeseries(primary, secondary), "shyfem_comparison")
         elif dtype == "netcdf":
-            return _compare_netcdf(primary, secondary, input)
+            return _with_export_config(_compare_netcdf(primary, secondary, input), "shyfem_comparison")
         else:
             fig = go.Figure()
             fig.add_annotation(
