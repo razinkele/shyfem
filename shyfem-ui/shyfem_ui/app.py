@@ -86,7 +86,7 @@ def create_app(config: Config | None = None) -> App:
 
     # Rate limiting (server mode only)
     if config.deployment_mode == "server" and config.rate_limit_rpm > 0:
-        app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm)
+        app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm, trusted_proxies=config.trusted_proxies)
 
     return app
 
@@ -251,9 +251,10 @@ def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
 class RateLimitMiddleware:
     """ASGI middleware that enforces per-client request rate limits."""
 
-    def __init__(self, app, rpm: int = 120):
+    def __init__(self, app, rpm: int = 120, trusted_proxies: list[str] | None = None):
         self.app = app
         self.rpm = rpm
+        self.trusted_proxies = trusted_proxies or []
         self._window = 60.0  # 1 minute sliding window
         self._requests: dict[str, list[float]] = defaultdict(list)
 
@@ -261,8 +262,7 @@ class RateLimitMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        client = scope.get("client", ("unknown", 0))
-        client_key = f"{client[0]}:{client[1]}"
+        client_key = get_client_ip(scope, self.trusted_proxies)
         now = time.monotonic()
 
         # Prune old entries outside the window
