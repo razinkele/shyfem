@@ -44,6 +44,18 @@ class Config(BaseSettings):
         default="sqlite:///./shyfem_ui.db",
         description="SQLAlchemy database URL"
     )
+    db_pool_size: int = Field(
+        default=5,
+        description="SQLAlchemy connection pool size (PostgreSQL only)"
+    )
+    db_pool_overflow: int = Field(
+        default=10,
+        description="Max overflow connections beyond pool_size (PostgreSQL only)"
+    )
+    db_pool_recycle: int = Field(
+        default=3600,
+        description="Seconds before recycling idle connections (PostgreSQL only)"
+    )
 
     # Job queue settings
     use_celery: bool = Field(

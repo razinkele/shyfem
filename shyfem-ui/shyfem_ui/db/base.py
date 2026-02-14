@@ -27,11 +27,23 @@ def get_engine():
     global _engine
     if _engine is None:
         config = get_config()
-        _engine = create_engine(
-            config.database_url,
-            connect_args={"check_same_thread": False} if "sqlite" in config.database_url else {},
-            echo=False,
-        )
+        is_sqlite = "sqlite" in config.database_url
+
+        if is_sqlite:
+            _engine = create_engine(
+                config.database_url,
+                connect_args={"check_same_thread": False},
+                echo=False,
+            )
+        else:
+            _engine = create_engine(
+                config.database_url,
+                pool_size=config.db_pool_size,
+                max_overflow=config.db_pool_overflow,
+                pool_recycle=config.db_pool_recycle,
+                pool_pre_ping=True,
+                echo=False,
+            )
     return _engine
 
 
