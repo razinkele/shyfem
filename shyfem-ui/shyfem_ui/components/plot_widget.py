@@ -281,7 +281,7 @@ def plot_boundaries(grd: GrdFile, show_nodes: bool = False) -> plt.Figure:
 
     # Add legend (deduplicated)
     handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
+    by_label = dict(zip(labels, handles, strict=False))
     ax.legend(by_label.values(), by_label.keys(), loc="upper right")
 
     if show_nodes:

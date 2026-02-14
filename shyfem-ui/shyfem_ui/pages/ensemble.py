@@ -342,7 +342,7 @@ def ensemble_server(
             value_lists = [v["values"] for v in variations]
             runs = []
             for combo_values in itertools.product(*value_lists):
-                combo = dict(zip(keys, combo_values))
+                combo = dict(zip(keys, combo_values, strict=True))
                 runs.append(combo)
             return runs
 
@@ -801,7 +801,7 @@ def _combo_label(combo: dict, index: int) -> str:
         return f"run_{index:03d}"
 
     parts = []
-    for (section, param), value in combo.items():
+    for (_section, param), value in combo.items():
         # Shorten: use param name + value
         parts.append(f"{param}_{value}")
 
@@ -903,9 +903,9 @@ def _build_ensemble_ts_plot(run_data: list[dict]) -> go.Figure:
                     all_y.append(y)
 
             if len(all_y) >= 2:
-                y_min = [min(vals) for vals in zip(*all_y)]
-                y_max = [max(vals) for vals in zip(*all_y)]
-                y_mean = [sum(vals) / len(vals) for vals in zip(*all_y)]
+                y_min = [min(vals) for vals in zip(*all_y, strict=True)]
+                y_max = [max(vals) for vals in zip(*all_y, strict=True)]
+                y_mean = [sum(vals) / len(vals) for vals in zip(*all_y, strict=True)]
 
                 # Envelope shading
                 fig.add_trace(go.Scatter(

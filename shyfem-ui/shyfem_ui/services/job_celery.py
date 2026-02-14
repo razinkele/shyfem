@@ -28,10 +28,10 @@ def get_celery_app(redis_url: str = "redis://localhost:6379/0"):
     if _celery_app is None:
         try:
             from celery import Celery
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "Celery is required for server mode. Install with: pip install celery redis"
-            )
+            ) from exc
 
         _celery_app = Celery(
             "shyfem_ui",
@@ -54,10 +54,10 @@ def _get_redis_client(redis_url: str = "redis://localhost:6379/0"):
     """Create a Redis client."""
     try:
         import redis
-    except ImportError:
+    except ImportError as exc:
         raise ImportError(
             "Redis is required for server mode. Install with: pip install redis"
-        )
+        ) from exc
     return redis.from_url(redis_url)
 
 

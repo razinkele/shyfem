@@ -441,10 +441,10 @@ class GrdParser:
         file_path = Path(file_path)
         try:
             content = file_path.read_text(encoding="utf-8", errors="replace")
-        except FileNotFoundError:
-            raise GridParseError(f"Grid file not found: {file_path}")
-        except OSError as e:
-            raise GridParseError(f"Cannot read grid file {file_path}: {e}")
+        except FileNotFoundError as exc:
+            raise GridParseError(f"Grid file not found: {file_path}") from exc
+        except OSError as exc:
+            raise GridParseError(f"Cannot read grid file {file_path}: {exc}") from exc
         result = cls.parse(content)
         result.file_path = file_path
         return result

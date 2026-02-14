@@ -595,7 +595,7 @@ def run_server(
         }
 
         fig = go.Figure()
-        for i, job in enumerate(reversed(jobs[:20])):  # Show last 20
+        for _i, job in enumerate(reversed(jobs[:20])):  # Show last 20
             start = job.started_at or job.created_at
             end = job.completed_at or datetime.now()
             color = status_colors.get(job.status, "#6c757d")

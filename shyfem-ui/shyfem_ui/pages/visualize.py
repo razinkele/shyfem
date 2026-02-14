@@ -1155,7 +1155,7 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
         vals2 = var2.values
 
         # Compute difference (handle shape mismatch)
-        min_shape = tuple(min(s1, s2) for s1, s2 in zip(vals1.shape, vals2.shape))
+        min_shape = tuple(min(s1, s2) for s1, s2 in zip(vals1.shape, vals2.shape, strict=True))
         diff = vals1[:min_shape[0], :min_shape[1]] - vals2[:min_shape[0], :min_shape[1]]
 
         dim_names = list(var1.dims)
@@ -1167,7 +1167,7 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
             subplot_titles=("Primary", "Comparison", "Difference"),
         )
 
-        for col, (vals, title) in enumerate([(vals1, "Primary"), (vals2, "Comparison"), (diff, "Diff")], 1):
+        for col, (vals, _title) in enumerate([(vals1, "Primary"), (vals2, "Comparison"), (diff, "Diff")], 1):
             cmap = "RdBu_r" if col == 3 else input.colormap()
             fig.add_trace(
                 go.Heatmap(
