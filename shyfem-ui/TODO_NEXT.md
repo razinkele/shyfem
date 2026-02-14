@@ -187,22 +187,22 @@
 
 ## Phase 25: Real-Time Log Streaming
 
-> Log viewer polls at a fixed interval (default 5s). For long-running
-> simulations, users want instant feedback as lines are written.
+> Fixed: pipeline approach instead of LogBroadcaster (YAGNI). Incremental
+> file writes + wired auto-refresh + configurable polling = real-time logs.
 
-- [ ] **25.1** Create `LogBroadcaster` service
-  - Watches a log file path with `asyncio` file polling (100ms interval)
-  - Pushes new lines to registered callbacks via reactive invalidation
-  - Auto-stops when file hasn't changed for 30 seconds
+- [x] **25.1** ~~Create `LogBroadcaster` service~~ — YAGNI, polling is adequate
+  - Instead: `tail_file()` utility with seek-from-end for large files
+  - Shared by both `LocalJobQueue` and `CeleryJobQueue`
 
-- [ ] **25.2** Integrate LogBroadcaster into Run page
-  - Replace polling `@reactive.poll` with push-based LogBroadcaster
-  - Fall back to polling if broadcaster fails (graceful degradation)
-  - Show "Live" indicator when streaming is active
+- [x] **25.2** Fix log streaming pipeline
+  - `job_local.py`: stdout written incrementally (append+flush per line)
+  - `run.py`: wired `on_refresh=_refresh_log` (was no-op `lambda: None`)
+  - `run.py`: added `await _refresh_log()` to auto-refresh loop
+  - `log_viewer.py`: configurable `refresh_interval` param (was hardcoded 2s)
 
-- [ ] **25.3** Add configurable streaming interval
-  - `SHYFEM_UI_LOG_STREAM_INTERVAL_MS` (default: 100)
-  - Throttle at the UI level to avoid flooding WebSocket with rapid updates
+- [x] **25.3** ~~Add configurable streaming interval~~ — Used existing config
+  - `log_refresh_interval` config (default: 5s) now honored by log viewer
+  - No new config option needed
 
 ---
 
