@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 import shinyswatch
-from shiny import App, ui
+from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
@@ -195,16 +195,22 @@ def _build_ui(config: Config) -> ui.Tag:
 
 def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     """Build the application server logic."""
+    active_project = reactive.value(None)
+
+    def nav_to(tab_name: str):
+        ui.update_navs("main_navbar", selected=tab_name, session=session)
+
     # Initialize page servers
-    home.home_server("home", config, job_queue)
-    grid_prep.grid_prep_server("grid_prep", config)
-    partitioning.partitioning_server("partitioning", config)
-    simulation.simulation_server("simulation", config)
-    run.run_server("run", config, job_queue)
-    postprocess.postprocess_server("postprocess", config)
-    visualize.visualize_server("visualize", config)
-    compare.compare_server("compare", config, job_queue)
-    ensemble.ensemble_server("ensemble", config, job_queue)
+    home.home_server("home", config, job_queue,
+                     active_project=active_project, nav_callback=nav_to)
+    grid_prep.grid_prep_server("grid_prep", config, active_project=active_project)
+    partitioning.partitioning_server("partitioning", config, active_project=active_project)
+    simulation.simulation_server("simulation", config, active_project=active_project)
+    run.run_server("run", config, job_queue, active_project=active_project)
+    postprocess.postprocess_server("postprocess", config, active_project=active_project)
+    visualize.visualize_server("visualize", config, active_project=active_project)
+    compare.compare_server("compare", config, job_queue, active_project=active_project)
+    ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
 
 
 def main():
