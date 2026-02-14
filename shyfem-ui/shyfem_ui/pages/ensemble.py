@@ -8,6 +8,7 @@ Features:
 """
 
 import itertools
+import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,8 @@ from shyfem_ui.components.job_status import format_datetime, format_duration, ge
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.parser_str import StrFile, StrParser
+
+logger = logging.getLogger(__name__)
 
 
 @module.ui
@@ -298,14 +301,17 @@ def ensemble_server(
             try:
                 section = input[f"var_section_{i}"]()
             except Exception:
+                logger.debug("Form field var_section_%d unavailable, using cached value", i)
                 section = var["section"]
             try:
                 param = input[f"var_param_{i}"]()
             except Exception:
+                logger.debug("Form field var_param_%d unavailable, using cached value", i)
                 param = var["param"]
             try:
                 values_str = input[f"var_values_{i}"]()
             except Exception:
+                logger.debug("Form field var_values_%d unavailable, using cached value", i)
                 values_str = var["values"]
 
             if param and values_str:
@@ -563,7 +569,7 @@ def ensemble_server(
             if any_active:
                 reactive.invalidate_later(3)
         except Exception:
-            # Silently retry on next cycle
+            logger.debug("Ensemble status poll failed, retrying in 5s", exc_info=True)
             reactive.invalidate_later(5)
 
     @render.ui
@@ -791,7 +797,7 @@ def _try_convert(value: str) -> Any:
     try:
         return float(value)
     except ValueError:
-        pass
+        logger.debug("Value '%s' is not numeric, keeping as string", value)
     return value
 
 
@@ -834,6 +840,7 @@ def _load_ts(path: Path) -> list[list[float]]:
                 except ValueError:
                     continue
     except Exception:
+        logger.warning("Failed to load time series from %s", path, exc_info=True)
         return []
     return data
 
@@ -927,7 +934,7 @@ def _build_ensemble_ts_plot(run_data: list[dict]) -> go.Figure:
                     line=dict(color="black", width=2, dash="dash"),
                 ))
         except Exception:
-            pass
+            logger.warning("Ensemble envelope computation failed", exc_info=True)
 
     fig.update_layout(
         title="Ensemble Time Series",
