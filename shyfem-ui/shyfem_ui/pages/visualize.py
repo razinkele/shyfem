@@ -216,6 +216,7 @@ def visualize_ui():
                 ui.nav_panel(
                     "Data Info",
                     ui.output_ui("data_info"),
+                    ui.output_ui("nc_variable_table"),
                 ),
                 ui.nav_panel(
                     "Time Series",
@@ -322,6 +323,7 @@ def visualize_server(
                 "Variable",
                 choices={v: v for v in variables},
             ),
+            ui.output_ui("nc_var_metadata"),
         ]
         # Add dimension slicers for dims with more than 2 values
         for dim_name, dim_size in dims.items():
@@ -332,6 +334,9 @@ def visualize_server(
                         dim_name,
                         min=0, max=dim_size - 1, value=0, step=1,
                     ),
+                )
+                controls.append(
+                    ui.output_text(f"nc_dim_label_{dim_name}"),
                 )
 
         # Transect controls
@@ -349,6 +354,66 @@ def visualize_server(
             *controls,
             ui.hr(),
         )
+
+    @reactive.effect
+    def _register_dim_labels():
+        """Register text renderers for dimension coordinate labels."""
+        dims = nc_dimensions.get()
+        ds = loaded_data.get()
+        if not dims or ds is None or data_type.get() != "netcdf":
+            return
+
+        for dim_name in dims:
+            if dims[dim_name] <= 1:
+                continue
+            _dim = dim_name
+
+            @output(id=f"nc_dim_label_{_dim}")
+            @render.text
+            def _label_text(_d=_dim):
+                try:
+                    idx = input[f"nc_dim_{_d}"]()
+                    ds_val = loaded_data.get()
+                    if ds_val is None:
+                        return ""
+                    return get_dim_label(ds_val, _d, int(idx))
+                except Exception:
+                    return ""
+
+    @render.ui
+    def nc_var_metadata():
+        """Show metadata for the selected NetCDF variable."""
+        ds = loaded_data.get()
+        if ds is None or data_type.get() != "netcdf":
+            return None
+        try:
+            var_name = input.nc_variable()
+        except Exception:
+            return None
+        if not var_name:
+            return None
+
+        attrs = get_variable_attrs(ds, var_name)
+        parts = []
+        if attrs.get("long_name"):
+            parts.append(ui.p(ui.em(str(attrs["long_name"])), class_="small mb-1"))
+        meta_items = []
+        if attrs.get("units"):
+            meta_items.append(f"Units: {attrs['units']}")
+        if attrs.get("standard_name"):
+            meta_items.append(f"CF: {attrs['standard_name']}")
+        if attrs.get("valid_range"):
+            meta_items.append(f"Range: {attrs['valid_range']}")
+        if attrs.get("_FillValue") is not None:
+            meta_items.append(f"Fill: {attrs['_FillValue']}")
+        if meta_items:
+            parts.append(
+                ui.p(" | ".join(meta_items), class_="small text-muted mb-1")
+            )
+
+        if not parts:
+            return None
+        return ui.div(*parts, class_="mb-2")
 
     @reactive.effect
     @reactive.event(input.load_data_btn)
@@ -522,6 +587,49 @@ def visualize_server(
         return ui.tags.table(
             ui.tags.tbody(*rows),
             class_="table table-sm",
+        )
+
+    @render.ui
+    def nc_variable_table():
+        """Show variable summary table for NetCDF datasets."""
+        ds = loaded_data.get()
+        if ds is None or data_type.get() != "netcdf":
+            return None
+
+        rows_data = build_variable_table(ds)
+        if not rows_data:
+            return ui.p("No variables found", class_="text-muted")
+
+        table_rows = [
+            ui.tags.tr(
+                ui.tags.td(r["name"]),
+                ui.tags.td(r["dims"]),
+                ui.tags.td(r["dtype"]),
+                ui.tags.td(r["units"]),
+                ui.tags.td(r["long_name"]),
+                ui.tags.td(f"{r['min']:.4g}" if r["min"] is not None else "-"),
+                ui.tags.td(f"{r['max']:.4g}" if r["max"] is not None else "-"),
+            )
+            for r in rows_data
+        ]
+
+        return ui.div(
+            ui.h6("Variable Summary"),
+            ui.tags.table(
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("Name"),
+                        ui.tags.th("Dimensions"),
+                        ui.tags.th("Type"),
+                        ui.tags.th("Units"),
+                        ui.tags.th("Description"),
+                        ui.tags.th("Min"),
+                        ui.tags.th("Max"),
+                    ),
+                ),
+                ui.tags.tbody(*table_rows),
+                class_="table table-sm table-bordered",
+            ),
         )
 
     @render_widget
