@@ -80,22 +80,42 @@ def file_browser_server(
     output,
     session,
     on_file_selected: Callable[[list[FileInfo]], None] | None = None,
+    accept: list[str] | None = None,
 ):
     """File browser component server logic.
 
     Args:
         on_file_selected: Callback when files are selected
+        accept: List of accepted file extensions (e.g., [".grd"]). None allows all.
     """
     selected_files = reactive.value([])
 
     @reactive.effect
     @reactive.event(input.file_input)
     def _handle_file_selection():
+        from shyfem_ui.config import get_config
+
         files = input.file_input()
-        if files:
-            selected_files.set(files)
+        if not files:
+            return
+
+        config = get_config()
+        max_size_bytes = config.max_upload_size_mb * 1024 * 1024
+
+        valid_files = []
+        for f in files:
+            errors = validate_upload(f, accept=accept, max_size_bytes=max_size_bytes)
+            if errors:
+                for err in errors:
+                    ui.notification_show(err, type="error", duration=8)
+                    logger.warning("Upload rejected: %s — %s", f.get("name", "?"), err)
+            else:
+                valid_files.append(f)
+
+        if valid_files:
+            selected_files.set(valid_files)
             if on_file_selected:
-                on_file_selected(files)
+                on_file_selected(valid_files)
 
     @render.ui
     def file_info():

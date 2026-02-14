@@ -143,7 +143,7 @@ def grid_prep_server(
             log_content.set(f"Error loading grid: {e}")
 
     # Initialize child modules
-    file_browser_server("grd_file", on_file_selected=_handle_file_upload)
+    file_browser_server("grd_file", on_file_selected=_handle_file_upload, accept=[".grd"])
     log_viewer_server("command_log", log_content)
     plot_widget_server("grid_plot", current_grd)
     grid_map_server("grid_map", grd_file=current_grd)
