@@ -11,6 +11,7 @@ Features:
 
 import csv
 import io
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,8 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
+
+logger = logging.getLogger(__name__)
 
 
 @module.ui
@@ -168,6 +171,7 @@ def timeseries_server(
         try:
             selected = input.selected_columns()
         except Exception:
+            logger.debug("Column selection input unavailable, using defaults")
             selected = columns[1:] if len(columns) > 1 else []
 
         style = input.plot_style()
@@ -274,6 +278,7 @@ def timeseries_server(
         try:
             selected = input.selected_columns()
         except Exception:
+            logger.debug("Column selection input unavailable, using defaults")
             selected = columns[1:] if len(columns) > 1 else []
 
         if not selected:
@@ -383,6 +388,7 @@ def timeseries_server(
         try:
             selected = input.selected_columns()
         except Exception:
+            logger.debug("Column selection input unavailable, using defaults")
             selected = columns[1:] if len(columns) > 1 else []
 
         # Build CSV content
@@ -431,6 +437,7 @@ def _load_obs_file(path: Path) -> dict:
             "data": df.values.tolist(),
         }
     except Exception:
+        logger.debug("CSV parsing failed for %s, falling back to whitespace-delimited", path)
         # Fall back to whitespace-delimited
         data = []
         columns = []
@@ -445,6 +452,7 @@ def _load_obs_file(path: Path) -> dict:
                     try:
                         data.append([float(p) for p in parts])
                     except ValueError:
+                        logger.debug("Skipping non-numeric line %d in %s", i, path)
                         continue
 
         if not columns and data:
