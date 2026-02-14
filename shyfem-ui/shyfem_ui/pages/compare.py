@@ -104,6 +104,7 @@ def compare_server(
     session,
     config: Config,
     job_queue: Optional[JobQueue] = None,
+    active_project=None,
 ):
     """Job comparison page server logic."""
     if job_queue is None:

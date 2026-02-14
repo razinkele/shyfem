@@ -227,6 +227,7 @@ def run_server(
     session,
     config: Config,
     job_queue: Optional[JobQueue] = None,
+    active_project=None,
 ):
     """Job execution page server logic."""
     # Initialize job queue if not provided

@@ -128,6 +128,8 @@ def home_server(
     session,
     config: Config,
     job_queue: Optional[JobQueue] = None,
+    active_project=None,
+    nav_callback=None,
 ):
     """Dashboard page server logic."""
     projects = reactive.value([])

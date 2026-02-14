@@ -117,6 +117,7 @@ def simulation_server(
     output,
     session,
     config: Config,
+    active_project=None,
 ):
     """Simulation configuration page server logic."""
     # State

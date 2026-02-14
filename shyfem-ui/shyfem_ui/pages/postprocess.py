@@ -217,6 +217,7 @@ def postprocess_server(
     output,
     session,
     config: Config,
+    active_project=None,
 ):
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)

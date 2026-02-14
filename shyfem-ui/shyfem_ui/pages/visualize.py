@@ -135,6 +135,7 @@ def visualize_server(
     output,
     session,
     config: Config,
+    active_project=None,
 ):
     """Visualization page server logic."""
     # State

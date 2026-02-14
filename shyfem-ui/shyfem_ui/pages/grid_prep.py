@@ -100,6 +100,7 @@ def grid_prep_server(
     output,
     session,
     config: Config,
+    active_project=None,
 ):
     """Grid preparation page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
