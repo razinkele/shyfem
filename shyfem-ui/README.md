@@ -153,15 +153,30 @@ Additional pages:
 # Install dev dependencies
 pip install -e ".[dev]"
 
-# Run tests
-pytest tests/
+# Run unit tests
+make test
 
 # Run with coverage
-pytest --cov=shyfem_ui tests/
+make coverage
 
 # Run specific test file
 pytest tests/test_parser_str.py -v
 ```
+
+### Running E2E (Playwright) Tests
+
+Browser tests require Playwright with Chromium installed:
+
+```bash
+# Install Playwright browsers (one-time)
+make e2e-install
+
+# Run E2E tests
+make e2e
+```
+
+In CI environments, use `python -m playwright install chromium --with-deps` to
+install Chromium and its OS-level dependencies automatically.
 
 ### Code Formatting
 

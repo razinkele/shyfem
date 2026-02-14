@@ -11,7 +11,7 @@
 > The test suite has **1 failure** caused by an environment variable leaking
 > into the test process, and **94 skipped** Playwright tests that never run.
 
-- [ ] **9.1** Fix `test_config.py::test_default_deployment_mode` failure
+- [x] **9.1** Fix `test_config.py::test_default_deployment_mode` failure
   - Root cause: the host machine has `SHYFEM_UI_DEPLOYMENT_MODE=server` set
     in the shell environment. `Config()` (Pydantic) picks it up automatically.
   - Fix: in `tests/conftest.py` add a session-scoped autouse fixture that
@@ -22,7 +22,7 @@
     on the host environment.
   - File: `tests/test_config.py` (~line 17)
 
-- [ ] **9.2** Make Playwright E2E tests runnable in CI
+- [x] **9.2** Make Playwright E2E tests runnable in CI
   - 94 tests are currently skipped because `playwright` browsers aren't
     installed. Add a `conftest.py` marker/condition that auto-installs
     browsers in CI or clarifies the skip reason.
@@ -30,7 +30,7 @@
     Makefile target.
   - Document: `README.md` should include a "Run E2E tests" section.
 
-- [ ] **9.3** Add `pytest-cov` coverage report to test run
+- [x] **9.3** Add `pytest-cov` coverage report to test run
   - Add `--cov=shyfem_ui --cov-report=term-missing` to `pytest.ini_options`.
   - Goal: establish baseline coverage percentage (currently estimated ~40%
     because pages/components have zero unit-test coverage).

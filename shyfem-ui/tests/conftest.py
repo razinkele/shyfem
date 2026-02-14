@@ -1,6 +1,7 @@
 """Shared test fixtures for unit and browser tests.
 
 Provides:
+- Environment isolation (strips SHYFEM_UI_* env vars)
 - Temporary config/database isolation for all tests
 - A live Shiny app server on a free port for browser tests
 - Playwright browser/page fixtures
@@ -14,6 +15,26 @@ import time
 from pathlib import Path
 
 import pytest
+
+
+# ---------------------------------------------------------------------------
+# Environment isolation — prevent host env vars from leaking into tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True, scope="session")
+def _isolate_env():
+    """Strip all SHYFEM_UI_* environment variables for the test session.
+
+    Pydantic Settings reads env vars automatically.  If the host shell has
+    e.g. SHYFEM_UI_DEPLOYMENT_MODE=server, tests that create Config() without
+    explicit overrides will see the host value instead of the default.
+    """
+    saved = {}
+    for key in list(os.environ):
+        if key.startswith("SHYFEM_UI_"):
+            saved[key] = os.environ.pop(key)
+    yield
+    os.environ.update(saved)
 
 
 # ---------------------------------------------------------------------------
@@ -125,10 +146,17 @@ def pw_browser():
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        pytest.skip("playwright not installed")
+        pytest.skip("playwright not installed — pip install pytest-playwright")
 
     pw = sync_playwright().start()
-    browser = pw.chromium.launch(headless=True)
+    try:
+        browser = pw.chromium.launch(headless=True)
+    except Exception as exc:
+        pw.stop()
+        pytest.skip(
+            f"Playwright browsers not installed: {exc}\n"
+            "Run: python -m playwright install chromium --with-deps"
+        )
     yield browser
     browser.close()
     pw.stop()
