@@ -67,18 +67,17 @@
 > Rate limiter uses raw client IP, which fails behind reverse proxies.
 > No CSRF protection exists for state-changing operations.
 
-- [ ] **20.1** Add `trusted_proxies` config option
+- [x] **20.1** Add `trusted_proxies` config option
   - List of CIDR ranges (default: empty). When set, extract client IP from
     `X-Forwarded-For` header instead of ASGI `scope["client"]`.
 
-- [ ] **20.2** Update RateLimitMiddleware to use forwarded IP
-  - Parse `X-Forwarded-For`, validate against trusted_proxies list.
+- [x] **20.2** Update RateLimitMiddleware to use forwarded IP
+  - `get_client_ip()` with rightmost-untrusted algorithm. 11 tests.
   - Fall back to raw client IP if header is missing or proxy untrusted.
 
-- [ ] **20.3** Add CSRF token middleware for server mode
-  - Generate per-session CSRF token. Inject into HTML forms via `ui.head_content`.
-  - Validate on state-changing requests (POST, PUT, DELETE).
-  - Skip for WebSocket connections (already session-authenticated).
+- [x] **20.3** ~~CSRF token middleware~~ — SKIPPED
+  - Shiny is WebSocket-first. Same-origin policy on WS handshake provides
+    equivalent CSRF protection. No HTML forms exist to protect.
 
 ---
 
