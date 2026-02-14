@@ -115,32 +115,32 @@
 > (parsing, file I/O, data transformation) that can be tested without a live
 > Shiny server.
 
-- [ ] **12.1** Test helper functions extracted from `pages/run.py`
+- [x] **12.1** Test helper functions extracted from `pages/run.py`
   - `_format_eta()`, progress calculation logic, `_build_job_timeline()`
     Plotly figure builder — extract into testable pure functions if needed.
 
-- [ ] **12.2** Test helper functions in `pages/postprocess.py`
+- [x] **12.2** Test helper functions in `pages/postprocess.py`
   - `_parse_shyelab_info()` — provide sample Fortran output and assert
     parsed structure.
 
-- [ ] **12.3** Test helper functions in `pages/visualize.py`
+- [x] **12.3** Test helper functions in `pages/visualize.py`
   - `_build_vertical_profile()`, `_build_transect()`, `_compare_netcdf()`
     — these return Plotly figures; test they produce valid `go.Figure`
     objects with expected trace counts.
 
-- [ ] **12.4** Test `components/grid_map.py` → `build_mesh_figure()`
+- [x] **12.4** Test `components/grid_map.py` → `build_mesh_figure()`
   - Provide a small synthetic `GrdFile`, assert figure has correct trace
     count (mesh, boundary, labels), axes labels, etc.
 
-- [ ] **12.5** Test `components/timeseries.py` → `compute_statistics()`
+- [x] **12.5** Test `components/timeseries.py` → `compute_statistics()`
   - Pure function — test with known DataFrame, assert min/max/mean/std/
     percentile values.
 
-- [ ] **12.6** Test `components/boundary_editor.py` CSV parsing logic
+- [x] **12.6** Test `components/boundary_editor.py` CSV parsing logic
   - Test the CSV import code that splits rows into node list, type, file,
     scale factor, interpolation.
 
-- [ ] **12.7** Test `services/job_celery.py` health_check/worker_info
+- [x] **12.7** Test `services/job_celery.py` health_check/worker_info
   - Mock Redis connection and Celery `app.control` to test without infra.
 
 ---
