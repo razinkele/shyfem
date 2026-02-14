@@ -14,6 +14,30 @@ from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 
+def grid_stats_to_json(stats: dict, grid_name: str) -> str:
+    """Serialize grid statistics to formatted JSON.
+
+    Args:
+        stats: Dictionary from GrdParser.get_statistics().
+        grid_name: Name of the grid file for metadata.
+
+    Returns:
+        Formatted JSON string.
+    """
+    import json
+
+    def _default(obj):
+        if isinstance(obj, set):
+            return sorted(obj)
+        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
+
+    payload = {
+        "grid_name": grid_name,
+        "statistics": stats,
+    }
+    return json.dumps(payload, indent=4, default=_default)
+
+
 @module.ui
 def grid_prep_ui():
     """Grid preparation page UI."""
@@ -80,6 +104,11 @@ def grid_prep_ui():
                 ui.nav_panel(
                     "Statistics",
                     ui.output_ui("grid_stats"),
+                    ui.input_action_button(
+                        "export_stats_btn",
+                        "Export Stats JSON",
+                        class_="btn-outline-secondary btn-sm mt-2",
+                    ),
                 ),
                 ui.nav_panel(
                     "Node Inspector",
@@ -346,6 +375,33 @@ def grid_prep_server(
             ui.h6("Line Types", class_="mt-3"),
             ui.p(", ".join(str(t) for t in stats['line_types']) or "None"),
         )
+
+    @reactive.effect
+    @reactive.event(input.export_stats_btn)
+    async def _export_stats():
+        grd = current_grd.get()
+        if grd is None:
+            ui.notification_show("No grid loaded", type="warning")
+            return
+
+        stats = GrdParser.get_statistics(grd)
+        grid_name = getattr(grd, "filename", "grid") or "grid"
+        if "/" in grid_name or "\\" in grid_name:
+            grid_name = Path(grid_name).stem
+
+        json_str = grid_stats_to_json(stats, grid_name)
+
+        import base64
+        b64 = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
+        filename = f"grid_stats_{grid_name}.json"
+        js = (
+            f"var a=document.createElement('a');"
+            f"a.href='data:application/json;base64,{b64}';"
+            f"a.download='{filename}';"
+            f"a.click();"
+        )
+        await session.send_custom_message("eval_js", js)
+        ui.notification_show(f"Exported {filename}", type="message", duration=3)
 
     @render.ui
     def node_inspector():
