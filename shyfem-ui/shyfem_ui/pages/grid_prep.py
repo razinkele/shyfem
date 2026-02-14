@@ -105,6 +105,20 @@ def grid_prep_server(
     """Grid preparation page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
+    # Auto-fill from active project
+    @reactive.effect
+    def _on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        if proj is None:
+            return
+        if proj["grids"]:
+            grid = proj["grids"][0]
+            if grid.get("grd_file"):
+                grd_path = str(Path(proj["work_dir"]) / grid["grd_file"])
+                ui.update_text("grd_path", value=grd_path)
+
     # State
     current_grd = reactive.value(None)  # GrdFile object
     current_grd_path = reactive.value(None)  # Path to loaded file

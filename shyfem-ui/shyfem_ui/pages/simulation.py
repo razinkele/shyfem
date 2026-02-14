@@ -1,5 +1,7 @@
 """Simulation configuration page - .str file editor."""
 
+from pathlib import Path
+
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
@@ -120,6 +122,20 @@ def simulation_server(
     active_project=None,
 ):
     """Simulation configuration page server logic."""
+    # Auto-fill from active project
+    @reactive.effect
+    def _on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        if proj is None:
+            return
+        if proj["simulations"]:
+            sim = proj["simulations"][0]
+            if sim.get("str_file"):
+                str_path = str(Path(proj["work_dir"]) / sim["str_file"])
+                ui.update_text("str_path", value=str_path)
+
     # State
     current_file_path = reactive.value(None)
     parsed_str = reactive.value(None)

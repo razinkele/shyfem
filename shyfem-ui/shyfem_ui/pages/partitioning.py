@@ -122,6 +122,22 @@ def partitioning_server(
     """Mesh partitioning page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
+    # Auto-fill from active project
+    @reactive.effect
+    def _on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        if proj is None:
+            return
+        work = proj["work_dir"]
+        if proj["grids"]:
+            grid = proj["grids"][0]
+            if grid.get("bas_file"):
+                ui.update_text("bas_path", value=str(Path(work) / grid["bas_file"]))
+            if grid.get("grd_file"):
+                ui.update_text("grd_path", value=str(Path(work) / grid["grd_file"]))
+
     # State
     log_content = reactive.value("")
     partition_files = reactive.value([])
