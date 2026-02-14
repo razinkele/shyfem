@@ -61,6 +61,89 @@ COLORMAPS = {
 }
 
 
+def build_variable_table(ds) -> list[dict]:
+    """Build a summary table of all variables in a NetCDF Dataset.
+
+    Args:
+        ds: xarray.Dataset
+
+    Returns:
+        List of dicts with keys: name, dims, dtype, units, long_name, min, max
+    """
+    rows = []
+    for var_name in ds.data_vars:
+        try:
+            var = ds[var_name]
+            values = var.values.flatten()
+            valid = values[~np.isnan(values)] if np.issubdtype(values.dtype, np.floating) else values
+            rows.append({
+                "name": var_name,
+                "dims": " \u00d7 ".join(var.dims),
+                "dtype": str(var.dtype),
+                "units": str(var.attrs.get("units", "-")),
+                "long_name": str(var.attrs.get("long_name", "-")),
+                "min": float(np.min(valid)) if len(valid) > 0 else None,
+                "max": float(np.max(valid)) if len(valid) > 0 else None,
+            })
+        except Exception:
+            continue
+    return rows
+
+
+def get_dim_label(ds, dim_name: str, index: int) -> str:
+    """Get a human-readable label for a dimension index.
+
+    Args:
+        ds: xarray.Dataset
+        dim_name: Name of the dimension
+        index: Integer index into the dimension
+
+    Returns:
+        Formatted string label (timestamp, depth value, or plain index)
+    """
+    try:
+        if dim_name not in ds.coords:
+            return str(index)
+        coord = ds.coords[dim_name]
+        if index < 0 or index >= len(coord):
+            return str(index)
+        value = coord.values[index]
+
+        # Time dimensions: format as datetime
+        if np.issubdtype(coord.dtype, np.datetime64):
+            import pandas as pd
+            return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M")
+
+        # Numeric: show value
+        if np.issubdtype(coord.dtype, np.number):
+            units = coord.attrs.get("units", "")
+            formatted = f"{float(value):.4g}"
+            return f"{formatted} {units}".strip()
+
+        return str(value)
+    except Exception:
+        return str(index)
+
+
+def get_variable_attrs(ds, var_name: str) -> dict:
+    """Extract key metadata attributes for a NetCDF variable.
+
+    Args:
+        ds: xarray.Dataset
+        var_name: Name of the variable
+
+    Returns:
+        Dict with keys: long_name, standard_name, units, valid_range, _FillValue.
+        Values are None if attribute is missing.
+    """
+    keys = ["long_name", "standard_name", "units", "valid_range", "_FillValue"]
+    try:
+        var = ds[var_name]
+        return {k: var.attrs.get(k) for k in keys}
+    except (KeyError, AttributeError):
+        return {k: None for k in keys}
+
+
 @module.ui
 def visualize_ui():
     """Visualization page UI."""
