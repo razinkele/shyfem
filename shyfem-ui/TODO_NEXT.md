@@ -12,31 +12,31 @@
 > 40+ silent `except Exception: pass` blocks across 8 files hide bugs and
 > make debugging impossible. Replace with logged handlers + graceful fallbacks.
 
-- [ ] **18.1** Fix silent exceptions in `components/str_editor.py`
+- [x] **18.1** Fix silent exceptions in `components/str_editor.py`
   - Line 146: `except Exception: pass` — add logger.warning, fall back to raw string
   - Line 171: `except Exception: continue` — log skipped parameter conversion
 
-- [ ] **18.2** Fix silent exceptions in `components/timeseries.py`
+- [x] **18.2** Fix silent exceptions in `components/timeseries.py`
   - Lines 170, 276, 385: silent fallbacks to default columns — add logger.debug
   - Line 433: silent whitespace parse fallback — log and notify
 
-- [ ] **18.3** Fix silent exceptions in `pages/ensemble.py`
+- [x] **18.3** Fix silent exceptions in `pages/ensemble.py`
   - Line 565: `except Exception: pass` — log retry failure
   - Line 836: `except Exception: return []` — log and return empty with context
 
-- [ ] **18.4** Fix silent exceptions in `pages/postprocess.py`
+- [x] **18.4** Fix silent exceptions in `pages/postprocess.py`
   - Lines 378, 386, 776: `except Exception: pass` — add logger.warning
 
-- [ ] **18.5** Fix silent exceptions in `pages/run.py`
+- [x] **18.5** Fix silent exceptions in `pages/run.py`
   - Lines 301, 565, 813: silent catches — add logger.exception
 
-- [ ] **18.6** Fix silent exceptions in `pages/compare.py`
+- [x] **18.6** Fix silent exceptions in `pages/compare.py`
   - Audit all exception handlers, add logging where missing
 
-- [ ] **18.7** Fix unlogged rollback in `db/base.py`
+- [x] **18.7** Fix unlogged rollback in `db/base.py`
   - Line 112: `except Exception:` rollback — add `logger.exception("DB error")`
 
-- [ ] **18.8** Audit `services/job_celery.py` exception handlers
+- [x] **18.8** Audit `services/job_celery.py` exception handlers
   - Lines 169, 179: asyncio.run() error handling — ensure exceptions propagate
 
 ---
