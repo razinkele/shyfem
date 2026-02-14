@@ -1,5 +1,6 @@
 """STR file editor component with split view: raw text + structured form."""
 
+import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,8 @@ from shyfem_ui.services.parser_str import (
     StrFile,
     StrParser,
 )
+
+logger = logging.getLogger(__name__)
 
 # Section color coding for visual differentiation
 SECTION_COLORS = {
@@ -144,7 +147,7 @@ def str_editor_server(
                 parsed = StrParser.parse(text)
                 parsed_file.set(parsed)
             except Exception:
-                pass
+                logger.warning("Failed to re-parse editor content for form sync", exc_info=True)
 
     @reactive.effect
     @reactive.event(input.apply_form_btn)
@@ -169,6 +172,7 @@ def str_editor_server(
                             if converted != old_val:
                                 parsed.set_param(section_name, param_name, converted)
                     except Exception:
+                        logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
                         continue
 
         # Regenerate text from modified parsed file
@@ -600,7 +604,7 @@ def _check_range(warnings: list[str], section: str, param: str,
                     f"Warning: ${section} {param}={value} outside range [{lo},{hi}]"
                 )
         except ValueError:
-            pass
+            logger.debug("Could not parse range '%s' for %s.%s", options_str, section, param)
         return
 
     # Check >0 or >=0 constraints
