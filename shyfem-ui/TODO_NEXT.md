@@ -165,27 +165,23 @@
 
 ## Phase 24: Fix Pre-Existing Test Failures
 
-> 17 tests in test_workflow.py (6) and test_wrapper.py (11) fail due to
-> async event loop issues. These have been failing since the test suite
-> was created.
+> Root cause: `test_playwright_active_project.py` was not excluded from
+> default pytest runs, creating an event loop conflict with pytest-asyncio.
+> Fix: `--ignore-glob` in addopts + `e2e` marker on all Playwright files.
+> Result: 429 passed, 0 failed.
 
-- [ ] **24.1** Fix test_workflow.py async failures
-  - Root cause: `asyncio.run()` inside tests that already have an event loop
-  - Fix: use `pytest-asyncio` `@pytest.mark.asyncio` decorator consistently
-  - 6 tests: stores_step_results, custom_name, cancel_workflow,
-    cancel_nonexistent, list_workflows, workflow lifecycle
+- [x] **24.1** ~~Fix test_workflow.py async failures~~ — No code fix needed
+  - Root cause was Playwright event loop contamination, not async test code
+  - Tests pass once Playwright files are excluded from collection
 
-- [ ] **24.2** Fix test_wrapper.py async failures
-  - Root cause: similar event loop conflict with `asyncio.run()`
-  - Fix: refactor to use `await` directly in async test functions
-  - 11 tests: run_command_success/failure/callback/args/stderr/
-    nonexistent/duration
+- [x] **24.2** ~~Fix test_wrapper.py async failures~~ — No code fix needed
+  - Same root cause as 24.1; tests pass with proper isolation
 
-- [ ] **24.3** Add pytest markers for selective test runs
-  - `@pytest.mark.slow` for tests > 5 seconds
-  - `@pytest.mark.e2e` for Playwright tests (already in separate files)
-  - Update pyproject.toml `[tool.pytest.ini_options]` with marker definitions
-  - Target: 0 failures, 430+ passing
+- [x] **24.3** Add pytest markers for selective test runs
+  - Added `--ignore-glob=tests/test_playwright_*.py` to pyproject.toml addopts
+  - Registered `e2e` and `slow` markers
+  - Added `pytest.mark.e2e` to all 5 Playwright test files
+  - Result: 429 passed, 0 failed
 
 ---
 
