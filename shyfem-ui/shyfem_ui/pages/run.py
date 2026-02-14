@@ -281,7 +281,13 @@ def run_server(
         except Exception as e:
             log_content.set(f"Error fetching log: {e}")
 
-    log_viewer_server("job_log", log_content, on_refresh=lambda: None)
+    from shyfem_ui.config import get_config
+    log_viewer_server(
+        "job_log",
+        log_content,
+        on_refresh=_refresh_log,
+        refresh_interval=get_config().log_refresh_interval,
+    )
 
     # Single unified poll loop: refresh every 2s while jobs or workflows are active
     @reactive.effect
@@ -298,6 +304,7 @@ def run_server(
                 reactive.invalidate_later(2)
                 _refresh_tick.set(_refresh_tick.get() + 1)
             await _refresh_jobs()
+            await _refresh_log()
         except Exception:
             logger.debug("Auto-refresh poll failed, retrying in 5s", exc_info=True)
             reactive.invalidate_later(5)

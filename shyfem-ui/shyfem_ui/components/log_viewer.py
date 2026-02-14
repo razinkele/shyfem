@@ -121,6 +121,7 @@ def log_viewer_server(
     session,
     log_content_val: reactive.Value[str],
     on_refresh: Callable[[], None] | None = None,
+    refresh_interval: int = 5,
 ):
     """Log viewer component server logic.
 
@@ -129,6 +130,7 @@ def log_viewer_server(
             Supports both plain text and structured format with
             "=== STDOUT ===" / "=== STDERR ===" separators.
         on_refresh: Callback when refresh is clicked
+        refresh_interval: Seconds between auto-refresh polls (default: 5)
     """
     internal_content = reactive.value("")
 
@@ -141,7 +143,7 @@ def log_viewer_server(
     def _auto_poll_effect():
         try:
             if input.auto_poll():
-                reactive.invalidate_later(2)
+                reactive.invalidate_later(refresh_interval)
                 if on_refresh:
                     on_refresh()
         except Exception:
