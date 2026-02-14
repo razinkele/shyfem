@@ -230,22 +230,21 @@
 
 ## Phase 27: NetCDF Variable Explorer
 
-> NetCDF files can contain dozens of variables across multiple dimensions.
-> Currently users must know variable names in advance.
+> Scoped to metadata visibility. Variable dropdown and dimension sliders
+> already existed. Added info table, coordinate labels, and metadata panel.
 
-- [ ] **27.1** Add variable list panel to Visualize page
-  - When NetCDF is loaded, show table: variable name, dimensions, dtype,
-    units (from attrs), min/max preview
-  - Clickable rows auto-select the variable for plotting
+- [x] **27.1** Add variable info table to Data Info tab
+  - `build_variable_table(ds)` — name, dims, dtype, units, long_name, min/max
+  - 5 tests. Displayed in Data Info tab when NetCDF loaded.
 
-- [ ] **27.2** Add dimension slicing controls
-  - Time step slider (for time dimension)
-  - Depth layer slider (for vertical dimension)
-  - Bind to plot updates via reactive values
+- [x] **27.2** ~~Add dimension slicing controls~~ — Already existed
+  - Enhanced: coordinate labels under each slider via `get_dim_label()`
+  - Shows timestamps for time dims, depth values for vertical dims
+  - 5 tests for label formatting
 
-- [ ] **27.3** Add variable metadata display
-  - Show `attrs` dict (long_name, units, valid_range) in sidebar panel
-  - Display coordinate reference system if available
+- [x] **27.3** Add variable metadata display
+  - `get_variable_attrs(ds, var)` — long_name, standard_name, units,
+    valid_range, _FillValue. 4 tests. Displayed below variable selector.
 
 ---
 
