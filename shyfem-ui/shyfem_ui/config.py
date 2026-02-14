@@ -130,6 +130,12 @@ class Config(BaseSettings):
         description="Maximum file upload size in MB"
     )
 
+    # Proxy settings (server mode)
+    trusted_proxies: list[str] = Field(
+        default_factory=list,
+        description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])"
+    )
+
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:
         """Validate that a user-supplied path is within allowed directories.
 

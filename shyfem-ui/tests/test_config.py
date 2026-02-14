@@ -71,6 +71,11 @@ class TestConfigDefaults:
         config = _clean_config()
         assert config.max_upload_size_mb == 500
 
+    def test_default_trusted_proxies(self):
+        """Test trusted_proxies defaults to empty list."""
+        config = _clean_config()
+        assert config.trusted_proxies == []
+
 
 class TestConfigProperties:
     """Tests for Config properties."""
