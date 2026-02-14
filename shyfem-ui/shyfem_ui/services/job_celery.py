@@ -11,12 +11,15 @@ Start workers with:
 """
 
 import json
+import logging
 import os
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
+
+logger = logging.getLogger(__name__)
 
 # Module-level Celery app (created lazily, shared across imports)
 _celery_app = None
@@ -365,6 +368,7 @@ class CeleryJobQueue(JobQueue):
                 return "\n".join(lines[-tail:])
             return content
         except Exception:
+            logger.warning("Failed to read output file %s", path, exc_info=True)
             return ""
 
     def set_progress_callback(
@@ -398,7 +402,7 @@ class CeleryJobQueue(JobQueue):
                         try:
                             Path(fp).unlink(missing_ok=True)
                         except Exception:
-                            pass
+                            logger.debug("Failed to clean up file %s", fp)
 
                 count += 1
 
@@ -429,6 +433,7 @@ class CeleryJobQueue(JobQueue):
             rc.ping()
             result["redis_connected"] = True
         except Exception:
+            logger.warning("Redis health check failed", exc_info=True)
             return result
 
         # Check Celery workers
@@ -453,7 +458,7 @@ class CeleryJobQueue(JobQueue):
                 result["reserved_tasks"] = sum(len(t) for t in reserved.values())
 
         except Exception:
-            pass
+            logger.debug("Failed to inspect Celery workers", exc_info=True)
 
         return result
 
