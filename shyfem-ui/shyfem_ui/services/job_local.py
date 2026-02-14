@@ -223,7 +223,10 @@ class LocalJobQueue(JobQueue):
             job.started_at = datetime.now()
             self._persist_job(job)
 
-            stdout_lines = []
+            stdout_fh = None
+            if job.stdout_file:
+                Path(job.stdout_file).touch()
+                stdout_fh = open(job.stdout_file, "a")
 
             def progress_callback(progress: float, message: str):
                 job.progress = progress
@@ -235,7 +238,9 @@ class LocalJobQueue(JobQueue):
                 self._notify_progress(job_id, progress, message)
 
             def output_callback(line: str):
-                stdout_lines.append(line)
+                if stdout_fh:
+                    stdout_fh.write(line + "\n")
+                    stdout_fh.flush()
 
             try:
                 if spec.tool_name == "shyfem" and spec.mpi_enabled and spec.mpi_np > 1:
@@ -270,10 +275,8 @@ class LocalJobQueue(JobQueue):
                     job.status = JobStatus.FAILED
                     job.error_message = result.stderr[:1000] if result.stderr else "Unknown error"
 
-                # Write output files
-                if job.stdout_file:
-                    Path(job.stdout_file).write_text(result.stdout)
-                if job.stderr_file:
+                # Write stderr (small, captured at end by wrapper)
+                if job.stderr_file and result.stderr:
                     Path(job.stderr_file).write_text(result.stderr)
 
             except asyncio.CancelledError:
@@ -283,6 +286,8 @@ class LocalJobQueue(JobQueue):
                 job.status = JobStatus.FAILED
                 job.error_message = str(e)
             finally:
+                if stdout_fh:
+                    stdout_fh.close()
                 job.completed_at = datetime.now()
                 self._running_count -= 1
                 # Clean up task reference
