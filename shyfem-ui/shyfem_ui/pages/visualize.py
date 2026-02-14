@@ -9,6 +9,7 @@ Provides:
 - Configurable colormaps, time slider, side-by-side comparison
 """
 
+import logging
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +22,8 @@ from shyfem_ui.components.grid_map import build_mesh_figure
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser
+
+logger = logging.getLogger(__name__)
 
 COLORMAPS = {
     "Viridis": "Viridis",
@@ -352,32 +355,40 @@ def visualize_server(
             fig.update_layout(height=600)
             return fig
 
-        plot_type = input.plot_type()
-        colormap = input.colormap()
-        show_cb = input.show_colorbar()
-        show_grid = input.show_grid_lines()
+        try:
+            plot_type = input.plot_type()
+            colormap = input.colormap()
+            show_cb = input.show_colorbar()
+            show_grid = input.show_grid_lines()
 
-        if dtype == "grid":
-            fig = build_mesh_figure(
-                data, mode=plot_type, colorscale=colormap,
-                show_boundaries=True, show_nodes=False,
-            )
-            if show_grid:
-                fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
-                fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
-            return fig
-        elif dtype == "timeseries":
-            return _plotly_timeseries(data, plot_type, show_grid)
-        elif dtype == "netcdf":
-            if plot_type in ("profile", "transect"):
-                # Profile/transect handled in dedicated tab
-                return _plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input)
-            return _plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input)
-        else:
+            if dtype == "grid":
+                fig = build_mesh_figure(
+                    data, mode=plot_type, colorscale=colormap,
+                    show_boundaries=True, show_nodes=False,
+                )
+                if show_grid:
+                    fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
+                    fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
+                return fig
+            elif dtype == "timeseries":
+                return _plotly_timeseries(data, plot_type, show_grid)
+            elif dtype == "netcdf":
+                if plot_type in ("profile", "transect"):
+                    return _plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input)
+                return _plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input)
+            else:
+                fig = go.Figure()
+                fig.add_annotation(text="Unsupported data type",
+                                   xref="paper", yref="paper", x=0.5, y=0.5,
+                                   showarrow=False)
+                return fig
+        except Exception as exc:
+            logger.exception("Error rendering plot")
+            ui.notification_show(f"Plot error: {exc}", type="error")
             fig = go.Figure()
-            fig.add_annotation(text="Unsupported data type",
-                               xref="paper", yref="paper", x=0.5, y=0.5,
-                               showarrow=False)
+            fig.add_annotation(text=f"Error: {exc}", xref="paper", yref="paper",
+                               x=0.5, y=0.5, showarrow=False, font_color="red")
+            fig.update_layout(height=600)
             return fig
 
     @render.ui
@@ -447,10 +458,19 @@ def visualize_server(
         except Exception:
             py = 0
 
-        if plot_type == "transect":
-            return _build_transect(data, var_name, py, input)
-        else:
-            return _build_vertical_profile(data, var_name, px, py, input)
+        try:
+            if plot_type == "transect":
+                return _build_transect(data, var_name, py, input)
+            else:
+                return _build_vertical_profile(data, var_name, px, py, input)
+        except Exception as exc:
+            logger.exception("Error rendering profile plot")
+            ui.notification_show(f"Profile plot error: {exc}", type="error")
+            fig = go.Figure()
+            fig.add_annotation(text=f"Error: {exc}", xref="paper", yref="paper",
+                               x=0.5, y=0.5, showarrow=False, font_color="red")
+            fig.update_layout(height=500)
+            return fig
 
     @render.ui
     def var_statistics():

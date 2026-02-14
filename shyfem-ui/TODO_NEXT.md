@@ -190,23 +190,23 @@
 
 ## Phase 15: UX Polish & Accessibility
 
-- [ ] **15.1** Add keyboard navigation to tab bar
+- [x] **15.1** Add keyboard navigation to tab bar
   - `ui.navset_tab` should support arrow-key navigation between tabs.
   - Test with Playwright that Tab/ArrowRight cycles through pages.
 
-- [ ] **15.2** Add loading spinners for long operations
+- [x] **15.2** Add loading spinners for long operations
   - Grid parsing, file loading, job submission currently show no feedback.
   - Use `ui.busy_indicators.use()` or add explicit `ui.output_ui` spinners.
 
-- [ ] **15.3** Add user-facing error boundaries
+- [x] **15.3** Add user-facing error boundaries
   - Unhandled exceptions in reactive functions crash the session silently.
   - Wrap key server blocks with try/except → `ui.notification_show(type="error")`.
 
-- [ ] **15.4** Add favicon and meta tags
+- [x] **15.4** Add favicon and meta tags
   - No `<link rel="icon">` or `<meta name="description">` in the HTML head.
   - Use `ui.head_content(ui.tags.link(rel="icon", href="..."))`.
 
-- [ ] **15.5** Add dark mode toggle
+- [x] **15.5** Add dark mode toggle
   - `shinyswatch` supports dark themes (e.g., `darkly`). Add a toggle in
     the navbar that switches `config.theme` and re-renders.
 

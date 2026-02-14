@@ -8,6 +8,7 @@ Features:
 - Auto-refresh for active jobs
 """
 
+import logging
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,8 @@ from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
+
+logger = logging.getLogger(__name__)
 
 
 @module.ui
@@ -584,48 +587,56 @@ def run_server(
             fig.update_layout(height=400)
             return fig
 
-        # Build Gantt-style chart
-        status_colors = {
-            JobStatus.PENDING: "#6c757d",
-            JobStatus.QUEUED: "#17a2b8",
-            JobStatus.RUNNING: "#0d6efd",
-            JobStatus.COMPLETED: "#198754",
-            JobStatus.FAILED: "#dc3545",
-            JobStatus.CANCELLED: "#ffc107",
-        }
+        try:
+            # Build Gantt-style chart
+            status_colors = {
+                JobStatus.PENDING: "#6c757d",
+                JobStatus.QUEUED: "#17a2b8",
+                JobStatus.RUNNING: "#0d6efd",
+                JobStatus.COMPLETED: "#198754",
+                JobStatus.FAILED: "#dc3545",
+                JobStatus.CANCELLED: "#ffc107",
+            }
 
-        fig = go.Figure()
-        for _i, job in enumerate(reversed(jobs[:20])):  # Show last 20
-            start = job.started_at or job.created_at
-            end = job.completed_at or datetime.now()
-            color = status_colors.get(job.status, "#6c757d")
+            fig = go.Figure()
+            for _i, job in enumerate(reversed(jobs[:20])):  # Show last 20
+                start = job.started_at or job.created_at
+                end = job.completed_at or datetime.now()
+                color = status_colors.get(job.status, "#6c757d")
 
-            fig.add_trace(go.Bar(
-                x=[(end - start).total_seconds()],
-                y=[job.name],
-                orientation="h",
-                marker_color=color,
-                text=f"{job.tool_name} - {job.status.value}",
-                textposition="inside",
-                hovertemplate=(
-                    f"<b>{job.name}</b><br>"
-                    f"Tool: {job.tool_name}<br>"
-                    f"Status: {job.status.value}<br>"
-                    f"Duration: {format_duration(job.duration)}<br>"
-                    f"<extra></extra>"
-                ),
+                fig.add_trace(go.Bar(
+                    x=[(end - start).total_seconds()],
+                    y=[job.name],
+                    orientation="h",
+                    marker_color=color,
+                    text=f"{job.tool_name} - {job.status.value}",
+                    textposition="inside",
+                    hovertemplate=(
+                        f"<b>{job.name}</b><br>"
+                        f"Tool: {job.tool_name}<br>"
+                        f"Status: {job.status.value}<br>"
+                        f"Duration: {format_duration(job.duration)}<br>"
+                        f"<extra></extra>"
+                    ),
+                    showlegend=False,
+                ))
+
+            fig.update_layout(
+                title="Job Timeline (last 20 jobs)",
+                xaxis_title="Duration (seconds)",
+                yaxis_title="",
+                height=max(300, len(jobs[:20]) * 35 + 100),
+                barmode="stack",
                 showlegend=False,
-            ))
-
-        fig.update_layout(
-            title="Job Timeline (last 20 jobs)",
-            xaxis_title="Duration (seconds)",
-            yaxis_title="",
-            height=max(300, len(jobs[:20]) * 35 + 100),
-            barmode="stack",
-            showlegend=False,
-        )
-        return fig
+            )
+            return fig
+        except Exception as exc:
+            logger.exception("Error rendering timeline chart")
+            fig = go.Figure()
+            fig.add_annotation(text=f"Error: {exc}", xref="paper", yref="paper",
+                               x=0.5, y=0.5, showarrow=False, font_color="red")
+            fig.update_layout(height=400)
+            return fig
 
     @render.ui
     def selected_job_details():

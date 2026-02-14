@@ -226,7 +226,9 @@ class RateLimitMiddleware:
         return await self.app(scope, receive, send)
 
 
-_WS_RECONNECT_JS = ui.tags.script("""
+_HEAD_EXTRAS = ui.TagList(
+    # WebSocket reconnection with exponential backoff
+    ui.tags.script("""
 (function() {
   var maxRetries = 5, retryDelay = 2000;
   var origWS = window.WebSocket;
@@ -245,7 +247,36 @@ _WS_RECONNECT_JS = ui.tags.script("""
   };
   window.WebSocket.prototype = origWS.prototype;
 })();
-""")
+"""),
+    # Dark mode toggle handler
+    ui.tags.script("""
+document.addEventListener('DOMContentLoaded', function() {
+  var saved = localStorage.getItem('shyfem-dark-mode');
+  if (saved === 'true') {
+    document.documentElement.setAttribute('data-bs-theme', 'dark');
+  }
+});
+function shyfemToggleDark() {
+  var html = document.documentElement;
+  var isDark = html.getAttribute('data-bs-theme') === 'dark';
+  html.setAttribute('data-bs-theme', isDark ? 'light' : 'dark');
+  localStorage.setItem('shyfem-dark-mode', String(!isDark));
+  var btn = document.getElementById('dark-mode-toggle');
+  if (btn) btn.textContent = isDark ? 'Dark' : 'Light';
+}
+"""),
+    # Meta tags
+    ui.tags.meta(name="description", content="SHYFEM Workbench — finite element hydrodynamic simulation interface"),
+    ui.tags.meta(name="viewport", content="width=device-width, initial-scale=1"),
+    # Inline SVG favicon (water wave icon)
+    ui.tags.link(
+        rel="icon",
+        type="image/svg+xml",
+        href="data:image/svg+xml,"
+        "%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E"
+        "%3Ctext y='28' font-size='28'%3E%F0%9F%8C%8A%3C/text%3E%3C/svg%3E",
+    ),
+)
 
 
 def _build_ui(config: Config) -> ui.Tag:
@@ -254,7 +285,8 @@ def _build_ui(config: Config) -> ui.Tag:
     theme = getattr(shinyswatch.theme, config.theme, shinyswatch.theme.flatly)
 
     return ui.page_fillable(
-        ui.head_content(_WS_RECONNECT_JS),
+        ui.head_content(_HEAD_EXTRAS),
+        ui.busy_indicators.use(spinners=True, pulse=True),
         ui.navset_tab(
             ui.nav_panel("Dashboard", home.home_ui("home")),
             ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
@@ -265,6 +297,15 @@ def _build_ui(config: Config) -> ui.Tag:
             ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
             ui.nav_panel("Compare", compare.compare_ui("compare")),
             ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
+            ui.nav_spacer(),
+            ui.nav_item(
+                ui.tags.button(
+                    "Dark",
+                    id="dark-mode-toggle",
+                    class_="btn btn-outline-secondary btn-sm",
+                    onclick="shyfemToggleDark()",
+                ),
+            ),
             id="main_navbar",
         ),
         title="SHYFEM Workbench",
