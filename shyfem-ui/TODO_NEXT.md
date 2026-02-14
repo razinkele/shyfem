@@ -144,20 +144,22 @@
 > Compare, ensemble, and visualize pages contain complex pure logic buried
 > inside reactive handlers. Extract and test independently.
 
-- [ ] **23.1** Extract and test `pages/compare.py` logic
-  - Parameter diff computation (two .str configs → diff dict)
-  - Timeline alignment for overlaying two job timelines
-  - Statistics comparison (runtime, memory, return codes)
+- [x] **23.1** Test `pages/compare.py` pure functions — 8 tests
+  - `_compute_param_diff()` — identical, different values, extra sections, empty
+  - `_load_ts()` — valid file, non-numeric skipping, empty file
 
-- [ ] **23.2** Extract and test `pages/ensemble.py` logic
-  - Sweep combination generation (grid mode vs zip mode)
-  - Parameter substitution into .str template
-  - Result aggregation (min/max envelope, mean, std)
+- [x] **23.2** Test `pages/ensemble.py` pure functions — 17 tests
+  - `_try_convert()` — int, float, string, negative
+  - `_combo_label()` — empty, single, sanitized, truncation
+  - `_load_ts()` — valid, missing file, empty
+  - `_build_duration_chart()` — returns Figure, traces, title
+  - `_build_ensemble_ts_plot()` — single run, envelope with 2 runs, empty
 
-- [ ] **23.3** Extract and test `pages/visualize.py` logic
-  - `_load_timeseries()` — CSV/TSV parsing with header detection
-  - `_plotly_netcdf()` — contour/heatmap/surface figure generation
-  - `_build_vertical_profile()` and `_build_transect()` — NetCDF slicing
+- [x] **23.3** Test `pages/visualize.py` pure functions — 11 tests
+  - `_load_timeseries()` — CSV, whitespace-delimited, empty
+  - `_plotly_timeseries()` — line/scatter/area plot types, raw data path
+  - `_compare_grids()` — returns Figure, title
+  - `_compare_timeseries()` — returns Figure, 4 traces
 
 ---
 
