@@ -6,14 +6,12 @@ import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
-from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
+# Reuse the partition color palette from grid_map
+from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
-
-# Reuse the partition color palette from grid_map
-from shyfem_ui.components.grid_map import PARTITION_COLORS
 
 
 @module.ui

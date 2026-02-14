@@ -10,7 +10,7 @@
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -34,7 +34,7 @@ class StrFile:
     # Preserves the order of top-level elements for round-trip fidelity:
     # each entry is ("section", name) or ("inter", [lines])
     _structure: list[tuple[str, Any]] = field(default_factory=list)
-    file_path: Optional[Path] = None
+    file_path: Path | None = None
 
     def get_param(self, section: str, key: str, default: Any = None) -> Any:
         """Get a parameter value from a section."""
@@ -72,7 +72,7 @@ class StrParser:
     def parse(cls, content: str) -> StrFile:
         """Parse .str file content into structured data."""
         result = StrFile()
-        current_section: Optional[StrSection] = None
+        current_section: StrSection | None = None
         in_header = True
         inter_section_lines: list[str] = []
 
@@ -491,7 +491,7 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
 }
 
 # Flat lookup: get param info regardless of section
-def get_param_info(param_name: str, section: str = "") -> Optional[ParamInfo]:
+def get_param_info(param_name: str, section: str = "") -> ParamInfo | None:
     """Look up parameter metadata, optionally restricting to a section."""
     if section and section in COMMON_PARAMS:
         return COMMON_PARAMS[section].get(param_name)

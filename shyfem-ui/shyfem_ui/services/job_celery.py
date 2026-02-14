@@ -12,9 +12,9 @@ Start workers with:
 
 import json
 import os
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Optional
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
@@ -92,7 +92,7 @@ def _store_job_info(redis_client, job_info: JobInfo) -> None:
     )
 
 
-def _load_job_info(redis_client, job_id: str) -> Optional[JobInfo]:
+def _load_job_info(redis_client, job_id: str) -> JobInfo | None:
     """Load job info from Redis."""
     data = redis_client.hget("shyfem:jobs", job_id)
     if not data:
@@ -230,12 +230,12 @@ class CeleryJobQueue(JobQueue):
 
     def __init__(
         self,
-        shyfem_dir: Optional[Path] = None,
-        redis_url: Optional[str] = None,
+        shyfem_dir: Path | None = None,
+        redis_url: str | None = None,
     ):
         self.shyfem_dir = shyfem_dir or Path(os.environ.get("SHYFEM_UI_SHYFEM_DIR", "/usr/local/shyfem"))
         self.redis_url = redis_url or "redis://localhost:6379/0"
-        self._progress_callback: Optional[Callable[[str, float, str], None]] = None
+        self._progress_callback: Callable[[str, float, str], None] | None = None
         self._celery_app = None
         self._redis_client = None
         self._task = None
@@ -302,16 +302,16 @@ class CeleryJobQueue(JobQueue):
         _store_job_info(rc, job_info)
         return True
 
-    async def get_status(self, job_id: str) -> Optional[JobInfo]:
+    async def get_status(self, job_id: str) -> JobInfo | None:
         """Get current status of a job."""
         return _load_job_info(self._get_redis_client(), job_id)
 
     async def list_jobs(
         self,
-        status: Optional[JobStatus] = None,
-        simulation_id: Optional[int] = None,
+        status: JobStatus | None = None,
+        simulation_id: int | None = None,
         limit: int = 100,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
         rc = self._get_redis_client()

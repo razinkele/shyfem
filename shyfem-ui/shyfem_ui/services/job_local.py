@@ -3,9 +3,9 @@
 import asyncio
 import logging
 from collections import OrderedDict
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Optional
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
@@ -25,7 +25,7 @@ class LocalJobQueue(JobQueue):
 
     def __init__(
         self,
-        shyfem_dir: Optional[Path] = None,
+        shyfem_dir: Path | None = None,
         max_workers: int = 4,
     ):
         """Initialize local job queue.
@@ -45,11 +45,11 @@ class LocalJobQueue(JobQueue):
         self._tasks: dict[str, asyncio.Task] = {}
 
         # Concurrency control (semaphore created lazily)
-        self._semaphore: Optional[asyncio.Semaphore] = None
+        self._semaphore: asyncio.Semaphore | None = None
         self._running_count = 0
 
         # Callbacks (legacy single + multi-session)
-        self._progress_callback: Optional[Callable[[str, float, str], None]] = None
+        self._progress_callback: Callable[[str, float, str], None] | None = None
 
         # Load completed jobs from DB into memory cache
         self._load_history_from_db()
@@ -312,16 +312,16 @@ class LocalJobQueue(JobQueue):
         self._persist_job(job)
         return True
 
-    async def get_status(self, job_id: str) -> Optional[JobInfo]:
+    async def get_status(self, job_id: str) -> JobInfo | None:
         """Get current status of a job."""
         return self._jobs.get(job_id)
 
     async def list_jobs(
         self,
-        status: Optional[JobStatus] = None,
-        simulation_id: Optional[int] = None,
+        status: JobStatus | None = None,
+        simulation_id: int | None = None,
         limit: int = 100,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
         jobs = list(self._jobs.values())

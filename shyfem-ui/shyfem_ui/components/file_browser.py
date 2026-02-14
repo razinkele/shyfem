@@ -1,6 +1,6 @@
 """File browser component for selecting and uploading files."""
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from shiny import module, reactive, render, ui
 from shiny.types import FileInfo
@@ -9,7 +9,7 @@ from shiny.types import FileInfo
 @module.ui
 def file_browser_ui(
     label: str = "Select File",
-    accept: Optional[list[str]] = None,
+    accept: list[str] | None = None,
     multiple: bool = False,
     placeholder: str = "No file selected",
 ):
@@ -41,7 +41,7 @@ def file_browser_server(
     input,
     output,
     session,
-    on_file_selected: Optional[Callable[[list[FileInfo]], None]] = None,
+    on_file_selected: Callable[[list[FileInfo]], None] | None = None,
 ):
     """File browser component server logic.
 

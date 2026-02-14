@@ -1,7 +1,6 @@
 """Job status display component."""
 
 from datetime import datetime
-from typing import Optional
 
 from shiny import module, reactive, render, ui
 
@@ -23,7 +22,7 @@ def get_status_badge(status: JobStatus) -> ui.Tag:
     return ui.span(status.value.upper(), class_=f"badge {badge_class}")
 
 
-def format_duration(seconds: Optional[float]) -> str:
+def format_duration(seconds: float | None) -> str:
     """Format duration in human-readable form."""
     if seconds is None:
         return "-"
@@ -40,7 +39,7 @@ def format_duration(seconds: Optional[float]) -> str:
         return f"{hours}h {minutes}m"
 
 
-def format_datetime(dt: Optional[datetime]) -> str:
+def format_datetime(dt: datetime | None) -> str:
     """Format datetime for display."""
     if dt is None:
         return "-"
@@ -61,7 +60,7 @@ def job_status_server(
     input,
     output,
     session,
-    job_info: reactive.Value[Optional[JobInfo]],
+    job_info: reactive.Value[JobInfo | None],
 ):
     """Job status component server logic.
 

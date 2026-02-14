@@ -10,13 +10,17 @@ Features:
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
-from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge, job_list_table
+from shyfem_ui.components.job_status import (
+    format_datetime,
+    format_duration,
+    get_status_badge,
+    job_list_table,
+)
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
@@ -227,7 +231,7 @@ def run_server(
     output,
     session,
     config: Config,
-    job_queue: Optional[JobQueue] = None,
+    job_queue: JobQueue | None = None,
     active_project=None,
 ):
     """Job execution page server logic."""

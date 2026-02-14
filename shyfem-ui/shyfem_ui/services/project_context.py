@@ -1,12 +1,11 @@
 """Load full project context from DB for active-project state."""
 
-from typing import Optional
 
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
 
 
-def load_project_context(project_id: int) -> Optional[dict]:
+def load_project_context(project_id: int) -> dict | None:
     """Load project with its grids and simulations as a plain dict.
 
     Returns None if the project_id does not exist.

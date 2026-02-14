@@ -8,7 +8,6 @@ Features:
 """
 
 from pathlib import Path
-from typing import Optional
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
@@ -103,7 +102,7 @@ def compare_server(
     output,
     session,
     config: Config,
-    job_queue: Optional[JobQueue] = None,
+    job_queue: JobQueue | None = None,
     active_project=None,
 ):
     """Job comparison page server logic."""

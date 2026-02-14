@@ -18,7 +18,7 @@ class Project(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     work_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -54,18 +54,18 @@ class Grid(Base):
         Integer, ForeignKey("projects.id"), nullable=False
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # File paths (relative to project work_dir)
-    grd_file: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-    bas_file: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    grd_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    bas_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Grid statistics
-    num_nodes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    num_elements: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    num_layers: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    min_depth: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    max_depth: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    num_nodes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    num_elements: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    num_layers: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    min_depth: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_depth: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
@@ -90,20 +90,20 @@ class Simulation(Base):
     project_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("projects.id"), nullable=False
     )
-    grid_id: Mapped[Optional[int]] = mapped_column(
+    grid_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("grids.id"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Configuration files (relative to project work_dir)
-    str_file: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-    output_dir: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
+    str_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    output_dir: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     # Simulation parameters (cached from .str file)
-    start_time: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    end_time: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
-    time_step: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    start_time: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    end_time: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    time_step: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     # MPI configuration
     mpi_enabled: Mapped[bool] = mapped_column(Integer, default=False)
@@ -142,10 +142,10 @@ class Job(Base):
     job_uuid: Mapped[str] = mapped_column(
         String(36), nullable=False, unique=True
     )  # UUID string from JobQueue
-    simulation_id: Mapped[Optional[int]] = mapped_column(
+    simulation_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("simulations.id"), nullable=True
     )
-    session_id: Mapped[Optional[str]] = mapped_column(
+    session_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # Shiny session ID for multi-user filtering
 
@@ -164,24 +164,24 @@ class Job(Base):
         Enum(JobStatus), default=JobStatus.PENDING, nullable=False
     )
     progress: Mapped[float] = mapped_column(Float, default=0.0)
-    progress_message: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    progress_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Output
-    stdout_file: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-    stderr_file: Mapped[Optional[str]] = mapped_column(String(1024), nullable=True)
-    return_code: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    stdout_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    stderr_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    return_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
-    queued_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # Celery task ID (server mode)
-    celery_task_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
     simulation: Mapped[Optional["Simulation"]] = relationship(
@@ -189,7 +189,7 @@ class Job(Base):
     )
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Calculate job duration in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()

@@ -8,7 +8,7 @@ Provides zoomable/pannable mesh visualization with:
 - Element quality heatmap
 """
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import numpy as np
 import plotly.graph_objects as go
@@ -58,7 +58,7 @@ def build_mesh_figure(
     colorscale: str = "Viridis",
     show_boundaries: bool = True,
     show_nodes: bool = False,
-    partition_map: Optional[dict[int, int]] = None,
+    partition_map: dict[int, int] | None = None,
 ) -> go.Figure:
     """Build a Plotly figure for grid visualization.
 
@@ -346,9 +346,9 @@ def grid_map_server(
     input,
     output,
     session,
-    grd_file: reactive.Value[Optional[GrdFile]],
-    partition_map: Optional[reactive.Value[Optional[dict[int, int]]]] = None,
-    on_node_click: Optional[Callable[[int], None]] = None,
+    grd_file: reactive.Value[GrdFile | None],
+    partition_map: reactive.Value[dict[int, int] | None] | None = None,
+    on_node_click: Callable[[int], None] | None = None,
 ):
     """Interactive grid map server logic.
 

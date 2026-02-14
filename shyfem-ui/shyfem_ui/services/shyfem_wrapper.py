@@ -4,10 +4,10 @@ import asyncio
 import os
 import re
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 
 @dataclass
@@ -79,10 +79,10 @@ class ShyfemWrapper:
         tool_name: str,
         args: list[str],
         working_dir: Path | str,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
-        env: Optional[dict[str, str]] = None,
-        command_prefix: Optional[list[str]] = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
+        env: dict[str, str] | None = None,
+        command_prefix: list[str] | None = None,
     ) -> CommandResult:
         """Run a SHYFEM command asynchronously.
 
@@ -181,7 +181,7 @@ class ShyfemWrapper:
             output_files=output_files,
         )
 
-    def _parse_progress(self, tool_name: str, line: str) -> Optional[float]:
+    def _parse_progress(self, tool_name: str, line: str) -> float | None:
         """Parse progress from output line."""
         pattern = self.PROGRESS_PATTERNS.get(tool_name)
         if not pattern:
@@ -213,9 +213,9 @@ class ShyfemWrapper:
         self,
         grd_file: Path | str,
         working_dir: Path | str,
-        options: Optional[list[str]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
+        options: list[str] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
         """Run shypre to convert .grd to .bas file.
 
@@ -234,9 +234,9 @@ class ShyfemWrapper:
         self,
         bas_file: Path | str,
         working_dir: Path | str,
-        options: Optional[list[str]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
+        options: list[str] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
         """Run shybas to analyze basin file.
 
@@ -256,9 +256,9 @@ class ShyfemWrapper:
         bas_file: Path | str,
         working_dir: Path | str,
         np: int = 4,
-        options: Optional[list[str]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
+        options: list[str] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
         """Run shyparts to partition mesh for MPI.
 
@@ -282,9 +282,9 @@ class ShyfemWrapper:
         mpi_enabled: bool = False,
         mpi_np: int = 1,
         mpirun_path: str = "mpirun",
-        options: Optional[list[str]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
+        options: list[str] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
         """Run shyfem simulation.
 
@@ -313,9 +313,9 @@ class ShyfemWrapper:
         self,
         shy_file: Path | str,
         working_dir: Path | str,
-        options: Optional[list[str]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
+        options: list[str] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
         """Run shyelab to post-process output.
 
@@ -334,9 +334,9 @@ class ShyfemWrapper:
         self,
         input_file: Path | str,
         working_dir: Path | str,
-        options: Optional[list[str]] = None,
-        progress_callback: Optional[Callable[[float, str], None]] = None,
-        output_callback: Optional[Callable[[str], None]] = None,
+        options: list[str] | None = None,
+        progress_callback: Callable[[float, str], None] | None = None,
+        output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
         """Run shyplot to generate plots.
 

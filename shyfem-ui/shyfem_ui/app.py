@@ -6,20 +6,29 @@ import hashlib
 import hmac
 import logging
 from pathlib import Path
-from typing import Optional
 
 import shinyswatch
 from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
-from shyfem_ui.pages import compare, ensemble, grid_prep, home, partitioning, postprocess, run, simulation, visualize
+from shyfem_ui.pages import (
+    compare,
+    ensemble,
+    grid_prep,
+    home,
+    partitioning,
+    postprocess,
+    run,
+    simulation,
+    visualize,
+)
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(config: Optional[Config] = None) -> App:
+def create_app(config: Config | None = None) -> App:
     """Create and return the Shiny application.
 
     Args:

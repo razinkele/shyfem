@@ -8,12 +8,12 @@ Steps can reference outputs from previous steps.
 """
 
 import asyncio
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
-import uuid
+from typing import Any
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
@@ -37,7 +37,7 @@ class WorkflowStep:
     mpi_enabled: bool = False
     mpi_np: int = 1
     # Reference previous step outputs: "{step_name.output_dir}" or "{step_name.output_files[0]}"
-    input_from: Optional[str] = None
+    input_from: str | None = None
     # Additional options passed to the tool
     options: list[str] = field(default_factory=list)
     # Whether to continue the workflow if this step fails
@@ -56,9 +56,9 @@ class WorkflowInstance:
     step_job_ids: dict[str, str] = field(default_factory=dict)  # step_name -> job_id
     step_results: dict[str, dict[str, Any]] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    error_message: Optional[str] = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    error_message: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -72,13 +72,13 @@ class WorkflowInstance:
         return self.current_step_index / len(self.steps)
 
     @property
-    def current_step(self) -> Optional[WorkflowStep]:
+    def current_step(self) -> WorkflowStep | None:
         if 0 <= self.current_step_index < len(self.steps):
             return self.steps[self.current_step_index]
         return None
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
         return None
@@ -174,8 +174,8 @@ class WorkflowEngine:
         self,
         template_key: str,
         working_dir: Path | str,
-        params: Optional[dict[str, str]] = None,
-        name: Optional[str] = None,
+        params: dict[str, str] | None = None,
+        name: str | None = None,
     ) -> str:
         """Create and start a workflow from a template.
 
@@ -246,7 +246,7 @@ class WorkflowEngine:
 
         return True
 
-    def get_workflow(self, workflow_id: str) -> Optional[WorkflowInstance]:
+    def get_workflow(self, workflow_id: str) -> WorkflowInstance | None:
         """Get workflow status."""
         return self._workflows.get(workflow_id)
 
@@ -327,7 +327,7 @@ class WorkflowEngine:
         wf.completed_at = datetime.now()
         self._polling_tasks.pop(workflow_id, None)
 
-    async def _wait_for_job(self, job_id: str, poll_interval: float = 2.0) -> Optional[JobInfo]:
+    async def _wait_for_job(self, job_id: str, poll_interval: float = 2.0) -> JobInfo | None:
         """Poll job queue until job completes."""
         while True:
             job_info = await self._queue.get_status(job_id)

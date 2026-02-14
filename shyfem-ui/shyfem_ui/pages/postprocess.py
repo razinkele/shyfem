@@ -11,7 +11,6 @@ Features:
 
 import re
 from pathlib import Path
-from typing import Optional
 
 from shiny import module, reactive, render, ui
 
@@ -19,7 +18,6 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
-
 
 # Shyelab operation modes and their CLI flags
 SHYELAB_OPERATIONS = {
@@ -576,7 +574,7 @@ def postprocess_server(
         time_keys = ["Reference Date", "Reference Time", "Averaging Period", "Min Depth / Offset"]
         var_keys = ["Variables", "Total Variables", "Variable Names"]
 
-        def _render_section(title: str, keys: list[str]) -> Optional[ui.Tag]:
+        def _render_section(title: str, keys: list[str]) -> ui.Tag | None:
             rows = []
             for key in keys:
                 if key in info:

@@ -10,10 +10,9 @@ Features:
 """
 
 import html
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from shiny import module, reactive, render, ui
-
 
 MAX_DISPLAY_LINES = 500
 LINE_TRUNCATE_LEN = 4096
@@ -121,7 +120,7 @@ def log_viewer_server(
     output,
     session,
     log_content_val: reactive.Value[str],
-    on_refresh: Optional[Callable[[], None]] = None,
+    on_refresh: Callable[[], None] | None = None,
 ):
     """Log viewer component server logic.
 

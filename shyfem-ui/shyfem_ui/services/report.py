@@ -13,7 +13,7 @@ Reports are standalone HTML files with inline CSS and JS (no external deps).
 import html
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 class ReportBuilder:
@@ -42,7 +42,7 @@ class ReportBuilder:
             "icon": icon,
         })
 
-    def add_parameters(self, str_file, section_filter: Optional[list[str]] = None) -> None:
+    def add_parameters(self, str_file, section_filter: list[str] | None = None) -> None:
         """Add simulation parameters from a parsed StrFile.
 
         Args:
@@ -167,7 +167,7 @@ class ReportBuilder:
         )
         self.add_section("Runtime Statistics", header + table)
 
-    def add_output_files(self, files: list[str], working_dir: Optional[str] = None) -> None:
+    def add_output_files(self, files: list[str], working_dir: str | None = None) -> None:
         """Add output file inventory.
 
         Args:
@@ -340,10 +340,10 @@ class ReportBuilder:
 def generate_job_report(
     job_info,
     str_file=None,
-    grd_stats: Optional[dict] = None,
-    figures: Optional[list[tuple[Any, str]]] = None,
-    variable_stats: Optional[dict[str, dict[str, float]]] = None,
-    output_dir: Optional[str | Path] = None,
+    grd_stats: dict | None = None,
+    figures: list[tuple[Any, str]] | None = None,
+    variable_stats: dict[str, dict[str, float]] | None = None,
+    output_dir: str | Path | None = None,
 ) -> Path:
     """Generate a complete simulation report.
 
@@ -397,8 +397,8 @@ def generate_job_report(
 def generate_comparison_report(
     jobs: list,
     title: str = "Simulation Comparison",
-    figures: Optional[list[tuple[Any, str]]] = None,
-    output_path: Optional[str | Path] = None,
+    figures: list[tuple[Any, str]] | None = None,
+    output_path: str | Path | None = None,
 ) -> Path:
     """Generate a comparison report for multiple jobs.
 

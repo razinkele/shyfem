@@ -2,11 +2,12 @@
 
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 
 class JobStatus(Enum):
@@ -28,10 +29,10 @@ class JobSpec:
     tool_name: str  # shypre, shybas, shyparts, shyfem, shyelab, shyplot
     args: list[str]
     working_dir: Path
-    simulation_id: Optional[int] = None
+    simulation_id: int | None = None
     mpi_enabled: bool = False
     mpi_np: int = 1
-    env: Optional[dict[str, str]] = None
+    env: dict[str, str] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -48,15 +49,15 @@ class JobInfo:
     progress: float = 0.0
     progress_message: str = ""
     created_at: datetime = field(default_factory=datetime.now)
-    queued_at: Optional[datetime] = None
-    started_at: Optional[datetime] = None
-    completed_at: Optional[datetime] = None
-    return_code: Optional[int] = None
-    error_message: Optional[str] = None
-    stdout_file: Optional[str] = None
-    stderr_file: Optional[str] = None
+    queued_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    return_code: int | None = None
+    error_message: str | None = None
+    stdout_file: str | None = None
+    stderr_file: str | None = None
     output_files: list[str] = field(default_factory=list)
-    simulation_id: Optional[int] = None
+    simulation_id: int | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -65,7 +66,7 @@ class JobInfo:
         return self.status in (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
 
     @property
-    def duration(self) -> Optional[float]:
+    def duration(self) -> float | None:
         """Calculate job duration in seconds."""
         if self.started_at and self.completed_at:
             return (self.completed_at - self.started_at).total_seconds()
@@ -86,17 +87,17 @@ class JobQueue(ABC):
         pass
 
     @abstractmethod
-    async def get_status(self, job_id: str) -> Optional[JobInfo]:
+    async def get_status(self, job_id: str) -> JobInfo | None:
         """Get current status of a job."""
         pass
 
     @abstractmethod
     async def list_jobs(
         self,
-        status: Optional[JobStatus] = None,
-        simulation_id: Optional[int] = None,
+        status: JobStatus | None = None,
+        simulation_id: int | None = None,
         limit: int = 100,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> list[JobInfo]:
         """List jobs, optionally filtered by status, simulation, or session."""
         pass
@@ -166,9 +167,9 @@ class JobQueueFactory:
     @staticmethod
     def create(
         mode: str = "local",
-        shyfem_dir: Optional[Path] = None,
+        shyfem_dir: Path | None = None,
         max_workers: int = 4,
-        redis_url: Optional[str] = None,
+        redis_url: str | None = None,
     ) -> JobQueue:
         """Create a job queue instance.
 

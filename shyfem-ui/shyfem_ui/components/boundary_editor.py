@@ -8,7 +8,7 @@ Provides a structured UI for defining $bound sections in .str files:
 - Auto-generate $bound section text
 """
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from shiny import module, reactive, render, ui
 
@@ -55,8 +55,8 @@ def boundary_editor_server(
     input,
     output,
     session,
-    parsed_str: reactive.Value[Optional[StrFile]] = None,
-    on_boundaries_changed: Optional[Callable[[list[dict]], None]] = None,
+    parsed_str: reactive.Value[StrFile | None] = None,
+    on_boundaries_changed: Callable[[list[dict]], None] | None = None,
 ):
     """Boundary editor component server logic.
 

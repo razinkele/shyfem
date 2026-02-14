@@ -3,7 +3,6 @@
 import shutil
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from shiny import module, reactive, render, ui
 
@@ -128,7 +127,7 @@ def home_server(
     output,
     session,
     config: Config,
-    job_queue: Optional[JobQueue] = None,
+    job_queue: JobQueue | None = None,
     active_project=None,
     nav_callback=None,
 ):

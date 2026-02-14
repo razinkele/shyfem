@@ -1,7 +1,8 @@
 """STR file editor component with split view: raw text + structured form."""
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from shiny import module, reactive, render, ui
 
@@ -11,7 +12,6 @@ from shyfem_ui.services.parser_str import (
     StrFile,
     StrParser,
 )
-
 
 # Section color coding for visual differentiation
 SECTION_COLORS = {
@@ -101,8 +101,8 @@ def str_editor_server(
     input,
     output,
     session,
-    file_path: reactive.Value[Optional[Path]],
-    on_save: Optional[Callable[[Path, str], None]] = None,
+    file_path: reactive.Value[Path | None],
+    on_save: Callable[[Path, str], None] | None = None,
 ):
     """STR file editor component server logic with split view support.
 
@@ -319,7 +319,7 @@ def str_editor_server(
     }
 
 
-def _build_form_panel(parsed: Optional[StrFile]) -> ui.Tag:
+def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
     """Build the structured form panel from parsed STR file data."""
     if parsed is None or not parsed.sections:
         return ui.div(
@@ -465,7 +465,7 @@ def _parse_options_to_choices(options_str: str, current_val: Any) -> dict[str, s
 
 
 def validate_str_content(content: str, check_files: bool = False,
-                         working_dir: Optional[Path] = None) -> list[str]:
+                         working_dir: Path | None = None) -> list[str]:
     """Validate STR file content and return list of errors and warnings.
 
     Args:
@@ -643,7 +643,7 @@ $end"""
 $end"""
 
 
-def get_parameter_help(section: str, param: str) -> Optional[str]:
+def get_parameter_help(section: str, param: str) -> str | None:
     """Get help text for a parameter."""
     section_params = COMMON_PARAMS.get(section, {})
     param_info = section_params.get(param)

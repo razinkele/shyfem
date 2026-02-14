@@ -9,7 +9,6 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import numpy as np
 
@@ -32,7 +31,7 @@ class Node:
     node_type: int
     x: float
     y: float
-    depth: Optional[float] = None
+    depth: float | None = None
 
 
 @dataclass
@@ -69,7 +68,7 @@ class CoordinateSystem:
     UTM = "utm"  # UTM projection (meters, known zone)
 
     def __init__(self, crs_type: str = "cartesian",
-                 utm_zone: Optional[int] = None,
+                 utm_zone: int | None = None,
                  utm_hemisphere: str = "N"):
         self.crs_type = crs_type
         self.utm_zone = utm_zone
@@ -98,8 +97,8 @@ class GrdFile:
     lines: dict[int, Line] = field(default_factory=dict)
     comments: list[str] = field(default_factory=list)
     parse_warnings: list[str] = field(default_factory=list)
-    file_path: Optional[Path] = None
-    coordinate_system: Optional[CoordinateSystem] = None
+    file_path: Path | None = None
+    coordinate_system: CoordinateSystem | None = None
 
     @property
     def num_nodes(self) -> int:
@@ -129,7 +128,7 @@ class GrdFile:
         ys = [n.y for n in self.nodes.values()]
         return (min(xs), min(ys), max(xs), max(ys))
 
-    def get_depth_range(self) -> tuple[Optional[float], Optional[float]]:
+    def get_depth_range(self) -> tuple[float | None, float | None]:
         """Get depth range (min, max)."""
         depths = [n.depth for n in self.nodes.values() if n.depth is not None]
         if not depths:
@@ -208,7 +207,7 @@ class GrdFile:
         self.coordinate_system = cs
         return cs
 
-    def to_geographic(self, utm_zone: Optional[int] = None,
+    def to_geographic(self, utm_zone: int | None = None,
                       hemisphere: str = "N") -> bool:
         """Convert UTM coordinates to geographic (lat/lon) in place.
 

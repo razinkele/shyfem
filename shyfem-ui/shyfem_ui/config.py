@@ -1,7 +1,7 @@
 """Configuration management using Pydantic settings."""
 
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -209,7 +209,7 @@ class Config(BaseSettings):
 
 
 # Global configuration instance
-_config: Optional[Config] = None
+_config: Config | None = None
 
 
 def get_config() -> Config:

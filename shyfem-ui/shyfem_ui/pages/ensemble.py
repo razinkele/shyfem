@@ -11,7 +11,7 @@ import itertools
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
@@ -125,7 +125,7 @@ def ensemble_server(
     output,
     session,
     config: Config,
-    job_queue: Optional[JobQueue] = None,
+    job_queue: JobQueue | None = None,
     active_project=None,
 ):
     """Ensemble page server logic."""
