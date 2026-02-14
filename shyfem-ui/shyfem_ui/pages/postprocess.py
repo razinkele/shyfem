@@ -9,6 +9,7 @@ Features:
 - Operation presets for common workflows
 """
 
+import logging
 import re
 from pathlib import Path
 
@@ -18,6 +19,8 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+logger = logging.getLogger(__name__)
 
 # Shyelab operation modes and their CLI flags
 SHYELAB_OPERATIONS = {
@@ -376,7 +379,7 @@ def postprocess_server(
                 for var in selected_vars:
                     options.append(f"-{var}")
         except Exception:
-            pass
+            logger.debug("Variable selection input unavailable")
 
         # Layer selection
         try:
@@ -384,7 +387,7 @@ def postprocess_server(
             if layer != "all":
                 options.extend(["-layer", layer])
         except Exception:
-            pass
+            logger.debug("Layer selection input unavailable")
 
         return options
 
@@ -622,6 +625,7 @@ def postprocess_server(
             try:
                 size = path.stat().st_size if path.exists() else 0
             except Exception:
+                logger.debug("Could not stat file %s", f)
                 size = 0
             total_size += size
 
@@ -762,6 +766,7 @@ def postprocess_server(
                     try:
                         data.append([float(p) for p in parts])
                     except ValueError:
+                        logger.debug("Skipping non-numeric line in time series file")
                         continue
 
             if data:
@@ -774,7 +779,7 @@ def postprocess_server(
                     "data": data,
                 })
         except Exception:
-            pass
+            logger.warning("Failed to load time series preview", exc_info=True)
 
     return {
         "generated_files": generated_files,
