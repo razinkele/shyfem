@@ -208,25 +208,23 @@
 
 ## Phase 26: Data Export
 
-> Users cannot download plots, data, or reports from the UI. Everything
-> is view-only.
+> Scoped to missing items. Existing exports (Plotly PNG modebar, timeseries
+> CSV, job reports) already functional.
 
-- [ ] **26.1** Add plot export buttons to Visualize page
-  - Client-side "Download PNG" and "Download SVG" buttons using
-    `Plotly.downloadImage()` JavaScript call
-  - Add to main_plot and profile_plot outputs
+- [x] **26.1** ~~Add plot export buttons~~ — Already exists (Plotly modebar)
+  - Enhanced: added SVG export option, removed logo, vertical modebar
+  - Applied `_with_export_config()` to all 3 render_widget functions
 
-- [ ] **26.2** Add CSV export for time series data
-  - "Download CSV" button that serializes the loaded DataFrame
-  - Use `shiny.render.download` handler to serve the file
+- [x] **26.2** ~~Add CSV export for time series~~ — Already exists
+  - `timeseries.py` has full CSV export (lines 376-422)
 
-- [ ] **26.3** Add report download to Run page
-  - "Download Report" button on completed jobs
-  - Calls `generate_job_report()` and serves HTML via download handler
+- [x] **26.3** ~~Add report download to Run page~~ — Already exists
+  - "Generate Report" button with `ReportBuilder` already functional
 
-- [ ] **26.4** Add grid statistics JSON export
-  - "Export Stats" button on Grid Prep page
-  - Serializes `GrdParser.get_statistics()` output as formatted JSON
+- [x] **26.4** Add grid statistics JSON export
+  - "Export Stats JSON" button on Grid Prep page
+  - `grid_stats_to_json()` pure function with 5 tests
+  - Base64 data URI download via `session.send_custom_message`
 
 ---
 
