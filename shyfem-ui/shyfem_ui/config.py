@@ -124,6 +124,12 @@ class Config(BaseSettings):
         description="Max requests per minute per session (server mode)"
     )
 
+    # Upload limits
+    max_upload_size_mb: int = Field(
+        default=500,
+        description="Maximum file upload size in MB"
+    )
+
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:
         """Validate that a user-supplied path is within allowed directories.
 

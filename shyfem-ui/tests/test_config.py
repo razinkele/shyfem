@@ -66,6 +66,11 @@ class TestConfigDefaults:
         config = _clean_config()
         assert config.rate_limit_rpm == 120
 
+    def test_default_max_upload_size(self):
+        """Test default max upload size is 500 MB."""
+        config = _clean_config()
+        assert config.max_upload_size_mb == 500
+
 
 class TestConfigProperties:
     """Tests for Config properties."""
