@@ -476,6 +476,85 @@ def home_server(
                 shutil.rmtree(project_path, ignore_errors=True)
             ui.notification_show(f"Failed to create tutorial project: {e}", type="error")
 
+    # --- Active project handlers ---
+
+    def _activate_project(project_id: int):
+        """Load project context, set active, navigate to Grid Prep."""
+        from shyfem_ui.services.project_context import load_project_context
+
+        ctx = load_project_context(project_id)
+        if ctx is None:
+            ui.notification_show("Project not found", type="error")
+            return
+        if active_project is not None:
+            active_project.set(ctx)
+        ui.notification_show(f"Opened project: {ctx['name']}", type="message")
+        if nav_callback:
+            nav_callback("Grid Prep")
+
+    @reactive.effect
+    @reactive.event(input.open_project_btn)
+    def _show_open_project_modal():
+        project_data = projects.get()
+        if not project_data:
+            m = ui.modal(
+                ui.p("No projects yet. Create one first!", class_="text-muted"),
+                title="Open Project",
+                easy_close=True,
+            )
+            ui.modal_show(m)
+            return
+
+        project_links = []
+        for p in project_data:
+            project_links.append(
+                ui.div(
+                    ui.input_action_link(
+                        f"open_proj_{p['id']}",
+                        ui.span(p["name"], class_="fw-bold"),
+                    ),
+                    ui.span(
+                        f" — {p['description'] or 'No description'}",
+                        class_="text-muted small",
+                    ),
+                    ui.br(),
+                    ui.code(p["work_dir"], class_="small text-muted"),
+                    class_="mb-2 p-2 border rounded",
+                )
+            )
+
+        m = ui.modal(
+            *project_links,
+            title="Open Project",
+            easy_close=True,
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    def _register_open_proj_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_open_proj_handler(p["id"])
+
+    def _make_open_proj_handler(pid: int):
+        @reactive.effect
+        @reactive.event(input[f"open_proj_{pid}"])
+        def _open():
+            ui.modal_remove()
+            _activate_project(pid)
+
+    @reactive.effect
+    def _register_project_link_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_project_link_handler(p["id"])
+
+    def _make_project_link_handler(pid: int):
+        @reactive.effect
+        @reactive.event(input[f"project_{pid}"])
+        def _click():
+            _activate_project(pid)
+
     return {
         "projects": projects,
     }
