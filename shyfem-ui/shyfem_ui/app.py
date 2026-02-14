@@ -4,6 +4,7 @@ import argparse
 import base64
 import hashlib
 import hmac
+import ipaddress
 import logging
 import time
 from collections import defaultdict
@@ -183,6 +184,68 @@ class BasicAuthMiddleware:
             hmac.compare_digest(username.encode(), self.username.encode())
             and hmac.compare_digest(password_hash, self._password_hash)
         )
+
+
+def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
+    """Extract real client IP, respecting trusted proxy X-Forwarded-For.
+
+    Uses the rightmost-untrusted algorithm: walk X-Forwarded-For from right
+    to left, skipping IPs that match a trusted CIDR, and return the first
+    untrusted IP. If all are trusted, return the leftmost.
+
+    Args:
+        scope: ASGI scope dict (needs 'client' and 'headers').
+        trusted_proxies: List of CIDR strings (e.g., ["127.0.0.0/8"]).
+
+    Returns:
+        Client IP string.
+    """
+    client = scope.get("client")
+    raw_ip = client[0] if client else "unknown"
+
+    if not trusted_proxies:
+        return raw_ip
+
+    # Parse trusted networks
+    try:
+        networks = [ipaddress.ip_network(cidr, strict=False) for cidr in trusted_proxies]
+    except ValueError:
+        return raw_ip
+
+    # Check if the direct client is a trusted proxy
+    try:
+        client_addr = ipaddress.ip_address(raw_ip)
+    except ValueError:
+        return raw_ip
+
+    if not any(client_addr in net for net in networks):
+        return raw_ip
+
+    # Client is trusted — parse X-Forwarded-For
+    xff = None
+    for header_name, header_value in scope.get("headers", []):
+        if header_name == b"x-forwarded-for":
+            xff = header_value.decode("latin-1")
+            break
+
+    if not xff:
+        return raw_ip
+
+    # Walk right-to-left, find rightmost non-trusted IP
+    ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
+    if not ips:
+        return raw_ip
+
+    for ip_str in reversed(ips):
+        try:
+            addr = ipaddress.ip_address(ip_str)
+            if not any(addr in net for net in networks):
+                return ip_str
+        except ValueError:
+            continue
+
+    # All trusted — return leftmost
+    return ips[0]
 
 
 class RateLimitMiddleware:
