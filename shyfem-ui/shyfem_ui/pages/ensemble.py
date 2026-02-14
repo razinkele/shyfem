@@ -138,6 +138,20 @@ def ensemble_server(
             redis_url=config.redis_url if config.use_celery else None,
         )
 
+    # Auto-fill from active project
+    @reactive.effect
+    def _on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        if proj is None:
+            return
+        ui.update_text("working_dir", value=str(Path(proj["work_dir"]) / "ensemble"))
+        if proj["simulations"]:
+            sim = proj["simulations"][0]
+            if sim.get("str_file"):
+                ui.update_text("base_str_file", value=str(Path(proj["work_dir"]) / sim["str_file"]))
+
     # State
     param_variations = reactive.value([
         {"section": "para", "param": "", "values": ""},

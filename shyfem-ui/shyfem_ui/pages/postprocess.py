@@ -222,6 +222,16 @@ def postprocess_server(
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
+    # Auto-fill from active project
+    @reactive.effect
+    def _on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        if proj is None:
+            return
+        ui.update_text("shy_path", value=proj["work_dir"])
+
     # State
     log_content = reactive.value("")
     file_info_data = reactive.value(None)

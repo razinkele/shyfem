@@ -138,6 +138,16 @@ def visualize_server(
     active_project=None,
 ):
     """Visualization page server logic."""
+    # Auto-fill from active project
+    @reactive.effect
+    def _on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        if proj is None:
+            return
+        ui.update_text("data_path", value=proj["work_dir"])
+
     # State
     loaded_data = reactive.value(None)
     data_type = reactive.value(None)
