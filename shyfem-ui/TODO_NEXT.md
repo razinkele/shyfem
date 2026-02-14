@@ -42,14 +42,14 @@
 > Ruff reports **77 issues** (28 unused imports, 7 unused variables, 35 long
 > lines, 4 import-ordering, 2 empty f-strings, 1 ambiguous variable name).
 
-- [ ] **10.1** Remove 28 unused imports (auto-fixable: `ruff check --fix`)
+- [x] **10.1** Remove 28 unused imports (auto-fixable: `ruff check --fix`)
   - Files affected: `app.py`, `boundary_editor.py`, `log_viewer.py`,
     `plot_widget.py`, `str_editor.py`, `timeseries.py`, `compare.py`,
     `ensemble.py`, `grid_prep.py`, `home.py`, `partitioning.py`,
     `postprocess.py`, `run.py`, `simulation.py`, `visualize.py`,
     `job_local.py`, `report.py`, `workflow.py`
 
-- [ ] **10.2** Fix 7 unused local variables
+- [x] **10.2** Fix 7 unused local variables
   - `components/grid_map.py:293` – `config` dict never used
   - `components/grid_map.py:106` – `bounds` assigned but never read
   - `pages/run.py:376` – `total` computed but never rendered
@@ -58,16 +58,16 @@
   - `services/shyfem_wrapper.py:228` – `stderr_lines` never read
   - `services/report.py:187` – `name` shadowed and unused
 
-- [ ] **10.3** Fix 2 f-strings with no placeholders (`F541`)
+- [x] **10.3** Fix 2 f-strings with no placeholders (`F541`)
   - Inspect and convert to plain strings or add intended variables.
 
-- [ ] **10.4** Fix 4 module-level import ordering issues (`E402` in `app.py`)
+- [x] **10.4** Fix 4 module-level import ordering issues (`E402` in `app.py`)
   - Move logger assignment below all imports, or restructure the import block.
 
-- [ ] **10.5** Address `E741` ambiguous variable name (1 occurrence)
+- [x] **10.5** Address `E741` ambiguous variable name (1 occurrence)
   - Rename single-letter variable (likely `l` → `layer` or similar).
 
-- [ ] **10.6** Migrate ruff config from deprecated top-level keys
+- [x] **10.6** Migrate ruff config from deprecated top-level keys
   - `pyproject.toml`: move `select`, `ignore` under `[tool.ruff.lint]`.
 
 ---
