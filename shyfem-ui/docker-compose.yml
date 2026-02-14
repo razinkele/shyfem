@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # SHYFEM UI Web Application
   shyfem-ui:
@@ -20,9 +18,11 @@ services:
       - SHYFEM_UI_USE_CELERY=${USE_CELERY:-false}
       - SHYFEM_UI_REDIS_URL=redis://redis:6379/0
       - SHYFEM_UI_DATABASE_URL=sqlite:////data/db/shyfem_ui.db
-      # Uncomment to enable authentication (strongly recommended):
+      # WARNING: Enable authentication for any network-accessible deployment!
+      # Without auth, anyone who can reach port 8000 can run simulations.
       # - SHYFEM_UI_AUTH_ENABLED=true
-      # - SHYFEM_UI_AUTH_PASSWORD=changeme
+      # - SHYFEM_UI_AUTH_USERNAME=admin
+      # - SHYFEM_UI_AUTH_PASSWORD=changeme  # CHANGE THIS!
     depends_on:
       redis:
         condition: service_started

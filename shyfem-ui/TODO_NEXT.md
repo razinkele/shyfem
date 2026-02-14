@@ -77,7 +77,7 @@
 > The Dockerfile references a deleted `requirements.txt` and uses `pip`
 > instead of the conda/micromamba environment. Docker-compose has issues too.
 
-- [ ] **11.1** Fix Dockerfile — references non-existent `requirements.txt`
+- [x] **11.1** Fix Dockerfile — references non-existent `requirements.txt`
   - Stage 1 runs `COPY requirements.txt .` and `pip install -r requirements.txt`.
     This file was deleted per Phase 2 recommendations.
   - Options: (a) use `pip install .` with `pyproject.toml`, or (b) use
@@ -85,25 +85,25 @@
   - Recommended: option (b) to align with the micromamba deployment strategy
     documented in `CODEBASE_ANALYSIS.md`.
 
-- [ ] **11.2** Pin Python version consistently
+- [x] **11.2** Pin Python version consistently
   - `environment.yml` specifies `python=3.13`, `Dockerfile` uses
     `python:3.11-slim`, `pyproject.toml` classifiers list 3.10–3.12.
   - Standardize on **Python 3.12** across all three artifacts.
 
-- [ ] **11.3** Docker Compose: fix unconditional `depends_on: redis`
+- [x] **11.3** Docker Compose: fix unconditional `depends_on: redis`
   - The `shyfem-ui` service always depends on `redis`, but redis uses
     `profiles: [server]` meaning it won't start in default mode.
   - Fix: either remove the dependency or make `shyfem-ui` also conditional.
 
-- [ ] **11.4** Add `.dockerignore` file
+- [x] **11.4** Add `.dockerignore` file
   - Exclude: `__pycache__/`, `.git/`, `*.egg-info/`, `tests/`, `.env`,
     `*.pyc`, `.ruff_cache/`, `.mypy_cache/`.
 
-- [ ] **11.5** Add non-root user to Dockerfile
+- [x] **11.5** Add non-root user to Dockerfile
   - Currently runs as root. Add `RUN useradd -m appuser` and
     `USER appuser` for security hardening.
 
-- [ ] **11.6** Add `SHYFEM_UI_AUTH_ENABLED=true` and a placeholder password
+- [x] **11.6** Add `SHYFEM_UI_AUTH_ENABLED=true` and a placeholder password
   to Docker Compose environment block with a warning comment.
 
 ---
