@@ -1,9 +1,47 @@
 """File browser component for selecting and uploading files."""
 
+import logging
 from collections.abc import Callable
+from pathlib import Path
 
 from shiny import module, reactive, render, ui
 from shiny.types import FileInfo
+
+logger = logging.getLogger(__name__)
+
+
+def validate_upload(
+    file_info: dict,
+    accept: list[str] | None,
+    max_size_bytes: int,
+) -> list[str]:
+    """Validate an uploaded file's size and extension.
+
+    Args:
+        file_info: Shiny FileInfo dict with 'name' and 'size' keys.
+        accept: List of accepted extensions (e.g., [".grd"]). None allows all.
+        max_size_bytes: Maximum file size in bytes.
+
+    Returns:
+        List of error messages. Empty list means valid.
+    """
+    errors = []
+
+    size = file_info.get("size", 0)
+    if size > max_size_bytes:
+        size_mb = size / (1024 * 1024)
+        max_mb = max_size_bytes / (1024 * 1024)
+        errors.append(f"File too large: {size_mb:.1f} MB (max {max_mb:.0f} MB)")
+
+    if accept:
+        suffix = Path(file_info.get("name", "")).suffix.lower()
+        allowed = [ext.lower() for ext in accept]
+        if suffix not in allowed:
+            errors.append(
+                f"Invalid file type: {suffix}. Expected: {', '.join(accept)}"
+            )
+
+    return errors
 
 
 @module.ui
