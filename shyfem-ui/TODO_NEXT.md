@@ -287,20 +287,19 @@
 
 ## Phase 30: Session Isolation
 
-> In server mode, all users see all jobs and projects. No filtering by
-> session or user identity.
+> In server mode, each browser session sees only its own jobs by default.
+> Projects remain shared. Toggle switches between "My Jobs" and "All Jobs".
 
-- [ ] **30.1** Add session_id to project and job creation
-  - Store `session.id` when creating projects and submitting jobs
-  - Add `session_id` column to Project model (nullable for backwards compat)
+- [x] **30.1** ~~Add session_id to project and job creation~~ — SKIPPED
+  - Jobs already have `session_id` column and metadata. Projects stay shared.
 
-- [ ] **30.2** Filter queries by session in server mode
-  - `list_jobs()`, project listing, job history — filter by current session
-  - In local mode, show everything (no filtering)
+- [x] **30.2** Filter queries by session in server mode — 5 tests
+  - Dashboard `_refresh_jobs()` filters by session (was showing all jobs)
+  - `session.on_ended` cleanup only cancels own session's jobs (multi-user bug fix)
 
-- [ ] **30.3** Add "My Jobs" / "All Jobs" toggle
-  - Toggle switch on Run page and Dashboard
-  - "All Jobs" only available when auth is enabled (admin view)
+- [x] **30.3** Add "All jobs" toggle — Run page + Dashboard
+  - `ui.input_switch` visible only in server mode, default off (My Jobs)
+  - Toggling to "All jobs" removes session_id filter from list_jobs
 
 ---
 
