@@ -134,6 +134,8 @@ def home_server(
     """Dashboard page server logic."""
     projects = reactive.value([])
     recent_jobs_list = reactive.value([])
+    _session_id = str(id(session))
+    _is_server_mode = config.deployment_mode == "server"
 
     # Load initial data
     @reactive.effect
@@ -161,7 +163,8 @@ def home_server(
 
     async def _refresh_jobs():
         if job_queue:
-            jobs = await job_queue.list_jobs(limit=5)
+            sid = _session_id if _is_server_mode else None
+            jobs = await job_queue.list_jobs(limit=5, session_id=sid)
             recent_jobs_list.set(jobs)
 
     @render.ui
