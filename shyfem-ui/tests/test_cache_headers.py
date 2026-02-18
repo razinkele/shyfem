@@ -22,7 +22,7 @@ class TestCacheHeaderConfig:
         assert config.static_cache_max_age == 0
 
 
-from shyfem_ui.app import CacheHeaderMiddleware
+from shyfem_ui.app import CacheHeaderMiddleware, create_app
 
 
 def _http_scope(path: str = "/") -> dict:
@@ -172,3 +172,34 @@ class TestCacheHeaderMiddleware:
         headers = dict(sent[0]["headers"])
         assert headers[b"content-type"] == b"text/plain"
         assert headers[b"cache-control"] == b"public, max-age=86400"
+
+
+class TestCacheHeaderIntegration:
+    """Integration: middleware is wired into create_app()."""
+
+    def test_create_app_wraps_with_cache_middleware(self):
+        config = Config(shyfem_dir="/tmp/fake", static_cache_max_age=7200)
+        app = create_app(config)
+        # Walk the .app chain to find CacheHeaderMiddleware
+        current = app
+        found = False
+        for _ in range(10):
+            if isinstance(current, CacheHeaderMiddleware):
+                found = True
+                assert current.max_age == 7200
+                break
+            current = getattr(current, "app", None)
+            if current is None:
+                break
+        assert found, "CacheHeaderMiddleware not found in middleware chain"
+
+    def test_create_app_skips_cache_when_zero(self):
+        config = Config(shyfem_dir="/tmp/fake", static_cache_max_age=0)
+        app = create_app(config)
+        current = app
+        for _ in range(10):
+            assert not isinstance(current, CacheHeaderMiddleware), \
+                "CacheHeaderMiddleware should not be in chain when max_age=0"
+            current = getattr(current, "app", None)
+            if current is None:
+                break

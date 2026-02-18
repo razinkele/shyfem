@@ -70,6 +70,10 @@ def create_app(config: Config | None = None) -> App:
 
     app = App(app_ui, server)
 
+    # Cache headers for static assets
+    if config.static_cache_max_age > 0:
+        app = CacheHeaderMiddleware(app, max_age=config.static_cache_max_age)
+
     # Debug: wrap with WebSocket logging middleware (only when debug=True)
     if config.debug:
         app = _WsDebugMiddleware(app)
@@ -398,7 +402,7 @@ def _build_ui(config: Config) -> ui.Tag:
             ui.nav_panel("Compare", compare.compare_ui("compare")),
             ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
             ui.nav_spacer(),
-            ui.nav_item(
+            ui.nav_control(
                 ui.tags.button(
                     "Dark",
                     id="dark-mode-toggle",
