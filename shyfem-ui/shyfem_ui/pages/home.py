@@ -101,7 +101,11 @@ def home_ui():
             ui.column(
                 6,
                 ui.div(
-                    ui.h5("Recent Jobs"),
+                    ui.div(
+                        ui.h5("Recent Jobs", class_="d-inline"),
+                        ui.output_ui("show_all_toggle_ui"),
+                        class_="d-flex justify-content-between align-items-center",
+                    ),
                     ui.output_ui("recent_jobs"),
                     class_="card p-3",
                 ),
@@ -137,6 +141,12 @@ def home_server(
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
 
+    @render.ui
+    def show_all_toggle_ui():
+        if not _is_server_mode:
+            return ui.span()  # hidden in local mode
+        return ui.input_switch("show_all_jobs", "All jobs", value=False)
+
     # Load initial data
     @reactive.effect
     async def _load_data():
@@ -163,7 +173,8 @@ def home_server(
 
     async def _refresh_jobs():
         if job_queue:
-            sid = _session_id if _is_server_mode else None
+            show_all = input.show_all_jobs() if _is_server_mode else True
+            sid = None if show_all else _session_id
             jobs = await job_queue.list_jobs(limit=5, session_id=sid)
             recent_jobs_list.set(jobs)
 
