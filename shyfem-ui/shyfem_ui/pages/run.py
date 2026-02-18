@@ -220,6 +220,7 @@ def run_ui():
             ),
         ),
         # Auto-refresh timer
+        ui.output_ui("run_show_all_toggle_ui"),
         ui.input_action_button(
             "refresh_btn",
             "Refresh",
@@ -319,8 +320,8 @@ def run_server(
 
     async def _refresh_jobs():
         """Refresh job lists."""
-        # In server mode, only show jobs from this session
-        sid = _session_id if _is_server_mode else None
+        show_all = input.show_all_run_jobs() if _is_server_mode else True
+        sid = None if show_all else _session_id
         jobs = await job_queue.list_jobs(limit=50, session_id=sid)
         _update_job_lists(jobs)
 
@@ -1019,6 +1020,12 @@ def run_server(
     # Session ID for multi-user isolation and per-session callbacks
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
+
+    @render.ui
+    def run_show_all_toggle_ui():
+        if not _is_server_mode:
+            return ui.span()  # hidden in local mode
+        return ui.input_switch("show_all_run_jobs", "All jobs", value=False)
 
     job_queue.add_progress_callback(_session_id, on_progress)
 
