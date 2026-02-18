@@ -121,3 +121,46 @@ def _sanitize_dirname(name: str) -> str:
     """Convert a project name to a safe directory name."""
     safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name)
     return safe.strip().replace(" ", "_") or "project"
+
+
+def clone_project(
+    work_dir: Path,
+    project_meta: dict,
+    base_dir: Path,
+    new_name: str | None = None,
+) -> dict:
+    """Clone a project by copying its work directory.
+
+    Args:
+        work_dir: Source project's work directory.
+        project_meta: Dict with keys: name, description, grids, simulations.
+        base_dir: Base directory where the clone will be created.
+        new_name: Optional name for the clone. Defaults to "Original (Copy)".
+
+    Returns:
+        Dict with keys: name, description, work_dir (Path), grids, simulations.
+    """
+    import shutil
+
+    work_dir = Path(work_dir)
+    base_dir = Path(base_dir)
+    name = new_name or f"{project_meta['name']} (Copy)"
+    clone_dir = base_dir / _sanitize_dirname(name)
+
+    if clone_dir.exists():
+        suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+        name = f"{name}_{suffix}"
+        clone_dir = base_dir / _sanitize_dirname(name)
+
+    def _ignore_logs(directory, files):
+        return [f for f in files if Path(f).suffix in _EXCLUDE_EXTENSIONS]
+
+    shutil.copytree(work_dir, clone_dir, ignore=_ignore_logs)
+
+    return {
+        "name": name,
+        "description": project_meta.get("description"),
+        "work_dir": clone_dir,
+        "grids": project_meta.get("grids", []),
+        "simulations": project_meta.get("simulations", []),
+    }

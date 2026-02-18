@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from shyfem_ui.services.project_export import export_project, import_project, MANIFEST_VERSION
+from shyfem_ui.services.project_export import export_project, import_project, clone_project, MANIFEST_VERSION
 
 
 @pytest.fixture
@@ -194,3 +194,38 @@ class TestImportProject:
         buf.seek(0)
         with pytest.raises(ValueError, match="version"):
             import_project(buf, tmp_path)
+
+
+class TestCloneProject:
+
+    def test_clone_creates_new_directory(self, project_dir, project_meta):
+        result = clone_project(project_dir, project_meta, project_dir.parent)
+        assert result["work_dir"].is_dir()
+        assert result["work_dir"] != project_dir
+
+    def test_clone_copies_files(self, project_dir, project_meta):
+        result = clone_project(project_dir, project_meta, project_dir.parent)
+        wd = result["work_dir"]
+        assert (wd / "GRID" / "mesh.grd").exists()
+        assert (wd / "sim.str").exists()
+
+    def test_clone_default_name(self, project_dir, project_meta):
+        result = clone_project(project_dir, project_meta, project_dir.parent)
+        assert result["name"] == "Test Project (Copy)"
+
+    def test_clone_custom_name(self, project_dir, project_meta):
+        result = clone_project(
+            project_dir, project_meta, project_dir.parent, new_name="My Clone"
+        )
+        assert result["name"] == "My Clone"
+
+    def test_clone_returns_metadata(self, project_dir, project_meta):
+        result = clone_project(project_dir, project_meta, project_dir.parent)
+        assert len(result["grids"]) == 1
+        assert len(result["simulations"]) == 1
+
+    def test_clone_excludes_logs(self, project_dir, project_meta):
+        result = clone_project(project_dir, project_meta, project_dir.parent)
+        wd = result["work_dir"]
+        assert not list(wd.glob("*.stdout"))
+        assert not list(wd.glob("*.stderr"))
