@@ -425,9 +425,13 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
         ui.update_navs("main_navbar", selected=tab_name, session=session)
 
     # Cancel orphaned running jobs when the browser session disconnects
+    _cleanup_session_id = str(id(session))
+    _is_server = config.deployment_mode == "server"
+
     async def _on_session_ended():
         try:
-            jobs = await job_queue.list_jobs(limit=100)
+            sid = _cleanup_session_id if _is_server else None
+            jobs = await job_queue.list_jobs(limit=100, session_id=sid)
             for job in jobs:
                 if job.is_active:
                     logger.info("Session ended — cancelling orphaned job %s", job.id)

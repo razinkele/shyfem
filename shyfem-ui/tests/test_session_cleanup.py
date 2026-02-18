@@ -135,3 +135,53 @@ class TestSessionCleanup:
         mock_logger.warning.assert_called_once()
         warning_msg = mock_logger.warning.call_args[0][0]
         assert "Session cleanup failed" in warning_msg
+
+
+async def session_cleanup_filtered(job_queue, session_id, is_server_mode, logger):
+    """Replicate updated _on_session_ended with session filtering."""
+    try:
+        sid = session_id if is_server_mode else None
+        jobs = await job_queue.list_jobs(limit=100, session_id=sid)
+        for job in jobs:
+            if job.is_active:
+                logger.info("Session ended — cancelling orphaned job %s", job.id)
+                await job_queue.cancel(job.id)
+    except Exception as exc:
+        logger.warning("Session cleanup failed: %s", exc)
+
+
+class TestSessionCleanupFiltered:
+    """Tests for session-filtered cleanup (server mode)."""
+
+    @pytest.mark.asyncio
+    async def test_server_mode_passes_session_id(self, mock_job_queue, mock_logger):
+        """In server mode, list_jobs is called with session_id."""
+        mock_job_queue.list_jobs.return_value = []
+        await session_cleanup_filtered(
+            mock_job_queue, "sess-123", is_server_mode=True, logger=mock_logger
+        )
+        mock_job_queue.list_jobs.assert_awaited_once_with(limit=100, session_id="sess-123")
+
+    @pytest.mark.asyncio
+    async def test_local_mode_no_session_filter(self, mock_job_queue, mock_logger):
+        """In local mode, list_jobs is called without session_id."""
+        mock_job_queue.list_jobs.return_value = []
+        await session_cleanup_filtered(
+            mock_job_queue, "sess-123", is_server_mode=False, logger=mock_logger
+        )
+        mock_job_queue.list_jobs.assert_awaited_once_with(limit=100, session_id=None)
+
+    @pytest.mark.asyncio
+    async def test_server_mode_cancels_only_session_jobs(
+        self, mock_job_queue, mock_logger
+    ):
+        """In server mode, only active jobs from list_jobs (already filtered) are cancelled."""
+        active = _make_job("mine-1", is_active=True)
+        done = _make_job("mine-2", is_active=False)
+        mock_job_queue.list_jobs.return_value = [active, done]
+
+        await session_cleanup_filtered(
+            mock_job_queue, "sess-456", is_server_mode=True, logger=mock_logger
+        )
+
+        mock_job_queue.cancel.assert_awaited_once_with("mine-1")
