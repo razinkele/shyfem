@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from shyfem_ui.services.project_export import export_project, MANIFEST_VERSION
+from shyfem_ui.services.project_export import export_project, import_project, MANIFEST_VERSION
 
 
 @pytest.fixture
@@ -117,3 +117,80 @@ class TestExportProject:
         result = export_project(empty, project_meta)
         with zipfile.ZipFile(result) as zf:
             assert "manifest.json" in zf.namelist()
+
+
+@pytest.fixture
+def exported_zip(project_dir, project_meta):
+    """Create an exported ZIP for import tests."""
+    return export_project(project_dir, project_meta)
+
+
+class TestImportProject:
+
+    def test_import_creates_directory(self, exported_zip, tmp_path):
+        result = import_project(exported_zip, tmp_path)
+        assert result["work_dir"].is_dir()
+
+    def test_import_extracts_files(self, exported_zip, tmp_path):
+        result = import_project(exported_zip, tmp_path)
+        wd = result["work_dir"]
+        assert (wd / "GRID" / "mesh.grd").exists()
+        assert (wd / "sim.str").exists()
+
+    def test_import_returns_manifest_data(self, exported_zip, tmp_path):
+        result = import_project(exported_zip, tmp_path)
+        assert result["name"] == "Test Project"
+        assert len(result["grids"]) == 1
+        assert len(result["simulations"]) == 1
+
+    def test_import_name_collision_appends_suffix(self, exported_zip, tmp_path):
+        import_project(exported_zip, tmp_path)
+        exported_zip.seek(0)
+        result = import_project(exported_zip, tmp_path)
+        assert result["name"] != "Test Project"
+        assert result["name"].startswith("Test Project_")
+
+    def test_import_rejects_missing_manifest(self, tmp_path):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("file.txt", "hello")
+        buf.seek(0)
+        with pytest.raises(ValueError, match="manifest.json"):
+            import_project(buf, tmp_path)
+
+    def test_import_rejects_bad_json(self, tmp_path):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("manifest.json", "not json")
+        buf.seek(0)
+        with pytest.raises(ValueError, match="manifest"):
+            import_project(buf, tmp_path)
+
+    def test_import_rejects_path_traversal(self, tmp_path):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            manifest = {
+                "version": "1.0",
+                "exported_at": "2026-01-01T00:00:00Z",
+                "project": {"name": "evil", "description": None},
+                "grids": [],
+                "simulations": [],
+            }
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr("../../../etc/passwd", "pwned")
+        buf.seek(0)
+        with pytest.raises(ValueError, match="path traversal"):
+            import_project(buf, tmp_path)
+
+    def test_import_rejects_missing_version(self, tmp_path):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            manifest = {
+                "project": {"name": "test", "description": None},
+                "grids": [],
+                "simulations": [],
+            }
+            zf.writestr("manifest.json", json.dumps(manifest))
+        buf.seek(0)
+        with pytest.raises(ValueError, match="version"):
+            import_project(buf, tmp_path)

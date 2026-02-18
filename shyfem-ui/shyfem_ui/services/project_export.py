@@ -50,3 +50,74 @@ def export_project(work_dir: Path, project_meta: dict) -> BytesIO:
 
     buf.seek(0)
     return buf
+
+
+def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
+    """Import a project from a ZIP archive.
+
+    Args:
+        zip_data: BytesIO containing the ZIP archive.
+        base_dir: Base directory where the project will be extracted.
+
+    Returns:
+        Dict with keys: name, description, work_dir (Path), grids, simulations.
+
+    Raises:
+        ValueError: If the archive is invalid.
+    """
+    base_dir = Path(base_dir)
+
+    with zipfile.ZipFile(zip_data, "r") as zf:
+        if "manifest.json" not in zf.namelist():
+            raise ValueError("Invalid archive: missing manifest.json")
+
+        try:
+            manifest = json.loads(zf.read("manifest.json"))
+        except (json.JSONDecodeError, KeyError) as e:
+            raise ValueError(f"Invalid manifest: {e}") from e
+
+        if "version" not in manifest:
+            raise ValueError("Invalid manifest: missing version")
+
+        project_info = manifest.get("project", {})
+        name = project_info.get("name", "imported_project")
+
+        # Check for path traversal
+        for member in zf.namelist():
+            if member == "manifest.json":
+                continue
+            normalized = Path(member).as_posix()
+            if ".." in normalized.split("/"):
+                raise ValueError(f"Rejected: path traversal in '{member}'")
+
+        # Determine unique directory name
+        project_dir = base_dir / _sanitize_dirname(name)
+        if project_dir.exists():
+            suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+            name = f"{name}_{suffix}"
+            project_dir = base_dir / _sanitize_dirname(name)
+
+        project_dir.mkdir(parents=True)
+
+        # Extract files (skip manifest)
+        for member in zf.namelist():
+            if member == "manifest.json":
+                continue
+            target = project_dir / member
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with zf.open(member) as src, open(target, "wb") as dst:
+                dst.write(src.read())
+
+    return {
+        "name": name,
+        "description": project_info.get("description"),
+        "work_dir": project_dir,
+        "grids": manifest.get("grids", []),
+        "simulations": manifest.get("simulations", []),
+    }
+
+
+def _sanitize_dirname(name: str) -> str:
+    """Convert a project name to a safe directory name."""
+    safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name)
+    return safe.strip().replace(" ", "_") or "project"
