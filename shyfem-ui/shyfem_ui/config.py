@@ -148,6 +148,12 @@ class Config(BaseSettings):
         description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])"
     )
 
+    # Static asset caching
+    static_cache_max_age: int = Field(
+        default=86400,
+        description="Cache-Control max-age for static assets in seconds (0 = disabled)"
+    )
+
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:
         """Validate that a user-supplied path is within allowed directories.
 
