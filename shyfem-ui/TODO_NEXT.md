@@ -323,22 +323,26 @@
 
 ## Phase 32: STR Template Library Expansion
 
-> Only 3 simulation templates exist. SHYFEM supports many more scenarios.
+> Expanded template library covering all major SHYFEM simulation scenarios (9 total). 32 tests.
 
-- [ ] **32.1** Add Wind-Driven Circulation template
-  - Pre-filled: wind forcing, Coriolis, constant depth, 2D barotropic
+- [x] **32.1** Enhance Wind-Driven Circulation template — added Coriolis, Smagorinsky
+  - Was minimal (wind file only). Now has `icor=1`, `idhtyp=2`, `dlat=45`
 
-- [ ] **32.2** Add Tidal Estuary template
-  - Pre-filled: tidal boundary, river inflow, salinity transport, 3D baroclinic
+- [x] **32.2** Add Tidal Estuary template (3D) — new `tidal_estuary`
+  - 3D baroclinic with salinity, GOTM turbulence, tidal + river boundaries
+  - Separate from existing basic `tidal` (which stays 2D)
 
-- [ ] **32.3** Add Sediment Transport template
-  - Pre-filled: sediment module, settling velocity, erosion/deposition params
+- [x] **32.3** Add Sediment Transport template — new `sediment_transport`
+  - Simple sedi module (`issedi=1`) with 3D setup
+  - Commented `$sedtr` section for advanced full-module usage
 
-- [ ] **32.4** Add Water Quality template
-  - Pre-filled: oxygen, nutrients, temperature, biological modules
+- [x] **32.4** Add Water Quality template — new `water_quality`
+  - WASP/EUTRO 9-variable model (`ibio=1`), 3D baroclinic, heat flux
+  - Bio boundary/initial condition file references
 
-- [ ] **32.5** Add Storm Surge template
-  - Pre-filled: atmospheric pressure, wind fields, wetting/drying, high resolution
+- [x] **32.5** Add Storm Surge template — new `storm_surge`
+  - 2D barotropic, `idt=60s`, Wu drag (`itdrag=2`), wetting/drying
+  - Coriolis, optional spherical coords, atmospheric pressure
 
 ---
 
