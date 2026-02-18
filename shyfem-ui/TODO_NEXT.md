@@ -348,19 +348,20 @@
 
 ## Phase 33: Project Import/Export
 
-> No way to share simulation setups between users or back up projects.
+> Export, import, and clone projects for sharing and backup. 21 tests.
 
-- [ ] **33.1** Add "Export Project" button to Dashboard
-  - ZIP archive containing: work_dir files, project metadata JSON,
-    grid and simulation records, job history summary
+- [x] **33.1** Add "Export Project" button to Dashboard — 7 tests
+  - ZIP archive with work_dir files + `manifest.json` (project/grid/sim metadata)
+  - Excludes job logs (`.stdout`, `.stderr`); downloads via data URI
 
-- [ ] **33.2** Add "Import Project" handler
-  - Upload ZIP, extract to work_dir, create DB records from metadata JSON
-  - Validate paths and file integrity before importing
+- [x] **33.2** Add "Import Project" handler — 8 tests
+  - Upload ZIP, validate manifest, reject path traversal, extract to work_dir
+  - Creates Project, Grid, Simulation DB records from manifest
+  - Handles name collisions by appending timestamp
 
-- [ ] **33.3** Add project clone functionality
-  - "Clone Project" button that duplicates work_dir and DB records
-  - Useful for parameter variations without re-uploading files
+- [x] **33.3** Add project clone functionality — 6 tests
+  - `shutil.copytree()` with log exclusion, new DB records
+  - Default name: "Original (Copy)"
 
 ---
 
