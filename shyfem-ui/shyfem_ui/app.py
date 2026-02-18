@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import ipaddress
+import json
 import logging
 import time
 from collections import defaultdict
@@ -328,6 +329,72 @@ class CacheHeaderMiddleware:
                 await result
 
         return await self.app(scope, receive, send_with_cache)
+
+
+class HealthCheckMiddleware:
+    """ASGI middleware that serves a /health JSON endpoint.
+
+    Placed as the outermost middleware so it bypasses auth and rate limiting.
+    """
+
+    def __init__(self, app, db_check=None, job_queue=None):
+        self.app = app
+        self._start_time = time.monotonic()
+        self._db_check = db_check
+        self._job_queue = job_queue
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        if scope.get("path") != "/health" or scope.get("method", "GET") != "GET":
+            return await self.app(scope, receive, send)
+
+        from shyfem_ui import __version__
+
+        # Probe database
+        db_ok = True
+        try:
+            if self._db_check:
+                self._db_check()
+        except Exception:
+            db_ok = False
+
+        # Probe job queue
+        active_jobs = -1
+        queue_ok = True
+        try:
+            active_jobs = getattr(self._job_queue, "active_job_count", -1)
+            if callable(active_jobs):
+                active_jobs = active_jobs()
+        except Exception:
+            active_jobs = -1
+            queue_ok = False
+
+        status = "ok" if db_ok and queue_ok else "degraded"
+
+        payload = {
+            "status": status,
+            "version": __version__,
+            "uptime_seconds": round(time.monotonic() - self._start_time, 1),
+            "database": "ok" if db_ok else "error",
+            "active_jobs": active_jobs,
+        }
+
+        body = json.dumps(payload).encode()
+        result = send({
+            "type": "http.response.start",
+            "status": 200,
+            "headers": [
+                [b"content-type", b"application/json"],
+                [b"content-length", str(len(body)).encode()],
+            ],
+        })
+        if result is not None:
+            await result
+        result = send({"type": "http.response.body", "body": body})
+        if result is not None:
+            await result
 
 
 _HEAD_EXTRAS = ui.TagList(
