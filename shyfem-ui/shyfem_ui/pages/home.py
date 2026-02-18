@@ -2,6 +2,7 @@
 
 import shutil
 from datetime import datetime
+from io import BytesIO
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
@@ -78,6 +79,11 @@ def home_ui():
                     ui.input_action_button(
                         "import_grid_btn",
                         "Import Grid",
+                        class_="btn-outline-secondary w-100 mb-2",
+                    ),
+                    ui.input_action_button(
+                        "import_project_btn",
+                        "Import Project",
                         class_="btn-outline-secondary w-100 mb-2",
                     ),
                     ui.hr(),
@@ -262,6 +268,18 @@ def home_server(
                         p["updated_at"].strftime("%Y-%m-%d %H:%M")
                         if p["updated_at"] else "-"
                     ),
+                    ui.tags.td(
+                        ui.input_action_link(
+                            f"export_{p['id']}",
+                            "Export",
+                            class_="btn btn-sm btn-outline-secondary me-1",
+                        ),
+                        ui.input_action_link(
+                            f"clone_{p['id']}",
+                            "Clone",
+                            class_="btn btn-sm btn-outline-secondary",
+                        ),
+                    ),
                 )
             )
 
@@ -272,6 +290,7 @@ def home_server(
                     ui.tags.th("Description"),
                     ui.tags.th("Directory"),
                     ui.tags.th("Last Updated"),
+                    ui.tags.th("Actions"),
                 )
             ),
             ui.tags.tbody(*rows),
@@ -674,6 +693,257 @@ def home_server(
             _refresh_projects()
         except Exception as e:
             ui.notification_show(f"Failed to create grid record: {e}", type="error")
+
+    # --- Export/Import/Clone project handlers ---
+
+    def _safe_filename(name: str) -> str:
+        return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
+
+    @reactive.effect
+    def _register_export_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_export_handler(p["id"], p["name"])
+
+    def _make_export_handler(pid: int, pname: str):
+        @reactive.effect
+        @reactive.event(input[f"export_{pid}"])
+        async def _export():
+            await _do_export(pid, pname)
+
+    async def _do_export(project_id: int, project_name: str):
+        """Export a project as ZIP and trigger browser download."""
+        import base64
+        from shyfem_ui.services.project_context import load_project_context
+        from shyfem_ui.services.project_export import export_project
+
+        ctx = load_project_context(project_id)
+        if ctx is None:
+            ui.notification_show("Project not found", type="error")
+            return
+
+        work_dir = Path(ctx["work_dir"])
+        if not work_dir.is_dir():
+            ui.notification_show("Project directory not found", type="error")
+            return
+
+        meta = {
+            "name": ctx["name"],
+            "description": ctx.get("description"),
+            "grids": ctx.get("grids", []),
+            "simulations": ctx.get("simulations", []),
+        }
+
+        try:
+            zip_buf = export_project(work_dir, meta)
+            b64 = base64.b64encode(zip_buf.read()).decode("ascii")
+            filename = f"{_safe_filename(project_name)}.zip"
+            js = (
+                f"var a=document.createElement('a');"
+                f"a.href='data:application/zip;base64,{b64}';"
+                f"a.download='{filename}';"
+                f"a.click();"
+            )
+            await session.send_custom_message("eval_js", js)
+            ui.notification_show(f"Exported '{project_name}'", type="message")
+        except Exception as e:
+            ui.notification_show(f"Export failed: {e}", type="error")
+
+    @reactive.effect
+    def _register_clone_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_clone_handler(p["id"], p["name"])
+
+    def _make_clone_handler(pid: int, pname: str):
+        @reactive.effect
+        @reactive.event(input[f"clone_{pid}"])
+        def _clone():
+            _do_clone(pid, pname)
+
+    def _do_clone(project_id: int, project_name: str):
+        """Clone a project."""
+        from shyfem_ui.services.project_context import load_project_context
+        from shyfem_ui.services.project_export import clone_project
+
+        ctx = load_project_context(project_id)
+        if ctx is None:
+            ui.notification_show("Project not found", type="error")
+            return
+
+        work_dir = Path(ctx["work_dir"])
+        if not work_dir.is_dir():
+            ui.notification_show("Project directory not found", type="error")
+            return
+
+        meta = {
+            "name": ctx["name"],
+            "description": ctx.get("description"),
+            "grids": ctx.get("grids", []),
+            "simulations": ctx.get("simulations", []),
+        }
+
+        try:
+            result = clone_project(work_dir, meta, config.work_dir)
+        except Exception as e:
+            ui.notification_show(f"Clone failed: {e}", type="error")
+            return
+
+        try:
+            with db_session() as db:
+                project = Project(
+                    name=result["name"],
+                    description=result.get("description"),
+                    work_dir=str(result["work_dir"]),
+                )
+                db.add(project)
+                db.flush()
+
+                grid_name_to_id = {}
+                for g in result.get("grids", []):
+                    grid = Grid(
+                        project_id=project.id,
+                        name=g["name"],
+                        description=g.get("description"),
+                        grd_file=g.get("grd_file"),
+                        bas_file=g.get("bas_file"),
+                    )
+                    db.add(grid)
+                    db.flush()
+                    grid_name_to_id[g["name"]] = grid.id
+
+                for s in result.get("simulations", []):
+                    sim = Simulation(
+                        project_id=project.id,
+                        grid_id=grid_name_to_id.get(s.get("grid_name")),
+                        name=s["name"],
+                        description=s.get("description"),
+                        str_file=s.get("str_file"),
+                    )
+                    db.add(sim)
+
+            ui.notification_show(
+                f"Cloned '{project_name}' as '{result['name']}'", type="message"
+            )
+            _refresh_projects()
+
+        except Exception as e:
+            wd = result.get("work_dir")
+            if wd and Path(wd).exists():
+                shutil.rmtree(wd, ignore_errors=True)
+            ui.notification_show(f"Clone failed: {e}", type="error")
+
+    # Import project from ZIP
+    @reactive.effect
+    @reactive.event(input.import_project_btn)
+    def _show_import_project_modal():
+        m = ui.modal(
+            ui.p("Upload a project ZIP archive (exported from SHYFEM UI)."),
+            ui.input_file(
+                "import_zip_file",
+                "Select ZIP file",
+                accept=[".zip"],
+                multiple=False,
+            ),
+            title="Import Project",
+            easy_close=True,
+            footer=ui.div(
+                ui.input_action_button(
+                    "confirm_import_project_btn",
+                    "Import",
+                    class_="btn-primary",
+                ),
+                ui.input_action_button(
+                    "cancel_import_project_btn",
+                    "Cancel",
+                    class_="btn-secondary ms-2",
+                ),
+            ),
+        )
+        ui.modal_show(m)
+
+    @reactive.effect
+    @reactive.event(input.cancel_import_project_btn)
+    def _hide_import_project_modal():
+        ui.modal_remove()
+
+    @reactive.effect
+    @reactive.event(input.confirm_import_project_btn)
+    def _do_import_project():
+        file_info = input.import_zip_file()
+        if not file_info:
+            ui.notification_show("No file selected", type="error")
+            return
+
+        file_path = file_info[0]["datapath"]
+
+        from shyfem_ui.services.project_export import import_project
+
+        try:
+            with open(file_path, "rb") as f:
+                zip_data = BytesIO(f.read())
+            result = import_project(zip_data, config.work_dir)
+        except ValueError as e:
+            ui.notification_show(f"Import failed: {e}", type="error")
+            return
+        except Exception as e:
+            ui.notification_show(f"Import failed: {e}", type="error")
+            return
+
+        try:
+            with db_session() as db:
+                project = Project(
+                    name=result["name"],
+                    description=result.get("description"),
+                    work_dir=str(result["work_dir"]),
+                )
+                db.add(project)
+                db.flush()
+
+                grid_name_to_id = {}
+                for g in result.get("grids", []):
+                    grid = Grid(
+                        project_id=project.id,
+                        name=g["name"],
+                        description=g.get("description"),
+                        grd_file=g.get("grd_file"),
+                        bas_file=g.get("bas_file"),
+                        num_nodes=g.get("num_nodes"),
+                        num_elements=g.get("num_elements"),
+                        num_layers=g.get("num_layers"),
+                        min_depth=g.get("min_depth"),
+                        max_depth=g.get("max_depth"),
+                    )
+                    db.add(grid)
+                    db.flush()
+                    grid_name_to_id[g["name"]] = grid.id
+
+                for s in result.get("simulations", []):
+                    sim = Simulation(
+                        project_id=project.id,
+                        grid_id=grid_name_to_id.get(s.get("grid_name")),
+                        name=s["name"],
+                        description=s.get("description"),
+                        str_file=s.get("str_file"),
+                        start_time=s.get("start_time"),
+                        end_time=s.get("end_time"),
+                        time_step=s.get("time_step"),
+                        mpi_enabled=s.get("mpi_enabled", False),
+                        mpi_np=s.get("mpi_np", 1),
+                    )
+                    db.add(sim)
+
+            ui.notification_show(
+                f"Imported project '{result['name']}'", type="message"
+            )
+            ui.modal_remove()
+            _refresh_projects()
+
+        except Exception as e:
+            wd = result.get("work_dir")
+            if wd and Path(wd).exists():
+                shutil.rmtree(wd, ignore_errors=True)
+            ui.notification_show(f"Import failed: {e}", type="error")
 
     return {
         "projects": projects,
