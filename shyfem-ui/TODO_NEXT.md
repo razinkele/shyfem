@@ -305,22 +305,19 @@
 
 ## Phase 31: Health & Monitoring
 
-> No way to check if the app is healthy or monitor performance in production.
+> Health check endpoint for load balancers and uptime monitoring.
 
-- [ ] **31.1** Add `/health` HTTP endpoint
-  - Bypass auth middleware. Return JSON: `{"status": "ok", "version": "0.1.0",
-    "uptime_seconds": N, "database": "ok|error", "queue_depth": N}`
-  - Implement as ASGI middleware that intercepts `/health` path
+- [x] **31.1** Add `/health` HTTP endpoint — 10 tests
+  - `HealthCheckMiddleware` as outermost ASGI wrapper (bypasses auth + rate limit)
+  - Returns JSON: status, version, uptime_seconds, database, active_jobs
+  - `"ok"` when healthy, `"degraded"` when DB or queue has errors
+  - DB probe via `SELECT 1`, job count via `active_job_count` property
 
-- [ ] **31.2** Add structured JSON logging
-  - `SHYFEM_UI_LOG_FORMAT=json` config option
-  - Use `python-json-logger` or custom formatter
-  - Fields: timestamp, level, logger, message, extra context
+- [x] **31.2** ~~Add structured JSON logging~~ — SKIPPED
+  - Low priority. stdlib logging adequate for current usage.
 
-- [ ] **31.3** Add `/metrics` Prometheus endpoint
-  - Server mode only. Expose: requests_total, request_duration_seconds,
-    active_websocket_connections, job_queue_depth, job_status_counts
-  - Use `prometheus_client` library (optional dependency)
+- [x] **31.3** ~~Add `/metrics` Prometheus endpoint~~ — SKIPPED
+  - Adds `prometheus_client` dependency and significant instrumentation. Low ROI.
 
 ---
 
