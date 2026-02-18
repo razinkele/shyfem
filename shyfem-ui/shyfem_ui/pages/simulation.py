@@ -81,10 +81,14 @@ def simulation_ui():
                         "": "Select template...",
                         "basic_2d": "Basic 2D Simulation",
                         "basic_3d": "Basic 3D Simulation",
-                        "wind_driven": "Wind-driven Flow",
+                        "wind_driven": "Wind-Driven Circulation",
                         "tidal": "Tidal Simulation",
+                        "tidal_estuary": "Tidal Estuary (3D)",
                         "baroclinic": "Baroclinic (T/S)",
                         "lagrangian": "Lagrangian Tracking",
+                        "sediment_transport": "Sediment Transport",
+                        "water_quality": "Water Quality (EUTRO)",
+                        "storm_surge": "Storm Surge",
                     },
                 ),
                 ui.output_ui("template_preview"),
@@ -530,11 +534,12 @@ $end
 """,
         "wind_driven": """
 #------------------------------------------------------------------------
-# Wind-driven Flow Simulation Template
+# Wind-Driven Circulation Template
+# 2D barotropic flow with Coriolis and Smagorinsky diffusion
 #------------------------------------------------------------------------
 
 $title
-        Wind-driven Flow
+        Wind-Driven Circulation
         simulation_name
         GRID/grid_name
 $end
@@ -550,6 +555,14 @@ $para
         ilin = 1
         iwtype = 3     dragco = 2.5e-3
         ireib = 5      czdef = 2.5e-3
+
+        ! Coriolis (beta-plane)
+        icor = 1
+        dlat = 45.0
+
+        ! Horizontal diffusion (Smagorinsky)
+        idhtyp = 2
+        ahpar = 1.0
 $end
 
 $extra
@@ -708,6 +721,292 @@ $extra
 $end
 
 $name
+        wind = 'INPUT/wind.txt'
+$end
+""",
+        "tidal_estuary": """
+#------------------------------------------------------------------------
+# Tidal Estuary Template
+# 3D baroclinic with tidal boundary, river inflow, and salinity
+#------------------------------------------------------------------------
+
+$title
+        Tidal Estuary
+        simulation_name
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-10'
+        idt = '300s'
+        idtout = '1h'
+        idtext = '300s'
+        idtcon = '1h'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3     dragco = 2.5e-3
+        ireib = 5      czdef = 2.5e-3
+
+        ! 3D baroclinic mode
+        ibarcl = 1
+        itemp = 1
+        isalt = 1
+        temref = 15.0
+        salref = 35.0
+
+        ! Vertical layers
+        nlv = 10
+
+        ! Turbulence (GOTM)
+        iturb = 1
+        difmol = 1.0e-6
+        vismol = 1.0e-6
+
+        ! Horizontal mixing (Smagorinsky)
+        idhtyp = 2
+        ahpar = 1.0
+        dhpar = 1.0
+
+        ! Coriolis
+        icor = 1
+        dlat = 45.0
+$end
+
+$levels
+        1.0
+        2.0
+        3.0
+        5.0
+        7.0
+        10.0
+        15.0
+        20.0
+        30.0
+        50.0
+$end
+
+$bound
+        ! Open boundary: tidal forcing
+        1  1  1  0.5    ! M2 tidal amplitude [m]
+        ! River inflow boundary
+        ! 2  3  0  100.0  ! Discharge [m3/s], salinity = 0
+$end
+
+$extra
+        1     'estuary mouth'
+        2     'upstream station'
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+        ! bound = 'INPUT/tide.txt'
+        ! saltin = 'INPUT/salt_init.shy'
+$end
+""",
+        "sediment_transport": """
+#------------------------------------------------------------------------
+# Sediment Transport Template
+# 3D with simple sedimentation module
+#------------------------------------------------------------------------
+
+$title
+        Sediment Transport
+        simulation_name
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-05'
+        idt = '300s'
+        idtout = '1h'
+        idtext = '300s'
+        idtcon = '1h'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3     dragco = 2.5e-3
+        ireib = 5      czdef = 2.5e-3
+
+        ! 3D setup
+        nlv = 10
+        ibarcl = 1
+        itemp = 1
+        isalt = 1
+        temref = 15.0
+        salref = 35.0
+
+        ! Turbulence
+        iturb = 1
+        difmol = 1.0e-6
+
+        ! Simple sedimentation module
+        issedi = 1
+
+        ! Horizontal mixing
+        idhtyp = 2
+        ahpar = 1.0
+$end
+
+$levels
+        0.5
+        1.0
+        2.0
+        3.0
+        5.0
+        7.0
+        10.0
+        15.0
+        20.0
+        30.0
+$end
+
+$extra
+        1     'monitoring point'
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+$end
+
+! For full sediment transport, use the $sedtr section instead of issedi:
+! $sedtr
+!         isedi = 1
+!         sedgrs = '0.063 0.125 0.25 0.5'
+!         percin = '0.25 0.25 0.25 0.25'
+! $end
+""",
+        "water_quality": """
+#------------------------------------------------------------------------
+# Water Quality (EUTRO) Template
+# 3D baroclinic with 9-variable eutrophication model
+#------------------------------------------------------------------------
+
+$title
+        Water Quality
+        simulation_name
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-30'
+        idt = '300s'
+        idtout = '1h'
+        idtext = '300s'
+        idtcon = '1h'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3     dragco = 2.5e-3
+        ireib = 5      czdef = 2.5e-3
+
+        ! 3D baroclinic
+        ibarcl = 1
+        itemp = 1
+        isalt = 1
+        temref = 15.0
+        salref = 35.0
+
+        ! Vertical layers
+        nlv = 10
+
+        ! Turbulence
+        iturb = 1
+        difmol = 1.0e-6
+
+        ! Water quality (WASP/EUTRO 9-variable model)
+        ! Variables: NH3, NO3, OPO4, PHYT, CBOD, DO, ON, OP, ZOO
+        ibio = 1
+
+        ! Heat flux for temperature evolution
+        iheat = 1
+
+        ! Horizontal mixing
+        idhtyp = 2
+        ahpar = 1.0
+        dhpar = 1.0
+$end
+
+$levels
+        1.0
+        2.0
+        3.0
+        5.0
+        7.0
+        10.0
+        15.0
+        20.0
+        30.0
+        50.0
+$end
+
+$extra
+        1     'monitoring station'
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+        ! bio2dn = 'INPUT/bio_boundary.txt'
+        ! bioin = 'INPUT/bio_initial.shy'
+$end
+""",
+        "storm_surge": """
+#------------------------------------------------------------------------
+# Storm Surge Template
+# 2D barotropic with wetting/drying and meteorological forcing
+#------------------------------------------------------------------------
+
+$title
+        Storm Surge
+        simulation_name
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-03'
+        idt = '60s'
+        idtout = '30m'
+        idtext = '60s'
+
+        date = 20200101
+
+        ilin = 1
+
+        ! Wind drag (Wu 1982 - speed-dependent)
+        iwtype = 3
+        itdrag = 2
+        wsmax = 60
+
+        ! Bottom friction
+        ireib = 5      czdef = 2.5e-3
+
+        ! Coriolis
+        icor = 1
+        dlat = 45.0
+
+        ! Spherical coordinates (for real-world domains)
+        ! isphe = 1
+
+        ! Wetting and drying
+        hzoff = 0.05
+        hzon = 0.10
+        hzmin = 0.01
+
+        ! Horizontal diffusion
+        idhtyp = 2
+        ahpar = 1.0
+$end
+
+$extra
+        1     'tide gauge 1'
+        2     'tide gauge 2'
+$end
+
+$name
+        ! Wind file with optional atmospheric pressure (3rd column)
         wind = 'INPUT/wind.txt'
 $end
 """,
