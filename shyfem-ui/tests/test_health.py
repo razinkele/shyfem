@@ -138,3 +138,22 @@ class TestHealthCheckMiddleware:
         assert body["status"] == "degraded"
         assert body["database"] == "error"
         assert body["active_jobs"] == -1
+
+
+from shyfem_ui.app import create_app
+from shyfem_ui.config import Config
+
+
+class TestHealthIntegration:
+
+    def test_health_middleware_is_outermost(self):
+        config = Config(shyfem_dir="/tmp/fake")
+        app = create_app(config)
+        # Outermost wrapper should be HealthCheckMiddleware
+        assert isinstance(app, HealthCheckMiddleware)
+
+    def test_health_middleware_has_db_check(self):
+        config = Config(shyfem_dir="/tmp/fake")
+        app = create_app(config)
+        assert app._db_check is not None
+        assert callable(app._db_check)

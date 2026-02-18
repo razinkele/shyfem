@@ -32,6 +32,14 @@ from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 logger = logging.getLogger(__name__)
 
 
+def _check_db_health():
+    """Probe database with SELECT 1."""
+    from sqlalchemy import text
+    from shyfem_ui.db.base import get_engine
+    with get_engine().connect() as conn:
+        conn.execute(text("SELECT 1"))
+
+
 def create_app(config: Config | None = None) -> App:
     """Create and return the Shiny application.
 
@@ -92,6 +100,9 @@ def create_app(config: Config | None = None) -> App:
     # Rate limiting (server mode only)
     if config.deployment_mode == "server" and config.rate_limit_rpm > 0:
         app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm, trusted_proxies=config.trusted_proxies)
+
+    # Health check endpoint (outermost — bypasses auth and rate limiting)
+    app = HealthCheckMiddleware(app, db_check=_check_db_health, job_queue=job_queue)
 
     return app
 
