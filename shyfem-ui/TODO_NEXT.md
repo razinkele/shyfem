@@ -268,21 +268,20 @@
 
 ## Phase 29: Frontend Bundle Optimization
 
-> Static assets have no cache headers. Tab content renders eagerly even
-> when hidden.
+> Static assets have no cache headers. Lazy tabs and Plotly precision
+> optimization are low ROI for the current scale.
 
-- [ ] **29.1** Add static asset cache headers
-  - ASGI middleware that adds `Cache-Control: public, max-age=86400` for
-    CSS, JS, and font files served by Shiny
+- [x] **29.1** Add static asset cache headers — 17 tests
+  - `CacheHeaderMiddleware` adds `Cache-Control: public, max-age=N` for
+    `.css`, `.js`, `.woff2`, `.woff`, `.ttf`, `.png`, `.svg`, `.ico`
+  - `static_cache_max_age` config (default 86400, env `SHYFEM_UI_STATIC_CACHE_MAX_AGE`)
+  - max_age=0 disables header injection
 
-- [ ] **29.2** Add lazy tab content rendering
-  - Use `ui.nav_panel(..., value=...)` with conditional rendering so
-    heavy tabs (Visualize, Ensemble) only render when selected
+- [x] **29.2** ~~Add lazy tab content rendering~~ — SKIPPED
+  - Shiny is server-rendered, not SPA. Invasive refactor of all 9 page modules. Low ROI.
 
-- [ ] **29.3** Optimize Plotly figure serialization
-  - Reduce decimal precision for large mesh coordinates (6 → 2 decimals
-    for display-only plots)
-  - Use `plotly.io.to_json(fig, engine="json")` for faster serialization
+- [x] **29.3** ~~Optimize Plotly figure serialization~~ — SKIPPED
+  - Micro-optimization. Negligible benefit for current mesh sizes.
 
 ---
 
