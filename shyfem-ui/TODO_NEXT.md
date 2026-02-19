@@ -365,6 +365,79 @@
 
 ---
 
+## Phase 34: STR Validation Engine Tests
+
+> Zero-coverage pure functions in `str_editor.py` — validate_str_content(), _check_range(),
+> generate_section_template(), get_parameter_help(). 45 tests.
+
+- [x] **34.1** Add structural validation tests — 6 tests
+  - Missing $end, extra $end, missing $para, missing $title, valid minimal STR
+
+- [x] **34.2** Add timing validation tests — 6 tests
+  - Missing itanf/itend/idt, itanf >= itend, idt <= 0
+
+- [x] **34.3** Add depth/range/unknown param tests — 4 tests
+  - hzmin >= hzoff, unknown param warning, idt/itm prefix exceptions
+
+- [x] **34.4** Add file existence tests — 3 tests
+  - check_files=True with missing/existing files, check_files=False
+
+- [x] **34.5** Add _check_range unit tests — 12 tests
+  - [0,1] range boundaries, >0, >=0, non-matching options
+
+- [x] **34.6** Add generate_section_template tests — 7 tests (5 parametrized)
+  - Known sections, unknown section generic, para timing params
+
+- [x] **34.7** Add get_parameter_help tests — 7 tests
+  - Known param (with units/default/options), unknown param/section, name section
+
+---
+
+## Phase 35: Boundary Editor & Home Helper Tests
+
+> Extract pure functions from Shiny reactive closures, then test. 30 tests.
+
+- [x] **35.1** Extract `_safe_filename` to module level in `home.py`
+  - Moved from closure inside `home_server()` to module-level function
+
+- [x] **35.2** Extract `generate_bound_text()` and `parse_boundary_csv()` from `boundary_editor.py`
+  - Pure logic extracted from reactive effects, call sites updated
+
+- [x] **35.3** Add generate_bound_text tests — 11 tests
+  - Empty, single boundary, boundn/zfact/intpol inclusion/omission, multiple boundaries
+
+- [x] **35.4** Add parse_boundary_csv tests — 10 tests
+  - Two/five columns, comments, blanks, single column skip, start_id, defaults, invalid data
+
+- [x] **35.5** Add _safe_filename tests — 9 tests
+  - Normal name, special chars, unicode, hyphens, spaces, empty, long name
+
+---
+
+## Phase 36: CeleryJobQueue Mock Tests
+
+> Production job queue backend with zero unit tests. 26 tests with mocked Redis/Celery.
+
+- [x] **36.1** Add Redis helper tests — 3 tests
+  - _store_job_info calls hset+zadd, _load_job_info returns/None
+
+- [x] **36.2** Add submit tests — 4 tests
+  - Returns job ID, dispatches apply_async, stores twice in Redis, MPI metadata
+
+- [x] **36.3** Add cancel tests — 3 tests
+  - Active→True+revoke, completed→False, nonexistent→False
+
+- [x] **36.4** Add get_status/list_jobs tests — 7 tests
+  - Existing/nonexistent status, empty/multiple/filter/limit list
+
+- [x] **36.5** Add get_output tests — 3 tests
+  - Nonexistent job, no file, has file with tail_file
+
+- [x] **36.6** Add health_check/cleanup tests — 6 tests
+  - Redis OK/down, active tasks, old inactive removed, active skipped, empty
+
+---
+
 ## Implementation Priority
 
 ```
