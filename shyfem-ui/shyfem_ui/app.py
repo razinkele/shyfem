@@ -25,6 +25,7 @@ from shyfem_ui.pages import (
     postprocess,
     run,
     simulation,
+    tutorial,
     visualize,
 )
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
@@ -409,6 +410,11 @@ class HealthCheckMiddleware:
 
 
 _HEAD_EXTRAS = ui.TagList(
+    # Bootstrap Icons
+    ui.tags.link(
+        rel="stylesheet",
+        href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
+    ),
     # WebSocket reconnection with exponential backoff
     ui.tags.script("""
 (function() {
@@ -471,6 +477,7 @@ def _build_ui(config: Config) -> ui.Tag:
         ui.busy_indicators.use(spinners=True, pulse=True),
         ui.navset_tab(
             ui.nav_panel("Dashboard", home.home_ui("home")),
+            ui.nav_panel("Tutorial", tutorial.tutorial_ui("tutorial")),
             ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
             ui.nav_panel("Partitioning", partitioning.partitioning_ui("partitioning")),
             ui.nav_panel("Simulation", simulation.simulation_ui("simulation")),
@@ -522,6 +529,7 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     # Initialize page servers
     home.home_server("home", config, job_queue,
                      active_project=active_project, nav_callback=nav_to)
+    tutorial.tutorial_server("tutorial", config, active_project=active_project, nav_callback=nav_to)
     grid_prep.grid_prep_server("grid_prep", config, active_project=active_project)
     partitioning.partitioning_server("partitioning", config, active_project=active_project)
     simulation.simulation_server("simulation", config, active_project=active_project)

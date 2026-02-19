@@ -210,12 +210,12 @@ def home_server(
 
         for tool in tools:
             available = wrapper.check_available(tool)
-            icon = "check-circle" if available else "x-circle"
+            icon_cls = "bi-check-circle-fill" if available else "bi-x-circle-fill"
             color = "text-success" if available else "text-danger"
             tool_status.append(
                 ui.div(
                     ui.span(tool, class_="me-2"),
-                    ui.span(icon, class_=f"{color}"),
+                    ui.tags.i(class_=f"bi {icon_cls} {color}"),
                     class_="d-flex justify-content-between",
                 )
             )
@@ -517,6 +517,8 @@ def home_server(
             )
             ui.modal_remove()
             _refresh_projects()
+            if nav_callback:
+                nav_callback("Tutorial")
 
         except Exception as e:
             # Clean up copied directory on DB failure

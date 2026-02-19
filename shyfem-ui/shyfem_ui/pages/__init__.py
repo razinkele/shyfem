@@ -16,6 +16,7 @@ __all__ = [
     "visualize",
     "compare",
     "ensemble",
+    "tutorial",
 ]
 
 _modules: dict = {}
