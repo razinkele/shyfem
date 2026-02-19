@@ -47,6 +47,21 @@ TUTORIAL_PHASES = [
 ]
 
 
+def _safe_filename(name: str) -> str:
+    """Sanitize a project name for use as a filename.
+
+    Replaces non-alphanumeric characters (except hyphens, underscores, and
+    spaces) with underscores and strips leading/trailing whitespace.
+
+    Args:
+        name: Raw project name string.
+
+    Returns:
+        Sanitized string safe for use in filenames.
+    """
+    return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
+
+
 @module.ui
 def home_ui():
     """Dashboard page UI."""
@@ -695,9 +710,6 @@ def home_server(
             ui.notification_show(f"Failed to create grid record: {e}", type="error")
 
     # --- Export/Import/Clone project handlers ---
-
-    def _safe_filename(name: str) -> str:
-        return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
 
     @reactive.effect
     def _register_export_handlers():

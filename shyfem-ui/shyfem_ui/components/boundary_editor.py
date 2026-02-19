@@ -15,6 +15,75 @@ from shiny import module, reactive, render, ui
 from shyfem_ui.services.parser_str import StrFile
 
 
+def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
+    """Parse CSV text into boundary definitions.
+
+    CSV format: nodes,ibtyp[,boundn][,zfact][,intpol]
+    Lines starting with # are comments. Blank lines are skipped.
+    Minimum 2 columns required (nodes + ibtyp).
+
+    Args:
+        csv_text: Raw CSV text
+        start_id: Starting boundary ID
+
+    Returns:
+        List of boundary dicts with keys: id, label, nodes, ibtyp, boundn, zfact, intpol
+    """
+    imported = []
+    bid = start_id
+    for line in csv_text.strip().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) < 2:
+            continue
+        entry = {
+            "id": bid,
+            "label": f"bound{bid}",
+            "nodes": parts[0],
+            "ibtyp": int(parts[1]) if len(parts) > 1 else 1,
+            "boundn": parts[2] if len(parts) > 2 else "",
+            "zfact": float(parts[3]) if len(parts) > 3 else 1.0,
+            "intpol": int(parts[4]) if len(parts) > 4 else 1,
+        }
+        imported.append(entry)
+        bid += 1
+
+    return imported
+
+
+def generate_bound_text(boundaries: list[dict]) -> str:
+    """Generate $bound section text from boundary definitions.
+
+    Args:
+        boundaries: List of dicts with keys: label, nodes, ibtyp, boundn, zfact, intpol
+
+    Returns:
+        Multi-line string with $bound sections
+    """
+    if not boundaries:
+        return "! No boundaries defined"
+
+    lines = []
+    for b in boundaries:
+        section_name = b["label"]
+        lines.append(f"${section_name}")
+        if b.get("nodes"):
+            lines.append(f"        kbound = {b['nodes']}")
+        lines.append(f"        ibtyp = {b['ibtyp']}")
+        if b.get("boundn"):
+            lines.append(f"        boundn = '{b['boundn']}'")
+        if b.get("zfact", 1.0) != 1.0:
+            lines.append(f"        zfact = {b['zfact']}")
+        if b.get("intpol", 1) != 1:
+            lines.append(f"        intpol = {b['intpol']}")
+        lines.append("$end")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 @module.ui
 def boundary_editor_ui():
     """Boundary editor component UI."""
@@ -143,32 +212,13 @@ def boundary_editor_server(
             ui.notification_show("No CSV data provided", type="warning")
             return
 
-        imported = []
-        bid = _next_id.get()
-        for line in csv_text.strip().splitlines():
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-            parts = [p.strip() for p in line.split(",")]
-            if len(parts) < 2:
-                continue
-            entry = {
-                "id": bid,
-                "label": f"bound{bid}",
-                "nodes": parts[0],
-                "ibtyp": int(parts[1]) if len(parts) > 1 else 1,
-                "boundn": parts[2] if len(parts) > 2 else "",
-                "zfact": float(parts[3]) if len(parts) > 3 else 1.0,
-                "intpol": int(parts[4]) if len(parts) > 4 else 1,
-            }
-            imported.append(entry)
-            bid += 1
+        imported = parse_boundary_csv(csv_text, _next_id.get())
 
         if imported:
             current = boundaries.get()
             current.extend(imported)
             boundaries.set(current)
-            _next_id.set(bid)
+            _next_id.set(imported[-1]["id"] + 1)
             show_csv_import.set(False)
             ui.notification_show(f"Imported {len(imported)} boundaries", type="message")
         else:
@@ -202,24 +252,7 @@ def boundary_editor_server(
 
         boundaries.set(updated)
 
-        # Generate $bound section text
-        lines = []
-        for b in updated:
-            section_name = b["label"]
-            lines.append(f"${section_name}")
-            if b["nodes"]:
-                lines.append(f"        kbound = {b['nodes']}")
-            lines.append(f"        ibtyp = {b['ibtyp']}")
-            if b["boundn"]:
-                lines.append(f"        boundn = '{b['boundn']}'")
-            if b["zfact"] != 1.0:
-                lines.append(f"        zfact = {b['zfact']}")
-            if b["intpol"] != 1:
-                lines.append(f"        intpol = {b['intpol']}")
-            lines.append("$end")
-            lines.append("")
-
-        text = "\n".join(lines)
+        text = generate_bound_text(updated)
         generated_text.set(text)
 
         if on_boundaries_changed:
