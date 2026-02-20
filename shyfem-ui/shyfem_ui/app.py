@@ -85,10 +85,6 @@ def create_app(config: Config | None = None) -> App:
     if config.static_cache_max_age > 0:
         app = CacheHeaderMiddleware(app, max_age=config.static_cache_max_age)
 
-    # Debug: wrap with WebSocket logging middleware (only when debug=True)
-    if config.debug:
-        app = _WsDebugMiddleware(app)
-
     # Wrap with basic auth middleware in server mode
     if config.auth_enabled and config.auth_password:
         app = BasicAuthMiddleware(app, config.auth_username, config.auth_password)
@@ -107,42 +103,6 @@ def create_app(config: Config | None = None) -> App:
     app = HealthCheckMiddleware(app, db_check=_check_db_health, job_queue=job_queue)
 
     return app
-
-
-class _WsDebugMiddleware:
-    """Temporary ASGI middleware to debug WebSocket messages."""
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "websocket":
-            logger.debug("WebSocket connection: path=%s", scope.get("path"))
-            msg_count = 0
-
-            async def debug_receive():
-                nonlocal msg_count
-                msg = await receive()
-                msg_count += 1
-                msg_type = msg.get("type", "unknown")
-                if msg_type == "websocket.receive":
-                    text = msg.get("text", "")
-                    logger.debug("WS recv #%d: %s", msg_count, text[:300])
-                else:
-                    logger.debug("WS recv #%d: type=%s", msg_count, msg_type)
-                return msg
-
-            async def debug_send(msg):
-                msg_type = msg.get("type", "unknown")
-                if msg_type == "websocket.send":
-                    text = msg.get("text", "")
-                    logger.debug("WS send: %s", text[:300])
-                else:
-                    logger.debug("WS send: type=%s", msg_type)
-                return await send(msg)
-
-            return await self.app(scope, debug_receive, debug_send)
-        return await self.app(scope, receive, send)
 
 
 class BasicAuthMiddleware:
@@ -269,12 +229,31 @@ def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
 class RateLimitMiddleware:
     """ASGI middleware that enforces per-client request rate limits."""
 
-    def __init__(self, app, rpm: int = 120, trusted_proxies: list[str] | None = None):
+    def __init__(self, app, rpm: int = 120, trusted_proxies: list[str] | None = None,
+                 max_clients: int = 10000):
         self.app = app
         self.rpm = rpm
         self.trusted_proxies = trusted_proxies or []
         self._window = 60.0  # 1 minute sliding window
         self._requests: dict[str, list[float]] = defaultdict(list)
+        self._max_clients = max_clients
+
+    def _prune_clients(self, now: float):
+        """Evict stale client entries when dict exceeds max_clients."""
+        if len(self._requests) <= self._max_clients:
+            return
+        cutoff = now - self._window
+        # First pass: remove clients with no recent timestamps
+        stale = [k for k, v in self._requests.items() if not v or v[-1] <= cutoff]
+        for k in stale:
+            del self._requests[k]
+        if len(self._requests) <= self._max_clients:
+            return
+        # Second pass: evict least-recently-active (oldest max timestamp)
+        by_recency = sorted(self._requests.items(), key=lambda kv: kv[1][-1] if kv[1] else 0)
+        to_remove = len(self._requests) - self._max_clients
+        for k, _ in by_recency[:to_remove]:
+            del self._requests[k]
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
@@ -282,6 +261,8 @@ class RateLimitMiddleware:
 
         client_key = get_client_ip(scope, self.trusted_proxies)
         now = time.monotonic()
+
+        self._prune_clients(now)
 
         # Prune old entries outside the window
         timestamps = self._requests[client_key]
