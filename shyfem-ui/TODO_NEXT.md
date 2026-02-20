@@ -438,6 +438,26 @@
 
 ---
 
+## Phase 37: STR Parameter Search
+
+> Search/filter box in the STR editor form view. Filters parameters across
+> all sections by name or description with match highlighting.
+
+- [x] **37.1** Add `filter_sections()` pure function — 11 tests
+  - Case-insensitive substring match on param name + description
+  - Unknown params matched by name only, standalone entries skipped
+  - Returns `None` for empty search (show all), `{}` for no matches
+
+- [x] **37.2** Add search input to form panel UI
+  - Text input with placeholder, match count badge
+  - Non-matching sections hidden, matching param labels highlighted
+  - Empty results show "No matching parameters" message
+
+- [x] **37.3** Wire search reactively in `str_editor_server`
+  - `input.param_search()` → `filter_sections()` → `_build_form_panel(search_filter=...)`
+
+---
+
 ## Implementation Priority
 
 ```
