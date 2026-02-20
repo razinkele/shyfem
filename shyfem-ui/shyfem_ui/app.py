@@ -34,12 +34,14 @@ from shyfem_ui.services.notification_service import NotificationService
 logger = logging.getLogger(__name__)
 
 
-def _check_db_health():
-    """Probe database with SELECT 1."""
+def _check_db_health() -> float:
+    """Probe database with SELECT 1, return response time in ms."""
     from sqlalchemy import text
     from shyfem_ui.db.base import get_engine
+    start = time.monotonic()
     with get_engine().connect() as conn:
         conn.execute(text("SELECT 1"))
+    return round((time.monotonic() - start) * 1000, 1)
 
 
 def create_app(config: Config | None = None) -> App:
@@ -98,6 +100,10 @@ def create_app(config: Config | None = None) -> App:
     # Rate limiting (server mode only)
     if config.deployment_mode == "server" and config.rate_limit_rpm > 0:
         app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm, trusted_proxies=config.trusted_proxies)
+
+    # Request ID correlation
+    from shyfem_ui.middleware.request_id import RequestIdMiddleware
+    app = RequestIdMiddleware(app)
 
     # Health check endpoint (outermost — bypasses auth and rate limiting)
     app = HealthCheckMiddleware(app, db_check=_check_db_health, job_queue=job_queue)
@@ -348,9 +354,12 @@ class HealthCheckMiddleware:
 
         # Probe database
         db_ok = True
+        db_response_time_ms = -1.0
         try:
             if self._db_check:
-                self._db_check()
+                result = self._db_check()
+                if isinstance(result, (int, float)):
+                    db_response_time_ms = result
         except Exception:
             db_ok = False
 
@@ -365,6 +374,21 @@ class HealthCheckMiddleware:
             active_jobs = -1
             queue_ok = False
 
+        # Queue depth and worker count
+        queue_depth = -1
+        try:
+            qd = getattr(self._job_queue, "active_job_count", -1)
+            queue_depth = qd() if callable(qd) else qd
+        except Exception:
+            queue_depth = -1
+
+        worker_count = -1
+        try:
+            wc = getattr(self._job_queue, "max_workers", -1)
+            worker_count = wc() if callable(wc) else wc
+        except Exception:
+            worker_count = -1
+
         status = "ok" if db_ok and queue_ok else "degraded"
 
         payload = {
@@ -372,7 +396,10 @@ class HealthCheckMiddleware:
             "version": __version__,
             "uptime_seconds": round(time.monotonic() - self._start_time, 1),
             "database": "ok" if db_ok else "error",
+            "db_response_time_ms": db_response_time_ms,
             "active_jobs": active_jobs,
+            "queue_depth": queue_depth,
+            "worker_count": worker_count,
         }
 
         body = json.dumps(payload).encode()
@@ -655,7 +682,13 @@ Environment variables (can be used instead of arguments):
     port = args.port or config.port
 
     # Create and run app
-    logging.basicConfig(level=logging.DEBUG if config.debug else logging.INFO)
+    from shyfem_ui.middleware.request_id import RequestIdFilter
+    logging.basicConfig(
+        level=logging.DEBUG if config.debug else logging.INFO,
+        format="%(asctime)s [%(name)s] [%(request_id)s] %(levelname)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    logging.getLogger().addFilter(RequestIdFilter())
     logger.info("Starting SHYFEM Workbench...")
     logger.info("  Mode: %s", config.deployment_mode)
     logger.info("  SHYFEM Dir: %s", config.shyfem_dir)

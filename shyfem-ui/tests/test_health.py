@@ -37,18 +37,21 @@ async def _mock_app(scope, receive, send):
 
 
 def _mock_db_check_ok():
-    return True
+    return 1.5  # simulated 1.5ms response time
 
 
 def _mock_db_check_fail():
     raise RuntimeError("DB down")
 
 
-def _mock_job_queue(active=3):
+def _mock_job_queue(active=3, workers=4):
     class Q:
         @property
         def active_job_count(self):
             return active
+        @property
+        def max_workers(self):
+            return workers
     return Q()
 
 
@@ -71,6 +74,9 @@ class TestHealthCheckMiddleware:
         assert body["version"] == "0.1.0"
         assert body["database"] == "ok"
         assert body["active_jobs"] == 3
+        assert body["db_response_time_ms"] == 1.5
+        assert body["queue_depth"] == 3
+        assert body["worker_count"] == 4
         assert "uptime_seconds" in body
 
     @pytest.mark.asyncio
@@ -138,6 +144,32 @@ class TestHealthCheckMiddleware:
         assert body["status"] == "degraded"
         assert body["database"] == "error"
         assert body["active_jobs"] == -1
+
+    @pytest.mark.asyncio
+    async def test_health_db_error_response_time_minus_one(self):
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_fail, job_queue=_mock_job_queue())
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        body = json.loads(sent[1]["body"])
+        assert body["database"] == "error"
+        assert body["db_response_time_ms"] == -1.0
+
+    @pytest.mark.asyncio
+    async def test_health_queue_depth_matches_active_jobs(self):
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_ok, job_queue=_mock_job_queue(active=5))
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        body = json.loads(sent[1]["body"])
+        assert body["queue_depth"] == body["active_jobs"]
+        assert body["queue_depth"] == 5
+
+    @pytest.mark.asyncio
+    async def test_health_worker_count_present(self):
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_ok, job_queue=_mock_job_queue(workers=8))
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        body = json.loads(sent[1]["body"])
+        assert body["worker_count"] == 8
 
 
 from shyfem_ui.app import create_app
