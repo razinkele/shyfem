@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from shyfem_ui.pages.compare import _compute_param_diff, _load_ts
+from shyfem_ui.pages.compare import _compute_param_diff, _extract_str_choices, _load_ts
 from shyfem_ui.services.parser_str import StrFile, StrSection
 
 
@@ -156,3 +156,95 @@ def test_load_ts_empty_file(tmp_path):
     f.write_text("")
     result = _load_ts(f)
     assert result == []
+
+
+# ── _extract_str_choices ─────────────────────────────────────────
+
+
+def test_extract_str_choices_none():
+    """None project context returns empty dict."""
+    assert _extract_str_choices(None) == {}
+
+
+def test_extract_str_choices_empty_project():
+    """Project with no simulations or files returns empty dict."""
+    ctx = {"work_dir": "/tmp/proj", "simulations": [], "files": []}
+    assert _extract_str_choices(ctx) == {}
+
+
+def test_extract_str_choices_simulations():
+    """Simulations produce label = 'name (filename)'."""
+    ctx = {
+        "work_dir": "/tmp/proj",
+        "simulations": [
+            {"name": "Run 1", "str_file": "/tmp/proj/run1.str"},
+            {"name": "Run 2", "str_file": "/tmp/proj/run2.str"},
+        ],
+        "files": [],
+    }
+    choices = _extract_str_choices(ctx)
+    assert len(choices) == 2
+    assert choices["/tmp/proj/run1.str"] == "Run 1 (run1.str)"
+    assert choices["/tmp/proj/run2.str"] == "Run 2 (run2.str)"
+
+
+def test_extract_str_choices_project_files():
+    """Project files with file_type='str' are included."""
+    ctx = {
+        "work_dir": "/tmp/proj",
+        "simulations": [],
+        "files": [
+            {"id": 1, "filename": "extra.str", "rel_path": "sims/extra.str",
+             "file_type": "str", "size_bytes": 100},
+            {"id": 2, "filename": "grid.grd", "rel_path": "grids/grid.grd",
+             "file_type": "grd", "size_bytes": 200},
+        ],
+    }
+    choices = _extract_str_choices(ctx)
+    assert len(choices) == 1
+    expected_path = str(Path("/tmp/proj") / "sims/extra.str")
+    assert expected_path in choices
+    assert choices[expected_path] == "extra.str"
+
+
+def test_extract_str_choices_dedup_sim_wins():
+    """When a simulation and project file share the same path, simulation label wins."""
+    ctx = {
+        "work_dir": "/tmp/proj",
+        "simulations": [
+            {"name": "My Sim", "str_file": "/tmp/proj/sims/extra.str"},
+        ],
+        "files": [
+            {"id": 1, "filename": "extra.str", "rel_path": "sims/extra.str",
+             "file_type": "str", "size_bytes": 100},
+        ],
+    }
+    choices = _extract_str_choices(ctx)
+    # The simulation label should overwrite the project-file label
+    assert len(choices) == 1
+    assert choices["/tmp/proj/sims/extra.str"] == "My Sim (extra.str)"
+
+
+def test_extract_str_choices_missing_str_file():
+    """Simulations with no str_file key are skipped."""
+    ctx = {
+        "work_dir": "/tmp/proj",
+        "simulations": [
+            {"name": "No file"},
+            {"name": "Has file", "str_file": "/tmp/proj/run.str"},
+        ],
+        "files": [],
+    }
+    choices = _extract_str_choices(ctx)
+    assert len(choices) == 1
+    assert "/tmp/proj/run.str" in choices
+
+
+def test_extract_str_choices_empty_str_file():
+    """Simulations with empty str_file string are skipped."""
+    ctx = {
+        "work_dir": "/tmp/proj",
+        "simulations": [{"name": "Empty", "str_file": ""}],
+        "files": [],
+    }
+    assert _extract_str_choices(ctx) == {}
