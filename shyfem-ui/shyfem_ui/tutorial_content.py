@@ -4,6 +4,14 @@ This is a pure data module with NO UI imports. It defines the complete
 tutorial content for the 14-simulation Mar Menor progression, organized
 into 6 phases that build from a minimal setup to a full 3D baroclinic
 non-linear simulation.
+
+Each step may contain:
+  - title: step heading
+  - content: educational explanation (physics, theory)
+  - actions: list of numbered UI instructions (what to click/do)
+  - expected: what the user should see after completing the actions
+  - screenshot: filename in www/tutorial/ showing the expected UI state
+  - nav_target: tab name for the "Go to" navigation link
 """
 
 from __future__ import annotations
@@ -36,48 +44,82 @@ TUTORIAL_CONTENT: list[dict] = [
                 "new_params": {},
                 "steps": [
                     {
-                        "title": "The STR file structure",
+                        "title": "Prepare the Grid",
+                        "content": (
+                            "Every SHYFEM simulation needs a pre-processed "
+                            "basin file (`.bas`). The raw mesh is in "
+                            "`GRID/MM_coarse.grd` and must be converted with "
+                            "the **shypre** preprocessor before the model can "
+                            "use it."
+                        ),
+                        "actions": [
+                            "Navigate to the **Grid Prep** tab.",
+                            "The grid path should be auto-filled as "
+                            "`GRID/MM_coarse.grd`.",
+                            "Click **Run shypre** in the sidebar.",
+                            "Wait for the **Log** sub-tab to show completion.",
+                        ],
+                        "expected": (
+                            "The Statistics sub-tab shows ~1,300 nodes and "
+                            "~2,400 elements. The Interactive Map displays "
+                            "the Mar Menor lagoon outline."
+                        ),
+                        "screenshot": "grid_prep_stats.png",
+                        "nav_target": "Grid Prep",
+                    },
+                    {
+                        "title": "Load and Inspect the STR File",
                         "content": (
                             "Every SHYFEM simulation is controlled by a "
                             "**parameter file** (`.str`). It is divided into "
                             "named sections delimited by `$section` ... `$end` "
                             "pairs.\n\n"
                             "The `$title` section identifies the simulation and "
-                            "specifies the computational grid. Here we use "
-                            "`GRID/MM_coarse`, the coarse Mar Menor mesh.\n\n"
-                            "The `$para` section holds all runtime parameters."
+                            "specifies the computational grid. The `$para` "
+                            "section holds all runtime parameters."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_00.str`.",
+                            "Open the **Sections** sub-tab to see `$title` "
+                            "and `$para`.",
+                            "Verify `ilin = 1` (linearized equations) and "
+                            "`idt = '300s'` (5-minute time step).",
+                        ],
+                        "expected": (
+                            "The Sections sub-tab shows a `$title` section "
+                            "referencing `GRID/MM_coarse` and a `$para` "
+                            "section with time parameters."
+                        ),
+                        "screenshot": "simulation_sections.png",
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Time parameters",
+                        "title": "Run the Minimal Simulation",
                         "content": (
                             "Three parameters define the simulation window:\n\n"
-                            "- **itanf** = `'2009-01-01'` -- simulation start "
-                            "date.\n"
-                            "- **itend** = `'2009-01-05'` -- simulation end "
-                            "date (4-day run).\n"
-                            "- **idt** = `'300s'` -- internal time step of "
-                            "300 seconds (5 minutes).\n\n"
-                            "The `date` parameter (20090101) sets the reference "
-                            "date for the internal clock. All time-series input "
-                            "files are interpreted relative to this date."
+                            "- **itanf** = `'2009-01-01'` -- start date.\n"
+                            "- **itend** = `'2009-01-05'` -- end date (4 days).\n"
+                            "- **idt** = `'300s'` -- time step (5 minutes).\n\n"
+                            "Setting **ilin = 1** solves the linearized "
+                            "shallow water equations (no advective terms). "
+                            "This is computationally stable and fast, ideal "
+                            "for initial testing."
                         ),
-                    },
-                    {
-                        "title": "Linearized equations (ilin=1)",
-                        "content": (
-                            "Setting **ilin = 1** tells SHYFEM to solve the "
-                            "**linearized** shallow water equations. This means "
-                            "the non-linear advective acceleration terms "
-                            "(u * du/dx, etc.) are dropped from the momentum "
-                            "equations.\n\n"
-                            "Linearized mode is computationally stable and fast, "
-                            "making it ideal for initial testing. However, it "
-                            "misses important physics: tidal asymmetry, "
-                            "non-linear interactions between currents and "
-                            "topography, and proper momentum transport. We will "
-                            "switch to non-linear mode (ilin=0) in a later phase."
+                        "actions": [
+                            "Navigate to the **Run** tab.",
+                            "Select `mm_hyd_00.str` from the STR file dropdown.",
+                            "Click **Submit** to start the simulation.",
+                            "Watch the **Log** output for progress messages.",
+                        ],
+                        "expected": (
+                            "The simulation completes in a few seconds with "
+                            "a clean exit (no errors or NaN warnings). No "
+                            "output files are produced because no output "
+                            "intervals were set."
                         ),
+                        "screenshot": "run_completed.png",
+                        "nav_target": "Run",
                     },
                 ],
             },
@@ -104,37 +146,88 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Output intervals",
+                        "title": "Load and Review Output Parameters",
                         "content": (
                             "Two new parameters control how often results are "
                             "saved:\n\n"
                             "- **idtout** = `'3h'` -- spatial output every 3 "
                             "hours. This writes water level and velocity fields "
-                            "over the entire mesh, suitable for map plots and "
-                            "animations.\n"
+                            "over the entire mesh.\n"
                             "- **idtext** = `'300s'` -- time-series output every "
                             "5 minutes at selected monitor nodes.\n\n"
                             "Spatial output is expensive in disk space, so a "
                             "coarser interval (3h) is typical. Monitor node "
                             "output is cheap, so it can match the time step."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_01.str`.",
+                            "Open the **Sections** sub-tab.",
+                            "Locate `idtout` and `idtext` in the `$para` "
+                            "section.",
+                            "Scroll down to find the `$extra` section listing "
+                            "monitor node numbers (128, 58, 868, 441).",
+                        ],
+                        "expected": (
+                            "The `$para` section now includes `idtout` and "
+                            "`idtext`. The `$extra` section lists four node "
+                            "numbers."
+                        ),
+                        "screenshot": "simulation_loaded.png",
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Monitor nodes ($extra section)",
+                        "title": "Run and Inspect Output",
                         "content": (
                             "The `$extra` section lists node numbers where "
                             "time-series data is recorded:\n\n"
                             "- **Node 128** -- at the sea boundary (El Estacio "
-                            "inlet to the Mediterranean).\n"
+                            "inlet).\n"
                             "- **Node 58** -- at the inlet channel.\n"
-                            "- **Node 868** -- in the center of the lagoon.\n"
+                            "- **Node 868** -- in the lagoon center.\n"
                             "- **Node 441** -- near the lagoon border.\n\n"
                             "Choosing monitor nodes at physically meaningful "
-                            "locations (inlets, open boundaries, interior) helps "
-                            "diagnose whether the simulation is behaving "
-                            "correctly."
+                            "locations helps diagnose whether the simulation "
+                            "is behaving correctly."
                         ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_01.str`.",
+                            "After completion, go to the **Post-Process** tab.",
+                            "Click **Scan** to detect the `.shy` output file.",
+                            "Use **Extract Time Series** to pull data from "
+                            "the four monitor nodes.",
+                        ],
+                        "expected": (
+                            "Post-Process File Info shows a `.shy` file. "
+                            "Time series extraction produces `.ext` files "
+                            "with water level data at all four nodes."
+                        ),
+                        "screenshot": "postprocess_scan.png",
                         "nav_target": "Post-Process",
+                    },
+                    {
+                        "title": "Visualize Time Series",
+                        "content": (
+                            "With output files available, you can now create "
+                            "your first plots. The `.ext` files contain "
+                            "time-series data at the monitor nodes, perfect "
+                            "for line plots showing how water level evolves."
+                        ),
+                        "actions": [
+                            "Navigate to the **Visualize** tab.",
+                            "Load the extracted `.ext` file.",
+                            "Select **Line Plot** as the chart type.",
+                            "All four monitor nodes should appear as "
+                            "separate lines.",
+                        ],
+                        "expected": (
+                            "A time-series plot showing water level at the "
+                            "four monitor nodes. Since there is no forcing, "
+                            "values should be near zero or slowly drifting."
+                        ),
+                        "screenshot": "visualize_timeseries.png",
+                        "nav_target": "Visualize",
                     },
                 ],
             },
@@ -163,7 +256,7 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Wind stress physics",
+                        "title": "Load and Review Wind Parameters",
                         "content": (
                             "Wind is typically the most important forcing "
                             "mechanism in coastal lagoons. The wind stress "
@@ -174,24 +267,49 @@ TUTORIAL_CONTENT: list[dict] = [
                             "velocity vector.\n\n"
                             "Setting **iwtype = 3** selects this quadratic "
                             "bulk formula. The drag coefficient **dragco = "
-                            "2.5e-3** is a reasonable starting value for "
-                            "coastal applications."
+                            "2.5e-3** is a reasonable starting value."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_02.str`.",
+                            "In the **Sections** sub-tab, find `iwtype` and "
+                            "`dragco` in `$para`.",
+                            "Scroll to the `$name` section and note "
+                            "`wind = 'INPUT/wind_scir.txt'`.",
+                        ],
+                        "expected": (
+                            "The `$para` section includes `iwtype = 3` and "
+                            "`dragco = 2.5e-3`. The `$name` section "
+                            "references the wind input file."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Wind input file",
+                        "title": "Run and Compare with mm_hyd_01",
                         "content": (
-                            "The `$name` section specifies external data "
-                            "files. Here:\n\n"
+                            "The `$name` section specifies the wind data "
+                            "file:\n\n"
                             "```\nwind = 'INPUT/wind_scir.txt'\n```\n\n"
-                            "This file contains time-series wind data "
-                            "(speed and direction or u/v components). The "
-                            "wind field is applied uniformly over the entire "
-                            "domain. For large domains, spatially varying "
-                            "wind fields may be needed, but for a lagoon "
+                            "This file contains time-series wind data applied "
+                            "uniformly over the entire domain. For a lagoon "
                             "the size of Mar Menor (~170 km2), a single "
                             "station is usually adequate."
                         ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_02.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "Navigate to the **Visualize** tab and compare "
+                            "the current fields with mm_hyd_01.",
+                        ],
+                        "expected": (
+                            "Wind-driven currents are now visible. Water "
+                            "levels at monitor nodes show oscillations driven "
+                            "by the wind. Currents are much stronger than "
+                            "the no-forcing case."
+                        ),
+                        "screenshot": "postprocess_timeseries.png",
                         "nav_target": "Run",
                     },
                 ],
@@ -220,7 +338,7 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Why bottom friction matters",
+                        "title": "Load and Review Friction Parameters",
                         "content": (
                             "Without bottom friction, wind-driven currents "
                             "would accelerate indefinitely. Bottom friction "
@@ -232,24 +350,46 @@ TUTORIAL_CONTENT: list[dict] = [
                             "important because the entire water column "
                             "feels the frictional effect of the seabed."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_03.str`.",
+                            "In the **Sections** sub-tab, find `ireib = 5` "
+                            "and `czdef = 2.5e-3` in `$para`.",
+                        ],
+                        "expected": (
+                            "The `$para` section includes `ireib = 5` and "
+                            "`czdef = 2.5e-3` alongside the wind parameters "
+                            "from mm_hyd_02."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Friction parameters",
+                        "title": "Run and Compare Currents",
                         "content": (
                             "Setting **ireib = 5** selects a quadratic "
                             "bottom drag law:\n\n"
                             "**tau_b = rho * Cd * |u| * u**\n\n"
                             "The coefficient **czdef = 2.5e-3** is a "
                             "typical value for sandy/muddy bottoms. "
-                            "Rougher substrates (rocky, vegetated) may "
-                            "need larger values (5e-3 or more), while "
-                            "smooth sandy beds may use smaller values "
-                            "(1e-3).\n\n"
-                            "Compare the current fields from mm_hyd_02 "
-                            "(wind only) and mm_hyd_03 (wind + friction) "
-                            "to see how friction reduces current speeds "
-                            "and modifies the circulation pattern."
+                            "Rougher substrates may need larger values "
+                            "(5e-3 or more)."
                         ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_03.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "Navigate to the **Compare** tab.",
+                            "Select mm_hyd_02 and mm_hyd_03 to see how "
+                            "friction reduces current speeds.",
+                        ],
+                        "expected": (
+                            "Current speeds are noticeably lower than "
+                            "mm_hyd_02 (wind only). The circulation pattern "
+                            "is modified with friction providing energy "
+                            "dissipation."
+                        ),
+                        "screenshot": "compare_params.png",
                         "nav_target": "Post-Process",
                     },
                 ],
@@ -298,7 +438,7 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Open boundary concept",
+                        "title": "Load and Inspect the Boundary",
                         "content": (
                             "Real water bodies exchange flow with their "
                             "surroundings. The `$bound1` section defines "
@@ -307,42 +447,50 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Mar Menor and the Mediterranean Sea.\n\n"
                             "Setting **ibtyp = 1** creates a **Dirichlet "
                             "boundary condition** where water levels are "
-                            "prescribed from the data file "
-                            "`INPUT/level_Mar_Menor.dat`. The model then "
-                            "computes velocities that satisfy continuity "
-                            "at these boundary nodes."
+                            "prescribed from `INPUT/level_Mar_Menor.dat`."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_11.str`.",
+                            "Open the **Boundaries** sub-tab.",
+                            "Verify `$bound1` shows `ibtyp = 1` with "
+                            "93 boundary nodes (85-177).",
+                            "Note the tilt correction: `ztilt = 0.008` "
+                            "and `ktilt = 130`.",
+                        ],
+                        "expected": (
+                            "The Boundaries sub-tab shows `$bound1` with "
+                            "Dirichlet type and the list of boundary node "
+                            "numbers."
+                        ),
+                        "screenshot": "simulation_boundaries.png",
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Tilt correction",
+                        "title": "Run and Observe Tidal Exchange",
                         "content": (
                             "The parameters **ztilt = 0.008** and **ktilt = "
                             "130** apply a linear tilt correction across "
-                            "the open boundary.\n\n"
-                            "In reality, the sea surface is not perfectly "
-                            "flat along a boundary -- geostrophic balance "
-                            "causes a slight cross-shore slope. The tilt "
-                            "correction adds a linear gradient to the "
-                            "prescribed levels, with node 130 as the "
-                            "reference point. This prevents spurious "
-                            "currents that would arise if the model boundary "
-                            "had an unrealistic flat water surface."
+                            "the open boundary to prevent spurious currents "
+                            "from an unrealistically flat water surface.\n\n"
+                            "With this boundary active, periodic water "
+                            "level oscillations appear at the monitor nodes "
+                            "as the tide propagates through the inlet."
                         ),
-                    },
-                    {
-                        "title": "Observing tidal exchange",
-                        "content": (
-                            "With this boundary active, you should see "
-                            "periodic water level oscillations at the "
-                            "monitor nodes. The boundary drives flow "
-                            "through the inlet channel, creating a tidal "
-                            "signal that propagates into the lagoon.\n\n"
-                            "Compare the time series at node 128 (sea "
-                            "boundary) and node 868 (lagoon center). "
-                            "The lagoon signal should be attenuated and "
-                            "delayed relative to the sea boundary, "
-                            "reflecting the choking effect of the narrow "
-                            "inlet."
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_11.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "In **Visualize**, compare node 128 (sea "
+                            "boundary) with node 868 (lagoon center).",
+                        ],
+                        "expected": (
+                            "Water level time series show periodic tidal "
+                            "oscillations. The lagoon signal (node 868) "
+                            "is attenuated and delayed relative to the "
+                            "sea boundary (node 128), reflecting the "
+                            "choking effect of the narrow inlet."
                         ),
                         "nav_target": "Post-Process",
                     },
@@ -368,34 +516,50 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Initial condition experiments",
+                        "title": "Load and Note the Initial Condition",
                         "content": (
                             "Setting **zconst = +0.30** raises the initial "
                             "water level in the entire lagoon by 30 cm "
                             "relative to the reference.\n\n"
                             "This creates an initial pressure gradient "
                             "between the lagoon (elevated) and the sea "
-                            "boundary (at the prescribed level). The result "
-                            "is a strong outflow through the inlet at the "
-                            "start of the simulation, which gradually "
-                            "decays as the lagoon drains toward equilibrium."
+                            "boundary (at the prescribed level), causing "
+                            "a strong outflow through the inlet."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_12a.str`.",
+                            "In the **Sections** sub-tab, find `zconst = "
+                            "0.30` in `$para`.",
+                        ],
+                        "expected": (
+                            "The `$para` section shows `zconst = 0.30` "
+                            "alongside all the boundary parameters from "
+                            "mm_hyd_11."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Comparing with mm_hyd_12b",
+                        "title": "Run and Compare Initial Surge",
                         "content": (
                             "The companion file `mm_hyd_12b.str` uses "
-                            "**zconst = -0.30** (negative offset), which "
-                            "creates the opposite scenario: an initial "
-                            "inflow surge as the sea fills the depressed "
-                            "lagoon.\n\n"
-                            "Running both variants lets you verify that "
-                            "the model responds symmetrically to positive "
-                            "and negative perturbations, and that the "
-                            "system relaxes to the same equilibrium state "
-                            "regardless of initial conditions. This is a "
-                            "fundamental sanity check for any hydrodynamic "
-                            "model."
+                            "**zconst = -0.30** (negative offset), creating "
+                            "the opposite scenario: an initial inflow surge. "
+                            "Running both variants verifies the model "
+                            "responds symmetrically to perturbations."
+                        ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_12a.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "In **Visualize**, look at the first few hours "
+                            "to see the initial outflow surge decaying.",
+                        ],
+                        "expected": (
+                            "Time series show a strong initial outflow "
+                            "that gradually decays as the lagoon drains "
+                            "toward equilibrium with the sea boundary."
                         ),
                         "nav_target": "Post-Process",
                     },
@@ -429,7 +593,7 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Flux vs. level boundaries",
+                        "title": "Inspect the River Boundary",
                         "content": (
                             "The `$bound2` section adds a second boundary "
                             "at node 218 (Los Alcazares). Unlike the sea "
@@ -438,24 +602,46 @@ TUTORIAL_CONTENT: list[dict] = [
                             "With a flux boundary, you prescribe the "
                             "volumetric flow rate (m3/s) rather than the "
                             "water level. This is the natural choice for "
-                            "rivers and streams, where you typically know "
-                            "the discharge from gauge measurements but "
-                            "not the exact water level."
+                            "rivers and streams."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_13.str`.",
+                            "Open the **Boundaries** sub-tab.",
+                            "Verify `$bound2` shows `ibtyp = 3` at node "
+                            "218 with `zfact = 50`.",
+                        ],
+                        "expected": (
+                            "The Boundaries sub-tab now shows two "
+                            "boundaries: `$bound1` (sea level, Dirichlet) "
+                            "and `$bound2` (river, flux)."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "River discharge parameters",
+                        "title": "Run and Observe River Effects",
                         "content": (
                             "The river boundary reads discharge data from "
                             "`INPUT/river.txt` with **intpol = 2** (linear "
-                            "interpolation between data points) and "
-                            "**zfact = 50** (scaling factor).\n\n"
-                            "The scaling factor multiplies the raw data "
-                            "values, which is useful for unit conversion "
-                            "or sensitivity experiments. A single node "
-                            "(218) is sufficient for a small river input, "
-                            "while wider river mouths might use multiple "
-                            "boundary nodes."
+                            "interpolation) and **zfact = 50** (scaling "
+                            "factor).\n\n"
+                            "A single node (218) is sufficient for a small "
+                            "river input, while wider river mouths might "
+                            "use multiple boundary nodes."
+                        ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_13.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "In **Visualize**, compare with mm_hyd_11 to "
+                            "see the river's effect on water levels.",
+                        ],
+                        "expected": (
+                            "Water levels near the river node (441) show "
+                            "increased variability from the freshwater "
+                            "discharge. The tidal signal from bound1 is "
+                            "still visible."
                         ),
                         "nav_target": "Run",
                     },
@@ -498,33 +684,52 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "The Coriolis effect",
+                        "title": "Load and Review Coriolis Parameters",
                         "content": (
                             "On a rotating Earth, moving water experiences "
                             "a fictitious force that deflects it to the "
-                            "right in the Northern Hemisphere (left in the "
-                            "Southern). This is the **Coriolis force**, "
-                            "and it is proportional to:\n\n"
+                            "right in the Northern Hemisphere. This is the "
+                            "**Coriolis force**, proportional to:\n\n"
                             "**f = 2 * omega * sin(lat)**\n\n"
-                            "where omega is Earth's rotation rate and lat "
-                            "is the latitude. At Mar Menor's latitude of "
-                            "~38N, f ~ 8.9 x 10^-5 s^-1."
+                            "At Mar Menor's latitude of ~38N, "
+                            "f ~ 8.9 x 10^-5 s^-1. The Rossby number "
+                            "Ro ~ 0.06, meaning Coriolis has a significant "
+                            "effect on the circulation."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_21.str`.",
+                            "In the **Sections** sub-tab, find `icor = 1` "
+                            "and `dlat = 38` in `$para`.",
+                        ],
+                        "expected": (
+                            "The `$para` section includes `icor = 1` and "
+                            "`dlat = 38` alongside the wind, friction, and "
+                            "boundary parameters."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "When does Coriolis matter?",
+                        "title": "Run and Observe Circulation Deflection",
                         "content": (
-                            "The importance of Coriolis is measured by the "
-                            "**Rossby number** Ro = U / (f * L), where U "
-                            "is a typical velocity and L a length scale. "
-                            "When Ro << 1, Coriolis dominates.\n\n"
-                            "For Mar Menor (L ~ 20 km, U ~ 0.1 m/s), "
-                            "Ro ~ 0.06, meaning Coriolis has a significant "
-                            "effect on the circulation pattern. You should "
-                            "see the current field rotate slightly compared "
-                            "to the non-Coriolis runs.\n\n"
                             "Setting **icor = 1** and **dlat = 38** activates "
-                            "the Coriolis term at the correct latitude."
+                            "the Coriolis term at the correct latitude.\n\n"
+                            "You should see the current field rotate slightly "
+                            "compared to the non-Coriolis runs: wind-driven "
+                            "currents are deflected to the right."
+                        ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_21.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "In **Visualize**, compare the current vectors "
+                            "with mm_hyd_13 to see the deflection.",
+                        ],
+                        "expected": (
+                            "Current vectors show a rightward deflection "
+                            "compared to the non-Coriolis case. This is "
+                            "most visible in the open areas of the lagoon."
                         ),
                         "nav_target": "Post-Process",
                     },
@@ -549,36 +754,58 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Linear vs. non-linear equations",
+                        "title": "Load and Note the Non-linear Switch",
                         "content": (
                             "Switching **ilin = 0** enables the full "
                             "non-linear shallow water equations. The key "
                             "difference is the **advective acceleration** "
-                            "term (u * grad(u)) in the momentum equations."
-                            "\n\n"
-                            "Non-linear effects are responsible for:\n\n"
-                            "- **Tidal asymmetry** -- flood and ebb tides "
-                            "have different durations and peak velocities.\n"
+                            "term (u * grad(u)).\n\n"
+                            "Non-linear effects produce:\n\n"
+                            "- **Tidal asymmetry** -- flood and ebb have "
+                            "different durations.\n"
                             "- **Jet formation** -- fast currents through "
-                            "narrow channels spread as jets in open water.\n"
+                            "narrow channels.\n"
                             "- **Residual circulation** -- time-averaged "
-                            "flows that exist only in non-linear systems."
+                            "flows."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_22.str`.",
+                            "In the **Sections** sub-tab, verify "
+                            "`ilin = 0` in `$para`.",
+                            "Note that the time step `idt` remains at "
+                            "`'300s'`.",
+                        ],
+                        "expected": (
+                            "The `$para` section shows `ilin = 0` "
+                            "(previously 1). All other parameters carry "
+                            "over from mm_hyd_21."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Stability considerations",
+                        "title": "Run and Compare with Linear",
                         "content": (
                             "Non-linear equations are more demanding "
                             "numerically. The advective terms can cause "
                             "instabilities if the time step is too large "
-                            "relative to the flow speed (the CFL condition)."
-                            "\n\n"
-                            "In this simulation, the same time step "
-                            "(idt = 300s) is used. If the simulation "
-                            "becomes unstable, you would need to either "
-                            "reduce the time step or enable adaptive "
-                            "time-stepping (see mm_hyd_23)."
+                            "(the CFL condition). In this simulation, the "
+                            "same time step (idt = 300s) is used."
                         ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_22.str`.",
+                            "After completion, go to **Post-Process** and "
+                            "extract time series.",
+                            "In **Compare**, select mm_hyd_21 (linear) and "
+                            "mm_hyd_22 (non-linear) to see differences.",
+                        ],
+                        "expected": (
+                            "Non-linear effects produce asymmetric tidal "
+                            "signals and jet-like flow at the inlet. "
+                            "Peak velocities may differ from the linear case."
+                        ),
+                        "nav_target": "Post-Process",
                     },
                 ],
             },
@@ -621,56 +848,79 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "The smoothed grid",
+                        "title": "Load and Review Grid and Stepping",
                         "content": (
                             "This simulation switches to "
                             "`GRID/MM_coarse_smooth`, a version of the "
-                            "Mar Menor mesh where bathymetry gradients "
-                            "have been smoothed. Sharp depth changes can "
-                            "generate spurious pressure gradients in the "
-                            "model, especially with non-linear terms "
-                            "active.\n\n"
-                            "Grid smoothing is a common pre-processing "
-                            "step that trades some bathymetric accuracy "
-                            "for numerical stability."
-                        ),
-                    },
-                    {
-                        "title": "Adaptive time-splitting",
-                        "content": (
+                            "mesh where bathymetry gradients have been "
+                            "smoothed. Sharp depth changes can generate "
+                            "spurious pressure gradients, especially with "
+                            "non-linear terms active.\n\n"
                             "The base time step is reduced to **idt = "
                             "'30s'**, and the adaptive time-splitter is "
                             "enabled with **itsplt = 2** and **coumax = "
-                            "0.8**.\n\n"
-                            "The model automatically subdivides the "
-                            "advection step so that the Courant number "
-                            "(C = u * dt / dx) stays below 0.8. This "
-                            "prevents the numerical instabilities that "
-                            "non-linear advection can cause when flow "
-                            "speeds are high relative to the grid spacing."
-                            "\n\n"
-                            "**idtsyn = '1h'** ensures all processes "
-                            "re-synchronize every hour, preventing "
-                            "sub-steps from drifting apart."
+                            "0.8**."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_23.str`.",
+                            "In the **Sections** sub-tab, note the grid "
+                            "reference changed to `GRID/MM_coarse_smooth`.",
+                            "Find `idt = '30s'`, `itsplt = 2`, and "
+                            "`coumax = 0.8` in `$para`.",
+                        ],
+                        "expected": (
+                            "The `$title` section references the smooth "
+                            "grid. The `$para` section has the reduced "
+                            "time step and adaptive splitting parameters."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Smagorinsky diffusion",
+                        "title": "Understand Smagorinsky Diffusion",
                         "content": (
                             "Setting **idhtyp = 2** with **ahpar = 0.3** "
                             "activates the **Smagorinsky** horizontal "
-                            "diffusion scheme. Instead of a constant "
-                            "diffusivity, the eddy viscosity is computed "
-                            "from the local velocity gradients and element "
-                            "size:\n\n"
+                            "diffusion scheme:\n\n"
                             "**nu_h = (C_s * dx)^2 * |S|**\n\n"
                             "where C_s is the Smagorinsky constant (0.3) "
                             "and |S| is the strain rate. This provides "
                             "more diffusion where the flow is sheared "
-                            "(e.g., near jets) and less where it is "
-                            "uniform, which is physically more realistic "
-                            "than a constant diffusivity."
+                            "and less where it is uniform."
                         ),
+                        "actions": [
+                            "In the **Sections** sub-tab, find `idhtyp = 2` "
+                            "and `ahpar = 0.3` in `$para`.",
+                            "Also note `idtsyn = '1h'` which re-synchronizes "
+                            "all processes hourly.",
+                        ],
+                        "expected": (
+                            "All Smagorinsky and time-splitting parameters "
+                            "are visible in `$para`."
+                        ),
+                    },
+                    {
+                        "title": "Run and Verify Stability",
+                        "content": (
+                            "The combination of smoothed grid, adaptive "
+                            "stepping, and Smagorinsky diffusion should "
+                            "produce a stable non-linear simulation without "
+                            "grid-scale noise."
+                        ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_23.str`.",
+                            "Monitor the log for any CFL warnings.",
+                            "After completion, go to **Post-Process** and "
+                            "verify smooth current fields.",
+                        ],
+                        "expected": (
+                            "The simulation runs without CFL warnings. "
+                            "Current fields are smooth, with no "
+                            "grid-scale oscillations or checkerboard "
+                            "patterns."
+                        ),
+                        "nav_target": "Run",
                     },
                 ],
             },
@@ -728,53 +978,79 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "What is baroclinic mode?",
+                        "title": "Load and Understand Baroclinic Mode",
                         "content": (
                             "In **barotropic** mode (all previous runs), "
-                            "the water column has uniform density. Pressure "
-                            "differences are caused only by water level "
-                            "gradients.\n\n"
+                            "the water column has uniform density.\n\n"
                             "In **baroclinic** mode (**ibarcl = 3**), "
                             "density varies horizontally and vertically "
-                            "due to salinity (and temperature) differences. "
-                            "These density variations create internal "
-                            "pressure gradients that drive additional "
-                            "currents, often in opposite directions at "
-                            "different depths (estuarine circulation)."
+                            "due to salinity differences. These create "
+                            "internal pressure gradients that drive "
+                            "additional currents, often in opposite "
+                            "directions at different depths."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_31.str`.",
+                            "In the **Sections** sub-tab, find `ibarcl = 3`, "
+                            "`isalt = 1`, and `salref = 35` in `$para`.",
+                            "Note the extended end date: `itend = "
+                            "'2009-01-31'` (full month).",
+                        ],
+                        "expected": (
+                            "The `$para` section shows baroclinic and "
+                            "salinity parameters. The simulation period is "
+                            "extended to 31 days."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Salinity transport",
+                        "title": "Run the Extended Simulation",
                         "content": (
                             "With **isalt = 1**, SHYFEM solves the "
-                            "advection-diffusion equation for salinity:\n\n"
-                            "**dS/dt + u * grad(S) = K_h * laplacian(S)**"
-                            "\n\n"
-                            "The domain starts at **salref = 35** psu "
-                            "everywhere. The sea boundary prescribes "
-                            "salinity from `INPUT/S_MarMenor.txt`, while "
-                            "the river (bound2) injects freshwater with "
-                            "**salt = 0**.\n\n"
-                            "Temperature is disabled (**itemp = 0**) to "
-                            "isolate the salinity effect on density."
+                            "advection-diffusion equation for salinity. "
+                            "The domain starts at **salref = 35** psu. "
+                            "The sea boundary prescribes salinity from "
+                            "`INPUT/S_MarMenor.txt`, while the river "
+                            "injects freshwater with **salt = 0**."
                         ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_31.str`.",
+                            "This run takes longer (full month). Watch the "
+                            "log for progress.",
+                            "After completion, go to **Post-Process**.",
+                        ],
+                        "expected": (
+                            "The simulation completes without errors. "
+                            "Output includes both `.shy` (hydrodynamic) "
+                            "and `.nos` or `.ous` (concentration) files."
+                        ),
+                        "nav_target": "Run",
                     },
                     {
-                        "title": "Extended simulation period",
+                        "title": "Visualize Salinity Fields",
                         "content": (
-                            "The end date is extended to **itend = "
-                            "'2009-01-31'** (a full month) because "
-                            "baroclinic adjustment takes longer than "
-                            "barotropic processes. Salinity fields evolve "
-                            "slowly as river water mixes through the "
-                            "lagoon.\n\n"
-                            "The smoothed grid (`MM_coarse_smooth`) is "
-                            "used to prevent spurious density currents "
-                            "near steep bathymetry gradients. The new "
-                            "parameter **idtcon = '3h'** writes salinity "
-                            "fields at the same interval as the "
-                            "hydrodynamic output."
+                            "The new parameter **idtcon = '3h'** writes "
+                            "salinity fields at the same interval as "
+                            "hydrodynamic output. You can now create "
+                            "contour plots of the salinity distribution "
+                            "to see how freshwater spreads from the river."
                         ),
+                        "actions": [
+                            "In **Post-Process**, extract salinity fields "
+                            "to NetCDF format.",
+                            "Navigate to the **Visualize** tab.",
+                            "Load the salinity NetCDF file.",
+                            "Select **Contour** plot type to see the "
+                            "spatial salinity distribution.",
+                        ],
+                        "expected": (
+                            "The contour map shows salinity ~35 psu in "
+                            "most of the lagoon, with a freshwater plume "
+                            "near the river boundary (node 218)."
+                        ),
+                        "screenshot": "visualize_netcdf.png",
                         "nav_target": "Post-Process",
                     },
                 ],
@@ -842,58 +1118,83 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Vertical level structure",
+                        "title": "Load and Review Vertical Levels",
                         "content": (
                             "The `$levels` section defines the vertical "
-                            "grid. This simulation uses 19 levels:\n\n"
+                            "grid with 19 levels:\n\n"
                             "```\n1 2 3 4 5 6 7 8 9 10 12 15 20 30 40 "
                             "50 60 70 80\n```\n\n"
-                            "The levels represent depth below the surface "
-                            "in meters. Near the surface, layers are 1 m "
-                            "thick (resolving the thermocline and wind-"
-                            "mixed layer), while deeper layers are "
-                            "progressively thicker (10-20 m). Most of "
-                            "Mar Menor is 4-7 m deep, so only the first "
-                            "~7 levels are active over most of the domain."
+                            "Near the surface, layers are 1 m thick "
+                            "(resolving the thermocline). Deeper layers "
+                            "are progressively thicker. Most of Mar Menor "
+                            "is 4-7 m deep, so only the first ~7 levels "
+                            "are active over most of the domain."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_41.str`.",
+                            "In the **Sections** sub-tab, find the "
+                            "`$levels` section with 19 depth values.",
+                            "Find `itemp = 1`, `temref = 9`, `iturb = 1`, "
+                            "and `ievap = 1` in `$para`.",
+                        ],
+                        "expected": (
+                            "The `$levels` section lists 19 depth values. "
+                            "The `$para` section includes temperature, "
+                            "turbulence, and evaporation parameters."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Temperature and heat exchange",
+                        "title": "Run with Full 3D Physics",
                         "content": (
-                            "Setting **itemp = 1** activates the heat "
-                            "equation. The initial temperature is **temref "
-                            "= 9** degrees C throughout the domain.\n\n"
-                            "The boundary prescribes temperature from "
-                            "`INPUT/T_MarMenor.txt`. Additional heat "
-                            "exchange files are specified in `$name`:\n\n"
-                            "- **qflux** = solar/atmospheric heat flux\n"
-                            "- **rain** = precipitation (freshwater input "
-                            "that dilutes salinity)\n\n"
+                            "Setting **iturb = 1** activates **GOTM**, an "
+                            "advanced turbulence closure that computes "
+                            "vertical mixing from TKE equations. It "
+                            "replaces constant vertical viscosity (hence "
+                            "**aapar = 0**).\n\n"
                             "With **ievap = 1**, evaporative cooling and "
-                            "water loss are computed from the atmospheric "
-                            "conditions."
+                            "water loss are computed. The wind file "
+                            "switches to `INPUT/wind09.txt` with hourly "
+                            "atmospheric data for heat flux computations."
                         ),
-                    },
-                    {
-                        "title": "GOTM turbulence model",
-                        "content": (
-                            "Setting **iturb = 1** activates the "
-                            "**General Ocean Turbulence Model** (GOTM), "
-                            "an advanced one-dimensional turbulence "
-                            "closure that computes vertical mixing "
-                            "profiles from turbulent kinetic energy (TKE) "
-                            "equations.\n\n"
-                            "GOTM is configured through "
-                            "`INPUT/gotmturb.nml`. It replaces the simple "
-                            "constant vertical viscosity (hence **aapar = "
-                            "0**) with a physically-based profile that "
-                            "responds to wind stirring, stratification, "
-                            "and bottom shear.\n\n"
-                            "The wind file switches to `INPUT/wind09.txt` "
-                            "which contains the hourly atmospheric data "
-                            "needed for the heat flux computations."
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_41.str`.",
+                            "This is a longer 3D run. Monitor the log "
+                            "for progress and any warnings.",
+                            "After completion, go to **Post-Process**.",
+                        ],
+                        "expected": (
+                            "The simulation completes cleanly. Output "
+                            "includes hydrodynamic, salinity, and "
+                            "temperature fields."
                         ),
                         "nav_target": "Run",
+                    },
+                    {
+                        "title": "Visualize Temperature and Salinity",
+                        "content": (
+                            "The boundary prescribes temperature from "
+                            "`INPUT/T_MarMenor.txt`. Additional heat "
+                            "exchange files (qflux, rain) are in the "
+                            "`$name` section. You can now visualize both "
+                            "temperature and salinity fields."
+                        ),
+                        "actions": [
+                            "In **Post-Process**, extract temperature and "
+                            "salinity fields to NetCDF.",
+                            "Navigate to the **Visualize** tab.",
+                            "Load the temperature NetCDF and create a "
+                            "contour plot.",
+                            "Switch to the salinity NetCDF and compare.",
+                        ],
+                        "expected": (
+                            "Temperature contours show ~9 degrees C with "
+                            "slight warming from heat fluxes. Salinity "
+                            "shows the freshwater plume near the river."
+                        ),
+                        "nav_target": "Post-Process",
                     },
                 ],
             },
@@ -918,35 +1219,50 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Diagnostic vs. prognostic baroclinic",
+                        "title": "Load and Compare Baroclinic Modes",
                         "content": (
                             "SHYFEM offers different baroclinic modes:\n\n"
-                            "- **ibarcl = 1** (diagnostic): Density is "
-                            "computed from T/S fields and used in the "
-                            "pressure gradient, but with a simplified "
-                            "treatment. This is numerically stable and "
-                            "suitable for cases where baroclinic effects "
-                            "are secondary.\n\n"
+                            "- **ibarcl = 1** (diagnostic): Simplified "
+                            "density-pressure coupling. Numerically stable, "
+                            "suitable when baroclinic effects are secondary."
+                            "\n\n"
                             "- **ibarcl = 3** (full prognostic): Complete "
-                            "baroclinic formulation with full density-"
-                            "pressure coupling. More accurate but can be "
-                            "sensitive to grid quality and bathymetry "
-                            "gradients."
+                            "formulation. More accurate but can be sensitive "
+                            "to grid quality."
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_42.str`.",
+                            "In the **Sections** sub-tab, verify "
+                            "`ibarcl = 1` (changed from 3).",
+                        ],
+                        "expected": (
+                            "The only change from mm_hyd_41 is `ibarcl = 1` "
+                            "in `$para`. All other parameters are identical."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Comparing the two modes",
+                        "title": "Run and Compare with Prognostic Mode",
                         "content": (
                             "Run both mm_hyd_41 (ibarcl=3) and mm_hyd_42 "
-                            "(ibarcl=1) and compare the salinity and "
-                            "temperature fields. In many shallow-water "
-                            "applications, the differences are small, "
-                            "and the diagnostic mode is preferred for "
-                            "its stability.\n\n"
-                            "If you observe spurious density currents "
-                            "with ibarcl=3 (often visible as noisy velocity "
-                            "fields near steep bathymetry), switching to "
-                            "ibarcl=1 is a practical solution."
+                            "(ibarcl=1) and compare the fields. In many "
+                            "shallow-water applications, differences are "
+                            "small, and the diagnostic mode is preferred "
+                            "for its stability."
+                        ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_42.str`.",
+                            "After completion, go to the **Compare** tab.",
+                            "Select mm_hyd_41 and mm_hyd_42 to see "
+                            "parameter differences and field comparisons.",
+                        ],
+                        "expected": (
+                            "Salinity and temperature fields are very "
+                            "similar to mm_hyd_41. If mm_hyd_41 showed "
+                            "noisy velocity fields near steep bathymetry, "
+                            "mm_hyd_42 should be smoother."
                         ),
                         "nav_target": "Post-Process",
                     },
@@ -1018,7 +1334,7 @@ TUTORIAL_CONTENT: list[dict] = [
                 },
                 "steps": [
                     {
-                        "title": "Putting it all together",
+                        "title": "Load the Full-Physics Configuration",
                         "content": (
                             "This simulation combines every feature "
                             "introduced in the previous phases:\n\n"
@@ -1033,40 +1349,78 @@ TUTORIAL_CONTENT: list[dict] = [
                             "- GOTM turbulence closure\n"
                             "- Atmospheric heat exchange and evaporation"
                         ),
+                        "actions": [
+                            "Navigate to the **Simulation** tab.",
+                            "Click **Load** and select `mm_hyd_43.str`.",
+                            "In the **Sections** sub-tab, verify `ilin = 0`, "
+                            "`ibarcl = 1`, `itsplt = 2`, and `coumax = 0.8`.",
+                            "Check `idt = '30s'` and "
+                            "`itend = '2009-01-25'`.",
+                        ],
+                        "expected": (
+                            "The `$para` section shows the full set of "
+                            "production parameters: non-linear, Smagorinsky, "
+                            "adaptive stepping, 3D tracers, GOTM, and "
+                            "heat exchange."
+                        ),
+                        "nav_target": "Simulation",
                     },
                     {
-                        "title": "Non-linear stability strategy",
+                        "title": "Run the Production Simulation",
                         "content": (
-                            "The key to running a stable non-linear 3D "
-                            "simulation is the combination of:\n\n"
+                            "The key to a stable non-linear 3D simulation "
+                            "is the combination of:\n\n"
                             "1. **Short base time step** (idt = 30s)\n"
                             "2. **Adaptive splitting** (itsplt=2, "
-                            "coumax=0.8) to handle fast local flows\n"
-                            "3. **Smagorinsky diffusion** (idhtyp=2, "
-                            "ahpar=0.3) to suppress grid-scale noise\n"
-                            "4. **Smoothed grid** to avoid pressure "
-                            "gradient errors at steep bathymetry\n"
-                            "5. **Diagnostic baroclinic** (ibarcl=1) "
-                            "for robust density-pressure coupling"
+                            "coumax=0.8)\n"
+                            "3. **Smagorinsky diffusion** (idhtyp=2)\n"
+                            "4. **Smoothed grid**\n"
+                            "5. **Diagnostic baroclinic** (ibarcl=1)"
                         ),
+                        "actions": [
+                            "Navigate to the **Run** tab and submit "
+                            "`mm_hyd_43.str`.",
+                            "This is the most expensive run. Monitor the "
+                            "log carefully for any CFL warnings or "
+                            "instabilities.",
+                            "The simulation period is 24 days with a "
+                            "30-second time step.",
+                        ],
+                        "expected": (
+                            "The simulation completes without CFL warnings "
+                            "or numerical instabilities. Run time will be "
+                            "longer than previous simulations."
+                        ),
+                        "nav_target": "Run",
                     },
                     {
-                        "title": "Performance and output",
+                        "title": "Visualize Full 3D Results",
                         "content": (
-                            "This is the most computationally expensive "
-                            "configuration. The simulation period is "
-                            "shortened to 24 days (**itend = '2009-01-25'**"
-                            ") to keep run times manageable.\n\n"
                             "Output intervals remain at 3 hours for both "
                             "hydrodynamic (idtout) and tracer (idtcon) "
                             "fields. Monitor node output (idtext) at 300s "
-                            "provides detailed time series for validation "
-                            "against observations.\n\n"
-                            "For production runs on larger domains or "
-                            "longer periods, MPI parallelization can "
-                            "significantly reduce wall-clock time."
+                            "provides detailed time series for validation."
+                            "\n\n"
+                            "For production runs on larger domains, MPI "
+                            "parallelization significantly reduces "
+                            "wall-clock time."
                         ),
-                        "nav_target": "Run",
+                        "actions": [
+                            "In **Post-Process**, extract all available "
+                            "fields (water level, velocity, salinity, "
+                            "temperature) to NetCDF.",
+                            "Navigate to the **Visualize** tab.",
+                            "Create contour plots for each variable.",
+                            "Use time-series plots at monitor nodes for "
+                            "validation against observations.",
+                        ],
+                        "expected": (
+                            "Full 3D fields show realistic circulation "
+                            "with wind-driven surface currents, tidal "
+                            "exchange, river plume, and temperature/salinity "
+                            "stratification."
+                        ),
+                        "nav_target": "Post-Process",
                     },
                 ],
             },
@@ -1090,6 +1444,25 @@ def get_simulation(sim_name: str) -> dict | None:
             if sim["name"] == sim_name:
                 return sim
     return None
+
+
+def build_tutorial_context(
+    sim_name: str, work_dir: str, target_tab: str
+) -> dict | None:
+    """Build a tutorial context dict for a given simulation.
+
+    Returns None if the simulation name is not found in the tutorial content.
+    """
+    sim = get_simulation(sim_name)
+    if sim is None:
+        return None
+    return {
+        "sim_name": sim_name,
+        "str_file": sim["str_file"],
+        "work_dir": work_dir,
+        "grd_file": "GRID/MM_coarse.grd",
+        "target_tab": target_tab,
+    }
 
 
 def get_all_sim_names() -> list[str]:

@@ -11,40 +11,7 @@ from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
-
-# Tutorial phases: (phase_name, description, list of .str file basenames)
-TUTORIAL_PHASES = [
-    (
-        "1. Basic Hydrodynamics",
-        "Minimal setup, output, wind forcing, friction",
-        ["mm_hyd_00", "mm_hyd_01", "mm_hyd_02", "mm_hyd_03"],
-    ),
-    (
-        "2. Tidal Boundaries",
-        "Sea level boundary conditions",
-        ["mm_hyd_11", "mm_hyd_12", "mm_hyd_13"],
-    ),
-    (
-        "3. Coriolis & Rivers",
-        "Coriolis force, advection, river discharge",
-        ["mm_hyd_21", "mm_hyd_22", "mm_hyd_23"],
-    ),
-    (
-        "4. Salinity (3D)",
-        "Baroclinic salinity transport",
-        ["mm_hyd_31"],
-    ),
-    (
-        "5. Temperature (3D)",
-        "Full 3D with temperature and turbulence",
-        ["mm_hyd_41", "mm_hyd_42"],
-    ),
-    (
-        "6. Advanced Numerics",
-        "Non-linear free surface, Smagorinsky diffusion",
-        ["mm_hyd_43"],
-    ),
-]
+from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
 
 
 def _safe_filename(name: str) -> str:
@@ -194,7 +161,10 @@ def home_server(
 
     async def _refresh_jobs():
         if job_queue:
-            show_all = input.show_all_jobs() if _is_server_mode else True
+            try:
+                show_all = input.show_all_jobs() if _is_server_mode else True
+            except Exception:
+                show_all = False  # input not yet rendered on startup
             sid = None if show_all else _session_id
             jobs = await job_queue.list_jobs(limit=5, session_id=sid)
             recent_jobs_list.set(jobs)
@@ -416,12 +386,15 @@ def home_server(
             ui.tags.ol(
                 *[
                     ui.tags.li(
-                        ui.span(phase, class_="fw-bold"),
-                        ui.span(f" — {desc}", class_="text-muted"),
+                        ui.span(phase["title"], class_="fw-bold"),
+                        ui.span(f" — {phase['description']}", class_="text-muted"),
                         ui.br(),
-                        ui.code(", ".join(f"{f}.str" for f in files), class_="small"),
+                        ui.code(
+                            ", ".join(sim["str_file"] for sim in phase["simulations"]),
+                            class_="small",
+                        ),
                     )
-                    for phase, desc, files in TUTORIAL_PHASES
+                    for phase in TUTORIAL_CONTENT
                 ],
                 class_="small",
             ),
@@ -498,19 +471,27 @@ def home_server(
                 db.add(grid)
                 db.flush()
 
-                for phase_name, phase_desc, str_files in TUTORIAL_PHASES:
-                    for basename in str_files:
-                        str_path = project_path / f"{basename}.str"
+                for phase in TUTORIAL_CONTENT:
+                    for tsim in phase["simulations"]:
+                        str_path = project_path / tsim["str_file"]
                         if not str_path.exists():
                             continue
                         sim = Simulation(
                             project_id=project.id,
                             grid_id=grid.id,
-                            name=basename,
-                            description=f"{phase_name}: {phase_desc}",
-                            str_file=f"{basename}.str",
+                            name=tsim["name"],
+                            description=f"{phase['title']}: {tsim['title']}",
+                            str_file=tsim["str_file"],
                         )
                         db.add(sim)
+
+                project_id = project.id
+
+            # Activate project so target pages can auto-fill fields
+            from shyfem_ui.services.project_context import load_project_context
+            ctx = load_project_context(project_id)
+            if ctx and active_project is not None:
+                active_project.set(ctx)
 
             ui.notification_show(
                 f"Tutorial project '{name}' created successfully!", type="message"

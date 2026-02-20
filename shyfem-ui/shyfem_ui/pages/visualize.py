@@ -246,6 +246,7 @@ def visualize_server(
     session,
     config: Config,
     active_project=None,
+    tutorial_context=None,
 ):
     """Visualization page server logic."""
     # Auto-fill from active project
@@ -257,6 +258,17 @@ def visualize_server(
         if proj is None:
             return
         ui.update_text("data_path", value=proj["work_dir"])
+
+    # Auto-fill from tutorial navigation
+    @reactive.effect
+    def _on_tutorial_context():
+        if tutorial_context is None:
+            return
+        ctx = tutorial_context.get()
+        if ctx is None or ctx.get("target_tab") != "Visualize":
+            return
+        ui.update_text("data_path", value=ctx["work_dir"])
+        tutorial_context.set(None)
 
     # State
     loaded_data = reactive.value(None)

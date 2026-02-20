@@ -78,7 +78,7 @@ def create_app(config: Config | None = None) -> App:
     def server(input, output, session):
         _build_server(input, output, session, config, job_queue)
 
-    app = App(app_ui, server)
+    app = App(app_ui, server, static_assets=Path(__file__).parent / "www")
 
     # Cache headers for static assets
     if config.static_cache_max_age > 0:
@@ -505,6 +505,7 @@ def _build_ui(config: Config) -> ui.Tag:
 def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     """Build the application server logic."""
     active_project = reactive.value(None)
+    tutorial_context = reactive.value(None)
 
     def nav_to(tab_name: str):
         ui.update_navs("main_navbar", selected=tab_name, session=session)
@@ -529,13 +530,19 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     # Initialize page servers
     home.home_server("home", config, job_queue,
                      active_project=active_project, nav_callback=nav_to)
-    tutorial.tutorial_server("tutorial", config, active_project=active_project, nav_callback=nav_to)
-    grid_prep.grid_prep_server("grid_prep", config, active_project=active_project)
+    tutorial.tutorial_server("tutorial", config, active_project=active_project,
+                             nav_callback=nav_to, tutorial_context=tutorial_context)
+    grid_prep.grid_prep_server("grid_prep", config, active_project=active_project,
+                               tutorial_context=tutorial_context)
     partitioning.partitioning_server("partitioning", config, active_project=active_project)
-    simulation.simulation_server("simulation", config, active_project=active_project)
-    run.run_server("run", config, job_queue, active_project=active_project)
-    postprocess.postprocess_server("postprocess", config, active_project=active_project)
-    visualize.visualize_server("visualize", config, active_project=active_project)
+    simulation.simulation_server("simulation", config, active_project=active_project,
+                                 tutorial_context=tutorial_context)
+    run.run_server("run", config, job_queue, active_project=active_project,
+                   tutorial_context=tutorial_context)
+    postprocess.postprocess_server("postprocess", config, active_project=active_project,
+                                   tutorial_context=tutorial_context)
+    visualize.visualize_server("visualize", config, active_project=active_project,
+                               tutorial_context=tutorial_context)
     compare.compare_server("compare", config, job_queue, active_project=active_project)
     ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
 

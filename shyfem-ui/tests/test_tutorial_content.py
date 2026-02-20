@@ -63,6 +63,110 @@ class TestTutorialContentStructure:
                     assert isinstance(sim["new_params"], dict)
 
 
+class TestActionFields:
+    """Validate the new actions/expected/screenshot fields."""
+
+    def test_every_step_has_actions(self):
+        from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+        for phase in TUTORIAL_CONTENT:
+            for sim in phase["simulations"]:
+                for step in sim["steps"]:
+                    assert "actions" in step, (
+                        f"Step '{step['title']}' in {sim['name']} missing actions"
+                    )
+                    assert isinstance(step["actions"], list)
+                    assert len(step["actions"]) > 0
+
+    def test_actions_are_nonempty_strings(self):
+        from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+        for phase in TUTORIAL_CONTENT:
+            for sim in phase["simulations"]:
+                for step in sim["steps"]:
+                    for action in step.get("actions", []):
+                        assert isinstance(action, str)
+                        assert len(action.strip()) > 0
+
+    def test_every_step_has_expected(self):
+        from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+        for phase in TUTORIAL_CONTENT:
+            for sim in phase["simulations"]:
+                for step in sim["steps"]:
+                    assert "expected" in step, (
+                        f"Step '{step['title']}' in {sim['name']} missing expected"
+                    )
+                    assert isinstance(step["expected"], str)
+                    assert len(step["expected"].strip()) > 0
+
+    def test_screenshot_is_string_when_present(self):
+        from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+        for phase in TUTORIAL_CONTENT:
+            for sim in phase["simulations"]:
+                for step in sim["steps"]:
+                    screenshot = step.get("screenshot")
+                    if screenshot is not None:
+                        assert isinstance(screenshot, str)
+                        assert screenshot.endswith(".png")
+
+    def test_at_least_some_steps_have_screenshots(self):
+        from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+        screenshots = []
+        for phase in TUTORIAL_CONTENT:
+            for sim in phase["simulations"]:
+                for step in sim["steps"]:
+                    if "screenshot" in step:
+                        screenshots.append(step["screenshot"])
+        assert len(screenshots) >= 5, "Expected at least 5 screenshot references"
+
+    def test_screenshot_filenames_are_unique(self):
+        from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+        filenames = []
+        for phase in TUTORIAL_CONTENT:
+            for sim in phase["simulations"]:
+                for step in sim["steps"]:
+                    if "screenshot" in step:
+                        filenames.append(step["screenshot"])
+        assert len(filenames) == len(set(filenames)), "Duplicate screenshot filenames"
+
+
+class TestBuildTutorialContext:
+    """Test the build_tutorial_context() helper."""
+
+    def test_valid_sim_returns_dict(self):
+        from shyfem_ui.tutorial_content import build_tutorial_context
+        ctx = build_tutorial_context("mm_hyd_00", "/tmp/work", "Grid Prep")
+        assert ctx is not None
+        assert isinstance(ctx, dict)
+        assert ctx["sim_name"] == "mm_hyd_00"
+        assert ctx["str_file"] == "mm_hyd_00.str"
+        assert ctx["work_dir"] == "/tmp/work"
+        assert ctx["grd_file"] == "GRID/MM_coarse.grd"
+        assert ctx["target_tab"] == "Grid Prep"
+
+    def test_invalid_sim_returns_none(self):
+        from shyfem_ui.tutorial_content import build_tutorial_context
+        assert build_tutorial_context("nonexistent", "/tmp", "Run") is None
+
+    def test_all_sims_produce_valid_context(self):
+        from shyfem_ui.tutorial_content import build_tutorial_context, get_all_sim_names
+        for name in get_all_sim_names():
+            ctx = build_tutorial_context(name, "/work", "Simulation")
+            assert ctx is not None, f"build_tutorial_context failed for {name}"
+            assert "str_file" in ctx
+            assert "work_dir" in ctx
+            assert "grd_file" in ctx
+
+    def test_target_tab_preserved(self):
+        from shyfem_ui.tutorial_content import build_tutorial_context
+        ctx = build_tutorial_context("mm_hyd_02", "/work", "Post-Process")
+        assert ctx["target_tab"] == "Post-Process"
+
+    def test_returns_all_expected_keys(self):
+        from shyfem_ui.tutorial_content import build_tutorial_context
+        ctx = build_tutorial_context("mm_hyd_01", "/work", "Run")
+        expected_keys = {"sim_name", "str_file", "work_dir", "grd_file", "target_tab"}
+        assert set(ctx.keys()) == expected_keys
+
+
 class TestHelpers:
     """Test helper functions."""
 

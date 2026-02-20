@@ -124,6 +124,7 @@ def simulation_server(
     session,
     config: Config,
     active_project=None,
+    tutorial_context=None,
 ):
     """Simulation configuration page server logic."""
     # Auto-fill from active project
@@ -139,6 +140,20 @@ def simulation_server(
             if sim.get("str_file"):
                 str_path = str(Path(proj["work_dir"]) / sim["str_file"])
                 ui.update_text("str_path", value=str_path)
+
+    # Auto-fill from tutorial navigation
+    @reactive.effect
+    def _on_tutorial_context():
+        if tutorial_context is None:
+            return
+        ctx = tutorial_context.get()
+        if ctx is None or ctx.get("target_tab") != "Simulation":
+            return
+        ui.update_text(
+            "str_path",
+            value=str(Path(ctx["work_dir"]) / ctx["str_file"]),
+        )
+        tutorial_context.set(None)
 
     # State
     current_file_path = reactive.value(None)

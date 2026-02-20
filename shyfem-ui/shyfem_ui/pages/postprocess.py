@@ -219,6 +219,7 @@ def postprocess_server(
     session,
     config: Config,
     active_project=None,
+    tutorial_context=None,
 ):
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
@@ -232,6 +233,17 @@ def postprocess_server(
         if proj is None:
             return
         ui.update_text("shy_path", value=proj["work_dir"])
+
+    # Auto-fill from tutorial navigation
+    @reactive.effect
+    def _on_tutorial_context():
+        if tutorial_context is None:
+            return
+        ctx = tutorial_context.get()
+        if ctx is None or ctx.get("target_tab") != "Post-Process":
+            return
+        ui.update_text("shy_path", value=ctx["work_dir"])
+        tutorial_context.set(None)
 
     # State
     log_content = reactive.value("")

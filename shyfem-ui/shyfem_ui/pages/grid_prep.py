@@ -130,6 +130,7 @@ def grid_prep_server(
     session,
     config: Config,
     active_project=None,
+    tutorial_context=None,
 ):
     """Grid preparation page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
@@ -147,6 +148,20 @@ def grid_prep_server(
             if grid.get("grd_file"):
                 grd_path = str(Path(proj["work_dir"]) / grid["grd_file"])
                 ui.update_text("grd_path", value=grd_path)
+
+    # Auto-fill from tutorial navigation
+    @reactive.effect
+    def _on_tutorial_context():
+        if tutorial_context is None:
+            return
+        ctx = tutorial_context.get()
+        if ctx is None or ctx.get("target_tab") != "Grid Prep":
+            return
+        ui.update_text(
+            "grd_path",
+            value=str(Path(ctx["work_dir"]) / ctx["grd_file"]),
+        )
+        tutorial_context.set(None)
 
     # State
     current_grd = reactive.value(None)  # GrdFile object

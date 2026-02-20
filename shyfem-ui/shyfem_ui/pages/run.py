@@ -237,6 +237,7 @@ def run_server(
     config: Config,
     job_queue: JobQueue | None = None,
     active_project=None,
+    tutorial_context=None,
 ):
     """Job execution page server logic."""
     # Initialize job queue if not provided
@@ -262,6 +263,22 @@ def run_server(
             sim = proj["simulations"][0]
             if sim.get("str_file"):
                 ui.update_text("input_file", value=str(Path(proj["work_dir"]) / sim["str_file"]))
+
+    # Auto-fill from tutorial navigation
+    @reactive.effect
+    def _on_tutorial_context():
+        if tutorial_context is None:
+            return
+        ctx = tutorial_context.get()
+        if ctx is None or ctx.get("target_tab") != "Run":
+            return
+        ui.update_text(
+            "input_file",
+            value=str(Path(ctx["work_dir"]) / ctx["str_file"]),
+        )
+        ui.update_text("working_dir", value=ctx["work_dir"])
+        ui.update_select("tool_select", selected="shyfem")
+        tutorial_context.set(None)
 
     # State
     active_jobs_data = reactive.value([])

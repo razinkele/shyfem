@@ -7,10 +7,14 @@ module level so they can be tested without a live Shiny session.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.tutorial_content import (
     TUTORIAL_CONTENT,
+    build_tutorial_context,
     get_all_sim_names,
     get_simulation,
 )
@@ -20,6 +24,27 @@ from shyfem_ui.tutorial_content import (
 # ---------------------------------------------------------------------------
 
 _TOTAL_SIMS = 14
+_WWW_DIR = Path(__file__).resolve().parent.parent / "www"
+
+_TAB_NAME_MAP = {
+    "run": "Run",
+    "post_process": "Post-Process",
+    "simulation": "Simulation",
+    "grid_prep": "Grid Prep",
+    "visualize": "Visualize",
+    "compare": "Compare",
+}
+
+
+def _md_to_html(text: str) -> str:
+    """Convert minimal markdown (bold and inline code) to HTML.
+
+    Handles ``**bold**`` and `` `code` `` patterns commonly used in
+    tutorial action strings.
+    """
+    text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+    return text
 
 
 def _icon(name: str, extra_class: str = "") -> ui.Tag:
@@ -61,7 +86,7 @@ def _render_phase_nav_item(
 
 
 def _render_step(step: dict, step_num: int) -> ui.Tag:
-    """Render a single tutorial step."""
+    """Render a single tutorial step with optional actions, expected result, and screenshot."""
     children: list[ui.Tag] = [
         ui.div(
             ui.span(
@@ -73,6 +98,52 @@ def _render_step(step: dict, step_num: int) -> ui.Tag:
         ),
         ui.p(step["content"], class_="ms-4"),
     ]
+
+    # Actions checklist (numbered instructions in a blue card)
+    actions = step.get("actions")
+    if actions:
+        children.append(
+            ui.div(
+                ui.h6(
+                    ui.tags.i(class_="bi bi-list-check me-1"),
+                    "Actions",
+                    class_="text-primary",
+                ),
+                ui.tags.ol(
+                    *[ui.tags.li(ui.HTML(_md_to_html(a))) for a in actions],
+                ),
+                class_="card card-body bg-light border-primary mb-2 ms-4",
+            )
+        )
+
+    # Expected result box (green-bordered info box)
+    expected = step.get("expected")
+    if expected:
+        children.append(
+            ui.div(
+                ui.h6(
+                    ui.tags.i(class_="bi bi-check2-square me-1"),
+                    "Expected Result",
+                    class_="text-success",
+                ),
+                ui.p(expected),
+                class_="card card-body border-success bg-success bg-opacity-10 mb-2 ms-4",
+            )
+        )
+
+    # Screenshot image (only if the file actually exists)
+    screenshot = step.get("screenshot")
+    if screenshot and (_WWW_DIR / "tutorial" / screenshot).is_file():
+        children.append(
+            ui.div(
+                ui.tags.img(
+                    src=f"tutorial/{screenshot}",
+                    class_="img-fluid rounded shadow-sm mb-2",
+                    alt=step["title"],
+                ),
+                class_="ms-4",
+            )
+        )
 
     nav_target = step.get("nav_target")
     if nav_target:
@@ -194,6 +265,7 @@ def tutorial_server(
     config,
     active_project,
     nav_callback=None,
+    tutorial_context=None,
 ):
     """Tutorial page server logic."""
 
@@ -295,15 +367,24 @@ def tutorial_server(
                 return
 
     # Navigation button handlers
-    _nav_targets = {"run", "post_process"}
+    _nav_targets = {"run", "post_process", "simulation", "grid_prep", "visualize", "compare"}
 
     def _make_nav_handler(target: str):
         @reactive.effect
         @reactive.event(input[f"nav_{target}"])
         def _():
+            tab_name = _TAB_NAME_MAP.get(
+                target, target.replace("_", " ").title()
+            )
+            if tutorial_context is not None:
+                cur = current_sim.get()
+                proj = active_project.get() if active_project else None
+                if proj and cur:
+                    ctx = build_tutorial_context(
+                        cur, proj["work_dir"], tab_name
+                    )
+                    tutorial_context.set(ctx)
             if nav_callback is not None:
-                # Convert target back to tab name
-                tab_name = target.replace("_", "-").title().replace("-", " ")
                 nav_callback(tab_name)
 
     for target in _nav_targets:
