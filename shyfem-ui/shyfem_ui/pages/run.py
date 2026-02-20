@@ -31,6 +31,21 @@ from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, Work
 logger = logging.getLogger(__name__)
 
 
+def _preflight_validate(simulation_id: int | None) -> list[str]:
+    """Run pre-flight file validation for a simulation.
+
+    Returns list of warning strings. Empty = all OK.
+    Returns empty list for None or invalid simulation IDs (non-blocking).
+    """
+    if simulation_id is None:
+        return []
+    try:
+        from shyfem_ui.services.file_service import FileService
+        return FileService.validate_simulation_files(simulation_id)
+    except (ValueError, Exception):
+        return []
+
+
 @module.ui
 def run_ui():
     """Job execution page UI."""
