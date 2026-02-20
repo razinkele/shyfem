@@ -34,6 +34,9 @@ class Project(Base):
     simulations: Mapped[list["Simulation"]] = relationship(
         "Simulation", back_populates="project", cascade="all, delete-orphan"
     )
+    files: Mapped[list["ProjectFile"]] = relationship(
+        "ProjectFile", back_populates="project", cascade="all, delete-orphan"
+    )
 
     @property
     def work_path(self) -> Path:
@@ -42,6 +45,35 @@ class Project(Base):
 
     def __repr__(self) -> str:
         return f"<Project(id={self.id}, name='{self.name}')>"
+
+
+class ProjectFile(Base):
+    """A file tracked within a project."""
+
+    __tablename__ = "project_files"
+    __table_args__ = (
+        Index("ix_project_files_project_id", "project_id"),
+        Index("ix_project_files_file_type", "file_type"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("projects.id"), nullable=False
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    rel_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    file_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    # Relationships
+    project: Mapped["Project"] = relationship("Project", back_populates="files")
+
+    def __repr__(self) -> str:
+        return f"<ProjectFile(id={self.id}, filename='{self.filename}', type='{self.file_type}')>"
 
 
 class Grid(Base):
