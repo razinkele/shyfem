@@ -257,7 +257,13 @@ def str_editor_server(
             style="font-family: monospace; font-size: 13px;",
         )
 
-        form_panel = _build_form_panel(parsed)
+        # Compute search filter
+        try:
+            search_term = input.param_search()
+        except Exception:
+            search_term = ""
+        search_filter = filter_sections(search_term, parsed)
+        form_panel = _build_form_panel(parsed, search_filter=search_filter)
 
         if mode == "raw":
             return raw_panel
