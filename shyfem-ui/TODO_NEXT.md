@@ -555,6 +555,40 @@
 
 ---
 
+## Phase 44: File Management UI Integration
+
+> Server deployment: end-to-end file management through the browser.
+
+- [x] **44.1** Enhanced file_browser with project persistence — 5 tests
+  - `persist_upload()` reads temp file, calls `FileService.upload_file()`
+  - `infer_file_type()` auto-detects category from extension
+  - Returns None gracefully on quota exceeded or missing project
+
+- [x] **44.2** File picker component (new) — 15 tests
+  - `file_picker_ui()` — dropdown + "Browse..." button
+  - `file_picker_server()` — reactive choices from FileService, browse modal
+  - `build_file_choices()` pure function with type filtering
+  - `is_file_param()` / `param_to_file_types()` — STR parameter detection
+
+- [x] **44.3** Files page (new tab) — 8 tests
+  - Storage usage bar with progress indicator
+  - File table with type badges, download, and delete actions
+  - Type filter buttons (All, Grid, Forcing, Boundary, STR, Config, Other)
+  - Upload section with type selector and subdirectory input
+  - "Seed Tutorial Files" button for empty projects
+
+- [x] **44.4** STR editor file picker integration — 7 tests
+  - File parameters auto-detected via `is_file_param()`
+  - Renders `file_picker_ui()` instead of `ui.input_text()` when project active
+  - Falls back to plain text input when no project selected
+  - `project_id` threaded from simulation page → STR editor → form panel
+
+- [x] **44.5** Run page pre-flight validation — 4 tests
+  - `_preflight_validate()` calls `FileService.validate_simulation_files()`
+  - Returns empty list for invalid/missing simulations (non-blocking)
+
+---
+
 ## Implementation Priority
 
 ```
