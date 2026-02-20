@@ -101,9 +101,12 @@ def create_app(config: Config | None = None) -> App:
     if config.deployment_mode == "server" and config.rate_limit_rpm > 0:
         app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm, trusted_proxies=config.trusted_proxies)
 
-    # Request ID correlation
-    from shyfem_ui.middleware.request_id import RequestIdMiddleware
+    # Request ID correlation (middleware + logging filter)
+    from shyfem_ui.middleware.request_id import RequestIdFilter, RequestIdMiddleware
     app = RequestIdMiddleware(app)
+    root_logger = logging.getLogger()
+    if not any(isinstance(f, RequestIdFilter) for f in root_logger.filters):
+        root_logger.addFilter(RequestIdFilter())
 
     # Health check endpoint (outermost — bypasses auth and rate limiting)
     app = HealthCheckMiddleware(app, db_check=_check_db_health, job_queue=job_queue)
@@ -363,24 +366,16 @@ class HealthCheckMiddleware:
         except Exception:
             db_ok = False
 
-        # Probe job queue
+        # Probe job queue (active_jobs and queue_depth are the same value)
         active_jobs = -1
         queue_ok = True
         try:
-            active_jobs = getattr(self._job_queue, "active_job_count", -1)
-            if callable(active_jobs):
-                active_jobs = active_jobs()
+            val = getattr(self._job_queue, "active_job_count", -1)
+            active_jobs = val() if callable(val) else val
         except Exception:
             active_jobs = -1
             queue_ok = False
-
-        # Queue depth and worker count
-        queue_depth = -1
-        try:
-            qd = getattr(self._job_queue, "active_job_count", -1)
-            queue_depth = qd() if callable(qd) else qd
-        except Exception:
-            queue_depth = -1
+        queue_depth = active_jobs
 
         worker_count = -1
         try:
@@ -681,14 +676,12 @@ Environment variables (can be used instead of arguments):
 
     port = args.port or config.port
 
-    # Create and run app
-    from shyfem_ui.middleware.request_id import RequestIdFilter
+    # Create and run app (RequestIdFilter already added in create_app())
     logging.basicConfig(
         level=logging.DEBUG if config.debug else logging.INFO,
         format="%(asctime)s [%(name)s] [%(request_id)s] %(levelname)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    logging.getLogger().addFilter(RequestIdFilter())
     logger.info("Starting SHYFEM Workbench...")
     logger.info("  Mode: %s", config.deployment_mode)
     logger.info("  SHYFEM Dir: %s", config.shyfem_dir)
