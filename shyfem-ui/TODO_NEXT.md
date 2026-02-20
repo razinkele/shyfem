@@ -491,6 +491,21 @@
 
 ---
 
+## Phase 40: Compare Page Diff Colorization
+
+> Scientific workflow: improve param diff readability and STR file selection.
+
+- [x] **40.1** Add semantic diff colorization to Parameter Diff tab — 7 tests
+  - `diff_type` field on each row: `"only_a"` (red), `"only_b"` (green), `"changed"` (yellow)
+  - Module-level `_DIFF_TYPE_CLASSES` mapping to Bootstrap classes
+
+- [x] **40.2** Add STR file picker from active project — 7 tests
+  - `_extract_str_choices()` pure function extracts STR paths from project context
+  - Reactive `str_file_inputs` renderer: dropdown when project active, text input fallback
+  - De-duplicates paths with simulation entries taking priority
+
+---
+
 ## Implementation Priority
 
 ```
