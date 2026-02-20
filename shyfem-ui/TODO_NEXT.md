@@ -458,6 +458,23 @@
 
 ---
 
+## Phase 38: Job Notification Improvements
+
+> Cross-page job completion/failure notifications using app-level polling
+> with status transition detection.
+
+- [x] **38.1** Add `NotificationService` — 11 tests
+  - Detects transitions to terminal states (completed, failed, cancelled)
+  - First-poll deduplication (no alert storm on startup)
+  - Prunes stale jobs from seen set
+
+- [x] **38.2** Wire into `_build_server()` in `app.py`
+  - `reactive.invalidate_later(5)` polls job queue every 5 seconds
+  - Calls `ui.notification_show()` with appropriate type/duration
+  - Session-aware in server mode (only own jobs)
+
+---
+
 ## Implementation Priority
 
 ```
