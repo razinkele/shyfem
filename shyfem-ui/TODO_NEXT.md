@@ -475,6 +475,22 @@
 
 ---
 
+## Phase 39: Rate Limiter LRU + Debug Middleware Cleanup
+
+> Ops readiness: remove temporary debug middleware and add memory safety
+> to the rate limiter for long-running server deployments.
+
+- [x] **39.1** Remove `_WsDebugMiddleware`
+  - Deleted class definition (41 lines) and usage in `create_app()`
+  - Was labeled "Temporary", shipped for 30+ phases
+
+- [x] **39.2** Add LRU client eviction to `RateLimitMiddleware` — 3 tests
+  - `max_clients` parameter (default 10,000)
+  - Two-pass `_prune_clients()`: stale-first, then LRU by recency
+  - Prevents unbounded `_requests` dict growth on busy servers
+
+---
+
 ## Implementation Priority
 
 ```
