@@ -22,6 +22,12 @@ from shyfem_ui.services.report import generate_comparison_report
 
 logger = logging.getLogger(__name__)
 
+_DIFF_TYPE_CLASSES = {
+    "only_a": "table-danger",
+    "only_b": "table-success",
+    "changed": "table-warning",
+}
+
 
 @module.ui
 def compare_ui():
@@ -305,15 +311,9 @@ def compare_server(
                      class_="text-muted small text-center"),
             )
 
-        _diff_type_classes = {
-            "only_a": "table-danger",
-            "only_b": "table-success",
-            "changed": "table-warning",
-        }
-
         rows = []
         for row in diff["rows"]:
-            diff_class = _diff_type_classes.get(row.get("diff_type", ""), "")
+            diff_class = _DIFF_TYPE_CLASSES.get(row.get("diff_type", ""), "")
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(ui.code(row["section"])),
