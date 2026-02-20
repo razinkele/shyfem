@@ -1,6 +1,6 @@
 """Tests for helper functions in pages/postprocess.py."""
 
-from shyfem_ui.pages.postprocess import _parse_shyelab_info
+from shyfem_ui.pages.postprocess import _discover_shy_files, _parse_shyelab_info
 
 
 SAMPLE_SHYELAB_OUTPUT = """\
@@ -101,3 +101,47 @@ class TestParseShyelabInfo:
         # isphe maps to a custom key in key_map (not listed, so raw key)
         # dirn maps to raw key
         assert "Yes" in str(info.values()) or "No" in str(info.values())
+
+
+class TestDiscoverShyFiles:
+    """Tests for _discover_shy_files()."""
+
+    def test_empty_dir(self, tmp_path):
+        result = _discover_shy_files(tmp_path)
+        assert result == []
+
+    def test_with_shy_files(self, tmp_path):
+        (tmp_path / "output_a.shy").write_bytes(b"x" * 2048)
+        (tmp_path / "output_b.shy").write_bytes(b"x" * 100)
+        result = _discover_shy_files(tmp_path)
+        assert len(result) == 2
+        assert result[0]["name"] == "output_a.shy"
+        assert result[1]["name"] == "output_b.shy"
+        assert result[0]["path"] == str(tmp_path / "output_a.shy")
+
+    def test_ignores_non_shy(self, tmp_path):
+        (tmp_path / "data.nc").write_bytes(b"nc")
+        (tmp_path / "log.txt").write_bytes(b"log")
+        (tmp_path / "valid.shy").write_bytes(b"shy")
+        result = _discover_shy_files(tmp_path)
+        assert len(result) == 1
+        assert result[0]["name"] == "valid.shy"
+
+    def test_nonexistent_dir(self):
+        result = _discover_shy_files("/nonexistent/path/xyz")
+        assert result == []
+
+    def test_size_formatting_bytes(self, tmp_path):
+        (tmp_path / "small.shy").write_bytes(b"x" * 500)
+        result = _discover_shy_files(tmp_path)
+        assert "500 B" == result[0]["size_str"]
+
+    def test_size_formatting_kb(self, tmp_path):
+        (tmp_path / "medium.shy").write_bytes(b"x" * 5120)
+        result = _discover_shy_files(tmp_path)
+        assert "5.0 KB" == result[0]["size_str"]
+
+    def test_size_formatting_mb(self, tmp_path):
+        (tmp_path / "large.shy").write_bytes(b"x" * (2 * 1024 * 1024))
+        result = _discover_shy_files(tmp_path)
+        assert "2.0 MB" == result[0]["size_str"]

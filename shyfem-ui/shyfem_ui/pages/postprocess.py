@@ -183,6 +183,16 @@ def postprocess_ui():
                     class_="btn-outline-primary w-100",
                 ),
 
+                # Batch convert to NetCDF
+                ui.hr(),
+                ui.h5("Batch Convert to NetCDF"),
+                ui.output_ui("shy_file_list"),
+                ui.input_action_button(
+                    "batch_convert_btn",
+                    "Convert Selected to NetCDF",
+                    class_="btn-outline-success w-100 mt-2",
+                ),
+
                 width=320,
             ),
             # Main content
@@ -560,6 +570,128 @@ def postprocess_server(
         ui.notification_show(
             f"Batch done: {success_count}/{len(paths)} succeeded",
             type="message" if success_count == len(paths) else "warning",
+        )
+
+    # --- Batch convert to NetCDF ---
+
+    @render.ui
+    def shy_file_list():
+        work_dir = None
+        if active_project is not None:
+            proj = active_project.get()
+            if proj is not None:
+                work_dir = proj.get("work_dir")
+        if work_dir is None:
+            shy_path = input.shy_path()
+            if shy_path:
+                p = Path(shy_path)
+                if p.is_dir():
+                    work_dir = str(p)
+                elif p.parent.is_dir():
+                    work_dir = str(p.parent)
+        if work_dir is None:
+            return ui.p(
+                "No .shy files found. Enter a path or select a project.",
+                class_="text-muted small",
+            )
+        files = _discover_shy_files(work_dir)
+        if files:
+            return ui.input_checkbox_group(
+                "batch_convert_files",
+                "Select files:",
+                choices={f["path"]: f"{f['name']} ({f['size_str']})" for f in files},
+                selected=[f["path"] for f in files],
+            )
+        return ui.p(
+            "No .shy files found. Enter a path or select a project.",
+            class_="text-muted small",
+        )
+
+    @reactive.effect
+    @reactive.event(input.batch_convert_btn)
+    async def _batch_convert():
+        try:
+            selected = input.batch_convert_files()
+        except Exception:
+            selected = None
+        if not selected:
+            ui.notification_show("No files selected for conversion", type="warning")
+            return
+
+        results = []
+        log_content.set(f"Converting {len(selected)} files to NetCDF...\n\n")
+
+        for i, file_path in enumerate(selected):
+            try:
+                path = config.validate_path(file_path, must_exist=True)
+            except (ValueError, FileNotFoundError) as e:
+                results.append({
+                    "file": file_path,
+                    "status": "error",
+                    "message": str(e),
+                    "files": [],
+                })
+                continue
+
+            output_dir = input.output_dir() or str(path.parent)
+            try:
+                output_path = config.validate_path(output_dir)
+            except ValueError as e:
+                results.append({
+                    "file": file_path,
+                    "status": "error",
+                    "message": str(e),
+                    "files": [],
+                })
+                continue
+
+            output_path.mkdir(parents=True, exist_ok=True)
+
+            try:
+                result = await wrapper.run_shyelab(
+                    path, output_path, ["-outformat", "nc"],
+                )
+
+                results.append({
+                    "file": path.name,
+                    "status": "success" if result.success else "failed",
+                    "message": f"code={result.return_code}, {len(result.output_files)} files",
+                    "files": result.output_files,
+                    "duration": result.duration,
+                })
+
+                current = log_content.get()
+                log_content.set(
+                    current +
+                    f"[{i+1}/{len(selected)}] {path.name}: "
+                    f"{'OK' if result.success else 'FAILED'} "
+                    f"({result.duration:.1f}s)\n"
+                )
+
+            except Exception as e:
+                results.append({
+                    "file": file_path,
+                    "status": "error",
+                    "message": str(e),
+                    "files": [],
+                })
+
+        batch_results.set(results)
+
+        # Collect all output files
+        all_files = []
+        for r in results:
+            all_files.extend(r.get("files", []))
+        generated_files.set(all_files)
+
+        success_count = sum(1 for r in results if r["status"] == "success")
+        log_content.set(
+            log_content.get() +
+            f"\n*** Batch convert complete: {success_count}/{len(selected)} succeeded ***\n"
+        )
+        ui.notification_show(
+            f"Batch convert done: {success_count}/{len(selected)} succeeded",
+            type="message" if success_count == len(selected) else "warning",
         )
 
     # --- Render outputs ---
@@ -980,3 +1112,25 @@ def _parse_shyelab_info(output: str) -> dict:
         info["Layer Depths"] = ", ".join(layer_depths)
 
     return info
+
+
+def _discover_shy_files(directory: str | Path) -> list[dict]:
+    """Discover .shy files in a directory, returning sorted metadata."""
+    dir_path = Path(directory)
+    if not dir_path.is_dir():
+        return []
+    files = sorted(dir_path.glob("*.shy"), key=lambda p: p.name)
+    result = []
+    for f in files:
+        try:
+            size = f.stat().st_size
+        except OSError:
+            size = 0
+        if size < 1024:
+            size_str = f"{size} B"
+        elif size < 1024 * 1024:
+            size_str = f"{size / 1024:.1f} KB"
+        else:
+            size_str = f"{size / 1024 / 1024:.1f} MB"
+        result.append({"path": str(f), "name": f.name, "size_str": size_str})
+    return result
