@@ -506,6 +506,18 @@
 
 ---
 
+## Phase 41: Batch shy→NetCDF Conversion
+
+> Scientific workflow: streamlined batch conversion of .shy output files to NetCDF.
+
+- [x] **41.1** Add `_discover_shy_files()` helper + batch convert UI/server logic — 7 tests
+  - Auto-discovers .shy files from project directory or input path
+  - Checkbox selection + dedicated "Convert Selected to NetCDF" button
+  - Reuses existing batch_results table and log viewer for progress display
+  - `_format_size()` shared helper for human-readable file sizes
+
+---
+
 ## Implementation Priority
 
 ```
