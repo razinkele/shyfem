@@ -44,6 +44,83 @@ def validate_upload(
     return errors
 
 
+def infer_file_type(filename: str) -> str:
+    """Infer file_type category from filename/path.
+
+    Args:
+        filename: Filename or relative path (e.g. "mesh.grd", "INPUT/wind.fem").
+
+    Returns:
+        One of: grid, basin, str, restart, config, output, forcing, other.
+    """
+    from pathlib import PurePosixPath
+
+    p = PurePosixPath(filename)
+    ext = p.suffix.lower()
+    if ext == ".grd":
+        return "grid"
+    if ext == ".bas":
+        return "basin"
+    if ext == ".str":
+        return "str"
+    if ext == ".rst":
+        return "restart"
+    if ext == ".nml":
+        return "config"
+    if ext in (".shy", ".nc"):
+        return "output"
+    # Subdirectory hint
+    if len(p.parts) > 1 and p.parts[0].upper() == "INPUT":
+        return "forcing"
+    return "other"
+
+
+def persist_upload(
+    temp_path: Path,
+    filename: str,
+    project_id: int | None,
+    file_type: str | None = None,
+    subdir: str | None = None,
+) -> dict | None:
+    """Persist an uploaded file to a project via FileService.
+
+    Args:
+        temp_path: Path to the temporary uploaded file.
+        filename: Original filename.
+        project_id: Target project ID. If None, returns None (no persistence).
+        file_type: File category. If None, inferred from filename.
+        subdir: Optional subdirectory within project work_dir.
+
+    Returns:
+        ProjectFile dict on success, None if project_id is None or on error.
+    """
+    if project_id is None:
+        return None
+
+    if file_type is None:
+        file_type = infer_file_type(filename)
+
+    try:
+        from shyfem_ui.services.file_service import FileService
+
+        file_data = temp_path.read_bytes()
+        return FileService.upload_file(
+            project_id=project_id,
+            file_data=file_data,
+            filename=filename,
+            file_type=file_type,
+            subdir=subdir,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to persist upload %s to project %s",
+            filename,
+            project_id,
+            exc_info=True,
+        )
+        return None
+
+
 @module.ui
 def file_browser_ui(
     label: str = "Select File",
