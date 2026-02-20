@@ -36,16 +36,7 @@ def compare_ui():
                 ui.output_ui("job_selector"),
                 ui.hr(),
                 ui.h5("Compare STR Files"),
-                ui.input_text(
-                    "str_file_a",
-                    "STR File A",
-                    placeholder="/path/to/file_a.str",
-                ),
-                ui.input_text(
-                    "str_file_b",
-                    "STR File B",
-                    placeholder="/path/to/file_b.str",
-                ),
+                ui.output_ui("str_file_inputs"),
                 ui.input_action_button(
                     "compare_str_btn",
                     "Compare Parameters",
@@ -156,6 +147,37 @@ def compare_server(
                 "compare_jobs_btn",
                 "Compare Jobs",
                 class_="btn-primary btn-sm w-100 mt-2",
+            ),
+        )
+
+    @render.ui
+    def str_file_inputs():
+        proj = active_project.get() if active_project is not None else None
+        choices = _extract_str_choices(proj)
+        if choices:
+            select_choices = {"": "Select..."} | choices
+            return ui.div(
+                ui.input_select(
+                    "str_file_a",
+                    "STR File A",
+                    choices=select_choices,
+                ),
+                ui.input_select(
+                    "str_file_b",
+                    "STR File B",
+                    choices=select_choices,
+                ),
+            )
+        return ui.div(
+            ui.input_text(
+                "str_file_a",
+                "STR File A",
+                placeholder="/path/to/file_a.str",
+            ),
+            ui.input_text(
+                "str_file_b",
+                "STR File B",
+                placeholder="/path/to/file_b.str",
             ),
         )
 
@@ -283,14 +305,15 @@ def compare_server(
                      class_="text-muted small text-center"),
             )
 
+        _diff_type_classes = {
+            "only_a": "table-danger",
+            "only_b": "table-success",
+            "changed": "table-warning",
+        }
+
         rows = []
         for row in diff["rows"]:
-            diff_class = ""
-            if row["value_a"] != row["value_b"]:
-                if row["value_a"] == "-" or row["value_b"] == "-":
-                    diff_class = "table-info"
-                else:
-                    diff_class = "table-warning"
+            diff_class = _diff_type_classes.get(row.get("diff_type", ""), "")
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(ui.code(row["section"])),
@@ -426,6 +449,36 @@ def compare_server(
     return {}
 
 
+def _extract_str_choices(project_ctx: dict | None) -> dict[str, str]:
+    """Extract STR file choices from a project context dict.
+
+    Returns ``{absolute_path: human_label}`` for every STR file found in the
+    project's simulations and uploaded project files.  Simulation entries take
+    priority when the same path appears in both sources.  Returns an empty
+    dict when *project_ctx* is ``None`` or contains no STR files.
+    """
+    if project_ctx is None:
+        return {}
+
+    choices: dict[str, str] = {}
+
+    # 1. Project files with file_type == "str"
+    work_dir = project_ctx.get("work_dir", "")
+    for f in project_ctx.get("files", []):
+        if f.get("file_type") == "str":
+            path = str(Path(work_dir) / f["rel_path"])
+            choices[path] = f["filename"]
+
+    # 2. Simulations (overwrite any duplicate paths from step 1)
+    for sim in project_ctx.get("simulations", []):
+        str_file = sim.get("str_file")
+        if str_file:
+            label = f"{sim['name']} ({Path(str_file).name})"
+            choices[str_file] = label
+
+    return choices
+
+
 def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
     """Compute parameter differences between two parsed STR files."""
     rows = []
@@ -442,11 +495,18 @@ def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
             val_a = str(params_a.get(param, "-"))
             val_b = str(params_b.get(param, "-"))
             if val_a != val_b:
+                if val_b == "-":
+                    diff_type = "only_a"
+                elif val_a == "-":
+                    diff_type = "only_b"
+                else:
+                    diff_type = "changed"
                 rows.append({
                     "section": section_name,
                     "param": param,
                     "value_a": val_a,
                     "value_b": val_b,
+                    "diff_type": diff_type,
                 })
 
     return {
