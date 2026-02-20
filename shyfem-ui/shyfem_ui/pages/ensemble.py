@@ -572,6 +572,19 @@ def ensemble_server(
             logger.debug("Ensemble status poll failed, retrying in 5s", exc_info=True)
             reactive.invalidate_later(5)
 
+    @reactive.effect
+    @reactive.event(input.stop_all_btn)
+    async def _stop_all_ensemble():
+        state = ensemble_state.get()
+        if not state:
+            return
+        cancelled = await _cancel_jobs(job_queue, state["job_ids"])
+        total = len(state["job_ids"])
+        ui.notification_show(
+            f"Cancelled {cancelled} of {total} jobs",
+            type="message" if cancelled > 0 else "warning",
+        )
+
     @render.ui
     def ensemble_progress():
         state = ensemble_state.get()
@@ -614,6 +627,16 @@ def ensemble_server(
             _badge(f"Queued: {queued}", "bg-info") if queued > 0 else None,
             _badge(f"Total: {total}", "bg-secondary"),
             class_="d-flex gap-2 mb-3",
+        )
+
+        stop_btn = (
+            ui.input_action_button(
+                "stop_all_btn",
+                "Stop All Jobs",
+                class_="btn-danger btn-sm mb-3",
+            )
+            if running > 0 or queued > 0
+            else None
         )
 
         # Per-run rows
@@ -661,6 +684,7 @@ def ensemble_server(
                  class_="text-muted small"),
             status_bar,
             stat_badges,
+            stop_btn,
             job_table,
         )
 
@@ -822,6 +846,18 @@ def _combo_label(combo: dict, index: int) -> str:
 def _badge(text: str, bg_class: str) -> ui.Tag:
     """Create a small badge."""
     return ui.span(text, class_=f"badge {bg_class}")
+
+
+async def _cancel_jobs(job_queue, job_ids: list[str]) -> int:
+    """Cancel multiple jobs, returning count of successful cancellations."""
+    cancelled = 0
+    for job_id in job_ids:
+        try:
+            if await job_queue.cancel(job_id):
+                cancelled += 1
+        except Exception:
+            logger.debug("Failed to cancel job %s", job_id, exc_info=True)
+    return cancelled
 
 
 def _load_ts(path: Path) -> list[list[float]]:
