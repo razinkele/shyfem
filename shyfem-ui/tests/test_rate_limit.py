@@ -183,3 +183,98 @@ class TestRateLimitMiddleware:
         assert sent[0]["status"] == 429
         body_msg = sent[1]["body"]
         assert b"Rate limit exceeded" in body_msg
+
+    @pytest.mark.asyncio
+    async def test_stale_clients_evicted_when_over_max(self):
+        """Stale client entries are pruned when dict exceeds max_clients."""
+        mw = RateLimitMiddleware(_mock_app, rpm=5, max_clients=2)
+        sent = []
+
+        async def capture_send(msg):
+            sent.append(msg)
+
+        base_time = 1000.0
+        with patch("shyfem_ui.app.time") as mock_time:
+            # Add 3 clients at t=1000
+            mock_time.monotonic.return_value = base_time
+            for ip in ["10.0.0.1", "10.0.0.2", "10.0.0.3"]:
+                sent.clear()
+                await mw(_http_scope(ip), _noop_receive, capture_send)
+                assert sent[0]["status"] == 200
+
+            # At t=1000, all 3 are fresh — no eviction yet because pruning checks
+            # Move past the window so entries become stale
+            mock_time.monotonic.return_value = base_time + 61.0
+
+            # New request triggers pruning
+            sent.clear()
+            await mw(_http_scope("10.0.0.4"), _noop_receive, capture_send)
+            assert sent[0]["status"] == 200
+
+            # Stale entries should be pruned, only fresh client(s) remain
+            assert len(mw._requests) <= 2
+
+    @pytest.mark.asyncio
+    async def test_evicted_client_can_make_requests_again(self):
+        """After eviction, a returning client starts fresh."""
+        mw = RateLimitMiddleware(_mock_app, rpm=2, max_clients=1)
+        sent = []
+
+        async def capture_send(msg):
+            sent.append(msg)
+
+        base_time = 1000.0
+        with patch("shyfem_ui.app.time") as mock_time:
+            mock_time.monotonic.return_value = base_time
+            # Client A makes requests
+            for _ in range(2):
+                sent.clear()
+                await mw(_http_scope("10.0.0.1"), _noop_receive, capture_send)
+
+            # Move past window so A becomes stale
+            mock_time.monotonic.return_value = base_time + 61.0
+
+            # Client B triggers eviction of A
+            sent.clear()
+            await mw(_http_scope("10.0.0.2"), _noop_receive, capture_send)
+            assert sent[0]["status"] == 200
+
+            # Client A returns — should get fresh bucket
+            sent.clear()
+            await mw(_http_scope("10.0.0.1"), _noop_receive, capture_send)
+            assert sent[0]["status"] == 200
+
+    @pytest.mark.asyncio
+    async def test_active_clients_not_evicted_over_stale(self):
+        """When pruning, active clients are kept over stale ones."""
+        mw = RateLimitMiddleware(_mock_app, rpm=5, max_clients=2)
+        sent = []
+
+        async def capture_send(msg):
+            sent.append(msg)
+
+        base_time = 1000.0
+        with patch("shyfem_ui.app.time") as mock_time:
+            # Client A at t=1000
+            mock_time.monotonic.return_value = base_time
+            await mw(_http_scope("10.0.0.1"), _noop_receive, capture_send)
+
+            # Client B at t=1050 (more recent)
+            mock_time.monotonic.return_value = base_time + 50.0
+            await mw(_http_scope("10.0.0.2"), _noop_receive, capture_send)
+
+            # Move past window for A but not B
+            mock_time.monotonic.return_value = base_time + 61.0
+
+            # Client C — brings count to 3 (A, B, C) after this call
+            await mw(_http_scope("10.0.0.3"), _noop_receive, capture_send)
+
+            # Now 3 entries exist; next request triggers pruning
+            sent.clear()
+            await mw(_http_scope("10.0.0.3"), _noop_receive, capture_send)
+            assert sent[0]["status"] == 200
+
+            # A should be evicted (stale), B and C should remain
+            assert "10.0.0.1" not in mw._requests
+            assert "10.0.0.2" in mw._requests
+            assert "10.0.0.3" in mw._requests
