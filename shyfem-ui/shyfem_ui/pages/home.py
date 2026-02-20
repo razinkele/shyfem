@@ -7,9 +7,12 @@ from pathlib import Path
 
 from shiny import module, reactive, render, ui
 
+from sqlalchemy import or_
+
 from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
+from shyfem_ui.models.user import ProjectPermission
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
 
@@ -27,6 +30,32 @@ def _safe_filename(name: str) -> str:
         Sanitized string safe for use in filenames.
     """
     return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
+
+
+def get_visible_projects(db, user_id: int, role: str, limit: int = 10):
+    """Return projects visible to a user based on ownership and permissions.
+
+    Admins see all projects. Regular users see their own projects
+    plus projects shared with them.
+    """
+    if role == "admin":
+        return db.query(Project).order_by(Project.updated_at.desc()).limit(limit).all()
+
+    return (
+        db.query(Project)
+        .filter(
+            or_(
+                Project.owner_id == user_id,
+                Project.id.in_(
+                    db.query(ProjectPermission.project_id)
+                    .filter(ProjectPermission.user_id == user_id)
+                ),
+            )
+        )
+        .order_by(Project.updated_at.desc())
+        .limit(limit)
+        .all()
+    )
 
 
 @module.ui
@@ -145,9 +174,13 @@ def home_server(
             ui.notification_show(f"Error loading data: {e}", type="error")
 
     def _refresh_projects():
+        from shyfem_ui.middleware.session_auth import get_current_user
+        user = get_current_user()
         with db_session() as db:
-            project_list = db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
-            # Convert to dicts to avoid detached instance errors
+            if user and user.get("role") != "admin":
+                project_list = get_visible_projects(db, user["id"], user["role"])
+            else:
+                project_list = db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
             projects.set([
                 {
                     "id": p.id,
@@ -155,6 +188,7 @@ def home_server(
                     "description": p.description,
                     "work_dir": p.work_dir,
                     "updated_at": p.updated_at,
+                    "owner_id": getattr(p, "owner_id", None),
                 }
                 for p in project_list
             ])
@@ -352,10 +386,13 @@ def home_server(
         # Create project in database
         try:
             with db_session() as db:
+                from shyfem_ui.middleware.session_auth import get_current_user
+                user = get_current_user()
                 project = Project(
                     name=name,
                     description=description or None,
                     work_dir=str(project_path),
+                    owner_id=user["id"] if user else None,
                 )
                 db.add(project)
 
@@ -453,10 +490,13 @@ def home_server(
         # Create database records
         try:
             with db_session() as db:
+                from shyfem_ui.middleware.session_auth import get_current_user
+                user = get_current_user()
                 project = Project(
                     name=name,
                     description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
                     work_dir=str(project_path),
+                    owner_id=user["id"] if user else None,
                 )
                 db.add(project)
                 db.flush()
@@ -786,10 +826,13 @@ def home_server(
 
         try:
             with db_session() as db:
+                from shyfem_ui.middleware.session_auth import get_current_user
+                user = get_current_user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
                     work_dir=str(result["work_dir"]),
+                    owner_id=user["id"] if user else None,
                 )
                 db.add(project)
                 db.flush()
@@ -887,10 +930,13 @@ def home_server(
 
         try:
             with db_session() as db:
+                from shyfem_ui.middleware.session_auth import get_current_user
+                user = get_current_user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
                     work_dir=str(result["work_dir"]),
+                    owner_id=user["id"] if user else None,
                 )
                 db.add(project)
                 db.flush()
