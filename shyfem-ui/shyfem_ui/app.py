@@ -350,7 +350,7 @@ class HealthCheckMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        if scope.get("path") != "/health" or scope.get("method", "GET") != "GET":
+        if scope.get("path") != "/health" or scope["method"] != "GET":
             return await self.app(scope, receive, send)
 
         from shyfem_ui import __version__

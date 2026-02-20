@@ -3,8 +3,6 @@
 import logging
 import uuid
 
-import pytest
-
 from shyfem_ui.middleware.request_id import (
     RequestIdFilter,
     RequestIdMiddleware,
@@ -42,7 +40,6 @@ async def _echo_app(scope, receive, send):
 
 class TestRequestIdMiddleware:
 
-    @pytest.mark.asyncio
     async def test_generates_uuid(self):
         mw = RequestIdMiddleware(_echo_app)
         sent = []
@@ -52,7 +49,6 @@ class TestRequestIdMiddleware:
         # Verify it's a valid UUID
         uuid.UUID(req_id)
 
-    @pytest.mark.asyncio
     async def test_propagates_incoming_header(self):
         incoming_id = "my-custom-request-id-123"
         headers = [[b"x-request-id", incoming_id.encode()]]
@@ -62,7 +58,6 @@ class TestRequestIdMiddleware:
         resp_headers = dict(sent[0]["headers"])
         assert resp_headers[b"x-request-id"].decode() == incoming_id
 
-    @pytest.mark.asyncio
     async def test_sets_context_var(self):
         captured_id = None
         async def capturing_app(scope, receive, send):
@@ -76,14 +71,12 @@ class TestRequestIdMiddleware:
         assert captured_id is not None
         uuid.UUID(captured_id)
 
-    @pytest.mark.asyncio
     async def test_resets_context_var_after_request(self):
         mw = RequestIdMiddleware(_echo_app)
         sent = []
         await mw(_http_scope(), _noop_receive, sent.append)
         assert request_id_var.get() is None
 
-    @pytest.mark.asyncio
     async def test_websocket_passthrough(self):
         call_count = 0
         async def ws_app(scope, receive, send):
