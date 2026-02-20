@@ -161,6 +161,89 @@ class FileService:
             project = db.query(Project).filter_by(id=pf.project_id).first()
             return Path(project.work_dir) / pf.rel_path
 
+    # Parameters in $name that reference files
+    _NAME_FILE_PARAMS = frozenset({
+        "wind", "rain", "qflux", "ice", "zinit", "tempin", "saltin",
+        "conzin", "restrt", "tempobs", "saltobs", "gotmpa", "basnam",
+        "offlin", "surfvel", "temptau", "salttau",
+    })
+
+    # Parameters in $bound sections that reference files
+    _BOUND_FILE_PARAMS = frozenset({
+        "boundn", "tempn", "saltn", "conzn", "vel3dn", "bio2dn", "sed2dn",
+    })
+
+    @classmethod
+    def validate_simulation_files(cls, simulation_id: int) -> list[str]:
+        """Check that all files referenced in the STR exist on disk.
+
+        Args:
+            simulation_id: Simulation whose STR file to validate.
+
+        Returns:
+            List of warning strings for missing files (empty = all OK).
+
+        Raises:
+            ValueError: If simulation_id does not exist.
+        """
+        from shyfem_ui.models.project import Simulation
+        from shyfem_ui.services.parser_str import StrParser
+
+        with db_session() as db:
+            sim = db.query(Simulation).filter_by(id=simulation_id).first()
+            if sim is None:
+                raise ValueError(f"Simulation {simulation_id} not found")
+
+            project = db.query(Project).filter_by(id=sim.project_id).first()
+            work_dir = Path(project.work_dir)
+            str_path = work_dir / sim.str_file
+
+        if not str_path.exists():
+            return [f"STR file not found: {sim.str_file}"]
+
+        parsed = StrParser.parse_file(str_path)
+        warnings: list[str] = []
+
+        # Check $name file references
+        name_section = parsed.sections.get("name")
+        if name_section:
+            for param, value in name_section.parameters.items():
+                if param in cls._NAME_FILE_PARAMS and isinstance(value, str) and value:
+                    path = work_dir / value
+                    if not path.exists():
+                        warnings.append(
+                            f"Missing file for $name/{param}: {value}"
+                        )
+
+        # Check $bound sections
+        for sec_name, section in parsed.sections.items():
+            if not sec_name.startswith("bound"):
+                continue
+            for param, value in section.parameters.items():
+                if param in cls._BOUND_FILE_PARAMS and isinstance(value, str) and value:
+                    path = work_dir / value
+                    if not path.exists():
+                        warnings.append(
+                            f"Missing file for ${sec_name}/{param}: {value}"
+                        )
+
+        # Check basin file from $title (3rd line = basin name)
+        title_section = parsed.sections.get("title")
+        if title_section and title_section.raw_lines:
+            content_lines = [
+                ln.strip() for ln in title_section.raw_lines
+                if ln.strip() and not ln.strip().startswith(("#", "!"))
+            ]
+            if len(content_lines) >= 3:
+                basin_name = content_lines[2]
+                bas_path = work_dir / (basin_name + ".bas")
+                if not bas_path.exists():
+                    warnings.append(
+                        f"Missing basin file: {basin_name}.bas"
+                    )
+
+        return warnings
+
     @staticmethod
     def get_project_storage(project_id: int) -> dict:
         """Get storage usage for a project.
