@@ -20,6 +20,9 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     work_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
+    owner_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -180,6 +183,9 @@ class Job(Base):
     session_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # Shiny session ID for multi-user filtering
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id"), nullable=True
+    )
 
     # Job identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)

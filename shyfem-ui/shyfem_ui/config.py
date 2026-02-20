@@ -83,6 +83,18 @@ class Config(BaseSettings):
     )
     auth_username: str = Field(default="admin", description="Basic auth username")
     auth_password: str = Field(default="", description="Basic auth password (required if auth_enabled)")
+    auth_session_ttl_hours: int = Field(
+        default=24,
+        description="Session cookie lifetime in hours"
+    )
+    default_admin_username: str = Field(
+        default="admin",
+        description="Default admin username created on first run"
+    )
+    default_admin_password: str = Field(
+        default="",
+        description="Default admin password (required for server mode first run)"
+    )
 
     # Debug settings
     debug: bool = Field(
