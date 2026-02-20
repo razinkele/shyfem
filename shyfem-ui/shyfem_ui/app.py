@@ -19,6 +19,7 @@ from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
     compare,
     ensemble,
+    files,
     grid_prep,
     home,
     partitioning,
@@ -490,6 +491,7 @@ def _build_ui(config: Config) -> ui.Tag:
             ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
             ui.nav_panel("Compare", compare.compare_ui("compare")),
             ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
+            ui.nav_panel("Files", files.files_ui("files")),
             ui.nav_spacer(),
             ui.nav_control(
                 ui.tags.button(
@@ -549,6 +551,7 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
                                tutorial_context=tutorial_context)
     compare.compare_server("compare", config, job_queue, active_project=active_project)
     ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
+    files.files_server("files", config, active_project=active_project)
 
     # --- Cross-page job notifications ---
     _notification_svc = NotificationService()
