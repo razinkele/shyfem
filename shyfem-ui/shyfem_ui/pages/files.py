@@ -1,7 +1,9 @@
 """Project file management page -- upload, browse, download, delete."""
 
 import base64
+import json
 import logging
+from pathlib import Path
 
 from shiny import module, reactive, render, ui
 
@@ -292,8 +294,6 @@ def files_server(
         for f in files:
             file_type = input.upload_type() or None
             subdir = input.upload_subdir() or None
-            from pathlib import Path
-
             result = persist_upload(
                 temp_path=Path(f["datapath"]),
                 filename=f["name"],
@@ -354,10 +354,11 @@ def files_server(
                 path = FileService.get_file_path(file_id)
                 data = path.read_bytes()
                 b64 = base64.b64encode(data).decode()
+                safe_name = json.dumps(path.name)
                 js = (
                     "var a = document.createElement('a');"
                     f"a.href = 'data:application/octet-stream;base64,{b64}';"
-                    f"a.download = '{path.name}';"
+                    f"a.download = {safe_name};"
                     "document.body.appendChild(a);"
                     "a.click();"
                     "document.body.removeChild(a);"
