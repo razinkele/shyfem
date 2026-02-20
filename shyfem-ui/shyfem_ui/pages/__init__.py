@@ -18,6 +18,7 @@ __all__ = [
     "ensemble",
     "tutorial",
     "files",
+    "admin",
 ]
 
 _modules: dict = {}

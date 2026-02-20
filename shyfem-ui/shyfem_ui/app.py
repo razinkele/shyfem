@@ -17,6 +17,7 @@ from shiny import App, reactive, ui
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
+    admin,
     compare,
     ensemble,
     files,
@@ -509,6 +510,7 @@ def _build_ui(config: Config) -> ui.Tag:
             ui.nav_panel("Compare", compare.compare_ui("compare")),
             ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
             ui.nav_panel("Files", files.files_ui("files")),
+            ui.nav_panel("Admin", admin.admin_ui("admin")),
             ui.nav_spacer(),
             ui.nav_control(
                 ui.tags.button(
@@ -580,6 +582,9 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue,
     compare.compare_server("compare", config, job_queue, active_project=active_project)
     ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
     files.files_server("files", config, active_project=active_project)
+
+    if auth_service:
+        admin.admin_server("admin", config, auth_service)
 
     # --- Cross-page job notifications ---
     _notification_svc = NotificationService()
