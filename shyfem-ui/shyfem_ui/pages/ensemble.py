@@ -848,7 +848,7 @@ def _badge(text: str, bg_class: str) -> ui.Tag:
     return ui.span(text, class_=f"badge {bg_class}")
 
 
-async def _cancel_jobs(job_queue, job_ids: list[str]) -> int:
+async def _cancel_jobs(job_queue: JobQueue, job_ids: list[str]) -> int:
     """Cancel multiple jobs, returning count of successful cancellations."""
     cancelled = 0
     for job_id in job_ids:
