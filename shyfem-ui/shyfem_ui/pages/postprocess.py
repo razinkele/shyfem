@@ -96,6 +96,15 @@ PRESETS = {
 }
 
 
+def _format_size(size: int) -> str:
+    """Format a byte count as a human-readable string."""
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / 1024 / 1024:.1f} MB"
+
+
 @module.ui
 def postprocess_ui():
     """Post-processing page UI."""
@@ -613,6 +622,7 @@ def postprocess_server(
         try:
             selected = input.batch_convert_files()
         except Exception:
+            logger.debug("batch_convert_files input unavailable")
             selected = None
         if not selected:
             ui.notification_show("No files selected for conversion", type="warning")
@@ -773,12 +783,7 @@ def postprocess_server(
                 size = 0
             total_size += size
 
-            if size < 1024:
-                size_str = f"{size} B"
-            elif size < 1024 * 1024:
-                size_str = f"{size / 1024:.1f} KB"
-            else:
-                size_str = f"{size / 1024 / 1024:.1f} MB"
+            size_str = _format_size(size)
 
             ext = path.suffix.lower()
             type_labels = {
@@ -1126,11 +1131,6 @@ def _discover_shy_files(directory: str | Path) -> list[dict]:
             size = f.stat().st_size
         except OSError:
             size = 0
-        if size < 1024:
-            size_str = f"{size} B"
-        elif size < 1024 * 1024:
-            size_str = f"{size / 1024:.1f} KB"
-        else:
-            size_str = f"{size / 1024 / 1024:.1f} MB"
+        size_str = _format_size(size)
         result.append({"path": str(f), "name": f.name, "size_str": size_str})
     return result

@@ -1,6 +1,10 @@
 """Tests for helper functions in pages/postprocess.py."""
 
-from shyfem_ui.pages.postprocess import _discover_shy_files, _parse_shyelab_info
+from shyfem_ui.pages.postprocess import (
+    _discover_shy_files,
+    _format_size,
+    _parse_shyelab_info,
+)
 
 
 SAMPLE_SHYELAB_OUTPUT = """\
