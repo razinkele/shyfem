@@ -589,6 +589,41 @@
 
 ---
 
+## Phase 45: User Management
+
+> Multi-user authentication with session-based login, admin/user roles,
+> project ownership with sharing, and job ownership.
+
+- [x] **45.1** User + AuthSession + ProjectPermission models + Alembic migration — 9 tests
+  - Config: `auth_session_ttl_hours`, `default_admin_username`, `default_admin_password`
+  - `argon2-cffi` password hashing (already installed)
+
+- [x] **45.2** AuthService — password hashing, session management, user CRUD — 31 tests
+  - `hash_password`, `verify_password`, `authenticate`, `create_session`, `validate_session`
+  - `create_user`, `update_user`, `deactivate_user`, `reset_password`, `ensure_admin`
+
+- [x] **45.3** SessionAuthMiddleware — replaces BasicAuthMiddleware — 18 tests
+  - Cookie-based session validation, `/login` page, `/logout` endpoint
+  - `_user_var` contextvar for Shiny server access, local mode bypass
+
+- [x] **45.4** App wiring — middleware swap, logout button, auth_service init
+  - `create_app()` creates AuthService, ensures default admin
+  - `_build_server` receives auth_service, reads `get_current_user()`
+
+- [x] **45.5** Admin panel (`pages/admin.py`) — 24 tests
+  - User table with create, reset password, toggle active, change role
+  - Form validation, role/active badges
+
+- [x] **45.6** Project ownership — `owner_id`, filtered listing, `get_visible_projects()` — 5 tests
+  - Regular users see own + shared projects, admins see all
+
+- [x] **45.7** Job ownership — `user_id` in metadata, `_get_job_metadata()` helper — 3 tests
+
+- [x] **45.8** Project sharing — SharingService, share/unshare, permissions — 8 tests
+  - Viewer (read-only) and editor (modify) roles per project
+
+---
+
 ## Implementation Priority
 
 ```
