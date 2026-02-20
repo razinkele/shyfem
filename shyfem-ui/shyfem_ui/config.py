@@ -141,6 +141,10 @@ class Config(BaseSettings):
         default=500,
         description="Maximum file upload size in MB"
     )
+    max_project_storage_mb: int = Field(
+        default=5000,
+        description="Maximum total storage per project in MB"
+    )
 
     # Proxy settings (server mode)
     trusted_proxies: list[str] = Field(

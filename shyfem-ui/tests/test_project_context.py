@@ -70,3 +70,26 @@ class TestLoadProjectContext:
         ctx = load_project_context(pid)
         assert ctx["grids"] == []
         assert ctx["simulations"] == []
+
+    def test_context_includes_files(self, tmp_path):
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import Project, ProjectFile
+        from shyfem_ui.services.project_context import load_project_context
+
+        with db_session() as db:
+            p = Project(name="files_proj", work_dir=str(tmp_path / "fp"))
+            db.add(p)
+            db.flush()
+            pf = ProjectFile(
+                project_id=p.id, filename="wind.fem",
+                rel_path="INPUT/wind.fem", file_type="forcing", size_bytes=100,
+            )
+            db.add(pf)
+            db.flush()
+            pid = p.id
+
+        ctx = load_project_context(pid)
+        assert "files" in ctx
+        assert len(ctx["files"]) == 1
+        assert ctx["files"][0]["filename"] == "wind.fem"
+        assert ctx["files"][0]["file_type"] == "forcing"

@@ -109,6 +109,18 @@ class TestExportProject:
             manifest = json.loads(zf.read("manifest.json"))
             assert "exported_at" in manifest
 
+    def test_manifest_includes_file_inventory(self, project_dir, project_meta):
+        project_meta["files"] = [
+            {"filename": "wind.txt", "rel_path": "INPUT/wind.txt",
+             "file_type": "forcing", "size_bytes": 9},
+        ]
+        result = export_project(project_dir, project_meta)
+        with zipfile.ZipFile(result) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            assert "files" in manifest
+            assert len(manifest["files"]) == 1
+            assert manifest["files"][0]["filename"] == "wind.txt"
+
     def test_empty_project_dir(self, tmp_path, project_meta):
         empty = tmp_path / "empty"
         empty.mkdir()
