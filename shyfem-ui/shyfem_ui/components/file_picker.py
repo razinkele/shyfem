@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 
-from shiny import module, reactive, render, ui
+from shiny import module, reactive, ui
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def build_file_choices(
 
     choices = {}
     for f in sorted(files, key=lambda x: x["rel_path"]):
-        label = f"{f['filename']} ({f['file_type']})"
+        label = f"{f['rel_path']} ({f['file_type']})"
         choices[label] = f["rel_path"]
     return choices
 

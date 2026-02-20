@@ -1,7 +1,6 @@
 """Tests for file_picker component helpers."""
 
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
