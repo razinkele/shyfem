@@ -6,6 +6,7 @@ and a ``_server()`` function (registers reactive logic).
 Widgets:
     boundary_editor_ui / boundary_editor_server: CSV-based boundary condition editor.
     file_browser_ui / file_browser_server: File upload and path selection widget.
+    file_picker_ui / file_picker_server: File picker dropdown with browse modal.
     grid_map_ui / grid_map_server: Interactive Plotly mesh map with zoom, pan, hover.
     job_status_ui / job_status_server: Job progress badges, duration, status formatting.
     log_viewer_ui / log_viewer_server: Real-time log output viewer with auto-scroll.
@@ -16,6 +17,7 @@ Widgets:
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
 from shyfem_ui.components.file_browser import file_browser_server, file_browser_ui
+from shyfem_ui.components.file_picker import file_picker_server, file_picker_ui
 from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.job_status import job_status_server, job_status_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
@@ -28,6 +30,8 @@ __all__ = [
     "boundary_editor_server",
     "file_browser_ui",
     "file_browser_server",
+    "file_picker_ui",
+    "file_picker_server",
     "grid_map_ui",
     "grid_map_server",
     "job_status_ui",
