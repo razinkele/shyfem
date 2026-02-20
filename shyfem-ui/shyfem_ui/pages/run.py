@@ -46,6 +46,14 @@ def _preflight_validate(simulation_id: int | None) -> list[str]:
         return []
 
 
+def _get_job_metadata(session_id: str, user_id: int | None = None) -> dict:
+    """Build job metadata dict with session_id and optional user_id."""
+    meta = {"session_id": session_id}
+    if user_id is not None:
+        meta["user_id"] = user_id
+    return meta
+
+
 @module.ui
 def run_ui():
     """Job execution page UI."""
@@ -403,7 +411,7 @@ def run_server(
 
         # Build job spec
         args = [str(validated_input)]
-        metadata = {"session_id": _session_id}
+        metadata = _get_job_metadata(_session_id, _user_id)
 
         # Check dependency
         depends_on = input.depends_on()
@@ -1052,6 +1060,11 @@ def run_server(
     # Session ID for multi-user isolation and per-session callbacks
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
+
+    # User context for job ownership
+    from shyfem_ui.middleware.session_auth import get_current_user
+    _current_user = get_current_user()
+    _user_id = _current_user["id"] if _current_user else None
 
     @render.ui
     def run_show_all_toggle_ui():
