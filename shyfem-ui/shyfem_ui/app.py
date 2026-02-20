@@ -29,6 +29,7 @@ from shyfem_ui.pages import (
     visualize,
 )
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
+from shyfem_ui.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -545,6 +546,54 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
                                tutorial_context=tutorial_context)
     compare.compare_server("compare", config, job_queue, active_project=active_project)
     ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
+
+    # --- Cross-page job notifications ---
+    _notification_svc = NotificationService()
+
+    @reactive.effect
+    def _poll_job_notifications():
+        reactive.invalidate_later(5)  # Poll every 5 seconds
+
+        import asyncio
+
+        async def _check():
+            sid = _cleanup_session_id if _is_server else None
+            jobs = await job_queue.list_jobs(limit=100, session_id=sid)
+            job_dicts = [
+                {"id": j.id, "name": j.name, "status": j.status.value}
+                for j in jobs
+            ]
+            events = _notification_svc.check_transitions(job_dicts)
+            for event in events:
+                status = event["new_status"]
+                name = event["job_name"]
+                if status == "completed":
+                    ui.notification_show(
+                        f"Job '{name}' completed successfully.",
+                        type="message",
+                        duration=8,
+                    )
+                elif status == "failed":
+                    ui.notification_show(
+                        f"Job '{name}' failed.",
+                        type="error",
+                        duration=10,
+                    )
+                elif status == "cancelled":
+                    ui.notification_show(
+                        f"Job '{name}' was cancelled.",
+                        type="warning",
+                        duration=5,
+                    )
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(_check())
+            else:
+                asyncio.run(_check())
+        except Exception:
+            logger.debug("Notification poll error", exc_info=True)
 
 
 def main():
