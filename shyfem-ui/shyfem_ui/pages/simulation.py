@@ -159,8 +159,18 @@ def simulation_server(
     current_file_path = reactive.value(None)
     parsed_str = reactive.value(None)
 
+    # Create project_id reactive value for file picker integration
+    project_id_reactive = reactive.value(None)
+
+    @reactive.effect
+    def _sync_project_id():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        project_id_reactive.set(proj["id"] if proj else None)
+
     # Initialize str_editor and wire up its reactive state
-    editor_state = str_editor_server("str_editor", current_file_path)
+    editor_state = str_editor_server("str_editor", current_file_path, project_id=project_id_reactive)
 
     # Initialize boundary editor
     boundary_editor_server("boundary_editor", parsed_str=parsed_str)

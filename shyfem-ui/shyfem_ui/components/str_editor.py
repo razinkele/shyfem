@@ -7,6 +7,7 @@ from typing import Any
 
 from shiny import module, reactive, render, ui
 
+from shyfem_ui.components.file_picker import file_picker_ui, is_file_param, param_to_file_types
 from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
     COMMON_SECTIONS,
@@ -106,12 +107,14 @@ def str_editor_server(
     session,
     file_path: reactive.Value[Path | None],
     on_save: Callable[[Path, str], None] | None = None,
+    project_id: reactive.Value | None = None,
 ):
     """STR file editor component server logic with split view support.
 
     Args:
         file_path: Reactive value containing the file path to edit
         on_save: Callback when file is saved
+        project_id: Reactive value with current project ID (enables file pickers)
     """
     content = reactive.value("")
     parsed_file = reactive.value(None)
@@ -263,7 +266,8 @@ def str_editor_server(
         except Exception:
             search_term = ""
         search_filter = filter_sections(search_term, parsed)
-        form_panel = _build_form_panel(parsed, search_filter=search_filter)
+        pid = project_id.get() if project_id else None
+        form_panel = _build_form_panel(parsed, search_filter=search_filter, project_id=pid)
 
         if mode == "raw":
             return raw_panel
@@ -329,7 +333,11 @@ def str_editor_server(
     }
 
 
-def _build_form_panel(parsed: StrFile | None, search_filter: dict[str, list[str]] | None = None) -> ui.Tag:
+def _build_form_panel(
+    parsed: StrFile | None,
+    search_filter: dict[str, list[str]] | None = None,
+    project_id: int | None = None,
+) -> ui.Tag:
     """Build the structured form panel from parsed STR file data."""
     if parsed is None or not parsed.sections:
         return ui.div(
@@ -403,6 +411,21 @@ def _build_form_panel(parsed: StrFile | None, search_filter: dict[str, list[str]
                             class_="mb-2",
                         )
                     )
+                elif project_id is not None and is_file_param(param_name):
+                    file_types = param_to_file_types(param_name)
+                    picker_id = f"fp_{section_name}_{param_name}"
+                    fields.append(
+                        ui.div(
+                            label,
+                            file_picker_ui(picker_id, label=""),
+                            # Hidden text input to hold value for form sync
+                            ui.input_text(
+                                field_id, "",
+                                value=str(param_val),
+                            ),
+                            class_="mb-2",
+                        )
+                    )
                 else:
                     fields.append(
                         ui.div(
@@ -415,17 +438,31 @@ def _build_form_panel(parsed: StrFile | None, search_filter: dict[str, list[str]
                         )
                     )
             else:
-                # Unknown parameter — plain text input
-                fields.append(
-                    ui.div(
-                        ui.span(param_name, class_="fw-bold small", style=highlight_style),
-                        ui.input_text(
-                            field_id, "",
-                            value=str(param_val),
-                        ),
-                        class_="mb-2",
+                # Unknown parameter — check if it's a file param
+                if project_id is not None and is_file_param(param_name):
+                    picker_id = f"fp_{section_name}_{param_name}"
+                    fields.append(
+                        ui.div(
+                            ui.span(param_name, class_="fw-bold small", style=highlight_style),
+                            file_picker_ui(picker_id, label=""),
+                            ui.input_text(
+                                field_id, "",
+                                value=str(param_val),
+                            ),
+                            class_="mb-2",
+                        )
                     )
-                )
+                else:
+                    fields.append(
+                        ui.div(
+                            ui.span(param_name, class_="fw-bold small", style=highlight_style),
+                            ui.input_text(
+                                field_id, "",
+                                value=str(param_val),
+                            ),
+                            class_="mb-2",
+                        )
+                    )
 
         section_cards.append(
             ui.div(
