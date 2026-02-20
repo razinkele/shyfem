@@ -244,6 +244,99 @@ class FileService:
 
         return warnings
 
+    # Extensions to skip when seeding tutorial files
+    _SKIP_EXTENSIONS = frozenset({".sh", ".stdout", ".stderr"})
+    _SKIP_FILENAMES = frozenset({"Makefile", "README", "util.sh", "run_all.sh"})
+
+    @staticmethod
+    def _infer_file_type(rel_path: str) -> str:
+        """Infer file_type from path and extension."""
+        p = PurePosixPath(rel_path)
+        ext = p.suffix.lower()
+        parts = p.parts
+
+        if ext == ".grd":
+            return "grid"
+        if ext == ".bas":
+            return "basin"
+        if ext == ".str":
+            return "str"
+        if ext == ".rst":
+            return "restart"
+        if ext == ".nml":
+            return "config"
+        if ext in (".shy", ".ext", ".flx", ".nc"):
+            return "output"
+        # Subdirectory hints
+        if len(parts) > 1 and parts[0].upper() == "INPUT":
+            return "forcing"
+        return "other"
+
+    @classmethod
+    def seed_tutorial_files(cls, project_id: int) -> None:
+        """Copy Mar Menor tutorial files into a project.
+
+        Copies grid, input, and STR files from testcases/examples/mar_menor/
+        into the project work directory and creates ProjectFile records.
+
+        Args:
+            project_id: Target project.
+
+        Raises:
+            ValueError: If project not found or tutorial data missing.
+        """
+        import shutil
+
+        config = get_config()
+        tutorial_dir = config.shyfem_dir / "testcases" / "examples" / "mar_menor"
+        if not tutorial_dir.exists():
+            raise ValueError(f"Tutorial data not found: {tutorial_dir}")
+
+        with db_session() as db:
+            project = db.query(Project).filter_by(id=project_id).first()
+            if project is None:
+                raise ValueError(f"Project {project_id} not found")
+            work_dir = Path(project.work_dir)
+
+        # Walk tutorial directory and copy relevant files
+        for src_file in sorted(tutorial_dir.rglob("*")):
+            if not src_file.is_file():
+                continue
+            if src_file.suffix in cls._SKIP_EXTENSIONS:
+                continue
+            if src_file.name in cls._SKIP_FILENAMES:
+                continue
+            # Skip output/partition files
+            if src_file.name.startswith("partition."):
+                continue
+            if src_file.suffix in (".inf",):
+                continue
+            # Skip large output files
+            if ".hydro." in src_file.name or ".ext" == src_file.suffix:
+                if src_file.stat().st_size > 100_000:
+                    continue
+
+            rel = src_file.relative_to(tutorial_dir)
+            rel_str = str(rel)
+            dest = work_dir / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dest)
+
+            file_type = cls._infer_file_type(rel_str)
+            file_data = src_file.read_bytes()
+            checksum = hashlib.sha256(file_data).hexdigest()
+
+            with db_session() as db:
+                pf = ProjectFile(
+                    project_id=project_id,
+                    filename=src_file.name,
+                    rel_path=rel_str,
+                    file_type=file_type,
+                    size_bytes=len(file_data),
+                    checksum=checksum,
+                )
+                db.add(pf)
+
     @staticmethod
     def get_project_storage(project_id: int) -> dict:
         """Get storage usage for a project.
