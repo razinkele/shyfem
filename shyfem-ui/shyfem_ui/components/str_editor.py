@@ -7,7 +7,7 @@ from typing import Any
 
 from shiny import module, reactive, render, ui
 
-from shyfem_ui.components.file_picker import file_picker_ui, is_file_param, param_to_file_types
+from shyfem_ui.components.file_picker import file_picker_ui, is_file_param
 from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
     COMMON_SECTIONS,
@@ -412,16 +412,18 @@ def _build_form_panel(
                         )
                     )
                 elif project_id is not None and is_file_param(param_name):
-                    file_types = param_to_file_types(param_name)
+                    # file_types filtering wired when file_picker_server is connected
                     picker_id = f"fp_{section_name}_{param_name}"
                     fields.append(
                         ui.div(
                             label,
                             file_picker_ui(picker_id, label=""),
-                            # Hidden text input to hold value for form sync
-                            ui.input_text(
-                                field_id, "",
-                                value=str(param_val),
+                            ui.div(
+                                ui.input_text(
+                                    field_id, "",
+                                    value=str(param_val),
+                                ),
+                                style="display:none;",
                             ),
                             class_="mb-2",
                         )
@@ -445,9 +447,12 @@ def _build_form_panel(
                         ui.div(
                             ui.span(param_name, class_="fw-bold small", style=highlight_style),
                             file_picker_ui(picker_id, label=""),
-                            ui.input_text(
-                                field_id, "",
-                                value=str(param_val),
+                            ui.div(
+                                ui.input_text(
+                                    field_id, "",
+                                    value=str(param_val),
+                                ),
+                                style="display:none;",
                             ),
                             class_="mb-2",
                         )
