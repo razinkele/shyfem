@@ -518,6 +518,25 @@
 
 ---
 
+## Phase 42: Workflow State Persistence + Misc UX
+
+> UX polish: ensemble management and workflow state audit.
+
+- [x] **42.1** Dark mode preference restoration — already implemented
+  - localStorage-based persistence at app.py:421-437
+  - Reads on DOMContentLoaded, saves on toggle
+
+- [x] **42.2** Workflow state across tab navigation — handled by framework
+  - Shiny module server closures persist reactive values across tab switches
+  - No additional persistence layer needed for in-session navigation
+
+- [x] **42.3** Ensemble "Stop All" button — 4 tests
+  - `_cancel_jobs()` async helper for batch cancellation (module-level, typed)
+  - Button shown only when running or queued jobs exist (`btn-danger`)
+  - Cancels all jobs in current ensemble via `job_queue.cancel()`
+
+---
+
 ## Implementation Priority
 
 ```
