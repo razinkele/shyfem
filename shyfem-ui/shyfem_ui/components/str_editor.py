@@ -323,7 +323,7 @@ def str_editor_server(
     }
 
 
-def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
+def _build_form_panel(parsed: StrFile | None, search_filter: dict[str, list[str]] | None = None) -> ui.Tag:
     """Build the structured form panel from parsed STR file data."""
     if parsed is None or not parsed.sections:
         return ui.div(
@@ -333,6 +333,10 @@ def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
 
     section_cards = []
     for section_name, section in parsed.sections.items():
+        if search_filter is not None and section_name not in search_filter:
+            continue
+        matching_params = search_filter.get(section_name) if search_filter is not None else None
+
         color = SECTION_COLORS.get(section_name, "#6c757d")
         section_desc = COMMON_SECTIONS.get(section_name, "")
         known_params = COMMON_PARAMS.get(section_name, {})
@@ -353,6 +357,12 @@ def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
                         )
                 continue
 
+            # Skip non-matching params when filter is active
+            if matching_params is not None and param_name not in matching_params:
+                continue
+
+            highlight_style = "background-color: #fff3cd; padding: 0 4px; border-radius: 2px;" if matching_params and param_name in matching_params else ""
+
             info = known_params.get(param_name)
             field_id = f"form_{section_name}_{param_name}"
 
@@ -365,7 +375,7 @@ def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
                 if options:
                     tooltip += f" [{options}]"
 
-                label_parts = [ui.span(param_name, class_="fw-bold small")]
+                label_parts = [ui.span(param_name, class_="fw-bold small", style=highlight_style)]
                 if units:
                     label_parts.append(ui.span(f" ({units})", class_="text-muted small"))
 
@@ -402,7 +412,7 @@ def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
                 # Unknown parameter — plain text input
                 fields.append(
                     ui.div(
-                        ui.span(param_name, class_="fw-bold small"),
+                        ui.span(param_name, class_="fw-bold small", style=highlight_style),
                         ui.input_text(
                             field_id, "",
                             value=str(param_val),
@@ -427,7 +437,35 @@ def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
             )
         )
 
+    # Build match count badge
+    match_info = None
+    if search_filter is not None:
+        total_params = sum(len(v) for v in search_filter.values())
+        total_sections = len(search_filter)
+        if total_params > 0:
+            match_info = ui.span(
+                f"{total_params} param{'s' if total_params != 1 else ''} in "
+                f"{total_sections} section{'s' if total_sections != 1 else ''}",
+                class_="badge bg-info text-dark ms-2",
+            )
+        else:
+            match_info = ui.span("No matches", class_="badge bg-secondary ms-2")
+
     return ui.div(
+        # Search bar
+        ui.div(
+            ui.div(
+                ui.input_text(
+                    "param_search",
+                    "",
+                    placeholder="Search parameters (e.g. 'wind', 'time step')...",
+                    width="100%",
+                ),
+                match_info,
+                class_="d-flex align-items-center",
+            ),
+            class_="mb-2",
+        ),
         ui.div(
             ui.input_action_button(
                 "apply_form_btn",
@@ -439,6 +477,8 @@ def _build_form_panel(parsed: StrFile | None) -> ui.Tag:
         ui.div(
             *section_cards,
             style="max-height: 500px; overflow-y: auto;",
+        ) if section_cards else ui.div(
+            ui.p("No matching parameters.", class_="text-muted text-center p-4"),
         ),
     )
 
