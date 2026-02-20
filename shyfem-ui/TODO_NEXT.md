@@ -537,6 +537,24 @@
 
 ---
 
+## Phase 43: Richer /health + Request Correlation IDs
+
+> Ops readiness: enhanced health endpoint and request tracing.
+
+- [x] **43.1** Enrich /health endpoint — 13 tests (10 existing + 3 new)
+  - `_check_db_health()` returns response time in ms (float)
+  - New payload fields: `db_response_time_ms`, `queue_depth`, `worker_count`
+  - Graceful degradation: -1.0 on failure for each metric
+
+- [x] **43.2** Request ID middleware — 7 tests
+  - `RequestIdMiddleware` (ASGI): generates UUID per HTTP request
+  - `request_id_var` (contextvars): async-safe propagation through logs
+  - `RequestIdFilter` (logging): injects `request_id` into log records
+  - Accepts incoming `X-Request-Id` header from reverse proxy
+  - Wired in `create_app()` between RateLimit and HealthCheck layers
+
+---
+
 ## Implementation Priority
 
 ```
