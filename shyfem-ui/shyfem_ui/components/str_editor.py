@@ -468,6 +468,55 @@ def _parse_options_to_choices(options_str: str, current_val: Any) -> dict[str, s
     return choices
 
 
+def filter_sections(
+    search_term: str,
+    parsed: StrFile | None,
+) -> dict[str, list[str]] | None:
+    """Filter parsed STR sections/params by search term.
+
+    Args:
+        search_term: User's search text (case-insensitive substring).
+        parsed: Parsed STR file.
+
+    Returns:
+        None if search_term is blank (meaning "show all").
+        Otherwise dict mapping section_name -> list of matching param names.
+        Sections with zero matches are omitted.
+    """
+    if not search_term or not search_term.strip():
+        return None
+    if parsed is None:
+        return {}
+
+    term = search_term.strip().lower()
+    result: dict[str, list[str]] = {}
+
+    for section_name, section in parsed.sections.items():
+        matches = []
+        known_params = COMMON_PARAMS.get(section_name, {})
+
+        for param_name in section.parameters:
+            if param_name.startswith("_"):
+                continue
+
+            # Match against param name
+            if term in param_name.lower():
+                matches.append(param_name)
+                continue
+
+            # Match against description (known params only)
+            info = known_params.get(param_name)
+            if info:
+                desc = info[0]  # (description, type, default, units, options)
+                if term in desc.lower():
+                    matches.append(param_name)
+
+        if matches:
+            result[section_name] = matches
+
+    return result
+
+
 def validate_str_content(content: str, check_files: bool = False,
                          working_dir: Path | None = None) -> list[str]:
     """Validate STR file content and return list of errors and warnings.
