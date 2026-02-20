@@ -45,6 +45,7 @@ def export_project(work_dir: Path, project_meta: dict) -> BytesIO:
             },
             "grids": project_meta.get("grids", []),
             "simulations": project_meta.get("simulations", []),
+            "files": project_meta.get("files", []),
         }
         zf.writestr("manifest.json", json.dumps(manifest, indent=2))
 
