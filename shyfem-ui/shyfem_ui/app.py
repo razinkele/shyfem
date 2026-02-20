@@ -29,6 +29,8 @@ from shyfem_ui.pages import (
     tutorial,
     visualize,
 )
+from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current_user
+from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import NotificationService
 
@@ -66,6 +68,17 @@ def create_app(config: Config | None = None) -> App:
     # Initialize database
     init_db()
 
+    # Initialize auth service and ensure default admin exists
+    auth_service = AuthService()
+    if config.deployment_mode == "server":
+        if config.default_admin_password:
+            auth_service.ensure_admin(
+                config.default_admin_username, config.default_admin_password
+            )
+        elif config.auth_enabled and config.auth_password:
+            # Backward compat: migrate from basic auth config
+            auth_service.ensure_admin(config.auth_username, config.auth_password)
+
     # Initialize job queue
     queue_mode = "celery" if config.use_celery else "local"
     job_queue = JobQueueFactory.create(
@@ -80,7 +93,7 @@ def create_app(config: Config | None = None) -> App:
 
     # Build server
     def server(input, output, session):
-        _build_server(input, output, session, config, job_queue)
+        _build_server(input, output, session, config, job_queue, auth_service)
 
     app = App(app_ui, server, static_assets=Path(__file__).parent / "www")
 
@@ -88,14 +101,18 @@ def create_app(config: Config | None = None) -> App:
     if config.static_cache_max_age > 0:
         app = CacheHeaderMiddleware(app, max_age=config.static_cache_max_age)
 
-    # Wrap with basic auth middleware in server mode
-    if config.auth_enabled and config.auth_password:
-        app = BasicAuthMiddleware(app, config.auth_username, config.auth_password)
-    elif config.deployment_mode == "server" and not config.auth_enabled:
+    # Session-based auth (replaces basic auth)
+    is_local = config.deployment_mode == "local"
+    app = SessionAuthMiddleware(
+        app,
+        auth_service=auth_service,
+        local_mode=is_local,
+        session_ttl_hours=config.auth_session_ttl_hours,
+    )
+    if not is_local and not config.default_admin_password and not config.auth_password:
         logger.warning(
-            "Running in server mode without authentication. "
-            "Set SHYFEM_UI_AUTH_ENABLED=true and SHYFEM_UI_AUTH_PASSWORD=<password> "
-            "to enable basic auth."
+            "Running in server mode without authentication credentials. "
+            "Set SHYFEM_UI_DEFAULT_ADMIN_PASSWORD to enable user login."
         )
 
     # Rate limiting (server mode only)
@@ -501,6 +518,14 @@ def _build_ui(config: Config) -> ui.Tag:
                     onclick="shyfemToggleDark()",
                 ),
             ),
+            ui.nav_control(
+                ui.tags.a(
+                    "Logout",
+                    href="/logout",
+                    class_="btn btn-outline-danger btn-sm ms-2",
+                    id="logout-btn",
+                ),
+            ),
             id="main_navbar",
         ),
         title="SHYFEM Workbench",
@@ -508,7 +533,8 @@ def _build_ui(config: Config) -> ui.Tag:
     )
 
 
-def _build_server(input, output, session, config: Config, job_queue: JobQueue):
+def _build_server(input, output, session, config: Config, job_queue: JobQueue,
+                  auth_service: AuthService | None = None):
     """Build the application server logic."""
     active_project = reactive.value(None)
     tutorial_context = reactive.value(None)
@@ -519,6 +545,8 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue):
     # Cancel orphaned running jobs when the browser session disconnects
     _cleanup_session_id = str(id(session))
     _is_server = config.deployment_mode == "server"
+    _current_user = get_current_user()
+    _user_id = _current_user["id"] if _current_user else None
 
     async def _on_session_ended():
         try:
