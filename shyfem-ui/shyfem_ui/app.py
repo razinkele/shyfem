@@ -16,6 +16,7 @@ from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
+from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current_user
 from shyfem_ui.pages import (
     admin,
     compare,
@@ -30,7 +31,6 @@ from shyfem_ui.pages import (
     tutorial,
     visualize,
 )
-from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current_user
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import NotificationService
@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 def _check_db_health() -> float:
     """Probe database with SELECT 1, return response time in ms."""
     from sqlalchemy import text
+
     from shyfem_ui.db.base import get_engine
     start = time.monotonic()
     with get_engine().connect() as conn:

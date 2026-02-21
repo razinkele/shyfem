@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
-from sqlalchemy.exc import IntegrityError
 
 from shyfem_ui.models.user import AuthSession, User
 

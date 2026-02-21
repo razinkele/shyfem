@@ -6,7 +6,6 @@ from io import BytesIO
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
-
 from sqlalchemy import or_
 
 from shyfem_ui.config import Config
@@ -786,6 +785,7 @@ def home_server(
     async def _do_export(project_id: int, project_name: str):
         """Export a project as ZIP and trigger browser download."""
         import base64
+
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import export_project
 

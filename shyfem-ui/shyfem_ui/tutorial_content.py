@@ -16,7 +16,6 @@ Each step may contain:
 
 from __future__ import annotations
 
-
 TUTORIAL_CONTENT: list[dict] = [
     # -------------------------------------------------------------------------
     # Phase 1: Basic Hydrodynamics (mm_hyd_00 .. mm_hyd_03)

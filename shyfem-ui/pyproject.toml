@@ -40,6 +40,7 @@ dependencies = [
     "ipyleaflet>=0.18",
     "shinywidgets>=0.3",
     "scipy>=1.12",
+    "argon2-cffi>=21.0",
 ]
 
 [project.optional-dependencies]
