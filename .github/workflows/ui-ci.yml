@@ -48,7 +48,7 @@ jobs:
         shell: micromamba-shell {0}
         run: |
           python -m pytest tests/ -v \
-            --ignore=tests/test_playwright_*.py \
+            --ignore-glob="tests/test_playwright_*.py" \
             --cov=shyfem_ui --cov-report=term-missing \
             --cov-report=xml:coverage.xml
       - name: Upload coverage
@@ -76,7 +76,7 @@ jobs:
         run: python -m playwright install chromium --with-deps
       - name: Run E2E tests
         shell: micromamba-shell {0}
-        run: python -m pytest tests/test_playwright_*.py -v --timeout=120
+        run: python -m pytest tests/test_playwright_*.py -v
 
   docker:
     name: Docker Build
