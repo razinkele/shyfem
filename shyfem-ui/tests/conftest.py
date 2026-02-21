@@ -208,3 +208,95 @@ def _dismiss_modals(page):
         document.body.style.paddingRight = '';
     }""")
     page.wait_for_timeout(100)
+
+
+# ---------------------------------------------------------------------------
+# Server-mode app (with authentication) for auth/sharing E2E tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="session")
+def auth_app_port():
+    """Return a free port for the server-mode test app."""
+    return _find_free_port()
+
+
+@pytest.fixture(scope="session")
+def _auth_app_server(tmp_path_factory, auth_app_port):
+    """Start a server-mode Shiny app with authentication enabled."""
+    tmp_dir = tmp_path_factory.mktemp("shyfem_ui_auth_test")
+    db_path = tmp_dir / "auth_test.db"
+    work_dir = tmp_dir / "work"
+    work_dir.mkdir()
+
+    env = os.environ.copy()
+    env = {k: v for k, v in env.items() if not k.startswith("SHYFEM_UI_")}
+    env.update({
+        "SHYFEM_UI_HOST": "127.0.0.1",
+        "SHYFEM_UI_PORT": str(auth_app_port),
+        "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
+        "SHYFEM_UI_WORK_DIR": str(work_dir),
+        "SHYFEM_UI_DEPLOYMENT_MODE": "server",
+        "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
+        "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
+        "SHYFEM_UI_AUTH_SESSION_TTL_HOURS": "24",
+        "SHYFEM_UI_DEBUG": "false",
+    })
+
+    python = sys.executable
+    test_app = str(Path(__file__).resolve().parent / "_test_auth_app.py")
+    proc = subprocess.Popen(
+        [
+            python, test_app,
+            "--port", str(auth_app_port),
+            "--host", "127.0.0.1",
+            "--db", str(db_path),
+            "--workdir", str(work_dir),
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
+
+    if not _wait_for_server("127.0.0.1", auth_app_port, timeout=30):
+        proc.kill()
+        stdout = proc.stdout.read().decode() if proc.stdout else ""
+        pytest.fail(f"Auth app did not start within 30 s.\nOutput:\n{stdout}")
+
+    yield proc
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+@pytest.fixture(scope="session")
+def auth_live_server(_auth_app_server, auth_app_port):
+    """Ensure the auth server is running and return its base URL."""
+    return f"http://127.0.0.1:{auth_app_port}"
+
+
+def _login(page, base_url: str, username: str, password: str):
+    """Log into the server-mode app by filling the login form."""
+    page.goto(f"{base_url}/login", wait_until="networkidle", timeout=15000)
+    page.locator("#username").fill(username)
+    page.locator("#password").fill(password)
+    page.locator("button[type='submit']").click()
+    page.wait_for_url(f"{base_url}/", timeout=15000)
+    page.wait_for_timeout(2000)
+
+
+@pytest.fixture(scope="session")
+def pw_auth_page(pw_browser, auth_live_server):
+    """A Playwright page logged into the server-mode app as admin."""
+    ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(15000)
+    _login(page, auth_live_server, "admin", "testpass")
+    _dismiss_modals(page)
+    yield page
+    page.close()
+    ctx.close()

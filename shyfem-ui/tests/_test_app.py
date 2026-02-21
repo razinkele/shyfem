@@ -20,16 +20,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
+    admin,
     compare,
     ensemble,
+    files,
     grid_prep,
     home,
     partitioning,
     postprocess,
     run,
     simulation,
+    tutorial,
     visualize,
 )
+from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 
 
@@ -90,6 +94,9 @@ def create_test_app(config=None):
             ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
             ui.nav_panel("Compare", compare.compare_ui("compare")),
             ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
+            ui.nav_panel("Files", files.files_ui("files")),
+            ui.nav_panel("Tutorial", tutorial.tutorial_ui("tutorial")),
+            ui.nav_panel("Admin", admin.admin_ui("admin")),
             id="main_navbar",
         ),
         title="SHYFEM Workbench",
@@ -97,16 +104,38 @@ def create_test_app(config=None):
     )
 
     def server(input, output, session):
-        home.home_server("home", config, job_queue)
-        grid_prep.grid_prep_server("grid_prep", config)
-        partitioning.partitioning_server("partitioning", config)
-        simulation.simulation_server("simulation", config)
+        active_project = reactive.value(None)
+        tutorial_context = reactive.value(None)
+
+        home.home_server("home", config, job_queue,
+                         active_project=active_project, nav_callback=None)
+        tutorial.tutorial_server("tutorial", config,
+                                 active_project=active_project,
+                                 nav_callback=None,
+                                 tutorial_context=tutorial_context)
+        grid_prep.grid_prep_server("grid_prep", config,
+                                   active_project=active_project,
+                                   tutorial_context=tutorial_context)
+        partitioning.partitioning_server("partitioning", config,
+                                         active_project=active_project)
+        simulation.simulation_server("simulation", config,
+                                     active_project=active_project,
+                                     tutorial_context=tutorial_context)
         # Use stub run_server to avoid event loop deadlock
         _stub_run_server("run", config, job_queue)
-        postprocess.postprocess_server("postprocess", config)
-        visualize.visualize_server("visualize", config)
-        compare.compare_server("compare", config, job_queue)
-        ensemble.ensemble_server("ensemble", config, job_queue)
+        postprocess.postprocess_server("postprocess", config,
+                                       active_project=active_project,
+                                       tutorial_context=tutorial_context)
+        visualize.visualize_server("visualize", config,
+                                   active_project=active_project,
+                                   tutorial_context=tutorial_context)
+        compare.compare_server("compare", config, job_queue,
+                               active_project=active_project)
+        ensemble.ensemble_server("ensemble", config, job_queue,
+                                 active_project=active_project)
+        files.files_server("files", config, active_project=active_project)
+        auth_service = AuthService()
+        admin.admin_server("admin", config, auth_service)
 
     return App(app_ui, server)
 
