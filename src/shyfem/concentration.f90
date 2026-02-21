@@ -778,6 +778,9 @@
 
           call shympi_exchange_3d_node(cnv)
           call bndo_setbc(what,nlvddi,cnv,rcv,uprv,vprv)
+          ! Second exchange needed: bndo_setbc modifies all boundary nodes
+          ! including outer ghost nodes. Must propagate BC values back to
+          ! owning domains when boundary nodes span partition boundaries.
           call shympi_exchange_3d_node(cnv)
 
 	  if( btvddebug ) call tvd_debug_finalize
