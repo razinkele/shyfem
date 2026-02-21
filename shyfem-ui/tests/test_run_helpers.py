@@ -9,7 +9,7 @@ from shyfem_ui.pages.run import (
     detect_mesh_node_count,
     get_solver_recommendation,
 )
-from shyfem_ui.services.job_queue import JobInfo, JobStatus
+from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
 
 
 def _make_job(**overrides) -> JobInfo:
@@ -169,3 +169,28 @@ class TestDetectMeshNodeCount:
         """Returns None for nonexistent STR file."""
         count = detect_mesh_node_count(tmp_path / "nope.str", tmp_path)
         assert count is None
+
+
+class TestSolverJobRouting:
+    """Tests for solver metadata routing in job execution."""
+
+    def test_jobspec_metadata_stores_solver(self):
+        """JobSpec metadata can store solver choice."""
+        spec = JobSpec(
+            name="test",
+            tool_name="shyfem",
+            args=["test.str"],
+            working_dir="/tmp/test",
+            metadata={"solver": "petsc"},
+        )
+        assert spec.metadata["solver"] == "petsc"
+
+    def test_jobspec_default_no_solver(self):
+        """JobSpec metadata has no solver key by default."""
+        spec = JobSpec(
+            name="test",
+            tool_name="shyfem",
+            args=["test.str"],
+            working_dir="/tmp/test",
+        )
+        assert "solver" not in spec.metadata

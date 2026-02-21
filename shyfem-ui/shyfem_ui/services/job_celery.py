@@ -167,6 +167,7 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
     try:
         mpi_enabled = job_info.metadata.get("mpi_enabled", False)
         mpi_np = job_info.metadata.get("mpi_np", 1)
+        solver = job_info.metadata.get("solver", "sparskit")
 
         if job_info.tool_name == "shyfem" and mpi_enabled and mpi_np > 1:
             result = asyncio.run(wrapper.run_shyfem(
@@ -176,6 +177,14 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
                 mpi_np=mpi_np,
                 mpirun_path="mpirun",
                 options=job_info.args[:-1] if len(job_info.args) > 1 else None,
+                solver=solver,
+                progress_callback=progress_callback,
+            ))
+        elif job_info.tool_name == "shyfem":
+            result = asyncio.run(wrapper.run_shyfem(
+                job_info.args[-1] if job_info.args else "",
+                working_dir,
+                solver=solver,
                 progress_callback=progress_callback,
             ))
         else:

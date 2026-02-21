@@ -243,6 +243,7 @@ class LocalJobQueue(JobQueue):
                     stdout_fh.flush()
 
             try:
+                solver = spec.metadata.get("solver", "sparskit")
                 if spec.tool_name == "shyfem" and spec.mpi_enabled and spec.mpi_np > 1:
                     # MPI execution
                     result = await self.wrapper.run_shyfem(
@@ -252,6 +253,16 @@ class LocalJobQueue(JobQueue):
                         mpi_np=spec.mpi_np,
                         mpirun_path="mpirun",
                         options=spec.args[:-1] if len(spec.args) > 1 else None,
+                        solver=solver,
+                        progress_callback=progress_callback,
+                        output_callback=output_callback,
+                    )
+                elif spec.tool_name == "shyfem":
+                    # Serial shyfem (may use petsc solver)
+                    result = await self.wrapper.run_shyfem(
+                        spec.args[-1] if spec.args else "",
+                        spec.working_dir,
+                        solver=solver,
                         progress_callback=progress_callback,
                         output_callback=output_callback,
                     )
