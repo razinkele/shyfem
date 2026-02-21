@@ -170,11 +170,11 @@
 ! 	double precision,dimension(nlvddi,nkn) :: clow
 ! 	double precision,dimension(nlvddi,nkn) :: chigh
 	
-	double precision,dimension(:,:),allocatable :: cn        
-	double precision,dimension(:,:),allocatable :: co        
-        double precision,dimension(:,:),allocatable :: cdiag
-	double precision,dimension(:,:),allocatable :: clow
-	double precision,dimension(:,:),allocatable :: chigh
+	double precision,dimension(:,:),allocatable,save :: cn
+	double precision,dimension(:,:),allocatable,save :: co
+        double precision,dimension(:,:),allocatable,save :: cdiag
+	double precision,dimension(:,:),allocatable,save :: clow
+	double precision,dimension(:,:),allocatable,save :: chigh
 
 	! here debug code ------------------------
 	logical, save :: bdebug = .false.
@@ -192,16 +192,26 @@
 !	call cpu_time(time1)
 !!$	dtime1 = omp_get_wtime()
 	
-	ALLOCATE(cn(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	ALLOCATE(co(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	ALLOCATE(cdiag(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	ALLOCATE(clow(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	ALLOCATE(chigh(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if (.not. allocated(cn)) then
+	  allocate(cn(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(co)) then
+	  allocate(co(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(cdiag)) then
+	  allocate(cdiag(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(clow)) then
+	  allocate(clow(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(chigh)) then
+	  allocate(chigh(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
 	
 	az = azpar
 	ad = adpar
