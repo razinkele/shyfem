@@ -85,3 +85,52 @@ class TestAuthenticatedApp:
     def test_logout_button_visible(self, pw_auth_page):
         """Logout button is visible in the navbar."""
         assert pw_auth_page.locator("#logout-btn").count() == 1
+
+
+class TestAdminPanel:
+    """Tests for admin user management in server mode."""
+
+    def test_admin_user_table_shows_admin(self, pw_auth_page):
+        """Admin tab lists the seeded admin user."""
+        _switch_tab(pw_auth_page, "Admin")
+        table = pw_auth_page.locator("#admin-user_table")
+        table.wait_for(state="attached", timeout=10000)
+        pw_auth_page.wait_for_timeout(1000)
+        assert pw_auth_page.locator("text=admin").count() >= 1
+
+    def test_admin_create_user(self, pw_auth_page):
+        """Create a new user via the admin form."""
+        _switch_tab(pw_auth_page, "Admin")
+        pw_auth_page.wait_for_timeout(500)
+
+        # Click create user to open modal
+        pw_auth_page.locator("#admin-create_user_btn").click(force=True)
+        pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
+
+        # Fill form
+        pw_auth_page.locator("#admin-new_username").fill("testuser")
+        pw_auth_page.locator("#admin-new_password").fill("testpass123")
+        pw_auth_page.wait_for_timeout(300)
+
+        # Submit via the confirm button
+        pw_auth_page.locator("#admin-confirm_create_user").click(force=True)
+        pw_auth_page.wait_for_timeout(2000)
+
+        # User should now appear in the table
+        _dismiss_modals(pw_auth_page)
+        assert pw_auth_page.locator("text=testuser").count() >= 1
+
+    def test_admin_user_has_action_buttons(self, pw_auth_page):
+        """Action buttons (Reset PW, Toggle) exist for users."""
+        _switch_tab(pw_auth_page, "Admin")
+        pw_auth_page.wait_for_timeout(500)
+        # Look for any reset password link
+        reset_links = pw_auth_page.locator("[id^='admin-reset_pw_']")
+        assert reset_links.count() >= 1
+
+    def test_admin_active_badges_visible(self, pw_auth_page):
+        """Active/role badges are visible in the admin table."""
+        _switch_tab(pw_auth_page, "Admin")
+        pw_auth_page.wait_for_timeout(500)
+        badges = pw_auth_page.locator(".badge.bg-success, .badge.bg-secondary, .badge.bg-danger, .badge.bg-primary")
+        assert badges.count() >= 1
