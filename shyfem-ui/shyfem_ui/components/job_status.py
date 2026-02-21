@@ -132,9 +132,7 @@ def job_status_server(
         # Output files
         files_section = None
         if job.output_files:
-            file_items = [
-                ui.li(ui.code(f), class_="small") for f in job.output_files
-            ]
+            file_items = [ui.li(ui.code(f), class_="small") for f in job.output_files]
             files_section = ui.div(
                 ui.strong("Output Files:"),
                 ui.ul(*file_items, class_="mb-0"),
@@ -145,9 +143,11 @@ def job_status_server(
             ui.div(
                 ui.h6(job.name, class_="card-title"),
                 progress_bar if job.is_active else None,
-                ui.div(job.progress_message, class_="small text-muted mb-2")
-                if job.progress_message
-                else None,
+                (
+                    ui.div(job.progress_message, class_="small text-muted mb-2")
+                    if job.progress_message
+                    else None
+                ),
                 *detail_rows,
                 error_section,
                 files_section,

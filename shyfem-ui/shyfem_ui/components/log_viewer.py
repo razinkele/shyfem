@@ -169,6 +169,7 @@ def log_viewer_server(
             return
         # Use JS to trigger download via data URI
         import base64
+
         b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
         js = (
             f"var a=document.createElement('a');"

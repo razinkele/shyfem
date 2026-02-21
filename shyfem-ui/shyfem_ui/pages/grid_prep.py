@@ -181,8 +181,10 @@ def grid_prep_server(
             grd = GrdParser.parse_file(temp_path)
             current_grd.set(grd)
             current_grd_path.set(temp_path)
-            log_content.set(f"Loaded grid: {file_info['name']}\n"
-                          f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}")
+            log_content.set(
+                f"Loaded grid: {file_info['name']}\n"
+                f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
+            )
         except Exception as e:
             log_content.set(f"Error loading grid: {e}")
 
@@ -209,8 +211,10 @@ def grid_prep_server(
             grd = GrdParser.parse_file(path)
             current_grd.set(grd)
             current_grd_path.set(path)
-            log_content.set(f"Loaded grid: {path.name}\n"
-                          f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}")
+            log_content.set(
+                f"Loaded grid: {path.name}\n"
+                f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
+            )
         except Exception as e:
             log_content.set(f"Error loading grid: {e}")
 
@@ -260,15 +264,13 @@ def grid_prep_server(
 
             if result.success:
                 log_content.set(
-                    log_content.get() +
-                    f"\n*** shypre completed successfully ***\n"
+                    log_content.get() + f"\n*** shypre completed successfully ***\n"
                     f"Output files: {', '.join(result.output_files)}\n"
                 )
                 output_files.set(result.output_files)
             else:
                 log_content.set(
-                    log_content.get() +
-                    f"\n*** shypre failed (code {result.return_code}) ***\n"
+                    log_content.get() + f"\n*** shypre failed (code {result.return_code}) ***\n"
                     f"{result.stderr}\n"
                 )
 
@@ -310,14 +312,10 @@ def grid_prep_server(
             )
 
             if result.success:
-                log_content.set(
-                    log_content.get() +
-                    "\n*** shybas completed successfully ***\n"
-                )
+                log_content.set(log_content.get() + "\n*** shybas completed successfully ***\n")
             else:
                 log_content.set(
-                    log_content.get() +
-                    f"\n*** shybas failed (code {result.return_code}) ***\n"
+                    log_content.get() + f"\n*** shybas failed (code {result.return_code}) ***\n"
                     f"{result.stderr}\n"
                 )
 
@@ -380,15 +378,15 @@ def grid_prep_server(
             ui.h6("Depth Range", class_="mt-3"),
             ui.p(
                 f"Min: {stats['depth']['min']:.2f}, Max: {stats['depth']['max']:.2f}"
-                if stats['depth']['min'] is not None
+                if stats["depth"]["min"] is not None
                 else "No depth data"
             ),
             ui.h6("Node Types", class_="mt-3"),
-            ui.p(", ".join(str(t) for t in stats['node_types']) or "None"),
+            ui.p(", ".join(str(t) for t in stats["node_types"]) or "None"),
             ui.h6("Element Types", class_="mt-3"),
-            ui.p(", ".join(str(t) for t in stats['element_types']) or "None"),
+            ui.p(", ".join(str(t) for t in stats["element_types"]) or "None"),
             ui.h6("Line Types", class_="mt-3"),
-            ui.p(", ".join(str(t) for t in stats['line_types']) or "None"),
+            ui.p(", ".join(str(t) for t in stats["line_types"]) or "None"),
         )
 
     @reactive.effect
@@ -407,6 +405,7 @@ def grid_prep_server(
         json_str = grid_stats_to_json(stats, grid_name)
 
         import base64
+
         b64 = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
         filename = f"grid_stats_{grid_name}.json"
         js = (
@@ -427,46 +426,65 @@ def grid_prep_server(
         # Build a searchable node/element summary
         return ui.div(
             ui.h5("Node & Element Inspector"),
-            ui.p("Use the Interactive Map tab with 'Nodes' enabled to hover/inspect.",
-                 class_="text-muted small"),
+            ui.p(
+                "Use the Interactive Map tab with 'Nodes' enabled to hover/inspect.",
+                class_="text-muted small",
+            ),
             ui.row(
-                ui.column(6,
+                ui.column(
+                    6,
                     ui.h6("Sample Nodes (first 20)"),
                     ui.tags.table(
                         ui.tags.thead(
                             ui.tags.tr(
-                                ui.tags.th("ID"), ui.tags.th("X"), ui.tags.th("Y"),
-                                ui.tags.th("Depth"), ui.tags.th("Type"),
+                                ui.tags.th("ID"),
+                                ui.tags.th("X"),
+                                ui.tags.th("Y"),
+                                ui.tags.th("Depth"),
+                                ui.tags.th("Type"),
                             ),
                         ),
                         ui.tags.tbody(
-                            *[ui.tags.tr(
-                                ui.tags.td(str(nid)),
-                                ui.tags.td(f"{n.x:.4f}"),
-                                ui.tags.td(f"{n.y:.4f}"),
-                                ui.tags.td(f"{n.depth:.2f}" if n.depth is not None else "-"),
-                                ui.tags.td(str(n.node_type)),
-                            ) for nid, n in list(grd.nodes.items())[:20]]
+                            *[
+                                ui.tags.tr(
+                                    ui.tags.td(str(nid)),
+                                    ui.tags.td(f"{n.x:.4f}"),
+                                    ui.tags.td(f"{n.y:.4f}"),
+                                    ui.tags.td(f"{n.depth:.2f}" if n.depth is not None else "-"),
+                                    ui.tags.td(str(n.node_type)),
+                                )
+                                for nid, n in list(grd.nodes.items())[:20]
+                            ]
                         ),
                         class_="table table-sm table-striped",
                     ),
                 ),
-                ui.column(6,
+                ui.column(
+                    6,
                     ui.h6("Sample Elements (first 20)"),
                     ui.tags.table(
                         ui.tags.thead(
                             ui.tags.tr(
-                                ui.tags.th("ID"), ui.tags.th("Type"),
-                                ui.tags.th("Nodes"), ui.tags.th("Shape"),
+                                ui.tags.th("ID"),
+                                ui.tags.th("Type"),
+                                ui.tags.th("Nodes"),
+                                ui.tags.th("Shape"),
                             ),
                         ),
                         ui.tags.tbody(
-                            *[ui.tags.tr(
-                                ui.tags.td(str(eid)),
-                                ui.tags.td(str(e.elem_type)),
-                                ui.tags.td(" ".join(str(n) for n in e.nodes)),
-                                ui.tags.td("Tri" if e.is_triangle else "Quad" if e.is_quad else f"{len(e.nodes)}-gon"),
-                            ) for eid, e in list(grd.elements.items())[:20]]
+                            *[
+                                ui.tags.tr(
+                                    ui.tags.td(str(eid)),
+                                    ui.tags.td(str(e.elem_type)),
+                                    ui.tags.td(" ".join(str(n) for n in e.nodes)),
+                                    ui.tags.td(
+                                        "Tri"
+                                        if e.is_triangle
+                                        else "Quad" if e.is_quad else f"{len(e.nodes)}-gon"
+                                    ),
+                                )
+                                for eid, e in list(grd.elements.items())[:20]
+                            ]
                         ),
                         class_="table table-sm table-striped",
                     ),

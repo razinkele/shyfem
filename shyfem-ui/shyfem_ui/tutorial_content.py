@@ -53,8 +53,7 @@ TUTORIAL_CONTENT: list[dict] = [
                         ),
                         "actions": [
                             "Navigate to the **Grid Prep** tab.",
-                            "The grid path should be auto-filled as "
-                            "`GRID/MM_coarse.grd`.",
+                            "The grid path should be auto-filled as " "`GRID/MM_coarse.grd`.",
                             "Click **Run shypre** in the sidebar.",
                             "Wait for the **Log** sub-tab to show completion.",
                         ],
@@ -80,8 +79,7 @@ TUTORIAL_CONTENT: list[dict] = [
                         "actions": [
                             "Navigate to the **Simulation** tab.",
                             "Click **Load** and select `mm_hyd_00.str`.",
-                            "Open the **Sections** sub-tab to see `$title` "
-                            "and `$para`.",
+                            "Open the **Sections** sub-tab to see `$title` " "and `$para`.",
                             "Verify `ilin = 1` (linearized equations) and "
                             "`idt = '300s'` (5-minute time step).",
                         ],
@@ -162,8 +160,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Navigate to the **Simulation** tab.",
                             "Click **Load** and select `mm_hyd_01.str`.",
                             "Open the **Sections** sub-tab.",
-                            "Locate `idtout` and `idtext` in the `$para` "
-                            "section.",
+                            "Locate `idtout` and `idtext` in the `$para` " "section.",
                             "Scroll down to find the `$extra` section listing "
                             "monitor node numbers (128, 58, 868, 441).",
                         ],
@@ -190,8 +187,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "is behaving correctly."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_01.str`.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_01.str`.",
                             "After completion, go to the **Post-Process** tab.",
                             "Click **Scan** to detect the `.shy` output file.",
                             "Use **Extract Time Series** to pull data from "
@@ -217,8 +213,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Navigate to the **Visualize** tab.",
                             "Load the extracted `.ext` file.",
                             "Select **Line Plot** as the chart type.",
-                            "All four monitor nodes should appear as "
-                            "separate lines.",
+                            "All four monitor nodes should appear as " "separate lines.",
                         ],
                         "expected": (
                             "A time-series plot showing water level at the "
@@ -295,10 +290,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "station is usually adequate."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_02.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_02.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "Navigate to the **Visualize** tab and compare "
                             "the current fields with mm_hyd_01.",
                         ],
@@ -374,10 +367,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "(5e-3 or more)."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_03.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_03.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "Navigate to the **Compare** tab.",
                             "Select mm_hyd_02 and mm_hyd_03 to see how "
                             "friction reduces current speeds.",
@@ -454,8 +445,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Open the **Boundaries** sub-tab.",
                             "Verify `$bound1` shows `ibtyp = 1` with "
                             "93 boundary nodes (85-177).",
-                            "Note the tilt correction: `ztilt = 0.008` "
-                            "and `ktilt = 130`.",
+                            "Note the tilt correction: `ztilt = 0.008` " "and `ktilt = 130`.",
                         ],
                         "expected": (
                             "The Boundaries sub-tab shows `$bound1` with "
@@ -477,10 +467,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "as the tide propagates through the inlet."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_11.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_11.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "In **Visualize**, compare node 128 (sea "
                             "boundary) with node 868 (lagoon center).",
                         ],
@@ -528,8 +516,7 @@ TUTORIAL_CONTENT: list[dict] = [
                         "actions": [
                             "Navigate to the **Simulation** tab.",
                             "Click **Load** and select `mm_hyd_12a.str`.",
-                            "In the **Sections** sub-tab, find `zconst = "
-                            "0.30` in `$para`.",
+                            "In the **Sections** sub-tab, find `zconst = " "0.30` in `$para`.",
                         ],
                         "expected": (
                             "The `$para` section shows `zconst = 0.30` "
@@ -548,10 +535,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "responds symmetrically to perturbations."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_12a.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_12a.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "In **Visualize**, look at the first few hours "
                             "to see the initial outflow surge decaying.",
                         ],
@@ -607,8 +592,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Navigate to the **Simulation** tab.",
                             "Click **Load** and select `mm_hyd_13.str`.",
                             "Open the **Boundaries** sub-tab.",
-                            "Verify `$bound2` shows `ibtyp = 3` at node "
-                            "218 with `zfact = 50`.",
+                            "Verify `$bound2` shows `ibtyp = 3` at node " "218 with `zfact = 50`.",
                         ],
                         "expected": (
                             "The Boundaries sub-tab now shows two "
@@ -629,10 +613,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "use multiple boundary nodes."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_13.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_13.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "In **Visualize**, compare with mm_hyd_11 to "
                             "see the river's effect on water levels.",
                         ],
@@ -718,10 +700,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "currents are deflected to the right."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_21.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_21.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "In **Visualize**, compare the current vectors "
                             "with mm_hyd_13 to see the deflection.",
                         ],
@@ -770,10 +750,8 @@ TUTORIAL_CONTENT: list[dict] = [
                         "actions": [
                             "Navigate to the **Simulation** tab.",
                             "Click **Load** and select `mm_hyd_22.str`.",
-                            "In the **Sections** sub-tab, verify "
-                            "`ilin = 0` in `$para`.",
-                            "Note that the time step `idt` remains at "
-                            "`'300s'`.",
+                            "In the **Sections** sub-tab, verify " "`ilin = 0` in `$para`.",
+                            "Note that the time step `idt` remains at " "`'300s'`.",
                         ],
                         "expected": (
                             "The `$para` section shows `ilin = 0` "
@@ -792,10 +770,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "same time step (idt = 300s) is used."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_22.str`.",
-                            "After completion, go to **Post-Process** and "
-                            "extract time series.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_22.str`.",
+                            "After completion, go to **Post-Process** and " "extract time series.",
                             "In **Compare**, select mm_hyd_21 (linear) and "
                             "mm_hyd_22 (non-linear) to see differences.",
                         ],
@@ -865,8 +841,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Click **Load** and select `mm_hyd_23.str`.",
                             "In the **Sections** sub-tab, note the grid "
                             "reference changed to `GRID/MM_coarse_smooth`.",
-                            "Find `idt = '30s'`, `itsplt = 2`, and "
-                            "`coumax = 0.8` in `$para`.",
+                            "Find `idt = '30s'`, `itsplt = 2`, and " "`coumax = 0.8` in `$para`.",
                         ],
                         "expected": (
                             "The `$title` section references the smooth "
@@ -907,8 +882,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "grid-scale noise."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_23.str`.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_23.str`.",
                             "Monitor the log for any CFL warnings.",
                             "After completion, go to **Post-Process** and "
                             "verify smooth current fields.",
@@ -993,8 +967,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Click **Load** and select `mm_hyd_31.str`.",
                             "In the **Sections** sub-tab, find `ibarcl = 3`, "
                             "`isalt = 1`, and `salref = 35` in `$para`.",
-                            "Note the extended end date: `itend = "
-                            "'2009-01-31'` (full month).",
+                            "Note the extended end date: `itend = " "'2009-01-31'` (full month).",
                         ],
                         "expected": (
                             "The `$para` section shows baroclinic and "
@@ -1014,10 +987,8 @@ TUTORIAL_CONTENT: list[dict] = [
                             "injects freshwater with **salt = 0**."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_31.str`.",
-                            "This run takes longer (full month). Watch the "
-                            "log for progress.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_31.str`.",
+                            "This run takes longer (full month). Watch the " "log for progress.",
                             "After completion, go to **Post-Process**.",
                         ],
                         "expected": (
@@ -1037,8 +1008,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "to see how freshwater spreads from the river."
                         ),
                         "actions": [
-                            "In **Post-Process**, extract salinity fields "
-                            "to NetCDF format.",
+                            "In **Post-Process**, extract salinity fields " "to NetCDF format.",
                             "Navigate to the **Visualize** tab.",
                             "Load the salinity NetCDF file.",
                             "Select **Contour** plot type to see the "
@@ -1158,8 +1128,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "atmospheric data for heat flux computations."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_41.str`.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_41.str`.",
                             "This is a longer 3D run. Monitor the log "
                             "for progress and any warnings.",
                             "After completion, go to **Post-Process**.",
@@ -1184,8 +1153,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "In **Post-Process**, extract temperature and "
                             "salinity fields to NetCDF.",
                             "Navigate to the **Visualize** tab.",
-                            "Load the temperature NetCDF and create a "
-                            "contour plot.",
+                            "Load the temperature NetCDF and create a " "contour plot.",
                             "Switch to the salinity NetCDF and compare.",
                         ],
                         "expected": (
@@ -1232,8 +1200,7 @@ TUTORIAL_CONTENT: list[dict] = [
                         "actions": [
                             "Navigate to the **Simulation** tab.",
                             "Click **Load** and select `mm_hyd_42.str`.",
-                            "In the **Sections** sub-tab, verify "
-                            "`ibarcl = 1` (changed from 3).",
+                            "In the **Sections** sub-tab, verify " "`ibarcl = 1` (changed from 3).",
                         ],
                         "expected": (
                             "The only change from mm_hyd_41 is `ibarcl = 1` "
@@ -1251,8 +1218,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "for its stability."
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_42.str`.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_42.str`.",
                             "After completion, go to the **Compare** tab.",
                             "Select mm_hyd_41 and mm_hyd_42 to see "
                             "parameter differences and field comparisons.",
@@ -1296,32 +1262,20 @@ TUTORIAL_CONTENT: list[dict] = [
                 ),
                 "new_params": {
                     "ilin (changed)": (
-                        "Changed to 0 (non-linear). Full advective "
-                        "momentum transport is active."
+                        "Changed to 0 (non-linear). Full advective " "momentum transport is active."
                     ),
                     "idt (changed)": (
                         "Reduced to 30s (from 300s). Non-linear "
                         "advection with 3D tracer transport requires "
                         "a shorter base time step."
                     ),
-                    "coumax": (
-                        "Maximum Courant number (0.8) for adaptive "
-                        "time-splitting."
-                    ),
+                    "coumax": ("Maximum Courant number (0.8) for adaptive " "time-splitting."),
                     "itsplt": (
-                        "Automatic time-splitting (2) subdivides "
-                        "the advection step as needed."
+                        "Automatic time-splitting (2) subdivides " "the advection step as needed."
                     ),
-                    "idtsyn": (
-                        "Synchronization interval (1 hour)."
-                    ),
-                    "ahpar": (
-                        "Smagorinsky constant (0.3) for horizontal "
-                        "diffusion."
-                    ),
-                    "idhtyp": (
-                        "Smagorinsky diffusion type (2)."
-                    ),
+                    "idtsyn": ("Synchronization interval (1 hour)."),
+                    "ahpar": ("Smagorinsky constant (0.3) for horizontal " "diffusion."),
+                    "idhtyp": ("Smagorinsky diffusion type (2)."),
                     "ibarcl (changed)": (
                         "Changed to 1 (diagnostic baroclinic). Chosen "
                         "for stability with non-linear terms active."
@@ -1353,8 +1307,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "Click **Load** and select `mm_hyd_43.str`.",
                             "In the **Sections** sub-tab, verify `ilin = 0`, "
                             "`ibarcl = 1`, `itsplt = 2`, and `coumax = 0.8`.",
-                            "Check `idt = '30s'` and "
-                            "`itend = '2009-01-25'`.",
+                            "Check `idt = '30s'` and " "`itend = '2009-01-25'`.",
                         ],
                         "expected": (
                             "The `$para` section shows the full set of "
@@ -1377,13 +1330,11 @@ TUTORIAL_CONTENT: list[dict] = [
                             "5. **Diagnostic baroclinic** (ibarcl=1)"
                         ),
                         "actions": [
-                            "Navigate to the **Run** tab and submit "
-                            "`mm_hyd_43.str`.",
+                            "Navigate to the **Run** tab and submit " "`mm_hyd_43.str`.",
                             "This is the most expensive run. Monitor the "
                             "log carefully for any CFL warnings or "
                             "instabilities.",
-                            "The simulation period is 24 days with a "
-                            "30-second time step.",
+                            "The simulation period is 24 days with a " "30-second time step.",
                         ],
                         "expected": (
                             "The simulation completes without CFL warnings "
@@ -1445,9 +1396,7 @@ def get_simulation(sim_name: str) -> dict | None:
     return None
 
 
-def build_tutorial_context(
-    sim_name: str, work_dir: str, target_tab: str
-) -> dict | None:
+def build_tutorial_context(sim_name: str, work_dir: str, target_tab: str) -> dict | None:
     """Build a tutorial context dict for a given simulation.
 
     Returns None if the simulation name is not found in the tutorial content.

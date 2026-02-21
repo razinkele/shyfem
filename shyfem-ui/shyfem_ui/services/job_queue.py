@@ -103,16 +103,12 @@ class JobQueue(ABC):
         pass
 
     @abstractmethod
-    async def get_output(
-        self, job_id: str, stream: str = "stdout", tail: int = 100
-    ) -> str:
+    async def get_output(self, job_id: str, stream: str = "stdout", tail: int = 100) -> str:
         """Get job output (stdout or stderr), optionally limited to last N lines."""
         pass
 
     @abstractmethod
-    def set_progress_callback(
-        self, callback: Callable[[str, float, str], None]
-    ) -> None:
+    def set_progress_callback(self, callback: Callable[[str, float, str], None]) -> None:
         """Set callback for progress updates: callback(job_id, progress, message).
 
         Deprecated: Use add_progress_callback/remove_progress_callback for

@@ -44,12 +44,14 @@ class NotificationService:
                 continue
 
             if status != old_status and status in _TERMINAL_STATUSES:
-                events.append({
-                    "job_id": job_id,
-                    "job_name": job.get("name", job_id),
-                    "old_status": old_status,
-                    "new_status": status,
-                })
+                events.append(
+                    {
+                        "job_id": job_id,
+                        "job_name": job.get("name", job_id),
+                        "old_status": old_status,
+                        "new_status": status,
+                    }
+                )
 
             self._seen[job_id] = status
 

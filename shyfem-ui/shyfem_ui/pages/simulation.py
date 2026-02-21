@@ -127,6 +127,7 @@ def simulation_server(
     tutorial_context=None,
 ):
     """Simulation configuration page server logic."""
+
     # Auto-fill from active project
     @reactive.effect
     def _on_project_changed():
@@ -170,7 +171,9 @@ def simulation_server(
         project_id_reactive.set(proj["id"] if proj else None)
 
     # Initialize str_editor and wire up its reactive state
-    editor_state = str_editor_server("str_editor", current_file_path, project_id=project_id_reactive)
+    editor_state = str_editor_server(
+        "str_editor", current_file_path, project_id=project_id_reactive
+    )
 
     # Initialize boundary editor
     boundary_editor_server("boundary_editor", parsed_str=parsed_str)
@@ -447,7 +450,11 @@ def simulation_server(
                         ui.tags.td(ui.code(param_name)),
                         ui.tags.td(desc),
                         ui.tags.td(ui.span(type_str, class_="text-muted small")),
-                        ui.tags.td(ui.code(default_str, class_="small") if default_str else ui.span("-", class_="text-muted")),
+                        ui.tags.td(
+                            ui.code(default_str, class_="small")
+                            if default_str
+                            else ui.span("-", class_="text-muted")
+                        ),
                         ui.tags.td(ui.span(opts_str, class_="text-muted small")),
                     )
                 )

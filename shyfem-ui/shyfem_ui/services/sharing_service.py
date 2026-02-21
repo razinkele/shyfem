@@ -14,6 +14,7 @@ class SharingService:
     def __init__(self, session_factory=None):
         if session_factory is None:
             from shyfem_ui.db.base import get_session_factory
+
             session_factory = get_session_factory()
         self._session_factory = session_factory
 
@@ -29,9 +30,7 @@ class SharingService:
             if existing:
                 existing.role = role
             else:
-                perm = ProjectPermission(
-                    project_id=project_id, user_id=user_id, role=role
-                )
+                perm = ProjectPermission(project_id=project_id, user_id=user_id, role=role)
                 db.add(perm)
             db.commit()
             return True
@@ -121,8 +120,7 @@ class SharingService:
                 .all()
             )
             return [
-                {"id": u.id, "username": u.username, "display_name": u.display_name}
-                for u in users
+                {"id": u.id, "username": u.username, "display_name": u.display_name} for u in users
             ]
         finally:
             db.close()

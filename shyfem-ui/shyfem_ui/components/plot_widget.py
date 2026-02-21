@@ -75,8 +75,7 @@ def plot_widget_server(
         if grd is None or not grd.nodes:
             fig, ax = plt.subplots(figsize=(10, 8))
             ax.text(
-                0.5, 0.5, "No grid data loaded",
-                ha="center", va="center", fontsize=14, color="gray"
+                0.5, 0.5, "No grid data loaded", ha="center", va="center", fontsize=14, color="gray"
             )
             ax.set_xlim(0, 1)
             ax.set_ylim(0, 1)
@@ -169,10 +168,7 @@ def plot_mesh(
     if show_labels and len(node_ids) < 500:
         for nid in node_ids:
             node = grd.nodes[nid]
-            ax.annotate(
-                str(nid), (node.x, node.y),
-                fontsize=6, alpha=0.7
-            )
+            ax.annotate(str(nid), (node.x, node.y), fontsize=6, alpha=0.7)
 
     ax.set_aspect("equal")
     ax.set_xlabel("X")
@@ -191,16 +187,20 @@ def plot_depth_contour(grd: GrdFile, show_nodes: bool = False) -> plt.Figure:
     node_ids = list(grd.nodes.keys())
     x = np.array([grd.nodes[nid].x for nid in node_ids])
     y = np.array([grd.nodes[nid].y for nid in node_ids])
-    depths = np.array([
-        grd.nodes[nid].depth if grd.nodes[nid].depth is not None else 0.0
-        for nid in node_ids
-    ])
+    depths = np.array(
+        [grd.nodes[nid].depth if grd.nodes[nid].depth is not None else 0.0 for nid in node_ids]
+    )
 
     if np.all(depths == 0):
         ax.text(
-            0.5, 0.5, "No depth data available",
-            ha="center", va="center", fontsize=14, color="gray",
-            transform=ax.transAxes
+            0.5,
+            0.5,
+            "No depth data available",
+            ha="center",
+            va="center",
+            fontsize=14,
+            color="gray",
+            transform=ax.transAxes,
         )
     else:
         # Use tricontourf for triangulated data
@@ -323,7 +323,7 @@ def plot_element_quality(grd: GrdFile) -> plt.Figure:
             sides = []
             for i in range(3):
                 j = (i + 1) % 3
-                side_len = np.sqrt((ex[j] - ex[i])**2 + (ey[j] - ey[i])**2)
+                side_len = np.sqrt((ex[j] - ex[i]) ** 2 + (ey[j] - ey[i]) ** 2)
                 sides.append(side_len)
 
             # Quality: ratio of smallest to largest side
@@ -340,8 +340,7 @@ def plot_element_quality(grd: GrdFile) -> plt.Figure:
     if qualities:
         centroids = np.array(centroids)
         scatter = ax.scatter(
-            centroids[:, 0], centroids[:, 1],
-            c=qualities, s=10, cmap="RdYlGn", vmin=0, vmax=1
+            centroids[:, 0], centroids[:, 1], c=qualities, s=10, cmap="RdYlGn", vmin=0, vmax=1
         )
         fig.colorbar(scatter, ax=ax, label="Element Quality (0-1)")
 

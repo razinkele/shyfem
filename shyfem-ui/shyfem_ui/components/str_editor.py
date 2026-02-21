@@ -308,10 +308,7 @@ def str_editor_server(
 
         is_success = len(errors) == 1 and "valid" in errors[0].lower()
 
-        items = [
-            ui.li(error, class_="small")
-            for error in errors
-        ]
+        items = [ui.li(error, class_="small") for error in errors]
 
         return ui.div(
             ui.ul(*items, class_="mb-0"),
@@ -341,8 +338,10 @@ def _build_form_panel(
     """Build the structured form panel from parsed STR file data."""
     if parsed is None or not parsed.sections:
         return ui.div(
-            ui.p("No file loaded. Load or create a parameter file to see structured form.",
-                 class_="text-muted text-center p-4"),
+            ui.p(
+                "No file loaded. Load or create a parameter file to see structured form.",
+                class_="text-muted text-center p-4",
+            ),
         )
 
     section_cards = []
@@ -375,7 +374,11 @@ def _build_form_panel(
             if matching_params is not None and param_name not in matching_params:
                 continue
 
-            highlight_style = "background-color: #fff3cd; padding: 0 4px; border-radius: 2px;" if matching_params and param_name in matching_params else ""
+            highlight_style = (
+                "background-color: #fff3cd; padding: 0 4px; border-radius: 2px;"
+                if matching_params and param_name in matching_params
+                else ""
+            )
 
             info = known_params.get(param_name)
             field_id = f"form_{section_name}_{param_name}"
@@ -403,7 +406,8 @@ def _build_form_panel(
                         ui.div(
                             label,
                             ui.input_select(
-                                field_id, "",
+                                field_id,
+                                "",
                                 choices=choices,
                                 selected=str(param_val),
                                 width="100%",
@@ -420,7 +424,8 @@ def _build_form_panel(
                             file_picker_ui(picker_id, label=""),
                             ui.div(
                                 ui.input_text(
-                                    field_id, "",
+                                    field_id,
+                                    "",
                                     value=str(param_val),
                                 ),
                                 style="display:none;",
@@ -433,7 +438,8 @@ def _build_form_panel(
                         ui.div(
                             label,
                             ui.input_text(
-                                field_id, "",
+                                field_id,
+                                "",
                                 value=str(param_val),
                             ),
                             class_="mb-2",
@@ -449,7 +455,8 @@ def _build_form_panel(
                             file_picker_ui(picker_id, label=""),
                             ui.div(
                                 ui.input_text(
-                                    field_id, "",
+                                    field_id,
+                                    "",
                                     value=str(param_val),
                                 ),
                                 style="display:none;",
@@ -462,7 +469,8 @@ def _build_form_panel(
                         ui.div(
                             ui.span(param_name, class_="fw-bold small", style=highlight_style),
                             ui.input_text(
-                                field_id, "",
+                                field_id,
+                                "",
                                 value=str(param_val),
                             ),
                             class_="mb-2",
@@ -473,7 +481,11 @@ def _build_form_panel(
             ui.div(
                 ui.div(
                     _section_badge(section_name),
-                    ui.span(f" {section_desc}", class_="text-muted small ms-2") if section_desc else None,
+                    (
+                        ui.span(f" {section_desc}", class_="text-muted small ms-2")
+                        if section_desc
+                        else None
+                    ),
                     class_="card-header py-2",
                     style=f"border-left: 3px solid {color};",
                 ),
@@ -522,11 +534,15 @@ def _build_form_panel(
             ),
             class_="d-flex justify-content-end",
         ),
-        ui.div(
-            *section_cards,
-            style="max-height: 500px; overflow-y: auto;",
-        ) if section_cards else ui.div(
-            ui.p("No matching parameters.", class_="text-muted text-center p-4"),
+        (
+            ui.div(
+                *section_cards,
+                style="max-height: 500px; overflow-y: auto;",
+            )
+            if section_cards
+            else ui.div(
+                ui.p("No matching parameters.", class_="text-muted text-center p-4"),
+            )
         ),
     )
 
@@ -605,8 +621,9 @@ def filter_sections(
     return result
 
 
-def validate_str_content(content: str, check_files: bool = False,
-                         working_dir: Path | None = None) -> list[str]:
+def validate_str_content(
+    content: str, check_files: bool = False, working_dir: Path | None = None
+) -> list[str]:
     """Validate STR file content and return list of errors and warnings.
 
     Args:
@@ -683,7 +700,9 @@ def validate_str_content(content: str, check_files: bool = False,
         hzoff = params.get("hzoff")
         if isinstance(hzmin, (int, float)) and isinstance(hzoff, (int, float)):
             if hzmin >= hzoff:
-                warnings.append(f"Warning: $para hzmin ({hzmin}) should be less than hzoff ({hzoff})")
+                warnings.append(
+                    f"Warning: $para hzmin ({hzmin}) should be less than hzoff ({hzoff})"
+                )
 
         # Value range checks from COMMON_PARAMS
         known_para = COMMON_PARAMS.get("para", {})
@@ -725,8 +744,9 @@ def validate_str_content(content: str, check_files: bool = False,
     return errors + warnings
 
 
-def _check_range(warnings: list[str], section: str, param: str,
-                 value: float, options_str: str) -> None:
+def _check_range(
+    warnings: list[str], section: str, param: str, value: float, options_str: str
+) -> None:
     """Check if a value is within the range specified in options_str."""
     import re
 
@@ -737,9 +757,7 @@ def _check_range(warnings: list[str], section: str, param: str,
             lo = float(bracket_match.group(1))
             hi = float(bracket_match.group(2))
             if value < lo or value > hi:
-                warnings.append(
-                    f"Warning: ${section} {param}={value} outside range [{lo},{hi}]"
-                )
+                warnings.append(f"Warning: ${section} {param}={value} outside range [{lo},{hi}]")
         except ValueError:
             logger.debug("Could not parse range '%s' for %s.%s", options_str, section, param)
         return

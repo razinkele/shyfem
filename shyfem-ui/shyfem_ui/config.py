@@ -23,8 +23,7 @@ class Config(BaseSettings):
 
     # Deployment settings
     deployment_mode: Literal["local", "server"] = Field(
-        default="local",
-        description="Deployment mode: 'local' for desktop, 'server' for multi-user"
+        default="local", description="Deployment mode: 'local' for desktop, 'server' for multi-user"
     )
     host: str = Field(default="127.0.0.1", description="Host to bind to")
     port: int = Field(default=8000, description="Port to bind to")
@@ -32,43 +31,34 @@ class Config(BaseSettings):
     # SHYFEM paths
     shyfem_dir: Path = Field(
         default_factory=lambda: Path(__file__).resolve().parents[2],
-        description="Path to SHYFEM installation directory"
+        description="Path to SHYFEM installation directory",
     )
     work_dir: Path = Field(
         default=Path.home() / ".shyfem-ui" / "projects",
-        description="Working directory for projects and outputs"
+        description="Working directory for projects and outputs",
     )
 
     # Database settings
     database_url: str = Field(
-        default="sqlite:///./shyfem_ui.db",
-        description="SQLAlchemy database URL"
+        default="sqlite:///./shyfem_ui.db", description="SQLAlchemy database URL"
     )
     db_pool_size: int = Field(
-        default=5,
-        description="SQLAlchemy connection pool size (PostgreSQL only)"
+        default=5, description="SQLAlchemy connection pool size (PostgreSQL only)"
     )
     db_pool_overflow: int = Field(
-        default=10,
-        description="Max overflow connections beyond pool_size (PostgreSQL only)"
+        default=10, description="Max overflow connections beyond pool_size (PostgreSQL only)"
     )
     db_pool_recycle: int = Field(
-        default=3600,
-        description="Seconds before recycling idle connections (PostgreSQL only)"
+        default=3600, description="Seconds before recycling idle connections (PostgreSQL only)"
     )
 
     # Job queue settings
     use_celery: bool = Field(
-        default=False,
-        description="Use Celery/Redis for job queue (server mode)"
+        default=False, description="Use Celery/Redis for job queue (server mode)"
     )
-    max_workers: int = Field(
-        default=4,
-        description="Maximum concurrent jobs (local mode)"
-    )
+    max_workers: int = Field(default=4, description="Maximum concurrent jobs (local mode)")
     redis_url: str = Field(
-        default="redis://localhost:6379/0",
-        description="Redis URL for Celery broker"
+        default="redis://localhost:6379/0", description="Redis URL for Celery broker"
     )
 
     # MPI settings
@@ -78,41 +68,34 @@ class Config(BaseSettings):
 
     # Solver settings
     solver_node_threshold: int = Field(
-        default=50000,
-        description="Node count threshold for recommending PETSc over SPARSKIT"
+        default=50000, description="Node count threshold for recommending PETSc over SPARSKIT"
     )
 
     # Authentication (server mode only)
     auth_enabled: bool = Field(
-        default=False,
-        description="Enable basic auth (recommended for server mode)"
+        default=False, description="Enable basic auth (recommended for server mode)"
     )
     auth_username: str = Field(default="admin", description="Basic auth username")
-    auth_password: str = Field(default="", description="Basic auth password (required if auth_enabled)")
-    auth_session_ttl_hours: int = Field(
-        default=24,
-        description="Session cookie lifetime in hours"
+    auth_password: str = Field(
+        default="", description="Basic auth password (required if auth_enabled)"
     )
+    auth_session_ttl_hours: int = Field(default=24, description="Session cookie lifetime in hours")
     default_admin_username: str = Field(
-        default="admin",
-        description="Default admin username created on first run"
+        default="admin", description="Default admin username created on first run"
     )
     default_admin_password: str = Field(
-        default="",
-        description="Default admin password (required for server mode first run)"
+        default="", description="Default admin password (required for server mode first run)"
     )
 
     # Debug settings
     debug: bool = Field(
-        default=False,
-        description="Enable debug mode (verbose WebSocket logging, etc.)"
+        default=False, description="Enable debug mode (verbose WebSocket logging, etc.)"
     )
 
     # UI settings
     theme: str = Field(default="flatly", description="Shinyswatch theme name")
     log_refresh_interval: int = Field(
-        default=5,
-        description="Log viewer refresh interval in seconds"
+        default=5, description="Log viewer refresh interval in seconds"
     )
 
     @field_validator("shyfem_dir", "work_dir", mode="before")
@@ -150,34 +133,28 @@ class Config(BaseSettings):
 
     # Rate limiting (requests per minute per session, server mode)
     rate_limit_rpm: int = Field(
-        default=120,
-        description="Max requests per minute per session (server mode)"
+        default=120, description="Max requests per minute per session (server mode)"
     )
 
     # Upload limits
-    max_upload_size_mb: int = Field(
-        default=500,
-        description="Maximum file upload size in MB"
-    )
+    max_upload_size_mb: int = Field(default=500, description="Maximum file upload size in MB")
     max_project_storage_mb: int = Field(
-        default=5000,
-        description="Maximum total storage per project in MB"
+        default=5000, description="Maximum total storage per project in MB"
     )
 
     # Proxy settings (server mode)
     root_path: str = Field(
-        default="",
-        description="ASGI root_path for reverse proxy deployment (e.g., '/shyfem-ui')"
+        default="", description="ASGI root_path for reverse proxy deployment (e.g., '/shyfem-ui')"
     )
     trusted_proxies: list[str] = Field(
         default_factory=list,
-        description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])"
+        description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])",
     )
 
     # Static asset caching
     static_cache_max_age: int = Field(
         default=86400,
-        description="Cache-Control max-age for static assets in seconds (0 = disabled)"
+        description="Cache-Control max-age for static assets in seconds (0 = disabled)",
     )
 
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:
@@ -217,8 +194,7 @@ class Config(BaseSettings):
         ]
 
         if not any(
-            resolved == root or str(resolved).startswith(str(root) + "/")
-            for root in allowed_roots
+            resolved == root or str(resolved).startswith(str(root) + "/") for root in allowed_roots
         ):
             raise ValueError(
                 f"Path '{resolved}' is outside allowed directories: "
@@ -257,9 +233,7 @@ class Config(BaseSettings):
         work_root = self.work_dir.resolve()
 
         if resolved != work_root and not str(resolved).startswith(str(work_root) + "/"):
-            raise ValueError(
-                f"Save path '{resolved}' must be within work directory: {work_root}"
-            )
+            raise ValueError(f"Save path '{resolved}' must be within work directory: {work_root}")
 
         return resolved
 

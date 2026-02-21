@@ -112,7 +112,9 @@ def _load_job_info(redis_client, job_id: str) -> JobInfo | None:
         status=JobStatus(d["status"]),
         progress=d.get("progress", 0.0),
         progress_message=d.get("progress_message", ""),
-        created_at=datetime.fromisoformat(d["created_at"]) if d.get("created_at") else datetime.now(),
+        created_at=(
+            datetime.fromisoformat(d["created_at"]) if d.get("created_at") else datetime.now()
+        ),
         queued_at=datetime.fromisoformat(d["queued_at"]) if d.get("queued_at") else None,
         started_at=datetime.fromisoformat(d["started_at"]) if d.get("started_at") else None,
         completed_at=datetime.fromisoformat(d["completed_at"]) if d.get("completed_at") else None,
@@ -129,6 +131,7 @@ def _load_job_info(redis_client, job_id: str) -> JobInfo | None:
 # ---------------------------------------------------------------------------
 # Celery task: runs synchronously in a worker process
 # ---------------------------------------------------------------------------
+
 
 def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
     """Execute a SHYFEM job (called by Celery worker).
@@ -170,30 +173,36 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
         solver = job_info.metadata.get("solver", "sparskit")
 
         if job_info.tool_name == "shyfem" and mpi_enabled and mpi_np > 1:
-            result = asyncio.run(wrapper.run_shyfem(
-                job_info.args[-1] if job_info.args else "",
-                working_dir,
-                mpi_enabled=True,
-                mpi_np=mpi_np,
-                mpirun_path="mpirun",
-                options=job_info.args[:-1] if len(job_info.args) > 1 else None,
-                solver=solver,
-                progress_callback=progress_callback,
-            ))
+            result = asyncio.run(
+                wrapper.run_shyfem(
+                    job_info.args[-1] if job_info.args else "",
+                    working_dir,
+                    mpi_enabled=True,
+                    mpi_np=mpi_np,
+                    mpirun_path="mpirun",
+                    options=job_info.args[:-1] if len(job_info.args) > 1 else None,
+                    solver=solver,
+                    progress_callback=progress_callback,
+                )
+            )
         elif job_info.tool_name == "shyfem":
-            result = asyncio.run(wrapper.run_shyfem(
-                job_info.args[-1] if job_info.args else "",
-                working_dir,
-                solver=solver,
-                progress_callback=progress_callback,
-            ))
+            result = asyncio.run(
+                wrapper.run_shyfem(
+                    job_info.args[-1] if job_info.args else "",
+                    working_dir,
+                    solver=solver,
+                    progress_callback=progress_callback,
+                )
+            )
         else:
-            result = asyncio.run(wrapper.run_command(
-                job_info.tool_name,
-                job_info.args,
-                working_dir,
-                progress_callback=progress_callback,
-            ))
+            result = asyncio.run(
+                wrapper.run_command(
+                    job_info.tool_name,
+                    job_info.args,
+                    working_dir,
+                    progress_callback=progress_callback,
+                )
+            )
 
         job_info.return_code = result.return_code
         job_info.output_files = result.output_files
@@ -222,9 +231,11 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
 # Register the task with Celery when the module is imported by a worker
 def _register_celery_task(app):
     """Register the execute task with the Celery app."""
+
     @app.task(bind=True, name="shyfem_ui.execute_job")
     def _execute_job_task(self, job_id: str, redis_url: str, shyfem_dir: str):
         execute_shyfem_job(job_id, redis_url, shyfem_dir)
+
     return _execute_job_task
 
 
@@ -245,7 +256,9 @@ class CeleryJobQueue(JobQueue):
         shyfem_dir: Path | None = None,
         redis_url: str | None = None,
     ):
-        self.shyfem_dir = shyfem_dir or Path(os.environ.get("SHYFEM_UI_SHYFEM_DIR", "/usr/local/shyfem"))
+        self.shyfem_dir = shyfem_dir or Path(
+            os.environ.get("SHYFEM_UI_SHYFEM_DIR", "/usr/local/shyfem")
+        )
         self.redis_url = redis_url or "redis://localhost:6379/0"
         self._progress_callback: Callable[[str, float, str], None] | None = None
         self._celery_app = None
@@ -353,9 +366,7 @@ class CeleryJobQueue(JobQueue):
 
         return jobs
 
-    async def get_output(
-        self, job_id: str, stream: str = "stdout", tail: int = 100
-    ) -> str:
+    async def get_output(self, job_id: str, stream: str = "stdout", tail: int = 100) -> str:
         """Get job output."""
         rc = self._get_redis_client()
         job_info = _load_job_info(rc, job_id)
@@ -370,9 +381,7 @@ class CeleryJobQueue(JobQueue):
 
         return tail_file(file_path, tail=tail)
 
-    def set_progress_callback(
-        self, callback: Callable[[str, float, str], None]
-    ) -> None:
+    def set_progress_callback(self, callback: Callable[[str, float, str], None]) -> None:
         """Set callback for progress updates."""
         self._progress_callback = callback
 
@@ -382,9 +391,7 @@ class CeleryJobQueue(JobQueue):
         cutoff = datetime.now() - timedelta(days=days)
         cutoff_timestamp = cutoff.timestamp()
 
-        old_job_ids = rc.zrangebyscore(
-            "shyfem:jobs:by_time", "-inf", cutoff_timestamp
-        )
+        old_job_ids = rc.zrangebyscore("shyfem:jobs:by_time", "-inf", cutoff_timestamp)
 
         count = 0
         for job_id in old_job_ids:
@@ -485,14 +492,16 @@ class CeleryJobQueue(JobQueue):
 
             for name, stat in stats.items():
                 pool = stat.get("pool", {})
-                workers.append({
-                    "name": name,
-                    "active_tasks": len(active.get(name, [])),
-                    "processed": stat.get("total", {}).get("shyfem_ui.execute_job", 0),
-                    "concurrency": pool.get("max-concurrency", "?"),
-                    "pool": pool.get("implementation", "unknown"),
-                    "pid": stat.get("pid", "?"),
-                })
+                workers.append(
+                    {
+                        "name": name,
+                        "active_tasks": len(active.get(name, [])),
+                        "processed": stat.get("total", {}).get("shyfem_ui.execute_job", 0),
+                        "concurrency": pool.get("max-concurrency", "?"),
+                        "pool": pool.get("implementation", "unknown"),
+                        "pid": stat.get("pid", "?"),
+                    }
+                )
 
         except Exception:
             pass

@@ -75,16 +75,20 @@ def build_variable_table(ds) -> list[dict]:
         try:
             var = ds[var_name]
             values = var.values.flatten()
-            valid = values[~np.isnan(values)] if np.issubdtype(values.dtype, np.floating) else values
-            rows.append({
-                "name": var_name,
-                "dims": " \u00d7 ".join(var.dims),
-                "dtype": str(var.dtype),
-                "units": str(var.attrs.get("units", "-")),
-                "long_name": str(var.attrs.get("long_name", "-")),
-                "min": float(np.min(valid)) if len(valid) > 0 else None,
-                "max": float(np.max(valid)) if len(valid) > 0 else None,
-            })
+            valid = (
+                values[~np.isnan(values)] if np.issubdtype(values.dtype, np.floating) else values
+            )
+            rows.append(
+                {
+                    "name": var_name,
+                    "dims": " \u00d7 ".join(var.dims),
+                    "dtype": str(var.dtype),
+                    "units": str(var.attrs.get("units", "-")),
+                    "long_name": str(var.attrs.get("long_name", "-")),
+                    "min": float(np.min(valid)) if len(valid) > 0 else None,
+                    "max": float(np.max(valid)) if len(valid) > 0 else None,
+                }
+            )
         except Exception:
             continue
     return rows
@@ -112,6 +116,7 @@ def get_dim_label(ds, dim_name: str, index: int) -> str:
         # Time dimensions: format as datetime
         if np.issubdtype(coord.dtype, np.datetime64):
             import pandas as pd
+
             return pd.Timestamp(value).strftime("%Y-%m-%d %H:%M")
 
         # Numeric: show value
@@ -149,8 +154,7 @@ def visualize_ui():
     """Visualization page UI."""
     return ui.div(
         ui.h3("Visualization"),
-        ui.p("Create interactive plots from SHYFEM results and grid files.",
-             class_="text-muted"),
+        ui.p("Create interactive plots from SHYFEM results and grid files.", class_="text-muted"),
         ui.layout_sidebar(
             ui.sidebar(
                 # Data source
@@ -249,6 +253,7 @@ def visualize_server(
     tutorial_context=None,
 ):
     """Visualization page server logic."""
+
     # Auto-fill from active project
     @reactive.effect
     def _on_project_changed():
@@ -344,7 +349,10 @@ def visualize_server(
                     ui.input_slider(
                         f"nc_dim_{dim_name}",
                         dim_name,
-                        min=0, max=dim_size - 1, value=0, step=1,
+                        min=0,
+                        max=dim_size - 1,
+                        value=0,
+                        step=1,
                     ),
                 )
                 controls.append(
@@ -419,9 +427,7 @@ def visualize_server(
         if attrs.get("_FillValue") is not None:
             meta_items.append(f"Fill: {attrs['_FillValue']}")
         if meta_items:
-            parts.append(
-                ui.p(" | ".join(meta_items), class_="small text-muted mb-1")
-            )
+            parts.append(ui.p(" | ".join(meta_items), class_="small text-muted mb-1"))
 
         if not parts:
             return None
@@ -484,16 +490,19 @@ def visualize_server(
                     loaded_data.set(ts)
                     data_type.set("timeseries")
                     ts_data_val.set(ts)  # Feed to timeseries component
-                    data_info_val.set({
-                        "file": str(path),
-                        "columns": len(ts.get("columns", [])),
-                        "rows": len(ts.get("data", [])),
-                    })
+                    data_info_val.set(
+                        {
+                            "file": str(path),
+                            "columns": len(ts.get("columns", [])),
+                            "rows": len(ts.get("data", [])),
+                        }
+                    )
                 ui.notification_show("Loaded time series data", type="message")
 
             elif dtype == "netcdf":
                 try:
                     import xarray as xr
+
                     # Use lazy loading — data stays on disk until accessed
                     ds = xr.open_dataset(path, chunks="auto")
                     if is_compare:
@@ -504,16 +513,16 @@ def visualize_server(
                         data_type.set("netcdf")
                         nc_variables.set(list(ds.data_vars))
                         nc_dimensions.set(dict(ds.dims))
-                        data_info_val.set({
-                            "file": str(path),
-                            "variables": list(ds.data_vars),
-                            "dimensions": dict(ds.dims),
-                            "coords": list(ds.coords),
-                            "attrs": dict(ds.attrs) if ds.attrs else {},
-                        })
-                    ui.notification_show(
-                        f"Loaded NetCDF: {list(ds.data_vars)}", type="message"
-                    )
+                        data_info_val.set(
+                            {
+                                "file": str(path),
+                                "variables": list(ds.data_vars),
+                                "dimensions": dict(ds.dims),
+                                "coords": list(ds.coords),
+                                "attrs": dict(ds.attrs) if ds.attrs else {},
+                            }
+                        )
+                    ui.notification_show(f"Loaded NetCDF: {list(ds.data_vars)}", type="message")
                 except ImportError:
                     ui.notification_show("xarray not installed", type="error")
 
@@ -532,8 +541,13 @@ def visualize_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Load data to generate plot",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=600)
             return fig
@@ -546,31 +560,54 @@ def visualize_server(
 
             if dtype == "grid":
                 fig = build_mesh_figure(
-                    data, mode=plot_type, colorscale=colormap,
-                    show_boundaries=True, show_nodes=False,
+                    data,
+                    mode=plot_type,
+                    colorscale=colormap,
+                    show_boundaries=True,
+                    show_nodes=False,
                 )
                 if show_grid:
                     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
                     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
                 return _with_export_config(fig, "shyfem_main_plot")
             elif dtype == "timeseries":
-                return _with_export_config(_plotly_timeseries(data, plot_type, show_grid), "shyfem_main_plot")
+                return _with_export_config(
+                    _plotly_timeseries(data, plot_type, show_grid), "shyfem_main_plot"
+                )
             elif dtype == "netcdf":
                 if plot_type in ("profile", "transect"):
-                    return _with_export_config(_plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input), "shyfem_main_plot")
-                return _with_export_config(_plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input), "shyfem_main_plot")
+                    return _with_export_config(
+                        _plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input),
+                        "shyfem_main_plot",
+                    )
+                return _with_export_config(
+                    _plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input),
+                    "shyfem_main_plot",
+                )
             else:
                 fig = go.Figure()
-                fig.add_annotation(text="Unsupported data type",
-                                   xref="paper", yref="paper", x=0.5, y=0.5,
-                                   showarrow=False)
+                fig.add_annotation(
+                    text="Unsupported data type",
+                    xref="paper",
+                    yref="paper",
+                    x=0.5,
+                    y=0.5,
+                    showarrow=False,
+                )
                 return fig
         except Exception as exc:
             logger.exception("Error rendering plot")
             ui.notification_show(f"Plot error: {exc}", type="error")
             fig = go.Figure()
-            fig.add_annotation(text=f"Error: {exc}", xref="paper", yref="paper",
-                               x=0.5, y=0.5, showarrow=False, font_color="red")
+            fig.add_annotation(
+                text=f"Error: {exc}",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_color="red",
+            )
             fig.update_layout(height=600)
             return fig
 
@@ -654,8 +691,13 @@ def visualize_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Load NetCDF data to view vertical profiles",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=14, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=14,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -669,9 +711,14 @@ def visualize_server(
 
         if not var_name:
             fig = go.Figure()
-            fig.add_annotation(text="No variable selected",
-                               xref="paper", yref="paper", x=0.5, y=0.5,
-                               showarrow=False)
+            fig.add_annotation(
+                text="No variable selected",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )
             fig.update_layout(height=500)
             return fig
 
@@ -686,15 +733,26 @@ def visualize_server(
 
         try:
             if plot_type == "transect":
-                return _with_export_config(_build_transect(data, var_name, py, input), "shyfem_profile")
+                return _with_export_config(
+                    _build_transect(data, var_name, py, input), "shyfem_profile"
+                )
             else:
-                return _with_export_config(_build_vertical_profile(data, var_name, px, py, input), "shyfem_profile")
+                return _with_export_config(
+                    _build_vertical_profile(data, var_name, px, py, input), "shyfem_profile"
+                )
         except Exception as exc:
             logger.exception("Error rendering profile plot")
             ui.notification_show(f"Profile plot error: {exc}", type="error")
             fig = go.Figure()
-            fig.add_annotation(text=f"Error: {exc}", xref="paper", yref="paper",
-                               x=0.5, y=0.5, showarrow=False, font_color="red")
+            fig.add_annotation(
+                text=f"Error: {exc}",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_color="red",
+            )
             fig.update_layout(height=500)
             return fig
 
@@ -717,10 +775,12 @@ def visualize_server(
                 return ui.p("No statistics available", class_="text-muted")
             rows = []
             for k, v in stats.items():
-                rows.append(ui.tags.tr(
-                    ui.tags.th(str(k)),
-                    ui.tags.td(str(v)[:200]),
-                ))
+                rows.append(
+                    ui.tags.tr(
+                        ui.tags.th(str(k)),
+                        ui.tags.td(str(v)[:200]),
+                    )
+                )
             return ui.tags.table(
                 ui.tags.tbody(*rows),
                 class_="table table-sm table-bordered",
@@ -738,24 +798,37 @@ def visualize_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Load both primary and comparison files",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=14, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=14,
+                font_color="gray",
             )
             fig.update_layout(height=600)
             return fig
 
         if dtype == "grid":
-            return _with_export_config(_compare_grids(primary, secondary, input.colormap()), "shyfem_comparison")
+            return _with_export_config(
+                _compare_grids(primary, secondary, input.colormap()), "shyfem_comparison"
+            )
         elif dtype == "timeseries":
             return _with_export_config(_compare_timeseries(primary, secondary), "shyfem_comparison")
         elif dtype == "netcdf":
-            return _with_export_config(_compare_netcdf(primary, secondary, input), "shyfem_comparison")
+            return _with_export_config(
+                _compare_netcdf(primary, secondary, input), "shyfem_comparison"
+            )
         else:
             fig = go.Figure()
             fig.add_annotation(
                 text="Comparison not supported for this data type",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False)
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )
             fig.update_layout(height=600)
             return fig
 
@@ -765,6 +838,7 @@ def visualize_server(
 # ---------------------------------------------------------------------------
 # Data loaders
 # ---------------------------------------------------------------------------
+
 
 def _load_timeseries(path: Path) -> dict:
     """Load time series data from file."""
@@ -806,6 +880,7 @@ def _load_timeseries(path: Path) -> dict:
 # Time series plots
 # ---------------------------------------------------------------------------
 
+
 def _plotly_timeseries(data: dict, plot_type: str, show_grid: bool) -> go.Figure:
     """Create an interactive Plotly time series figure."""
     fig = go.Figure()
@@ -816,19 +891,35 @@ def _plotly_timeseries(data: dict, plot_type: str, show_grid: bool) -> go.Figure
         for col in df.columns[1:]:
             y_vals = df[col]
             if plot_type == "line":
-                fig.add_trace(go.Scattergl(
-                    x=x_vals, y=y_vals, mode="lines", name=col,
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=x_vals,
+                        y=y_vals,
+                        mode="lines",
+                        name=col,
+                    )
+                )
             elif plot_type == "scatter":
-                fig.add_trace(go.Scattergl(
-                    x=x_vals, y=y_vals, mode="markers",
-                    marker=dict(size=4), name=col,
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=x_vals,
+                        y=y_vals,
+                        mode="markers",
+                        marker=dict(size=4),
+                        name=col,
+                    )
+                )
             elif plot_type == "area":
-                fig.add_trace(go.Scatter(
-                    x=x_vals, y=y_vals, fill="tozeroy",
-                    mode="lines", name=col, opacity=0.6,
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_vals,
+                        y=y_vals,
+                        fill="tozeroy",
+                        mode="lines",
+                        name=col,
+                        opacity=0.6,
+                    )
+                )
     else:
         arr = np.array(data.get("data", []))
         columns = data.get("columns", [])
@@ -836,20 +927,35 @@ def _plotly_timeseries(data: dict, plot_type: str, show_grid: bool) -> go.Figure
             for i in range(1, arr.shape[1]):
                 col_name = columns[i] if i < len(columns) else f"col{i}"
                 if plot_type == "line":
-                    fig.add_trace(go.Scattergl(
-                        x=arr[:, 0].tolist(), y=arr[:, i].tolist(),
-                        mode="lines", name=col_name,
-                    ))
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=arr[:, 0].tolist(),
+                            y=arr[:, i].tolist(),
+                            mode="lines",
+                            name=col_name,
+                        )
+                    )
                 elif plot_type == "scatter":
-                    fig.add_trace(go.Scattergl(
-                        x=arr[:, 0].tolist(), y=arr[:, i].tolist(),
-                        mode="markers", marker=dict(size=4), name=col_name,
-                    ))
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=arr[:, 0].tolist(),
+                            y=arr[:, i].tolist(),
+                            mode="markers",
+                            marker=dict(size=4),
+                            name=col_name,
+                        )
+                    )
                 elif plot_type == "area":
-                    fig.add_trace(go.Scatter(
-                        x=arr[:, 0].tolist(), y=arr[:, i].tolist(),
-                        fill="tozeroy", mode="lines", name=col_name, opacity=0.6,
-                    ))
+                    fig.add_trace(
+                        go.Scatter(
+                            x=arr[:, 0].tolist(),
+                            y=arr[:, i].tolist(),
+                            fill="tozeroy",
+                            mode="lines",
+                            name=col_name,
+                            opacity=0.6,
+                        )
+                    )
 
     fig.update_layout(
         xaxis_title="Time",
@@ -871,8 +977,10 @@ def _plotly_timeseries(data: dict, plot_type: str, show_grid: bool) -> go.Figure
 # NetCDF plots
 # ---------------------------------------------------------------------------
 
-def _plotly_netcdf(data, plot_type: str, colormap: str,
-                   show_colorbar: bool, show_grid: bool, input) -> go.Figure:
+
+def _plotly_netcdf(
+    data, plot_type: str, colormap: str, show_colorbar: bool, show_grid: bool, input
+) -> go.Figure:
     """Create an interactive Plotly figure for NetCDF data."""
     fig = go.Figure()
 
@@ -912,43 +1020,53 @@ def _plotly_netcdf(data, plot_type: str, colormap: str,
                 coords[d] = np.arange(values.shape[dim_names.index(d)])
 
         if plot_type == "contour":
-            fig.add_trace(go.Contour(
-                z=values,
-                x=coords.get(dim_names[1], None) if len(dim_names) > 1 else None,
-                y=coords.get(dim_names[0], None),
-                colorscale=colormap,
-                showscale=show_colorbar,
-                colorbar=dict(title=var_name, thickness=15) if show_colorbar else None,
-                contours=dict(showlabels=True),
-            ))
+            fig.add_trace(
+                go.Contour(
+                    z=values,
+                    x=coords.get(dim_names[1], None) if len(dim_names) > 1 else None,
+                    y=coords.get(dim_names[0], None),
+                    colorscale=colormap,
+                    showscale=show_colorbar,
+                    colorbar=dict(title=var_name, thickness=15) if show_colorbar else None,
+                    contours=dict(showlabels=True),
+                )
+            )
         elif plot_type == "heatmap":
-            fig.add_trace(go.Heatmap(
-                z=values,
-                x=coords.get(dim_names[1], None) if len(dim_names) > 1 else None,
-                y=coords.get(dim_names[0], None),
-                colorscale=colormap,
-                showscale=show_colorbar,
-                colorbar=dict(title=var_name, thickness=15) if show_colorbar else None,
-            ))
+            fig.add_trace(
+                go.Heatmap(
+                    z=values,
+                    x=coords.get(dim_names[1], None) if len(dim_names) > 1 else None,
+                    y=coords.get(dim_names[0], None),
+                    colorscale=colormap,
+                    showscale=show_colorbar,
+                    colorbar=dict(title=var_name, thickness=15) if show_colorbar else None,
+                )
+            )
         elif plot_type == "surface3d":
-            fig.add_trace(go.Surface(
-                z=values,
-                x=coords.get(dim_names[1], None) if len(dim_names) > 1 else None,
-                y=coords.get(dim_names[0], None),
-                colorscale=colormap,
-                showscale=show_colorbar,
-            ))
-            fig.update_layout(scene=dict(
-                zaxis_title=var_name,
-                xaxis_title=dim_names[1] if len(dim_names) > 1 else "",
-                yaxis_title=dim_names[0],
-            ))
+            fig.add_trace(
+                go.Surface(
+                    z=values,
+                    x=coords.get(dim_names[1], None) if len(dim_names) > 1 else None,
+                    y=coords.get(dim_names[0], None),
+                    colorscale=colormap,
+                    showscale=show_colorbar,
+                )
+            )
+            fig.update_layout(
+                scene=dict(
+                    zaxis_title=var_name,
+                    xaxis_title=dim_names[1] if len(dim_names) > 1 else "",
+                    yaxis_title=dim_names[0],
+                )
+            )
         else:
-            fig.add_trace(go.Heatmap(
-                z=values,
-                colorscale=colormap,
-                showscale=show_colorbar,
-            ))
+            fig.add_trace(
+                go.Heatmap(
+                    z=values,
+                    colorscale=colormap,
+                    showscale=show_colorbar,
+                )
+            )
 
         # Build title with slice info
         title = var_name
@@ -964,8 +1082,12 @@ def _plotly_netcdf(data, plot_type: str, colormap: str,
     except Exception as e:
         fig.add_annotation(
             text=f"Error: {e}",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font_color="red",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font_color="red",
         )
 
     fig.update_layout(height=600)
@@ -986,23 +1108,51 @@ def _build_vertical_profile(ds, var_name: str, x_idx: int, y_idx: int, input) ->
         dims = list(var.dims)
 
         # Look for a vertical dimension (common names)
-        vert_dims = [d for d in dims if d.lower() in (
-            "level", "levels", "depth", "z", "sigma", "layer", "lev",
-        )]
+        vert_dims = [
+            d
+            for d in dims
+            if d.lower()
+            in (
+                "level",
+                "levels",
+                "depth",
+                "z",
+                "sigma",
+                "layer",
+                "lev",
+            )
+        ]
 
         if not vert_dims:
             # Try to find any dim that's not time, x, or y
-            spatial_dims = [d for d in dims if d.lower() not in (
-                "time", "x", "y", "lon", "lat", "longitude", "latitude", "node",
-            )]
+            spatial_dims = [
+                d
+                for d in dims
+                if d.lower()
+                not in (
+                    "time",
+                    "x",
+                    "y",
+                    "lon",
+                    "lat",
+                    "longitude",
+                    "latitude",
+                    "node",
+                )
+            ]
             if spatial_dims:
                 vert_dims = [spatial_dims[0]]
 
         if not vert_dims:
             fig.add_annotation(
                 text="No vertical dimension found in this variable",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=14, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=14,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -1042,13 +1192,15 @@ def _build_vertical_profile(ds, var_name: str, x_idx: int, y_idx: int, input) ->
         else:
             z_vals = np.arange(len(values))
 
-        fig.add_trace(go.Scattergl(
-            x=values,
-            y=z_vals,
-            mode="lines+markers",
-            marker=dict(size=6),
-            name=var_name,
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=values,
+                y=z_vals,
+                mode="lines+markers",
+                marker=dict(size=6),
+                name=var_name,
+            )
+        )
 
         # Build info string
         slice_str = ", ".join(f"{k}={v}" for k, v in sel.items())
@@ -1063,8 +1215,12 @@ def _build_vertical_profile(ds, var_name: str, x_idx: int, y_idx: int, input) ->
     except Exception as e:
         fig.add_annotation(
             text=f"Error: {e}",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font_color="red",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font_color="red",
         )
         fig.update_layout(height=500)
 
@@ -1096,8 +1252,13 @@ def _build_transect(ds, var_name: str, row_idx: int, input) -> go.Figure:
         if len(dims) < 2:
             fig.add_annotation(
                 text="Variable needs at least 2 dimensions for transect",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=14, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=14,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -1115,11 +1276,14 @@ def _build_transect(ds, var_name: str, row_idx: int, input) -> go.Figure:
             else:
                 x_vals = np.arange(len(values))
 
-            fig.add_trace(go.Scattergl(
-                x=x_vals, y=values,
-                mode="lines+markers",
-                name=f"{var_name} at {dims[0]}={row_idx}",
-            ))
+            fig.add_trace(
+                go.Scattergl(
+                    x=x_vals,
+                    y=values,
+                    mode="lines+markers",
+                    name=f"{var_name} at {dims[0]}={row_idx}",
+                )
+            )
             fig.update_layout(
                 xaxis_title=remaining_dims[0],
                 yaxis_title=var_name,
@@ -1127,16 +1291,22 @@ def _build_transect(ds, var_name: str, row_idx: int, input) -> go.Figure:
         else:
             # 2D transect cross-section (heatmap)
             values = transect.values
-            coords_x = ds.coords[remaining_dims[1]].values if remaining_dims[1] in ds.coords else None
-            coords_y = ds.coords[remaining_dims[0]].values if remaining_dims[0] in ds.coords else None
+            coords_x = (
+                ds.coords[remaining_dims[1]].values if remaining_dims[1] in ds.coords else None
+            )
+            coords_y = (
+                ds.coords[remaining_dims[0]].values if remaining_dims[0] in ds.coords else None
+            )
 
-            fig.add_trace(go.Heatmap(
-                z=values,
-                x=coords_x,
-                y=coords_y,
-                colorscale=input.colormap(),
-                colorbar=dict(title=var_name),
-            ))
+            fig.add_trace(
+                go.Heatmap(
+                    z=values,
+                    x=coords_x,
+                    y=coords_y,
+                    colorscale=input.colormap(),
+                    colorbar=dict(title=var_name),
+                )
+            )
             fig.update_layout(
                 xaxis_title=remaining_dims[1] if len(remaining_dims) > 1 else "",
                 yaxis_title=remaining_dims[0],
@@ -1150,8 +1320,12 @@ def _build_transect(ds, var_name: str, row_idx: int, input) -> go.Figure:
     except Exception as e:
         fig.add_annotation(
             text=f"Error: {e}",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font_color="red",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font_color="red",
         )
         fig.update_layout(height=500)
 
@@ -1161,6 +1335,7 @@ def _build_transect(ds, var_name: str, row_idx: int, input) -> go.Figure:
 # ---------------------------------------------------------------------------
 # Statistics
 # ---------------------------------------------------------------------------
+
 
 def _netcdf_statistics(ds) -> ui.Tag:
     """Compute and display statistics for all NetCDF variables."""
@@ -1281,41 +1456,46 @@ def _timeseries_statistics(data: dict) -> ui.Tag:
 # Comparison plots
 # ---------------------------------------------------------------------------
 
+
 def _compare_grids(grd1: GrdFile, grd2: GrdFile, colormap: str) -> go.Figure:
     """Side-by-side comparison of two grids."""
     fig = make_subplots(rows=1, cols=2, subplot_titles=("Primary", "Comparison"))
 
     for col, grd in enumerate([grd1, grd2], 1):
         from shyfem_ui.components.grid_map import _build_edge_arrays
+
         edge_x, edge_y, x, y, node_ids, node_map = _build_edge_arrays(grd)
         fig.add_trace(
             go.Scattergl(
-                x=edge_x, y=edge_y,
+                x=edge_x,
+                y=edge_y,
                 mode="lines",
                 line=dict(color="#4a90d9", width=0.5),
                 hoverinfo="skip",
                 showlegend=False,
             ),
-            row=1, col=col,
+            row=1,
+            col=col,
         )
-        depths = np.array([
-            grd.nodes[nid].depth if grd.nodes[nid].depth is not None else 0.0
-            for nid in node_ids
-        ])
+        depths = np.array(
+            [grd.nodes[nid].depth if grd.nodes[nid].depth is not None else 0.0 for nid in node_ids]
+        )
         if not np.all(depths == 0):
             fig.add_trace(
                 go.Scattergl(
-                    x=x.tolist(), y=y.tolist(),
+                    x=x.tolist(),
+                    y=y.tolist(),
                     mode="markers",
-                    marker=dict(size=3, color=depths.tolist(),
-                                colorscale=colormap, showscale=(col == 2)),
+                    marker=dict(
+                        size=3, color=depths.tolist(), colorscale=colormap, showscale=(col == 2)
+                    ),
                     hoverinfo="skip",
                     showlegend=False,
                 ),
-                row=1, col=col,
+                row=1,
+                col=col,
             )
-        fig.update_xaxes(scaleanchor=f"y{col}" if col == 1 else "y2", scaleratio=1,
-                         row=1, col=col)
+        fig.update_xaxes(scaleanchor=f"y{col}" if col == 1 else "y2", scaleratio=1, row=1, col=col)
 
     fig.update_layout(height=600, title="Grid Comparison")
     return fig
@@ -1329,24 +1509,30 @@ def _compare_timeseries(ts1: dict, ts2: dict) -> go.Figure:
         df = ts_data.get("df")
         if df is not None:
             for col in df.columns[1:]:
-                fig.add_trace(go.Scattergl(
-                    x=df.iloc[:, 0], y=df[col],
-                    mode="lines",
-                    line=dict(dash=dash),
-                    name=f"{prefix}: {col}",
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=df.iloc[:, 0],
+                        y=df[col],
+                        mode="lines",
+                        line=dict(dash=dash),
+                        name=f"{prefix}: {col}",
+                    )
+                )
         else:
             arr = np.array(ts_data.get("data", []))
             columns = ts_data.get("columns", [])
             if arr.size > 0:
                 for i in range(1, arr.shape[1]):
                     col_name = columns[i] if i < len(columns) else f"col{i}"
-                    fig.add_trace(go.Scattergl(
-                        x=arr[:, 0].tolist(), y=arr[:, i].tolist(),
-                        mode="lines",
-                        line=dict(dash=dash),
-                        name=f"{prefix}: {col_name}",
-                    ))
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=arr[:, 0].tolist(),
+                            y=arr[:, i].tolist(),
+                            mode="lines",
+                            line=dict(dash=dash),
+                            name=f"{prefix}: {col_name}",
+                        )
+                    )
 
     fig.update_layout(
         height=600,
@@ -1371,8 +1557,13 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text=f"Variable '{var_name}' not found in comparison dataset",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font_size=14, font_color="gray",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font_size=14,
+            font_color="gray",
         )
         fig.update_layout(height=600)
         return fig
@@ -1402,29 +1593,41 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
 
         # Compute difference (handle shape mismatch)
         min_shape = tuple(min(s1, s2) for s1, s2 in zip(vals1.shape, vals2.shape, strict=True))
-        diff = vals1[:min_shape[0], :min_shape[1]] - vals2[:min_shape[0], :min_shape[1]]
+        diff = vals1[: min_shape[0], : min_shape[1]] - vals2[: min_shape[0], : min_shape[1]]
 
         dim_names = list(var1.dims)
-        coords_x = var1.coords[dim_names[1]].values[:min_shape[1]] if len(dim_names) > 1 and dim_names[1] in var1.coords else None
-        coords_y = var1.coords[dim_names[0]].values[:min_shape[0]] if dim_names[0] in var1.coords else None
+        coords_x = (
+            var1.coords[dim_names[1]].values[: min_shape[1]]
+            if len(dim_names) > 1 and dim_names[1] in var1.coords
+            else None
+        )
+        coords_y = (
+            var1.coords[dim_names[0]].values[: min_shape[0]]
+            if dim_names[0] in var1.coords
+            else None
+        )
 
         fig = make_subplots(
-            rows=1, cols=3,
+            rows=1,
+            cols=3,
             subplot_titles=("Primary", "Comparison", "Difference"),
         )
 
-        for col, (vals, _title) in enumerate([(vals1, "Primary"), (vals2, "Comparison"), (diff, "Diff")], 1):
+        for col, (vals, _title) in enumerate(
+            [(vals1, "Primary"), (vals2, "Comparison"), (diff, "Diff")], 1
+        ):
             cmap = "RdBu_r" if col == 3 else input.colormap()
             fig.add_trace(
                 go.Heatmap(
-                    z=vals[:min_shape[0], :min_shape[1]] if col < 3 else vals,
+                    z=vals[: min_shape[0], : min_shape[1]] if col < 3 else vals,
                     x=coords_x,
                     y=coords_y,
                     colorscale=cmap,
                     showscale=(col == 3),
                     colorbar=dict(title="Diff" if col == 3 else "", x=1.02) if col == 3 else None,
                 ),
-                row=1, col=col,
+                row=1,
+                col=col,
             )
 
         fig.update_layout(
@@ -1437,8 +1640,12 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
         fig = go.Figure()
         fig.add_annotation(
             text=f"Comparison error: {e}",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font_color="red",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font_color="red",
         )
         fig.update_layout(height=600)
         return fig

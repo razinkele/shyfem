@@ -162,16 +162,40 @@ class FileService:
             return Path(project.work_dir) / pf.rel_path
 
     # Parameters in $name that reference files
-    _NAME_FILE_PARAMS = frozenset({
-        "wind", "rain", "qflux", "ice", "zinit", "tempin", "saltin",
-        "conzin", "restrt", "tempobs", "saltobs", "gotmpa", "basnam",
-        "offlin", "surfvel", "temptau", "salttau",
-    })
+    _NAME_FILE_PARAMS = frozenset(
+        {
+            "wind",
+            "rain",
+            "qflux",
+            "ice",
+            "zinit",
+            "tempin",
+            "saltin",
+            "conzin",
+            "restrt",
+            "tempobs",
+            "saltobs",
+            "gotmpa",
+            "basnam",
+            "offlin",
+            "surfvel",
+            "temptau",
+            "salttau",
+        }
+    )
 
     # Parameters in $bound sections that reference files
-    _BOUND_FILE_PARAMS = frozenset({
-        "boundn", "tempn", "saltn", "conzn", "vel3dn", "bio2dn", "sed2dn",
-    })
+    _BOUND_FILE_PARAMS = frozenset(
+        {
+            "boundn",
+            "tempn",
+            "saltn",
+            "conzn",
+            "vel3dn",
+            "bio2dn",
+            "sed2dn",
+        }
+    )
 
     @classmethod
     def validate_simulation_files(cls, simulation_id: int) -> list[str]:
@@ -211,9 +235,7 @@ class FileService:
                 if param in cls._NAME_FILE_PARAMS and isinstance(value, str) and value:
                     path = work_dir / value
                     if not path.exists():
-                        warnings.append(
-                            f"Missing file for $name/{param}: {value}"
-                        )
+                        warnings.append(f"Missing file for $name/{param}: {value}")
 
         # Check $bound sections
         for sec_name, section in parsed.sections.items():
@@ -223,24 +245,21 @@ class FileService:
                 if param in cls._BOUND_FILE_PARAMS and isinstance(value, str) and value:
                     path = work_dir / value
                     if not path.exists():
-                        warnings.append(
-                            f"Missing file for ${sec_name}/{param}: {value}"
-                        )
+                        warnings.append(f"Missing file for ${sec_name}/{param}: {value}")
 
         # Check basin file from $title (3rd line = basin name)
         title_section = parsed.sections.get("title")
         if title_section and title_section.raw_lines:
             content_lines = [
-                ln.strip() for ln in title_section.raw_lines
+                ln.strip()
+                for ln in title_section.raw_lines
                 if ln.strip() and not ln.strip().startswith(("#", "!"))
             ]
             if len(content_lines) >= 3:
                 basin_name = content_lines[2]
                 bas_path = work_dir / (basin_name + ".bas")
                 if not bas_path.exists():
-                    warnings.append(
-                        f"Missing basin file: {basin_name}.bas"
-                    )
+                    warnings.append(f"Missing basin file: {basin_name}.bas")
 
         return warnings
 
@@ -353,6 +372,7 @@ class FileService:
 def _sum_project_bytes(db, project_id: int) -> int:
     """Sum size_bytes for all files in a project."""
     from sqlalchemy import func as sa_func
+
     result = (
         db.query(sa_func.coalesce(sa_func.sum(ProjectFile.size_bytes), 0))
         .filter_by(project_id=project_id)

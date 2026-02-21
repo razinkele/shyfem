@@ -36,11 +36,13 @@ class ReportBuilder:
 
     def add_section(self, title: str, content_html: str, icon: str = "") -> None:
         """Add a raw HTML section to the report."""
-        self.sections.append({
-            "title": title,
-            "html": content_html,
-            "icon": icon,
-        })
+        self.sections.append(
+            {
+                "title": title,
+                "html": content_html,
+                "icon": icon,
+            }
+        )
 
     def add_parameters(self, str_file, section_filter: list[str] | None = None) -> None:
         """Add simulation parameters from a parsed StrFile.
@@ -92,8 +94,12 @@ class ReportBuilder:
 
         bounds = stats.get("bounds")
         if bounds:
-            items.append(("X Range", f"{bounds.get('x_min', '?'):.6g} to {bounds.get('x_max', '?'):.6g}"))
-            items.append(("Y Range", f"{bounds.get('y_min', '?'):.6g} to {bounds.get('y_max', '?'):.6g}"))
+            items.append(
+                ("X Range", f"{bounds.get('x_min', '?'):.6g} to {bounds.get('x_max', '?'):.6g}")
+            )
+            items.append(
+                ("Y Range", f"{bounds.get('y_min', '?'):.6g} to {bounds.get('y_max', '?'):.6g}")
+            )
 
         depth = stats.get("depth_range")
         if depth and depth.get("min") is not None:
@@ -162,9 +168,7 @@ class ReportBuilder:
             "cancelled": "badge-warning",
         }.get(job_info.status.value, "badge-secondary")
 
-        header = (
-            f'<span class="badge {status_class}">{_esc(job_info.status.value.upper())}</span>'
-        )
+        header = f'<span class="badge {status_class}">{_esc(job_info.status.value.upper())}</span>'
         self.add_section("Runtime Statistics", header + table)
 
     def add_output_files(self, files: list[str], working_dir: str | None = None) -> None:
@@ -213,7 +217,7 @@ class ReportBuilder:
                     rel = str(path)
 
             rows.append(
-                f'<tr><td><code>{_esc(rel)}</code></td>'
+                f"<tr><td><code>{_esc(rel)}</code></td>"
                 f'<td><span class="badge {badge_cls}">{label}</span></td>'
                 f"<td>{size_str}</td></tr>"
             )
@@ -260,9 +264,7 @@ class ReportBuilder:
             return
 
         stat_keys = ["min", "max", "mean", "std", "range", "count"]
-        header_cells = "<th>Variable</th>" + "".join(
-            f"<th>{k.title()}</th>" for k in stat_keys
-        )
+        header_cells = "<th>Variable</th>" + "".join(f"<th>{k.title()}</th>" for k in stat_keys)
 
         rows = []
         for var_name, stats in data.items():
@@ -419,10 +421,7 @@ def generate_comparison_report(
         return builder.save(out)
 
     # Summary table
-    header = (
-        "<th>Job</th><th>Tool</th><th>Status</th>"
-        "<th>Duration</th><th>Return Code</th>"
-    )
+    header = "<th>Job</th><th>Tool</th><th>Status</th>" "<th>Duration</th><th>Return Code</th>"
     rows = []
     for job in jobs:
         duration = _format_duration(job.duration) if job.duration else "-"
@@ -460,6 +459,7 @@ def generate_comparison_report(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _esc(s: str) -> str:
     """HTML-escape a string."""

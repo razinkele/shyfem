@@ -126,7 +126,6 @@ def postprocess_ui():
                     class_="btn-outline-primary btn-sm w-100 mb-2",
                 ),
                 ui.hr(),
-
                 # Operation selection
                 ui.h5("Operation"),
                 ui.input_select(
@@ -137,17 +136,14 @@ def postprocess_ui():
                 ),
                 ui.output_ui("operation_description"),
                 ui.hr(),
-
                 # Variable/layer selection (populated after scan)
                 ui.h5("Filters"),
                 ui.output_ui("variable_selector"),
                 ui.output_ui("layer_selector"),
-
                 # Time range
                 ui.input_text("tmin", "Start Time", placeholder="0 or 2020-01-01"),
                 ui.input_text("tmax", "End Time", placeholder="86400 or 2020-01-02"),
                 ui.hr(),
-
                 # Output options
                 ui.h5("Output"),
                 ui.input_text(
@@ -164,7 +160,6 @@ def postprocess_ui():
                     ),
                 ),
                 ui.hr(),
-
                 # Actions
                 ui.input_action_button(
                     "run_btn",
@@ -172,11 +167,9 @@ def postprocess_ui():
                     class_="btn-primary w-100 mb-2",
                 ),
                 ui.hr(),
-
                 # Presets
                 ui.h5("Quick Presets"),
                 ui.output_ui("preset_buttons"),
-
                 # Batch mode
                 ui.hr(),
                 ui.h5("Batch Mode"),
@@ -191,7 +184,6 @@ def postprocess_ui():
                     "Batch Process All",
                     class_="btn-outline-primary w-100",
                 ),
-
                 # Batch convert to NetCDF
                 ui.hr(),
                 ui.h5("Batch Convert to NetCDF"),
@@ -201,7 +193,6 @@ def postprocess_ui():
                     "Convert Selected to NetCDF",
                     class_="btn-outline-success w-100 mt-2",
                 ),
-
                 width=320,
             ),
             # Main content
@@ -446,14 +437,13 @@ def postprocess_server(
 
         options = _build_options()
 
-        log_content.set(
-            f"Running shyelab on {path.name}...\n"
-            f"Options: {' '.join(options)}\n\n"
-        )
+        log_content.set(f"Running shyelab on {path.name}...\n" f"Options: {' '.join(options)}\n\n")
 
         try:
             result = await wrapper.run_shyelab(
-                path, output_path, options,
+                path,
+                output_path,
+                options,
             )
 
             stdout_section = f"=== STDOUT ===\n{result.stdout}" if result.stdout else ""
@@ -486,8 +476,14 @@ def postprocess_server(
 
     for preset_key, preset_info in PRESETS.items():
         _register_preset(
-            preset_key, preset_info, input, config, wrapper,
-            log_content, generated_files, batch_results,
+            preset_key,
+            preset_info,
+            input,
+            config,
+            wrapper,
+            log_content,
+            generated_files,
+            batch_results,
         )
 
     # --- Batch mode ---
@@ -514,24 +510,28 @@ def postprocess_server(
             try:
                 path = config.validate_path(path_str, must_exist=True)
             except (ValueError, FileNotFoundError) as e:
-                results.append({
-                    "file": path_str,
-                    "status": "error",
-                    "message": str(e),
-                    "files": [],
-                })
+                results.append(
+                    {
+                        "file": path_str,
+                        "status": "error",
+                        "message": str(e),
+                        "files": [],
+                    }
+                )
                 continue
 
             output_dir = input.output_dir() or str(path.parent)
             try:
                 output_path = config.validate_path(output_dir)
             except ValueError as e:
-                results.append({
-                    "file": path_str,
-                    "status": "error",
-                    "message": str(e),
-                    "files": [],
-                })
+                results.append(
+                    {
+                        "file": path_str,
+                        "status": "error",
+                        "message": str(e),
+                        "files": [],
+                    }
+                )
                 continue
 
             output_path.mkdir(parents=True, exist_ok=True)
@@ -539,29 +539,32 @@ def postprocess_server(
             try:
                 result = await wrapper.run_shyelab(path, output_path, options)
 
-                results.append({
-                    "file": path.name,
-                    "status": "success" if result.success else "failed",
-                    "message": f"code={result.return_code}, {len(result.output_files)} files",
-                    "files": result.output_files,
-                    "duration": result.duration,
-                })
+                results.append(
+                    {
+                        "file": path.name,
+                        "status": "success" if result.success else "failed",
+                        "message": f"code={result.return_code}, {len(result.output_files)} files",
+                        "files": result.output_files,
+                        "duration": result.duration,
+                    }
+                )
 
                 current = log_content.get()
                 log_content.set(
-                    current +
-                    f"[{i+1}/{len(paths)}] {path.name}: "
+                    current + f"[{i+1}/{len(paths)}] {path.name}: "
                     f"{'OK' if result.success else 'FAILED'} "
                     f"({result.duration:.1f}s)\n"
                 )
 
             except Exception as e:
-                results.append({
-                    "file": path_str,
-                    "status": "error",
-                    "message": str(e),
-                    "files": [],
-                })
+                results.append(
+                    {
+                        "file": path_str,
+                        "status": "error",
+                        "message": str(e),
+                        "files": [],
+                    }
+                )
 
         batch_results.set(results)
 
@@ -573,8 +576,8 @@ def postprocess_server(
 
         success_count = sum(1 for r in results if r["status"] == "success")
         log_content.set(
-            log_content.get() +
-            f"\n*** Batch complete: {success_count}/{len(paths)} succeeded ***\n"
+            log_content.get()
+            + f"\n*** Batch complete: {success_count}/{len(paths)} succeeded ***\n"
         )
         ui.notification_show(
             f"Batch done: {success_count}/{len(paths)} succeeded",
@@ -635,56 +638,65 @@ def postprocess_server(
             try:
                 path = config.validate_path(file_path, must_exist=True)
             except (ValueError, FileNotFoundError) as e:
-                results.append({
-                    "file": file_path,
-                    "status": "error",
-                    "message": str(e),
-                    "files": [],
-                })
+                results.append(
+                    {
+                        "file": file_path,
+                        "status": "error",
+                        "message": str(e),
+                        "files": [],
+                    }
+                )
                 continue
 
             output_dir = input.output_dir() or str(path.parent)
             try:
                 output_path = config.validate_path(output_dir)
             except ValueError as e:
-                results.append({
-                    "file": file_path,
-                    "status": "error",
-                    "message": str(e),
-                    "files": [],
-                })
+                results.append(
+                    {
+                        "file": file_path,
+                        "status": "error",
+                        "message": str(e),
+                        "files": [],
+                    }
+                )
                 continue
 
             output_path.mkdir(parents=True, exist_ok=True)
 
             try:
                 result = await wrapper.run_shyelab(
-                    path, output_path, ["-outformat", "nc"],
+                    path,
+                    output_path,
+                    ["-outformat", "nc"],
                 )
 
-                results.append({
-                    "file": path.name,
-                    "status": "success" if result.success else "failed",
-                    "message": f"code={result.return_code}, {len(result.output_files)} files",
-                    "files": result.output_files,
-                    "duration": result.duration,
-                })
+                results.append(
+                    {
+                        "file": path.name,
+                        "status": "success" if result.success else "failed",
+                        "message": f"code={result.return_code}, {len(result.output_files)} files",
+                        "files": result.output_files,
+                        "duration": result.duration,
+                    }
+                )
 
                 current = log_content.get()
                 log_content.set(
-                    current +
-                    f"[{i+1}/{len(selected)}] {path.name}: "
+                    current + f"[{i+1}/{len(selected)}] {path.name}: "
                     f"{'OK' if result.success else 'FAILED'} "
                     f"({result.duration:.1f}s)\n"
                 )
 
             except Exception as e:
-                results.append({
-                    "file": file_path,
-                    "status": "error",
-                    "message": str(e),
-                    "files": [],
-                })
+                results.append(
+                    {
+                        "file": file_path,
+                        "status": "error",
+                        "message": str(e),
+                        "files": [],
+                    }
+                )
 
         batch_results.set(results)
 
@@ -696,8 +708,8 @@ def postprocess_server(
 
         success_count = sum(1 for r in results if r["status"] == "success")
         log_content.set(
-            log_content.get() +
-            f"\n*** Batch convert complete: {success_count}/{len(selected)} succeeded ***\n"
+            log_content.get()
+            + f"\n*** Batch convert complete: {success_count}/{len(selected)} succeeded ***\n"
         )
         ui.notification_show(
             f"Batch convert done: {success_count}/{len(selected)} succeeded",
@@ -816,7 +828,11 @@ def postprocess_server(
                 )
             )
 
-        total_str = f"{total_size / 1024 / 1024:.1f} MB" if total_size > 1024 * 1024 else f"{total_size / 1024:.1f} KB"
+        total_str = (
+            f"{total_size / 1024 / 1024:.1f} MB"
+            if total_size > 1024 * 1024
+            else f"{total_size / 1024:.1f} KB"
+        )
 
         return ui.div(
             ui.div(
@@ -888,10 +904,7 @@ def postprocess_server(
         if not files:
             return
 
-        ts_files = [
-            f for f in files
-            if f.endswith((".ts", ".ext", ".csv"))
-        ]
+        ts_files = [f for f in files if f.endswith((".ts", ".ext", ".csv"))]
         if not ts_files:
             return
 
@@ -909,7 +922,16 @@ def postprocess_server(
                     if not parts:
                         continue
                     # Check if first line is a header
-                    if i == 0 and not parts[0].replace(".", "").replace("-", "").replace("+", "").replace("e", "").replace("E", "").isdigit():
+                    if (
+                        i == 0
+                        and not parts[0]
+                        .replace(".", "")
+                        .replace("-", "")
+                        .replace("+", "")
+                        .replace("e", "")
+                        .replace("E", "")
+                        .isdigit()
+                    ):
                         columns = parts
                         continue
                     try:
@@ -923,10 +945,12 @@ def postprocess_server(
                     columns = [f"col{j}" for j in range(len(data[0]))]
                     if columns:
                         columns[0] = "time"
-                ts_preview_data.set({
-                    "columns": columns,
-                    "data": data,
-                })
+                ts_preview_data.set(
+                    {
+                        "columns": columns,
+                        "data": data,
+                    }
+                )
         except Exception:
             logger.warning("Failed to load time series preview", exc_info=True)
 
@@ -935,8 +959,9 @@ def postprocess_server(
     }
 
 
-def _register_preset(preset_key, preset_info, input, config, wrapper,
-                      log_content, generated_files, batch_results):
+def _register_preset(
+    preset_key, preset_info, input, config, wrapper, log_content, generated_files, batch_results
+):
     """Register a preset button handler. Must be called in a loop to capture closure."""
 
     @reactive.effect
@@ -962,8 +987,9 @@ def _register_preset(preset_key, preset_info, input, config, wrapper,
         output_path.mkdir(parents=True, exist_ok=True)
 
         ops = preset_info["operations"]
-        log_content.set(f"Running preset: {preset_info['name']}\n"
-                        f"Operations: {', '.join(ops)}\n\n")
+        log_content.set(
+            f"Running preset: {preset_info['name']}\n" f"Operations: {', '.join(ops)}\n\n"
+        )
 
         all_output = []
         for op_key in ops:
@@ -986,10 +1012,7 @@ def _register_preset(preset_key, preset_info, input, config, wrapper,
                 log_content.set(current + f"  Error: {e}\n")
 
         generated_files.set(all_output)
-        log_content.set(
-            log_content.get() +
-            f"\n*** Preset complete: {len(all_output)} files ***\n"
-        )
+        log_content.set(log_content.get() + f"\n*** Preset complete: {len(all_output)} files ***\n")
         ui.notification_show(
             f"Preset '{preset_info['name']}' done: {len(all_output)} files",
             type="message",
@@ -1067,7 +1090,11 @@ def _parse_shyelab_info(output: str) -> dict:
                 parsing_layer_values = False
 
         # Layer statistics table
-        if "layer" in stripped.lower() and "count" in stripped.lower() and "accumulated" in stripped.lower():
+        if (
+            "layer" in stripped.lower()
+            and "count" in stripped.lower()
+            and "accumulated" in stripped.lower()
+        ):
             continue
 
         # Basin info: nkn = N   nel = N

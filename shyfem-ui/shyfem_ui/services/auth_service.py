@@ -262,9 +262,7 @@ class AuthService:
         """
         session = self._session_factory()
         try:
-            auth_session = (
-                session.query(AuthSession).filter_by(token=token).first()
-            )
+            auth_session = session.query(AuthSession).filter_by(token=token).first()
             if auth_session is None:
                 return None
 
@@ -292,9 +290,7 @@ class AuthService:
         """
         session = self._session_factory()
         try:
-            auth_session = (
-                session.query(AuthSession).filter_by(token=token).first()
-            )
+            auth_session = session.query(AuthSession).filter_by(token=token).first()
             if auth_session is None:
                 return False
             session.delete(auth_session)
@@ -315,9 +311,7 @@ class AuthService:
         now = datetime.now(timezone.utc)
         session = self._session_factory()
         try:
-            expired = session.query(AuthSession).filter(
-                AuthSession.expires_at <= now
-            ).all()
+            expired = session.query(AuthSession).filter(AuthSession.expires_at <= now).all()
             count = len(expired)
             for s in expired:
                 session.delete(s)

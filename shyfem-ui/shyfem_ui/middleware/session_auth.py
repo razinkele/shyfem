@@ -142,8 +142,7 @@ class SessionAuthMiddleware:
         Default session time-to-live passed to ``create_session``.
     """
 
-    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24,
-                 root_path=""):
+    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24, root_path=""):
         self.app = app
         self.auth_service = auth_service
         self.local_mode = local_mode
@@ -251,18 +250,22 @@ class SessionAuthMiddleware:
         """Send the login page HTML as a 200 response."""
         html = _LOGIN_HTML.format(error=error, login_action=f"{root_path}/login")
         body = html.encode("utf-8")
-        await send({
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [
-                (b"content-type", b"text/html; charset=utf-8"),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": body,
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"text/html; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": body,
+            }
+        )
 
     async def _handle_login_post(self, receive, send, root_path: str = ""):
         """Parse POST form data, authenticate, and redirect or re-render."""
@@ -283,9 +286,7 @@ class SessionAuthMiddleware:
             return
 
         # Create session and set cookie
-        token = self.auth_service.create_session(
-            user["id"], ttl_hours=self.session_ttl_hours
-        )
+        token = self.auth_service.create_session(user["id"], ttl_hours=self.session_ttl_hours)
         ttl_seconds = self.session_ttl_hours * 3600
         cookie_path = root_path or "/"
         cookie = (
@@ -293,14 +294,16 @@ class SessionAuthMiddleware:
             f"Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age={ttl_seconds}"
         )
         redirect_to = f"{root_path}/" if root_path else "/"
-        await send({
-            "type": "http.response.start",
-            "status": 302,
-            "headers": [
-                (b"location", redirect_to.encode("utf-8")),
-                (b"set-cookie", cookie.encode("utf-8")),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 302,
+                "headers": [
+                    (b"location", redirect_to.encode("utf-8")),
+                    (b"set-cookie", cookie.encode("utf-8")),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": b""})
 
     async def _handle_logout(self, session_token, send, root_path: str = ""):
@@ -311,24 +314,28 @@ class SessionAuthMiddleware:
         cookie_path = root_path or "/"
         cookie = f"shyfem_session=; Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age=0"
         redirect_to = f"{root_path}/login"
-        await send({
-            "type": "http.response.start",
-            "status": 302,
-            "headers": [
-                (b"location", redirect_to.encode("utf-8")),
-                (b"set-cookie", cookie.encode("utf-8")),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 302,
+                "headers": [
+                    (b"location", redirect_to.encode("utf-8")),
+                    (b"set-cookie", cookie.encode("utf-8")),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": b""})
 
     @staticmethod
     async def _redirect(send, location: str, status: int = 302):
         """Send a minimal HTTP redirect."""
-        await send({
-            "type": "http.response.start",
-            "status": status,
-            "headers": [
-                (b"location", location.encode("utf-8")),
-            ],
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"location", location.encode("utf-8")),
+                ],
+            }
+        )
         await send({"type": "http.response.body", "body": b""})

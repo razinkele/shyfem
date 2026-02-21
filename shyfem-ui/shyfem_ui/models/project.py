@@ -20,9 +20,7 @@ class Project(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     work_dir: Mapped[str] = mapped_column(String(1024), nullable=False)
-    owner_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=True
-    )
+    owner_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -60,9 +58,7 @@ class ProjectFile(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     rel_path: Mapped[str] = mapped_column(String(1024), nullable=False)
     file_type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -85,9 +81,7 @@ class Grid(Base):
     __tablename__ = "grids"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -108,9 +102,7 @@ class Grid(Base):
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="grids")
-    simulations: Mapped[list["Simulation"]] = relationship(
-        "Simulation", back_populates="grid"
-    )
+    simulations: Mapped[list["Simulation"]] = relationship("Simulation", back_populates="grid")
 
     def __repr__(self) -> str:
         return f"<Grid(id={self.id}, name='{self.name}', nodes={self.num_nodes})>"
@@ -122,12 +114,8 @@ class Simulation(Base):
     __tablename__ = "simulations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )
-    grid_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("grids.id"), nullable=True
-    )
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
+    grid_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("grids.id"), nullable=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -183,9 +171,7 @@ class Job(Base):
     session_id: Mapped[str | None] = mapped_column(
         String(255), nullable=True
     )  # Shiny session ID for multi-user filtering
-    user_id: Mapped[int | None] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=True
-    )
+    user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
 
     # Job identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -223,9 +209,7 @@ class Job(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
-    simulation: Mapped[Optional["Simulation"]] = relationship(
-        "Simulation", back_populates="jobs"
-    )
+    simulation: Mapped[Optional["Simulation"]] = relationship("Simulation", back_populates="jobs")
 
     @property
     def duration(self) -> float | None:

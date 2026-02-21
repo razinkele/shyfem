@@ -31,8 +31,10 @@ def ensemble_ui():
     """Ensemble / parameter sweep page UI."""
     return ui.div(
         ui.h3("Ensemble / Parameter Sweep"),
-        ui.p("Vary simulation parameters across multiple runs and compare results.",
-             class_="text-muted"),
+        ui.p(
+            "Vary simulation parameters across multiple runs and compare results.",
+            class_="text-muted",
+        ),
         ui.layout_sidebar(
             ui.sidebar(
                 ui.h5("Base Configuration"),
@@ -61,7 +63,6 @@ def ensemble_ui():
                     },
                 ),
                 ui.hr(),
-
                 # MPI options
                 ui.h6("MPI Options"),
                 ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
@@ -70,7 +71,6 @@ def ensemble_ui():
                     ui.input_numeric("mpi_np", "Processes", value=4, min=2, max=128),
                 ),
                 ui.hr(),
-
                 # Sweep mode
                 ui.h6("Sweep Mode"),
                 ui.input_radio_buttons(
@@ -83,7 +83,6 @@ def ensemble_ui():
                     selected="grid",
                 ),
                 ui.hr(),
-
                 ui.input_action_button(
                     "preview_btn",
                     "Preview Runs",
@@ -156,9 +155,11 @@ def ensemble_server(
                 ui.update_text("base_str_file", value=str(Path(proj["work_dir"]) / sim["str_file"]))
 
     # State
-    param_variations = reactive.value([
-        {"section": "para", "param": "", "values": ""},
-    ])
+    param_variations = reactive.value(
+        [
+            {"section": "para", "param": "", "values": ""},
+        ]
+    )
     preview_runs = reactive.value([])
     ensemble_state = reactive.value(None)  # {id, name, job_ids, submitted_at}
     ensemble_jobs = reactive.value([])
@@ -201,11 +202,15 @@ def ensemble_server(
                         class_="col-5",
                     ),
                     ui.div(
-                        ui.input_action_button(
-                            f"remove_var_{i}",
-                            "X",
-                            class_="btn-sm btn-outline-danger mt-4",
-                        ) if i > 0 else None,
+                        (
+                            ui.input_action_button(
+                                f"remove_var_{i}",
+                                "X",
+                                class_="btn-sm btn-outline-danger mt-4",
+                            )
+                            if i > 0
+                            else None
+                        ),
                         class_="col-1",
                     ),
                     class_="row mb-2",
@@ -214,9 +219,11 @@ def ensemble_server(
 
         return ui.div(
             ui.h5("Parameter Variations"),
-            ui.p("Specify which parameters to vary and their values. "
-                 "Use comma-separated values (e.g., 0.01, 0.02, 0.05).",
-                 class_="text-muted small"),
+            ui.p(
+                "Specify which parameters to vary and their values. "
+                "Use comma-separated values (e.g., 0.01, 0.02, 0.05).",
+                class_="text-muted small",
+            ),
             *rows,
             ui.div(
                 ui.input_action_button(
@@ -274,24 +281,30 @@ def ensemble_server(
     @reactive.effect
     @reactive.event(input.preset_friction)
     def _preset_friction():
-        param_variations.set([
-            {"section": "para", "param": "czdef", "values": "0.02, 0.025, 0.03, 0.035, 0.04"},
-        ])
+        param_variations.set(
+            [
+                {"section": "para", "param": "czdef", "values": "0.02, 0.025, 0.03, 0.035, 0.04"},
+            ]
+        )
 
     @reactive.effect
     @reactive.event(input.preset_timestep)
     def _preset_timestep():
-        param_variations.set([
-            {"section": "para", "param": "idt", "values": "10, 30, 60, 120, 300"},
-        ])
+        param_variations.set(
+            [
+                {"section": "para", "param": "idt", "values": "10, 30, 60, 120, 300"},
+            ]
+        )
 
     @reactive.effect
     @reactive.event(input.preset_viscosity)
     def _preset_viscosity():
-        param_variations.set([
-            {"section": "para", "param": "ahpar", "values": "1, 5, 10, 50, 100"},
-            {"section": "para", "param": "dhpar", "values": "1, 5, 10, 50, 100"},
-        ])
+        param_variations.set(
+            [
+                {"section": "para", "param": "ahpar", "values": "1, 5, 10, 50, 100"},
+                {"section": "para", "param": "dhpar", "values": "1, 5, 10, 50, 100"},
+            ]
+        )
 
     def _read_current_variations() -> list[dict]:
         """Read the current variation values from the dynamic inputs."""
@@ -317,11 +330,13 @@ def ensemble_server(
             if param and values_str:
                 values = [v.strip() for v in values_str.split(",") if v.strip()]
                 if values:
-                    result.append({
-                        "section": section or "para",
-                        "param": param,
-                        "values": values,
-                    })
+                    result.append(
+                        {
+                            "section": section or "para",
+                            "param": param,
+                            "values": values,
+                        }
+                    )
         return result
 
     def _build_combinations(variations: list[dict], mode: str) -> list[dict]:
@@ -404,13 +419,15 @@ def ensemble_server(
 
         header_cells = [ui.tags.th("#")]
         for section, param in all_keys:
-            header_cells.append(ui.tags.th(
-                ui.div(
-                    ui.code(param),
-                    ui.br(),
-                    ui.span(f"${section}", class_="text-muted small"),
+            header_cells.append(
+                ui.tags.th(
+                    ui.div(
+                        ui.code(param),
+                        ui.br(),
+                        ui.span(f"${section}", class_="text-muted small"),
+                    )
                 )
-            ))
+            )
 
         rows = []
         for i, run in enumerate(runs[:50]):  # Show max 50
@@ -533,14 +550,16 @@ def ensemble_server(
                 ui.notification_show(f"Failed to submit run {i}: {e}", type="error")
 
         if job_ids:
-            ensemble_state.set({
-                "id": ensemble_id,
-                "name": name,
-                "job_ids": job_ids,
-                "submitted_at": datetime.now(),
-                "total": len(combos),
-                "combos": combos,
-            })
+            ensemble_state.set(
+                {
+                    "id": ensemble_id,
+                    "name": name,
+                    "job_ids": job_ids,
+                    "submitted_at": datetime.now(),
+                    "total": len(combos),
+                    "combos": combos,
+                }
+            )
             ui.notification_show(
                 f"Submitted {len(job_ids)}/{len(combos)} ensemble runs",
                 type="message",
@@ -610,8 +629,7 @@ def ensemble_server(
             ui.div(
                 ui.div(
                     f"{overall_pct}% ({completed + failed}/{total})",
-                    class_="progress-bar"
-                    + (" bg-success" if failed == 0 else " bg-warning"),
+                    class_="progress-bar" + (" bg-success" if failed == 0 else " bg-warning"),
                     style=f"width: {max(overall_pct, 2)}%",
                     role="progressbar",
                 ),
@@ -656,9 +674,16 @@ def ensemble_server(
                     ui.tags.td(ui.code(combo_str, class_="small") if combo_str else "-"),
                     ui.tags.td(format_duration(j.duration) if j.duration else "-"),
                     ui.tags.td(
-                        ui.span(j.error_message[:60] + "..." if j.error_message and len(j.error_message) > 60 else j.error_message or "",
-                                class_="text-danger small")
-                        if j.error_message else "-"
+                        ui.span(
+                            (
+                                j.error_message[:60] + "..."
+                                if j.error_message and len(j.error_message) > 60
+                                else j.error_message or ""
+                            ),
+                            class_="text-danger small",
+                        )
+                        if j.error_message
+                        else "-"
                     ),
                 )
             )
@@ -680,8 +705,10 @@ def ensemble_server(
 
         return ui.div(
             ui.h5(f"Ensemble: {state['name']}"),
-            ui.p(f"ID: {state['id']} | Submitted: {format_datetime(state['submitted_at'])}",
-                 class_="text-muted small"),
+            ui.p(
+                f"ID: {state['id']} | Submitted: {format_datetime(state['submitted_at'])}",
+                class_="text-muted small",
+            ),
             status_bar,
             stat_badges,
             stop_btn,
@@ -699,8 +726,13 @@ def ensemble_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Submit an ensemble and wait for results",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -710,8 +742,13 @@ def ensemble_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Waiting for completed runs...",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -761,16 +798,20 @@ def ensemble_server(
             max_dur = max(durations)
             parts.append(ui.hr())
             parts.append(ui.h6("Runtime Statistics"))
-            parts.append(ui.tags.table(
-                ui.tags.tbody(
-                    ui.tags.tr(ui.tags.th("Average"), ui.tags.td(format_duration(avg_dur))),
-                    ui.tags.tr(ui.tags.th("Fastest"), ui.tags.td(format_duration(min_dur))),
-                    ui.tags.tr(ui.tags.th("Slowest"), ui.tags.td(format_duration(max_dur))),
-                    ui.tags.tr(ui.tags.th("Speedup Range"),
-                               ui.tags.td(f"{max_dur / min_dur:.1f}x" if min_dur > 0 else "-")),
-                ),
-                class_="table table-sm table-bordered",
-            ))
+            parts.append(
+                ui.tags.table(
+                    ui.tags.tbody(
+                        ui.tags.tr(ui.tags.th("Average"), ui.tags.td(format_duration(avg_dur))),
+                        ui.tags.tr(ui.tags.th("Fastest"), ui.tags.td(format_duration(min_dur))),
+                        ui.tags.tr(ui.tags.th("Slowest"), ui.tags.td(format_duration(max_dur))),
+                        ui.tags.tr(
+                            ui.tags.th("Speedup Range"),
+                            ui.tags.td(f"{max_dur / min_dur:.1f}x" if min_dur > 0 else "-"),
+                        ),
+                    ),
+                    class_="table table-sm table-bordered",
+                )
+            )
 
         # Failed runs info
         if failed:
@@ -779,13 +820,15 @@ def ensemble_server(
             for j in failed:
                 combo = j.metadata.get("param_combo", {})
                 combo_str = ", ".join(f"{k}={v}" for k, v in combo.items()) or "?"
-                parts.append(ui.div(
-                    ui.span(f"Run {j.metadata.get('run_index', '?')}: ", class_="fw-bold"),
-                    ui.code(combo_str),
-                    ui.br(),
-                    ui.span(j.error_message or "Unknown error", class_="text-danger small"),
-                    class_="mb-2",
-                ))
+                parts.append(
+                    ui.div(
+                        ui.span(f"Run {j.metadata.get('run_index', '?')}: ", class_="fw-bold"),
+                        ui.code(combo_str),
+                        ui.br(),
+                        ui.span(j.error_message or "Unknown error", class_="text-danger small"),
+                        class_="mb-2",
+                    )
+                )
 
         return ui.div(*parts)
 
@@ -795,6 +838,7 @@ def ensemble_server(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _apply_param_combo(base_str: StrFile, combo: dict) -> StrFile:
     """Apply a parameter combination to a copy of the base STR file.
@@ -895,13 +939,15 @@ def _build_duration_chart(jobs: list[JobInfo]) -> go.Figure:
         durations.append(j.duration or 0)
         colors.append("#198754" if j.status == JobStatus.COMPLETED else "#dc3545")
 
-    fig.add_trace(go.Bar(
-        x=labels,
-        y=durations,
-        marker_color=colors,
-        text=[format_duration(d) for d in durations],
-        textposition="outside",
-    ))
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=durations,
+            marker_color=colors,
+            text=[format_duration(d) for d in durations],
+            textposition="outside",
+        )
+    )
 
     fig.update_layout(
         title="Run Duration Comparison",
@@ -926,13 +972,16 @@ def _build_ensemble_ts_plot(run_data: list[dict]) -> go.Figure:
         x = [row[0] for row in data]
         y = [row[1] for row in data]
 
-        fig.add_trace(go.Scattergl(
-            x=x, y=y,
-            mode="lines",
-            name=rd["label"],
-            line=dict(width=1),
-            opacity=0.7,
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=x,
+                y=y,
+                mode="lines",
+                name=rd["label"],
+                line=dict(width=1),
+                opacity=0.7,
+            )
+        )
 
     # Compute and plot envelope if multiple runs with same time axis
     if len(run_data) >= 2:
@@ -951,24 +1000,29 @@ def _build_ensemble_ts_plot(run_data: list[dict]) -> go.Figure:
                 y_mean = [sum(vals) / len(vals) for vals in zip(*all_y, strict=True)]
 
                 # Envelope shading
-                fig.add_trace(go.Scatter(
-                    x=ref_x + ref_x[::-1],
-                    y=y_max + y_min[::-1],
-                    fill="toself",
-                    fillcolor="rgba(100,100,200,0.15)",
-                    line=dict(width=0),
-                    name="Min/Max Envelope",
-                    showlegend=True,
-                    hoverinfo="skip",
-                ))
+                fig.add_trace(
+                    go.Scatter(
+                        x=ref_x + ref_x[::-1],
+                        y=y_max + y_min[::-1],
+                        fill="toself",
+                        fillcolor="rgba(100,100,200,0.15)",
+                        line=dict(width=0),
+                        name="Min/Max Envelope",
+                        showlegend=True,
+                        hoverinfo="skip",
+                    )
+                )
 
                 # Mean line
-                fig.add_trace(go.Scattergl(
-                    x=ref_x, y=y_mean,
-                    mode="lines",
-                    name="Ensemble Mean",
-                    line=dict(color="black", width=2, dash="dash"),
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=ref_x,
+                        y=y_mean,
+                        mode="lines",
+                        name="Ensemble Mean",
+                        line=dict(color="black", width=2, dash="dash"),
+                    )
+                )
         except Exception:
             logger.warning("Ensemble envelope computation failed", exc_info=True)
 

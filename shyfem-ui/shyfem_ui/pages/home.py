@@ -46,8 +46,9 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10):
             or_(
                 Project.owner_id == user_id,
                 Project.id.in_(
-                    db.query(ProjectPermission.project_id)
-                    .filter(ProjectPermission.user_id == user_id)
+                    db.query(ProjectPermission.project_id).filter(
+                        ProjectPermission.user_id == user_id
+                    )
                 ),
             )
         )
@@ -183,6 +184,7 @@ def home_server(
     _is_server_mode = config.deployment_mode == "server"
 
     from shyfem_ui.middleware.session_auth import get_current_user as _get_user
+
     _current_user = _get_user()
 
     @render.ui
@@ -202,23 +204,26 @@ def home_server(
 
     def _refresh_projects():
         from shyfem_ui.middleware.session_auth import get_current_user
+
         user = get_current_user()
         with db_session() as db:
             if user and user.get("role") != "admin":
                 project_list = get_visible_projects(db, user["id"], user["role"])
             else:
                 project_list = db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
-            projects.set([
-                {
-                    "id": p.id,
-                    "name": p.name,
-                    "description": p.description,
-                    "work_dir": p.work_dir,
-                    "updated_at": p.updated_at,
-                    "owner_id": getattr(p, "owner_id", None),
-                }
-                for p in project_list
-            ])
+            projects.set(
+                [
+                    {
+                        "id": p.id,
+                        "name": p.name,
+                        "description": p.description,
+                        "work_dir": p.work_dir,
+                        "updated_at": p.updated_at,
+                        "owner_id": getattr(p, "owner_id", None),
+                    }
+                    for p in project_list
+                ]
+            )
 
     async def _refresh_jobs():
         if job_queue:
@@ -237,6 +242,7 @@ def home_server(
         tool_status = []
 
         from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
         wrapper = ShyfemWrapper(config.shyfem_dir)
 
         for tool in tools:
@@ -319,8 +325,7 @@ def home_server(
                     ui.tags.td(p["description"] or "-"),
                     ui.tags.td(ui.code(p["work_dir"], class_="small")),
                     ui.tags.td(
-                        p["updated_at"].strftime("%Y-%m-%d %H:%M")
-                        if p["updated_at"] else "-"
+                        p["updated_at"].strftime("%Y-%m-%d %H:%M") if p["updated_at"] else "-"
                     ),
                     ui.tags.td(
                         share_btn,
@@ -423,6 +428,7 @@ def home_server(
         try:
             with db_session() as db:
                 from shyfem_ui.middleware.session_auth import get_current_user
+
                 user = get_current_user()
                 project = Project(
                     name=name,
@@ -504,9 +510,7 @@ def home_server(
         # Check source directory exists
         mar_menor_src = config.testcases_dir / "mar_menor"
         if not mar_menor_src.is_dir():
-            ui.notification_show(
-                f"Tutorial source not found: {mar_menor_src}", type="error"
-            )
+            ui.notification_show(f"Tutorial source not found: {mar_menor_src}", type="error")
             return
 
         # Create project directory
@@ -514,9 +518,7 @@ def home_server(
         try:
             config.ensure_work_dir()
             if project_path.exists():
-                ui.notification_show(
-                    f"Directory already exists: {project_path}", type="error"
-                )
+                ui.notification_show(f"Directory already exists: {project_path}", type="error")
                 return
             shutil.copytree(mar_menor_src, project_path)
         except Exception as e:
@@ -527,6 +529,7 @@ def home_server(
         try:
             with db_session() as db:
                 from shyfem_ui.middleware.session_auth import get_current_user
+
                 user = get_current_user()
                 project = Project(
                     name=name,
@@ -565,13 +568,12 @@ def home_server(
 
             # Activate project so target pages can auto-fill fields
             from shyfem_ui.services.project_context import load_project_context
+
             ctx = load_project_context(project_id, user=_current_user)
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
-            ui.notification_show(
-                f"Tutorial project '{name}' created successfully!", type="message"
-            )
+            ui.notification_show(f"Tutorial project '{name}' created successfully!", type="message")
             ui.modal_remove()
             _refresh_projects()
             if nav_callback:
@@ -669,9 +671,7 @@ def home_server(
     def _show_import_grid_modal():
         project_data = projects.get()
         if not project_data:
-            ui.notification_show(
-                "Create a project first before importing a grid", type="warning"
-            )
+            ui.notification_show("Create a project first before importing a grid", type="warning")
             return
 
         choices = {str(p["id"]): p["name"] for p in project_data}
@@ -691,12 +691,8 @@ def home_server(
             title="Import Grid",
             easy_close=True,
             footer=ui.div(
-                ui.input_action_button(
-                    "import_confirm_btn", "Import", class_="btn-primary"
-                ),
-                ui.input_action_button(
-                    "import_cancel_btn", "Cancel", class_="btn-secondary ms-2"
-                ),
+                ui.input_action_button("import_confirm_btn", "Import", class_="btn-primary"),
+                ui.input_action_button("import_cancel_btn", "Cancel", class_="btn-secondary ms-2"),
             ),
         )
         ui.modal_show(m)
@@ -760,9 +756,7 @@ def home_server(
                 )
                 db.add(grid)
 
-            ui.notification_show(
-                f"Imported grid '{grid_name}' into project", type="message"
-            )
+            ui.notification_show(f"Imported grid '{grid_name}' into project", type="message")
             ui.modal_remove()
             _refresh_projects()
         except Exception as e:
@@ -864,6 +858,7 @@ def home_server(
         try:
             with db_session() as db:
                 from shyfem_ui.middleware.session_auth import get_current_user
+
                 user = get_current_user()
                 project = Project(
                     name=result["name"],
@@ -897,9 +892,7 @@ def home_server(
                     )
                     db.add(sim)
 
-            ui.notification_show(
-                f"Cloned '{project_name}' as '{result['name']}'", type="message"
-            )
+            ui.notification_show(f"Cloned '{project_name}' as '{result['name']}'", type="message")
             _refresh_projects()
 
         except Exception as e:
@@ -968,6 +961,7 @@ def home_server(
         try:
             with db_session() as db:
                 from shyfem_ui.middleware.session_auth import get_current_user
+
                 user = get_current_user()
                 project = Project(
                     name=result["name"],
@@ -1011,9 +1005,7 @@ def home_server(
                     )
                     db.add(sim)
 
-            ui.notification_show(
-                f"Imported project '{result['name']}'", type="message"
-            )
+            ui.notification_show(f"Imported project '{result['name']}'", type="message")
             ui.modal_remove()
             _refresh_projects()
 
@@ -1117,7 +1109,8 @@ def home_server(
             user_select = ui.div(
                 ui.input_select("share_user_id", "User", choices=user_choices),
                 ui.input_select(
-                    "share_role", "Role",
+                    "share_role",
+                    "Role",
                     choices={"viewer": "Viewer", "editor": "Editor"},
                 ),
                 ui.input_action_button(
@@ -1127,9 +1120,7 @@ def home_server(
                 ),
             )
         else:
-            user_select = ui.p(
-                "No users available to share with.", class_="text-muted small"
-            )
+            user_select = ui.p("No users available to share with.", class_="text-muted small")
 
         m = ui.modal(
             ui.h6("Current Access"),

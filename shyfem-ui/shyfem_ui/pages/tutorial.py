@@ -235,6 +235,7 @@ def _render_progress_bar(completed: int, total: int) -> ui.Tag:
 # Module UI
 # ---------------------------------------------------------------------------
 
+
 @module.ui
 def tutorial_ui():
     """Tutorial page UI -- two-column with phase navigator and step content."""
@@ -256,6 +257,7 @@ def tutorial_ui():
 # ---------------------------------------------------------------------------
 # Module Server
 # ---------------------------------------------------------------------------
+
 
 @module.server
 def tutorial_server(
@@ -356,7 +358,7 @@ def tutorial_server(
             idx = _all_names.index(cur)
         except ValueError:
             return
-        for next_name in _all_names[idx + 1:]:
+        for next_name in _all_names[idx + 1 :]:
             if next_name not in done:
                 current_sim.set(next_name)
                 return
@@ -373,16 +375,12 @@ def tutorial_server(
         @reactive.effect
         @reactive.event(input[f"nav_{target}"])
         def _():
-            tab_name = _TAB_NAME_MAP.get(
-                target, target.replace("_", " ").title()
-            )
+            tab_name = _TAB_NAME_MAP.get(target, target.replace("_", " ").title())
             if tutorial_context is not None:
                 cur = current_sim.get()
                 proj = active_project.get() if active_project else None
                 if proj and cur:
-                    ctx = build_tutorial_context(
-                        cur, proj["work_dir"], tab_name
-                    )
+                    ctx = build_tutorial_context(cur, proj["work_dir"], tab_name)
                     tutorial_context.set(ctx)
             if nav_callback is not None:
                 nav_callback(tab_name)

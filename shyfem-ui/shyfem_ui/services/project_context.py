@@ -1,6 +1,5 @@
 """Load full project context from DB for active-project state."""
 
-
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, ProjectFile, Simulation
 from shyfem_ui.services.access_control import check_project_access
@@ -48,24 +47,15 @@ def _load(db, project_id: int) -> dict | None:
     grids = db.query(Grid).filter_by(project_id=project_id).all()
     sims = db.query(Simulation).filter_by(project_id=project_id).all()
     files = (
-        db.query(ProjectFile)
-        .filter_by(project_id=project_id)
-        .order_by(ProjectFile.filename)
-        .all()
+        db.query(ProjectFile).filter_by(project_id=project_id).order_by(ProjectFile.filename).all()
     )
     return {
         "id": project.id,
         "name": project.name,
         "work_dir": project.work_dir,
         "description": project.description,
-        "grids": [
-            {"name": g.name, "grd_file": g.grd_file, "bas_file": g.bas_file}
-            for g in grids
-        ],
-        "simulations": [
-            {"name": s.name, "str_file": s.str_file}
-            for s in sims
-        ],
+        "grids": [{"name": g.name, "grd_file": g.grd_file, "bas_file": g.bas_file} for g in grids],
+        "simulations": [{"name": s.name, "str_file": s.str_file} for s in sims],
         "files": [
             {
                 "id": f.id,

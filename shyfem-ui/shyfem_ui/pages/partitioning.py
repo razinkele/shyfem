@@ -212,16 +212,14 @@ def partitioning_server(
 
             if result.success:
                 log_content.set(
-                    log_content.get() +
-                    f"\n*** shyparts completed successfully ***\n"
+                    log_content.get() + f"\n*** shyparts completed successfully ***\n"
                     f"Output files: {', '.join(result.output_files)}\n"
                 )
                 partition_files.set(result.output_files)
                 _analyze_partitions(output_path, np_val)
             else:
                 log_content.set(
-                    log_content.get() +
-                    f"\n*** shyparts failed (code {result.return_code}) ***\n"
+                    log_content.get() + f"\n*** shyparts failed (code {result.return_code}) ***\n"
                     f"{result.stderr}\n"
                 )
 
@@ -275,15 +273,9 @@ def partitioning_server(
             path = Path(f)
             if path.exists():
                 size = path.stat().st_size
-                log_content.set(
-                    log_content.get() +
-                    f"  {path.name}: {size:,} bytes - OK\n"
-                )
+                log_content.set(log_content.get() + f"  {path.name}: {size:,} bytes - OK\n")
             else:
-                log_content.set(
-                    log_content.get() +
-                    f"  {path.name}: MISSING\n"
-                )
+                log_content.set(log_content.get() + f"  {path.name}: MISSING\n")
 
         log_content.set(log_content.get() + "\nValidation complete.\n")
 
@@ -295,8 +287,13 @@ def partitioning_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Run shyparts to see load balance",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -306,8 +303,13 @@ def partitioning_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="No partition data available",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -318,14 +320,16 @@ def partitioning_server(
         colors = [PARTITION_COLORS[i % len(PARTITION_COLORS)] for i in range(n_parts)]
 
         fig = go.Figure()
-        fig.add_trace(go.Bar(
-            x=labels,
-            y=elements,
-            marker_color=colors,
-            text=[f"{c:,}" for c in elements],
-            textposition="auto",
-            hovertemplate="Partition %{x}<br>Elements: %{y:,}<extra></extra>",
-        ))
+        fig.add_trace(
+            go.Bar(
+                x=labels,
+                y=elements,
+                marker_color=colors,
+                text=[f"{c:,}" for c in elements],
+                textposition="auto",
+                hovertemplate="Partition %{x}<br>Elements: %{y:,}<extra></extra>",
+            )
+        )
         # Average line
         fig.add_hline(
             y=avg,
@@ -360,10 +364,7 @@ def partitioning_server(
                 ),
             )
 
-        file_list = [
-            ui.tags.li(ui.code(Path(f).name))
-            for f in files
-        ]
+        file_list = [ui.tags.li(ui.code(Path(f).name)) for f in files]
 
         return ui.div(
             ui.h5("Generated Partition Files"),
@@ -415,7 +416,11 @@ def partitioning_server(
                         ui.tags.th("Load Imbalance"),
                         ui.tags.td(
                             f"{imbalance:.1f}%",
-                            class_="text-success" if imbalance < 10 else "text-warning" if imbalance < 20 else "text-danger",
+                            class_=(
+                                "text-success"
+                                if imbalance < 10
+                                else "text-warning" if imbalance < 20 else "text-danger"
+                            ),
                         ),
                     ),
                 ),

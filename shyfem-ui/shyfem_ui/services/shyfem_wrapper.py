@@ -320,8 +320,11 @@ class ShyfemWrapper:
             prefix = [mpirun_path, "-np", str(mpi_np)]
 
         return await self.run_command(
-            tool_name, args_list, working_dir,
-            progress_callback, output_callback,
+            tool_name,
+            args_list,
+            working_dir,
+            progress_callback,
+            output_callback,
             command_prefix=prefix,
         )
 

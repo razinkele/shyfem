@@ -34,8 +34,7 @@ def compare_ui():
     """Job comparison page UI."""
     return ui.div(
         ui.h3("Compare Simulations"),
-        ui.p("Compare parameters, runtime, and results across simulations.",
-             class_="text-muted"),
+        ui.p("Compare parameters, runtime, and results across simulations.", class_="text-muted"),
         ui.layout_sidebar(
             ui.sidebar(
                 ui.h5("Select Jobs"),
@@ -244,15 +243,23 @@ def compare_server(
             ui.notification_show(str(e), type="error")
             return
 
-        ts_data.set({"a": _load_ts(file_a), "b": _load_ts(file_b),
-                      "name_a": file_a.name, "name_b": file_b.name})
+        ts_data.set(
+            {
+                "a": _load_ts(file_a),
+                "b": _load_ts(file_b),
+                "name_a": file_a.name,
+                "name_b": file_b.name,
+            }
+        )
 
     @render.ui
     def runtime_comparison():
         jobs = selected_jobs.get()
         if len(jobs) < 2:
-            return ui.p("Select two jobs to compare runtime statistics.",
-                        class_="text-muted text-center mt-3")
+            return ui.p(
+                "Select two jobs to compare runtime statistics.",
+                class_="text-muted text-center mt-3",
+            )
 
         job_a, job_b = jobs[0], jobs[1]
 
@@ -301,14 +308,18 @@ def compare_server(
     def param_diff():
         diff = param_diff_data.get()
         if diff is None:
-            return ui.p("Load two STR files to see parameter differences.",
-                        class_="text-muted text-center mt-3")
+            return ui.p(
+                "Load two STR files to see parameter differences.",
+                class_="text-muted text-center mt-3",
+            )
 
         if not diff["rows"]:
             return ui.div(
                 ui.p("No parameter differences found.", class_="text-success text-center mt-3"),
-                ui.p("Both files have identical parameters in compared sections.",
-                     class_="text-muted small text-center"),
+                ui.p(
+                    "Both files have identical parameters in compared sections.",
+                    class_="text-muted small text-center",
+                ),
             )
 
         rows = []
@@ -348,8 +359,13 @@ def compare_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="Load two time series files to compare",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -364,12 +380,15 @@ def compare_server(
             x = [row[0] for row in dataset]
             for col_idx in range(1, len(dataset[0]) if dataset else 0):
                 y = [row[col_idx] for row in dataset]
-                fig.add_trace(go.Scattergl(
-                    x=x, y=y,
-                    mode="lines",
-                    line=dict(dash=dash),
-                    name=f"{label}: col{col_idx}",
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=x,
+                        y=y,
+                        mode="lines",
+                        line=dict(dash=dash),
+                        name=f"{label}: col{col_idx}",
+                    )
+                )
 
         fig.update_layout(
             title="Time Series Comparison",
@@ -395,22 +414,28 @@ def compare_server(
             if job_a.duration and job_b.duration:
                 ratio = job_a.duration / job_b.duration if job_b.duration > 0 else 0
                 if ratio > 1:
-                    parts.append(ui.p(
-                        f"Job B ({job_b.name}) was {ratio:.1f}x faster than Job A ({job_a.name})",
-                        class_="text-success",
-                    ))
+                    parts.append(
+                        ui.p(
+                            f"Job B ({job_b.name}) was {ratio:.1f}x faster than Job A ({job_a.name})",
+                            class_="text-success",
+                        )
+                    )
                 elif ratio < 1 and ratio > 0:
-                    parts.append(ui.p(
-                        f"Job A ({job_a.name}) was {1/ratio:.1f}x faster than Job B ({job_b.name})",
-                        class_="text-success",
-                    ))
+                    parts.append(
+                        ui.p(
+                            f"Job A ({job_a.name}) was {1/ratio:.1f}x faster than Job B ({job_b.name})",
+                            class_="text-success",
+                        )
+                    )
                 else:
                     parts.append(ui.p("Both jobs had similar runtime"))
 
         if diff:
             parts.append(ui.hr())
             parts.append(ui.h5("Parameter Differences"))
-            parts.append(ui.p(f"{diff['diff_count']} parameters differ between the two configurations."))
+            parts.append(
+                ui.p(f"{diff['diff_count']} parameters differ between the two configurations.")
+            )
 
         if not parts:
             return ui.p("Run comparisons to see a summary.", class_="text-muted text-center")
@@ -501,13 +526,15 @@ def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
                     diff_type = "only_b"
                 else:
                     diff_type = "changed"
-                rows.append({
-                    "section": section_name,
-                    "param": param,
-                    "value_a": val_a,
-                    "value_b": val_b,
-                    "diff_type": diff_type,
-                })
+                rows.append(
+                    {
+                        "section": section_name,
+                        "param": param,
+                        "value_a": val_a,
+                        "value_b": val_b,
+                        "diff_type": diff_type,
+                    }
+                )
 
     return {
         "name_a": name_a,

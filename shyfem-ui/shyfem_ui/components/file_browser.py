@@ -37,9 +37,7 @@ def validate_upload(
         suffix = Path(file_info.get("name", "")).suffix.lower()
         allowed = [ext.lower() for ext in accept]
         if suffix not in allowed:
-            errors.append(
-                f"Invalid file type: {suffix}. Expected: {', '.join(accept)}"
-            )
+            errors.append(f"Invalid file type: {suffix}. Expected: {', '.join(accept)}")
 
     return errors
 

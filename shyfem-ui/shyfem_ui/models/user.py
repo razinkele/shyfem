@@ -47,12 +47,8 @@ class AuthSession(Base):
     __tablename__ = "auth_sessions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    token: Mapped[str] = mapped_column(
-        String(255), nullable=False, unique=True, index=True
-    )
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=False
-    )
+    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )
@@ -82,17 +78,11 @@ class ProjectPermission(Base):
     """Permission granting a user access to a project with a specific role."""
 
     __tablename__ = "project_permissions"
-    __table_args__ = (
-        UniqueConstraint("project_id", "user_id", name="uq_project_user"),
-    )
+    __table_args__ = (UniqueConstraint("project_id", "user_id", name="uq_project_user"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("projects.id"), nullable=False
-    )
-    user_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("users.id"), nullable=False
-    )
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("projects.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     role: Mapped[str] = mapped_column(String(64), nullable=False, default="viewer")
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

@@ -62,9 +62,7 @@ class StrParser:
     SECTION_END = re.compile(r"^\s*\$end\s*$", re.IGNORECASE)
     COMMENT = re.compile(r"^\s*[#!]")
     # Parameter patterns: key = value or key = 'string'
-    PARAM_PATTERN = re.compile(
-        r"(\w+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|(\S+))"
-    )
+    PARAM_PATTERN = re.compile(r"(\w+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|(\S+))")
     # Standalone value (like in $extra section): number 'description'
     STANDALONE_PATTERN = re.compile(r"^\s*(\d+)\s+'([^']+)'")
 
@@ -211,9 +209,7 @@ class StrParser:
                         cls._generate_section(lines, section)
 
             # Emit any new sections not in the original structure
-            structured_names = {
-                v for t, v in str_file._structure if t == "section"
-            }
+            structured_names = {v for t, v in str_file._structure if t == "section"}
             for section_name, section in str_file.sections.items():
                 if section_name not in structured_names:
                     cls._generate_section(lines, section)
@@ -318,8 +314,9 @@ COMMON_SECTIONS = {
 ParamInfo = tuple  # (description, type_str, default, units, options)
 
 
-def _p(desc: str, ptype: str = "float", default: Any = None,
-       units: str = "", options: str = "") -> ParamInfo:
+def _p(
+    desc: str, ptype: str = "float", default: Any = None, units: str = "", options: str = ""
+) -> ParamInfo:
     return (desc, ptype, default, units, options)
 
 
@@ -332,7 +329,6 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "date": _p("Reference date for time 0", "int", -1, "", "YYYYMMDD"),
         "time": _p("Reference time for time 0", "int", 0, "", "HHMMSS"),
         "tz": _p("Time zone", "int", 0, "", "0=GMT, 1=MET, 2=MEST"),
-
         # --- Output intervals ---
         "idtout": _p("Hydrodynamic output interval", "string", "0", "s", ""),
         "idtext": _p("Extra point time series interval", "string", "0", "s", ""),
@@ -346,17 +342,14 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "idtstb": _p("Stability index interval", "string", "0", "s", ""),
         "netcdf": _p("Output file format", "int", 0, "", "0=Fortran, 1=NetCDF"),
         "ishyff": _p("SHYFEM file format version", "int", 1, "", "0=old, 1=new, 2=both"),
-
         # --- Model physics: advection ---
         "ilin": _p("Advective (nonlinear) terms", "int", 1, "", "0=linear, 1=nonlinear"),
         "itlin": _p("Advection scheme", "int", 0, "", "0=FE, 1=semi-Lagrangian"),
         "iclin": _p("Linearize continuity equation", "int", 0, "", "0=nonlinear, 1=linear"),
-
         # --- Variable time stepping ---
         "itsplt": _p("Time step mode", "int", 0, "", "0=constant, 1-2=splitting, 3=fractional"),
         "coumax": _p("Maximum Courant number", "float", 1.0, "", ">0"),
         "idtsyn": _p("Synchronization interval for itsplt=2", "int", 0, "s", ">=0"),
-
         # --- Semi-implicit weighting ---
         "azpar": _p("Transport term weighting", "float", 0.5, "", "[0,1]"),
         "ampar": _p("Pressure term weighting", "float", 0.5, "", "[0,1]"),
@@ -364,12 +357,10 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "atpar": _p("Vertical viscosity weighting", "float", 1.0, "", "[0,1]"),
         "adpar": _p("Vertical diffusion weighting", "float", 1.0, "", "[0,1]"),
         "aapar": _p("Vertical advection weighting", "float", 1.0, "", "[0,1]"),
-
         # --- Coriolis ---
         "icor": _p("Coriolis force", "int", 0, "", "0=off, 1=beta-plane, 2=f-plane"),
         "dlat": _p("Latitude for Coriolis parameter", "float", 100.0, "deg N", ""),
         "isphe": _p("Coordinate system", "int", -1, "", "-1=auto, 0=Cartesian, 1=spherical"),
-
         # --- Depth ---
         "href": _p("Reference depth correction", "float", 0.0, "m", ""),
         "hzmin": _p("Minimum water depth (drying)", "float", 0.01, "m", ">0"),
@@ -377,84 +368,87 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "hzon": _p("Depth threshold for rewetting", "float", 0.10, "m", ">hzoff"),
         "hmin": _p("Minimum basin depth", "float", -99999, "m", ""),
         "hmax": _p("Maximum basin depth", "float", 99999, "m", ""),
-
         # --- Bottom friction ---
         "ireib": _p("Bottom friction type", "int", 0, "", "0=none, 5=quadratic/Manning, 10=linear"),
         "czdef": _p("Friction coefficient", "float", 0.0, "", "depends on ireib"),
         "iczv": _p("Friction coefficient type flag", "int", 1, "", "0/1"),
-
         # --- Wind ---
         "iwtype": _p("Wind input type", "int", 1, "", "1-5"),
         "itdrag": _p("Drag calculation type", "int", 0, "", "0/1"),
         "dragco": _p("Wind drag coefficient", "float", 2.5e-3, "", ">0"),
         "wsmax": _p("Maximum wind speed", "float", 50.0, "m/s", ">0"),
         "rfact": _p("Wind stress scaling factor", "float", 1.0, "", ">0"),
-
         # --- Heat flux ---
-        "iheat": _p("Heat flux algorithm", "int", 1, "", "1=AREG,2=POM,3=Gill,4=Dejak,5=GOTM,6=COARE,7=direct,8=MFS"),
+        "iheat": _p(
+            "Heat flux algorithm",
+            "int",
+            1,
+            "",
+            "1=AREG,2=POM,3=Gill,4=Dejak,5=GOTM,6=COARE,7=direct,8=MFS",
+        ),
         "ihtype": _p("Water vapor input type", "int", 1, "", "1=RH%, 2=Tw, 3=Td, 4=q"),
         "hdecay": _p("Radiation penetration depth", "float", 0.0, "m", "0=no penetration"),
         "albedo": _p("Surface albedo", "float", 0.06, "", "[0,1]"),
         "ievap": _p("Compute evaporation mass flux", "int", 0, "", "0/1"),
         "irain": _p("Compute precipitation mass flux", "int", 1, "", "0/1"),
-
         # --- Physical constants ---
         "rowass": _p("Water density", "float", 1025.0, "kg/m3", ">0"),
         "roluft": _p("Air density", "float", 1.225, "kg/m3", ">0"),
         "grav": _p("Gravitational acceleration", "float", 9.81, "m/s2", ">0"),
-
         # --- 3D layers ---
         "dzreg": _p("Regular vertical layer spacing", "float", 0.0, "m", "0=use $levels"),
-        "ilytyp": _p("Bottom layer treatment", "int", 3, "", "0=none,1=delete,2=delete if thin,3=merge"),
+        "ilytyp": _p(
+            "Bottom layer treatment", "int", 3, "", "0=none,1=delete,2=delete if thin,3=merge"
+        ),
         "hlvmin": _p("Minimum bottom layer thickness fraction", "float", 0.25, "", "[0,1]"),
         "nzadapt": _p("Moving surface layers (z-star)", "int", 0, "", "0=z-layers only"),
         "nsigma": _p("Number of sigma layers", "int", 0, "", "0=use $levels"),
         "hsigma": _p("Depth for sigma-zeta transition", "float", 10000.0, "m", ">0"),
-
         # --- Vertical mixing ---
         "difmol": _p("Molecular vertical diffusivity", "float", 1.0e-6, "m2/s", ">0"),
         "diftur": _p("Turbulent vertical diffusivity", "float", 0.0, "m2/s", ">=0"),
         "vismol": _p("Molecular vertical viscosity", "float", 1.0e-6, "m2/s", ">0"),
         "vistur": _p("Turbulent vertical viscosity", "float", 0.0, "m2/s", ">=0"),
-        "iturb": _p("Turbulence closure model", "int", 0, "", "0=none,1=GOTM,2=k-e,3=Munk-Anderson"),
-
+        "iturb": _p(
+            "Turbulence closure model", "int", 0, "", "0=none,1=GOTM,2=k-e,3=Munk-Anderson"
+        ),
         # --- Horizontal mixing ---
-        "idhtyp": _p("Horizontal diffusion type", "int", 0, "", "0=constant,1=area-weighted,2=Smagorinsky"),
+        "idhtyp": _p(
+            "Horizontal diffusion type", "int", 0, "", "0=constant,1=area-weighted,2=Smagorinsky"
+        ),
         "ahpar": _p("Horizontal viscosity coefficient", "float", 0.0, "m2/s", ">=0"),
         "dhpar": _p("Horizontal diffusion coefficient", "float", 0.0, "m2/s", ">=0"),
         "noslip": _p("Boundary condition", "int", 0, "", "0=free-slip, 1=no-slip"),
-
         # --- Scalar transport ---
         "itvd": _p("Horizontal advection scheme for scalars", "int", 0, "", "0=upwind, 1-2=TVD"),
         "itvdv": _p("Vertical advection scheme for scalars", "int", 0, "", "0=upwind, 1=TVD"),
-
         # --- Temperature / Salinity ---
-        "ibarcl": _p("Baroclinic mode", "int", 0, "", "0=off,1=full,2=diagnostic,3=passive,4=nudging"),
+        "ibarcl": _p(
+            "Baroclinic mode", "int", 0, "", "0=off,1=full,2=diagnostic,3=passive,4=nudging"
+        ),
         "itemp": _p("Compute temperature", "int", 1, "", "0/1"),
         "isalt": _p("Compute salinity", "int", 1, "", "0/1"),
         "temref": _p("Initial reference temperature", "float", 0.0, "C", ""),
         "salref": _p("Initial reference salinity", "float", 0.0, "PSU", ""),
         "thpar": _p("Temperature horizontal diffusion", "float", -1.0, "", "-1=use dhpar"),
         "shpar": _p("Salinity horizontal diffusion", "float", -1.0, "", "-1=use dhpar"),
-
         # --- Concentration / Tracers ---
         "iconz": _p("Number of concentrations/tracers", "int", 0, "", "0=off"),
         "idecay": _p("Tracer decay type", "int", 0, "", "0=none,1=exponential,2=Chapra"),
         "iage": _p("Water age tracer mode", "int", 0, "", "0/1"),
         "conref": _p("Initial reference concentration", "float", 0.0, "", ""),
         "chpar": _p("Concentration horizontal diffusion", "float", -1.0, "", "-1=use dhpar"),
-
         # --- Output averaging ---
         "iout_av": _p("Hydro output averaging", "int", 0, "", "0=instantaneous, 1=time-averaged"),
-        "icon_av": _p("Scalar output averaging", "int", 0, "", "0=instant,1=time-avg,2=vert+time-avg"),
-
+        "icon_av": _p(
+            "Scalar output averaging", "int", 0, "", "0=instant,1=time-avg,2=vert+time-avg"
+        ),
         # --- Module activation ---
         "ihydro": _p("Compute hydrodynamics", "int", 1, "", "0/1 (0 for debug)"),
         "ibio": _p("Biological module", "int", 0, "", "0/1"),
         "issedi": _p("Sediment module", "int", 0, "", "0/1"),
         "rtide": _p("Tidal forcing", "int", 0, "", "0/1"),
         "icemod": _p("Ice model", "int", 0, "", "0/1"),
-
         # --- Grid/partition ---
         "ibasin": _p("Grid optimization", "int", -1, "", "-1=none,0=renumber,1=optimize"),
         "pqual": _p("Max partition quality index (MPI)", "float", 2.5, "", ">0"),
@@ -489,6 +483,7 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "ztilt": _p("Tilt for water level gradient", "float", 0.0, "m", ""),
     },
 }
+
 
 # Flat lookup: get param info regardless of section
 def get_param_info(param_name: str, section: str = "") -> ParamInfo | None:

@@ -116,14 +116,14 @@ def admin_ui():
 
 
 @module.server
-def admin_server(
-    input, output, session, config: Config, auth_service: AuthService
-):
+def admin_server(input, output, session, config: Config, auth_service: AuthService):
     """Admin panel server logic."""
     # Admin role guard
     from shyfem_ui.middleware.session_auth import get_current_user
+
     current_user = get_current_user()
     if not _check_admin_access(current_user):
+
         @render.ui
         def user_summary():
             return ui.div(
@@ -230,18 +230,14 @@ def admin_server(
         m = ui.modal(
             ui.input_text("new_username", "Username"),
             ui.input_password("new_password", "Password"),
-            ui.input_select(
-                "new_role", "Role", choices=sorted(_VALID_ROLES)
-            ),
+            ui.input_select("new_role", "Role", choices=sorted(_VALID_ROLES)),
             ui.input_text("new_display_name", "Display Name (optional)"),
             ui.input_text("new_email", "Email (optional)"),
             ui.output_ui("create_user_errors"),
             title="Create New User",
             easy_close=True,
             footer=ui.div(
-                ui.input_action_button(
-                    "confirm_create_user", "Create", class_="btn-primary"
-                ),
+                ui.input_action_button("confirm_create_user", "Create", class_="btn-primary"),
                 ui.modal_button("Cancel"),
             ),
         )
@@ -262,9 +258,7 @@ def admin_server(
 
         errors = _validate_create_user_form(username, password, role)
         if errors:
-            ui.notification_show(
-                "; ".join(errors), type="error", duration=5
-            )
+            ui.notification_show("; ".join(errors), type="error", duration=5)
             return
 
         try:
@@ -276,14 +270,10 @@ def admin_server(
                 email=email,
             )
             ui.modal_remove()
-            ui.notification_show(
-                f"User '{username.strip()}' created.", type="message", duration=4
-            )
+            ui.notification_show(f"User '{username.strip()}' created.", type="message", duration=4)
             _refresh()
         except ValueError as exc:
             ui.notification_show(str(exc), type="error", duration=5)
         except Exception as exc:
             logger.exception("Failed to create user")
-            ui.notification_show(
-                f"Error creating user: {exc}", type="error", duration=5
-            )
+            ui.notification_show(f"Error creating user: {exc}", type="error", duration=5)

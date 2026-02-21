@@ -43,6 +43,7 @@ def _check_db_health() -> float:
     from sqlalchemy import text
 
     from shyfem_ui.db.base import get_engine
+
     start = time.monotonic()
     with get_engine().connect() as conn:
         conn.execute(text("SELECT 1"))
@@ -74,9 +75,7 @@ def create_app(config: Config | None = None) -> App:
     auth_service = AuthService()
     if config.deployment_mode == "server":
         if config.default_admin_password:
-            auth_service.ensure_admin(
-                config.default_admin_username, config.default_admin_password
-            )
+            auth_service.ensure_admin(config.default_admin_username, config.default_admin_password)
         elif config.auth_enabled and config.auth_password:
             # Backward compat: migrate from basic auth config
             auth_service.ensure_admin(config.auth_username, config.auth_password)
@@ -120,10 +119,13 @@ def create_app(config: Config | None = None) -> App:
 
     # Rate limiting (server mode only)
     if config.deployment_mode == "server" and config.rate_limit_rpm > 0:
-        app = RateLimitMiddleware(app, rpm=config.rate_limit_rpm, trusted_proxies=config.trusted_proxies)
+        app = RateLimitMiddleware(
+            app, rpm=config.rate_limit_rpm, trusted_proxies=config.trusted_proxies
+        )
 
     # Request ID correlation (middleware + logging filter)
     from shyfem_ui.middleware.request_id import RequestIdFilter, RequestIdMiddleware
+
     app = RequestIdMiddleware(app)
     root_logger = logging.getLogger()
     if not any(isinstance(f, RequestIdFilter) for f in root_logger.filters):
@@ -164,19 +166,23 @@ class BasicAuthMiddleware:
             return
 
         response_body = b"Authentication required"
-        await send({
-            "type": "http.response.start",
-            "status": 401,
-            "headers": [
-                [b"www-authenticate", f'Basic realm="{self.REALM}"'.encode()],
-                [b"content-type", b"text/plain"],
-                [b"content-length", str(len(response_body)).encode()],
-            ],
-        })
-        await send({
-            "type": "http.response.body",
-            "body": response_body,
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 401,
+                "headers": [
+                    [b"www-authenticate", f'Basic realm="{self.REALM}"'.encode()],
+                    [b"content-type", b"text/plain"],
+                    [b"content-length", str(len(response_body)).encode()],
+                ],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": response_body,
+            }
+        )
 
     def _check_credentials(self, auth_header: str) -> bool:
         if not auth_header.startswith("Basic "):
@@ -188,10 +194,9 @@ class BasicAuthMiddleware:
             return False
 
         password_hash = hashlib.sha256(password.encode()).digest()
-        return (
-            hmac.compare_digest(username.encode(), self.username.encode())
-            and hmac.compare_digest(password_hash, self._password_hash)
-        )
+        return hmac.compare_digest(
+            username.encode(), self.username.encode()
+        ) and hmac.compare_digest(password_hash, self._password_hash)
 
 
 def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
@@ -259,8 +264,13 @@ def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
 class RateLimitMiddleware:
     """ASGI middleware that enforces per-client request rate limits."""
 
-    def __init__(self, app, rpm: int = 120, trusted_proxies: list[str] | None = None,
-                 max_clients: int = 10000):
+    def __init__(
+        self,
+        app,
+        rpm: int = 120,
+        trusted_proxies: list[str] | None = None,
+        max_clients: int = 10000,
+    ):
         self.app = app
         self.rpm = rpm
         self.trusted_proxies = trusted_proxies or []
@@ -302,15 +312,17 @@ class RateLimitMiddleware:
 
         if len(timestamps) >= self.rpm:
             body = b"Rate limit exceeded. Try again later."
-            await send({
-                "type": "http.response.start",
-                "status": 429,
-                "headers": [
-                    [b"content-type", b"text/plain"],
-                    [b"content-length", str(len(body)).encode()],
-                    [b"retry-after", b"60"],
-                ],
-            })
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 429,
+                    "headers": [
+                        [b"content-type", b"text/plain"],
+                        [b"content-length", str(len(body)).encode()],
+                        [b"retry-after", b"60"],
+                    ],
+                }
+            )
             await send({"type": "http.response.body", "body": body})
             return
 
@@ -318,9 +330,18 @@ class RateLimitMiddleware:
         return await self.app(scope, receive, send)
 
 
-_STATIC_EXTENSIONS = frozenset({
-    ".css", ".js", ".woff2", ".woff", ".ttf", ".png", ".svg", ".ico",
-})
+_STATIC_EXTENSIONS = frozenset(
+    {
+        ".css",
+        ".js",
+        ".woff2",
+        ".woff",
+        ".ttf",
+        ".png",
+        ".svg",
+        ".ico",
+    }
+)
 
 
 class CacheHeaderMiddleware:
@@ -419,14 +440,16 @@ class HealthCheckMiddleware:
         }
 
         body = json.dumps(payload).encode()
-        result = send({
-            "type": "http.response.start",
-            "status": 200,
-            "headers": [
-                [b"content-type", b"application/json"],
-                [b"content-length", str(len(body)).encode()],
-            ],
-        })
+        result = send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    [b"content-type", b"application/json"],
+                    [b"content-length", str(len(body)).encode()],
+                ],
+            }
+        )
         if result is not None:
             await result
         result = send({"type": "http.response.body", "body": body})
@@ -479,7 +502,10 @@ function shyfemToggleDark() {
 }
 """),
     # Meta tags
-    ui.tags.meta(name="description", content="SHYFEM Workbench — finite element hydrodynamic simulation interface"),
+    ui.tags.meta(
+        name="description",
+        content="SHYFEM Workbench — finite element hydrodynamic simulation interface",
+    ),
     ui.tags.meta(name="viewport", content="width=device-width, initial-scale=1"),
     # Inline SVG favicon (water wave icon)
     ui.tags.link(
@@ -537,8 +563,14 @@ def _build_ui(config: Config) -> ui.Tag:
     )
 
 
-def _build_server(input, output, session, config: Config, job_queue: JobQueue,
-                  auth_service: AuthService | None = None):
+def _build_server(
+    input,
+    output,
+    session,
+    config: Config,
+    job_queue: JobQueue,
+    auth_service: AuthService | None = None,
+):
     """Build the application server logic."""
     active_project = reactive.value(None)
     tutorial_context = reactive.value(None)
@@ -566,21 +598,30 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue,
     session.on_ended(_on_session_ended)
 
     # Initialize page servers
-    home.home_server("home", config, job_queue,
-                     active_project=active_project, nav_callback=nav_to)
-    tutorial.tutorial_server("tutorial", config, active_project=active_project,
-                             nav_callback=nav_to, tutorial_context=tutorial_context)
-    grid_prep.grid_prep_server("grid_prep", config, active_project=active_project,
-                               tutorial_context=tutorial_context)
+    home.home_server("home", config, job_queue, active_project=active_project, nav_callback=nav_to)
+    tutorial.tutorial_server(
+        "tutorial",
+        config,
+        active_project=active_project,
+        nav_callback=nav_to,
+        tutorial_context=tutorial_context,
+    )
+    grid_prep.grid_prep_server(
+        "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
+    )
     partitioning.partitioning_server("partitioning", config, active_project=active_project)
-    simulation.simulation_server("simulation", config, active_project=active_project,
-                                 tutorial_context=tutorial_context)
-    run.run_server("run", config, job_queue, active_project=active_project,
-                   tutorial_context=tutorial_context)
-    postprocess.postprocess_server("postprocess", config, active_project=active_project,
-                                   tutorial_context=tutorial_context)
-    visualize.visualize_server("visualize", config, active_project=active_project,
-                               tutorial_context=tutorial_context)
+    simulation.simulation_server(
+        "simulation", config, active_project=active_project, tutorial_context=tutorial_context
+    )
+    run.run_server(
+        "run", config, job_queue, active_project=active_project, tutorial_context=tutorial_context
+    )
+    postprocess.postprocess_server(
+        "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
+    )
+    visualize.visualize_server(
+        "visualize", config, active_project=active_project, tutorial_context=tutorial_context
+    )
     compare.compare_server("compare", config, job_queue, active_project=active_project)
     ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
     files.files_server("files", config, active_project=active_project)
@@ -600,10 +641,7 @@ def _build_server(input, output, session, config: Config, job_queue: JobQueue,
         async def _check():
             sid = _cleanup_session_id if _is_server else None
             jobs = await job_queue.list_jobs(limit=100, session_id=sid)
-            job_dicts = [
-                {"id": j.id, "name": j.name, "status": j.status.value}
-                for j in jobs
-            ]
+            job_dicts = [{"id": j.id, "name": j.name, "status": j.status.value} for j in jobs]
             events = _notification_svc.check_transitions(job_dicts)
             for event in events:
                 status = event["new_status"]
@@ -731,6 +769,7 @@ Environment variables (can be used instead of arguments):
 
     # Run with Shiny's built-in server
     from shiny import run_app
+
     run_kwargs = dict(host=host, port=port, reload=args.reload)
     if config.root_path:
         run_kwargs["root_path"] = config.root_path

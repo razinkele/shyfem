@@ -70,9 +70,9 @@ class CoordinateSystem:
     CARTESIAN = "cartesian"  # meters or unknown units
     UTM = "utm"  # UTM projection (meters, known zone)
 
-    def __init__(self, crs_type: str = "cartesian",
-                 utm_zone: int | None = None,
-                 utm_hemisphere: str = "N"):
+    def __init__(
+        self, crs_type: str = "cartesian", utm_zone: int | None = None, utm_hemisphere: str = "N"
+    ):
         self.crs_type = crs_type
         self.utm_zone = utm_zone
         self.utm_hemisphere = utm_hemisphere
@@ -156,9 +156,7 @@ class GrdFile:
             return np.array([])
         has_depth = any(n.depth is not None for n in self.nodes.values())
         if has_depth:
-            return np.array(
-                [[n.x, n.y, n.depth or 0.0] for n in self.nodes.values()]
-            )
+            return np.array([[n.x, n.y, n.depth or 0.0] for n in self.nodes.values()])
         return np.array([[n.x, n.y] for n in self.nodes.values()])
 
     def get_elements_array(self) -> np.ndarray:
@@ -210,8 +208,7 @@ class GrdFile:
         self.coordinate_system = cs
         return cs
 
-    def to_geographic(self, utm_zone: int | None = None,
-                      hemisphere: str = "N") -> bool:
+    def to_geographic(self, utm_zone: int | None = None, hemisphere: str = "N") -> bool:
         """Convert UTM coordinates to geographic (lat/lon) in place.
 
         Uses a simplified UTM-to-lat/lon conversion that avoids the pyproj
@@ -253,8 +250,9 @@ class GrdFile:
         return True
 
 
-def _utm_to_latlon(easting: float, northing: float,
-                    zone: int, northern: bool) -> tuple[float, float]:
+def _utm_to_latlon(
+    easting: float, northing: float, zone: int, northern: bool
+) -> tuple[float, float]:
     """Convert UTM coordinates to latitude/longitude (WGS84).
 
     Simplified conversion without pyproj. Accurate to ~1 meter for
@@ -289,10 +287,13 @@ def _utm_to_latlon(easting: float, northing: float,
 
     e1 = (1 - np.sqrt(1 - e**2)) / (1 + np.sqrt(1 - e**2))
 
-    phi1 = (mu + (3 * e1 / 2 - 27 * e1**3 / 32) * np.sin(2 * mu)
-            + (21 * e1**2 / 16 - 55 * e1**4 / 32) * np.sin(4 * mu)
-            + (151 * e1**3 / 96) * np.sin(6 * mu)
-            + (1097 * e1**4 / 512) * np.sin(8 * mu))
+    phi1 = (
+        mu
+        + (3 * e1 / 2 - 27 * e1**3 / 32) * np.sin(2 * mu)
+        + (21 * e1**2 / 16 - 55 * e1**4 / 32) * np.sin(4 * mu)
+        + (151 * e1**3 / 96) * np.sin(6 * mu)
+        + (1097 * e1**4 / 512) * np.sin(8 * mu)
+    )
 
     sin_phi = np.sin(phi1)
     cos_phi = np.cos(phi1)
@@ -301,7 +302,7 @@ def _utm_to_latlon(easting: float, northing: float,
     N1 = a / np.sqrt(1 - e**2 * sin_phi**2)
     T1 = tan_phi**2
     C1 = e_prime**2 * cos_phi**2
-    R1 = a * (1 - e**2) / (1 - e**2 * sin_phi**2)**1.5
+    R1 = a * (1 - e**2) / (1 - e**2 * sin_phi**2) ** 1.5
     D = x / (N1 * k0)
 
     lat = phi1 - (N1 * tan_phi / R1) * (
@@ -310,9 +311,15 @@ def _utm_to_latlon(easting: float, northing: float,
         + (61 + 90 * T1 + 298 * C1 + 45 * T1**2 - 252 * e_prime**2 - 3 * C1**2) * D**6 / 720
     )
 
-    lon = lon0 + (D - (1 + 2 * T1 + C1) * D**3 / 6
-                  + (5 - 2 * C1 + 28 * T1 - 3 * C1**2 + 8 * e_prime**2 + 24 * T1**2)
-                  * D**5 / 120) / cos_phi
+    lon = (
+        lon0
+        + (
+            D
+            - (1 + 2 * T1 + C1) * D**3 / 6
+            + (5 - 2 * C1 + 28 * T1 - 3 * C1**2 + 8 * e_prime**2 + 24 * T1**2) * D**5 / 120
+        )
+        / cos_phi
+    )
 
     return (np.degrees(lat), np.degrees(lon))
 
@@ -422,14 +429,10 @@ class GrdParser:
                             f"Line {line_num}: line {line_id} has {len(node_ids)} valid nodes (need >= 2)"
                         )
                         continue
-                    result.lines[line_id] = Line(
-                        id=line_id, line_type=line_type, nodes=node_ids
-                    )
+                    result.lines[line_id] = Line(id=line_id, line_type=line_type, nodes=node_ids)
 
             except (ValueError, IndexError) as e:
-                result.parse_warnings.append(
-                    f"Line {line_num}: skipped ({e})"
-                )
+                result.parse_warnings.append(f"Line {line_num}: skipped ({e})")
                 continue
 
         return result
@@ -497,9 +500,7 @@ class GrdParser:
                     f"1 {node.id} {node.node_type} {node.x:.6f} {node.y:.6f} {node.depth:.6f}"
                 )
             else:
-                lines.append(
-                    f"1 {node.id} {node.node_type} {node.x:.6f} {node.y:.6f}"
-                )
+                lines.append(f"1 {node.id} {node.node_type} {node.x:.6f} {node.y:.6f}")
 
         # Elements
         for elem in sorted(grd_file.elements.values(), key=lambda e: e.id):

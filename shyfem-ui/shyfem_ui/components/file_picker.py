@@ -8,25 +8,55 @@ from shiny import module, reactive, ui
 logger = logging.getLogger(__name__)
 
 # STR parameters that reference files -- from FileService
-_NAME_FILE_PARAMS = frozenset({
-    "wind", "rain", "qflux", "ice", "zinit", "tempin", "saltin",
-    "conzin", "restrt", "tempobs", "saltobs", "gotmpa", "basnam",
-    "offlin", "surfvel", "temptau", "salttau",
-})
+_NAME_FILE_PARAMS = frozenset(
+    {
+        "wind",
+        "rain",
+        "qflux",
+        "ice",
+        "zinit",
+        "tempin",
+        "saltin",
+        "conzin",
+        "restrt",
+        "tempobs",
+        "saltobs",
+        "gotmpa",
+        "basnam",
+        "offlin",
+        "surfvel",
+        "temptau",
+        "salttau",
+    }
+)
 
-_BOUND_FILE_PARAMS = frozenset({
-    "boundn", "tempn", "saltn", "conzn", "vel3dn", "bio2dn", "sed2dn",
-})
+_BOUND_FILE_PARAMS = frozenset(
+    {
+        "boundn",
+        "tempn",
+        "saltn",
+        "conzn",
+        "vel3dn",
+        "bio2dn",
+        "sed2dn",
+    }
+)
 
 # Parameter -> file_types filter mapping
 _PARAM_TYPE_MAP = {
     # Forcing files
-    "wind": ["forcing"], "rain": ["forcing"], "qflux": ["forcing"],
-    "ice": ["forcing"], "surfvel": ["forcing"],
+    "wind": ["forcing"],
+    "rain": ["forcing"],
+    "qflux": ["forcing"],
+    "ice": ["forcing"],
+    "surfvel": ["forcing"],
     # Boundary + forcing
-    "boundn": ["boundary", "forcing"], "tempn": ["boundary", "forcing"],
-    "saltn": ["boundary", "forcing"], "conzn": ["boundary", "forcing"],
-    "vel3dn": ["boundary", "forcing"], "bio2dn": ["boundary", "forcing"],
+    "boundn": ["boundary", "forcing"],
+    "tempn": ["boundary", "forcing"],
+    "saltn": ["boundary", "forcing"],
+    "conzn": ["boundary", "forcing"],
+    "vel3dn": ["boundary", "forcing"],
+    "bio2dn": ["boundary", "forcing"],
     "sed2dn": ["boundary", "forcing"],
     # Initial conditions
     "zinit": ["initial_condition", "forcing"],
@@ -38,10 +68,13 @@ _PARAM_TYPE_MAP = {
     # Config
     "gotmpa": ["config"],
     # Observations
-    "tempobs": ["forcing"], "saltobs": ["forcing"],
-    "temptau": ["forcing"], "salttau": ["forcing"],
+    "tempobs": ["forcing"],
+    "saltobs": ["forcing"],
+    "temptau": ["forcing"],
+    "salttau": ["forcing"],
     # Other
-    "basnam": ["basin"], "offlin": ["forcing"],
+    "basnam": ["basin"],
+    "offlin": ["forcing"],
 }
 
 
@@ -183,6 +216,7 @@ def file_picker_server(
             return
 
         from shyfem_ui.services.file_service import FileService
+
         files = FileService.list_files(pid)
 
         rows = []

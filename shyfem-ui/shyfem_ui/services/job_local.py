@@ -66,10 +66,7 @@ class LocalJobQueue(JobQueue):
 
             with db_session() as db:
                 rows = (
-                    db.query(Job)
-                    .order_by(Job.created_at.desc())
-                    .limit(self.MAX_STORED_JOBS)
-                    .all()
+                    db.query(Job).order_by(Job.created_at.desc()).limit(self.MAX_STORED_JOBS).all()
                 )
                 for row in reversed(rows):  # oldest first so OrderedDict order is correct
                     if row.job_uuid in self._jobs:
@@ -359,9 +356,7 @@ class LocalJobQueue(JobQueue):
 
         return jobs[:limit]
 
-    async def get_output(
-        self, job_id: str, stream: str = "stdout", tail: int = 100
-    ) -> str:
+    async def get_output(self, job_id: str, stream: str = "stdout", tail: int = 100) -> str:
         """Get job output."""
         job = self._jobs.get(job_id)
         if not job:
@@ -375,9 +370,7 @@ class LocalJobQueue(JobQueue):
 
         return tail_file(file_path, tail=tail)
 
-    def set_progress_callback(
-        self, callback: Callable[[str, float, str], None]
-    ) -> None:
+    def set_progress_callback(self, callback: Callable[[str, float, str], None]) -> None:
         """Set callback for progress updates."""
         self._progress_callback = callback
 

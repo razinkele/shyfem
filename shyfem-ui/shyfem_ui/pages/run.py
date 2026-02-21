@@ -44,6 +44,7 @@ def _preflight_validate(simulation_id: int | None) -> list[str]:
         return []
     try:
         from shyfem_ui.services.file_service import FileService
+
         return FileService.validate_simulation_files(simulation_id)
     except (ValueError, Exception):
         return []
@@ -57,9 +58,7 @@ def _get_job_metadata(session_id: str, user_id: int | None = None) -> dict:
     return meta
 
 
-def get_solver_recommendation(
-    num_nodes: int | None, threshold: int
-) -> dict[str, str | None]:
+def get_solver_recommendation(num_nodes: int | None, threshold: int) -> dict[str, str | None]:
     """Return solver recommendation based on mesh node count.
 
     Returns dict with 'solver' ('sparskit'/'petsc'/None) and 'hint' (display text).
@@ -86,9 +85,7 @@ def get_solver_recommendation(
     }
 
 
-def detect_mesh_node_count(
-    str_file: Path | str, working_dir: Path | str
-) -> int | None:
+def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int | None:
     """Detect mesh node count from the grid file referenced in a STR file.
 
     The STR $title section's 3rd non-empty line is the basin name (e.g. 'GRID/MM_coarse').
@@ -255,16 +252,17 @@ def run_ui():
                         "Workflows",
                         ui.div(
                             ui.h5("Workflow Templates"),
-                            ui.p("Chain multiple SHYFEM tools into automated pipelines.",
-                                 class_="text-muted small"),
+                            ui.p(
+                                "Chain multiple SHYFEM tools into automated pipelines.",
+                                class_="text-muted small",
+                            ),
                             ui.div(
                                 ui.div(
                                     ui.input_select(
                                         "wf_template",
                                         "Template",
                                         choices={
-                                            k: v["name"]
-                                            for k, v in WORKFLOW_TEMPLATES.items()
+                                            k: v["name"] for k, v in WORKFLOW_TEMPLATES.items()
                                         },
                                     ),
                                     class_="col-6",
@@ -451,6 +449,7 @@ def run_server(
             log_content.set(f"Error fetching log: {e}")
 
     from shyfem_ui.config import get_config
+
     log_viewer_server(
         "job_log",
         log_content,
@@ -519,9 +518,15 @@ def run_server(
             if _proj is not None:
                 from shyfem_ui.middleware.session_auth import get_current_user as _get_user
                 from shyfem_ui.services.access_control import check_project_access
+
                 _usr = _get_user()
-                if _usr is not None and check_project_access(_proj["id"], _usr, min_role="editor") is None:
-                    ui.notification_show("Permission denied: editor role required to submit jobs", type="error")
+                if (
+                    _usr is not None
+                    and check_project_access(_proj["id"], _usr, min_role="editor") is None
+                ):
+                    ui.notification_show(
+                        "Permission denied: editor role required to submit jobs", type="error"
+                    )
                     return
 
         name = input.job_name() or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -603,7 +608,10 @@ def run_server(
         if not active:
             return ui.div(
                 stat_cards,
-                ui.p("No active jobs. Submit a new job to get started.", class_="text-muted text-center mt-3"),
+                ui.p(
+                    "No active jobs. Submit a new job to get started.",
+                    class_="text-muted text-center mt-3",
+                ),
             )
 
         # Build progress cards for each active job
@@ -639,12 +647,18 @@ def run_server(
                                 job.progress_message or "Starting...",
                                 class_="small text-muted",
                             ),
-                            ui.span(f"ETA: {eta_str}", class_="small text-muted ms-auto")
-                            if eta_str else None,
+                            (
+                                ui.span(f"ETA: {eta_str}", class_="small text-muted ms-auto")
+                                if eta_str
+                                else None
+                            ),
                             class_="d-flex justify-content-between mt-1",
                         ),
                         ui.div(
-                            ui.span(f"Started: {format_datetime(job.started_at)}", class_="small text-muted me-3"),
+                            ui.span(
+                                f"Started: {format_datetime(job.started_at)}",
+                                class_="small text-muted me-3",
+                            ),
                             ui.span(f"ID: {job.id[:8]}...", class_="small text-muted"),
                             class_="mt-1",
                         ),
@@ -773,8 +787,13 @@ def run_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="No jobs to display",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=400)
             return fig
@@ -796,22 +815,24 @@ def run_server(
                 end = job.completed_at or datetime.now()
                 color = status_colors.get(job.status, "#6c757d")
 
-                fig.add_trace(go.Bar(
-                    x=[(end - start).total_seconds()],
-                    y=[job.name],
-                    orientation="h",
-                    marker_color=color,
-                    text=f"{job.tool_name} - {job.status.value}",
-                    textposition="inside",
-                    hovertemplate=(
-                        f"<b>{job.name}</b><br>"
-                        f"Tool: {job.tool_name}<br>"
-                        f"Status: {job.status.value}<br>"
-                        f"Duration: {format_duration(job.duration)}<br>"
-                        f"<extra></extra>"
-                    ),
-                    showlegend=False,
-                ))
+                fig.add_trace(
+                    go.Bar(
+                        x=[(end - start).total_seconds()],
+                        y=[job.name],
+                        orientation="h",
+                        marker_color=color,
+                        text=f"{job.tool_name} - {job.status.value}",
+                        textposition="inside",
+                        hovertemplate=(
+                            f"<b>{job.name}</b><br>"
+                            f"Tool: {job.tool_name}<br>"
+                            f"Status: {job.status.value}<br>"
+                            f"Duration: {format_duration(job.duration)}<br>"
+                            f"<extra></extra>"
+                        ),
+                        showlegend=False,
+                    )
+                )
 
             fig.update_layout(
                 title="Job Timeline (last 20 jobs)",
@@ -825,8 +846,15 @@ def run_server(
         except Exception as exc:
             logger.exception("Error rendering timeline chart")
             fig = go.Figure()
-            fig.add_annotation(text=f"Error: {exc}", xref="paper", yref="paper",
-                               x=0.5, y=0.5, showarrow=False, font_color="red")
+            fig.add_annotation(
+                text=f"Error: {exc}",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_color="red",
+            )
             fig.update_layout(height=400)
             return fig
 
@@ -887,10 +915,7 @@ def run_server(
         # Output files
         files_section = None
         if job.output_files:
-            file_items = [
-                ui.li(ui.code(f, class_="small"))
-                for f in job.output_files
-            ]
+            file_items = [ui.li(ui.code(f, class_="small")) for f in job.output_files]
             files_section = ui.div(
                 ui.strong("Output Files:"),
                 ui.tags.ul(*file_items, class_="mb-0 mt-1"),
@@ -1175,9 +1200,7 @@ def run_server(
                     ui.tags.td(wf.name),
                     ui.tags.td(ui.span(wf.status.value, class_=f"badge {badge_class}")),
                     ui.tags.td(f"{int(wf.progress * 100)}%"),
-                    ui.tags.td(
-                        format_duration(wf.duration) if wf.duration else "-"
-                    ),
+                    ui.tags.td(format_duration(wf.duration) if wf.duration else "-"),
                 )
             )
 
@@ -1207,6 +1230,7 @@ def run_server(
 
     # User context for job ownership
     from shyfem_ui.middleware.session_auth import get_current_user
+
     _current_user = get_current_user()
     _user_id = _current_user["id"] if _current_user else None
 

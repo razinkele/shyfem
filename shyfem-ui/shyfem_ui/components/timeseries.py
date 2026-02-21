@@ -147,8 +147,13 @@ def timeseries_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="No time series data loaded",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=16, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=16,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -161,8 +166,13 @@ def timeseries_server(
             fig = go.Figure()
             fig.add_annotation(
                 text="No data rows available",
-                xref="paper", yref="paper", x=0.5, y=0.5,
-                showarrow=False, font_size=14, font_color="gray",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=14,
+                font_color="gray",
             )
             fig.update_layout(height=500)
             return fig
@@ -209,7 +219,8 @@ def timeseries_server(
             fill = "tozeroy" if style == "area" else None
 
             trace_kwargs = dict(
-                x=x_vals, y=y_vals,
+                x=x_vals,
+                y=y_vals,
                 mode=mode,
                 name=col,
                 fill=fill,
@@ -238,12 +249,17 @@ def timeseries_server(
                 obs_arr = np.array(obs_rows)
                 obs_x = obs_arr[:, 0].tolist()
                 for j in range(1, len(obs_cols)):
-                    fig.add_trace(go.Scattergl(
-                        x=obs_x, y=obs_arr[:, j].tolist(),
-                        mode="markers",
-                        marker=dict(size=6, symbol="diamond", line=dict(width=1, color="black")),
-                        name=f"Obs: {obs_cols[j]}",
-                    ))
+                    fig.add_trace(
+                        go.Scattergl(
+                            x=obs_x,
+                            y=obs_arr[:, j].tolist(),
+                            mode="markers",
+                            marker=dict(
+                                size=6, symbol="diamond", line=dict(width=1, color="black")
+                            ),
+                            name=f"Obs: {obs_cols[j]}",
+                        )
+                    )
 
         # Layout
         fig.update_layout(
@@ -411,6 +427,7 @@ def timeseries_server(
         csv_text = buf.getvalue()
 
         import base64
+
         b64 = base64.b64encode(csv_text.encode("utf-8")).decode("ascii")
         js = (
             f"var a=document.createElement('a');"
@@ -446,7 +463,10 @@ def _load_obs_file(path: Path) -> dict:
                 parts = line.strip().split()
                 if not parts:
                     continue
-                if i == 0 and not parts[0].replace(".", "").replace("-", "").replace("+", "").isdigit():
+                if (
+                    i == 0
+                    and not parts[0].replace(".", "").replace("-", "").replace("+", "").isdigit()
+                ):
                     columns = parts
                 else:
                     try:
@@ -477,8 +497,7 @@ def compute_statistics(values) -> dict:
     arr = arr[~np.isnan(arr)]
 
     if len(arr) == 0:
-        return {"min": None, "max": None, "mean": None, "std": None,
-                "range": None, "count": 0}
+        return {"min": None, "max": None, "mean": None, "std": None, "range": None, "count": 0}
 
     return {
         "min": float(np.min(arr)),

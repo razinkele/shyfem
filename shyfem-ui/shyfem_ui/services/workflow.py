@@ -20,6 +20,7 @@ from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
 class WorkflowStatus(Enum):
     """Workflow execution status."""
+
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -31,6 +32,7 @@ class WorkflowStatus(Enum):
 @dataclass
 class WorkflowStep:
     """A single step in a workflow."""
+
     name: str
     tool_name: str
     args_template: list[str] = field(default_factory=list)
@@ -47,6 +49,7 @@ class WorkflowStep:
 @dataclass
 class WorkflowInstance:
     """A running workflow instance."""
+
     id: str
     name: str
     steps: list[WorkflowStep]
@@ -165,8 +168,11 @@ class WorkflowEngine:
     def list_templates(self) -> dict[str, dict]:
         """List available workflow templates."""
         return {
-            key: {"name": tpl["name"], "description": tpl["description"],
-                   "steps": [s.name for s in tpl["steps"]]}
+            key: {
+                "name": tpl["name"],
+                "description": tpl["description"],
+                "steps": [s.name for s in tpl["steps"]],
+            }
             for key, tpl in WORKFLOW_TEMPLATES.items()
         }
 
@@ -199,16 +205,18 @@ class WorkflowEngine:
         # Deep copy steps from template
         steps = []
         for step in template["steps"]:
-            steps.append(WorkflowStep(
-                name=step.name,
-                tool_name=step.tool_name,
-                args_template=list(step.args_template),
-                mpi_enabled=step.mpi_enabled,
-                mpi_np=int(params.get("mpi_np", step.mpi_np)),
-                input_from=step.input_from,
-                options=list(step.options),
-                continue_on_failure=step.continue_on_failure,
-            ))
+            steps.append(
+                WorkflowStep(
+                    name=step.name,
+                    tool_name=step.tool_name,
+                    args_template=list(step.args_template),
+                    mpi_enabled=step.mpi_enabled,
+                    mpi_np=int(params.get("mpi_np", step.mpi_np)),
+                    input_from=step.input_from,
+                    options=list(step.options),
+                    continue_on_failure=step.continue_on_failure,
+                )
+            )
 
         wf = WorkflowInstance(
             id=wf_id,

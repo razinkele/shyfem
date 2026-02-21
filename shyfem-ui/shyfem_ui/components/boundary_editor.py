@@ -173,15 +173,17 @@ def boundary_editor_server(
     def _add_boundary():
         current = boundaries.get()
         bid = _next_id.get()
-        current.append({
-            "id": bid,
-            "label": f"bound{bid}",
-            "nodes": "",
-            "ibtyp": 1,
-            "boundn": "",
-            "zfact": 1.0,
-            "intpol": 1,
-        })
+        current.append(
+            {
+                "id": bid,
+                "label": f"bound{bid}",
+                "nodes": "",
+                "ibtyp": 1,
+                "boundn": "",
+                "zfact": 1.0,
+                "intpol": 1,
+            }
+        )
         _next_id.set(bid + 1)
         boundaries.set(current)
 
@@ -262,8 +264,9 @@ def boundary_editor_server(
     def boundary_list():
         bounds = boundaries.get()
         if not bounds:
-            return ui.p("No boundaries defined. Click '+ Add Boundary' to start.",
-                        class_="text-muted small")
+            return ui.p(
+                "No boundaries defined. Click '+ Add Boundary' to start.", class_="text-muted small"
+            )
 
         cards = []
         for b in bounds:
@@ -281,8 +284,11 @@ def boundary_editor_server(
             cards.append(
                 ui.div(
                     ui.div(
-                        ui.span(f"${b['label']}", class_="badge bg-danger me-2",
-                                style="font-family: monospace;"),
+                        ui.span(
+                            f"${b['label']}",
+                            class_="badge bg-danger me-2",
+                            style="font-family: monospace;",
+                        ),
                         ui.input_action_button(
                             f"remove_bound_{bid}",
                             "x",
@@ -292,45 +298,61 @@ def boundary_editor_server(
                     ),
                     ui.div(
                         ui.row(
-                            ui.column(6,
+                            ui.column(
+                                6,
                                 ui.div(
                                     ui.span("Nodes", class_="small fw-bold"),
-                                    ui.input_text(f"bound_nodes_{bid}", "",
-                                                  value=b["nodes"],
-                                                  placeholder="1 2 3 or 1-10"),
+                                    ui.input_text(
+                                        f"bound_nodes_{bid}",
+                                        "",
+                                        value=b["nodes"],
+                                        placeholder="1 2 3 or 1-10",
+                                    ),
                                 ),
                             ),
-                            ui.column(6,
+                            ui.column(
+                                6,
                                 ui.div(
                                     ui.span("Type", class_="small fw-bold"),
-                                    ui.input_select(f"bound_type_{bid}", "",
-                                                    choices=type_choices,
-                                                    selected=str(b["ibtyp"])),
+                                    ui.input_select(
+                                        f"bound_type_{bid}",
+                                        "",
+                                        choices=type_choices,
+                                        selected=str(b["ibtyp"]),
+                                    ),
                                 ),
                             ),
                         ),
                         ui.row(
-                            ui.column(6,
+                            ui.column(
+                                6,
                                 ui.div(
                                     ui.span("Time series file", class_="small fw-bold"),
-                                    ui.input_text(f"bound_file_{bid}", "",
-                                                  value=b["boundn"],
-                                                  placeholder="INPUT/boundary.txt"),
+                                    ui.input_text(
+                                        f"bound_file_{bid}",
+                                        "",
+                                        value=b["boundn"],
+                                        placeholder="INPUT/boundary.txt",
+                                    ),
                                 ),
                             ),
-                            ui.column(3,
+                            ui.column(
+                                3,
                                 ui.div(
                                     ui.span("Scale factor", class_="small fw-bold"),
-                                    ui.input_text(f"bound_zfact_{bid}", "",
-                                                  value=str(b["zfact"])),
+                                    ui.input_text(f"bound_zfact_{bid}", "", value=str(b["zfact"])),
                                 ),
                             ),
-                            ui.column(3,
+                            ui.column(
+                                3,
                                 ui.div(
                                     ui.span("Interpolation", class_="small fw-bold"),
-                                    ui.input_select(f"bound_intpol_{bid}", "",
-                                                    choices=intpol_choices,
-                                                    selected=str(b["intpol"])),
+                                    ui.input_select(
+                                        f"bound_intpol_{bid}",
+                                        "",
+                                        choices=intpol_choices,
+                                        selected=str(b["intpol"]),
+                                    ),
                                 ),
                             ),
                         ),
@@ -349,8 +371,10 @@ def boundary_editor_server(
 
         return ui.div(
             ui.h6("Import Boundaries from CSV"),
-            ui.p("Format: nodes, type, file, zfact, intpol (one boundary per line)",
-                 class_="text-muted small"),
+            ui.p(
+                "Format: nodes, type, file, zfact, intpol (one boundary per line)",
+                class_="text-muted small",
+            ),
             ui.input_text_area(
                 "csv_input",
                 "",
@@ -373,8 +397,11 @@ def boundary_editor_server(
 
         return ui.div(
             ui.h6("Generated $bound sections"),
-            ui.pre(text, class_="small p-2 bg-light",
-                   style="max-height: 200px; overflow-y: auto; font-family: monospace;"),
+            ui.pre(
+                text,
+                class_="small p-2 bg-light",
+                style="max-height: 200px; overflow-y: auto; font-family: monospace;",
+            ),
             class_="mt-2",
         )
 

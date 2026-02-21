@@ -184,9 +184,7 @@ def files_server(
                 table_rows.append(
                     ui.tags.tr(
                         ui.tags.td(row["filename"]),
-                        ui.tags.td(
-                            ui.span(row["file_type"], class_=f"badge {badge_class}")
-                        ),
+                        ui.tags.td(ui.span(row["file_type"], class_=f"badge {badge_class}")),
                         ui.tags.td(ui.code(row["rel_path"], class_="small")),
                         ui.tags.td(row["size_str"]),
                         ui.tags.td(
@@ -222,9 +220,7 @@ def files_server(
                 _register_download_handler(row["id"])
                 _register_delete_handler(row["id"], row["filename"])
         else:
-            file_table = ui.p(
-                "No files found.", class_="text-muted text-center p-4"
-            )
+            file_table = ui.p("No files found.", class_="text-muted text-center p-4")
 
         # Upload section
         from shyfem_ui.components.file_browser import file_browser_ui
@@ -294,9 +290,12 @@ def files_server(
         # Access check: require editor role to upload
         from shyfem_ui.middleware.session_auth import get_current_user
         from shyfem_ui.services.access_control import check_project_access
+
         user = get_current_user()
         if user is not None and check_project_access(proj["id"], user, min_role="editor") is None:
-            ui.notification_show("Permission denied: editor role required to upload files", type="error")
+            ui.notification_show(
+                "Permission denied: editor role required to upload files", type="error"
+            )
             return
 
         for f in files:
@@ -310,13 +309,9 @@ def files_server(
                 subdir=subdir,
             )
             if result:
-                ui.notification_show(
-                    f"Uploaded: {result['filename']}", type="message"
-                )
+                ui.notification_show(f"Uploaded: {result['filename']}", type="message")
             else:
-                ui.notification_show(
-                    f"Failed to upload: {f['name']}", type="error"
-                )
+                ui.notification_show(f"Failed to upload: {f['name']}", type="error")
 
         refresh_trigger.set(refresh_trigger.get() + 1)
 
@@ -343,14 +338,10 @@ def files_server(
             return
         try:
             FileService.seed_tutorial_files(proj["id"])
-            ui.notification_show(
-                "Tutorial files seeded successfully!", type="message"
-            )
+            ui.notification_show("Tutorial files seeded successfully!", type="message")
             refresh_trigger.set(refresh_trigger.get() + 1)
         except Exception as e:
-            ui.notification_show(
-                f"Error seeding tutorial files: {e}", type="error"
-            )
+            ui.notification_show(f"Error seeding tutorial files: {e}", type="error")
 
     def _register_download_handler(file_id: int):
         btn_id = f"dl_{file_id}"
@@ -371,9 +362,7 @@ def files_server(
                     "a.click();"
                     "document.body.removeChild(a);"
                 )
-                ui.insert_ui(
-                    ui.tags.script(js), selector="body", where="beforeEnd"
-                )
+                ui.insert_ui(ui.tags.script(js), selector="body", where="beforeEnd")
             except Exception as e:
                 ui.notification_show(f"Download error: {e}", type="error")
 
@@ -408,11 +397,14 @@ def files_server(
                 # Access check: require editor role to delete
                 from shyfem_ui.middleware.session_auth import get_current_user
                 from shyfem_ui.services.access_control import check_project_access
+
                 user = get_current_user()
                 proj = active_project.get() if active_project else None
                 if user is not None and proj is not None:
                     if check_project_access(proj["id"], user, min_role="editor") is None:
-                        ui.notification_show("Permission denied: editor role required to delete files", type="error")
+                        ui.notification_show(
+                            "Permission denied: editor role required to delete files", type="error"
+                        )
                         ui.modal_remove()
                         return
                 try:
