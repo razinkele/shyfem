@@ -572,6 +572,7 @@
 !       ------------------------------------------------
 
         ahmax = 0.
+!$OMP PARALLEL DO PRIVATE(ie,area,ah,lmax,l) REDUCTION(max:ahmax) SCHEDULE(STATIC)
         do ie=1,nel
           area = 12. * ev(10,ie)
           ah = 1.
@@ -583,6 +584,7 @@
             difhv(l,ie) = ah
           end do
         end do
+!$OMP END PARALLEL DO
 
 !       ------------------------------------------------
 !       finished initializing
