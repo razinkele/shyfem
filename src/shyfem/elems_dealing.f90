@@ -1130,6 +1130,7 @@
 ! compute depth at nodes
 !----------------------------------------------------------------
 
+!$OMP PARALLEL DO PRIVATE(k,lmax,lmin,levmin,l,areafv,h) SCHEDULE(STATIC)
 	do k=1,nkn_inner
 	  lmax = ilhkv(k)
 	  lmin = jlhkv(k)
@@ -1160,6 +1161,7 @@
 	    end if
 	  end do
 	end do
+!$OMP END PARALLEL DO
 
 !----------------------------------------------------------------
 ! echange nodal values
