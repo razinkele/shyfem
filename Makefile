@@ -107,7 +107,7 @@ FEMDIRS   = $(FEMLIBS) $(FEMEXTRA) $(FEMGRID) $(FEMMESH) $(FEMPROG) $(FEMUTIL)
 FEMNOGRAPH   = $(FEMLIBS) $(FEMEXTRA) $(FEMMESH) $(FEMPROG) $(FEMUTIL)
 
 .IGNORE: clean
-.PHONY: default all nuopc compile fem shyfem para_get para_compile para_clean \
+.PHONY: default all nuopc compile fem shyfem petsc para_get para_compile para_clean \
 	bfm_compile bfm_clean nograph libmod docs doc dirs dirf list depend \
 	directories links ctags nothing cleanlocal clean cleanall cleandist \
 	cleanregress cleanbck help first_time version tags info check \
@@ -141,6 +141,17 @@ compile: shyfem
 fem: shyfem
 shyfem: checkv libmod
 	cd src; make
+
+petsc: checkv libmod
+	cd src; make SOLVER=PETSC PETSC_DIR=$(PETSC_DIR)
+	@if [ -f bin/shyfem ]; then \
+	  mv bin/shyfem bin/shyfem-petsc; \
+	  echo "PETSc solver built as bin/shyfem-petsc"; \
+	  echo "Rebuilding default SPARSKIT solver..."; \
+	fi
+	cd src/shyfem; make clean
+	cd src; make
+	@echo "Both solvers ready: bin/shyfem (SPARSKIT) and bin/shyfem-petsc (PETSc)"
 
 para_get:
 	@cd fempara; ./para_get.sh $(PARADIR)
