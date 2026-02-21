@@ -1761,8 +1761,8 @@
 	real ffn,ffo
 	real volo,voln,dt,dvdt,q
 	real dzmax,dz
-	real, allocatable :: vf(:,:)
-	real, allocatable :: va(:,:)
+	real, allocatable, save :: vf(:,:)
+	real, allocatable, save :: va(:,:)
 ! statement functions
 
 	integer ipint
@@ -1784,8 +1784,14 @@
 	azt = 1. - az
 	call get_timestep(dt)
 
-	allocate(vf(nlvdi,nkn),va(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if (.not. allocated(vf)) then
+	  allocate(vf(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(va)) then
+	  allocate(va(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
 	vf = 0.
 	va = 0.
 
@@ -1894,7 +1900,7 @@
           end if
 	end do
 
-	deallocate(vf,va)
+
 
 	if( shympi_partition_on_nodes() ) then
 	  !call shympi_comment('exchanging wlnv')
