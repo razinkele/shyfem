@@ -210,6 +210,20 @@ class TestConfigGlobal:
         set_config(None)
 
 
+class TestSolverSettings:
+    """Tests for solver-related configuration."""
+
+    def test_solver_node_threshold_default(self):
+        """Default solver node threshold is 50000."""
+        config = _clean_config()
+        assert config.solver_node_threshold == 50000
+
+    def test_solver_node_threshold_override(self):
+        """Solver node threshold can be overridden."""
+        config = _clean_config(solver_node_threshold=100000)
+        assert config.solver_node_threshold == 100000
+
+
 class TestPathResolver:
     """Tests for path resolution validator."""
 

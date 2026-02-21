@@ -76,6 +76,12 @@ class Config(BaseSettings):
     mpi_default_np: int = Field(default=4, description="Default MPI processes")
     mpirun_path: str = Field(default="mpirun", description="Path to mpirun executable")
 
+    # Solver settings
+    solver_node_threshold: int = Field(
+        default=50000,
+        description="Node count threshold for recommending PETSc over SPARSKIT"
+    )
+
     # Authentication (server mode only)
     auth_enabled: bool = Field(
         default=False,
