@@ -69,6 +69,13 @@ def _active_badge(is_active: bool) -> str:
     return '<span class="badge bg-secondary">Inactive</span>'
 
 
+def _check_admin_access(user: dict | None) -> bool:
+    """Check if user has admin role. Returns False for None or non-admin users."""
+    if user is None:
+        return False
+    return user.get("role") == "admin"
+
+
 # ---------------------------------------------------------------------------
 # Shiny UI module
 # ---------------------------------------------------------------------------
@@ -113,6 +120,23 @@ def admin_server(
     input, output, session, config: Config, auth_service: AuthService
 ):
     """Admin panel server logic."""
+    # Admin role guard
+    from shyfem_ui.middleware.session_auth import get_current_user
+    current_user = get_current_user()
+    if not _check_admin_access(current_user):
+        @render.ui
+        def user_summary():
+            return ui.div(
+                ui.h5("Access Denied", class_="text-danger"),
+                ui.p("You must be an admin to view this page."),
+            )
+
+        @render.ui
+        def user_table():
+            return ui.div()
+
+        return
+
     # Reactive value holding user list
     users_data: reactive.Value[list[dict]] = reactive.value([])
 
