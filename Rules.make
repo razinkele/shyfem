@@ -704,9 +704,9 @@ ifeq ($(DEBUG),true)
   FGNU_NOOPT = -g -fbacktrace -ffpe-trap=$(TRAP_LIST) $(FGNU_BOUNDS)
 endif
 
-FGNU_OPT   = -O
+FGNU_OPT   = -O2
 ifeq ($(OPTIMIZE),HIGH)
-  FGNU_OPT   = -O3
+  FGNU_OPT   = -O3 -march=native -funroll-loops -ftree-vectorize
 endif
 ifeq ($(OPTIMIZE),NONE)
   FGNU_OPT   = 
