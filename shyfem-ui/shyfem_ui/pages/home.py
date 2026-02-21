@@ -58,6 +58,31 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10):
     )
 
 
+def _should_show_share_button(project: dict, user: dict | None) -> bool:
+    """Return True if user should see the Share button for this project.
+
+    Only project owners and admins can share.
+    """
+    if user is None:
+        return False
+    if user.get("role") == "admin":
+        return True
+    return project.get("owner_id") == user.get("id")
+
+
+def _build_permissions_table_data(permissions: list[dict]) -> list[dict]:
+    """Format permission dicts for display in the share modal table."""
+    return [
+        {
+            "user_id": p["user_id"],
+            "username": p["username"],
+            "display_name": p.get("display_name") or p["username"],
+            "role": p["role"],
+        }
+        for p in permissions
+    ]
+
+
 @module.ui
 def home_ui():
     """Dashboard page UI."""
@@ -157,6 +182,9 @@ def home_server(
     recent_jobs_list = reactive.value([])
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
+
+    from shyfem_ui.middleware.session_auth import get_current_user as _get_user
+    _current_user = _get_user()
 
     @render.ui
     def show_all_toggle_ui():
@@ -272,6 +300,14 @@ def home_server(
 
         rows = []
         for p in project_data:
+            share_btn = ui.span()
+            if _should_show_share_button(p, _current_user):
+                share_btn = ui.input_action_link(
+                    f"share_{p['id']}",
+                    "Share",
+                    class_="btn btn-sm btn-outline-success me-1",
+                )
+
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(
@@ -288,6 +324,7 @@ def home_server(
                         if p["updated_at"] else "-"
                     ),
                     ui.tags.td(
+                        share_btn,
                         ui.input_action_link(
                             f"export_{p['id']}",
                             "Export",
@@ -985,6 +1022,126 @@ def home_server(
             if wd and Path(wd).exists():
                 shutil.rmtree(wd, ignore_errors=True)
             ui.notification_show(f"Import failed: {e}", type="error")
+
+    # ------------------------------------------------------------------
+    # Share project handlers
+    # ------------------------------------------------------------------
+
+    from shyfem_ui.services.sharing_service import SharingService
+
+    @reactive.effect
+    def _register_share_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_share_handler(p["id"], p["name"])
+
+    def _make_share_handler(pid: int, pname: str):
+        @reactive.effect
+        @reactive.event(input[f"share_{pid}"])
+        def _share():
+            _show_share_modal(pid, pname)
+
+    def _show_share_modal(project_id: int, project_name: str):
+        svc = SharingService()
+        user_id = _current_user["id"] if _current_user else 0
+        shareable = svc.list_shareable_users(project_id, exclude_user_id=user_id)
+        perms = svc.list_permissions(project_id)
+        perm_data = _build_permissions_table_data(perms)
+
+        # Build user choices
+        user_choices = {
+            str(u["id"]): f"{u['username']} ({u['display_name'] or u['username']})"
+            for u in shareable
+        }
+
+        # Build permissions table
+        perm_rows = []
+        for p in perm_data:
+            perm_rows.append(
+                ui.tags.tr(
+                    ui.tags.td(p["display_name"]),
+                    ui.tags.td(ui.span(p["role"], class_="badge bg-info")),
+                    ui.tags.td(
+                        ui.input_action_link(
+                            f"unshare_{project_id}_{p['user_id']}",
+                            "Remove",
+                            class_="btn btn-sm btn-outline-danger",
+                        ),
+                    ),
+                )
+            )
+
+        if perm_rows:
+            perm_table = ui.tags.table(
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("User"),
+                        ui.tags.th("Role"),
+                        ui.tags.th(""),
+                    )
+                ),
+                ui.tags.tbody(*perm_rows),
+                class_="table table-sm",
+            )
+        else:
+            perm_table = ui.p("No users shared with yet.", class_="text-muted small")
+
+        if user_choices:
+            user_select = ui.div(
+                ui.input_select("share_user_id", "User", choices=user_choices),
+                ui.input_select(
+                    "share_role", "Role",
+                    choices={"viewer": "Viewer", "editor": "Editor"},
+                ),
+                ui.input_action_button(
+                    f"confirm_share_{project_id}",
+                    "Share",
+                    class_="btn-primary mt-2",
+                ),
+            )
+        else:
+            user_select = ui.p(
+                "No users available to share with.", class_="text-muted small"
+            )
+
+        m = ui.modal(
+            ui.h6("Current Access"),
+            perm_table,
+            ui.hr(),
+            ui.h6("Add User"),
+            user_select,
+            title=f"Share '{project_name}'",
+            easy_close=True,
+        )
+        ui.modal_show(m)
+
+        # Register confirm handler
+        @reactive.effect
+        @reactive.event(input[f"confirm_share_{project_id}"])
+        def _do_share():
+            uid = int(input.share_user_id())
+            role = input.share_role()
+            svc_inner = SharingService()
+            svc_inner.share_project(project_id, uid, role)
+            ui.notification_show("User added", type="message")
+            ui.modal_remove()
+            _refresh_projects()
+
+        # Register unshare handlers
+        for p in perm_data:
+            _make_unshare_handler(project_id, project_name, p["user_id"])
+
+    def _make_unshare_handler(
+        project_id: int, project_name: str, target_user_id: int
+    ):
+        @reactive.effect
+        @reactive.event(input[f"unshare_{project_id}_{target_user_id}"])
+        def _unshare():
+            svc = SharingService()
+            svc.unshare_project(project_id, target_user_id)
+            ui.notification_show("Access removed", type="message")
+            ui.modal_remove()
+            _refresh_projects()
 
     return {
         "projects": projects,
