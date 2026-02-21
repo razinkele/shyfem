@@ -16,6 +16,9 @@ TAB_NAMES = [
     "Visualize",
     "Compare",
     "Ensemble",
+    "Files",
+    "Tutorial",
+    "Admin",
 ]
 
 # Scope to main navbar to avoid inner sub-tab conflicts (e.g. Run > Dashboard)
@@ -35,7 +38,7 @@ class TestNavigation:
         assert navbar.is_visible()
 
     def test_all_tabs_present(self, pw_page):
-        """Test all 9 navigation tabs are present."""
+        """Test all 12 navigation tabs are present."""
         for tab_name in TAB_NAMES:
             tab = pw_page.locator(_TAB.format(name=tab_name))
             assert tab.count() == 1, f"Tab '{tab_name}' not found (or duplicated)"
