@@ -54,6 +54,35 @@ def _get_job_metadata(session_id: str, user_id: int | None = None) -> dict:
     return meta
 
 
+def get_solver_recommendation(
+    num_nodes: int | None, threshold: int
+) -> dict[str, str | None]:
+    """Return solver recommendation based on mesh node count.
+
+    Returns dict with 'solver' ('sparskit'/'petsc'/None) and 'hint' (display text).
+    """
+    if num_nodes is None:
+        return {
+            "solver": None,
+            "hint": "Could not detect mesh size — select solver manually",
+        }
+    if num_nodes >= threshold:
+        return {
+            "solver": "petsc",
+            "hint": (
+                f"Mesh has {num_nodes:,} nodes. "
+                f"Recommended: Iterative Solver (PETSc) — scales better for large meshes"
+            ),
+        }
+    return {
+        "solver": "sparskit",
+        "hint": (
+            f"Mesh has {num_nodes:,} nodes. "
+            f"Recommended: Direct Solver (SPARSKIT) — fastest for small/medium meshes"
+        ),
+    }
+
+
 @module.ui
 def run_ui():
     """Job execution page UI."""

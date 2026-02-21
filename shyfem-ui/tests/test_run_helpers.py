@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 
-from shyfem_ui.pages.run import _estimate_eta, _stat_card
+from shyfem_ui.pages.run import _estimate_eta, _stat_card, get_solver_recommendation
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 
 
@@ -82,3 +82,34 @@ class TestStatCard:
         for bg in ["bg-primary", "bg-success", "bg-danger", "bg-warning"]:
             result = _stat_card("Label", "0", bg)
             assert result is not None
+
+
+class TestGetSolverRecommendation:
+    """Tests for solver recommendation logic."""
+
+    def test_small_mesh_recommends_sparskit(self):
+        rec = get_solver_recommendation(1500, 50000)
+        assert rec["solver"] == "sparskit"
+        assert "Direct" in rec["hint"]
+
+    def test_large_mesh_recommends_petsc(self):
+        rec = get_solver_recommendation(100000, 50000)
+        assert rec["solver"] == "petsc"
+        assert "Iterative" in rec["hint"]
+
+    def test_threshold_boundary_recommends_petsc(self):
+        rec = get_solver_recommendation(50000, 50000)
+        assert rec["solver"] == "petsc"
+
+    def test_below_threshold_recommends_sparskit(self):
+        rec = get_solver_recommendation(49999, 50000)
+        assert rec["solver"] == "sparskit"
+
+    def test_zero_nodes_recommends_sparskit(self):
+        rec = get_solver_recommendation(0, 50000)
+        assert rec["solver"] == "sparskit"
+
+    def test_none_nodes_returns_no_recommendation(self):
+        rec = get_solver_recommendation(None, 50000)
+        assert rec["solver"] is None
+        assert "detect" in rec["hint"].lower() or "manually" in rec["hint"].lower()
