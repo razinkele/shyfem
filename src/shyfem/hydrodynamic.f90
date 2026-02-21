@@ -666,6 +666,7 @@
             dbc = 0.
             dcb = 0.
             dcc = 0.
+            !$OMP SIMD reduction(+:dbb,dbc,dcb,dcc)
             do l=jlevel,ilevel
               jv=l+l
               ju=jv-1
@@ -684,6 +685,7 @@
             uhat = 0.
             vhat = 0.
 
+            !$OMP SIMD reduction(+:uold,vold,uhat,vhat)
             do l=jlevel,ilevel
               uold = uold + utlov(l,ie)
               vold = vold + vtlov(l,ie)
@@ -799,6 +801,7 @@
             delta=ddt*ddt*az*am*grav*afix
 
             dbb = 0.; dbc = 0.; dcb = 0.; dcc = 0.
+            !$OMP SIMD reduction(+:dbb,dbc,dcb,dcc)
             do l=jlevel,ilevel
               jv=l+l; ju=jv-1
               dbb = dbb + ddxv(ju,ie)
@@ -808,6 +811,7 @@
             end do
 
             uold = 0.; vold = 0.; uhat = 0.; vhat = 0.
+            !$OMP SIMD reduction(+:uold,vold,uhat,vhat)
             do l=jlevel,ilevel
               uold = uold + utlov(l,ie)
               vold = vold + vtlov(l,ie)
@@ -1495,6 +1499,7 @@
 	if( afix /= 0. ) then
 	  dtafix = dt * afix
 	  !ierr = ieee_handler( 'set', 'exception', SIGFPE_IGNORE )
+	  !$OMP SIMD
 	  do l=jlevel,ilevel
 	    utlnv(l,ie) = utlov(l,ie) - dtafix * rvec(2*l-1)
 	    vtlnv(l,ie) = vtlov(l,ie) - dtafix * rvec(2*l)
@@ -1506,6 +1511,7 @@
 ! save contribution A^{-1} H^x and A^{-1} H^y
 !-------------------------------------------------------------
 
+	!$OMP SIMD
 	do l=1,ngl						!ASYM_OPSPLT
 	  ddxv(l,ie) = rvec(ngl+l)
 	  ddyv(l,ie) = rvec(2*ngl+l)
@@ -1661,6 +1667,7 @@
 !	new transports from u/v hat variable
 !	------------------------------------------------------
 
+	!$OMP SIMD
 	do l=jlevel,ilevel
 
 	  jv=l+l
@@ -1680,6 +1687,7 @@
 
 	um = 0.
 	vm = 0.
+	!$OMP SIMD reduction(+:um,vm)
 	do l=jlevel,ilevel
 	  um = um + utlnv(l,ie)
 	  vm = vm + vtlnv(l,ie)
