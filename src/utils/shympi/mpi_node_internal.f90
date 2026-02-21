@@ -209,8 +209,7 @@
 	integer ierr,iberr
 	integer required,provided
 
-	required = MPI_THREAD_MULTIPLE
-	required = MPI_THREAD_SERIALIZED
+	required = MPI_THREAD_FUNNELED
 
 	ierr = 0
         if( binit ) call MPI_INIT_THREAD( required, provided, ierr )
@@ -407,7 +406,7 @@
         tag=151
 	ir = 0
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
 	if( my_p_id == id_to ) then
 	  ir = ir + 1
@@ -425,7 +424,7 @@
 
         call MPI_WaitAll(ir,request,status,ierr)
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
 	call shympi_icomment('shympi_receive_internal_i')
 
@@ -456,7 +455,7 @@
 	ir = 0
 	ierr = 0
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
 	if( my_p_id == id_to ) then
 	  ir = ir + 1
@@ -479,7 +478,7 @@
 	  if( ierr /= 0 ) write(6,*) 'internal error 3: ',ierr
 	end if
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
 	if( ierr > 0 ) then
 	  call shympi_abort_internal('error stop shympi_receive_internal: exchange error')
@@ -544,7 +543,7 @@
 	  nbs(2,ia) = nb
 	end do
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
 	do ia=1,n_ghost_areas
 	  ir = ir + 1
@@ -568,7 +567,7 @@
 
         call MPI_WaitAll(ir,request,status,ierr)
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
 	do ia=1,n_ghost_areas
 	  id = ghost_areas(1,ia)
@@ -654,7 +653,7 @@
 	  end if
 	end do
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
 	do ia=1,n_ghost_areas
 	  ir = ir + 1
@@ -681,7 +680,7 @@
 
         call MPI_WaitAll(ir,request,status,ierr)
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
 	do ia=1,n_ghost_areas
 	  id = ghost_areas(1,ia)
@@ -748,7 +747,7 @@
           nbs(2,ia) = nb
         end do
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
         do ia=1,n_ghost_areas
           ir = ir + 1
@@ -772,7 +771,7 @@
 
         call MPI_WaitAll(ir,request,status,ierr)
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
         do ia=1,n_ghost_areas
           id = ghost_areas(1,ia)
@@ -2050,7 +2049,7 @@
      &				' size of out array')
 	end if
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
 	if( my_id == 0 ) then
 	  do i=2,n_threads
@@ -2073,7 +2072,7 @@
 
         call MPI_WaitAll(ir,req,status,ierr)
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
 	call shympi_icomment('shympi_get_array_internal_r')
 
@@ -2116,7 +2115,7 @@
      &				' size of out array')
 	end if
 
-!ccgguccc!$OMP CRITICAL
+!$OMP CRITICAL
 
 	if( my_id == 0 ) then
 	  do i=2,n_threads
@@ -2139,7 +2138,7 @@
 
         call MPI_WaitAll(ir,req,status,ierr)
 
-!ccgguccc!$OMP END CRITICAL
+!$OMP END CRITICAL
 
 	call shympi_icomment('shympi_get_array_internal_i')
 
