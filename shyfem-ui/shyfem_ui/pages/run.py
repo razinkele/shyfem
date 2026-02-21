@@ -385,6 +385,17 @@ def run_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_job():
+        # Access check: require editor role on active project
+        if active_project is not None:
+            _proj = active_project.get()
+            if _proj is not None:
+                from shyfem_ui.middleware.session_auth import get_current_user as _get_user
+                from shyfem_ui.services.access_control import check_project_access
+                _usr = _get_user()
+                if _usr is not None and check_project_access(_proj["id"], _usr, min_role="editor") is None:
+                    ui.notification_show("Permission denied: editor role required to submit jobs", type="error")
+                    return
+
         name = input.job_name() or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         tool = input.tool_select()
         input_file = input.input_file()

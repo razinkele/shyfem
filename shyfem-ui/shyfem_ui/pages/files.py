@@ -291,6 +291,14 @@ def files_server(
         if proj is None:
             return
 
+        # Access check: require editor role to upload
+        from shyfem_ui.middleware.session_auth import get_current_user
+        from shyfem_ui.services.access_control import check_project_access
+        user = get_current_user()
+        if user is not None and check_project_access(proj["id"], user, min_role="editor") is None:
+            ui.notification_show("Permission denied: editor role required to upload files", type="error")
+            return
+
         for f in files:
             file_type = input.upload_type() or None
             subdir = input.upload_subdir() or None
@@ -397,6 +405,16 @@ def files_server(
             @reactive.effect
             @reactive.event(getattr(input, f"confirm_rm_{file_id}"))
             def _do_delete():
+                # Access check: require editor role to delete
+                from shyfem_ui.middleware.session_auth import get_current_user
+                from shyfem_ui.services.access_control import check_project_access
+                user = get_current_user()
+                proj = active_project.get() if active_project else None
+                if user is not None and proj is not None:
+                    if check_project_access(proj["id"], user, min_role="editor") is None:
+                        ui.notification_show("Permission denied: editor role required to delete files", type="error")
+                        ui.modal_remove()
+                        return
                 try:
                     FileService.delete_file(file_id)
                     ui.notification_show(f"Deleted: {filename}", type="message")
