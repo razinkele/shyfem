@@ -165,6 +165,10 @@ class Config(BaseSettings):
     )
 
     # Proxy settings (server mode)
+    root_path: str = Field(
+        default="",
+        description="ASGI root_path for reverse proxy deployment (e.g., '/shyfem-ui')"
+    )
     trusted_proxies: list[str] = Field(
         default_factory=list,
         description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])"

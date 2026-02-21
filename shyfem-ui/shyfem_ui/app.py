@@ -654,6 +654,7 @@ Environment variables (can be used instead of arguments):
   SHYFEM_UI_DEPLOYMENT_MODE   'local' or 'server'
   SHYFEM_UI_USE_CELERY        'true' for Celery job queue (server mode)
   SHYFEM_UI_DATABASE_URL      Database URL (default: sqlite)
+  SHYFEM_UI_ROOT_PATH         Root path for reverse proxy (e.g., '/shyfem-ui')
         """,
     )
 
@@ -728,12 +729,11 @@ Environment variables (can be used instead of arguments):
 
     # Run with Shiny's built-in server
     from shiny import run_app
-    run_app(
-        app,
-        host=host,
-        port=port,
-        reload=args.reload,
-    )
+    run_kwargs = dict(host=host, port=port, reload=args.reload)
+    if config.root_path:
+        run_kwargs["root_path"] = config.root_path
+        logger.info("  Root Path: %s", config.root_path)
+    run_app(app, **run_kwargs)
 
 
 if __name__ == "__main__":

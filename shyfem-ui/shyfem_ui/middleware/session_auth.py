@@ -100,7 +100,7 @@ _LOGIN_HTML = """\
       <div class="card-body p-4">
         <h3 class="card-title text-center mb-4">SHYFEM Login</h3>
         {error}
-        <form method="post" action="/login">
+        <form method="post" action="{login_action}">
           <div class="mb-3">
             <label for="username" class="form-label">Username</label>
             <input type="text" class="form-control" id="username"
@@ -161,9 +161,10 @@ class SessionAuthMiddleware:
             return
 
         # ----------------------------------------------------------
-        # Extract session cookie from headers
+        # Extract session cookie and root_path from scope
         # ----------------------------------------------------------
         session_token = self._extract_session_token(scope)
+        root_path = scope.get("root_path", "")
 
         # ----------------------------------------------------------
         # HTTP requests
@@ -174,17 +175,17 @@ class SessionAuthMiddleware:
 
             # GET /login -- serve the login page
             if path == "/login" and method == "GET":
-                await self._serve_login_page(send)
+                await self._serve_login_page(send, root_path=root_path)
                 return
 
             # POST /login -- authenticate credentials
             if path == "/login" and method == "POST":
-                await self._handle_login_post(receive, send)
+                await self._handle_login_post(receive, send, root_path=root_path)
                 return
 
             # GET /logout -- destroy session
             if path == "/logout" and method == "GET":
-                await self._handle_logout(session_token, send)
+                await self._handle_logout(session_token, send, root_path=root_path)
                 return
 
             # All other paths: require valid session
@@ -193,7 +194,7 @@ class SessionAuthMiddleware:
                 user = self.auth_service.validate_session(session_token)
 
             if user is None:
-                await self._redirect(send, "/login")
+                await self._redirect(send, f"{root_path}/login")
                 return
 
             token = _user_var.set(user)
@@ -240,9 +241,9 @@ class SessionAuthMiddleware:
                 return cookies.get("shyfem_session")
         return None
 
-    async def _serve_login_page(self, send, error: str = ""):
+    async def _serve_login_page(self, send, error: str = "", root_path: str = ""):
         """Send the login page HTML as a 200 response."""
-        html = _LOGIN_HTML.format(error=error)
+        html = _LOGIN_HTML.format(error=error, login_action=f"{root_path}/login")
         body = html.encode("utf-8")
         await send({
             "type": "http.response.start",
@@ -257,7 +258,7 @@ class SessionAuthMiddleware:
             "body": body,
         })
 
-    async def _handle_login_post(self, receive, send):
+    async def _handle_login_post(self, receive, send, root_path: str = ""):
         """Parse POST form data, authenticate, and redirect or re-render."""
         message = await receive()
         raw_body = message.get("body", b"")
@@ -272,7 +273,7 @@ class SessionAuthMiddleware:
                 "Invalid username or password."
                 "</div>"
             )
-            await self._serve_login_page(send, error=error_html)
+            await self._serve_login_page(send, error=error_html, root_path=root_path)
             return
 
         # Create session and set cookie
@@ -280,31 +281,35 @@ class SessionAuthMiddleware:
             user["id"], ttl_hours=self.session_ttl_hours
         )
         ttl_seconds = self.session_ttl_hours * 3600
+        cookie_path = root_path or "/"
         cookie = (
             f"shyfem_session={token}; "
-            f"Path=/; HttpOnly; SameSite=Lax; Max-Age={ttl_seconds}"
+            f"Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age={ttl_seconds}"
         )
+        redirect_to = f"{root_path}/" if root_path else "/"
         await send({
             "type": "http.response.start",
             "status": 302,
             "headers": [
-                (b"location", b"/"),
+                (b"location", redirect_to.encode("utf-8")),
                 (b"set-cookie", cookie.encode("utf-8")),
             ],
         })
         await send({"type": "http.response.body", "body": b""})
 
-    async def _handle_logout(self, session_token, send):
+    async def _handle_logout(self, session_token, send, root_path: str = ""):
         """Delete the session and redirect to /login with cookie cleared."""
         if session_token:
             self.auth_service.delete_session(session_token)
 
-        cookie = "shyfem_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
+        cookie_path = root_path or "/"
+        cookie = f"shyfem_session=; Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age=0"
+        redirect_to = f"{root_path}/login"
         await send({
             "type": "http.response.start",
             "status": 302,
             "headers": [
-                (b"location", b"/login"),
+                (b"location", redirect_to.encode("utf-8")),
                 (b"set-cookie", cookie.encode("utf-8")),
             ],
         })

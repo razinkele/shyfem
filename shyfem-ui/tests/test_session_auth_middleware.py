@@ -113,17 +113,20 @@ class TestMiddlewareLocalMode:
 # ------------------------------------------------------------------
 
 
-def _make_scope(method="GET", path="/", cookies=None):
+def _make_scope(method="GET", path="/", cookies=None, root_path=""):
     """Build an ASGI HTTP scope dict."""
     headers = []
     if cookies:
         headers.append((b"cookie", cookies.encode("utf-8")))
-    return {
+    scope = {
         "type": "http",
         "method": method,
         "path": path,
         "headers": headers,
     }
+    if root_path:
+        scope["root_path"] = root_path
+    return scope
 
 
 class TestMiddlewareHTTP:
@@ -348,3 +351,102 @@ class TestMiddlewareWebSocket:
         close_msg = send.call_args_list[0][0][0]
         assert close_msg["type"] == "websocket.close"
         assert close_msg["code"] == 4001
+
+
+# ------------------------------------------------------------------
+# Reverse proxy root_path support
+# ------------------------------------------------------------------
+
+
+class TestMiddlewareRootPath:
+    """Verify redirects and form actions include the ASGI root_path prefix."""
+
+    ROOT = "/shyfem-ui"
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_redirect_includes_root_path(self):
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(path="/dashboard", root_path=self.ROOT)
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        start_msg = send.call_args_list[0][0][0]
+        headers = dict(start_msg["headers"])
+        assert headers[b"location"] == b"/shyfem-ui/login"
+
+    @pytest.mark.asyncio
+    async def test_login_form_action_includes_root_path(self):
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(method="GET", path="/login", root_path=self.ROOT)
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        body_msg = send.call_args_list[1][0][0]
+        html = body_msg["body"].decode("utf-8")
+        assert 'action="/shyfem-ui/login"' in html
+
+    @pytest.mark.asyncio
+    async def test_post_login_redirects_to_root_path(self):
+        user = {"id": 1, "username": "u", "role": "user", "is_active": True}
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = user
+        auth_service.create_session.return_value = "tok"
+
+        inner_app = AsyncMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        receive = AsyncMock(return_value={"body": b"username=u&password=p"})
+        scope = _make_scope(method="POST", path="/login", root_path=self.ROOT)
+        send = AsyncMock()
+        await mw(scope, receive, send)
+
+        start_msg = send.call_args_list[0][0][0]
+        headers = dict(start_msg["headers"])
+        assert headers[b"location"] == b"/shyfem-ui/"
+        cookie = headers[b"set-cookie"].decode()
+        assert "Path=/shyfem-ui" in cookie
+
+    @pytest.mark.asyncio
+    async def test_logout_redirects_with_root_path(self):
+        auth_service = MagicMock()
+        auth_service.delete_session.return_value = True
+
+        inner_app = AsyncMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(
+            method="GET", path="/logout",
+            cookies="shyfem_session=tok", root_path=self.ROOT,
+        )
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        start_msg = send.call_args_list[0][0][0]
+        headers = dict(start_msg["headers"])
+        assert headers[b"location"] == b"/shyfem-ui/login"
+        cookie = headers[b"set-cookie"].decode()
+        assert "Path=/shyfem-ui" in cookie
+
+    @pytest.mark.asyncio
+    async def test_invalid_session_redirect_includes_root_path(self):
+        auth_service = MagicMock()
+        auth_service.validate_session.return_value = None
+
+        inner_app = AsyncMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(
+            cookies="shyfem_session=bad", root_path=self.ROOT,
+        )
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        start_msg = send.call_args_list[0][0][0]
+        headers = dict(start_msg["headers"])
+        assert headers[b"location"] == b"/shyfem-ui/login"
