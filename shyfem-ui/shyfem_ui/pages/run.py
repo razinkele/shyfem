@@ -25,6 +25,8 @@ from shyfem_ui.components.job_status import (
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
+from shyfem_ui.services.parser_grd import GrdParser
+from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
 
@@ -81,6 +83,54 @@ def get_solver_recommendation(
             f"Recommended: Direct Solver (SPARSKIT) — fastest for small/medium meshes"
         ),
     }
+
+
+def detect_mesh_node_count(
+    str_file: Path | str, working_dir: Path | str
+) -> int | None:
+    """Detect mesh node count from the grid file referenced in a STR file.
+
+    The STR $title section's 3rd non-empty line is the basin name (e.g. 'GRID/MM_coarse').
+    The grid file is {basnam}.grd relative to working_dir.
+    Returns node count or None if detection fails.
+    """
+    str_path = Path(str_file)
+    work_path = Path(working_dir)
+
+    if not str_path.exists():
+        return None
+
+    try:
+        content = str_path.read_text()
+        parsed = StrParser.parse(content)
+    except Exception:
+        return None
+
+    title_sec = parsed.sections.get("title")
+    if title_sec is None or len(title_sec.raw_lines) < 3:
+        return None
+
+    # 3rd non-empty, non-comment line in $title is the basin name
+    lines = [
+        ln.strip()
+        for ln in title_sec.raw_lines
+        if ln.strip() and not ln.strip().startswith(("#", "!"))
+    ]
+    if len(lines) < 3:
+        return None
+    basnam = lines[2]
+
+    # Try .grd then .bas extension
+    for ext in (".grd", ".bas"):
+        grid_path = work_path / f"{basnam}{ext}"
+        if grid_path.exists():
+            try:
+                grd = GrdParser.parse_file(grid_path)
+                return grd.num_nodes
+            except Exception:
+                continue
+
+    return None
 
 
 @module.ui

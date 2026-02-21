@@ -1,8 +1,14 @@
 """Tests for helper functions in pages/run.py."""
 
 from datetime import datetime, timedelta
+from pathlib import Path
 
-from shyfem_ui.pages.run import _estimate_eta, _stat_card, get_solver_recommendation
+from shyfem_ui.pages.run import (
+    _estimate_eta,
+    _stat_card,
+    detect_mesh_node_count,
+    get_solver_recommendation,
+)
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 
 
@@ -113,3 +119,53 @@ class TestGetSolverRecommendation:
         rec = get_solver_recommendation(None, 50000)
         assert rec["solver"] is None
         assert "detect" in rec["hint"].lower() or "manually" in rec["hint"].lower()
+
+
+class TestDetectMeshNodeCount:
+    """Tests for mesh node count detection from STR file."""
+
+    def test_valid_str_with_grid(self, tmp_path):
+        """Detects node count from grid file referenced in STR."""
+        # Create a minimal .grd file (3 nodes, 1 triangle)
+        # Format: record_type id type x y [depth]  for nodes
+        #         record_type id type n1 n2 n3      for elements
+        grd_content = (
+            "1 1 0 0.000000 0.000000 -5.000000\n"
+            "1 2 0 1.000000 0.000000 -5.000000\n"
+            "1 3 0 0.500000 1.000000 -5.000000\n"
+            "2 1 0 1 2 3\n"
+        )
+        grid_dir = tmp_path / "GRID"
+        grid_dir.mkdir()
+        (grid_dir / "test.grd").write_text(grd_content)
+
+        # Create STR file referencing the grid
+        str_content = "$title\n  Test sim\n  test_id\n  GRID/test\n$end\n$para\n$end\n"
+        str_file = tmp_path / "test.str"
+        str_file.write_text(str_content)
+
+        count = detect_mesh_node_count(str_file, tmp_path)
+        assert count == 3
+
+    def test_missing_grid_returns_none(self, tmp_path):
+        """Returns None when grid file doesn't exist."""
+        str_content = "$title\n  Test sim\n  test_id\n  GRID/missing\n$end\n$para\n$end\n"
+        str_file = tmp_path / "test.str"
+        str_file.write_text(str_content)
+
+        count = detect_mesh_node_count(str_file, tmp_path)
+        assert count is None
+
+    def test_no_title_section_returns_none(self, tmp_path):
+        """Returns None when STR has no $title section."""
+        str_content = "$para\n  idt = '300s'\n$end\n"
+        str_file = tmp_path / "test.str"
+        str_file.write_text(str_content)
+
+        count = detect_mesh_node_count(str_file, tmp_path)
+        assert count is None
+
+    def test_nonexistent_str_returns_none(self, tmp_path):
+        """Returns None for nonexistent STR file."""
+        count = detect_mesh_node_count(tmp_path / "nope.str", tmp_path)
+        assert count is None
