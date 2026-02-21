@@ -566,9 +566,37 @@ ifeq ($(COMPILER_PROFILE),SPEED)
   XFLAG = -DSHYFEM_SPEED
 endif
 
+# PGO (Profile-Guided Optimization) profiles for gfortran:
+#   Step 1: make clean && make fem COMPILER_PROFILE=SPEED_PGO_GEN [flags]
+#   Step 2: Run representative workload (generates .gcda files)
+#   Step 3: make clean && make fem COMPILER_PROFILE=SPEED_PGO_USE [flags]
+PGO_FLAGS =
+
+ifeq ($(COMPILER_PROFILE),SPEED_PGO_GEN)
+  CPROF = true
+  PROFILE = false
+  DEBUG = false
+  OPTIMIZE = HIGH
+  WARNING = false
+  BOUNDS = false
+  XFLAG = -DSHYFEM_SPEED
+  PGO_FLAGS = -fprofile-generate
+endif
+
+ifeq ($(COMPILER_PROFILE),SPEED_PGO_USE)
+  CPROF = true
+  PROFILE = false
+  DEBUG = false
+  OPTIMIZE = HIGH
+  WARNING = false
+  BOUNDS = false
+  XFLAG = -DSHYFEM_SPEED
+  PGO_FLAGS = -fprofile-use -fprofile-correction
+endif
+
 ifeq ($(CPROF),false)
   RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
-  RULES_MAKE_MESSAGE = "COMPILER_PROFILE must be one of NORMAL,CHECK,SPEED"
+  RULES_MAKE_MESSAGE = "COMPILER_PROFILE must be one of NORMAL,CHECK,SPEED,SPEED_PGO_GEN,SPEED_PGO_USE"
   $(warning COMPILER_PROFILE=$(COMPILER_PROFILE))
 endif
 
@@ -705,8 +733,9 @@ ifeq ($(OPTIMIZE),HIGH)
   FGNU_OPT   = -O3 -march=native -funroll-loops -ftree-vectorize
 endif
 ifeq ($(OPTIMIZE),NONE)
-  FGNU_OPT   = 
+  FGNU_OPT   =
 endif
+FGNU_OPT += $(PGO_FLAGS)
 
 FGNU_OMP   =
 ifeq ($(PARALLEL_OMP),true)

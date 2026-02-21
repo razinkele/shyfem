@@ -175,6 +175,8 @@ amgx-c-wrapper/src/
 *.bbl
 *.blg
 *.stb
+*.gcda
+*.gcno
 core
 fort.*
 nohup.out
