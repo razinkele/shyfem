@@ -708,6 +708,9 @@
 	nresid = 0
 	dresid = 0.
 
+!$OMP PARALLEL DO PRIVATE(k,l,lmin,lmax,depth,presbc,hlayer,hh,rhop, &
+!$OMP&   dpresc,presbt,pres,salt,bsigma) &
+!$OMP& REDUCTION(+:nresid,dresid) SCHEDULE(DYNAMIC)
 	do k=1,nkn
 	  depth = 0.
 	  presbc = 0.
@@ -743,6 +746,7 @@
 	    presbc = presbc + dpresc		!baroclinic pres. (bottom-lay.)
 	  end do
 	end do
+!$OMP END PARALLEL DO
 
 	resid = dresid/nresid
 
