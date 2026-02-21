@@ -142,11 +142,13 @@ class SessionAuthMiddleware:
         Default session time-to-live passed to ``create_session``.
     """
 
-    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24):
+    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24,
+                 root_path=""):
         self.app = app
         self.auth_service = auth_service
         self.local_mode = local_mode
         self.session_ttl_hours = session_ttl_hours
+        self.root_path = root_path.rstrip("/")
 
     async def __call__(self, scope, receive, send):
         # ----------------------------------------------------------
@@ -164,7 +166,7 @@ class SessionAuthMiddleware:
         # Extract session cookie and root_path from scope
         # ----------------------------------------------------------
         session_token = self._extract_session_token(scope)
-        root_path = scope.get("root_path", "")
+        root_path = scope.get("root_path", "") or self.root_path
 
         # ----------------------------------------------------------
         # HTTP requests

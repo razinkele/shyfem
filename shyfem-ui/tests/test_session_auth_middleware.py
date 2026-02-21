@@ -450,3 +450,19 @@ class TestMiddlewareRootPath:
         start_msg = send.call_args_list[0][0][0]
         headers = dict(start_msg["headers"])
         assert headers[b"location"] == b"/shyfem-ui/login"
+
+    @pytest.mark.asyncio
+    async def test_constructor_root_path_used_as_fallback(self):
+        """When scope has no root_path, the constructor value is used."""
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service, root_path="/shyfem-ui")
+
+        # Scope WITHOUT root_path — simulates Shiny Server
+        scope = _make_scope(path="/dashboard")
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        start_msg = send.call_args_list[0][0][0]
+        headers = dict(start_msg["headers"])
+        assert headers[b"location"] == b"/shyfem-ui/login"

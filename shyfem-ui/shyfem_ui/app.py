@@ -109,6 +109,7 @@ def create_app(config: Config | None = None) -> App:
         auth_service=auth_service,
         local_mode=is_local,
         session_ttl_hours=config.auth_session_ttl_hours,
+        root_path=config.root_path,
     )
     if not is_local and not config.default_admin_password and not config.auth_password:
         logger.warning(
