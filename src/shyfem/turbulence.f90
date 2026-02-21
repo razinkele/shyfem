@@ -428,6 +428,7 @@
 !           update boyancy and shear-frequency vectors
 !           ------------------------------------------------------
 
+	    !$OMP SIMD
 	    do l=flev,nlev-1
 	      laux = nlev - l
 	      nn(laux) = buoyf2(l,k)
@@ -593,6 +594,7 @@
 !           update viscosity and diffusivity
 !           ------------------------------------------------------
 
+	    !$OMP SIMD
 	    do l=flev-1,nlev
 	      laux = nlev - l
 	      visv(l,k) = num(laux)
@@ -794,6 +796,7 @@
 
 	integer l,laux
 
+        !$OMP SIMD
         do l=0,nlev
 	  laux = nlev - l
           num(l) = numv_gotm(laux,k)
