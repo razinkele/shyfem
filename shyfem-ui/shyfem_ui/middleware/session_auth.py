@@ -214,7 +214,11 @@ class SessionAuthMiddleware:
             if session_token:
                 user = self.auth_service.validate_session(session_token)
 
-            if user is None:
+            if user is None and not self.root_path:
+                # Direct deployment: reject unauthenticated WebSocket.
+                # Behind reverse proxy (Shiny Server): skip WS auth
+                # because the proxy gates access at the HTTP layer and
+                # its internal WS connection doesn't forward cookies.
                 await send({"type": "websocket.close", "code": 4001})
                 return
 

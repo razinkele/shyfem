@@ -466,3 +466,30 @@ class TestMiddlewareRootPath:
         start_msg = send.call_args_list[0][0][0]
         headers = dict(start_msg["headers"])
         assert headers[b"location"] == b"/shyfem-ui/login"
+
+    @pytest.mark.asyncio
+    async def test_websocket_allowed_without_cookie_when_behind_proxy(self):
+        """Shiny Server's internal WS doesn't forward cookies — allow through."""
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service, root_path="/shyfem-ui")
+
+        scope = {"type": "websocket", "headers": []}
+        await mw(scope, AsyncMock(), AsyncMock())
+
+        inner_app.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_websocket_rejected_without_cookie_direct_deploy(self):
+        """Without root_path (direct deploy), WS without cookie is rejected."""
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = {"type": "websocket", "headers": []}
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        inner_app.assert_not_called()
+        close_msg = send.call_args_list[0][0][0]
+        assert close_msg["code"] == 4001
