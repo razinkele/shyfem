@@ -630,15 +630,17 @@
 	real xadv,yadv
 	real area,vol
 
-	real, allocatable :: saux(:,:)
+	real, allocatable, save :: saux(:,:)
 	integer ierr
 
 !---------------------------------------------------------------
 ! initialization
 !---------------------------------------------------------------
 
-	allocate(saux(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if (.not. allocated(saux)) then
+	  allocate(saux(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
 
 	saux = 0.
 	momentxv = 0.
@@ -1049,15 +1051,19 @@
 
         real rhop,presbt,presbcx,presbcy,dprescx,dprescy,br,cr!dbf
         real b,c
-	real, allocatable :: bpresxv(:,:), bpresyv(:,:)
+	real, allocatable, save :: bpresxv(:,:), bpresyv(:,:)
 	integer ierr
 
         call get_timestep(dt)
 
-	allocate(bpresxv(nlv,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(bpresyv(nlv,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if (.not. allocated(bpresxv)) then
+	  allocate(bpresxv(nlv,nel),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(bpresyv)) then
+	  allocate(bpresyv(nlv,nel),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
 	bpresxv = 0.
 	bpresyv = 0.
 
@@ -1272,8 +1278,8 @@
 	real hkk
 	!real hkko(0:nlvdi,nkn)	!depth of interface at node
 	!real hkkom(0:nlvdi,nkn)	!average depth of layer at node
-	real, allocatable :: hkko(:,:)	!depth of interface at node
-	real, allocatable :: hkkom(:,:)	!average depth of layer at node
+	real, allocatable, save :: hkko(:,:)	!depth of interface at node
+	real, allocatable, save :: hkkom(:,:)	!average depth of layer at node
 	!real, allocatable :: aux2d(:)	!temporary
 	!real, allocatable :: aux3d(:,:)	!temporary
 	real hele
@@ -1321,10 +1327,14 @@
         raux=grav/rowass
 	psigma = 0.
 	
-	allocate(hkko(0:nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(hkkom(0:nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if (.not. allocated(hkko)) then
+	  allocate(hkko(0:nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
+	if (.not. allocated(hkkom)) then
+	  allocate(hkkom(0:nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	end if
 	!allocate(aux3d(nlvdi,nkn))
 	!allocate(aux2d(nkn))
 
@@ -1549,8 +1559,6 @@
           end do
         end do
         
-	deallocate(hkko)
-	deallocate(hkkom)
 
 	return
    99	continue
