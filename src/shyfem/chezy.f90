@@ -284,6 +284,8 @@
 ! loop on elements
 !-------------------------------------------------------------------
 
+!$OMP PARALLEL DO PRIVATE(ie,lmax,uso,vso,uv,hzg,rfric,rr,rcd,ss,uuvv,ii,k,alpha) &
+!$OMP& SCHEDULE(STATIC) IF(ireib <= 7)
 	do ie=1,nel
 
 !         ----------------------------------------------------------
@@ -393,6 +395,7 @@
 	  bnstressv(ie) = rcd * uuvv * uuvv
 
 	end do
+!$OMP END PARALLEL DO
 
 !-------------------------------------------------------------------
 ! end of routine
