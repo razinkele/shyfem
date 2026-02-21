@@ -185,6 +185,7 @@
 ! compute richardson number for each water column
 !------------------------------------------------------
 
+!$OMP PARALLEL DO PRIVATE(k,l,nlev,flev,h,ri,vis,dif) SCHEDULE(DYNAMIC)
 	do k=1,nkn
 
 	    nlev = nlvdi
@@ -219,6 +220,7 @@
             end if
 
 	end do
+!$OMP END PARALLEL DO
 
 !------------------------------------------------------
 ! end of routine
