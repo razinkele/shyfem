@@ -296,6 +296,7 @@ class ShyfemWrapper:
         mpi_np: int = 1,
         mpirun_path: str = "mpirun",
         options: list[str] | None = None,
+        solver: str = "sparskit",
         progress_callback: Callable[[float, str], None] | None = None,
         output_callback: Callable[[str], None] | None = None,
     ) -> CommandResult:
@@ -308,7 +309,9 @@ class ShyfemWrapper:
             mpi_np: Number of MPI processes
             mpirun_path: Path to mpirun executable
             options: Additional options
+            solver: Solver variant ('sparskit' or 'petsc')
         """
+        tool_name = self.SOLVER_EXECUTABLES.get(solver, "shyfem")
         args_list = options or []
         args_list.append(str(str_file))
 
@@ -317,7 +320,7 @@ class ShyfemWrapper:
             prefix = [mpirun_path, "-np", str(mpi_np)]
 
         return await self.run_command(
-            "shyfem", args_list, working_dir,
+            tool_name, args_list, working_dir,
             progress_callback, output_callback,
             command_prefix=prefix,
         )

@@ -340,3 +340,47 @@ class TestShyfemWrapperExtended:
         assert wrapper.check_available("shypre") is True
         assert wrapper.check_available("shyfem") is True
         assert wrapper.check_available("shyplot") is False
+
+
+class TestRunShyfemSolver:
+    """Tests for solver selection in run_shyfem."""
+
+    @pytest.fixture
+    def wrapper(self, tmp_path):
+        shyfem_dir = tmp_path / "shyfem"
+        shyfem_dir.mkdir()
+        (shyfem_dir / "bin").mkdir()
+        # Create both solver binaries as shell scripts
+        for name in ("shyfem", "shyfem-petsc"):
+            exe = shyfem_dir / "bin" / name
+            exe.write_text("#!/bin/bash\necho 'solver=$0'")
+            exe.chmod(0o755)
+        return ShyfemWrapper(shyfem_dir)
+
+    @pytest.mark.asyncio
+    async def test_default_solver_uses_shyfem(self, wrapper, tmp_path):
+        """No solver arg uses bin/shyfem."""
+        result = await wrapper.run_shyfem("test.str", tmp_path)
+        assert "shyfem" in result.command
+        assert "shyfem-petsc" not in result.command
+
+    @pytest.mark.asyncio
+    async def test_petsc_solver_uses_shyfem_petsc(self, wrapper, tmp_path):
+        """solver='petsc' uses bin/shyfem-petsc."""
+        result = await wrapper.run_shyfem("test.str", tmp_path, solver="petsc")
+        assert "shyfem-petsc" in result.command
+
+    @pytest.mark.asyncio
+    async def test_sparskit_solver_uses_shyfem(self, wrapper, tmp_path):
+        """solver='sparskit' uses bin/shyfem."""
+        result = await wrapper.run_shyfem("test.str", tmp_path, solver="sparskit")
+        assert "shyfem" in result.command
+        assert "shyfem-petsc" not in result.command
+
+    @pytest.mark.asyncio
+    async def test_petsc_solver_not_found_raises(self, wrapper, tmp_path):
+        """solver='petsc' raises FileNotFoundError if binary missing."""
+        # Remove petsc binary
+        (wrapper.bin_dir / "shyfem-petsc").unlink()
+        with pytest.raises(FileNotFoundError):
+            await wrapper.run_shyfem("test.str", tmp_path, solver="petsc")
