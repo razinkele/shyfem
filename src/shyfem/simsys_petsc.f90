@@ -287,6 +287,32 @@
 
 !******************************************************************
 
+        subroutine system_assemble_omp(ie,kn_arg,hia_arg,hik_arg)
+
+! assembles element matrix into system matrix (OpenMP-safe version)
+! Accepts local arrays instead of using module variables
+! PETSc MatSetValues/VecSetValues are not thread-safe,
+! so we use OMP CRITICAL to serialize access
+
+        use mod_zeta_system
+
+        implicit none
+
+        integer, intent(in) :: ie
+        integer, intent(in) :: kn_arg(3)
+        real, intent(in) :: hia_arg(3,3)
+        real, intent(in) :: hik_arg(3)
+
+!$OMP CRITICAL(petsc_assemble)
+        zeta_system%mat3x3 = hia_arg
+        zeta_system%vecx3 = hik_arg
+        call zeta_system%add_matvec_values(ie)
+!$OMP END CRITICAL(petsc_assemble)
+
+        end subroutine system_assemble_omp
+
+!******************************************************************
+
         subroutine system_get(n,z)
 
 ! copies solution back to z

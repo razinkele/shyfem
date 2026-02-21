@@ -112,7 +112,7 @@ ifeq ($(SOLVER),SPARSKIT)
 endif
 
 ifeq ($(SOLVER),PETSC)
-   LIBG_PETSC = -L$(PETSC_DIR)/lib -lpetsc
+   LIBG_PETSC = -L$(PETSC_DIR)/lib -lpetsc_real
    SOLVER_OBJ		 =  matrix_inv.o \
 	amgx_c_wrapper_dummy.o mod_petsc_global.o \
 	mod_petsc_system.o simsys_petsc.o
