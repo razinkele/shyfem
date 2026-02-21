@@ -134,3 +134,68 @@ class TestAdminPanel:
         pw_auth_page.wait_for_timeout(500)
         badges = pw_auth_page.locator(".badge.bg-success, .badge.bg-secondary, .badge.bg-danger, .badge.bg-primary")
         assert badges.count() >= 1
+
+
+class TestSharingUI:
+    """Tests for the project sharing modal (requires a project to exist)."""
+
+    def _ensure_project(self, pw_auth_page):
+        """Create a project if none exists, return to Dashboard."""
+        _switch_tab(pw_auth_page, "Dashboard")
+        pw_auth_page.wait_for_timeout(1000)
+
+        # Check if any project links exist
+        project_links = pw_auth_page.locator("[id^='home-project_']")
+        if project_links.count() == 0:
+            # Create a new project
+            pw_auth_page.locator("#home-new_project_btn").click(force=True)
+            pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
+            pw_auth_page.locator("#home-project_name").fill("TestProject")
+            pw_auth_page.locator("#home-create_project_btn").click(force=True)
+            pw_auth_page.wait_for_timeout(3000)
+            _dismiss_modals(pw_auth_page)
+
+    def test_share_button_visible_for_owner(self, pw_auth_page):
+        """Share button appears on owned projects."""
+        self._ensure_project(pw_auth_page)
+        _switch_tab(pw_auth_page, "Dashboard")
+        pw_auth_page.wait_for_timeout(1000)
+        share_btns = pw_auth_page.locator("[id^='home-share_']")
+        assert share_btns.count() >= 1
+
+    def test_share_modal_opens(self, pw_auth_page):
+        """Clicking Share opens the sharing modal."""
+        self._ensure_project(pw_auth_page)
+        _switch_tab(pw_auth_page, "Dashboard")
+        pw_auth_page.wait_for_timeout(1000)
+        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
+        # Modal should mention "Share" in title
+        modal_text = pw_auth_page.locator(".modal.show").inner_text()
+        assert "Share" in modal_text or "Current Access" in modal_text or "Add User" in modal_text
+        _dismiss_modals(pw_auth_page)
+
+    def test_share_modal_has_role_selector(self, pw_auth_page):
+        """Share modal has a role selector (requires testuser from TestAdminPanel)."""
+        self._ensure_project(pw_auth_page)
+        _switch_tab(pw_auth_page, "Dashboard")
+        pw_auth_page.wait_for_timeout(1000)
+        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
+        pw_auth_page.wait_for_timeout(500)
+        # Role selector is rendered when shareable users exist
+        role_select = pw_auth_page.locator("#home-share_role")
+        assert role_select.count() >= 1
+        _dismiss_modals(pw_auth_page)
+
+    def test_share_modal_has_user_selector(self, pw_auth_page):
+        """Share modal has a user dropdown (requires testuser from TestAdminPanel)."""
+        self._ensure_project(pw_auth_page)
+        _switch_tab(pw_auth_page, "Dashboard")
+        pw_auth_page.wait_for_timeout(1000)
+        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
+        pw_auth_page.wait_for_timeout(500)
+        user_select = pw_auth_page.locator("#home-share_user_id")
+        assert user_select.count() >= 1
+        _dismiss_modals(pw_auth_page)
