@@ -28,6 +28,7 @@ from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, Job
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.report import generate_job_report
+from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
 
 logger = logging.getLogger(__name__)
@@ -188,6 +189,22 @@ def run_ui():
                                 max=128,
                             ),
                         ),
+                    ),
+                    # Solver options (shown for shyfem)
+                    ui.panel_conditional(
+                        "input.tool_select === 'shyfem'",
+                        ui.hr(),
+                        ui.h6("Solver Options"),
+                        ui.input_select(
+                            "solver_select",
+                            "Solver",
+                            choices={
+                                "sparskit": "Direct Solver (SPARSKIT)",
+                                "petsc": "Iterative Solver (PETSc)",
+                            },
+                            selected="sparskit",
+                        ),
+                        ui.output_ui("solver_hint"),
                     ),
                     # Job dependency (optional)
                     ui.hr(),
@@ -382,6 +399,38 @@ def run_server(
         ui.update_select("tool_select", selected="shyfem")
         tutorial_context.set(None)
 
+    @render.ui
+    def solver_hint():
+        """Show solver recommendation and availability hint."""
+        # Check PETSc availability
+        petsc_available = config.shyfem_dir and ShyfemWrapper(
+            config.shyfem_dir
+        ).check_solver_available("petsc")
+
+        # Detect mesh size from input file
+        input_file = input.input_file()
+        working_dir = input.working_dir()
+        num_nodes = None
+        if input_file and working_dir:
+            num_nodes = detect_mesh_node_count(input_file, working_dir)
+
+        rec = get_solver_recommendation(num_nodes, config.solver_node_threshold)
+        parts = []
+
+        if not petsc_available:
+            parts.append(
+                ui.p(
+                    "PETSc solver not installed. Build with: ",
+                    ui.code("make petsc"),
+                    class_="text-warning small mb-1",
+                )
+            )
+
+        if rec["hint"]:
+            parts.append(ui.p(rec["hint"], class_="text-muted small mb-0"))
+
+        return ui.div(*parts) if parts else ui.div()
+
     # State
     active_jobs_data = reactive.value([])
     all_jobs_data = reactive.value([])
@@ -502,6 +551,11 @@ def run_server(
         # Build job spec
         args = [str(validated_input)]
         metadata = _get_job_metadata(_session_id, _user_id)
+
+        # Solver selection
+        solver = input.solver_select() if tool == "shyfem" else "sparskit"
+        if solver == "petsc":
+            metadata["solver"] = "petsc"
 
         # Check dependency
         depends_on = input.depends_on()
