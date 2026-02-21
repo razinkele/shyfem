@@ -36,6 +36,7 @@ if __name__ == "__main__":
         default_admin_password="testpass",
         auth_session_ttl_hours=24,
         debug=False,
+        root_path="",
     )
     set_config(config)
 
