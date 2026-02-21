@@ -477,10 +477,6 @@ ifeq ($(ECOLOGICAL),BFM)
 endif
 
 ifeq ($(PARALLEL_MPI),NODE)
-  ifeq ($(PARALLEL_OMP),true)
-    RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
-    RULES_MAKE_MESSAGE = "OMP and MPI parallelization are incompatible"
-  endif
   ifeq ($(PARTS),NONE)
     RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
     RULES_MAKE_MESSAGE = "MPI parallelization PARTS = METIS"
