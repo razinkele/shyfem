@@ -1029,17 +1029,44 @@ def home_server(
 
     from shyfem_ui.services.sharing_service import SharingService
 
+    # Dedup set prevents effect accumulation (Shiny for Python does not
+    # auto-destroy child effects when a parent @reactive.effect re-runs).
+    _registered_handlers: set = set()
+
     @reactive.effect
     def _register_share_handlers():
         project_data = projects.get()
         for p in project_data:
             _make_share_handler(p["id"], p["name"])
+            _make_confirm_share_handler(p["id"])
 
     def _make_share_handler(pid: int, pname: str):
+        key = f"share_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
         @reactive.effect
-        @reactive.event(input[f"share_{pid}"])
+        @reactive.event(input[key])
         def _share():
             _show_share_modal(pid, pname)
+
+    def _make_confirm_share_handler(pid: int):
+        key = f"confirm_share_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
+        @reactive.effect
+        @reactive.event(input[key])
+        def _do_share():
+            uid = int(input.share_user_id())
+            role = input.share_role()
+            svc_inner = SharingService()
+            svc_inner.share_project(pid, uid, role)
+            ui.notification_show("User added", type="message")
+            ui.modal_remove()
+            _refresh_projects()
 
     def _show_share_modal(project_id: int, project_name: str):
         svc = SharingService()
@@ -1113,29 +1140,21 @@ def home_server(
             title=f"Share '{project_name}'",
             easy_close=True,
         )
+        ui.modal_remove()
         ui.modal_show(m)
 
-        # Register confirm handler
-        @reactive.effect
-        @reactive.event(input[f"confirm_share_{project_id}"])
-        def _do_share():
-            uid = int(input.share_user_id())
-            role = input.share_role()
-            svc_inner = SharingService()
-            svc_inner.share_project(project_id, uid, role)
-            ui.notification_show("User added", type="message")
-            ui.modal_remove()
-            _refresh_projects()
-
-        # Register unshare handlers
+        # Register unshare handlers for existing permissions
         for p in perm_data:
-            _make_unshare_handler(project_id, project_name, p["user_id"])
+            _make_unshare_handler(project_id, p["user_id"])
 
-    def _make_unshare_handler(
-        project_id: int, project_name: str, target_user_id: int
-    ):
+    def _make_unshare_handler(project_id: int, target_user_id: int):
+        key = f"unshare_{project_id}_{target_user_id}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
         @reactive.effect
-        @reactive.event(input[f"unshare_{project_id}_{target_user_id}"])
+        @reactive.event(input[key])
         def _unshare():
             svc = SharingService()
             svc.unshare_project(project_id, target_user_id)
