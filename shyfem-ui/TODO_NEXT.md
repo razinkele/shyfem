@@ -624,6 +624,32 @@
 
 ---
 
+## Phase 46: Sharing UI & Access Control
+
+> Project-level access control enforcement and sharing UI — owners/admins
+> can share projects with viewer/editor roles via a modal dialog.
+
+- [x] **46.1** Access control helper (`services/access_control.py`) — 11 tests
+  - `check_project_access(project_id, user, min_role)` with role hierarchy
+  - Admin bypass, owner/editor/viewer roles, `session_factory` for testing
+
+- [x] **46.2** Admin page guard — 3 tests
+  - `_check_admin_access()` pure function, early return with "Access Denied"
+
+- [x] **46.3** Enforcement in project_context, run.py, files.py — 5 tests
+  - `load_project_context` gains `user`/`session_factory` params with viewer check
+  - Run page: editor role required to submit jobs
+  - Files page: editor role required to upload/delete files
+
+- [x] **46.4** Share button & modal on Dashboard — 8 tests
+  - `_should_show_share_button()` and `_build_permissions_table_data()` pure functions
+  - Share modal with user search, role selector, permissions table, unshare
+
+- [x] **46.5** Wire user param into all `load_project_context` callers
+  - All 5 calls in home.py updated to pass `user=_current_user`
+
+---
+
 ## Implementation Priority
 
 ```

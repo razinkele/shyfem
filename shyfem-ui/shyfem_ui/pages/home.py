@@ -566,7 +566,7 @@ def home_server(
 
             # Activate project so target pages can auto-fill fields
             from shyfem_ui.services.project_context import load_project_context
-            ctx = load_project_context(project_id)
+            ctx = load_project_context(project_id, user=_current_user)
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
@@ -590,7 +590,7 @@ def home_server(
         """Load project context, set active, navigate to Grid Prep."""
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id)
+        ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
             ui.notification_show("Project not found", type="error")
             return
@@ -732,7 +732,7 @@ def home_server(
         project_id = int(project_id_str)
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id)
+        ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
             ui.notification_show("Project not found", type="error")
             return
@@ -789,7 +789,7 @@ def home_server(
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import export_project
 
-        ctx = load_project_context(project_id)
+        ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
             ui.notification_show("Project not found", type="error")
             return
@@ -838,7 +838,7 @@ def home_server(
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import clone_project
 
-        ctx = load_project_context(project_id)
+        ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
             ui.notification_show("Project not found", type="error")
             return
