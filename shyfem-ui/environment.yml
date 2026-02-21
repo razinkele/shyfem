@@ -38,7 +38,6 @@ dependencies:
       - pytest>=7.0
       - pytest-asyncio>=0.21
       - pytest-cov>=4.0
-      - pytest-shiny>=0.1.0
       - playwright>=1.50
       - pytest-playwright>=0.4
       - pytest-base-url>=2.0
