@@ -144,6 +144,24 @@ class TestShyfemWrapper:
 
         assert progress is None
 
+    def test_check_solver_available_sparskit(self, wrapper):
+        """SPARSKIT available when bin/shyfem exists."""
+        (wrapper.bin_dir / "shyfem").touch()
+        assert wrapper.check_solver_available("sparskit") is True
+
+    def test_check_solver_available_petsc_missing(self, wrapper):
+        """PETSc unavailable when bin/shyfem-petsc doesn't exist."""
+        assert wrapper.check_solver_available("petsc") is False
+
+    def test_check_solver_available_petsc_present(self, wrapper):
+        """PETSc available when bin/shyfem-petsc exists."""
+        (wrapper.bin_dir / "shyfem-petsc").touch()
+        assert wrapper.check_solver_available("petsc") is True
+
+    def test_check_solver_available_unknown(self, wrapper):
+        """Unknown solver returns False."""
+        assert wrapper.check_solver_available("unknown") is False
+
     def test_find_output_files(self, wrapper, tmp_path):
         """Test finding output files."""
         # Create some output files

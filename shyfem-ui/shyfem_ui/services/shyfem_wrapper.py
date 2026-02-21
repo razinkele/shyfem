@@ -74,6 +74,19 @@ class ShyfemWrapper:
         except FileNotFoundError:
             return False
 
+    # Map solver names to executable names
+    SOLVER_EXECUTABLES = {
+        "sparskit": "shyfem",
+        "petsc": "shyfem-petsc",
+    }
+
+    def check_solver_available(self, solver: str) -> bool:
+        """Check if a solver variant is available."""
+        exe_name = self.SOLVER_EXECUTABLES.get(solver)
+        if exe_name is None:
+            return False
+        return self.check_available(exe_name)
+
     async def run_command(
         self,
         tool_name: str,
