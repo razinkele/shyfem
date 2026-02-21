@@ -1,5 +1,7 @@
 # User Management Implementation Plan
 
+> **Status:** COMPLETE (2026-02-21) — 98 new tests, 949 total passing. Merged to main.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add multi-user authentication with session-based login, admin/user roles, project ownership, and sharing to SHYFEM-UI.
