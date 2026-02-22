@@ -155,7 +155,7 @@
            if (perr .ne. 0) then
               write(6,*)'Unable to read from config file ', &
      &                    petscconfig
-              stop
+              stop 'error stop mod_petsc_system: unable to read config'
            endif
          else
            write(6,*)'NO petsc_zconfig file was given. '

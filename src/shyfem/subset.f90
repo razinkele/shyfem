@@ -356,7 +356,7 @@
 	    ik = indipendent_subset(k,i)
  	    if (indipendent_element(ie,ik) .neqv. .true.) then
 	       print *,"  ERROR SUBSET NOT INDEPENDENT",i,ie,ik
-	       stop
+	       stop 'error stop subset: subsets not independent'
 	    endif
 	    
 	   endif

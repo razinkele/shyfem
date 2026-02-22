@@ -1237,7 +1237,7 @@
               if (id_ghost < 1) then
                 print *, "Bad conversion from"
                 print *, "SHYFEM distributed mesh to the ESMF one"
-                stop
+                stop 'error stop nuopc_shyfem_cap: bad mesh conversion'
               endif
               mesh%nen3v_ghost(i,ie) = id_ghost
             enddo

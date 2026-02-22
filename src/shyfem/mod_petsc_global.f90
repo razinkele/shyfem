@@ -77,7 +77,7 @@
      &                  perr)
          if (perr .ne. 0) then
             write(6,*)'Unable to initialize PETSc'
-            stop
+            stop 'error stop mod_petsc_global: unable to initialize PETSc'
          endif
 
 

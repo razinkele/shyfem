@@ -665,16 +665,6 @@
 
 	call shympi_barrier
 	return
-
-	if( shympi_is_master() ) then
-	  do j=1,knausm
-	    ke = knext(j)
-	    write(6,*) '++ ',ke,x(j),y(j),hdep(j)
-	  end do
-	end if
-	call shympi_finalize
-	stop
-
 	end
 
 !*********************************************************

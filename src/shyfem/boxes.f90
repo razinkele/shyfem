@@ -947,17 +947,6 @@
 	call flux_initialize(kfluxm,kflux,iflux,nsect,nslayers,nslmax)
 
 	return
-
-!	from here debug...
-
-	write(6,*) nsect
-	write(6,*) kfluxm
-	write(6,*) kflux(1:kfluxm)
-	do i=1,kfluxm
-	  write(6,*) iflux(:,i)
-	end do
-	stop
-
 	end
 
 !******************************************************************
