@@ -111,7 +111,7 @@ def build_mesh_figure(
                 x=edge_x,
                 y=edge_y,
                 mode="lines",
-                line=dict(color="#4a90d9", width=0.5),
+                line=dict(color="#2D9CBA", width=0.5),  # --sf-ocean-light
                 hoverinfo="skip",
                 name="Mesh",
             )
@@ -273,7 +273,7 @@ def build_mesh_figure(
                 x=edge_x,
                 y=edge_y,
                 mode="lines",
-                line=dict(color="#4a90d9", width=0.5),
+                line=dict(color="#2D9CBA", width=0.5),  # --sf-ocean-light
                 hoverinfo="skip",
                 name="Mesh",
             )

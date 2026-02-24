@@ -110,6 +110,10 @@ def create_app(config: Config | None = None) -> App:
     # Initialize database
     init_db()
 
+    # Register Plotly theme
+    from shyfem_ui.plotly_theme import register_shyfem_template
+    register_shyfem_template(dark=False)
+
     # Initialize auth service and ensure default admin exists
     auth_service = AuthService()
     if config.deployment_mode == "server":
@@ -772,6 +776,13 @@ def _build_server(
             logger.warning("Session cleanup failed: %s", exc)
 
     session.on_ended(_on_session_ended)
+
+    @reactive.effect
+    @reactive.event(input._dark_mode)
+    def _update_plotly_theme():
+        from shyfem_ui.plotly_theme import register_shyfem_template
+        is_dark = input._dark_mode()
+        register_shyfem_template(dark=bool(is_dark))
 
     # Initialize page servers
     home.home_server("home", config, job_queue, active_project=active_project, nav_callback=nav_to)
