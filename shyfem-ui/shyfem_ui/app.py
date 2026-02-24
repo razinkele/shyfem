@@ -535,11 +535,7 @@ def _build_sidebar_nav() -> ui.Tag:
 
 
 _HEAD_EXTRAS = ui.TagList(
-    # Bootstrap 5 CSS
-    ui.tags.link(
-        rel="stylesheet",
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css",
-    ),
+    # NOTE: Bootstrap 5 CSS/JS is NOT loaded here — page_fillable() already injects it.
     # Bootstrap Icons
     ui.tags.link(
         rel="stylesheet",
@@ -552,10 +548,6 @@ _HEAD_EXTRAS = ui.TagList(
     ),
     # Custom design system CSS
     ui.tags.link(rel="stylesheet", href="css/shyfem.css"),
-    # Bootstrap 5 JS bundle
-    ui.tags.script(
-        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js",
-    ),
     # WebSocket reconnection with exponential backoff
     ui.tags.script("""
 (function() {
@@ -584,6 +576,8 @@ document.addEventListener('DOMContentLoaded', function() {
   var saved = localStorage.getItem('shyfem-dark-mode');
   if (saved === 'true') {
     document.documentElement.setAttribute('data-bs-theme', 'dark');
+    var btn = document.getElementById('dark-mode-toggle');
+    if (btn) { var icon = btn.querySelector('i'); if (icon) icon.className = 'bi bi-sun'; }
   }
   // Sidebar collapse init
   var collapsed = localStorage.getItem('shyfem-sidebar-collapsed');
@@ -616,11 +610,12 @@ function shyfemNavTo(name) {
   var clicked = document.querySelector('.sf-nav-item[data-nav="' + name + '"]');
   if (clicked) clicked.classList.add('active');
 
-  // Show/hide pages
+  // Show/hide pages (IDs use hyphens instead of spaces)
   document.querySelectorAll('.sf-page').forEach(function(el) {
     el.classList.remove('active');
   });
-  var page = document.getElementById('sf-page-' + name);
+  var pageId = 'sf-page-' + name.replace(/ /g, '-');
+  var page = document.getElementById(pageId);
   if (page) {
     page.classList.add('active');
     page.classList.add('sf-page-enter');
@@ -704,7 +699,7 @@ def _build_ui(config: Config) -> ui.Tag:
     content_panels = ui.div(
         ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
         ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
-        ui.div(grid_prep.grid_prep_ui("grid_prep"), id="sf-page-Grid Prep", class_="sf-page"),
+        ui.div(grid_prep.grid_prep_ui("grid_prep"), id="sf-page-Grid-Prep", class_="sf-page"),
         ui.div(
             partitioning.partitioning_ui("partitioning"),
             id="sf-page-Partitioning",

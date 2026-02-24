@@ -294,38 +294,6 @@ def home_server(
             recent_jobs_list.set(jobs)
 
     @render.ui
-    def system_status():
-        # Check SHYFEM tools availability
-        tools = ["shypre", "shybas", "shyparts", "shyfem", "shyelab", "shyplot"]
-        tool_status = []
-
-        from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
-
-        wrapper = ShyfemWrapper(config.shyfem_dir)
-
-        for tool in tools:
-            available = wrapper.check_available(tool)
-            icon_cls = "bi-check-circle-fill" if available else "bi-x-circle-fill"
-            color = "text-success" if available else "text-danger"
-            tool_status.append(
-                ui.div(
-                    ui.span(tool, class_="me-2"),
-                    ui.tags.i(class_=f"bi {icon_cls} {color}"),
-                    class_="d-flex justify-content-between",
-                )
-            )
-
-        return ui.div(
-            *tool_status,
-            ui.hr(),
-            ui.div(
-                ui.span("SHYFEM Dir:", class_="text-muted"),
-                ui.br(),
-                ui.code(str(config.shyfem_dir), class_="small"),
-            ),
-        )
-
-    @render.ui
     def project_count():
         count = len(projects.get())
         return ui.span(str(count), class_="sf-metric-number")

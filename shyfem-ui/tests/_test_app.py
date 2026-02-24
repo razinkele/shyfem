@@ -6,6 +6,9 @@ whose interplay deadlocks the single-threaded event loop during the initial
 flush cycle.  We replace run_server with a lightweight version that only
 initialises state (so the UI elements exist) without the polling/refresh
 effects.
+
+Uses the new sidebar layout (matching app.py) so that E2E selectors
+like `.sf-nav-item[data-nav='...']` and `#sf-sidebar` work correctly.
 """
 
 import argparse
@@ -17,6 +20,7 @@ from shiny import App, module, reactive, render, ui
 # Ensure the package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from shyfem_ui.app import SIDEBAR_GROUPS, _HEAD_EXTRAS, _build_sidebar_nav
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
@@ -77,30 +81,56 @@ def create_test_app(config=None):
         max_workers=config.max_workers,
     )
 
-    try:
-        import shinyswatch
-        theme = getattr(shinyswatch.theme, config.theme, shinyswatch.theme.flatly)
-    except ImportError:
-        theme = None
+    sidebar = _build_sidebar_nav()
+
+    # Top bar (simplified for tests)
+    topbar = ui.div(
+        ui.div(
+            ui.tags.i(class_="bi bi-tsunami me-2", style="font-size:1.3rem"),
+            ui.span("SHYFEM Workbench", style="font-weight:600;font-size:1rem"),
+            class_="d-flex align-items-center",
+        ),
+        class_="sf-topbar",
+    )
+
+    # Content panels — one div per page, toggled by CSS (matches app.py)
+    content_panels = ui.div(
+        ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
+        ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
+        ui.div(grid_prep.grid_prep_ui("grid_prep"), id="sf-page-Grid-Prep", class_="sf-page"),
+        ui.div(
+            partitioning.partitioning_ui("partitioning"),
+            id="sf-page-Partitioning",
+            class_="sf-page",
+        ),
+        ui.div(
+            simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
+        ),
+        ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
+        ui.div(
+            postprocess.postprocess_ui("postprocess"),
+            id="sf-page-Post-Process",
+            class_="sf-page",
+        ),
+        ui.div(
+            visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"
+        ),
+        ui.div(compare.compare_ui("compare"), id="sf-page-Compare", class_="sf-page"),
+        ui.div(ensemble.ensemble_ui("ensemble"), id="sf-page-Ensemble", class_="sf-page"),
+        ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
+        ui.div(admin.admin_ui("admin"), id="sf-page-Admin", class_="sf-page"),
+        class_="sf-content",
+    )
 
     app_ui = ui.page_fillable(
-        ui.navset_tab(
-            ui.nav_panel("Dashboard", home.home_ui("home")),
-            ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
-            ui.nav_panel("Partitioning", partitioning.partitioning_ui("partitioning")),
-            ui.nav_panel("Simulation", simulation.simulation_ui("simulation")),
-            ui.nav_panel("Run", run.run_ui("run")),
-            ui.nav_panel("Post-Process", postprocess.postprocess_ui("postprocess")),
-            ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
-            ui.nav_panel("Compare", compare.compare_ui("compare")),
-            ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
-            ui.nav_panel("Files", files.files_ui("files")),
-            ui.nav_panel("Tutorial", tutorial.tutorial_ui("tutorial")),
-            ui.nav_panel("Admin", admin.admin_ui("admin")),
-            id="main_navbar",
+        ui.head_content(_HEAD_EXTRAS),
+        topbar,
+        ui.div(
+            sidebar,
+            content_panels,
+            class_="sf-layout",
         ),
         title="SHYFEM Workbench",
-        theme=theme,
     )
 
     def server(input, output, session):
@@ -137,7 +167,7 @@ def create_test_app(config=None):
         auth_service = AuthService()
         admin.admin_server("admin", config, auth_service)
 
-    return App(app_ui, server)
+    return App(app_ui, server, static_assets=Path(__file__).parent.parent / "shyfem_ui" / "www")
 
 
 if __name__ == "__main__":
