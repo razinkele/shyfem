@@ -6,7 +6,7 @@ from tests.conftest import _dismiss_modals
 
 pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
-_TAB = "#main_navbar > li > a[data-value='{name}']"
+_TAB = ".sf-nav-item[data-nav='{name}']"
 
 
 def _switch_tab(pw_page, name):
@@ -23,9 +23,8 @@ class TestNewTabNavigation:
     def test_tab_exists_and_activates(self, pw_page, tab_name):
         _switch_tab(pw_page, tab_name)
         tab = pw_page.locator(_TAB.format(name=tab_name))
-        assert (
-            "active" in (tab.get_attribute("class") or "")
-            or tab.get_attribute("aria-selected") == "true"
+        assert "active" in (
+            tab.get_attribute("class") or ""
         ), f"Tab '{tab_name}' did not become active"
 
 

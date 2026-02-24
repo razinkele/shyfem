@@ -6,7 +6,7 @@ from tests.conftest import _dismiss_modals
 
 pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
-_TAB = "#main_navbar > li > a[data-value='{name}']"
+_TAB = ".sf-nav-item[data-nav='{name}']"
 
 
 def _switch_tab(pw_page, tab_name: str):

@@ -13,7 +13,7 @@ from tests.conftest import _dismiss_modals
 pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
 _MODAL = ".modal.show"
-_TAB = "#main_navbar > li > a[data-value='{name}']"
+_TAB = ".sf-nav-item[data-nav='{name}']"
 
 
 def _switch_tab(pw_page, name):
@@ -62,10 +62,7 @@ class TestProjectWorkflow:
         # Activation navigates to Grid Prep via nav_callback -- verify the
         # Grid Prep tab became active or a notification appeared.
         grid_tab = pw_page.locator(_TAB.format(name="Grid Prep"))
-        is_active = (
-            "active" in (grid_tab.get_attribute("class") or "")
-            or grid_tab.get_attribute("aria-selected") == "true"
-        )
+        is_active = "active" in (grid_tab.get_attribute("class") or "")
         notification = pw_page.locator(".shiny-notification")
         assert is_active or notification.count() >= 1
 

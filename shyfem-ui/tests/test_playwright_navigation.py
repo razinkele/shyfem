@@ -21,8 +21,8 @@ TAB_NAMES = [
     "Admin",
 ]
 
-# Scope to main navbar to avoid inner sub-tab conflicts (e.g. Run > Dashboard)
-_TAB = "#main_navbar > li > a[data-value='{name}']"
+# Scope to sidebar nav to avoid inner sub-tab conflicts (e.g. Run > Dashboard)
+_TAB = ".sf-nav-item[data-nav='{name}']"
 
 
 class TestNavigation:
@@ -34,7 +34,7 @@ class TestNavigation:
 
     def test_navbar_visible(self, pw_page):
         """Test the main navbar is visible."""
-        navbar = pw_page.locator("#main_navbar")
+        navbar = pw_page.locator("#sf-sidebar")
         assert navbar.is_visible()
 
     def test_all_tabs_present(self, pw_page):
@@ -49,10 +49,7 @@ class TestNavigation:
         tab = pw_page.locator(_TAB.format(name="Dashboard"))
         tab.click(force=True)
         pw_page.wait_for_timeout(300)
-        assert (
-            "active" in (tab.get_attribute("class") or "")
-            or tab.get_attribute("aria-selected") == "true"
-        )
+        assert "active" in (tab.get_attribute("class") or "")
 
     @pytest.mark.parametrize("tab_name", TAB_NAMES)
     def test_switch_to_tab(self, pw_page, tab_name):
@@ -62,9 +59,8 @@ class TestNavigation:
         tab.click(force=True)
         pw_page.wait_for_timeout(500)
 
-        assert (
-            "active" in (tab.get_attribute("class") or "")
-            or tab.get_attribute("aria-selected") == "true"
+        assert "active" in (
+            tab.get_attribute("class") or ""
         ), f"Tab '{tab_name}' did not become active"
 
     def test_rapid_tab_switching(self, pw_page):
@@ -78,10 +74,7 @@ class TestNavigation:
         # After rapid switching, last tab should be active
         last = pw_page.locator(_TAB.format(name=TAB_NAMES[-1]))
         pw_page.wait_for_timeout(500)
-        assert (
-            "active" in (last.get_attribute("class") or "")
-            or last.get_attribute("aria-selected") == "true"
-        )
+        assert "active" in (last.get_attribute("class") or "")
 
     def test_page_does_not_crash_on_navigation(self, pw_page):
         """Test navigating through all tabs leaves no JS errors."""

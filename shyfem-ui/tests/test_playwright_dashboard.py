@@ -8,7 +8,7 @@ pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
 # Shiny modals get the .show class when visible
 _MODAL = ".modal.show"
-_TAB = "#main_navbar > li > a[data-value='{name}']"
+_TAB = ".sf-nav-item[data-nav='{name}']"
 
 
 def _ensure_dashboard(pw_page):

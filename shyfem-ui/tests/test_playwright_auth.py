@@ -6,7 +6,7 @@ from tests.conftest import _dismiss_modals, _login
 
 pytestmark = [pytest.mark.e2e]
 
-_TAB = "#main_navbar > li > a[data-value='{name}']"
+_TAB = ".sf-nav-item[data-nav='{name}']"
 _MODAL = ".modal.show"
 
 
@@ -80,7 +80,7 @@ class TestAuthenticatedApp:
 
     def test_main_navbar_visible(self, pw_auth_page):
         """After login, main navbar is visible."""
-        assert pw_auth_page.locator("#main_navbar").count() == 1
+        assert pw_auth_page.locator("#sf-sidebar").count() == 1
 
     def test_logout_button_visible(self, pw_auth_page):
         """Logout button is visible in the navbar."""
