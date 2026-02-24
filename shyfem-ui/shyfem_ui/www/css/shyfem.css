@@ -1,0 +1,575 @@
+/* ==========================================================================
+   SHYFEM Design System (shyfem.css)
+   Ocean-themed design system for the SHYFEM UI application.
+   Loaded AFTER Bootstrap 5 — all selectors override Bootstrap defaults.
+   ========================================================================== */
+
+/* ==========================================================================
+   1. CSS Custom Properties — Ocean palette (light mode)
+   ========================================================================== */
+
+:root {
+  /* Primary ocean blues */
+  --sf-ocean-deep: #0B3D5B;
+  --sf-ocean-mid: #1A6B8A;
+  --sf-ocean-light: #2D9CBA;
+
+  /* Accent colours */
+  --sf-teal: #3DB8A0;
+  --sf-coral: #E8725A;
+  --sf-amber: #E6A641;
+
+  /* Neutral surfaces */
+  --sf-sand: #F5F0E8;
+  --sf-sand-dark: #E8DFD0;
+  --sf-foam: #FFFFFF;
+
+  /* Text */
+  --sf-text: #2C3E50;
+  --sf-text-muted: #6B7C8D;
+}
+
+/* ==========================================================================
+   2. Dark-mode overrides
+   ========================================================================== */
+
+[data-bs-theme="dark"] {
+  --sf-ocean-deep: #0A2A3C;
+  --sf-ocean-mid: #1A8AAA;
+  --sf-sand: #1A2332;
+  --sf-sand-dark: #243040;
+  --sf-foam: #2A3545;
+  --sf-text: #E0E8F0;
+  --sf-text-muted: #8A9AAB;
+}
+
+/* ==========================================================================
+   3. Base resets
+   ========================================================================== */
+
+html,
+body {
+  background-color: var(--sf-sand);
+  color: var(--sf-text);
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  transition: background-color 300ms ease, color 300ms ease;
+}
+
+/* ==========================================================================
+   4. Typography
+   ========================================================================== */
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  font-weight: 600;
+  color: var(--sf-text);
+}
+
+body {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+code,
+pre,
+.font-monospace {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "Consolas",
+    monospace;
+  font-size: 13px;
+}
+
+/* ==========================================================================
+   5. Layout
+   ========================================================================== */
+
+.sf-layout {
+  display: flex;
+  height: calc(100vh - 48px);
+}
+
+.sf-topbar {
+  height: 48px;
+  background: var(--sf-ocean-deep);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  color: #fff;
+  z-index: 1000;
+}
+
+.sf-topbar-btn {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+  padding: 4px 12px;
+  transition: background-color 150ms ease, color 150ms ease;
+  cursor: pointer;
+}
+
+.sf-topbar-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* ==========================================================================
+   6. Sidebar
+   ========================================================================== */
+
+.sf-sidebar {
+  width: 240px;
+  background: var(--sf-ocean-deep);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  transition: width 250ms ease;
+  overflow: hidden;
+}
+
+.sf-sidebar-collapsed {
+  width: 60px;
+}
+
+/* Navigation items container */
+.sf-nav-items {
+  flex-grow: 1;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+
+/* Group headings (e.g. "SIMULATION", "ANALYSIS") */
+.sf-nav-group-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 16px 20px 6px;
+  font-weight: 600;
+}
+
+/* Individual nav items */
+.sf-nav-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.8);
+  gap: 12px;
+  margin: 2px 8px;
+  border-radius: 6px;
+  transition: background-color 150ms ease;
+  border-left: 3px solid transparent;
+  text-decoration: none;
+}
+
+.sf-nav-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  text-decoration: none;
+}
+
+.sf-nav-item.active {
+  border-left-color: var(--sf-ocean-light);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.sf-nav-icon {
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  font-size: 1.1rem;
+}
+
+.sf-nav-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.875rem;
+}
+
+/* Collapsed sidebar adjustments */
+.sf-sidebar-collapsed .sf-nav-label {
+  display: none;
+}
+
+.sf-sidebar-collapsed .sf-nav-group-header {
+  display: none;
+}
+
+.sf-sidebar-collapsed .sf-nav-item {
+  justify-content: center;
+  padding: 8px 0;
+  margin: 2px 4px;
+}
+
+/* Collapse / expand button at sidebar bottom */
+.sf-collapse-btn {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: auto;
+  padding: 12px 16px;
+}
+
+/* ==========================================================================
+   7. Content Area
+   ========================================================================== */
+
+.sf-content {
+  flex-grow: 1;
+  background: var(--sf-sand);
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.sf-page {
+  display: none;
+}
+
+.sf-page.active {
+  display: block;
+}
+
+.sf-page-enter {
+  animation: sfPageEnter 200ms ease-out;
+}
+
+@keyframes sfPageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ==========================================================================
+   8. Cards — Bootstrap .card overrides
+   ========================================================================== */
+
+.card {
+  background: var(--sf-foam);
+  border-radius: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(11, 61, 91, 0.08);
+  transition: box-shadow 200ms ease;
+}
+
+.card:hover {
+  box-shadow: 0 4px 12px rgba(11, 61, 91, 0.12);
+}
+
+.sf-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+/* Dark-mode card adjustments */
+[data-bs-theme="dark"] .card {
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+[data-bs-theme="dark"] .sf-card-header {
+  border-bottom-color: rgba(255, 255, 255, 0.06);
+}
+
+/* ==========================================================================
+   9. Buttons — Bootstrap .btn overrides
+   ========================================================================== */
+
+.btn {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 150ms ease;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+/* Primary */
+.btn-primary {
+  background-color: var(--sf-ocean-mid);
+  border-color: var(--sf-ocean-mid);
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background-color: var(--sf-ocean-deep);
+  border-color: var(--sf-ocean-deep);
+}
+
+/* Outline primary */
+.btn-outline-primary {
+  color: var(--sf-ocean-mid);
+  border-color: var(--sf-ocean-mid);
+}
+
+.btn-outline-primary:hover,
+.btn-outline-primary:focus {
+  background-color: var(--sf-ocean-mid);
+  color: #fff;
+}
+
+/* Success */
+.btn-success {
+  background-color: var(--sf-teal);
+  border-color: var(--sf-teal);
+}
+
+.btn-success:hover,
+.btn-success:focus {
+  background-color: #339980;
+  border-color: #339980;
+}
+
+/* Danger */
+.btn-danger {
+  background-color: var(--sf-coral);
+  border-color: var(--sf-coral);
+}
+
+.btn-danger:hover,
+.btn-danger:focus {
+  background-color: #D4604A;
+  border-color: #D4604A;
+}
+
+/* Outline secondary */
+.btn-outline-secondary {
+  border-color: var(--sf-ocean-mid);
+  color: var(--sf-ocean-mid);
+}
+
+/* ==========================================================================
+   10. Badges — Bootstrap badge overrides
+   ========================================================================== */
+
+.badge {
+  border-radius: 999px;
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 2px 10px;
+  letter-spacing: 0.02em;
+}
+
+.bg-success {
+  background-color: var(--sf-teal) !important;
+}
+
+.bg-danger {
+  background-color: var(--sf-coral) !important;
+}
+
+.bg-primary {
+  background-color: var(--sf-ocean-mid) !important;
+}
+
+.bg-info {
+  background-color: var(--sf-ocean-light) !important;
+}
+
+.bg-warning {
+  background-color: var(--sf-amber) !important;
+  color: var(--sf-text) !important;
+}
+
+.bg-secondary {
+  background-color: var(--sf-sand-dark) !important;
+  color: var(--sf-text) !important;
+}
+
+/* ==========================================================================
+   11. Form Controls
+   ========================================================================== */
+
+.form-control,
+.form-select {
+  border-radius: 8px;
+  border-color: var(--sf-sand-dark);
+  background-color: var(--sf-foam);
+  color: var(--sf-text);
+}
+
+.form-control:focus,
+.form-select:focus {
+  box-shadow: 0 0 0 3px rgba(26, 107, 138, 0.15);
+  border-color: var(--sf-ocean-light);
+}
+
+/* Dark-mode form controls */
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+  background-color: var(--sf-foam);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: var(--sf-text);
+}
+
+/* ==========================================================================
+   12. Progress Bars
+   ========================================================================== */
+
+.progress {
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--sf-sand-dark);
+}
+
+.progress-bar {
+  background: linear-gradient(90deg, var(--sf-ocean-mid), var(--sf-teal));
+  transition: width 500ms ease;
+}
+
+/* ==========================================================================
+   13. Animations
+   ========================================================================== */
+
+/* Skeleton / shimmer loading placeholder */
+.sf-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--sf-sand-dark) 25%,
+    var(--sf-sand) 50%,
+    var(--sf-sand-dark) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: 8px;
+  animation: sfShimmer 1.5s infinite;
+}
+
+@keyframes sfShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Pulse ring (e.g. "running" indicator) */
+.sf-pulse {
+  animation: sfPulse 2s infinite;
+}
+
+@keyframes sfPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(26, 107, 138, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(26, 107, 138, 0);
+  }
+}
+
+/* ==========================================================================
+   14. Metric Cards
+   ========================================================================== */
+
+.sf-metric-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.sf-metric-number {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sf-metric-label {
+  font-size: 12px;
+  color: var(--sf-text-muted);
+  display: block;
+}
+
+.sf-metric-text {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==========================================================================
+   15. Project Cards
+   ========================================================================== */
+
+.sf-project-card {
+  display: inline-block;
+  width: 200px;
+  transition: transform 200ms ease;
+  cursor: pointer;
+  vertical-align: top;
+}
+
+.sf-project-card:hover {
+  transform: translateY(-2px);
+}
+
+.sf-project-card.active {
+  border: 2px solid var(--sf-ocean-light);
+}
+
+/* ==========================================================================
+   16. Activity Timeline
+   ========================================================================== */
+
+.sf-timeline-item {
+  display: flex;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+}
+
+.sf-timeline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+/* ==========================================================================
+   17. Sidebar Scrollbar
+   ========================================================================== */
+
+.sf-sidebar ::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sf-sidebar ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+}
+
+.sf-sidebar ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ==========================================================================
+   18. Shiny Overrides
+   ========================================================================== */
+
+.shiny-notification {
+  border-radius: 8px;
+}
+
+/* Override Shiny busy-indicator colours with ocean-mid */
+.shiny-busy-indicator .progress-bar,
+.shiny-busy .progress-bar {
+  background-color: var(--sf-ocean-mid);
+}
