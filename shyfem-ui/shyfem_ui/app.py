@@ -11,7 +11,6 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-import shinyswatch
 from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
@@ -36,6 +35,46 @@ from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import NotificationService
 
 logger = logging.getLogger(__name__)
+
+SIDEBAR_GROUPS = [
+    {
+        "name": "Overview",
+        "items": [
+            {"label": "Dashboard", "icon": "bi-house", "value": "Dashboard"},
+            {"label": "Tutorial", "icon": "bi-mortarboard", "value": "Tutorial"},
+        ],
+    },
+    {
+        "name": "Prepare",
+        "items": [
+            {"label": "Grid Prep", "icon": "bi-grid-3x3", "value": "Grid Prep"},
+            {"label": "Partitioning", "icon": "bi-diagram-3", "value": "Partitioning"},
+        ],
+    },
+    {
+        "name": "Simulate",
+        "items": [
+            {"label": "Configuration", "icon": "bi-sliders", "value": "Simulation"},
+            {"label": "Run", "icon": "bi-play-circle", "value": "Run"},
+        ],
+    },
+    {
+        "name": "Analyze",
+        "items": [
+            {"label": "Post-Process", "icon": "bi-gear", "value": "Post-Process"},
+            {"label": "Visualize", "icon": "bi-graph-up", "value": "Visualize"},
+            {"label": "Compare", "icon": "bi-layout-split", "value": "Compare"},
+            {"label": "Ensemble", "icon": "bi-collection", "value": "Ensemble"},
+        ],
+    },
+    {
+        "name": "Manage",
+        "items": [
+            {"label": "Files", "icon": "bi-folder", "value": "Files"},
+            {"label": "Admin", "icon": "bi-shield-lock", "value": "Admin"},
+        ],
+    },
+]
 
 
 def _check_db_health() -> float:
@@ -457,11 +496,61 @@ class HealthCheckMiddleware:
             await result
 
 
+def _build_sidebar_nav() -> ui.Tag:
+    """Build the sidebar navigation HTML."""
+    nav_items = []
+    for group in SIDEBAR_GROUPS:
+        nav_items.append(
+            ui.div(
+                ui.span(group["name"], class_="sf-nav-group-header"),
+            )
+        )
+        for item in group["items"]:
+            active_class = " active" if item["value"] == "Dashboard" else ""
+            nav_items.append(
+                ui.div(
+                    ui.tags.i(class_=f"bi {item['icon']} sf-nav-icon"),
+                    ui.span(item["label"], class_="sf-nav-label"),
+                    class_=f"sf-nav-item{active_class}",
+                    data_nav=item["value"],
+                    onclick=f"shyfemNavTo('{item['value']}')",
+                )
+            )
+
+    return ui.div(
+        ui.div(*nav_items, class_="sf-nav-items"),
+        ui.div(
+            ui.tags.i(class_="bi bi-chevron-bar-left sf-nav-icon"),
+            ui.span("Collapse", class_="sf-nav-label"),
+            class_="sf-nav-item sf-collapse-btn",
+            onclick="shyfemToggleSidebar()",
+        ),
+        class_="sf-sidebar",
+        id="sf-sidebar",
+    )
+
+
 _HEAD_EXTRAS = ui.TagList(
+    # Bootstrap 5 CSS
+    ui.tags.link(
+        rel="stylesheet",
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css",
+    ),
     # Bootstrap Icons
     ui.tags.link(
         rel="stylesheet",
         href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css",
+    ),
+    # Google Fonts (Inter + JetBrains Mono)
+    ui.tags.link(
+        rel="stylesheet",
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
+    ),
+    # Custom design system CSS
+    ui.tags.link(rel="stylesheet", href="css/shyfem.css"),
+    # Bootstrap 5 JS bundle
+    ui.tags.script(
+        src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js",
     ),
     # WebSocket reconnection with exponential backoff
     ui.tags.script("""
@@ -484,22 +573,80 @@ _HEAD_EXTRAS = ui.TagList(
   window.WebSocket.prototype = origWS.prototype;
 })();
 """),
-    # Dark mode toggle handler
+    # Dark mode, sidebar, and navigation handler
     ui.tags.script("""
 document.addEventListener('DOMContentLoaded', function() {
+  // Dark mode init
   var saved = localStorage.getItem('shyfem-dark-mode');
   if (saved === 'true') {
     document.documentElement.setAttribute('data-bs-theme', 'dark');
   }
+  // Sidebar collapse init
+  var collapsed = localStorage.getItem('shyfem-sidebar-collapsed');
+  if (collapsed === 'true') {
+    var sb = document.getElementById('sf-sidebar');
+    if (sb) sb.classList.add('sf-sidebar-collapsed');
+  }
 });
+
 function shyfemToggleDark() {
   var html = document.documentElement;
   var isDark = html.getAttribute('data-bs-theme') === 'dark';
   html.setAttribute('data-bs-theme', isDark ? 'light' : 'dark');
   localStorage.setItem('shyfem-dark-mode', String(!isDark));
   var btn = document.getElementById('dark-mode-toggle');
-  if (btn) btn.textContent = isDark ? 'Dark' : 'Light';
+  if (btn) {
+    var icon = btn.querySelector('i');
+    if (icon) icon.className = isDark ? 'bi bi-moon' : 'bi bi-sun';
+  }
+  if (window.Shiny && Shiny.setInputValue) {
+    Shiny.setInputValue('_dark_mode', !isDark);
+  }
 }
+
+function shyfemNavTo(name) {
+  // Update active sidebar item
+  document.querySelectorAll('.sf-nav-item').forEach(function(el) {
+    el.classList.remove('active');
+  });
+  var clicked = document.querySelector('.sf-nav-item[data-nav="' + name + '"]');
+  if (clicked) clicked.classList.add('active');
+
+  // Show/hide pages
+  document.querySelectorAll('.sf-page').forEach(function(el) {
+    el.classList.remove('active');
+  });
+  var page = document.getElementById('sf-page-' + name);
+  if (page) {
+    page.classList.add('active');
+    page.classList.add('sf-page-enter');
+    setTimeout(function() { page.classList.remove('sf-page-enter'); }, 250);
+  }
+
+  // Notify Shiny
+  if (window.Shiny && Shiny.setInputValue) {
+    Shiny.setInputValue('_active_nav', name, {priority: 'event'});
+  }
+}
+
+function shyfemToggleSidebar() {
+  var sb = document.getElementById('sf-sidebar');
+  if (!sb) return;
+  sb.classList.toggle('sf-sidebar-collapsed');
+  var isCollapsed = sb.classList.contains('sf-sidebar-collapsed');
+  localStorage.setItem('shyfem-sidebar-collapsed', String(isCollapsed));
+  var icon = sb.querySelector('.sf-collapse-btn i');
+  if (icon) {
+    icon.className = isCollapsed ? 'bi bi-chevron-bar-right sf-nav-icon' : 'bi bi-chevron-bar-left sf-nav-icon';
+  }
+}
+
+// Server-initiated navigation
+$(document).on('shiny:connected', function() {
+  Shiny.addCustomMessageHandler('shyfem_nav', function(msg) {
+    shyfemNavTo(msg.tab);
+  });
+});
 """),
     # Meta tags
     ui.tags.meta(
@@ -519,47 +666,75 @@ function shyfemToggleDark() {
 
 
 def _build_ui(config: Config) -> ui.Tag:
-    """Build the application UI."""
-    # Build page with theme
-    theme = getattr(shinyswatch.theme, config.theme, shinyswatch.theme.flatly)
+    """Build the application UI with sidebar navigation."""
+    sidebar = _build_sidebar_nav()
+
+    # Top bar
+    topbar = ui.div(
+        ui.div(
+            ui.tags.i(class_="bi bi-tsunami me-2", style="font-size:1.3rem"),
+            ui.span("SHYFEM Workbench", style="font-weight:600;font-size:1rem"),
+            class_="d-flex align-items-center",
+        ),
+        ui.div(
+            ui.tags.button(
+                ui.tags.i(class_="bi bi-moon"),
+                id="dark-mode-toggle",
+                class_="btn btn-sm sf-topbar-btn me-2",
+                onclick="shyfemToggleDark()",
+                title="Toggle dark mode",
+            ),
+            ui.tags.a(
+                ui.tags.i(class_="bi bi-box-arrow-right me-1"),
+                "Logout",
+                href="/logout",
+                class_="btn btn-sm sf-topbar-btn",
+                id="logout-btn",
+            ),
+            class_="d-flex align-items-center",
+        ),
+        class_="sf-topbar",
+    )
+
+    # Content panels -- one div per page, toggled by CSS
+    content_panels = ui.div(
+        ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
+        ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
+        ui.div(grid_prep.grid_prep_ui("grid_prep"), id="sf-page-Grid Prep", class_="sf-page"),
+        ui.div(
+            partitioning.partitioning_ui("partitioning"),
+            id="sf-page-Partitioning",
+            class_="sf-page",
+        ),
+        ui.div(
+            simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
+        ),
+        ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
+        ui.div(
+            postprocess.postprocess_ui("postprocess"),
+            id="sf-page-Post-Process",
+            class_="sf-page",
+        ),
+        ui.div(
+            visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"
+        ),
+        ui.div(compare.compare_ui("compare"), id="sf-page-Compare", class_="sf-page"),
+        ui.div(ensemble.ensemble_ui("ensemble"), id="sf-page-Ensemble", class_="sf-page"),
+        ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
+        ui.div(admin.admin_ui("admin"), id="sf-page-Admin", class_="sf-page"),
+        class_="sf-content",
+    )
 
     return ui.page_fillable(
         ui.head_content(_HEAD_EXTRAS),
         ui.busy_indicators.use(spinners=True, pulse=True),
-        ui.navset_tab(
-            ui.nav_panel("Dashboard", home.home_ui("home")),
-            ui.nav_panel("Tutorial", tutorial.tutorial_ui("tutorial")),
-            ui.nav_panel("Grid Prep", grid_prep.grid_prep_ui("grid_prep")),
-            ui.nav_panel("Partitioning", partitioning.partitioning_ui("partitioning")),
-            ui.nav_panel("Simulation", simulation.simulation_ui("simulation")),
-            ui.nav_panel("Run", run.run_ui("run")),
-            ui.nav_panel("Post-Process", postprocess.postprocess_ui("postprocess")),
-            ui.nav_panel("Visualize", visualize.visualize_ui("visualize")),
-            ui.nav_panel("Compare", compare.compare_ui("compare")),
-            ui.nav_panel("Ensemble", ensemble.ensemble_ui("ensemble")),
-            ui.nav_panel("Files", files.files_ui("files")),
-            ui.nav_panel("Admin", admin.admin_ui("admin")),
-            ui.nav_spacer(),
-            ui.nav_control(
-                ui.tags.button(
-                    "Dark",
-                    id="dark-mode-toggle",
-                    class_="btn btn-outline-secondary btn-sm",
-                    onclick="shyfemToggleDark()",
-                ),
-            ),
-            ui.nav_control(
-                ui.tags.a(
-                    "Logout",
-                    href="/logout",
-                    class_="btn btn-outline-danger btn-sm ms-2",
-                    id="logout-btn",
-                ),
-            ),
-            id="main_navbar",
+        topbar,
+        ui.div(
+            sidebar,
+            content_panels,
+            class_="sf-layout",
         ),
         title="SHYFEM Workbench",
-        theme=theme,
     )
 
 
@@ -576,7 +751,8 @@ def _build_server(
     tutorial_context = reactive.value(None)
 
     def nav_to(tab_name: str):
-        ui.update_navs("main_navbar", selected=tab_name, session=session)
+        """Navigate to a tab via client-side JavaScript."""
+        session.send_custom_message("shyfem_nav", {"tab": tab_name})
 
     # Cancel orphaned running jobs when the browser session disconnects
     _cleanup_session_id = str(id(session))
