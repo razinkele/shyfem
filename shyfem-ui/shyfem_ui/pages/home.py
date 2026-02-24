@@ -85,82 +85,140 @@ def _build_permissions_table_data(permissions: list[dict]) -> list[dict]:
 
 @module.ui
 def home_ui():
-    """Dashboard page UI."""
+    """Dashboard page UI — rich metrics, project cards, activity timeline."""
     return ui.div(
-        # Header
+        # Welcome header
         ui.div(
-            ui.h2("SHYFEM Workbench"),
+            ui.h4("Welcome to SHYFEM Workbench", class_="mb-1"),
             ui.p(
-                "Finite Element Hydrodynamic Model - Web Interface",
-                class_="text-muted",
+                "Finite Element Hydrodynamic Model — Web Interface",
+                class_="text-muted mb-0",
+                style="font-size:0.9rem",
             ),
             class_="mb-4",
         ),
-        # Quick actions row
+        # Main two-column layout
         ui.row(
+            # Left column (8/12) — metrics + projects
             ui.column(
-                3,
+                8,
+                # Metric cards row
+                ui.row(
+                    ui.column(
+                        4,
+                        ui.div(
+                            ui.div(
+                                ui.div(
+                                    ui.tags.i(class_="bi bi-folder", style="font-size:1.4rem"),
+                                    class_="sf-metric-icon",
+                                    style="background:rgba(26,107,138,0.1);color:var(--sf-ocean-mid)",
+                                ),
+                                ui.div(
+                                    ui.output_ui("project_count"),
+                                    ui.span("Projects", class_="sf-metric-label"),
+                                    class_="sf-metric-text",
+                                ),
+                                class_="d-flex align-items-center gap-3",
+                            ),
+                            class_="card p-3",
+                        ),
+                    ),
+                    ui.column(
+                        4,
+                        ui.div(
+                            ui.div(
+                                ui.div(
+                                    ui.tags.i(class_="bi bi-activity", style="font-size:1.4rem"),
+                                    class_="sf-metric-icon",
+                                    style="background:rgba(61,184,160,0.1);color:var(--sf-teal)",
+                                ),
+                                ui.div(
+                                    ui.output_ui("active_job_count"),
+                                    ui.span("Active Jobs", class_="sf-metric-label"),
+                                    class_="sf-metric-text",
+                                ),
+                                class_="d-flex align-items-center gap-3",
+                            ),
+                            class_="card p-3",
+                        ),
+                    ),
+                    ui.column(
+                        4,
+                        ui.div(
+                            ui.div(
+                                ui.div(
+                                    ui.tags.i(class_="bi bi-cpu", style="font-size:1.4rem"),
+                                    class_="sf-metric-icon",
+                                    style="background:rgba(61,184,160,0.1);color:var(--sf-teal)",
+                                ),
+                                ui.div(
+                                    ui.output_ui("system_health_count"),
+                                    ui.span("Tools Ready", class_="sf-metric-label"),
+                                    class_="sf-metric-text",
+                                ),
+                                class_="d-flex align-items-center gap-3",
+                            ),
+                            class_="card p-3",
+                        ),
+                    ),
+                    class_="mb-3",
+                ),
+                # Projects section
                 ui.div(
-                    ui.h5("Quick Start"),
+                    ui.div(
+                        ui.h5("Projects", class_="mb-0"),
+                        class_="sf-card-header",
+                    ),
+                    ui.output_ui("projects_list"),
+                    class_="card p-3",
+                ),
+            ),
+            # Right column (4/12) — activity + quick start
+            ui.column(
+                4,
+                # Recent activity
+                ui.div(
+                    ui.div(
+                        ui.h5("Recent Activity", class_="mb-0"),
+                        ui.output_ui("show_all_toggle_ui"),
+                        class_="sf-card-header",
+                    ),
+                    ui.output_ui("recent_jobs"),
+                    class_="card p-3 mb-3",
+                ),
+                # Quick start
+                ui.div(
+                    ui.div(
+                        ui.h5("Quick Start", class_="mb-0"),
+                        class_="sf-card-header",
+                    ),
                     ui.input_action_button(
                         "new_project_btn",
-                        "New Project",
+                        ui.TagList(ui.tags.i(class_="bi bi-plus-lg me-2"), "New Project"),
                         class_="btn-primary w-100 mb-2",
                     ),
                     ui.input_action_button(
                         "open_project_btn",
-                        "Open Project",
+                        ui.TagList(ui.tags.i(class_="bi bi-folder2-open me-2"), "Open Project"),
                         class_="btn-outline-primary w-100 mb-2",
                     ),
                     ui.input_action_button(
                         "import_grid_btn",
-                        "Import Grid",
-                        class_="btn-outline-secondary w-100 mb-2",
+                        ui.TagList(ui.tags.i(class_="bi bi-upload me-2"), "Import Grid"),
+                        class_="btn-outline-primary w-100 mb-2",
                     ),
                     ui.input_action_button(
                         "import_project_btn",
-                        "Import Project",
-                        class_="btn-outline-secondary w-100 mb-2",
+                        ui.TagList(ui.tags.i(class_="bi bi-box-arrow-in-down me-2"), "Import Project"),
+                        class_="btn-outline-primary w-100 mb-2",
                     ),
                     ui.hr(),
-                    ui.h6("Tutorials", class_="text-muted"),
                     ui.input_action_button(
                         "tutorial_btn",
-                        "Mar Menor Tutorial",
+                        ui.TagList(ui.tags.i(class_="bi bi-mortarboard me-2"), "Mar Menor Tutorial"),
                         class_="btn-success w-100",
                     ),
                     class_="card p-3",
-                ),
-            ),
-            ui.column(
-                3,
-                ui.div(
-                    ui.h5("System Status"),
-                    ui.output_ui("system_status"),
-                    class_="card p-3",
-                ),
-            ),
-            ui.column(
-                6,
-                ui.div(
-                    ui.div(
-                        ui.h5("Recent Jobs", class_="d-inline"),
-                        ui.output_ui("show_all_toggle_ui"),
-                        class_="d-flex justify-content-between align-items-center",
-                    ),
-                    ui.output_ui("recent_jobs"),
-                    class_="card p-3",
-                ),
-            ),
-        ),
-        # Projects list
-        ui.row(
-            ui.column(
-                12,
-                ui.div(
-                    ui.h5("Projects"),
-                    ui.output_ui("projects_list"),
-                    class_="card p-3 mt-3",
                 ),
             ),
         ),
@@ -265,6 +323,32 @@ def home_server(
                 ui.br(),
                 ui.code(str(config.shyfem_dir), class_="small"),
             ),
+        )
+
+    @render.ui
+    def project_count():
+        count = len(projects.get())
+        return ui.span(str(count), class_="sf-metric-number")
+
+    @render.ui
+    def active_job_count():
+        jobs = recent_jobs_list.get()
+        active = sum(1 for j in jobs if j.status in (JobStatus.RUNNING, JobStatus.QUEUED))
+        pulse = " sf-pulse" if active > 0 else ""
+        return ui.span(str(active), class_=f"sf-metric-number{pulse}")
+
+    @render.ui
+    def system_health_count():
+        from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+        wrapper = ShyfemWrapper(config.shyfem_dir)
+        tools = ["shypre", "shybas", "shyparts", "shyfem", "shyelab", "shyplot"]
+        available = sum(1 for t in tools if wrapper.check_available(t))
+        color = "var(--sf-teal)" if available == len(tools) else "var(--sf-coral)"
+        return ui.span(
+            f"{available}/{len(tools)}",
+            class_="sf-metric-number",
+            style=f"color:{color}",
         )
 
     @render.ui
