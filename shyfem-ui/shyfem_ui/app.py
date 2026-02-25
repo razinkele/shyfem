@@ -626,6 +626,9 @@ function shyfemNavTo(name) {
   if (window.Shiny && Shiny.setInputValue) {
     Shiny.setInputValue('_active_nav', name, {priority: 'event'});
   }
+
+  // Auto-close sidebar on mobile after navigation
+  if (window.innerWidth <= 768) { shyfemCloseMobile(); }
 }
 
 function shyfemToggleSidebar() {
@@ -638,6 +641,22 @@ function shyfemToggleSidebar() {
   if (icon) {
     icon.className = isCollapsed ? 'bi bi-chevron-bar-right sf-nav-icon' : 'bi bi-chevron-bar-left sf-nav-icon';
   }
+}
+
+function shyfemToggleMobile() {
+  var sb = document.getElementById('sf-sidebar');
+  var bd = document.getElementById('sf-sidebar-backdrop');
+  if (!sb) return;
+  var isOpen = sb.classList.contains('sf-sidebar-open');
+  sb.classList.toggle('sf-sidebar-open', !isOpen);
+  if (bd) bd.classList.toggle('active', !isOpen);
+}
+
+function shyfemCloseMobile() {
+  var sb = document.getElementById('sf-sidebar');
+  var bd = document.getElementById('sf-sidebar-backdrop');
+  if (sb) sb.classList.remove('sf-sidebar-open');
+  if (bd) bd.classList.remove('active');
 }
 
 // Server-initiated navigation
@@ -671,6 +690,13 @@ def _build_ui(config: Config) -> ui.Tag:
     # Top bar
     topbar = ui.div(
         ui.div(
+            ui.tags.button(
+                ui.tags.i(class_="bi bi-list"),
+                class_="sf-hamburger me-2",
+                onclick="shyfemToggleMobile()",
+                title="Toggle navigation",
+                **{"aria-label": "Toggle navigation"},
+            ),
             ui.tags.i(class_="bi bi-tsunami me-2", style="font-size:1.3rem"),
             ui.span("SHYFEM Workbench", style="font-weight:600;font-size:1rem"),
             class_="d-flex align-items-center",
@@ -733,6 +759,7 @@ def _build_ui(config: Config) -> ui.Tag:
             content_panels,
             class_="sf-layout",
         ),
+        ui.div(class_="sf-sidebar-backdrop", id="sf-sidebar-backdrop", onclick="shyfemCloseMobile()"),
         title="SHYFEM Workbench",
     )
 

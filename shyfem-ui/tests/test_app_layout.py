@@ -37,3 +37,22 @@ class TestBuildSidebarNav:
         html = str(_build_sidebar_nav())
         for group in SIDEBAR_GROUPS:
             assert group["name"] in html, f"Missing group header: {group['name']}"
+
+
+def test_hamburger_button_in_topbar():
+    """Topbar should contain a hamburger button for mobile."""
+    from shyfem_ui.app import _build_ui
+    from shyfem_ui.config import Config
+    config = Config()
+    html = str(_build_ui(config))
+    assert "sf-hamburger" in html
+    assert "bi-list" in html
+
+
+def test_sidebar_backdrop_present():
+    """Layout should contain a sidebar backdrop div for mobile overlay."""
+    from shyfem_ui.app import _build_ui
+    from shyfem_ui.config import Config
+    config = Config()
+    html = str(_build_ui(config))
+    assert "sf-sidebar-backdrop" in html
