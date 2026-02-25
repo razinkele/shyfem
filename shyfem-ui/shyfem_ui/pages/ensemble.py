@@ -937,7 +937,7 @@ def _build_duration_chart(jobs: list[JobInfo]) -> go.Figure:
         label = ", ".join(f"{v}" for v in combo.values()) or j.name
         labels.append(label)
         durations.append(j.duration or 0)
-        colors.append("#198754" if j.status == JobStatus.COMPLETED else "#dc3545")
+        colors.append("#3DB8A0" if j.status == JobStatus.COMPLETED else "#E8725A")
 
     fig.add_trace(
         go.Bar(
