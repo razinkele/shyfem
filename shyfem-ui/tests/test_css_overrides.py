@@ -27,3 +27,17 @@ def test_dark_mode_text_overrides():
     css = CSS_PATH.read_text()
     for sel in [".text-primary", ".text-success", ".text-danger", ".text-warning", ".text-info"]:
         assert f'[data-bs-theme="dark"] {sel}' in css, f"Missing dark-mode override for {sel}"
+
+
+RESPONSIVE_REQUIRED = [
+    "@media (max-width: 768px)",
+    ".sf-sidebar-backdrop",
+    ".sf-sidebar-open",
+    ".sf-hamburger",
+]
+
+
+def test_responsive_css_present():
+    css = CSS_PATH.read_text()
+    missing = [sel for sel in RESPONSIVE_REQUIRED if sel not in css]
+    assert not missing, f"Missing responsive CSS: {missing}"

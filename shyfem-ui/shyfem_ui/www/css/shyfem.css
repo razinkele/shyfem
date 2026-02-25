@@ -601,3 +601,99 @@ pre,
 .shiny-busy .progress-bar {
   background-color: var(--sf-ocean-mid);
 }
+
+/* ==========================================================================
+   19. Responsive — Tablet (<=768px)
+   ========================================================================== */
+
+/* Hamburger button: hidden on desktop, shown on mobile */
+.sf-hamburger {
+  display: none;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 1.4rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background-color 150ms ease;
+}
+
+.sf-hamburger:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+/* Sidebar backdrop overlay */
+.sf-sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1040;
+}
+
+.sf-sidebar-backdrop.active {
+  display: block;
+}
+
+@media (max-width: 768px) {
+  /* Show hamburger */
+  .sf-hamburger {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  /* Sidebar: off-screen by default, overlay on open */
+  .sf-sidebar {
+    position: fixed;
+    top: 48px;
+    left: -240px;
+    height: calc(100vh - 48px);
+    z-index: 1050;
+    transition: left 250ms ease;
+  }
+
+  .sf-sidebar-open {
+    left: 0;
+  }
+
+  /* Override collapsed state on mobile — always full-width when open */
+  .sf-sidebar-collapsed {
+    width: 240px;
+  }
+
+  .sf-sidebar-collapsed .sf-nav-label,
+  .sf-sidebar-collapsed .sf-nav-group-header {
+    display: block;
+  }
+
+  .sf-sidebar-collapsed .sf-nav-item {
+    justify-content: flex-start;
+    padding: 8px 16px;
+    margin: 2px 8px;
+  }
+
+  /* Hide collapse button on mobile (hamburger replaces it) */
+  .sf-collapse-btn {
+    display: none;
+  }
+
+  /* Content: full-width with tighter padding */
+  .sf-content {
+    padding: 16px;
+  }
+
+  /* Dashboard metric cards: stack vertically */
+  .sf-metric-icon {
+    width: 40px;
+    height: 40px;
+    font-size: 1.2rem;
+  }
+
+  /* Project cards: full-width */
+  .sf-project-card {
+    width: 100%;
+    display: block;
+  }
+}
