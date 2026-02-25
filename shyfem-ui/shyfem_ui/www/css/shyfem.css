@@ -98,7 +98,8 @@ pre,
   align-items: center;
   padding: 0 16px;
   color: #fff;
-  z-index: 1000;
+  position: relative;
+  z-index: 1060;
 }
 
 .sf-topbar-btn {
@@ -628,7 +629,10 @@ pre,
 .sf-sidebar-backdrop {
   display: none;
   position: fixed;
-  inset: 0;
+  top: 48px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   background: rgba(0, 0, 0, 0.4);
   z-index: 1040;
 }
