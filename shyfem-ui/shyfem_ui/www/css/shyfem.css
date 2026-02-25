@@ -391,6 +391,34 @@ pre,
 }
 
 /* ==========================================================================
+   10b. Bootstrap Utility Overrides — text / bg / border
+   ========================================================================== */
+
+.text-primary { color: var(--sf-ocean-mid) !important; }
+.text-success { color: var(--sf-teal) !important; }
+.text-danger  { color: var(--sf-coral) !important; }
+.text-warning { color: var(--sf-amber) !important; }
+.text-info    { color: var(--sf-ocean-light) !important; }
+.text-muted   { color: var(--sf-text-muted) !important; }
+
+.bg-light { background-color: var(--sf-sand) !important; }
+.bg-dark  { background-color: var(--sf-ocean-deep) !important; color: #fff !important; }
+
+.border-primary { border-color: var(--sf-ocean-mid) !important; }
+
+/* Dark-mode text overrides */
+[data-bs-theme="dark"] .text-primary { color: var(--sf-ocean-light) !important; }
+[data-bs-theme="dark"] .text-success { color: #5AD4B8 !important; }
+[data-bs-theme="dark"] .text-danger  { color: #F09080 !important; }
+[data-bs-theme="dark"] .text-warning { color: #F0C060 !important; }
+[data-bs-theme="dark"] .text-info    { color: #60C8E0 !important; }
+
+[data-bs-theme="dark"] .bg-light { background-color: var(--sf-sand-dark) !important; }
+[data-bs-theme="dark"] .bg-dark  { background-color: #0A1A28 !important; color: #fff !important; }
+
+[data-bs-theme="dark"] .border-primary { border-color: var(--sf-ocean-light) !important; }
+
+/* ==========================================================================
    11. Form Controls
    ========================================================================== */
 
