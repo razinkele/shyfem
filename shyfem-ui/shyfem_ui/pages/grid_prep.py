@@ -1,8 +1,10 @@
 """Grid preparation page - shypre/shybas interface."""
 
+import math
 import shutil
 from pathlib import Path
 
+import numpy as np
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.file_browser import file_browser_server, file_browser_ui
@@ -37,6 +39,206 @@ def grid_stats_to_json(stats: dict, grid_name: str) -> str:
         "statistics": stats,
     }
     return json.dumps(payload, indent=4, default=_default)
+
+
+def _get_triangle_vertices(elem, nodes_dict):
+    """Extract 3 vertex node IDs from an element, handling the parser quirk.
+
+    The .grd format is ``2 id type num_nodes n1 n2 n3 [depth]``, but the
+    parser consumes ``num_nodes`` as a node ID.  Triangles thus arrive with
+    ``nodes=[3, n1, n2, n3]`` (length 4) instead of ``[n1, n2, n3]``.
+
+    Returns:
+        List of 3 node IDs, or None if the element is not a triangle.
+    """
+    nids = elem.nodes
+    if len(nids) == 3:
+        return list(nids)
+    if len(nids) == 4 and nids[0] == 3:
+        return list(nids[1:4])
+    return None
+
+
+def compute_element_quality(grd):
+    """Compute min-side / max-side quality ratio for each triangle.
+
+    Returns:
+        Dict with ``qualities``, ``elem_ids``, and ``stats`` sub-dict
+        (min, max, mean, median, std, count, below_03, below_05).
+    """
+    qualities = []
+    elem_ids = []
+    for eid, elem in grd.elements.items():
+        verts = _get_triangle_vertices(elem, grd.nodes)
+        if verts is None:
+            continue
+        coords = []
+        for nid in verts:
+            node = grd.nodes.get(nid)
+            if node is None:
+                break
+            coords.append((node.x, node.y))
+        if len(coords) != 3:
+            continue
+        sides = [
+            math.sqrt((coords[(i + 1) % 3][0] - coords[i][0]) ** 2
+                       + (coords[(i + 1) % 3][1] - coords[i][1]) ** 2)
+            for i in range(3)
+        ]
+        max_s = max(sides)
+        q = min(sides) / max_s if max_s > 0 else 0.0
+        qualities.append(q)
+        elem_ids.append(eid)
+
+    if not qualities:
+        return {"qualities": [], "elem_ids": [], "stats": None}
+
+    arr = np.array(qualities)
+    stats = {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "median": float(np.median(arr)),
+        "std": float(arr.std()),
+        "count": len(arr),
+        "below_03": int(np.sum(arr < 0.3)),
+        "below_05": int(np.sum(arr < 0.5)),
+    }
+    return {"qualities": qualities, "elem_ids": elem_ids, "stats": stats}
+
+
+def compute_element_areas(grd):
+    """Compute triangle areas using the shoelace formula.
+
+    Returns:
+        Dict with ``areas``, ``elem_ids``, and ``stats`` sub-dict
+        (min, max, mean, median, std, count, area_ratio).
+    """
+    areas = []
+    elem_ids = []
+    for eid, elem in grd.elements.items():
+        verts = _get_triangle_vertices(elem, grd.nodes)
+        if verts is None:
+            continue
+        coords = []
+        for nid in verts:
+            node = grd.nodes.get(nid)
+            if node is None:
+                break
+            coords.append((node.x, node.y))
+        if len(coords) != 3:
+            continue
+        x1, y1 = coords[0]
+        x2, y2 = coords[1]
+        x3, y3 = coords[2]
+        area = 0.5 * abs(x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+        areas.append(area)
+        elem_ids.append(eid)
+
+    if not areas:
+        return {"areas": [], "elem_ids": [], "stats": None}
+
+    arr = np.array(areas)
+    stats = {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "median": float(np.median(arr)),
+        "std": float(arr.std()),
+        "count": len(arr),
+        "area_ratio": float(arr.max() / arr.min()) if arr.min() > 0 else float("inf"),
+    }
+    return {"areas": areas, "elem_ids": elem_ids, "stats": stats}
+
+
+def compute_min_angles(grd):
+    """Compute the minimum interior angle (degrees) for each triangle.
+
+    Uses the law of cosines to find all three angles.
+
+    Returns:
+        Dict with ``min_angles``, ``elem_ids``, and ``stats`` sub-dict
+        (min, max, mean, median, count, below_20).
+    """
+    min_angles = []
+    elem_ids = []
+    for eid, elem in grd.elements.items():
+        verts = _get_triangle_vertices(elem, grd.nodes)
+        if verts is None:
+            continue
+        coords = []
+        for nid in verts:
+            node = grd.nodes.get(nid)
+            if node is None:
+                break
+            coords.append((node.x, node.y))
+        if len(coords) != 3:
+            continue
+        # Side lengths squared
+        sides_sq = []
+        sides = []
+        for i in range(3):
+            dx = coords[(i + 1) % 3][0] - coords[i][0]
+            dy = coords[(i + 1) % 3][1] - coords[i][1]
+            s2 = dx * dx + dy * dy
+            sides_sq.append(s2)
+            sides.append(math.sqrt(s2))
+        # Angles via law of cosines: angle at vertex i is opposite side i
+        # side opposite vertex 0 is sides[1] (vertex 1→2), etc.
+        # Actually: side[i] connects vertex i to vertex (i+1)
+        # Angle at vertex 0: opposite side connects vertex 1 to vertex 2 = sides[1]
+        # Adjacent sides: sides[2] (vertex 2→0) and sides[0] (vertex 0→1)
+        angles = []
+        # a = side opposite vertex, b,c = adjacent sides
+        # side[0] = v0→v1, side[1] = v1→v2, side[2] = v2→v0
+        # angle at v0: opposite = side[1], adjacent = side[0], side[2]
+        # angle at v1: opposite = side[2], adjacent = side[0], side[1]
+        # angle at v2: opposite = side[0], adjacent = side[1], side[2]
+        for i in range(3):
+            a = sides[(i + 1) % 3]  # opposite side
+            b = sides[i]
+            c = sides[(i + 2) % 3]
+            if b > 0 and c > 0:
+                cos_angle = (b * b + c * c - a * a) / (2 * b * c)
+                cos_angle = max(-1.0, min(1.0, cos_angle))
+                angles.append(math.degrees(math.acos(cos_angle)))
+        if angles:
+            min_angles.append(min(angles))
+            elem_ids.append(eid)
+
+    if not min_angles:
+        return {"min_angles": [], "elem_ids": [], "stats": None}
+
+    arr = np.array(min_angles)
+    stats = {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "median": float(np.median(arr)),
+        "count": len(arr),
+        "below_20": int(np.sum(arr < 20.0)),
+    }
+    return {"min_angles": min_angles, "elem_ids": elem_ids, "stats": stats}
+
+
+def compute_boundary_summary(grd):
+    """Summarize boundary line assignments.
+
+    Returns:
+        List of dicts with ``line_id``, ``line_type``, ``node_count``,
+        ``node_range_str`` (e.g. "1-50"), sorted by line_id.
+    """
+    result = []
+    for lid, line in sorted(grd.lines.items()):
+        nids = line.nodes
+        node_range = f"{min(nids)}-{max(nids)}" if nids else ""
+        result.append({
+            "line_id": lid,
+            "line_type": line.line_type,
+            "node_count": len(nids),
+            "node_range_str": node_range,
+        })
+    return result
 
 
 @module.ui
@@ -115,6 +317,10 @@ def grid_prep_ui():
                 ui.nav_panel(
                     "Node Inspector",
                     ui.output_ui("node_inspector"),
+                ),
+                ui.nav_panel(
+                    "Inspect",
+                    ui.output_ui("grid_inspect"),
                 ),
                 ui.nav_panel(
                     "Log",
@@ -520,6 +726,177 @@ def grid_prep_server(
                 ),
             ),
         )
+
+    @render.ui
+    def grid_inspect():
+        grd = current_grd.get()
+        if grd is None:
+            return ui.p("Load a grid file to see inspection results.", class_="text-muted")
+
+        sections = []
+
+        # --- 1. Quality Summary ---
+        qdata = compute_element_quality(grd)
+        if qdata["stats"]:
+            qs = qdata["stats"]
+            # Text histogram
+            bins = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.01]
+            hist, _ = np.histogram(qdata["qualities"], bins=bins)
+            max_count = max(hist) if max(hist) > 0 else 1
+            hist_lines = []
+            for i in range(len(hist)):
+                lo = bins[i]
+                hi = bins[i + 1]
+                bar_len = int(40 * hist[i] / max_count)
+                label = f"{lo:.1f}-{min(hi, 1.0):.1f}"
+                hist_lines.append(f"{label:>9s} |{'█' * bar_len} {hist[i]}")
+            hist_text = "\n".join(hist_lines)
+
+            status_class = (
+                "text-success" if qs["below_03"] == 0
+                else "text-warning" if qs["below_03"] < qs["count"] * 0.05
+                else "text-danger"
+            )
+            sections.append(ui.div(
+                ui.h5("Quality Summary (min/max side ratio)"),
+                ui.tags.table(
+                    ui.tags.tbody(
+                        ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{qs['count']:,}")),
+                        ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{qs['min']:.4f}")),
+                        ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{qs['max']:.4f}")),
+                        ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{qs['mean']:.4f}")),
+                        ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{qs['median']:.4f}")),
+                        ui.tags.tr(ui.tags.th("Std Dev"), ui.tags.td(f"{qs['std']:.4f}")),
+                        ui.tags.tr(
+                            ui.tags.th("Below 0.3"),
+                            ui.tags.td(
+                                ui.span(str(qs["below_03"]), class_=status_class),
+                                f" ({100 * qs['below_03'] / qs['count']:.1f}%)",
+                            ),
+                        ),
+                        ui.tags.tr(
+                            ui.tags.th("Below 0.5"),
+                            ui.tags.td(
+                                f"{qs['below_05']} ({100 * qs['below_05'] / qs['count']:.1f}%)"
+                            ),
+                        ),
+                    ),
+                    class_="table table-sm",
+                ),
+                ui.h6("Distribution"),
+                ui.tags.pre(hist_text, style="font-size: 0.8rem;"),
+                class_="mb-4",
+            ))
+        else:
+            sections.append(ui.p("No triangles found for quality analysis.", class_="text-muted"))
+
+        # --- 2. Element Area Statistics ---
+        adata = compute_element_areas(grd)
+        if adata["stats"]:
+            a_s = adata["stats"]
+            # Detect units
+            cs = grd.coordinate_system or grd.detect_coordinate_system()
+            area_unit = "deg\u00b2" if cs.is_geographic else "m\u00b2"
+            sections.append(ui.div(
+                ui.h5("Element Area Statistics"),
+                ui.tags.table(
+                    ui.tags.tbody(
+                        ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{a_s['count']:,}")),
+                        ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{a_s['min']:.6g} {area_unit}")),
+                        ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{a_s['max']:.6g} {area_unit}")),
+                        ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{a_s['mean']:.6g} {area_unit}")),
+                        ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{a_s['median']:.6g} {area_unit}")),
+                        ui.tags.tr(ui.tags.th("Std Dev"), ui.tags.td(f"{a_s['std']:.6g} {area_unit}")),
+                        ui.tags.tr(
+                            ui.tags.th("Area Ratio (max/min)"),
+                            ui.tags.td(f"{a_s['area_ratio']:.1f}x"),
+                        ),
+                    ),
+                    class_="table table-sm",
+                ),
+                class_="mb-4",
+            ))
+        else:
+            sections.append(ui.p("No triangles found for area analysis.", class_="text-muted"))
+
+        # --- 3. Minimum Angle Analysis ---
+        mdata = compute_min_angles(grd)
+        if mdata["stats"]:
+            ms = mdata["stats"]
+            if ms["min"] >= 30:
+                badge_cls = "bg-success"
+                badge_text = "Excellent"
+            elif ms["min"] >= 20:
+                badge_cls = "bg-warning text-dark"
+                badge_text = "Acceptable"
+            else:
+                badge_cls = "bg-danger"
+                badge_text = "Poor"
+            sections.append(ui.div(
+                ui.h5(
+                    "Minimum Angle Analysis ",
+                    ui.span(badge_text, class_=f"badge {badge_cls}"),
+                ),
+                ui.tags.table(
+                    ui.tags.tbody(
+                        ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{ms['count']:,}")),
+                        ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{ms['min']:.2f}\u00b0")),
+                        ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{ms['max']:.2f}\u00b0")),
+                        ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{ms['mean']:.2f}\u00b0")),
+                        ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{ms['median']:.2f}\u00b0")),
+                        ui.tags.tr(
+                            ui.tags.th("Below 20\u00b0"),
+                            ui.tags.td(
+                                f"{ms['below_20']} ({100 * ms['below_20'] / ms['count']:.1f}%)"
+                            ),
+                        ),
+                    ),
+                    class_="table table-sm",
+                ),
+                ui.p(
+                    "FEM stability requires minimum angles above 20\u00b0; "
+                    "angles above 30\u00b0 are preferred.",
+                    class_="text-muted small",
+                ),
+                class_="mb-4",
+            ))
+        else:
+            sections.append(ui.p("No triangles found for angle analysis.", class_="text-muted"))
+
+        # --- 4. Boundary Assignments ---
+        bdata = compute_boundary_summary(grd)
+        if bdata:
+            rows = [
+                ui.tags.tr(
+                    ui.tags.td(str(b["line_id"])),
+                    ui.tags.td(str(b["line_type"])),
+                    ui.tags.td(str(b["node_count"])),
+                    ui.tags.td(b["node_range_str"]),
+                )
+                for b in bdata
+            ]
+            sections.append(ui.div(
+                ui.h5("Boundary Assignments"),
+                ui.tags.table(
+                    ui.tags.thead(
+                        ui.tags.tr(
+                            ui.tags.th("Line ID"),
+                            ui.tags.th("Type"),
+                            ui.tags.th("Node Count"),
+                            ui.tags.th("Node Range"),
+                        ),
+                    ),
+                    ui.tags.tbody(*rows),
+                    class_="table table-sm table-striped",
+                ),
+            ))
+        else:
+            sections.append(ui.div(
+                ui.h5("Boundary Assignments"),
+                ui.p("No boundary lines defined in this grid.", class_="text-muted"),
+            ))
+
+        return ui.div(*sections)
 
     return {
         "current_grd": current_grd,
