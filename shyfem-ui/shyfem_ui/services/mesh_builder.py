@@ -200,13 +200,23 @@ def _rebuild_grd_with_new_line(
                 id=nid, node_type=node.node_type, x=node.x, y=node.y, depth=node.depth
             )
 
-    # Assign new node IDs for the smoothed line
+    # Assign new node IDs for the smoothed line.
+    # If closed ring (last coord ≈ first coord), reuse the first node ID
+    # for the closing position to avoid duplicate vertices that crash Triangle.
+    is_closed = (
+        len(new_coords) >= 3
+        and np.allclose(new_coords[0], new_coords[-1], atol=1e-8)
+    )
     max_id = max(grd.nodes.keys()) if grd.nodes else 0
     new_node_ids = []
-    for i, (x, y) in enumerate(new_coords):
+    n_unique = len(new_coords) - 1 if is_closed else len(new_coords)
+    for i in range(n_unique):
+        x, y = new_coords[i]
         nid = max_id + 1 + i
         new_grd.nodes[nid] = Node(id=nid, node_type=0, x=float(x), y=float(y))
         new_node_ids.append(nid)
+    if is_closed:
+        new_node_ids.append(new_node_ids[0])  # close with first node ID
 
     # Copy all lines, replacing the target
     for lid, line in grd.lines.items():
@@ -360,22 +370,34 @@ def _build_pslg(grd: GrdFile) -> dict:
     """Convert GrdFile boundary lines into Triangle PSLG format.
 
     Returns dict with 'vertices', 'segments', and optionally 'holes'.
+    Deduplicates near-coincident vertices to prevent Triangle segfaults.
     """
     vertices = []
     segments = []
     holes = []
     node_map: dict[int, int] = {}  # grd node ID → vertex index
+    coord_to_idx: dict[tuple[float, float], int] = {}  # dedup by coords
 
     for nid in sorted(grd.nodes.keys()):
         node = grd.nodes[nid]
-        node_map[nid] = len(vertices)
-        vertices.append([node.x, node.y])
+        key = (round(node.x, 6), round(node.y, 6))
+        if key in coord_to_idx:
+            # Reuse existing vertex index for near-coincident node
+            node_map[nid] = coord_to_idx[key]
+        else:
+            idx = len(vertices)
+            node_map[nid] = idx
+            coord_to_idx[key] = idx
+            vertices.append([node.x, node.y])
 
     for line in grd.lines.values():
         nids = line.nodes
         for i in range(len(nids) - 1):
             if nids[i] in node_map and nids[i + 1] in node_map:
-                segments.append([node_map[nids[i]], node_map[nids[i + 1]]])
+                vi = node_map[nids[i]]
+                vj = node_map[nids[i + 1]]
+                if vi != vj:  # skip zero-length segments
+                    segments.append([vi, vj])
 
         # If this is a hole boundary, compute an interior point
         if line.line_type == 2:

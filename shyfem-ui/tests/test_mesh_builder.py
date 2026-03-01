@@ -791,6 +791,82 @@ class TestExportGrd:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# TestMarMenorIntegration — end-to-end with real sample data
+# ---------------------------------------------------------------------------
+
+_MAR_MENOR_DIR = Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "mar_menor"
+
+_HAS_MAR_MENOR = (
+    (_MAR_MENOR_DIR / "mar_menor_boundary.geojson").exists()
+    and (_MAR_MENOR_DIR / "mar_menor_bathymetry.xyz").exists()
+    and (_MAR_MENOR_DIR / "mar_menor_isobaths.geojson").exists()
+)
+
+
+@pytest.mark.skipif(not _HAS_MAR_MENOR, reason="Mar Menor sample data not found")
+class TestMarMenorIntegration:
+    """Full pipeline integration tests with real Mar Menor data."""
+
+    def test_import_boundary(self):
+        grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
+        assert grd.num_nodes > 100
+        assert grd.num_lines >= 1
+        issues = validate_boundary(grd)
+        errors = [i for i in issues if i.startswith("ERROR")]
+        assert len(errors) == 0
+
+    def test_smooth_and_triangulate(self):
+        """Chaikin-smoothed boundary triangulates without segfault."""
+        grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
+        smoothed = smooth_boundary(grd, line_id=1, method="chaikin", iterations=1)
+        mesh = triangulate(smoothed, max_area=100000.0, min_angle=20.0)
+        assert mesh.num_elements > 100
+        assert mesh.num_nodes > 100
+
+    def test_reduce_and_triangulate(self):
+        """Reduced boundary also triangulates cleanly."""
+        grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
+        reduced = reduce_boundary(grd, line_id=1, tolerance=100.0)
+        mesh = triangulate(reduced, max_area=200000.0, min_angle=20.0)
+        assert mesh.num_elements > 10
+
+    def test_interpolate_point_cloud(self):
+        """All scipy methods produce valid depths from XYZ point cloud."""
+        grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
+        mesh = triangulate(grd, max_area=200000.0, min_angle=20.0)
+        bathy = load_bathymetry_file(_MAR_MENOR_DIR / "mar_menor_bathymetry.xyz")
+        for method in ["linear", "nearest", "idw", "rbf", "cloughtocher"]:
+            result = interpolate_bathymetry_scipy(mesh, bathy, method=method)
+            depths = [n.depth for n in result.nodes.values()]
+            assert all(d is not None for d in depths), f"{method} has None depths"
+            assert not any(np.isnan(d) for d in depths), f"{method} has NaN depths"
+
+    def test_interpolate_contours_with_boundary_zero(self):
+        """RBF + boundary_zero on contour isobaths produces valid depths."""
+        grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
+        mesh = triangulate(grd, max_area=200000.0, min_angle=20.0)
+        contours = load_bathymetry_contours(_MAR_MENOR_DIR / "mar_menor_isobaths.geojson")
+        result = interpolate_bathymetry_scipy(
+            mesh, contours, method="rbf", use_boundary_zero=True
+        )
+        depths = [n.depth for n in result.nodes.values()]
+        assert all(d is not None for d in depths)
+        assert min(depths) >= -1.0  # boundary zero should keep near-shore close to 0
+
+    def test_export_round_trip(self, tmp_path):
+        """Full pipeline: import -> mesh -> bathy -> export -> reload."""
+        grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
+        mesh = triangulate(grd, max_area=200000.0, min_angle=20.0)
+        bathy = load_bathymetry_file(_MAR_MENOR_DIR / "mar_menor_bathymetry.xyz")
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="linear", use_boundary_zero=True)
+        out = tmp_path / "test_output.grd"
+        export_grd(result, out)
+        reloaded = GrdParser.parse_file(out)
+        assert len(reloaded.nodes) == len(result.nodes)
+        assert len(reloaded.elements) == len(result.elements)
+
+
 class TestSetResolution:
     """Tests for set_resolution()."""
 
