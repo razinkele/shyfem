@@ -631,13 +631,37 @@ def mesh_builder_server(
                 },
                 selected="linear",
             ),
-            ui.p(
-                "Linear: smooth, good default. Nearest: fast, discontinuous. "
-                "Cubic: smooth but may overshoot. IDW: distance-weighted. "
-                "RBF: thin-plate spline, naturally extrapolates. "
-                "Clough-Tocher: C1-smooth cubic, less overshoot than cubic. "
-                "shybas: SHYFEM built-in.",
-                class_="text-muted small",
+            ui.div(
+                ui.tags.strong("Method guide", class_="d-block mb-1"),
+                ui.tags.ul(
+                    ui.tags.li(ui.tags.strong("Linear"), " — smooth, good general-purpose default."),
+                    ui.tags.li(ui.tags.strong("Nearest"), " — fast, produces discontinuous steps between data points."),
+                    ui.tags.li(ui.tags.strong("Cubic"), " — smooth but can overshoot between sparse data."),
+                    ui.tags.li(ui.tags.strong("IDW"), " — inverse-distance weighted average of 8 nearest neighbors."),
+                    ui.tags.li(
+                        ui.tags.strong("RBF (thin-plate spline)"),
+                        " — globally smooth surface that ",
+                        ui.tags.em("naturally extrapolates"),
+                        " beyond the data extent. Best for sparse bathymetry and coastal edges.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("Clough-Tocher (C1 cubic)"),
+                        " — piecewise cubic with continuous first derivatives. "
+                        "Smoother than Cubic with less overshoot. Falls back to "
+                        "nearest-neighbor outside the data hull.",
+                    ),
+                    ui.tags.li(ui.tags.strong("shybas"), " — SHYFEM's built-in Fortran interpolation."),
+                    class_="small mb-1 ps-3",
+                ),
+                ui.tags.strong("Recommendation for contour isobaths:", class_="d-block mt-2 mb-1"),
+                ui.p(
+                    "Use RBF + boundary zero for best results. RBF smoothly "
+                    "interpolates between contour lines and extrapolates to the "
+                    "shoreline, while the boundary = 0 constraint anchors the "
+                    "coast. Use Clough-Tocher as a safer alternative if RBF "
+                    "overshoots in deep basins with very sparse contours.",
+                ),
+                class_="alert alert-light border small py-2 px-3 mb-2",
             ),
             ui.input_checkbox(
                 "use_boundary_zero",
@@ -645,8 +669,9 @@ def mesh_builder_server(
                 value=True,
             ),
             ui.p(
-                "When enabled, coastline boundary nodes are injected as depth=0 "
-                "points before interpolation, preventing unrealistic values near shore.",
+                "Injects coastline boundary nodes as depth = 0 points before "
+                "interpolation, forcing the shoreline to zero depth and "
+                "preventing unrealistic values near shore.",
                 class_="text-muted small",
             ),
             ui.input_action_button(
