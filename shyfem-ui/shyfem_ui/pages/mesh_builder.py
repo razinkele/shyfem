@@ -350,11 +350,24 @@ def mesh_builder_server(
     # --- Step 3: Generate Mesh ---
     def _step_mesh_ui():
         grd = refined_grd.get()
-        if grd is None:
-            return ui.p("Import and refine boundaries first.", class_="text-muted")
+        no_boundary = grd is None
         return ui.div(
             ui.h4("Step 3: Generate Mesh"),
-            ui.p("Configure mesh density and quality constraints.", class_="text-muted"),
+            ui.p("Configure triangulation method, mesh density and quality constraints.", class_="text-muted"),
+            ui.div(
+                "Import boundaries first (Steps 1-2).",
+                class_="alert alert-info py-2 px-3 small",
+            ) if no_boundary else ui.span(),
+            ui.input_select(
+                "mesh_method",
+                "Mesh Generation Method",
+                choices={
+                    "delaunay_quality": "Constrained Delaunay — quality mesh (Triangle)",
+                    "delaunay_conforming": "Conforming Delaunay — no area constraint (Triangle)",
+                    "delaunay_minimal": "Minimal Delaunay — fewest triangles (Triangle)",
+                },
+                selected="delaunay_quality",
+            ),
             ui.row(
                 ui.column(
                     6,
@@ -374,6 +387,11 @@ def mesh_builder_server(
                         min=10,
                         max=33,
                         value=20,
+                    ),
+                    ui.p(
+                        "Higher values produce more uniform triangles but may "
+                        "increase element count. Max theoretical limit is 33.9°.",
+                        class_="text-muted small",
                     ),
                 ),
             ),
@@ -406,11 +424,26 @@ def mesh_builder_server(
         if grd is None:
             ui.notification_show("No boundary data to mesh.", type="warning")
             return
+        method = input.mesh_method()
         max_area = input.max_area()
         min_angle = input.min_angle()
         try:
-            _log(f"Generating mesh: max_area={max_area}, min_angle={min_angle}°...")
-            new_mesh = triangulate(grd, max_area=max_area, min_angle=min_angle)
+            # Interpret method choice
+            if method == "delaunay_minimal":
+                # Minimal: PSLG only, no quality or area constraints
+                eff_area = None
+                eff_angle = 0.0
+            elif method == "delaunay_conforming":
+                # Conforming: quality constraint but no area limit
+                eff_area = None
+                eff_angle = min_angle
+            else:
+                # Quality: full constraints
+                eff_area = max_area
+                eff_angle = min_angle
+
+            _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle}°...")
+            new_mesh = triangulate(grd, max_area=eff_area, min_angle=eff_angle)
             mesh_grd.set(new_mesh)
             preview_grd.set(new_mesh)
             _log(f"Mesh generated: {new_mesh.num_nodes} nodes, {new_mesh.num_elements} elements")
@@ -462,33 +495,56 @@ def mesh_builder_server(
 
     # --- Step 4: Interpolate Bathymetry ---
     def _step_bathy_ui():
-        grd = mesh_grd.get()
-        if grd is None:
-            return ui.p("Generate a mesh first (Step 3).", class_="text-muted")
+        no_mesh = mesh_grd.get() is None
         return ui.div(
             ui.h4("Step 4: Interpolate Bathymetry"),
-            ui.p("Upload depth data and interpolate onto mesh nodes.", class_="text-muted"),
+            ui.p(
+                "Upload depth measurement points (x, y, depth) and interpolate "
+                "values onto mesh nodes.",
+                class_="text-muted",
+            ),
+            ui.div(
+                "Generate a mesh first (Step 3).",
+                class_="alert alert-info py-2 px-3 small",
+            ) if no_mesh else ui.span(),
+            # --- Bathymetry source ---
+            ui.h5("Depth Measurement Points"),
             ui.input_file(
                 "bathy_file",
-                "Upload Bathymetry (CSV/XYZ/GeoTIFF)",
+                "Upload Bathymetry File (CSV/XYZ/GeoTIFF)",
                 accept=[".csv", ".xyz", ".txt", ".tif", ".tiff"],
                 multiple=False,
             ),
+            ui.p(
+                "Format: one point per line as x, y, depth (comma or space separated). "
+                "GeoTIFF rasters are also supported.",
+                class_="text-muted small",
+            ),
+            ui.output_ui("bathy_loaded_info"),
+            ui.hr(),
+            # --- Interpolation method ---
+            ui.h5("Interpolation Method"),
             ui.input_select(
                 "bathy_method",
-                "Interpolation Method",
+                "Method",
                 choices={
-                    "linear": "Linear (scipy)",
-                    "nearest": "Nearest (scipy)",
-                    "cubic": "Cubic (scipy)",
-                    "idw": "IDW (inverse distance)",
-                    "shybas": "shybas -bfile (SHYFEM)",
+                    "linear": "Linear (scipy griddata)",
+                    "nearest": "Nearest neighbor (scipy)",
+                    "cubic": "Cubic (scipy griddata)",
+                    "idw": "IDW — inverse distance weighting (k=8 neighbors)",
+                    "shybas": "shybas -bfile (SHYFEM binary)",
                 },
                 selected="linear",
             ),
+            ui.p(
+                "Linear: smooth, good default. Nearest: fast, discontinuous. "
+                "Cubic: smoothest, may overshoot. IDW: distance-weighted average. "
+                "shybas: uses SHYFEM's built-in interpolation.",
+                class_="text-muted small",
+            ),
             ui.input_action_button(
                 "interpolate_btn",
-                "Interpolate",
+                "Interpolate Bathymetry",
                 class_="btn-primary w-100 mt-2 mb-2",
             ),
             ui.output_ui("bathy_stats_display"),
@@ -497,6 +553,36 @@ def mesh_builder_server(
                 "Next: Export",
                 class_="btn-primary mt-2",
             ),
+        )
+
+    @render.ui
+    def bathy_loaded_info():
+        data = bathy_data.get()
+        if data is None:
+            return ui.p("No depth points loaded yet.", class_="text-muted small")
+        return ui.div(
+            ui.tags.table(
+                ui.tags.tbody(
+                    ui.tags.tr(
+                        ui.tags.td("Points loaded", class_="pe-3 fw-bold"),
+                        ui.tags.td(f"{len(data):,}"),
+                    ),
+                    ui.tags.tr(
+                        ui.tags.td("X range", class_="pe-3 fw-bold"),
+                        ui.tags.td(f"{data[:,0].min():.4f} — {data[:,0].max():.4f}"),
+                    ),
+                    ui.tags.tr(
+                        ui.tags.td("Y range", class_="pe-3 fw-bold"),
+                        ui.tags.td(f"{data[:,1].min():.4f} — {data[:,1].max():.4f}"),
+                    ),
+                    ui.tags.tr(
+                        ui.tags.td("Depth range", class_="pe-3 fw-bold"),
+                        ui.tags.td(f"{data[:,2].min():.2f} — {data[:,2].max():.2f}"),
+                    ),
+                ),
+                class_="table table-sm table-borderless mb-0",
+            ),
+            class_="mt-2",
         )
 
     @reactive.effect
