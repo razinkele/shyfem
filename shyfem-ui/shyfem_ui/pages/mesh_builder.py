@@ -40,20 +40,250 @@ _STEPS = {
 
 
 # ---------------------------------------------------------------------------
-# UI
+# UI — all structural content is defined here (not in @render.ui)
 # ---------------------------------------------------------------------------
+
+
+def _step_import_panel():
+    """Step 1 UI — static panel content."""
+    return ui.nav_panel(
+        "import",
+        ui.div(
+            ui.h4("Step 1: Import Boundaries"),
+            ui.p(
+                "Upload a GeoJSON, Shapefile, or GeoPackage file containing "
+                "coastline or domain boundary polygons.",
+                class_="text-muted",
+            ),
+            ui.input_file(
+                "boundary_file",
+                "Upload Boundary File",
+                accept=[
+                    ".geojson", ".json", ".shp", ".shx", ".dbf", ".prj",
+                    ".cpg", ".gpkg", ".zip",
+                    "application/geopackage+sqlite3", "application/geo+json",
+                ],
+                multiple=True,
+            ),
+            ui.p(
+                "For Shapefiles, select all companion files (.shp, .shx, .dbf, .prj) "
+                "together, or upload a .zip archive containing them.",
+                class_="text-muted small",
+            ),
+            ui.output_ui("import_result"),
+        ),
+        value="import",
+    )
+
+
+def _step_refine_panel():
+    """Step 2 UI — static panel content."""
+    return ui.nav_panel(
+        "refine",
+        ui.div(
+            ui.h4("Step 2: Refine Boundaries"),
+            ui.output_ui("refine_controls"),
+        ),
+        value="refine",
+    )
+
+
+def _step_mesh_panel():
+    """Step 3 UI — static panel content."""
+    return ui.nav_panel(
+        "mesh",
+        ui.div(
+            ui.h4("Step 3: Generate Mesh"),
+            ui.p(
+                "Configure triangulation method, mesh density and quality constraints.",
+                class_="text-muted",
+            ),
+            ui.output_ui("mesh_prereq_alert"),
+            ui.input_radio_buttons(
+                "mesh_method",
+                "Triangulation Method",
+                choices={
+                    "delaunay_quality": "Quality mesh (area + angle constraints)",
+                    "delaunay_conforming": "Conforming (angle only, no area limit)",
+                    "delaunay_minimal": "Minimal (fewest triangles, no constraints)",
+                },
+                selected="delaunay_quality",
+            ),
+            ui.output_ui("mesh_method_controls"),
+            ui.input_action_button(
+                "generate_mesh",
+                "Generate Mesh",
+                class_="btn-primary w-100 mt-2 mb-2",
+            ),
+            ui.output_ui("mesh_stats_display"),
+            ui.input_action_button(
+                "next_to_bathy",
+                "Next: Interpolate Bathymetry",
+                class_="btn-primary mt-2",
+            ),
+        ),
+        value="mesh",
+    )
+
+
+def _step_bathy_panel():
+    """Step 4 UI — static panel content."""
+    return ui.nav_panel(
+        "bathy",
+        ui.div(
+            ui.h4("Step 4: Interpolate Bathymetry"),
+            ui.p(
+                "Upload depth data and interpolate values onto mesh nodes.",
+                class_="text-muted",
+            ),
+            ui.output_ui("bathy_prereq_alert"),
+            # --- Bathymetry source type ---
+            ui.h5("Depth Data Source"),
+            ui.input_radio_buttons(
+                "bathy_source",
+                "",
+                choices={
+                    "points": "Point cloud (CSV / XYZ / GeoTIFF)",
+                    "contours": "Contour isobaths (SHP / GeoJSON / GPKG)",
+                },
+                selected="points",
+                inline=True,
+            ),
+            ui.output_ui("bathy_upload_controls"),
+            ui.output_ui("bathy_loaded_info"),
+            ui.hr(),
+            # --- Interpolation method ---
+            ui.h5("Interpolation Method"),
+            ui.input_select(
+                "bathy_method",
+                "Method",
+                choices={
+                    "linear": "Linear (scipy griddata)",
+                    "nearest": "Nearest neighbor (scipy)",
+                    "cubic": "Cubic (scipy griddata)",
+                    "idw": "IDW — inverse distance weighting (k=8 neighbors)",
+                    "rbf": "RBF — thin-plate spline (smooth, extrapolates)",
+                    "cloughtocher": "Clough-Tocher — C1 cubic (smooth, no overshoot)",
+                    "shybas": "shybas -bfile (SHYFEM binary)",
+                },
+                selected="linear",
+            ),
+            ui.div(
+                ui.tags.strong("Method guide", class_="d-block mb-1"),
+                ui.tags.ul(
+                    ui.tags.li(
+                        ui.tags.strong("Linear"),
+                        " — smooth, good general-purpose default.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("Nearest"),
+                        " — fast, produces discontinuous steps between data points.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("Cubic"),
+                        " — smooth but can overshoot between sparse data.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("IDW"),
+                        " — inverse-distance weighted average of 8 nearest neighbors.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("RBF (thin-plate spline)"),
+                        " — globally smooth surface that ",
+                        ui.tags.em("naturally extrapolates"),
+                        " beyond the data extent. Best for sparse bathymetry "
+                        "and coastal edges.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("Clough-Tocher (C1 cubic)"),
+                        " — piecewise cubic with continuous first derivatives. "
+                        "Smoother than Cubic with less overshoot. Falls back to "
+                        "nearest-neighbor outside the data hull.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("shybas"),
+                        " — SHYFEM's built-in Fortran interpolation.",
+                    ),
+                    class_="small mb-1 ps-3",
+                ),
+                ui.tags.strong(
+                    "Recommendation for contour isobaths:",
+                    class_="d-block mt-2 mb-1",
+                ),
+                ui.p(
+                    "Use RBF + boundary zero for best results. RBF smoothly "
+                    "interpolates between contour lines and extrapolates to the "
+                    "shoreline, while the boundary = 0 constraint anchors the "
+                    "coast. Use Clough-Tocher as a safer alternative if RBF "
+                    "overshoots in deep basins with very sparse contours.",
+                ),
+                class_="alert alert-light border small py-2 px-3 mb-2",
+            ),
+            ui.input_checkbox(
+                "use_boundary_zero",
+                "Use boundary as depth = 0 (coastline constraint)",
+                value=True,
+            ),
+            ui.p(
+                "Injects coastline boundary nodes as depth = 0 points before "
+                "interpolation, forcing the shoreline to zero depth and "
+                "preventing unrealistic values near shore.",
+                class_="text-muted small",
+            ),
+            ui.input_action_button(
+                "interpolate_btn",
+                "Interpolate Bathymetry",
+                class_="btn-primary w-100 mt-2 mb-2",
+            ),
+            ui.output_ui("bathy_stats_display"),
+            ui.input_action_button(
+                "next_to_export",
+                "Next: Export",
+                class_="btn-primary mt-2",
+            ),
+        ),
+        value="bathy",
+    )
+
+
+def _step_export_panel():
+    """Step 5 UI — static panel content."""
+    return ui.nav_panel(
+        "export",
+        ui.div(
+            ui.h4("Step 5: Export"),
+            ui.output_ui("export_summary"),
+            ui.input_text(
+                "export_filename",
+                "Output Filename",
+                value="mesh_output.grd",
+            ),
+            ui.input_action_button(
+                "save_to_project",
+                "Save to Project Directory",
+                class_="btn-primary w-100 mt-2 mb-2",
+            ),
+            ui.download_button(
+                "download_grd",
+                "Download .grd File",
+                class_="btn-outline-primary w-100 mb-2",
+            ),
+            ui.output_ui("export_result"),
+        ),
+        value="export",
+    )
 
 
 @module.ui
 def mesh_builder_ui():
-    """Mesh builder page UI — 5-step wizard (no nested sidebar)."""
+    """Mesh builder page UI — 5-step wizard."""
     return ui.div(
         ui.h3("Mesh Builder"),
         ui.p(
             "Create simulation-ready meshes from coastline data in 5 steps.",
             class_="text-muted",
         ),
-        # Step navigation as horizontal pills (no nested sidebar)
+        # Step navigation as horizontal pills
         ui.div(
             ui.input_radio_buttons(
                 "wizard_step",
@@ -70,7 +300,16 @@ def mesh_builder_ui():
         ui.navset_card_tab(
             ui.nav_panel(
                 "Wizard",
-                ui.output_ui("wizard_content"),
+                # Hidden navset switched by the radio buttons
+                ui.navset_hidden(
+                    _step_import_panel(),
+                    _step_refine_panel(),
+                    _step_mesh_panel(),
+                    _step_bathy_panel(),
+                    _step_export_panel(),
+                    id="wizard_panels",
+                    selected="import",
+                ),
             ),
             ui.nav_panel(
                 "Preview",
@@ -162,6 +401,12 @@ def mesh_builder_server(
         # Fallback: return the first file
         return work / files[0]["name"]
 
+    # --- Sync radio buttons → hidden navset ---
+    @reactive.effect
+    @reactive.event(input.wizard_step)
+    def _sync_wizard_panels():
+        ui.update_navs("wizard_panels", selected=input.wizard_step())
+
     # --- Status summary (horizontal bar) ---
     @render.ui
     def status_summary():
@@ -203,7 +448,7 @@ def mesh_builder_server(
                         f"Depth: {min(depths):.1f} — {max(depths):.1f}",
                     )
                 )
-        # Busy indicator — shown globally above wizard content
+        # Busy indicator
         msg = busy_message.get()
         if msg:
             items.append(
@@ -224,48 +469,7 @@ def mesh_builder_server(
             return ui.span()
         return ui.div(*items, class_="small text-muted mb-2")
 
-    # --- Wizard content router ---
-    @render.ui
-    def wizard_content():
-        step = input.wizard_step()
-        if step == "import":
-            return _step_import_ui()
-        elif step == "refine":
-            return _step_refine_ui()
-        elif step == "mesh":
-            return _step_mesh_ui()
-        elif step == "bathy":
-            return _step_bathy_ui()
-        elif step == "export":
-            return _step_export_ui()
-        return ui.p("Select a step.")
-
     # --- Step 1: Import Boundaries ---
-    def _step_import_ui():
-        return ui.div(
-            ui.h4("Step 1: Import Boundaries"),
-            ui.p(
-                "Upload a GeoJSON, Shapefile, or GeoPackage file containing "
-                "coastline or domain boundary polygons.",
-                class_="text-muted",
-            ),
-            ui.input_file(
-                "boundary_file",
-                "Upload Boundary File",
-                accept=[
-                    ".geojson", ".json", ".shp", ".shx", ".dbf", ".prj",
-                    ".cpg", ".gpkg", ".zip",
-                    "application/geopackage+sqlite3", "application/geo+json",
-                ],
-                multiple=True,
-            ),
-            ui.p(
-                "For Shapefiles, select all companion files (.shp, .shx, .dbf, .prj) "
-                "together, or upload a .zip archive containing them.",
-                class_="text-muted small",
-            ),
-            ui.output_ui("import_result"),
-        )
 
     @reactive.effect
     @reactive.event(input.boundary_file)
@@ -327,15 +531,14 @@ def mesh_builder_server(
         ui.update_radio_buttons("wizard_step", selected="refine")
 
     # --- Step 2: Refine Boundaries ---
-    def _step_refine_ui():
+
+    @render.ui
+    def refine_controls():
         grd = refined_grd.get()
         if grd is None:
             return ui.div(
-                ui.h4("Step 2: Refine Boundaries"),
-                ui.div(
-                    "Import boundaries first (Step 1).",
-                    class_="alert alert-info py-2 px-3 small",
-                ),
+                "Import boundaries first (Step 1).",
+                class_="alert alert-info py-2 px-3 small",
             )
         line_choices = {
             str(lid): f"Line {lid} (type={line.line_type}, {len(line.nodes)} pts)"
@@ -344,7 +547,6 @@ def mesh_builder_server(
         all_choice = {"all": f"All lines ({len(grd.lines)} lines)"}
         all_choice.update(line_choices)
         return ui.div(
-            ui.h4("Step 2: Refine Boundaries"),
             ui.p("Smooth or simplify boundary lines.", class_="text-muted"),
             ui.input_select("refine_line", "Select Line", choices=all_choice),
             ui.row(
@@ -444,42 +646,15 @@ def mesh_builder_server(
         ui.update_radio_buttons("wizard_step", selected="mesh")
 
     # --- Step 3: Generate Mesh ---
-    def _step_mesh_ui():
-        grd = refined_grd.get()
-        no_boundary = grd is None
-        return ui.div(
-            ui.h4("Step 3: Generate Mesh"),
-            ui.p(
-                "Configure triangulation method, mesh density and quality constraints.",
-                class_="text-muted",
-            ),
-            ui.div(
+
+    @render.ui
+    def mesh_prereq_alert():
+        if refined_grd.get() is None:
+            return ui.div(
                 "Import boundaries first (Steps 1-2).",
                 class_="alert alert-info py-2 px-3 small",
-            ) if no_boundary else ui.span(),
-            ui.input_radio_buttons(
-                "mesh_method",
-                "Triangulation Method",
-                choices={
-                    "delaunay_quality": "Quality mesh (area + angle constraints)",
-                    "delaunay_conforming": "Conforming (angle only, no area limit)",
-                    "delaunay_minimal": "Minimal (fewest triangles, no constraints)",
-                },
-                selected="delaunay_quality",
-            ),
-            ui.output_ui("mesh_method_controls"),
-            ui.input_action_button(
-                "generate_mesh",
-                "Generate Mesh",
-                class_="btn-primary w-100 mt-2 mb-2",
-            ),
-            ui.output_ui("mesh_stats_display"),
-            ui.input_action_button(
-                "next_to_bathy",
-                "Next: Interpolate Bathymetry",
-                class_="btn-primary mt-2",
-            ),
-        )
+            )
+        return ui.span()
 
     @render.ui
     def mesh_method_controls():
@@ -608,123 +783,15 @@ def mesh_builder_server(
         ui.update_radio_buttons("wizard_step", selected="bathy")
 
     # --- Step 4: Interpolate Bathymetry ---
-    def _step_bathy_ui():
-        no_mesh = mesh_grd.get() is None
-        return ui.div(
-            ui.h4("Step 4: Interpolate Bathymetry"),
-            ui.p(
-                "Upload depth data and interpolate values onto mesh nodes.",
-                class_="text-muted",
-            ),
-            ui.div(
+
+    @render.ui
+    def bathy_prereq_alert():
+        if mesh_grd.get() is None:
+            return ui.div(
                 "Generate a mesh first (Step 3).",
                 class_="alert alert-info py-2 px-3 small",
-            ) if no_mesh else ui.span(),
-            # --- Bathymetry source type ---
-            ui.h5("Depth Data Source"),
-            ui.input_radio_buttons(
-                "bathy_source",
-                "",
-                choices={
-                    "points": "Point cloud (CSV / XYZ / GeoTIFF)",
-                    "contours": "Contour isobaths (SHP / GeoJSON / GPKG)",
-                },
-                selected="points",
-                inline=True,
-            ),
-            ui.output_ui("bathy_upload_controls"),
-            ui.output_ui("bathy_loaded_info"),
-            ui.hr(),
-            # --- Interpolation method ---
-            ui.h5("Interpolation Method"),
-            ui.input_select(
-                "bathy_method",
-                "Method",
-                choices={
-                    "linear": "Linear (scipy griddata)",
-                    "nearest": "Nearest neighbor (scipy)",
-                    "cubic": "Cubic (scipy griddata)",
-                    "idw": "IDW — inverse distance weighting (k=8 neighbors)",
-                    "rbf": "RBF — thin-plate spline (smooth, extrapolates)",
-                    "cloughtocher": "Clough-Tocher — C1 cubic (smooth, no overshoot)",
-                    "shybas": "shybas -bfile (SHYFEM binary)",
-                },
-                selected="linear",
-            ),
-            ui.div(
-                ui.tags.strong("Method guide", class_="d-block mb-1"),
-                ui.tags.ul(
-                    ui.tags.li(
-                        ui.tags.strong("Linear"),
-                        " — smooth, good general-purpose default.",
-                    ),
-                    ui.tags.li(
-                        ui.tags.strong("Nearest"),
-                        " — fast, produces discontinuous steps between data points.",
-                    ),
-                    ui.tags.li(
-                        ui.tags.strong("Cubic"),
-                        " — smooth but can overshoot between sparse data.",
-                    ),
-                    ui.tags.li(
-                        ui.tags.strong("IDW"),
-                        " — inverse-distance weighted average of 8 nearest neighbors.",
-                    ),
-                    ui.tags.li(
-                        ui.tags.strong("RBF (thin-plate spline)"),
-                        " — globally smooth surface that ",
-                        ui.tags.em("naturally extrapolates"),
-                        " beyond the data extent. Best for sparse bathymetry "
-                        "and coastal edges.",
-                    ),
-                    ui.tags.li(
-                        ui.tags.strong("Clough-Tocher (C1 cubic)"),
-                        " — piecewise cubic with continuous first derivatives. "
-                        "Smoother than Cubic with less overshoot. Falls back to "
-                        "nearest-neighbor outside the data hull.",
-                    ),
-                    ui.tags.li(
-                        ui.tags.strong("shybas"),
-                        " — SHYFEM's built-in Fortran interpolation.",
-                    ),
-                    class_="small mb-1 ps-3",
-                ),
-                ui.tags.strong(
-                    "Recommendation for contour isobaths:",
-                    class_="d-block mt-2 mb-1",
-                ),
-                ui.p(
-                    "Use RBF + boundary zero for best results. RBF smoothly "
-                    "interpolates between contour lines and extrapolates to the "
-                    "shoreline, while the boundary = 0 constraint anchors the "
-                    "coast. Use Clough-Tocher as a safer alternative if RBF "
-                    "overshoots in deep basins with very sparse contours.",
-                ),
-                class_="alert alert-light border small py-2 px-3 mb-2",
-            ),
-            ui.input_checkbox(
-                "use_boundary_zero",
-                "Use boundary as depth = 0 (coastline constraint)",
-                value=True,
-            ),
-            ui.p(
-                "Injects coastline boundary nodes as depth = 0 points before "
-                "interpolation, forcing the shoreline to zero depth and "
-                "preventing unrealistic values near shore.",
-                class_="text-muted small",
-            ),
-            ui.input_action_button(
-                "interpolate_btn",
-                "Interpolate Bathymetry",
-                class_="btn-primary w-100 mt-2 mb-2",
-            ),
-            ui.output_ui("bathy_stats_display"),
-            ui.input_action_button(
-                "next_to_export",
-                "Next: Export",
-                class_="btn-primary mt-2",
-            ),
-        )
+            )
+        return ui.span()
 
     @render.ui
     def bathy_upload_controls():
@@ -920,41 +987,21 @@ def mesh_builder_server(
         ui.update_radio_buttons("wizard_step", selected="export")
 
     # --- Step 5: Export ---
-    def _step_export_ui():
+
+    @render.ui
+    def export_summary():
         best = final_grd.get() or mesh_grd.get()
         if best is None:
             return ui.div(
-                ui.h4("Step 5: Export"),
-                ui.div(
-                    "Generate a mesh first (Step 3).",
-                    class_="alert alert-info py-2 px-3 small",
-                ),
+                "Generate a mesh first (Step 3).",
+                class_="alert alert-info py-2 px-3 small",
             )
         has_depth = any(n.depth is not None for n in best.nodes.values())
         summary = f"{best.num_nodes:,} nodes, {best.num_elements:,} elements"
         if has_depth:
             depths = [n.depth for n in best.nodes.values() if n.depth is not None]
-            summary += f", depth {min(depths):.1f}–{max(depths):.1f}"
-        return ui.div(
-            ui.h4("Step 5: Export"),
-            ui.p(f"Mesh ready: {summary}", class_="text-muted"),
-            ui.input_text(
-                "export_filename",
-                "Output Filename",
-                value="mesh_output.grd",
-            ),
-            ui.input_action_button(
-                "save_to_project",
-                "Save to Project Directory",
-                class_="btn-primary w-100 mt-2 mb-2",
-            ),
-            ui.download_button(
-                "download_grd",
-                "Download .grd File",
-                class_="btn-outline-primary w-100 mb-2",
-            ),
-            ui.output_ui("export_result"),
-        )
+            summary += f", depth {min(depths):.1f}\u2013{max(depths):.1f}"
+        return ui.p(f"Mesh ready: {summary}", class_="text-muted")
 
     @reactive.effect
     @reactive.event(input.save_to_project)
