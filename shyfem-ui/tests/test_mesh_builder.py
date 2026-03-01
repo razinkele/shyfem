@@ -886,3 +886,135 @@ class TestSetResolution:
         result = set_resolution(grd, global_area=10.0, refinement_zones=zones)
         assert len(result["regions"]) == 1
         assert result["regions"][0][3] == 1.0  # max_area
+
+
+# ---------------------------------------------------------------------------
+# TestCuronianIntegration — end-to-end with real Curonian Lagoon data
+# ---------------------------------------------------------------------------
+
+_CURONIAN_DIR = Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "curoninan"
+
+_HAS_CURONIAN = (
+    (_CURONIAN_DIR / "curonian_boundary.gpkg").exists()
+    and (_CURONIAN_DIR / "depth_isobates.gpkg").exists()
+)
+
+
+@pytest.mark.skipif(not _HAS_CURONIAN, reason="Curonian lagoon sample data not found")
+class TestCuronianIntegration:
+    """Full pipeline integration tests with real Curonian Lagoon GPKG data.
+
+    The Curonian data is more complex than Mar Menor: MultiPolygon boundary
+    with 21 interior holes (islands), 5136-point coastline, and 435 isobath
+    contours with 251k points spanning depths 0–95m.
+    """
+
+    def test_import_boundary(self):
+        """Import GPKG MultiPolygon with exterior + interior rings."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        assert grd.num_nodes > 5000
+        assert grd.num_lines >= 20  # outer rings + holes
+        # Check we have both exterior (type 1) and hole (type 2) lines
+        types = {l.line_type for l in grd.lines.values()}
+        assert 1 in types, "Should have exterior boundaries"
+        assert 2 in types, "Should have interior holes (islands)"
+        issues = validate_boundary(grd)
+        errors = [i for i in issues if i.startswith("ERROR")]
+        assert len(errors) == 0
+
+    def test_reduce_all_lines(self):
+        """Douglas-Peucker reduction works across all 31 lines."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        original_nodes = grd.num_nodes
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+        assert grd.num_nodes < original_nodes / 10  # significant reduction
+        # Main coastline should still have meaningful detail
+        main_line = max(grd.lines.values(), key=lambda l: len(l.nodes))
+        assert len(main_line.nodes) > 50
+
+    def test_reduce_and_triangulate(self):
+        """Reduced boundary with holes triangulates cleanly."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+        mesh = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+        assert mesh.num_elements > 100
+        assert mesh.num_nodes > 100
+        stats = compute_mesh_stats(mesh)
+        assert stats["quality"]["mean"] > 0.3
+
+    def test_all_triangulation_methods(self):
+        """Quality, conforming, and minimal triangulation all succeed."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+
+        # Quality: area + angle constraints → most elements
+        quality = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+        assert quality.num_elements > 1000
+        assert quality.num_nodes > 500
+
+        # Conforming: angle constraint only, no area limit → fewer elements
+        conforming = triangulate(grd, max_area=None, min_angle=20.0)
+        assert conforming.num_elements > 100
+        assert conforming.num_elements < quality.num_elements
+
+        # Minimal: no constraints → fewest triangles
+        minimal = triangulate(grd, max_area=None, min_angle=0.0)
+        assert minimal.num_elements > 10
+        assert minimal.num_elements <= conforming.num_elements
+
+    def test_smooth_main_coastline_and_triangulate(self):
+        """Chaikin-smoothed main coastline triangulates without segfault."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        # Reduce first (5136 pts too many for smoothing)
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+        # Find the main coastline (largest line)
+        main_lid = max(grd.lines, key=lambda lid: len(grd.lines[lid].nodes))
+        smoothed = smooth_boundary(grd, line_id=main_lid, method="chaikin", iterations=1)
+        mesh = triangulate(smoothed, max_area=1000000.0, min_angle=20.0)
+        assert mesh.num_elements > 100
+
+    def test_load_isobath_contours(self):
+        """Load 435 isobath contours from GPKG with depth attribute."""
+        data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
+        assert data.shape[1] == 3  # x, y, depth
+        assert len(data) > 100_000  # ~251k points
+        assert data[:, 2].min() == pytest.approx(0.0)
+        assert data[:, 2].max() >= 90.0  # up to 95m
+
+    def test_interpolate_isobaths_all_methods(self):
+        """All scipy methods produce valid depths from Curonian isobaths."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+        mesh = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+        data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
+        # Subsample for speed (251k points is too many for test)
+        sub = data[::10]
+        for method in ["linear", "nearest", "idw", "rbf", "cloughtocher"]:
+            result = interpolate_bathymetry_scipy(
+                mesh, sub, method=method, use_boundary_zero=True
+            )
+            depths = [n.depth for n in result.nodes.values()]
+            assert all(d is not None for d in depths), f"{method} has None depths"
+            assert not any(np.isnan(d) for d in depths), f"{method} has NaN depths"
+
+    def test_export_round_trip(self, tmp_path):
+        """Full pipeline: import -> reduce -> mesh -> bathy -> export -> reload."""
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+        mesh = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+        data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
+        sub = data[::20]
+        result = interpolate_bathymetry_scipy(
+            mesh, sub, method="linear", use_boundary_zero=True
+        )
+        out = tmp_path / "curonian_output.grd"
+        export_grd(result, out)
+        reloaded = GrdParser.parse_file(out)
+        assert len(reloaded.nodes) == len(result.nodes)
+        assert len(reloaded.elements) == len(result.elements)

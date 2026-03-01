@@ -110,7 +110,7 @@ def mesh_builder_server(
     preview_grd = reactive.value(None)  # Currently shown in map
     log_content = reactive.value("")
     bathy_data = reactive.value(None)  # Loaded bathymetry points
-    is_busy = reactive.value(False)  # Track long operations
+    busy_message = reactive.value("")  # Non-empty string = busy with that message
 
     # --- Initialize child modules ---
     log_viewer_server("build_log", log_content)
@@ -206,6 +206,24 @@ def mesh_builder_server(
                 )
         if not items:
             return ui.span()
+
+        # Busy indicator — shown globally above wizard content
+        msg = busy_message.get()
+        if msg:
+            items.append(
+                ui.div(
+                    ui.div(
+                        ui.div(
+                            class_="spinner-border spinner-border-sm text-primary me-2",
+                            role="status",
+                        ),
+                        ui.tags.span(msg),
+                        class_="d-flex align-items-center",
+                    ),
+                    class_="alert alert-warning py-2 px-3 small mb-2 d-inline-flex",
+                )
+            )
+
         return ui.div(*items, class_="small text-muted mb-2")
 
     # --- Wizard content router ---
@@ -464,7 +482,6 @@ def mesh_builder_server(
                 "Generate Mesh",
                 class_="btn-primary w-100 mt-2 mb-2",
             ),
-            ui.output_ui("mesh_progress"),
             ui.output_ui("mesh_stats_display"),
             ui.input_action_button(
                 "next_to_bathy",
@@ -481,19 +498,6 @@ def mesh_builder_server(
             return ui.p("Enter max area to see estimate.", class_="text-muted small")
         count = estimate_element_count(grd, area)
         return ui.p(f"Estimated elements: ~{count:,}", class_="small text-info")
-
-    @render.ui
-    def mesh_progress():
-        if is_busy.get():
-            return ui.div(
-                ui.div(
-                    ui.div(class_="spinner-border spinner-border-sm me-2"),
-                    "Generating mesh... this may take a moment for large boundaries.",
-                    class_="d-flex align-items-center",
-                ),
-                class_="alert alert-warning py-2 px-3 small",
-            )
-        return ui.span()
 
     @reactive.effect
     @reactive.event(input.generate_mesh)
@@ -518,9 +522,9 @@ def mesh_builder_server(
             eff_angle = min_angle
 
         _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
-        is_busy.set(True)
+        busy_message.set("Generating mesh — this may take a moment for large boundaries...")
+        await asyncio.sleep(0)  # yield so Shiny flushes the spinner to the browser
         try:
-            # Run triangulation in a thread so the UI stays responsive
             new_mesh = await asyncio.to_thread(
                 triangulate, grd, max_area=eff_area, min_angle=eff_angle
             )
@@ -536,7 +540,7 @@ def mesh_builder_server(
             _log(f"Mesh generation error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
         finally:
-            is_busy.set(False)
+            busy_message.set("")
 
     @render.ui
     def mesh_stats_display():
@@ -826,9 +830,10 @@ def mesh_builder_server(
             return
         method = input.bathy_method()
         boundary_zero = input.use_boundary_zero()
-        is_busy.set(True)
+        _log(f"Interpolating bathymetry: method={method}, boundary_zero={boundary_zero}...")
+        busy_message.set(f"Interpolating bathymetry ({method})...")
+        await asyncio.sleep(0)  # yield so Shiny flushes the spinner to the browser
         try:
-            _log(f"Interpolating bathymetry: method={method}, boundary_zero={boundary_zero}...")
             if method == "shybas":
                 work_dir = Path(config.work_dir) / "mesh_builder"
                 result_grd = await interpolate_bathymetry_shybas(
@@ -849,7 +854,7 @@ def mesh_builder_server(
             _log(f"Interpolation error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
         finally:
-            is_busy.set(False)
+            busy_message.set("")
 
     @render.ui
     def bathy_stats_display():

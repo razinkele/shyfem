@@ -755,6 +755,20 @@ def _idw_interpolate(
     return values.ravel()
 
 
+def _deduplicate_points(
+    xy: np.ndarray, z: np.ndarray, decimals: int = 2
+) -> tuple[np.ndarray, np.ndarray]:
+    """Remove near-duplicate XY points by rounding, keeping the first occurrence.
+
+    Dense isobath data often has many points within centimetres of each other,
+    which causes singular-matrix errors in RBF/CloughTocher.
+    """
+    rounded = np.round(xy, decimals=decimals)
+    _, unique_idx = np.unique(rounded, axis=0, return_index=True)
+    unique_idx.sort()  # preserve original order
+    return xy[unique_idx], z[unique_idx]
+
+
 def _rbf_interpolate(
     src_xy: np.ndarray,
     src_z: np.ndarray,
@@ -768,8 +782,8 @@ def _rbf_interpolate(
     producing smooth surfaces suitable for bathymetry.  For large point
     sets (>10k), pass ``neighbors=32`` for a local approximation.
     """
+    src_xy, src_z = _deduplicate_points(src_xy, src_z)
     n_pts = len(src_xy)
-    # Use local approximation for large datasets
     if neighbors is None and n_pts > 10_000:
         neighbors = min(32, n_pts)
     rbf = RBFInterpolator(
@@ -789,6 +803,7 @@ def _cloughtocher_interpolate(
     Smoother than ``griddata(method='cubic')`` with less overshoot.
     Falls back to nearest-neighbor for points outside the convex hull.
     """
+    src_xy, src_z = _deduplicate_points(src_xy, src_z)
     interp = CloughTocher2DInterpolator(src_xy, src_z)
     depths = interp(query_xy)
     # Fill NaN outside hull with nearest
