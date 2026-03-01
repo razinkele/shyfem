@@ -269,6 +269,17 @@ _LOGIN_HTML = """\
       letter-spacing: 0.02em;
     }}
 
+    .footer a {{
+      color: rgba(255, 255, 255, 0.55);
+      text-decoration: none;
+      transition: color 200ms ease;
+    }}
+
+    .footer a:hover {{
+      color: rgba(255, 255, 255, 0.85);
+      text-decoration: underline;
+    }}
+
     @media (max-width: 480px) {{
       .login-card {{
         padding: 28px 22px;
@@ -320,7 +331,11 @@ _LOGIN_HTML = """\
       </div>
     </form>
 
-    <div class="footer">System of HydroDYnamic Finite Element Modules</div>
+    <div class="footer">
+      <a href="https://shyfem.org" target="_blank" rel="noopener">shyfem.org</a>
+      &middot; System of HydroDYnamic Finite Element Modules
+      <br>Maintained by Marine Research Institute of the Klaip\u0117da University
+    </div>
   </div>
 </body>
 </html>

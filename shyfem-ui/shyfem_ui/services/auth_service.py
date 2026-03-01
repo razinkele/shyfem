@@ -327,6 +327,29 @@ class AuthService:
     # Bootstrap
     # ------------------------------------------------------------------
 
+    def ensure_user(self, username: str, password: str) -> dict:
+        """Ensure a default (non-admin) user exists.
+
+        If a user with the given username already exists, returns it unchanged.
+        Otherwise creates a new user with role "user".
+
+        Returns:
+            Dict with user fields.
+        """
+        session = self._session_factory()
+        try:
+            user = session.query(User).filter_by(username=username).first()
+            if user is not None:
+                return self._user_to_dict(user)
+        finally:
+            session.close()
+
+        return self.create_user(
+            username=username,
+            password=password,
+            role="user",
+        )
+
     def ensure_admin(self, username: str, password: str) -> dict:
         """Ensure an admin user exists.
 

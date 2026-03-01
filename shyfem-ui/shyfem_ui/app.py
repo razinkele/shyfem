@@ -7,6 +7,7 @@ import hmac
 import ipaddress
 import json
 import logging
+import shutil
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -89,6 +90,92 @@ def _check_db_health() -> float:
     return round((time.monotonic() - start) * 1000, 1)
 
 
+def _bootstrap_tutorial_project(admin_id: int, user_id: int, config: Config) -> None:
+    """Seed a shared Mar Menor tutorial project if it doesn't already exist.
+
+    Creates the project directory (via copytree from testcases), DB records
+    (Project, Grid, Simulations), and shares with the tutorial user. All steps
+    are idempotent.
+    """
+    from shyfem_ui.db.base import db_session
+    from shyfem_ui.models.project import Grid, Project, Simulation
+    from shyfem_ui.services.sharing_service import SharingService
+    from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+
+    project_name = "Mar Menor Tutorial"
+
+    # Check if project already exists
+    with db_session() as db:
+        existing = db.query(Project).filter_by(name=project_name).first()
+        if existing is not None:
+            # Ensure sharing is still in place
+            SharingService().share_project(existing.id, user_id, role="editor")
+            logger.debug("Tutorial project already exists (id=%d)", existing.id)
+            return
+
+    # Copy tutorial files
+    mar_menor_src = config.testcases_dir / "mar_menor"
+    if not mar_menor_src.is_dir():
+        logger.warning("Tutorial source not found: %s — skipping bootstrap", mar_menor_src)
+        return
+
+    project_path = config.work_dir / project_name
+    if not project_path.exists():
+        config.ensure_work_dir()
+        try:
+            shutil.copytree(mar_menor_src, project_path)
+        except Exception:
+            logger.exception("Failed to copy tutorial files to %s", project_path)
+            return
+
+    # Create DB records
+    try:
+        with db_session() as db:
+            project = Project(
+                name=project_name,
+                description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
+                work_dir=str(project_path),
+                owner_id=admin_id,
+            )
+            db.add(project)
+            db.flush()
+
+            grid = Grid(
+                project_id=project.id,
+                name="MM_coarse",
+                description="Mar Menor coarse grid",
+                grd_file="GRID/MM_coarse.grd",
+                bas_file="GRID/MM_coarse.bas",
+            )
+            db.add(grid)
+            db.flush()
+
+            for phase in TUTORIAL_CONTENT:
+                for tsim in phase["simulations"]:
+                    str_path = project_path / tsim["str_file"]
+                    if not str_path.exists():
+                        continue
+                    sim = Simulation(
+                        project_id=project.id,
+                        grid_id=grid.id,
+                        name=tsim["name"],
+                        description=f"{phase['title']}: {tsim['title']}",
+                        str_file=tsim["str_file"],
+                    )
+                    db.add(sim)
+
+            project_id = project.id
+
+        # Share with tutorial user
+        SharingService().share_project(project_id, user_id, role="editor")
+        logger.info("Bootstrapped tutorial project '%s' (id=%d)", project_name, project_id)
+
+    except Exception:
+        logger.exception("Failed to create tutorial project DB records")
+        if project_path.exists():
+            shutil.rmtree(project_path, ignore_errors=True)
+
+
 def create_app(config: Config | None = None) -> App:
     """Create and return the Shiny application.
 
@@ -118,10 +205,21 @@ def create_app(config: Config | None = None) -> App:
     auth_service = AuthService()
     if config.deployment_mode == "server":
         if config.default_admin_password:
-            auth_service.ensure_admin(config.default_admin_username, config.default_admin_password)
+            admin = auth_service.ensure_admin(
+                config.default_admin_username, config.default_admin_password
+            )
         elif config.auth_enabled and config.auth_password:
             # Backward compat: migrate from basic auth config
-            auth_service.ensure_admin(config.auth_username, config.auth_password)
+            admin = auth_service.ensure_admin(config.auth_username, config.auth_password)
+        else:
+            admin = None
+
+        # Bootstrap default tutorial user + shared project
+        if admin and config.default_user_password:
+            tutorial_user = auth_service.ensure_user(
+                config.default_user_username, config.default_user_password
+            )
+            _bootstrap_tutorial_project(admin["id"], tutorial_user["id"], config)
 
     # Initialize job queue
     queue_mode = "celery" if config.use_celery else "local"

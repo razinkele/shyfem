@@ -86,6 +86,12 @@ class Config(BaseSettings):
     default_admin_password: str = Field(
         default="", description="Default admin password (required for server mode first run)"
     )
+    default_user_username: str = Field(
+        default="user", description="Default tutorial user username"
+    )
+    default_user_password: str = Field(
+        default="", description="Default tutorial user password (set to enable)"
+    )
 
     # Debug settings
     debug: bool = Field(
