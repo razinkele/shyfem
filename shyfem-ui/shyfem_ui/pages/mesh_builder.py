@@ -439,44 +439,17 @@ def mesh_builder_server(
                 "Import boundaries first (Steps 1-2).",
                 class_="alert alert-info py-2 px-3 small",
             ) if no_boundary else ui.span(),
-            ui.row(
-                ui.column(
-                    4,
-                    ui.input_select(
-                        "mesh_method",
-                        "Mesh Method",
-                        choices={
-                            "delaunay_quality": "Quality mesh",
-                            "delaunay_conforming": "Conforming (no area limit)",
-                            "delaunay_minimal": "Minimal (fewest triangles)",
-                        },
-                        selected="delaunay_quality",
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "max_area",
-                        "Max Triangle Area",
-                        value=None,
-                        min=0.001,
-                    ),
-                    ui.output_ui("element_estimate"),
-                ),
-                ui.column(
-                    4,
-                    ui.input_slider(
-                        "min_angle",
-                        "Min Angle (degrees)",
-                        min=10, max=33, value=20,
-                    ),
-                ),
+            ui.input_radio_buttons(
+                "mesh_method",
+                "Triangulation Method",
+                choices={
+                    "delaunay_quality": "Quality mesh (area + angle constraints)",
+                    "delaunay_conforming": "Conforming (angle only, no area limit)",
+                    "delaunay_minimal": "Minimal (fewest triangles, no constraints)",
+                },
+                selected="delaunay_quality",
             ),
-            ui.p(
-                "Quality: full constraints. Conforming: angle only, no area limit. "
-                "Minimal: fewest triangles (no constraints). Max angle: 33.9 deg.",
-                class_="text-muted small",
-            ),
+            ui.output_ui("mesh_method_controls"),
             ui.input_action_button(
                 "generate_mesh",
                 "Generate Mesh",
@@ -489,6 +462,45 @@ def mesh_builder_server(
                 class_="btn-primary mt-2",
             ),
         )
+
+    @render.ui
+    def mesh_method_controls():
+        """Show/hide area and angle controls based on selected method."""
+        method = input.mesh_method()
+        controls = []
+        if method == "delaunay_quality":
+            controls.append(
+                ui.row(
+                    ui.column(
+                        6,
+                        ui.input_numeric(
+                            "max_area",
+                            "Max Triangle Area",
+                            value=None,
+                            min=0.001,
+                        ),
+                        ui.output_ui("element_estimate"),
+                    ),
+                    ui.column(
+                        6,
+                        ui.input_slider(
+                            "min_angle",
+                            "Min Angle (degrees)",
+                            min=10, max=33, value=20,
+                        ),
+                    ),
+                )
+            )
+        elif method == "delaunay_conforming":
+            controls.append(
+                ui.input_slider(
+                    "min_angle",
+                    "Min Angle (degrees)",
+                    min=10, max=33, value=20,
+                ),
+            )
+        # Minimal: no controls needed
+        return ui.div(*controls) if controls else ui.span()
 
     @render.ui
     def element_estimate():
@@ -507,19 +519,17 @@ def mesh_builder_server(
             ui.notification_show("No boundary data to mesh.", type="warning")
             return
         method = input.mesh_method()
-        max_area = input.max_area()
-        min_angle = input.min_angle()
 
-        # Interpret method choice
-        if method == "delaunay_minimal":
-            eff_area = None
-            eff_angle = 0.0
+        # Read controls that exist for the selected method
+        if method == "delaunay_quality":
+            eff_area = input.max_area()
+            eff_angle = input.min_angle()
         elif method == "delaunay_conforming":
             eff_area = None
-            eff_angle = min_angle
-        else:
-            eff_area = max_area
-            eff_angle = min_angle
+            eff_angle = input.min_angle()
+        else:  # minimal
+            eff_area = None
+            eff_angle = 0.0
 
         _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
         busy_message.set("Generating mesh — this may take a moment for large boundaries...")
