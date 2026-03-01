@@ -284,6 +284,23 @@ _LOGIN_HTML = """\
       text-decoration: underline;
     }}
 
+    /* FEM mesh patchwork */
+    .fem-mesh {{
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background-image: url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27160%27 height=%27138%27%3E%3Cpolygon points=%270,0 80,0 40,69%27 fill=%27rgba(45,156,186,0.06)%27/%3E%3Cpolygon points=%27120,69 80,138 160,138%27 fill=%27rgba(6,30,47,0.08)%27/%3E%3Cpolygon points=%2780,0 40,69 120,69%27 fill=%27rgba(100,200,230,0.04)%27/%3E%3Cpolygon points=%2740,69 0,138 80,138%27 fill=%27rgba(26,107,138,0.05)%27/%3E%3Cg stroke=%27rgba(255,255,255,0.05)%27 stroke-width=%270.5%27 fill=%27none%27%3E%3Cpath d=%27M0,0L80,0L160,0 M0,0L40,69 M80,0L40,69 M80,0L120,69 M160,0L120,69 M40,69L120,69 M40,69L0,138 M40,69L80,138 M120,69L80,138 M120,69L160,138 M0,138L80,138L160,138 M0,0L0,138 M160,0L160,138%27/%3E%3C/g%3E%3Cg fill=%27rgba(255,255,255,0.1)%27%3E%3Ccircle cx=%270%27 cy=%270%27 r=%271.5%27/%3E%3Ccircle cx=%2780%27 cy=%270%27 r=%271.5%27/%3E%3Ccircle cx=%27160%27 cy=%270%27 r=%271.5%27/%3E%3Ccircle cx=%2740%27 cy=%2769%27 r=%271.5%27/%3E%3Ccircle cx=%27120%27 cy=%2769%27 r=%271.5%27/%3E%3Ccircle cx=%270%27 cy=%27138%27 r=%271.5%27/%3E%3Ccircle cx=%2780%27 cy=%27138%27 r=%271.5%27/%3E%3Ccircle cx=%27160%27 cy=%27138%27 r=%271.5%27/%3E%3C/g%3E%3C/svg%3E');
+      background-repeat: repeat;
+      background-size: 160px 138px;
+      animation: mesh-drift 90s linear infinite;
+    }}
+
+    @keyframes mesh-drift {{
+      from {{ background-position: 0 0; }}
+      to {{ background-position: 160px 138px; }}
+    }}
+
     /* Ocean wave layers */
     .ocean {{
       position: fixed;
@@ -392,6 +409,9 @@ _LOGIN_HTML = """\
   </style>
 </head>
 <body>
+  <!-- FEM mesh patchwork -->
+  <div class="fem-mesh"></div>
+
   <!-- Underwater light shimmer -->
   <div class="shimmer"></div>
 
