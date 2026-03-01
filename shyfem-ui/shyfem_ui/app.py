@@ -598,6 +598,9 @@ class HealthCheckMiddleware:
             await result
 
 
+_ADMIN_ONLY_ITEMS = {"Dashboard", "Partitioning", "Compare", "Ensemble", "Files", "Admin"}
+
+
 def _build_sidebar_nav() -> ui.Tag:
     """Build the sidebar navigation HTML."""
     nav_items = []
@@ -605,10 +608,14 @@ def _build_sidebar_nav() -> ui.Tag:
         nav_items.append(
             ui.div(
                 ui.span(group["name"], class_="sf-nav-group-header"),
+                data_group=group["name"],
             )
         )
         for item in group["items"]:
             active_class = " active" if item["value"] == "Dashboard" else ""
+            extra_attrs: dict = {}
+            if item["value"] in _ADMIN_ONLY_ITEMS:
+                extra_attrs["data_admin_only"] = "1"
             nav_items.append(
                 ui.div(
                     ui.tags.i(class_=f"bi {item['icon']} sf-nav-icon"),
@@ -616,6 +623,7 @@ def _build_sidebar_nav() -> ui.Tag:
                     class_=f"sf-nav-item{active_class}",
                     data_nav=item["value"],
                     onclick=f"shyfemNavTo('{item['value']}')",
+                    **extra_attrs,
                 )
             )
 
@@ -683,10 +691,44 @@ document.addEventListener('DOMContentLoaded', function() {
     var sb = document.getElementById('sf-sidebar');
     if (sb) sb.classList.add('sf-sidebar-collapsed');
   }
-  // Fetch current username via HTTP (WebSocket doesn't forward cookies behind proxy)
+  // Fetch current username and role via HTTP (WebSocket doesn't forward cookies behind proxy)
   fetch('api/whoami').then(function(r) { return r.json(); }).then(function(data) {
     var el = document.getElementById('sf-current-username');
     if (el) el.textContent = data.display_name || data.username || '';
+
+    // Hide admin-only sidebar items and pages for non-admin users
+    if (data.role && data.role !== 'admin') {
+      // Hide admin-only nav items
+      document.querySelectorAll('.sf-nav-item[data-admin-only]').forEach(function(item) {
+        item.style.display = 'none';
+        // Hide the corresponding page panel
+        var nav = item.getAttribute('data-nav');
+        if (nav) {
+          var pageId = 'sf-page-' + nav.replace(/ /g, '-');
+          var page = document.getElementById(pageId);
+          if (page) page.style.display = 'none';
+        }
+      });
+      // Hide group headers whose visible items are all hidden
+      document.querySelectorAll('[data-group]').forEach(function(header) {
+        var next = header.nextElementSibling;
+        var hasVisible = false;
+        while (next && !next.hasAttribute('data-group')) {
+          if (next.classList.contains('sf-nav-item') && next.style.display !== 'none') {
+            hasVisible = true;
+            break;
+          }
+          next = next.nextElementSibling;
+        }
+        if (!hasVisible) header.style.display = 'none';
+      });
+      // Switch default landing from Dashboard to Tutorial
+      var dashNav = document.querySelector('.sf-nav-item[data-nav="Dashboard"]');
+      if (dashNav) dashNav.classList.remove('active');
+      var dashPage = document.getElementById('sf-page-Dashboard');
+      if (dashPage) dashPage.classList.remove('active');
+      shyfemNavTo('Tutorial');
+    }
   }).catch(function() {});
 });
 
