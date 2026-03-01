@@ -5,6 +5,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
+from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrFile, StrParser
@@ -16,6 +17,7 @@ def simulation_ui():
     return ui.div(
         ui.h3("Simulation Configuration"),
         ui.p("Edit .str parameter files for SHYFEM simulations.", class_="text-muted"),
+        sample_data_card_ui("simulation"),
         ui.layout_sidebar(
             ui.sidebar(
                 # File selection
@@ -189,6 +191,42 @@ def simulation_server(
         editor_parsed = editor_state["parsed_file"].get()
         if editor_parsed is not None:
             parsed_str.set(editor_parsed)
+
+    # Sample data: STR file description display
+    _str_files_lookup = {e["file"]: e["description"] for e in get_progressive_str_files()}
+
+    @render.ui
+    def sample_str_description():
+        selected = input.sample_str_select()
+        desc = _str_files_lookup.get(selected, "")
+        if not desc:
+            return ui.div()
+        return ui.p(desc, class_="text-muted small fst-italic mt-1")
+
+    # Load sample STR file handler
+    @reactive.effect
+    @reactive.event(input.load_sample_btn)
+    def _load_sample_data():
+        selected = input.sample_str_select()
+        if not selected:
+            selected = "mm_hyd_03.str"
+        str_path = config.testcases_dir / "mar_menor" / selected
+        if not str_path.exists():
+            ui.notification_show(
+                f"Sample STR not found: {str_path}", type="error"
+            )
+            return
+        ui.update_text("str_path", value=str(str_path))
+        try:
+            current_file_path.set(str_path)
+            str_file = StrParser.parse_file(str_path)
+            parsed_str.set(str_file)
+            ui.notification_show(
+                f"Sample loaded: {selected}",
+                type="message",
+            )
+        except Exception as e:
+            ui.notification_show(f"Error loading sample STR: {e}", type="error")
 
     @reactive.effect
     @reactive.event(input.load_btn)

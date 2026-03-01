@@ -16,6 +16,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -111,6 +112,7 @@ def postprocess_ui():
     return ui.div(
         ui.h3("Post-Processing"),
         ui.p("Process SHYFEM output files using shyelab.", class_="text-muted"),
+        sample_data_card_ui("postprocess"),
         ui.layout_sidebar(
             ui.sidebar(
                 # Input files
@@ -254,6 +256,23 @@ def postprocess_server(
             return
         ui.update_text("shy_path", value=ctx["work_dir"])
         tutorial_context.set(None)
+
+    # Load sample data handler
+    @reactive.effect
+    @reactive.event(input.load_sample_btn)
+    def _load_sample_data():
+        work_dir = config.testcases_dir / "mar_menor"
+        if not work_dir.exists():
+            ui.notification_show(
+                f"Sample directory not found: {work_dir}", type="error"
+            )
+            return
+        ui.update_text("shy_path", value=str(work_dir))
+        ui.notification_show(
+            "Sample directory set. Run a simulation first to generate "
+            ".shy output, then click Scan.",
+            type="message",
+        )
 
     # State
     log_content = reactive.value("")

@@ -23,6 +23,7 @@ from shyfem_ui.components.job_status import (
     job_list_table,
 )
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.parser_grd import GrdParser
@@ -137,6 +138,7 @@ def run_ui():
     return ui.div(
         ui.h3("Run Simulation"),
         ui.p("Submit and monitor SHYFEM simulation jobs.", class_="text-muted"),
+        sample_data_card_ui("run"),
         ui.row(
             # Left panel - Submit job
             ui.column(
@@ -396,6 +398,25 @@ def run_server(
         ui.update_text("working_dir", value=ctx["work_dir"])
         ui.update_select("tool_select", selected="shyfem")
         tutorial_context.set(None)
+
+    # Load sample data handler
+    @reactive.effect
+    @reactive.event(input.load_sample_btn)
+    def _load_sample_data():
+        str_path = config.testcases_dir / "mar_menor" / "mm_hyd_03.str"
+        work_dir = config.testcases_dir / "mar_menor"
+        if not str_path.exists():
+            ui.notification_show(
+                f"Sample STR not found: {str_path}", type="error"
+            )
+            return
+        ui.update_text("input_file", value=str(str_path))
+        ui.update_text("working_dir", value=str(work_dir))
+        ui.update_select("tool_select", selected="shyfem")
+        ui.notification_show(
+            "Sample loaded: mm_hyd_03.str ready to run (~3s serial)",
+            type="message",
+        )
 
     @render.ui
     def solver_hint():

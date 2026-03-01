@@ -9,6 +9,7 @@ from shyfem_ui.components.file_browser import file_browser_server, file_browser_
 from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
+from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -44,6 +45,7 @@ def grid_prep_ui():
     return ui.div(
         ui.h3("Grid Preparation"),
         ui.p("Convert .grd files to .bas format and analyze grid quality.", class_="text-muted"),
+        sample_data_card_ui("grid_prep"),
         ui.layout_sidebar(
             ui.sidebar(
                 # File selection
@@ -193,6 +195,33 @@ def grid_prep_server(
     log_viewer_server("command_log", log_content)
     plot_widget_server("grid_plot", current_grd)
     grid_map_server("grid_map", grd_file=current_grd)
+
+    # Load sample data handler
+    @reactive.effect
+    @reactive.event(input.load_sample_btn)
+    def _load_sample_data():
+        grd_path = config.testcases_dir / "mar_menor" / "GRID" / "MM_coarse.grd"
+        if not grd_path.exists():
+            ui.notification_show(
+                f"Sample grid not found: {grd_path}", type="error"
+            )
+            return
+        ui.update_text("grd_path", value=str(grd_path))
+        try:
+            grd = GrdParser.parse_file(grd_path)
+            current_grd.set(grd)
+            current_grd_path.set(grd_path)
+            log_content.set(
+                f"Loaded grid: {grd_path.name}\n"
+                f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
+            )
+            ui.notification_show(
+                f"Sample loaded: Mar Menor grid "
+                f"(~{grd.num_nodes:,} nodes, ~{grd.num_elements:,} elements)",
+                type="message",
+            )
+        except Exception as e:
+            ui.notification_show(f"Error loading sample grid: {e}", type="error")
 
     @reactive.effect
     @reactive.event(input.load_path_btn)
