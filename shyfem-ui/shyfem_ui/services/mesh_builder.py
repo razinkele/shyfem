@@ -12,8 +12,6 @@ from pathlib import Path
 import fiona
 import numpy as np
 import shapely.geometry
-import shapely.ops
-import shapely.validation
 import triangle
 from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
