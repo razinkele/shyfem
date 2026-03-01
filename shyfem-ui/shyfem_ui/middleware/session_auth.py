@@ -303,6 +303,9 @@ _LOGIN_HTML = """\
       </svg>
       <h1>SHYFEM Workbench</h1>
       <div class="tagline">Finite element hydrodynamic simulation platform</div>
+      <div class="tagline" style="margin-top:2px;font-size:0.75rem;opacity:0.7;">
+        Maintained by Marine Research Institute of Klaip\u0117da University
+      </div>
     </div>
 
     <div class="info">
@@ -310,6 +313,7 @@ _LOGIN_HTML = """\
         <li>\u2248 Lagoons, coastal seas &amp; estuaries</li>
         <li>\u2248 2D/3D modeling with MPI parallelization</li>
         <li>\u2248 Wind, tidal, baroclinic &amp; transport physics</li>
+        <li style="margin-top:6px;opacity:0.65;">\u2192 Try it: log in with <b>user</b> / <b>user</b></li>
       </ul>
     </div>
 
@@ -334,7 +338,6 @@ _LOGIN_HTML = """\
     <div class="footer">
       <a href="https://shyfem.org" target="_blank" rel="noopener">shyfem.org</a>
       &middot; System of HydroDYnamic Finite Element Modules
-      <br>Maintained by Marine Research Institute of the Klaip\u0117da University
     </div>
   </div>
 </body>
