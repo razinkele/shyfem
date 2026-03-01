@@ -153,14 +153,7 @@ def postprocess_ui():
                     "Output Directory",
                     placeholder="/path/to/output (default: same as input)",
                 ),
-                ui.panel_conditional(
-                    "input.operation === 'custom'",
-                    ui.input_text(
-                        "custom_options",
-                        "Custom CLI Options",
-                        placeholder="-split -outformat nc -tmin 0",
-                    ),
-                ),
+                ui.output_ui("custom_options_field"),
                 ui.hr(),
                 # Actions
                 ui.input_action_button(
@@ -296,6 +289,16 @@ def postprocess_server(
         op = input.operation()
         info = SHYELAB_OPERATIONS.get(op, {})
         return ui.p(info.get("description", ""), class_="text-muted small")
+
+    @render.ui
+    def custom_options_field():
+        if input.operation() != "custom":
+            return ui.span()
+        return ui.input_text(
+            "custom_options",
+            "Custom CLI Options",
+            placeholder="-split -outformat nc -tmin 0",
+        )
 
     @render.ui
     def variable_selector():

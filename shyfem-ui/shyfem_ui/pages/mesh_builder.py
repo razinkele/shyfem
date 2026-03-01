@@ -14,7 +14,6 @@ from shyfem_ui.services.mesh_builder import (
     compute_mesh_stats,
     estimate_element_count,
     export_grd,
-    extract_boundary_zero_points,
     import_boundaries,
     interpolate_bathymetry_scipy,
     interpolate_bathymetry_shybas,
@@ -204,9 +203,6 @@ def mesh_builder_server(
                         f"Depth: {min(depths):.1f} — {max(depths):.1f}",
                     )
                 )
-        if not items:
-            return ui.span()
-
         # Busy indicator — shown globally above wizard content
         msg = busy_message.get()
         if msg:
@@ -224,6 +220,8 @@ def mesh_builder_server(
                 )
             )
 
+        if not items:
+            return ui.span()
         return ui.div(*items, class_="small text-muted mb-2")
 
     # --- Wizard content router ---
@@ -332,18 +330,26 @@ def mesh_builder_server(
     def _step_refine_ui():
         grd = refined_grd.get()
         if grd is None:
-            return ui.p("Import boundaries first (Step 1).", class_="text-muted")
+            return ui.div(
+                ui.h4("Step 2: Refine Boundaries"),
+                ui.div(
+                    "Import boundaries first (Step 1).",
+                    class_="alert alert-info py-2 px-3 small",
+                ),
+            )
         line_choices = {
             str(lid): f"Line {lid} (type={line.line_type}, {len(line.nodes)} pts)"
             for lid, line in sorted(grd.lines.items())
         }
+        all_choice = {"all": f"All lines ({len(grd.lines)} lines)"}
+        all_choice.update(line_choices)
         return ui.div(
             ui.h4("Step 2: Refine Boundaries"),
             ui.p("Smooth or simplify boundary lines.", class_="text-muted"),
+            ui.input_select("refine_line", "Select Line", choices=all_choice),
             ui.row(
                 ui.column(
                     6,
-                    ui.input_select("refine_line", "Select Line", choices=line_choices),
                     ui.input_select(
                         "smooth_method",
                         "Smooth Method",
@@ -358,7 +364,7 @@ def mesh_builder_server(
                     6,
                     ui.input_slider(
                         "reduce_tolerance", "Simplify Tolerance",
-                        min=0.0, max=100.0, value=0.0, step=0.1,
+                        min=0.0, max=1000.0, value=0.0, step=1.0,
                     ),
                     ui.input_action_button(
                         "apply_reduce", "Apply Simplification",
@@ -380,15 +386,21 @@ def mesh_builder_server(
         grd = refined_grd.get()
         if grd is None:
             return
-        line_id = int(input.refine_line())
+        selection = input.refine_line()
         method = input.smooth_method()
         iterations = input.smooth_iterations()
+        line_ids = list(grd.lines.keys()) if selection == "all" else [int(selection)]
         try:
-            new_grd = smooth_boundary(grd, line_id, method=method, iterations=iterations)
+            new_grd = grd
+            for lid in line_ids:
+                new_grd = smooth_boundary(new_grd, lid, method=method, iterations=iterations)
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
-            new_count = len(new_grd.lines[line_id].nodes)
-            _log(f"Smoothed line {line_id}: {method}, {iterations} iters -> {new_count} nodes")
+            if selection == "all":
+                _log(f"Smoothed all {len(line_ids)} lines: {method}, {iterations} iters")
+            else:
+                lid = line_ids[0]
+                _log(f"Smoothed line {lid}: {method}, {iterations} iters -> {len(new_grd.lines[lid].nodes)} nodes")
         except Exception as e:
             _log(f"Smoothing error: {e}")
             ui.notification_show(str(e), type="error", duration=3)
@@ -399,14 +411,20 @@ def mesh_builder_server(
         grd = refined_grd.get()
         if grd is None:
             return
-        line_id = int(input.refine_line())
+        selection = input.refine_line()
         tolerance = input.reduce_tolerance()
+        line_ids = list(grd.lines.keys()) if selection == "all" else [int(selection)]
         try:
-            new_grd = reduce_boundary(grd, line_id, tolerance=tolerance)
+            new_grd = grd
+            for lid in line_ids:
+                new_grd = reduce_boundary(new_grd, lid, tolerance=tolerance)
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
-            new_count = len(new_grd.lines[line_id].nodes)
-            _log(f"Reduced line {line_id}: tolerance={tolerance} -> {new_count} nodes")
+            if selection == "all":
+                _log(f"Reduced all {len(line_ids)} lines: tolerance={tolerance}, {new_grd.num_nodes} total nodes")
+            else:
+                lid = line_ids[0]
+                _log(f"Reduced line {lid}: tolerance={tolerance} -> {len(new_grd.lines[lid].nodes)} nodes")
         except Exception as e:
             _log(f"Reduction error: {e}")
             ui.notification_show(str(e), type="error", duration=3)
@@ -614,52 +632,7 @@ def mesh_builder_server(
                 selected="points",
                 inline=True,
             ),
-            # --- Point cloud upload ---
-            ui.panel_conditional(
-                "input.bathy_source === 'points'",
-                ui.input_file(
-                    "bathy_file",
-                    "Upload Bathymetry Points",
-                    accept=[".csv", ".xyz", ".txt", ".tif", ".tiff"],
-                    multiple=False,
-                ),
-                ui.p(
-                    "Format: one point per line as x, y, depth (comma or space separated). "
-                    "GeoTIFF rasters are also supported.",
-                    class_="text-muted small",
-                ),
-            ),
-            # --- Contour isobath upload ---
-            ui.panel_conditional(
-                "input.bathy_source === 'contours'",
-                ui.input_file(
-                    "bathy_contour_file",
-                    "Upload Contour Isobaths",
-                    accept=[
-                        ".shp", ".shx", ".dbf", ".prj", ".cpg",
-                        ".geojson", ".json", ".gpkg", ".zip",
-                    ],
-                    multiple=True,
-                ),
-                ui.p(
-                    "Vector file with LineString features and a depth attribute "
-                    "(e.g. depth, elev, contour, z). For Shapefiles, select all "
-                    "companion files together or upload a .zip.",
-                    class_="text-muted small",
-                ),
-                ui.input_text(
-                    "contour_depth_attr",
-                    "Depth attribute name",
-                    value="depth",
-                    placeholder="depth, elev, z, contour...",
-                ),
-                ui.input_numeric(
-                    "contour_sample_dist",
-                    "Resample distance (0 = use vertices only)",
-                    value=0,
-                    min=0,
-                ),
-            ),
+            ui.output_ui("bathy_upload_controls"),
             ui.output_ui("bathy_loaded_info"),
             ui.hr(),
             # --- Interpolation method ---
@@ -750,6 +723,54 @@ def mesh_builder_server(
                 "next_to_export",
                 "Next: Export",
                 class_="btn-primary mt-2",
+            ),
+        )
+
+    @render.ui
+    def bathy_upload_controls():
+        """Show upload controls based on selected bathymetry source type."""
+        source = input.bathy_source()
+        if source == "contours":
+            return ui.div(
+                ui.input_file(
+                    "bathy_contour_file",
+                    "Upload Contour Isobaths",
+                    accept=[
+                        ".shp", ".shx", ".dbf", ".prj", ".cpg",
+                        ".geojson", ".json", ".gpkg", ".zip",
+                    ],
+                    multiple=True,
+                ),
+                ui.p(
+                    "Vector file with LineString features and a depth attribute "
+                    "(e.g. depth, elev, contour, z). For Shapefiles, select all "
+                    "companion files together or upload a .zip.",
+                    class_="text-muted small",
+                ),
+                ui.input_text(
+                    "contour_depth_attr",
+                    "Depth attribute name",
+                    value="depth",
+                    placeholder="depth, elev, z, contour...",
+                ),
+                ui.input_numeric(
+                    "contour_sample_dist",
+                    "Resample distance (0 = use vertices only)",
+                    value=0,
+                    min=0,
+                ),
+            )
+        return ui.div(
+            ui.input_file(
+                "bathy_file",
+                "Upload Bathymetry Points",
+                accept=[".csv", ".xyz", ".txt", ".tif", ".tiff"],
+                multiple=False,
+            ),
+            ui.p(
+                "Format: one point per line as x, y, depth (comma or space separated). "
+                "GeoTIFF rasters are also supported.",
+                class_="text-muted small",
             ),
         )
 
@@ -902,10 +923,21 @@ def mesh_builder_server(
     def _step_export_ui():
         best = final_grd.get() or mesh_grd.get()
         if best is None:
-            return ui.p("Generate a mesh first.", class_="text-muted")
+            return ui.div(
+                ui.h4("Step 5: Export"),
+                ui.div(
+                    "Generate a mesh first (Step 3).",
+                    class_="alert alert-info py-2 px-3 small",
+                ),
+            )
+        has_depth = any(n.depth is not None for n in best.nodes.values())
+        summary = f"{best.num_nodes:,} nodes, {best.num_elements:,} elements"
+        if has_depth:
+            depths = [n.depth for n in best.nodes.values() if n.depth is not None]
+            summary += f", depth {min(depths):.1f}–{max(depths):.1f}"
         return ui.div(
             ui.h4("Step 5: Export"),
-            ui.p("Save the mesh as a .grd file.", class_="text-muted"),
+            ui.p(f"Mesh ready: {summary}", class_="text-muted"),
             ui.input_text(
                 "export_filename",
                 "Output Filename",
@@ -913,8 +945,13 @@ def mesh_builder_server(
             ),
             ui.input_action_button(
                 "save_to_project",
-                "Save to Project",
+                "Save to Project Directory",
                 class_="btn-primary w-100 mt-2 mb-2",
+            ),
+            ui.download_button(
+                "download_grd",
+                "Download .grd File",
+                class_="btn-outline-primary w-100 mb-2",
             ),
             ui.output_ui("export_result"),
         )
@@ -928,7 +965,12 @@ def mesh_builder_server(
             return
         filename = input.export_filename() or "mesh_output.grd"
         try:
-            output_dir = Path(config.work_dir) / "mesh_builder"
+            # Use active project dir if available, fallback to global work_dir
+            project = active_project.get() if active_project else None
+            if project and project.get("work_dir"):
+                output_dir = Path(project["work_dir"])
+            else:
+                output_dir = Path(config.work_dir) / "mesh_builder"
             output_path = output_dir / filename
             export_grd(grd, output_path)
             _log(f"Exported mesh to: {output_path}")
@@ -936,6 +978,18 @@ def mesh_builder_server(
         except Exception as e:
             _log(f"Export error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
+
+    @render.download(filename=lambda: input.export_filename() or "mesh_output.grd")
+    def download_grd():
+        """Download .grd file to the browser."""
+        import tempfile
+
+        grd = final_grd.get() or mesh_grd.get()
+        if grd is None:
+            return
+        tmp = Path(tempfile.mktemp(suffix=".grd"))
+        export_grd(grd, tmp)
+        return str(tmp)
 
     @render.ui
     def export_result():

@@ -429,13 +429,10 @@ def timeseries_server(
         import base64
 
         b64 = base64.b64encode(csv_text.encode("utf-8")).decode("ascii")
-        js = (
-            f"var a=document.createElement('a');"
-            f"a.href='data:text/csv;base64,{b64}';"
-            f"a.download='timeseries_export.csv';"
-            f"a.click();"
+        await session.send_custom_message(
+            "download_file",
+            {"href": f"data:text/csv;base64,{b64}", "filename": "timeseries_export.csv"},
         )
-        await session.send_custom_message("eval_js", js)
         ui.notification_show("CSV exported", type="message")
 
     return {

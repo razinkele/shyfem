@@ -131,7 +131,7 @@ class AuthService:
         Returns:
             Updated user dict, or None if not found.
         """
-        allowed = {"display_name", "email", "role"}
+        allowed = {"display_name", "email", "role", "is_active"}
         session = self._session_factory()
         try:
             user = session.query(User).filter_by(id=user_id).first()

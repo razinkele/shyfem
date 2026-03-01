@@ -856,13 +856,10 @@ def home_server(
             zip_buf = export_project(work_dir, meta)
             b64 = base64.b64encode(zip_buf.read()).decode("ascii")
             filename = f"{_safe_filename(project_name)}.zip"
-            js = (
-                f"var a=document.createElement('a');"
-                f"a.href='data:application/zip;base64,{b64}';"
-                f"a.download='{filename}';"
-                f"a.click();"
+            await session.send_custom_message(
+                "download_file",
+                {"href": f"data:application/zip;base64,{b64}", "filename": filename},
             )
-            await session.send_custom_message("eval_js", js)
             ui.notification_show(f"Exported '{project_name}'", type="message")
         except Exception as e:
             ui.notification_show(f"Export failed: {e}", type="error")

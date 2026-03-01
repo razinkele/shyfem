@@ -811,6 +811,14 @@ $(document).on('shiny:connected', function() {
   Shiny.addCustomMessageHandler('shyfem_nav', function(msg) {
     shyfemNavTo(msg.tab);
   });
+  Shiny.addCustomMessageHandler('download_file', function(msg) {
+    var a = document.createElement('a');
+    a.href = msg.href;
+    a.download = msg.filename || 'download';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  });
 });
 """),
     # Meta tags

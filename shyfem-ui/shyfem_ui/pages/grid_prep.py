@@ -643,13 +643,10 @@ def grid_prep_server(
 
         b64 = base64.b64encode(json_str.encode("utf-8")).decode("ascii")
         filename = f"grid_stats_{grid_name}.json"
-        js = (
-            f"var a=document.createElement('a');"
-            f"a.href='data:application/json;base64,{b64}';"
-            f"a.download='{filename}';"
-            f"a.click();"
+        await session.send_custom_message(
+            "download_file",
+            {"href": f"data:application/json;base64,{b64}", "filename": filename},
         )
-        await session.send_custom_message("eval_js", js)
         ui.notification_show(f"Exported {filename}", type="message", duration=3)
 
     @render.ui

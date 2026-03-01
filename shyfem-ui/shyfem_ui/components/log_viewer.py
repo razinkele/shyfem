@@ -171,13 +171,10 @@ def log_viewer_server(
         import base64
 
         b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
-        js = (
-            f"var a=document.createElement('a');"
-            f"a.href='data:text/plain;base64,{b64}';"
-            f"a.download='shyfem_log.txt';"
-            f"a.click();"
+        await session.send_custom_message(
+            "download_file",
+            {"href": f"data:text/plain;base64,{b64}", "filename": "shyfem_log.txt"},
         )
-        await session.send_custom_message("eval_js", js)
 
     def _split_streams(content: str) -> tuple[str, str]:
         """Split combined log content into stdout and stderr streams."""

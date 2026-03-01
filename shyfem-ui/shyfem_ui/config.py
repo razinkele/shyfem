@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -111,6 +111,17 @@ class Config(BaseSettings):
         if isinstance(v, str):
             v = Path(v)
         return v.expanduser().resolve()
+
+    @model_validator(mode="after")
+    def _check_server_mode_passwords(self):
+        """Require an admin password when running in server mode."""
+        if self.deployment_mode == "server":
+            if not self.default_admin_password and not self.auth_password:
+                raise ValueError(
+                    "Server mode requires either SHYFEM_UI_DEFAULT_ADMIN_PASSWORD or "
+                    "SHYFEM_UI_AUTH_PASSWORD to be set."
+                )
+        return self
 
     @property
     def bin_dir(self) -> Path:

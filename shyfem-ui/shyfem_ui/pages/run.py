@@ -173,38 +173,8 @@ def run_ui():
                         placeholder="/path/to/workdir",
                     ),
                     ui.hr(),
-                    # MPI options (shown for shyfem)
-                    ui.panel_conditional(
-                        "input.tool_select === 'shyfem'",
-                        ui.h6("MPI Options"),
-                        ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
-                        ui.panel_conditional(
-                            "input.mpi_enabled",
-                            ui.input_numeric(
-                                "mpi_np",
-                                "Number of Processes",
-                                value=4,
-                                min=2,
-                                max=128,
-                            ),
-                        ),
-                    ),
-                    # Solver options (shown for shyfem)
-                    ui.panel_conditional(
-                        "input.tool_select === 'shyfem'",
-                        ui.hr(),
-                        ui.h6("Solver Options"),
-                        ui.input_select(
-                            "solver_select",
-                            "Solver",
-                            choices={
-                                "sparskit": "Direct Solver (SPARSKIT)",
-                                "petsc": "Iterative Solver (PETSc)",
-                            },
-                            selected="sparskit",
-                        ),
-                        ui.output_ui("solver_hint"),
-                    ),
+                    # MPI + Solver options (rendered server-side for module compatibility)
+                    ui.output_ui("shyfem_options"),
                     # Job dependency (optional)
                     ui.hr(),
                     ui.h6("Dependencies (optional)"),
@@ -416,6 +386,44 @@ def run_server(
         ui.notification_show(
             "Sample loaded: mm_hyd_03.str ready to run (~3s serial)",
             type="message",
+        )
+
+    @render.ui
+    def shyfem_options():
+        """Render MPI + solver options only when shyfem is selected."""
+        tool = input.tool_select()
+        if tool != "shyfem":
+            return ui.span()
+
+        mpi_np_control = ui.span()
+        try:
+            if input.mpi_enabled():
+                mpi_np_control = ui.input_numeric(
+                    "mpi_np",
+                    "Number of Processes",
+                    value=4,
+                    min=2,
+                    max=128,
+                )
+        except Exception:
+            pass
+
+        return ui.div(
+            ui.h6("MPI Options"),
+            ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
+            mpi_np_control,
+            ui.hr(),
+            ui.h6("Solver Options"),
+            ui.input_select(
+                "solver_select",
+                "Solver",
+                choices={
+                    "sparskit": "Direct Solver (SPARSKIT)",
+                    "petsc": "Iterative Solver (PETSc)",
+                },
+                selected="sparskit",
+            ),
+            ui.output_ui("solver_hint"),
         )
 
     @render.ui

@@ -66,10 +66,7 @@ def ensemble_ui():
                 # MPI options
                 ui.h6("MPI Options"),
                 ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
-                ui.panel_conditional(
-                    "input.mpi_enabled",
-                    ui.input_numeric("mpi_np", "Processes", value=4, min=2, max=128),
-                ),
+                ui.output_ui("mpi_np_control"),
                 ui.hr(),
                 # Sweep mode
                 ui.h6("Sweep Mode"),
@@ -163,6 +160,15 @@ def ensemble_server(
     preview_runs = reactive.value([])
     ensemble_state = reactive.value(None)  # {id, name, job_ids, submitted_at}
     ensemble_jobs = reactive.value([])
+
+    @render.ui
+    def mpi_np_control():
+        try:
+            if input.mpi_enabled():
+                return ui.input_numeric("mpi_np", "Processes", value=4, min=2, max=128)
+        except Exception:
+            pass
+        return ui.span()
 
     # ------- Parameter Editor -------
 

@@ -221,6 +221,80 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         )
 
     # ------------------------------------------------------------------
+    # Dynamic action handlers for user table buttons
+    # ------------------------------------------------------------------
+
+    def _register_user_actions(user_id: int, username: str, role: str, is_active: bool):
+        """Register action handlers for a specific user row."""
+
+        @reactive.effect
+        @reactive.event(input[f"reset_pw_{user_id}"])
+        def _reset_pw():
+            # Show a modal to enter new password
+            m = ui.modal(
+                ui.input_password("reset_pw_value", "New Password"),
+                title=f"Reset Password for {username}",
+                easy_close=True,
+                footer=ui.div(
+                    ui.input_action_button(
+                        f"confirm_reset_pw_{user_id}",
+                        "Reset",
+                        class_="btn-warning",
+                    ),
+                    ui.modal_button("Cancel"),
+                ),
+            )
+            ui.modal_show(m)
+
+        @reactive.effect
+        @reactive.event(input[f"confirm_reset_pw_{user_id}"])
+        def _do_reset_pw():
+            new_pw = input.reset_pw_value() or ""
+            if len(new_pw) < 4:
+                ui.notification_show("Password must be at least 4 characters", type="error")
+                return
+            try:
+                auth_service.reset_password(user_id, new_pw)
+                ui.modal_remove()
+                ui.notification_show(f"Password reset for '{username}'", type="message")
+            except Exception as e:
+                logger.exception("Failed to reset password for user %d", user_id)
+                ui.notification_show(f"Error: {e}", type="error")
+
+        @reactive.effect
+        @reactive.event(input[f"toggle_active_{user_id}"])
+        def _toggle_active():
+            try:
+                new_active = not is_active
+                auth_service.update_user(user_id, is_active=new_active)
+                status = "activated" if new_active else "deactivated"
+                ui.notification_show(f"User '{username}' {status}", type="message")
+                _refresh()
+            except Exception as e:
+                logger.exception("Failed to toggle active for user %d", user_id)
+                ui.notification_show(f"Error: {e}", type="error")
+
+        @reactive.effect
+        @reactive.event(input[f"toggle_role_{user_id}"])
+        def _toggle_role():
+            try:
+                new_role = "user" if role == "admin" else "admin"
+                auth_service.update_user(user_id, role=new_role)
+                action = "demoted to user" if new_role == "user" else "promoted to admin"
+                ui.notification_show(f"User '{username}' {action}", type="message")
+                _refresh()
+            except Exception as e:
+                logger.exception("Failed to toggle role for user %d", user_id)
+                ui.notification_show(f"Error: {e}", type="error")
+
+    @reactive.effect
+    def _register_all_user_actions():
+        """Re-register action handlers whenever user list changes."""
+        users = users_data.get()
+        for u in users:
+            _register_user_actions(u["id"], u["username"], u["role"], u.get("is_active", True))
+
+    # ------------------------------------------------------------------
     # Create user modal
     # ------------------------------------------------------------------
 
