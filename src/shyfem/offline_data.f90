@@ -243,11 +243,18 @@
 	  if( icall .eq. 0 ) then
 	    do ig=1,nintp
 	      call off_read(iuoff,ig,ierr)
-	      if( ierr .ne. 0 ) goto 97
+	      if( ierr .ne. 0 ) then
+	        write(6,*) iitime
+	        write(6,*) nintp,ig
+	        stop 'error stop handle_offline: read error at start'
+	      end if
 	    end do
 	    call can_do_offline
 	    itime_first = iitime(1)		!first time available in file
-	    if( it .lt. itime_first ) goto 99
+	    if( it .lt. itime_first ) then
+	      write(6,*) it,iitime
+	      stop 'error stop handle_offline: no time available'
+	    end if
 	    call get_timestep(dt)
 	    if( it .eq. itmoff ) then
 	      itstart = it
@@ -278,14 +285,6 @@
 ! end of routine
 !-------------------------------------------------------------
 
-	return
-   97	continue
-	write(6,*) iitime
-	write(6,*) nintp,ig
-	stop 'error stop handle_offline: read error at start'
-   99	continue
-	write(6,*) it,iitime
-	stop 'error stop handle_offline: no time available'
 	end
 
 !****************************************************************
@@ -339,7 +338,12 @@
 	  call off_read(iu,nintp,ierr)
 	end do
 
-	if( it .gt. iitime(nintp) ) goto 99
+	if( it .gt. iitime(nintp) ) then
+	  write(6,*) 'time to interpolate: it = ',it
+	  write(6,*) 'time values available in time(): '
+	  write(6,*) (iitime(i),i=1,nintp)
+	  stop 'error stop off_intp_all: no such time'
+	end if
 
 	!write(67,*) it,(iitime(i),i=1,nintp)
 	!write(6,*) it,bhydro,bts,iwhat
@@ -399,12 +403,6 @@
 !	end of routine
 !	---------------------------------------------------------
 
-	return
-   99	continue
-	write(6,*) 'time to interpolate: it = ',it
-	write(6,*) 'time values available in time(): '
-	write(6,*) (iitime(i),i=1,nintp)
-	stop 'error stop off_intp_all: no such time'
 	end
 
 !****************************************************************

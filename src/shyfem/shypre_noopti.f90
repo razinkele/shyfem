@@ -46,9 +46,15 @@
         if( ierr /= 0 ) stop 'error stop: allocation failed'
 
         call sidei(nkn,nel,nen3v,ng,iknot,ngr1,ngr,bstop)
-        if(bstop) goto 99934
+        if(bstop) then
+          write(6,*)' (34) error: ngr1 is wrong (internal error'
+          stop 'error stop handle_optimization: (34)'
+        end if
         call check_sidei(nkn,nel,nen3v,ipv,ng,ngr1,bstop)
-        if(bstop) goto 99935
+        if(bstop) then
+          write(6,*)' (35) error: irregular connections'
+          stop 'error stop handle_optimization: (35)'
+        end if
 
         call gtest(bdebug,'bandwidth',nelddi,nkn,nel,nen3v)
         call bandw(nel,nen3v,mbw)
@@ -57,10 +63,6 @@
         if( bww ) write(6,*) 'Bandwidth is not optimized'
 
 	return
-99934   write(6,*)' (34) error: ngr1 is wrong (internal error'
-        stop 'error stop handle_optimization: (34)'
-99935   write(6,*)' (35) error: irregular connections'
-        stop 'error stop handle_optimization: (35)'
 	end
 
 !**********************************************************

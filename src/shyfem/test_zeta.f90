@@ -38,6 +38,7 @@
         implicit none
 
 	integer, private, save :: nn_step = 0
+	integer, private, save :: iu_test = -1
 
 !==================================================================
         contains
@@ -64,7 +65,7 @@
 
 	if( (azpar == 0. .and. ampar == 1. ) .or. &
      &        (azpar == 1. .and. ampar == 0. ) )  then
-           open(unit = 99998,  &
+           open(newunit=iu_test,  &
      &          file = "test_zeta."//trim(n_threads_s)// &
      &                 ".EXPLICIT_"//trim(my_id_s),iostat=ios)
            if( ios /= 0 ) then
@@ -72,7 +73,7 @@
              stop 'error stop: error opening file'
            end if
 	else
-           open(unit = 99998,  &
+           open(newunit=iu_test,  &
      &          file = "test_zeta."//trim(n_threads_s)// &
      &                 ".IMPLICIT_"//trim(my_id_s),iostat=ios)
            if( ios /= 0 ) then
@@ -104,9 +105,9 @@
 	return
 #endif
 
-        write(99998,'(i10)') 0   
+        write(iu_test,'(i10)') 0   
         do nn=1,nkn,nn_step 
-          write(99998,'(i10,E25.15)') nn,znv(nn)   
+          write(iu_test,'(i10,E25.15)') nn,znv(nn)   
         end do 
 
 	end subroutine test_zeta_write
@@ -121,7 +122,7 @@
 	return
 #endif
 
-	close(99998)
+	close(iu_test)
 
 	end subroutine test_zeta_close
 

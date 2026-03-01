@@ -259,17 +259,16 @@
 
 	call get_timestep(dt)
 
-	if( mode .eq. 1 ) goto 1
-	if( mode .eq. 2 ) goto 2
+	if( mode /= 1 .and. mode /= 2 ) then
+	  write(6,*) 'mode = ',mode
+	  stop 'error stop: internal error sp111: mode'
+	end if
 
-	write(6,*) 'mode = ',mode
-	stop 'error stop: internal error sp111: mode'
+	if( mode == 1 ) then
 
 !---------------------------------------------------------------
 ! first call %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !---------------------------------------------------------------
-
-    1	continue
 
 !	-----------------------------------------------------
 !       initialize boundary ids
@@ -301,7 +300,12 @@
 
           bimpose = ibtyp .ge. 1 .and. ibtyp .le. 2
 
-          if( bimpose .and. nk .le. 1 ) goto 95 !$$ibtyp3
+          if( bimpose .and. nk .le. 1 ) then
+            write(6,*) 'One node boundary not allowed'
+            write(6,*) 'Boundary :',ibc
+            write(6,*) 'type     :',ibtyp
+            stop 'error stop : sp111'
+          end if
 
 	  if( bimpose ) then    		!$$FLUX3 - not for ibtyp=3
 	    call init_tilt(ibc)           	!find nodes for tilting
@@ -441,13 +445,11 @@
 !        write(79,*) 50,0
 !        write(79,*) 0,50,-0.01,0.01
 
-	return
+	else if( mode == 2 ) then
 
 !---------------------------------------------------------------
 ! normal call for boundary conditions %%%%%%%%%%%%%%%%%%%%%%%%%%
 !---------------------------------------------------------------
-
-    2	continue
 
 	call get_act_dtime(dtime)
 
@@ -611,12 +613,9 @@
 ! -----------------------------------------------------------
 
 
+	end if
+
 	return
-   95	continue
-	write(6,*) 'One node boundary not allowed'
-	write(6,*) 'Boundary :',ibc
-	write(6,*) 'type     :',ibtyp
-	stop 'error stop : sp111'
 	end
 
 !**************************************************************
@@ -956,11 +955,10 @@
 	      ii2=mod(ii1,3)+1
 	      kk1=nen3v(ii1,ie)
 	      kk2=nen3v(ii2,ie)
-	      if(k1.eq.kk1.and.k2.eq.kk2) goto 33
+	      if(k1.eq.kk1.and.k2.eq.kk2) exit
 	   end do
+	   if(k1.eq.kk1.and.k2.eq.kk2) exit
 	  end do
-
-   33	  continue
 
 	  if( k1 .ne. kk1 .or. k2 .ne. kk2 ) then
 	    write(6,*) 'Cannot locate boundary nodes in element index'
@@ -1108,9 +1106,19 @@
 	    if( levmin .gt. 0 ) lmin = max(lmin,levmin)
 	    if( levmin .lt. 0 ) lmin = max(lmin,lmax+1+levmin)
 
-	    if( lmin .gt. lmax ) goto 98
-	    if( lmin < 1 ) goto 98
-	    if( lmax > nlv ) goto 98
+	    if( lmin .gt. lmax .or. lmin < 1 .or. lmax > nlv ) then
+	      write(6,*) 'lmin,lmax out of bounds'
+	      write(6,*) 'ibc = ',ibc
+	      write(6,*) 'i = ',i
+	      write(6,*) 'k = ',k
+	      write(6,*) 'ilhkv(k) = ',ilhkv(k)
+	      write(6,*) 'levmin = ',levmin
+	      write(6,*) 'levmax = ',levmax
+	      write(6,*) 'lmin = ',lmin
+	      write(6,*) 'lmax = ',lmax
+	      write(6,*) 'nlv = ',nlv
+	      stop 'error stop set_mass_flux: voltot = 0'
+	    end if
 
 	    dvoltot = 0.
 	    dvols = 0.
@@ -1119,7 +1127,18 @@
 	      dvols(l) = dvol
 	      dvoltot = dvoltot + dvol
 	    end do
-	    if( dvoltot .le. 0. ) goto 99
+	    if( dvoltot .le. 0. ) then
+	      write(6,*) 'ibc = ',ibc
+	      write(6,*) 'i = ',i
+	      write(6,*) 'k = ',k
+	      write(6,*) 'ilhkv(k) = ',ilhkv(k)
+	      write(6,*) 'levmin = ',levmin
+	      write(6,*) 'levmax = ',levmax
+	      write(6,*) 'lmin = ',lmin
+	      write(6,*) 'lmax = ',lmax
+	      write(6,*) 'nlv = ',nlv
+	      stop 'error stop set_mass_flux: voltot = 0'
+	    end if
 	    drvols = dvols / dvoltot		!INTEL_BUG
 
             flux = rflux(kindex)
@@ -1168,20 +1187,6 @@
 ! end of routine
 !------------------------------------------------------------------
 
-	return
-   98	continue
-	write(6,*) 'lmin,lmax out of bounds'
-   99	continue
-	write(6,*) 'ibc = ',ibc
-	write(6,*) 'i = ',i
-	write(6,*) 'k = ',k
-	write(6,*) 'ilhkv(k) = ',ilhkv(k)
-	write(6,*) 'levmin = ',levmin
-	write(6,*) 'levmax = ',levmax
-	write(6,*) 'lmin = ',lmin
-	write(6,*) 'lmax = ',lmax
-	write(6,*) 'nlv = ',nlv
-	stop 'error stop set_mass_flux: voltot = 0'
 	end
 
 !**********************************************************************
@@ -1263,7 +1268,12 @@
 	    if( l .eq. lmin ) flux = flux - surf_flux	!without surface flux
 	    conz = r3v(l,k)
 	    if( flux .ne. 0. .or. conz .ne. flag ) then
-	      if( flux .ne. 0. .and. conz .eq. flag ) goto 99
+	      if( flux .ne. 0. .and. conz .eq. flag ) then
+	        write(6,*) 'what: ',what
+	        write(6,*) 'k,l: ',k,l
+	        write(6,*) 'flux,conz: ',flux,conz
+	        stop 'error stop make_scal_flux: boundary condition mismatch'
+	      end if
 	      if( conz .le. -990. ) conz = scal(l,k)	!ambient value
 	      if( conz .le. -5555. ) conz = scal(l,ks) - 10000. - conz !diff
 	      if( flux .lt. 0. ) conz = scal(l,k)	!ambient value (BUG)
@@ -1296,12 +1306,6 @@
 	!  call flux_debug(what,mfluxv,sflux,sconz)
 	!end if
 
-	return
-   99	continue
-	write(6,*) 'what: ',what
-	write(6,*) 'k,l: ',k,l
-	write(6,*) 'flux,conz: ',flux,conz
-	stop 'error stop make_scal_flux: boundary condition mismatch'
 	end
 
 !**********************************************************************
@@ -1773,7 +1777,18 @@
 	    if( levmin .gt. 0 ) lmin = max(lmin,levmin)
 	    if( levmin .lt. 0 ) lmin = max(lmin,lmax+1+levmin)
 
-	    if( lmin .gt. lmax ) goto 98
+	    if( lmin .gt. lmax ) then
+	      write(6,*) 'lmin > lmax'
+	      write(6,*) 'ibc = ',ibc
+	      write(6,*) 'i = ',i
+	      write(6,*) 'k = ',k
+	      write(6,*) 'ilhkv(k) = ',ilhkv(k)
+	      write(6,*) 'levmin = ',levmin
+	      write(6,*) 'levmax = ',levmax
+	      write(6,*) 'lmin = ',lmin
+	      write(6,*) 'lmax = ',lmax
+	      stop 'error stop get_discharge_3d: voltot = 0'
+	    end if
 
 	    voltot = 0.
 	    do l=lmin,lmax
@@ -1782,7 +1797,17 @@
 	      voltot = voltot + vol
 	    end do
 
-	    if( voltot .le. 0. ) goto 99
+	    if( voltot .le. 0. ) then
+	      write(6,*) 'ibc = ',ibc
+	      write(6,*) 'i = ',i
+	      write(6,*) 'k = ',k
+	      write(6,*) 'ilhkv(k) = ',ilhkv(k)
+	      write(6,*) 'levmin = ',levmin
+	      write(6,*) 'levmax = ',levmax
+	      write(6,*) 'lmin = ',lmin
+	      write(6,*) 'lmax = ',lmax
+	      stop 'error stop get_discharge_3d: voltot = 0'
+	    end if
 
 	    flux = rflux(kindex)
 	    flux2dacum = flux2dacum + flux
@@ -1795,19 +1820,6 @@
 	flux3d = flux3dacum
 	flux2d = flux2dacum
 
-	return
-   98	continue
-	write(6,*) 'lmin > lmax'
-   99	continue
-	write(6,*) 'ibc = ',ibc
-	write(6,*) 'i = ',i
-	write(6,*) 'k = ',k
-	write(6,*) 'ilhkv(k) = ',ilhkv(k)
-	write(6,*) 'levmin = ',levmin
-	write(6,*) 'levmax = ',levmax
-	write(6,*) 'lmin = ',lmin
-	write(6,*) 'lmax = ',lmax
-	stop 'error stop get_discharge_3d: voltot = 0'
 	end
 
 !**********************************************************************

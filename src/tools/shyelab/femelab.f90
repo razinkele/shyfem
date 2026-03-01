@@ -52,6 +52,8 @@
 
         program femelab_main
 
+        implicit none
+
         call femelab
 
         end

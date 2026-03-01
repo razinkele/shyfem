@@ -222,7 +222,9 @@
 	integer kant(2,nkn)
 
 	color_out = 0
-	if( .not. allocated(kantv) ) goto 99
+	if( .not. allocated(kantv) ) then
+	  stop 'error stop fill_border: kantv not allocated'
+	end if
 	kant = kantv
 	call adjust_kant(color,kant)
 
@@ -234,9 +236,6 @@
 
 	color = color_out
 
-	return
-   99	continue
-	stop 'error stop fill_border: kantv not allocated'
 	end
 
 !*********************************************************************

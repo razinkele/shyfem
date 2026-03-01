@@ -145,10 +145,15 @@
 	integer ikf(nkn)
 	integer ief(nel)
 
-	integer k,ie,ii,iu
+	integer k,ie,ii,iu,ios
 	real x,y
 
-	open(newunit=iu,file=file,status='unknown',form='formatted')
+	open(newunit=iu,file=file,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop write_grd_with_flags: cannot open file'
+	end if
 
 	do k=1,nkn
 	  x = xgv(k)

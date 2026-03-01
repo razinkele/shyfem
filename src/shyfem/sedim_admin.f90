@@ -747,18 +747,30 @@
 !	and convert it from mm to m
 !       --------------------------------------------------
 	call para_get_array_size('sedgrs',nrs)
-	if( nrs == 0 ) goto 30
+	if( nrs == 0 ) then
+	  write(6,*) 'No sediment class selected'
+	  write(6,*) 'in the .str file'
+	  stop 'error stop : readsed'
+	end if
 	allocate(gsc(nrs),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'
 	call para_get_array_value('sedgrs',nrs,nrs,gsc)
-        if (gsc(1) .ge. 100d0) goto 36
+        if (gsc(1) .ge. 100d0) then
+	  write(6,*) 'First grainsize class > 10 cm'
+	  write(6,*) 'grainsize :',gsc(1)
+	  stop 'error stop : readsed'
+	end if
         gsc = gsc*0.001
 
 !       --------------------------------------------------
 !       Reads initial erosion threshold vector
 !       --------------------------------------------------
 	call para_get_array_size('tauin',nrst)
-	if( nrst == 0 ) goto 31
+	if( nrst == 0 ) then
+	  write(6,*) 'No critical shear stress given'
+	  write(6,*) 'in the .str file'
+	  stop 'error stop : readsed'
+	end if
 	allocate(tue(nrst),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'
 	call para_get_array_value('tauin',nrst,nrst,tue)
@@ -772,7 +784,12 @@
 	  npi = 1
 	else
           npi = nps/nrs
-	  if ( mod(nps,nrs) /= 0 ) goto 35
+	  if ( mod(nps,nrs) /= 0 ) then
+	    write(6,*) 'Dimension error for percin'
+	    write(6,*) 'nps   :',nps
+	    write(6,*) 'nscls :',nrs
+	    stop 'error stop : readsed'
+	  end if
 	end if
 	allocate(pppp(nps),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'
@@ -816,27 +833,6 @@
         sedpa(7) = dgetpar('adjtime')
         sedpa(8) = dgetpar('irocks')
         return
-
-  30    continue
-        write(6,*) 'No sediment class selected'
-        write(6,*) 'in the .str file'
-        stop 'error stop : readsed'
-
-  31    continue
-        write(6,*) 'No critical shear stress given'
-        write(6,*) 'in the .str file'
-        stop 'error stop : readsed'
-
-  35    continue
-        write(6,*) 'Dimension error for percin'
-        write(6,*) 'nps   :',nps
-        write(6,*) 'nscls :',nrs
-        stop 'error stop : readsed'
-
-  36    continue
-        write(6,*) 'First grainsize class > 10 cm'
-        write(6,*) 'grainsize :',gsc(1)
-        stop 'error stop : readsed'
 
         end subroutine readsed
 
@@ -1174,7 +1170,14 @@
           do is = 1,nscls
             ptot = ptot + pers(k,is)
           end do
-          if(ptot.lt.pmin.or.ptot.gt.pmax) go to 130
+          if(ptot.lt.pmin.or.ptot.gt.pmax) then
+	    write(6,*) 'Error in computing the sediment fraction:'
+	    write(6,*) 'node: ',k,'  total percentage:',ptot
+	    do is = 1,nscls
+	      write(6,*) 'classnumber:',is,'percentage:',pers(k,is)
+	    enddo
+	    stop 'error stop inibed: percbd'
+	  end if
 	  ppmin = min(ppmin,ptot)
 	  ppmax = max(ppmax,ptot)
 	  pers(k,:) = pers(k,:) / ptot
@@ -1211,7 +1214,14 @@
             gsa = gsa + gss*percbd(1,is,k)
             if (gs(is).lt.limcoh) pcoes = pcoes + percbd(1,is,k)
           end do
-          if(ptot.lt.pmin.or.ptot.gt.pmax) go to 130
+          if(ptot.lt.pmin.or.ptot.gt.pmax) then
+	    write(6,*) 'Error in computing the sediment fraction:'
+	    write(6,*) 'node: ',k,'  total percentage:',ptot
+	    do is = 1,nscls
+	      write(6,*) 'classnumber:',is,'percentage:',pers(k,is)
+	    enddo
+	    stop 'error stop inibed: percbd'
+	  end if
           gskm(k) = real(gsa)
 
           rhosa = rhossand(pcoes,1.2d0)
@@ -1222,13 +1232,6 @@
         end do
 
 	return
- 130    continue
-        write(6,*) 'Error in computing the sediment fraction:'
-        write(6,*) 'node: ',k,'  total percentage:',ptot
-        do is = 1,nscls
-          write(6,*) 'classnumber:',is,'percentage:',pers(k,is)
-        enddo
-        stop 'error stop inibed: percbd'
 
         end subroutine inibed
 
@@ -2276,10 +2279,10 @@
           if( tau0.GT.BEDCHA(1,2) .OR. ( tau0.EQ.BEDCHA(1,2) .AND.     &
       & 	      tau0.GE.BEDCHA(2,2) ) ) THEN
 
-            DO 10, I=2,nlbdim
-             IF (BEDCHA(I,1).EQ.0.0d0) GOTO 20
-10          CONTINUE
-20          NBED=I-1
+            do I=2,nlbdim
+              if (BEDCHA(I,1).EQ.0.0d0) exit
+            end do
+            NBED=I-1
 
             CALL EROS1(NBED,nlbdim,BEDCHA,tau0,MAXEMASS,EMASS,bmix,    &
       & 	      TIMEDR,TAUCE)
@@ -2427,10 +2430,10 @@
         if( TAU0.GT.BEDCHA(1,2) .OR. ( TAU0.EQ.BEDCHA(1,2).AND.    &
       &       TAU0.GE.BEDCHA(2,2) ) ) THEN
 
-          DO 10, I=2,nlbdim
-           IF (BEDCHA(I,1).EQ.0.0d0) GOTO 20
-10        CONTINUE
-20        NBED=I-1
+          do I=2,nlbdim
+            if (BEDCHA(I,1).EQ.0.0d0) exit
+          end do
+          NBED=I-1
 
           CALL EROS1(NBED,nlbdim,BEDCHA,TAU0,MAXEMASS,EMASS,ZS,TIMEDR,    &
       & TAUCE)
@@ -3089,7 +3092,14 @@
          end do
          gskm(k) = real(gsa)
 
-         if(gskm(k).gt.gsmax.or.gskm(k).lt.gsmin) go to 120
+         if(gskm(k).gt.gsmax.or.gskm(k).lt.gsmin) then
+           write(6,*) 'Error in computing the average grainsize'
+           write(6,*) 'gsaver:',gskm(k),'node:',k
+           do is = 1,nscls
+             write(6,*)'classnumber:',is,'grainsize:',gs(is)
+           enddo
+           stop 'error stop : gsaver'
+         end if
 
 !       -------------------------------------------------------------------
 !       End of node loop
@@ -3098,14 +3108,6 @@
         end do
 
         return
-
- 120    continue
-        write(6,*) 'Error in computing the average grainsize'
-        write(6,*) 'gsaver:',gskm(k),'node:',k
-        do is = 1,nscls
-          write(6,*)'classnumber:',is,'grainsize:',gs(is)
-        enddo
-        stop 'error stop : gsaver'
 
         end
 
@@ -3145,10 +3147,10 @@
 !       z=0 in the row after the last used row.
 !       -------------------------------------------------------------------
 
-        do 10, ib=2,nlbdim
-          if (BEDCHA(ib,1).eq.0.0d0) goto 20
-10      continue
-20      nlbd=ib-1
+        do ib=2,nlbdim
+          if (BEDCHA(ib,1).eq.0.0d0) exit
+        end do
+        nlbd=ib-1
 
 !       -------------------------------------------------------------------
 !       CASE 1: BMIX < BEDCHA(2,1)
@@ -3181,8 +3183,8 @@
 !       If level 3 is lower than bmix merge layer 1 and 2
 !       -------------------------------------------------------------------
 
-        if (BEDCHA(3,1).le.bmix) then
-125       nlbd = nlbd - 1
+        do while (BEDCHA(3,1).le.bmix)
+          nlbd = nlbd - 1
 
           do is = 1,nscls			!update PERCS in layer 1
             PERCS(1,is) = (PERCS(2,is)*(BEDCHA(3,1)-BEDCHA(2,1)) +    &
@@ -3197,10 +3199,7 @@
            BEDCHA(ib,2) = BEDCHA(ib+1,2)
            BEDCHA(ib,3) = BEDCHA(ib+1,3)
           end do
-
-          if (BEDCHA(3,1).le.bmix) goto 125
-
-        end if
+        end do
 
 !       -------------------------------------------------------------------
 !       Update layer 1 (level 2) by linear interpolation
@@ -3229,7 +3228,14 @@
 	  PERCS(1,is) = dmin1(PERCS(1,is),1.d0)
          ptot = ptot + PERCS(1,is)
         end do
-        if(ptot.lt.0.99d0.or.ptot.gt.1.01d0) go to 130
+        if(ptot.lt.0.99d0.or.ptot.gt.1.01d0) then
+          write(6,*) 'Error in computing the sediment fraction: 1'
+          write(6,*) 'total percentage:',ptot
+          do is = 1,nscls
+            write(6,*) 'classnumber:',is,'percentage:',PERCS(1,is)
+          enddo
+          stop 'error stop : PERCS'
+        end if
 
         do is = 1,nscls
          PERCS(1,is) = PERCS(1,is)/ptot
@@ -3262,25 +3268,16 @@
           BEDCHA(ib,3) = 0.d0
         end do
 
-	if(.not.checkbedcha(bedcha,nlbdim)) go to 133
+	if(.not.checkbedcha(bedcha,nlbdim)) then
+          write(6,*) 'Error in BEDCHA: subroutine bedact'
+          write(6,*) 'nlevel:',nlbd
+          do ib = 1,nlbd
+            write(6,*) 'number:',ib,'depth:',bedcha(ib,1)
+          enddo
+          stop 'error stop : bedcha'
+        end if
 
         return
-
- 130    continue
-        write(6,*) 'Error in computing the sediment fraction: 1'
-        write(6,*) 'total percentage:',ptot
-        do is = 1,nscls
-          write(6,*) 'classnumber:',is,'percentage:',PERCS(1,is)
-        enddo
-        stop 'error stop : PERCS'
-
- 133    continue
-        write(6,*) 'Error in BEDCHA: subroutine bedact'
-        write(6,*) 'nlevel:',nlbd
-        do ib = 1,nlbd
-          write(6,*) 'number:',ib,'depth:',bedcha(ib,1)
-        enddo
-        stop 'error stop : bedcha'
 
         end
 
@@ -3313,10 +3310,10 @@
 !       z=0 in the row after the last used row.
 !       -------------------------------------------------------------------
 
-        do 10, ib=2,nlbdim
-          if (BEDCHA(ib,1).eq.0.0d0) goto 20
-10      continue
-20      nlbd=ib-1
+        do ib=2,nlbdim
+          if (BEDCHA(ib,1).eq.0.0d0) exit
+        end do
+        nlbd=ib-1
 
 	minthick = 0.001d0
 	layer2 = BEDCHA(3,1) - BEDCHA(2,1)
@@ -3354,7 +3351,14 @@
 	  PERCS(1,is) = dmin1(PERCS(1,is),1.d0)
          ptot = ptot + PERCS(2,is)
         end do
-        if(ptot.lt.0.99d0.or.ptot.gt.1.01d0) go to 130
+        if(ptot.lt.0.99d0.or.ptot.gt.1.01d0) then
+          write(6,*) 'Error in computing the sediment fraction in layer 2'
+          write(6,*) 'total percentage:',ptot
+          do is = 1,nscls
+            write(6,*) 'classnumber:',is,'percentage:',PERCS(2,is)
+          enddo
+          stop 'error stop : PERCS'
+        end if
 
         do is = 1,nscls
          PERCS(2,is) = PERCS(2,is)/ptot
@@ -3387,25 +3391,16 @@
           BEDCHA(ib,3) = 0.d0
         end do
 
-	if(.not.checkbedcha(bedcha,nlbdim)) go to 133
+	if(.not.checkbedcha(bedcha,nlbdim)) then
+          write(6,*) 'Error in BEDCHA: subroutine minthick'
+          write(6,*) 'nlevel:',nlbd
+          do ib = 1,nlbd
+            write(6,*) 'number:',ib,'depth:',bedcha(ib,1)
+          enddo
+          stop 'error stop : bedcha'
+        end if
 
         return
-
- 130    continue
-        write(6,*) 'Error in computing the sediment fraction in layer 2'
-        write(6,*) 'total percentage:',ptot
-        do is = 1,nscls
-          write(6,*) 'classnumber:',is,'percentage:',PERCS(2,is)
-        enddo
-        stop 'error stop : PERCS'
-
- 133    continue
-        write(6,*) 'Error in BEDCHA: subroutine minthick'
-        write(6,*) 'nlevel:',nlbd
-        do ib = 1,nlbd
-          write(6,*) 'number:',ib,'depth:',bedcha(ib,1)
-        enddo
-        stop 'error stop : bedcha'
 
         end
 
@@ -3443,10 +3438,10 @@
 !       z=0 in the row after the last used row.
 !       -------------------------------------------------------------------
 
-        do 10, ib=2,nlbdim
-          if (BEDCHA(ib,1).eq.0.0d0) goto 20
-10      continue
-20      nlbd=ib-1
+        do ib=2,nlbdim
+          if (BEDCHA(ib,1).eq.0.0d0) exit
+        end do
+        nlbd=ib-1
 
 !       -------------------------------------------------------------------
 !       Initialize valiables
@@ -3482,7 +3477,14 @@
 	  PERCS(1,is) = dmin1(PERCS(1,is),1.d0)
           ptot = ptot + PERCS(1,is)
         end do
-        if(ptot.lt.0.99d0.or.ptot.gt.1.01d0) go to 130
+        if(ptot.lt.0.99d0.or.ptot.gt.1.01d0) then
+          write(6,*) 'Error in computing the sediment fraction: 2'
+          write(6,*) 'total percentage:',ptot,'node:',k,'flux:',flux
+          do is = 1,nscls
+            write(6,*) 'classnumber:',is,'percentage:',PERCS(1,is)
+          enddo
+          stop 'error stop : PERCS'
+        end if
 
         do is = 1,nscls
          PERCS(1,is) = PERCS(1,is)/ptot
@@ -3500,26 +3502,17 @@
          BEDCHA(ib,3) = 0.d0
         end do
 
-	if(.not.checkbedcha(bedcha,nlbdim)) goto 133
+	if(.not.checkbedcha(bedcha,nlbdim)) then
+          write(6,*) 'Error in BEDCHA: subroutine checkbed'
+          write(6,*) 'node:',k, 'level:',nlbd
+          write(6,*) 'layer  depth  tauce  rhos'
+          do ib = 1,nlbd
+            write(6,*) ib,bedcha(ib,1),bedcha(ib,2),bedcha(ib,3)
+          enddo
+          stop 'error stop : bedcha'
+        end if
 
         return
-
- 130    continue
-        write(6,*) 'Error in computing the sediment fraction: 2'
-        write(6,*) 'total percentage:',ptot,'node:',k,'flux:',flux
-        do is = 1,nscls
-          write(6,*) 'classnumber:',is,'percentage:',PERCS(1,is)
-        enddo
-        stop 'error stop : PERCS'
-
- 133    continue
-        write(6,*) 'Error in BEDCHA: subroutine checkbed'
-        write(6,*) 'node:',k, 'level:',nlbd
-        write(6,*) 'layer  depth  tauce  rhos'
-        do ib = 1,nlbd
-          write(6,*) ib,bedcha(ib,1),bedcha(ib,2),bedcha(ib,3)
-        enddo
-        stop 'error stop : bedcha'
 
         end
 
@@ -3620,10 +3613,10 @@
 !       z=0 in the row after the last used row.
 !       -------------------------------------------------------------------
 
-        do 10, ib=2,nlbdim
-          if (BEDCHA(ib,1).eq.0.0d0) goto 20
-10      continue
-20      nlbd=ib-1
+        do ib=2,nlbdim
+          if (BEDCHA(ib,1).eq.0.0d0) exit
+        end do
+        nlbd=ib-1
 
 !       -------------------------------------------------------------------
 !       Initialize valiables
@@ -3678,22 +3671,21 @@
          BEDCHA(ib,3) = 0.d0
         end do
 
-	if(.not.checkbedcha(bedcha,nlbdim)) goto 133
+	if(.not.checkbedcha(bedcha,nlbdim)) then
+          write(6,*) 'Error in BEDCHA: subroutine newlayer'
+          write(6,*) 'nlevel:',nlbd
+          do ib = 1,nlbd
+            write(6,*) 'number:',ib,'depth:',bedcha(ib,1)
+          enddo
+          stop 'error stop : bedcha'
+        end if
 
 	return
-
- 133    continue
-        write(6,*) 'Error in BEDCHA: subroutine newlayer'
-        write(6,*) 'nlevel:',nlbd
-        do ib = 1,nlbd
-          write(6,*) 'number:',ib,'depth:',bedcha(ib,1)
-        enddo
-        stop 'error stop : bedcha'
 
         end
 
 ! ********************************************************************
-       
+
         subroutine erobed(iss,nlbd,nscls,BEDCHA,PERCS,flux,bnet,btot,bpre)
 
         use mod_sediment

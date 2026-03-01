@@ -37,7 +37,7 @@
         include 'param.h'
 
 !
-	integer iapini,iu
+	integer iapini,iu,ios
 !
 	include 'simul.h'
 
@@ -117,7 +117,12 @@
 
 	write(6,*) (hv(i),i=1,nkn)
 
-	open(newunit=iu,file='new.ini',status='unknown',form='unformatted')
+	open(newunit=iu,file='new.ini',status='unknown',form='unformatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: new.ini'
+	  stop 'error stop zinit: cannot open new.ini'
+	end if
 	write(iu) (hv(i),i=1,nkn)
 	close(iu)
 

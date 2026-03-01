@@ -764,12 +764,18 @@
 	do ie=1,ntot
 	  ia = iarv(ie)
 	  if( ia == iao ) cycle			!outer area - do not use
-	  if( ia > narea .or. ia < 0 ) goto 99
+	  if( ia > narea .or. ia < 0 ) then
+	    write(6,*) 'ie,ia: ',ie,ia
+	    stop 'error stop wrt_mass_area: internal error (1)'
+	  end if
           lmax = ilhv(ie)
 	  nlev = lmax
 	  area = 4.*ev(10,ie)
 	  call dep3dele(ie,+1,nlev,h)
-	  if( lmax .ne. nlev ) goto 98
+	  if( lmax .ne. nlev ) then
+	    write(6,*) 'lmax,nlev: ',lmax,nlev
+	    stop 'error stop wrt_mass_area: internal error (2)'
+	  end if
 	  do l=1,lmax
 	    hdep = h(l)
 	    do ii=1,3
@@ -789,13 +795,6 @@
 
 	where( vola > 0. ) conza = massa / vola
 
-	return
-   98	continue
-	write(6,*) 'lmax,nlev: ',lmax,nlev
-	stop 'error stop wrt_mass_area: internal error (2)'
-   99	continue
-	write(6,*) 'ie,ia: ',ie,ia
-	stop 'error stop wrt_mass_area: internal error (1)'
 	end
 
 !******************************************************
@@ -850,7 +849,10 @@
 	  nlev = lmax
           area = 4.*ev(10,ie)
           call dep3dele(ie,+1,nlev,h)
-          if( lmax .ne. nlev ) goto 98
+          if( lmax .ne. nlev ) then
+	    write(6,*) 'lmax,nlev: ',lmax,nlev
+	    stop 'error stop wrt_massvolconz: internal error (2)'
+	  end if
           do l=1,lmax
             hdep = h(l)
             do ii=1,3
@@ -867,13 +869,6 @@
 	mass = shympi_sum(mass)
 	volume = shympi_sum(volume)
 
-	return
-   98	continue
-	write(6,*) 'lmax,nlev: ',lmax,nlev
-	stop 'error stop wrt_massvolconz: internal error (2)'
-   99	continue
-	write(6,*) 'ie,ia: ',ie,ia
-	stop 'error stop wrt_massvolconz: internal error (1)'
 	end
 
 !***************************************************************

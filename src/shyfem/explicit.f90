@@ -128,23 +128,37 @@
 
 	use para
 	implicit none
-        
+
 	integer ie,l
-        
+
         logical bbarcl,blin
         integer ilin,itlin,ibarcl
 	double precision dtime
 	real rlin
 	logical bnohyd
 
+	integer, save :: icall = 0
+	integer, save :: ilin_c = 0
+	integer, save :: itlin_c = 0
+	integer, save :: ibarcl_c = 0
+	real, save :: rlin_c = 0.
+
 !-------------------------------------------
-! parameters
+! parameters (cached - constant during simulation)
 !-------------------------------------------
 
-        ilin = nint(getpar('ilin'))
-        rlin = getpar('rlin')
-        itlin = nint(getpar('itlin'))
-        ibarcl = nint(getpar('ibarcl'))
+	if( icall == 0 ) then
+	  ilin_c = nint(getpar('ilin'))
+	  rlin_c = getpar('rlin')
+	  itlin_c = nint(getpar('itlin'))
+	  ibarcl_c = nint(getpar('ibarcl'))
+	  icall = 1
+	end if
+
+        ilin = ilin_c
+        rlin = rlin_c
+        itlin = itlin_c
+        ibarcl = ibarcl_c
         bbarcl = ibarcl .gt. 0 .and. ibarcl .ne. 3 .and. ibarcl .ne. 5
 	blin = ilin /= 0
 	call nonhydro_get_flag(bnohyd)
@@ -1421,12 +1435,27 @@
 		end if
 		!do final check just to be sure (may be commented)
 		if( lldown(ii) .eq. 1 ) then
-		  if( helei .gt. hkkom(1,k) ) goto 99
+		  if( helei .gt. hkkom(1,k) ) then
+		    write(6,*) ie,k,ii
+		    write(6,*) llup(ii),lldown(ii)
+		    write(6,*) helei,hkkom(1,k)
+		    stop 'error stop set_barocl_new_interface: internal error'
+		  end if
 		else if( llup(ii) .eq. lkmax ) then
-		  if( helei .lt. hkkom(lkmax,k) ) goto 99
+		  if( helei .lt. hkkom(lkmax,k) ) then
+		    write(6,*) ie,k,ii
+		    write(6,*) llup(ii),lldown(ii)
+		    write(6,*) helei,hkkom(lkmax,k)
+		    stop 'error stop set_barocl_new_interface: internal error'
+		  end if
 		else
-		  if( helei .gt. hkkom(lldown(ii),k) ) goto 99
-		  if( helei .lt. hkkom(llup(ii),k) ) goto 99
+		  if( helei .gt. hkkom(lldown(ii),k) .or. &
+     &		      helei .lt. hkkom(llup(ii),k) ) then
+		    write(6,*) ie,k,ii
+		    write(6,*) llup(ii),lldown(ii)
+		    write(6,*) helei,hkkom(lldown(ii),k),hkkom(llup(ii),k)
+		    stop 'error stop set_barocl_new_interface: internal error'
+		  end if
 		end if
 	      end do
 	    end if
@@ -1560,12 +1589,6 @@
         end do
         
 
-	return
-   99	continue
-	write(6,*) ie,k,ii
-	write(6,*) llup(ii),lldown(ii)
-	write(6,*) helei,hkkom(lldown(ii),k),hkkom(llup(ii),k)
-	stop 'error stop set_barocl_new_interface: internal error'
         end
 
 !**********************************************************************

@@ -844,20 +844,19 @@
 	  end do
 	  resid = dresid/lmax
 	  if( resid < eps ) exit
-	  if( iter > iter_max ) goto 99
+	  if( iter > iter_max ) then
+	    write(6,*) 'error iterating rho'
+	    write(6,*) 'k,lmax: ',k,lmax
+	    write(6,*) 'resid,eps: ',resid,eps
+	    write(6,*) '#  layer     salt    temp    rho'
+	    do l=1,lmax
+	      write(6,*) l,saltv(l,k),tempv(l,k),rhov(l,k)
+	    end do
+	    stop 'error stop rhoset1: too many iterations'
+	  end if
 	 end do
 	end do
 
-	return
-   99	continue
-	write(6,*) 'error iterating rho'
-	write(6,*) 'k,lmax: ',k,lmax
-	write(6,*) 'resid,eps: ',resid,eps
-	write(6,*) '#  layer     salt    temp    rho'
-	do l=1,lmax
-	  write(6,*) l,saltv(l,k),tempv(l,k),rhov(l,k)
-	end do
-	stop 'error stop rhoset1: too many iterations'
 	end
 
 !*******************************************************************	
@@ -1067,22 +1066,19 @@
 	logical bexist
 
 	call ts_file_exists(file,bexist)
-	if( .not. bexist ) goto 99
+	if( .not. bexist ) then
+	  write(6,*) '*** error opening file for '//trim(string)
+	  write(6,*) 'file does not exisit: ',trim(file)
+	  stop 'error stop ts_open: error opening file'
+	end if
 	call ts_file_open(file,dtime,nkn,nlv,id)
-	if( id <= 0 ) goto 99
+	if( id <= 0 ) then
+	  write(6,*) '*** error opening file for '//trim(string)
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop ts_open: error opening file'
+	end if
 	call ts_file_descrp(id,string)
 
-	return
-   99	continue
-	write(6,*) '*** error opening file for '//trim(string)
-	if( file == ' ' ) then
-	  write(6,*) 'no file given...'
-	else if( .not. bexist ) then
-	  write(6,*) 'file does not exisit: ',trim(file)
-	else
-	  write(6,*) 'error opening file: ',trim(file)
-	end if
-	stop 'error stop ts_open: error opening file'
 	end
 
 !*******************************************************************	

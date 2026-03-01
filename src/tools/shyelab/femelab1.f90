@@ -100,7 +100,7 @@
 	integer nfile
 	integer nrec,iv,nrecs,l,i,ivar,lextr,nout
 	integer itype(2)
-	integer iformat,iformout
+	integer iformat,iformout,ios
 	integer date,time
 	integer datetime(2),dateanf(2),dateend(2)
 	integer iextract,it
@@ -243,10 +243,16 @@
         if( boutput ) then
           iout = iunit + 1
           if( iformout .eq. 1 ) then
-	    open(iout,file='out.fem',status='unknown',form='formatted')
+	    open(iout,file='out.fem',status='unknown',form='formatted' &
+     &			,iostat=ios)
           else
-	    open(iout,file='out.fem',status='unknown',form='unformatted')
+	    open(iout,file='out.fem',status='unknown',form='unformatted' &
+     &			,iostat=ios)
           end if
+	  if( ios /= 0 ) then
+	    write(6,*) 'error opening file: out.fem'
+	    stop 'error stop femelab: cannot open out.fem'
+	  end if
         end if
 
         date = 0
@@ -1552,7 +1558,7 @@
 	real regpar(7)
 	real data(nlvdi,np)
 	
-	integer nx,ny,iu
+	integer nx,ny,iu,ios
 	real x0,y0,dx,dy,flag
 	real x,y,val
 	integer ix,iy,ip,it
@@ -1567,7 +1573,12 @@
 	flag = regpar(7)
 
 	call make_grdfem_name(iv,nrec,name)
-	open(newunit=iu,file=name,status='unknown',form='formatted')
+	open(newunit=iu,file=name,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(name)
+	  stop 'error stop make_grd_from_data: cannot open file'
+	end if
 
 	ip = 0
 	do iy=1,ny
@@ -1868,10 +1879,16 @@
 
         if( brewrite .and. icall == 0 ) then
           if( iformat .eq. 1 ) then
-	    open(iout,file='out1.fem',status='unknown',form='formatted')
+	    open(iout,file='out1.fem',status='unknown',form='formatted' &
+     &			,iostat=ierr)
           else
-	    open(iout,file='out1.fem',status='unknown',form='unformatted')
+	    open(iout,file='out1.fem',status='unknown',form='unformatted' &
+     &			,iostat=ierr)
           end if
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: out1.fem'
+	    stop 'error stop fem_average_data: cannot open out1.fem'
+	  end if
 	  allocate(nralloc(np),ralloc(np),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  npalloc = np

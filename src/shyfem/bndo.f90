@@ -274,7 +274,10 @@
 	    end if
 	    ngood = ngood + 1
 	    nbndo = nbndo + 1
-	    if( nbndo .gt. kbcdim ) goto 99
+	    if( nbndo .gt. kbcdim ) then
+	      write(6,*) 'dimension error kbcdim : ',kbcdim
+	      stop 'error stop bndo'
+	    end if
 	    if( iopbnd(k) > 0 ) then
 	      ip = iopbnd(k)
 	      write(6,*) 'boundary node already inserted'
@@ -351,10 +354,16 @@
 !	  -------------------------------
 
 	  if( inext .gt. 0 ) then
-	    if( ibcnod(inext) .ne. ibc ) goto 98
+	    if( ibcnod(inext) .ne. ibc ) then
+	      write(6,*) 'different boundary : ',ibc
+	      stop 'error stop bndo'
+	    end if
 	  end if
 	  if( ilast .gt. 0 ) then
-	    if( ibcnod(ilast) .ne. ibc ) goto 98
+	    if( ibcnod(ilast) .ne. ibc ) then
+	      write(6,*) 'different boundary : ',ibc
+	      stop 'error stop bndo'
+	    end if
 	  end if
 
 !	  -------------------------------
@@ -477,13 +486,6 @@
 ! end of routine
 !----------------------------------------------------------
 
-	return
-   98	continue
-	write(6,*) 'different boundary : ',ibc
-	stop 'error stop bndo'
-   99	continue
-	write(6,*) 'dimension error kbcdim : ',kbcdim
-	stop 'error stop bndo'
 	end
 
 !***********************************************************************

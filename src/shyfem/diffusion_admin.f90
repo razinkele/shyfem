@@ -563,7 +563,10 @@
 
         alpha = 0.
         if( idhtyp .eq. 1 ) then
-          if( dhlen .le. 0. ) goto 99
+          if( dhlen .le. 0. ) then
+            write(6,*) 'dhlen = ',dhlen
+            stop 'error stop diff_h_set: dhlen not allowed'
+          end if
           alpha = 1. / ( dhlen**(4./3.) )
         end if
 
@@ -637,10 +640,6 @@
 ! end of routine
 !------------------------------------------------------------------
 
-        return
-   99   continue
-        write(6,*) 'dhlen = ',dhlen
-        stop 'error stop diff_h_set: dhlen not allowed'
         end
 
 !*************************************************************************** 

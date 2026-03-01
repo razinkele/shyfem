@@ -1488,7 +1488,9 @@
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  allocate(rf(ndim),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  open(newunit=iu,file=file,status='old',form='formatted',err=88)
+	  open(newunit=iu,file=file,status='old',form='formatted' &
+     &			,iostat=ios)
+	  if( ios /= 0 ) goto 88
 
 	  if( mode .eq. 1 ) then
 	    read(iu,*) nx,ny,nz
@@ -1534,7 +1536,9 @@
 	  do i=1,nx*ny
 	    rf(i) = 1.
 	  end do
-	  open(newunit=iu,file='sea_land.dat',status='old',form='formatted',err=77)
+	  open(newunit=iu,file='sea_land.dat',status='old' &
+     &			,form='formatted',iostat=ios)
+	  if( ios /= 0 ) goto 77
 	  read(iu,*)
 	  read(iu,*) nx,ny,nz
 	  if( n .ne. nx*ny ) goto 97

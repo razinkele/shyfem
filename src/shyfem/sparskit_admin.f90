@@ -220,7 +220,10 @@
 	  !call coo_print(ngl,nnzero,i2coo,j2coo,c2coo,rvec)
 	end if
       
-      if( nnzero .gt. nndim .or. ngl+1 .gt. 2*nndim ) goto 99
+      if( nnzero .gt. nndim .or. ngl+1 .gt. 2*nndim ) then
+	write(6,*) nnzero,ngl+1,nndim
+	stop 'error stop spk_solve_system: dimension iwork'
+      end if
 
       !call csort (ngl,csr,jcsr,icsr,iwork,.true.)
       call csort (ngl,csr,jcsr,icsr,.true.)	!new calling modus spk2
@@ -341,10 +344,6 @@
 	deallocate(IWKSP,WKSPIT)
 	deallocate(wksp,alu,jlu)
 
-	return
-   99	continue
-	write(6,*) nnzero,ngl+1,nndim
-	stop 'error stop spk_solve_system: dimension iwork'
 	end
 
 !*************************************************************************

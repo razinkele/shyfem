@@ -122,13 +122,25 @@
 	nadmax = maxval(nads)			!maximum of local values
 
 	if( nadmax /= nadist ) then
-	  if( nadmax > 0 .and. nadist > 0 ) goto 99
+	  if( nadmax > 0 .and. nadist > 0 ) then
+	    write(6,*) 'incongruence in nad values of boundary'
+	    write(6,*) 'nadist = ',nadist
+	    write(6,*) 'nad values on boundaries: ',nbc
+	    write(6,*) nads
+	    stop 'error stop shdist: incongruent nadist and local nad values'
+	  end if
 	  if( nadist == 0 ) nadist = nadmax
 	end if
 
 	do ibc=1,nbc
 	  nad = nads(ibc)
-	  if( nad > 0 .and. nad /= nadmax ) goto 99
+	  if( nad > 0 .and. nad /= nadmax ) then
+	    write(6,*) 'incongruence in nad values of boundary'
+	    write(6,*) 'nadist = ',nadist
+	    write(6,*) 'nad values on boundaries: ',nbc
+	    write(6,*) nads
+	    stop 'error stop shdist: incongruent nadist and local nad values'
+	  end if
 	end do
 
 	!write(6,*) my_id,nadist,nadmax
@@ -203,13 +215,6 @@
 ! end of routine
 !-----------------------------------------------------------------
 
-	return
-   99	continue
-	write(6,*) 'incongruence in nad values of boundary'
-	write(6,*) 'nadist = ',nadist
-	write(6,*) 'nad values on boundaries: ',nbc
-	write(6,*) nads
-	stop 'error stop shdist: incongruent nadist and local nad values'
         end
 
 !*************************************************************************** 

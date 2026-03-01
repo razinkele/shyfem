@@ -290,11 +290,21 @@
             do j=1,n
               if( nodes(j) == kj ) exit       !find kj in nodes
             end do
-            if( j > n ) goto 98
+            if( j > n ) then
+              write(6,*) id,i,ki,kj,n
+              write(6,*) nodes(1:n)
+              stop 'error stop system_setup_global_z: internal error (1)'
+            end if
             ipp = ipp0 + j
-            if( ipp > n2zero_global ) goto 97
-	    if( mm%i2coo(ipp) /= ki ) goto 97
-	    if( mm%j2coo(ipp) /= kj ) goto 97
+            if( ipp > n2zero_global .or. &
+     &          mm%i2coo(ipp) /= ki .or. &
+     &          mm%j2coo(ipp) /= kj ) then
+              write(6,*) id,i,ki,kj,n
+              write(6,*) nodes(1:n)
+              write(6,*) j,ipp0,ipp,n2zero_global
+              write(6,*) mm%i2coo(ipp),mm%j2coo(ipp)
+              stop 'error stop system_setup_global_z: internal error (2)'
+            end if
 	    ij2coos(i,id) = ipp
 	  end do
 	end do
@@ -307,17 +317,6 @@
 	  write(6,*) 'finished routine system_setup_global_z'
 	end if
 
-	return
-   97	continue
-	write(6,*) id,i,ki,kj,n
-	write(6,*) nodes(1:n)
-	write(6,*) j,ipp0,ipp,n2zero_global
-	write(6,*) mm%i2coo(ipp),mm%j2coo(ipp)
-	stop 'error stop system_setup_global_z: internal error (2)'
-   98	continue
-	write(6,*) id,i,ki,kj,n
-	write(6,*) nodes(1:n)
-	stop 'error stop system_setup_global_z: internal error (1)'
 	end
 
 !******************************************************************
@@ -427,14 +426,16 @@
 
 	n2max = mm%n2max				!maybe also n2zero
 	nkn = mm%nkn_system
-	if( nkn /= nkn_global ) goto 99
-	if( any( zglobal == flag ) ) goto 99
+	if( nkn /= nkn_global .or. any( zglobal == flag ) ) then
+	  nc = count( zglobal == flag )
+	  write(6,*) n2max,nkn,nkn_global,nc
+	  stop 'error stop system_solve_global_z: internal error (1)'
+	end if
 
 	call spk_solve_system(g_matrix,.false.,n2max,nkn,zglobal)
 
 	end if
 
-	call shympi_barrier
 	call shympi_bcast(g_matrix%rvec2d)
 
 !---------------------------------------------------------------
@@ -454,11 +455,6 @@
 	!  write(6,*) 'finished system_solve_global_z'
 	!end if
 
-	return
-   99	continue
-	nc = count( zglobal == flag )
-	write(6,*) n2max,nkn,nkn_global,nc
-	stop 'error stop system_solve_global_z: internal error (1)'
 	end
 
 !******************************************************************
@@ -576,7 +572,19 @@
             mm%raux2d(k) = mm%raux2d(k) + mass(i,i)	!GGUEXPL
             mm%rvec2d(k) = mm%rvec2d(k) + rhs(i)
 	    do j=1,3
-	      if( i /= j .and. mass(i,j) /= 0. ) goto 99
+	      if( i /= j .and. mass(i,j) /= 0. ) then
+	        write(6,*) 'error assembling matrix...'
+	        write(6,*) 'ie: ',ie,ieext(ie)
+	        write(6,*) 'k : ',kn(i),ipext(kn(i))
+	        write(6,*) 'i,j: ',i,j
+	        write(6,*) 'kn: ',kn
+	        write(6,*) 'rhs: ',rhs
+	        write(6,*) 'mass: '
+	        do ii=1,3
+	          write(6,*) ii,mass(ii,1),mass(ii,2),mass(ii,3)
+	        end do
+	        stop 'error stop system_assemble: non diag elems /= 0'
+	      end if
 	    end do
 	  end do
 	else
@@ -591,19 +599,6 @@
          end do
 	end if
 
-	return
-   99	continue
-	write(6,*) 'error assembling matrix...'
-	write(6,*) 'ie: ',ie,ieext(ie)
-	write(6,*) 'k : ',kn(i),ipext(kn(i))
-	write(6,*) 'i,j: ',i,j
-	write(6,*) 'kn: ',kn
-	write(6,*) 'rhs: ',rhs
-	write(6,*) 'mass: '
-	do i=1,3
-	  write(6,*) i,(mass(i,j),j=1,3)
-	end do
-	stop 'error stop system_assemble: non diag elems /= 0'
 	end
 
 !******************************************************************
@@ -640,7 +635,13 @@
 !$OMP ATOMIC
             mm%rvec2d(k) = mm%rvec2d(k) + hik(i)
 	    do j=1,3
-	      if( i /= j .and. hia(i,j) /= 0. ) goto 99
+	      if( i /= j .and. hia(i,j) /= 0. ) then
+	        write(6,*) 'error assembling matrix (omp)...'
+	        write(6,*) 'ie: ',ie,ieext(ie)
+	        write(6,*) 'k : ',kn(i),ipext(kn(i))
+	        write(6,*) 'i,j: ',i,j
+	        stop 'error stop system_assemble_omp: non diag elems /= 0'
+	      end if
 	    end do
 	  end do
 	else
@@ -659,13 +660,6 @@
          end do
 	end if
 
-	return
-   99	continue
-	write(6,*) 'error assembling matrix (omp)...'
-	write(6,*) 'ie: ',ie,ieext(ie)
-	write(6,*) 'k : ',kn(i),ipext(kn(i))
-	write(6,*) 'i,j: ',i,j
-	stop 'error stop system_assemble_omp: non diag elems /= 0'
 	end
 
 !******************************************************************

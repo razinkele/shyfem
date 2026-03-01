@@ -421,10 +421,18 @@
 	    call dep3dnod(k,+1,flev,nlev,h)	!here nlev,flev is passed back
             numOfLev = nlev-flev+1
 
-	    if( count( h(flev:nlev) <= 0. ) > 0 ) goto 97
-            if( nlev .eq. flev ) goto 1
+	    if( count( h(flev:nlev) <= 0. ) > 0 ) then
+	      write(6,*) 'layers without depth...'
+	      write(6,*) k,nlev
+	      write(6,*) h(flev:nlev)
+	      stop 'error stop gotm_shell: no layer'
+	    end if
+            if( nlev .eq. flev ) cycle
 
-	    if( numOfLev < 1 .or. numOfLev > 10000 ) goto 96
+	    if( numOfLev < 1 .or. numOfLev > 10000 ) then
+	      write(6,*) 'wrong number of layers: ',numOfLev
+	      stop 'error stop gotm_shell: wrong nlev'
+	    end if
 
 !           ------------------------------------------------------
 !           update boyancy and shear-frequency vectors
@@ -603,7 +611,6 @@
 	      difv(l,k) = nuh(laux)
 	    end do
 
-    1     continue
 	end do
 
 	if( bextra_exchange ) then
@@ -624,15 +631,6 @@
 ! end of routine
 !------------------------------------------------------
 
-	return
-   96	continue
-	write(6,*) 'wrong number of layers: ',numOfLev
-	stop 'error stop gotm_shell: wrong nlev'
-   97	continue
-	write(6,*) 'layers without depth...'
-	write(6,*) k,nlev
-	write(6,*) h(flev:nlev)
-	stop 'error stop gotm_shell: no layer'
 	end
 
 !**************************************************************
@@ -1505,11 +1503,20 @@
 
 	integer ndim
 
+	integer ios
+
 	ndim = nlev
 	ierr = 0
 
-	read(iu,end=1) iwhat,k,nlev
-	if( nlev > ndim ) goto 99
+	read(iu,iostat=ios) iwhat,k,nlev
+	if( ios /= 0 ) then
+	  ierr = -1
+	  return
+	end if
+	if( nlev > ndim ) then
+	  write(6,*) ndim,nlev
+	  stop 'error stop gotm_run_debug: dimensions'
+	end if
 	read(iu) dt,depth
 	read(iu) u_taus,u_taub
 	read(iu) z0s,z0b
@@ -1522,12 +1529,7 @@
 	read(iu) dis(0:nlev)
 	read(iu) len(0:nlev)
 
-    1	continue
 	ierr = -1
-	return
-   99	continue
-	write(6,*) ndim,nlev
-	stop 'error stop gotm_run_debug: dimensions'
 	end
 
 !**************************************************************

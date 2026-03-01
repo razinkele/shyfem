@@ -840,7 +840,11 @@
 	      else if( cn(l,k) < 0. ) then
 	        cn(l,k) = 0.
 	      end if
-              if( cload > cn(l,k) ) goto 98
+              if( cload > cn(l,k) ) then
+                write(6,*) 'error computing loading: ',l,k
+                write(6,*) 'loading,cload,cn(l,k): ',loading,cload,cn(l,k)
+                stop 'error stop conz3d_nodes: internal error (1)'
+              end if
               loading = -cload / dt
               if( rload > 0. ) load(l,k) = loading / rload
               cn(l,k) = cn(l,k) + dt*loading
@@ -874,7 +878,12 @@
 	  chigh(jlevel)=chigh(jlevel)*aux
 	  cn(jlevel,k)=cn(jlevel,k)*aux
 	  do l=jlevel+1,ilevel
-	    if( cdiag(l) == 0. ) goto 99
+	    if( cdiag(l) == 0. ) then
+	      write(6,*) k,l,ilevel
+	      write(6,*) nkn_inner,nkn_local,nkn
+	      write(6,*) cdiag(l),clow(l),chigh(l-1)
+	      stop 'error stop conz3d_nodes (omp): diag == 0'
+	    end if
 	    aux=1./(cdiag(l)-clow(l)*chigh(l-1))
 	    chigh(l)=chigh(l)*aux
 	    cn(l,k)=(cn(l,k)-clow(l)*cn(l-1,k))*aux
@@ -890,15 +899,6 @@
 ! ----------------------------------------------------------------
 
 	return
-   98	continue
-	write(6,*) 'error computing loading: ',l,k
-	write(6,*) 'loading,cload,cn(l,k): ',loading,cload,cn(l,k)
-	stop 'error stop conz3d_nodes: internal error (1)'
-   99	continue
-	write(6,*) k,l,ilevel
-	write(6,*) nkn_inner,nkn_local,nkn
-	write(6,*) cdiag(l),clow(l),chigh(l-1)
-	stop 'error stop conz3d_nodes (omp): diag == 0'
       end subroutine conz3d_nodes
 
 !*****************************************************************

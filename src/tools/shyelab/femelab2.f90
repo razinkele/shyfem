@@ -1175,7 +1175,7 @@
 	real regpar(7)
 	real data(nlvdi,np)
 	
-	integer nx,ny,iu
+	integer nx,ny,iu,ios
 	real x0,y0,dx,dy,flag
 	real x,y,val
 	integer ix,iy,ip,it
@@ -1190,7 +1190,12 @@
 	flag = regpar(7)
 
 	call make_grdfem_name(iv,nrec,name)
-	open(newunit=iu,file=name,status='unknown',form='formatted')
+	open(newunit=iu,file=name,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(name)
+	  stop 'error stop make_grd_from_data: cannot open file'
+	end if
 
 	ip = 0
 	do iy=1,ny

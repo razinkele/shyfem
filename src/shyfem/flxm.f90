@@ -199,7 +199,10 @@
 	if( shympi_is_master() ) then
 
           nbflx=ifemop(type,'unform','new')
-          if(nbflx.le.0) goto 99
+          if(nbflx.le.0) then
+            write(6,*) 'Error opening FLX file :'
+            stop 'error stop flux_file_open: opening flx file'
+          end if
 	  da_out(4) = nbflx
 	  nlmax = maxval(nlayers)
 
@@ -207,7 +210,11 @@
 	  idtflx = nint(da_out(1))
 	  call flx_write_header(nbflx,nvers,nsect,kfluxm,idtflx &
      &                                  ,nlmax,nvar,ierr)
-	  if( ierr /= 0 ) goto 98
+	  if( ierr /= 0 ) then
+            write(6,*) 'Error writing header of FLX file'
+            write(6,*) 'unit,ierr :',nbflx,ierr
+            stop 'error stop flux_file_open: writing flx header'
+          end if
 
 	  title = descrp
           call get_shyfem_version_and_commit(femver)
@@ -227,20 +234,16 @@
           call flx_write_header2(nbflx,nvers,nsect,kfluxm &
      &                          ,kflux_ext,nlayers &
      &                          ,atime0,title,femver,chflx,ierr)
-	  if( ierr /= 0 ) goto 98
+	  if( ierr /= 0 ) then
+            write(6,*) 'Error writing header of FLX file'
+            write(6,*) 'unit,ierr :',nbflx,ierr
+            stop 'error stop flux_file_open: writing flx header'
+          end if
 
 	end if
 
 	call shympi_barrier
 
-	return
-   99   continue
-        write(6,*) 'Error opening FLX file :'
-        stop 'error stop flux_file_open: opening flx file'
-   98   continue
-        write(6,*) 'Error writing header of FLX file'
-        write(6,*) 'unit,ierr :',nbflx,ierr
-        stop 'error stop flux_file_open: writing flx header'
 	end
 
 !******************************************************************
@@ -273,14 +276,13 @@
 	if( shympi_is_master() ) then
 	  call flx_write_record(nbflx,nvers,atime,nlv_global,nsect,ivar &
      &				,nlayers,flux_real,ierr)
-	  if( ierr /= 0 ) goto 97
+	  if( ierr /= 0 ) then
+            write(6,*) 'Error writing file FLX'
+            write(6,*) 'unit,ierr,ivar :',nbflx,ierr,ivar
+            stop 'error stop flux_write: writing flx record'
+          end if
 	end if
 
-	return
-   97   continue
-        write(6,*) 'Error writing file FLX'
-        write(6,*) 'unit,ierr,ivar :',nbflx,ierr,ivar
-        stop 'error stop flux_write: writing flx record'
 	end
 
 !******************************************************************

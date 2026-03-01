@@ -35,11 +35,15 @@
 
 	module heat_const
 
+	use mod_physical_constants, only: pi => pi_sp
+	use mod_physical_constants, only: deg2rad => deg2rad_sp
+	use mod_physical_constants, only: rad2deg => rad2deg_sp
+	use mod_physical_constants, only: grav => grav_sp
+
+	implicit none
+
 	real, parameter  :: rhow = 1026.
-        real, parameter  :: pi = 3.14159265358979323846
-        real, parameter  :: deg2rad = pi/180.
-        real, parameter  :: rad2deg = 180./pi
-        real, parameter  :: visw = 1.e-6      !molecular kinematic viscosity	
+        real, parameter  :: visw = 1.e-6      !molecular kinematic viscosity
         real, parameter  :: diff = 1.4e-7     !molecular thermalconductivity
 
 ! used in subqfxm4.f and subqfxm5.f
@@ -53,8 +57,7 @@
         real, parameter  :: cpw  = 3985.      !Spcf heat cap. seawater [J/kg/K]
         real, parameter  :: rgas = 287.1      !Gas constant dry air [J/kg/K]
         !real, parameter  :: rgas = 287.0      !Gas constant dry air [J/kg/K]
-        real, parameter  :: grav = 9.81	      !gravitational accel. [m/s2]
-        real, parameter  :: von  = 0.41	      !von Karman
+        real, parameter  :: von  = 0.41	      !von Karman (0.41 for heat flux)
         real, parameter  :: const06 = 0.62198
         !real, parameter  :: const06 = 0.622
 

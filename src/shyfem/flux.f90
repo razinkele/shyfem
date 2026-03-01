@@ -659,7 +659,11 @@
 	  !call flx_collect_3d(nl,n,fluxes,flux_global(:,:,iv))
 	end if
 
-	if( iv /= nvar ) goto 91
+	if( iv /= nvar ) then
+	  write(6,*) 'iv,nvar: ',iv,nvar
+	  write(6,*) 'iv is different from nvar'
+	  stop 'error stop wrflxa: internal error (1)'
+	end if
 
 !	-------------------------------------------------------
 !	global reduce and write
@@ -712,34 +716,6 @@
 !-----------------------------------------------------------------
 ! end of routine
 !-----------------------------------------------------------------
-
-	return
-   91   continue
-        write(6,*) 'iv,nvar: ',iv,nvar
-        write(6,*) 'iv is different from nvar'
-        stop 'error stop wrflxa: internal error (1)'
-   92   continue
-        write(6,*) 'arrays are different'
-	write(6,*) 'nvar,iv: ',nvar,iv
-	write(6,*) 'ns_flux: ',ns_flux
-	write(6,*) 'ivinfo: ',ivinfo(:,iv)
-	do n=1,ns_flux*3
-	  do l=0,nlv_global
-	    write(6,*) l,n,fluxes_global(l,n),flux_global(l,n,iv)
-	  end do
-	end do
-        stop 'error stop wrflxa: arrays are different'
-   99   continue
-        write(6,*) 'Error opening FLX file :'
-        stop 'error stop wrflxa: opening flx file'
-   98   continue
-        write(6,*) 'Error writing header of FLX file'
-        write(6,*) 'unit,ierr :',nbflx,ierr
-        stop 'error stop wrflxa: writing flx header'
-   97   continue
-        write(6,*) 'Error writing file FLX'
-        write(6,*) 'unit,ierr,iv :',nbflx,ierr,iv
-        stop 'error stop wrflxa: writing flx record'
 
 	end
 
@@ -808,7 +784,10 @@
                 if( nsect .le. 0 ) nbflx = -1
                 if( nbflx .eq. -1 ) return
 
-		if( .not. bflxinit ) goto 94
+		if( .not. bflxinit ) then
+		  write(6,*) 'Flux section has not been initialized'
+		  stop 'error stop fluxes_template: no initialization'
+		end if
 
         	allocate(trs(nscal),stat=ierr)
         	if( ierr /= 0 ) stop 'error stop: allocation failed'
@@ -824,7 +803,10 @@
 		end do
 
                 nbflx = ifemop(ext,'unform','new')
-                if( nbflx .le. 0 ) goto 99
+                if( nbflx .le. 0 ) then
+                  write(6,*) 'extension: ',ext
+                  stop 'error stop fluxes_template: cannot open flx file'
+                end if
 		write(6,*) 'flux file opened: ',nbflx,' ',ext
 		da_out(4) = nbflx
 
@@ -833,7 +815,11 @@
 		idtflx = nint(da_out(1))
                 call flx_write_header(nbflx,0,nsect,kfluxm,idtflx &
      &                                  ,nlmax,nvar,ierr)
-                if( ierr /= 0 ) goto 98
+                if( ierr /= 0 ) then
+                  write(6,*) 'Error writing headers of FLX file'
+                  write(6,*) 'unit,ierr :',nbflx,ierr
+                  stop 'error stop fluxes_template: writing flx header'
+                end if
 
                 title = descrp
                 call get_shyfem_version_and_commit(femver)
@@ -846,7 +832,11 @@
                 call flx_write_header2(nbflx,0,nsect,kfluxm &
      &                          ,kext,nlayers &
      &                          ,atime0,title,femver,chflx,ierr)
-                if( ierr /= 0 ) goto 98
+                if( ierr /= 0 ) then
+                  write(6,*) 'Error writing headers of FLX file'
+                  write(6,*) 'unit,ierr :',nbflx,ierr
+                  stop 'error stop fluxes_template: writing flx header'
+                end if
 
         end if
 
@@ -889,7 +879,11 @@
 	  fluxes_r = fluxes
           call flx_write_record(nbflx,nvers,atime,nlvdi,nsect,ivar &
      &                          ,nlayers,fluxes_r,ierr)
-          if( ierr /= 0 ) goto 97
+          if( ierr /= 0 ) then
+            write(6,*) 'Error writing data record of FLX file'
+            write(6,*) 'unit,ierr :',nbflx,ierr
+            stop 'error stop fluxes_template: writing flx record'
+          end if
 	end do
 
 !	-------------------------------------------------------
@@ -905,21 +899,6 @@
 ! end of routine
 !-----------------------------------------------------------------
 
-	return
-   94   continue
-        write(6,*) 'Flux section has not been initialized'
-        stop 'error stop fluxes_template: no initialization'
-   97   continue
-        write(6,*) 'Error writing data record of FLX file'
-        write(6,*) 'unit,ierr :',nbflx,ierr
-        stop 'error stop fluxes_template: writing flx record'
-   98   continue
-        write(6,*) 'Error writing headers of FLX file'
-        write(6,*) 'unit,ierr :',nbflx,ierr
-        stop 'error stop fluxes_template: writing flx header'
-   99	continue
-	write(6,*) 'extension: ',ext
-        stop 'error stop fluxes_template: cannot open flx file'
 	end
 
 !******************************************************************

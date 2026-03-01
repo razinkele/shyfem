@@ -421,7 +421,7 @@
 	integer iformat		!is formatted? (return)
 	integer iunit		!unit of opened file (return) (0 for error)
 
-	integer nvar,np,ntype
+	integer nvar,np,ntype,ios
 	integer itype(2)
 	logical filex,breg
 
@@ -446,9 +446,15 @@
 	  else
 	    call find_unit(iunit)
 	    if( iformat == 1 ) then
-	      open(iunit,file=file,form='formatted',status='old')
+	      open(iunit,file=file,form='formatted',status='old' &
+     &			,iostat=ios)
 	    else
-	      open(iunit,file=file,form='unformatted',status='old')
+	      open(iunit,file=file,form='unformatted',status='old' &
+     &			,iostat=ios)
+	    end if
+	    if( ios /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(file)
+	      stop 'error stop fem_file_read_open: cannot open file'
 	    end if
 	  end if
 	else
@@ -492,11 +498,19 @@
 	write(6,*) 'debug info for file: ',file
 
 	if( iformat == 1 ) then
-	  open(iunit,file=file,form='formatted',status='old')
+	  open(iunit,file=file,form='formatted',status='old',iostat=ios)
+	  if( ios /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(file)
+	    return
+	  end if
 	  read(iunit,*,iostat=ios) dtime,nvers,id,np,lmax,nvar,ntype
 	  write(6,*) 'formatted read: '
 	else
-	  open(iunit,file=file,form='unformatted',status='old')
+	  open(iunit,file=file,form='unformatted',status='old',iostat=ios)
+	  if( ios /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(file)
+	    return
+	  end if
 	  read(iunit,iostat=ios) dtime,nvers,id,np,lmax,nvar,ntype
 	  write(6,*) 'unformatted read: '
 	end if
@@ -560,43 +574,41 @@
 ! first try unformatted
 !------------------------------------------------------
 
-	ierr = 77
-	open(iunit,file=file,form='unformatted',status='old',err=2)
+	open(iunit,file=file,form='unformatted',status='old',iostat=ierr)
 
-	iformat = 0
-	call fem_file_read_params(iformat,iunit,dtime &
+	if( ierr == 0 ) then
+	  iformat = 0
+	  call fem_file_read_params(iformat,iunit,dtime &
      &				,nvers,np,lmax,nvar,ntype,datetime,ierr)
 
-	close(iunit)
+	  close(iunit)
 
-	if( ierr .ne. 0 ) then
-	  if( bdebug ) write(6,*) 'unformatted read error ',ierr
-	else	!ok, probably unformatted
-	  return
+	  if( ierr .ne. 0 ) then
+	    if( bdebug ) write(6,*) 'unformatted read error ',ierr
+	  else	!ok, probably unformatted
+	    return
+	  end if
 	end if
-
-    2	continue
 
 !------------------------------------------------------
 ! now try formatted
 !------------------------------------------------------
 
-	ierr = 77
-	open(iunit,file=file,form='formatted',status='old',err=8)
+	open(iunit,file=file,form='formatted',status='old',iostat=ierr)
 
-	iformat = 1
-	call fem_file_read_params(iformat,iunit,dtime &
+	if( ierr == 0 ) then
+	  iformat = 1
+	  call fem_file_read_params(iformat,iunit,dtime &
      &				,nvers,np,lmax,nvar,ntype,datetime,ierr)
 
-	close(iunit)
+	  close(iunit)
 
-	if( ierr .ne. 0 ) then
-	  if( bdebug ) write(6,*) 'formatted read error ',ierr
-	else	!ok, probably formatted
-	  return
+	  if( ierr .ne. 0 ) then
+	    if( bdebug ) write(6,*) 'formatted read error ',ierr
+	  else	!ok, probably formatted
+	    return
+	  end if
 	end if
-
-    8	continue
 
 !------------------------------------------------------
 ! no successful opening
@@ -606,7 +618,7 @@
 	nvar = 0
 	ntype = 0
 	iformat = -1
-	if( ierr == 77 ) iformat = -77
+	if( ierr /= 0 ) iformat = -77
 
 !------------------------------------------------------
 ! end of routine

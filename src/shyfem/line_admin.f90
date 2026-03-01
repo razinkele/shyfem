@@ -611,15 +611,24 @@
 	integer ifileo
 
 	iunit = ifileo(0,file,'form','old')
-	if( iunit <= 0 ) goto 99
+	if( iunit <= 0 ) then
+	  nli = -1
+	  return
+	end if
 
 	nli = 0
 	nnodes = 0
 	do
 	  read(iunit,*,iostat=ios) x,y,i
 	  if( ios < 0 ) return
-	  if( ios > 0 ) goto 99
-	  if( i /= 0 .and. i /= 1 ) goto 99
+	  if( ios > 0 ) then
+	    nli = -1
+	    return
+	  end if
+	  if( i /= 0 .and. i /= 1 ) then
+	    nli = -1
+	    return
+	  end if
 	  if( i == 1 ) nli = nli + 1
 	  nnodes = nnodes + 1
 	  if( binsert ) then
@@ -629,9 +638,6 @@
 	  end if
 	end do
 
-	return
-   99	continue
-	nli = -1
 	end
 
 !**********************************************************************

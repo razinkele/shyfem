@@ -43,14 +43,24 @@
 	double precision, allocatable :: lon(:,:),lat(:,:)
 	integer, allocatable :: node(:,:)
 
-	open(newunit=iu,file='xdata.txt',status='old',form='formatted')
+	open(newunit=iu,file='xdata.txt',status='old',form='formatted' &
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: xdata.txt'
+	  stop 'error stop ncgrid: cannot open xdata.txt'
+	end if
 	read(iu,*) nx,ny
 	allocate(lon(nx,ny),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	read(iu,*) lon
 	close(iu)
 
-	open(newunit=iu,file='ydata.txt',status='old',form='formatted')
+	open(newunit=iu,file='ydata.txt',status='old',form='formatted' &
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ydata.txt'
+	  stop 'error stop ncgrid: cannot open ydata.txt'
+	end if
 	read(iu,*) nx,ny
 	allocate(lat(nx,ny),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
@@ -62,7 +72,12 @@
 	allocate(node(nx,ny),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 
-	open(newunit=iu,file='ncgrid.grd',status='unknown',form='formatted')
+	open(newunit=iu,file='ncgrid.grd',status='unknown',form='formatted' &
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ncgrid.grd'
+	  stop 'error stop ncgrid: cannot open ncgrid.grd'
+	end if
 
 ! write nodes
 

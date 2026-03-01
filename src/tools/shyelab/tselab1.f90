@@ -186,7 +186,12 @@
 
 	if( bout .and. iout == 0 ) then
 	  iout = 1
-	  open(iout,file='out.txt',form='formatted',status='unknown')
+	  open(iout,file='out.txt',form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: out.txt'
+	    stop 'error stop tselab: cannot open out.txt'
+	  end if
 	  !write(format,'(a,i3,a)') '(f18.2,',nvar,'g14.6)'
 	  write(format,'(a,i3,a)') '(a20,',nvar,'g14.6)'
 	  write(formatit,'(a,i3,a)') '(i20,',nvar,'g14.6)'

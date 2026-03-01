@@ -229,7 +229,10 @@
 	  read(iu,*) cname,node,ndg_use(i)
 	  write(6,*) i,cname,node,ndg_use(i)
 	  k = ipint(node)
-	  if( k .le. 0 ) goto 99
+	  if( k .le. 0 ) then
+	    write(6,*) 'Cannot find internal node: ',node
+	    stop 'error stop nudge_init: no internal node'
+	  end if
 	  ndg_names(i) = cname
 	  ndg_nodelist(i) = k
 	end do
@@ -264,14 +267,6 @@
 	  end if
 	end if
 
-	return
-   98	continue
-	write(6,*) 'error reading stations to exclude'
-	write(6,*) ios,ivar,nvars
-	stop 'error stop nudge_init: error exclude stations'
-   99	continue
-	write(6,*) 'Cannot find internal node: ',node
-	stop 'error stop nudge_init: no internal node'
 	end
 
 !****************************************************************

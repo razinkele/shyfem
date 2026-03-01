@@ -86,6 +86,8 @@
 	module mod_optintp
 !================================================================
 
+	implicit none
+
 	logical, save :: bsilent
 	logical, save :: bquiet
 	logical, save :: bgeo
@@ -330,21 +332,33 @@
 	  string = varstring
 	  file = 'back.fem'
 	  zaux = zback
-	  open(iu,file=file,status='unknown',form='formatted')
+	  open(iu,file=file,status='unknown',form='formatted',iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(file)
+	    stop 'error stop optintp: cannot open file'
+	  end if
 	  call write_fem_record(iu,atime,regpar,string,np,zaux)
 	  close(iu)
 
 	  string = 'weight'
 	  file = 'weight.fem'
 	  zaux = 0.
-	  open(iu,file=file,status='unknown',form='formatted')
+	  open(iu,file=file,status='unknown',form='formatted',iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(file)
+	    stop 'error stop optintp: cannot open file'
+	  end if
 	  call write_fem_record(iu,atime,regpar,string,np,zaux)
 	  close(iu)
 
 	  string = 'time scale tau [s]'
 	  file = 'tau.fem'
 	  zaux = tmax
-	  open(iu,file=file,status='unknown',form='formatted')
+	  open(iu,file=file,status='unknown',form='formatted',iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(file)
+	    stop 'error stop optintp: cannot open file'
+	  end if
 	  call write_fem_record(iu,atime,regpar,string,np,zaux)
 	  close(iu)
 	end if
@@ -362,17 +376,36 @@
 	end if
 
 	iuobs = 20
-	open(iuobs,file=obsfile,status='old',form='formatted')
+	open(iuobs,file=obsfile,status='old',form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(obsfile)
+	  stop 'error stop optintp: cannot open obs file'
+	end if
 	if( .not. bquiet ) write(6,*) 'file with observations: ',trim(obsfile)
 
 	iufem = 21
-	open(iufem,file='optintp.fem',status='unknown',form=format)
+	open(iufem,file='optintp.fem',status='unknown',form=format &
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: optintp.fem'
+	  stop 'error stop optintp: cannot open optintp.fem'
+	end if
 
 	if( bweight ) then
 	  iuweight = 22
-	  open(iuweight,file='optweight.fem',status='unknown',form=format)
+	  open(iuweight,file='optweight.fem',status='unknown',form=format &
+     &			,iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: optweight.fem'
+	    stop 'error stop optintp: cannot open optweight.fem'
+	  end if
 	  iutau = 23
-	  open(iutau,file='opttau.fem',status='unknown',form=format)
+	  open(iutau,file='opttau.fem',status='unknown',form=format &
+     &			,iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: opttau.fem'
+	    stop 'error stop optintp: cannot open opttau.fem'
+	  end if
 	end if
 
 	iuse = 1
@@ -521,7 +554,12 @@
 	  end if
 	end if
 
-	open(newunit=iu,file='success.txt',status='new',form='formatted')
+	open(newunit=iu,file='success.txt',status='new',form='formatted' &
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: success.txt'
+	  stop 'error stop optintp: cannot open success.txt'
+	end if
 	write(iu,*) 'optintp finished with success'
 	close(iu)
 
@@ -813,12 +851,17 @@
 	real x0,y0
 	real dx,dy
 
-	integer iu
+	integer iu,ios
 	integer ix,iy,i
 	real x,y
 
 	iu = 9
-	open(iu,file='regfile.grd',form='formatted',status='unknown')
+	open(iu,file='regfile.grd',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: regfile.grd'
+	  stop 'error stop write_reg_grid: cannot open file'
+	end if
 
 	i = 0
 	do iy=0,ny
@@ -844,13 +887,18 @@
 	real x0,y0
 	real dx,dy
 
-	integer iu
+	integer iu,ios
 	integer ix,iy,in,il
 	real x,y
 	real x1,x2,y1,y2
 
 	iu = 9
-	open(iu,file='boxfile.grd',form='formatted',status='unknown')
+	open(iu,file='boxfile.grd',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: boxfile.grd'
+	  stop 'error stop write_box_grid: cannot open file'
+	end if
 
 	in = 0
 	il = 0
@@ -891,12 +939,17 @@
 	real yobs(nobs)
 	real zobs(nobs)
 
-	integer iu
+	integer iu,ios
 	integer i
 	real x,y,z
 
 	iu = 9
-	open(iu,file='obsfile.grd',form='formatted',status='unknown')
+	open(iu,file='obsfile.grd',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: obsfile.grd'
+	  stop 'error stop write_obs_grid: cannot open file'
+	end if
 
 	do i=1,nobs
 	    x = xobs(i)

@@ -351,11 +351,17 @@
 
         if( bwrite ) write(6,*) ' ...controlling uniqueness of node numbers'
         call uniqn(bwrite,nkn,ipv,ipdex,bstop)
-        if(bstop) goto 99909
+        if(bstop) then
+          write(6,*)' (09) error: no unique definition of nodes'
+          stop 'error stop handle_numbering: error'
+        end if
 
         if( bwrite ) write(6,*) ' ...controlling uniqueness of element numbers'
         call uniqn(bwrite,nel,ipev,iedex,bstop)
-        if(bstop) goto 99910
+        if(bstop) then
+          write(6,*)' (10) error: no unique definition of elements'
+          stop 'error stop handle_numbering: error'
+        end if
 
         call gtest(bdebug,'end uniqn',nelddi,nkn,nel,nen3v)
 
@@ -366,12 +372,18 @@
           bstopall = .true.
           if( bwrite ) write(6,*) 'trying to eliminate non-unique elements'
           call uniqe(bwrite,nel,nen3v,ipev,bstop)
-          if(bstop) goto 99915
+          if(bstop) then
+            write(6,*)' (15) error: no unique definition of elements'
+            stop 'error stop handle_numbering: error'
+          end if
         end if
 
         if( bwrite ) write(6,*) ' ...controlling node numbers'
         call needn(nkn,nel,nen3v,ipv,iaux,bstop)
-        if(bstop) goto 99918
+        if(bstop) then
+          write(6,*)' (18) error: not used nodes present'
+          stop 'error stop handle_numbering: error'
+        end if
 
         call gtest(bdebug,'end sense',nelddi,nkn,nel,nen3v)
 
@@ -382,30 +394,24 @@
           bstopall = .true.
           if( bwrite ) write(6,*) 'trying to invert sense of elements'
           call clockw(nkn,nel,nen3v,ipev,xgv,ygv,bstop)
-          if(bstop) goto 99930
+          if(bstop) then
+            write(6,*)' (30) error: elements with clockwise nodes'
+            stop 'error stop handle_numbering: error'
+          end if
         end if
 
         if( bwrite ) write(6,*) ' ...testing area of elements'
         call areaz(bwrite,eps_area,nkn,nel,nen3v,ipev,xgv,ygv,bstop)
-        if(bstop) goto 99931
+        if(bstop) then
+          write(6,*)' (31) error: zero area elements'
+          stop 'error stop handle_numbering: error'
+        end if
 
-        if( bstopall ) goto 99940
+        if( bstopall ) then
+          write(6,*)' (40) error: generic error'
+          stop 'error stop handle_numbering: error'
+        end if
 
-	return
-99909   write(6,*)' (09) error: no unique definition of nodes'
-	stop 'error stop handle_numbering: error'
-99910   write(6,*)' (10) error: no unique definition of elements'
-	stop 'error stop handle_numbering: error'
-99915   write(6,*)' (15) error: no unique definition of elements'
-	stop 'error stop handle_numbering: error'
-99918   write(6,*)' (18) error: not used nodes present'
-	stop 'error stop handle_numbering: error'
-99930   write(6,*)' (30) error: elements with clockwise nodes'
-	stop 'error stop handle_numbering: error'
-99931   write(6,*)' (31) error: zero area elements'
-	stop 'error stop handle_numbering: error'
-99940   write(6,*)' (40) error: generic error'
-	stop 'error stop handle_numbering: error'
 	end
 
 !********************************************************************
@@ -443,7 +449,8 @@
 
         if(nkn.le.0 .or. nel.le.0) then
           write(6,*) ' Nothing to process'
-          goto 99999
+          write(6,*)' (99) error: no grid in grd file'
+          stop 'error stop process_depth: no grid'
         end if
 
         itief=0
@@ -476,9 +483,6 @@
          end if
         end if
 
-	return
-99999   write(6,*)' (99) error: no grid in grd file'
-	stop 'error stop process_depth: no grid'
 	end
 
 !********************************************************************
@@ -534,14 +538,14 @@
      &                      ,hm3v,hkv,bstop)
         end if
 
-        if( bstop ) goto 99932
+        if( bstop ) then
+          write(6,*)' (32) error: handling depth'
+          stop 'error stop handle_depth: error'
+        end if
 
         call check_hm3v(nel,hm3v,hflag)
         call gtest(bdebug,'check hm3v',nel,nkn,nel,nen3v)
 
-	return
-99932   write(6,*)' (32) error: handling depth'
-	stop 'error stop handle_depth: error'
 	end
 
 !********************************************************************
@@ -1010,15 +1014,23 @@
             k1=nen3v(ii,ie)
             k2=nen3v(iii,ie)
             do i=1,ng(k1)
-              if(iknot(i,k1).eq.k2) goto 1    !already there
+              if(iknot(i,k1).eq.k2) exit       !already there
             end do
+            if( i <= ng(k1) ) cycle             !already there, skip
             ng(k1)=ng(k1)+1        !side not yet in index
-	    if(ng(k1).gt.ngr1) goto 99
+	    if(ng(k1).gt.ngr1) then
+	      bstop = .true.
+	      write(6,*) ' error: dimension of ngr1 is too low: ',ngr1
+	      return
+	    end if
             iknot(ng(k1),k1)=k2
             ng(k2)=ng(k2)+1        !has to be added to index
-	    if(ng(k2).gt.ngr1) goto 99
+	    if(ng(k2).gt.ngr1) then
+	      bstop = .true.
+	      write(6,*) ' error: dimension of ngr1 is too low: ',ngr1
+	      return
+	    end if
             iknot(ng(k2),k2)=k1
-    1       continue
           end do
 	end do
 
@@ -1027,10 +1039,6 @@
           if(ng(i).gt.ngr) ngr=ng(i)
 	end do
 
-        return
-   99	continue
-	bstop = .true.
-	write(6,*) ' error: dimension of ngr1 is too low: ',ngr1
         end
 
 !**********************************************************

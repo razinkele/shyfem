@@ -2356,7 +2356,7 @@
         real us(n)
         real vs(n)
 
-        integer ndim,i,k,iu
+        integer ndim,i,k,iu,ios
         real pi,rad
         real sp,dir
         real f(10)
@@ -2369,7 +2369,12 @@
         pi = 4. * atan(1.)
         rad = pi / 180.
 
-        open(newunit=iu,file=file,form='formatted',status='old')
+        open(newunit=iu,file=file,form='formatted',status='old' &
+     &                  ,iostat=ios)
+        if( ios /= 0 ) then
+          write(6,*) 'error opening file: ',trim(file)
+          stop 'error stop rdspecial: cannot open file'
+        end if
 
     1   continue
           !read(iu,*,end=2) i,k,sp,dir

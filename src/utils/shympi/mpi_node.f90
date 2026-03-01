@@ -4230,12 +4230,13 @@
         character*(14) filename
         character*(11) pwhat
         integer i
+        integer iu
 
         call shympi_get_filename(filename,what)
 
         write(6,*) filename,what
 
-        open(unit=108, file=filename, form="formatted" &
+        open(newunit=iu, file=filename, form="formatted" &
      &   , iostat=control, status="old", action="read")
         
         if(control .ne. 0) then
@@ -4247,7 +4248,7 @@
      &          'error stop: partitioning file not found')
         end if
 
-        read(unit=108, fmt="(i12,i12,i12,A12)") pnkn,pnel,pn_threads &
+        read(unit=iu, fmt="(i12,i12,i12,A12)") pnkn,pnel,pn_threads &
      &                  ,pwhat
 
         if(pnkn .ne. nkndi .or. pnel .ne. neldi .or. pn_threads      &
@@ -4267,7 +4268,7 @@
         if(what .eq. 'nodes') then
           allocate(allPartAssign(nkndi),stat=ierr)
           if( ierr /= 0 ) stop 'error stop: allocation failed'
-          read(unit=108,fmt="(i12,i12,i12,i12,i12,i12)") &
+          read(unit=iu,fmt="(i12,i12,i12,i12,i12,i12)") &
      &          (allPartAssign(i),i=1,nkndi)
         else
           write(6,*)'error partitioning file on nodes'
@@ -4275,7 +4276,7 @@
      &          'error stop: error partitioning file on nodes')
         end if
 
-        close(108)
+        close(iu)
 
         return
 

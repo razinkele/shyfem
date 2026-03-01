@@ -83,6 +83,8 @@
 	module mod_shypre
 !==========================================================
 
+	implicit none
+
 	logical, save :: bopti
 	logical, save :: brenumber
 	logical, save :: bauto

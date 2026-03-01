@@ -191,6 +191,7 @@
 !*****************************************************************
 
 	program shyfem
+	implicit none
 	call shyfem_main
 	end program
 

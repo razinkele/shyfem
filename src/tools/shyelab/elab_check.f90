@@ -187,7 +187,12 @@
             call strings_pop_direction(filename)
             file = 'aver.' // trim(filename) // '.txt'
 	    call get_new_unit(iu)
-            open(iu,file=file,form='formatted',status='unknown')
+            open(iu,file=file,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	    if( ierr /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(file)
+	      stop 'error stop check_fem_data: cannot open file'
+	    end if
 	    write(iu,'(a)') '#      date_and_time    minimum'// &
      &			'       average       maximum       std'
 	    filenames(iv) = file

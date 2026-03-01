@@ -63,6 +63,8 @@
         module shympi_tripple
 !==================================================================
 
+	implicit none
+
 	logical, parameter :: btripple = .true. !handles tripple points
 
 	integer, parameter :: nexch = 8

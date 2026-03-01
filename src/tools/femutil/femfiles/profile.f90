@@ -106,7 +106,7 @@
 	integer datetime(2)
 
 	integer nvers,np,nvar,ntype,nlvddi,iformat
-	integer iunit
+	integer iunit,ios
 	double precision dtime,dtime1,dtime2
 	real hd(1)
 	character*20 string
@@ -135,7 +135,12 @@
 	temp2 = (/19.,17.,15.,13.,11./)	!temp of second time stamp
 
 	iunit = 1
-	open(iunit,file='profile.fem',form='formatted',status='unknown')
+	open(iunit,file='profile.fem',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: profile.fem'
+	  stop 'error stop profile: cannot open file'
+	end if
 
 	dtime = dtime1
         call fem_file_write_header(iformat,iunit,dtime &
@@ -183,7 +188,7 @@
 	integer datetime(2)
 
 	integer nvers,np,nvar,ntype,nlvddi,iformat,i
-	integer iunit
+	integer iunit,ios
 	double precision dtime,dtime_start,dt
 	real hd(1)
 	character*20 string
@@ -211,7 +216,12 @@
 	temp = (/18.,17.,16.,14.,12./)	!temp of first time stamp
 
 	iunit = 1
-	open(iunit,file='profile1.fem',form='formatted',status='unknown')
+	open(iunit,file='profile1.fem',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: profile1.fem'
+	  stop 'error stop profile1: cannot open file'
+	end if
 
 	do i=0,24
 	  dtime = dtime_start + i*dt
@@ -251,7 +261,7 @@
 	integer datetime(2)
 
 	integer nvers,np,nvar,ntype,nlvddi,iformat
-	integer iunit
+	integer iunit,ios
 	integer ix,iy,ind
 	double precision dtime
 	real dxy,dx,dy,x0,y0,x1,y1
@@ -308,7 +318,12 @@
 	end do
 
 	iunit = 1
-	open(iunit,file='zeta.fem',form='formatted',status='unknown')
+	open(iunit,file='zeta.fem',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: zeta.fem'
+	  stop 'error stop zeta: cannot open file'
+	end if
 
 	dtime = 0.
         call fem_file_write_header(iformat,iunit,dtime &
@@ -348,7 +363,7 @@
 	integer datetime(2)
 
 	integer nvers,np,nvar,ntype,nlvddi,iformat
-	integer iunit
+	integer iunit,ios
 	double precision dtime
 	real dxy,dx,dy,x0,y0,x1,y1
 	real hd(1),flag
@@ -396,7 +411,12 @@
 	pr = 101325	!constant pressure of 1013.25 mbar
 
 	iunit = 1
-	open(iunit,file='wind.fem',form='formatted',status='unknown')
+	open(iunit,file='wind.fem',form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: wind.fem'
+	  stop 'error stop wind: cannot open file'
+	end if
 
 	dtime = 0.
         call fem_file_write_header(iformat,iunit,dtime &
@@ -479,6 +499,7 @@
 	real dxy,dx,dy,x0,y0,x1,y1
 	real hd(1),flag
 	real y,ycrit
+	integer ios
 	character*20 string
 
 	dxy = 1000.
@@ -547,7 +568,12 @@
 	end do
 
 	iunit = 1
-	open(iunit,file=file,form='formatted',status='unknown')
+	open(iunit,file=file,form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop conz2d: cannot open file'
+	end if
 
 	dtime = 0.
         call fem_file_write_header(iformat,iunit,dtime &
@@ -598,7 +624,7 @@
 	integer datetime(2)
 
 	integer nvers,ntype,nlvddi,iformat
-	integer iunit,np,iv,ix,iy,ind,l
+	integer iunit,np,iv,ix,iy,ind,l,ios
 	double precision dtime
 	real dxy,dx,dy,x0,y0,x1,y1
 	real hd,flag
@@ -675,7 +701,12 @@
 	end do
 
 	iunit = 1
-	open(iunit,file=file,form='formatted',status='unknown')
+	open(iunit,file=file,form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop conz3d: cannot open file'
+	end if
 
 	dtime = 0.
         call fem_file_write_header(iformat,iunit,dtime &
@@ -719,7 +750,7 @@
 	integer datetime(2)
 
 	integer nvers,ntype,nlvddi,iformat
-	integer iunit,iv,ip,ind,l,it
+	integer iunit,iv,ip,ind,l,it,ios
 	double precision dtime
 	real hd,flag
 	real rnvar,rlmax,rnxy
@@ -791,7 +822,12 @@
 ! please note that here all time records have the same values - please adjust
 
 	iunit = 1
-	open(iunit,file=file,form='formatted',status='unknown')
+	open(iunit,file=file,form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop conz3d_unstructured: cannot open file'
+	end if
 
 	do it=1,ntmax			!loop over time
 	  dtime = (it-1)*86400.		!time records are 1 day apart
@@ -841,7 +877,7 @@
 	character*80 strings(nvar)
 
 	integer nvers,np,ntype,nlvddi,iformat
-	integer iunit,iv,ix,iy,ind
+	integer iunit,iv,ix,iy,ind,ios
 	double precision dtime
 	real dxy,dx,dy,x0,y0,x1,y1
 	real hd(1),flag
@@ -913,7 +949,12 @@
 	end do
 
 	iunit = 1
-	open(iunit,file=file,form='formatted',status='unknown')
+	open(iunit,file=file,form='formatted',status='unknown' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop sedi_init: cannot open file'
+	end if
 
 	dtime = 0.
         call fem_file_write_header(iformat,iunit,dtime &

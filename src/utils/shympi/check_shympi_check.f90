@@ -110,7 +110,7 @@
 
 	if( ierr > 0 ) call shympi_abort_internal('error stop check500: read error')
 
-	stop
+	stop 'check_shympi_check: done'
    98	continue
 	write(6,*) 'level records are not comparable:'
 	write(6,*) ll,nsize,nrec,icall

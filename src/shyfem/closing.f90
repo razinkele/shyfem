@@ -344,8 +344,10 @@
 
 	ibndz = pentry(id)%ibndz
 
-	if(ibnd.gt.nbc) goto 82
-	if(ibndz.gt.nbc) goto 82
+	if(ibnd.gt.nbc .or. ibndz.gt.nbc) then
+	  write(6,*) 'ibnd,ibndz,nbc: ',ibnd,ibndz,nbc
+	  stop 'error stop close_init: parameters'
+	end if
 	if(ibndz.le.0.and.ibnd.gt.0) pentry(id)%ibndz = ibnd
 
 !	-----------------------------------------------
@@ -388,10 +390,6 @@
 !	end of routine
 !	-----------------------------------------------
 
-	return
-   82	continue
-	write(6,*) 'ibnd,ibndz,nbc: ',ibnd,ibndz,nbc
-	stop 'error stop close_init: parameters'
 	end
 
 !******************************************************************
@@ -934,15 +932,24 @@
             call to_lower(name)
 
             if( iweich .eq. 2 ) then
-              if( name .ne. 'kboc' .and. name .ne. 'itb' ) goto 93
+              if( name .ne. 'kboc' .and. name .ne. 'itb' ) then
+                write(6,*) 'Variable not allowed in this context : ',name
+                stop 'error stop : rdclos'
+              end if
 	    end if
             if( iweich .eq. 3 ) then
-              if( name .ne. 'cfile' ) goto 93
+              if( name .ne. 'cfile' ) then
+                write(6,*) 'Variable not allowed in this context : ',name
+                stop 'error stop : rdclos'
+              end if
 	    end if
 
 	    if( iweich == 0 ) exit
-	    if( iweich > 3 ) goto 98
-	    if( iweich < 0 ) goto 98
+	    if( iweich > 3 .or. iweich < 0 ) then
+	      write(6,*) 'iweich = ',iweich
+              write(6,*) 'Read error in closing section : ',isc
+              stop 'error stop : rdclos'
+	    end if
 
               if( name .eq. 'kboc' ) then
 	        call append_to_array(pentry(id)%kboc,ikboc,nint(value))
@@ -973,7 +980,8 @@
 	      else if(name.eq.'cfile') then
 	        pentry(id)%cfile=text
 	      else
-		goto 96
+                write(6,*) 'Not recognized variable name : ',name
+                stop 'error stop : rdclos'
 	      end if
 
         end do
@@ -981,17 +989,6 @@
 	call trim_array(pentry(id)%kboc,ikboc)
 	call trim_array(pentry(id)%itb,iitb)
 
-	return
-   93   continue
-        write(6,*) 'Variable not allowed in this context : ',name
-        stop 'error stop : rdclos'
-   96   continue
-        write(6,*) 'Not recognized variable name : ',name
-        stop 'error stop : rdclos'
-   98   continue
-	write(6,*) 'iweich = ',iweich
-        write(6,*) 'Read error in closing section : ',isc
-        stop 'error stop : rdclos'
 	end
 
 !********************************************************************

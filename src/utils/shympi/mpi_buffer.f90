@@ -36,6 +36,8 @@
 
         subroutine count_buffer(n0,nlvddi,n,nc,il,nodes,nb)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -59,6 +61,8 @@
 !******************************************************************
 
         subroutine to_buffer_i(n0,nlvddi,n,nc,il,nodes,val,nb,buffer)
+
+        implicit none
 
         integer n0,nlvddi,n,nc
         integer il(n)
@@ -93,6 +97,8 @@
 
         subroutine from_buffer_i(n0,nlvddi,n,nc,il,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -126,6 +132,8 @@
 
         subroutine to_buffer_r(n0,nlvddi,n,nc,il,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -158,6 +166,8 @@
 !******************************************************************
 
         subroutine from_buffer_r(n0,nlvddi,n,nc,il,nodes,val,nb,buffer)
+
+        implicit none
 
         integer n0,nlvddi,n,nc
         integer il(n)
@@ -193,6 +203,8 @@
         subroutine add_from_buffer_r(n0,nlvddi,n,nc,il &
      &                                  ,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -226,6 +238,8 @@
 
         subroutine to_buffer_d(n0,nlvddi,n,nc,il,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -258,6 +272,8 @@
 !******************************************************************
 
         subroutine from_buffer_d(n0,nlvddi,n,nc,il,nodes,val,nb,buffer)
+
+        implicit none
 
         integer n0,nlvddi,n,nc
         integer il(n)
@@ -293,6 +309,8 @@
         subroutine add_from_buffer_d(n0,nlvddi,n,nc,il &
      &                                  ,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -326,6 +344,8 @@
 
         subroutine min_from_buffer_i(n0,nlvddi,n,nc,il &
      &                                  ,nodes,val,nb,buffer)
+
+        implicit none
 
         integer n0,nlvddi,n,nc
         integer il(n)
@@ -361,6 +381,8 @@
         subroutine max_from_buffer_i(n0,nlvddi,n,nc,il &
      &                                  ,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -395,6 +417,8 @@
         subroutine min_from_buffer_r(n0,nlvddi,n,nc,il &
      &                                  ,nodes,val,nb,buffer)
 
+        implicit none
+
         integer n0,nlvddi,n,nc
         integer il(n)
         integer nodes(nc)
@@ -428,6 +452,8 @@
 
         subroutine max_from_buffer_r(n0,nlvddi,n,nc,il &
      &                                  ,nodes,val,nb,buffer)
+
+        implicit none
 
         integer n0,nlvddi,n,nc
         integer il(n)

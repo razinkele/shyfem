@@ -107,7 +107,7 @@
 	integer idep(0:nxdim+1,0:nydim+1)
 	integer node(0:nxdim,0:nydim)
 
-	integer ix,iy,iu
+	integer ix,iy,iu,ios
 	integer nnode,nelem
 	integer efact
 	integer k,n,nn
@@ -185,7 +185,12 @@
 !--------------------------------------------------------------
 
 	outfile = 'regular.grd'
-	open(newunit=iu,file=outfile,status='unknown',form='formatted')
+	open(newunit=iu,file=outfile,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(outfile)
+	  stop 'error stop mkgeom: cannot open file'
+	end if
 
 !--------------------------------------------------------------
 ! write title

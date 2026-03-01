@@ -1537,7 +1537,7 @@
 
 	real regpar(7)
 
-	integer nx,ny,ix,iy,n,l,iu
+	integer nx,ny,ix,iy,n,l,iu,ios
 	real x0,y0,x1,y1,dx,dy,x,y
 	character*256 grdfile
 
@@ -1553,7 +1553,12 @@
 
 	grdfile = 'bound.fem.grd'
 	write(6,*) 'writing file ',trim(grdfile)
-	open(newunit=iu,file=grdfile,status='unknown',form='formatted')
+	open(newunit=iu,file=grdfile,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(grdfile)
+	  stop 'error stop write_grd_coords: cannot open file'
+	end if
 	write(iu,1001) 1,1,0,x0,y0
 	write(iu,1001) 1,2,0,x0,y1
 	write(iu,1001) 1,3,0,x1,y1
@@ -1563,7 +1568,12 @@
 
 	grdfile = 'cross.fem.grd'
 	write(6,*) 'writing file ',trim(grdfile)
-	open(newunit=iu,file=grdfile,status='unknown',form='formatted')
+	open(newunit=iu,file=grdfile,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(grdfile)
+	  stop 'error stop write_grd_coords: cannot open file'
+	end if
 	n = 0
 	do iy=1,ny
 	  y = y0 + (iy-1)*dy
@@ -1577,7 +1587,12 @@
 
 	grdfile = 'grid.fem.grd'
 	write(6,*) 'writing file ',trim(grdfile)
-	open(newunit=iu,file=grdfile,status='unknown',form='formatted')
+	open(newunit=iu,file=grdfile,status='unknown',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(grdfile)
+	  stop 'error stop write_grd_coords: cannot open file'
+	end if
 	n = 0
 	l = 0
 	do iy=1,ny

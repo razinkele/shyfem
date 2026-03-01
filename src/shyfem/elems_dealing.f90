@@ -230,7 +230,12 @@
 	ndim = nlev
 	flev = jlhkv(k)
 	nlev = ilhkv(k)
-	if( nlev > ndim ) goto 99
+	if( nlev > ndim ) then
+	  write(6,*) 'k,ndim,flev,nlev: ',k,ndim,flev,nlev
+	  write(6,*) 'old: ',hdkov(:,k)
+	  write(6,*) 'new: ',hdknv(:,k)
+	  stop 'error stop dep3dnod: nlev>ndim'
+	end if
 
 	if( mode .gt. 0 ) then
 	  do l=flev,nlev
@@ -244,12 +249,6 @@
 	  stop 'error stop dep3dnod: Cannot use mode = 0'
 	end if
 
-	return
-   99	continue
-	write(6,*) 'k,ndim,flev,nlev: ',k,ndim,flev,nlev
-	write(6,*) 'old: ',hdkov(:,k)
-	write(6,*) 'new: ',hdknv(:,k)
-	stop 'error stop dep3dnod: nlev>ndim'
 	end
 	
 !****************************************************************
@@ -1044,7 +1043,16 @@
 		  hdkn(lmink,k) = hdkn(lmink,k) + areafv * z
 		end if
 	        hlast = htot - hlv(lmax-1)
-		if( hlast .lt. 0. ) goto 77
+		if( hlast .lt. 0. ) then
+		  write(6,*) 'last layer negative: ',hlast
+		  write(6,*) 'levdim,lmax: ',levdim,lmax
+		  write(6,*) 'ie,ii,k: ',ie,ii,k
+		  write(6,*) 'htot,hm: ',htot,hm
+		  write(6,*) 'hm3v  ',hm3v(1:3,ie)
+		  write(6,*) 'hlv   ',(hlv(l),l=1,levdim)
+		  write(6,*) 'hldv  ',(hldv(l),l=1,levdim)
+		  stop 'error stop setdepth: last layer negative'
+		end if
 	        hl(lmax,ii) = hlast
 	        hdkn(lmax,k) = hdkn(lmax,k) + areafv * hl(lmax,ii)
 	      end if
@@ -1100,7 +1108,16 @@
 	        hden(lmin,ie) = hden(lmin,ie) + zmed
 	      end if
 	      hlast = htot - hlv(lmax-1)
-	      if( hlast .lt. 0. ) goto 77
+	      if( hlast .lt. 0. ) then
+		write(6,*) 'last layer negative: ',hlast
+		write(6,*) 'levdim,lmax: ',levdim,lmax
+		write(6,*) 'ie,ii,k: ',ie,ii,k
+		write(6,*) 'htot,hm: ',htot,hm
+		write(6,*) 'hm3v  ',hm3v(1:3,ie)
+		write(6,*) 'hlv   ',(hlv(l),l=1,levdim)
+		write(6,*) 'hldv  ',(hldv(l),l=1,levdim)
+		stop 'error stop setdepth: last layer negative'
+	      end if
 	      hden(lmax,ie) = hlast
 	    end if
 	  end if
@@ -1176,16 +1193,6 @@
 ! end of routine
 !----------------------------------------------------------------
 
-	return
-   77	continue
-	write(6,*) 'last layer negative: ',hlast
-	write(6,*) 'levdim,lmax: ',levdim,lmax
-	write(6,*) 'ie,ii,k: ',ie,ii,k
-	write(6,*) 'htot,hm: ',htot,hm
-	write(6,*) 'hm3v  ',(hm3v(ii,ie),ii=1,3)
-	write(6,*) 'hlv   ',(hlv(l),l=1,levdim)
-	write(6,*) 'hldv  ',(hldv(l),l=1,levdim)
-	stop 'error stop setdepth: last layer negative'
 	end
 
 !***********************************************************

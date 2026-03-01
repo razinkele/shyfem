@@ -162,7 +162,9 @@
 	  do ii=1,3
 	    ien = ieltv(ii,ie)
 	    if( ien > 0 ) then
-	      if( count(ieltv(:,ien)==ie) /= 1 ) goto 98
+	      if( count(ieltv(:,ien)==ie) /= 1 ) then
+	        stop 'error stop set_geom_mpi: internal error (2)'
+	      end if
 	    else if( ien <= 1000 ) then
 !	      ide = -ien - 1000
 !	      ie_ext = ipev(ie)
@@ -180,11 +182,6 @@
 ! end of routine
 !-------------------------------------------------------------
 
-	return
-   98	continue
-	stop 'error stop set_geom_mpi: internal error (2)'
-   99	continue
-	stop 'error stop set_geom_mpi: internal error (1)'
 	end
 
 !*****************************************************************
@@ -343,26 +340,6 @@
 	flush(6)
 	stop 'programmed stop in check_2id_elements'
 
-	return
-   96	continue
-	write(6,*) ie,my_id
-	write(6,*) ielt_aux1(:,ie)
-	write(6,*) ielt_aux2(:,ie)
-	stop 'error stop check_2id_elements: internal error (2)'
-   98	continue
-	iu = 400 + my_id
-	write(iu,*) nkn,nel
-	do ie=1,nel
-	  ie_ext = ipev(ie)
-	  do ii=1,3
-	    if( ielt_aux1(ii,ie) /= ielt_aux3(ii,ie) ) then
-	      write(iu,*) ie_ext,ie,ii,ielt_aux1(ii,ie),ielt_aux3(ii,ie)
-	    end if
-	  end do
-	end do
-	stop 'error stop check_2id_elements: internal error (1)'
-   99	continue
-	stop 'error stop check_2id_elements: cannot do tripple points yet'
 	end
 
 !*****************************************************************

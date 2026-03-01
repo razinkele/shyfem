@@ -173,8 +173,18 @@
 
 	call insnod(nkn,ipv)
 
-	open(newunit=iu1,file='smooth.grd',status='unknown',form='formatted')
-	open(newunit=iu2,file='reduce.grd',status='unknown',form='formatted')
+	open(newunit=iu1,file='smooth.grd',status='unknown' &
+     &			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: smooth.grd'
+	  stop 'error stop gridr: cannot open smooth.grd'
+	end if
+	open(newunit=iu2,file='reduce.grd',status='unknown' &
+     &			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: reduce.grd'
+	  stop 'error stop gridr: cannot open reduce.grd'
+	end if
 
 	do l=1,nl
 	  nll = nnl

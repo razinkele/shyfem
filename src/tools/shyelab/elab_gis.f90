@@ -218,9 +218,14 @@
 
         implicit none
 
-	integer ie,ii,iu
+	integer ie,ii,iu,ios
 
-	open(newunit=iu,file='connectivity.gis',form='formatted',status='unknown')
+	open(newunit=iu,file='connectivity.gis',form='formatted' &
+     &			,status='unknown',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: connectivity.gis'
+	  stop 'error stop gis_write_connect: cannot open file'
+	end if
 
 	write(iu,*) nel
 	do ie=1,nel

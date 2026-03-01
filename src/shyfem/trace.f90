@@ -110,9 +110,13 @@
 
 	if( icall .eq. 0 ) then
 	  iuin = ifileo(55,'traccia.dat','form','old')
-	  if( iuin .le. 0 ) goto 99
+	  if( iuin .le. 0 ) then
+	    stop 'error stop traccia: cannot open file'
+	  end if
 	  iuout = ifileo(55,'traccia_out.dat','form','new')
-	  if( iuout .le. 0 ) goto 99
+	  if( iuout .le. 0 ) then
+	    stop 'error stop traccia: cannot open file'
+	  end if
 
 	  line = ' '
 	  write(6,*) 'initializing traccia...'
@@ -120,7 +124,9 @@
 	  call get_next_traccia(iuin,itp,np,xdp,ydp,line,uv,ierr)
 	  xp = xdp
 	  yp = ydp
-	  if( ierr .ne. 0 ) goto 98
+	  if( ierr .ne. 0 ) then
+	    stop 'error stop traccia: first record of traccia'
+	  end if
 
 	  iep = 0
 	  icall = 1
@@ -136,7 +142,10 @@
 	itnew = nint(dtime)
 	itold = nint(dtime - ddt)
 
-	if( itp .lt. itold ) goto 89
+	if( itp .lt. itold ) then
+	  write(6,*) itp,itold,itnew
+	  stop 'error stop traccia: simulation start too late'
+	end if
 	ierr = 0
 
 !-------------------------------------------------------------------
@@ -158,24 +167,16 @@
 
 	end do
 
-	if( ierr .gt. 0 ) goto 97
+	if( ierr .gt. 0 ) then
+	  write(6,*) itp,np,xp,yp,ierr
+	  stop 'error stop traccia: read error in traccia'
+	end if
 	if( ierr .lt. 0 ) icall = -1
 
 !-------------------------------------------------------------------
 ! end of routine
 !-------------------------------------------------------------------
 
-	return
-   99	continue
-	stop 'error stop traccia: cannot open file'
-   98	continue
-	stop 'error stop traccia: first record of traccia'
-   97	continue
-	write(6,*) itp,np,xp,yp,ierr
-	stop 'error stop traccia: read error in traccia'
-   89	continue
-	write(6,*) itp,itold,itnew
-	stop 'error stop traccia: simulation start too late'
         end
 
 !*****************************************************************
@@ -249,7 +250,12 @@
 	    write(6,*) 'using nearest point: ',k,zp
 	else if( bintmiss ) then	!interpolate using old point
 	    iep = iepold
-	    if( iep .le. 0 ) goto 99
+	    if( iep .le. 0 ) then
+	      write(6,*) iepold
+	      write(6,*) xold,yold,xp,yp
+	      write(6,*) itp,itold,itnew
+	      stop 'error stop interpolate_traccia: no element found'
+	    end if
 	    xp = xold
 	    yp = yold
 	    call intp_z(iep,xp,yp,itp,itold,itnew,zp)
@@ -264,12 +270,6 @@
 	xold = xp
 	yold = yp
 
-	return
-   99	continue
-	write(6,*) iepold
-	write(6,*) xold,yold,xp,yp
-	write(6,*) itp,itold,itnew
-	stop 'error stop interpolate_traccia: no element found'
 	end
 
 !*****************************************************************
@@ -489,9 +489,8 @@
 
 	imax = len(line)
 	do i=imax,1,-1
-	  if( line(i:i) .ne. ' ' ) goto 1
+	  if( line(i:i) .ne. ' ' ) exit
 	end do
-    1	continue
 	ilen = i
 	if( ilen .le. 0 ) ilen = 1
 

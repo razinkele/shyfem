@@ -597,14 +597,12 @@
 	integer, save :: nstate = 1
 	integer nstate_aux,nkn_aux
 	read(iunit) nstate_aux,nkn_aux
-	if( nstate /= nstate_aux ) goto 99
-	if( nkn /= nkn_aux ) goto 99
+	if( nstate /= nstate_aux .or. nkn /= nkn_aux ) then
+	  write(6,*) 'nstate: ',nstate,nstate_aux
+	  write(6,*) 'nkn   : ',nkn,nkn_aux
+	  stop 'error stop read_restart_ssedi: incompatible params'
+	end if
 	read(iunit) conza
-	return
-   99	continue
-	write(6,*) 'nstate: ',nstate,nstate_aux
-	write(6,*) 'nkn   : ',nkn,nkn_aux
-	stop 'error stop read_restart_ssedi: incompatible params'
         end
 
 !*****************************************************************

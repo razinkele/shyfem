@@ -33,6 +33,8 @@
 
         program lgrelab_main
 
+        implicit none
+
         call lgrelab
 
         end

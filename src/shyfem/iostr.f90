@@ -374,7 +374,10 @@
         nlv = 0         !is initialized really only in adjust_levels
 
 	nsc = 0
-	if(iunit.le.0) goto 63
+	if(iunit.le.0) then
+	  write(6,*) 'Cannot read STR file on unit : ',iunit
+	  stop 'error stop : nlsh2d'
+	end if
 	last = ' '
 
 	if( bdebug ) write(6,*) 'start reading STR file'
@@ -395,9 +398,17 @@
 
 		if(section.eq.'title') then
 			call rdtitl
-			if( nsc .ne. 1 ) goto 66
+			if( nsc .ne. 1 ) then
+			  write(6,*) 'section $title must be first section'
+			  stop 'error stop : nlsh2d'
+			end if
 		else if(section.eq.'end') then
-			goto 69
+			write(6,*) 'section $end is not allowed on its own'
+			write(6,*) 'last section found was: ',last
+			write(6,*) 'no section has been opened'
+			call nls_return_line(aline,iline)
+			write(6,*) trim(aline),'     line number = ',iline
+			stop 'error stop : nlsh2d'
 		else if(section.eq.'para') then
 			call nrdins(section)
 		else if(section.eq.'proj') then
@@ -452,7 +463,8 @@
 		else					!try modules
 			call modules(M_READ)
 			if( .not. hasreadsec() ) then	!sec has been handled?
-				goto 97			! -> no
+			  write(6,*) 'Cannot handle section : ',section
+			  stop 'error stop nlsh2d: no such section'
 			end if
 		end if
 
@@ -465,33 +477,6 @@
 
 ! end of read %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-	return
-   63	continue
-	write(6,*) 'Cannot read STR file on unit : ',iunit
-	stop 'error stop : nlsh2d'
-   66	continue
-	write(6,*) 'section $title must be first section'
-	stop 'error stop : nlsh2d'
-   69	continue
-	write(6,*) 'section $end is not allowed on its own'
-	write(6,*) 'last section found was: ',last
-	write(6,*) 'no section has been opened'
-	call nls_return_line(aline,iline)
-	write(6,*) trim(aline),'     line number = ',iline
-	stop 'error stop : nlsh2d'
-   77	continue
-	if( nlv .eq. -1 ) then
-	  write(6,*) 'read error in section $levels'
-	  write(6,*) 'nlv,nlvdi: ',nlv,nlvdi
-	  stop 'error stop nlsh2d: read error'
-	else
-	  write(6,*) 'dimension error in section $levels'
-	  write(6,*) 'nlvdi = ',nlvdi,'   number of data read = ',-nlv
-	  stop 'error stop nlsh2d: dimension error'
-	end if
-   97	continue
-	write(6,*) 'Cannot handle section : ',section
-	stop 'error stop nlsh2d: no such section'
 	end
 
 !************************************************************************
@@ -557,30 +542,38 @@
 	integer nrdlin,nrdsec
 	integer num
 
-	if( nrdlin(line) .eq. 0 ) goto 65
+	if( nrdlin(line) .eq. 0 ) then
+	  write(6,*) 'error in section $title'
+	  stop 'error stop rdtitl: cannot read title section'
+	end if
 	line = adjustl(line)
 	descrp=line
 	call putfnm('title',line)
 
-	if( nrdlin(line) .eq. 0 ) goto 65
+	if( nrdlin(line) .eq. 0 ) then
+	  write(6,*) 'error in section $title'
+	  stop 'error stop rdtitl: cannot read title section'
+	end if
 	line = adjustl(line)
 	call putfnm('runnam',line)
 
-	if( nrdlin(line) .eq. 0 ) goto 65
+	if( nrdlin(line) .eq. 0 ) then
+	  write(6,*) 'error in section $title'
+	  stop 'error stop rdtitl: cannot read title section'
+	end if
 	line = adjustl(line)
 	call putfnm('basnam',line)
 
 	!if( nrdlin(line) .gt. 0 ) goto 65
-	if( nrdsec(line,num,extra) .eq. 0 ) goto 65
-	if( line .ne. 'end' ) goto 64
+	if( nrdsec(line,num,extra) .eq. 0 ) then
+	  write(6,*) 'error in section $title'
+	  stop 'error stop rdtitl: cannot read title section'
+	end if
+	if( line .ne. 'end' ) then
+	  write(6,*) 'error in section $title'
+	  stop 'error stop rdtitl: no end found'
+	end if
 
-	return
-   64	continue
-	write(6,*) 'error in section $title'
-	stop 'error stop rdtitl: no end found'
-   65	continue
-	write(6,*) 'error in section $title'
-	stop 'error stop rdtitl: cannot read title section'
 	end
 
 !**********************************************************************

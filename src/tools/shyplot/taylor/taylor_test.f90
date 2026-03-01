@@ -115,11 +115,15 @@
         real a(6,ndim)
         character*10 line
 
-        integer i,iu
+        integer i,iu,ios
         real aux(6)
 
         n = 0
-        open(newunit=iu,file=file)
+        open(newunit=iu,file=file,iostat=ios)
+        if( ios /= 0 ) then
+          write(6,*) 'error opening file: ',trim(file)
+          stop 'error stop read_data: cannot open file'
+        end if
     3   continue
         read(iu,'(6(f8.4,2x),a)',end=4) (aux(i),i=1,6),line
         n = n + 1

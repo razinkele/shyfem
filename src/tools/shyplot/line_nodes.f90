@@ -311,11 +311,12 @@
 
 	character*(*) basin
 
-	integer i,iu
+	integer i,iu,ios
 
 	basin = ' '
 
-	open(newunit=iu,file='.memory',err=99)
+	open(newunit=iu,file='.memory',iostat=ios)
+	if( ios /= 0 ) goto 99
 	read(iu,*)
 	read(iu,'(a)') basin
 	close(iu)
@@ -344,7 +345,7 @@
 	integer n
 	integer nodes(n)
 
-	integer i,k,kext,iu
+	integer i,k,kext,iu,ios
 	real x,y
 
 	integer ipext
@@ -353,7 +354,12 @@
 !  write grd file
 ! --------------------------------------------------------------
 
-        open(newunit=iu,file='line_nodes.grd',status='unknown',form='formatted')
+        open(newunit=iu,file='line_nodes.grd',status='unknown' &
+     &			,form='formatted',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: line_nodes.grd'
+	  stop 'error stop write_line: cannot open file'
+	end if
 
 	write(iu,*)
 	do i=1,n
@@ -378,7 +384,12 @@
 !  write txt file
 ! --------------------------------------------------------------
 
-        open(newunit=iu,file='line_nodes.txt',status='unknown',form='formatted')
+        open(newunit=iu,file='line_nodes.txt',status='unknown' &
+     &			,form='formatted',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: line_nodes.txt'
+	  stop 'error stop write_line: cannot open file'
+	end if
 
 	do i=1,n
 	  kext = nodes(i)

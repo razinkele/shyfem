@@ -435,8 +435,11 @@
 	  tm = temp(lmin,k)
 	  salt = saltv(lmin,k)
 	  call get_ice_cover(k,cice)
-	  !if( cice < 0. .or. cice > 1. ) goto 98
-	  if( cice < -epsice .or. cice > 1.+epsice ) goto 98
+	  if( cice < -epsice .or. cice > 1.+epsice ) then
+	    write(6,*) 'impossible value for cice:'
+	    write(6,*) k,ipv(k),cice
+	    stop 'error stop qflux3d: impossible value for cice'
+	  end if
 	  fice_cover = aice*cice
 	  fice_free  = 1. - fice_cover
 	  bicecover = fice_cover > 0.
@@ -513,7 +516,19 @@
 	    call getuv(lmin,k,u,v)
 	    uv = sqrt(u*u+v*v)		!current speed
 	    call ice_water_exchange(tm,tice,uv,qice)
-	    if( abs(qice) > 100000. ) goto 99
+	    if( abs(qice) > 100000. ) then
+	      write(6,*) 'error in heat flux'
+	      write(6,*) 'k',k,ipext(k),iheat
+	      write(6,*) 'l',l,lmin,lmax,hm
+	      write(6,*) 'qurf',qsurface,qrad
+	      write(6,*) 'qlong',qlong,qlat,qsens,qss
+	      write(6,*) 'qice',qsens_orig,qice
+	      write(6,*) 'fice',fice_free,fice_cover
+	      write(6,*) 'ta',ta,p,uw,ur,cc
+	      write(6,*) 'tm',tm,tws(k),r
+	      flush(6)
+	      stop 'error stop qflux3d: impossible heat flux'
+	    end if
 	    if( .not. bheat ) qice = 0.
 	  else
 	    tice = 0.
@@ -585,7 +600,19 @@
               write(6,*) 'Use isolp = 0 (hdecay) or 1 (Jerlov t-I)'
               stop 'error stop qflux3d: isolp'
             end if
-	    if( abs(qsurface) > 100000. ) goto 99
+	    if( abs(qsurface) > 100000. ) then
+	      write(6,*) 'error in heat flux'
+	      write(6,*) 'k',k,ipext(k),iheat
+	      write(6,*) 'l',l,lmin,lmax,hm
+	      write(6,*) 'qurf',qsurface,qrad
+	      write(6,*) 'qlong',qlong,qlat,qsens,qss
+	      write(6,*) 'qice',qsens_orig,qice
+	      write(6,*) 'fice',fice_free,fice_cover
+	      write(6,*) 'ta',ta,p,uw,ur,cc
+	      write(6,*) 'tm',tm,tws(k),r
+	      flush(6)
+	      stop 'error stop qflux3d: impossible heat flux'
+	    end if
             call heat2t(dt,hm,qss-qsbottom,qsurface,tm,tnew)
             if (bdebug) call check_heat2(k,l,qss,qsbottom,qsurface,     &
            &                                   albedo,tm,tnew)
@@ -675,23 +702,6 @@
 ! end of routine
 !---------------------------------------------------------
 
-	return
-   98	continue
-	write(6,*) 'impossible value for cice:'
-	write(6,*) k,ipv(k),cice
-	stop 'error stop qflux3d: impossible value for cice'
-   99	continue
-	write(6,*) 'error in heat flux'
-	write(6,*) 'k',k,ipext(k),iheat
-	write(6,*) 'l',l,lmin,lmax,hm
-	write(6,*) 'qurf',qsurface,qrad
-	write(6,*) 'qlong',qlong,qlat,qsens,qss
-	write(6,*) 'qice',qsens_orig,qice
-	write(6,*) 'fice',fice_free,fice_cover
-	write(6,*) 'ta',ta,p,uw,ur,cc
-	write(6,*) 'tm',tm,tws(k),r
-	flush(6)
-	stop 'error stop qflux3d: impossible heat flux'
 	end
 
 !*****************************************************************************
@@ -748,16 +758,12 @@
 	integer k
 	real tm,qsens,qlat,qlong,evap
 
-	if( is_nan(tm) ) goto 98
-	if( is_nan(qsens) ) goto 98
-	if( is_nan(qlat) ) goto 98
-	if( is_nan(qlong) ) goto 98
-	if( is_nan(evap) ) goto 98
+	if( is_nan(tm) .or. is_nan(qsens) .or. is_nan(qlat)             &
+     &      .or. is_nan(qlong) .or. is_nan(evap) ) then
+	  write(6,*) k,tm,qsens,qlat,qlong,evap
+	  stop 'error stop check_heat: Nan found'
+	end if
 
-	return
-   98	continue
-	write(6,*) k,tm,qsens,qlat,qlong,evap
-	stop 'error stop check_heat: Nan found'
 	end
 
 !*****************************************************************************
@@ -771,23 +777,18 @@
 	integer k,l
 	real qs,qsbottom,qrad,albedo,tm,tnew
 
-	if( is_nan(qs) ) goto 98
-	if( is_nan(qsbottom) ) goto 98
-	if( is_nan(qrad) ) goto 98
-	if( is_nan(albedo) ) goto 98
-	if( is_nan(tm) ) goto 98
-	if( is_nan(tnew) ) goto 98
+	if( is_nan(qs) .or. is_nan(qsbottom) .or. is_nan(qrad)          &
+     &      .or. is_nan(albedo) .or. is_nan(tm) .or. is_nan(tnew)    &
+     &      ) then
+	  write(6,*) k,l,qs,qsbottom,qrad,albedo,tm,tnew
+	  stop 'error stop check_heat2: Nan found'
+	end if
 
-	if( abs(tm) .gt. 100. ) goto 97
-	if( abs(tnew) .gt. 100. ) goto 97
+	if( abs(tm) .gt. 100. .or. abs(tnew) .gt. 100. ) then
+	  write(6,*) k,l,tm,tnew
+	  stop 'error stop check_heat2: t out of range'
+	end if
 
-	return
-   97	continue
-	write(6,*) k,l,tm,tnew
-	stop 'error stop check_heat2: t out of range'
-   98	continue
-	write(6,*) k,l,qs,qsbottom,qrad,albedo,tm,tnew
-	stop 'error stop check_heat2: Nan found'
 	end
 
 !*****************************************************************************

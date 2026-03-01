@@ -554,7 +554,7 @@
 
 	implicit none
 
-	double precision dtstep		!time step to run, 0: run to end
+	double precision, intent(in) :: dtstep	!time step to run, 0: run to end
 
 	double precision dtmax		!run to this time
 
@@ -788,9 +788,10 @@
 
         implicit none
 
-        character*(*) strfile
-        logical bdebug,bdebout,bmpirun,bmpidebug,bltrace
-        logical bquiet,bsilent
+        character*(*), intent(out) :: strfile
+        logical, intent(out) :: bdebug,bdebout,bmpirun
+        logical, intent(out) :: bquiet,bsilent
+        logical :: bmpidebug,bltrace
 
         character*256 version
         character*256 scompiler
@@ -1123,10 +1124,14 @@
 	      call shy_make_output_name('.dbg',file)
 	      iunit = 200
               call find_unit(iunit)
-              if( iunit == 0 ) goto 98
+              if( iunit == 0 ) then
+                stop 'error stop handle_debug_output: cannot get unit'
+              end if
               open(iunit,file=file,status='unknown',form='unformatted'  &
      &                          ,iostat=ios)
-              if( ios /= 0 ) goto 99
+              if( ios /= 0 ) then
+                stop 'error stop handle_debug_output: cannot open file'
+              end if
 	      call set_debug_unit(iunit)
 	      call shympi_write_debug_unit(iunit)
               !call info_output_d('debug_output',da_out)
@@ -1157,11 +1162,6 @@
 
 	call shympi_barrier
 
-	return
-   98	continue
-        stop 'error stop handle_debug_output: cannot get unit number'
-   99	continue
-        stop 'error stop handle_debug_output: cannot open file'
 	end
 
 !*****************************************************************

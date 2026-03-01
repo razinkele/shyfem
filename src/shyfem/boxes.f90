@@ -900,12 +900,6 @@
 !-----------------------------------------------------------------
 
 	return
-   97	continue
-	write(6,*) 'error writing record of boxes flx file: ',ivar
-	stop 'error stop wrboxa: record'
-   98	continue
-	write(6,*) 'error writing header of boxes flx file'
-	stop 'error stop wrboxa: header'
 	end
 
 !******************************************************************
@@ -970,8 +964,12 @@
 	nsct = 0
 	kflxm = 0
 
-	open(newunit=iu,file=boxfile,form='formatted',status='old',err=94 &
+	open(newunit=iu,file=boxfile,form='formatted',status='old' &
      &		,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'file: ',trim(boxfile)
+	  stop 'error stop box_check: cannot read file'
+	end if
 
 	read(iu,*) id,ftype,nvers
 
@@ -991,19 +989,16 @@
 	  if( id .le. 0 ) exit
 	  read(iu,*) (iaux,i=1,n)
 	  nsct = nsct + 1
-	  if( id .ne. nsct ) goto 97
+	  if( id .ne. nsct ) then
+	    write(6,*) id,nsect
+	    stop 'error stop box_check: id'
+	  end if
 	  kflxm = kflxm + n + 1
 	end do
 
 	close(iu)
 
 	return
-   94	continue
-	write(6,*) 'file: ',trim(boxfile)
-	stop 'error stop box_check: cannot read file'
-   97	continue
-	write(6,*) id,nsect
-	stop 'error stop box_check: id'
 	end
 
 !******************************************************************
@@ -1043,8 +1038,12 @@
 
 	write(6,*) 'start reading boxfile... ',trim(boxfile)
 	if( iudeb > 0 ) write(iudeb,*) 'reading boxfile'
-	open(newunit=iu,file=boxfile,form='formatted',status='old',err=94 &
+	open(newunit=iu,file=boxfile,form='formatted',status='old' &
      &		,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'file: ',trim(boxfile)
+	  stop 'error stop box_read: cannot read file'
+	end if
 
 	read(iu,*) id,ftype,nvers
 
@@ -1052,12 +1051,21 @@
 	  nelbox = id
 	  nbox = ftype
 	  nb = nvers
-	  if( nelbox .ne. nel_global ) goto 99
+	  if( nelbox .ne. nel_global ) then
+	    write(6,*) nel,nelbox
+	    stop 'error stop box_read: nel/=nelbox'
+	  end if
 	  read(iu,*) (iboxes(ie),ie=1,nel)
 	else					!new read: id,ftype,nvers
-	  if( nvers /= 3 ) goto 91
+	  if( nvers /= 3 ) then
+	    write(6,*) 'nvers = ',nvers
+	    stop 'error stop box_read: cannot read this version'
+	  end if
 	  read(iu,*) nelbox,nbox,nb
-	  if( nelbox .ne. nel_global ) goto 99
+	  if( nelbox .ne. nel_global ) then
+	    write(6,*) nel,nelbox
+	    stop 'error stop box_read: nel/=nelbox'
+	  end if
 	  iboxes = -1
 	  do ie=1,nelbox
 	    read(iu,*) ie_ext,ia
@@ -1070,7 +1078,10 @@
 	    stop 'error stop box_read: incomplete box information'
 	  end if
 	end if
-	if( nbox .gt. nbxdim ) goto 98
+	if( nbox .gt. nbxdim ) then
+	  write(6,*) nbox,nbxdim
+	  stop 'error stop box_read: nbox>nbxdim'
+	end if
 
 	itype = 99		!internal sections
 
@@ -1079,11 +1090,23 @@
 	  if( id .le. 0 ) exit
 	  read(iu,*) (iauxv(i),i=1,n)
 	  nsect = nsect + 1
-	  if( id .ne. nsect ) goto 97
-	  if( nsect .gt. nscboxdim ) goto 95
+	  if( id .ne. nsect ) then
+	    write(6,*) id,nsect
+	    stop 'error stop box_read: id'
+	  end if
+	  if( nsect .gt. nscboxdim ) then
+	    write(6,*) nsect,nscboxdim
+	    stop 'error stop box_read: nscboxdim'
+	  end if
 	  call box_insert_section(id,n,itype,ib1,ib2,iauxv,ierr)
-	  if( kfluxm .gt. nfxboxdim ) goto 96	!kfluxm set in sub above
-	  if( ierr .gt. 0 ) goto 93		!should be already handled above
+	  if( kfluxm .gt. nfxboxdim ) then
+	    write(6,*) kfluxm,nfxboxdim
+	    stop 'error stop box_read: nfxboxdim'
+	  end if
+	  if( ierr .gt. 0 ) then
+	    write(6,*) ierr
+	    stop 'error stop box_read: unspecified error'
+	  end if
 	  if( iudeb > 0 ) then
 	    write(iudeb,*) id,n,ib1,ib2
 	    write(iudeb,*) iauxv(1:n)
@@ -1115,30 +1138,6 @@
 	close(iudeb)
 
 	return
-   91	continue
-	write(6,*) 'nvers = ',nvers
-	stop 'error stop box_read: cannot read this version'
-   93	continue
-	write(6,*) ierr
-	stop 'error stop box_read: unspecified error'
-   94	continue
-	write(6,*) 'file: ',trim(boxfile)
-	stop 'error stop box_read: cannot read file'
-   95	continue
-	write(6,*) nsect,nscboxdim
-	stop 'error stop box_read: nscboxdim'
-   96	continue
-	write(6,*) kfluxm,nfxboxdim
-	stop 'error stop box_read: nfxboxdim'
-   97	continue
-	write(6,*) id,nsect
-	stop 'error stop box_read: id'
-   98	continue
-	write(6,*) nbox,nbxdim
-	stop 'error stop box_read: nbox>nbxdim'
-   99	continue
-	write(6,*) nel,nelbox
-	stop 'error stop box_read: nel/=nelbox'
 	end
 
 !******************************************************************
@@ -2058,32 +2057,32 @@
 	  end do
 	end do
 
-	if( any( vold3d(nlvdi,:) > 0. ) ) goto 99
+	if( any( vold3d(nlvdi,:) > 0. ) ) then
+	  write(6,*) 'values for area in last interface'
+	  stop 'error stop boxes_compute_area: non zero area in last interface'
+	end if
 	aux = abs( vold3d(0,:) - vold(:) )
 	raux = 0.
 	where( vold > 0 ) raux = aux/vold
-	if( any( raux > 1.e-10 ) ) goto 98
+	if( any( raux > 1.e-10 ) ) then
+	  write(6,*) 'difference in zero interface'
+	  minaux = minval(vold)
+	  maxaux = maxval(vold)
+	  write(6,*) 'min,max value: ',minaux,maxaux
+	  aux = abs( vold3d(0,:) - vold(:) )
+	  minaux = minval(aux)
+	  maxaux = maxval(aux)
+	  write(6,*) 'min,max diff: ',minaux,maxaux
+	  minaux = minval(aux/vold)
+	  maxaux = maxval(aux/vold)
+	  write(6,*) 'min,max rdiff: ',minaux,maxaux
+	  stop 'error stop boxes_compute_area: difference in zero interface'
+	end if
 
 	area = vold
 	area3d = vold3d
 
 	return
-   98	continue
-	write(6,*) 'difference in zero interface'
-	minaux = minval(vold)
-	maxaux = maxval(vold)
-	write(6,*) 'min,max value: ',minaux,maxaux
-	aux = abs( vold3d(0,:) - vold(:) )
-	minaux = minval(aux)
-	maxaux = maxval(aux)
-	write(6,*) 'min,max diff: ',minaux,maxaux
-	minaux = minval(aux/vold)
-	maxaux = maxval(aux/vold)
-	write(6,*) 'min,max rdiff: ',minaux,maxaux
-	stop 'error stop boxes_compute_area: difference in zero interface'
-   99	continue
-	write(6,*) 'values for area in last interface'
-	stop 'error stop boxes_compute_area: non zero area in last interface'
 	end
 
 !******************************************************************
@@ -2692,9 +2691,15 @@
 	    k = iauxv(i)
 	    if( k <= 0 ) cycle
 	    ibk = ikboxes(k)
-	    if( ibk .le. 0 ) goto 99	!node not in unique box
+	    if( ibk .le. 0 ) then
+	      write(6,*) 'boxes: ',ibk,'  node: ',ipext(k)
+	      stop 'error stop box_ob_init: not unique box for node'
+	    end if
 	    if( ib .eq. 0 ) ib = ibk
-	    if( ibk .ne. ib ) goto 98	!boundary nodes in different boxes
+	    if( ibk .ne. ib ) then
+	      write(6,*) 'boxes: ',ib,ibk,'  node: ',ipext(k)
+	      stop 'error stop box_ob_init: different boxes for nodes'
+	    end if
 	  end do
 
 	  ifrom = -ibc
@@ -2710,10 +2715,19 @@
 	  iscbnd(4,ibc) = ito		!to box
 	  iscbnd(5,ibc) = nsect		!section number
 
-	  if( nsect .gt. nscboxdim ) goto 95
+	  if( nsect .gt. nscboxdim ) then
+	    write(6,*) nsect,nscboxdim
+	    stop 'error stop box_ob_init: nscboxdim'
+	  end if
 	  call box_insert_section(nsect,nk,itype,ifrom,ito,iauxv,ierr)
-	  if( kfluxm .gt. nfxboxdim ) goto 96
-	  if( ierr /= 0 ) goto 93
+	  if( kfluxm .gt. nfxboxdim ) then
+	    write(6,*) kfluxm,nfxboxdim
+	    stop 'error stop box_ob_init: nfxboxdim'
+	  end if
+	  if( ierr /= 0 ) then
+	    write(6,*) ierr
+	    stop 'error stop box_ob_init: unspecified error'
+	  end if
 	end do
 
 	!write(630+my_id,'(5i5)') (ibc,iscbnd(:,ibc),ibc=1,nbc)
@@ -2722,21 +2736,6 @@
 	!kfluxm = kfluxm - 1
 
 	return
-   93	continue
-	write(6,*) ierr
-	stop 'error stop box_ob_init: unspecified error'
-   95	continue
-	write(6,*) nsect,nscboxdim
-	stop 'error stop box_ob_init: nscboxdim'
-   96	continue
-	write(6,*) kfluxm,nfxboxdim
-	stop 'error stop box_ob_init: nfxboxdim'
-   98	continue
-	write(6,*) 'boxes: ',ib,ibk,'  node: ',ipext(k)
-	stop 'error stop box_ob_init: different boxes for nodes'
-   99	continue
-	write(6,*) 'boxes: ',ibk,'  node: ',ipext(k)
-	stop 'error stop box_ob_init: not unique box for node'
 	end
 
 !******************************************************************
@@ -3393,10 +3392,15 @@
 	  write(6,*) 'boxxxx: ',nbox,ib,lmax,val
 	  if( val > 0. ) rval = dval / val
 	  if( bw ) write(iu,2000) iv,ib,val,val0,dval,rval
-	  if( rval > eps ) goto 99
+	  if( rval > eps ) then
+	    write(6,*) trim(text)
+	    write(6,*) 'assert error for eps = ',eps
+	    write(6,2000) iv,ib,val,val0,dval,rval
+	    stop 'error stop assert_values'
+	  end if
 	end do
 
-	stop
+	stop 'assert_values: volume check completed'
 !-------------------------------------------------
 ! check 3d scalars
 !-------------------------------------------------
@@ -3417,7 +3421,12 @@
 	    rval = 0.
 	    if( val > 0. ) rval = dval / val
 	    if( bw ) write(iu,2000) iv,ib,val,val0,dval,rval
-	    if( rval > eps ) goto 99
+	    if( rval > eps ) then
+	      write(6,*) trim(text)
+	      write(6,*) 'assert error for eps = ',eps
+	      write(6,2000) iv,ib,val,val0,dval,rval
+	      stop 'error stop assert_values'
+	    end if
 	  end do
 	end do
 
@@ -3439,7 +3448,12 @@
 	    rval = 0.
 	    if( fmax > 0. ) rval = dval / fmax
 	    !if( bw ) write(iu,2000) l,is,fsum,ftot,dval,rval
-	    if( rval > eps ) goto 98
+	    if( rval > eps ) then
+	      write(6,*) trim(text)
+	      write(6,*) 'assert error for eps = ',eps
+	      write(6,2000) l,is,fsum,ftot,dval,rval
+	      stop 'error stop assert_values'
+	    end if
 	  end do
 	end do
 
@@ -3461,13 +3475,18 @@
 	  dvals = abs(vals-vals0)
 	  avals = abs(vals)
 	  rvals = 0.
-	  where( avals > 0 ) rvals = dvals / avals 
+	  where( avals > 0 ) rvals = dvals / avals
 	  val = maxval( vals )
 	  val0 = maxval( vals0 )
 	  dval = maxval( dvals )
 	  rval = maxval( rvals )
 	  if( bw ) write(iu,2000) 0,is,val,val0,dval,rval
-	  if( rval > eps ) goto 97
+	  if( rval > eps ) then
+	    write(6,*) trim(text)
+	    write(6,*) 'assert error for eps = ',eps
+	    write(6,2000) 0,is,val,val0,dval,rval
+	    stop 'error stop assert_values'
+	  end if
 	end do
 
 !-------------------------------------------------
@@ -3477,21 +3496,6 @@
 	return
  1000	format(i5,4e14.5)
  2000	format(2i5,4e14.5)
-   97	continue
-	write(6,*) trim(text)
-	write(6,*) 'assert error for eps = ',eps
-	write(6,2000) 0,is,val,val0,dval,rval
-	stop 'error stop assert_values'
-   98	continue
-	write(6,*) trim(text)
-	write(6,*) 'assert error for eps = ',eps
-	write(6,2000) l,is,fsum,ftot,dval,rval
-	stop 'error stop assert_values'
-   99	continue
-	write(6,*) trim(text)
-	write(6,*) 'assert error for eps = ',eps
-	write(6,2000) iv,ib,val,val0,dval,rval
-	stop 'error stop assert_values'
 	end
 
 !******************************************************************
@@ -3725,7 +3729,13 @@
 	  ib1 = isects(3,is)
 	  ib2 = isects(4,is)
 	  if( ib1 > 0 ) nb1 = nblayers(ib1)
-	  if( ib2 <= 0 ) goto 99
+	  if( ib2 <= 0 ) then
+	    write(6,*) 'info on sections:'
+	    do i=1,nsect
+	      write(6,*) i,nslayers(i),isects(3,i),isects(4,i)
+	    end do
+	    stop 'error stop finalize_nslayers: ib2 <= 0'
+	  end if
 	  nb2 = nblayers(ib2)
 	  !write(6,*) is,ib1,ib2,nbs,nb1,nb2
 	  if( ib1 <= 0 ) nb1 = nb2	!do not use nb1
@@ -3737,35 +3747,6 @@
 	nslmax = shympi_max(nslmax)
 
 	return
-
-	write(6,*) 'ggg1 debug_nslayers: ',nblayers
-
-	kk(1) = 8189
-	kk(2) = 7545
-	do ii=1,2
-	k = kk(ii)
-	do ie=1,nel
-	  !i = findloc(nen3v(:,ie),k,1)		!compiler error
-	  do i=1,3
-	    if( nen3v(i,k) == k ) exit
-	  end do
-	  if( i > 3 ) cycle
-	  if( i <= 0 ) cycle
-	  lmax = ilhv(ie)
-	  write(6,'(7i8)') k,nen3v(:,ie),ie,lmax,iboxes(ie)
-	end do
-	end do
-
-	stop 'stop debug_nslayers'
-   99	continue
-	write(6,*) 'info on sections:'
-	do is=1,nsect
-	  nbs = nslayers(is)
-	  ib1 = isects(3,is)
-	  ib2 = isects(4,is)
-	  write(6,*) is,nbs,ib1,ib2
-	end do
-	stop 'error stop finalize_nslayers: ib2 <= 0'
 	end
 
 !******************************************************************

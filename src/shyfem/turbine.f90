@@ -139,6 +139,9 @@
         real area_aux !DEB
         integer ios
         integer ierr
+        integer iu_dati,iu_disco,iu_1d,iu_075d,iu_3d,iu_5d
+        integer iu_anello,iu_theta,iu_partial,iu_full
+        integer iu_vel1d,iu_vel075,iu_vel3d,iu_vel5d,iu_rfricv
 
 !-----------------------------------------
 ! do we have to run turbine?
@@ -169,29 +172,30 @@
 !-----------------------------------------
 ! read file 'dati.txt'
 !-----------------------------------------        
-        open(unit=55, file='dati.txt', status='old',iostat=ios)
+        open(newunit=iu_dati, file='dati.txt', status='old',iostat=ios)
         if( ios /= 0 ) stop 'error stop turbine: cannot open dati.txt'
-        read(55,*) ir
-        read(55,*) ic   
+        read(iu_dati,*) ir
+        read(iu_dati,*) ic   
         !allocate (e(ir))
         !allocate (h(ic))    
         !allocate (B(ir,ic))
         !allocate (G(ir,ic))
-        read(55,*) (e(i), i=1, ir) !read Reynolds values
-        read(55,*) (h(i), i=1, ic) !read alpha values
+        read(iu_dati,*) (e(i), i=1, ir) !read Reynolds values
+        read(iu_dati,*) (h(i), i=1, ic) !read alpha values
        
         do i=1, ir
-          read(55,*) (B(i,j), j=1,ic)  !read Cl values
+          read(iu_dati,*) (B(i,j), j=1,ic)  !read Cl values
         end do
         do i=1, ir
-          read(55,*) (G(i,j), j=1,ic)  !read Cd values
+          read(iu_dati,*) (G(i,j), j=1,ic)  !read Cd values
         end do
        
-        close(55)
+        close(iu_dati)
 !-----------------------------------------
 ! turbine elements identification
 !-----------------------------------------
-        open(unit=82,file='ID_Celle_disco.txt',status='unknown',iostat=ios)
+        open(newunit=iu_disco,file='ID_Celle_disco.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open ID_Celle_disco.txt'
         icount=0
         ie1Dcount=0
@@ -232,42 +236,46 @@
         endif
         endif
         disc_theta(disc_count)=thetad
-        write(82,*)disc_ie(disc_count),x,y !mic 19/07/21
+        write(iu_disco,*)disc_ie(disc_count),x,y !mic 19/07/21
           endif
         end do
 !-----------------------------------------
 ! if necessary to find the wake elements (exception for 0.75D which is in front of the turbine)
 !-----------------------------------------
-        do ie=1,nel
-        call baric(ie,x,y)   
-        open(unit=78,file='ID_Celle_1D.txt',status='unknown',iostat=ios)
+        open(newunit=iu_1d,file='ID_Celle_1D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open ID_Celle_1D.txt'
-        open(unit=79,file='ID_Celle_075D.txt',status='unknown',iostat=ios)
+        open(newunit=iu_075d,file='ID_Celle_075D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open ID_Celle_075D.txt'
-        open(unit=80,file='ID_Celle_3D.txt',status='unknown',iostat=ios)
+        open(newunit=iu_3d,file='ID_Celle_3D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open ID_Celle_3D.txt'
-        open(unit=81,file='ID_Celle_5D.txt',status='unknown',iostat=ios)
+        open(newunit=iu_5d,file='ID_Celle_5D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open ID_Celle_5D.txt'
+        do ie=1,nel
+        call baric(ie,x,y)
         if(x.gt.x1_1.and.x.lt.x2_1)then    !change extreme on the basis of the grid 
         ie1Dcount=ie1Dcount+1
         ie_1D(ie1Dcount)=ie
-        write(78,*)ie_1D(ie1Dcount),ipev(ie_1D(ie1Dcount)),x,y
+        write(iu_1d,*)ie_1D(ie1Dcount),ipev(ie_1D(ie1Dcount)),x,y
         end if
         if(x.gt.x1_0_75.and.x.lt.x2_0_75)then  !change extreme on the basis of the grid 
         ie0_75Dcount=ie0_75Dcount+1
         ie_0_75D(ie0_75Dcount)=ie
-        write(79,*)ie_0_75D(ie0_75Dcount), &
+        write(iu_075d,*)ie_0_75D(ie0_75Dcount), &
      &   ipev(ie_0_75D(ie0_75Dcount)),x,y
         end if
         if(x.gt.x1_3.and.x.lt.x2_3)then    !change extreme on the basis of the grid
         ie3Dcount=ie3Dcount+1
         ie_3D(ie3Dcount)=ie
-        write(80,*)ie_3D(ie3Dcount),ipev(ie_3D(ie3Dcount)),x,y
+        write(iu_3d,*)ie_3D(ie3Dcount),ipev(ie_3D(ie3Dcount)),x,y
         end if
         if(x.gt.x1_5.and.x.lt.x2_5)then    !change extreme on the basis of the grid
         ie5Dcount=ie5Dcount+1
         ie_5D(ie5Dcount)=ie
-        write(81,*)ie_5D(ie5Dcount),ipev(ie_5D(ie5Dcount)),x,y
+        write(iu_5d,*)ie_5D(ie5Dcount),ipev(ie_5D(ie5Dcount)),x,y
         end if
         
         end do
@@ -278,8 +286,8 @@
         write(6,*) icount,n_ring
         endif
 
-        open(unit=32,file='ID_celle_anello.txt',form='formatted', &
-     &  status='unknown',iostat=ios)
+        open(newunit=iu_anello,file='ID_celle_anello.txt', &
+     &  form='formatted',status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open ID_celle_anello.txt'
         do i=1,icount-1   !these two do-cycles ordinate both the arrays in ascending order of theta
            do  j=i+1,icount
@@ -292,19 +300,20 @@
                 ring_ie(j)=app_ie
              endif
              end do
-        write(32,*) ring_ie(i),ipev(ring_ie(i)),ring_theta(i)
+        write(iu_anello,*) ring_ie(i),ipev(ring_ie(i)),ring_theta(i)
         end do
-        close(32)
+        close(iu_anello)
 
 !the two arrays are now ordinated in ascending order of theta moreover their values have been memorized to be available for all the successive time steps
-        open(unit=33, file='theta.txt', status='unknown',iostat=ios)
+        open(newunit=iu_theta, file='theta.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open theta.txt'
         do i=1, icount
         call baric(ring_ie(i),x,y)
-        write(33,*) ring_theta(i), x, y
+        write(iu_theta,*) ring_theta(i), x, y
         end do  
         
-        close(33)
+        close(iu_theta)
 !-----------------------------------------
 ! here the turbine is vitually devided in 18 horizontal stripes (change the number of stripes on the basis of n_ring) 
 ! to assign to the internal disc upwind elements (only those with theta<180 degrees) the same theta angle of the ring element belonging to the same stripe       
@@ -427,10 +436,13 @@
          end if
 
          
-         open(unit=31, file='L_theta_partial.txt', status='unknown',iostat=ios)
-         if( ios /= 0 ) write(6,*) 'warning: cannot open L_theta_partial.txt'
+         open(newunit=iu_partial, file='L_theta_partial.txt', &
+     &   status='unknown',iostat=ios)
+         if( ios /= 0 ) write(6,*) &
+     &   'warning: cannot open L_theta_partial.txt'
 
-        write(31,*) icall,ring_theta(i),alpha(i),foo,Cl_st2,Cd_st2, &
+        write(iu_partial,*) icall,ring_theta(i),alpha(i),foo, &
+     &  Cl_st2,Cd_st2, &
      &  Li,D,W,area_ele,u_abs,rfricv(ring_ie(i)),utlnv(l,ring_ie(i)), &
      &  vtlnv(l,ring_ie(i)),uv  
 
@@ -504,11 +516,14 @@
           rfricv(disc_ie(i))=frict_3*2*r/(corda*qc)         
          endif 
        
-        open(unit=41, file='L_theta_full.txt', status='unknown',iostat=ios)
-        if( ios /= 0 ) write(6,*) 'warning: cannot open L_theta_full.txt'
-        write(41,*) icall,disc_theta(i),alpha(i),foo,Cl_st2,Cd_st2, &
-     &  Li,D,W,area_ele,u_abs,rfricv(disc_ie(i)),utlnv(l,disc_ie(i)), &
-     &  vtlnv(l,disc_ie(i)),uv                  
+        open(newunit=iu_full, file='L_theta_full.txt', &
+     &  status='unknown',iostat=ios)
+        if( ios /= 0 ) write(6,*) &
+     &  'warning: cannot open L_theta_full.txt'
+        write(iu_full,*) icall,disc_theta(i),alpha(i),foo, &
+     &  Cl_st2,Cd_st2, &
+     &  Li,D,W,area_ele,u_abs,rfricv(disc_ie(i)), &
+     &  utlnv(l,disc_ie(i)),vtlnv(l,disc_ie(i)),uv                  
          
          end if
 
@@ -516,44 +531,50 @@
          end do  !stripes cycle
 
         
-        open(unit=68, file='velocità1D.txt', status='unknown',iostat=ios)
+        open(newunit=iu_vel1d, file='velocità1D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open velocita1D.txt'
-        open(unit=69, file='velocità0.75D.txt', status='unknown',iostat=ios)
-        if( ios /= 0 ) write(6,*) 'warning: cannot open velocita0.75D.txt'
-        open(unit=70, file='velocità3D.txt', status='unknown',iostat=ios)
+        open(newunit=iu_vel075, file='velocità0.75D.txt', &
+     &  status='unknown',iostat=ios)
+        if( ios /= 0 ) write(6,*) &
+     &  'warning: cannot open velocita0.75D.txt'
+        open(newunit=iu_vel3d, file='velocità3D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open velocita3D.txt'
-        open(unit=71, file='velocità5D.txt', status='unknown',iostat=ios)
+        open(newunit=iu_vel5d, file='velocità5D.txt', &
+     &  status='unknown',iostat=ios)
         if( ios /= 0 ) write(6,*) 'warning: cannot open velocita5D.txt'
 
         do el=1, ie1Dcount     
-        write(68,*)icall,ulnv(l,ie_1D(el)),vlnv(l,ie_1D(el)),ie_1D(el), &
-     &  ipev(ie_1D(el))
+        write(iu_vel1d,*)icall,ulnv(l,ie_1D(el)), &
+     &  vlnv(l,ie_1D(el)),ie_1D(el),ipev(ie_1D(el))
         end do
 
         do el=1, ie0_75Dcount
-        write(69,*)icall,ulnv(l,ie_0_75D(el)),vlnv(l,ie_0_75D(el)), &
-     &  ie_0_75D(el),ipev(ie_0_75D(el))
+        write(iu_vel075,*)icall,ulnv(l,ie_0_75D(el)), &
+     &  vlnv(l,ie_0_75D(el)),ie_0_75D(el),ipev(ie_0_75D(el))
         end do
 
         do el=1, ie3Dcount
-        write(70,*)icall,ulnv(l,ie_3D(el)),vlnv(l,ie_3D(el)), &
-     &  ie_3D(el),ipev(ie_3D(el))
+        write(iu_vel3d,*)icall,ulnv(l,ie_3D(el)), &
+     &  vlnv(l,ie_3D(el)),ie_3D(el),ipev(ie_3D(el))
         end do
 
         do el=1, ie5Dcount
-        write(71,*)icall,ulnv(l,ie_5D(el)),vlnv(l,ie_5D(el)), &
-     &  ie_5D(el),ipev(ie_5D(el))
+        write(iu_vel5d,*)icall,ulnv(l,ie_5D(el)), &
+     &  vlnv(l,ie_5D(el)),ie_5D(el),ipev(ie_5D(el))
         end do
-       close(68)
-       close(69)
-       close(70)
-       close(71)
+       close(iu_vel1d)
+       close(iu_vel075)
+       close(iu_vel3d)
+       close(iu_vel5d)
   
-       open(unit=51, file='rfricv.txt', status='unknown',iostat=ios)
+       open(newunit=iu_rfricv, file='rfricv.txt', &
+     &  status='unknown',iostat=ios)
        if( ios /= 0 ) write(6,*) 'warning: cannot open rfricv.txt'
 
          do j=1,disc_count
-         write(51,*)icall,j,rfricv(disc_ie(j))!,utlnv(l,disc_ie(j)),
+         write(iu_rfricv,*)icall,j,rfricv(disc_ie(j))!,utlnv(l,disc_ie(j)),
 !     +   utlnv(l,disc_ie(j)),uv,frict_3    
          end do
   

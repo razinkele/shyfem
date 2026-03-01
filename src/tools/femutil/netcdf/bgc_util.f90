@@ -356,7 +356,7 @@
 	double precision dbottom(nz)
 	double precision dlayer(nz)
 
-	integer iz,iu
+	integer iz,iu,ios
 	double precision dtop,dh2
 	character*256 file,header,format
 
@@ -375,7 +375,11 @@
      &			' layer_thickness'
 	iu = 1
 	file = 'depth.txt'
-	open(iu,file=file,status='unknown',form='formatted')
+	open(iu,file=file,status='unknown',form='formatted',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop make_depth: cannot open file'
+	end if
 
 	write(6,*) 'maximum number of layers: ',nz
 	write(6,'(a)') header
@@ -471,7 +475,11 @@
 	write(6,*) 'determining box information'
 
 	iu = 1
-	open(iu,file=file,status='unknown',form='formatted')
+	open(iu,file=file,status='unknown',form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop make_boxes: cannot open file'
+	end if
 	read(iu,*) nbox
 	write(6,*) 'nbox = ',nbox
 	header = '               box line_points       found       total'
@@ -860,7 +868,7 @@
 	integer nbox
 	integer ius(nbox)
 
-	integer iu,iubase,ibox
+	integer iu,iubase,ibox,ios
 	character*256 file
 	character*2 box
 
@@ -872,7 +880,11 @@
 	  if( box(1:1) == ' ' ) box(1:1) = '0'
 	  file = 'extract_' // trim(name) // '_' // box // '.txt'
 	  !write(6,*) 'filename: ',trim(file)
-	  open(iu,file=file,status='unknown',form='formatted')
+	  open(iu,file=file,status='unknown',form='formatted',iostat=ios)
+	  if( ios /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(file)
+	    stop 'error stop make_file_units: cannot open file'
+	  end if
 	  ius(ibox) = iu
 	end do
 
@@ -961,13 +973,17 @@
 	double precision value(nx,ny)
 
 	real, parameter :: flag = -999.
-	integer iu,node,ix,iy,it
+	integer iu,node,ix,iy,it,ios
 	real x,y,d
 
 	it = itype
 	iu = 1
 	node = 0
-	open(iu,file=file,status='unknown',form='formatted')
+	open(iu,file=file,status='unknown',form='formatted',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop write_grid: cannot open file'
+	end if
 	do iy=1,ny
 	  do ix=1,nx
 	    node = node + 1

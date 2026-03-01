@@ -295,11 +295,11 @@
 	real, intent(in) :: difv(0:nlvdi,nkn)
         real, intent(in) :: difmol
 
-        real, allocatable :: r3v(:,:)
-        real, allocatable :: load(:,:)
-        real, allocatable :: cobs(:,:)
-        real, allocatable :: rtauv(:,:)
-        real, allocatable :: wsinkv(:,:)
+        real, allocatable, save :: r3v(:,:)
+        real, allocatable, save :: load(:,:)
+        real, allocatable, save :: cobs(:,:)
+        real, allocatable, save :: rtauv(:,:)
+        real, allocatable, save :: wsinkv(:,:)
 
 	double precision dtime
 	real robs,rload
@@ -307,16 +307,18 @@
 	character*10 whatvar,whataux
 	integer ierr
 
-	allocate(r3v(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(load(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(cobs(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rtauv(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( .not. allocated(r3v) ) then
+	  allocate(r3v(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
+	  allocate(load(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
+	  allocate(cobs(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
+	  allocate(rtauv(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
+	  allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
+	end if
 
 	robs = 0.
 	rload = 0.
@@ -358,8 +360,6 @@
      &				,rkpar,wsink,wsinkv,rload,load &
      &                          ,difhv,difv,difmol)
 
-	deallocate(r3v,load,cobs,rtauv,wsinkv)
-
 !--------------------------------------------------------------
 ! end of routine
 !--------------------------------------------------------------
@@ -394,9 +394,9 @@
 	real, intent(in) :: robs
 	real, intent(in) :: rtauv(nlvdi,nkn)		!varible relaxation coefficient
 
-        real, allocatable :: r3v(:,:)
-        real, allocatable :: wsinkv(:,:)
-	real, allocatable :: load(:,:)
+        real, allocatable, save :: r3v(:,:)
+        real, allocatable, save :: wsinkv(:,:)
+	real, allocatable, save :: load(:,:)
 
 	integer ierr,l,k,lmax
 	real eps
@@ -405,10 +405,12 @@
         integer iwhat,ichanm
 	character*10 whatvar,whataux
 
-	allocate(r3v(nlvdi,nkn),load(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( .not. allocated(r3v) ) then
+	  allocate(r3v(nlvdi,nkn),load(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv_nudge: allocation failed'
+	  allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv_nudge: allocation failed'
+	end if
 
 	rload = 0.
 	r3v = 0.
@@ -444,9 +446,6 @@
      &                          ,r3v,sobs,robs,rtauv &
      &				,rkpar,wsink,wsinkv,rload,load &
      &                          ,difhv,difv,difmol)
-
-	deallocate(r3v,load)
-	deallocate(wsinkv)
 
 !--------------------------------------------------------------
 ! end of routine
@@ -484,21 +483,23 @@
 	real, intent(in) :: difv(0:nlvdi,nkn)
         real, intent(in) :: difmol
 
-        real, allocatable :: r3v(:,:)
-        real, allocatable :: cobs(:,:)
-        real, allocatable :: rtauv(:,:)
+        real, allocatable, save :: r3v(:,:)
+        real, allocatable, save :: cobs(:,:)
+        real, allocatable, save :: rtauv(:,:)
 
 	double precision dtime
 	real robs
         integer iwhat,ichanm,ierr
 	character*20 whatvar,whataux
 
-	allocate(r3v(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(cobs(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rtauv(nlvdi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( .not. allocated(r3v) ) then
+	  allocate(r3v(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
+	  allocate(cobs(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
+	  allocate(rtauv(nlvdi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
+	end if
 
 	robs = 0.
 	r3v = 0.
@@ -542,8 +543,6 @@
      &                          ,r3v,cobs,robs,rtauv &
      &				,rkpar,wsink,wsinkv,rload,load &
      &                          ,difhv,difv,difmol)
-
-	deallocate(r3v,cobs,rtauv)
 
 !--------------------------------------------------------------
 ! end of routine
@@ -1709,15 +1708,15 @@
 	double precision voltot
 
 !------------------------------------------------------------
-! big arrays
+! big arrays (cached with save to avoid per-timestep allocation)
 !------------------------------------------------------------
-	double precision, allocatable :: cn(:,:)
-	double precision, allocatable :: co(:,:)
-	double precision, allocatable :: cdiag(:,:)
-	double precision, allocatable :: clow(:,:)
-	double precision, allocatable :: chigh(:,:)
-        real, allocatable :: cwrite(:,:)
-        real, allocatable :: c2write(:)
+	double precision, allocatable, save :: cn(:,:)
+	double precision, allocatable, save :: co(:,:)
+	double precision, allocatable, save :: cdiag(:,:)
+	double precision, allocatable, save :: clow(:,:)
+	double precision, allocatable, save :: chigh(:,:)
+        real, allocatable, save :: cwrite(:,:)
+        real, allocatable, save :: c2write(:)
 !------------------------------------------------------------
 ! end of big arrays
 !------------------------------------------------------------
@@ -1742,6 +1741,7 @@
 	integer, save :: icall = 0
 	integer, save :: iuinfo = 0
 	double precision, save :: da_out(4) = 0
+	real, save :: rstol_c = 0.
 
 ! functions
 	logical is_zeta_bound,openmp_in_parallel,openmp_is_master
@@ -1750,15 +1750,17 @@
         if(nlv.ne.nlev) stop 'error stop conzstab: nlv/=nlev'
 
 !-----------------------------------------------------------------
-! allocation
+! allocation (cached - allocate once, reuse across calls)
 !-----------------------------------------------------------------
 
-	allocate(cn(nlvddi,nkn),co(nlvddi,nkn),cdiag(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( .not. allocated(cn) ) then
+	  allocate(cn(nlvddi,nkn),co(nlvddi,nkn),cdiag(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	  allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	  allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
+	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	end if
 
 	saux = 0.
 
@@ -1767,6 +1769,7 @@
 !-----------------------------------------------------------------
 
 	if( icall == 0 ) then
+	 rstol_c = getpar('rstol')
 	 if( openmp_is_master() ) then
           call init_output_d('itmstb','idtstb',da_out)
 	  id = 0
@@ -1999,14 +2002,15 @@
 
 	coadv = 0.
 	ciadv = 0.
+	aux1 = dt * aj4
 	do ii=1,3
 	  k=kn(ii)
           hmed = hold(l,ii)                      !new ggu   !HACK
-          chdiff = dt * aj4 * rk3 * hmed * wdiff(ii)	!bug fix 12.2.2010
-	  cvdiff = dt * aj4 * fd(ii)
-          chadv = dt * aj4 * 3. * f(ii)
-	  cviadv = dt * aj4 * fwin(ii)
-	  cvoadv = dt * aj4 * fwout(ii)
+          chdiff = aux1 * rk3 * hmed * wdiff(ii)	!bug fix 12.2.2010
+	  cvdiff = aux1 * fd(ii)
+          chadv = aux1 * 3. * f(ii)
+	  cviadv = aux1 * fwin(ii)
+	  cvoadv = aux1 * fwout(ii)
           if( chadv < 0. ) then             !flux out of node
 	    coadv = cvoadv - chadv
 	  else
@@ -2016,7 +2020,7 @@
 	  chigh(l,k) = chigh(l,k) + cadv
 	  clow(l,k) = clow(l,k) + chdiff
           cn(l,k) = cn(l,k) + cvdiff
-          co(l,k) = co(l,k) + dt * aj4 * hmed * robs * rtauv(l,k) !nudging
+          co(l,k) = co(l,k) + aux1 * hmed * robs * rtauv(l,k) !nudging
 	end do
 
 	end do		! loop over l
@@ -2102,7 +2106,7 @@
 ! sindex is saved and returned from subroutine (stability index)
 !-----------------------------------------------------------------
 
-	rstol = getpar('rstol')
+	rstol = rstol_c
         istot = 1 + stabind / rstol
         sindex = stabind / rstol
 
@@ -2123,12 +2127,8 @@
 	end if
 
 !-----------------------------------------------------------------
-! deallocation
+! end of computation (arrays retained via save for next call)
 !-----------------------------------------------------------------
-
-	deallocate(cn,co,cdiag)
-	deallocate(clow,chigh)
-	deallocate(cwrite)
 
 !-----------------------------------------------------------------
 ! end of routine
@@ -2480,15 +2480,23 @@
 
 	  if( tlimit0 /= flag ) btlimit0 = .true.
 	  if( tlimit1 /= flag ) btlimit1 = .true.
-	  if( btlimit0 .and. btlimit1 .and. tlimit0 > tlimit1 ) goto 99
-	  
+
 	  if( slimit0 /= flag ) bslimit0 = .true.
 	  if( slimit1 /= flag ) bslimit1 = .true.
-	  if( bslimit0 .and. bslimit1 .and. slimit0 > slimit1 ) goto 99
-	  
+
 	  if( climit0 /= flag ) bclimit0 = .true.
 	  if( climit1 /= flag ) bclimit1 = .true.
-	  if( bclimit0 .and. bclimit1 .and. climit0 > climit1 ) goto 99
+
+	  if( (btlimit0 .and. btlimit1 .and. tlimit0 > tlimit1) .or. &
+     &	      (bslimit0 .and. bslimit1 .and. slimit0 > slimit1) .or. &
+     &	      (bclimit0 .and. bclimit1 .and. climit0 > climit1) ) then
+	    write(6,*) 'error setting limiter...'
+	    write(6,*) 'either both limiters are set or are left as flag'
+	    write(6,*) 'tlimit: ',tlimit0,tlimit1
+	    write(6,*) 'slimit: ',slimit0,slimit1
+	    write(6,*) 'climit: ',climit0,climit1
+	    stop 'error stop limit_scalar: invalid limiter range'
+	  end if
 	  
 	  write(6,*) 'limiting scalars has been set up'
 	  if( btlimit0 ) write(6,*) 'limiting min temp: ',tlimit0
@@ -2549,13 +2557,6 @@
 	  if( ic > 0 ) write(6,*) 'ggu1 after ',what,ic
 	end if
 	
-	return
-   99	continue
-	write(6,*) 'error setting limiter...'
-	write(6,*) 'either both limiters are set or are left as flag'
-	write(6,*) 'tlimit: ',tlimit0,tlimit1
-	write(6,*) 'slimit: ',slimit0,slimit1
-	write(6,*) 'tlimit: ',climit0,climit1
 	end
 
 !*****************************************************************

@@ -142,16 +142,18 @@
 
 	call qfnext(itfold,qsold,taold,tbold,uwold,ccold      &
       &                  ,urold,pold,eold,rold,qold,ier)
-	if( ier .ne. 0 ) goto 99
+	if( ier .ne. 0 ) then
+	  write(6,*) ier
+	  stop 'error stop qfinit: error reading file'
+	end if
 
 	call qfnext(itfnew,qsnew,tanew,tbnew,uwnew,ccnew         &
       &                  ,urnew,pnew,enew,rnew,qold,ier)
-	if( ier .ne. 0 ) goto 99
+	if( ier .ne. 0 ) then
+	  write(6,*) ier
+	  stop 'error stop qfinit: error reading file'
+	end if
 
-	return
-   99	continue
-	write(6,*) ier
-	stop 'error stop qfinit: error reading file'
 	end
 
 !***********************************************************
@@ -293,7 +295,10 @@
 	  call qfnext(itfnew,qsnew,tanew,tbnew,uwnew,ccnew    &
       &                  ,urnew,pnew,enew,rnew,qnew,ier)
 
-	  if( ier .ne. 0 ) goto 99
+	  if( ier .ne. 0 ) then
+	    write(6,*) it,itact,ier
+	    stop 'error stop qfmake: error reading file'
+	  end if
 
 	end do
 
@@ -319,10 +324,6 @@
       &                  ,tbact,uwact,ccact
 	end if
 
-	return
-   99	continue
-	write(6,*) it,itact,ier
-	stop 'error stop qfmake: error reading file'
 	end
 
 !***********************************************************
@@ -449,20 +450,21 @@
 	integer it
 	real qs,ta,tb,ur,uw,cc,p
 
-	if( qs .lt. 0.    .or. qs .gt. 1500. ) goto 99
-	if( ta .lt. -100. .or. ta .gt. 100.  ) goto 99
-	if( tb .lt. -100. .or. tb .gt. 100.  ) goto 99
-	if( ur .lt. 0.    .or. ur .gt. 100.  ) goto 99
-	if( uw .lt. 0.    .or. uw .gt. 100.  ) goto 99
-	if( cc .lt. 0.    .or. cc .gt. 1.    ) goto 99
-	if(  p .lt. 900.  .or.  p .gt. 1100. ) goto 99
+	if( qs .lt. 0.    .or. qs .gt. 1500.                            &
+     &      .or. ta .lt. -100. .or. ta .gt. 100.                     &
+     &      .or. tb .lt. -100. .or. tb .gt. 100.                     &
+     &      .or. ur .lt. 0.    .or. ur .gt. 100.                     &
+     &      .or. uw .lt. 0.    .or. uw .gt. 100.                     &
+     &      .or. cc .lt. 0.    .or. cc .gt. 1.                       &
+     &      .or.  p .lt. 900.  .or.  p .gt. 1100.                    &
+     &      ) then
+	  write(6,*) 'Unrealistic values in heat flux file'              &
+     &              //' for time: ',it
+	  write(6,*) 'qs,ta,tb,ur,uw,cc,p'
+	  write(6,*) qs,ta,tb,ur,uw,cc,p
+	  stop 'error stop qfcheck: unrealistic values'
+	end if
 
-	return
-   99	continue
-	write(6,*) 'Unrealistic values in heat flux file for time: ',it
-	write(6,*) 'qs,ta,tb,ur,uw,cc,p'
-	write(6,*) qs,ta,tb,ur,uw,cc,p
-	stop 'error stop qfcheck: unrealistic values'
 	end
 
 !*****************************************************************************

@@ -2287,12 +2287,13 @@
         character*(14) filename
         character*(11) pwhat
         integer i
+        integer iu
 
         call shympi_get_filename(filename,what)
 
         write(6,*) filename,what
 
-        open(unit=108, file=filename, form="formatted" &
+        open(newunit=iu, file=filename, form="formatted" &
      &   , iostat=control, status="old", action="read")
         
         if(control .ne. 0) then
@@ -2300,10 +2301,11 @@
             write(6,*)'error stop: partitioning file not found'
           end if
           call shympi_barrier
-        stop
+        call shympi_abort_internal( &
+     &    'error stop check_part_basin: partitioning file not found')
         end if
 
-        read( unit=108, fmt="(i12,i12,i12,A12)" ) pnkn, pnel, pn_threads, pwhat
+        read( unit=iu, fmt="(i12,i12,i12,A12)" ) pnkn, pnel, pn_threads, pwhat
 
         if(pnkn .ne. nkndi .or. pnel .ne. neldi .or. pn_threads         &
      &     .ne. n_threads .or. pwhat .ne. what) then
@@ -2315,20 +2317,22 @@
      &          ,nkndi,neldi,n_threads,what
          end if
          call shympi_barrier
-         stop
+         call shympi_abort_internal( &
+     &     'error stop check_part_basin: basin file mismatch')
         end if
 
         if(what .eq. 'nodes') then
           allocate(allPartAssign(nkndi),stat=ierr)
           if( ierr /= 0 ) stop 'error stop: allocation failed'
-          read(unit=108,fmt="(i12,i12,i12,i12,i12,i12)") &
+          read(unit=iu,fmt="(i12,i12,i12,i12,i12,i12)") &
      &          (allPartAssign(i),i=1,nkndi)
         else 
           write(6,*)'error partitioning file on nodes'
-          stop
+          call shympi_abort_internal( &
+     &      'error stop check_part_basin: partitioning file on nodes')
         end if
 
-        close(108)
+        close(iu)
 
         return
 

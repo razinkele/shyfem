@@ -1820,7 +1820,9 @@
 
 	  call init_output_d('itmcon','idtcon',da_out)
 	  call shyfem_init_scalar_file('set',3,.true.,id)
-	  if( id <= 0 ) goto 99
+	  if( id <= 0 ) then
+	    stop 'error stop sedimt: error opening file'
+	  end if
 	  da_out(4) = id
 
         end if
@@ -1897,9 +1899,6 @@
 ! end of routine
 !------------------------------------------------------------
 
-	return
-   99	continue
-	stop 'error stop sedimt: error opening file'
         end
 
 !*****************************************************************
@@ -2603,14 +2602,14 @@
 	  dxx = (1.-fact) * r
 	  daux = 2.*pi*r*y*dxx
 	  dtot = dtot + daux
-	  if( dtot .gt. 100 .and. daux .lt. 1.e-10 ) goto 1
+	  if( dtot .gt. 100 .and. daux .lt. 1.e-10 ) exit
 	  !write(6,*) i,x,y,daux,real(dtot)
 	  r = fact * r
 	end do
-	write(6,*) i,daux
-	stop 'error stop make_anal: error too high'
-
-    1	continue
+	if( .not. (dtot .gt. 100 .and. daux .lt. 1.e-10) ) then
+	  write(6,*) i,daux
+	  stop 'error stop make_anal: error too high'
+	end if
 	ctot = dtot
 	write(6,*) 'analytic solution: ',i,y,daux,ctot
 
@@ -2714,13 +2713,14 @@
 	  x = x0 + r * cos(phi0)
 	  y = y0 + r * sin(phi0)
 	  call intp_on_node(ie,x,y,cv,zp)
-	write(6,*) ie,r,x,y,zp
-	  if( ie .le. 0 ) goto 1
+	  write(6,*) ie,r,x,y,zp
+	  if( ie .le. 0 ) exit
 	  xv(i) = r
 	  yv(i) = zp
 	end do
-	stop 'error stop extract_irreg: too many nodes (1)'
-    1	continue
+	if( ie .gt. 0 ) then
+	  stop 'error stop extract_irreg: too many nodes (1)'
+	end if
 	n = i-1
 	write(6,*) 'backward... ',n
 	
@@ -2744,12 +2744,13 @@
 	  x = x0 + r * cos(phi0)
 	  y = y0 + r * sin(phi0)
 	  call intp_on_node(ie,x,y,cv,zp)
-	  if( ie .le. 0 ) goto 2
+	  if( ie .le. 0 ) exit
 	  xv(i) = r
 	  yv(i) = zp
 	end do
-	stop 'error stop extract_irreg: too many nodes (2)'
-    2	continue
+	if( ie .gt. 0 ) then
+	  stop 'error stop extract_irreg: too many nodes (2)'
+	end if
 	n = i-1
 	write(6,*) 'foreward... ',n
 	
@@ -4007,17 +4008,16 @@
 
 	do k=1,nkn
 	  lmax = ilhkv(k)
-	  if( lmax .gt. ndim ) goto 99
+	  if( lmax .gt. ndim ) then
+	    write(6,*) 'lmax,ndim: ',lmax,ndim
+	    stop 'error stop init_ts: ndim must be at least lmax'
+	  end if
 	  do l=1,lmax
 	    tempv(l,k) = tobs(l)
 	    saltv(l,k) = sobs(l)
 	  end do
 	end do
 
-	return
-   99	continue
-	write(6,*) 'lmax,ndim: ',lmax,ndim
-	stop 'error stop init_ts: ndim must be at least lmax'
 	end
 
 !**********************************************************************

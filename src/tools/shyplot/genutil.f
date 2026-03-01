@@ -248,9 +248,15 @@ c (nen3v(ii,ie),ii=1,3) element connectivity - nodes of element ie
         integer nen3v(3,nel)
         real xgv(nkn), ygv(nkn)
 
-        integer k,ie,ii,iu
+        integer k,ie,ii,iu,ios
 
-        open(newunit=iu,file='connections.gis')
+        open(newunit=iu,file='connections.gis'
+     +                  ,iostat=ios)
+        if( ios /= 0 ) then
+          write(6,*) 'error opening file: '
+     +                  ,'connections.gis'
+          stop 'error stop write_connections'
+        end if
 
         write(iu,*) nkn                          !total number of nodes
         do k=1,nkn

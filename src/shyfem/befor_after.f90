@@ -41,6 +41,8 @@
         module befor_after
 !----------------------------------------------------------------------
 
+	implicit none
+
 	integer, parameter :: M_INIT = 1	!initialization stand-alone
 	integer, parameter :: M_READ = 2	!read in section
 	integer, parameter :: M_CHECK = 3	!check data read in

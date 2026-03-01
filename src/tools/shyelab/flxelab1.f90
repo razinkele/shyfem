@@ -511,7 +511,12 @@
 	  if( bext ) then
             name = 'disch.box.2d.txt'
 	    call get_new_unit(iubox)
-            open(iubox,file=name,form='formatted',status='unknown')
+            open(iubox,file=name,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	    if( ierr /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(name)
+	      stop 'error stop flx_write: cannot open file'
+	    end if
 	  end if
 	end if
 

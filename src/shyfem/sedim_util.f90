@@ -444,7 +444,7 @@
 !   THAN 0.5. TO ENSURE NO APPRECIABLE WAVE INDUCED BOTTOM STRESS, THIS
 !   CODE USES THE CRITERION OF D/WL GREATER THAN 2.0
 
-      IF (PER .EQ. 0) GOTO 30
+      IF (PER .EQ. 0) RETURN
       WL0 = G*PER*PER/(2*PII)
 
       IF ((D/WL0) .GT. 2.) RETURN
@@ -456,10 +456,11 @@
       W=2.*PII/PER
       RKD0=W**2*D/G
       RKD=RKD0
-  20  CONTINUE
-      DKD=(1./TANH(RKD)-RKD/RKD0)/(1./RKD0+1./SINH(RKD)**2)
-      RKD=RKD+DKD
-      IF (ABS(DKD) .GE. 1.0E-4) GO TO 20
+      do  ! Newton-Raphson iteration
+        DKD=(1./TANH(RKD)-RKD/RKD0)/(1./RKD0+1./SINH(RKD)**2)
+        RKD=RKD+DKD
+        IF (ABS(DKD) .LT. 1.0E-4) exit
+      end do
       WL=WL0*TANH(RKD)
 
 !---------------------------------------------------------------------
@@ -474,7 +475,7 @@
       AB=UB/W
 !---------------------------------------------------------------------
 
- 30   RETURN
+      RETURN
       END subroutine
 
 ! *****************************************************
@@ -775,13 +776,14 @@
 
 ! ASSIGN AN ARBITRARY VALUE TO THE USTCS CONVERGENCE CRITERION DELTA
         DELTA = 1.0D0
- 100    IF (DELTA .LT. 0.0001d0) GOTO 200
+        do  ! convergence loop on DELTA
+        IF (DELTA .LT. 0.0001d0) exit
 
         ICOUNT = ICOUNT + 1
 ! PREDICT CURRENT RIPPLE DIMENSIONS:
-! FOR NO-TRANSPORT CASE OR COARSE AND VERY-COARSE SANDS OR COHESIVE SEDIMENTS, 
-! BEDFORM DIMENSION WILL NOT BE PREDICTED AND INPUT VALUES WILL BE USED. 
-! OTHERWISE, RIPPLE HEIGHT AND LENGTH WILL BE PREDICTED ACCORDING TO YALIN 
+! FOR NO-TRANSPORT CASE OR COARSE AND VERY-COARSE SANDS OR COHESIVE SEDIMENTS,
+! BEDFORM DIMENSION WILL NOT BE PREDICTED AND INPUT VALUES WILL BE USED.
+! OTHERWISE, RIPPLE HEIGHT AND LENGTH WILL BE PREDICTED ACCORDING TO YALIN
 ! (1964) AND ALLEN (1970), RESPECTIVELY.
         IF (USTCS .LT. USTCRB .OR. GD .GE. 0.0005 .OR. COHES) THEN
            RHEIGHT=RHINP
@@ -831,10 +833,8 @@
           DELTA=0.00001D0
         ENDIF
 
-! GOTO 100 TO COMPARE THE DELTA VALUE WITH THE SET CRITERION VALUE
-        GOTO 100
-
- 200    CONTINUE
+! COMPARE THE DELTA VALUE WITH THE SET CRITERION VALUE
+        end do
 
 ! GET FINAL BED ROUGHNESS Z0
         Z0=RKB/30.
@@ -865,12 +865,11 @@
 
       IF ( COHES ) THEN
         RHEIGHT = RHINP
-        RLENGTH = RLINP 
+        RLENGTH = RLINP
         USTCWSE = USTCWS
         USTCW = USTCWS
         TKB = GKB
-        GOTO 543
-      ENDIF
+      ELSE
 
 ! COMPUTE INITIAL BED ROUGHNESS HEIGHTS BASED ON SKIN-FRICTION UST'S
       CALL ROUGH(VISK,RHINP,RLINP,USTCS,USTWS,USTCWS,USTCRB,      &
@@ -899,8 +898,9 @@
       CALL FRIC2(UZ,Z,PHI100,UB,PER,TKB,RKBC,FBAD,UA,PHIB,  &
      &   U100,USTC,USTW,USTCW,DELTACW)
 
+      ENDIF
+
 ! OBTAIN BED ROUGHNESS Z0, APPARENT BED ROUGHNESS Z0C
-543   CONTINUE
       Z0=TKB/30.
       RKB = TKB
       Z0C=RKBC
@@ -1157,14 +1157,16 @@
       Z0=RKB/30.
 
 ! CALCULATE UST'S BY ITERATION (GM,1986)
- 10   IF (DELTA .LT. 0.00001) GO TO 200      
+      do  ! outer convergence loop on DELTA
+      IF (DELTA .LT. 0.00001) exit
       Z0=RKB/30.
       TEMP=CR*UB/(Z0*W)
-! INITIALIZE THE ITERATION CRITERION EPSILON     
+! INITIALIZE THE ITERATION CRITERION EPSILON
       EPSILON=1.0
- 50   IF (EPSILON .LT. 0.00001) GO TO 100
+      do  ! inner convergence loop on EPSILON
+      IF (EPSILON .LT. 0.00001) exit
 
-! CALCULATE FCW ACCORDING TO GM (1986). NEWTON-RAPHSON SOLUTION IS USED IN      
+! CALCULATE FCW ACCORDING TO GM (1986). NEWTON-RAPHSON SOLUTION IS USED IN
 ! ITERATION.
       X=4*SQRT(FCW)
       A=0.24*X-1.65+DLOG10(TEMP*X)-1/X
@@ -1174,9 +1176,8 @@
       FCWNEW=(XNEW/4)**2
       EPSILON=DABS(FCWNEW/FCW-1)
       FCW=FCWNEW
-      GO TO 50
- 100  CONTINUE 
-!     CALCULATE USTW, USTCW AND DELTACW (BOUNDARY LAYER THICKNESS)     
+      end do
+!     CALCULATE USTW, USTCW AND DELTACW (BOUNDARY LAYER THICKNESS)
       USTW=SQRT(0.5*CR*FCW*UB**2)
       USTCW=SQRT(CR)*USTW
       DELTACW=2.*0.4*USTCW/W        !ggu error in article -> must be omega
@@ -1206,9 +1207,7 @@
      &      +(USTC/USTW)**4)
       DELTA=DABS(CRNEW/CR-1)
       CR=CRNEW
-      GO TO 10
-
- 200  CONTINUE
+      end do
 ! CALCULATE VELOCITY AT THE TOP OF THE WAVE-CURRENT BOUNDARY LAYER     
       UA=(USTC/0.4)*DLOG(DELTACW/RKBC)
 ! CALCULATE VELOCITY AT 1M ABOVE THE BOTTOM      
@@ -1337,11 +1336,10 @@
            RLENGTH=RLINP
            IF (RLENGTH .EQ. 0) STEEP = 0.
            IF (RLENGTH .GT. 0) STEEP=RHEIGHT/RLENGTH
-           GO TO 33
-      ENDIF
+      ELSE
 
 !-----------------------------------------------------------------
-!  COMPUTE THE INITIAL RIPPLE CONVERSION COEFFICIENT RPLCOEF. IT IS EQUAL 
+!  COMPUTE THE INITIAL RIPPLE CONVERSION COEFFICIENT RPLCOEF. IT IS EQUAL
 !  TO 1 FOR FLAT BED, OTHERWISE IS CALCULATED ACCORDING TO NIELSEN (1992)
       IF(RHINP .EQ. 0 .OR. USTCWS .GE. USTUP) THEN
            RPLCOEF=1
@@ -1359,7 +1357,6 @@
 !           STEEP=0.12
 !           RHEIGHT=GD*(22.15+6.38)
 !           RLENGTH=RHEIGHT/STEEP
-!           GO TO 33
 !      ENDIF
 
 !----------------------------------------------------------------- !ggu check
@@ -1369,8 +1366,7 @@
             RLENGTH=RLINP
             IF (RLENGTH .EQ. 0) STEEP = 0
             IF (RLENGTH .GT. 0) STEEP=RHEIGHT/RLENGTH
-            GO TO 33
-       ENDIF
+       ELSE
 
 !-----------------------------------------------------------------
 !  COMPUTE RIPPLES FOR ACTIVE TRANSPORT CASE
@@ -1412,7 +1408,8 @@
            STEEP=0
       ENDIF
 
- 33   CONTINUE     
+       ENDIF  ! USTCWSE .LT. USTCRB
+      ENDIF  ! GD .GE. 0.0005
 
 !  COMPUTE THE TRUE RIPPLE CONVERSION COEFFICIENT RPLCOEF
       IF(RHEIGHT .EQ. 0 .OR. RLENGTH .EQ. 0) THEN
@@ -1646,49 +1643,45 @@
       TAOCRS=RHOW*USTCRS**2
 
 !*** FIRST CALCULATE TIMES FOR SUSPENDED LOAD ***
-      IF (USTCWSE .LT. USTCRS) THEN
-         PERSUSP=0
-         GO TO 50
-      ENDIF
-      B24ACS=(TAOCRS**2.0-(TAOCS*SIN(PHIB))**2.0)/(TAOWS**2.0)
-      IF (B24ACS .LE. 0.0) THEN
+      IF (USTCWSE .GE. USTCRS) THEN
+        B24ACS=(TAOCRS**2.0-(TAOCS*SIN(PHIB))**2.0)/(TAOWS**2.0)
+        IF (B24ACS .LE. 0.0) THEN
 ! CRITICAL STRESS FOR SUSPENSION OF SEDIMENT ALWAYS EXCEEDED
-         TS1=PER/2.
-         PERSUSP=100.0
-         PERBED=0.0
-         RETURN
-      ENDIF
-      B=-TAOCS*COS(PHIB)/TAOWS
-      XS1=B+SQRT(B24ACS)
-      IF (XS1 .GE. 1.0) THEN
+           TS1=PER/2.
+           PERSUSP=100.0
+           PERBED=0.0
+           RETURN
+        ENDIF
+        B=-TAOCS*COS(PHIB)/TAOWS
+        XS1=B+SQRT(B24ACS)
+        IF (XS1 .GE. 1.0) THEN
 ! CRITICAL STRESS FOR SUSPENSION OF SEDIMENT NEVER EXCEEDED
-         PERSUSP=0.0
-         GO TO 50
-      ENDIF
-      IF (XS1 .LE. -1.0) THEN
+           PERSUSP=0.0
+        ELSE IF (XS1 .LE. -1.0) THEN
 ! SECOND CASE WHERE CRITICAL STRESS FOR SUSPENSION OF SEDIMENT IS
 ! ALWAYS EXCEEDED
-         TS1=PER/2.
-         PERSUSP=100.0
-         PERBED=0.0
-         RETURN
-      ELSE
+           TS1=PER/2.
+           PERSUSP=100.0
+           PERBED=0.0
+           RETURN
+        ELSE
 ! CRITICAL STRESS FOR SUSPENSION OF SEDIMENT SOMETIMES EXCEEDED
-         TS1=PER/(2.*PII)*ACOS(XS1)
-      ENDIF
-      XS2=B-SQRT(B24ACS)
-      IF (XS2 .LE. -1.0) THEN
+           TS1=PER/(2.*PII)*ACOS(XS1)
+           XS2=B-SQRT(B24ACS)
+           IF (XS2 .LE. -1.0) THEN
 ! CRITICAL STRESS FOR SUSPENSION OF SEDIMENT NOT EXCEEDED DURING TROUGH
-         PERSUSP=200.*TS1/PER
-      ELSE
+              PERSUSP=200.*TS1/PER
+           ELSE
 ! CRITICAL STRESS FOR SUSPENSION OF SEDIMENT EXCEEDED DURING TROUGH
-         TS2=PER/(2.*PII)*ACOS(XS2)
-         PERSUSP=(2.*(TS1-TS2)+PER)/PER*100.
+              TS2=PER/(2.*PII)*ACOS(XS2)
+              PERSUSP=(2.*(TS1-TS2)+PER)/PER*100.
+           ENDIF
+        ENDIF
       ENDIF
 
 !**** CALCULATE TIMES FOR BEDLOAD ****
 ! CALCULATE TIMES FOR BEDLOAD ONLY IF USTCRB < USTCRS
-  50  IF (USTCRB .GE. USTCRS ) RETURN
+      IF (USTCRB .GE. USTCRS ) RETURN
 
 ! FOR EFFECTIVE SHEAR VELOCITY < USTCRB, NO BEDLOAD TRANSPORT
       IF (USTCWSE .LT. USTCRB) THEN
@@ -1836,6 +1829,7 @@
       DOUBLE PRECISION ZZZ
 
       INTEGER I,IL
+      LOGICAL skip_integrate
 
 ! INITIALIZE ZZ, CZ AND UUZ
       DATA ZZINI /0.0,0.01,0.02,0.03,0.05,0.07,0.1,0.2,0.3,0.5,0.7,  &
@@ -1849,15 +1843,13 @@
 
 ! GET THE UPPER LIMIT DEPTH FOR THE CONCENTRATION PROFILE
       IL = 18
-      DO 12 I=1,IL
+      DO I=1,18
        IF (D.le.ZZ(I))THEN
         ZZ(I) = D
         IL = I
-        GOTO 432
+        exit
        END IF
- 12    CONTINUE
-
-432   CONTINUE
+      END DO
 
 ! SET DEFAULT VALUES TO ZERO
       C0=0.D0
@@ -1883,34 +1875,35 @@
 ! COMPUTE THE VELOCITY PROFILE
 !*****************************
 ! PURE WAVE CASE:
-      IF (USTCS.EQ.0) GOTO 25 
+      IF (USTCS.NE.0) THEN
 ! PURE CURRENT CASE:
       IF (UB.LT.0.01) THEN
-        DO 10 I=1,IL,1
-        UUZ(I)=(USTC/ZKAPPA)*DLOG(ZZ(I)/Z0)    !al posto di ALOG 
+        DO I=1,IL,1
+        UUZ(I)=(USTC/ZKAPPA)*DLOG(ZZ(I)/Z0)    !al posto di ALOG
         IF (UUZ(I).LT.0.) UUZ(I)=0.
- 10     CONTINUE                             !c'e' DLOG 
+        END DO                                   !c'e' DLOG
       ELSE
 ! COMBINED WAVES AND CURRENT
-        DO 20 I=1,IL,1
+        DO I=1,IL,1
         IF (ZZ(I).LE.DELTACW) THEN
           UUZ(I)=(USTC/ZKAPPA)*(USTC/USTCW)*DLOG(ZZ(I)/Z0)
         ELSE
           UUZ(I)=(USTC/ZKAPPA)*DLOG(ZZ(I)/Z0C)
         ENDIF
         IF (UUZ(I).LT.0.) UUZ(I)=0.
- 20     CONTINUE
-      ENDIF 
+        END DO
+      ENDIF
+      ENDIF  ! USTCS.NE.0
 
 !*****************************************************
 ! COMPUTE THE SUSPENDED SEDIMENT CONCENTRATION PROFILE
 !*****************************************************
- 25   CONTINUE
+      skip_integrate = .false.
 ! PURE CURRENT CASE:
       IF (UB.LT.0.01) THEN
         IF (USTCS.LE.USTCRS) THEN
           QS=0
-          GOTO 300
+          skip_integrate = .true.
         ELSE
 ! CALCULATE REFERENCE CONCENTRATIONS C0 AT Z0S
           TAOST=(TAOCS-TAOCRB)/TAOCRB
@@ -1919,20 +1912,20 @@
 !     +                  C0,Z0S)
 ! 	   CALL GETC0_VR(GD,DX,Z0,TAOST,C0,Z0S)
 !          CALL GETC0_ZF(TAOCS,RHOW,G,S,GD,C0,Z0S)
-          DO 40 I=1,IL
+          DO I=1,IL
 	    zzz=zz(i)
 	    if( zzz < 0. ) zzz = 0.	!GGUZ0
 	    if( USTC == 0 ) USTC = 1.	!GGUZ0
             CZ(I)=C0*(ZZZ/Z0S)**(-0.74*FALL/(0.4*USTC))
             IF (CZ(I) .LT. 0.) CZ(I) = 0.
- 40       CONTINUE
+          END DO
         ENDIF
       ELSE
         IF (USTCS.EQ.0) THEN
 ! PURE WAVE CASE:
           IF (USTWS.LE.USTCRS) THEN
             QS=0
-            GOTO 300                          
+            skip_integrate = .true.
           ELSE
 ! CALCULATE REFERENCE CONCENTRATIONS C0 AT Z0S
             TAOST=(TAOWS-TAOCRB)/TAOCRB
@@ -1941,19 +1934,19 @@
 !     +                    C0,Z0S)
 !	     CALL GETC0_VR(GD,DX,Z0,TAOST,C0,Z0S)
 !             CALL GETC0_ZF(TAOWS,RHOW,G,S,GD,C0,Z0S)
-            DO 60 I=1,IL
+            DO I=1,IL
 	      zzz=zz(i)
 	      if( zzz < 0. ) zzz = 0.	!GGUZ0
               CZ(I)=C0*(ZZZ/Z0S)**(-0.74*FALL/(0.4*USTW))
               IF (CZ(I) .LT. 0.) CZ(I) = 0.
- 60         CONTINUE
+            END DO
           ENDIF
         ELSE
-! COMBINED WAVE-CURRENT CASE: 
+! COMBINED WAVE-CURRENT CASE:
 ! FOR USTCWSB<USTCRS,NO SUSPENSION PROFILE WILL BE PREDICTED
           IF (USTCWSB.LE.USTCRS) THEN
             QS=0
-            GOTO 300
+            skip_integrate = .true.
           ELSE
 ! CALCULATE REFERENCE CONCENTRATIONS C0 AT Z0S AND CZD AT DELTACW
             TAOST=(TAOCWS-TAOCRB)/TAOCRB
@@ -1964,7 +1957,7 @@
 !            CALL GETC0_ZF(TAOCWS,RHOW,G,S,GD,C0,Z0S)
             CZD=C0*(DELTACW/Z0S)**(-0.74*FALL/(0.4*USTCW))
 ! PREDICT SUSPENSION PROFILE BASED ON THE MODIFIED ROUSE EQUATION
-            DO 90 I=1,IL
+            DO I=1,IL
 	      zzz=zz(i)
 	      if( zzz < 0. ) zzz = 0.	!GGUZ0
               IF (ZZZ.LE.DELTACW) THEN
@@ -1973,7 +1966,7 @@
                 CZ(I)=CZD*(ZZZ/DELTACW)**(-0.74*FALL/(0.4*USTC))
               ENDIF
               IF (CZ(I) .LT. 0.) CZ(I) = 0.
- 90         CONTINUE
+            END DO
           ENDIF
         ENDIF
       ENDIF
@@ -1983,19 +1976,20 @@
 ! AND CALCULATE THE DEPTH AVERAGED EQUILIBRIUM CONCENTRATION (C0A)  !ccf
 !*********************************************************************
 
+      IF (.NOT. skip_integrate) THEN
       ZZ(0)=0
-      DO 95 I=1,IL
+      DO I=1,IL
         QS=QS+(ZZ(I)-ZZ(I-1))*UUZ(I)*CZ(I)
         SOM = SOM + CZ(I)*(ZZ(I)-ZZ(I-1))
- 95   CONTINUE
+      END DO
       C0A = SOM/D
 
 ! ASSIGN THE CURRENT DIRECTION AS THE DIRECTION OF QS
       QSDIR=CDIR
+      ENDIF
 
- 300  CONTINUE
       RETURN
-      END subroutine      
+      END subroutine
 
 ! ************************************************************
 ! SUBROUTINE GETC0_SM
@@ -2075,13 +2069,11 @@
       C0 = CB*GAMMA0*TAOST/(1.+GAMMA0*TAOST)
       Z0S = (0.15*GD*TAOST**1.5)/(RHOW*G*(S-1)) + GD/12.	!Cacchione 2008
 
-	if( z0s <= 0. ) goto 99
-	if( c0 < 0. ) goto 99
-
-	return
-   99	continue
+	if( z0s <= 0. .or. c0 < 0. ) then
 	  write(6,*) '*** GGUZ0: ',RHOW,G,S,GD,TAOST,C0,Z0S
 	  stop 'error stop GETC0_VE: internal error (1)'
+	end if
+
       END subroutine
 
 ! ************************************************************
@@ -2322,7 +2314,7 @@
 !  IS PRINTED CONCERNING THE USE OF "BEDLOAD" TRANSPORT PREDICTORS
 
 !  SKIP THIS SECTION IF THERE ARE BOTH WAVES AND CURRENTS
-      IF (UB .GT. 0.01) GOTO 888
+      IF (UB .LE. 0.01) THEN
 
 ! CHECK IF THERE IS ANY TRANSPORT, IF NOT THEN EXIT.
       IF (PERBED .EQ. 0.0 .AND. PERSUSP .EQ. 0.0) RETURN
@@ -2330,27 +2322,25 @@
 ! OBTAIN CURRENT SHEAR STRESS TAO0, UA=U100 FOR STEADY CURRENT
 !      TAO0=RHOW*FCW/2.*UA**2
       TAO0=RHOW*USTCS**2
-      
-      GOTO 777
 
- 888  CONTINUE
+      ELSE
 
 !******************************
-!  COMBINED WAVE AND CURRENT 
+!  COMBINED WAVE AND CURRENT
 !******************************
 !
 !  THE COMBINED WAVE AND CURRENT CASE REQUIRES INTEGRATION OF THE
 !  INSTANTANEOUS TRANSPORT OVER THE WAVE PERIOD. THE USE OF LWT ALLOWS
 !  INTEGRATION TO BE DONE OVER ONLY HALF A WAVE CYCLE. BAGNOLD'S METHOD
-!  DOES NOT REQUIRE INTEGRATION. THE X- AND Y- COMPONENTS OF TRANSPORT 
-!  ARE CONSIDERED SEPARATELY, WHERE THE X-COMPONENT IS PARALLEL TO THE 
+!  DOES NOT REQUIRE INTEGRATION. THE X- AND Y- COMPONENTS OF TRANSPORT
+!  ARE CONSIDERED SEPARATELY, WHERE THE X-COMPONENT IS PARALLEL TO THE
 !  WAVE DIRECTION AND THE Y-COMPONENT IS NORMAL TO THE WAVE DIRECTION.
 !
 !  INTERMEDIATE VARIABLES:
 !      STEPC = INTEGRATION TIME STEP OF SEDIMENT TRANSPORT UNDER CREST
-!      STEPT = INTEGRATION TIME STEP OF SEDIMENT TRANSPORT UNDER TROUGH 
+!      STEPT = INTEGRATION TIME STEP OF SEDIMENT TRANSPORT UNDER TROUGH
 !      TIMEC = SEDIMENT TRANSPORT TIME UNDER CREST
-!      TIMET = SEDIMENT TRANSPORT TIME UNDER TROUGH 
+!      TIMET = SEDIMENT TRANSPORT TIME UNDER TROUGH
 !      RLWRT = LOWER LIMIT OF TRANSPORT INTEGRATION UNDER TROUGH
 
 !  CHECK IF CRITICAL STRESS IS EVER EXCEEDED, IF NOT THEN EXIT.
@@ -2366,8 +2356,8 @@
          TIMEC = TB1
          TIMET = PER/2. - TB2
          RLWRT = TB2
-      ELSE 
-         TIMEC=TB1                 
+      ELSE
+         TIMEC=TB1
          TIMET=0.
       ENDIF
 
@@ -2385,41 +2375,40 @@
       STEPC = TIMEC/NC
       STEPT = TIMET/NT
 
- 777  CONTINUE
+      ENDIF  ! UB .LE. 0.01
 
 !-----------------------------------
 ! DECIDE FORMULA ACCORDING TO IOPT1
 !-----------------------------------
-      
-      GOTO (1,2,3,4,5) IOPT1
 
- 1    CALL ENGHAN(RHOW,DGAMMA,GD,U100,USTCS,USTWS,USTCWS,USTCWSB,    &
+      select case (IOPT1)
+      case (1)
+      CALL ENGHAN(RHOW,DGAMMA,GD,U100,USTCS,USTWS,USTCWS,USTCWSB,    &
      &   PHIB,USTCRB,USTBF,USTUP,RPLCOEF,W,NC,NT,TIMET,STEPC,STEPT,  &
      &   RLWRT,UB,TAO0,IOPT1,PER,PHI100,CDIR,WDIR,SED,SEDDIR)
-      GOTO 998
 
- 2    CALL EINBWN(RHOW,DGAMMA,GD,FALL,USTCS,USTWS,USTCWS,USTCWSB,    &
+      case (2)
+      CALL EINBWN(RHOW,DGAMMA,GD,FALL,USTCS,USTWS,USTCWS,USTCWSB,    &
      &   PHIB,USTCRB,USTBF,USTUP,RPLCOEF,W,NC,NT,TIMET,STEPC,STEPT,  &
      &   RLWRT,UB,TAO0,IOPT1,PER,PHI100,CDIR,WDIR,SED,SEDDIR)
-      GOTO 998
- 
- 3    CALL BAGNLD(RHOW,DGAMMA,U100,CDIR,USTCWS,USTCWSB,              &
+
+      case (3)
+      CALL BAGNLD(RHOW,DGAMMA,U100,CDIR,USTCWS,USTCWSB,              &
      &      USTCRB,USTBF,USTUP,RPLCOEF,SED,SEDDIR,UB,GD,RHOS,VCB)
-      GOTO 998
 
- 4    CALL YALIN(RHOW,RHOS,GD,USTCS,USTWS,USTCWS,USTCWSB,               &
+      case (4)
+      CALL YALIN(RHOW,RHOS,GD,USTCS,USTWS,USTCWS,USTCWSB,               &
      &      PHIB,USTCRB,USTBF,USTUP,RPLCOEF,W,NC,NT,TIMET,STEPC,STEPT,  &
      &      RLWRT,UB,FCW,UA,VCB,TAOCRB,G,DRHO,IOPT1,                    &
      &      PER,PHI100,CDIR,WDIR,SED,SEDDIR)
-      GOTO 998
 
- 5    CALL VANRIJN(RHOW,RHOS,HT,D,DX,GD,USTCS,USTWS,USTCWS,         &
+      case (5)
+      CALL VANRIJN(RHOW,RHOS,HT,D,DX,GD,USTCS,USTWS,USTCWS,         &
      &   USTCWSB,TAOCRB,PHIB,USTCRB,USTBF,USTUP,RPLCOEF,W,NC,NT,       &
      &   TIMET,STEPC,STEPT,RLWRT,UB,TAO0,IOPT1,PER,PHI100,CDIR,WDIR,   &
      &   G,SED,SEDDIR)
-      GOTO 998
 
- 998  CONTINUE
+      end select
 
 ! INLUDE BED-SLOPE EFFECT AND THEN CONVERT SED FROM VOLUME FLUX (M^2/M/S)
 ! TO MASS FLUX SEDM IN KG/SEC/M.
@@ -2479,7 +2468,7 @@
       DOUBLE PRECISION V,CONST1,CONST2
 
 !  SKIP THIS SECTION IF THERE ARE BOTH WAVES AND CURRENTS
-      IF (UB .GT. 0.01) GOTO 123
+      IF (UB .LE. 0.01) THEN
 
 !****************************
 !  CURRENT ONLY (NO WAVES)
@@ -2490,7 +2479,7 @@
       SEDDIR=CDIR
       RETURN
 
- 123  CONTINUE
+      ENDIF
 
 !*****************************
 !  COMBINED WAVE AND CURRENT
@@ -2556,7 +2545,7 @@
       DOUBLE PRECISION CONST1,CONST2
 
 !  SKIP THIS SECTION IF THERE ARE BOTH WAVES AND CURRENTS
-      IF (UB .GT. 0.01) GOTO 123
+      IF (UB .LE. 0.01) THEN
 
 !****************************
 !  CURRENT ONLY (NO WAVES)
@@ -2566,7 +2555,7 @@
       SEDDIR=CDIR
       RETURN
 
- 123  CONTINUE
+      ENDIF
 
 !*****************************
 !  COMBINED WAVE AND CURRENT
@@ -2624,7 +2613,7 @@
       DOUBLE PRECISION BETA,ALPHA,EST,RK
 
 !  SKIP THIS SECTION IF THERE ARE BOTH WAVES AND CURRENTS
-      IF (UB .GT. 0.01) GOTO 123
+      IF (UB .LE. 0.01) THEN
 
 !****************************
 !  CURRENT ONLY (NO WAVES)
@@ -2636,7 +2625,7 @@
       SEDDIR=CDIR
       RETURN
 
- 123  CONTINUE
+      ENDIF
 
 !*****************************
 !  COMBINED WAVE AND CURRENT
@@ -2762,7 +2751,7 @@
       DOUBLE PRECISION S,A,USTAR
 
 !  SKIP THIS SECTION IF THERE ARE BOTH WAVES AND CURRENTS
-      IF (UB .GT. 0.01) GOTO 123
+      IF (UB .LE. 0.01) THEN
 
 !****************************
 !  CURRENT ONLY (NO WAVES)
@@ -2775,7 +2764,7 @@
       SEDDIR=CDIR
       RETURN
 
- 123  CONTINUE
+      ENDIF
 
 !*****************************
 !  COMBINED WAVE AND CURRENT
@@ -2851,7 +2840,7 @@
       DOUBLE PRECISION G        !GRAVITY
 
 !  SKIP THIS SECTION IF THERE ARE BOTH WAVES AND CURRENTS
-      IF (UB .GT. 0.01) GOTO 123
+      IF (UB .LE. 0.01) THEN
 
 !****************************
 !  CURRENT ONLY (NO WAVES)
@@ -2870,7 +2859,7 @@
       SEDDIR=CDIR
       RETURN
 
- 123  CONTINUE
+      ENDIF
 
 !*****************************
 !  COMBINED WAVE AND CURRENT
@@ -3080,8 +3069,8 @@
 ! ===================================================================
 ! COMPUTE TRANSPORT VOLUME UNDER THE WAVE TROUGH
 
-! IF NO TRANSPORT OCCURRED UNDER WAVE TROUGH, EXIT
-      IF (TIMET .EQ. 0.) GO TO 333
+! IF NO TRANSPORT OCCURRED UNDER WAVE TROUGH, SKIP
+      IF (TIMET .NE. 0.) THEN
 
       DO 222 I = 0, (NT-1)
          TAOCWSX=TAOCSX+0.5*TAOWS*(COS(W*(RLWRT+I*STEPT))+COS(W*(RLWRT+(I+1)*STEPT)))
@@ -3181,7 +3170,7 @@
       SEDYT=2*SEDYT
 ! ===================================================================
 
- 333  CONTINUE
+      ENDIF  ! TIMET .NE. 0.
 
 ! RETURN THE BURST-AVERAGED SHEAR VELOCITIES
       USTCS=USTCSGM
@@ -3273,17 +3262,17 @@
 ! Find the number of rows that are used (NBED). This is indicated by z=0 in
 ! the row after the last used row.
 
-      DO 10, I=2,MAXBED
-         IF (BEDCHA(I,1).EQ.0.0) GOTO 20
-10    CONTINUE
-20    NBED=I-1
+      DO I=2,MAXBED
+         IF (BEDCHA(I,1).EQ.0.0) exit
+      END DO
+      NBED=I-1
 
 ! **********************************************************************
 ! Compute the total SSC before deposition and erosion
 
-      DO 210, I=1,NBCONC
+      DO I=1,NBCONC
          TCONC1=TCONC1+CONC(I)
-210   CONTINUE
+      END DO
 
 ! **********************************************************************
 ! Compute TAU0, the effective skin friction stress acting on the bed
@@ -3386,16 +3375,19 @@
 
 ! Statement function which interpolate linearly the value Y of (X,Y),
 ! which located on the line between (X1,Y1) and (X2,Y2)
+      LOGICAL done_erosion
       DOUBLE PRECISION LIN,X1,X2,Y1,Y2,X
       LIN(X1,X2,Y1,Y2,X)=Y1 + (X-X1)/(X2-X1)*(Y2-Y1)
 
-      RHOS = 0. 
+      RHOS = 0.
       M1 = 0.
+      done_erosion = .false.
 
 ! Find the erosion depth ZS and also TAUCE and RHOS at this depth
 ! Each layer is processed successively until the duration TIMEDR is finished
       T1=TIMEDR ! time remaining for erosion
-      DO 110, IB=1,NBED
+      DO IB=1,NBED
+         IF (done_erosion) exit
 ! Density variation in this layer RHO = RHOA * dz + RHOB
          RHOB=BEDCHA(IB,3)
          IF(IB.EQ.NBED) THEN
@@ -3409,7 +3401,7 @@
 ! Do 2 iterations do define the eroded depth, for the first RE is calculated
 ! with TAUCES = Tce(top), for the second TAUCES = (Tce(top)+Tce(dz))/2
          TAUCES=BEDCHA(IB,2) ! for first iteration
-         DO 100, I=1,2
+         DO I=1,2
             RE=E0*EXP(RKERO*(TAU0-TAUCES)**0.5d0) ! erosion rate
             M1=RE*T1    ! eroded mass
             M1=DMIN1(M1,MAXEMASS-EMASS)
@@ -3432,7 +3424,8 @@
                ZS=LIN(BEDCHA(IB,2),BEDCHA(IB+1,2),BEDCHA(IB,1),BEDCHA(IB+1,1),TAU0)
                TAUCE=TAU0
                RHOS=LIN(BEDCHA(IB,1),BEDCHA(IB+1,1),BEDCHA(IB,3),BEDCHA(IB+1,3),ZS)
-               GOTO 120  ! out of loop DO 100
+               done_erosion = .true.
+               exit  ! out of inner DO loop
             ENDIF
             IF(I.EQ.1) THEN
                TAUCES=(TAUCES+TAUCE)/2d0 ! for second iteration
@@ -3440,15 +3433,16 @@
                IF(M1.LE.MLAYER)THEN ! the layer is not eroded completely
                   RHOS=DZ*RHOA+RHOB
                   ZS=DZ+BEDCHA(IB,1)
-                  GOTO 120  ! out of loop DO 100
+                  done_erosion = .true.
+                  exit  ! out of inner DO loop
                ENDIF
                T1=T1-(MLAYER/RE) ! substract from T1 the time taken to erode this layer
             ENDIF
-100      CONTINUE
-         EMASS=EMASS+M1  ! first approximation for drag-reduction limitation
-110   CONTINUE  ! this loop will always be exited by a GOTO 120
+         END DO
+         IF (.NOT. done_erosion) EMASS=EMASS+M1  ! first approximation for drag-reduction limitation
+      END DO  ! this loop will always be exited by done_erosion
 
-120   IF(IB.LT.NBED) IB=IB+1
+      IF(IB.LT.NBED) IB=IB+1
 ! At this stage, IB can have following values
 !    if ZS > BEDCHA(NBED,1)               IB=NBED   (also if NBED=1)
 !    if ZS = BEDCHA(n,1)                  IB=n
@@ -3457,14 +3451,14 @@
 ! Compute the eroded mass, EMASS
       EMASS=0d0 ! EMASS was used above for temporary storage
       IF(ZS.GT.BEDCHA(NBED,1) .OR. ZS.EQ.BEDCHA(IB,1)) THEN
-         DO 140, I=1,IB-1
+         DO I=1,IB-1
             EMASS=EMASS + (BEDCHA(I+1,1)-BEDCHA(I,1))*(BEDCHA(I,3)+BEDCHA(I+1,3))*0.5d0   ! dZ * (RHOS1+RHOS2)/2
-140      CONTINUE
+         END DO
          EMASS=EMASS + (ZS-BEDCHA(IB,1))*BEDCHA(IB,3) ! dZ * RHOS
       ELSE
-         DO 150, I=1,IB-2
+         DO I=1,IB-2
             EMASS=EMASS + (BEDCHA(I+1,1)-BEDCHA(I,1))*(BEDCHA(I,3)+BEDCHA(I+1,3))*0.5d0    ! dZ * (RHOS1+RHOS2)/2
-150      CONTINUE
+         END DO
          EMASS=EMASS+(ZS-BEDCHA(IB-1,1))*(BEDCHA(IB-1,3)+RHOS)*0.5d0
       ENDIF
 
@@ -3504,27 +3498,27 @@
             IB=NBED+1
          ELSE
 ! Find next point below erosion depth, and interpolate TAUCE and RHOS
-            DO 20,IB=2,NBED
-               IF (ZS.LT.BEDCHA(IB,1)) GOTO 30
-20          CONTINUE
-30          TAUCE=LIN(BEDCHA(IB-1,1), BEDCHA(IB,1),BEDCHA(IB-1,2), BEDCHA(IB,2), ZS)
+            DO IB=2,NBED
+               IF (ZS.LT.BEDCHA(IB,1)) exit
+            END DO
+            TAUCE=LIN(BEDCHA(IB-1,1), BEDCHA(IB,1),BEDCHA(IB-1,2), BEDCHA(IB,2), ZS)
             RHOS= LIN(BEDCHA(IB-1,1), BEDCHA(IB,1),BEDCHA(IB-1,3), BEDCHA(IB,3), ZS)
             MOVEZ=IB-2
          ENDIF
 ! Modify BEDCHA
          BEDCHA(1,2)=TAUCE
          BEDCHA(1,3)=RHOS
-         DO 170, I=IB,NBED
+         DO I=IB,NBED
             BEDCHA(I-MOVEZ,1)=BEDCHA(I,1)-ZS
             BEDCHA(I-MOVEZ,2)=BEDCHA(I,2)
             BEDCHA(I-MOVEZ,3)=BEDCHA(I,3)
-170      CONTINUE
+      END DO
 !  set rows after last used row to zero
-         DO 180, I=NBED-MOVEZ+1,NBED
+         DO I=NBED-MOVEZ+1,NBED
             BEDCHA(I,1)=0d0
             BEDCHA(I,2)=0d0
             BEDCHA(I,3)=0d0
-180      CONTINUE
+         END DO
          NBED=NBED-MOVEZ
       ENDIF
 
@@ -3601,7 +3595,7 @@
 
 ! LOOP FOR EACH SUSPENDED SEDIMENT CLASS
 
-      DO 220 I=NBCONC,1,-1
+      DO I=NBCONC,1,-1
          IF (CONC(I).GT.0.D0) THEN ! SKIP CLASS IF EMPTY
             WS=WSI(I) ! compute free settling velocity for this class
             IF(TCONC1.GT.CLIM1) THEN ! correct for flocculation
@@ -3633,8 +3627,8 @@
 					  
 ! Check if effective skin friction stress below TAUCD
             IF (TAU0.GE.TAUCD) THEN
-! if this class does not settle, also the finer class will not --> exit loop 220
-               GOTO 230
+! if this class does not settle, also the finer class will not --> exit loop
+               exit
             ELSEIF (CONC(I).GT.0) THEN
 ! CONCENTRATION REMAINING IN SUSPENSION AFTER DEPOSITION DURING TIME TIMEDR
                CONC(I)=CONC(I) * EXP(-WS*(1D0-TAU0/TAUCD)*(1d0-PRS)*TIMEDR/D)
@@ -3644,13 +3638,13 @@
                ENDIF
             ENDIF
          ENDIF
-220   CONTINUE
+      END DO
 
 ! COMPUTE THE TOTAL SSC AFTER THE DEPOSITION (but before erosion)
-230   TCONC2=0.d0
-      DO 240 I=1,NBCONC
+      TCONC2=0.d0
+      DO I=1,NBCONC
         TCONC2=TCONC2+CONC(I)
-240   CONTINUE
+      END DO
 ! Compute the total deposited mass (positive value)
       DMASS=(TCONC1-TCONC2)*D
 
@@ -3826,29 +3820,27 @@
       INTEGER I,J              ! counter for loops
 
 ! Determine Ws of suspended sediment, WSERODED is median+1 Ws index
-      DO 310, WSERODED=WSCLAY+1,NBCONC
+      DO WSERODED=WSCLAY+1,NBCONC
 ! Find the first Ws class that cannot be lifted
          WS=WSI(MIN(WSERODED+NDISTR-MEDDISTR,NBCONC)) ! Ws of coarsest of distribution
-         IF (RHOW*0.64D0*WS**2.GT.TAU0) GOTO 320
+         IF (RHOW*0.64D0*WS**2.GT.TAU0) exit
 ! Find the first Ws class that is disrupted
          WS=WSI(WSERODED)  ! Ws of median of distribution
-         IF (WS .GE. TAUCE/(TAU0**0.5d0) * CDISRUPT) GOTO 320
-310   CONTINUE
-      WSERODED=NBCONC+1
-
-320   CONTINUE
+         IF (WS .GE. TAUCE/(TAU0**0.5d0) * CDISRUPT) exit
+      END DO
+      IF (WSERODED .GT. NBCONC) WSERODED=NBCONC+1
 !CC      WSERODED=WSERODED-3
-      DO 330,I=1,NDISTR
+      DO I=1,NDISTR
          J=WSERODED-MEDDISTR+I-1
          J=MAX(MIN(J,NBCONC),1)  ! put J in the range 1:NBCONC
          CONC(J)=CONC(J)+EMASS/D*DISTR(I)
-330   CONTINUE
+      END DO
 
 ! compute the total SSC after the erosion (to be used for the sediment transport)
       TCONC2=0
-      DO 390 I=1,NBCONC
+      DO I=1,NBCONC
          TCONC2=TCONC2+CONC(I)
-390   CONTINUE
+      END DO
 
       END subroutine
 
@@ -3942,17 +3934,17 @@
 ! Find the number of rows that are used (NBED). This is indicated by z=0 in
 ! row after the last used row.
       ABOVE(1)=0 ! mass above the surface is 0
-      DO 10, IB=2,MAXBED
-         IF (BEDCHA(IB,1).EQ.0.0) GOTO 20
+      DO IB=2,MAXBED
+         IF (BEDCHA(IB,1).EQ.0.0) exit
          ! compute the mass above depth Z : ABOVE(IB-1) + dZ * mean RHOS
          ABOVE(IB)=ABOVE(IB-1) + (BEDCHA(IB,1)-BEDCHA(IB-1,1))* &
      &               0.5d0*(BEDCHA(IB,3)+BEDCHA(IB-1,3))
          DZOLD(IB)=BEDCHA(IB,1)-BEDCHA(IB-1,1)
-10    CONTINUE
-20    NBED=IB-1
+      END DO
+      NBED=IB-1
 
 ! Compute the new bed densities = ACTUAL COMPACTION
-      DO 110, IB=1,NBED
+      DO IB=1,NBED
          OLDRHO(IB)=BEDCHA(IB,3)
 ! Compute the final density for this overlaying mass
 !     FINAL(I) = A -  B * EXP(-C*ABOVE(I)) - D * EXP(-E*ABOVE(I))
@@ -3974,14 +3966,14 @@
          TAUCE=TEROA*(BEDCHA(IB,3)**TEROB)*(1+TEROC*(1-EXP(TEROD*ABOVE(IB))))
          BEDCHA(IB,2)=DMAX1(BEDCHA(IB,2),TAUCE)
 
-110   CONTINUE
+      END DO
 
 ! Adapt the depth Z to the new densities by conserving the sediment mass
-      DO 200, IB=2,NBED
+      DO IB=2,NBED
          DZNEW=DZOLD(IB)*((OLDRHO(IB)+OLDRHO(IB-1)) / (BEDCHA(IB,3)+BEDCHA(IB-1,3)))
          ZS=ZS+(DZOLD(IB)-DZNEW) ! ZS positif for consolidation/compaction
          BEDCHA(IB,1)=BEDCHA(IB-1,1)+DZNEW
-200   CONTINUE
+      END DO
 
 ! ??????????????????????????????????????????????????????????????????????
 ! Reorganize BEDCHA if too much rows are used or the difference between
@@ -4010,33 +4002,50 @@
       PARAMETER (HIMAXBED=50) ! Highest possible value for MAXBED
       INTEGER NBED, I
 
-      IF (MAXBED.LT.3 .OR. MAXBED.GT.HIMAXBED) GOTO 90
+      LOGICAL found_error
+      found_error = .false.
+
+      IF (MAXBED.LT.3 .OR. MAXBED.GT.HIMAXBED) THEN
          ! MAXBED must be in the range 3-50
+         found_error = .true.
+      ELSE IF (BEDCHA(1,1).NE.0.0) THEN  ! First entry must be the sediment surface
+         found_error = .true.
+      END IF
 
-      IF (BEDCHA(1,1).NE.0.0) GOTO 90  ! First entry must be the sediment surface
-
+      IF (.NOT. found_error) THEN
 ! Find the number of rows that are used (NBED)
-      DO 10, I=2,MAXBED
-         IF (BEDCHA(I,1).EQ.0.0) GOTO 20 ! A zero depth indicate the last entry
-         IF (BEDCHA(I,1).LT.BEDCHA(I-1,1)) GOTO 90 ! Z must increase monotonously
-10    CONTINUE
-20    NBED=I-1
+      DO I=2,MAXBED
+         IF (BEDCHA(I,1).EQ.0.0) exit  ! A zero depth indicate the last entry
+         IF (BEDCHA(I,1).LT.BEDCHA(I-1,1)) THEN  ! Z must increase monotonously
+            found_error = .true.
+            exit
+         END IF
+      END DO
+      NBED=I-1
+      END IF
 
+      IF (.NOT. found_error) THEN
 ! Check that the values of TAUCE and RHOS are plausible
 !   0 < TAUCE   and    0 < RHOS < 4000 kg/m**3
-      DO 30, I=1,NBED
-         IF (BEDCHA(I,2).LE.0 .OR. BEDCHA(I,3).LE.0 .OR.BEDCHA(I,3).GE.4000) GOTO 90
-30    CONTINUE
+      DO I=1,NBED
+         IF (BEDCHA(I,2).LE.0 .OR. BEDCHA(I,3).LE.0 .OR.BEDCHA(I,3).GE.4000) THEN
+            found_error = .true.
+            exit
+         END IF
+      END DO
+      END IF
 
+      IF (.NOT. found_error) THEN
 ! Check that all z after NBED are set to 0
-      DO 40, I=NBED+1,MAXBED
-         IF (BEDCHA(I,1).NE.0) GOTO 90
-40    CONTINUE
+      DO I=NBED+1,MAXBED
+         IF (BEDCHA(I,1).NE.0) THEN
+            found_error = .true.
+            exit
+         END IF
+      END DO
+      END IF
 
-      CHECKBEDCHA=.TRUE.    ! Found no error, return true
-      RETURN
-
-90    CHECKBEDCHA=.FALSE.   ! Found a error, return false
+      CHECKBEDCHA = .NOT. found_error
       END function  ! end of function CHECKBEDCHA
 
 
@@ -4145,12 +4154,13 @@
       ABOVE=0d0
       BEDCHA(1,3)=A-B-D
       BEDCHA(1,2)=TEROA*(BEDCHA(1,3)**TEROB)
-      DO 20, IB=2,NBED
+      DO IB=2,NBED
          N=0
          DZ=BEDCHA(IB,1)-BEDCHA(IB-1,1)
          M1=ABOVE+DZ*BEDCHA(IB-1,3)*0.95d0
          M2=ABOVE+DZ*BEDCHA(IB-1,3)*2d0
-10       MMID=(M1+M2)/2d0
+         do  ! bisection convergence loop
+         MMID=(M1+M2)/2d0
          IF(D.EQ.0) THEN
             BEDCHA(IB,3)=A-B*EXP(-C*MMID)
          ELSE
@@ -4158,23 +4168,22 @@
          ENDIF
          DZEST=(MMID-ABOVE)*2d0/(BEDCHA(IB,3)+BEDCHA(IB-1,3))
          n=n+1
-         IF(ABS(DZ-DZEST).GT. 0.05d-3) THEN
-            IF(DZEST.GT.DZ) THEN
-               M2=MMID
-            ELSE
-               M1=MMID
-            ENDIF
-            GOTO 10
+         IF(ABS(DZ-DZEST).LE. 0.05d-3) exit
+         IF(DZEST.GT.DZ) THEN
+            M2=MMID
+         ELSE
+            M1=MMID
          ENDIF
+         end do
          ABOVE=ABOVE+DZ*(BEDCHA(IB,3)+BEDCHA(IB-1,3))/2.
          BEDCHA(IB,2)=TEROA*(BEDCHA(IB,3)**TEROB)*(1+TEROC*(1-EXP(TEROD*ABOVE)))
-20    CONTINUE
+      END DO
 
-      DO 60, IB=NBED+1,MAXBED  ! set the rest of the table to 0
+      DO IB=NBED+1,MAXBED  ! set the rest of the table to 0
          BEDCHA(IB,1)=0d0
          BEDCHA(IB,2)=0d0
          BEDCHA(IB,3)=0d0
-60    CONTINUE
+      END DO
 
       END subroutine  ! end of subroutine BEDINI
 
@@ -4212,10 +4221,10 @@
       P = 0
 
 ! Find the number of rows that are used (NBED)
-      DO 10, I=2,MAXBED
-         IF (BEDCHA(I,1).EQ.0.0) GOTO 20 ! A zero depth indicate the last entry
-10    CONTINUE
-20    NBED=I-1
+      DO I=2,MAXBED
+         IF (BEDCHA(I,1).EQ.0.0) exit ! A zero depth indicate the last entry
+      END DO
+      NBED=I-1
       IF(NBED.LT.3) RETURN    ! do nothing if there less than two layers
 
 ! Interpret the input argument NB
@@ -4229,26 +4238,26 @@
       ENDIF
 
 ! start of main loop (removing several rows in BEDCHA)
-30    CONTINUE
+      DO
 
 ! Compute how much RHOdry would change if interpolated
-      DO 40, I=2,NBED-1
+      DO I=2,NBED-1
 ! for position z2, (dX-d1)/(z2-z1) = (d3-d1)/(z3-z2)
          DIFF(I)=(BEDCHA(I,1)-BEDCHA(I-1,1)) /(BEDCHA(I+1,1)-BEDCHA(I-1,1)) *   &
      &               (BEDCHA(I+1,3)-BEDCHA(I-1,3)) + BEDCHA(I-1,3) - BEDCHA(I,3)
-40    CONTINUE
+      END DO
 
       IF(N.EQ.0) THEN
 ! CASE 1 : removal of the thinnest layer
 ! find the thinnest layer
          MINDZ=1000
-         DO 50,I=NBED-1,1,-1
+         DO I=NBED-1,1,-1
             DZ=BEDCHA(I+1,1)-BEDCHA(I,1)
             IF(DZ.LT.MINDZ) THEN
                P=I
                MINDZ=DZ
             ENDIF
-50       CONTINUE
+         END DO
          IF(MINDZ.GE.NB) RETURN  ! quit if there is no (more) layer thinner than NB
 ! decide whether upper or limit of layer has to be removed
          IF(P.EQ.1 .OR. ( DIFF(P).GE.DIFF(P+1) .AND. P+1.LT.NBED ) ) THEN
@@ -4259,11 +4268,11 @@
 ! CASE 2 : removal of the best interpolated point
 ! find the best interpolated point
          P=NBED-1
-         DO 60,I=NBED-2,2,-1
+         DO I=NBED-2,2,-1
             IF(DIFF(I).LT.DIFF(P)) THEN
                P=I
             ENDIF
-60       CONTINUE
+         END DO
          N=N-1
       ENDIF
 
@@ -4283,16 +4292,17 @@
      &         BEDCHA(P+1,3)*(BEDCHA(P-1,1)-BEDCHA(P,1)) ) / (BEDCHA(P+1,1)-BEDCHA(P-2,1))
       ENDIF
 ! reshuffle the rows
-      DO 70, I=P,NBED-1
+      DO I=P,NBED-1
          BEDCHA(I,1)=BEDCHA(I+1,1)
          BEDCHA(I,2)=BEDCHA(I+1,2)
          BEDCHA(I,3)=BEDCHA(I+1,3)
-70    CONTINUE
+      END DO
       BEDCHA(NBED,1)=0d0
       NBED=NBED-1
 
-      IF (NB.GT.0 .OR. N.GT.0) GOTO 30
+      IF (.NOT. (NB.GT.0 .OR. N.GT.0)) exit
 ! End of main loop (removing several rows in BEDCHA)
+      END DO
 
       END subroutine   ! end of subroutine REMOVEBED
 
@@ -4327,13 +4337,13 @@
      &  XDPROFC,XDPROFD,XDPROFE,XCONSOA,XTEROA,XTEROB,XTEROC,           &
      &  XTEROD,XCDRAGRED,XZ0COH,XFCWCOH
       INTEGER XWSCLAY,XDOCOMPACT
+      INTEGER IERR
 
-      DO 10,UN=20,63
+      DO UN=20,63
          INQUIRE(UNIT=UN,OPENED=EX)
-         IF(.NOT.EX)GOTO 20
-10    CONTINUE
-      STOP
-20    CONTINUE
+         IF(.NOT.EX) exit
+      END DO
+      IF(EX) STOP 'error stop SETCCONST: no free file unit'
 
       IF(FILENAME.EQ.' ')THEN
          NAME='INDATA.CST'
@@ -4346,22 +4356,52 @@
                STOP
             ENDIF
          ENDIF
-         OPEN(UN,FILE=NAME,ERR=200)
-         WRITE(UN,120,ERR=200)
+         OPEN(UN,FILE=NAME,IOSTAT=IERR)
+         IF(IERR /= 0) THEN
+            WRITE(*,102) NAME(1:LASTCH(NAME))
+            CLOSE(UN)
+            STOP 'error stop SETCCONST: file open/write error'
+         ENDIF
+         WRITE(UN,120,IOSTAT=IERR)
+         IF(IERR /= 0) THEN
+            WRITE(*,102) NAME(1:LASTCH(NAME))
+            CLOSE(UN)
+            STOP 'error stop SETCCONST: file open/write error'
+         ENDIF
          WRITE(CH,121)
          CALL LINETAB(CH)
-         WRITE(UN,'(A)',ERR=200)CH
+         WRITE(UN,'(A)',IOSTAT=IERR)CH
+         IF(IERR /= 0) THEN
+            WRITE(*,102) NAME(1:LASTCH(NAME))
+            CLOSE(UN)
+            STOP 'error stop SETCCONST: file open/write error'
+         ENDIF
          WRITE(CH,*)(-999.,I=1,27),-999,-999
          CALL LINETAB(CH)
-         WRITE(UN,'(A)',ERR=200)CH
+         WRITE(UN,'(A)',IOSTAT=IERR)CH
+         IF(IERR /= 0) THEN
+            WRITE(*,102) NAME(1:LASTCH(NAME))
+            CLOSE(UN)
+            STOP 'error stop SETCCONST: file open/write error'
+         ENDIF
          CLOSE(UN)
       ELSE
-         OPEN(UN,FILE=FILENAME,ERR=210)
-30       READ(UN,*,ERR=930,END=210)                                     &
+         OPEN(UN,FILE=FILENAME,IOSTAT=IERR)
+         IF(IERR /= 0) THEN
+            WRITE(*,102) FILENAME(1:LASTCH(FILENAME))
+            CLOSE(UN)
+            STOP 'error stop SETCCONST: file open/read error'
+         ENDIF
+         READ(UN,*,IOSTAT=IERR)                                         &
      &   XCSULVA,XTMULVA,XTRULVA,XRKERO,XE0,XCDISRUPT,XCLIM1,XCLIM2,    &
      &   XKFLOC,XMFLOC,XRHOCLAY,XCTAUDEP,XPRS,XRHOMUD,XDPROFA,XDPROFB,  &
      &   XDPROFC,XDPROFD,XDPROFE,XCONSOA,XTEROA,XTEROB,XTEROC,          &
      &   XTEROD,XCDRAGRED,XZ0COH,XFCWCOH,XWSCLAY,XDOCOMPACT
+         IF(IERR /= 0) THEN
+            WRITE(*,102) FILENAME(1:LASTCH(FILENAME))
+            CLOSE(UN)
+            STOP 'error stop SETCCONST: file read error'
+         ENDIF
 
          WRITE(OUTUNIT,140)
          IF(XCSULVA.NE.-999.)THEN
@@ -4485,13 +4525,6 @@
       ENDIF
       RETURN
 
-200   WRITE(*,102) NAME(1:LASTCH(NAME))
-      CLOSE (UN)
-      STOP
-210   WRITE(*,102) FILENAME(1:LASTCH(FILENAME))
-      CLOSE (UN)
-      STOP
-
 100   FORMAT (/'The existing file ',A,' will be overwritten, '/,  &
      &   'do you want to continue ? (Y/N)')
 101   FORMAT (/'Generation of file ',A,' aborted.')
@@ -4506,7 +4539,6 @@
 140   FORMAT('Following default parameters for the cohesive algorithm',' were modified')
 141   FORMAT(T10,A,' was set to',G12.5)
 142   FORMAT(T10,A,' was set to',I4)
-930   stop 'error stop reading...'
 
       END subroutine   ! end of subroutine SETCCONST
 
@@ -4522,10 +4554,10 @@
       INTEGER FUNCTION LASTCH(CH)
       CHARACTER CH*(*)
       INTEGER I
-      DO 10, I=LEN(CH),2,-1
-         IF (CH(I:I).NE.' ') GOTO 20
-10    CONTINUE
-20    LASTCH=I
+      DO I=LEN(CH),2,-1
+         IF (CH(I:I).NE.' ') exit
+      END DO
+      LASTCH=I
       END function
 
 ! ======================================================================
@@ -4543,7 +4575,7 @@
       A=0
       B=0
 
-10    CONTINUE
+      DO WHILE(B.LT.LENGTH)
          A=A+1
          B=B+1
          IF(CH(B:B).EQ.' ') THEN
@@ -4553,18 +4585,15 @@
                A=0
             ENDIF
 
-20          CONTINUE
-            IF(B.LT.LENGTH) THEN
-               IF(CH(B+1:B+1).EQ.' ') THEN
-                  B=B+1
-                  GOTO 20
-               ENDIF
-            ENDIF
+            DO WHILE(B.LT.LENGTH)
+               IF(CH(B+1:B+1).NE.' ') exit
+               B=B+1
+            END DO
 
          ELSE
             CH(A:A)=CH(B:B)
          ENDIF
-      IF(B.LT.LENGTH) GOTO 10
+      END DO
 
       IF(A.LT.LENGTH) CH(A+1:LENGTH)=' '
       END subroutine     ! end of subroutine LINETAB
@@ -4589,7 +4618,7 @@
 
 ! compute the water density according to Brydon et al. 1999, J. Geoph. Res.
 ! 104/C1, 1537-1540, equation 2 with Coefficient of Table 4, without pressure
-! component. Ranges TEMP -2 - 40øC, S 0-42, surface water.
+! component. Ranges TEMP -2 - 40ï¿½C, S 0-42, surface water.
 !      RHOW=9.20601d-2 + 5.10768d-2*TEMP + 8.05999d-1*SALIN
 !     &     -7.40849d-3*TEMP**2 - 3.01036d-3*SALIN*TEMP +
 !     %     3.32267d-5*TEMP**3 + 3.21931d-5*SALIN*TEMP**2

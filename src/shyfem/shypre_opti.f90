@@ -46,9 +46,15 @@
         if( ierr /= 0 ) stop 'error stop: allocation failed'
 
         call sidei(nkn,nel,nen3v,ng,iknot,ngr1,ngr,bstop)
-        if(bstop) goto 99934
+        if(bstop) then
+          write(6,*)' (34) error: ngr1 is wrong (internal error'
+          stop 'error stop handle_optimization: (34)'
+        end if
         call check_sidei(nkn,nel,nen3v,ipv,ng,ngr1,bstop)
-        if(bstop) goto 99935
+        if(bstop) then
+          write(6,*)' (35) error: irregular connections'
+          stop 'error stop handle_optimization: (35)'
+        end if
         call knscr(nkn,ngr,ngr1,iknot)
 
         call gtest(bdebug,'bandwidth',nelddi,nkn,nel,nen3v)
@@ -79,11 +85,6 @@
           if( bww ) write(6,*) 'Optimized bandwidth is ',mbw
         end if
 
-	return
-99934   write(6,*)' (34) error: ngr1 is wrong (internal error'
-        stop 'error stop handle_optimization: (34)'
-99935   write(6,*)' (35) error: irregular connections'
-        stop 'error stop handle_optimization: (35)'
 	end
 
 !**********************************************************
@@ -246,24 +247,22 @@
         integer i
 
         do i=1,nkn
-          if( iphv(i) .gt. nkn ) goto 99
-          if( kphv(i) .gt. nkn ) goto 99
-          if( iphv(kphv(i)) .ne. i ) goto 99
-          if( kphv(iphv(i)) .ne. i ) goto 99
+          if( iphv(i) .gt. nkn .or. kphv(i) .gt. nkn               &
+     &        .or. iphv(kphv(i)) .ne. i                             &
+     &        .or. kphv(iphv(i)) .ne. i ) then
+            write(6,*) '*** Error in optest: '
+            write(6,*) text
+            write(6,*) 'error in pointers...'
+            write(6,*) 'problem is close to following node...'
+            write(6,*) 'node (intern/extern): ',i,ipv(i)
+            write(6,*) i,nkn
+            write(6,*) iphv(i),kphv(i)
+            write(6,*) iphv(kphv(i)),kphv(iphv(i))
+            write(6,*) 'maybe the domain is not connected...'
+            stop 'error stop optest: pointers'
+          end if
         end do
 
-        return
-   99   continue
-        write(6,*) '*** Error in optest: '
-        write(6,*) text
-        write(6,*) 'error in pointers...'
-        write(6,*) 'problem is close to following node...'
-        write(6,*) 'node (intern/extern): ',i,ipv(i)
-        write(6,*) i,nkn
-        write(6,*) iphv(i),kphv(i)
-        write(6,*) iphv(kphv(i)),kphv(iphv(i))
-        write(6,*) 'maybe the domain is not connected...'
-        stop 'error stop optest: pointers'
         end
 
 !**********************************************************
@@ -333,8 +332,11 @@
         if( bgrd ) then
           write(6,*) 'reading partitioning file ',trim(grdpart)
           call grd_read(grdpart)
-          if( nk_grd /= nn ) goto 99
-          if( ne_grd /= ne ) goto 99
+          if( nk_grd /= nn .or. ne_grd /= ne ) then
+            write(6,*) nk_grd,nn
+            write(6,*) ne_grd,ne
+            stop 'error stop handle_partition: incompatibility'
+          end if
           area_node = ianv
           area_elem = iaev
         else
@@ -353,11 +355,6 @@
 
         call basin_set_partition(nn,ne,nnpart,nepart,area_node,area_elem)
 
-        return
-   99   continue
-        write(6,*) nk_grd,nn
-        write(6,*) ne_grd,ne
-        stop 'error stop handle_partition: incompatibility'
         end
 
 !**********************************************************
@@ -587,7 +584,7 @@
           call iiswap(ipa1,ipa2)
         end if
 	mh=kn2-kn1			!bandbreite
-	if(mh.lt.m) goto 90		!naechstes paar
+	if(mh.lt.m) cycle		!naechstes paar
 	if(mh.gt.m) stop 'error stop : m to big'
 !
 ! groesseren index kn2 mit einem kleineren vertauschen
@@ -604,30 +601,32 @@
 	do k=kn2-1,kanf,-1		!k ist index der mit
 	ia=iphv(k)			!...kn2 vertauscht wird
 	mhhmax=max(kmax-k,k-kn1)	!...und bandbreite
-	if(mhhmax.gt.mmin) goto 10	!...mhhmax ergibt
-	do ii=1,ng(ia)		!bestimmung der bandbreite fuer
-	mhh=iabs(kn2-kphv(iknot(ngr*(ia-1)+ii))) !...restl. knoten
-	if(mhh.eq.0) mhh=kn2-k	!kn2 war im knotenverzeichnis
-	if(mhh.gt.mmin) goto 10
-	if(mhh.gt.mhhmax) mhhmax=mhh
-	end do
-	if(mhhmax.lt.mmin) then		!kleinere bandbreite
+	if(mhhmax.le.mmin) then		!...mhhmax ergibt
+	  do ii=1,ng(ia)	!bestimmung der bandbreite fuer
+	  mhh=iabs(kn2-kphv(iknot(ngr*(ia-1)+ii))) !...restl. knoten
+	  if(mhh.eq.0) mhh=kn2-k	!kn2 war im knotenverzeichnis
+	  if(mhh.gt.mmin) exit
+	  if(mhh.gt.mhhmax) mhhmax=mhh
+	  end do
+	  if(mhh.le.mmin) then		!inner loop completed normally
+	    if(mhhmax.lt.mmin) then	!kleinere bandbreite
 		mmin=mhhmax		!...gefunden, merke
 		kmerk=k			!...k und m
-	else if(mhhmax.eq.m) then	!vertauschung laesst
-          if(nhil.lt.ndim) then !...bandbreite
+	    else if(mhhmax.eq.m) then	!vertauschung laesst
+              if(nhil.lt.ndim) then !...bandbreite
 			nhil=nhil+1	!...gleich,
 			khil(1,nhil)=k	!...trage in
 			khil(2,nhil)=kn2!...nhil ein
 		end if
+	    end if
+	  end if
 	end if
-   10	continue
 	end do
 !
 	if(mmin.lt.m) then		!kleinere bandbreite gefunden
 		nvert=0			!...--> vertausche
 		call vertau(nkn,kmerk,kn2,iphv,kphv,lvert,nhil)
-		goto 90
+		cycle
 	end if
 !
 ! kleineren index kn1 mit einem groesseren vertauschen
@@ -644,30 +643,32 @@
 	do k=kn1+1,kend		!k ist index der mit
 	ia=iphv(k)			!...kn1 vertauscht wird
 	mhhmax=max(k-kmin,kn2-k)
-	if(mhhmax.gt.mmin) goto 11
-	do ii=1,ng(ia)
-	mhh=iabs(kn1-kphv(iknot(ngr*(ia-1)+ii)))
-	if(mhh.eq.0) mhh=k-kn1	!kn1 war im knotenverzeichnis
-	if(mhh.gt.mmin) goto 11
-	if(mhh.gt.mhhmax) mhhmax=mhh
-	end do
-	if(mhhmax.lt.mmin) then
+	if(mhhmax.le.mmin) then
+	  do ii=1,ng(ia)
+	  mhh=iabs(kn1-kphv(iknot(ngr*(ia-1)+ii)))
+	  if(mhh.eq.0) mhh=k-kn1	!kn1 war im knotenverzeichnis
+	  if(mhh.gt.mmin) exit
+	  if(mhh.gt.mhhmax) mhhmax=mhh
+	  end do
+	  if(mhh.le.mmin) then		!inner loop completed normally
+	    if(mhhmax.lt.mmin) then
 		mmin=mhhmax
 		kmerk=k
-	else if(mhhmax.eq.m) then
-          if(nhil.lt.ndim) then
+	    else if(mhhmax.eq.m) then
+              if(nhil.lt.ndim) then
 			nhil=nhil+1
 			khil(1,nhil)=kn1
 			khil(2,nhil)=k
 		end if
+	    end if
+	  end if
 	end if
-   11	continue
 	end do
 !
 	if(mmin.lt.m) then
 		nvert=0
 		call vertau(nkn,kn1,kmerk,iphv,kphv,lvert,nhil)
-		goto 90
+		cycle
 	end if
 !
 ! bandbreite kann nicht erniedrigt werden
@@ -675,24 +676,24 @@
 	if(nvert.ge.nkn) stop 'error stop :dimension kvert'
 !
 	do i=1,nhil		!ueberpruefen ob es noch
-	do ii=1,nvert		!...indizes gibt auf nhil
-	if(khil(1,i).eq.kvert(1,ii)) then!...die noch nicht
-		if(khil(2,i).eq.kvert(2,ii)) goto 21	!...
-	end if			!...vertauscht worden sind
-	end do
-	k1=khil(1,i)
-	k2=khil(2,i)
-	nvert=nvert+1
-	kvert(1,nvert)=k1
-	kvert(2,nvert)=k2
-	call vertau(nkn,k1,k2,iphv,kphv,lvert,nhil)
-	goto 90
-   21	continue
+	  do ii=1,nvert		!...indizes gibt auf nhil
+	    if(khil(1,i).eq.kvert(1,ii)) then!...die noch nicht
+		if(khil(2,i).eq.kvert(2,ii)) exit	!found match
+	    end if		!...vertauscht worden sind
+	  end do
+	  if(ii.gt.nvert) then	!no match found - do exchange
+	    k1=khil(1,i)
+	    k2=khil(2,i)
+	    nvert=nvert+1
+	    kvert(1,nvert)=k1
+	    kvert(2,nvert)=k2
+	    call vertau(nkn,k1,k2,iphv,kphv,lvert,nhil)
+	    exit		!exit the nhil loop
+	  end if
 	end do
 !
 ! keine vertauschung moeglich
 !
-   90	continue
 	end do
 !
 	if(lvert.eq.0) exit	!keine vertauschung mehr moegl.

@@ -35,6 +35,8 @@
 
         program tselab_main
 
+        implicit none
+
         call tselab
 
         end

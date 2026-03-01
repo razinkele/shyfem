@@ -312,8 +312,11 @@
 	  do l=0,nlv
 	    v = visv(l,k)
 	    d = difv(l,k)
-	    if( v .lt. 0. .or. v .gt. 1.e+5 ) goto 99
-	    if( d .lt. 0. .or. d .gt. 1.e+5 ) goto 99
+	    if( v .lt. 0. .or. v .gt. 1.e+5 .or.                       &
+     &          d .lt. 0. .or. d .gt. 1.e+5 ) then
+	      write(6,*) k,l,v,d
+	      stop 'error stop check_eddy: error in values'
+	    end if
 	  end do
 	end do
 
@@ -321,10 +324,6 @@
 ! end of routine
 !------------------------------------------------------------------
 
-	return
-   99	continue
-	write(6,*) k,l,v,d
-	stop 'error stop check_eddy: error in values'
 	end
 
 !*****************************************************************
@@ -469,26 +468,41 @@
 	bhybrid = hsigma .lt. hmax
 	bzeta = dzreg .gt. 0.
 
-	if( nsigma .eq. 1 ) goto 92
+	if( nsigma .eq. 1 ) then
+	  write(6,*) 'nsigma must be > 1'
+	  stop 'error stop adjust_levels: nsigma = 1'
+	end if
 
 	if( nlv .le. 0 ) then		! hlv not set -> must set
 
 	  if( bsigma ) then		!sigma layers
-	    if( nsigma > nlvdi ) goto 86
+	    if( nsigma > nlvdi ) then
+	      write(6,*) 'nsigma,nlvdi: ',nsigma,nlvdi
+	      stop 'error stop adjust_levels: dimension too small'
+	    end if
 	    call make_sigma_levels(nsigma,hlv)
 	    nlv = nsigma
 	  end if
 
 	  if( bhybrid .or. bzeta ) then	!zeta levels
-	    if( bhybrid .and. .not. bzeta ) goto 99
-	    if( bhybrid .and. .not. bsigma ) goto 90
+	    if( bhybrid .and. .not. bzeta ) then
+	      write(6,*) 'for hybrid levels dzreg must be > 0'
+	      stop 'error stop adjust_levels: dzreg = 0'
+	    end if
+	    if( bhybrid .and. .not. bsigma ) then
+	      write(6,*) 'nsigma,hsigma: ',nsigma,hsigma
+	      write(6,*) 'with hsigma set nsigma must be > 0'
+	      stop 'error stop adjust_levels: nsigma and hsigma'
+	    end if
 	    nlv = nlvdi
 	    if( bhybrid ) then
 	      call make_zeta_levels(nsigma,hsigma,dzreg,nlv,hlv)
 	    else if( .not. bsigma ) then	!no sigma layers given
 	      call make_zeta_levels(0,0.,dzreg,nlv,hlv)
 	    else
-	      goto 89
+	      write(6,*) 'nsigma,dzreg: ',nsigma,dzreg
+	      write(6,*) 'with pure sigma layers cannot give dzreg'
+	      stop 'error stop adjust_levels: bsigma and dzreg'
 	    end if
 	  else if( .not. bsigma ) then		!just one layer
 	    nlv = 1
@@ -498,13 +512,35 @@
 	else				!level section present
 
 	  if( nlv .eq. 1 ) then		!just one level (barotropic)
-	    if( bsigma .or. bhybrid ) goto 98
+	    if( bsigma .or. bhybrid ) then
+	      write(6,*) 'only one level given in level section'
+	      write(6,*) hlv(1)
+	      write(6,*) 'cannot have sigma levels...'
+	      stop 'error stop adjust_levels: nlv = 1'
+	    end if
 	  else if( hlv(second) .gt. hlv(1) ) then	!zeta layers given
-	    if( bzeta ) goto 97
+	    if( bzeta ) then
+	      write(6,*) 'nlv,dzreg: ',nlv,dzreg
+	      write(6,*) 'You cannot give both zeta levels and dzreg'
+	      stop 'error stop adjust_levels: dzreg'
+	    end if
 	    if( bsigma ) then		!put sigma layers on top
-	      if( .not. bhybrid ) goto 88
-	      if( hlv(1) .ne. hsigma ) goto 96
-	      if( nsigma + nlv - 1 .gt. nlvdi ) goto 95
+	      if( .not. bhybrid ) then
+	        write(6,*) 'hsigma: ',hsigma
+	        write(6,*) 'for hybrid levels hsigma must be set'
+	        stop 'error stop adjust_levels: hsigma'
+	      end if
+	      if( hlv(1) .ne. hsigma ) then
+	        write(6,*) 'hlv(1),hsigma: ',hlv(1),hsigma
+	        write(6,*) 'for hybrid levels first zeta level'       &
+     &                //' must be hsigma'
+	        stop 'error stop adjust_levels: hsigma'
+	      end if
+	      if( nsigma + nlv - 1 .gt. nlvdi ) then
+	        write(6,*) 'nlv,nsigma,nlvdi: ',nlv,nsigma,nlvdi
+	        write(6,*) 'not enough space to add zeta levels'
+	        stop 'error stop adjust_levels: nlvdi'
+	      end if
 	      do l=1,nlv
 	        hlv(nsigma+l-1) = hlv(l)
 	      end do
@@ -513,28 +549,53 @@
 	      nlv = nlv + nsigma - 1
 	    end if
 	  else if( hlv(nlv) .eq. -1. ) then	!only sigma layers given
-	    if( bsigma ) goto 91
+	    if( bsigma ) then
+	      write(6,*) 'nlv,nsigma: ',nlv,nsigma
+	      write(6,*) 'You cannot give both sigma levels and nsigma'
+	      stop 'error stop adjust_levels: nsigma'
+	    end if
 	    nsigma = nlv
 	    if( bhybrid ) then		!put zeta levels below
-	      if( .not. bzeta ) goto 94
+	      if( .not. bzeta ) then
+	        write(6,*) 'for hybrid levels dzreg must be > 0'
+	        stop 'error stop adjust_levels: dzreg'
+	      end if
 	      nlv = nlvdi
 	      call make_zeta_levels(nsigma,hsigma,dzreg,nlv,hlv)
 	    end if
 	  else				!both sigma and zeta levels given
-	    if( bsigma ) goto 91
-	    if( bzeta ) goto 97
-	    if( .not. bhybrid ) goto 88
+	    if( bsigma ) then
+	      write(6,*) 'nlv,nsigma: ',nlv,nsigma
+	      write(6,*) 'You cannot give both sigma levels and nsigma'
+	      stop 'error stop adjust_levels: nsigma'
+	    end if
+	    if( bzeta ) then
+	      write(6,*) 'nlv,dzreg: ',nlv,dzreg
+	      write(6,*) 'You cannot give both zeta levels and dzreg'
+	      stop 'error stop adjust_levels: dzreg'
+	    end if
+	    if( .not. bhybrid ) then
+	      write(6,*) 'hsigma: ',hsigma
+	      write(6,*) 'for hybrid levels hsigma must be set'
+	      stop 'error stop adjust_levels: hsigma'
+	    end if
 	    do l=2,nlv
 	      if( hlv(l) .gt. hlv(l-1) ) exit
 	    end do
-	    if( l > nlv ) goto 93	!not found
+	    if( l > nlv ) then
+	      write(6,*) 'error in level structure'
+	      write(6,*) (hlv(l),l=1,nlv)
+	      stop 'error stop adjust_levels: hlv'
+	    end if
 	    if( hlv(l-1) .eq. -1. ) then
 	      nsigma = l-1
 	      hlv(l-1) = hsigma
 	    else if( hlv(l) .eq. hsigma ) then
 	      nsigma = l
 	    else
-	      goto 93
+	      write(6,*) 'error in level structure'
+	      write(6,*) (hlv(l),l=1,nlv)
+	      stop 'error stop adjust_levels: hlv'
 	    end if
 	    if( hlv(nsigma) .eq. hlv(nsigma+1) ) then	!double entry
 	      do l=nsigma+1,nlv
@@ -542,7 +603,9 @@
 	      end do
 	      nlv = nlv - 1
 	    else if( hlv(nsigma) .ge. hlv(nsigma+1) ) then
-	      goto 93
+	      write(6,*) 'error in level structure'
+	      write(6,*) (hlv(l),l=1,nlv)
+	      stop 'error stop adjust_levels: hlv'
 	    end if
 	  end if
 
@@ -573,7 +636,10 @@
 !--------------------------------------------------------------
 
 	hbot = hlv(nlv)
-	if( hbot /= -1. .and. hmax > hbot ) goto 87
+	if( hbot /= -1. .and. hmax > hbot ) then
+	  write(6,*) 'nlv,hlv(nlv),hmax: ',nlv,hlv(nlv),hmax
+	  stop 'error stop adjust_levels: not enough layers'
+	end if
 
 	call check_levels
 
@@ -583,59 +649,6 @@
 ! end of routine
 !--------------------------------------------------------------
 
-	return
-   86	continue
-	write(6,*) 'nsigma,nlvdi: ',nsigma,nlvdi
-	stop 'error stop adjust_levels: dimension too small'
-   87	continue
-	write(6,*) 'nlv,hlv(nlv),hmax: ',nlv,hlv(nlv),hmax
-	stop 'error stop adjust_levels: not enough layers'
-   88	continue
-	write(6,*) 'hsigma: ',hsigma
-	write(6,*) 'for hybrid levels hsigma must be set'
-	stop 'error stop adjust_levels: hsigma'
-   89	continue
-	write(6,*) 'nsigma,dzreg: ',nsigma,dzreg
-	write(6,*) 'with pure sigma layers cannot give dzreg'
-	stop 'error stop adjust_levels: bsigma and dzreg'
-   90	continue
-	write(6,*) 'nsigma,hsigma: ',nsigma,hsigma
-	write(6,*) 'with hsigma set nsigma must be > 0'
-	stop 'error stop adjust_levels: nsigma and hsigma'
-   91	continue
-	write(6,*) 'nlv,nsigma: ',nlv,nsigma
-	write(6,*) 'You cannot give both sigma levels and nsigma'
-	stop 'error stop adjust_levels: nsigma'
-   92	continue
-	write(6,*) 'nsigma must be > 1'
-	stop 'error stop adjust_levels: nsigma = 1'
-   93	continue
-	write(6,*) 'error in level structure'
-	write(6,*) (hlv(l),l=1,nlv)
-	stop 'error stop adjust_levels: hlv'
-   94	continue
-	write(6,*) 'for hybrid levels dzreg must be > 0'
-	stop 'error stop adjust_levels: dzreg'
-   95	continue
-	write(6,*) 'nlv,nsigma,nlvdi: ',nlv,nsigma,nlvdi
-	write(6,*) 'not enough space to add zeta levels'
-	stop 'error stop adjust_levels: nlvdi'
-   96	continue
-	write(6,*) 'hlv(1),hsigma: ',hlv(1),hsigma
-	write(6,*) 'for hybrid levels first zeta level must be hsigma'
-	stop 'error stop adjust_levels: hsigma'
-   97	continue
-	write(6,*) 'nlv,dzreg: ',nlv,dzreg
-	write(6,*) 'You cannot give both zeta levels and dzreg'
-	stop 'error stop adjust_levels: dzreg'
-   98	continue
-	write(6,*) 'only one level given in level section'
-	write(6,*) hlv(1)
-	write(6,*) 'cannot have sigma levels...'
-	stop 'error stop adjust_levels: nlv = 1'
-   99	continue
-	write(6,*) 'for hybrid levels dzreg must be > 0'
-	stop 'error stop adjust_levels: dzreg = 0'
 	end
 
 !*****************************************************************
@@ -783,7 +796,13 @@
 	    do l=nsigma+1,nlv
 	      if(hlv(l).ge.h) exit
 	    end do
-	    if( l .gt. nlv ) goto 99
+	    if( l .gt. nlv ) then
+	      write(6,*) ie,l,nlv,h,hlv(nlv)
+	      write(6,*) 'maximum basin depth: ',hmax
+	      write(6,*) 'maximum layer depth: ',hlv(nlv)
+	      write(6,'(5g14.6)') (hlv(l),l=1,nlv)
+	      stop 'error stop set_ilhv: not enough layers'
+	    end if
 	  end if
 
 	  ilhv(ie)=l
@@ -798,13 +817,6 @@
 	write(6,*) 'nlv,lmax,hmax: ',nlv,lmax,hmax
 	write(6,'(5g14.6)') (hlv(l),l=1,nlv)
 
-	return
-   99	continue
-	write(6,*) ie,l,nlv,h,hlv(nlv)
-	write(6,*) 'maximum basin depth: ',hmax
-	write(6,*) 'maximum layer depth: ',hlv(nlv)
-	write(6,'(5g14.6)') (hlv(l),l=1,nlv)
-	stop 'error stop set_ilhv: not enough layers'
 	end
 
 !*****************************************************************
@@ -930,7 +942,11 @@
 	hmax = 0.
 	do ie=1,nel
 	  lmax = ilhv(ie)
-	  if( lmax .le. 0 ) goto 99
+	  if( lmax .le. 0 ) then
+	    write(6,*) ie,lmax
+	    stop 'error stop check_ilevels: error in vertical'       &
+     &          //' structure (1)'
+	  end if
 	  do ii=1,3
 	    hmax = max(hmax,hm3v(ii,ie))
 	  end do
@@ -943,33 +959,35 @@
 	  do ii=1,3
 	    k=nen3v(ii,ie)
 	    lk = ilhkv(k)
-	    if( lk .le. 0 ) goto 98
-	    if( lk .lt. lmax ) goto 98
+	    if( lk .le. 0 .or. lk .lt. lmax ) then
+	      write(6,*) ie,lmax,k,lk
+	      stop 'error stop check_ilevels: error in vertical'     &
+     &            //' structure (2)'
+	    end if
 	  end do
-	  if( bspure .and. lmax .ne. nsigma ) goto 96
-	  if( bsigma .and. lmax .lt. nsigma ) goto 96
+	  if( (bspure .and. lmax .ne. nsigma) .or.                    &
+     &        (bsigma .and. lmax .lt. nsigma) ) then
+	    write(6,*) ie,k,lmax,nsigma
+	    stop 'error stop check_ilevels: error in vertical'       &
+     &          //' structure (4)'
+	  end if
 	end do
 
 	do k=1,nkn
 	  lmax=ilhkv(k)
-	  if( lmax .le. 0 ) goto 97
-	  if( bspure .and. lmax .ne. nsigma ) goto 96
-	  if( bsigma .and. lmax .lt. nsigma ) goto 96
+	  if( lmax .le. 0 ) then
+	    write(6,*) k,lmax
+	    stop 'error stop check_ilevels: error in vertical'       &
+     &          //' structure (3)'
+	  end if
+	  if( (bspure .and. lmax .ne. nsigma) .or.                    &
+     &        (bsigma .and. lmax .lt. nsigma) ) then
+	    write(6,*) ie,k,lmax,nsigma
+	    stop 'error stop check_ilevels: error in vertical'       &
+     &          //' structure (4)'
+	  end if
 	end do
 
-	return
-   96	continue
-	write(6,*) ie,k,lmax,nsigma
-	stop 'error stop check_ilevels: error in vertical structure (4)'
-   97	continue
-	write(6,*) k,lmax
-	stop 'error stop check_ilevels: error in vertical structure (3)'
-   98	continue
-	write(6,*) ie,lmax,k,lk
-	stop 'error stop check_ilevels: error in vertical structure (2)'
-   99	continue
-	write(6,*) ie,lmax
-	stop 'error stop check_ilevels: error in vertical structure (1)'
 	end
 
 !*****************************************************************
@@ -1036,7 +1054,13 @@
 	hlvmin = getpar('hlvmin')		!min percentage of last layer
 	ilytyp = nint(getpar('ilytyp'))
 
-	if( hlvmin .gt. 1. .or. hlvmin .lt. 0. ) goto 98
+	if( hlvmin .gt. 1. .or. hlvmin .lt. 0. ) then
+	  write(6,*) '*** error setting up layer structure...'
+	  write(6,*) 'hlvmin is given in fraction of last layer'
+	  write(6,*) 'therefore:  0 <= hlvmin <= 1'
+	  write(6,*) 'hlvmin = ',hlvmin
+	  stop 'error stop set_last_layer: hlvmin'
+	end if
 
 !------------------------------------------------------------
 ! adjust last layer thickness
@@ -1063,7 +1087,19 @@
 	  hlast = hldv(l)			!regular last layer thickness
 	  hmin = hlvmin * hlast
 
-	  if( l .gt. 1 .and. h .le. 0. ) goto 99
+	  if( l .gt. 1 .and. h .le. 0. ) then
+	    write(6,*) '*** error setting up layer structure...'
+	    write(6,*) 'ie,l,hold,h: ',ie,l,hold,h
+	    write(6,*) 'nsigma,hsigma: ',nsigma,hsigma
+	    write(6,*) 'hlv: ',nlv,(hlv(l),l=1,nlv)
+	    if( nsigma > 0 .and. hold <= 0. ) then
+	      write(6,*) 'total depth: ',hold
+	      write(6,*) 'cannot yet handle salt marshes'               &
+     &                //' with sigma layers'
+	    end if
+	    stop 'error stop set_last_layer: layer depth <=0'           &
+     &          //' (internal error)'
+	  end if
 
 	  bdepth = .false.			!adjust depth? (implies blayer)
 	  blayer = .false.			!adjust layer?
@@ -1141,23 +1177,6 @@
 ! end of routine
 !------------------------------------------------------------
 
-	return
-   98	continue
-	write(6,*) '*** error setting up layer structure...'
-	write(6,*) 'hlvmin is given in fraction of last layer'
-	write(6,*) 'therefore:  0 <= hlvmin <= 1'
-	write(6,*) 'hlvmin = ',hlvmin
-	stop 'error stop set_last_layer: hlvmin'
-   99	continue
-	write(6,*) '*** error setting up layer structure...'
-	write(6,*) 'ie,l,hold,h: ',ie,l,hold,h
-	write(6,*) 'nsigma,hsigma: ',nsigma,hsigma
-	write(6,*) 'hlv: ',nlv,(hlv(l),l=1,nlv)
-	if( nsigma > 0 .and. hold <= 0. ) then
-	  write(6,*) 'total depth: ',hold
-	  write(6,*) 'cannot yet handle salt marshes with sigma layers'
-	end if
-	stop 'error stop set_last_layer: layer depth <=0 (internal error)'
 	end
 
 !*****************************************************************

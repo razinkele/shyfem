@@ -542,12 +542,22 @@
 
 	  name = 'all_scal_nodes.2d.txt'
 	  call get_new_unit(iuall2d)
-          open(iuall2d,file=name,form='formatted',status='unknown')
+          open(iuall2d,file=name,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	  if( ierr /= 0 ) then
+	    write(6,*) 'error opening file: ',trim(name)
+	    stop 'error stop write_nodes_scalar_ts: cannot open file'
+	  end if
 
 	  if( b3d ) then
 	    name = 'all_scal_nodes.3d.txt'
 	    call get_new_unit(iuall3d)
-            open(iuall3d,file=name,form='formatted',status='unknown')
+            open(iuall3d,file=name,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	    if( ierr /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(name)
+	      stop 'error stop write_nodes_scalar_ts: cannot open file'
+	    end if
 	  end if
 
 	  do iv=1,nvar			!all nodes in one file
@@ -673,7 +683,12 @@
 	  if( debug ) then
 	    name = 'all_nodes.3d.txt'
 	    call get_new_unit(iuall)
-            open(iuall,file=name,form='formatted',status='unknown')
+            open(iuall,file=name,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	    if( ierr /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(name)
+	      stop 'error stop write_nodes_hydro_ts: cannot open file'
+	    end if
 	  end if
 	end if
 	icall = icall + 1

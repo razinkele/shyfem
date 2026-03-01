@@ -337,10 +337,17 @@
 
 	  if( shympi_is_master() ) then
 	    nbext=ideffi('datdir','runnam','.ext','unform','new')
-            if(nbext.le.0) goto 99
+            if(nbext.le.0) then
+	      write(6,*) 'Error opening EXT file :'
+	      stop 'error stop wrexta: opening ext file'
+	    end if
 	    da_out(4) = nbext
             call ext_write_header(nbext,0,knausm,nlv_global,nvar,ierr)
-            if( ierr /= 0 ) goto 98
+            if( ierr /= 0 ) then
+	      write(6,*) 'Error writing first header of EXT file'
+	      write(6,*) 'unit,ierr :',nbext,ierr
+	      stop 'error stop wrexta: writing first ext header'
+	    end if
 	  end if
 
 	  allocate(il(knausm),stat=ierr)
@@ -373,7 +380,11 @@
      &                          ,href,hzmin,nzadapt,title,femver &
      &                          ,kext,hdep,il,x,y,strings,hlv_global &
      &                          ,ierr)
-            if( ierr /= 0 ) goto 96
+            if( ierr /= 0 ) then
+	      write(6,*) 'Error writing second header of EXT file'
+	      write(6,*) 'unit,ierr :',nbext,ierr
+	      stop 'error stop wrexta: writing second ext header'
+	    end if
 	  end if
         end if
 
@@ -405,8 +416,11 @@
 	ivar = 1
 	iv = iv + 1
 	m = 3
-	if( iv > nvar ) goto 88
-	if( m > mmax ) goto 88
+	if( iv > nvar .or. m > mmax ) then
+	  write(6,*) 'm,mmax: ',m,mmax
+	  write(6,*) 'iv,nvar: ',iv,nvar
+	  stop 'error stop wrexta: incompatible parameters'
+	end if
 	nl = 1
 	ipstart = ip
 	do j=1,knausm
@@ -424,8 +438,11 @@
 	ivar = 2
 	iv = iv + 1
 	m = 2
-	if( iv > nvar ) goto 88
-	if( m > mmax ) goto 88
+	if( iv > nvar .or. m > mmax ) then
+	  write(6,*) 'm,mmax: ',m,mmax
+	  write(6,*) 'iv,nvar: ',iv,nvar
+	  stop 'error stop wrexta: incompatible parameters'
+	end if
 	nl = nlv
 	ipstart = ip
 	do j=1,knausm
@@ -440,14 +457,22 @@
 !	-------------------------------------------------------
 
 	m = 1
-	if( m > mmax ) goto 88
+	if( m > mmax ) then
+	  write(6,*) 'm,mmax: ',m,mmax
+	  write(6,*) 'iv,nvar: ',iv,nvar
+	  stop 'error stop wrexta: incompatible parameters'
+	end if
 	nl = nlv
 
 	ipstart = ip
 	if( btemp ) then
 	  ivar = 12
 	  iv = iv + 1
-	  if( iv > nvar ) goto 88
+	  if( iv > nvar ) then
+	    write(6,*) 'm,mmax: ',m,mmax
+	    write(6,*) 'iv,nvar: ',iv,nvar
+	    stop 'error stop wrexta: incompatible parameters'
+	  end if
 	  do j=1,knausm
 	    k = knaus(j)
 	    call add_to_array(ip,k,nl,nlg,tempv,array)
@@ -463,7 +488,11 @@
 	if( bsalt ) then
 	  ivar = 11
 	  iv = iv + 1
-	  if( iv > nvar ) goto 88
+	  if( iv > nvar ) then
+	    write(6,*) 'm,mmax: ',m,mmax
+	    write(6,*) 'iv,nvar: ',iv,nvar
+	    stop 'error stop wrexta: incompatible parameters'
+	  end if
 	  do j=1,knausm
 	    k = knaus(j)
 	    call add_to_array(ip,k,nl,nlg,saltv,array)
@@ -479,7 +508,11 @@
         if( brho ) then
           ivar = 13
           iv = iv + 1
-	  if( iv > nvar ) goto 88
+	  if( iv > nvar ) then
+	    write(6,*) 'm,mmax: ',m,mmax
+	    write(6,*) 'iv,nvar: ',iv,nvar
+	    stop 'error stop wrexta: incompatible parameters'
+	  end if
           do j=1,knausm
             k = knaus(j)
 	    call add_to_array(ip,k,nl,nlg,rhov,array)
@@ -495,7 +528,11 @@
 	if( bconz ) then
 	  ivar = 10
 	  iv = iv + 1
-	  if( iv > nvar ) goto 88
+	  if( iv > nvar ) then
+	    write(6,*) 'm,mmax: ',m,mmax
+	    write(6,*) 'iv,nvar: ',iv,nvar
+	    stop 'error stop wrexta: incompatible parameters'
+	  end if
 	  do j=1,knausm
 	    k = knaus(j)
 	    call add_to_array(ip,k,nl,nlg,cnv,array)
@@ -511,7 +548,11 @@
 	if( bsedi ) then
 	  ivar = 800
 	  iv = iv + 1
-	  if( iv > nvar ) goto 88
+	  if( iv > nvar ) then
+	    write(6,*) 'm,mmax: ',m,mmax
+	    write(6,*) 'iv,nvar: ',iv,nvar
+	    stop 'error stop wrexta: incompatible parameters'
+	  end if
 	  do j=1,knausm
 	    k = knaus(j)
 	    call add_to_array(ip,k,nl,nlg,tcn,array)
@@ -528,8 +569,11 @@
           ivar = 230
           iv = iv + 1
 	  m = 3
-	  if( iv > nvar ) goto 88
-	  if( m > mmax ) goto 88
+	  if( iv > nvar .or. m > mmax ) then
+	    write(6,*) 'm,mmax: ',m,mmax
+	    write(6,*) 'iv,nvar: ',iv,nvar
+	    stop 'error stop wrexta: incompatible parameters'
+	  end if
 	  nl = 1
           do j=1,knausm
             k = knaus(j)
@@ -544,7 +588,11 @@
 ! error check
 !--------------------------------------------------------------
 
-	if( iv /= nvar ) goto 91
+	if( iv /= nvar ) then
+	  write(6,*) 'iv,nvar: ',iv,nvar
+	  write(6,*) 'iv is different from nvar'
+	  stop 'error stop wrexta: internal error (1)'
+	end if
 
 !--------------------------------------------------------------
 ! reduce and write
@@ -570,7 +618,12 @@
 	    !write(6,*) iv,ivar,vals(1,1,1)
             call ext_write_record(nbext,0,atime,knausm,nlv_d &
      &                                  ,ivar,m,il,vals,ierr)
-            if( ierr /= 0 ) goto 97
+            if( ierr /= 0 ) then
+	      write(6,*) 'Error writing record of EXT file'
+	      write(6,*) 'unit,iv,ierr :',nbext,iv,ierr
+	      write(6,*) btemp,bsalt,brho,bconz,bwave,bsedi
+	      stop 'error stop wrexta: writing ext record'
+	    end if
 	  end do
 	end if
 	call shympi_barrier
@@ -588,36 +641,6 @@
 ! end of routine
 !--------------------------------------------------------------
 
-	return
-   88   continue
-	write(6,*) 'm,mmax: ',m,mmax
-	write(6,*) 'iv,nvar: ',iv,nvar
-	stop 'error stop wrexta: incompatible parameters'
-   91   continue
-	write(6,*) 'iv,nvar: ',iv,nvar
-	write(6,*) 'iv is different from nvar'
-	stop 'error stop wrexta: internal error (1)'
-   92   continue
-	iu = 750 + my_id
-	write(iu,*) 'iv,ivar: ',iv,ivar
-	write(iu,*) 'm,knausm,nlv_d: ',m,knausm,nlv_d
-	stop 'error stop wrexta: values differ'
-   99   continue
-	write(6,*) 'Error opening EXT file :'
-	stop 'error stop wrexta: opening ext file'
-   96   continue
-	write(6,*) 'Error writing second header of EXT file'
-	write(6,*) 'unit,ierr :',nbext,ierr
-	stop 'error stop wrexta: writing second ext header'
-   98   continue
-	write(6,*) 'Error writing first header of EXT file'
-	write(6,*) 'unit,ierr :',nbext,ierr
-	stop 'error stop wrexta: writing first ext header'
-   97   continue
-	write(6,*) 'Error writing record of EXT file'
-	write(6,*) 'unit,iv,ierr :',nbext,iv,ierr
-	write(6,*) btemp,bsalt,brho,bconz,bwave,bsedi
-	stop 'error stop wrexta: writing ext record'
 	end
 
 !*********************************************************

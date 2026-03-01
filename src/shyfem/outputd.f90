@@ -489,7 +489,15 @@
 	  call dts_get_date(date,time)
 	  call dts_to_abs_time(date,time,atime0)
 	  call dts_string2time(text,atime,ierr)
-	  if( ierr .ne. 0 ) goto 99
+	  if( ierr .ne. 0 ) then
+	    write(6,*) 'name: ',trim(name)
+	    write(6,*) 'text: ',text
+            write(6,*) '*** cannot parse date: ',ierr,text
+            write(6,*) '    format should be YYYY-MM-DD::hh:mm:ss'
+            write(6,*) '    possible also YYYY-MM-DD[::hh[:mm[:ss]]]'
+            write(6,*) '    or it should be an integer (relative time)'
+	    stop 'error stop convert_date: cannot parse'
+	  end if
 	  dtime = atime - atime0
 	  dit = dtime
 	  call dputpar(name,dit)
@@ -504,15 +512,6 @@
 	write(6,*) text
 	write(6,*) dit
 
-	return
-   99	continue
-	write(6,*) 'name: ',trim(name)
-	write(6,*) 'text: ',text
-        write(6,*) '*** cannot parse date: ',ierr,text
-        write(6,*) '    format should be YYYY-MM-DD::hh:mm:ss'
-        write(6,*) '    possible also YYYY-MM-DD[::hh[:mm[:ss]]]'
-        write(6,*) '    or it should be an integer (relative time)'
-	stop 'error stop convert_date: cannot parse'
 	end
 
 !********************************************************************
@@ -540,7 +539,10 @@
 
 	if( text .ne. ' ' ) then
 	  call dtstimespand(didt,text,ierr)	!still in integer
-	  if( ierr .ne. 0 ) goto 99
+	  if( ierr .ne. 0 ) then
+	    write(6,*) 'name: ',name
+	    stop 'error stop convert_time: cannot parse'
+	  end if
 	  if( bdebug ) then
 	    write(6,*) 'time span as string found'
 	    write(6,*) name
@@ -554,10 +556,6 @@
 
 	if( bdebug ) write(6,*) 'finished converting time: ',didt
 
-	return
-   99	continue
-	write(6,*) 'name: ',name
-	stop 'error stop convert_time: cannot parse'
 	end
 
 !********************************************************************

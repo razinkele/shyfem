@@ -520,7 +520,12 @@
             numb = adjustl(numb)
             name = trim(basen)// '.' //numb
             call get_new_unit(iu)
-            open(iu,file=name,form='formatted',status='unknown')
+            open(iu,file=name,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	    if( ierr /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(name)
+	      stop 'error stop lgr_write_mean_posit: cannot open file'
+	    end if
             ium(i) = iu
           end do
           nty = nm
@@ -540,7 +545,12 @@
             numb = adjustl(numb)
             name = trim(basen)// '.' //numb
             call get_new_unit(iu)
-            open(iu,file=name,form='formatted',status='unknown')
+            open(iu,file=name,form='formatted',status='unknown' &
+     &			,iostat=ierr)
+	    if( ierr /= 0 ) then
+	      write(6,*) 'error opening file: ',trim(name)
+	      stop 'error stop lgr_write_mean_posit: cannot open file'
+	    end if
             ium(i) = iu
           end do
           nty = nm

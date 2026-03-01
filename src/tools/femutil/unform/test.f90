@@ -31,20 +31,33 @@
 
 	implicit none
 
-	integer iunit,nl,iu
+	integer iunit,nl,iu,ios
 	integer fields(3)
 
-	open(newunit=iu,file='unform.dat',form='unformatted',status='unknown')
+	open(newunit=iu,file='unform.dat',form='unformatted' &
+     &			,status='unknown',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: unform.dat'
+	  stop 'error stop test_unformatted: cannot open unform.dat'
+	end if
 	write(iu) 1
 	close(iu)
 
-	open(newunit=iu,file='stream.dat',form='unformatted',status='unknown' &
-     &			,access='stream')
+	open(newunit=iu,file='stream.dat',form='unformatted' &
+     &			,status='unknown',access='stream',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: stream.dat'
+	  stop 'error stop test_unformatted: cannot open stream.dat'
+	end if
 	write(iu) 1
 	close(iu)
 
-	open(newunit=iunit,file='unform.dat',form='unformatted',status='old' &
-     &			,access='stream')
+	open(newunit=iunit,file='unform.dat',form='unformatted' &
+     &			,status='old',access='stream',iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: unform.dat'
+	  stop 'error stop test_unformatted: cannot open unform.dat'
+	end if
 	call skip_record(iunit,nl)
 	close(iunit)
 

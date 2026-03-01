@@ -111,7 +111,10 @@
 	  do i=1,n
 	    if( nodes(i) == k ) exit
 	  end do
-	  if( i > n ) goto 99
+	  if( i > n ) then
+	    write(6,*) n,k,nodes(1:n)
+	    stop 'error stop coo_init_new: internal error (1)'
+	  end if
 	  mm%diag(k) = i
 	end do
 
@@ -166,9 +169,15 @@
 	      do m=1,n
 	        if( nodes(m) == kj ) exit	!find kj in nodes
 	      end do
-	      if( m > n ) goto 98
+	      if( m > n ) then
+	        write(6,*) n,kj,nodes(1:n)
+	        stop 'error stop coo_init_new: internal error (2)'
+	      end if
 	      ipp = ipp0 + m
-	      if( ipp > n2zero ) goto 97
+	      if( ipp > n2zero ) then
+	        write(6,*) ipp,n2zero,i,j,ki,kj,n,m,nodes(1:n)
+	        stop 'error stop coo_init_new: internal error (3)'
+	      end if
 	      mm%ijp_ie(i,j,ie) = ipp
 	      mm%i2coo(ipp) = ki			!row
 	      mm%j2coo(ipp) = kj			!col
@@ -185,8 +194,10 @@
 	n3max = mm%n3max
 	!n3zero = mm%ntg(nkn)*nlv + nkn*(2+3*nlv)	!set global 3d value
 	n3zero = (mm%ntg(nkn)-nkn)*nlv + nkn*(2+3*nlv)	!BUG $NONHYDRO
-	if( n3zero /= mm%nt3g(nkn) ) goto 91
-	if( n3zero > n3max ) goto 91
+	if( n3zero /= mm%nt3g(nkn) .or. n3zero > n3max ) then
+	  write(6,*) n3zero,mm%nt3g(nkn),n3max
+	  stop 'error stop coo_init_new: internal error (5)'
+	end if
 	mm%n3zero = n3zero
 
 	mm%i3coo = -99
@@ -203,8 +214,10 @@
 	      kj = kn(j)			!col
 	      do l=1,nlv
 		ipp = loccoo3d(i,j,kn,l,ie)
-	        if( ipp > n3max ) goto 96
-	        if( ipp < 0 ) goto 96
+	        if( ipp > n3max .or. ipp < 0 ) then
+	          write(6,*) ipp,n3zero
+	          stop 'error stop coo_init_new: internal error (4)'
+	        end if
 	        kic = (ki-1)*(nlv+2) + l + 1
 	        kjc = (kj-1)*(nlv+2) + l + 1
 		iiis = 0
@@ -249,22 +262,6 @@
 ! end of routine
 !------------------------------------------------------------------
 
-	return
-   91	continue
-	write(6,*) n3zero,mm%nt3g(nkn),n3max
-	stop 'error stop coo_init_new: internal error (5)'
-   96	continue
-	write(6,*) ipp,n3zero
-	stop 'error stop coo_init_new: internal error (4)'
-   97	continue
-	write(6,*) ipp,n2zero,i,j,ki,kj,n,m,nodes(1:n)
-	stop 'error stop coo_init_new: internal error (3)'
-   98	continue
-	write(6,*) n,kj,nodes(1:n)
-	stop 'error stop coo_init_new: internal error (2)'
-   99	continue
-	write(6,*) n,k,nodes(1:n)
-	stop 'error stop coo_init_new: internal error (1)'
 	end
 
 !******************************************************************
@@ -369,7 +366,10 @@
 
 	do k=1,nkn
 	  n = nlist(0,k) + 1
-	  if( n > 2*ngr+1 ) goto 99
+	  if( n > 2*ngr+1 ) then
+	    write(6,*) 'internal error: n,ngr: ',n,ngr
+	    stop 'error stop construct_node_list: n > 2*ngr+1'
+	  end if
 	  nlist(n,k) = k
 	  nlist(0,k) = n
 	end do
@@ -389,7 +389,10 @@
 	    if( ip /= i ) nodes(ip) = nodes(i)
 	  end do
 	  n = ip
-	  if( n > ngr+1 ) goto 98
+	  if( n > ngr+1 ) then
+	    write(6,*) 'internal error: n,ngr: ',n,ngr
+	    stop 'error stop construct_node_list: n > ngr+1'
+	  end if
 	  nlist(0,k) = n
 	  nlist(1:n,k) = nodes(1:n)
 	  nlist(n+1:,k) = 0
@@ -399,13 +402,6 @@
 ! end of routine
 !----------------------------------------------------
 
-	return
-   98	continue
-	write(6,*) 'internal error: n,ngr: ',n,ngr
-	stop 'error stop construct_node_list: n > ngr+1'
-   99	continue
-	write(6,*) 'internal error: n,ngr: ',n,ngr
-	stop 'error stop construct_node_list: n > 2*ngr+1'
 	end
 
 !******************************************************************
@@ -443,7 +439,10 @@
 	  end do
 	end do
 
-	if( n .gt. ndim) goto 99
+	if( n .gt. ndim) then
+	  write(6,*) 'nnot0,ndim: ',nnot0,ndim
+	  stop 'error stop coo_init: ndim'
+	end if
 
 	nnot0 = n
 
@@ -460,10 +459,6 @@
 	!call coo_debug(nnkn,mmbw,iijp)
 	call coo_check(nnkn,mmbw,iijp,ip,jp)
 
-	return
-   99	continue
-	write(6,*) 'nnot0,ndim: ',nnot0,ndim
-	stop 'error stop coo_init: ndim'
 	end
 
 !******************************************************************
@@ -560,8 +555,12 @@
 	      n0 = n0 + 1
 	      j = k
 	      i = j + m
-	      if( ip(n) .ne. i ) goto 99
-	      if( jp(n) .ne. j ) goto 99
+	      if( ip(n) .ne. i .or. jp(n) .ne. j ) then
+	        write(6,*) n,k,m
+	        write(6,*) i,ip(n)
+	        write(6,*) j,jp(n)
+	        stop 'error stop coo_check: internal error'
+	      end if
 	    end if
 	  end do
 	end do
@@ -574,12 +573,6 @@
 	  write(6,*) '  full matrix = ',nnkn*nnkn
 	end if
 
-	return
-   99	continue
-	write(6,*) n,k,m
-	write(6,*) i,ip(n)
-	write(6,*) j,jp(n)
-	stop 'error stop coo_check: internal error'
 	end
 
 !******************************************************************

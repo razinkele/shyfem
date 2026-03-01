@@ -140,7 +140,16 @@
 
           write(6,'(a)') 'preparing boundary conditions for '//what
           call iff_init(dtime0,file,nvar,nk,nlv,nintp,nodes,aconst,id)
-	  if( nvar /= nvar_orig ) goto 99
+	  if( nvar /= nvar_orig ) then
+	    write(6,*) 'number of variables is wrong'
+	    write(6,*) 'expected: ',nvar_orig
+	    write(6,*) 'read from file: ',nvar
+	    write(6,*) 'type of boundary condition: ',what
+	    write(6,*) 'number of boundary: ',ibc
+	    write(6,*) 'file name: ',trim(file)
+	    call iff_print_info(id)
+	    stop 'error stop bnds_init_new: wrong number of variables'
+	  end if
 	  call iff_set_description(id,ibc,what)
 	  call iff_flag_ok(id)		!can deal with ambient value
 
@@ -164,16 +173,6 @@
 	  end do
 	end if
 
-	return
-   99	continue
-	write(6,*) 'number of variables is wrong'
-	write(6,*) 'expected: ',nvar_orig
-	write(6,*) 'read from file: ',nvar
-	write(6,*) 'type of boundary condition: ',what
-	write(6,*) 'number of boundary: ',ibc
-	write(6,*) 'file name: ',trim(file)
-	call iff_print_info(id)
-	stop 'error stop bnds_init_new: wrong number of variables'
 	end
 
 !******************************************************************
