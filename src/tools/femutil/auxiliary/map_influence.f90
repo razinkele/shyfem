@@ -323,7 +323,7 @@
 ! end of routine
 !---------------------------------------------------------------
 
-	stop
+	stop 'distribu_deb: done'
    95   continue
         write(6,*) 'error parameters in fvl file : '
         write(6,*) 'nkn: ',nkn,nkn2

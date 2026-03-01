@@ -1120,7 +1120,7 @@
 
 	write(6,*) routine_name(1:nr),' version ',version_name(1:nv)
 
-	stop
+	stop 'clo_version: version displayed'
 	end subroutine clo_version
 
 !**************************************************************
@@ -1135,7 +1135,7 @@
 	write(6,*) 'Usage: ',routine_name(1:nr) &
      &			,' [-h|-help] [-options] ',files_name(1:nf)
 
-	stop
+	stop 'clo_usage: usage displayed'
 	end subroutine clo_usage
 
 !**************************************************************
@@ -1194,7 +1194,7 @@
 	  write(6,*) '  ',text(1:len_trim(text))
 	end do
 
-	stop
+	stop 'clo_fullusage: full usage displayed'
 	end subroutine clo_fullusage
 
 !**************************************************************

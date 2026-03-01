@@ -153,9 +153,16 @@
 ! n		actual dimension of matrix
 ! nd		formal dimension of matrix
 !
+	implicit none
+
+	integer n,nd
+	real eps
 	parameter (eps=1.e-30)
 	real a(nd,nd),hv(nd)
 	integer ip(nd)
+
+	integer i,j,k,ir,ihi,ipk
+	real amax,hr
 !
 	do j=1,n
 	  ip(j)=j
@@ -377,10 +384,17 @@
 ! nd,md		formal dimension of matrix
 ! ldiag		rank of matrix (positive if solvable, negative if not)
 !
+	implicit none
+
 	integer ldiag
+	integer n,m,nd,md
+	real eps
 	parameter (eps=1.e-5)
 	real a(nd,md),b(nd)
 	integer ip(md)
+
+	integer i,j,k,l,jr,jc,ipr
+	real amax,hr
 !
 !	lingl=0
 	ldiag=0		!$$ALPHA
@@ -489,10 +503,17 @@
 ! nd,md		formal dimension of matrix
 ! ltria		rank of matrix (positive if solvable, negative if not)
 !
+	implicit none
+
 	integer ltria
+	integer n,m,nd,md
+	real eps
 	parameter (eps=1.e-5)
 	real a(nd,md),b(nd)
 	integer ip(md)
+
+	integer i,j,k,jr,jc,ipr
+	real amax,hr
 !
 !	lingl=0
 	ltria=0		!$$ALPHA
@@ -580,7 +601,7 @@
 !
 	subroutine lsolvd(a,b,ip,n,m,nd,md)
 !
-! solves linear system that is already diagonalizied 
+! solves linear system that is already diagonalizied
 !
 ! a		matrix of linear system a(n,m)
 ! b		constant vector for indices [1...n]
@@ -593,9 +614,16 @@
 !		...n is the number of the effective equations
 ! nd,md		formal dimension of matrix
 !
+	implicit none
+
+	integer n,m,nd,md
+	real eps
 	parameter (eps=1.e-5)
 	real a(nd,md),b(nd)
 	integer ip(md)
+
+	integer i,j,k,ipr
+	real hr
 
 ! solve for rest of variables
 
@@ -658,15 +686,24 @@
 ! bh		auxiliar vector to solve for minimum bh(m-lll)
 ! iph		auxiliar vector used for pivot search iph(m-lll)
 ! n,m		actual dimension of matrix a (n equations, m variables)
-! nd,md		formal dimension of matrix a 
+! nd,md		formal dimension of matrix a
 ! nmdh		formal dimension of matrix ah
 ! lsqua		rank of solution
 !
+	implicit none
+
+	integer lsqua
+	integer n,m,nd,md,nmdh
+	real eps
 	parameter (eps=1.e-5)
 	real a(nd,md),b(md)
 	integer ip(md)
 	real ah(nmdh,nmdh),bh(nmdh),hv(nmdh)
 	integer iph(nmdh)
+
+	integer i,j,k,lll,kmat,jmat
+	real hr
+	integer ldiag
 !
 ! set hv
 !

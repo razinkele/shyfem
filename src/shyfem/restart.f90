@@ -1290,6 +1290,7 @@
 	end
 
 	function has_restart(id)
+	implicit none
 	logical has_restart
 	integer id
 	logical rst_use_restart

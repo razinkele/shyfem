@@ -47,13 +47,12 @@ c*******************************************************************
 
 c computes squared distance (also for latlon coordinates)
 
+	use mod_physical_constants, only: rad => deg2rad_sp
+
 	implicit none
 
 	real dist2
 	real x1,y1,x2,y2
-
-	real pi,rad
-	parameter ( pi = 3.14159 , rad = pi / 180. )
 
 	integer latlon
 	common /latlon/latlon
@@ -334,6 +333,7 @@ c interpolates depth values - exponential interpolation
 
 	use mod_depth
 	use basin
+	use mod_physical_constants, only: pi => pi_sp
 
 	implicit none
 
@@ -364,7 +364,6 @@ c interpolates depth values - exponential interpolation
 	real hmed
 	real fact,dx,dy
 	real area,x0,y0,sig2
-	real pi
 
 	logical ok(nel)
 
@@ -399,7 +398,6 @@ c-----------------------------------------------------------------
 
 	nintpol = 0
 	iloop = 0
-	pi = 4.*atan(1.)
 
 	fact = 2./pi	!start with a radius slightly greater than area
 

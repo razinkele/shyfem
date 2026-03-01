@@ -330,7 +330,7 @@
 
 	if( blist ) then
 	  call list_strings
-	  stop
+	  stop 'nc2fem: string list displayed'
 	end if
 
 !-----------------------------------------------------------------

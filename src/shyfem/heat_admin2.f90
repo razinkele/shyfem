@@ -126,7 +126,7 @@
 
 	implicit none
 
-	logical byes
+	logical, intent(out) :: byes
 
 	character*256 file
 
@@ -163,7 +163,7 @@
 
 	implicit none
 
-	integer it
+	integer, intent(in) :: it
 
 	call qfmake(it)
 
@@ -186,12 +186,12 @@
 	use para
 	implicit none
 
-	double precision dtime
-	real dt
-	integer nkn
-	integer nlvddi
-        real temp(nlvddi,nkn) 
-	double precision dq	!total energy introduced [(W/m**2)*dt*area = J]
+	double precision, intent(in) :: dtime
+	real, intent(in) :: dt
+	integer, intent(in) :: nkn
+	integer, intent(in) :: nlvddi
+        real, intent(inout) :: temp(nlvddi,nkn)
+	double precision, intent(out) :: dq	!total energy introduced [(W/m**2)*dt*area = J]
 
         logical byes
         logical buseice,bicecover
@@ -723,10 +723,10 @@
 
 	implicit none
 
-	real tw			!temperature of water
-	real ti			!temperature of ice
-	real uv			!current speed
-	real qice		!ice heat flux (return)
+	real, intent(in) :: tw			!temperature of water
+	real, intent(in) :: ti			!temperature of ice
+	real, intent(in) :: uv			!current speed
+	real, intent(out) :: qice		!ice heat flux (return)
 
 	real ustar
 
@@ -755,8 +755,8 @@
 
 	implicit none
 
-	integer k
-	real tm,qsens,qlat,qlong,evap
+	integer, intent(in) :: k
+	real, intent(in) :: tm,qsens,qlat,qlong,evap
 
 	if( is_nan(tm) .or. is_nan(qsens) .or. is_nan(qlat)             &
      &      .or. is_nan(qlong) .or. is_nan(evap) ) then
@@ -774,8 +774,8 @@
 
 	implicit none
 
-	integer k,l
-	real qs,qsbottom,qrad,albedo,tm,tnew
+	integer, intent(in) :: k,l
+	real, intent(in) :: qs,qsbottom,qrad,albedo,tm,tnew
 
 	if( is_nan(qs) .or. is_nan(qsbottom) .or. is_nan(qrad)          &
      &      .or. is_nan(albedo) .or. is_nan(tm) .or. is_nan(tnew)    &
@@ -802,8 +802,8 @@
 	use para
 	implicit none
 
-	double precision dtime
-	real tws(nkn)
+	double precision, intent(in) :: dtime
+	real, intent(in) :: tws(nkn)
 
 	integer, parameter :: nvar = 1
 	logical, parameter :: b2d = .true.

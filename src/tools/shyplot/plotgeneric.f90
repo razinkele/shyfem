@@ -334,13 +334,13 @@
 
         subroutine convert_wind(s,d,u,v)
 
+        use mod_physical_constants, only: rad => deg2rad_sp
+
         implicit none
 
         real s,d,u,v
 
         real dir
-        real pi,rad
-        parameter(pi=3.14159,rad=pi/180.)
 
         dir = d
         dir = 90. - dir + 180.

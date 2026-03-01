@@ -1301,14 +1301,13 @@
 
 	subroutine get_oscil(ibc,dtime,zvalue)
 
+	use mod_physical_constants, only: pi => pi_sp
+
 	implicit none
 
 	integer ibc
 	double precision dtime
 	real zvalue
-
-        real pi
-        parameter( pi=3.141592653 )
 
 	real ampli,period,phase,zref
 
@@ -1376,26 +1375,48 @@
 !********************************************************************
  
         subroutine set_bnd_par(ibc,name,value)
+        implicit none
+        integer ibc
         character*(*) name
+        real value
+        integer id
+        integer iget_bnd_par_id
         id = iget_bnd_par_id(name,.true.)
         call setget_bnd_par(ibc,id,name,value,.true.)
         end
 
         subroutine get_bnd_par(ibc,name,value)
+        implicit none
+        integer ibc
         character*(*) name
+        real value
+        integer id
+        integer iget_bnd_par_id
         id = iget_bnd_par_id(name,.true.)
         call setget_bnd_par(ibc,id,name,value,.false.)
         end
 
         subroutine set_bnd_ipar(ibc,name,ivalue)
+        implicit none
+        integer ibc
         character*(*) name
+        integer ivalue
+        real value
+        integer id
+        integer iget_bnd_par_id
         id = iget_bnd_par_id(name,.true.)
 	value = ivalue
         call setget_bnd_par(ibc,id,name,value,.true.)
         end
 
         subroutine get_bnd_ipar(ibc,name,ivalue)
+        implicit none
+        integer ibc
         character*(*) name
+        integer ivalue
+        real value
+        integer id
+        integer iget_bnd_par_id
         id = iget_bnd_par_id(name,.true.)
         call setget_bnd_par(ibc,id,name,value,.false.)
 	ivalue = nint(value)
@@ -1599,13 +1620,21 @@
 !********************************************************************
  
         subroutine set_bnd_file(ibc,name,file)
+        implicit none
+        integer ibc
         character*(*) name,file
+        integer id
+        integer iget_bnd_file_id
         id = iget_bnd_file_id(name,.true.)
         call setget_bnd_file(ibc,id,name,file,.true.)
         end
 
         subroutine get_bnd_file(ibc,name,file)
+        implicit none
+        integer ibc
         character*(*) name,file
+        integer id
+        integer iget_bnd_file_id
         id = iget_bnd_file_id(name,.true.)
         call setget_bnd_file(ibc,id,name,file,.false.)
         end

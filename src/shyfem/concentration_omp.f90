@@ -910,9 +910,9 @@
 
         implicit none
 
-        real robs
-        real cobs(nlvdi,nkn)
-        real rtauv(nlvdi,nkn)
+        real, intent(in) :: robs
+        real, intent(in) :: cobs(nlvdi,nkn)
+        real, intent(in) :: rtauv(nlvdi,nkn)
 
         integer k,lmax,i
         integer ipext,ipint
@@ -933,10 +933,12 @@
 
         subroutine tsdebugk(k,lmax,robs,cobs,rtau)
 
-        integer k,lmax
-        real robs
-        real cobs(lmax)
-        real rtau(lmax)
+        implicit none
+
+        integer, intent(in) :: k,lmax
+        real, intent(in) :: robs
+        real, intent(in) :: cobs(lmax)
+        real, intent(in) :: rtau(lmax)
 
         integer iunit,ke
         real aux(lmax)

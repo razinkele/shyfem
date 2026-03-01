@@ -51,6 +51,12 @@
 
 	function grand(idum)
 
+	implicit none
+
+	real grand
+	integer idum
+	real shyran2
+
 	grand = shyran2(idum)
 
 	end
@@ -60,6 +66,12 @@
 	function ggrand(init)
 
 ! works for initialization and normal call
+
+	implicit none
+
+	real ggrand
+	integer init
+	real shyran2
 
 	integer, save :: icall = 0
 	integer, save :: idum = 99
@@ -77,6 +89,12 @@
 
 	function shyran00(idum)
 
+	implicit none
+
+	real shyran00
+	integer idum
+	real shyran1
+
 	shyran00 = shyran1(idum)
 
 	end
@@ -84,8 +102,13 @@
 !******************************************************
 
       function shyran0(idum)
-      dimension v(97)
-      save y,v
+      implicit none
+      real shyran0
+      integer idum
+      real v(97)
+      real y,dum,ran
+      integer iff,iseed,j
+      save y,v,iff
       data iff /0/
       if(idum.lt.0.or.iff.eq.0)then
         iff=1
@@ -110,11 +133,17 @@
 !******************************************************
 
       function shyran1(idum)
-      dimension r(97)
+      implicit none
+      real shyran1
+      integer idum
+      real r(97)
+      integer m1,ia1,ic1,m2,ia2,ic2,m3,ia3,ic3
+      real rm1,rm2
       parameter (m1=259200,ia1=7141,ic1=54773,rm1=3.8580247e-6)
       parameter (m2=134456,ia2=8121,ic2=28411,rm2=7.4373773e-6)
       parameter (m3=243000,ia3=4561,ic3=51349)
-      save ix1,ix2,ix3,r
+      integer ix1,ix2,ix3,iff,j
+      save ix1,ix2,ix3,r,iff
       data iff /0/
       if (idum.lt.0.or.iff.eq.0) then
         iff=1
@@ -143,9 +172,15 @@
 !******************************************************
 
       function shyran2(idum)
+      implicit none
+      real shyran2
+      integer idum
+      integer m,ia,ic
+      real rm
       parameter (m=714025,ia=1366,ic=150889,rm=1.4005112e-6)
-      dimension ir(97)
-      save iy,ir
+      integer ir(97)
+      integer iy,iff,j
+      save iy,ir,iff
       data iff /0/
       if(idum.lt.0.or.iff.eq.0)then
         iff=1
@@ -169,10 +204,17 @@
 !******************************************************
 
       function shyran3(idum)
+      implicit none
+      real shyran3
+      integer idum
 !         implicit real*4(m)
 !         parameter (mbig=4000000.,mseed=1618033.,mz=0.,fac=2.5e-7)
+      integer mbig,mseed,mz
+      real fac
       parameter (mbig=1000000000,mseed=161803398,mz=0,fac=1.e-9)
-      dimension ma(55)
+      integer ma(55)
+      integer iff,mj,mk,i,ii,k,j,inext,inextp
+      save ma,iff,inext,inextp
       data iff /0/
       if(idum.lt.0.or.iff.eq.0)then
         iff=1
@@ -211,8 +253,15 @@
 !******************************************************
 
       function shyran4(idum)
+      implicit none
+      real shyran4
+      integer idum
+      integer im,ia,ic,nacc
       parameter (im=11979,ia=430,ic=2531,nacc=24)
-      dimension inp(64),jot(64),key(64),pow(65)
+      integer inp(64),jot(64),key(64)
+      real pow(65)
+      integer iff,j,isav,newkey
+      save inp,key,pow,iff,newkey
       data iff/0/
       if(idum.lt.0.or.iff.eq.0)then
         iff=1

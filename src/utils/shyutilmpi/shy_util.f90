@@ -636,6 +636,8 @@
 
 	subroutine shy_make_output_name(ext,file)
 
+	implicit none
+
 	character*(*) ext	!extension (with dot), example: .ext
 	character*(*) file	!complete file name (return)
 

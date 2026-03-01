@@ -723,7 +723,7 @@
 	real yy(nx,ny)
 	real regpar(9)
 
-	integer ip,jp
+	integer ip,jp,ierr
 	real dx,dy,x0,y0,x1,y1,flag
 
 	call bas_insert_irregular(nx,ny,xx,yy)	!inserts data coords into basin
@@ -734,7 +734,8 @@
 	nc_flag = flag
 	do_interpolation = .true.
 
-	allocate(fm(4,ip,jp))
+	allocate(fm(4,ip,jp),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	call av2fm(fm,ip,jp)			!computes interpolation matrix
 
@@ -838,13 +839,14 @@
 	integer nxnew,nynew
 	real valnew(nxnew,nynew)
 
-	integer ndim
+	integer ndim,ierr
 	real flag
 	real, allocatable :: valaux(:)
 
 	flag = nc_flag
 	ndim = nx*ny + (nx-1)*(ny-1)
-	allocate(valaux(ndim))
+	allocate(valaux(ndim),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	call insert_interpol_2d(nx,ny,val,ndim,valaux,flag)
 	call fm2am2d(valaux,nxnew,nynew,fm,valnew)
@@ -862,14 +864,16 @@
 	integer nxnew,nynew
 	real valnew(nxnew,nynew,nz)
 
-	integer iz
+	integer iz,ierr
 	!real val2d(nx,ny)
 	!real val2dnew(nxnew,nynew)
 	real, allocatable :: val2d(:,:)
 	real, allocatable :: val2dnew(:,:)
 
-	allocate(val2d(nx,ny))
-	allocate(val2dnew(nxnew,nynew))
+	allocate(val2d(nx,ny),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
+	allocate(val2dnew(nxnew,nynew),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	do iz=1,nz
 	  val2d(:,:) = val(:,:,iz)
@@ -894,14 +898,15 @@
         real yy(nx,ny)
         real regpar(9)
 
-	integer ndim,ip,jp
+	integer ndim,ip,jp,ierr
 
 	ns = 0
 	if( sfile == ' ' ) return
 
 	ndim = 0
 	call read_single_points(sfile,ndim,ns,xsingle,ysingle)
-	allocate(xsingle(ns),ysingle(ns))
+	allocate(xsingle(ns),ysingle(ns),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 	ndim = ns
 	call read_single_points(sfile,ndim,ns,xsingle,ysingle)
 	nsingle = ns
@@ -918,7 +923,8 @@
 
 	ip = ns
 	jp = 1
-	allocate(fm(4,ip,jp))
+	allocate(fm(4,ip,jp),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 	call av2fm_single(fm,ns,xsingle,ysingle)
 
 	end
@@ -941,7 +947,12 @@
 	ns = 0
 	if( sfile == ' ' ) return
 
-	open(newunit=iu,file=sfile,form='formatted',status='old')
+	open(newunit=iu,file=sfile,form='formatted',status='old'
+     &			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(sfile)
+	  stop 'error stop: cannot open file'
+	end if
 
 	do
 	  read(iu,*,iostat=ios) x,y

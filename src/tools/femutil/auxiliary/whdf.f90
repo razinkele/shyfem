@@ -130,5 +130,5 @@
 	iaux(3)=ls
 	iret = dsadata('s.hdf',irank,iaux,s)
 
-	stop
+	stop 'whdf: done'
 	end

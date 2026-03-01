@@ -36,6 +36,8 @@
 
 ! gaussian smoothing
 
+	use mod_physical_constants, only: pi => pi_sp
+
 	implicit none
 
 	integer nl		!length of input arrays
@@ -58,7 +60,7 @@
 	integer jmin,jmax
 	real a,b
 	real t0,tnew,dt,weight
-	real pi,eps
+	real eps
 	real val
 	real rkern,rknew,tkern
 
@@ -96,7 +98,6 @@
 ! set up gaussian kernel parameters
 !----------------------------------------------------
 
-        pi = 4.*atan(1.)
         eps = 1.e-7
 
         a = 1. / ( sqrt(2.*pi) * sigma )

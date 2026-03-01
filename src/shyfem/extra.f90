@@ -89,6 +89,8 @@
 	use extra
 	use nls
 
+	implicit none
+
 	integer n
 	integer ierr
 

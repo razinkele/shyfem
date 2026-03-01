@@ -296,7 +296,7 @@
 	write(6,*) 'Successful completion.'// &
      &			' Output has been written to adjust.grd'
 
-	stop
+	stop 'shyadj: done'
    97	continue
 	write(6,*) 'error reading grd file'
 	stop 'error stop rdgrd'

@@ -815,9 +815,11 @@
 	use mod_depth
 	use basin, only : nkn,nel,ngr,mbw
 
+	implicit none
+
 	character*(*) file
 
-	integer ie,ios,iu
+	integer ie,ios,iu,nelaux
 	logical, save :: berror = .true.	!throw error if not found
 
 	open(newunit=iu,file=file,status='old',form='formatted',iostat=ios)
@@ -846,6 +848,8 @@
 
 	use mod_depth
 	use basin, only : nkn,nel,ngr,mbw
+
+	implicit none
 
 	character*(*) file
 

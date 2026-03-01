@@ -1062,6 +1062,7 @@
  
 ! true if year is bisestial
  
+        implicit none
         logical bises
         integer year
  
@@ -1080,6 +1081,7 @@
  
 ! returns total days in year
  
+	implicit none
 	integer days_in_year
         integer year
 
@@ -1408,6 +1410,7 @@
 	function dts_is_atime(dtime)
 
 	use dts
+	implicit none
 
 	logical dts_is_atime
 	double precision dtime
@@ -1421,6 +1424,7 @@
 	subroutine dts_to_atime(dtime,atime)
 
 	use dts
+	implicit none
 
 	double precision dtime,atime
 
@@ -1437,6 +1441,7 @@
 	subroutine dts_to_dtime(atime,dtime)
 
 	use dts
+	implicit none
 
 	double precision atime,dtime
 
@@ -1670,6 +1675,7 @@
 !************************************************************************
 
         subroutine check_j2date(jd,year,iprint)
+        implicit none
         integer jdd,jd,year,month,day,iprint
         call j2date(jd,year,month,day)
         call date2j(year,month,day,jdd)
@@ -1716,6 +1722,7 @@
 !************************************************************************
 
         subroutine check_secs_pack(secs,iprint)
+        implicit none
         integer secs,secs0,iprint
         integer hour,min,sec
         call secs2hms(secs,hour,min,sec)
@@ -1729,6 +1736,7 @@
 !************************************************************************
 
         subroutine check_days_pack(days,iprint)
+        implicit none
         integer days,days0,iprint
         integer year,month,day
         call days2date(days,year,month,day)
@@ -1769,6 +1777,7 @@
 !************************************************************************
 
         subroutine check_dpack(year,month,day,iprint)
+        implicit none
         integer year,month,day,iprint
         integer year0,month0,day0
         integer date
@@ -1784,6 +1793,7 @@
 !************************************************************************
 
         subroutine check_tpack(year,month,day,iprint)
+        implicit none
         integer year,month,day,iprint
         integer year0,month0,day0
         integer date
@@ -1951,6 +1961,8 @@
 !************************************************************************
 
         subroutine test_timespan
+
+	implicit none
 
 	write(6,*) 'test_timespan:'
 
@@ -2201,6 +2213,8 @@
 !************************************************************************
 
         subroutine test_date_all
+
+	implicit none
 
 	call datetest
 	call test_j2date

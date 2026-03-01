@@ -106,7 +106,7 @@ c---------------------------------------------------------------
 c end of routine
 c---------------------------------------------------------------
 
-	stop
+	stop 'bas_resolution: done'
    97   continue
         write(6,*) 'error writing header'
         stop 'error stop nosaver'
@@ -235,7 +235,11 @@ c***************************************************************
 	rtot = sum(ic)
 
 	open(newunit=iu,file='histo.txt',status='unknown'
-     +			,form='formatted')
+     +			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: histo.txt'
+	  stop 'error stop: cannot open file'
+	end if
 	do i=0,nr
 	  r = (dr/2.) * (i+i+1)
 	  perc = 100. * ic(i) / rtot

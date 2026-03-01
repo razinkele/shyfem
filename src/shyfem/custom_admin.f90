@@ -4669,10 +4669,17 @@
 	real, allocatable :: zdiff_ibe(:),z_ibe(:)
 	double precision dtime
         integer k
+        integer ierr
 	integer,save :: id
 
-        if (.not. allocated(zdiff_ibe)) allocate(zdiff_ibe(nkn))
-        if (.not. allocated(z_ibe)) allocate(z_ibe(nkn))
+        if (.not. allocated(zdiff_ibe)) then
+          allocate(zdiff_ibe(nkn),stat=ierr)
+          if (ierr /= 0) stop 'error stop: allocation failed'
+        end if
+        if (.not. allocated(z_ibe)) then
+          allocate(z_ibe(nkn),stat=ierr)
+          if (ierr /= 0) stop 'error stop: allocation failed'
+        end if
 
 	call get_act_dtime(dtime)
 

@@ -255,20 +255,31 @@
 
 	implicit none
 
+	integer :: iu, iu2, ios
+
 	character*80 line
 
 	close(iunit)
-	open(2,file='fort.44',status='old',form='formatted',err=3)
+	open(newunit=iu,file='fort.44',status='old',form='formatted' &
+     &			,iostat=ios)
+	if( ios /= 0 ) return
 
-    1	continue
-	  read(2,'(a)',end=2) line
-	  write(45,'(a)') line
-	  goto 1
-    2	continue
+	open(newunit=iu2,file='fort.45',status='unknown' &
+     &			,form='formatted',iostat=ios)
+	if( ios /= 0 ) then
+	  close(iu)
+	  return
+	end if
 
-	close(2)
+	do
+	  read(iu,'(a)',iostat=ios) line
+	  if( ios /= 0 ) exit
+	  write(iu2,'(a)') line
+	end do
 
-    3	continue
+	close(iu)
+	close(iu2)
+
 	end
 
 !-----------------------------------------------------------------------

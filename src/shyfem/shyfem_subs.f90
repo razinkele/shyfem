@@ -1100,7 +1100,7 @@
 
 	implicit none
 
-	double precision dtime
+	double precision, intent(in) :: dtime
 
 	logical bdebug,blast
 	integer id,ios
@@ -1188,7 +1188,8 @@
 
 	implicit none
 
-	double precision dtime,dtime1
+	double precision, intent(in) :: dtime
+	double precision dtime1
 	real, allocatable :: aux3d(:,:)
 
 	integer ierr
@@ -1357,7 +1358,7 @@
 
 	implicit none
 
-	double precision dtime
+	double precision, intent(in) :: dtime
 
 	write(6,*) 'debug_output: writing records'
 
@@ -1436,7 +1437,7 @@
 
 	implicit none
 
-	double precision dtime
+	double precision, intent(in) :: dtime
 
 	write(66) dtime
 
@@ -1490,9 +1491,9 @@
 
 	subroutine debug_output_record(ntot,nfirst,val,text)
 	implicit none
-	integer ntot,nfirst
-	real val(ntot)
-	character*(*) text
+	integer, intent(in) :: ntot,nfirst
+	real, intent(in) :: val(ntot)
+	character*(*), intent(in) :: text
 	character*80 text1
 	text1=text
 	write(66) ntot,nfirst
@@ -1607,7 +1608,7 @@
 
 	implicit none
 
-	character*(*) text
+	character*(*), intent(in) :: text
 
 	integer k
 
@@ -1629,7 +1630,8 @@
 
         implicit none
 
-        double precision dtime,dtend
+        double precision, intent(inout) :: dtime
+        double precision, intent(in) :: dtend
 
         real dt
 
@@ -1660,7 +1662,7 @@
 
         implicit none
 
-        double precision dtime
+        double precision, intent(in) :: dtime
 
 	integer nn,ne,i
 	integer ierr

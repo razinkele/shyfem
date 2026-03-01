@@ -153,6 +153,11 @@
 
 	subroutine chartest
 
+	implicit none
+
+	integer :: i
+	real :: w,cd1,cd2
+
 	do i=1,20
 	  w = i
 	  call charnock(w,cd1)

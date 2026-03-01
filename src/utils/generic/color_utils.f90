@@ -50,13 +50,15 @@
 
 !  computes HSI from RGB
 
+	use mod_physical_constants, only: pi => pi_sp
+
 	implicit none
 
 	real r,g,b
 	real h,s,i
 
-	real a,pi
-	parameter( a = 0.8660254 , pi = 3.1415927 )
+	real a
+	parameter( a = 0.8660254 )
 
 	real x,y
 
@@ -84,13 +86,15 @@
 
 !  computes RGB from HSI
 
+	use mod_physical_constants, only: pi => pi_sp
+
 	implicit none
 
 	real h,s,i
 	real r,g,b
 
-	real a,pi
-	parameter( a = 0.8660254 , pi = 3.1415927 )
+	real a
+	parameter( a = 0.8660254 )
 
 	real x,y
 

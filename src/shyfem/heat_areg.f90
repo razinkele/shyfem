@@ -581,7 +581,10 @@
 ! --- wind velocity
 ! --- ( Hellermann and  Rosenstein )
 !
-      dimension a(6)
+      implicit none
+      real :: CD
+      real :: speed,delt
+      real :: a(6)
       data a /0.934e-3,0.788e-4,0.868e-4,-0.616e-6,-.120e-5,-.214e-5/
 !
       cd = a(1) + a(2)*speed + a(3)*delt + a(4)*speed*speed
@@ -636,6 +639,9 @@
 ! --- Constant Latent Heat of Vaporization ( Rosati,Miyakoda 1988 )
 !     L = 2.501e+6  (MKS)
 !
+      implicit none
+      real :: HEATLAT
+      real :: t
       heatlat = 2.5008e+6 -2.3e+3*t
 !
       return
@@ -647,9 +653,21 @@
 !
         use mod_physical_constants, only: pi => pi_sp, &
      &          degrad => deg2rad_sp, degradr => rad2deg_sp
-        parameter(eclips=23.439*degrad)
+
+        implicit none
+
+        real :: qshort
+        integer :: imonth,iday
+        real :: hour,dlat,dlon,cldnow
+        real, parameter :: eclips=23.439*degrad
 !
-        dimension alpham(12),alb1(20),za(20),dza(19)
+        real :: alpham(12),alb1(20),za(20),dza(19)
+        real :: solar,tau,aozone,yrdays,sunalpha
+        real :: alat,alon,day,days
+        real :: th0,th02,th03,sundec,thsun,coszen,qatten
+        real :: R,qzer,qdir,qdiff,qtot,tjul,sunbet
+        real :: zen,albedo,dzen
+        integer :: jab
        
 !
 ! ---   alat,alon - (lat, lon)  in radians !!

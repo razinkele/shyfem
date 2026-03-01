@@ -99,7 +99,7 @@
 
       subroutine psy(isel,db,rh,wb,dp)
 
-! grandezze psicrometriche 
+! grandezze psicrometriche
 !
 ! temperatures in Celsius, pressure in Pascal
 !
@@ -113,8 +113,13 @@
 !     V Volume specifico m3/Kg
 !     RH Umidita' relativa % [0-100]
 
+      implicit none
+
+      integer isel
+      real db,rh,wb,dp
       REAL H
-  
+      real PB,PV,W,V
+
       real pstd
       parameter ( pstd = 1013.0 )
 
@@ -154,6 +159,10 @@
 ! example: PSDBWB uses DB and WB to compute DP,PV,W,H,V,RH
 
       SUBROUTINE PSDBWB(DB,WB,DP,PB,PV,W,H,V,RH)
+      implicit none
+      real DB,WB,DP,PB,PV,W,H,V,RH
+      real PVP,HDB0,WB1,WSTAR,HL,CH,EX
+      real PVSF,DPF,WBFF
       PVP=PVSF(WB)
 	  !      IF (DB-WB)1,4,7 !ARITHMETIC IF
 	  continue
@@ -189,6 +198,10 @@
       END
       
       SUBROUTINE PSDBDP(DB,WB,DP,PB,PV,W,H,V,RH)
+      implicit none
+      real DB,WB,DP,PB,PV,W,H,V,RH
+      real PVS
+      real PVSF,DPF,WBFF
       IF(DP .LE. DB) GO TO 1
       WRITE(*,10)DB,DP
    10 FORMAT(5X,'ERROR IN PSDBDP : DB=',F6.2,'  DP=',F6.2,'   DP greater than DB')
@@ -204,6 +217,10 @@
       END
       
       SUBROUTINE PSDBRH(DB,WB,DP,PB,PV,W,H,V,RH)
+      implicit none
+      real DB,WB,DP,PB,PV,W,H,V,RH
+      real PVS,X
+      real PVSF,DPF,WBFF
       IF (RH .EQ. 0.0)RH=0.001
       IF (RH .GE. 0.001 .AND. RH .LE. 100) GO TO 1
       WRITE(*,11)DB,RH
@@ -231,6 +248,10 @@
       END
       
       SUBROUTINE PSDPH(DB,WB,DP,PB,PV,W,H,V,RH)
+      implicit none
+      real DB,WB,DP,PB,PV,W,H,V,RH
+      real H2,PWS
+      real PVSF,DPF,WBFF
       PV=PVSF(DP)
       W=0.62198*PV/(PB-PV)
       H2=(1.006*DP+(2501.+1.83*DP)*W)-0.0001
@@ -247,6 +268,10 @@
       END
       
       SUBROUTINE PSDBW(DB,WB,DP,PB,PV,W,H,V,RH)
+      implicit none
+      real DB,WB,DP,PB,PV,W,H,V,RH
+      real XS
+      real PVSF,DPF,WBFF
       IF(W .EQ. 0.0)W=1.E-07
       IF(W .GE. 1.E-07)GO TO 2
       WRITE(*,11)DB,W
@@ -266,6 +291,10 @@
       END
       
       FUNCTION DPF(PV)
+      implicit none
+      real DPF
+      real PV
+      real PU,Y
       PU=PV/3386.389
       Y=ALOG(PU)
       IF(PU .GT. 0.18036)GO TO 1
@@ -276,6 +305,10 @@
       END
       
       FUNCTION PVSF(TEMP)
+      implicit none
+      real PVSF
+      real TEMP
+      real PRIF,T,Z,P1,P2,A1,P3,A2,P4,SUM
       real pstd
       parameter ( pstd = 1013.0 )
       PRIF=pstd*100.
@@ -299,6 +332,11 @@
       END
       
       FUNCTION WBFF(W,DB)
+      implicit none
+      real WBFF
+      real W,DB
+      real WB1,WB2,WS1,WS2,W1,W2,Y1,Y2,Z
+      real XSAT
       WB1=DB
    15 WS1=XSAT(WB1)
       W1=(WS1*(2501-2.364*WB1)+1.006*(WB1-DB))/(2501+1.83*DB-4.194*WB1)
@@ -367,7 +405,12 @@
       END
       
       FUNCTION XSAT(TEMP)
-      DIMENSION C(8)
+      implicit none
+      real XSAT
+      real TEMP
+      integer I,II
+      real SUM
+      real C(8)
       DATA C/0.15036368E-02,0.87755907E-04,0.17497041E-04,-0.11118891E-5     &
      &      ,0.56661491E-07,-0.13317505E-08,0.16671702E-10,-0.80607734E-13/
       TEMP=TEMP+11.
@@ -746,6 +789,11 @@
 
 	subroutine get_rand(rmin,rmax,r)
 
+	implicit none
+
+	real rmin,rmax,r
+	real rr
+
 	call random_number(rr)
 
 	r = rr*(rmax-rmin) + rmin
@@ -757,6 +805,11 @@
 	subroutine test_relative
 
 ! for rh >= 14 error in rh is less than 1 %
+
+	implicit none
+
+	integer i
+	real eps,ta,pp,rh,val,rh1,diff
 
 	eps = 1.
 	ta = 25.
@@ -787,6 +840,10 @@
 !***********************************************************************
 
 	subroutine test_vapor
+
+	implicit none
+
+	real ta,pp,rh,val
 
 	ta = 25.
 	pp = 1013.25

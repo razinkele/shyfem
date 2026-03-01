@@ -78,11 +78,20 @@
 !		...ye=c(i)*y(i) ; i=1,n
 ! xee		x-value for which y-value has to be computed
 !
+	implicit none
+
+	integer nn,ndiff
+	real xee
+
+	integer iexpmx,idim
 	parameter(iexpmx=5,idim=iexpmx+1)
 	real x(idim,idim),a(idim,idim)
 	real b(idim,idim)
 	real xx(idim),xe(idim)
 	integer ip(idim)
+
+	integer n,i,j,ii
+	real h
 !
 	if(nn.le.ndiff) goto 99
 	if(ndiff.le.0) goto 98
@@ -163,9 +172,16 @@
 ! n             actual dimension of matrix
 ! nd            formal dimension of matrix
 
+        implicit none
+
+        integer n,nd
+        real eps
         parameter (eps=1.e-30)
         real a(nd,nd),hv(nd)
         integer ip(nd)
+
+        integer i,j,k,ir,ihi,ipk
+        real amax,hr
 
         do j=1,n
           ip(j)=j

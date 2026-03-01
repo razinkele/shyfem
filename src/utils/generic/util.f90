@@ -41,14 +41,15 @@
 
 ! convert from uv to sd
 
+        use mod_physical_constants, only: rad => deg2rad_sp, &
+     &          rrad => rad2deg_sp
+
         implicit none
 
         real u,v,s,d
         logical bmeteo          !use meteo convention
 
         real dir
-        real pi,rad,rrad
-        parameter(pi=3.14159,rad=pi/180.,rrad=1./rad)
 
         s = sqrt(u*u+v*v)
         d = 0.
@@ -67,16 +68,14 @@
 
 ! convert from sd to uv
 
+        use mod_physical_constants, only: rad => deg2rad_sp
+
         implicit none
 
         real s,d,u,v
         logical bmeteo          !use meteo convention
 
         real dir
-        !real pi,rad
-        !parameter(pi=3.14159,rad=pi/180.)
-	real, parameter :: pi = 4.*atan(1.)
-	real, parameter :: rad = pi/180.
 
         dir = 90. - d
         if( bmeteo ) dir = dir + 180.

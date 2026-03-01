@@ -112,7 +112,7 @@
 	close(iu)
 	write(6,*) 'data writte: ',n
 
-	stop
+	stop 'ncgrid: done'
  1000	format(i1,i10,i3,2f16.8)
  2000	format(i1,i10,i3,i5)
  3000	format(10i7)

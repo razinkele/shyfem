@@ -114,7 +114,7 @@
 ! end of routine
 !------------------------------------------------------------------
 
-	stop
+	stop 'qflux_test: done'
  1000   format(a,i10,f7.1,2f6.1,f5.1,f5.2,f6.1,f7.1,f5.1,2f6.3)
         end
 
@@ -124,6 +124,8 @@
 
 ! dummy routine to allow linking
 
+	implicit none
+	real qs,ta,ur,tb,uw,cc
 	end
 
 !***********************************************************************

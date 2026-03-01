@@ -754,6 +754,8 @@
 
         subroutine nonhydro_adjust_value
 
+	implicit none
+
 	end
 
 !********************************************************************

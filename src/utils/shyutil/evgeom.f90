@@ -945,9 +945,11 @@
 
         subroutine ev_g2c(x,y,lambda,phi,lambda0,phi0)
 
-! transforms geographical (lon,lat) into cartesian (x,y) coordinates 
+! transforms geographical (lon,lat) into cartesian (x,y) coordinates
 !
 ! (lon,lat in degrees)
+
+        use mod_physical_constants, only: rad => deg2rad_dp
 
         implicit none
 
@@ -957,10 +959,6 @@
 
         double precision r		!earth radius [m]
 	parameter ( r = 6378206.4D0 )
-        double precision pi		!pi
-	parameter ( pi = 3.14159265358979D0 )
-        double precision rad		!convert degrees to radian
-	parameter ( rad = pi / 180.0 )
 
 	double precision dlambda,dphi
 
@@ -977,9 +975,12 @@
 
         subroutine ev_c2g(x,y,lambda,phi,lambda0,phi0)
 
-! transforms cartesian (x,y) into geographical (lon,lat) coordinates 
+! transforms cartesian (x,y) into geographical (lon,lat) coordinates
 !
 ! (lon,lat in degrees)
+
+        use mod_physical_constants, only: rad => deg2rad_dp, &
+     &          rrad => rad2deg_dp
 
         implicit none
 
@@ -989,10 +990,6 @@
 
         double precision r		!earth radius [m]
 	parameter ( r = 6378206.4D0 )
-        double precision pi		!pi
-	parameter ( pi = 3.14159265358979D0 )
-        double precision rad,rrad	!convert degrees to radian
-	parameter ( rad = pi / 180.0 , rrad = 1. / rad )
 
 	lambda = lambda0 + rrad * x / (r*dcos(rad*phi0))
 	phi = phi0 + rrad * y / r

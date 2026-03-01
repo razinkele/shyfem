@@ -92,6 +92,15 @@
 ! izahl		ciphers of number z with minus sign and
 !		...decimal point if necessary (return value)
 !
+	implicit none
+
+	integer izahl
+	real z
+	integer ndec
+
+	integer ndech,iz,istel
+	real zh
+
 	if(ndec.lt.-1) then
 		ndech=iabs(ndec)-1
 		zh=z
@@ -147,9 +156,13 @@
 !		y j s t 1	==>	true
 !		n f 0 'blank'	==>	false
 !
+	implicit none
+
+	integer iantw
 	character*(*) l
 !
 	character l1*1
+	integer net,nat
 	data net,nat /5,6/
 !
     1	continue
@@ -215,12 +228,16 @@
 ! gets number from terminal
 !
 ! prompt	text written to terminal
-! getnum	value of number 
+! getnum	value of number
 !
+	implicit none
+
+	real getnum
 	character*(*) prompt
 !
 	character*256 lh
 	real f(1)
+	integer net,nat,iscanf
 	data net,nat /5,6/
 !
     1	continue
@@ -253,9 +270,12 @@
 !
 ! itab		number of blanks equals one tab (for fortran minimum 6)
 !
+	implicit none
+
 	character*(*) linold,linnew
 !
 	character*1 tab
+	integer itab,lengo,lengn,iold,inew,ianf,iend,i
 	data itab   / 8 /
 !
 	call tabula(tab)
@@ -297,9 +317,13 @@
 ! ichanm	length of line (return value)
 !		... 0 : line is all blank
 !
+	implicit none
+
+	integer ichanm_0
 	character*(*) line
 !
 	character*1 blank,tab
+	integer ndim,i
 	data blank /' '/
 !
 	call tabula(tab)
@@ -326,9 +350,13 @@
 ! ichafs	position of first non-blank character (return value)
 !		... 0 : no non-blank character found
 !
+	implicit none
+
+	integer ichafs_0
 	character*(*) line
 !
 	character*1 blank,tab
+	integer ndim,i
 	data blank /' '/
 !
 	call tabula(tab)
@@ -363,8 +391,14 @@
 !		...  0 : cha not found
 !		... -1 : error in ioff or ndim
 !
+	implicit none
+
+	integer ifndch
 	character*(*) line,cha
+	integer iocc
 !
+	integer n,ncha,ndim,iend,i,ianf
+
 	n=0
 !
 	ncha=len(cha)-1
@@ -409,10 +443,15 @@
 ! text		text written to terminal
 ! fdeflt	real value chosen
 !
+	implicit none
+
+	real fdeflt
+	real r
 	character*(*) text
 !
 	character line*80
 	real f(1)
+	integer ianz,iscanf
 !
     1	continue
 !
@@ -445,6 +484,11 @@
 ! f		real value
 ! iround	rounded integer value
 !
+	implicit none
+
+	integer iround
+	real f
+
 	if(f.ge.0) then
 		iround=f+0.5
 	else
@@ -464,7 +508,9 @@
 !
 ! tab		tab character (return value)
 !
-	character*1 tab,char
+	implicit none
+
+	character*1 tab
 !
 	tab=char(9)
 !

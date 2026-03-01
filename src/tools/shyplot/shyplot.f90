@@ -1159,7 +1159,7 @@
 ! end of routine
 !--------------------------------------------------------------
 
-	stop
+	stop 'shyplot: done'
    71	continue
 	write(6,*) 'ftype = ',ftype,'  nvar = ',nvar
 	write(6,*) 'nvar should be 4'
@@ -1674,6 +1674,7 @@
 !***************************************************************
 
 	subroutine reset_mask
+	implicit none
 
         call reset_dry_mask
 

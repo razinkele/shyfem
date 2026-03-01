@@ -486,6 +486,8 @@
 !		...wird beendet wenn in do-90-loop kein index-
 !		...paar mehr vertauscht werden kann.
 !
+	implicit none
+
         integer ndim
         parameter (ndim=10)
 
@@ -504,6 +506,7 @@
         integer ipp,ipa1,ipa2,kk,kmax
         integer kanf,k,mhhmax,mhh,mmin
         integer kmerk,k1,k2,kmin
+        integer ia,kend
 
         logical true
         integer msmax

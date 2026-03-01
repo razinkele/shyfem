@@ -1012,6 +1012,7 @@
  
 ! true if year is bisestial
  
+        implicit none
         logical bises
         integer year
  
@@ -1030,6 +1031,7 @@
  
 ! returns total days in year
  
+	implicit none
 	integer days_in_year
         integer year
 
@@ -1456,6 +1458,7 @@
 !************************************************************************
 
         subroutine check_j2date(jd,year,iprint)
+        implicit none
         integer jdd,jd,year,month,day,iprint
         call j2date(jd,year,month,day)
         call date2j(year,month,day,jdd)
@@ -1502,6 +1505,7 @@
 !************************************************************************
 
         subroutine check_secs_pack(secs,iprint)
+        implicit none
         integer secs,secs0,iprint
         integer hour,min,sec
         call secs2hms(secs,hour,min,sec)
@@ -1515,6 +1519,7 @@
 !************************************************************************
 
         subroutine check_days_pack(days,iprint)
+        implicit none
         integer days,days0,iprint
         integer year,month,day
         call days2date(days,year,month,day)
@@ -1555,6 +1560,7 @@
 !************************************************************************
 
         subroutine check_dpack(year,month,day,iprint)
+        implicit none
         integer year,month,day,iprint
         integer year0,month0,day0
         integer date
@@ -1570,6 +1576,7 @@
 !************************************************************************
 
         subroutine check_tpack(year,month,day,iprint)
+        implicit none
         integer year,month,day,iprint
         integer year0,month0,day0
         integer date
@@ -1736,6 +1743,8 @@
 
         subroutine test_timespan
 
+	implicit none
+
 	call test_timespan_one('5m')
 	call test_timespan_one('5m 20s')
 	call test_timespan_one('1d')
@@ -1767,6 +1776,8 @@
 !************************************************************************
 
         subroutine test_date_all
+
+	implicit none
 
 	call datetest
 	call test_j2date

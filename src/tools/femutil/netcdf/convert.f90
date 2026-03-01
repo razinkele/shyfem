@@ -1327,6 +1327,7 @@
 !****************************************************************
 
 	subroutine test_scan
+	implicit none
 	call scants
 	call test_iscans
 	call check_tabs

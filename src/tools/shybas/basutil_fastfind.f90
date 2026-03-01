@@ -160,6 +160,7 @@
 	integer nrun,i
 	integer ief,ien
 	integer nw,perc
+	integer ierr
 	real time1,time2
 	real xmin,ymin,xmax,ymax
 	real x,y
@@ -173,8 +174,10 @@
 
 	write(6,*) 'running test_fast_find_optimize: ',nrun
 
-	allocate(xv(nrun))
-	allocate(yv(nrun))
+	allocate(xv(nrun),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
+	allocate(yv(nrun),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	call bas_get_minmax(xmin,ymin,xmax,ymax)
 
@@ -221,6 +224,7 @@
 	integer nrun,i
 	integer ief,ien
 	integer nw,perc
+	integer ierr
 	real time1,time2
 	real xmin,ymin,xmax,ymax
 	real x,y
@@ -232,8 +236,10 @@
 
 	write(6,*) 'running test_quad_tree_optimize: ',nrun
 
-	allocate(xv(nrun))
-	allocate(yv(nrun))
+	allocate(xv(nrun),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
+	allocate(yv(nrun),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	call bas_get_minmax(xmin,ymin,xmax,ymax)
 

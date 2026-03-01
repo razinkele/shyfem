@@ -640,7 +640,7 @@
 ! end of routine
 !--------------------------------------------------------------
 
-	stop
+	stop 'shyelab1: done'
    60	continue
 	write(6,*) 'difference found > ',deps
 	write(6,*) '*** files are different'
@@ -991,6 +991,7 @@
 
         subroutine shy_assert(bval,text)
 
+        implicit none
         logical bval
         character*(*) text
 
@@ -1007,6 +1008,7 @@
 	subroutine shy_write_filename(id)
 
 	use shyfile
+	implicit none
 
 	integer id
 
@@ -1041,7 +1043,7 @@
 	  write(6,*) i,ipv(i)
 	end do
 
-	stop
+	stop 'test_internal_numbering: done'
 
 	end
 

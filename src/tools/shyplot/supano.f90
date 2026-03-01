@@ -1913,6 +1913,8 @@
 ! ******************************************************************
 
 	subroutine swapr(a,b)
+	implicit none
+	real a,b,c
 	c=a
 	a=b
 	b=c

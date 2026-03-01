@@ -1328,14 +1328,16 @@
 
 !  computes factor for transformation from spherical to cartesian coordinates
 
+	use mod_physical_constants, only: rad => deg2rad_sp
+
 	implicit none
 
 	integer isphe			!spherical coordinates?
 	real y				!average y coordinate
 	real xfact,yfact		!factors for transformation
 
-	real r,pi,rad
-	parameter ( r = 6378206.4 , pi = 3.14159 , rad = pi/180. )
+	real r
+	parameter ( r = 6378206.4 )
 
 	if( isphe .ne. 0 ) then		!handle sperical coordinates
 	  yfact = rad*r

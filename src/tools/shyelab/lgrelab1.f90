@@ -584,6 +584,7 @@
         use levels
         use elabutil
         use shyelab_out
+        use mod_physical_constants, only: rad => deg2rad_sp
 
         implicit none
 
@@ -607,7 +608,6 @@
         real, allocatable		:: area(:,:)
         real, allocatable		:: density(:,:,:)
 
-        real, parameter :: pi=3.14159265358979323846, rad = pi/180.
 	real				:: xp,x1,x2,x3,x4
 	real				:: yp,y1,y2,y3,y4
 	real				:: dx,dy 

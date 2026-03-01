@@ -947,13 +947,16 @@
 
 	subroutine ww3_init
 	use mod_ww3
+	implicit none
 	call ww3_init_internal
 	end
 	subroutine ww3_loop
 	use mod_ww3
+	implicit none
 	call ww3_loop_internal
 	end
 	subroutine ww3_finalize
 	use mod_ww3
+	implicit none
 	call ww3_finalize_internal
 	end

@@ -992,6 +992,8 @@
  
 	function to_radian(degree)
           ! degrees to radians
+          implicit none
+          real :: to_radian
           real,intent(in) :: degree
           real, parameter :: deg_to_rad = atan(1.0)/45 ! exploit intrinsic atan to generate pi/180 runtime constant
           real :: rad
@@ -1002,7 +1004,10 @@
  
 !******************************************************************
       function haversine(deglat1,deglon1,deglat2,deglon2)
-          ! great circle distance -- adapted from Matlab 
+          ! great circle distance -- adapted from Matlab
+          implicit none
+          real :: haversine
+          real :: to_radian
           real,intent(in) :: deglat1,deglon1,deglat2,deglon2
           real :: a,c,dist,dlat,dlon,lat1,lat2
           real,parameter :: radius = 6372.8 

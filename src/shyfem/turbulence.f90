@@ -1164,10 +1164,10 @@
 
 	implicit none
 
-	integer nldim
-	real buoyf2(nldim,nkn)
-	real shearf2(nldim,nkn)
-	real taub(nkn)
+	integer, intent(in) :: nldim
+	real, intent(in) :: buoyf2(nldim,nkn)
+	real, intent(in) :: shearf2(nldim,nkn)
+	real, intent(in) :: taub(nkn)
 
 	call nantest(nkn*nldim,shearf2,'shearf2')
 	call nantest(nkn*nldim,buoyf2,'buoyf2')
@@ -1203,7 +1203,7 @@
 
 	implicit none
 
-	character*(*) text
+	character*(*), intent(in) :: text
 
 	integer one,three
 	real zero,valmax

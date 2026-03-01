@@ -35,6 +35,7 @@
 !--------------------------------------------------------------------------
 
       subroutine sgbco(abd,lda,n,ml,mu,ipvt,rcond,z)
+      implicit none
       integer lda,n,ml,mu,ipvt(1)
       real abd(lda,1),z(1)
       real rcond
@@ -299,6 +300,7 @@
       return
       end
       subroutine sgbfa(abd,lda,n,ml,mu,ipvt,info)
+      implicit none
       integer lda,n,ml,mu,ipvt(1),info
       real abd(lda,1)
 !
@@ -473,6 +475,7 @@
       return
       end
       subroutine sgbsl(abd,lda,n,ml,mu,ipvt,b,job)
+      implicit none
       integer lda,n,ml,mu,ipvt(1),job
       real abd(lda,1),b(1)
 !
@@ -608,6 +611,7 @@
       return
       end
       subroutine dgbco(abd,lda,n,ml,mu,ipvt,rcond,z)
+      implicit none
       integer lda,n,ml,mu,ipvt(1)
       double precision abd(lda,1),z(1)
       double precision rcond
@@ -872,6 +876,7 @@
       return
       end
       subroutine dgbfa(abd,lda,n,ml,mu,ipvt,info)
+      implicit none
       integer lda,n,ml,mu,ipvt(1),info
       double precision abd(lda,1)
 !
@@ -1046,6 +1051,7 @@
       return
       end
       subroutine dgbsl(abd,lda,n,ml,mu,ipvt,b,job)
+      implicit none
       integer lda,n,ml,mu,ipvt(1),job
       double precision abd(lda,1),b(1)
 !
@@ -1182,6 +1188,7 @@
       end
 
       subroutine dsvdc(x,ldx,n,p,s,e,u,ldu,v,ldv,work,job,info)
+      implicit none
       integer ldx,n,p,ldu,ldv,job,info
       double precision x(ldx,1),s(1),e(1),u(ldu,1),v(ldv,1),work(1)
 !

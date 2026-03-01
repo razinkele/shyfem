@@ -203,10 +203,12 @@
 ! moves particle a small distance inside the element
 ! this is done to not fall onto the side or vertex
 
+	implicit none
+
 	integer ie
 	double precision xi(3)
 
-	integer is,it,i
+	integer is,it,i,in
 	double precision dist,disttot
 	double precision, parameter :: eps = 1.e-5
 

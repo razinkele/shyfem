@@ -33,6 +33,8 @@ c***************************************************************
 
 	subroutine bas_custom
 
+	implicit none
+
 	!call sort_basin
 	call black_sea_nudge
 

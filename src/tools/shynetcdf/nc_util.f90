@@ -61,7 +61,7 @@
 	real aux(ndim)
 	real fact
 
-	integer nx,ny,nz,iu
+	integer nx,ny,nz,iu,ierr
 	integer ndims
 	integer dims(10)
 	integer i
@@ -81,7 +81,12 @@
 	call compress_data(nx,ny,nz,aux,aux)
 	call scale_val(nx*ny*nz,aux,fact)
 
-	open(newunit=iu,file=new,form='formatted',status='unknown')
+	open(newunit=iu,file=new,form='formatted',status='unknown'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(new)
+	  stop 'error stop: cannot open file'
+	end if
 	write(iu,*) it
 	write(iu,*) nx,ny,nz
 	write(iu,'((5e15.7))') (aux(i),i=1,nx*ny*nz)
@@ -107,7 +112,7 @@
 	real aux(ndim)
 	real fact
 
-	integer nx,ny,nz,iu
+	integer nx,ny,nz,iu,ierr
 	integer ndims
 	integer dims(10)
 	integer i
@@ -127,7 +132,12 @@
 	call compress_data(nx,ny,nz,aux,aux)
 	call scale_val(nx*ny,aux,fact)
 
-	open(newunit=iu,file=new,form='formatted',status='unknown')
+	open(newunit=iu,file=new,form='formatted',status='unknown'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(new)
+	  stop 'error stop: cannot open file'
+	end if
 	write(iu,*) it
 	write(iu,*) nx,ny,0
 	write(iu,'((5e15.7))') (aux(i),i=1,nx*ny)
@@ -501,14 +511,19 @@
 	real hlv(nz)
 
         integer ix1,ix2,iy1,iy2,iz1,iz2
-	integer iz,iu
+	integer iz,iu,ierr
 	character*256 file
 
 	file = 'zcoords.dat'
 
 	call nc_get_domain(ix1,ix2,iy1,iy2,iz1,iz2)
 
-	open(newunit=iu,file=file,status='unknown',form='formatted')
+	open(newunit=iu,file=file,status='unknown',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 
 	write(iu,*) 0,0,iz2-iz1+1
 	do iz=iz1,iz2
@@ -702,7 +717,7 @@
 	real regpar(9)
 	real val(*)
 
-	integer ix,iy
+	integer ix,iy,ierr
 	integer nx,ny,nz
 	integer iformat,iunit,nvers,np,nvar,lmax,nlvddi,ntype
 	integer datetime(2),ilhkv(1)
@@ -726,8 +741,12 @@
 	datetime = 0
 	ntype = 10
 
-	iunit = 3
-	open(iunit,file=file,status='unknown',form='formatted')
+	open(newunit=iunit,file=file,status='unknown',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 
         call fem_file_write_header(iformat,iunit,dtime                  &
      &                          ,nvers,np,lmax                          &
@@ -754,9 +773,14 @@
 	integer nx,ny
 	real val(nx,ny)
 
-	integer ix,iy,iu
+	integer ix,iy,iu,ierr
 
-	open(newunit=iu,file=file,status='unknown',form='formatted')
+	open(newunit=iu,file=file,status='unknown',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 	write(iu,*) 0			! time - not needed
 	write(iu,*) nx,ny,0
 	write(iu,'((5e15.7))') ((val(ix,iy),ix=1,nx),iy=1,ny)
@@ -776,10 +800,15 @@
 	real y(n)
 	real val(n)
 
-	integer i,iu
+	integer i,iu,ierr
 	real, parameter :: flag = -999.
 
-	open(newunit=iu,file=file,status='unknown',form='formatted')
+	open(newunit=iu,file=file,status='unknown',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 
 	do i=1,n
 	  if( val(i) == flag ) then
@@ -807,12 +836,17 @@
 	real y(nx,ny)
 	real val(nx,ny)
 
-	integer ix,iy,n,iu
+	integer ix,iy,n,iu,ierr
 	real, parameter :: flag = -999.
 
 	n = 0
 
-	open(newunit=iu,file=file,status='unknown',form='formatted')
+	open(newunit=iu,file=file,status='unknown',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 
 	do iy=1,ny
 	  do ix=1,nx
@@ -1033,12 +1067,22 @@
 	real xlon(nx,ny)
 	real ylat(nx,ny)
 
-	integer ix,iy,n,iu1,iu2
+	integer ix,iy,n,iu1,iu2,ierr
 
 	n = 0
 
-	open(newunit=iu1,file='coords_orig.grd',status='unknown',form='formatted')
-	open(newunit=iu2,file='coords_orig.dat',status='unknown',form='formatted')
+	open(newunit=iu1,file='coords_orig.grd',status='unknown'
+     &			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: coords_orig.grd'
+	  stop 'error stop: cannot open file'
+	end if
+	open(newunit=iu2,file='coords_orig.dat',status='unknown'
+     &			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: coords_orig.dat'
+	  stop 'error stop: cannot open file'
+	end if
 
 	write(iu2,*) nx,ny,0
 	do iy=1,ny
@@ -1067,14 +1111,19 @@
 
 	real regpar(9)
 
-	integer ix,iy,n,iu
+	integer ix,iy,n,iu,ierr
 	integer nx,ny
 	real dx,dy,x0,y0,x1,y1,flag
 	real x,y
 
 	call get_regpar(regpar,nx,ny,dx,dy,x0,y0,x1,y1,flag)
 
-	open(newunit=iu,file='coords_new.grd',status='unknown',form='formatted')
+	open(newunit=iu,file='coords_new.grd',status='unknown'
+     &			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: coords_new.grd'
+	  stop 'error stop: cannot open file'
+	end if
 
 	n = 0
 	do iy=1,ny
@@ -1104,7 +1153,7 @@
 	real regpar(9)
 	real scal(*)
 
-	integer ix,iy,n,iu
+	integer ix,iy,n,iu,ierr
 	integer nx,ny
 	real dx,dy,x0,y0,x1,y1,flag
 	real x,y,val
@@ -1112,7 +1161,12 @@
 
 	call get_regpar(regpar,nx,ny,dx,dy,x0,y0,x1,y1,flag)
 
-	open(newunit=iu,file=file,status='unknown',form='formatted')
+	open(newunit=iu,file=file,status='unknown',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 
 	ddx = dx
 	ddy = dy
@@ -1146,6 +1200,7 @@
 
 	subroutine get_flag_for_var(ncid,var_id,value)
 
+	implicit none
 	integer ncid,var_id
 	real value
 

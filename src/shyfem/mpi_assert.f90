@@ -40,6 +40,8 @@
 
 	subroutine shympi_assert_all
 
+	implicit none
+
 	call shympi_assert_coriolis
 
 	end

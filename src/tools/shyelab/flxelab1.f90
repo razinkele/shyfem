@@ -458,7 +458,7 @@
 ! end of routine
 !--------------------------------------------------------------
 
-	stop
+	stop 'flxelab: done'
    91	continue
 	write(6,*) 'error reading first data record'
 	write(6,*) 'maybe the file is empty'

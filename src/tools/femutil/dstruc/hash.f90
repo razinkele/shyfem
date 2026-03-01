@@ -696,6 +696,7 @@
 	end
 
 	subroutine hash_rand_init
+	implicit none
 	call random_seed
 	end
 

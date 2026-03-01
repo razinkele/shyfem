@@ -40,7 +40,7 @@
 	end do
     1	continue
 
-	stop
+	stop 'prep_txt: done'
  1000	format(a,3(f9.6,a))
 	end
 

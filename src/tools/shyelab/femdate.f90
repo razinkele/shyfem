@@ -192,7 +192,7 @@
 ! end of routine
 !--------------------------------------------------------------
 
-	stop
+	stop 'femdate: done'
    95	continue
 	write(6,*) 'nvar is changing: ',nvar,nvar0
 	stop 'error stop femdate: nvar not constant'

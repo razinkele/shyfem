@@ -98,6 +98,7 @@
 	use pkonst
 	use mkonst
 	use befor_after
+	use mod_physical_constants, only: pi_sp, grav_sp
 
 	implicit none
 
@@ -115,7 +116,7 @@
 
 	eps1=1.0E-5
 	eps2=1.0E-6
-	pi=3.141592653
+	pi=pi_sp
 	flag=-9988765.0
 	high=1.0E+35
         higi=.21474e+10   ! +/- 2147483647
@@ -124,7 +125,7 @@
 
 ! these parameters are set one more time in cstset (from STR file)
 
-	grav=9.81
+	grav=grav_sp
 	fcor=0.
 	dcor=0.
 	dirn=0.

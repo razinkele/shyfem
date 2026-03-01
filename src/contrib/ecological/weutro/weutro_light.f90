@@ -242,18 +242,23 @@
 	common /luxlen_c/ luxv,fdayv
 	save /luxlen_c/
 
-	integer n
+	integer n,iu,ierr
 	real tdummy
 
 !--------------------------------------------------------------
 ! read in file
 !--------------------------------------------------------------
 
-        open(2,file='lux.dat',status='old',form='formatted')
+        open(newunit=iu,file='lux.dat',status='old',form='formatted'
+     &			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: lux.dat'
+	  stop 'error stop: cannot open file'
+	end if
 	do n=1,365
-          read(2,*) tdummy,luxv(n),fdayv(n)
+          read(iu,*) tdummy,luxv(n),fdayv(n)
 	end do
-	close(2)
+	close(iu)
 
 !--------------------------------------------------------------
 ! end of routine

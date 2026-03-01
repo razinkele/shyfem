@@ -1500,11 +1500,14 @@
 	subroutine handle_changed(ffem,ffem_old,bterm)
 
 	use fem_util
+	use levels, only: hlv
+	implicit none
 
 	type(fem_type) :: ffem
 	type(fem_type) :: ffem_old
 	logical bterm
 
+	integer np,lmax
 	double precision atime
 	character*20 aline
 	integer, save :: np0 = 0

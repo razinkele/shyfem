@@ -248,9 +248,13 @@
         integer nen3v(3,nel)
         real xgv(nkn), ygv(nkn)
 
-        integer k,ie,ii,iu
+        integer k,ie,ii,iu,ierr
 
-        open(newunit=iu,file='connections.gis')
+        open(newunit=iu,file='connections.gis',iostat=ierr)
+        if( ierr /= 0 ) then
+          write(6,*) 'error opening file: connections.gis'
+          stop 'error stop: cannot open file'
+        end if
 
         write(iu,*) nkn                          !total number of nodes
         do k=1,nkn

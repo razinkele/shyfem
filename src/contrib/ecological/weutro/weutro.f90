@@ -2213,13 +2213,18 @@
         integer n_params
         real v_params(ndim)
 
-        integer i
+        integer i,iu,ierr
 
-        open(1,file='michol.dat',status='old',form='formatted')
-        read(1,*) n_params
+        open(newunit=iu,file='michol.dat',status='old',
+     +       form='formatted',iostat=ierr)
+        if( ierr /= 0 ) then
+          write(6,*) 'error opening file: michol.dat'
+          stop 'error stop: cannot open file'
+        end if
+        read(iu,*) n_params
         if( n_params .gt. ndim ) stop 'error stop: ndim - n_params'
-        read(1,*) (v_params(i),i=1,n_params)
-        close(1)
+        read(iu,*) (v_params(i),i=1,n_params)
+        close(iu)
 
         K1C = v_params(1)
         K1D = v_params(2)

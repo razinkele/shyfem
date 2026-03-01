@@ -500,15 +500,17 @@
 
 ! gaussian smoothing - creates kernel to be used with gsmooth
 
+	use mod_physical_constants, only: pi => pi_sp
+
+	implicit none
 	real sigma
 	integer ndim
 	integer ngk
 	real gk(-ndim:ndim)
 
 	integer i
-	real pi,eps,a,b,x,val
+	real eps,a,b,x,val
 
-        pi = 4.*atan(1.)
         eps = 1.e-7
 
         a = 1. / ( sqrt(2.*pi) * sigma )
@@ -536,6 +538,7 @@
 
 ! gaussian smoothing - only good for regular point spacing
 
+	implicit none
 	integer ndim
 	integer nl
 	real rt(1)
@@ -573,6 +576,9 @@
 
 ! gaussian smoothing - good for irregular point spacing
 
+	use mod_physical_constants, only: pi => pi_sp
+
+	implicit none
 	integer ndim
 	integer nl
 	real sigma
@@ -582,10 +588,11 @@
 	real ht(1)
 	logical bperiod
 
-	integer i,j
+	integer i,j,jmin,jmax
 	real val
 	real rkern,tkern
 	real rintv
+	real eps,a,b,weight,dist
 
 ! set up circular array
 
@@ -598,7 +605,6 @@
 
 ! set up gaussian kernel parameters
 
-        pi = 4.*atan(1.)
         eps = 1.e-7
 
         a = 1. / ( sqrt(2.*pi) * sigma )
@@ -671,6 +677,7 @@
 
 ! write line
 
+	implicit none
 	integer iunit
 	integer nline
 	integer nnode

@@ -125,6 +125,7 @@
 !  sets up color table after read from $color section
 
 	use para
+	implicit none
 	logical bdebug
 	integer niso,nisomx,nisodf
 	integer icolor,ipllog

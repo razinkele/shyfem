@@ -245,6 +245,7 @@ c*******************************************************************
 
 	subroutine basin_interactive
 
+	implicit none
 	logical bnode,belem
 
 	bnode = .true.
@@ -735,6 +736,7 @@ c*******************************************************************
 	subroutine bas_stabil
 
 	use basin
+	use mod_physical_constants, only: grav => grav_sp
 
 	implicit none
 
@@ -742,7 +744,6 @@ c*******************************************************************
 	real dist2,distmin,dx,dy,hmax
 	real dt2,dtt2,dt,dtt
 	real, parameter :: high = 1.e+30
-	real, parameter :: grav = 9.81
 
 	dt2 = high
 	dtt2 = high
@@ -805,6 +806,7 @@ c writes frequency distribution of depth
 
 	integer ie,i,iu
 	integer imax,ih
+	integer ierr
 	real area,vol,z
 	real hmin,hmax,dh,h,fr
 	real fa,fv,fap
@@ -818,8 +820,10 @@ c-----------------------------------------------------------------
 c area code
 c-----------------------------------------------------------------
 
-	allocate(freqa(0:ndim))
-	allocate(freqv(0:ndim))
+	allocate(freqa(0:ndim),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
+	allocate(freqv(0:ndim),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	dh = 0.01
 
@@ -872,7 +876,11 @@ c-----------------------------------------------------------------
 	write(6,*) 'total area/vol for freq curve: ',area,vol
 
 	open(newunit=iu,file='areavol.dat',status='unknown'
-     +			,form='formatted')
+     +			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: areavol.dat'
+	  stop 'error stop: cannot open file'
+	end if
 
 	do i=0,imax
 	  z = -hmax + i*dh
@@ -898,11 +906,12 @@ c ie            number of element (internal)
 c areatr        element area (return value)
 
 	use basin
+	implicit none
 
 	real areatr
 	integer ie
 
-	integer ii,i1,i2,k1,k2
+	integer ii,i1,i2,k1,k2,k
 	double precision f,x(3),y(3)
 
         do ii=1,3
@@ -1269,9 +1278,14 @@ c writes xy as data to file (format is gis format)
         real ygv(nkn)
         real hkv(nkn)
 
-        integer k,iu
+        integer k,iu,ierr
 
-        open(newunit=iu,file=nfile,status='unknown',form='formatted')
+        open(newunit=iu,file=nfile,status='unknown',form='formatted'
+     +			,iostat=ierr)
+        if( ierr /= 0 ) then
+          write(6,*) 'error opening file: ',trim(nfile)
+          stop 'error stop: cannot open file'
+        end if
         write(iu,*) 0,nkn,5,'0'
         do k=1,nkn
           write(iu,*) k,xgv(k),ygv(k),1,hkv(k)
@@ -1468,13 +1482,21 @@ c*******************************************************************
 
         implicit none
 
-        integer ie,ii,k,iu1,iu2
+        integer ie,ii,k,iu1,iu2,ierr
         double precision xm,ym,hm
 
 	open(newunit=iu1,file='depth.grd',status='unknown'
-     +			,form='formatted')
+     +			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: depth.grd'
+	  stop 'error stop: cannot open file'
+	end if
 	open(newunit=iu2,file='depth.xyz',status='unknown'
-     +			,form='formatted')
+     +			,form='formatted',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: depth.xyz'
+	  stop 'error stop: cannot open file'
+	end if
 
         do ie=1,nel
 
@@ -1514,7 +1536,7 @@ c*******************************************************************
 
 	logical bwrite
 
-	integer ierr1,ierr2
+	integer ierr,ierr1,ierr2
 	integer ie,k,ii,ic,nc,n
 	integer, allocatable :: nic(:)
 	integer icolor(nkn)
@@ -1522,7 +1544,8 @@ c*******************************************************************
         if( bwrite ) write(6,*) 'making nodal partition...'
 
 	nc = maxval(iarnv)
-	allocate(nic(0:nc))
+	allocate(nic(0:nc),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 	nic = 0
 	do k=1,nkn
 	  ic = iarnv(k)
@@ -1733,6 +1756,7 @@ c****************************************************************
 	integer ie,k
 	integer nx,ny
 	integer iunit,iformat,datetime(2),np
+	integer ierr
 	double precision dtime
 	integer ilhkv(1)
 	real xmin,ymin,xmax,ymax,dx,dy
@@ -1760,7 +1784,8 @@ c****************************************************************
 ! interpolate on regular grid
 !-------------------------------------------------------------
 
-	allocate( hreg(nx*ny) )
+	allocate( hreg(nx*ny),stat=ierr )
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 	if( dx /= dy ) stop 'error stop write_regular_depth: dx/=dy'
 	if( dx /= dreg ) stop 'error stop write_regular_depth: dx/=dreg'
@@ -1772,12 +1797,16 @@ c****************************************************************
 ! write fem file
 !-------------------------------------------------------------
 
-	iunit = 1
 	file = 'regbathy.fem'
 	string = 'bathymetry'
 	np = nx*ny
 
-	open(iunit,file=file,status='unknown',form='formatted')
+	open(newunit=iunit,file=file,status='unknown',form='formatted'
+     +			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 	call write_regular_2d_1var_record(iunit,string,regpar,np,hreg)
 	close(iunit)
 
@@ -1799,10 +1828,11 @@ c****************************************************************
 	integer imax,n
 	integer iarray(n)
 
-	integer i,ia,ic
+	integer i,ia,ic,ierr
 	integer, allocatable :: count(:)
 
-	allocate(count(0:imax))
+	allocate(count(0:imax),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 	count = 0
 
 	write(6,*) '  details:'
@@ -1834,6 +1864,7 @@ c****************************************************************
 
 	integer iu,nmax
 	integer ie,ii,k,i,ind,kext,iext
+	integer ierr
 	integer, allocatable :: index(:)
 	double precision darea_n(nkn)
 	real area_n(nkn)
@@ -1844,7 +1875,8 @@ c****************************************************************
 
 	iu = 567
 	nmax = max(nkn,nel)
-	allocate(index(nmax))
+	allocate(index(nmax),stat=ierr)
+	if (ierr /= 0) stop 'error stop: allocation failed'
 
 !-------------------------------------------------------
 ! compute area of nodes

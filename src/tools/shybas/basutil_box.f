@@ -107,7 +107,11 @@ c write index file boxes.txt
 c-----------------------------------------------------------------
 
 	open(newunit=iu,file='boxes.txt',form='formatted'
-     +			,status='unknown')
+     +			,status='unknown',iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: boxes.txt'
+	  stop 'error stop: cannot open file'
+	end if
 
 	call write_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,bnew)
 	call sort_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,neib
@@ -929,9 +933,13 @@ c area code 0 is not allowed !!!!
 ! read section information and write index_sections.grd
 !-----------------------------------------------------------
 
-	nout = 2
 	file = 'index_sections.grd'
-	open(nout,file=file,status='unknown',form='formatted')
+	open(newunit=nout,file=file,status='unknown',form='formatted'
+     +			,iostat=ios)
+	if( ios /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file)
+	  stop 'error stop: cannot open file'
+	end if
 	write(6,*) 'reading sections of index file...'
 
 	allocate(extnodes(nkn),nodes(nkn),used(nkn),stat=ierr)
@@ -1294,10 +1302,19 @@ c area code 0 is not allowed !!!!
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	iuse = 0
 
-	iu = 88
-	open(iu,file=file1,status='unknown',form='formatted')
-	open(iu+1,file=file2,status='unknown',form='formatted')
-	write(iu+1,*) nbox
+	open(newunit=iu,file=file1,status='unknown',form='formatted'
+     +			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file1)
+	  stop 'error stop: cannot open file'
+	end if
+	open(newunit=iu1,file=file2,status='unknown',form='formatted'
+     +			,iostat=ierr)
+	if( ierr /= 0 ) then
+	  write(6,*) 'error opening file: ',trim(file2)
+	  stop 'error stop: cannot open file'
+	end if
+	write(iu1,*) nbox
 
 	header = '   ibox  iline istart   iend   itot   icum     nc'
 	if( bterminal ) write(6,'(a)') header

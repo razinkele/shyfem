@@ -191,7 +191,7 @@
 	cprofile = 'unknown'
 #endif
 	write(6,*) 'compiler profile: ',trim(cprofile)
-	stop
+	stop 'sub_test_compatibility: done'
 
 	call compiler(string)
 	write(6,*) 'compiler: ',trim(string)

@@ -33,56 +33,72 @@
 !--------------------------------------------------------------------------
 
 	subroutine mpi_init(ierr)
+	implicit none
 	integer ierr
 	ierr = 0
 	end
 
 	subroutine mpi_comm_rank(comm,my_id,ierr)
+	implicit none
 	integer comm,my_id,ierr
 	my_id = 0
 	ierr = 0
 	end
 
 	subroutine mpi_comm_size(comm,n_threads,ierr)
+	implicit none
 	integer comm,n_threads,ierr
 	n_threads = 1
 	ierr = 0
 	end
 
 	subroutine mpi_barrier(comm,ierr)
+	implicit none
 	integer comm,ierr
 	ierr = 0
 	end
 
 	subroutine mpi_finalize
+	implicit none
 	end
 
 	subroutine mpi_irecv
+	implicit none
 	end
 
 	subroutine mpi_isend
+	implicit none
 	end
 
 	subroutine mpi_waitall
+	implicit none
 	end
 
 	subroutine mpi_abort
+	implicit none
 	end
 
 	subroutine mpi_scatter
+	implicit none
 	end
 
 	subroutine mpi_gather
+	implicit none
 	end
 
 	subroutine mpi_allgather
+	implicit none
 	end
 
 	subroutine mpi_bcast
+	implicit none
 	end
 
 	subroutine mpi_allreduce(what,val)
+	implicit none
+	integer what,val
 	end
 
 	subroutine mpi_wtime
+	implicit none
 	end

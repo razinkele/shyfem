@@ -62,7 +62,7 @@
 	write(6,3) 3,1,0,ndim+1
 	write(6,*) (i,i=1,ndim),1
 
-	stop
+	stop 'circle: done'
     1	format(i1,2i8,2f12.4)
     3	format(i1,3i8)
 	end

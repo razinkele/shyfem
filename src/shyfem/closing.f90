@@ -1368,13 +1368,16 @@
 	use close
 	use mod_hydro
 
+	implicit none
+
 	integer id
 	character*(*) text
 
 	integer iact,imode,ioper
 	integer kref,kin,kout
 	integer izin,izout,izref,izdate,iflux
-	real zin,zout,zref,zdate,geyer,flux
+	real zin,zout,zref,zdate,geyer,flux,scal
+	real zvbnds
 	double precision dtime
 	character*256 string1,string2
 	character*20 aline

@@ -171,6 +171,7 @@
 	subroutine nc_init
 
 	use netcdf_params
+	implicit none
 
 	time_dim = ' '
 	time_var = ' '

@@ -180,6 +180,7 @@
         end
 
         subroutine ousopen
+	implicit none
 	stop 'error stop velopen: no more OUS files'
 	end
 
@@ -469,7 +470,7 @@
 ! ******************************************************
 
 	subroutine fvlini
-
+	implicit none
 	end
 
 ! ******************************************************

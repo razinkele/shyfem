@@ -566,7 +566,7 @@
 ! end of routine
 !--------------------------------------------------------
 
-	stop
+	stop 'shypre: done'
 99909	write(nat,*)' (09) error: no unique definition of nodes'
 	goto 99
 99915	write(nat,*)' (15) error: no unique definition of elements'

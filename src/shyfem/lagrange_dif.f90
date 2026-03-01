@@ -735,6 +735,8 @@
 ! Returns a normally distributed deviate with zero mean and unit variance
 ! using shyran1(idum) as the source of uniform deviates.
 
+        implicit none
+
         INTEGER idum
         REAL shygasdev
         INTEGER, save :: iset = 0

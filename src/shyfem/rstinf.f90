@@ -139,7 +139,7 @@
 ! end of routine
 !-------------------------------------------------------------------
 
-	stop
+	stop 'rstinf: done'
  1000	format(a)
  1001	format(a)
  1010	format(i7,i5,5i10)

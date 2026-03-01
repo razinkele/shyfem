@@ -850,8 +850,12 @@
 
 	integer nlv
 	real hlv(nlv)
+	integer ierr
 
-	if( .not. allocated(hlv_global) ) allocate(hlv_global(nlv))
+	if( .not. allocated(hlv_global) ) then
+	  allocate(hlv_global(nlv),stat=ierr)
+	  if (ierr /= 0) stop 'error stop: allocation failed'
+	end if
 
 	nlv_local = nlv
 	nlv_global = nlv
@@ -982,7 +986,7 @@
 	integer ierr
 
 	call exit(ierr)
-	stop
+	stop 'shympi_exit: unreachable after exit'
 
 	end subroutine shympi_exit
 
@@ -993,7 +997,7 @@
 	character*(*) text
 
 	write(6,*) 'error stop shympi_stop: ',trim(text)
-	stop
+	stop 'shympi_stop: fatal error'
 
 	end subroutine shympi_stop
 
@@ -1002,7 +1006,7 @@
 	subroutine shympi_abort
 
 	call exit(33)
-	stop
+	stop 'shympi_abort: unreachable after exit'
 
 	end subroutine shympi_abort
 

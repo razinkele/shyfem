@@ -759,6 +759,8 @@
 
 	subroutine test_sort_all
 
+	implicit none
+
 	call test_sort_int_direct(100)
 	call test_sort_real_direct(100)
 	call test_sort_int_indirect(100)

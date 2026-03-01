@@ -33,6 +33,7 @@
 ! prepares initial z condition
 
 	use basin
+	use mod_physical_constants, only: pi => pi_sp
 
         include 'param.h'
 
@@ -78,7 +79,6 @@
 !
 !%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 !
-	pi=acos(-1.)
 !
 	kk1 = ipext(k1)
 	kk2 = ipext(k2)

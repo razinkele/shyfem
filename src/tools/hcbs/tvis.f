@@ -98,7 +98,9 @@ c	call setxwd(ixmin,iymin,ixmax+100,ixmax+100)
 	read(5,'(a)') file
 	write(6,*) file
 	if(file.eq.' ') stop
-	open(newunit=iu,err=98,file=file,form='formatted',status='old')
+	open(newunit=iu,file=file,form='formatted',status='old'
+     +			,iostat=ierr)
+	if( ierr /= 0 ) goto 98
 
 c qopen opens the window - has to be called once at the beginning
 
@@ -193,7 +195,7 @@ c call qclose at the end of the session
 
 	call qclose
 
-	stop
+	stop 'tvis: done'
    98	write(6,*) 'No such file : '
 	write(6,*) file
 	stop 'error stop'

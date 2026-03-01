@@ -180,6 +180,8 @@
         use mod_flux
         use nls
 
+        implicit none
+
         integer, intent(out) :: n,ns
 	integer ierr
 

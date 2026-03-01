@@ -115,7 +115,7 @@
 
 	implicit none
 
-	character*(*) file
+	character*(*), intent(in) :: file
 
 	integer ier
 	integer ifileo
@@ -198,7 +198,7 @@
 
         implicit none
 
-	real qs,ta,tb,uw,cc,ur,p,e,r,q
+	real, intent(out) :: qs,ta,tb,uw,cc,ur,p,e,r,q
 
 	qs = qsact
 	ta = taact
@@ -223,7 +223,7 @@
 
         implicit none
 
-        integer iu
+        integer, intent(out) :: iu
 
         iu = ifunit
 
@@ -239,7 +239,7 @@
 
 	implicit none
 
-	integer it
+	integer, intent(in) :: it
 
 	character*256 file
 	logical bdebug,bwrite
@@ -354,10 +354,10 @@
 
 	implicit none
 
-	integer it
-	real qs,ta,tb,uw,cc
-	real ur,p,e,r,q
-	integer ier
+	integer, intent(out) :: it
+	real, intent(out) :: qs,ta,tb,uw,cc
+	real, intent(out) :: ur,p,e,r,q
+	integer, intent(out) :: ier
 
         real pstd
         parameter ( pstd = 1013.25 )
@@ -447,8 +447,8 @@
 
 	implicit none
 
-	integer it
-	real qs,ta,tb,ur,uw,cc,p
+	integer, intent(in) :: it
+	real, intent(in) :: qs,ta,tb,ur,uw,cc,p
 
 	if( qs .lt. 0.    .or. qs .gt. 1500.                            &
      &      .or. ta .lt. -100. .or. ta .gt. 100.                     &
@@ -475,7 +475,7 @@
 
 	implicit none
 
-	character*(*) file
+	character*(*), intent(in) :: file
 
 	integer ier,it
 	real qs,ta,tb,uw,cc,ur,p,e,r,q
@@ -503,7 +503,7 @@
 
 	implicit none
 
-	integer itp
+	integer, intent(in) :: itp
 
 	call qfinit_internal
 	itperiod = itp
@@ -522,7 +522,7 @@
 
 	implicit none
 
-	integer irh
+	integer, intent(in) :: irh
 
 	call qfinit_internal
 	irhumid = irh

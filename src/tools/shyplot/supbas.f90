@@ -894,6 +894,8 @@
 
 !  computes factors for for spherical coordinates
 
+	use mod_physical_constants, only: rad => deg2rad_sp
+
 	implicit none
 
 	real fact	!factor in x direction
@@ -902,7 +904,7 @@
 	real geomile,onedeg
 	parameter( geomile = 1855.325 , onedeg = 60.*geomile )
 
-	real y,pi,rad
+	real y
 	real x0,y0,x1,y1
 
 	logical is_spherical
@@ -914,8 +916,6 @@
 
 	call getbas(x0,y0,x1,y1)
 	y = 0.5*(y0+y1)
-	pi = 4.*atan(1.)
-	rad = pi/180.
 
 	fact = cos(y*rad)
 	afact = fact * onedeg * onedeg

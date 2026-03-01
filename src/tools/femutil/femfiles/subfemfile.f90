@@ -1302,6 +1302,7 @@
 
 	subroutine test_type
 
+	implicit none
 	integer imax,ntype
 	integer itype(4)
 

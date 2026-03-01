@@ -110,7 +110,7 @@
 	  if(mod(i,2).eq.0) aux=0.
 	end do
 !
-	stop
+	stop 'rhotst: done'
  1000	format('       salinity    temperature       pressure', &
      &         '        density', &
      &         '    ref-density')

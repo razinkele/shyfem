@@ -458,7 +458,8 @@
    LEVEL1 'init_kpp...'
 
    ! read the variables from the namelist file
-   open(namlst,file=fn,status='old',action='read',err=80)
+   open(namlst,file=fn,status='old',action='read',iostat=rc)
+   if (rc /= 0) goto 80
 
    LEVEL2 'reading kpp namelist...'
 

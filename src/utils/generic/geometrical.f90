@@ -320,20 +320,21 @@
 
 	function angle(x1,y1,x2,y2,x3,y3)
 
-! angle between 1-2-3 in degrees 
+! angle between 1-2-3 in degrees
 !
 ! a < 180 => right turn
 ! a = 180 => straight
 ! a > 180 => left turn
+
+	use mod_physical_constants, only: rad => rad2deg_dp
 
 	implicit none
 
 	real angle
 	real x1,y1,x2,y2,x3,y3
 
-	double precision null,full,pi,rad
+	double precision null,full
 	parameter( null = 0. , full = 360. )
-	parameter( pi = 3.14159265 , rad = 180. / pi )
 
 	double precision norm,aux,ang
 	double precision dx1,dy1,dx2,dy2
@@ -869,6 +870,8 @@
 
 ! converts cartesian to polar coordinates
 ! oceanographic convention: 0 -> current to north
+
+	implicit none
 
 	real u,v,s,d
 
