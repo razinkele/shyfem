@@ -487,6 +487,112 @@ def load_bathymetry_file(file_path: Path) -> np.ndarray:
     return np.array(points)
 
 
+def load_bathymetry_contours(
+    file_path: Path,
+    depth_attr: str = "depth",
+    sample_distance: float | None = None,
+) -> np.ndarray:
+    """Load bathymetry from contour isobath lines (vector file).
+
+    Reads a GeoJSON, Shapefile, or GeoPackage containing LineString
+    features where each feature has a depth attribute.  Extracts vertex
+    coordinates along each line and assigns the feature's depth value
+    to every vertex.
+
+    Args:
+        file_path: Path to vector file with isobath lines.
+        depth_attr: Name of the numeric depth/elevation attribute.
+            Common names are tried automatically if the given name is
+            not found: depth, DEPTH, z, Z, elev, ELEV, elevation,
+            CONTOUR, contour.
+        sample_distance: If set, resample each line at this interval
+            (coordinate units) to add extra points between vertices.
+            Useful for sparse contours with long straight segments.
+
+    Returns:
+        Nx3 numpy array of (x, y, depth).
+    """
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Contour file not found: {path}")
+
+    # Common depth attribute names to try
+    depth_candidates = [
+        depth_attr,
+        "depth", "DEPTH", "Depth",
+        "z", "Z",
+        "elev", "ELEV", "elevation", "ELEVATION", "Elevation",
+        "contour", "CONTOUR", "Contour",
+        "value", "VALUE", "Value",
+        "level", "LEVEL", "Level",
+    ]
+
+    points = []
+    with fiona.open(str(path)) as src:
+        # Detect the depth attribute from the first feature
+        resolved_attr = None
+        for feat in src:
+            props = feat["properties"]
+            for candidate in depth_candidates:
+                if candidate in props and props[candidate] is not None:
+                    try:
+                        float(props[candidate])
+                        resolved_attr = candidate
+                        break
+                    except (ValueError, TypeError):
+                        continue
+            break  # only check first feature
+        src.close()
+
+    if resolved_attr is None:
+        raise ValueError(
+            f"No numeric depth attribute found. Tried: {depth_candidates[:6]}. "
+            f"Available attributes: {list(feat['properties'].keys()) if feat else []}"
+        )
+
+    with fiona.open(str(path)) as src:
+        for feat in src:
+            props = feat["properties"]
+            z_val = props.get(resolved_attr)
+            if z_val is None:
+                continue
+            try:
+                z = float(z_val)
+            except (ValueError, TypeError):
+                continue
+
+            geom = shapely.geometry.shape(feat["geometry"])
+            lines = []
+            if geom.geom_type == "LineString":
+                lines = [geom]
+            elif geom.geom_type == "MultiLineString":
+                lines = list(geom.geoms)
+            else:
+                continue
+
+            for line in lines:
+                if sample_distance and sample_distance > 0 and line.length > 0:
+                    # Resample at regular intervals
+                    dist = 0.0
+                    while dist <= line.length:
+                        pt = line.interpolate(dist)
+                        points.append([pt.x, pt.y, z])
+                        dist += sample_distance
+                    # Always include the endpoint
+                    pt = line.interpolate(line.length)
+                    points.append([pt.x, pt.y, z])
+                else:
+                    # Use original vertices
+                    for x, y, *_ in line.coords:
+                        points.append([x, y, z])
+
+    if not points:
+        raise ValueError(f"No valid contour points extracted from {path}")
+
+    logger.info("Loaded %d points from %s (attr=%s)", len(points), path.name, resolved_attr)
+    return np.array(points)
+
+
 def _load_bathymetry_raster(path: Path) -> np.ndarray:
     """Sample points from a GeoTIFF raster."""
     import rasterio

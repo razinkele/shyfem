@@ -16,6 +16,7 @@ from shyfem_ui.services.mesh_builder import (
     import_boundaries,
     interpolate_bathymetry_scipy,
     interpolate_bathymetry_shybas,
+    load_bathymetry_contours,
     load_bathymetry_file,
     reduce_boundary,
     smooth_boundary,
@@ -548,26 +549,68 @@ def mesh_builder_server(
         return ui.div(
             ui.h4("Step 4: Interpolate Bathymetry"),
             ui.p(
-                "Upload depth measurement points (x, y, depth) and interpolate "
-                "values onto mesh nodes.",
+                "Upload depth data and interpolate values onto mesh nodes.",
                 class_="text-muted",
             ),
             ui.div(
                 "Generate a mesh first (Step 3).",
                 class_="alert alert-info py-2 px-3 small",
             ) if no_mesh else ui.span(),
-            # --- Bathymetry source ---
-            ui.h5("Depth Measurement Points"),
-            ui.input_file(
-                "bathy_file",
-                "Upload Bathymetry File (CSV/XYZ/GeoTIFF)",
-                accept=[".csv", ".xyz", ".txt", ".tif", ".tiff"],
-                multiple=False,
+            # --- Bathymetry source type ---
+            ui.h5("Depth Data Source"),
+            ui.input_radio_buttons(
+                "bathy_source",
+                "",
+                choices={
+                    "points": "Point cloud (CSV / XYZ / GeoTIFF)",
+                    "contours": "Contour isobaths (SHP / GeoJSON / GPKG)",
+                },
+                selected="points",
+                inline=True,
             ),
-            ui.p(
-                "Format: one point per line as x, y, depth (comma or space separated). "
-                "GeoTIFF rasters are also supported.",
-                class_="text-muted small",
+            # --- Point cloud upload ---
+            ui.panel_conditional(
+                "input.bathy_source === 'points'",
+                ui.input_file(
+                    "bathy_file",
+                    "Upload Bathymetry Points",
+                    accept=[".csv", ".xyz", ".txt", ".tif", ".tiff"],
+                    multiple=False,
+                ),
+                ui.p(
+                    "Format: one point per line as x, y, depth (comma or space separated). "
+                    "GeoTIFF rasters are also supported.",
+                    class_="text-muted small",
+                ),
+            ),
+            # --- Contour isobath upload ---
+            ui.panel_conditional(
+                "input.bathy_source === 'contours'",
+                ui.input_file(
+                    "bathy_contour_file",
+                    "Upload Contour Isobaths",
+                    accept=[".shp", ".shx", ".dbf", ".prj", ".cpg",
+                            ".geojson", ".json", ".gpkg", ".zip"],
+                    multiple=True,
+                ),
+                ui.p(
+                    "Vector file with LineString features and a depth attribute "
+                    "(e.g. depth, elev, contour, z). For Shapefiles, select all "
+                    "companion files together or upload a .zip.",
+                    class_="text-muted small",
+                ),
+                ui.input_text(
+                    "contour_depth_attr",
+                    "Depth attribute name",
+                    value="depth",
+                    placeholder="depth, elev, z, contour...",
+                ),
+                ui.input_numeric(
+                    "contour_sample_dist",
+                    "Resample distance (0 = use vertices only)",
+                    value=0,
+                    min=0,
+                ),
             ),
             ui.output_ui("bathy_loaded_info"),
             ui.hr(),
@@ -645,7 +688,7 @@ def mesh_builder_server(
         try:
             data = load_bathymetry_file(temp_path)
             bathy_data.set(data)
-            _log(f"Loaded bathymetry: {file_info['name']} ({len(data)} points)")
+            _log(f"Loaded bathymetry points: {file_info['name']} ({len(data)} points)")
             _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
             ui.notification_show(
                 f"Loaded {len(data)} bathymetry points", type="message", duration=3
@@ -653,6 +696,33 @@ def mesh_builder_server(
         except Exception as e:
             _log(f"Error loading bathymetry: {e}")
             ui.notification_show(f"Load error: {e}", type="error", duration=5)
+
+    @reactive.effect
+    @reactive.event(input.bathy_contour_file)
+    def _on_contour_upload():
+        files = input.bathy_contour_file()
+        if not files:
+            return
+        try:
+            open_path = _prepare_upload_files(files)
+            depth_attr = input.contour_depth_attr() or "depth"
+            sample_dist = input.contour_sample_dist()
+            sample_dist = sample_dist if sample_dist and sample_dist > 0 else None
+            data = load_bathymetry_contours(
+                open_path, depth_attr=depth_attr, sample_distance=sample_dist
+            )
+            bathy_data.set(data)
+            names = ", ".join(f["name"] for f in files)
+            _log(f"Loaded contour isobaths: {names} ({len(data)} points)")
+            _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
+            ui.notification_show(
+                f"Extracted {len(data)} points from contour isobaths",
+                type="message",
+                duration=3,
+            )
+        except Exception as e:
+            _log(f"Error loading contours: {e}")
+            ui.notification_show(f"Contour load error: {e}", type="error", duration=5)
 
     @reactive.effect
     @reactive.event(input.interpolate_btn)

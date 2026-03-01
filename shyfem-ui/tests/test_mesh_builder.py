@@ -18,6 +18,7 @@ from shyfem_ui.services.mesh_builder import (
     export_grd,
     import_boundaries,
     interpolate_bathymetry_scipy,
+    load_bathymetry_contours,
     load_bathymetry_file,
     reduce_boundary,
     set_resolution,
@@ -404,6 +405,112 @@ class TestLoadBathymetry:
         path.write_text("# header\n! comment\n1 2 3\n4 5 6\n")
         data = load_bathymetry_file(path)
         assert data.shape == (2, 3)
+
+
+# ---------------------------------------------------------------------------
+# TestLoadBathymetryContours
+# ---------------------------------------------------------------------------
+
+
+class TestLoadBathymetryContours:
+    """Tests for load_bathymetry_contours()."""
+
+    def test_geojson_linestring_contours(self, tmp_path):
+        """LineString features with depth attribute produce points."""
+        geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[0, 0], [5, 0], [10, 0]],
+                    },
+                    "properties": {"depth": 10.0},
+                },
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[0, 5], [5, 5], [10, 5]],
+                    },
+                    "properties": {"depth": 20.0},
+                },
+            ],
+        }
+        path = tmp_path / "isobaths.geojson"
+        path.write_text(json.dumps(geojson))
+        data = load_bathymetry_contours(path)
+        assert data.shape == (6, 3)
+        # First 3 points should have depth=10
+        np.testing.assert_allclose(data[:3, 2], 10.0)
+        # Last 3 points should have depth=20
+        np.testing.assert_allclose(data[3:, 2], 20.0)
+
+    def test_auto_detects_depth_attribute(self, tmp_path):
+        """Finds depth under alternate attribute names like 'elev'."""
+        geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[0, 0], [1, 1]],
+                    },
+                    "properties": {"ELEV": 5.5},
+                },
+            ],
+        }
+        path = tmp_path / "contours.geojson"
+        path.write_text(json.dumps(geojson))
+        data = load_bathymetry_contours(path, depth_attr="ELEV")
+        assert data.shape == (2, 3)
+        np.testing.assert_allclose(data[:, 2], 5.5)
+
+    def test_resample_distance(self, tmp_path):
+        """sample_distance adds points along long segments."""
+        geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[0, 0], [100, 0]],
+                    },
+                    "properties": {"depth": 15.0},
+                },
+            ],
+        }
+        path = tmp_path / "sparse.geojson"
+        path.write_text(json.dumps(geojson))
+        # Without resampling: 2 vertices
+        data_raw = load_bathymetry_contours(path)
+        assert len(data_raw) == 2
+        # With resampling at 10-unit intervals: ~11 points
+        data_resampled = load_bathymetry_contours(path, sample_distance=10.0)
+        assert len(data_resampled) > len(data_raw)
+
+    def test_no_depth_attribute_raises(self, tmp_path):
+        """Missing depth attribute raises ValueError."""
+        geojson = {
+            "type": "FeatureCollection",
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[0, 0], [1, 1]],
+                    },
+                    "properties": {"name": "contour_1"},
+                },
+            ],
+        }
+        path = tmp_path / "no_depth.geojson"
+        path.write_text(json.dumps(geojson))
+        with pytest.raises(ValueError, match="No numeric depth attribute"):
+            load_bathymetry_contours(path)
 
 
 # ---------------------------------------------------------------------------
