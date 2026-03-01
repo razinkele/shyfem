@@ -1,5 +1,6 @@
 """Mesh builder page — 5-step wizard for creating FEM meshes."""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -29,6 +30,15 @@ from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
 
+# Step definitions for the wizard navigation
+_STEPS = {
+    "import": "1. Import Boundaries",
+    "refine": "2. Refine Boundaries",
+    "mesh": "3. Generate Mesh",
+    "bathy": "4. Interpolate Bathymetry",
+    "export": "5. Export",
+}
+
 
 # ---------------------------------------------------------------------------
 # UI
@@ -37,48 +47,39 @@ logger = logging.getLogger(__name__)
 
 @module.ui
 def mesh_builder_ui():
-    """Mesh builder page UI — 5-step wizard."""
+    """Mesh builder page UI — 5-step wizard (no nested sidebar)."""
     return ui.div(
         ui.h3("Mesh Builder"),
         ui.p(
             "Create simulation-ready meshes from coastline data in 5 steps.",
             class_="text-muted",
         ),
-        ui.layout_sidebar(
-            ui.sidebar(
-                # Step navigation
-                ui.h5("Steps"),
-                ui.input_radio_buttons(
-                    "wizard_step",
-                    "",
-                    choices={
-                        "import": "1. Import Boundaries",
-                        "refine": "2. Refine Boundaries",
-                        "mesh": "3. Generate Mesh",
-                        "bathy": "4. Interpolate Bathymetry",
-                        "export": "5. Export",
-                    },
-                    selected="import",
-                ),
-                ui.hr(),
-                # Status summary
-                ui.output_ui("status_summary"),
-                width=280,
+        # Step navigation as horizontal pills (no nested sidebar)
+        ui.div(
+            ui.input_radio_buttons(
+                "wizard_step",
+                "",
+                choices=_STEPS,
+                selected="import",
+                inline=True,
             ),
-            # Main content — one panel per step
-            ui.navset_card_tab(
-                ui.nav_panel(
-                    "Wizard",
-                    ui.output_ui("wizard_content"),
-                ),
-                ui.nav_panel(
-                    "Preview",
-                    grid_map_ui("mesh_preview"),
-                ),
-                ui.nav_panel(
-                    "Log",
-                    log_viewer_ui("build_log"),
-                ),
+            class_="mb-3",
+        ),
+        # Status bar
+        ui.output_ui("status_summary"),
+        # Main content area — tabs for wizard / preview / log
+        ui.navset_card_tab(
+            ui.nav_panel(
+                "Wizard",
+                ui.output_ui("wizard_content"),
+            ),
+            ui.nav_panel(
+                "Preview",
+                grid_map_ui("mesh_preview"),
+            ),
+            ui.nav_panel(
+                "Log",
+                log_viewer_ui("build_log"),
             ),
         ),
     )
@@ -109,6 +110,7 @@ def mesh_builder_server(
     preview_grd = reactive.value(None)  # Currently shown in map
     log_content = reactive.value("")
     bathy_data = reactive.value(None)  # Loaded bathymetry points
+    is_busy = reactive.value(False)  # Track long operations
 
     # --- Initialize child modules ---
     log_viewer_server("build_log", log_content)
@@ -161,35 +163,35 @@ def mesh_builder_server(
         # Fallback: return the first file
         return work / files[0]["name"]
 
-    # --- Status summary ---
+    # --- Status summary (horizontal bar) ---
     @render.ui
     def status_summary():
         items = []
         bgrd = boundary_grd.get()
         if bgrd:
             items.append(
-                ui.div(
-                    ui.tags.span("Boundary: ", class_="fw-bold"),
-                    f"{bgrd.num_nodes} nodes, {bgrd.num_lines} lines",
-                    class_="small mb-1",
+                ui.tags.span(
+                    ui.tags.i(class_="bi bi-check-circle-fill text-success me-1"),
+                    f"Boundary: {bgrd.num_nodes} nodes",
+                    class_="me-3",
                 )
             )
         rgrd = refined_grd.get()
-        if rgrd:
+        if rgrd and rgrd is not bgrd:
             items.append(
-                ui.div(
-                    ui.tags.span("Refined: ", class_="fw-bold"),
-                    f"{rgrd.num_nodes} nodes",
-                    class_="small mb-1",
+                ui.tags.span(
+                    ui.tags.i(class_="bi bi-check-circle-fill text-success me-1"),
+                    f"Refined: {rgrd.num_nodes} nodes",
+                    class_="me-3",
                 )
             )
         mgrd = mesh_grd.get()
         if mgrd:
             items.append(
-                ui.div(
-                    ui.tags.span("Mesh: ", class_="fw-bold"),
-                    f"{mgrd.num_nodes} nodes, {mgrd.num_elements} elements",
-                    class_="small mb-1",
+                ui.tags.span(
+                    ui.tags.i(class_="bi bi-check-circle-fill text-success me-1"),
+                    f"Mesh: {mgrd.num_nodes} nodes, {mgrd.num_elements} elems",
+                    class_="me-3",
                 )
             )
         fgrd = final_grd.get()
@@ -197,15 +199,14 @@ def mesh_builder_server(
             depths = [n.depth for n in fgrd.nodes.values() if n.depth is not None]
             if depths:
                 items.append(
-                    ui.div(
-                        ui.tags.span("Bathymetry: ", class_="fw-bold"),
-                        f"depth {min(depths):.1f} to {max(depths):.1f}",
-                        class_="small mb-1",
+                    ui.tags.span(
+                        ui.tags.i(class_="bi bi-check-circle-fill text-success me-1"),
+                        f"Depth: {min(depths):.1f} — {max(depths):.1f}",
                     )
                 )
         if not items:
-            return ui.p("No data loaded yet.", class_="text-muted small")
-        return ui.div(*items)
+            return ui.span()
+        return ui.div(*items, class_="small text-muted mb-2")
 
     # --- Wizard content router ---
     @render.ui
@@ -235,7 +236,11 @@ def mesh_builder_server(
             ui.input_file(
                 "boundary_file",
                 "Upload Boundary File",
-                accept=[".geojson", ".json", ".shp", ".shx", ".dbf", ".prj", ".cpg", ".gpkg", ".zip", "application/geopackage+sqlite3", "application/geo+json"],
+                accept=[
+                    ".geojson", ".json", ".shp", ".shx", ".dbf", ".prj",
+                    ".cpg", ".gpkg", ".zip",
+                    "application/geopackage+sqlite3", "application/geo+json",
+                ],
                 multiple=True,
             ),
             ui.p(
@@ -333,9 +338,13 @@ def mesh_builder_server(
                 ),
                 ui.column(
                     6,
-                    ui.input_slider("reduce_tolerance", "Simplify Tolerance", min=0.0, max=100.0, value=0.0, step=0.1),
+                    ui.input_slider(
+                        "reduce_tolerance", "Simplify Tolerance",
+                        min=0.0, max=100.0, value=0.0, step=0.1,
+                    ),
                     ui.input_action_button(
-                        "apply_reduce", "Apply Simplification", class_="btn-outline-primary btn-sm mb-2"
+                        "apply_reduce", "Apply Simplification",
+                        class_="btn-outline-primary btn-sm mb-2",
                     ),
                 ),
             ),
@@ -361,7 +370,7 @@ def mesh_builder_server(
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
             new_count = len(new_grd.lines[line_id].nodes)
-            _log(f"Smoothed line {line_id}: {method}, {iterations} iterations → {new_count} nodes")
+            _log(f"Smoothed line {line_id}: {method}, {iterations} iters -> {new_count} nodes")
         except Exception as e:
             _log(f"Smoothing error: {e}")
             ui.notification_show(str(e), type="error", duration=3)
@@ -379,7 +388,7 @@ def mesh_builder_server(
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
             new_count = len(new_grd.lines[line_id].nodes)
-            _log(f"Reduced line {line_id}: tolerance={tolerance} → {new_count} nodes")
+            _log(f"Reduced line {line_id}: tolerance={tolerance} -> {new_count} nodes")
         except Exception as e:
             _log(f"Reduction error: {e}")
             ui.notification_show(str(e), type="error", duration=3)
@@ -404,24 +413,30 @@ def mesh_builder_server(
         no_boundary = grd is None
         return ui.div(
             ui.h4("Step 3: Generate Mesh"),
-            ui.p("Configure triangulation method, mesh density and quality constraints.", class_="text-muted"),
+            ui.p(
+                "Configure triangulation method, mesh density and quality constraints.",
+                class_="text-muted",
+            ),
             ui.div(
                 "Import boundaries first (Steps 1-2).",
                 class_="alert alert-info py-2 px-3 small",
             ) if no_boundary else ui.span(),
-            ui.input_select(
-                "mesh_method",
-                "Mesh Generation Method",
-                choices={
-                    "delaunay_quality": "Constrained Delaunay — quality mesh (Triangle)",
-                    "delaunay_conforming": "Conforming Delaunay — no area constraint (Triangle)",
-                    "delaunay_minimal": "Minimal Delaunay — fewest triangles (Triangle)",
-                },
-                selected="delaunay_quality",
-            ),
             ui.row(
                 ui.column(
-                    6,
+                    4,
+                    ui.input_select(
+                        "mesh_method",
+                        "Mesh Method",
+                        choices={
+                            "delaunay_quality": "Quality mesh",
+                            "delaunay_conforming": "Conforming (no area limit)",
+                            "delaunay_minimal": "Minimal (fewest triangles)",
+                        },
+                        selected="delaunay_quality",
+                    ),
+                ),
+                ui.column(
+                    4,
                     ui.input_numeric(
                         "max_area",
                         "Max Triangle Area",
@@ -431,26 +446,25 @@ def mesh_builder_server(
                     ui.output_ui("element_estimate"),
                 ),
                 ui.column(
-                    6,
+                    4,
                     ui.input_slider(
                         "min_angle",
                         "Min Angle (degrees)",
-                        min=10,
-                        max=33,
-                        value=20,
-                    ),
-                    ui.p(
-                        "Higher values produce more uniform triangles but may "
-                        "increase element count. Max theoretical limit is 33.9°.",
-                        class_="text-muted small",
+                        min=10, max=33, value=20,
                     ),
                 ),
+            ),
+            ui.p(
+                "Quality: full constraints. Conforming: angle only, no area limit. "
+                "Minimal: fewest triangles (no constraints). Max angle: 33.9 deg.",
+                class_="text-muted small",
             ),
             ui.input_action_button(
                 "generate_mesh",
                 "Generate Mesh",
                 class_="btn-primary w-100 mt-2 mb-2",
             ),
+            ui.output_ui("mesh_progress"),
             ui.output_ui("mesh_stats_display"),
             ui.input_action_button(
                 "next_to_bathy",
@@ -468,9 +482,22 @@ def mesh_builder_server(
         count = estimate_element_count(grd, area)
         return ui.p(f"Estimated elements: ~{count:,}", class_="small text-info")
 
+    @render.ui
+    def mesh_progress():
+        if is_busy.get():
+            return ui.div(
+                ui.div(
+                    ui.div(class_="spinner-border spinner-border-sm me-2"),
+                    "Generating mesh... this may take a moment for large boundaries.",
+                    class_="d-flex align-items-center",
+                ),
+                class_="alert alert-warning py-2 px-3 small",
+            )
+        return ui.span()
+
     @reactive.effect
     @reactive.event(input.generate_mesh)
-    def _on_generate_mesh():
+    async def _on_generate_mesh():
         grd = refined_grd.get()
         if grd is None:
             ui.notification_show("No boundary data to mesh.", type="warning")
@@ -478,23 +505,25 @@ def mesh_builder_server(
         method = input.mesh_method()
         max_area = input.max_area()
         min_angle = input.min_angle()
-        try:
-            # Interpret method choice
-            if method == "delaunay_minimal":
-                # Minimal: PSLG only, no quality or area constraints
-                eff_area = None
-                eff_angle = 0.0
-            elif method == "delaunay_conforming":
-                # Conforming: quality constraint but no area limit
-                eff_area = None
-                eff_angle = min_angle
-            else:
-                # Quality: full constraints
-                eff_area = max_area
-                eff_angle = min_angle
 
-            _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle}°...")
-            new_mesh = triangulate(grd, max_area=eff_area, min_angle=eff_angle)
+        # Interpret method choice
+        if method == "delaunay_minimal":
+            eff_area = None
+            eff_angle = 0.0
+        elif method == "delaunay_conforming":
+            eff_area = None
+            eff_angle = min_angle
+        else:
+            eff_area = max_area
+            eff_angle = min_angle
+
+        _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
+        is_busy.set(True)
+        try:
+            # Run triangulation in a thread so the UI stays responsive
+            new_mesh = await asyncio.to_thread(
+                triangulate, grd, max_area=eff_area, min_angle=eff_angle
+            )
             mesh_grd.set(new_mesh)
             preview_grd.set(new_mesh)
             _log(f"Mesh generated: {new_mesh.num_nodes} nodes, {new_mesh.num_elements} elements")
@@ -506,6 +535,8 @@ def mesh_builder_server(
         except Exception as e:
             _log(f"Mesh generation error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
+        finally:
+            is_busy.set(False)
 
     @render.ui
     def mesh_stats_display():
@@ -525,7 +556,7 @@ def mesh_builder_server(
             rows.append(("Area (min/max)", f"{a['min']:.2f} / {a['max']:.2f}"))
         if stats.get("min_angles"):
             ang = stats["min_angles"]
-            rows.append(("Min Angle (min/mean)", f"{ang['min']:.1f}° / {ang['mean']:.1f}°"))
+            rows.append(("Min Angle (min/mean)", f"{ang['min']:.1f} / {ang['mean']:.1f} deg"))
         return ui.tags.table(
             ui.tags.tbody(
                 *[
@@ -590,8 +621,10 @@ def mesh_builder_server(
                 ui.input_file(
                     "bathy_contour_file",
                     "Upload Contour Isobaths",
-                    accept=[".shp", ".shx", ".dbf", ".prj", ".cpg",
-                            ".geojson", ".json", ".gpkg", ".zip"],
+                    accept=[
+                        ".shp", ".shx", ".dbf", ".prj", ".cpg",
+                        ".geojson", ".json", ".gpkg", ".zip",
+                    ],
                     multiple=True,
                 ),
                 ui.p(
@@ -634,15 +667,28 @@ def mesh_builder_server(
             ui.div(
                 ui.tags.strong("Method guide", class_="d-block mb-1"),
                 ui.tags.ul(
-                    ui.tags.li(ui.tags.strong("Linear"), " — smooth, good general-purpose default."),
-                    ui.tags.li(ui.tags.strong("Nearest"), " — fast, produces discontinuous steps between data points."),
-                    ui.tags.li(ui.tags.strong("Cubic"), " — smooth but can overshoot between sparse data."),
-                    ui.tags.li(ui.tags.strong("IDW"), " — inverse-distance weighted average of 8 nearest neighbors."),
+                    ui.tags.li(
+                        ui.tags.strong("Linear"),
+                        " — smooth, good general-purpose default.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("Nearest"),
+                        " — fast, produces discontinuous steps between data points.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("Cubic"),
+                        " — smooth but can overshoot between sparse data.",
+                    ),
+                    ui.tags.li(
+                        ui.tags.strong("IDW"),
+                        " — inverse-distance weighted average of 8 nearest neighbors.",
+                    ),
                     ui.tags.li(
                         ui.tags.strong("RBF (thin-plate spline)"),
                         " — globally smooth surface that ",
                         ui.tags.em("naturally extrapolates"),
-                        " beyond the data extent. Best for sparse bathymetry and coastal edges.",
+                        " beyond the data extent. Best for sparse bathymetry "
+                        "and coastal edges.",
                     ),
                     ui.tags.li(
                         ui.tags.strong("Clough-Tocher (C1 cubic)"),
@@ -650,10 +696,16 @@ def mesh_builder_server(
                         "Smoother than Cubic with less overshoot. Falls back to "
                         "nearest-neighbor outside the data hull.",
                     ),
-                    ui.tags.li(ui.tags.strong("shybas"), " — SHYFEM's built-in Fortran interpolation."),
+                    ui.tags.li(
+                        ui.tags.strong("shybas"),
+                        " — SHYFEM's built-in Fortran interpolation.",
+                    ),
                     class_="small mb-1 ps-3",
                 ),
-                ui.tags.strong("Recommendation for contour isobaths:", class_="d-block mt-2 mb-1"),
+                ui.tags.strong(
+                    "Recommendation for contour isobaths:",
+                    class_="d-block mt-2 mb-1",
+                ),
                 ui.p(
                     "Use RBF + boundary zero for best results. RBF smoothly "
                     "interpolates between contour lines and extrapolates to the "
@@ -701,15 +753,15 @@ def mesh_builder_server(
                     ),
                     ui.tags.tr(
                         ui.tags.td("X range", class_="pe-3 fw-bold"),
-                        ui.tags.td(f"{data[:,0].min():.4f} — {data[:,0].max():.4f}"),
+                        ui.tags.td(f"{data[:,0].min():.4f} -- {data[:,0].max():.4f}"),
                     ),
                     ui.tags.tr(
                         ui.tags.td("Y range", class_="pe-3 fw-bold"),
-                        ui.tags.td(f"{data[:,1].min():.4f} — {data[:,1].max():.4f}"),
+                        ui.tags.td(f"{data[:,1].min():.4f} -- {data[:,1].max():.4f}"),
                     ),
                     ui.tags.tr(
                         ui.tags.td("Depth range", class_="pe-3 fw-bold"),
-                        ui.tags.td(f"{data[:,2].min():.2f} — {data[:,2].max():.2f}"),
+                        ui.tags.td(f"{data[:,2].min():.2f} -- {data[:,2].max():.2f}"),
                     ),
                 ),
                 class_="table table-sm table-borderless mb-0",
@@ -774,6 +826,7 @@ def mesh_builder_server(
             return
         method = input.bathy_method()
         boundary_zero = input.use_boundary_zero()
+        is_busy.set(True)
         try:
             _log(f"Interpolating bathymetry: method={method}, boundary_zero={boundary_zero}...")
             if method == "shybas":
@@ -782,8 +835,9 @@ def mesh_builder_server(
                     grd, Path("bathy_temp.xyz"), work_dir, wrapper
                 )
             else:
-                result_grd = interpolate_bathymetry_scipy(
-                    grd, data, method=method, use_boundary_zero=boundary_zero
+                result_grd = await asyncio.to_thread(
+                    interpolate_bathymetry_scipy,
+                    grd, data, method=method, use_boundary_zero=boundary_zero,
                 )
             final_grd.set(result_grd)
             preview_grd.set(result_grd)
@@ -794,6 +848,8 @@ def mesh_builder_server(
         except Exception as e:
             _log(f"Interpolation error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
+        finally:
+            is_busy.set(False)
 
     @render.ui
     def bathy_stats_display():
@@ -806,9 +862,18 @@ def mesh_builder_server(
         darr = np.array(depths)
         return ui.tags.table(
             ui.tags.tbody(
-                ui.tags.tr(ui.tags.td("Min depth", class_="pe-3 fw-bold"), ui.tags.td(f"{darr.min():.2f}")),
-                ui.tags.tr(ui.tags.td("Max depth", class_="pe-3 fw-bold"), ui.tags.td(f"{darr.max():.2f}")),
-                ui.tags.tr(ui.tags.td("Mean depth", class_="pe-3 fw-bold"), ui.tags.td(f"{darr.mean():.2f}")),
+                ui.tags.tr(
+                    ui.tags.td("Min depth", class_="pe-3 fw-bold"),
+                    ui.tags.td(f"{darr.min():.2f}"),
+                ),
+                ui.tags.tr(
+                    ui.tags.td("Max depth", class_="pe-3 fw-bold"),
+                    ui.tags.td(f"{darr.max():.2f}"),
+                ),
+                ui.tags.tr(
+                    ui.tags.td("Mean depth", class_="pe-3 fw-bold"),
+                    ui.tags.td(f"{darr.mean():.2f}"),
+                ),
             ),
             class_="table table-sm table-borderless mb-0",
         )
