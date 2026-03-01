@@ -8,6 +8,7 @@ import importlib
 
 __all__ = [
     "home",
+    "mesh_builder",
     "grid_prep",
     "partitioning",
     "simulation",

@@ -24,6 +24,7 @@ from shyfem_ui.pages import (
     files,
     grid_prep,
     home,
+    mesh_builder,
     partitioning,
     postprocess,
     run,
@@ -48,6 +49,7 @@ SIDEBAR_GROUPS = [
     {
         "name": "Prepare",
         "items": [
+            {"label": "Mesh Builder", "icon": "bi-pencil-square", "value": "Mesh Builder"},
             {"label": "Grid Prep", "icon": "bi-grid-3x3", "value": "Grid Prep"},
             {"label": "Partitioning", "icon": "bi-diagram-3", "value": "Partitioning"},
         ],
@@ -876,6 +878,11 @@ def _build_ui(config: Config) -> ui.Tag:
     content_panels = ui.div(
         ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
         ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
+        ui.div(
+            mesh_builder.mesh_builder_ui("mesh_builder"),
+            id="sf-page-Mesh-Builder",
+            class_="sf-page",
+        ),
         ui.div(grid_prep.grid_prep_ui("grid_prep"), id="sf-page-Grid-Prep", class_="sf-page"),
         ui.div(
             partitioning.partitioning_ui("partitioning"),
@@ -965,6 +972,9 @@ def _build_server(
         active_project=active_project,
         nav_callback=nav_to,
         tutorial_context=tutorial_context,
+    )
+    mesh_builder.mesh_builder_server(
+        "mesh_builder", config, active_project=active_project, tutorial_context=tutorial_context
     )
     grid_prep.grid_prep_server(
         "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
