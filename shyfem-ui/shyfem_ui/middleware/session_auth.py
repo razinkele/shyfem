@@ -75,46 +75,252 @@ _LOGIN_HTML = """\
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SHYFEM Login</title>
-  <link rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
-        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YcnS/1Vb6E5lr8e9JOoFzF5ldQ3X6OR6poi"
-        crossorigin="anonymous">
+  <title>SHYFEM Workbench</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
   <style>
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
     body {{
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
+      background: linear-gradient(135deg, #0B3D5B 0%, #1A6B8A 50%, #2D9CBA 100%);
+      background-size: 400% 400%;
+      animation: gradientShift 15s ease infinite;
     }}
+
+    @keyframes gradientShift {{
+      0%   {{ background-position: 0% 50%; }}
+      50%  {{ background-position: 100% 50%; }}
+      100% {{ background-position: 0% 50%; }}
+    }}
+
     .login-card {{
-      max-width: 420px;
+      max-width: 440px;
+      width: 95%;
+      background: rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      padding: 40px 36px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+      animation: cardEntrance 600ms ease-out both;
+    }}
+
+    @keyframes cardEntrance {{
+      from {{
+        opacity: 0;
+        transform: translateY(30px);
+      }}
+      to {{
+        opacity: 1;
+        transform: translateY(0);
+      }}
+    }}
+
+    .brand {{
+      text-align: center;
+      margin-bottom: 8px;
+    }}
+
+    .brand svg {{
+      width: 48px;
+      height: 48px;
+      margin-bottom: 12px;
+    }}
+
+    .brand h1 {{
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: #fff;
+      margin: 0;
+      letter-spacing: -0.02em;
+    }}
+
+    .brand .tagline {{
+      font-size: 0.85rem;
+      color: rgba(255, 255, 255, 0.7);
+      margin-top: 4px;
+      font-weight: 400;
+    }}
+
+    .info {{
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin: 20px 0 28px;
+      animation: cardEntrance 600ms ease-out 100ms both;
+    }}
+
+    .info ul {{
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }}
+
+    .info li {{
+      font-size: 0.82rem;
+      color: rgba(255, 255, 255, 0.8);
+      padding: 3px 0;
+    }}
+
+    .info li::before {{
+      margin-right: 8px;
+      opacity: 0.7;
+    }}
+
+    .form-group {{
+      margin-bottom: 18px;
+      animation: cardEntrance 500ms ease-out both;
+    }}
+
+    .form-group:nth-child(1) {{ animation-delay: 150ms; }}
+    .form-group:nth-child(2) {{ animation-delay: 250ms; }}
+    .form-group.btn-group       {{ animation-delay: 350ms; }}
+
+    label {{
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: rgba(255, 255, 255, 0.85);
+      margin-bottom: 6px;
+      letter-spacing: 0.01em;
+    }}
+
+    input[type="text"],
+    input[type="password"] {{
       width: 100%;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      color: #fff;
+      outline: none;
+      transition: box-shadow 200ms ease, border-color 200ms ease;
+    }}
+
+    input[type="text"]::placeholder,
+    input[type="password"]::placeholder {{
+      color: rgba(255, 255, 255, 0.4);
+    }}
+
+    input[type="text"]:focus,
+    input[type="password"]:focus {{
+      border-color: #2D9CBA;
+      box-shadow: 0 0 0 3px rgba(45, 156, 186, 0.35);
+    }}
+
+    .btn-signin {{
+      width: 100%;
+      padding: 11px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      font-family: inherit;
+      color: #fff;
+      background: linear-gradient(135deg, #1A6B8A, #2D9CBA);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: transform 150ms ease, filter 150ms ease;
+      letter-spacing: 0.01em;
+    }}
+
+    .btn-signin:hover {{
+      transform: scale(1.02);
+      filter: brightness(1.1);
+    }}
+
+    .btn-signin:active {{
+      transform: scale(0.99);
+    }}
+
+    .error-alert {{
+      background: rgba(220, 53, 69, 0.2);
+      border: 1px solid rgba(220, 53, 69, 0.5);
+      border-radius: 8px;
+      color: #ffc9cf;
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      margin-bottom: 18px;
+      animation: shake 400ms ease;
+    }}
+
+    @keyframes shake {{
+      0%, 100% {{ transform: translateX(0); }}
+      20%      {{ transform: translateX(-6px); }}
+      40%      {{ transform: translateX(6px); }}
+      60%      {{ transform: translateX(-4px); }}
+      80%      {{ transform: translateX(4px); }}
+    }}
+
+    .footer {{
+      text-align: center;
+      margin-top: 24px;
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 0.02em;
+    }}
+
+    @media (max-width: 480px) {{
+      .login-card {{
+        padding: 28px 22px;
+      }}
+      .brand h1 {{
+        font-size: 1.35rem;
+      }}
     }}
   </style>
 </head>
 <body>
   <div class="login-card">
-    <div class="card shadow-lg">
-      <div class="card-body p-4">
-        <h3 class="card-title text-center mb-4">SHYFEM Login</h3>
-        {error}
-        <form method="post" action="{login_action}">
-          <div class="mb-3">
-            <label for="username" class="form-label">Username</label>
-            <input type="text" class="form-control" id="username"
-                   name="username" required autofocus>
-          </div>
-          <div class="mb-3">
-            <label for="password" class="form-label">Password</label>
-            <input type="password" class="form-control" id="password"
-                   name="password" required>
-          </div>
-          <button type="submit" class="btn btn-primary w-100">Sign In</button>
-        </form>
-      </div>
+    <div class="brand">
+      <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M4 28c4-4 8-6 12-2s8 2 12-2 8-6 12-2" stroke="rgba(255,255,255,0.9)"
+              stroke-width="2.5" stroke-linecap="round" fill="none"/>
+        <path d="M4 34c4-4 8-6 12-2s8 2 12-2 8-6 12-2" stroke="rgba(255,255,255,0.5)"
+              stroke-width="2" stroke-linecap="round" fill="none"/>
+        <path d="M4 22c4-4 8-6 12-2s8 2 12-2 8-6 12-2" stroke="rgba(255,255,255,0.3)"
+              stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      </svg>
+      <h1>SHYFEM Workbench</h1>
+      <div class="tagline">Finite element hydrodynamic simulation platform</div>
     </div>
+
+    <div class="info">
+      <ul>
+        <li>\u2248 Lagoons, coastal seas &amp; estuaries</li>
+        <li>\u2248 2D/3D modeling with MPI parallelization</li>
+        <li>\u2248 Wind, tidal, baroclinic &amp; transport physics</li>
+      </ul>
+    </div>
+
+    {error}
+
+    <form method="post" action="{login_action}">
+      <div class="form-group">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" required autofocus
+               placeholder="Enter your username">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required
+               placeholder="Enter your password">
+      </div>
+      <div class="form-group btn-group">
+        <button type="submit" class="btn-signin">Sign In</button>
+      </div>
+    </form>
+
+    <div class="footer">System of HydroDYnamic Finite Element Modules</div>
   </div>
 </body>
 </html>
@@ -278,7 +484,7 @@ class SessionAuthMiddleware:
         user = self.auth_service.authenticate(username, password)
         if user is None:
             error_html = (
-                '<div class="alert alert-danger" role="alert">'
+                '<div class="error-alert" role="alert">'
                 "Invalid username or password."
                 "</div>"
             )
