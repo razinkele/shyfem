@@ -810,7 +810,7 @@ def _build_ui(config: Config) -> ui.Tag:
             ui.tags.a(
                 ui.tags.i(class_="bi bi-box-arrow-right me-1"),
                 "Logout",
-                href="/logout",
+                href=f"{config.root_path}/logout",
                 class_="btn btn-sm sf-topbar-btn",
                 id="logout-btn",
             ),
