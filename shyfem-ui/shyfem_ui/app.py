@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from shiny import App, reactive, ui
+from shiny import App, reactive, render, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
@@ -807,6 +807,12 @@ def _build_ui(config: Config) -> ui.Tag:
                 onclick="shyfemToggleDark()",
                 title="Toggle dark mode",
             ),
+            ui.span(
+                ui.tags.i(class_="bi bi-person-circle me-1"),
+                ui.output_text("_current_username", inline=True),
+                class_="me-3",
+                style="color:rgba(255,255,255,0.75);font-size:0.85rem;",
+            ),
             ui.tags.a(
                 ui.tags.i(class_="bi bi-box-arrow-right me-1"),
                 "Logout",
@@ -883,6 +889,12 @@ def _build_server(
     _is_server = config.deployment_mode == "server"
     _current_user = get_current_user()
     _user_id = _current_user["id"] if _current_user else None
+
+    @render.text
+    def _current_username():
+        if _current_user:
+            return _current_user.get("display_name") or _current_user.get("username", "")
+        return ""
 
     async def _on_session_ended():
         try:
