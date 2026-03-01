@@ -78,20 +78,21 @@ _LOGIN_HTML = """\
   <title>SHYFEM Workbench</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600&display=swap"
         rel="stylesheet">
   <style>
     *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
     body {{
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      font-family: 'Outfit', system-ui, -apple-system, sans-serif;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: linear-gradient(135deg, #0B3D5B 0%, #1A6B8A 50%, #2D9CBA 100%);
+      background: linear-gradient(160deg, #061E2F 0%, #0B3D5B 30%, #1A6B8A 60%, #2D9CBA 100%);
       background-size: 400% 400%;
-      animation: gradientShift 15s ease infinite;
+      animation: gradientShift 18s ease infinite;
+      overflow: hidden;
     }}
 
     @keyframes gradientShift {{
@@ -111,6 +112,8 @@ _LOGIN_HTML = """\
       padding: 40px 36px;
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
       animation: cardEntrance 600ms ease-out both;
+      position: relative;
+      z-index: 2;
     }}
 
     @keyframes cardEntrance {{
@@ -136,11 +139,12 @@ _LOGIN_HTML = """\
     }}
 
     .brand h1 {{
-      font-size: 1.6rem;
-      font-weight: 700;
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 1.75rem;
+      font-weight: 400;
       color: #fff;
       margin: 0;
-      letter-spacing: -0.02em;
+      letter-spacing: 0.01em;
     }}
 
     .brand .tagline {{
@@ -280,17 +284,136 @@ _LOGIN_HTML = """\
       text-decoration: underline;
     }}
 
+    /* Ocean wave layers */
+    .ocean {{
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 40vh;
+      min-height: 160px;
+      overflow: hidden;
+      pointer-events: none;
+      z-index: 1;
+    }}
+
+    .wave {{
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 200%;
+      background-repeat: repeat-x;
+      background-size: 50% 100%;
+    }}
+
+    .wave-1 {{
+      height: 130px;
+      animation: wave-flow 8s linear infinite;
+    }}
+
+    .wave-2 {{
+      height: 110px;
+      bottom: -4px;
+      animation: wave-flow 12s linear infinite reverse;
+    }}
+
+    .wave-3 {{
+      height: 90px;
+      bottom: -8px;
+      animation: wave-flow 16s linear infinite;
+    }}
+
+    @keyframes wave-flow {{
+      from {{ transform: translateX(0); }}
+      to {{ transform: translateX(-50%); }}
+    }}
+
+    /* Rising bubbles */
+    .bubbles {{
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      overflow: hidden;
+      z-index: 0;
+    }}
+
+    .bbl {{
+      position: absolute;
+      bottom: -20px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 30% 30%,
+        rgba(255,255,255,0.35), rgba(255,255,255,0.06));
+      box-shadow: inset 0 0 6px rgba(255,255,255,0.08);
+      animation: rise linear infinite;
+    }}
+
+    @keyframes rise {{
+      0%   {{ transform: translateY(0) translateX(0); opacity: 0; }}
+      12%  {{ opacity: 0.7; }}
+      50%  {{ transform: translateY(-50vh) translateX(18px); }}
+      88%  {{ opacity: 0.12; }}
+      100% {{ transform: translateY(-105vh) translateX(-8px); opacity: 0; }}
+    }}
+
+    /* Underwater light shimmer */
+    .shimmer {{
+      position: fixed;
+      top: -30%;
+      left: -30%;
+      width: 160%;
+      height: 160%;
+      pointer-events: none;
+      z-index: 0;
+      background:
+        radial-gradient(ellipse 500px 350px at 25% 30%,
+          rgba(45,156,186,0.09), transparent),
+        radial-gradient(ellipse 400px 300px at 75% 65%,
+          rgba(100,200,230,0.06), transparent);
+      animation: shimmer-drift 22s ease-in-out infinite alternate;
+    }}
+
+    @keyframes shimmer-drift {{
+      0%   {{ transform: translate(0, 0) rotate(0deg); }}
+      100% {{ transform: translate(6%, 4%) rotate(1.5deg); }}
+    }}
+
     @media (max-width: 480px) {{
       .login-card {{
         padding: 28px 22px;
       }}
       .brand h1 {{
-        font-size: 1.35rem;
+        font-size: 1.4rem;
+      }}
+      .ocean {{
+        height: 25vh;
+        min-height: 100px;
       }}
     }}
   </style>
 </head>
 <body>
+  <!-- Underwater light shimmer -->
+  <div class="shimmer"></div>
+
+  <!-- Rising bubbles -->
+  <div class="bubbles">
+    <div class="bbl" style="left:7%;width:3px;height:3px;animation-duration:16s;animation-delay:0s"></div>
+    <div class="bbl" style="left:18%;width:5px;height:5px;animation-duration:22s;animation-delay:3s"></div>
+    <div class="bbl" style="left:33%;width:4px;height:4px;animation-duration:18s;animation-delay:1s"></div>
+    <div class="bbl" style="left:48%;width:6px;height:6px;animation-duration:25s;animation-delay:5s"></div>
+    <div class="bbl" style="left:62%;width:3px;height:3px;animation-duration:17s;animation-delay:2s"></div>
+    <div class="bbl" style="left:76%;width:5px;height:5px;animation-duration:23s;animation-delay:4s"></div>
+    <div class="bbl" style="left:87%;width:4px;height:4px;animation-duration:19s;animation-delay:6s"></div>
+    <div class="bbl" style="left:94%;width:3px;height:3px;animation-duration:15s;animation-delay:8s"></div>
+  </div>
+
+  <!-- Ocean waves -->
+  <div class="ocean">
+    <div class="wave wave-1" style="background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 1000 100%27 preserveAspectRatio=%27none%27%3E%3Cpath d=%27M0,30 C166,0 333,60 500,30 C666,0 833,60 1000,30 V100 H0 Z%27 fill=%27rgba(255,255,255,0.07)%27/%3E%3C/svg%3E')"></div>
+    <div class="wave wave-2" style="background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 1000 100%27 preserveAspectRatio=%27none%27%3E%3Cpath d=%27M0,50 C150,20 350,80 500,50 C650,20 850,80 1000,50 V100 H0 Z%27 fill=%27rgba(255,255,255,0.05)%27/%3E%3C/svg%3E')"></div>
+    <div class="wave wave-3" style="background-image:url('data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 1000 100%27 preserveAspectRatio=%27none%27%3E%3Cpath d=%27M0,65 C80,45 180,75 280,55 C380,35 480,70 580,55 C680,40 780,70 880,55 C940,45 1000,60 1000,65 V100 H0 Z%27 fill=%27rgba(255,255,255,0.035)%27/%3E%3C/svg%3E')"></div>
+  </div>
+
   <div class="login-card">
     <div class="brand">
       <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
