@@ -12,7 +12,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from shiny import App, reactive, render, ui
+from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
@@ -683,6 +683,11 @@ document.addEventListener('DOMContentLoaded', function() {
     var sb = document.getElementById('sf-sidebar');
     if (sb) sb.classList.add('sf-sidebar-collapsed');
   }
+  // Fetch current username via HTTP (WebSocket doesn't forward cookies behind proxy)
+  fetch('api/whoami').then(function(r) { return r.json(); }).then(function(data) {
+    var el = document.getElementById('sf-current-username');
+    if (el) el.textContent = data.display_name || data.username || '';
+  }).catch(function() {});
 });
 
 function shyfemToggleDark() {
@@ -809,7 +814,7 @@ def _build_ui(config: Config) -> ui.Tag:
             ),
             ui.span(
                 ui.tags.i(class_="bi bi-person-circle me-1"),
-                ui.output_text("_current_username", inline=True),
+                ui.span(id="sf-current-username"),
                 class_="me-3",
                 style="color:rgba(255,255,255,0.75);font-size:0.85rem;",
             ),
@@ -889,12 +894,6 @@ def _build_server(
     _is_server = config.deployment_mode == "server"
     _current_user = get_current_user()
     _user_id = _current_user["id"] if _current_user else None
-
-    @render.text
-    def _current_username():
-        if _current_user:
-            return _current_user.get("display_name") or _current_user.get("username", "")
-        return ""
 
     async def _on_session_ended():
         try:

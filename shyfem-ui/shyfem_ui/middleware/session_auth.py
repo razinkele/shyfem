@@ -413,6 +413,11 @@ class SessionAuthMiddleware:
                 await self._handle_logout(session_token, send, root_path=root_path)
                 return
 
+            # GET /api/whoami -- return current user as JSON
+            if path == "/api/whoami" and method == "GET":
+                await self._handle_whoami(session_token, send)
+                return
+
             # All other paths: require valid session
             user = None
             if session_token:
@@ -549,6 +554,46 @@ class SessionAuthMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": b""})
+
+    async def _handle_whoami(self, session_token, send):
+        """Return the current user as JSON, or 401 if not authenticated."""
+        import json
+
+        user = None
+        if session_token:
+            user = self.auth_service.validate_session(session_token)
+
+        if user is None:
+            body = b'{"error":"not authenticated"}'
+            await send(
+                {
+                    "type": "http.response.start",
+                    "status": 401,
+                    "headers": [
+                        (b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode()),
+                    ],
+                }
+            )
+            await send({"type": "http.response.body", "body": body})
+            return
+
+        body = json.dumps({
+            "username": user.get("username", ""),
+            "display_name": user.get("display_name", ""),
+            "role": user.get("role", ""),
+        }).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
 
     @staticmethod
     async def _redirect(send, location: str, status: int = 302):
