@@ -115,6 +115,50 @@ def mesh_builder_server(
     def _log(msg: str) -> None:
         log_content.set(log_content.get() + msg + "\n")
 
+    def _prepare_upload_files(files: list[dict]) -> Path:
+        """Reassemble uploaded files into a single directory for fiona.
+
+        Shiny renames uploads to temp names (0.shp, 1.shx, etc.), breaking
+        multi-file formats like Shapefiles.  This copies them into a temp
+        directory with their original names so fiona can find companions.
+        Also handles .zip archives.
+        """
+        import shutil
+        import tempfile
+        import zipfile
+
+        work = Path(tempfile.mkdtemp(prefix="mesh_import_"))
+
+        # Check for zip first
+        for f in files:
+            if f["name"].lower().endswith(".zip"):
+                with zipfile.ZipFile(f["datapath"], "r") as zf:
+                    zf.extractall(work)
+                # Find the .shp inside
+                shps = list(work.rglob("*.shp"))
+                if shps:
+                    return shps[0]
+                # Maybe it's a GeoJSON or GPKG inside the zip
+                for ext in (".geojson", ".json", ".gpkg"):
+                    found = list(work.rglob(f"*{ext}"))
+                    if found:
+                        return found[0]
+                raise ValueError("No .shp, .geojson, or .gpkg found inside zip")
+
+        # Copy all files to work dir with original names
+        for f in files:
+            dest = work / f["name"]
+            shutil.copy2(f["datapath"], dest)
+
+        # Find the primary file to open
+        for ext in (".shp", ".geojson", ".json", ".gpkg"):
+            found = list(work.glob(f"*{ext}"))
+            if found:
+                return found[0]
+
+        # Fallback: return the first file
+        return work / files[0]["name"]
+
     # --- Status summary ---
     @render.ui
     def status_summary():
@@ -189,8 +233,13 @@ def mesh_builder_server(
             ui.input_file(
                 "boundary_file",
                 "Upload Boundary File",
-                accept=[".geojson", ".json", ".shp", ".gpkg", ".zip"],
-                multiple=False,
+                accept=[".geojson", ".json", ".shp", ".shx", ".dbf", ".prj", ".gpkg", ".zip"],
+                multiple=True,
+            ),
+            ui.p(
+                "For Shapefiles, select all companion files (.shp, .shx, .dbf, .prj) "
+                "together, or upload a .zip archive containing them.",
+                class_="text-muted small",
             ),
             ui.output_ui("import_result"),
         )
@@ -201,15 +250,15 @@ def mesh_builder_server(
         files = input.boundary_file()
         if not files:
             return
-        file_info = files[0]
-        temp_path = Path(file_info["datapath"])
         try:
-            grd = import_boundaries(temp_path)
+            open_path = _prepare_upload_files(files)
+            grd = import_boundaries(open_path)
             issues = validate_boundary(grd)
             boundary_grd.set(grd)
             refined_grd.set(grd)  # Start refine step with same data
             preview_grd.set(grd)
-            _log(f"Imported boundary: {file_info['name']}")
+            names = ", ".join(f["name"] for f in files)
+            _log(f"Imported boundary: {names}")
             _log(f"  Nodes: {grd.num_nodes}, Lines: {grd.num_lines}")
             if issues:
                 for issue in issues:
