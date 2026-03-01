@@ -13,7 +13,12 @@ import fiona
 import numpy as np
 import shapely.geometry
 import triangle
-from scipy.interpolate import griddata
+from scipy.interpolate import (
+    CloughTocher2DInterpolator,
+    LinearNDInterpolator,
+    RBFInterpolator,
+    griddata,
+)
 from scipy.spatial import cKDTree
 
 from shyfem_ui.services.parser_grd import (
@@ -615,21 +620,63 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
     return np.array(points)
 
 
+def extract_boundary_zero_points(grd: GrdFile) -> np.ndarray:
+    """Extract boundary line vertices as depth=0 constraint points.
+
+    Sampling the coastline boundary at zero depth prevents interpolation
+    from producing unrealistic values near shore.
+
+    Args:
+        grd: Grid with boundary lines.
+
+    Returns:
+        Nx3 numpy array of (x, y, 0.0) for every boundary node.
+    """
+    points = []
+    seen: set[int] = set()
+    for line in grd.lines.values():
+        for nid in line.nodes:
+            if nid not in seen and nid in grd.nodes:
+                node = grd.nodes[nid]
+                points.append([node.x, node.y, 0.0])
+                seen.add(nid)
+    if not points:
+        return np.empty((0, 3))
+    return np.array(points)
+
+
 def interpolate_bathymetry_scipy(
-    grd: GrdFile, bathy_points: np.ndarray, method: str = "linear"
+    grd: GrdFile,
+    bathy_points: np.ndarray,
+    method: str = "linear",
+    use_boundary_zero: bool = False,
 ) -> GrdFile:
     """Interpolate bathymetry onto mesh nodes using scipy.
 
     Args:
         grd: Mesh with nodes (from triangulation step).
         bathy_points: Nx3 array of (x, y, depth).
-        method: One of ``"nearest"``, ``"linear"``, ``"cubic"``, ``"idw"``.
+        method: One of ``"nearest"``, ``"linear"``, ``"cubic"``, ``"idw"``,
+            ``"rbf"`` (thin-plate spline), or ``"cloughtocher"`` (C1 cubic).
+        use_boundary_zero: If True, automatically inject boundary nodes as
+            depth=0 constraints before interpolating. This forces the
+            coastline to zero depth and improves near-shore results.
 
     Returns:
         New GrdFile with depth values set on all nodes.
     """
     if len(bathy_points) == 0:
         raise ValueError("No bathymetry points provided")
+
+    # Optionally prepend boundary=0 points
+    if use_boundary_zero:
+        zero_pts = extract_boundary_zero_points(grd)
+        if len(zero_pts) > 0:
+            bathy_points = np.vstack([zero_pts, bathy_points])
+            logger.info(
+                "Injected %d boundary-zero points (total: %d)",
+                len(zero_pts), len(bathy_points),
+            )
 
     bathy_xy = bathy_points[:, :2]
     bathy_z = bathy_points[:, 2]
@@ -645,6 +692,10 @@ def interpolate_bathymetry_scipy(
         if np.any(np.isnan(depths)):
             nearest = griddata(bathy_xy, bathy_z, mesh_xy, method="nearest")
             depths = np.where(np.isnan(depths), nearest, depths)
+    elif method == "rbf":
+        depths = _rbf_interpolate(bathy_xy, bathy_z, mesh_xy)
+    elif method == "cloughtocher":
+        depths = _cloughtocher_interpolate(bathy_xy, bathy_z, mesh_xy)
     else:
         raise ValueError(f"Unknown interpolation method: {method}")
 
@@ -680,6 +731,49 @@ def _idw_interpolate(
     weight_sum = weights.sum(axis=1, keepdims=True)
     values = (weights * src_z[indices]).sum(axis=1, keepdims=True) / weight_sum
     return values.ravel()
+
+
+def _rbf_interpolate(
+    src_xy: np.ndarray,
+    src_z: np.ndarray,
+    query_xy: np.ndarray,
+    kernel: str = "thin_plate_spline",
+    neighbors: int | None = None,
+) -> np.ndarray:
+    """Radial Basis Function interpolation (thin-plate spline by default).
+
+    RBF naturally extrapolates beyond the convex hull of data points,
+    producing smooth surfaces suitable for bathymetry.  For large point
+    sets (>10k), pass ``neighbors=32`` for a local approximation.
+    """
+    n_pts = len(src_xy)
+    # Use local approximation for large datasets
+    if neighbors is None and n_pts > 10_000:
+        neighbors = min(32, n_pts)
+    rbf = RBFInterpolator(
+        src_xy, src_z, kernel=kernel, neighbors=neighbors
+    )
+    return rbf(query_xy)
+
+
+def _cloughtocher_interpolate(
+    src_xy: np.ndarray,
+    src_z: np.ndarray,
+    query_xy: np.ndarray,
+) -> np.ndarray:
+    """Clough-Tocher C1-smooth cubic interpolation on data triangulation.
+
+    Produces a piecewise-cubic surface with continuous first derivatives.
+    Smoother than ``griddata(method='cubic')`` with less overshoot.
+    Falls back to nearest-neighbor for points outside the convex hull.
+    """
+    interp = CloughTocher2DInterpolator(src_xy, src_z)
+    depths = interp(query_xy)
+    # Fill NaN outside hull with nearest
+    if np.any(np.isnan(depths)):
+        nearest = griddata(src_xy, src_z, query_xy, method="nearest")
+        depths = np.where(np.isnan(depths), nearest, depths)
+    return depths
 
 
 async def interpolate_bathymetry_shybas(

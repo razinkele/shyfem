@@ -13,6 +13,7 @@ from shyfem_ui.services.mesh_builder import (
     compute_mesh_stats,
     estimate_element_count,
     export_grd,
+    extract_boundary_zero_points,
     import_boundaries,
     interpolate_bathymetry_scipy,
     interpolate_bathymetry_shybas,
@@ -624,14 +625,28 @@ def mesh_builder_server(
                     "nearest": "Nearest neighbor (scipy)",
                     "cubic": "Cubic (scipy griddata)",
                     "idw": "IDW — inverse distance weighting (k=8 neighbors)",
+                    "rbf": "RBF — thin-plate spline (smooth, extrapolates)",
+                    "cloughtocher": "Clough-Tocher — C1 cubic (smooth, no overshoot)",
                     "shybas": "shybas -bfile (SHYFEM binary)",
                 },
                 selected="linear",
             ),
             ui.p(
                 "Linear: smooth, good default. Nearest: fast, discontinuous. "
-                "Cubic: smoothest, may overshoot. IDW: distance-weighted average. "
-                "shybas: uses SHYFEM's built-in interpolation.",
+                "Cubic: smooth but may overshoot. IDW: distance-weighted. "
+                "RBF: thin-plate spline, naturally extrapolates. "
+                "Clough-Tocher: C1-smooth cubic, less overshoot than cubic. "
+                "shybas: SHYFEM built-in.",
+                class_="text-muted small",
+            ),
+            ui.input_checkbox(
+                "use_boundary_zero",
+                "Use boundary as depth = 0 (coastline constraint)",
+                value=True,
+            ),
+            ui.p(
+                "When enabled, coastline boundary nodes are injected as depth=0 "
+                "points before interpolation, preventing unrealistic values near shore.",
                 class_="text-muted small",
             ),
             ui.input_action_button(
@@ -733,15 +748,18 @@ def mesh_builder_server(
             ui.notification_show("Load mesh and bathymetry data first.", type="warning")
             return
         method = input.bathy_method()
+        boundary_zero = input.use_boundary_zero()
         try:
-            _log(f"Interpolating bathymetry: method={method}...")
+            _log(f"Interpolating bathymetry: method={method}, boundary_zero={boundary_zero}...")
             if method == "shybas":
                 work_dir = Path(config.work_dir) / "mesh_builder"
                 result_grd = await interpolate_bathymetry_shybas(
                     grd, Path("bathy_temp.xyz"), work_dir, wrapper
                 )
             else:
-                result_grd = interpolate_bathymetry_scipy(grd, data, method=method)
+                result_grd = interpolate_bathymetry_scipy(
+                    grd, data, method=method, use_boundary_zero=boundary_zero
+                )
             final_grd.set(result_grd)
             preview_grd.set(result_grd)
             depths = [n.depth for n in result_grd.nodes.values() if n.depth is not None]

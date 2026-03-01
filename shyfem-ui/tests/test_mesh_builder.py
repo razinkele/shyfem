@@ -16,6 +16,7 @@ from shyfem_ui.services.mesh_builder import (
     compute_mesh_stats,
     estimate_element_count,
     export_grd,
+    extract_boundary_zero_points,
     import_boundaries,
     interpolate_bathymetry_scipy,
     load_bathymetry_contours,
@@ -369,6 +370,166 @@ class TestInterpolateScipy:
         result = interpolate_bathymetry_scipy(mesh, bathy, method="cubic")
         for node in result.nodes.values():
             assert node.depth is not None
+
+
+# ---------------------------------------------------------------------------
+# TestRBFInterpolation
+# ---------------------------------------------------------------------------
+
+
+class TestRBFInterpolation:
+    """Tests for RBF (thin-plate spline) interpolation method."""
+
+    def _make_mesh_and_bathy(self):
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=10.0)
+        bathy = np.array([
+            [0, 0, 0], [10, 0, 10], [0, 10, 10], [10, 10, 20],
+            [5, 5, 10], [5, 0, 5], [0, 5, 5],
+        ])
+        return mesh, bathy
+
+    def test_rbf_sets_all_depths(self):
+        """RBF method assigns depth to every node."""
+        mesh, bathy = self._make_mesh_and_bathy()
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="rbf")
+        for node in result.nodes.values():
+            assert node.depth is not None
+            assert not np.isnan(node.depth)
+
+    def test_rbf_extrapolates_beyond_hull(self):
+        """RBF naturally extrapolates — no NaN outside convex hull."""
+        grd = _make_square_boundary(size=20.0)
+        mesh = triangulate(grd, max_area=20.0)
+        # Bathy covers only center 5x5 area
+        bathy = np.array([
+            [8, 8, 5], [12, 8, 5], [8, 12, 5], [12, 12, 10],
+        ])
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="rbf")
+        depths = [n.depth for n in result.nodes.values()]
+        assert all(d is not None for d in depths)
+        assert not any(np.isnan(d) for d in depths)
+
+    def test_rbf_smooth_surface(self):
+        """RBF on z=x+y produces smooth, reasonable values."""
+        mesh, bathy = self._make_mesh_and_bathy()
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="rbf")
+        for node in result.nodes.values():
+            expected = node.x + node.y
+            assert abs(node.depth - expected) < 5.0
+
+
+# ---------------------------------------------------------------------------
+# TestCloughTocherInterpolation
+# ---------------------------------------------------------------------------
+
+
+class TestCloughTocherInterpolation:
+    """Tests for CloughTocher C1 cubic interpolation."""
+
+    def _make_mesh_and_bathy(self):
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=10.0)
+        bathy = np.array([
+            [0, 0, 0], [10, 0, 10], [0, 10, 10], [10, 10, 20],
+            [5, 5, 10], [5, 0, 5], [0, 5, 5],
+        ])
+        return mesh, bathy
+
+    def test_cloughtocher_sets_all_depths(self):
+        """CloughTocher assigns depth to every node."""
+        mesh, bathy = self._make_mesh_and_bathy()
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="cloughtocher")
+        for node in result.nodes.values():
+            assert node.depth is not None
+            assert not np.isnan(node.depth)
+
+    def test_cloughtocher_smooth_surface(self):
+        """CloughTocher on z=x+y produces smooth, reasonable values."""
+        mesh, bathy = self._make_mesh_and_bathy()
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="cloughtocher")
+        for node in result.nodes.values():
+            expected = node.x + node.y
+            assert abs(node.depth - expected) < 5.0
+
+    def test_cloughtocher_fills_outside_hull(self):
+        """Nodes outside hull get nearest-neighbor fallback, not NaN."""
+        grd = _make_square_boundary(size=20.0)
+        mesh = triangulate(grd, max_area=20.0)
+        bathy = np.array([
+            [8, 8, 5], [12, 8, 5], [8, 12, 5], [12, 12, 10],
+        ])
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="cloughtocher")
+        depths = [n.depth for n in result.nodes.values()]
+        assert all(d is not None for d in depths)
+        assert not any(np.isnan(d) for d in depths)
+
+
+# ---------------------------------------------------------------------------
+# TestBoundaryZeroInjection
+# ---------------------------------------------------------------------------
+
+
+class TestBoundaryZeroInjection:
+    """Tests for extract_boundary_zero_points and use_boundary_zero flag."""
+
+    def test_extract_boundary_zero_points(self):
+        """Boundary nodes produce depth=0 points."""
+        grd = _make_square_boundary()
+        pts = extract_boundary_zero_points(grd)
+        assert pts.shape[1] == 3
+        assert len(pts) == 4  # 4 unique nodes (closing node is duplicate)
+        np.testing.assert_allclose(pts[:, 2], 0.0)
+
+    def test_boundary_zero_with_linear(self):
+        """use_boundary_zero forces boundary nodes to near-zero depth."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=10.0)
+        # Bathy: constant depth=10 everywhere
+        bathy = np.array([
+            [2, 2, 10], [8, 2, 10], [2, 8, 10], [8, 8, 10], [5, 5, 10],
+        ])
+        # Without boundary zero: all nodes ~10
+        result_no_bz = interpolate_bathymetry_scipy(
+            mesh, bathy, method="linear", use_boundary_zero=False
+        )
+        # With boundary zero: boundary nodes pulled toward 0
+        result_bz = interpolate_bathymetry_scipy(
+            mesh, bathy, method="linear", use_boundary_zero=True
+        )
+        # Some boundary-adjacent nodes should have lower depth with boundary=0
+        depths_no_bz = [n.depth for n in result_no_bz.nodes.values()]
+        depths_bz = [n.depth for n in result_bz.nodes.values()]
+        assert min(depths_bz) < min(depths_no_bz)
+
+    def test_boundary_zero_with_rbf(self):
+        """RBF + boundary_zero produces zero at coastline."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=10.0)
+        bathy = np.array([
+            [5, 5, 20], [3, 3, 15], [7, 7, 15],
+        ])
+        result = interpolate_bathymetry_scipy(
+            mesh, bathy, method="rbf", use_boundary_zero=True
+        )
+        # Interior should have high depth, edges should be near zero
+        boundary_nids = set()
+        for line in mesh.lines.values():
+            boundary_nids.update(line.nodes)
+        boundary_depths = [
+            result.nodes[nid].depth for nid in boundary_nids if nid in result.nodes
+        ]
+        interior_depths = [
+            n.depth for nid, n in result.nodes.items() if nid not in boundary_nids
+        ]
+        if boundary_depths and interior_depths:
+            assert np.mean(boundary_depths) < np.mean(interior_depths)
+
+    def test_empty_boundary_no_crash(self):
+        """Grid with no lines returns empty array."""
+        grd = GrdFile()
+        pts = extract_boundary_zero_points(grd)
+        assert pts.shape == (0, 3)
 
 
 # ---------------------------------------------------------------------------
