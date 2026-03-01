@@ -233,7 +233,7 @@ def mesh_builder_server(
             ui.input_file(
                 "boundary_file",
                 "Upload Boundary File",
-                accept=[".geojson", ".json", ".shp", ".shx", ".dbf", ".prj", ".gpkg", ".zip"],
+                accept=[".geojson", ".json", ".shp", ".shx", ".dbf", ".prj", ".cpg", ".gpkg", ".zip", "application/geopackage+sqlite3", "application/geo+json"],
                 multiple=True,
             ),
             ui.p(
