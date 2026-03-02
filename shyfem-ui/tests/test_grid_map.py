@@ -18,9 +18,11 @@ from shyfem_ui.components.grid_map import (
     _build_node_data,
     _build_triangle_data,
     _compute_quality,
+    _compute_view_state,
     _depth_to_colors,
     _get_lonlat,
     _quality_to_colors,
+    build_layers,
 )
 from shyfem_ui.services.parser_grd import (
     CoordinateSystem,
@@ -489,3 +491,150 @@ class TestBuildNodeData:
         result = _build_node_data(grd)
         ids = {n["node_id"] for n in result}
         assert ids == {1, 2, 3, 4}
+
+
+# ===========================================================================
+# TestBuildLayers
+# ===========================================================================
+
+def _layer_ids(layers: list[dict]) -> set[str]:
+    """Extract the set of layer IDs from a list of layer dicts."""
+    return {lyr["id"] for lyr in layers}
+
+
+class TestBuildLayers:
+    """Tests for build_layers()."""
+
+    def test_mesh_mode_returns_wireframe(self):
+        """Mesh mode returns wireframe path_layer but no triangles polygon."""
+        grd = _make_triangle_grid()
+        layers = build_layers(grd, mode="mesh", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False)
+        ids = _layer_ids(layers)
+        assert "wireframe" in ids
+        assert "triangles" not in ids
+
+    def test_depth_mode_returns_fill_and_wireframe(self):
+        """Depth mode returns both filled triangles and wireframe."""
+        grd = _make_triangle_grid()
+        layers = build_layers(grd, mode="depth", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False)
+        ids = _layer_ids(layers)
+        assert "triangles" in ids
+        assert "wireframe" in ids
+
+    def test_depth_3d_mode_has_extruded(self):
+        """Depth 3D mode produces triangles layer with extruded=True."""
+        grd = _make_triangle_grid()
+        layers = build_layers(grd, mode="depth_3d", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False,
+                              elevation_scale=100.0)
+        tri_layer = [l for l in layers if l["id"] == "triangles"]
+        assert len(tri_layer) == 1
+        assert tri_layer[0].get("extruded") is True
+
+    def test_boundaries_mode_adds_boundary_layers(self):
+        """Boundaries mode includes boundary_* layers."""
+        grd = _make_multi_grid()
+        layers = build_layers(grd, mode="boundaries", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False)
+        ids = _layer_ids(layers)
+        boundary_ids = {i for i in ids if i.startswith("boundary_")}
+        assert len(boundary_ids) >= 1
+
+    def test_show_boundaries_adds_layers(self):
+        """show_boundaries=True in mesh mode appends boundary_* layers."""
+        grd = _make_multi_grid()
+        layers = build_layers(grd, mode="mesh", colorscale="viridis",
+                              show_boundaries=True, show_nodes=False)
+        ids = _layer_ids(layers)
+        boundary_ids = {i for i in ids if i.startswith("boundary_")}
+        assert len(boundary_ids) >= 1
+
+    def test_show_nodes_adds_scatter(self):
+        """show_nodes=True appends a nodes scatterplot layer."""
+        grd = _make_triangle_grid()
+        layers = build_layers(grd, mode="mesh", colorscale="viridis",
+                              show_boundaries=False, show_nodes=True)
+        ids = _layer_ids(layers)
+        assert "nodes" in ids
+
+    def test_empty_grid(self):
+        """Empty grid returns empty layer list."""
+        grd = GrdFile()
+        layers = build_layers(grd, mode="mesh", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False)
+        assert layers == []
+
+    def test_partition_mode(self):
+        """Partition mode has triangles layer."""
+        grd = _make_multi_grid()
+        pmap = {1: 0, 2: 1}
+        layers = build_layers(grd, mode="partitions", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False,
+                              partition_map=pmap)
+        ids = _layer_ids(layers)
+        assert "triangles" in ids
+
+    def test_depth_3d_no_wireframe(self):
+        """Depth 3D mode should NOT have a wireframe layer."""
+        grd = _make_triangle_grid()
+        layers = build_layers(grd, mode="depth_3d", colorscale="viridis",
+                              show_boundaries=False, show_nodes=False,
+                              elevation_scale=100.0)
+        ids = _layer_ids(layers)
+        assert "wireframe" not in ids
+
+
+# ===========================================================================
+# TestComputeViewState
+# ===========================================================================
+
+class TestComputeViewState:
+    """Tests for _compute_view_state()."""
+
+    def test_geographic_grid_center(self):
+        """Center longitude/latitude should be within node bounds."""
+        grd = _make_triangle_grid()
+        vs = _compute_view_state(grd)
+        # Node x range: -0.80 to -0.78, y range: 37.70 to 37.72
+        assert -0.80 <= vs["longitude"] <= -0.78
+        assert 37.70 <= vs["latitude"] <= 37.72
+
+    def test_3d_tilts_camera(self):
+        """3D mode sets pitch=45 and bearing=-30."""
+        grd = _make_triangle_grid()
+        vs = _compute_view_state(grd, is_3d=True)
+        assert vs["pitch"] == 45
+        assert vs["bearing"] == -30
+
+    def test_empty_grid_defaults(self):
+        """Empty grid returns sensible defaults."""
+        grd = GrdFile()
+        vs = _compute_view_state(grd)
+        assert "longitude" in vs
+        assert "latitude" in vs
+        assert "zoom" in vs
+        assert vs["longitude"] == 0
+        assert vs["latitude"] == 0
+        assert vs["zoom"] == 2
+
+    def test_returns_bounds(self):
+        """View state includes bounds as [[sw], [ne]]."""
+        grd = _make_triangle_grid()
+        vs = _compute_view_state(grd)
+        assert "bounds" in vs
+        bounds = vs["bounds"]
+        assert len(bounds) == 2
+        assert len(bounds[0]) == 2  # [xmin, ymin]
+        assert len(bounds[1]) == 2  # [xmax, ymax]
+        # SW should be less than NE
+        assert bounds[0][0] <= bounds[1][0]
+        assert bounds[0][1] <= bounds[1][1]
+
+    def test_2d_flat_camera(self):
+        """2D mode sets pitch=0 and bearing=0."""
+        grd = _make_triangle_grid()
+        vs = _compute_view_state(grd, is_3d=False)
+        assert vs["pitch"] == 0
+        assert vs["bearing"] == 0

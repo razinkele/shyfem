@@ -22,6 +22,9 @@ from shiny_deckgl import (
     PALETTE_THERMAL,
     PALETTE_VIRIDIS,
     color_bins,
+    path_layer,
+    polygon_layer,
+    scatterplot_layer,
 )
 
 from shyfem_ui.services.parser_grd import GrdFile
@@ -429,6 +432,254 @@ def _build_node_data(grd: GrdFile) -> list[dict]:
         })
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Task 5: build_layers
+# ---------------------------------------------------------------------------
+
+def build_layers(
+    grd: GrdFile,
+    mode: str = "mesh",
+    colorscale: str = "viridis",
+    show_boundaries: bool = False,
+    show_nodes: bool = False,
+    elevation_scale: float = 1.0,
+    partition_map: dict[int, int] | None = None,
+) -> list[dict]:
+    """Assemble deck.gl layers for the given grid and display mode.
+
+    Parameters
+    ----------
+    grd
+        Parsed grid file.
+    mode
+        Display mode: ``"mesh"``, ``"depth"``, ``"depth_3d"``,
+        ``"boundaries"``, ``"quality"``, ``"partitions"``.
+    colorscale
+        Palette name for depth coloring (key in :data:`PALETTES`).
+    show_boundaries
+        Overlay boundary lines regardless of *mode*.
+    show_nodes
+        Overlay node scatter points.
+    elevation_scale
+        Multiplier for 3-D extrusion (``"depth_3d"`` mode only).
+    partition_map
+        ``{elem_id: partition_index}`` for partition coloring.
+
+    Returns
+    -------
+    list[dict]
+        Layer definitions suitable for ``shiny_deckgl.output_deckgl``.
+    """
+    # Empty grid => no layers
+    if not grd.nodes or not grd.elements:
+        return []
+
+    layers: list[dict] = []
+
+    # --- Shared polygon layer kwargs ---
+    _poly_common: dict = {
+        "pickable": True,
+        "opacity": 0.85,
+        "autoHighlight": True,
+        "highlightColor": [255, 255, 255, 80],
+        "getFillColor": "@@d.fill_color",
+        "getPolygon": "@@d.polygon",
+        "getLineColor": [0, 0, 0, 0],
+        "getLineWidth": 0,
+    }
+
+    # --- Wireframe edge data (reused across modes) ---
+    edge_data = _build_edge_data(grd)
+
+    # --- Build layers per mode ---
+
+    if mode == "mesh":
+        # Wireframe only, blue edges
+        layers.append(path_layer(
+            "wireframe",
+            edge_data,
+            getPath="@@d.path",
+            getColor=[45, 156, 186, 255],
+            widthMinPixels=1,
+            pickable=False,
+        ))
+
+    elif mode == "depth":
+        # Filled polygons + thin gray wireframe
+        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
+        layers.append(polygon_layer(
+            "triangles",
+            tri_data,
+            **_poly_common,
+        ))
+        layers.append(path_layer(
+            "wireframe",
+            edge_data,
+            getPath="@@d.path",
+            getColor=[150, 150, 150, 80],
+            widthMinPixels=0.5,
+            pickable=False,
+        ))
+
+    elif mode == "depth_3d":
+        # Filled polygons with extrusion, NO wireframe
+        tri_data = _build_triangle_data(
+            grd, mode=mode, colorscale=colorscale,
+            elevation_scale=elevation_scale,
+        )
+        layers.append(polygon_layer(
+            "triangles",
+            tri_data,
+            **_poly_common,
+            extruded=True,
+            getElevation="@@d.elevation",
+        ))
+
+    elif mode == "boundaries":
+        # Light filled polygons + thin wireframe + bold boundary lines
+        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
+        layers.append(polygon_layer(
+            "triangles",
+            tri_data,
+            **_poly_common,
+        ))
+        layers.append(path_layer(
+            "wireframe",
+            edge_data,
+            getPath="@@d.path",
+            getColor=[150, 150, 150, 80],
+            widthMinPixels=0.5,
+            pickable=False,
+        ))
+        # Add bold boundary path_layers
+        boundary_data = _build_boundary_data(grd)
+        for btype, blines in boundary_data.items():
+            color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
+            layers.append(path_layer(
+                f"boundary_{btype}",
+                blines,
+                getPath="@@d.path",
+                getColor=color,
+                widthMinPixels=3,
+                pickable=True,
+            ))
+
+    elif mode == "quality":
+        # Filled polygons + thin wireframe
+        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
+        layers.append(polygon_layer(
+            "triangles",
+            tri_data,
+            **_poly_common,
+        ))
+        layers.append(path_layer(
+            "wireframe",
+            edge_data,
+            getPath="@@d.path",
+            getColor=[150, 150, 150, 80],
+            widthMinPixels=0.5,
+            pickable=False,
+        ))
+
+    elif mode == "partitions":
+        # Filled polygons only (no wireframe)
+        tri_data = _build_triangle_data(
+            grd, mode=mode, colorscale=colorscale,
+            partition_map=partition_map,
+        )
+        layers.append(polygon_layer(
+            "triangles",
+            tri_data,
+            **_poly_common,
+        ))
+
+    # --- Optional boundary overlay (not in boundaries mode, already done) ---
+    if show_boundaries and mode != "boundaries":
+        boundary_data = _build_boundary_data(grd)
+        for btype, blines in boundary_data.items():
+            color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
+            layers.append(path_layer(
+                f"boundary_{btype}",
+                blines,
+                getPath="@@d.path",
+                getColor=color,
+                widthMinPixels=3,
+                pickable=True,
+            ))
+
+    # --- Optional node overlay ---
+    if show_nodes:
+        node_data = _build_node_data(grd)
+        layers.append(scatterplot_layer(
+            "nodes",
+            node_data,
+            getPosition="@@d.position",
+            getFillColor=[255, 60, 60, 220],
+            radiusMinPixels=3,
+            radiusMaxPixels=6,
+            pickable=True,
+        ))
+
+    return layers
+
+
+# ---------------------------------------------------------------------------
+# Task 6: _compute_view_state
+# ---------------------------------------------------------------------------
+
+def _compute_view_state(
+    grd: GrdFile,
+    is_3d: bool = False,
+) -> dict:
+    """Compute an initial deck.gl view state that fits the grid bounds.
+
+    Parameters
+    ----------
+    grd
+        Parsed grid file.
+    is_3d
+        If ``True``, tilt the camera for 3-D perspective.
+
+    Returns
+    -------
+    dict
+        View state with ``longitude``, ``latitude``, ``zoom``,
+        ``pitch``, ``bearing``, and ``bounds``.
+    """
+    if not grd.nodes:
+        return {
+            "longitude": 0,
+            "latitude": 0,
+            "zoom": 2,
+            "pitch": 0,
+            "bearing": 0,
+            "bounds": [[-180, -90], [180, 90]],
+        }
+
+    xmin, ymin, xmax, ymax = grd.get_bounds()
+
+    center_lon = (xmin + xmax) / 2.0
+    center_lat = (ymin + ymax) / 2.0
+
+    dx = max(xmax - xmin, 1e-6)
+    dy = max(ymax - ymin, 1e-6)
+    extent = max(dx, dy)
+    zoom = math.log2(360.0 / extent)
+    zoom = max(0, min(20, zoom))
+
+    pitch = 45 if is_3d else 0
+    bearing = -30 if is_3d else 0
+
+    return {
+        "longitude": center_lon,
+        "latitude": center_lat,
+        "zoom": zoom,
+        "pitch": pitch,
+        "bearing": bearing,
+        "bounds": [[xmin, ymin], [xmax, ymax]],
+    }
 
 
 # ---------------------------------------------------------------------------
