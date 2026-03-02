@@ -10,7 +10,10 @@ Provides zoomable/pannable mesh visualization with:
 
 from __future__ import annotations
 
+import logging
 import math
+
+from pyproj import CRS, Transformer
 
 from shiny_deckgl import (
     CARTO_DARK,
@@ -95,27 +98,104 @@ _QUALITY_PALETTE: list[list[int]] = [
 
 
 # ---------------------------------------------------------------------------
-# Task 1: _get_lonlat
+# Coordinate reprojection helpers
 # ---------------------------------------------------------------------------
 
-def _get_lonlat(grd: GrdFile) -> dict[int, list[float]]:
+_logger = logging.getLogger(__name__)
+
+
+def _is_geographic(grd: GrdFile) -> bool:
+    """Return ``True`` if the grid appears to use geographic (lon/lat) coords.
+
+    SHYFEM grids are typically in projected metre coordinates (UTM,
+    Gauss-Boaga).  We detect geographic coordinates when ALL node
+    positions fall within the WGS84 range (|x| <= 180, |y| <= 90).
+    """
+    if not grd.nodes:
+        return True
+    return all(
+        abs(n.x) <= 180 and abs(n.y) <= 90
+        for n in grd.nodes.values()
+    )
+
+
+def _detect_projected_crs(grd: GrdFile) -> int | None:
+    """Try to auto-detect the EPSG code for a projected SHYFEM grid.
+
+    Detectable projections:
+
+    * **Gauss-Boaga** (Italy): easting 1.4M-2.1M → fuse West (EPSG:3003),
+      easting 2.4M-3.1M → fuse East (EPSG:3004).
+    * **UTM**: cannot be determined from coordinates alone (the UTM zone
+      is metadata that lives in the STR ``$proj`` section).  Returns
+      ``None`` — the caller must supply the EPSG via the UI.
+
+    Returns ``None`` when the projection cannot be determined.
+    """
+    if not grd.nodes:
+        return None
+    xs = [n.x for n in grd.nodes.values()]
+    cx = sum(xs) / len(xs)
+
+    # Gauss-Boaga (Italy) — distinctive false eastings
+    if 1_400_000 < cx < 2_100_000:
+        _logger.info("Auto-detected Gauss-Boaga West (EPSG:3003)")
+        return 3003
+    if 2_400_000 < cx < 3_100_000:
+        _logger.info("Auto-detected Gauss-Boaga East (EPSG:3004)")
+        return 3004
+
+    # UTM-like (easting 100k-900k) — zone is ambiguous without metadata
+    return None
+
+
+def _get_lonlat(
+    grd: GrdFile,
+    epsg: int | None = None,
+) -> dict[int, list[float]]:
     """Return ``{node_id: [lon, lat]}`` for every node in *grd*.
 
-    For geographic coordinate systems, ``x`` is longitude and ``y`` is
-    latitude.  For Cartesian/UTM systems, the raw ``(x, y)`` values are
-    returned as-is (the caller is responsible for any projection).
+    Parameters
+    ----------
+    grd
+        Parsed grid file.
+    epsg
+        Source EPSG code for reprojection (e.g. 32630 for UTM 30N).
+        If ``None``, auto-detection is attempted (works for Gauss-Boaga;
+        UTM requires explicit EPSG).
     """
-    return {
-        nid: [float(node.x), float(node.y)]
-        for nid, node in grd.nodes.items()
-    }
+    if not grd.nodes:
+        return {}
+
+    if _is_geographic(grd) and epsg is None:
+        return {
+            nid: [float(node.x), float(node.y)]
+            for nid, node in grd.nodes.items()
+        }
+
+    # Projected grid — use explicit EPSG or try auto-detection
+    source_epsg = epsg or _detect_projected_crs(grd)
+    if source_epsg is None:
+        _logger.warning("Could not determine projection for grid; "
+                        "using raw coordinates (set EPSG in map controls)")
+        return {
+            nid: [float(node.x), float(node.y)]
+            for nid, node in grd.nodes.items()
+        }
+
+    t = Transformer.from_crs(source_epsg, 4326, always_xy=True)
+    result: dict[int, list[float]] = {}
+    for nid, node in grd.nodes.items():
+        lng, lat = t.transform(float(node.x), float(node.y))
+        result[nid] = [lng, lat]
+    return result
 
 
 # ---------------------------------------------------------------------------
 # Task 2: _build_edge_data
 # ---------------------------------------------------------------------------
 
-def _build_edge_data(grd: GrdFile) -> list[dict]:
+def _build_edge_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
     """Build deduplicated wireframe edges for all elements.
 
     Shared edges between adjacent elements appear only once.
@@ -128,7 +208,7 @@ def _build_edge_data(grd: GrdFile) -> list[dict]:
     if not grd.elements:
         return []
 
-    lonlat = _get_lonlat(grd)
+    lonlat = _get_lonlat(grd, epsg=epsg)
     seen: set[tuple[int, int]] = set()
     edges: list[dict] = []
 
@@ -226,6 +306,7 @@ def _build_triangle_data(
     colorscale: str = "viridis",
     elevation_scale: float = 1.0,
     partition_map: dict[int, int] | None = None,
+    epsg: int | None = None,
 ) -> list[dict]:
     """Build filled polygon data for deck.gl ``polygon_layer``.
 
@@ -259,7 +340,7 @@ def _build_triangle_data(
     if not grd.elements or not grd.nodes:
         return []
 
-    lonlat = _get_lonlat(grd)
+    lonlat = _get_lonlat(grd, epsg=epsg)
 
     # Gather per-element data
     records: list[dict] = []
@@ -342,7 +423,7 @@ def _triangle_tooltip(rec: dict, mode: str) -> str:
 # Task 4: _build_boundary_data + _build_node_data
 # ---------------------------------------------------------------------------
 
-def _build_boundary_data(grd: GrdFile) -> dict[int, list[dict]]:
+def _build_boundary_data(grd: GrdFile, epsg: int | None = None) -> dict[int, list[dict]]:
     """Build boundary line data grouped by line type.
 
     Parameters
@@ -359,7 +440,7 @@ def _build_boundary_data(grd: GrdFile) -> dict[int, list[dict]]:
     if not grd.lines:
         return {}
 
-    lonlat = _get_lonlat(grd)
+    lonlat = _get_lonlat(grd, epsg=epsg)
     grouped: dict[int, list[dict]] = {}
 
     for line in grd.lines.values():
@@ -389,7 +470,7 @@ def _build_boundary_data(grd: GrdFile) -> dict[int, list[dict]]:
     return grouped
 
 
-def _build_node_data(grd: GrdFile) -> list[dict]:
+def _build_node_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
     """Build node data for deck.gl ``scatterplot_layer``.
 
     Parameters
@@ -406,7 +487,7 @@ def _build_node_data(grd: GrdFile) -> list[dict]:
     if not grd.nodes:
         return []
 
-    lonlat = _get_lonlat(grd)
+    lonlat = _get_lonlat(grd, epsg=epsg)
     result: list[dict] = []
 
     for nid, node in grd.nodes.items():
@@ -446,6 +527,7 @@ def build_layers(
     show_nodes: bool = False,
     elevation_scale: float = 1.0,
     partition_map: dict[int, int] | None = None,
+    epsg: int | None = None,
 ) -> list[dict]:
     """Assemble deck.gl layers for the given grid and display mode.
 
@@ -466,6 +548,9 @@ def build_layers(
         Multiplier for 3-D extrusion (``"depth_3d"`` mode only).
     partition_map
         ``{elem_id: partition_index}`` for partition coloring.
+    epsg
+        Source EPSG code for coordinate reprojection (e.g. 32630 for
+        UTM zone 30N).  ``None`` means auto-detect.
 
     Returns
     -------
@@ -492,7 +577,7 @@ def build_layers(
     }
 
     # --- Wireframe edge data (reused across modes, only if elements exist) ---
-    edge_data = _build_edge_data(grd) if has_elements else []
+    edge_data = _build_edge_data(grd, epsg=epsg) if has_elements else []
 
     # --- Build layers per mode (element-based modes need elements) ---
 
@@ -509,7 +594,7 @@ def build_layers(
 
     elif mode == "depth" and has_elements:
         # Filled polygons + thin gray wireframe
-        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
+        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale, epsg=epsg)
         layers.append(polygon_layer(
             "triangles",
             tri_data,
@@ -528,7 +613,7 @@ def build_layers(
         # Filled polygons with extrusion, NO wireframe
         tri_data = _build_triangle_data(
             grd, mode=mode, colorscale=colorscale,
-            elevation_scale=elevation_scale,
+            elevation_scale=elevation_scale, epsg=epsg,
         )
         layers.append(polygon_layer(
             "triangles",
@@ -541,7 +626,7 @@ def build_layers(
     elif mode == "boundaries" or (not has_elements and grd.lines):
         # Bold boundary lines (+ light mesh if elements exist)
         if has_elements:
-            tri_data = _build_triangle_data(grd, mode="boundaries", colorscale=colorscale)
+            tri_data = _build_triangle_data(grd, mode="boundaries", colorscale=colorscale, epsg=epsg)
             layers.append(polygon_layer(
                 "triangles",
                 tri_data,
@@ -556,7 +641,7 @@ def build_layers(
                 pickable=False,
             ))
         # Add bold boundary path_layers
-        boundary_data = _build_boundary_data(grd)
+        boundary_data = _build_boundary_data(grd, epsg=epsg)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
             layers.append(path_layer(
@@ -570,7 +655,7 @@ def build_layers(
 
     elif mode == "quality" and has_elements:
         # Filled polygons + thin wireframe
-        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
+        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale, epsg=epsg)
         layers.append(polygon_layer(
             "triangles",
             tri_data,
@@ -589,7 +674,7 @@ def build_layers(
         # Filled polygons only (no wireframe)
         tri_data = _build_triangle_data(
             grd, mode=mode, colorscale=colorscale,
-            partition_map=partition_map,
+            partition_map=partition_map, epsg=epsg,
         )
         layers.append(polygon_layer(
             "triangles",
@@ -599,7 +684,7 @@ def build_layers(
 
     # --- Optional boundary overlay (not in boundaries mode, already done) ---
     if show_boundaries and mode != "boundaries" and has_elements:
-        boundary_data = _build_boundary_data(grd)
+        boundary_data = _build_boundary_data(grd, epsg=epsg)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
             layers.append(path_layer(
@@ -613,7 +698,7 @@ def build_layers(
 
     # --- Optional node overlay ---
     if show_nodes:
-        node_data = _build_node_data(grd)
+        node_data = _build_node_data(grd, epsg=epsg)
         layers.append(scatterplot_layer(
             "nodes",
             node_data,
@@ -634,6 +719,7 @@ def build_layers(
 def _compute_view_state(
     grd: GrdFile,
     is_3d: bool = False,
+    epsg: int | None = None,
 ) -> dict:
     """Compute an initial deck.gl view state that fits the grid bounds.
 
@@ -643,6 +729,8 @@ def _compute_view_state(
         Parsed grid file.
     is_3d
         If ``True``, tilt the camera for 3-D perspective.
+    epsg
+        Source EPSG code for coordinate reprojection.
 
     Returns
     -------
@@ -660,11 +748,14 @@ def _compute_view_state(
             "bounds": [[-180, -90], [180, 90]],
         }
 
-    xmin, ymin, xmax, ymax = grd.get_bounds()
+    # Use reprojected lon/lat (handles projected grids when EPSG is set)
+    lonlat = _get_lonlat(grd, epsg=epsg)
+    lons = [pos[0] for pos in lonlat.values()]
+    lats = [pos[1] for pos in lonlat.values()]
+    xmin, xmax = min(lons), max(lons)
+    ymin, ymax = min(lats), max(lats)
 
-    # Safety: if coordinates are outside WGS84 range, the grid is likely
-    # in a projected CRS (e.g. UTM/LKS94).  Return a safe default so
-    # maplibre-gl does not throw "Invalid LngLat latitude value".
+    # Safety: if still outside WGS84 range (projection failed), use defaults
     if abs(ymin) > 90 or abs(ymax) > 90 or abs(xmin) > 180 or abs(xmax) > 180:
         return {
             "longitude": 0,
@@ -978,6 +1069,25 @@ def grid_map_ui(height: str = "600px"):
                         width="140px",
                     ),
                 ),
+                ui.input_select(
+                    "grid_epsg",
+                    "CRS",
+                    choices={
+                        "": "Auto",
+                        "32629": "UTM 29N",
+                        "32630": "UTM 30N",
+                        "32631": "UTM 31N",
+                        "32632": "UTM 32N",
+                        "32633": "UTM 33N",
+                        "32634": "UTM 34N",
+                        "32635": "UTM 35N",
+                        "32636": "UTM 36N",
+                        "3003": "GB West",
+                        "3004": "GB East",
+                    },
+                    selected="",
+                    width="120px",
+                ),
                 ui.input_checkbox("show_boundaries", "Boundaries", value=True),
                 ui.input_checkbox("show_nodes", "Nodes", value=False),
                 class_="d-flex flex-wrap align-items-end gap-2",
@@ -1039,6 +1149,10 @@ def grid_map_server(
         show_nd = input.show_nodes()
         basemap_key = input.map_basemap()
 
+        # EPSG for coordinate reprojection
+        epsg_str = input.grid_epsg()
+        epsg_val: int | None = int(epsg_str) if epsg_str else None
+
         # Elevation scale — only read when mode is depth_3d
         elev_scale = 1.0
         if mode == "depth_3d":
@@ -1065,9 +1179,10 @@ def grid_map_server(
             show_nodes=show_nd,
             elevation_scale=elev_scale,
             partition_map=pmap,
+            epsg=epsg_val,
         )
 
-        vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"))
+        vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"), epsg=epsg_val)
 
         await _map.update(
             session,

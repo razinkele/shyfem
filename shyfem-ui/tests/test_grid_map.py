@@ -20,7 +20,9 @@ from shyfem_ui.components.grid_map import (
     _compute_quality,
     _compute_view_state,
     _depth_to_colors,
+    _detect_projected_crs,
     _get_lonlat,
+    _is_geographic,
     _quality_to_colors,
     build_layers,
 )
@@ -739,3 +741,185 @@ class TestBuildLayersBoundaryOnly:
         layers = build_layers(grd, mode="boundaries", show_nodes=True)
         layer_ids = [l["id"] for l in layers]
         assert "nodes" in layer_ids
+
+
+# ===========================================================================
+# UTM fixture for reprojection tests
+# ===========================================================================
+
+def _make_utm30n_grid() -> GrdFile:
+    """Mar Menor-like grid in UTM zone 30N (EPSG:32630).
+
+    Three nodes near Mar Menor, Spain (~lon -0.8, lat 37.7).
+    Coordinates in metres (easting/northing).
+    """
+    grd = GrdFile()
+    grd.nodes = {
+        1: Node(id=1, node_type=0, x=690_000.0, y=4_175_000.0, depth=2.0),
+        2: Node(id=2, node_type=0, x=700_000.0, y=4_175_000.0, depth=3.0),
+        3: Node(id=3, node_type=0, x=695_000.0, y=4_185_000.0, depth=4.0),
+    }
+    grd.elements = {
+        1: Element(id=1, elem_type=3, nodes=[1, 2, 3]),
+    }
+    return grd
+
+
+def _make_gauss_boaga_west_grid() -> GrdFile:
+    """Italian grid in Gauss-Boaga West (EPSG:3003).
+
+    Gauss-Boaga West has false easting ~1,500,000.
+    """
+    grd = GrdFile()
+    grd.nodes = {
+        1: Node(id=1, node_type=0, x=1_550_000.0, y=4_600_000.0, depth=5.0),
+        2: Node(id=2, node_type=0, x=1_560_000.0, y=4_600_000.0, depth=6.0),
+        3: Node(id=3, node_type=0, x=1_555_000.0, y=4_610_000.0, depth=7.0),
+    }
+    grd.elements = {
+        1: Element(id=1, elem_type=3, nodes=[1, 2, 3]),
+    }
+    return grd
+
+
+# ===========================================================================
+# TestIsGeographic
+# ===========================================================================
+
+class TestIsGeographic:
+    """Tests for _is_geographic()."""
+
+    def test_lonlat_coords_are_geographic(self):
+        grd = _make_triangle_grid()
+        assert _is_geographic(grd) is True
+
+    def test_utm_coords_are_not_geographic(self):
+        grd = _make_utm30n_grid()
+        assert _is_geographic(grd) is False
+
+    def test_gauss_boaga_not_geographic(self):
+        grd = _make_gauss_boaga_west_grid()
+        assert _is_geographic(grd) is False
+
+    def test_empty_grid_is_geographic(self):
+        grd = GrdFile()
+        assert _is_geographic(grd) is True
+
+
+# ===========================================================================
+# TestDetectProjectedCrs
+# ===========================================================================
+
+class TestDetectProjectedCrs:
+    """Tests for _detect_projected_crs()."""
+
+    def test_gauss_boaga_west_detected(self):
+        grd = _make_gauss_boaga_west_grid()
+        assert _detect_projected_crs(grd) == 3003
+
+    def test_gauss_boaga_east_detected(self):
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=2_550_000.0, y=4_600_000.0),
+        }
+        assert _detect_projected_crs(grd) == 3004
+
+    def test_utm_returns_none(self):
+        """UTM zone cannot be auto-detected."""
+        grd = _make_utm30n_grid()
+        assert _detect_projected_crs(grd) is None
+
+    def test_empty_grid_returns_none(self):
+        grd = GrdFile()
+        assert _detect_projected_crs(grd) is None
+
+
+# ===========================================================================
+# TestGetLonLatReprojection
+# ===========================================================================
+
+class TestGetLonLatReprojection:
+    """Tests for _get_lonlat() with EPSG reprojection."""
+
+    def test_utm30n_with_epsg_reprojects(self):
+        """UTM 30N grid reprojects to correct lon/lat with explicit EPSG."""
+        grd = _make_utm30n_grid()
+        lonlat = _get_lonlat(grd, epsg=32630)
+        # Node 1: (690000, 4175000) in UTM 30N → lon ~-0.85, lat ~37.7
+        lon1, lat1 = lonlat[1]
+        assert -1.5 < lon1 < 0.0, f"Expected lon near -0.85, got {lon1}"
+        assert 37.0 < lat1 < 38.5, f"Expected lat near 37.7, got {lat1}"
+
+    def test_utm_without_epsg_returns_raw(self):
+        """UTM grid without EPSG returns raw metre coordinates."""
+        grd = _make_utm30n_grid()
+        lonlat = _get_lonlat(grd)
+        # No EPSG → raw coordinates (easting/northing)
+        assert lonlat[1][0] == 690_000.0
+        assert lonlat[1][1] == 4_175_000.0
+
+    def test_geographic_with_epsg_still_reprojects(self):
+        """If user sets EPSG on a geographic grid, it still reprojects."""
+        # Edge case: user mistakenly sets EPSG on lon/lat grid
+        grd = _make_triangle_grid()
+        # With EPSG=4326 (WGS84→WGS84), coords should be essentially unchanged
+        lonlat = _get_lonlat(grd, epsg=4326)
+        assert abs(lonlat[1][0] - (-0.80)) < 0.001
+        assert abs(lonlat[1][1] - 37.70) < 0.001
+
+    def test_gauss_boaga_auto_detected(self):
+        """Gauss-Boaga is auto-detected without explicit EPSG."""
+        grd = _make_gauss_boaga_west_grid()
+        lonlat = _get_lonlat(grd)
+        # GB West → should give Italian coordinates (lon ~9-12, lat ~40-45)
+        lon1, lat1 = lonlat[1]
+        assert 5.0 < lon1 < 20.0, f"Expected Italian longitude, got {lon1}"
+        assert 35.0 < lat1 < 50.0, f"Expected Italian latitude, got {lat1}"
+
+
+# ===========================================================================
+# TestBuildLayersWithEpsg
+# ===========================================================================
+
+class TestBuildLayersWithEpsg:
+    """Tests for build_layers() with EPSG parameter."""
+
+    def test_utm_mesh_with_epsg(self):
+        """UTM grid produces wireframe when EPSG is set."""
+        grd = _make_utm30n_grid()
+        layers = build_layers(grd, mode="mesh", epsg=32630)
+        assert len(layers) == 1
+        assert layers[0]["id"] == "wireframe"
+
+    def test_utm_depth_with_epsg(self):
+        """UTM grid produces depth layers when EPSG is set."""
+        grd = _make_utm30n_grid()
+        layers = build_layers(grd, mode="depth", epsg=32630)
+        ids = [l["id"] for l in layers]
+        assert "triangles" in ids
+        assert "wireframe" in ids
+
+    def test_utm_without_epsg_still_renders(self):
+        """UTM grid without EPSG uses raw coords but still renders."""
+        grd = _make_utm30n_grid()
+        layers = build_layers(grd, mode="mesh")
+        # Should still produce layers (with raw metre coords)
+        assert len(layers) == 1
+
+    def test_view_state_with_epsg(self):
+        """View state centers on reprojected coordinates."""
+        grd = _make_utm30n_grid()
+        vs = _compute_view_state(grd, epsg=32630)
+        # Center should be near Mar Menor
+        assert -2.0 < vs["longitude"] < 1.0
+        assert 36.0 < vs["latitude"] < 39.0
+        assert vs["zoom"] > 5
+
+    def test_view_state_without_epsg_raw_coords(self):
+        """View state with raw UTM coords exceeds WGS84 → safe defaults."""
+        grd = _make_utm30n_grid()
+        vs = _compute_view_state(grd)
+        # Raw UTM northing ~4M exceeds 90° → should return safe defaults
+        assert vs["longitude"] == 0
+        assert vs["latitude"] == 0
+        assert vs["zoom"] == 2
