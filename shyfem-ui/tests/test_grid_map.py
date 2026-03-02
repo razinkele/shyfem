@@ -7,6 +7,7 @@ _build_boundary_data, _build_node_data, and helper functions.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pytest
 
@@ -30,8 +31,14 @@ from shyfem_ui.services.parser_grd import (
     CoordinateSystem,
     Element,
     GrdFile,
+    GrdParser,
     Line,
     Node,
+)
+
+# Path to Mar Menor test grid (UTM zone 30N, EPSG:32630)
+_MAR_MENOR_GRD = Path(__file__).resolve().parents[1] / (
+    "../testcases/examples/mar_menor/GRID/MM_coarse.grd"
 )
 
 
@@ -923,3 +930,200 @@ class TestBuildLayersWithEpsg:
         assert vs["longitude"] == 0
         assert vs["latitude"] == 0
         assert vs["zoom"] == 2
+
+
+# ===========================================================================
+# Mar Menor real-grid integration tests (EPSG:32630 — UTM zone 30N)
+# ===========================================================================
+
+
+@pytest.fixture(scope="module")
+def mar_menor_grd() -> GrdFile:
+    """Load the real Mar Menor grid from the SHYFEM testcases directory."""
+    if not _MAR_MENOR_GRD.exists():
+        pytest.skip(f"Mar Menor grid not found: {_MAR_MENOR_GRD}")
+    return GrdParser.parse_file(_MAR_MENOR_GRD)
+
+
+class TestMarMenorGridParsing:
+    """Verify the real Mar Menor grid parses correctly."""
+
+    def test_grid_has_nodes(self, mar_menor_grd):
+        assert mar_menor_grd.num_nodes > 100
+
+    def test_grid_has_elements(self, mar_menor_grd):
+        assert mar_menor_grd.num_elements > 100
+
+    def test_coordinates_are_utm(self, mar_menor_grd):
+        """Mar Menor coordinates are in UTM metres, not geographic."""
+        assert _is_geographic(mar_menor_grd) is False
+
+    def test_coordinates_in_utm_range(self, mar_menor_grd):
+        """Eastings ~688k-710k, northings ~4.17M-4.19M."""
+        xs = [n.x for n in mar_menor_grd.nodes.values()]
+        ys = [n.y for n in mar_menor_grd.nodes.values()]
+        assert 600_000 < min(xs) < 750_000
+        assert 600_000 < max(xs) < 750_000
+        assert 4_000_000 < min(ys) < 4_500_000
+        assert 4_000_000 < max(ys) < 4_500_000
+
+    def test_auto_detect_returns_none_for_utm(self, mar_menor_grd):
+        """UTM zone cannot be auto-detected — returns None."""
+        assert _detect_projected_crs(mar_menor_grd) is None
+
+
+class TestMarMenorReprojection:
+    """Verify Mar Menor grid reprojects correctly with EPSG:32630."""
+
+    def test_lonlat_without_epsg_returns_raw(self, mar_menor_grd):
+        """Without EPSG, returns raw UTM coordinates."""
+        lonlat = _get_lonlat(mar_menor_grd)
+        some_lon = next(iter(lonlat.values()))[0]
+        # Raw easting ~690k (not a valid longitude)
+        assert some_lon > 10_000
+
+    def test_lonlat_with_epsg_gives_geographic(self, mar_menor_grd):
+        """With EPSG:32630, coordinates are in geographic range."""
+        lonlat = _get_lonlat(mar_menor_grd, epsg=32630)
+        lons = [p[0] for p in lonlat.values()]
+        lats = [p[1] for p in lonlat.values()]
+        # Mar Menor is near lon -0.8, lat 37.7
+        assert all(-2.0 < lon < 1.0 for lon in lons)
+        assert all(36.0 < lat < 39.0 for lat in lats)
+
+    def test_lonlat_center_near_mar_menor(self, mar_menor_grd):
+        """Reprojected centroid is near Mar Menor, Spain."""
+        lonlat = _get_lonlat(mar_menor_grd, epsg=32630)
+        lons = [p[0] for p in lonlat.values()]
+        lats = [p[1] for p in lonlat.values()]
+        center_lon = sum(lons) / len(lons)
+        center_lat = sum(lats) / len(lats)
+        # Mar Menor center: approx lon -0.74, lat 37.75
+        assert abs(center_lon - (-0.74)) < 0.2
+        assert abs(center_lat - 37.75) < 0.2
+
+    def test_all_nodes_reprojected(self, mar_menor_grd):
+        """Every node gets a reprojected coordinate."""
+        lonlat = _get_lonlat(mar_menor_grd, epsg=32630)
+        assert len(lonlat) == mar_menor_grd.num_nodes
+
+    def test_wrong_epsg_gives_wrong_location(self, mar_menor_grd):
+        """Using wrong EPSG (e.g. UTM 35N) gives very different coordinates."""
+        lonlat_30 = _get_lonlat(mar_menor_grd, epsg=32630)
+        lonlat_35 = _get_lonlat(mar_menor_grd, epsg=32635)
+        center_lon_30 = sum(p[0] for p in lonlat_30.values()) / len(lonlat_30)
+        center_lon_35 = sum(p[0] for p in lonlat_35.values()) / len(lonlat_35)
+        # 5 zones apart = ~30° longitude shift
+        assert abs(center_lon_35 - center_lon_30) > 20
+
+
+class TestMarMenorViewState:
+    """Verify view state computation for Mar Menor grid."""
+
+    def test_view_state_without_epsg_returns_defaults(self, mar_menor_grd):
+        """Without EPSG, UTM coords exceed WGS84 → safe defaults."""
+        vs = _compute_view_state(mar_menor_grd)
+        assert vs["longitude"] == 0
+        assert vs["latitude"] == 0
+        assert vs["zoom"] == 2
+
+    def test_view_state_with_epsg_centers_on_mar_menor(self, mar_menor_grd):
+        """With EPSG:32630, view centers on Mar Menor."""
+        vs = _compute_view_state(mar_menor_grd, epsg=32630)
+        assert -2.0 < vs["longitude"] < 1.0
+        assert 36.0 < vs["latitude"] < 39.0
+
+    def test_view_state_zoom_reasonable(self, mar_menor_grd):
+        """Zoom level is reasonable for a local lagoon grid."""
+        vs = _compute_view_state(mar_menor_grd, epsg=32630)
+        # Mar Menor is ~25km across, should give zoom ~9-12
+        assert 8 < vs["zoom"] < 15
+
+    def test_view_state_bounds_in_wgs84(self, mar_menor_grd):
+        """View state bounds are within WGS84 range."""
+        vs = _compute_view_state(mar_menor_grd, epsg=32630)
+        bounds = vs["bounds"]
+        assert -180 <= bounds[0][0] <= 180
+        assert -90 <= bounds[0][1] <= 90
+        assert -180 <= bounds[1][0] <= 180
+        assert -90 <= bounds[1][1] <= 90
+
+
+class TestMarMenorLayerGeneration:
+    """Verify layer generation for Mar Menor grid."""
+
+    def test_mesh_mode_without_epsg_still_produces_layers(self, mar_menor_grd):
+        """Without EPSG, mesh mode still produces wireframe (raw coords)."""
+        layers = build_layers(mar_menor_grd, mode="mesh")
+        assert len(layers) == 1
+        assert layers[0]["id"] == "wireframe"
+
+    def test_mesh_mode_with_epsg(self, mar_menor_grd):
+        """With EPSG, mesh mode produces wireframe with correct data."""
+        layers = build_layers(mar_menor_grd, mode="mesh", epsg=32630)
+        assert len(layers) == 1
+        assert layers[0]["id"] == "wireframe"
+        data = layers[0]["data"]
+        assert len(data) > 100  # Many edges
+
+    def test_mesh_edge_coords_in_wgs84(self, mar_menor_grd):
+        """Wireframe edges have geographic coordinates with EPSG."""
+        layers = build_layers(mar_menor_grd, mode="mesh", epsg=32630)
+        edge = layers[0]["data"][0]
+        path = edge["path"]
+        lon, lat = path[0]
+        assert -2.0 < lon < 1.0
+        assert 36.0 < lat < 39.0
+
+    def test_depth_mode_with_epsg(self, mar_menor_grd):
+        """Depth mode produces triangles + wireframe."""
+        layers = build_layers(mar_menor_grd, mode="depth", epsg=32630)
+        ids = [l["id"] for l in layers]
+        assert "triangles" in ids
+        assert "wireframe" in ids
+
+    def test_depth_triangle_coords_in_wgs84(self, mar_menor_grd):
+        """Triangle polygons have geographic coordinates with EPSG."""
+        layers = build_layers(mar_menor_grd, mode="depth", epsg=32630)
+        tri_layer = next(l for l in layers if l["id"] == "triangles")
+        tri = tri_layer["data"][0]
+        polygon = tri["polygon"]
+        lon, lat = polygon[0]
+        assert -2.0 < lon < 1.0
+        assert 36.0 < lat < 39.0
+
+    def test_quality_mode_with_epsg(self, mar_menor_grd):
+        """Quality mode produces layers."""
+        layers = build_layers(mar_menor_grd, mode="quality", epsg=32630)
+        ids = [l["id"] for l in layers]
+        assert "triangles" in ids
+
+    def test_show_nodes_with_epsg(self, mar_menor_grd):
+        """show_nodes produces scatterplot layer with geographic coords."""
+        layers = build_layers(
+            mar_menor_grd, mode="mesh", show_nodes=True, epsg=32630,
+        )
+        ids = [l["id"] for l in layers]
+        assert "nodes" in ids
+        node_layer = next(l for l in layers if l["id"] == "nodes")
+        node = node_layer["data"][0]
+        lon, lat = node["position"]
+        assert -2.0 < lon < 1.0
+        assert 36.0 < lat < 39.0
+
+    def test_show_boundaries_with_epsg(self, mar_menor_grd):
+        """show_boundaries on the mesh overlay (if grid has boundary lines)."""
+        layers = build_layers(
+            mar_menor_grd, mode="mesh", show_boundaries=True, epsg=32630,
+        )
+        # If grid has boundary lines, there should be boundary layers
+        has_lines = bool(mar_menor_grd.lines)
+        if has_lines:
+            ids = [l["id"] for l in layers]
+            assert any("boundary" in i for i in ids)
+
+    def test_all_view_modes_no_crash(self, mar_menor_grd):
+        """All view modes run without errors when EPSG is set."""
+        for mode in ("mesh", "depth", "depth_3d", "quality", "boundaries"):
+            layers = build_layers(mar_menor_grd, mode=mode, epsg=32630)
+            assert isinstance(layers, list), f"mode={mode} failed"
