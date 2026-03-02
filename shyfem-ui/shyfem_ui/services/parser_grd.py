@@ -2,9 +2,13 @@
 
 .grd file format:
 - Lines starting with 0 are comments
-- Type 1: Nodes - "1 node_id type x y [depth]"
-- Type 2: Elements - "2 elem_id type node1 node2 node3 [node4...]"
-- Type 3: Lines/Boundaries - "3 line_id type node1 node2 [node3...]"
+- Type 1: Nodes  - "1 node_id type x y [depth]"
+- Type 2: Elements   - "2 elem_id type nvert node1 node2 ... [depth]"
+- Type 3: Lines      - "3 line_id type nvert node1 node2 ..."
+
+nvert is the vertex count (3 for triangles, 4 for quads).
+For line records with many nodes, IDs may continue on subsequent
+file lines (multi-line continuation).
 """
 
 import logging
@@ -44,6 +48,7 @@ class Element:
     id: int
     elem_type: int
     nodes: list[int] = field(default_factory=list)
+    depth: float | None = None
 
     @property
     def is_triangle(self) -> bool:
@@ -337,6 +342,9 @@ class GrdParser:
         """
         result = GrdFile()
 
+        # State for multi-line continuation (line records with many nodes)
+        pending_line: tuple | None = None  # (line_id, line_type, nvert, nodes, start_line)
+
         for line_num, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
             if not stripped:
@@ -353,6 +361,39 @@ class GrdParser:
                     f"Line {line_num}: skipped (invalid record type: {parts[0]!r})"
                 )
                 continue
+
+            # Handle continuation lines for line records (record_type > 3
+            # means this isn't a record header — it's continuation data)
+            if pending_line is not None:
+                if record_type > 3:
+                    # Continuation: all fields are node IDs
+                    pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
+                    for p in parts:
+                        try:
+                            pl_nodes.append(int(float(p)))
+                        except ValueError:
+                            pass
+                    if len(pl_nodes) >= pl_nvert:
+                        result.lines[pl_id] = Line(
+                            id=pl_id, line_type=pl_type, nodes=pl_nodes[:pl_nvert]
+                        )
+                        pending_line = None
+                    else:
+                        pending_line = (pl_id, pl_type, pl_nvert, pl_nodes, pl_start)
+                    continue
+                else:
+                    # New record header encountered — finalize pending line
+                    pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
+                    if len(pl_nodes) >= 2:
+                        result.lines[pl_id] = Line(
+                            id=pl_id, line_type=pl_type, nodes=pl_nodes
+                        )
+                    else:
+                        result.parse_warnings.append(
+                            f"Line {pl_start}: line {pl_id} expected {pl_nvert} nodes, "
+                            f"got {len(pl_nodes)}"
+                        )
+                    pending_line = None
 
             try:
                 if record_type == 0:
@@ -383,58 +424,82 @@ class GrdParser:
                     )
 
                 elif record_type == 2:
-                    # Element: 2 id type node1 node2 node3 [node4...]
-                    if len(parts) < 6:
+                    # Element: 2 id type nvert node1 node2 ... [depth]
+                    # nvert = vertex count (3 for triangles, 4 for quads)
+                    if len(parts) < 7:
                         result.parse_warnings.append(
-                            f"Line {line_num}: element record has {len(parts)} fields (need >= 6)"
+                            f"Line {line_num}: element record has {len(parts)} fields (need >= 7)"
                         )
                         continue
                     elem_id = int(parts[1])
                     elem_type = int(parts[2])
-                    node_ids = []
-                    for p in parts[3:]:
+                    nvert = int(parts[3])
+                    node_ids = [int(parts[4 + i]) for i in range(nvert)]
+                    # Optional depth after the last node
+                    depth = None
+                    depth_idx = 4 + nvert
+                    if depth_idx < len(parts):
                         try:
-                            node_ids.append(int(p))
+                            depth = float(parts[depth_idx])
                         except ValueError:
-                            result.parse_warnings.append(
-                                f"Line {line_num}: invalid node id {p!r} in element {elem_id}"
-                            )
+                            pass
                     if len(node_ids) < 3:
                         result.parse_warnings.append(
                             f"Line {line_num}: element {elem_id} has {len(node_ids)} valid nodes (need >= 3)"
                         )
                         continue
                     result.elements[elem_id] = Element(
-                        id=elem_id, elem_type=elem_type, nodes=node_ids
+                        id=elem_id, elem_type=elem_type, nodes=node_ids, depth=depth
                     )
 
                 elif record_type == 3:
-                    # Line: 3 id type node1 node2 [node3...]
-                    if len(parts) < 5:
+                    # Line: 3 id type nvert node1 node2 ...
+                    # nvert = vertex count; nodes may continue on subsequent lines
+                    if len(parts) < 4:
                         result.parse_warnings.append(
-                            f"Line {line_num}: line record has {len(parts)} fields (need >= 5)"
+                            f"Line {line_num}: line record has {len(parts)} fields (need >= 4)"
                         )
                         continue
                     line_id = int(parts[1])
                     line_type = int(parts[2])
+                    nvert = int(parts[3])
+                    # Read any nodes present on the same line after nvert
                     node_ids = []
-                    for p in parts[3:]:
+                    for p in parts[4:]:
                         try:
-                            node_ids.append(int(p))
+                            node_ids.append(int(float(p)))
                         except ValueError:
-                            result.parse_warnings.append(
-                                f"Line {line_num}: invalid node id {p!r} in line {line_id}"
-                            )
+                            break
+                    if len(node_ids) < nvert:
+                        # Remaining nodes will come on continuation lines;
+                        # store partial state and collect in subsequent iterations
+                        pending_line = (line_id, line_type, nvert, node_ids, line_num)
+                        continue
                     if len(node_ids) < 2:
                         result.parse_warnings.append(
                             f"Line {line_num}: line {line_id} has {len(node_ids)} valid nodes (need >= 2)"
                         )
                         continue
-                    result.lines[line_id] = Line(id=line_id, line_type=line_type, nodes=node_ids)
+                    result.lines[line_id] = Line(
+                        id=line_id, line_type=line_type, nodes=node_ids[:nvert]
+                    )
 
             except (ValueError, IndexError) as e:
                 result.parse_warnings.append(f"Line {line_num}: skipped ({e})")
                 continue
+
+        # Finalize any pending line record at end of file
+        if pending_line is not None:
+            pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
+            if len(pl_nodes) >= 2:
+                result.lines[pl_id] = Line(
+                    id=pl_id, line_type=pl_type, nodes=pl_nodes
+                )
+            else:
+                result.parse_warnings.append(
+                    f"Line {pl_start}: line {pl_id} expected {pl_nvert} nodes, "
+                    f"got {len(pl_nodes)}"
+                )
 
         return result
 
@@ -503,15 +568,18 @@ class GrdParser:
             else:
                 lines.append(f"1 {node.id} {node.node_type} {node.x:.6f} {node.y:.6f}")
 
-        # Elements
+        # Elements: 2 id type nvert node1 node2 ... [depth]
         for elem in sorted(grd_file.elements.values(), key=lambda e: e.id):
             nodes_str = " ".join(str(n) for n in elem.nodes)
-            lines.append(f"2 {elem.id} {elem.elem_type} {nodes_str}")
+            depth_str = f" {elem.depth:.6f}" if elem.depth is not None else ""
+            lines.append(
+                f"2 {elem.id} {elem.elem_type} {len(elem.nodes)} {nodes_str}{depth_str}"
+            )
 
-        # Lines
+        # Lines: 3 id type nvert node1 node2 ...
         for ln in sorted(grd_file.lines.values(), key=lambda ln_: ln_.id):
             nodes_str = " ".join(str(n) for n in ln.nodes)
-            lines.append(f"3 {ln.id} {ln.line_type} {nodes_str}")
+            lines.append(f"3 {ln.id} {ln.line_type} {len(ln.nodes)} {nodes_str}")
 
         return "\n".join(lines)
 
