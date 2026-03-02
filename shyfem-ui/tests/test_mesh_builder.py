@@ -194,6 +194,76 @@ class TestImportBoundaries:
         grd = import_boundaries(path)
         assert any("unsupported" in w.lower() or "Skipped" in w for w in grd.parse_warnings)
 
+    def test_projected_crs_reprojected_to_wgs84(self, tmp_path):
+        """Shapefile in projected CRS (e.g. UTM) gets reprojected to WGS84."""
+        import fiona
+        from fiona.crs import CRS
+
+        # Create a polygon in EPSG:32635 (UTM zone 35N) — Curonian Lagoon area
+        schema = {"geometry": "Polygon", "properties": {}}
+        path = tmp_path / "projected.shp"
+        with fiona.open(
+            str(path), "w", driver="ESRI Shapefile",
+            schema=schema, crs=CRS.from_epsg(32635),
+        ) as dst:
+            dst.write({
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [300000, 6100000],
+                        [350000, 6100000],
+                        [350000, 6150000],
+                        [300000, 6150000],
+                        [300000, 6100000],
+                    ]],
+                },
+                "properties": {},
+            })
+        grd = import_boundaries(path)
+        # After reprojection, coordinates should be in WGS84 range
+        xs = [n.x for n in grd.nodes.values()]
+        ys = [n.y for n in grd.nodes.values()]
+        assert all(-180 <= x <= 180 for x in xs), f"X out of WGS84 range: {xs}"
+        assert all(-90 <= y <= 90 for y in ys), f"Y out of WGS84 range: {ys}"
+
+    def test_wgs84_not_reprojected(self, tmp_path):
+        """Shapefile already in WGS84 keeps original coordinates."""
+        import fiona
+        from fiona.crs import CRS
+
+        schema = {"geometry": "Polygon", "properties": {}}
+        path = tmp_path / "wgs84.shp"
+        with fiona.open(
+            str(path), "w", driver="ESRI Shapefile",
+            schema=schema, crs=CRS.from_epsg(4326),
+        ) as dst:
+            dst.write({
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[[21.0, 55.0], [21.5, 55.0], [21.5, 55.5], [21.0, 55.5], [21.0, 55.0]]],
+                },
+                "properties": {},
+            })
+        grd = import_boundaries(path)
+        xs = [round(n.x, 1) for n in grd.nodes.values()]
+        ys = [round(n.y, 1) for n in grd.nodes.values()]
+        assert 21.0 in xs
+        assert 55.0 in ys
+
+    def test_gpkg_projected_crs(self):
+        """Real GeoPackage in LKS94 (EPSG:3346) reprojects to WGS84."""
+        path = Path(__file__).resolve().parent.parent.parent / "testcases/examples/curoninan/curonian_boundary.gpkg"
+        if not path.exists():
+            pytest.skip("curonian_boundary.gpkg not available")
+        grd = import_boundaries(path)
+        xs = [n.x for n in grd.nodes.values()]
+        ys = [n.y for n in grd.nodes.values()]
+        assert all(-180 <= x <= 180 for x in xs), f"X out of range: {min(xs)}-{max(xs)}"
+        assert all(-90 <= y <= 90 for y in ys), f"Y out of range: {min(ys)}-{max(ys)}"
+        # Curonian Lagoon is around lon 21, lat 55
+        assert 20 < max(xs) < 22
+        assert 54 < max(ys) < 56
+
 
 # ---------------------------------------------------------------------------
 # TestSmoothBoundary

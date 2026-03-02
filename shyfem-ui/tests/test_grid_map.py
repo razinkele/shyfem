@@ -638,3 +638,104 @@ class TestComputeViewState:
         vs = _compute_view_state(grd, is_3d=False)
         assert vs["pitch"] == 0
         assert vs["bearing"] == 0
+
+    def test_projected_coords_returns_safe_defaults(self):
+        """Projected CRS coords (outside WGS84 range) return safe defaults."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=300000.0, y=6100000.0),
+            2: Node(id=2, node_type=0, x=350000.0, y=6150000.0),
+        }
+        vs = _compute_view_state(grd)
+        # Should NOT crash maplibre-gl — lat must be in [-90, 90]
+        assert -90 <= vs["latitude"] <= 90
+        assert -180 <= vs["longitude"] <= 180
+        assert vs["zoom"] == 2  # default fallback
+
+    def test_longitude_out_of_range_returns_safe_defaults(self):
+        """X values > 180 (projected CRS) return safe defaults."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=500000.0, y=55.0),
+        }
+        vs = _compute_view_state(grd)
+        assert -90 <= vs["latitude"] <= 90
+        assert -180 <= vs["longitude"] <= 180
+
+
+class TestBuildLayersBoundaryOnly:
+    """Tests for build_layers() with boundary-only grids (no elements)."""
+
+    def test_boundary_only_grid_renders_lines(self):
+        """Grid with nodes+lines but no elements produces boundary layers."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=21.0, y=55.0),
+            2: Node(id=2, node_type=0, x=21.5, y=55.0),
+            3: Node(id=3, node_type=0, x=21.5, y=55.5),
+            4: Node(id=4, node_type=0, x=21.0, y=55.5),
+        }
+        grd.lines = {
+            1: Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1]),
+        }
+        layers = build_layers(grd, mode="mesh")
+        # Should auto-switch to boundaries mode for boundary-only grids
+        assert len(layers) >= 1
+        layer_ids = [l["id"] for l in layers]
+        assert any("boundary" in lid for lid in layer_ids)
+
+    def test_boundary_only_grid_no_crash_on_depth_mode(self):
+        """Depth mode on boundary-only grid should not crash."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=21.0, y=55.0),
+            2: Node(id=2, node_type=0, x=21.5, y=55.0),
+        }
+        grd.lines = {
+            1: Line(id=1, line_type=1, nodes=[1, 2]),
+        }
+        # Element-dependent modes fall through to boundary rendering
+        layers = build_layers(grd, mode="depth")
+        assert isinstance(layers, list)
+
+    def test_boundary_only_grid_explicit_boundaries_mode(self):
+        """Explicit boundaries mode on boundary-only grid."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=21.0, y=55.0),
+            2: Node(id=2, node_type=0, x=21.5, y=55.0),
+            3: Node(id=3, node_type=0, x=21.5, y=55.5),
+            4: Node(id=4, node_type=0, x=21.0, y=55.5),
+        }
+        grd.lines = {
+            1: Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1]),
+        }
+        layers = build_layers(grd, mode="boundaries")
+        assert len(layers) >= 1
+        # Should NOT have triangle or wireframe layers
+        layer_ids = [l["id"] for l in layers]
+        assert "triangles" not in layer_ids
+        assert "wireframe" not in layer_ids
+
+    def test_nodes_only_grid_returns_empty(self):
+        """Grid with only nodes (no elements, no lines) returns empty."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=21.0, y=55.0),
+        }
+        layers = build_layers(grd, mode="mesh")
+        assert layers == []
+
+    def test_show_nodes_on_boundary_only_grid(self):
+        """show_nodes works on boundary-only grids."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=21.0, y=55.0),
+            2: Node(id=2, node_type=0, x=21.5, y=55.0),
+        }
+        grd.lines = {
+            1: Line(id=1, line_type=1, nodes=[1, 2]),
+        }
+        layers = build_layers(grd, mode="boundaries", show_nodes=True)
+        layer_ids = [l["id"] for l in layers]
+        assert "nodes" in layer_ids

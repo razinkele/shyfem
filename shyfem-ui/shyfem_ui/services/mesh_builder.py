@@ -11,7 +11,9 @@ from pathlib import Path
 
 import fiona
 import numpy as np
+import pyproj
 import shapely.geometry
+import shapely.ops
 import triangle
 from scipy.interpolate import (
     CloughTocher2DInterpolator,
@@ -72,10 +74,25 @@ def import_boundaries(file_path: Path) -> GrdFile:
         line_id += 1
 
     with fiona.open(str(file_path)) as src:
+        # Reproject to WGS84 if source CRS is projected (e.g. UTM, LKS94)
+        transformer = None
+        if src.crs:
+            try:
+                src_crs = pyproj.CRS.from_user_input(src.crs)
+                if src_crs.is_projected:
+                    transformer = pyproj.Transformer.from_crs(
+                        src_crs, "EPSG:4326", always_xy=True
+                    ).transform
+                    logger.info("Reprojecting from %s to WGS84", src_crs.name)
+            except Exception as exc:
+                logger.warning("Could not determine CRS, using raw coordinates: %s", exc)
+
         for feature in src:
             geom = shapely.geometry.shape(feature["geometry"])
             if geom.is_empty:
                 continue
+            if transformer is not None:
+                geom = shapely.ops.transform(transformer, geom)
             polygons = []
             if geom.geom_type == "Polygon":
                 polygons = [geom]

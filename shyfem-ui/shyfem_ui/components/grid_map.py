@@ -662,6 +662,19 @@ def _compute_view_state(
 
     xmin, ymin, xmax, ymax = grd.get_bounds()
 
+    # Safety: if coordinates are outside WGS84 range, the grid is likely
+    # in a projected CRS (e.g. UTM/LKS94).  Return a safe default so
+    # maplibre-gl does not throw "Invalid LngLat latitude value".
+    if abs(ymin) > 90 or abs(ymax) > 90 or abs(xmin) > 180 or abs(xmax) > 180:
+        return {
+            "longitude": 0,
+            "latitude": 0,
+            "zoom": 2,
+            "pitch": 0,
+            "bearing": 0,
+            "bounds": [[-180, -90], [180, 90]],
+        }
+
     center_lon = (xmin + xmax) / 2.0
     center_lat = (ymin + ymax) / 2.0
 
