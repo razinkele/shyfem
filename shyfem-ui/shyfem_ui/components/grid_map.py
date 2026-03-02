@@ -473,10 +473,11 @@ def build_layers(
         Layer definitions suitable for ``shiny_deckgl.output_deckgl``.
     """
     # Empty grid => no layers
-    if not grd.nodes or not grd.elements:
+    if not grd.nodes:
         return []
 
     layers: list[dict] = []
+    has_elements = bool(grd.elements)
 
     # --- Shared polygon layer kwargs ---
     _poly_common: dict = {
@@ -490,12 +491,12 @@ def build_layers(
         "getLineWidth": 0,
     }
 
-    # --- Wireframe edge data (reused across modes) ---
-    edge_data = _build_edge_data(grd)
+    # --- Wireframe edge data (reused across modes, only if elements exist) ---
+    edge_data = _build_edge_data(grd) if has_elements else []
 
-    # --- Build layers per mode ---
+    # --- Build layers per mode (element-based modes need elements) ---
 
-    if mode == "mesh":
+    if mode == "mesh" and has_elements:
         # Wireframe only, blue edges
         layers.append(path_layer(
             "wireframe",
@@ -506,7 +507,7 @@ def build_layers(
             pickable=False,
         ))
 
-    elif mode == "depth":
+    elif mode == "depth" and has_elements:
         # Filled polygons + thin gray wireframe
         tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
         layers.append(polygon_layer(
@@ -523,7 +524,7 @@ def build_layers(
             pickable=False,
         ))
 
-    elif mode == "depth_3d":
+    elif mode == "depth_3d" and has_elements:
         # Filled polygons with extrusion, NO wireframe
         tri_data = _build_triangle_data(
             grd, mode=mode, colorscale=colorscale,
@@ -537,22 +538,23 @@ def build_layers(
             getElevation="@@d.elevation",
         ))
 
-    elif mode == "boundaries":
-        # Light filled polygons + thin wireframe + bold boundary lines
-        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
-        layers.append(polygon_layer(
-            "triangles",
-            tri_data,
-            **_poly_common,
-        ))
-        layers.append(path_layer(
-            "wireframe",
-            edge_data,
-            getPath="@@d.path",
-            getColor=[150, 150, 150, 80],
-            widthMinPixels=0.5,
-            pickable=False,
-        ))
+    elif mode == "boundaries" or (not has_elements and grd.lines):
+        # Bold boundary lines (+ light mesh if elements exist)
+        if has_elements:
+            tri_data = _build_triangle_data(grd, mode="boundaries", colorscale=colorscale)
+            layers.append(polygon_layer(
+                "triangles",
+                tri_data,
+                **_poly_common,
+            ))
+            layers.append(path_layer(
+                "wireframe",
+                edge_data,
+                getPath="@@d.path",
+                getColor=[150, 150, 150, 80],
+                widthMinPixels=0.5,
+                pickable=False,
+            ))
         # Add bold boundary path_layers
         boundary_data = _build_boundary_data(grd)
         for btype, blines in boundary_data.items():
@@ -566,7 +568,7 @@ def build_layers(
                 pickable=True,
             ))
 
-    elif mode == "quality":
+    elif mode == "quality" and has_elements:
         # Filled polygons + thin wireframe
         tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale)
         layers.append(polygon_layer(
@@ -583,7 +585,7 @@ def build_layers(
             pickable=False,
         ))
 
-    elif mode == "partitions":
+    elif mode == "partitions" and has_elements:
         # Filled polygons only (no wireframe)
         tri_data = _build_triangle_data(
             grd, mode=mode, colorscale=colorscale,
@@ -596,7 +598,7 @@ def build_layers(
         ))
 
     # --- Optional boundary overlay (not in boundaries mode, already done) ---
-    if show_boundaries and mode != "boundaries":
+    if show_boundaries and mode != "boundaries" and has_elements:
         boundary_data = _build_boundary_data(grd)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
@@ -883,7 +885,6 @@ from shiny import module, reactive, render, ui  # noqa: E402
 
 from shiny_deckgl import (  # noqa: E402
     MapWidget,
-    head_includes as deckgl_head_includes,
     zoom_widget,
 )
 
@@ -920,15 +921,15 @@ def grid_map_ui(height: str = "600px"):
     Includes map controls (view mode, palette, basemap, elevation slider,
     boundary/node toggles) and the MapWidget output.
     """
-    # The MapWidget in the UI uses the bare ID; @module.ui auto-namespaces it.
+    # MapWidget uses a raw HTML id (not auto-namespaced by @module.ui),
+    # so we must resolve the module namespace manually.
     _map = MapWidget(
-        id="deckgl_map",
+        id=module.resolve_id("deckgl_map"),
         tooltip={"html": "{tooltip_html}"},
         picking_radius=5,
     )
 
     return ui.div(
-        deckgl_head_includes(),
         # Controls row
         ui.div(
             ui.div(
@@ -1077,10 +1078,10 @@ def grid_map_server(
                 duration=800,
             )
 
-    # Handle click events
+    # Handle click events — use bare ID; module input auto-namespaces.
     @reactive.effect
     def _handle_click():
-        click_data = input[f"{map_id}_click"]()
+        click_data = input["deckgl_map_click"]()
         if click_data is None:
             return
         # Extract node_id from the clicked object
