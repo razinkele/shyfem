@@ -874,28 +874,248 @@ def build_mesh_figure(
 
 
 # ---------------------------------------------------------------------------
-# Shiny module stubs (replaced by Task 7)
+# Shiny module: grid_map_ui + grid_map_server (Task 7 — deck.gl)
 # ---------------------------------------------------------------------------
 
-def _grid_map_ui_impl(height: str = "600px"):
-    """Placeholder UI -- replaced by the full deck.gl Shiny module in Task 7."""
-    from shiny import ui as _ui  # noqa: E402
+from typing import Callable
 
-    return _ui.div(
-        _ui.p("Grid map placeholder (deck.gl migration in progress)"),
+from shiny import module, reactive, render, ui  # noqa: E402
+
+from shiny_deckgl import (  # noqa: E402
+    MapWidget,
+    head_includes as deckgl_head_includes,
+    zoom_widget,
+)
+
+# View-mode choices for the dropdown
+_VIEW_MODES: dict[str, str] = {
+    "mesh": "Mesh",
+    "depth": "Depth",
+    "depth_3d": "Depth 3D",
+    "boundaries": "Boundaries",
+    "quality": "Quality",
+}
+
+# User-facing palette names (keys of PALETTES dict defined above)
+_PALETTE_CHOICES: dict[str, str] = {
+    "viridis": "Viridis",
+    "plasma": "Plasma",
+    "ocean": "Ocean",
+    "thermal": "Thermal",
+    "chlorophyll": "Chlorophyll",
+}
+
+# User-facing basemap names (keys of BASEMAPS dict defined above)
+_BASEMAP_CHOICES: dict[str, str] = {
+    "positron": "Positron",
+    "dark": "Dark",
+    "osm": "OSM",
+}
+
+
+@module.ui
+def grid_map_ui(height: str = "600px"):
+    """Deck.gl interactive grid map UI.
+
+    Includes map controls (view mode, palette, basemap, elevation slider,
+    boundary/node toggles) and the MapWidget output.
+    """
+    # The MapWidget in the UI uses the bare ID; @module.ui auto-namespaces it.
+    _map = MapWidget(
+        id="deckgl_map",
+        tooltip={"html": "{tooltip_html}"},
+        picking_radius=5,
+    )
+
+    return ui.div(
+        deckgl_head_includes(),
+        # Controls row
+        ui.div(
+            ui.div(
+                ui.input_select(
+                    "map_mode",
+                    "View",
+                    choices=_VIEW_MODES,
+                    selected="mesh",
+                    width="120px",
+                ),
+                ui.input_select(
+                    "map_colors",
+                    "Colors",
+                    choices=_PALETTE_CHOICES,
+                    selected="viridis",
+                    width="120px",
+                ),
+                ui.input_select(
+                    "map_basemap",
+                    "Basemap",
+                    choices=_BASEMAP_CHOICES,
+                    selected="positron",
+                    width="120px",
+                ),
+                ui.panel_conditional(
+                    "input.map_mode === 'depth_3d'",
+                    ui.input_slider(
+                        "elevation_scale",
+                        "Elevation",
+                        min=1,
+                        max=50,
+                        value=10,
+                        width="140px",
+                    ),
+                ),
+                ui.input_checkbox("show_boundaries", "Boundaries", value=True),
+                ui.input_checkbox("show_nodes", "Nodes", value=False),
+                class_="d-flex flex-wrap align-items-end gap-2",
+            ),
+            class_="mb-2",
+        ),
+        # Map widget
+        _map.ui(width="100%", height=height),
+        # Inspection info panel (click feedback)
+        ui.output_ui("inspect_info"),
         class_="grid-map-component",
-        style=f"height: {height}; background: #f8f9fa; display: flex; "
-              "align-items: center; justify-content: center;",
     )
 
 
-def _grid_map_server_impl(input, output, session, **kwargs):
-    """Placeholder server -- replaced by the full deck.gl Shiny module in Task 7."""
-    return {}
+@module.server
+def grid_map_server(
+    input,
+    output,
+    session,
+    grd_file: reactive.Value,
+    partition_map: reactive.Value | None = None,
+    on_node_click: Callable[[int], None] | None = None,
+):
+    """Deck.gl interactive grid map server logic.
 
+    Parameters
+    ----------
+    input, output, session
+        Shiny module server arguments (injected by ``@module.server``).
+    grd_file
+        Reactive value holding the current ``GrdFile`` (or ``None``).
+    partition_map
+        Optional reactive value holding ``{elem_id: partition_index}`` or ``None``.
+    on_node_click
+        Optional callback invoked with the clicked node ID.
+    """
+    # Create MapWidget with the RESOLVED id (module namespace prefix).
+    map_id = module.resolve_id("deckgl_map")
+    _map = MapWidget(
+        id=map_id,
+        tooltip={"html": "{tooltip_html}"},
+        picking_radius=5,
+    )
 
-# Apply @module.ui / @module.server so callers can use grid_map_ui("id")
-from shiny import module as _module  # noqa: E402
+    selected_node: reactive.Value[int | None] = reactive.value(None)
 
-grid_map_ui = _module.ui(_grid_map_ui_impl)
-grid_map_server = _module.server(_grid_map_server_impl)
+    @reactive.effect
+    async def _update_map():
+        """Rebuild layers and push to the map when inputs change."""
+        grd = grd_file.get()
+        if grd is None:
+            # Clear the map
+            await _map.update(session, layers=[], widgets=[zoom_widget()])
+            return
+
+        mode = input.map_mode()
+        colorscale = input.map_colors()
+        show_bdry = input.show_boundaries()
+        show_nd = input.show_nodes()
+        basemap_key = input.map_basemap()
+
+        # Elevation scale — only read when mode is depth_3d
+        elev_scale = 1.0
+        if mode == "depth_3d":
+            try:
+                elev_scale = float(input.elevation_scale())
+            except Exception:
+                elev_scale = 10.0
+
+        # Partition map
+        pmap = None
+        if partition_map is not None:
+            pmap = partition_map.get()
+
+        # If mode is "partitions" but there's a partition map, use it
+        actual_mode = mode
+        if pmap and mode == "mesh":
+            actual_mode = "partitions"
+
+        layers = build_layers(
+            grd,
+            mode=actual_mode,
+            colorscale=colorscale,
+            show_boundaries=show_bdry,
+            show_nodes=show_nd,
+            elevation_scale=elev_scale,
+            partition_map=pmap,
+        )
+
+        vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"))
+
+        await _map.update(
+            session,
+            layers=layers,
+            view_state=vs,
+            transition_duration=500,
+            widgets=[zoom_widget()],
+        )
+
+        # Set basemap style
+        basemap_url = BASEMAPS.get(basemap_key, BASEMAPS["positron"])
+        await _map.set_style(session, basemap_url)
+
+        # Fit bounds to grid extent
+        bounds = vs.get("bounds")
+        if bounds:
+            await _map.fit_bounds(
+                session,
+                bounds=bounds,
+                max_zoom=18,
+                duration=800,
+            )
+
+    # Handle click events
+    @reactive.effect
+    def _handle_click():
+        click_data = input[f"{map_id}_click"]()
+        if click_data is None:
+            return
+        # Extract node_id from the clicked object
+        obj = click_data.get("object") if isinstance(click_data, dict) else None
+        if obj and "node_id" in obj:
+            nid = int(obj["node_id"])
+            selected_node.set(nid)
+            if on_node_click is not None:
+                on_node_click(nid)
+
+    @render.ui
+    def inspect_info():
+        """Display selected node info as a badge."""
+        nid = selected_node.get()
+        if nid is None:
+            return ui.div()
+        grd = grd_file.get()
+        if grd is None or nid not in grd.nodes:
+            return ui.div()
+        node = grd.nodes[nid]
+        depth_str = f"{node.depth:.2f}" if node.depth is not None else "N/A"
+        return ui.div(
+            ui.span(
+                f"Node {nid}",
+                class_="badge bg-primary me-1",
+            ),
+            ui.span(
+                f"({node.x:.6f}, {node.y:.6f})",
+                class_="badge bg-secondary me-1",
+            ),
+            ui.span(
+                f"Depth: {depth_str}",
+                class_="badge bg-info",
+            ),
+            class_="mt-2",
+        )
+
+    return {"selected_node": selected_node}

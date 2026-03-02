@@ -32,6 +32,8 @@ from shyfem_ui.pages import (
     tutorial,
     visualize,
 )
+from shiny_deckgl import head_includes as deckgl_head_includes
+
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import NotificationService
@@ -918,6 +920,7 @@ def _build_ui(config: Config) -> ui.Tag:
 
     return ui.page_fillable(
         ui.head_content(_HEAD_EXTRAS),
+        deckgl_head_includes(),
         ui.busy_indicators.use(spinners=True, pulse=True),
         topbar,
         ui.div(
