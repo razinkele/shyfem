@@ -102,6 +102,7 @@ class GrdFile:
     parse_warnings: list[str] = field(default_factory=list)
     file_path: Path | None = None
     coordinate_system: CoordinateSystem | None = None
+    epsg: int | None = None  # Source EPSG code (e.g. 32630 for UTM 30N)
 
     @property
     def num_nodes(self) -> int:

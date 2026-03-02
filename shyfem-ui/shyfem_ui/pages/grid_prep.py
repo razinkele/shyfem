@@ -415,11 +415,14 @@ def grid_prep_server(
         ui.update_text("grd_path", value=str(grd_path))
         try:
             grd = GrdParser.parse_file(grd_path)
+            # Mar Menor grid is in UTM zone 30N
+            grd.epsg = 32630
             current_grd.set(grd)
             current_grd_path.set(grd_path)
             log_content.set(
                 f"Loaded grid: {grd_path.name}\n"
-                f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
+                f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}\n"
+                f"CRS: EPSG:32630 (UTM zone 30N)"
             )
             ui.notification_show(
                 f"Sample loaded: Mar Menor grid "

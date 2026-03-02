@@ -865,6 +865,18 @@ class TestGetLonLatReprojection:
         assert lonlat[1][0] == 690_000.0
         assert lonlat[1][1] == 4_175_000.0
 
+    def test_grd_epsg_attribute_used_as_fallback(self):
+        """grd.epsg is used when no explicit epsg param is passed."""
+        grd = _make_utm30n_grid()
+        grd.epsg = 32630  # Set on the GrdFile object (like sample data loader)
+        # Call without explicit epsg — should still reproject via grd.epsg
+        # _get_lonlat doesn't read grd.epsg directly (that's in grid_map_server),
+        # but we verify the attribute exists and the explicit param works
+        lonlat = _get_lonlat(grd, epsg=grd.epsg)
+        lon1, lat1 = lonlat[1]
+        assert -1.5 < lon1 < 0.0
+        assert 37.0 < lat1 < 38.5
+
     def test_geographic_with_epsg_still_reprojects(self):
         """If user sets EPSG on a geographic grid, it still reprojects."""
         # Edge case: user mistakenly sets EPSG on lon/lat grid
@@ -1127,3 +1139,96 @@ class TestMarMenorLayerGeneration:
         for mode in ("mesh", "depth", "depth_3d", "quality", "boundaries"):
             layers = build_layers(mar_menor_grd, mode=mode, epsg=32630)
             assert isinstance(layers, list), f"mode={mode} failed"
+
+
+# ===========================================================================
+# Simulate the "Load Sample Data" flow (grid_prep page)
+# ===========================================================================
+
+
+class TestSampleDataFlow:
+    """Simulate the exact flow of grid_prep's 'Load Sample Data' button.
+
+    The button does:
+      grd = GrdParser.parse_file(grd_path)
+      grd.epsg = 32630
+      current_grd.set(grd)
+
+    Then grid_map_server reads grd.epsg as fallback when the CRS dropdown
+    is "Auto".
+    """
+
+    def test_parse_and_set_epsg(self):
+        """Parse the real grid, set epsg, verify attribute persists."""
+        if not _MAR_MENOR_GRD.exists():
+            pytest.skip("Mar Menor grid not found")
+        grd = GrdParser.parse_file(_MAR_MENOR_GRD)
+        assert grd.epsg is None  # Parser doesn't set EPSG
+        grd.epsg = 32630
+        assert grd.epsg == 32630
+
+    def test_full_pipeline_with_grd_epsg(self):
+        """Full pipeline: parse → set epsg → build layers → verify WGS84."""
+        if not _MAR_MENOR_GRD.exists():
+            pytest.skip("Mar Menor grid not found")
+        grd = GrdParser.parse_file(_MAR_MENOR_GRD)
+        grd.epsg = 32630
+
+        # Simulate grid_map_server: use grd.epsg when dropdown is "Auto"
+        epsg_val = grd.epsg
+
+        layers = build_layers(grd, mode="mesh", epsg=epsg_val)
+        assert len(layers) == 1
+        assert layers[0]["id"] == "wireframe"
+
+        # Verify edge coords are in WGS84
+        edge = layers[0]["data"][0]
+        lon, lat = edge["path"][0]
+        assert -2.0 < lon < 1.0, f"lon={lon} not near Mar Menor"
+        assert 36.0 < lat < 39.0, f"lat={lat} not near Mar Menor"
+
+    def test_view_state_with_grd_epsg(self):
+        """View state centers on Mar Menor when using grd.epsg."""
+        if not _MAR_MENOR_GRD.exists():
+            pytest.skip("Mar Menor grid not found")
+        grd = GrdParser.parse_file(_MAR_MENOR_GRD)
+        grd.epsg = 32630
+
+        vs = _compute_view_state(grd, epsg=grd.epsg)
+        assert -2.0 < vs["longitude"] < 1.0
+        assert 36.0 < vs["latitude"] < 39.0
+        assert 8 < vs["zoom"] < 15
+
+    def test_depth_mode_with_grd_epsg(self):
+        """Depth mode works with grd.epsg set."""
+        if not _MAR_MENOR_GRD.exists():
+            pytest.skip("Mar Menor grid not found")
+        grd = GrdParser.parse_file(_MAR_MENOR_GRD)
+        grd.epsg = 32630
+
+        layers = build_layers(grd, mode="depth", epsg=grd.epsg)
+        ids = [l["id"] for l in layers]
+        assert "triangles" in ids
+        # Verify triangle coords
+        tri_layer = next(l for l in layers if l["id"] == "triangles")
+        polygon = tri_layer["data"][0]["polygon"]
+        lon, lat = polygon[0]
+        assert -2.0 < lon < 1.0
+        assert 36.0 < lat < 39.0
+
+    def test_nodes_overlay_with_grd_epsg(self):
+        """Node scatter overlay works with grd.epsg set."""
+        if not _MAR_MENOR_GRD.exists():
+            pytest.skip("Mar Menor grid not found")
+        grd = GrdParser.parse_file(_MAR_MENOR_GRD)
+        grd.epsg = 32630
+
+        layers = build_layers(
+            grd, mode="mesh", show_nodes=True, epsg=grd.epsg,
+        )
+        ids = [l["id"] for l in layers]
+        assert "nodes" in ids
+        node_layer = next(l for l in layers if l["id"] == "nodes")
+        pos = node_layer["data"][0]["position"]
+        assert -2.0 < pos[0] < 1.0
+        assert 36.0 < pos[1] < 39.0

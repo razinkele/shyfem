@@ -1149,9 +1149,14 @@ def grid_map_server(
         show_nd = input.show_nodes()
         basemap_key = input.map_basemap()
 
-        # EPSG for coordinate reprojection
+        # EPSG for coordinate reprojection:
+        # 1. UI dropdown selection takes priority
+        # 2. Fall back to grd.epsg (set by loader, e.g. sample data)
+        # 3. None → auto-detect (works for Gauss-Boaga only)
         epsg_str = input.grid_epsg()
         epsg_val: int | None = int(epsg_str) if epsg_str else None
+        if epsg_val is None and hasattr(grd, "epsg") and grd.epsg is not None:
+            epsg_val = grd.epsg
 
         # Elevation scale — only read when mode is depth_3d
         elev_scale = 1.0

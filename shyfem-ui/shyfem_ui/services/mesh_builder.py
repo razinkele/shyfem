@@ -117,6 +117,8 @@ def import_boundaries(file_path: Path) -> GrdFile:
     if not grd.nodes:
         grd.parse_warnings.append("No geometries found in file")
 
+    # Boundaries are always in WGS84 after reprojection
+    grd.epsg = 4326
     return grd
 
 

@@ -194,6 +194,13 @@ class TestImportBoundaries:
         grd = import_boundaries(path)
         assert any("unsupported" in w.lower() or "Skipped" in w for w in grd.parse_warnings)
 
+    def test_geojson_sets_epsg_4326(self, tmp_path):
+        """import_boundaries always sets grd.epsg = 4326 (WGS84 output)."""
+        coords = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]
+        path = _make_geojson_polygon(coords, tmp_path / "test.geojson")
+        grd = import_boundaries(path)
+        assert grd.epsg == 4326
+
     def test_projected_crs_reprojected_to_wgs84(self, tmp_path):
         """Shapefile in projected CRS (e.g. UTM) gets reprojected to WGS84."""
         import fiona
@@ -225,6 +232,7 @@ class TestImportBoundaries:
         ys = [n.y for n in grd.nodes.values()]
         assert all(-180 <= x <= 180 for x in xs), f"X out of WGS84 range: {xs}"
         assert all(-90 <= y <= 90 for y in ys), f"Y out of WGS84 range: {ys}"
+        assert grd.epsg == 4326
 
     def test_wgs84_not_reprojected(self, tmp_path):
         """Shapefile already in WGS84 keeps original coordinates."""
