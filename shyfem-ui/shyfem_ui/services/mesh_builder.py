@@ -628,12 +628,20 @@ def load_bathymetry_contours(
         "level", "LEVEL", "Level",
     ]
 
+    # Attribute names that are almost certainly not depth values
+    _NON_DEPTH_NAMES = frozenset({
+        "count", "fid", "id", "gid", "oid", "objectid",
+        "shape_length", "shape_len", "shape_area", "perimeter", "area", "length",
+    })
+
     points = []
     with fiona.open(str(path)) as src:
         # Detect the depth attribute from the first feature
         resolved_attr = None
+        feat = None
         for feat in src:
             props = feat["properties"]
+            # Pass 1: try known candidate names
             for candidate in depth_candidates:
                 if candidate in props and props[candidate] is not None:
                     try:
@@ -642,13 +650,32 @@ def load_bathymetry_contours(
                         break
                     except (ValueError, TypeError):
                         continue
+            # Pass 2: fallback — scan all properties, skip obvious non-depth names
+            if resolved_attr is None:
+                for attr_name, attr_val in props.items():
+                    if attr_name.lower() in _NON_DEPTH_NAMES:
+                        continue
+                    if attr_val is not None:
+                        try:
+                            float(attr_val)
+                            resolved_attr = attr_name
+                            logger.info(
+                                "Auto-detected depth attribute %r "
+                                "(set 'Depth attribute name' explicitly to suppress this)",
+                                attr_name,
+                            )
+                            break
+                        except (ValueError, TypeError):
+                            continue
             break  # only check first feature
         src.close()
 
     if resolved_attr is None:
+        available = list(feat["properties"].keys()) if feat else []
         raise ValueError(
             f"No numeric depth attribute found. Tried: {depth_candidates[:6]}. "
-            f"Available attributes: {list(feat['properties'].keys()) if feat else []}"
+            f"Available attributes: {available}. "
+            f"Set the 'Depth attribute name' field to one of: {available}"
         )
 
     with fiona.open(str(path)) as src:
