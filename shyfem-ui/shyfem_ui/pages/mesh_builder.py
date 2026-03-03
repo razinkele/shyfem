@@ -17,7 +17,6 @@ from shyfem_ui.services.mesh_builder import (
     estimate_element_count,
     export_grd,
     import_boundaries,
-    interpolate_bathymetry_scipy,
     interpolate_bathymetry_shybas,
     load_bathymetry_contours,
     load_bathymetry_file,
