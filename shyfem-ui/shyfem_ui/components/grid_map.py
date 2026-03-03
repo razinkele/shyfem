@@ -402,7 +402,10 @@ def _build_triangle_data(
             "tooltip_html": _triangle_tooltip(rec, mode),
         }
         if mode == "depth_3d":
-            entry["elevation"] = rec["depth"] * elevation_scale
+            # Use abs() so negative depths (below sea level) produce positive
+            # elevations — deck.gl extrudes downward for negative values, making
+            # them invisible even with pitch=45.
+            entry["elevation"] = abs(rec["depth"]) * elevation_scale
         result.append(entry)
 
     return result

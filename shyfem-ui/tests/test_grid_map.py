@@ -293,7 +293,27 @@ class TestBuildTriangleData:
         assert "elevation" in tri
         avg_depth = (2.5 + 4.0 + 3.0) / 3.0
         # depth is rounded to 6 decimals internally, so allow small tolerance
-        assert abs(tri["elevation"] - avg_depth * 100.0) < 0.01
+        assert abs(tri["elevation"] - abs(avg_depth) * 100.0) < 0.01
+
+    def test_depth_3d_elevation_positive_for_negative_depths(self):
+        """Negative depths (below sea level) must produce positive elevation.
+
+        deck.gl PolygonLayer with extruded=True renders negative elevations
+        below the ground plane (invisible). Depth -10m must produce a visible
+        upward bar, not an invisible downward spike.
+        """
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=0.0, y=0.0, depth=-10.0),
+            2: Node(id=2, node_type=0, x=1.0, y=0.0, depth=-20.0),
+            3: Node(id=3, node_type=0, x=0.5, y=1.0, depth=-30.0),
+        }
+        grd.elements = {1: Element(id=1, elem_type=3, nodes=[1, 2, 3])}
+        result = _build_triangle_data(grd, mode="depth_3d", elevation_scale=1.0)
+        assert len(result) == 1
+        assert result[0]["elevation"] > 0, "elevation must be positive for deck.gl extrusion"
+        avg_abs = (10.0 + 20.0 + 30.0) / 3.0
+        assert abs(result[0]["elevation"] - avg_abs) < 0.01
 
     def test_partitions_different_colors(self):
         grd = _make_multi_grid()
