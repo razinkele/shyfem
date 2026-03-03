@@ -11,6 +11,7 @@ from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.mesh_builder import (
+    _compute_depths_only,
     adjust_depths,
     compute_mesh_stats,
     estimate_element_count,
@@ -25,7 +26,7 @@ from shyfem_ui.services.mesh_builder import (
     triangulate,
     validate_boundary,
 )
-from shyfem_ui.services.parser_grd import GrdParser
+from shyfem_ui.services.parser_grd import GrdFile, GrdParser, Node
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
@@ -293,6 +294,7 @@ def mesh_builder_ui():
         ),
         # Status bar
         ui.output_ui("status_summary"),
+        ui.output_ui("operation_progress"),
         # Main content area — tabs for wizard / preview / log
         ui.navset_card_tab(
             ui.nav_panel(
@@ -348,6 +350,8 @@ def mesh_builder_server(
     busy_message = reactive.value("")  # Non-empty string = busy with that message
     staged_grd = reactive.value(None)    # After interpolation, before Accept
     comparison_runs = reactive.value({})  # {label: GrdFile}, max 3 entries
+    progress_value = reactive.value(0)   # 0-100 = percent; -1 = indeterminate
+    progress_label = reactive.value("")  # empty = bar hidden
 
     # --- Initialize child modules ---
     log_viewer_server("build_log", log_content)
@@ -405,6 +409,40 @@ def mesh_builder_server(
     @reactive.event(input.wizard_step)
     def _sync_wizard_panels():
         ui.update_navs("wizard_panels", selected=input.wizard_step())
+
+    @render.ui
+    def operation_progress():
+        """Bootstrap progress bar shown during mesh gen and interpolation."""
+        label = progress_label.get()
+        if not label:
+            return ui.div()
+        pct = progress_value.get()
+        if pct == -1:
+            return ui.div(
+                ui.tags.div(
+                    ui.tags.div(
+                        label,
+                        class_="progress-bar progress-bar-striped progress-bar-animated",
+                        role="progressbar",
+                        style="width: 100%",
+                    ),
+                    class_="progress mb-2",
+                ),
+            )
+        return ui.div(
+            ui.tags.div(
+                ui.tags.div(
+                    f"{label} ({pct}%)",
+                    class_="progress-bar",
+                    role="progressbar",
+                    style=f"width: {pct}%",
+                    aria_valuenow=str(pct),
+                    aria_valuemin="0",
+                    aria_valuemax="100",
+                ),
+                class_="progress mb-2",
+            ),
+        )
 
     # --- Status summary (horizontal bar) ---
     @render.ui
