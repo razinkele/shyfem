@@ -155,6 +155,10 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
     # Reactive value holding user list (always defined so render functions can reference it)
     users_data: reactive.Value[list[dict]] = reactive.value([])
 
+    # Track which user IDs have already had their action handlers registered.
+    # Prevents duplicate effects when _register_all_user_actions re-runs on refresh.
+    _registered_user_ids: set[int] = set()
+
     # Load users whenever admin status becomes available
     @reactive.effect
     def _load_users():
@@ -260,9 +264,19 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
     # ------------------------------------------------------------------
 
     def _register_user_actions(
-        user_id: int, username: str, role: str, is_active: bool, email: str | None = None
+        user_id: int, username: str, email: str | None = None
     ):
-        """Register action handlers for a specific user row."""
+        """Register action handlers for a specific user row.
+
+        Safe to call multiple times — subsequent calls for an already-registered
+        user_id are silently ignored, preventing handler accumulation across refreshes.
+        """
+        if user_id in _registered_user_ids:
+            return
+        _registered_user_ids.add(user_id)
+
+        def _get_user() -> dict | None:
+            return next((u for u in users_data.get() if u["id"] == user_id), None)
 
         @reactive.effect
         @reactive.event(input[f"reset_pw_{user_id}"])
@@ -301,8 +315,11 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         @reactive.effect
         @reactive.event(input[f"toggle_active_{user_id}"])
         def _toggle_active():
+            user = _get_user()
+            if user is None:
+                return
             try:
-                new_active = not is_active
+                new_active = not user.get("is_active", True)
                 auth_service.update_user(user_id, is_active=new_active)
                 status = "activated" if new_active else "deactivated"
                 ui.notification_show(f"User '{username}' {status}", type="message")
@@ -314,6 +331,10 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         @reactive.effect
         @reactive.event(input[f"toggle_role_{user_id}"])
         def _toggle_role():
+            user = _get_user()
+            if user is None:
+                return
+            role = user["role"]
             try:
                 if role == "admin":
                     new_role = "user"
@@ -357,16 +378,15 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
 
     @reactive.effect
     def _register_all_user_actions():
-        """Re-register action handlers whenever user list changes."""
+        """Register action handlers for users that don't have them yet.
+
+        Re-runs when users_data changes (e.g. after create), but the
+        idempotency guard in _register_user_actions ensures existing users
+        never get duplicate handlers.
+        """
         users = users_data.get()
         for u in users:
-            _register_user_actions(
-                u["id"],
-                u["username"],
-                u["role"],
-                u.get("is_active", True),
-                email=u.get("email"),
-            )
+            _register_user_actions(u["id"], u["username"], email=u.get("email"))
 
     # ------------------------------------------------------------------
     # Create user modal
