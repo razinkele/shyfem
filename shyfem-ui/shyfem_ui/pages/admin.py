@@ -134,22 +134,23 @@ def admin_ui():
 
 
 @module.server
-def admin_server(input, output, session, config: Config, auth_service: AuthService):
+def admin_server(input, output, session, config: Config, auth_service: AuthService, user_role=None):
     """Admin panel server logic."""
     from shyfem_ui.middleware.session_auth import get_current_user
 
     def _is_admin() -> bool:
         """Check admin access reactively.
 
-        Prefers input.current_user_role() (propagated from JS via Shiny.setInputValue)
-        because the Shiny WebSocket context doesn't carry the browser session cookie,
-        making get_current_user() always return None behind Shiny Server.
-        Falls back to the HTTP-context value as a secondary check.
+        Uses user_role() passed from the top-level app server, where
+        input.current_user_role is reachable without Shiny module namespacing.
+        Falls back to the HTTP-context value (always None behind Shiny Server).
         """
         try:
-            return input.current_user_role() == "admin"
+            if user_role is not None:
+                return user_role() == "admin"
         except Exception:
-            return _check_admin_access(get_current_user())
+            pass
+        return _check_admin_access(get_current_user())
 
     # Reactive value holding user list (always defined so render functions can reference it)
     users_data: reactive.Value[list[dict]] = reactive.value([])

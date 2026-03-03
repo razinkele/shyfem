@@ -327,6 +327,7 @@ def run_server(
     job_queue: JobQueue | None = None,
     active_project=None,
     tutorial_context=None,
+    user_role=None,
 ):
     """Job execution page server logic."""
     # Initialize job queue if not provided
@@ -542,10 +543,10 @@ def run_server(
     @reactive.event(input.submit_btn)
     async def _submit_job():
         # Tutorial accounts are read-only.
-        # Prefer input.current_user_role() (set from JS via Shiny.setInputValue)
-        # because the Shiny WebSocket context doesn't carry the browser session cookie.
+        # Use user_role() from the top-level server where input.current_user_role
+        # is reachable (Shiny module namespacing prevents accessing it here).
         try:
-            _role = input.current_user_role()
+            _role = user_role() if user_role is not None else None
         except Exception:
             _role = _current_user.get("role") if _current_user else None
         if _role == "tutorial":

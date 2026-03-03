@@ -1021,6 +1021,17 @@ def _build_server(
         is_dark = input._dark_mode()
         register_shyfem_template(dark=bool(is_dark))
 
+    # Reactive calc for the current user's role.
+    # Must live in the top-level server (no Shiny module namespace) so that
+    # input.current_user_role — set by JS via Shiny.setInputValue — is reachable.
+    # Modules receive this as a callable parameter instead of reading it themselves.
+    @reactive.calc
+    def _current_role():
+        try:
+            return input.current_user_role()
+        except Exception:
+            return _current_user.get("role") if _current_user else None
+
     # Initialize page servers
     home.home_server("home", config, job_queue, active_project=active_project, nav_callback=nav_to)
     tutorial.tutorial_server(
@@ -1041,7 +1052,8 @@ def _build_server(
         "simulation", config, active_project=active_project, tutorial_context=tutorial_context
     )
     run.run_server(
-        "run", config, job_queue, active_project=active_project, tutorial_context=tutorial_context
+        "run", config, job_queue, active_project=active_project,
+        tutorial_context=tutorial_context, user_role=_current_role,
     )
     ibm.ibm_server("ibm", config, active_project=active_project)
     postprocess.postprocess_server(
@@ -1055,7 +1067,7 @@ def _build_server(
     files.files_server("files", config, active_project=active_project)
 
     if auth_service:
-        admin.admin_server("admin", config, auth_service)
+        admin.admin_server("admin", config, auth_service, user_role=_current_role)
 
     # --- Cross-page job notifications ---
     _notification_svc = JobTransitionDetector()
