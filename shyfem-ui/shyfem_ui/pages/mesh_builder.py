@@ -407,7 +407,7 @@ def mesh_builder_server(
     @reactive.effect
     @reactive.event(input.wizard_step)
     def _sync_wizard_panels():
-        ui.update_navs("wizard_panels", selected=input.wizard_step())
+        ui.update_navset("wizard_panels", selected=input.wizard_step())
 
     @render.ui
     def operation_progress():
