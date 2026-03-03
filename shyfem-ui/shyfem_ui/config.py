@@ -38,6 +38,12 @@ class Config(BaseSettings):
         description="Working directory for projects and outputs",
     )
 
+    # Per-user data directories
+    user_data_root: Path = Field(
+        default=Path("/data/shyfem"),
+        description="Root directory under which per-user home dirs are created: {user_data_root}/{username}/",
+    )
+
     # Database settings
     database_url: str = Field(
         default="sqlite:///./shyfem_ui.db", description="SQLAlchemy database URL"
@@ -172,6 +178,16 @@ class Config(BaseSettings):
     static_cache_max_age: int = Field(
         default=86400,
         description="Cache-Control max-age for static assets in seconds (0 = disabled)",
+    )
+
+    # Email / SMTP notifications
+    smtp_host: str = Field(default="", description="SMTP host for notifications (empty = disabled)")
+    smtp_port: int = Field(default=587, description="SMTP port (587=STARTTLS, 465=SSL)")
+    smtp_user: str = Field(default="", description="SMTP login username")
+    smtp_password: str = Field(default="", description="SMTP login password")
+    smtp_from: str = Field(
+        default="SHYFEM UI <noreply@localhost>",
+        description="From address for notification emails",
     )
 
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:

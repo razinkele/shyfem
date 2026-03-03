@@ -1,6 +1,5 @@
 """Tests for configuration management."""
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -237,3 +236,32 @@ class TestPathResolver:
         # This tests the validator runs, actual expansion depends on env
         config = Config(work_dir=tmp_path)
         assert config.work_dir.is_absolute()
+
+
+def test_user_data_root_default():
+    """user_data_root defaults to /data/shyfem."""
+    c = _clean_config()
+    assert str(c.user_data_root) == "/data/shyfem"
+
+
+def test_user_data_root_env(monkeypatch):
+    """SHYFEM_UI_USER_DATA_ROOT overrides the default."""
+    monkeypatch.setenv("SHYFEM_UI_USER_DATA_ROOT", "/mnt/data")
+    c = Config(_env_file=None)
+    assert str(c.user_data_root) == "/mnt/data"
+
+
+def test_smtp_host_default_empty():
+    """smtp_host defaults to empty string (SMTP disabled)."""
+    c = _clean_config()
+    assert c.smtp_host == ""
+
+
+def test_smtp_settings_env(monkeypatch):
+    """SMTP settings are read from env vars."""
+    monkeypatch.setenv("SHYFEM_UI_SMTP_HOST", "smtp.example.com")
+    monkeypatch.setenv("SHYFEM_UI_SMTP_PORT", "587")
+    monkeypatch.setenv("SHYFEM_UI_SMTP_USER", "noreply@example.com")
+    c = Config(_env_file=None)
+    assert c.smtp_host == "smtp.example.com"
+    assert c.smtp_port == 587
