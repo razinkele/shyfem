@@ -818,6 +818,14 @@ def _compute_depths_only(
     Runs entirely as a pure computation — no Shiny state. Intended to be
     called via ``asyncio.to_thread`` from the page handler.
 
+    Args:
+        grd: Mesh with nodes (from triangulation step).
+        bathy_points: Nx3 array of (x, y, depth).
+        method: One of ``"nearest"``, ``"linear"``, ``"cubic"``, ``"idw"``,
+            ``"rbf"``, or ``"cloughtocher"``.
+        use_boundary_zero: If True, inject boundary nodes as depth=0 before
+            interpolating.
+
     Returns:
         Tuple of (node_ids, depths) where depths[i] is the depth for node_ids[i].
     """
