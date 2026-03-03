@@ -1032,7 +1032,6 @@ def mesh_builder_server(
                         "adj_min_clamp",
                         "Clamp min (m)",
                         value=None,
-                        placeholder="e.g. -200",
                     ),
                 ),
                 ui.column(
@@ -1041,7 +1040,6 @@ def mesh_builder_server(
                         "adj_max_clamp",
                         "Clamp max (m)",
                         value=None,
-                        placeholder="e.g. 0",
                     ),
                 ),
                 ui.column(
@@ -1050,7 +1048,6 @@ def mesh_builder_server(
                         "adj_fill_value",
                         "Fill unmapped (m)",
                         value=None,
-                        placeholder="e.g. -1",
                     ),
                 ),
             ),
