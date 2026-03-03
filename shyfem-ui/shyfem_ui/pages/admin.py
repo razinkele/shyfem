@@ -302,15 +302,15 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         def _do_reset_pw():
             new_pw = input.reset_pw_value() or ""
             if len(new_pw) < 4:
-                ui.notification_show("Password must be at least 4 characters", type="error")
+                ui.notification_show("Password must be at least 4 characters", type="error", duration=6)
                 return
             try:
                 auth_service.reset_password(user_id, new_pw)
                 ui.modal_remove()
-                ui.notification_show(f"Password reset for '{username}'", type="message")
+                ui.notification_show(f"Password reset for '{username}'", type="message", duration=4)
             except Exception as e:
                 logger.exception("Failed to reset password for user %d", user_id)
-                ui.notification_show(f"Error: {e}", type="error")
+                ui.notification_show(f"Error: {e}", type="error", duration=6)
 
         @reactive.effect
         @reactive.event(input[f"toggle_active_{user_id}"])
@@ -322,11 +322,11 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                 new_active = not user.get("is_active", True)
                 auth_service.update_user(user_id, is_active=new_active)
                 status = "activated" if new_active else "deactivated"
-                ui.notification_show(f"User '{username}' {status}", type="message")
+                ui.notification_show(f"User '{username}' {status}", type="message", duration=4)
                 _refresh()
             except Exception as e:
                 logger.exception("Failed to toggle active for user %d", user_id)
-                ui.notification_show(f"Error: {e}", type="error")
+                ui.notification_show(f"Error: {e}", type="error", duration=6)
 
         @reactive.effect
         @reactive.event(input[f"toggle_role_{user_id}"])
@@ -344,11 +344,11 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                     new_role = "user"  # promote tutorial to user first
                 auth_service.update_user(user_id, role=new_role)
                 action = "demoted to user" if new_role == "user" else "promoted to admin"
-                ui.notification_show(f"User '{username}' {action}", type="message")
+                ui.notification_show(f"User '{username}' {action}", type="message", duration=4)
                 _refresh()
             except Exception as e:
                 logger.exception("Failed to toggle role for user %d", user_id)
-                ui.notification_show(f"Error: {e}", type="error")
+                ui.notification_show(f"Error: {e}", type="error", duration=6)
 
         @reactive.effect
         @reactive.event(input[f"send_test_email_{user_id}"])
@@ -371,10 +371,10 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                         "stderr": "",
                     },
                 )
-                ui.notification_show(f"Test email sent to {email}", type="message")
+                ui.notification_show(f"Test email sent to {email}", type="message", duration=4)
             except Exception as e:
                 logger.exception("Failed to send test email to user %d", user_id)
-                ui.notification_show(f"SMTP error: {e}", type="error")
+                ui.notification_show(f"SMTP error: {e}", type="error", duration=6)
 
     @reactive.effect
     def _register_all_user_actions():

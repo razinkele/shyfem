@@ -399,7 +399,7 @@ def ensemble_server(
             )
 
         preview_runs.set(combos)
-        ui.notification_show(f"{len(combos)} runs configured", type="message")
+        ui.notification_show(f"{len(combos)} runs configured", type="message", duration=4)
 
     @render.ui
     def run_preview():
@@ -473,13 +473,13 @@ def ensemble_server(
         name = input.ensemble_name() or f"ensemble_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
         if not base_str_path:
-            ui.notification_show("Base STR file is required", type="error")
+            ui.notification_show("Base STR file is required", type="error", duration=6)
             return
 
         try:
             base_file = config.validate_path(base_str_path, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         if not working_dir_path:
@@ -488,25 +488,25 @@ def ensemble_server(
         try:
             work_dir = config.validate_path(working_dir_path)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         variations = _read_current_variations()
         if not variations:
-            ui.notification_show("Define at least one parameter variation", type="error")
+            ui.notification_show("Define at least one parameter variation", type="error", duration=6)
             return
 
         mode = input.sweep_mode()
         combos = _build_combinations(variations, mode)
         if not combos:
-            ui.notification_show("No valid parameter combinations", type="error")
+            ui.notification_show("No valid parameter combinations", type="error", duration=6)
             return
 
         # Parse the base STR file
         try:
             base_str = StrParser.parse_file(base_file)
         except Exception as e:
-            ui.notification_show(f"Failed to parse STR file: {e}", type="error")
+            ui.notification_show(f"Failed to parse STR file: {e}", type="error", duration=6)
             return
 
         tool = input.tool_name()
@@ -553,7 +553,7 @@ def ensemble_server(
                 job_id = await job_queue.submit(spec)
                 job_ids.append(job_id)
             except Exception as e:
-                ui.notification_show(f"Failed to submit run {i}: {e}", type="error")
+                ui.notification_show(f"Failed to submit run {i}: {e}", type="error", duration=6)
 
         if job_ids:
             ensemble_state.set(
@@ -569,6 +569,7 @@ def ensemble_server(
             ui.notification_show(
                 f"Submitted {len(job_ids)}/{len(combos)} ensemble runs",
                 type="message",
+                duration=4,
             )
 
     # ------- Progress Tracking -------
@@ -608,6 +609,7 @@ def ensemble_server(
         ui.notification_show(
             f"Cancelled {cancelled} of {total} jobs",
             type="message" if cancelled > 0 else "warning",
+            duration=4,
         )
 
     @render.ui

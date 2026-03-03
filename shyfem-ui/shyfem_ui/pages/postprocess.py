@@ -186,7 +186,7 @@ def postprocess_ui():
                 ui.input_action_button(
                     "batch_convert_btn",
                     "Convert Selected to NetCDF",
-                    class_="btn-outline-success w-100 mt-2",
+                    class_="btn-outline-primary w-100 mt-2",
                 ),
                 width=320,
             ),
@@ -258,13 +258,14 @@ def postprocess_server(
         if not work_dir.exists():
             ui.notification_show(
                 f"Sample directory not found: {work_dir}", type="error"
-            )
+            , duration=6)
             return
         ui.update_text("shy_path", value=str(work_dir))
         ui.notification_show(
             "Sample directory set. Run a simulation first to generate "
             ".shy output, then click Scan.",
             type="message",
+            duration=4,
         )
 
     # State
@@ -352,7 +353,7 @@ def postprocess_server(
         try:
             path = config.validate_path(shy_path, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         log_content.set(f"Scanning {path.name}...\n")
@@ -382,18 +383,18 @@ def postprocess_server(
                     f"=== STDERR ===\n{result.stderr}\n\n"
                     f"*** Scan complete ***\n"
                 )
-                ui.notification_show("File scanned successfully", type="message")
+                ui.notification_show("File scanned successfully", type="message", duration=4)
             else:
                 log_content.set(
                     f"=== STDOUT ===\n{result.stdout}\n\n"
                     f"=== STDERR ===\n{result.stderr}\n\n"
                     f"*** shyelab -info failed (code {result.return_code}) ***\n"
                 )
-                ui.notification_show("Scan failed - check log", type="error")
+                ui.notification_show("Scan failed - check log", type="error", duration=6)
 
         except Exception as e:
             log_content.set(f"Error: {e}\n")
-            ui.notification_show(f"Error: {e}", type="error")
+            ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     # --- Run shyelab ---
 
@@ -446,14 +447,14 @@ def postprocess_server(
         try:
             path = config.validate_path(shy_path, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         output_dir = input.output_dir() or str(path.parent)
         try:
             output_path = config.validate_path(output_dir)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -482,17 +483,18 @@ def postprocess_server(
                 ui.notification_show(
                     f"Done: {len(result.output_files)} files generated",
                     type="message",
+                    duration=4,
                 )
             else:
                 log_content.set(
                     f"{stdout_section}{stderr_section}\n\n"
                     f"*** shyelab failed (code {result.return_code}) ***\n"
                 )
-                ui.notification_show("shyelab failed - check log", type="error")
+                ui.notification_show("shyelab failed - check log", type="error", duration=6)
 
         except Exception as e:
             log_content.set(f"Error: {e}\n")
-            ui.notification_show(f"Error: {e}", type="error")
+            ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     # --- Presets ---
 
@@ -604,6 +606,7 @@ def postprocess_server(
         ui.notification_show(
             f"Batch done: {success_count}/{len(paths)} succeeded",
             type="message" if success_count == len(paths) else "warning",
+            duration=4,
         )
 
     # --- Batch convert to NetCDF ---
@@ -736,6 +739,7 @@ def postprocess_server(
         ui.notification_show(
             f"Batch convert done: {success_count}/{len(selected)} succeeded",
             type="message" if success_count == len(selected) else "warning",
+            duration=4,
         )
 
     # --- Render outputs ---
@@ -997,14 +1001,14 @@ def _register_preset(
         try:
             path = config.validate_path(shy_path, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         output_dir = input.output_dir() or str(path.parent)
         try:
             output_path = config.validate_path(output_dir)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -1038,6 +1042,7 @@ def _register_preset(
         ui.notification_show(
             f"Preset '{preset_info['name']}' done: {len(all_output)} files",
             type="message",
+            duration=4,
         )
 
 

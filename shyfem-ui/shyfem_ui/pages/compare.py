@@ -127,7 +127,7 @@ def compare_server(
             jobs = await job_queue.list_jobs(limit=100)
             all_jobs.set(jobs)
         except Exception as e:
-            ui.notification_show(f"Failed to load jobs: {e}", type="error")
+            ui.notification_show(f"Failed to load jobs: {e}", type="error", duration=6)
 
     @render.ui
     def job_selector():
@@ -219,7 +219,7 @@ def compare_server(
             file_a = config.validate_path(path_a, must_exist=True)
             file_b = config.validate_path(path_b, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         str_a = StrParser.parse_file(file_a)
@@ -240,7 +240,7 @@ def compare_server(
             file_a = config.validate_path(path_a, must_exist=True)
             file_b = config.validate_path(path_b, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         ts_data.set(
@@ -469,7 +469,7 @@ def compare_server(
                 duration=8,
             )
         except Exception as e:
-            ui.notification_show(f"Report generation failed: {e}", type="error")
+            ui.notification_show(f"Report generation failed: {e}", type="error", duration=6)
 
     return {}
 

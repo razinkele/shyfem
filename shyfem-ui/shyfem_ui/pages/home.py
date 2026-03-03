@@ -89,7 +89,7 @@ def home_ui():
     return ui.div(
         # Welcome header
         ui.div(
-            ui.h4("Welcome to SHYFEM Workbench", class_="mb-1"),
+            ui.h3("Welcome to SHYFEM Workbench", class_="mb-1"),
             ui.p(
                 "Finite Element Hydrodynamic Model — Web Interface",
                 class_="text-muted mb-0",
@@ -258,7 +258,7 @@ def home_server(
             _refresh_projects()
             await _refresh_jobs()
         except Exception as e:
-            ui.notification_show(f"Error loading data: {e}", type="error")
+            ui.notification_show(f"Error loading data: {e}", type="error", duration=6)
 
     def _refresh_projects():
         from shyfem_ui.middleware.session_auth import get_current_user
@@ -434,19 +434,10 @@ def home_server(
                     "Create",
                     class_="btn-primary",
                 ),
-                ui.input_action_button(
-                    "cancel_create_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
+                ui.modal_button("Cancel"),
             ),
         )
         ui.modal_show(m)
-
-    @reactive.effect
-    @reactive.event(input.cancel_create_btn)
-    def _hide_modal():
-        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.create_project_btn)
@@ -456,24 +447,24 @@ def home_server(
         work_dir = input.project_dir()
 
         if not name:
-            ui.notification_show("Project name is required", type="error")
+            ui.notification_show("Project name is required", type="error", duration=6)
             return
 
         if not work_dir:
-            ui.notification_show("Project directory is required", type="error")
+            ui.notification_show("Project directory is required", type="error", duration=6)
             return
 
         # Validate and create directory
         try:
             project_path = config.validate_save_path(work_dir)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         try:
             project_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            ui.notification_show(f"Failed to create directory: {e}", type="error")
+            ui.notification_show(f"Failed to create directory: {e}", type="error", duration=6)
             return
 
         # Create project in database
@@ -490,12 +481,12 @@ def home_server(
                 )
                 db.add(project)
 
-            ui.notification_show(f"Project '{name}' created successfully", type="message")
+            ui.notification_show(f"Project '{name}' created successfully", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
 
         except Exception as e:
-            ui.notification_show(f"Failed to create project: {e}", type="error")
+            ui.notification_show(f"Failed to create project: {e}", type="error", duration=6)
 
     # Tutorial handlers
     @reactive.effect
@@ -535,34 +526,25 @@ def home_server(
                 ui.input_action_button(
                     "confirm_tutorial_btn",
                     "Create Tutorial Project",
-                    class_="btn-success",
+                    class_="btn-primary",
                 ),
-                ui.input_action_button(
-                    "cancel_tutorial_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
+                ui.modal_button("Cancel"),
             ),
         )
         ui.modal_show(m)
-
-    @reactive.effect
-    @reactive.event(input.cancel_tutorial_btn)
-    def _hide_tutorial_modal():
-        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.confirm_tutorial_btn)
     def _create_tutorial_project():
         name = input.tutorial_project_name().strip()
         if not name:
-            ui.notification_show("Project name is required", type="error")
+            ui.notification_show("Project name is required", type="error", duration=6)
             return
 
         # Check source directory exists
         mar_menor_src = config.testcases_dir / "mar_menor"
         if not mar_menor_src.is_dir():
-            ui.notification_show(f"Tutorial source not found: {mar_menor_src}", type="error")
+            ui.notification_show(f"Tutorial source not found: {mar_menor_src}", type="error", duration=6)
             return
 
         # Create project directory
@@ -570,11 +552,11 @@ def home_server(
         try:
             config.ensure_work_dir()
             if project_path.exists():
-                ui.notification_show(f"Directory already exists: {project_path}", type="error")
+                ui.notification_show(f"Directory already exists: {project_path}", type="error", duration=6)
                 return
             shutil.copytree(mar_menor_src, project_path)
         except Exception as e:
-            ui.notification_show(f"Failed to copy tutorial files: {e}", type="error")
+            ui.notification_show(f"Failed to copy tutorial files: {e}", type="error", duration=6)
             return
 
         # Create database records
@@ -625,7 +607,7 @@ def home_server(
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
-            ui.notification_show(f"Tutorial project '{name}' created successfully!", type="message")
+            ui.notification_show(f"Tutorial project '{name}' created successfully!", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
             if nav_callback:
@@ -635,7 +617,7 @@ def home_server(
             # Clean up copied directory on DB failure
             if project_path.exists():
                 shutil.rmtree(project_path, ignore_errors=True)
-            ui.notification_show(f"Failed to create tutorial project: {e}", type="error")
+            ui.notification_show(f"Failed to create tutorial project: {e}", type="error", duration=6)
 
     # --- Active project handlers ---
 
@@ -645,11 +627,11 @@ def home_server(
 
         ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
-            ui.notification_show("Project not found", type="error")
+            ui.notification_show("Project not found", type="error", duration=6)
             return
         if active_project is not None:
             active_project.set(ctx)
-        ui.notification_show(f"Opened project: {ctx['name']}", type="message")
+        ui.notification_show(f"Opened project: {ctx['name']}", type="message", duration=4)
         if nav_callback:
             nav_callback("Grid Prep")
 
@@ -744,15 +726,10 @@ def home_server(
             easy_close=True,
             footer=ui.div(
                 ui.input_action_button("import_confirm_btn", "Import", class_="btn-primary"),
-                ui.input_action_button("import_cancel_btn", "Cancel", class_="btn-secondary ms-2"),
+                ui.modal_button("Cancel"),
             ),
         )
         ui.modal_show(m)
-
-    @reactive.effect
-    @reactive.event(input.import_cancel_btn)
-    def _cancel_import():
-        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.import_confirm_btn)
@@ -762,17 +739,17 @@ def home_server(
         grid_name = input.import_grid_name().strip()
 
         if not grd_path_str:
-            ui.notification_show("Grid file path is required", type="error")
+            ui.notification_show("Grid file path is required", type="error", duration=6)
             return
         if not project_id_str:
-            ui.notification_show("Select a target project", type="error")
+            ui.notification_show("Select a target project", type="error", duration=6)
             return
 
         # Validate source file
         try:
             src_path = config.validate_path(grd_path_str, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         # Look up project work_dir
@@ -781,7 +758,7 @@ def home_server(
 
         ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
-            ui.notification_show("Project not found", type="error")
+            ui.notification_show("Project not found", type="error", duration=6)
             return
 
         work_dir = Path(ctx["work_dir"])
@@ -795,7 +772,7 @@ def home_server(
         try:
             shutil.copy2(src_path, dest_path)
         except Exception as e:
-            ui.notification_show(f"Failed to copy grid file: {e}", type="error")
+            ui.notification_show(f"Failed to copy grid file: {e}", type="error", duration=6)
             return
 
         # Create DB record
@@ -808,11 +785,11 @@ def home_server(
                 )
                 db.add(grid)
 
-            ui.notification_show(f"Imported grid '{grid_name}' into project", type="message")
+            ui.notification_show(f"Imported grid '{grid_name}' into project", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
         except Exception as e:
-            ui.notification_show(f"Failed to create grid record: {e}", type="error")
+            ui.notification_show(f"Failed to create grid record: {e}", type="error", duration=6)
 
     # --- Export/Import/Clone project handlers ---
 
@@ -837,12 +814,12 @@ def home_server(
 
         ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
-            ui.notification_show("Project not found", type="error")
+            ui.notification_show("Project not found", type="error", duration=6)
             return
 
         work_dir = Path(ctx["work_dir"])
         if not work_dir.is_dir():
-            ui.notification_show("Project directory not found", type="error")
+            ui.notification_show("Project directory not found", type="error", duration=6)
             return
 
         meta = {
@@ -860,9 +837,9 @@ def home_server(
                 "download_file",
                 {"href": f"data:application/zip;base64,{b64}", "filename": filename},
             )
-            ui.notification_show(f"Exported '{project_name}'", type="message")
+            ui.notification_show(f"Exported '{project_name}'", type="message", duration=4)
         except Exception as e:
-            ui.notification_show(f"Export failed: {e}", type="error")
+            ui.notification_show(f"Export failed: {e}", type="error", duration=6)
 
     @reactive.effect
     def _register_clone_handlers():
@@ -883,12 +860,12 @@ def home_server(
 
         ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
-            ui.notification_show("Project not found", type="error")
+            ui.notification_show("Project not found", type="error", duration=6)
             return
 
         work_dir = Path(ctx["work_dir"])
         if not work_dir.is_dir():
-            ui.notification_show("Project directory not found", type="error")
+            ui.notification_show("Project directory not found", type="error", duration=6)
             return
 
         meta = {
@@ -901,7 +878,7 @@ def home_server(
         try:
             result = clone_project(work_dir, meta, config.work_dir)
         except Exception as e:
-            ui.notification_show(f"Clone failed: {e}", type="error")
+            ui.notification_show(f"Clone failed: {e}", type="error", duration=6)
             return
 
         try:
@@ -941,14 +918,14 @@ def home_server(
                     )
                     db.add(sim)
 
-            ui.notification_show(f"Cloned '{project_name}' as '{result['name']}'", type="message")
+            ui.notification_show(f"Cloned '{project_name}' as '{result['name']}'", type="message", duration=4)
             _refresh_projects()
 
         except Exception as e:
             wd = result.get("work_dir")
             if wd and Path(wd).exists():
                 shutil.rmtree(wd, ignore_errors=True)
-            ui.notification_show(f"Clone failed: {e}", type="error")
+            ui.notification_show(f"Clone failed: {e}", type="error", duration=6)
 
     # Import project from ZIP
     @reactive.effect
@@ -970,26 +947,17 @@ def home_server(
                     "Import",
                     class_="btn-primary",
                 ),
-                ui.input_action_button(
-                    "cancel_import_project_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
+                ui.modal_button("Cancel"),
             ),
         )
         ui.modal_show(m)
-
-    @reactive.effect
-    @reactive.event(input.cancel_import_project_btn)
-    def _hide_import_project_modal():
-        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.confirm_import_project_btn)
     def _do_import_project():
         file_info = input.import_zip_file()
         if not file_info:
-            ui.notification_show("No file selected", type="error")
+            ui.notification_show("No file selected", type="error", duration=6)
             return
 
         file_path = file_info[0]["datapath"]
@@ -1001,10 +969,10 @@ def home_server(
                 zip_data = BytesIO(f.read())
             result = import_project(zip_data, config.work_dir)
         except ValueError as e:
-            ui.notification_show(f"Import failed: {e}", type="error")
+            ui.notification_show(f"Import failed: {e}", type="error", duration=6)
             return
         except Exception as e:
-            ui.notification_show(f"Import failed: {e}", type="error")
+            ui.notification_show(f"Import failed: {e}", type="error", duration=6)
             return
 
         try:
@@ -1054,7 +1022,7 @@ def home_server(
                     )
                     db.add(sim)
 
-            ui.notification_show(f"Imported project '{result['name']}'", type="message")
+            ui.notification_show(f"Imported project '{result['name']}'", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
 
@@ -1062,7 +1030,7 @@ def home_server(
             wd = result.get("work_dir")
             if wd and Path(wd).exists():
                 shutil.rmtree(wd, ignore_errors=True)
-            ui.notification_show(f"Import failed: {e}", type="error")
+            ui.notification_show(f"Import failed: {e}", type="error", duration=6)
 
     # ------------------------------------------------------------------
     # Share project handlers
@@ -1105,7 +1073,7 @@ def home_server(
             role = input.share_role()
             svc_inner = SharingService()
             svc_inner.share_project(pid, uid, role)
-            ui.notification_show("User added", type="message")
+            ui.notification_show("User added", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
 
@@ -1198,7 +1166,7 @@ def home_server(
         def _unshare():
             svc = SharingService()
             svc.unshare_project(project_id, target_user_id)
-            ui.notification_show("Access removed", type="message")
+            ui.notification_show("Access removed", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
 

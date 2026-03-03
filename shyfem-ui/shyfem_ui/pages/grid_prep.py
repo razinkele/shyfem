@@ -404,7 +404,7 @@ def grid_prep_server(
         if not grd_path.exists():
             ui.notification_show(
                 f"Sample grid not found: {grd_path}", type="error"
-            )
+            , duration=6)
             return
         ui.update_text("grd_path", value=str(grd_path))
         try:
@@ -422,9 +422,10 @@ def grid_prep_server(
                 f"Sample loaded: Mar Menor grid "
                 f"(~{grd.num_nodes:,} nodes, ~{grd.num_elements:,} elements)",
                 type="message",
+                duration=4,
             )
         except Exception as e:
-            ui.notification_show(f"Error loading sample grid: {e}", type="error")
+            ui.notification_show(f"Error loading sample grid: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.load_path_btn)

@@ -214,7 +214,7 @@ def simulation_server(
         if not str_path.exists():
             ui.notification_show(
                 f"Sample STR not found: {str_path}", type="error"
-            )
+            , duration=6)
             return
         ui.update_text("str_path", value=str(str_path))
         try:
@@ -224,9 +224,10 @@ def simulation_server(
             ui.notification_show(
                 f"Sample loaded: {selected}",
                 type="message",
+                duration=4,
             )
         except Exception as e:
-            ui.notification_show(f"Error loading sample STR: {e}", type="error")
+            ui.notification_show(f"Error loading sample STR: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.load_btn)
@@ -239,16 +240,16 @@ def simulation_server(
         try:
             path = config.validate_path(path_str, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         try:
             current_file_path.set(path)
             str_file = StrParser.parse_file(path)
             parsed_str.set(str_file)
-            ui.notification_show(f"Loaded: {path.name}", type="message")
+            ui.notification_show(f"Loaded: {path.name}", type="message", duration=4)
         except Exception as e:
-            ui.notification_show(f"Error loading file: {e}", type="error")
+            ui.notification_show(f"Error loading file: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.new_btn)
@@ -259,9 +260,9 @@ def simulation_server(
             parsed_str.set(new_str)
             editor_state["set_content"](template)
             current_file_path.set(None)
-            ui.notification_show("Created new parameter file", type="message")
+            ui.notification_show("Created new parameter file", type="message", duration=4)
         except Exception as e:
-            ui.notification_show(f"Error creating new file: {e}", type="error")
+            ui.notification_show(f"Error creating new file: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.save_as_btn)
@@ -287,19 +288,10 @@ def simulation_server(
                     "Save",
                     class_="btn-primary",
                 ),
-                ui.input_action_button(
-                    "cancel_save_btn",
-                    "Cancel",
-                    class_="btn-secondary ms-2",
-                ),
+                ui.modal_button("Cancel"),
             ),
         )
         ui.modal_show(m)
-
-    @reactive.effect
-    @reactive.event(input.cancel_save_btn)
-    def _cancel_save():
-        ui.modal_remove()
 
     @reactive.effect
     @reactive.event(input.confirm_save_btn)
@@ -312,7 +304,7 @@ def simulation_server(
         try:
             path = config.validate_save_path(path_str)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -324,9 +316,9 @@ def simulation_server(
             current_file_path.set(path)
             ui.update_text("str_path", value=str(path))
             ui.modal_remove()
-            ui.notification_show(f"Saved: {path.name}", type="message")
+            ui.notification_show(f"Saved: {path.name}", type="message", duration=4)
         except Exception as e:
-            ui.notification_show(f"Error saving file: {e}", type="error")
+            ui.notification_show(f"Error saving file: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.apply_quick_btn)
@@ -358,9 +350,9 @@ def simulation_server(
 
             parsed_str.set(str_file)
             editor_state["set_content"](StrParser.generate(str_file))
-            ui.notification_show("Applied quick settings", type="message")
+            ui.notification_show("Applied quick settings", type="message", duration=4)
         except Exception as e:
-            ui.notification_show(f"Error applying settings: {e}", type="error")
+            ui.notification_show(f"Error applying settings: {e}", type="error", duration=6)
 
     @render.ui
     def template_preview():
@@ -413,12 +405,12 @@ def simulation_server(
             parsed_str.set(str_file)
             editor_state["set_content"](template)
             current_file_path.set(None)
-            ui.notification_show(f"Loaded template: {template_name}", type="message")
+            ui.notification_show(f"Loaded template: {template_name}", type="message", duration=4)
 
             # Reset dropdown
             ui.update_select("template_select", selected="")
         except Exception as e:
-            ui.notification_show(f"Error loading template: {e}", type="error")
+            ui.notification_show(f"Error loading template: {e}", type="error", duration=6)
 
     @render.ui
     def sections_view():

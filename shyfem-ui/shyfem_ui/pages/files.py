@@ -295,7 +295,7 @@ def files_server(
         if user is not None and check_project_access(proj["id"], user, min_role="editor") is None:
             ui.notification_show(
                 "Permission denied: editor role required to upload files", type="error"
-            )
+            , duration=6)
             return
 
         for f in files:
@@ -309,9 +309,9 @@ def files_server(
                 subdir=subdir,
             )
             if result:
-                ui.notification_show(f"Uploaded: {result['filename']}", type="message")
+                ui.notification_show(f"Uploaded: {result['filename']}", type="message", duration=4)
             else:
-                ui.notification_show(f"Failed to upload: {f['name']}", type="error")
+                ui.notification_show(f"Failed to upload: {f['name']}", type="error", duration=6)
 
         refresh_trigger.set(refresh_trigger.get() + 1)
 
@@ -338,10 +338,10 @@ def files_server(
             return
         try:
             FileService.seed_tutorial_files(proj["id"])
-            ui.notification_show("Tutorial files seeded successfully!", type="message")
+            ui.notification_show("Tutorial files seeded successfully!", type="message", duration=4)
             refresh_trigger.set(refresh_trigger.get() + 1)
         except Exception as e:
-            ui.notification_show(f"Error seeding tutorial files: {e}", type="error")
+            ui.notification_show(f"Error seeding tutorial files: {e}", type="error", duration=6)
 
     def _register_download_handler(file_id: int):
         btn_id = f"dl_{file_id}"
@@ -364,7 +364,7 @@ def files_server(
                 )
                 ui.insert_ui(ui.tags.script(js), selector="body", where="beforeEnd")
             except Exception as e:
-                ui.notification_show(f"Download error: {e}", type="error")
+                ui.notification_show(f"Download error: {e}", type="error", duration=6)
 
     def _register_delete_handler(file_id: int, filename: str):
         btn_id = f"rm_{file_id}"
@@ -382,11 +382,7 @@ def files_server(
                         "Delete",
                         class_="btn-danger",
                     ),
-                    ui.input_action_button(
-                        f"cancel_rm_{file_id}",
-                        "Cancel",
-                        class_="btn-secondary ms-2",
-                    ),
+                    ui.modal_button("Cancel"),
                 ),
             )
             ui.modal_show(m)
@@ -404,20 +400,15 @@ def files_server(
                     if check_project_access(proj["id"], user, min_role="editor") is None:
                         ui.notification_show(
                             "Permission denied: editor role required to delete files", type="error"
-                        )
+                        , duration=6)
                         ui.modal_remove()
                         return
                 try:
                     FileService.delete_file(file_id)
-                    ui.notification_show(f"Deleted: {filename}", type="message")
+                    ui.notification_show(f"Deleted: {filename}", type="message", duration=4)
                     refresh_trigger.set(refresh_trigger.get() + 1)
                 except Exception as e:
-                    ui.notification_show(f"Delete error: {e}", type="error")
-                ui.modal_remove()
-
-            @reactive.effect
-            @reactive.event(getattr(input, f"cancel_rm_{file_id}"))
-            def _cancel():
+                    ui.notification_show(f"Delete error: {e}", type="error", duration=6)
                 ui.modal_remove()
 
 

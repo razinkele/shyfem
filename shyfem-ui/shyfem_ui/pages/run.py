@@ -379,7 +379,7 @@ def run_server(
         if not str_path.exists():
             ui.notification_show(
                 f"Sample STR not found: {str_path}", type="error"
-            )
+            , duration=6)
             return
         ui.update_text("input_file", value=str(str_path))
         ui.update_text("working_dir", value=str(work_dir))
@@ -387,6 +387,7 @@ def run_server(
         ui.notification_show(
             "Sample loaded: mm_hyd_03.str ready to run (~3s serial)",
             type="message",
+            duration=4,
         )
 
     @render.ui
@@ -513,7 +514,7 @@ def run_server(
         try:
             await _refresh_jobs()
         except Exception as e:
-            ui.notification_show(f"Refresh failed: {e}", type="error")
+            ui.notification_show(f"Refresh failed: {e}", type="error", duration=6)
 
     async def _refresh_jobs():
         """Refresh job lists."""
@@ -571,7 +572,7 @@ def run_server(
                 ):
                     ui.notification_show(
                         "Permission denied: editor role required to submit jobs", type="error"
-                    )
+                    , duration=6)
                     return
 
         name = input.job_name() or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -580,13 +581,13 @@ def run_server(
         working_dir = input.working_dir()
 
         if not input_file:
-            ui.notification_show("Input file is required", type="error")
+            ui.notification_show("Input file is required", type="error", duration=6)
             return
 
         try:
             validated_input = config.validate_path(input_file, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         if not working_dir:
@@ -595,7 +596,7 @@ def run_server(
         try:
             validated_workdir = config.validate_path(working_dir)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         # Build job spec
@@ -624,11 +625,11 @@ def run_server(
 
         try:
             job_id = await job_queue.submit(spec)
-            ui.notification_show(f"Job submitted: {job_id}", type="message")
+            ui.notification_show(f"Job submitted: {job_id}", type="message", duration=4)
             selected_job_id.set(job_id)
             await _refresh_jobs()
         except Exception as e:
-            ui.notification_show(f"Failed to submit job: {e}", type="error")
+            ui.notification_show(f"Failed to submit job: {e}", type="error", duration=6)
 
     @render.ui
     def dashboard():
@@ -807,12 +808,12 @@ def run_server(
         try:
             success = await job_queue.cancel(job_id)
             if success:
-                ui.notification_show("Job cancelled", type="message")
+                ui.notification_show("Job cancelled", type="message", duration=4)
             else:
-                ui.notification_show("Failed to cancel job", type="error")
+                ui.notification_show("Failed to cancel job", type="error", duration=6)
             await _refresh_jobs()
         except Exception as e:
-            ui.notification_show(f"Error: {e}", type="error")
+            ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     @render.ui
     def job_history():
@@ -1035,12 +1036,12 @@ def run_server(
         try:
             success = await job_queue.cancel(job.id)
             if success:
-                ui.notification_show("Job cancelled", type="message")
+                ui.notification_show("Job cancelled", type="message", duration=4)
             else:
-                ui.notification_show("Failed to cancel job", type="error")
+                ui.notification_show("Failed to cancel job", type="error", duration=6)
             await _refresh_jobs()
         except Exception as e:
-            ui.notification_show(f"Error: {e}", type="error")
+            ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     # --- Generate Report handler ---
 
@@ -1060,7 +1061,7 @@ def run_server(
                 duration=8,
             )
         except Exception as e:
-            ui.notification_show(f"Report generation failed: {e}", type="error")
+            ui.notification_show(f"Report generation failed: {e}", type="error", duration=6)
 
     # --- Workflow engine ---
 
@@ -1106,13 +1107,13 @@ def run_server(
         mpi_np = input.wf_mpi_np()
 
         if not working_dir:
-            ui.notification_show("Working directory is required", type="error")
+            ui.notification_show("Working directory is required", type="error", duration=6)
             return
 
         try:
             validated_workdir = config.validate_path(working_dir)
         except ValueError as e:
-            ui.notification_show(str(e), type="error")
+            ui.notification_show(str(e), type="error", duration=6)
             return
 
         validated_workdir.mkdir(parents=True, exist_ok=True)
@@ -1133,9 +1134,9 @@ def run_server(
                 name=wf_name,
             )
             active_workflow_id.set(wf_id)
-            ui.notification_show(f"Workflow launched: {wf_id[:8]}", type="message")
+            ui.notification_show(f"Workflow launched: {wf_id[:8]}", type="message", duration=4)
         except Exception as e:
-            ui.notification_show(f"Failed to launch workflow: {e}", type="error")
+            ui.notification_show(f"Failed to launch workflow: {e}", type="error", duration=6)
 
     @render.ui
     def wf_progress():

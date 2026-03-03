@@ -185,7 +185,7 @@ def ibm_server(
         except Exception as e:
             logger.warning("Failed to load LGR file %s: %s", path_str, e, exc_info=True)
             load_error.set(str(e))
-            ui.notification_show(f"Failed to load: {e}", type="error")
+            ui.notification_show(f"Failed to load: {e}", type="error", duration=6)
 
     @render.ui
     def time_range_controls():

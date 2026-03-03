@@ -478,7 +478,7 @@ def visualize_server(
                     data_type.set("grid")
                     stats = GrdParser.get_statistics(grd)
                     data_info_val.set(stats)
-                ui.notification_show(f"Loaded grid: {grd.num_nodes} nodes", type="message")
+                ui.notification_show(f"Loaded grid: {grd.num_nodes} nodes", type="message", duration=4)
 
             elif dtype == "timeseries":
                 ts = _load_timeseries(path)
@@ -496,7 +496,7 @@ def visualize_server(
                             "rows": len(ts.get("data", [])),
                         }
                     )
-                ui.notification_show("Loaded time series data", type="message")
+                ui.notification_show("Loaded time series data", type="message", duration=4)
 
             elif dtype == "netcdf":
                 try:
@@ -523,13 +523,13 @@ def visualize_server(
                         )
                     ui.notification_show(f"Loaded NetCDF: {list(ds.data_vars)}", type="message")
                 except ImportError:
-                    ui.notification_show("xarray not installed", type="error")
+                    ui.notification_show("xarray not installed", type="error", duration=6)
 
             else:
-                ui.notification_show(f"Unsupported data type: {dtype}", type="error")
+                ui.notification_show(f"Unsupported data type: {dtype}", type="error", duration=6)
 
         except Exception as e:
-            ui.notification_show(f"Error loading data: {e}", type="error")
+            ui.notification_show(f"Error loading data: {e}", type="error", duration=6)
 
     @render_widget
     def main_plot():
@@ -596,7 +596,7 @@ def visualize_server(
                 return fig
         except Exception as exc:
             logger.exception("Error rendering plot")
-            ui.notification_show(f"Plot error: {exc}", type="error")
+            ui.notification_show(f"Plot error: {exc}", type="error", duration=6)
             fig = go.Figure()
             fig.add_annotation(
                 text=f"Error: {exc}",
@@ -741,7 +741,7 @@ def visualize_server(
                 )
         except Exception as exc:
             logger.exception("Error rendering profile plot")
-            ui.notification_show(f"Profile plot error: {exc}", type="error")
+            ui.notification_show(f"Profile plot error: {exc}", type="error", duration=6)
             fig = go.Figure()
             fig.add_annotation(
                 text=f"Error: {exc}",

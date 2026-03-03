@@ -369,7 +369,7 @@ def timeseries_server(
                 ui.notification_show(str(e), type="error")
                 return
         elif not path.exists():
-            ui.notification_show(f"File not found: {path}", type="error")
+            ui.notification_show(f"File not found: {path}", type="error", duration=6)
             return
 
         try:
@@ -380,7 +380,7 @@ def timeseries_server(
                 type="message",
             )
         except Exception as e:
-            ui.notification_show(f"Error loading observations: {e}", type="error")
+            ui.notification_show(f"Error loading observations: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.clear_obs_btn)
@@ -433,7 +433,7 @@ def timeseries_server(
             "download_file",
             {"href": f"data:text/csv;base64,{b64}", "filename": "timeseries_export.csv"},
         )
-        ui.notification_show("CSV exported", type="message")
+        ui.notification_show("CSV exported", type="message", duration=4)
 
     return {
         "obs_data": obs_data,
