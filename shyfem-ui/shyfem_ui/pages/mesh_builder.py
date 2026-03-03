@@ -11,6 +11,7 @@ from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.mesh_builder import (
+    adjust_depths,
     compute_mesh_stats,
     estimate_element_count,
     export_grd,
@@ -349,6 +350,8 @@ def mesh_builder_server(
     log_content = reactive.value("")
     bathy_data = reactive.value(None)  # Loaded bathymetry points
     busy_message = reactive.value("")  # Non-empty string = busy with that message
+    staged_grd = reactive.value(None)    # After interpolation, before Accept
+    comparison_runs = reactive.value({})  # {label: GrdFile}, max 3 entries
 
     # --- Initialize child modules ---
     log_viewer_server("build_log", log_content)
@@ -942,11 +945,22 @@ def mesh_builder_server(
                     interpolate_bathymetry_scipy,
                     grd, data, method=method, use_boundary_zero=boundary_zero,
                 )
-            final_grd.set(result_grd)
+            staged_grd.set(result_grd)
             preview_grd.set(result_grd)
             depths = [n.depth for n in result_grd.nodes.values() if n.depth is not None]
+            depth_info = ""
             if depths:
-                _log(f"Bathymetry interpolated: depth {min(depths):.2f} to {max(depths):.2f}")
+                dmin, dmax = min(depths), max(depths)
+                depth_info = f" (min: {dmin:.1f}, max: {dmax:.1f} m)"
+                _log(f"Bathymetry interpolated: depth {dmin:.2f} to {dmax:.2f}")
+            # Store run in comparison_runs (max 3; oldest dropped)
+            label = f"{method}{depth_info}"
+            runs = dict(comparison_runs.get())
+            runs[label] = result_grd
+            if len(runs) > 3:
+                oldest = next(iter(runs))
+                del runs[oldest]
+            comparison_runs.set(runs)
             ui.notification_show("Bathymetry interpolated", type="message", duration=3)
         except Exception as e:
             _log(f"Interpolation error: {e}")
@@ -956,7 +970,7 @@ def mesh_builder_server(
 
     @render.ui
     def bathy_stats_display():
-        grd = final_grd.get()
+        grd = staged_grd.get()
         if grd is None:
             return ui.p("Interpolate to see depth statistics.", class_="text-muted small")
         depths = [n.depth for n in grd.nodes.values() if n.depth is not None]
