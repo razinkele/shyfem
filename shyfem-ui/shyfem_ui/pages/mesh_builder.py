@@ -237,11 +237,7 @@ def _step_bathy_panel():
                 class_="btn-primary w-100 mt-2 mb-2",
             ),
             ui.output_ui("bathy_stats_display"),
-            ui.input_action_button(
-                "next_to_export",
-                "Next: Export",
-                class_="btn-primary mt-2",
-            ),
+            ui.output_ui("bathy_post_panel"),
         ),
         value="bathy",
     )
@@ -994,11 +990,6 @@ def mesh_builder_server(
             ),
             class_="table table-sm table-borderless mb-0",
         )
-
-    @reactive.effect
-    @reactive.event(input.next_to_export)
-    def _go_to_export():
-        ui.update_radio_buttons("wizard_step", selected="export")
 
     # --- Step 5: Export ---
 
