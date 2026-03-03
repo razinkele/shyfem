@@ -129,6 +129,13 @@ def test_filter_removes_track_with_no_matching_steps():
     assert result == []
 
 
+def test_filter_empty_string_treated_as_no_bound():
+    """Empty string tmax should behave like None, not filter everything out."""
+    track = _make_track()
+    result = filter_by_time([track], tmin="2020-01-01 01:00:00", tmax="")
+    assert len(result[0].path) == 2  # same result as tmax=None
+
+
 # ---------------------------------------------------------------------------
 # LgrService.load
 # ---------------------------------------------------------------------------
@@ -165,6 +172,7 @@ def test_lgr_service_no_output_files_returns_empty(tmp_path):
     mock_wrapper.run_command = AsyncMock(return_value=_make_ok_result(tmp_path))
     svc = LgrService(mock_wrapper)
 
-    # run_command writes to a tmpdir; mock won't write files → empty result
+    # The mock returns success but lgrelab never runs, so no lagrange_mean_traj.*
+    # files are written to the internal tmpdir created by LgrService.load → returns []
     result = asyncio.run(svc.load(lgr))
     assert result == []

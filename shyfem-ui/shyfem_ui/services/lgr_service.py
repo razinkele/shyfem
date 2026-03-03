@@ -107,6 +107,10 @@ def _parse_traj_file(path: Path) -> list[dict]:
             parts = line.split()
             if len(parts) < 6:
                 continue
+            # Verify parts[1] looks like HH:MM:SS (colon at index 2)
+            if len(parts[1]) < 3 or parts[1][2] != ":":
+                logger.debug("Skipping line with unexpected date format: %s", line.rstrip())
+                continue
             try:
                 date = f"{parts[0]} {parts[1]}"
                 lon = float(parts[2])
@@ -137,7 +141,9 @@ def filter_by_time(
     Returns:
         New list of ParticleTrack objects with filtered timesteps.
     """
-    if not tmin and not tmax:
+    tmin = tmin or None
+    tmax = tmax or None
+    if tmin is None and tmax is None:
         return tracks
 
     filtered = []
