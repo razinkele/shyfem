@@ -803,10 +803,27 @@ def interpolate_bathymetry_scipy(
     Returns:
         New GrdFile with depth values set on all nodes.
     """
+    node_ids, depths = _compute_depths_only(grd, bathy_points, method, use_boundary_zero)
+    return _build_grd_from_depths(grd, node_ids, depths)
+
+
+def _compute_depths_only(
+    grd: GrdFile,
+    bathy_points: np.ndarray,
+    method: str,
+    use_boundary_zero: bool = False,
+) -> tuple[list[int], np.ndarray]:
+    """Compute interpolated depth values for all mesh nodes.
+
+    Runs entirely as a pure computation — no Shiny state. Intended to be
+    called via ``asyncio.to_thread`` from the page handler.
+
+    Returns:
+        Tuple of (node_ids, depths) where depths[i] is the depth for node_ids[i].
+    """
     if len(bathy_points) == 0:
         raise ValueError("No bathymetry points provided")
 
-    # Optionally prepend boundary=0 points
     if use_boundary_zero:
         zero_pts = extract_boundary_zero_points(grd)
         if len(zero_pts) > 0:
@@ -826,7 +843,6 @@ def interpolate_bathymetry_scipy(
         depths = _idw_interpolate(bathy_xy, bathy_z, mesh_xy, k=8, power=2.0)
     elif method in ("nearest", "linear", "cubic"):
         depths = griddata(bathy_xy, bathy_z, mesh_xy, method=method)
-        # Fill NaN with nearest for edge nodes
         if np.any(np.isnan(depths)):
             nearest = griddata(bathy_xy, bathy_z, mesh_xy, method="nearest")
             depths = np.where(np.isnan(depths), nearest, depths)
@@ -837,7 +853,22 @@ def interpolate_bathymetry_scipy(
     else:
         raise ValueError(f"Unknown interpolation method: {method}")
 
-    # Build new GrdFile with depths
+    return node_ids, depths
+
+
+def _build_grd_from_depths(
+    grd: GrdFile, node_ids: list[int], depths: np.ndarray
+) -> GrdFile:
+    """Build a new GrdFile from precomputed depth values.
+
+    Args:
+        grd: Original mesh (elements and lines are shallow-copied).
+        node_ids: Ordered list of node IDs matching the depths array.
+        depths: 1-D array of float depth values, one per node_id.
+
+    Returns:
+        New GrdFile with depth set on all nodes.
+    """
     new_grd = GrdFile()
     for i, nid in enumerate(node_ids):
         node = grd.nodes[nid]
