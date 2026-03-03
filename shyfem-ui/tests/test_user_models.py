@@ -80,3 +80,28 @@ class TestJobUserColumn:
         )
         assert hasattr(j, "user_id")
         assert j.user_id is None
+
+
+def test_home_dir_returns_root_slash_username():
+    """User.home_dir(root) returns Path(root) / username."""
+    from pathlib import Path
+    from shyfem_ui.models.user import User
+    u = User(username="alice", password_hash="x", role="user")
+    assert u.home_dir(Path("/data/shyfem")) == Path("/data/shyfem/alice")
+
+
+def test_home_dir_tutorial_user():
+    """Tutorial user home_dir is computed the same way (directory skipped at creation)."""
+    from pathlib import Path
+    from shyfem_ui.models.user import User
+    u = User(username="user", password_hash="x", role="tutorial")
+    assert u.home_dir(Path("/data/shyfem")) == Path("/data/shyfem/user")
+
+
+def test_is_tutorial_property():
+    """User.is_tutorial returns True only for role='tutorial'."""
+    from shyfem_ui.models.user import User
+    t = User(username="u", password_hash="x", role="tutorial")
+    r = User(username="u", password_hash="x", role="user")
+    assert t.is_tutorial is True
+    assert r.is_tutorial is False

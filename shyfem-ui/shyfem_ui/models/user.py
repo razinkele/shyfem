@@ -1,11 +1,17 @@
 """Database models for user management, sessions, and project permissions."""
 
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shyfem_ui.db.base import Base
+
+# Valid user roles
+ROLE_ADMIN = "admin"
+ROLE_USER = "user"
+ROLE_TUTORIAL = "tutorial"
 
 
 class User(Base):
@@ -36,6 +42,22 @@ class User(Base):
     def is_admin(self) -> bool:
         """Check if the user has admin role."""
         return self.role == "admin"
+
+    @property
+    def is_tutorial(self) -> bool:
+        """Check if the user has the read-only tutorial role."""
+        return self.role == ROLE_TUTORIAL
+
+    def home_dir(self, user_data_root: Path) -> Path:
+        """Return the per-user data directory path.
+
+        Args:
+            user_data_root: The configured root (config.user_data_root).
+
+        Returns:
+            Path: {user_data_root}/{username}/
+        """
+        return Path(user_data_root) / self.username
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"
