@@ -50,23 +50,23 @@ class TestPasswordHashing:
 class TestUserCRUD:
 
     def test_create_user(self, auth_service):
-        user = auth_service.create_user("alice", "pass123")
+        user = auth_service.create_user("alice", "pass123", email="alice@example.com")
         assert user["id"] is not None
         assert user["username"] == "alice"
         assert user["role"] == "user"
         assert user["is_active"] is True
 
     def test_create_admin(self, auth_service):
-        user = auth_service.create_user("boss", "admin-pass", role="admin")
+        user = auth_service.create_user("boss", "admin-pass", role="admin", email="boss@example.com")
         assert user["role"] == "admin"
 
     def test_create_duplicate_raises_value_error(self, auth_service):
-        auth_service.create_user("alice", "pass1")
+        auth_service.create_user("alice", "pass1", email="alice@example.com")
         with pytest.raises(ValueError, match="Username already exists"):
-            auth_service.create_user("alice", "pass2")
+            auth_service.create_user("alice", "pass2", email="alice2@example.com")
 
     def test_get_user(self, auth_service):
-        created = auth_service.create_user("bob", "pass")
+        created = auth_service.create_user("bob", "pass", email="bob@example.com")
         fetched = auth_service.get_user(created["id"])
         assert fetched is not None
         assert fetched["username"] == "bob"
@@ -75,15 +75,15 @@ class TestUserCRUD:
         assert auth_service.get_user(9999) is None
 
     def test_list_users(self, auth_service):
-        auth_service.create_user("u1", "p1")
-        auth_service.create_user("u2", "p2")
+        auth_service.create_user("u1", "p1", email="u1@example.com")
+        auth_service.create_user("u2", "p2", email="u2@example.com")
         users = auth_service.list_users()
         assert len(users) == 2
         assert users[0]["username"] == "u1"
         assert users[1]["username"] == "u2"
 
     def test_update_display_name(self, auth_service):
-        created = auth_service.create_user("carol", "pass")
+        created = auth_service.create_user("carol", "pass", email="carol@example.com")
         updated = auth_service.update_user(
             created["id"], display_name="Carol D."
         )
@@ -94,7 +94,7 @@ class TestUserCRUD:
         assert auth_service.update_user(9999, display_name="X") is None
 
     def test_deactivate_user(self, auth_service):
-        created = auth_service.create_user("dave", "pass")
+        created = auth_service.create_user("dave", "pass", email="dave@example.com")
         assert auth_service.deactivate_user(created["id"]) is True
         fetched = auth_service.get_user(created["id"])
         assert fetched["is_active"] is False
@@ -103,7 +103,7 @@ class TestUserCRUD:
         assert auth_service.deactivate_user(9999) is False
 
     def test_reset_password(self, auth_service):
-        created = auth_service.create_user("eve", "old-pass")
+        created = auth_service.create_user("eve", "old-pass", email="eve@example.com")
         assert auth_service.reset_password(created["id"], "new-pass") is True
         # Old password should fail, new should work
         assert auth_service.authenticate("eve", "old-pass") is None
@@ -113,7 +113,7 @@ class TestUserCRUD:
         assert auth_service.reset_password(9999, "whatever") is False
 
     def test_change_role(self, auth_service):
-        created = auth_service.create_user("frank", "pass")
+        created = auth_service.create_user("frank", "pass", email="frank@example.com")
         updated = auth_service.update_user(created["id"], role="admin")
         assert updated["role"] == "admin"
 
@@ -126,20 +126,20 @@ class TestUserCRUD:
 class TestAuthenticate:
 
     def test_authenticate_valid(self, auth_service):
-        auth_service.create_user("alice", "s3cret")
+        auth_service.create_user("alice", "s3cret", email="alice@example.com")
         result = auth_service.authenticate("alice", "s3cret")
         assert result is not None
         assert result["username"] == "alice"
 
     def test_authenticate_wrong_password(self, auth_service):
-        auth_service.create_user("alice", "s3cret")
+        auth_service.create_user("alice", "s3cret", email="alice@example.com")
         assert auth_service.authenticate("alice", "wrong") is None
 
     def test_authenticate_nonexistent_user(self, auth_service):
         assert auth_service.authenticate("ghost", "pass") is None
 
     def test_authenticate_inactive_user(self, auth_service):
-        created = auth_service.create_user("alice", "s3cret")
+        created = auth_service.create_user("alice", "s3cret", email="alice@example.com")
         auth_service.deactivate_user(created["id"])
         assert auth_service.authenticate("alice", "s3cret") is None
 
@@ -152,20 +152,20 @@ class TestAuthenticate:
 class TestSessionManagement:
 
     def test_create_session_returns_64_char_token(self, auth_service):
-        user = auth_service.create_user("alice", "pass")
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
         token = auth_service.create_session(user["id"])
         assert isinstance(token, str)
         assert len(token) == 64
 
     def test_validate_valid_session(self, auth_service):
-        user = auth_service.create_user("alice", "pass")
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
         token = auth_service.create_session(user["id"], ttl_hours=1)
         result = auth_service.validate_session(token)
         assert result is not None
         assert result["username"] == "alice"
 
     def test_validate_expired_session(self, auth_service):
-        user = auth_service.create_user("alice", "pass")
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
         token = auth_service.create_session(user["id"], ttl_hours=0)
         assert auth_service.validate_session(token) is None
 
@@ -173,13 +173,13 @@ class TestSessionManagement:
         assert auth_service.validate_session("bogus-token") is None
 
     def test_validate_session_inactive_user(self, auth_service):
-        user = auth_service.create_user("alice", "pass")
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
         token = auth_service.create_session(user["id"], ttl_hours=24)
         auth_service.deactivate_user(user["id"])
         assert auth_service.validate_session(token) is None
 
     def test_delete_session(self, auth_service):
-        user = auth_service.create_user("alice", "pass")
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
         token = auth_service.create_session(user["id"])
         assert auth_service.delete_session(token) is True
         assert auth_service.validate_session(token) is None
@@ -188,7 +188,7 @@ class TestSessionManagement:
         assert auth_service.delete_session("no-such-token") is False
 
     def test_cleanup_expired_sessions(self, auth_service):
-        user = auth_service.create_user("alice", "pass")
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
         # Create two expired sessions and one valid
         auth_service.create_session(user["id"], ttl_hours=0)
         auth_service.create_session(user["id"], ttl_hours=0)
@@ -207,15 +207,78 @@ class TestSessionManagement:
 class TestEnsureAdmin:
 
     def test_creates_admin_when_none_exists(self, auth_service):
-        admin = auth_service.ensure_admin("admin", "admin-pass")
+        admin = auth_service.ensure_admin("admin", "admin-pass", email="admin@example.com")
         assert admin["username"] == "admin"
         assert admin["role"] == "admin"
 
     def test_skips_creation_when_admin_exists(self, auth_service):
-        first = auth_service.ensure_admin("admin", "first-pass")
-        second = auth_service.ensure_admin("admin2", "second-pass")
+        first = auth_service.ensure_admin("admin", "first-pass", email="admin@example.com")
+        second = auth_service.ensure_admin("admin2", "second-pass", email="admin2@example.com")
         # Should return the existing admin, not create a new one
         assert second["id"] == first["id"]
         assert second["username"] == "admin"
         # Original password should still work
         assert auth_service.authenticate("admin", "first-pass") is not None
+
+
+# ------------------------------------------------------------------
+# Email enforcement and home directory creation
+# ------------------------------------------------------------------
+
+
+class TestCreateUserEmailAndDirectory:
+
+    def test_create_non_tutorial_user_requires_email(self, auth_service):
+        """Creating a non-tutorial user without email raises ValueError."""
+        with pytest.raises(ValueError, match="email"):
+            auth_service.create_user("alice", "pass1234", role="user")
+
+    def test_create_tutorial_user_no_email_required(self, auth_service):
+        """Creating a tutorial user without email is allowed."""
+        result = auth_service.create_user("user", "user", role="tutorial")
+        assert result["username"] == "user"
+        assert result["email"] is None
+
+    def test_create_user_with_email_succeeds(self, auth_service):
+        """Creating a user with a valid email succeeds."""
+        result = auth_service.create_user(
+            "bob", "pass1234", role="user", email="bob@example.com"
+        )
+        assert result["email"] == "bob@example.com"
+
+    def test_create_user_duplicate_email_raises(self, auth_service):
+        """Duplicate email raises ValueError."""
+        auth_service.create_user("alice", "pass1234", role="user", email="alice@x.com")
+        with pytest.raises(ValueError, match="email"):
+            auth_service.create_user("alice2", "pass1234", role="user", email="alice@x.com")
+
+    def test_create_user_creates_home_dir(self, auth_service, tmp_path):
+        """create_user creates the home directory on disk."""
+        auth_service.create_user(
+            "carol", "pass1234", role="user",
+            email="carol@example.com",
+            user_data_root=tmp_path,
+        )
+        assert (tmp_path / "carol").is_dir()
+
+    def test_create_tutorial_user_no_dir_created(self, auth_service, tmp_path):
+        """Tutorial user does not get a home directory."""
+        auth_service.create_user("user", "user", role="tutorial", user_data_root=tmp_path)
+        assert not (tmp_path / "user").exists()
+
+    def test_create_user_dir_permission_error_rolls_back(self, auth_service, tmp_path):
+        """If directory creation fails, the user record is NOT saved."""
+        import os
+        os.chmod(tmp_path, 0o444)
+        try:
+            with pytest.raises(PermissionError):
+                auth_service.create_user(
+                    "dave", "pass1234", role="user",
+                    email="dave@example.com",
+                    user_data_root=tmp_path,
+                )
+            # User must not be in DB
+            users = auth_service.list_users()
+            assert not any(u["username"] == "dave" for u in users)
+        finally:
+            os.chmod(tmp_path, 0o755)

@@ -54,27 +54,43 @@ class AuthService:
         role: str = "user",
         display_name: str | None = None,
         email: str | None = None,
+        user_data_root: "Path | None" = None,
     ) -> dict:
         """Create a new user account.
 
         Args:
             username: Unique login name.
             password: Plaintext password (will be hashed).
-            role: User role -- "user" or "admin".
+            role: User role -- "user", "admin", or "tutorial".
             display_name: Optional display name.
-            email: Optional email address.
+            email: Email address. Required for non-tutorial accounts.
+            user_data_root: If provided, creates {user_data_root}/{username}/ on disk.
+                            Skipped for tutorial users. If creation fails, user is not saved.
 
         Returns:
             Dict with user fields.
 
         Raises:
-            ValueError: If the username already exists.
+            ValueError: If username or email already exists, or email missing for non-tutorial.
+            PermissionError: If directory creation fails.
         """
+        from pathlib import Path
+        from shyfem_ui.models.user import ROLE_TUTORIAL
+
+        # Validate email requirement
+        if role != ROLE_TUTORIAL and not email:
+            raise ValueError("email is required for non-tutorial accounts")
+
         session = self._session_factory()
         try:
             existing = session.query(User).filter_by(username=username).first()
             if existing is not None:
                 raise ValueError(f"Username already exists: {username}")
+
+            if email:
+                existing_email = session.query(User).filter_by(email=email).first()
+                if existing_email is not None:
+                    raise ValueError(f"email already in use: {email}")
 
             user = User(
                 username=username,
@@ -85,6 +101,13 @@ class AuthService:
                 is_active=True,
             )
             session.add(user)
+            session.flush()  # get user.id before committing
+
+            # Create home directory (non-tutorial only)
+            if user_data_root and role != ROLE_TUTORIAL:
+                home = user.home_dir(Path(user_data_root))
+                home.mkdir(parents=True, exist_ok=True)  # raises PermissionError if not writable
+
             session.commit()
             return self._user_to_dict(user)
         except Exception:
@@ -327,11 +350,16 @@ class AuthService:
     # Bootstrap
     # ------------------------------------------------------------------
 
-    def ensure_user(self, username: str, password: str) -> dict:
+    def ensure_user(self, username: str, password: str, email: str | None = None) -> dict:
         """Ensure a default (non-admin) user exists.
 
         If a user with the given username already exists, returns it unchanged.
         Otherwise creates a new user with role "user".
+
+        Args:
+            username: Login name.
+            password: Plaintext password.
+            email: Email address. Required when creating a new non-tutorial user.
 
         Returns:
             Dict with user fields.
@@ -348,13 +376,19 @@ class AuthService:
             username=username,
             password=password,
             role="user",
+            email=email,
         )
 
-    def ensure_admin(self, username: str, password: str) -> dict:
+    def ensure_admin(self, username: str, password: str, email: str | None = None) -> dict:
         """Ensure an admin user exists.
 
         If no admin user exists, creates one with the given credentials.
         If an admin already exists, returns it without modifying the password.
+
+        Args:
+            username: Login name for the admin account.
+            password: Plaintext password.
+            email: Email address. Required when creating a new admin user.
 
         Returns:
             Dict with admin user fields.
@@ -372,6 +406,7 @@ class AuthService:
             username=username,
             password=password,
             role="admin",
+            email=email,
         )
 
     # ------------------------------------------------------------------
