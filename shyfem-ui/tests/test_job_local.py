@@ -355,6 +355,50 @@ class TestLocalJobQueue:
         assert await queue.get_status(job_id) is not None
 
 
+class TestJobUserIdAndNotifications:
+
+    @pytest.mark.asyncio
+    async def test_user_id_saved_from_metadata(self, queue, job_spec):
+        """Job submitted with user_id in metadata is accessible after execution."""
+        job_spec.metadata["user_id"] = 42
+        job_id = await queue.submit(job_spec)
+        await asyncio.sleep(0.3)
+        jobs = await queue.list_jobs()
+        job = next((j for j in jobs if j.id == job_id), None)
+        assert job is not None
+        assert job.metadata.get("user_id") == 42
+
+    @pytest.mark.asyncio
+    async def test_notification_called_on_success(self, queue, job_spec):
+        """NotificationService.notify_job_success is called when job succeeds."""
+        from unittest.mock import MagicMock
+        mock_notif = MagicMock()
+        mock_notif.notify_job_success = MagicMock()
+        queue.notification_service = mock_notif
+
+        job_id = await queue.submit(job_spec)
+        await asyncio.sleep(0.3)
+        mock_notif.notify_job_success.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_notification_called_on_failure(self, queue, job_spec, mock_wrapper):
+        """NotificationService.notify_job_failed is called when job fails."""
+        from unittest.mock import MagicMock, AsyncMock
+        from shyfem_ui.services.shyfem_wrapper import CommandResult
+
+        mock_wrapper.run_command = AsyncMock(return_value=CommandResult(
+            success=False, return_code=1, stdout="", stderr="error",
+            command="test", working_dir="/tmp", duration=0.1, output_files=[],
+        ))
+        mock_notif = MagicMock()
+        mock_notif.notify_job_failed = MagicMock()
+        queue.notification_service = mock_notif
+
+        job_id = await queue.submit(job_spec)
+        await asyncio.sleep(0.3)
+        mock_notif.notify_job_failed.assert_called_once()
+
+
 class TestLocalJobQueueEviction:
     """Tests for job eviction when storage exceeds limit."""
 

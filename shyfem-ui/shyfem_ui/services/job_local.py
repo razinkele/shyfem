@@ -27,17 +27,20 @@ class LocalJobQueue(JobQueue):
         self,
         shyfem_dir: Path | None = None,
         max_workers: int = 4,
+        notification_service=None,
     ):
         """Initialize local job queue.
 
         Args:
             shyfem_dir: Path to SHYFEM installation
             max_workers: Maximum concurrent jobs
+            notification_service: Optional NotificationService for job completion emails
         """
         from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
         self.shyfem_dir = shyfem_dir or Path(__file__).resolve().parents[3]
         self.max_workers = max_workers
+        self.notification_service = notification_service
         self.wrapper = ShyfemWrapper(self.shyfem_dir)
 
         # Job storage (in-memory for active jobs, DB for history)
@@ -117,6 +120,7 @@ class LocalJobQueue(JobQueue):
                         working_dir=job.working_dir,
                         simulation_id=job.simulation_id,
                         session_id=job.metadata.get("session_id"),
+                        user_id=job.metadata.get("user_id"),
                     )
                     db.add(row)
 
@@ -132,6 +136,44 @@ class LocalJobQueue(JobQueue):
                 row.stderr_file = job.stderr_file
         except Exception:
             logger.debug("Could not persist job %s to DB", job.id, exc_info=True)
+
+    def _send_completion_notification(self, job: "JobInfo") -> None:
+        """Send email notification for job completion. Skips if not configured."""
+        if self.notification_service is None:
+            return
+        try:
+            from shyfem_ui.services.job_queue import JobStatus
+
+            user_id = job.metadata.get("user_id")
+            user_dict: dict = {}
+            if user_id:
+                try:
+                    from shyfem_ui.db.base import db_session
+                    from shyfem_ui.models.user import User
+                    with db_session() as db:
+                        user = db.query(User).filter_by(id=user_id).first()
+                    if user:
+                        user_dict = {"username": user.username, "email": user.email}
+                except Exception:
+                    logger.debug("Could not look up user %s for notification", user_id, exc_info=True)
+
+            duration = None
+            if job.started_at and job.completed_at:
+                duration = (job.completed_at - job.started_at).total_seconds()
+            job_dict = {
+                "name": job.name,
+                "duration": duration,
+                "working_dir": job.working_dir,
+                "stderr": job.error_message or "",
+            }
+            if job.status == JobStatus.COMPLETED:
+                self.notification_service.notify_job_success(user_dict, job_dict)
+            else:
+                self.notification_service.notify_job_failed(user_dict, job_dict)
+        except Exception:
+            logger.warning(
+                "Failed to send completion notification for job %s", job.id, exc_info=True
+            )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -302,6 +344,8 @@ class LocalJobQueue(JobQueue):
                 self._tasks.pop(job_id, None)
                 # Persist final state to DB
                 self._persist_job(job)
+                # Send completion notification (best-effort, never raises)
+                self._send_completion_notification(job)
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a running job."""
