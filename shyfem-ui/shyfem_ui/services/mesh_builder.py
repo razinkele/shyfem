@@ -7,6 +7,7 @@ bathymetry interpolation via scipy or shybas.
 
 import logging
 import math
+from dataclasses import replace as _dc_replace
 from pathlib import Path
 
 import fiona
@@ -968,6 +969,40 @@ async def interpolate_bathymetry_shybas(
         output_path = work_dir / "_mesh_temp.bas"
 
     return GrdParser.parse_file(output_path)
+
+
+
+# ---------------------------------------------------------------------------
+# 6b. Depth adjustments
+# ---------------------------------------------------------------------------
+
+
+def adjust_depths(
+    grd: GrdFile,
+    min_clamp: float | None = None,
+    max_clamp: float | None = None,
+    fill_value: float | None = None,
+) -> GrdFile:
+    """Return a new GrdFile with depth values adjusted.
+
+    - min_clamp: nodes with depth < min_clamp are set to min_clamp
+    - max_clamp: nodes with depth > max_clamp are set to max_clamp
+    - fill_value: nodes where depth is None receive this value
+    Each parameter is independent; all are optional.
+    Pure function — does not mutate the input GrdFile.
+    """
+    new_nodes = {}
+    for nid, node in grd.nodes.items():
+        depth = node.depth
+        if depth is None and fill_value is not None:
+            depth = fill_value
+        if depth is not None:
+            if min_clamp is not None and depth < min_clamp:
+                depth = min_clamp
+            if max_clamp is not None and depth > max_clamp:
+                depth = max_clamp
+        new_nodes[nid] = _dc_replace(node, depth=depth)
+    return _dc_replace(grd, nodes=new_nodes)
 
 
 # ---------------------------------------------------------------------------

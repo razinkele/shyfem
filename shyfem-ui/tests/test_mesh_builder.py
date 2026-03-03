@@ -14,6 +14,7 @@ import pytest
 
 from shyfem_ui.services.mesh_builder import (
     _remove_ring_loops,
+    adjust_depths,
     compute_mesh_stats,
     estimate_element_count,
     export_grd,
@@ -1205,3 +1206,62 @@ class TestTriangulateElementFormat:
             assert len(elem.nodes) == 3, (
                 f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
             )
+
+
+# ---------------------------------------------------------------------------
+# adjust_depths tests
+# ---------------------------------------------------------------------------
+
+
+def _make_depth_grd() -> GrdFile:
+    """GrdFile with 4 nodes spanning depths -10, -3, None, 5."""
+    grd = GrdFile()
+    grd.nodes[1] = Node(id=1, node_type=0, x=0.0, y=0.0, depth=-10.0)
+    grd.nodes[2] = Node(id=2, node_type=0, x=1.0, y=0.0, depth=-3.0)
+    grd.nodes[3] = Node(id=3, node_type=0, x=0.0, y=1.0, depth=None)
+    grd.nodes[4] = Node(id=4, node_type=0, x=1.0, y=1.0, depth=5.0)
+    return grd
+
+
+class TestAdjustDepths:
+    def test_min_clamp(self):
+        """Nodes shallower than min_clamp are raised to min_clamp."""
+        grd = _make_depth_grd()
+        result = adjust_depths(grd, min_clamp=-5.0)
+        assert result.nodes[1].depth == -5.0
+        assert result.nodes[2].depth == -3.0
+        assert result.nodes[3].depth is None
+        assert result.nodes[4].depth == 5.0
+
+    def test_max_clamp(self):
+        """Nodes with depth > max_clamp are clamped to max_clamp."""
+        grd = _make_depth_grd()
+        result = adjust_depths(grd, max_clamp=0.0)
+        assert result.nodes[1].depth == -10.0
+        assert result.nodes[2].depth == -3.0
+        assert result.nodes[3].depth is None
+        assert result.nodes[4].depth == 0.0
+
+    def test_fill_unmapped(self):
+        """Nodes with depth=None receive fill_value."""
+        grd = _make_depth_grd()
+        result = adjust_depths(grd, fill_value=-1.0)
+        assert result.nodes[1].depth == -10.0
+        assert result.nodes[3].depth == -1.0
+
+    def test_combined(self):
+        """min_clamp + max_clamp + fill applied together."""
+        grd = _make_depth_grd()
+        result = adjust_depths(grd, min_clamp=-8.0, max_clamp=2.0, fill_value=-1.0)
+        assert result.nodes[1].depth == -8.0
+        assert result.nodes[2].depth == -3.0
+        assert result.nodes[3].depth == -1.0
+        assert result.nodes[4].depth == 2.0
+
+    def test_no_op(self):
+        """No parameters → returned GrdFile has identical depth values."""
+        grd = _make_depth_grd()
+        result = adjust_depths(grd)
+        for nid in grd.nodes:
+            assert result.nodes[nid].depth == grd.nodes[nid].depth
+        assert grd.nodes[1].depth == -10.0
