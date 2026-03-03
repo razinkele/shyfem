@@ -734,6 +734,10 @@ document.addEventListener('DOMContentLoaded', function() {
   fetch('api/whoami').then(function(r) { return r.json(); }).then(function(data) {
     var el = document.getElementById('sf-current-username');
     if (el) el.textContent = data.display_name || data.username || '';
+    // Propagate role into Shiny so server-side guards can use input.current_user_role()
+    if (window.Shiny && window.Shiny.setInputValue) {
+      window.Shiny.setInputValue('current_user_role', data.role || '');
+    }
 
     // Hide admin-only sidebar items and pages for non-admin users
     if (data.role && data.role !== 'admin') {
@@ -748,6 +752,12 @@ document.addEventListener('DOMContentLoaded', function() {
           if (page) page.style.display = 'none';
         }
       });
+      // Hide non-Tutorial nav items for tutorial-role users
+      if (data.role === 'tutorial') {
+        document.querySelectorAll('.sf-nav-item[data-hidden-for-tutorial]').forEach(function(el) {
+          el.style.display = 'none';
+        });
+      }
       // Hide group headers whose visible items are all hidden
       document.querySelectorAll('[data-group]').forEach(function(header) {
         var next = header.nextElementSibling;
@@ -761,12 +771,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (!hasVisible) header.style.display = 'none';
       });
-      // Hide non-Tutorial nav items for tutorial-role users
-      if (data.role === 'tutorial') {
-        document.querySelectorAll('.sf-nav-item[data-hidden-for-tutorial]').forEach(function(el) {
-          el.style.display = 'none';
-        });
-      }
       // Switch default landing from Dashboard to Tutorial
       var dashNav = document.querySelector('.sf-nav-item[data-nav="Dashboard"]');
       if (dashNav) dashNav.classList.remove('active');

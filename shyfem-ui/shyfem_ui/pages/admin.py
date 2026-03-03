@@ -136,32 +136,19 @@ def admin_ui():
 @module.server
 def admin_server(input, output, session, config: Config, auth_service: AuthService):
     """Admin panel server logic."""
-    # Admin role guard
     from shyfem_ui.middleware.session_auth import get_current_user
 
     current_user = get_current_user()
-    if not _check_admin_access(current_user):
+    is_admin = _check_admin_access(current_user)
 
-        @render.ui
-        def user_summary():
-            return ui.div(
-                ui.h5("Access Denied", class_="text-danger"),
-                ui.p("You must be an admin to view this page."),
-            )
-
-        @render.ui
-        def user_table():
-            return ui.div()
-
-        return
-
-    # Reactive value holding user list
+    # Reactive value holding user list (always defined so render functions can reference it)
     users_data: reactive.Value[list[dict]] = reactive.value([])
 
-    # Load users on init
+    # Load users on init (only meaningful when admin)
     @reactive.effect
     def _load_users():
-        users_data.set(auth_service.list_users())
+        if is_admin:
+            users_data.set(auth_service.list_users())
 
     def _refresh():
         users_data.set(auth_service.list_users())
@@ -172,6 +159,11 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
 
     @render.ui
     def user_summary():
+        if not is_admin:
+            return ui.div(
+                ui.h5("Access Denied", class_="text-danger"),
+                ui.p("You must be an admin to view this page."),
+            )
         users = users_data.get()
         total = len(users)
         admins = sum(1 for u in users if u["role"] == "admin")
@@ -189,6 +181,8 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
 
     @render.ui
     def user_table():
+        if not is_admin:
+            return ui.div()
         users = users_data.get()
         if not users:
             return ui.p("No users found.", class_="text-muted")

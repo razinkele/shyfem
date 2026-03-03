@@ -541,8 +541,14 @@ def run_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_job():
-        # Tutorial accounts are read-only
-        if _current_user and _current_user.get("role") == "tutorial":
+        # Tutorial accounts are read-only.
+        # Prefer input.current_user_role() (set from JS via Shiny.setInputValue)
+        # because the Shiny WebSocket context doesn't carry the browser session cookie.
+        try:
+            _role = input.current_user_role()
+        except Exception:
+            _role = _current_user.get("role") if _current_user else None
+        if _role == "tutorial":
             ui.notification_show(
                 "Tutorial accounts are read-only. Contact your admin for a full account.",
                 type="warning",

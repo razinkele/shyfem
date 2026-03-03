@@ -375,6 +375,9 @@ class AuthService:
         try:
             user = session.query(User).filter_by(username=username).first()
             if user is not None:
+                if user.role != role:
+                    user.role = role
+                    session.commit()
                 return self._user_to_dict(user)
         finally:
             session.close()
