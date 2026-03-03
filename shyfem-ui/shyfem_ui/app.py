@@ -37,7 +37,7 @@ from shiny_deckgl import head_includes as deckgl_head_includes
 
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
-from shyfem_ui.services.notification_service import NotificationService
+from shyfem_ui.services.notification_service import JobTransitionDetector
 
 logger = logging.getLogger(__name__)
 
@@ -1015,7 +1015,7 @@ def _build_server(
         admin.admin_server("admin", config, auth_service)
 
     # --- Cross-page job notifications ---
-    _notification_svc = NotificationService()
+    _notification_svc = JobTransitionDetector()
 
     @reactive.effect
     def _poll_job_notifications():

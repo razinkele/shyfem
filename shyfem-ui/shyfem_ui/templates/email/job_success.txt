@@ -1,0 +1,11 @@
+Subject: [SHYFEM] Simulation finished: {{ job_name }}
+
+Hi {{ username }},
+
+Your SHYFEM simulation has completed successfully.
+
+  Job:       {{ job_name }}
+  Duration:  {{ duration }}
+  Output:    {{ working_dir }}
+
+Log in to SHYFEM UI to view the results.

@@ -1,0 +1,12 @@
+Subject: [SHYFEM] Simulation failed: {{ job_name }}
+
+Hi {{ username }},
+
+Your SHYFEM simulation has failed.
+
+  Job:  {{ job_name }}
+
+Last output:
+{{ stderr_tail }}
+
+Log in to SHYFEM UI for details.
