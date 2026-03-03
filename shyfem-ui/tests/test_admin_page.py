@@ -70,7 +70,7 @@ class TestBuildUserTableData:
 
 class TestValidateCreateUserForm:
     def test_valid_form(self):
-        errors = _validate_create_user_form("alice", "password123", "user")
+        errors = _validate_create_user_form("alice", "password123", "user", email="alice@example.com")
         assert errors == []
 
     def test_missing_username(self):
@@ -90,7 +90,7 @@ class TestValidateCreateUserForm:
         assert any("password" in e.lower() for e in errors)
 
     def test_password_exactly_4_chars(self):
-        errors = _validate_create_user_form("alice", "abcd", "user")
+        errors = _validate_create_user_form("alice", "abcd", "user", email="alice@example.com")
         assert errors == []
 
     def test_invalid_role(self):
@@ -98,7 +98,7 @@ class TestValidateCreateUserForm:
         assert any("role" in e.lower() for e in errors)
 
     def test_valid_admin_role(self):
-        errors = _validate_create_user_form("alice", "password", "admin")
+        errors = _validate_create_user_form("alice", "password", "admin", email="alice@example.com")
         assert errors == []
 
     def test_multiple_errors(self):

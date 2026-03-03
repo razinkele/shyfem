@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # Pure functions (testable without Shiny runtime)
 # ---------------------------------------------------------------------------
 
-_VALID_ROLES = {"admin", "user"}
+_VALID_ROLES = {"admin", "user", "tutorial"}
 
 
 def _build_user_table_data(users: list[dict]) -> list[dict]:
@@ -38,8 +38,16 @@ def _build_user_table_data(users: list[dict]) -> list[dict]:
     ]
 
 
-def _validate_create_user_form(username: str, password: str, role: str) -> list[str]:
+def _validate_create_user_form(
+    username: str, password: str, role: str, email: str | None = None
+) -> list[str]:
     """Validate user creation form inputs.
+
+    Args:
+        username: Login name.
+        password: Plaintext password.
+        role: User role.
+        email: Email address. Required for non-tutorial accounts.
 
     Returns:
         List of error messages (empty if valid).
@@ -53,6 +61,12 @@ def _validate_create_user_form(username: str, password: str, role: str) -> list[
         errors.append("Password must be at least 4 characters")
     if role not in _VALID_ROLES:
         errors.append(f"Role must be one of: {', '.join(sorted(_VALID_ROLES))}")
+    # Email required for non-tutorial accounts
+    if role != "tutorial":
+        if not email or not email.strip():
+            errors.append("Email is required")
+        elif "@" not in email or "." not in email.split("@")[-1]:
+            errors.append("Email address is not valid")
     return errors
 
 
@@ -178,6 +192,11 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         rows_data = _build_user_table_data(users)
         rows = []
         for u in rows_data:
+            # Home directory: N/A for tutorial users
+            if u["role"] == "tutorial":
+                home_dir_text = "N/A"
+            else:
+                home_dir_text = str(config.user_data_root / u["username"])
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(u["username"]),
@@ -185,6 +204,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                     ui.tags.td(u["email"]),
                     ui.tags.td(ui.HTML(_role_badge(u["role"]))),
                     ui.tags.td(ui.HTML(_active_badge(u["is_active"]))),
+                    ui.tags.td(home_dir_text, style="font-size:0.8em;word-break:break-all;"),
                     ui.tags.td(
                         ui.input_action_link(
                             f"reset_pw_{u['id']}",
@@ -199,7 +219,12 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                         ui.input_action_link(
                             f"toggle_role_{u['id']}",
                             "Demote" if u["role"] == "admin" else "Promote",
-                            class_="btn btn-sm btn-outline-info",
+                            class_="btn btn-sm btn-outline-info me-1",
+                        ),
+                        ui.input_action_link(
+                            f"send_test_email_{u['id']}",
+                            "Test Email",
+                            class_="btn btn-sm btn-outline-primary",
                         ),
                     ),
                 )
@@ -213,6 +238,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                     ui.tags.th("Email"),
                     ui.tags.th("Role"),
                     ui.tags.th("Status"),
+                    ui.tags.th("Home Dir"),
                     ui.tags.th("Actions"),
                 )
             ),
@@ -224,7 +250,9 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
     # Dynamic action handlers for user table buttons
     # ------------------------------------------------------------------
 
-    def _register_user_actions(user_id: int, username: str, role: str, is_active: bool):
+    def _register_user_actions(
+        user_id: int, username: str, role: str, is_active: bool, email: str | None = None
+    ):
         """Register action handlers for a specific user row."""
 
         @reactive.effect
@@ -287,12 +315,44 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                 logger.exception("Failed to toggle role for user %d", user_id)
                 ui.notification_show(f"Error: {e}", type="error")
 
+        @reactive.effect
+        @reactive.event(input[f"send_test_email_{user_id}"])
+        def _send_test_email():
+            """Send a test notification email to this user."""
+            from shyfem_ui.services.notification_service import NotificationService
+
+            if not email:
+                ui.notification_show("User has no email address.", type="warning")
+                return
+            user_dict = {"username": username, "email": email}
+            svc = NotificationService(config)
+            try:
+                svc.notify_job_success(
+                    user_dict,
+                    {
+                        "name": "test notification",
+                        "duration": None,
+                        "working_dir": str(config.user_data_root / username),
+                        "stderr": "",
+                    },
+                )
+                ui.notification_show(f"Test email sent to {email}", type="message")
+            except Exception as e:
+                logger.exception("Failed to send test email to user %d", user_id)
+                ui.notification_show(f"SMTP error: {e}", type="error")
+
     @reactive.effect
     def _register_all_user_actions():
         """Re-register action handlers whenever user list changes."""
         users = users_data.get()
         for u in users:
-            _register_user_actions(u["id"], u["username"], u["role"], u.get("is_active", True))
+            _register_user_actions(
+                u["id"],
+                u["username"],
+                u["role"],
+                u.get("is_active", True),
+                email=u.get("email"),
+            )
 
     # ------------------------------------------------------------------
     # Create user modal
@@ -306,7 +366,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
             ui.input_password("new_password", "Password"),
             ui.input_select("new_role", "Role", choices=sorted(_VALID_ROLES)),
             ui.input_text("new_display_name", "Display Name (optional)"),
-            ui.input_text("new_email", "Email (optional)"),
+            ui.input_text("new_email", "Email (required for user/admin)"),
             ui.output_ui("create_user_errors"),
             title="Create New User",
             easy_close=True,
@@ -330,21 +390,35 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         display_name = input.new_display_name() or None
         email = input.new_email() or None
 
-        errors = _validate_create_user_form(username, password, role)
+        errors = _validate_create_user_form(username, password, role, email=email)
         if errors:
             ui.notification_show("; ".join(errors), type="error", duration=5)
             return
 
         try:
+            clean_username = username.strip()
             auth_service.create_user(
-                username=username.strip(),
+                username=clean_username,
                 password=password,
                 role=role,
                 display_name=display_name,
                 email=email,
+                user_data_root=config.user_data_root,
             )
             ui.modal_remove()
-            ui.notification_show(f"User '{username.strip()}' created.", type="message", duration=4)
+            home_path = config.user_data_root / clean_username if role != "tutorial" else None
+            if home_path:
+                ui.notification_show(
+                    f"User '{clean_username}' created. Home: {home_path}",
+                    type="message",
+                    duration=4,
+                )
+            else:
+                ui.notification_show(
+                    f"User '{clean_username}' created.",
+                    type="message",
+                    duration=4,
+                )
             _refresh()
         except ValueError as exc:
             ui.notification_show(str(exc), type="error", duration=5)
