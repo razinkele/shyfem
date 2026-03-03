@@ -282,17 +282,9 @@ def grid_prep_ui():
                     placeholder="/path/to/output",
                 ),
                 ui.hr(),
-                # Actions
-                ui.input_action_button(
-                    "run_shypre_btn",
-                    "Run shypre",
-                    class_="btn-primary w-100 mb-2",
-                ),
-                ui.input_action_button(
-                    "run_shybas_btn",
-                    "Run shybas",
-                    class_="btn-secondary w-100",
-                ),
+                # Actions + status
+                ui.output_ui("shypre_action_area"),
+                ui.output_ui("shybas_action_area"),
                 width=300,
             ),
             # Main content
@@ -376,6 +368,8 @@ def grid_prep_server(
     current_grd_path = reactive.value(None)  # Path to loaded file
     log_content = reactive.value("")
     output_files = reactive.value([])
+    shypre_running = reactive.value(False)
+    shybas_running = reactive.value(False)
 
     def _handle_file_upload(files):
         """Handle uploaded .grd file."""
@@ -462,6 +456,11 @@ def grid_prep_server(
         grd_path = current_grd_path.get()
         if not grd_path:
             log_content.set("Error: No grid file loaded")
+            ui.notification_show(
+                "No grid file loaded. Upload or select a .grd file first.",
+                type="error",
+                duration=5,
+            )
             return
 
         # Determine output directory
@@ -470,14 +469,22 @@ def grid_prep_server(
             output_path = config.validate_path(output_dir)
         except ValueError as e:
             log_content.set(f"Error: {e}")
+            ui.notification_show(f"Invalid output directory: {e}", type="error", duration=5)
             return
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Copy grid file to output directory if needed
         if grd_path.parent != output_path:
-            dest_grd = output_path / grd_path.name
-            shutil.copy2(grd_path, dest_grd)
-            grd_path = dest_grd
+            try:
+                dest_grd = output_path / grd_path.name
+                shutil.copy2(grd_path, dest_grd)
+                grd_path = dest_grd
+            except OSError as e:
+                log_content.set(f"Error copying grid file: {e}")
+                ui.notification_show(
+                    f"Cannot copy grid to output directory: {e}", type="error", duration=5,
+                )
+                return
 
         # Build options
         options = []
@@ -486,7 +493,13 @@ def grid_prep_server(
         if input.renumber():
             options.append("-renumber")
 
+        shypre_running.set(True)
         log_content.set(f"Running shypre on {grd_path.name}...\n")
+        ui.notification_show(
+            f"shypre started on {grd_path.name}",
+            type="message",
+            duration=3,
+        )
 
         def update_log(line):
             current = log_content.get()
@@ -506,14 +519,35 @@ def grid_prep_server(
                     f"Output files: {', '.join(result.output_files)}\n"
                 )
                 output_files.set(result.output_files)
+                ui.notification_show(
+                    f"shypre completed — {len(result.output_files)} output file(s)",
+                    type="message",
+                    duration=5,
+                )
             else:
+                stderr_preview = (result.stderr or "Unknown error")[:200]
                 log_content.set(
                     log_content.get() + f"\n*** shypre failed (code {result.return_code}) ***\n"
                     f"{result.stderr}\n"
                 )
+                ui.notification_show(
+                    f"shypre failed (exit code {result.return_code}): {stderr_preview}",
+                    type="error",
+                    duration=8,
+                )
 
+        except FileNotFoundError:
+            msg = (
+                "shypre executable not found. "
+                "Check that SHYFEM is built and the bin/ directory is accessible."
+            )
+            log_content.set(log_content.get() + f"\nError: {msg}\n")
+            ui.notification_show(msg, type="error", duration=8)
         except Exception as e:
             log_content.set(log_content.get() + f"\nError: {e}\n")
+            ui.notification_show(f"shypre error: {e}", type="error", duration=8)
+        finally:
+            shypre_running.set(False)
 
     @reactive.effect
     @reactive.event(input.run_shybas_btn)
@@ -532,10 +566,21 @@ def grid_prep_server(
 
         if not bas_files:
             log_content.set("Error: No .bas file found. Run shypre first.")
+            ui.notification_show(
+                "No .bas file found. Run shypre first to generate one.",
+                type="error",
+                duration=5,
+            )
             return
 
         bas_path = Path(bas_files[0])
+        shybas_running.set(True)
         log_content.set(f"Running shybas on {bas_path.name}...\n")
+        ui.notification_show(
+            f"shybas started on {bas_path.name}",
+            type="message",
+            duration=3,
+        )
 
         def update_log(line):
             current = log_content.get()
@@ -551,14 +596,85 @@ def grid_prep_server(
 
             if result.success:
                 log_content.set(log_content.get() + "\n*** shybas completed successfully ***\n")
+                ui.notification_show(
+                    "shybas completed successfully",
+                    type="message",
+                    duration=5,
+                )
             else:
+                stderr_preview = (result.stderr or "Unknown error")[:200]
                 log_content.set(
                     log_content.get() + f"\n*** shybas failed (code {result.return_code}) ***\n"
                     f"{result.stderr}\n"
                 )
+                ui.notification_show(
+                    f"shybas failed (exit code {result.return_code}): {stderr_preview}",
+                    type="error",
+                    duration=8,
+                )
 
+        except FileNotFoundError:
+            msg = (
+                "shybas executable not found. "
+                "Check that SHYFEM is built and the bin/ directory is accessible."
+            )
+            log_content.set(log_content.get() + f"\nError: {msg}\n")
+            ui.notification_show(msg, type="error", duration=8)
         except Exception as e:
             log_content.set(log_content.get() + f"\nError: {e}\n")
+            ui.notification_show(f"shybas error: {e}", type="error", duration=8)
+        finally:
+            shybas_running.set(False)
+
+    @render.ui
+    def shypre_action_area():
+        """Dynamic shypre button — shows spinner while running."""
+        running = shypre_running.get()
+        if running:
+            return ui.div(
+                ui.div(
+                    ui.tags.span(
+                        class_="spinner-border spinner-border-sm me-2",
+                        role="status",
+                    ),
+                    "Running shypre...",
+                    class_="btn btn-primary w-100 mb-2 disabled d-flex align-items-center justify-content-center",
+                ),
+                ui.p(
+                    "Check the Log tab for real-time output.",
+                    class_="text-muted small mt-1 mb-0",
+                ),
+            )
+        return ui.input_action_button(
+            "run_shypre_btn",
+            "Run shypre",
+            class_="btn-primary w-100 mb-2",
+        )
+
+    @render.ui
+    def shybas_action_area():
+        """Dynamic shybas button — shows spinner while running."""
+        running = shybas_running.get()
+        if running:
+            return ui.div(
+                ui.div(
+                    ui.tags.span(
+                        class_="spinner-border spinner-border-sm me-2",
+                        role="status",
+                    ),
+                    "Running shybas...",
+                    class_="btn btn-secondary w-100 disabled d-flex align-items-center justify-content-center",
+                ),
+                ui.p(
+                    "Check the Log tab for real-time output.",
+                    class_="text-muted small mt-1 mb-0",
+                ),
+            )
+        return ui.input_action_button(
+            "run_shybas_btn",
+            "Run shybas",
+            class_="btn-secondary w-100",
+        )
 
     @render.ui
     def grid_stats():

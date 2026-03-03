@@ -17,6 +17,7 @@ __all__ = [
     "visualize",
     "compare",
     "ensemble",
+    "ibm",
     "tutorial",
     "files",
     "admin",

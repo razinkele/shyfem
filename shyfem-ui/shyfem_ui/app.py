@@ -24,6 +24,7 @@ from shyfem_ui.pages import (
     files,
     grid_prep,
     home,
+    ibm,
     mesh_builder,
     partitioning,
     postprocess,
@@ -61,6 +62,7 @@ SIDEBAR_GROUPS = [
         "items": [
             {"label": "Configuration", "icon": "bi-sliders", "value": "Simulation"},
             {"label": "Run", "icon": "bi-play-circle", "value": "Run"},
+            {"label": "IBM", "icon": "bi-wind", "value": "IBM"},
         ],
     },
     {
@@ -903,6 +905,7 @@ def _build_ui(config: Config) -> ui.Tag:
             simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
         ),
         ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
+        ui.div(ibm.ibm_ui("ibm"), id="sf-page-IBM", class_="sf-page"),
         ui.div(
             postprocess.postprocess_ui("postprocess"),
             id="sf-page-Post-Process",
@@ -997,6 +1000,7 @@ def _build_server(
     run.run_server(
         "run", config, job_queue, active_project=active_project, tutorial_context=tutorial_context
     )
+    ibm.ibm_server("ibm", config, active_project=active_project)
     postprocess.postprocess_server(
         "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
     )

@@ -39,6 +39,41 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+def _remove_ring_loops(ring: list[int]) -> list[int]:
+    """Remove self-touching loops from a ring of node IDs.
+
+    After coordinate deduplication, a ring may visit the same node twice
+    (non-consecutively), creating a "lollipop" self-intersection.  This
+    function finds such duplicates (excluding the closing node) and
+    collapses the loop between the two occurrences.
+    """
+    # Exclude closing node from duplicate detection
+    is_closed = len(ring) >= 2 and ring[0] == ring[-1]
+    body = ring[:-1] if is_closed else ring
+
+    changed = True
+    while changed:
+        changed = False
+        seen: dict[int, int] = {}
+        new_body: list[int] = []
+        for nid in body:
+            if nid in seen:
+                # Found a loop: remove everything from the first occurrence
+                # to here, keeping the node once
+                new_body = new_body[: seen[nid] + 1]
+                # Rebuild 'seen' for the truncated list
+                seen = {n: i for i, n in enumerate(new_body)}
+                changed = True
+            else:
+                seen[nid] = len(new_body)
+                new_body.append(nid)
+        body = new_body
+
+    if is_closed and body:
+        body.append(body[0])
+    return body
+
+
 def import_boundaries(file_path: Path) -> GrdFile:
     """Import boundary lines from GeoJSON, Shapefile, or GeoPackage.
 
@@ -58,7 +93,7 @@ def import_boundaries(file_path: Path) -> GrdFile:
 
     def _add_ring(coords, ltype):
         nonlocal node_id, line_id
-        ring_nodes = []
+        ring_nodes: list[int] = []
         # Close the ring if not already closed
         coord_list = list(coords)
         if coord_list[0] != coord_list[-1]:
@@ -69,7 +104,19 @@ def import_boundaries(file_path: Path) -> GrdFile:
                 grd.nodes[node_id] = Node(id=node_id, node_type=0, x=x, y=y)
                 coord_to_node[key] = node_id
                 node_id += 1
-            ring_nodes.append(coord_to_node[key])
+            nid = coord_to_node[key]
+            # Skip consecutive duplicates (from near-coincident coords that
+            # round to the same key — these create zero-length segments)
+            if ring_nodes and ring_nodes[-1] == nid:
+                continue
+            ring_nodes.append(nid)
+        # Remove lollipop loops: if a node appears twice (non-consecutively,
+        # excluding the closing node), the ring self-touches. Collapse the
+        # loop by removing the nodes between the two occurrences.
+        ring_nodes = _remove_ring_loops(ring_nodes)
+        # Ensure the ring is still closed after cleanup
+        if len(ring_nodes) >= 2 and ring_nodes[0] != ring_nodes[-1]:
+            ring_nodes.append(ring_nodes[0])
         grd.lines[line_id] = Line(id=line_id, line_type=ltype, nodes=ring_nodes)
         line_id += 1
 
@@ -448,12 +495,11 @@ def _triangle_result_to_grd(result: dict, original_grd: GrdFile) -> GrdFile:
         nid = i + 1
         new_grd.nodes[nid] = Node(id=nid, node_type=0, x=float(x), y=float(y))
 
-    # Create elements — store as [3, n1, n2, n3] matching .grd format convention
+    # Create elements (Triangle library uses 0-indexed; convert to 1-indexed)
     for i, tri in enumerate(triangles):
         eid = i + 1
-        # Triangle uses 0-indexed, convert to 1-indexed node IDs
         n1, n2, n3 = int(tri[0]) + 1, int(tri[1]) + 1, int(tri[2]) + 1
-        new_grd.elements[eid] = Element(id=eid, elem_type=0, nodes=[3, n1, n2, n3])
+        new_grd.elements[eid] = Element(id=eid, elem_type=0, nodes=[n1, n2, n3])
 
     # Rebuild boundary lines from segment markers if available
     # Otherwise preserve original line structure with new node mapping
@@ -505,13 +551,21 @@ def load_bathymetry_file(file_path: Path) -> np.ndarray:
     if not path.exists():
         raise FileNotFoundError(f"Bathymetry file not found: {path}")
 
+    # Vector formats must use load_bathymetry_contours() instead
+    vector_exts = {".gpkg", ".geojson", ".json", ".shp"}
+    if path.suffix.lower() in vector_exts:
+        raise ValueError(
+            f"'{path.name}' is a vector file ({path.suffix}). "
+            f"Please select 'Contour Isobaths' as the bathymetry data type."
+        )
+
     # Try GeoTIFF via rasterio
     if path.suffix.lower() in (".tif", ".tiff"):
         return _load_bathymetry_raster(path)
 
     # Text-based formats
     points = []
-    with open(path) as f:
+    with open(path, errors="replace") as f:
         for line_num, line in enumerate(f, 1):
             line = line.strip()
             if not line or line.startswith("#") or line.startswith("!"):
@@ -597,6 +651,25 @@ def load_bathymetry_contours(
         )
 
     with fiona.open(str(path)) as src:
+        # Reproject to WGS84 if source CRS is projected
+        transformer = None
+        if src.crs:
+            try:
+                src_crs = pyproj.CRS.from_user_input(src.crs)
+                if src_crs.is_projected:
+                    transformer = pyproj.Transformer.from_crs(
+                        src_crs, "EPSG:4326", always_xy=True
+                    ).transform
+                    logger.info(
+                        "Reprojecting bathymetry contours from %s to WGS84",
+                        src_crs.name,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Could not determine CRS for contours, using raw coordinates: %s",
+                    exc,
+                )
+
         for feat in src:
             props = feat["properties"]
             z_val = props.get(resolved_attr)
@@ -608,6 +681,8 @@ def load_bathymetry_contours(
                 continue
 
             geom = shapely.geometry.shape(feat["geometry"])
+            if transformer is not None:
+                geom = shapely.ops.transform(transformer, geom)
             lines = []
             if geom.geom_type == "LineString":
                 lines = [geom]
@@ -640,12 +715,31 @@ def load_bathymetry_contours(
 
 
 def _load_bathymetry_raster(path: Path) -> np.ndarray:
-    """Sample points from a GeoTIFF raster."""
+    """Sample points from a GeoTIFF raster, reprojecting to WGS84 if needed."""
     import rasterio
 
     with rasterio.open(path) as src:
         band = src.read(1)
         nodata = src.nodata
+
+        # Build reprojection transformer if raster is projected
+        transformer = None
+        if src.crs:
+            try:
+                src_crs = pyproj.CRS.from_user_input(src.crs)
+                if src_crs.is_projected:
+                    transformer = pyproj.Transformer.from_crs(
+                        src_crs, "EPSG:4326", always_xy=True
+                    )
+                    logger.info(
+                        "Reprojecting raster bathymetry from %s to WGS84",
+                        src_crs.name,
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "Could not determine raster CRS, using raw coordinates: %s", exc
+                )
+
         points = []
         for row in range(band.shape[0]):
             for col in range(band.shape[1]):
@@ -653,6 +747,8 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
                 if nodata is not None and val == nodata:
                     continue
                 x, y = src.xy(row, col)
+                if transformer is not None:
+                    x, y = transformer.transform(x, y)
                 points.append([x, y, float(val)])
 
     if not points:

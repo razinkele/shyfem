@@ -28,6 +28,7 @@ from shiny_deckgl import (
     path_layer,
     polygon_layer,
     scatterplot_layer,
+    tile_layer,
 )
 
 from shyfem_ui.services.parser_grd import GrdFile
@@ -516,6 +517,33 @@ def _build_node_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# EMODnet bathymetry WMS base layer
+# ---------------------------------------------------------------------------
+
+EMODNET_WMS_URL = (
+    "https://ows.emodnet-bathymetry.eu/wms?"
+    "SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap"
+    "&FORMAT=image/png&TRANSPARENT=true"
+    "&LAYERS=emodnet:mean_atlas_land"
+    "&CRS=EPSG:3857&WIDTH=256&HEIGHT=256"
+    "&BBOX={bbox-epsg-3857}"
+)
+
+
+def _build_emodnet_layer() -> dict:
+    """Build an EMODnet bathymetry WMS tile layer."""
+    return tile_layer(
+        "emodnet",
+        EMODNET_WMS_URL,
+        minZoom=0,
+        maxZoom=18,
+        tileSize=256,
+        opacity=0.6,
+        pickable=False,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Task 5: build_layers
 # ---------------------------------------------------------------------------
 
@@ -525,6 +553,7 @@ def build_layers(
     colorscale: str = "viridis",
     show_boundaries: bool = False,
     show_nodes: bool = False,
+    show_emodnet: bool = False,
     elevation_scale: float = 1.0,
     partition_map: dict[int, int] | None = None,
     epsg: int | None = None,
@@ -544,6 +573,8 @@ def build_layers(
         Overlay boundary lines regardless of *mode*.
     show_nodes
         Overlay node scatter points.
+    show_emodnet
+        Overlay EMODnet bathymetry WMS tiles as a base layer.
     elevation_scale
         Multiplier for 3-D extrusion (``"depth_3d"`` mode only).
     partition_map
@@ -562,6 +593,11 @@ def build_layers(
         return []
 
     layers: list[dict] = []
+
+    # --- EMODnet bathymetry base layer (rendered below everything else) ---
+    if show_emodnet:
+        layers.append(_build_emodnet_layer())
+
     has_elements = bool(grd.elements)
 
     # --- Shared polygon layer kwargs ---
@@ -989,6 +1025,8 @@ from shiny import module, reactive, render, ui  # noqa: E402
 
 from shiny_deckgl import (  # noqa: E402
     MapWidget,
+    deck_legend_control,
+    fullscreen_widget,
     zoom_widget,
 )
 
@@ -1090,6 +1128,7 @@ def grid_map_ui(height: str = "600px"):
                 ),
                 ui.input_checkbox("show_boundaries", "Boundaries", value=True),
                 ui.input_checkbox("show_nodes", "Nodes", value=False),
+                ui.input_checkbox("show_emodnet", "EMODnet", value=False),
                 class_="d-flex flex-wrap align-items-end gap-2",
             ),
             class_="mb-2",
@@ -1140,13 +1179,22 @@ def grid_map_server(
         grd = grd_file.get()
         if grd is None:
             # Clear the map
-            await _map.update(session, layers=[], widgets=[zoom_widget()])
+            await _map.update(
+                session,
+                layers=[],
+                widgets=[
+                    zoom_widget(),
+                    fullscreen_widget(placement="top-right"),
+                ],
+            )
+            await _map.set_controls(session, [])
             return
 
         mode = input.map_mode()
         colorscale = input.map_colors()
         show_bdry = input.show_boundaries()
         show_nd = input.show_nodes()
+        show_emod = input.show_emodnet()
         basemap_key = input.map_basemap()
 
         # EPSG for coordinate reprojection:
@@ -1182,6 +1230,7 @@ def grid_map_server(
             colorscale=colorscale,
             show_boundaries=show_bdry,
             show_nodes=show_nd,
+            show_emodnet=show_emod,
             elevation_scale=elev_scale,
             partition_map=pmap,
             epsg=epsg_val,
@@ -1194,8 +1243,63 @@ def grid_map_server(
             layers=layers,
             view_state=vs,
             transition_duration=500,
-            widgets=[zoom_widget()],
+            widgets=[
+                zoom_widget(),
+                fullscreen_widget(placement="top-right"),
+            ],
         )
+
+        # Build layer legend entries from the layers we just created
+        legend_entries: list[dict] = []
+        for layer in layers:
+            lid = layer.get("id", "")
+            if lid == "emodnet":
+                legend_entries.append({
+                    "layer_id": "emodnet",
+                    "label": "EMODnet Bathy",
+                    "color": [0, 100, 180],
+                    "shape": "rect",
+                })
+            elif lid == "wireframe":
+                wire_color = layer.get("getColor", [150, 150, 150])
+                legend_entries.append({
+                    "layer_id": "wireframe",
+                    "label": "Wireframe",
+                    "color": wire_color[:3],
+                    "shape": "line",
+                })
+            elif lid == "triangles":
+                legend_entries.append({
+                    "layer_id": "triangles",
+                    "label": actual_mode.replace("_", " ").title(),
+                    "color": [100, 160, 200],
+                    "shape": "rect",
+                })
+            elif lid.startswith("boundary_"):
+                btype_str = lid.split("_", 1)[1]
+                b_color = layer.get("getColor", [231, 76, 60])
+                legend_entries.append({
+                    "layer_id": lid,
+                    "label": f"Boundary {btype_str}",
+                    "color": b_color[:3],
+                    "shape": "line",
+                })
+            elif lid == "nodes":
+                legend_entries.append({
+                    "layer_id": "nodes",
+                    "label": "Nodes",
+                    "color": [255, 60, 60],
+                    "shape": "circle",
+                })
+
+        if legend_entries:
+            await _map.set_controls(session, [
+                deck_legend_control(
+                    legend_entries,
+                    position="bottom-right",
+                    title="Layers",
+                ),
+            ])
 
         # Set basemap style
         basemap_url = BASEMAPS.get(basemap_key, BASEMAPS["positron"])

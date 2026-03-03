@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from shyfem_ui.services.mesh_builder import (
+    _remove_ring_loops,
     compute_mesh_stats,
     estimate_element_count,
     export_grd,
@@ -116,9 +117,8 @@ def _make_simple_mesh() -> GrdFile:
     grd.nodes[2] = Node(id=2, node_type=0, x=10.0, y=0.0, depth=2.0)
     grd.nodes[3] = Node(id=3, node_type=0, x=10.0, y=10.0, depth=3.0)
     grd.nodes[4] = Node(id=4, node_type=0, x=0.0, y=10.0, depth=4.0)
-    # Triangles in .grd format: [3, n1, n2, n3]
-    grd.elements[1] = Element(id=1, elem_type=0, nodes=[3, 1, 2, 3])
-    grd.elements[2] = Element(id=2, elem_type=0, nodes=[3, 1, 3, 4])
+    grd.elements[1] = Element(id=1, elem_type=0, nodes=[1, 2, 3])
+    grd.elements[2] = Element(id=2, elem_type=0, nodes=[1, 3, 4])
     grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1])
     return grd
 
@@ -369,8 +369,6 @@ class TestTriangulate:
         # All element centroids should be outside the hole
         for elem in mesh.elements.values():
             nids = elem.nodes
-            if len(nids) == 4 and nids[0] == 3:
-                nids = nids[1:]
             coords = [(mesh.nodes[nid].x, mesh.nodes[nid].y) for nid in nids if nid in mesh.nodes]
             if len(coords) == 3:
                 cx = sum(c[0] for c in coords) / 3
@@ -1004,8 +1002,9 @@ class TestCuronianIntegration:
         """Douglas-Peucker reduction works across all 31 lines."""
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
         original_nodes = grd.num_nodes
+        # Tolerance in degrees (~0.005° ≈ 500m at this latitude)
         for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
         assert grd.num_nodes < original_nodes / 10  # significant reduction
         # Main coastline should still have meaningful detail
         main_line = max(grd.lines.values(), key=lambda l: len(l.nodes))
@@ -1015,8 +1014,8 @@ class TestCuronianIntegration:
         """Reduced boundary with holes triangulates cleanly."""
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
         for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
-        mesh = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         assert mesh.num_elements > 100
         assert mesh.num_nodes > 100
         stats = compute_mesh_stats(mesh)
@@ -1025,11 +1024,13 @@ class TestCuronianIntegration:
     def test_all_triangulation_methods(self):
         """Quality, conforming, and minimal triangulation all succeed."""
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        # Tolerance in degrees (~0.005° ≈ 500m)
         for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
 
         # Quality: area + angle constraints → most elements
-        quality = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+        # Area in sq-degrees (~0.001 sq-deg ≈ 10 km²)
+        quality = triangulate(grd, max_area=0.001, min_angle=20.0)
         assert quality.num_elements > 1000
         assert quality.num_nodes > 500
 
@@ -1048,27 +1049,36 @@ class TestCuronianIntegration:
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
         # Reduce first (5136 pts too many for smoothing)
         for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
         # Find the main coastline (largest line)
         main_lid = max(grd.lines, key=lambda lid: len(grd.lines[lid].nodes))
         smoothed = smooth_boundary(grd, line_id=main_lid, method="chaikin", iterations=1)
-        mesh = triangulate(smoothed, max_area=1000000.0, min_angle=20.0)
+        mesh = triangulate(smoothed, max_area=0.001, min_angle=20.0)
         assert mesh.num_elements > 100
 
     def test_load_isobath_contours(self):
-        """Load 435 isobath contours from GPKG with depth attribute."""
+        """Load 435 isobath contours from GPKG with depth attribute.
+
+        The source file is EPSG:3346 (LKS94 projected), so
+        load_bathymetry_contours must reproject to WGS84 automatically.
+        """
         data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
         assert data.shape[1] == 3  # x, y, depth
         assert len(data) > 100_000  # ~251k points
         assert data[:, 2].min() == pytest.approx(0.0)
         assert data[:, 2].max() >= 90.0  # up to 95m
+        # Verify CRS reprojection: X should be in WGS84 lon range, not projected
+        assert data[:, 0].min() > 19.0, "X should be WGS84 longitude (not projected)"
+        assert data[:, 0].max() < 22.0, "X should be WGS84 longitude (not projected)"
+        assert data[:, 1].min() > 54.0, "Y should be WGS84 latitude (not projected)"
+        assert data[:, 1].max() < 57.0, "Y should be WGS84 latitude (not projected)"
 
     def test_interpolate_isobaths_all_methods(self):
         """All scipy methods produce valid depths from Curonian isobaths."""
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
         for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
-        mesh = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
         # Subsample for speed (251k points is too many for test)
         sub = data[::10]
@@ -1084,8 +1094,8 @@ class TestCuronianIntegration:
         """Full pipeline: import -> reduce -> mesh -> bathy -> export -> reload."""
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
         for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=500.0)
-        mesh = triangulate(grd, max_area=1000000.0, min_angle=20.0)
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
         sub = data[::20]
         result = interpolate_bathymetry_scipy(
@@ -1096,3 +1106,102 @@ class TestCuronianIntegration:
         reloaded = GrdParser.parse_file(out)
         assert len(reloaded.nodes) == len(result.nodes)
         assert len(reloaded.elements) == len(result.elements)
+
+
+# ---------------------------------------------------------------------------
+# TestRemoveRingLoops
+# ---------------------------------------------------------------------------
+
+
+class TestRemoveRingLoops:
+    """Tests for _remove_ring_loops()."""
+
+    def test_no_loops(self):
+        """Ring without duplicates is unchanged."""
+        ring = [1, 2, 3, 4, 1]
+        assert _remove_ring_loops(ring) == [1, 2, 3, 4, 1]
+
+    def test_simple_lollipop(self):
+        """Non-consecutive duplicate creates a lollipop loop that is removed."""
+        # 1→2→3→4→2→5→1  has a loop 2→3→4→2
+        ring = [1, 2, 3, 4, 2, 5, 1]
+        result = _remove_ring_loops(ring)
+        assert result == [1, 2, 5, 1]
+
+    def test_consecutive_duplicates_kept(self):
+        """Consecutive duplicate is a self-loop of length 0 — removed."""
+        ring = [1, 2, 2, 3, 1]
+        result = _remove_ring_loops(ring)
+        assert result == [1, 2, 3, 1]
+
+    def test_multiple_loops(self):
+        """Multiple independent loops are all removed."""
+        # 1→2→3→2→4→5→4→6→1  has loops at 2 and 4
+        ring = [1, 2, 3, 2, 4, 5, 4, 6, 1]
+        result = _remove_ring_loops(ring)
+        assert result == [1, 2, 4, 6, 1]
+
+    def test_open_ring(self):
+        """Open ring (not closed) also handled correctly."""
+        ring = [1, 2, 3, 2, 4]
+        result = _remove_ring_loops(ring)
+        assert result == [1, 2, 4]
+
+    def test_empty_ring(self):
+        """Empty ring returns empty."""
+        assert _remove_ring_loops([]) == []
+
+    def test_single_node_closed(self):
+        """Single-node closed ring."""
+        assert _remove_ring_loops([1, 1]) == [1, 1]
+
+    def test_nested_loop(self):
+        """Nested loop: 1→2→3→4→3→2→5→1."""
+        ring = [1, 2, 3, 4, 3, 2, 5, 1]
+        result = _remove_ring_loops(ring)
+        # First pass: 3→4→3 removed → [1, 2, 3, 2, 5, 1]
+        # Second pass: 2→3→2 removed → [1, 2, 5, 1]
+        assert result == [1, 2, 5, 1]
+
+
+# ---------------------------------------------------------------------------
+# TestTriangulateElementFormat
+# ---------------------------------------------------------------------------
+
+
+class TestTriangulateElementFormat:
+    """Tests that triangulate() produces elements with correct node format."""
+
+    def test_elements_have_three_nodes(self):
+        """Regression: all elements must have exactly 3 nodes (no nvert prefix)."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=50.0)
+        for elem in mesh.elements.values():
+            assert len(elem.nodes) == 3, (
+                f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
+            )
+
+    def test_no_nvert_in_node_list(self):
+        """Regression: nvert value (3) must NOT appear as first node ID."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=10.0)
+        first_nodes = {elem.nodes[0] for elem in mesh.elements.values()}
+        # With multiple elements, the first node should vary
+        assert len(first_nodes) > 1, "All elements start with same node — nvert leak?"
+
+    def test_node_ids_are_valid_references(self):
+        """All element node IDs must reference existing nodes."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=10.0)
+        for elem in mesh.elements.values():
+            for nid in elem.nodes:
+                assert nid in mesh.nodes, f"Element {elem.id} references missing node {nid}"
+
+    def test_with_hole_elements_correct(self):
+        """Elements in domain with hole also have exactly 3 nodes."""
+        grd = _make_square_with_hole()
+        mesh = triangulate(grd, max_area=5.0)
+        for elem in mesh.elements.values():
+            assert len(elem.nodes) == 3, (
+                f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
+            )

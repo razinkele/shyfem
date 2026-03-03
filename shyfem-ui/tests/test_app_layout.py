@@ -13,7 +13,7 @@ class TestSidebarGroups:
         all_pages = []
         for group in SIDEBAR_GROUPS:
             all_pages.extend(item["label"] for item in group["items"])
-        assert len(all_pages) == 13
+        assert len(all_pages) == 14
 
     def test_group_names(self):
         names = [g["name"] for g in SIDEBAR_GROUPS]
