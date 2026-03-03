@@ -981,10 +981,41 @@ def mesh_builder_server(
                     grd, Path("bathy_temp.xyz"), work_dir, wrapper
                 )
             else:
-                result_grd = await asyncio.to_thread(
-                    interpolate_bathymetry_scipy,
-                    grd, data, method=method, use_boundary_zero=boundary_zero,
+                n_bathy = len(data)
+                n_nodes = len(grd.nodes)
+                # Phase 1: setup
+                progress_value.set(5)
+                progress_label.set(f"Preparing {n_bathy:,} bathymetry points…")
+                await asyncio.sleep(0)
+                # Phase 2: scipy model + evaluation in thread
+                progress_value.set(10)
+                progress_label.set(f"Running {method} on {n_nodes:,} nodes…")
+                await asyncio.sleep(0)
+                node_ids, depths = await asyncio.to_thread(
+                    _compute_depths_only, grd, data, method, boundary_zero,
                 )
+                # Phase 3: assign depths in async chunks for smooth progress
+                new_grd = GrdFile()
+                chunk = 500
+                for start in range(0, n_nodes, chunk):
+                    end = min(start + chunk, n_nodes)
+                    for i in range(start, end):
+                        nid = node_ids[i]
+                        node = grd.nodes[nid]
+                        new_grd.nodes[nid] = Node(
+                            id=nid, node_type=node.node_type,
+                            x=node.x, y=node.y,
+                            depth=float(depths[i]),
+                        )
+                    pct = min(99, 10 + int(end / n_nodes * 90))
+                    progress_value.set(pct)
+                    progress_label.set(
+                        f"Assigning depths… {end:,} / {n_nodes:,} nodes"
+                    )
+                    await asyncio.sleep(0)
+                new_grd.elements = dict(grd.elements)
+                new_grd.lines = dict(grd.lines)
+                result_grd = new_grd
             staged_grd.set(result_grd)
             preview_grd.set(result_grd)
             depths = [n.depth for n in result_grd.nodes.values() if n.depth is not None]
@@ -1007,6 +1038,8 @@ def mesh_builder_server(
             ui.notification_show(f"Error: {e}", type="error", duration=5)
         finally:
             busy_message.set("")
+            progress_label.set("")
+            progress_value.set(0)
 
     @render.ui
     def bathy_stats_display():
