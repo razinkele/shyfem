@@ -991,6 +991,140 @@ def mesh_builder_server(
             class_="table table-sm table-borderless mb-0",
         )
 
+    @render.ui
+    def bathy_post_panel():
+        """Renders comparison selector, depth adjustments, and Accept button.
+
+        Shown only after a successful interpolation (staged_grd is not None).
+        """
+        if staged_grd.get() is None:
+            return ui.div()
+
+        # --- Comparison selector (only when >=2 runs exist) ---
+        runs = comparison_runs.get()
+        comparison_ui = ui.div()
+        if len(runs) >= 2:
+            newest_label = next(reversed(runs))
+            comparison_ui = ui.div(
+                ui.hr(),
+                ui.h6("Compare Runs"),
+                ui.input_radio_buttons(
+                    "comparison_run",
+                    "",
+                    choices={k: k for k in runs},
+                    selected=newest_label,
+                    inline=False,
+                ),
+            )
+
+        # --- Depth adjustments ---
+        adjustments_ui = ui.div(
+            ui.hr(),
+            ui.h6("Depth Adjustments"),
+            ui.p(
+                "Leave blank to skip. Changes apply to the staged result.",
+                class_="text-muted small mb-2",
+            ),
+            ui.row(
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "adj_min_clamp",
+                        "Clamp min (m)",
+                        value=None,
+                        placeholder="e.g. -200",
+                    ),
+                ),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "adj_max_clamp",
+                        "Clamp max (m)",
+                        value=None,
+                        placeholder="e.g. 0",
+                    ),
+                ),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "adj_fill_value",
+                        "Fill unmapped (m)",
+                        value=None,
+                        placeholder="e.g. -1",
+                    ),
+                ),
+            ),
+            ui.input_action_button(
+                "apply_adjustments_btn",
+                "Apply Adjustments",
+                class_="btn-outline-secondary btn-sm mt-1 mb-2 w-100",
+            ),
+        )
+
+        # --- Accept button ---
+        accept_ui = ui.div(
+            ui.hr(),
+            ui.input_action_button(
+                "accept_depths_btn",
+                "Accept Depths → Export",
+                class_="btn-success w-100 mt-1",
+            ),
+        )
+
+        return ui.div(comparison_ui, adjustments_ui, accept_ui)
+
+    @reactive.effect
+    @reactive.event(input.comparison_run)
+    def _on_comparison_run():
+        """Switch staged_grd and preview when user selects a different run."""
+        label = input.comparison_run()
+        runs = comparison_runs.get()
+        if label in runs:
+            staged_grd.set(runs[label])
+            preview_grd.set(runs[label])
+
+    @reactive.effect
+    @reactive.event(input.apply_adjustments_btn)
+    def _on_apply_adjustments():
+        """Apply clamp/fill adjustments to staged_grd."""
+        grd = staged_grd.get()
+        if grd is None:
+            return
+        try:
+            min_clamp = input.adj_min_clamp()
+            max_clamp = input.adj_max_clamp()
+            fill_val = input.adj_fill_value()
+        except Exception:
+            min_clamp = max_clamp = fill_val = None
+        if min_clamp is None and max_clamp is None and fill_val is None:
+            ui.notification_show("No adjustments specified.", type="warning", duration=3)
+            return
+        adjusted = adjust_depths(grd, min_clamp=min_clamp, max_clamp=max_clamp, fill_value=fill_val)
+        staged_grd.set(adjusted)
+        preview_grd.set(adjusted)
+        parts = []
+        if min_clamp is not None:
+            parts.append(f"min clamp {min_clamp}")
+        if max_clamp is not None:
+            parts.append(f"max clamp {max_clamp}")
+        if fill_val is not None:
+            parts.append(f"fill {fill_val}")
+        _log(f"Depths adjusted: {', '.join(parts)}")
+        ui.notification_show("Adjustments applied", type="message", duration=3)
+
+    @reactive.effect
+    @reactive.event(input.accept_depths_btn)
+    def _on_accept_depths():
+        """Commit staged_grd to final_grd and navigate to Export step."""
+        grd = staged_grd.get()
+        if grd is None:
+            return
+        final_grd.set(grd)
+        depths = [n.depth for n in grd.nodes.values() if n.depth is not None]
+        if depths:
+            _log(f"Depths accepted: {min(depths):.2f} to {max(depths):.2f}")
+        ui.update_radio_buttons("wizard_step", selected="export")
+
     # --- Step 5: Export ---
 
     @render.ui
