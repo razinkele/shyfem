@@ -350,16 +350,23 @@ class AuthService:
     # Bootstrap
     # ------------------------------------------------------------------
 
-    def ensure_user(self, username: str, password: str, email: str | None = None) -> dict:
+    def ensure_user(
+        self,
+        username: str,
+        password: str,
+        email: str | None = None,
+        role: str = "user",
+    ) -> dict:
         """Ensure a default (non-admin) user exists.
 
         If a user with the given username already exists, returns it unchanged.
-        Otherwise creates a new user with role "user".
+        Otherwise creates a new user with the specified role.
 
         Args:
             username: Login name.
             password: Plaintext password.
             email: Email address. Required when creating a new non-tutorial user.
+            role: Role to assign when creating a new user (default "user").
 
         Returns:
             Dict with user fields.
@@ -375,7 +382,7 @@ class AuthService:
         return self.create_user(
             username=username,
             password=password,
-            role="user",
+            role=role,
             email=email,
         )
 

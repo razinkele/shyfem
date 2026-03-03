@@ -84,6 +84,35 @@ SIDEBAR_GROUPS = [
 ]
 
 
+# Pages accessible to tutorial (read-only demo) accounts
+_TUTORIAL_ALLOWED_PAGES = {"Tutorial"}
+
+
+def _filter_sidebar_for_role(groups: list[dict], role: str) -> list[dict]:
+    """Return a filtered copy of SIDEBAR_GROUPS for the given user role.
+
+    - "admin"    — all pages
+    - "user"     — all pages except Admin
+    - "tutorial" — Tutorial page only
+    """
+    _hidden = {
+        "user": {"Admin"},
+        "tutorial": {
+            item["value"]
+            for group in groups
+            for item in group["items"]
+            if item["value"] not in _TUTORIAL_ALLOWED_PAGES
+        },
+    }.get(role, set())
+
+    filtered = []
+    for group in groups:
+        items = [i for i in group["items"] if i["value"] not in _hidden]
+        if items:
+            filtered.append({**group, "items": items})
+    return filtered
+
+
 def _check_db_health() -> float:
     """Probe database with SELECT 1, return response time in ms."""
     from sqlalchemy import text
@@ -223,7 +252,7 @@ def create_app(config: Config | None = None) -> App:
         # Bootstrap default tutorial user + shared project
         if admin and config.default_user_password:
             tutorial_user = auth_service.ensure_user(
-                config.default_user_username, config.default_user_password
+                config.default_user_username, config.default_user_password, role="tutorial"
             )
             _bootstrap_tutorial_project(admin["id"], tutorial_user["id"], config)
 
@@ -622,6 +651,8 @@ def _build_sidebar_nav() -> ui.Tag:
             extra_attrs: dict = {}
             if item["value"] in _ADMIN_ONLY_ITEMS:
                 extra_attrs["data_admin_only"] = "1"
+            if item["value"] not in {"Tutorial"}:
+                extra_attrs["data_hidden_for_tutorial"] = "1"
             nav_items.append(
                 ui.div(
                     ui.tags.i(class_=f"bi {item['icon']} sf-nav-icon"),
@@ -728,6 +759,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (!hasVisible) header.style.display = 'none';
       });
+      // Hide non-Tutorial nav items for tutorial-role users
+      if (data.role === 'tutorial') {
+        document.querySelectorAll('.sf-nav-item[data-hidden-for-tutorial]').forEach(function(el) {
+          el.style.display = 'none';
+        });
+      }
       // Switch default landing from Dashboard to Tutorial
       var dashNav = document.querySelector('.sf-nav-item[data-nav="Dashboard"]');
       if (dashNav) dashNav.classList.remove('active');

@@ -541,6 +541,15 @@ def run_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_job():
+        # Tutorial accounts are read-only
+        if _current_user and _current_user.get("role") == "tutorial":
+            ui.notification_show(
+                "Tutorial accounts are read-only. Contact your admin for a full account.",
+                type="warning",
+                duration=6,
+            )
+            return
+
         # Access check: require editor role on active project
         if active_project is not None:
             _proj = active_project.get()
