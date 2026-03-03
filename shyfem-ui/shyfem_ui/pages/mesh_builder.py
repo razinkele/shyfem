@@ -762,8 +762,12 @@ def mesh_builder_server(
             eff_angle = 0.0
 
         _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
-        busy_message.set("Generating mesh — this may take a moment for large boundaries...")
-        await asyncio.sleep(0)  # yield so Shiny flushes the spinner to the browser
+        busy_message.set("Generating mesh…")
+        estimate = estimate_element_count(grd, eff_area) if eff_area else 0
+        est_label = f" (~{estimate:,} elements estimated)" if estimate else ""
+        progress_label.set(f"Generating mesh{est_label}…")
+        progress_value.set(-1)
+        await asyncio.sleep(0)  # yield so Shiny flushes the bar to the browser
         try:
             new_mesh = await asyncio.to_thread(
                 triangulate, grd, max_area=eff_area, min_angle=eff_angle
@@ -781,6 +785,8 @@ def mesh_builder_server(
             ui.notification_show(f"Error: {e}", type="error", duration=5)
         finally:
             busy_message.set("")
+            progress_label.set("")
+            progress_value.set(0)
 
     @render.ui
     def mesh_stats_display():
