@@ -138,16 +138,26 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
     """Admin panel server logic."""
     from shyfem_ui.middleware.session_auth import get_current_user
 
-    current_user = get_current_user()
-    is_admin = _check_admin_access(current_user)
+    def _is_admin() -> bool:
+        """Check admin access reactively.
+
+        Prefers input.current_user_role() (propagated from JS via Shiny.setInputValue)
+        because the Shiny WebSocket context doesn't carry the browser session cookie,
+        making get_current_user() always return None behind Shiny Server.
+        Falls back to the HTTP-context value as a secondary check.
+        """
+        try:
+            return input.current_user_role() == "admin"
+        except Exception:
+            return _check_admin_access(get_current_user())
 
     # Reactive value holding user list (always defined so render functions can reference it)
     users_data: reactive.Value[list[dict]] = reactive.value([])
 
-    # Load users on init (only meaningful when admin)
+    # Load users whenever admin status becomes available
     @reactive.effect
     def _load_users():
-        if is_admin:
+        if _is_admin():
             users_data.set(auth_service.list_users())
 
     def _refresh():
@@ -159,7 +169,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
 
     @render.ui
     def user_summary():
-        if not is_admin:
+        if not _is_admin():
             return ui.div(
                 ui.h5("Access Denied", class_="text-danger"),
                 ui.p("You must be an admin to view this page."),
@@ -181,7 +191,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
 
     @render.ui
     def user_table():
-        if not is_admin:
+        if not _is_admin():
             return ui.div()
         users = users_data.get()
         if not users:
