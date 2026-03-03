@@ -166,7 +166,6 @@ def visualize_ui():
                         "grid": "Grid File (.grd/.bas)",
                         "timeseries": "Time Series (.ts)",
                         "netcdf": "NetCDF (.nc)",
-                        "shy": "SHYFEM Output (.shy)",
                     },
                 ),
                 ui.input_text(
