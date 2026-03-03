@@ -51,18 +51,23 @@ class LgrService:
 
         Raises:
             FileNotFoundError: If lgr_path does not exist.
-            RuntimeError: If lgrelab exits with a non-zero return code.
+            RuntimeError: If lgrelab is not found or exits with a non-zero return code.
         """
         if not lgr_path.exists():
             raise FileNotFoundError(f"LGR file not found: {lgr_path}")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp_path = Path(tmpdir)
-            result = await self._wrapper.run_command(
-                "lgrelab",
-                ["-lgmean", str(lgr_path.resolve())],
-                working_dir=tmp_path,
-            )
+            try:
+                result = await self._wrapper.run_command(
+                    "lgrelab",
+                    ["-lgmean", str(lgr_path.resolve())],
+                    working_dir=tmp_path,
+                )
+            except FileNotFoundError:
+                raise RuntimeError(
+                    "lgrelab executable not found — ensure SHYFEM bin directory is configured"
+                )
             if not result.success:
                 raise RuntimeError(
                     f"lgrelab failed (code {result.return_code}): {result.stderr}"

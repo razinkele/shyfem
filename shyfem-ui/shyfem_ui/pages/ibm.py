@@ -233,7 +233,7 @@ def ibm_server(
         for track in filtered:
             if not track.path:
                 continue
-            color = _TRACK_COLORS[track.type_id % len(_TRACK_COLORS)]
+            color = _TRACK_COLORS[(track.type_id - 1) % len(_TRACK_COLORS)]
             steps = len(track.path)
             if show_trk:
                 layers.append(path_layer(
@@ -253,8 +253,13 @@ def ibm_server(
                          "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}"})
 
         if filtered:
-            legend_entries.append({"layer_id": "track_1", "label": "Tracks",
-                                    "color": _TRACK_COLORS[0][:3], "shape": "line"})
+            first_id = filtered[0].type_id
+            legend_entries.append({
+                "layer_id": f"track_{first_id}",
+                "label": "Tracks",
+                "color": _TRACK_COLORS[(first_id - 1) % len(_TRACK_COLORS)][:3],
+                "shape": "line",
+            })
 
         if show_starts and starts:
             layers.append(scatterplot_layer(
