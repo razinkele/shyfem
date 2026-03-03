@@ -51,3 +51,10 @@ def test_home_dir_column_in_source():
     """Admin page source references home_dir for the user table."""
     source = inspect.getsource(admin)
     assert "home_dir" in source
+
+
+def test_validate_create_user_rejects_path_traversal():
+    """_validate_create_user_form rejects usernames with path traversal characters."""
+    from shyfem_ui.pages.admin import _validate_create_user_form
+    errors = _validate_create_user_form("../evil", "pass1234", "user", email="x@x.com")
+    assert any("username" in e.lower() for e in errors)

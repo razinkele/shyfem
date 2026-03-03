@@ -5,6 +5,7 @@ resetting passwords, toggling active status, and promoting/demoting roles.
 """
 
 import logging
+import re
 
 from shiny import module, reactive, render, ui
 
@@ -55,6 +56,9 @@ def _validate_create_user_form(
     errors: list[str] = []
     if not username or not username.strip():
         errors.append("Username is required")
+    if username and username.strip():
+        if not re.match(r'^[a-zA-Z0-9._-]{1,64}$', username.strip()):
+            errors.append("Username may only contain letters, digits, dots, hyphens, and underscores (1-64 characters)")
     if not password:
         errors.append("Password is required")
     elif len(password) < 4:
@@ -306,7 +310,12 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         @reactive.event(input[f"toggle_role_{user_id}"])
         def _toggle_role():
             try:
-                new_role = "user" if role == "admin" else "admin"
+                if role == "admin":
+                    new_role = "user"
+                elif role == "user":
+                    new_role = "admin"
+                else:  # tutorial or unknown
+                    new_role = "user"  # promote tutorial to user first
                 auth_service.update_user(user_id, role=new_role)
                 action = "demoted to user" if new_role == "user" else "promoted to admin"
                 ui.notification_show(f"User '{username}' {action}", type="message")

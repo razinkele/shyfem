@@ -166,6 +166,7 @@ class JobQueueFactory:
         shyfem_dir: Path | None = None,
         max_workers: int = 4,
         redis_url: str | None = None,
+        notification_service=None,
     ) -> JobQueue:
         """Create a job queue instance.
 
@@ -174,11 +175,16 @@ class JobQueueFactory:
             shyfem_dir: Path to SHYFEM installation
             max_workers: Max concurrent jobs (local mode)
             redis_url: Redis URL (celery mode)
+            notification_service: Optional NotificationService for job completion emails
         """
         if mode == "local":
             from shyfem_ui.services.job_local import LocalJobQueue
 
-            return LocalJobQueue(shyfem_dir=shyfem_dir, max_workers=max_workers)
+            return LocalJobQueue(
+                shyfem_dir=shyfem_dir,
+                max_workers=max_workers,
+                notification_service=notification_service,
+            )
         elif mode == "celery":
             from shyfem_ui.services.job_celery import CeleryJobQueue
 

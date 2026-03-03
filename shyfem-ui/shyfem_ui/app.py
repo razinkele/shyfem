@@ -37,7 +37,7 @@ from shiny_deckgl import head_includes as deckgl_head_includes
 
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
-from shyfem_ui.services.notification_service import JobTransitionDetector
+from shyfem_ui.services.notification_service import JobTransitionDetector, NotificationService as EmailNotificationService
 
 logger = logging.getLogger(__name__)
 
@@ -258,11 +258,13 @@ def create_app(config: Config | None = None) -> App:
 
     # Initialize job queue
     queue_mode = "celery" if config.use_celery else "local"
+    notification_svc = EmailNotificationService(config)
     job_queue = JobQueueFactory.create(
         mode=queue_mode,
         shyfem_dir=config.shyfem_dir,
         max_workers=config.max_workers,
         redis_url=config.redis_url if config.use_celery else None,
+        notification_service=notification_svc,
     )
 
     # Build UI
