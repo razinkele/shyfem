@@ -499,6 +499,26 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "gotmpa": _p("GOTM turbulence parameters file", "string", "", "", ""),
         # System
         "basnam": _p("Grid/basin file name", "string", "", "", ""),
+        # Ecology
+        "bioin": _p("Initial pelagic ecology state file", "string", "", "", ""),
+        "biosin": _p("Initial sediment ecology state file", "string", "", "", ""),
+        "biocon": _p("Biogeochemical constants file", "string", "", "", ""),
+        "biolight": _p("Light extinction data file", "string", "", "", ""),
+        "mercin": _p("Initial mercury concentrations file", "string", "", "", ""),
+        "bfmini": _p("Initial BFM state file", "string", "", "", ""),
+        # Sediment
+        "sedp": _p("Spatially varying sediment distribution file", "string", "", "", ""),
+        "sedt": _p("Spatially varying critical erosion stress file", "string", "", "", ""),
+        "sedcon": _p("Sediment model constants file", "string", "", "", ""),
+        # Lagrangian / Nudging
+        "lgrlin": _p("Lagrangian release area lines file", "string", "", "", ""),
+        "lgrtrj": _p("Drifter trajectory file", "string", "", "", ""),
+        "statcnn": _p("Connectivity station coordinates file", "string", "", "", ""),
+        "surfvel": _p("Surface velocity nudging file", "string", "", "", ""),
+        # Scalar boundary files
+        "saltn": _p("Boundary salinity time series file", "string", "", "", ""),
+        "tempn": _p("Boundary temperature time series file", "string", "", "", ""),
+        "conzn": _p("Boundary concentration time series file", "string", "", "", ""),
     },
     "bound": {
         "kbound": _p("Boundary node/element numbers", "int_list", None, "", ""),

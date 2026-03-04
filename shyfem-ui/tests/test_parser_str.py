@@ -486,3 +486,23 @@ class TestCommonParams:
         """ibtyp description includes radiation boundary type."""
         desc = COMMON_PARAMS["bound"]["ibtyp"][4]
         assert "radiation" in desc.lower() or "31" in desc
+
+    def test_common_params_name_has_ecology_files(self):
+        """$name section has ecology input file entries."""
+        for f in ("bioin", "biosin", "biocon", "biolight", "mercin", "bfmini"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_name_has_sediment_files(self):
+        """$name section has sediment input file entries."""
+        for f in ("sedp", "sedt", "sedcon"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_name_has_lagrangian_files(self):
+        """$name section has lagrangian input file entries."""
+        for f in ("lgrlin", "lgrtrj", "statcnn", "surfvel"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_name_has_scalar_boundary_files(self):
+        """$name section has scalar boundary file entries."""
+        for f in ("saltn", "tempn", "conzn"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
