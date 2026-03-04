@@ -179,6 +179,8 @@ def run_ui():
                     ui.hr(),
                     # MPI + Solver options (rendered server-side for module compatibility)
                     ui.output_ui("shyfem_options"),
+                    # Restart options (shyfem only)
+                    ui.output_ui("restart_section"),
                     # Job dependency (optional)
                     ui.hr(),
                     ui.h6("Dependencies (optional)"),
@@ -464,6 +466,57 @@ def run_server(
 
         return ui.div(*parts) if parts else ui.div()
 
+    @render.ui
+    def restart_section():
+        """Render restart dropdown only when shyfem is selected."""
+        tool = input.tool_select()
+        if tool != "shyfem":
+            return ui.span()
+
+        # Build choices from completed shyfem jobs that have .rst files
+        choices: dict[str, str] = {"": "Fresh start (no restart)"}
+        jobs = all_jobs_data.get()
+        for job in jobs:
+            if job.tool_name != "shyfem" or job.status != JobStatus.COMPLETED:
+                continue
+            work_dir = Path(job.working_dir)
+            rst_files = sorted(work_dir.glob("*.rst"))
+            if rst_files:
+                label = f"{job.name} ({rst_files[-1].name})"
+                choices[str(rst_files[-1])] = label
+
+        return ui.div(
+            ui.hr(),
+            ui.h6("Restart"),
+            ui.input_select(
+                "restart_from",
+                "Continue from job",
+                choices=choices,
+            ),
+            ui.output_ui("restart_info"),
+        )
+
+    @render.ui
+    def restart_info():
+        """Show selected restart file path."""
+        try:
+            rst = input.restart_from()
+        except Exception:
+            return ui.span()
+        if not rst:
+            return ui.span()
+        rst_path = Path(rst)
+        if rst_path.exists():
+            size_kb = rst_path.stat().st_size / 1024
+            return ui.p(
+                f"Restart file: {rst_path.name} ({size_kb:.0f} KB)",
+                class_="text-muted small mb-0",
+            )
+        return ui.p(
+            f"Warning: restart file not found: {rst}",
+            class_="text-warning small mb-0",
+        )
+
     # State
     active_jobs_data = reactive.value([])
     all_jobs_data = reactive.value([])
@@ -611,6 +664,15 @@ def run_server(
         solver = input.solver_select() if tool == "shyfem" else "sparskit"
         if solver == "petsc":
             metadata["solver"] = "petsc"
+
+        # Restart file selection
+        if tool == "shyfem":
+            try:
+                restart_from = input.restart_from()
+                if restart_from:
+                    metadata["restart_file"] = restart_from
+            except Exception:
+                pass
 
         # Check dependency
         depends_on = input.depends_on()
