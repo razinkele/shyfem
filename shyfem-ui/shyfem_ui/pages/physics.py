@@ -206,6 +206,60 @@ def physics_server(input, output, session, config: Config, active_project=None):
         else:
             ui.notification_show("File not found or not .str", type="warning")
 
+    # Map of input IDs that differ from the STR param name.
+    # key = input_id used in the UI, value = (section, param_name).
+    _INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
+        "ibarcl_assim": ("para", "ibarcl"),
+        "idtcon_out": ("para", "idtcon"),
+        "icon_av_out": ("para", "icon_av"),
+    }
+
+    def _collect_panel_values() -> None:
+        """Read all panel input values and update str_data before saving."""
+        sf = str_data.get()
+
+        for panel_id, panel in PHYSICS_PANELS.items():
+            # --- params explicitly listed in the panel definition ---
+            for param, section in panel["params"].items():
+                _read_input_and_set(sf, param, section, param)
+
+            # --- params from a dedicated section (sedtr, lagrg, nduge) ---
+            dedicated = panel.get("section")
+            if dedicated and dedicated in COMMON_PARAMS:
+                for param in COMMON_PARAMS[dedicated]:
+                    if param not in panel["params"]:
+                        _read_input_and_set(sf, param, dedicated, param)
+
+        # --- handle remapped input IDs (duplicates across panels) ---
+        for input_id, (section, param) in _INPUT_ID_REMAP.items():
+            _read_input_and_set(sf, input_id, section, param)
+
+    def _read_input_and_set(
+        sf: StrFile, input_id: str, section: str, param: str,
+    ) -> None:
+        """Try reading a single input value and write it into *sf*."""
+        try:
+            raw = input[input_id]()
+        except Exception:
+            return  # input not yet rendered
+
+        if raw is None:
+            return
+
+        raw_str = str(raw).strip()
+        if not raw_str:
+            return
+
+        try:
+            if "." in raw_str or "e" in raw_str.lower():
+                value: object = float(raw_str)
+            else:
+                value = int(raw_str)
+        except ValueError:
+            value = raw_str
+
+        sf.set_param(section, param, value)
+
     @reactive.Effect
     @reactive.event(input.save_btn)
     def save_file():
@@ -214,6 +268,7 @@ def physics_server(input, output, session, config: Config, active_project=None):
             ui.notification_show("No file path specified", type="warning")
             return
         try:
+            _collect_panel_values()
             StrParser.save(str_data.get(), Path(path_str))
             ui.notification_show(f"Saved to {path_str}", type="message", duration=3)
         except Exception as e:
