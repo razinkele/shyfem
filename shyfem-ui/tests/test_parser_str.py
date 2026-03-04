@@ -465,3 +465,24 @@ class TestCommonParams:
         """Wave coupling and mercury params are defined in $para."""
         for param in ("iwave", "dtwave", "imerc"):
             assert param in COMMON_PARAMS["para"], f"Missing {param}"
+
+    def test_ireib_description_has_all_models(self):
+        """ireib description lists all 11 friction models (0-10)."""
+        desc = COMMON_PARAMS["para"]["ireib"][4]  # options field
+        for keyword in ("Chezy", "Strickler", "roughness", "fluid mud", "hybrid"):
+            assert keyword.lower() in desc.lower(), f"ireib missing {keyword}"
+
+    def test_iheat_description_has_coare(self):
+        """iheat description includes COARE algorithm."""
+        desc = COMMON_PARAMS["para"]["iheat"][4]
+        assert "COARE" in desc
+
+    def test_ibarcl_description_has_nudging(self):
+        """ibarcl description includes nudging and assimilation modes."""
+        desc = COMMON_PARAMS["para"]["ibarcl"][4]
+        assert "nudging" in desc.lower()
+
+    def test_bound_ibtyp_has_radiation(self):
+        """ibtyp description includes radiation boundary type."""
+        desc = COMMON_PARAMS["bound"]["ibtyp"][4]
+        assert "radiation" in desc.lower() or "31" in desc

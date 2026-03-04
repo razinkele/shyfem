@@ -369,7 +369,12 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "hmin": _p("Minimum basin depth", "float", -99999, "m", ""),
         "hmax": _p("Maximum basin depth", "float", 99999, "m", ""),
         # --- Bottom friction ---
-        "ireib": _p("Bottom friction type", "int", 0, "", "0=none, 5=quadratic/Manning, 10=linear"),
+        "ireib": _p(
+            "Bottom friction type", "int", 0, "",
+            "0=none, 1=Chezy law, 2=Strickler, 3=Chezy coeff, 4=linear, "
+            "5=quadratic drag, 6=roughness z0, 7=Strickler+drag, "
+            "8=sediment z0, 9=fluid mud, 10=hybrid quad-linear",
+        ),
         "czdef": _p("Friction coefficient", "float", 0.0, "", "depends on ireib"),
         "iczv": _p("Friction coefficient type flag", "int", 1, "", "0/1"),
         # --- Wind ---
@@ -380,11 +385,9 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "rfact": _p("Wind stress scaling factor", "float", 1.0, "", ">0"),
         # --- Heat flux ---
         "iheat": _p(
-            "Heat flux algorithm",
-            "int",
-            1,
-            "",
-            "1=AREG,2=POM,3=Gill,4=Dejak,5=GOTM,6=COARE,7=direct,8=MFS",
+            "Heat flux algorithm", "int", 1, "",
+            "0=off, 1=AREG, 2=POM bulk, 3=Gill, 4=Dejak, 5=GOTM, "
+            "6=COARE 3.0, 7=read from file, 8=MFS bulk",
         ),
         "ihtype": _p("Water vapor input type", "int", 1, "", "1=RH%, 2=Tw, 3=Td, 4=q"),
         "hdecay": _p("Radiation penetration depth", "float", 0.0, "m", "0=no penetration"),
@@ -424,7 +427,8 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "itvdv": _p("Vertical advection scheme for scalars", "int", 0, "", "0=upwind, 1=TVD"),
         # --- Temperature / Salinity ---
         "ibarcl": _p(
-            "Baroclinic mode", "int", 0, "", "0=off,1=full,2=diagnostic,3=passive,4=nudging"
+            "Baroclinic mode", "int", 0, "",
+            "0=off, 1=diagnostic, 2=T/S diagnostic, 3=prognostic, 4=nudging, 5=assimilation",
         ),
         "itemp": _p("Compute temperature", "int", 1, "", "0/1"),
         "isalt": _p("Compute salinity", "int", 1, "", "0/1"),
@@ -498,7 +502,11 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
     },
     "bound": {
         "kbound": _p("Boundary node/element numbers", "int_list", None, "", ""),
-        "ibtyp": _p("Boundary type", "int", 1, "", "1=elevation,2=velocity,3=discharge"),
+        "ibtyp": _p(
+            "Boundary type", "int", 1, "",
+            "-1=closed, 0=off, 1=water level, 2=discharge, 3=volume inlet, "
+            "4=momentum, 5=fixed scalar, 31=radiation/zero-gradient",
+        ),
         "boundn": _p("Boundary time series file", "string", "", "", ""),
         "intpol": _p("Interpolation method", "int", 1, "", "1=linear, 2=spline"),
         "zfact": _p("Scaling factor for boundary values", "float", 1.0, "", ""),
