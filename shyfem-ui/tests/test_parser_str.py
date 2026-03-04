@@ -506,3 +506,32 @@ class TestCommonParams:
         """$name section has scalar boundary file entries."""
         for f in ("saltn", "tempn", "conzn"):
             assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_has_sedtr_section(self):
+        """COMMON_PARAMS has $sedtr section with key params."""
+        assert "sedtr" in COMMON_PARAMS
+        for p in ("isedi", "sedgrs", "percin", "tauin", "sedhpar"):
+            assert p in COMMON_PARAMS["sedtr"], f"Missing {p} in $sedtr"
+
+    def test_common_params_has_lagrg_section(self):
+        """COMMON_PARAMS has $lagrg section with key params."""
+        assert "lagrg" in COMMON_PARAMS
+        for p in ("ilagr", "nbdy", "nbdymax", "ioil", "ilarv", "lbeach", "ldecay"):
+            assert p in COMMON_PARAMS["lagrg"], f"Missing {p} in $lagrg"
+
+    def test_common_params_has_connec_section(self):
+        """COMMON_PARAMS has $connec section."""
+        assert "connec" in COMMON_PARAMS
+        for p in ("icnn", "radcnn", "ppscnn", "pldcnn"):
+            assert p in COMMON_PARAMS["connec"], f"Missing {p} in $connec"
+
+    def test_common_params_has_bfmsc_section(self):
+        """COMMON_PARAMS has $bfmsc section."""
+        assert "bfmsc" in COMMON_PARAMS
+        assert "ibfm" in COMMON_PARAMS["bfmsc"]
+
+    def test_common_params_has_nduge_section(self):
+        """COMMON_PARAMS has $nduge data assimilation section."""
+        assert "nduge" in COMMON_PARAMS
+        for p in ("nvars", "tramp", "ttau", "sigma"):
+            assert p in COMMON_PARAMS["nduge"], f"Missing {p} in $nduge"
