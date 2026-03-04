@@ -1,21 +1,19 @@
 """Main SHYFEM UI Shiny application."""
 
 import argparse
-import base64
-import hashlib
-import hmac
-import ipaddress
-import json
 import logging
 import shutil
 import time
-from collections import defaultdict
 from pathlib import Path
 
 from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
+from shyfem_ui.middleware.basic_auth import BasicAuthMiddleware
+from shyfem_ui.middleware.cache_headers import CacheHeaderMiddleware
+from shyfem_ui.middleware.health_check import HealthCheckMiddleware
+from shyfem_ui.middleware.rate_limit import RateLimitMiddleware, get_client_ip
 from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current_user
 from shyfem_ui.pages import (
     admin,
@@ -27,13 +25,17 @@ from shyfem_ui.pages import (
     ibm,
     mesh_builder,
     partitioning,
+    physics,
     postprocess,
     run,
     simulation,
     tutorial,
     visualize,
 )
-from shiny_deckgl import head_includes as deckgl_head_includes
+try:
+    from shiny_deckgl import head_includes as deckgl_head_includes
+except ImportError:
+    deckgl_head_includes = None
 
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
@@ -55,6 +57,7 @@ SIDEBAR_GROUPS = [
             {"label": "Mesh Builder", "icon": "bi-pencil-square", "value": "Mesh Builder"},
             {"label": "Grid Prep", "icon": "bi-grid-3x3", "value": "Grid Prep"},
             {"label": "Partitioning", "icon": "bi-diagram-3", "value": "Partitioning"},
+            {"label": "Physics Config", "icon": "bi-cpu", "value": "Physics"},
         ],
     },
     {
@@ -315,327 +318,7 @@ def create_app(config: Config | None = None) -> App:
     return app
 
 
-class BasicAuthMiddleware:
-    """ASGI middleware that enforces HTTP Basic Authentication."""
-
-    REALM = "SHYFEM Workbench"
-
-    def __init__(self, app, username: str, password: str):
-        self.app = app
-        self.username = username
-        # Store a hash so the plaintext password isn't kept in memory
-        self._password_hash = hashlib.sha256(password.encode()).digest()
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] not in ("http", "websocket"):
-            return await self.app(scope, receive, send)
-
-        # Extract Authorization header
-        headers = dict(scope.get("headers", []))
-        auth_header = headers.get(b"authorization", b"").decode()
-
-        if self._check_credentials(auth_header):
-            return await self.app(scope, receive, send)
-
-        # Return 401 Unauthorized
-        if scope["type"] == "websocket":
-            # WebSocket connections can't send 401; just close
-            await send({"type": "websocket.close", "code": 4001})
-            return
-
-        response_body = b"Authentication required"
-        await send(
-            {
-                "type": "http.response.start",
-                "status": 401,
-                "headers": [
-                    [b"www-authenticate", f'Basic realm="{self.REALM}"'.encode()],
-                    [b"content-type", b"text/plain"],
-                    [b"content-length", str(len(response_body)).encode()],
-                ],
-            }
-        )
-        await send(
-            {
-                "type": "http.response.body",
-                "body": response_body,
-            }
-        )
-
-    def _check_credentials(self, auth_header: str) -> bool:
-        if not auth_header.startswith("Basic "):
-            return False
-        try:
-            decoded = base64.b64decode(auth_header[6:]).decode()
-            username, password = decoded.split(":", 1)
-        except Exception:
-            return False
-
-        password_hash = hashlib.sha256(password.encode()).digest()
-        return hmac.compare_digest(
-            username.encode(), self.username.encode()
-        ) and hmac.compare_digest(password_hash, self._password_hash)
-
-
-def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
-    """Extract real client IP, respecting trusted proxy X-Forwarded-For.
-
-    Uses the rightmost-untrusted algorithm: walk X-Forwarded-For from right
-    to left, skipping IPs that match a trusted CIDR, and return the first
-    untrusted IP. If all are trusted, return the leftmost.
-
-    Args:
-        scope: ASGI scope dict (needs 'client' and 'headers').
-        trusted_proxies: List of CIDR strings (e.g., ["127.0.0.0/8"]).
-
-    Returns:
-        Client IP string.
-    """
-    client = scope.get("client")
-    raw_ip = client[0] if client else "unknown"
-
-    if not trusted_proxies:
-        return raw_ip
-
-    # Parse trusted networks
-    try:
-        networks = [ipaddress.ip_network(cidr, strict=False) for cidr in trusted_proxies]
-    except ValueError:
-        return raw_ip
-
-    # Check if the direct client is a trusted proxy
-    try:
-        client_addr = ipaddress.ip_address(raw_ip)
-    except ValueError:
-        return raw_ip
-
-    if not any(client_addr in net for net in networks):
-        return raw_ip
-
-    # Client is trusted — parse X-Forwarded-For
-    xff = None
-    for header_name, header_value in scope.get("headers", []):
-        if header_name == b"x-forwarded-for":
-            xff = header_value.decode("latin-1")
-            break
-
-    if not xff:
-        return raw_ip
-
-    # Walk right-to-left, find rightmost non-trusted IP
-    ips = [ip.strip() for ip in xff.split(",") if ip.strip()]
-    if not ips:
-        return raw_ip
-
-    for ip_str in reversed(ips):
-        try:
-            addr = ipaddress.ip_address(ip_str)
-            if not any(addr in net for net in networks):
-                return ip_str
-        except ValueError:
-            continue
-
-    # All trusted — return leftmost
-    return ips[0]
-
-
-class RateLimitMiddleware:
-    """ASGI middleware that enforces per-client request rate limits."""
-
-    def __init__(
-        self,
-        app,
-        rpm: int = 120,
-        trusted_proxies: list[str] | None = None,
-        max_clients: int = 10000,
-    ):
-        self.app = app
-        self.rpm = rpm
-        self.trusted_proxies = trusted_proxies or []
-        self._window = 60.0  # 1 minute sliding window
-        self._requests: dict[str, list[float]] = defaultdict(list)
-        self._max_clients = max_clients
-
-    def _prune_clients(self, now: float):
-        """Evict stale client entries when dict exceeds max_clients."""
-        if len(self._requests) <= self._max_clients:
-            return
-        cutoff = now - self._window
-        # First pass: remove clients with no recent timestamps
-        stale = [k for k, v in self._requests.items() if not v or v[-1] <= cutoff]
-        for k in stale:
-            del self._requests[k]
-        if len(self._requests) <= self._max_clients:
-            return
-        # Second pass: evict least-recently-active (oldest max timestamp)
-        by_recency = sorted(self._requests.items(), key=lambda kv: kv[1][-1] if kv[1] else 0)
-        to_remove = len(self._requests) - self._max_clients
-        for k, _ in by_recency[:to_remove]:
-            del self._requests[k]
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        client_key = get_client_ip(scope, self.trusted_proxies)
-        now = time.monotonic()
-
-        self._prune_clients(now)
-
-        # Prune old entries outside the window
-        timestamps = self._requests[client_key]
-        cutoff = now - self._window
-        self._requests[client_key] = [t for t in timestamps if t > cutoff]
-        timestamps = self._requests[client_key]
-
-        if len(timestamps) >= self.rpm:
-            body = b"Rate limit exceeded. Try again later."
-            await send(
-                {
-                    "type": "http.response.start",
-                    "status": 429,
-                    "headers": [
-                        [b"content-type", b"text/plain"],
-                        [b"content-length", str(len(body)).encode()],
-                        [b"retry-after", b"60"],
-                    ],
-                }
-            )
-            await send({"type": "http.response.body", "body": body})
-            return
-
-        timestamps.append(now)
-        return await self.app(scope, receive, send)
-
-
-_STATIC_EXTENSIONS = frozenset(
-    {
-        ".css",
-        ".js",
-        ".woff2",
-        ".woff",
-        ".ttf",
-        ".png",
-        ".svg",
-        ".ico",
-    }
-)
-
-
-class CacheHeaderMiddleware:
-    """ASGI middleware that adds Cache-Control headers to static asset responses."""
-
-    def __init__(self, app, max_age: int = 86400):
-        self.app = app
-        self.max_age = max_age
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or self.max_age <= 0:
-            return await self.app(scope, receive, send)
-
-        path = scope.get("path", "")
-        dot = path.rfind(".")
-        ext = path[dot:].lower() if dot != -1 else ""
-
-        if ext not in _STATIC_EXTENSIONS:
-            return await self.app(scope, receive, send)
-
-        cache_value = f"public, max-age={self.max_age}".encode()
-
-        async def send_with_cache(message):
-            if message["type"] == "http.response.start":
-                headers = list(message.get("headers", []))
-                headers.append([b"cache-control", cache_value])
-                message = {**message, "headers": headers}
-            result = send(message)
-            if result is not None:
-                await result
-
-        return await self.app(scope, receive, send_with_cache)
-
-
-class HealthCheckMiddleware:
-    """ASGI middleware that serves a /health JSON endpoint.
-
-    Placed as the outermost middleware so it bypasses auth and rate limiting.
-    """
-
-    def __init__(self, app, db_check=None, job_queue=None):
-        self.app = app
-        self._start_time = time.monotonic()
-        self._db_check = db_check
-        self._job_queue = job_queue
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            return await self.app(scope, receive, send)
-
-        if scope.get("path") != "/health" or scope["method"] != "GET":
-            return await self.app(scope, receive, send)
-
-        from shyfem_ui import __version__
-
-        # Probe database
-        db_ok = True
-        db_response_time_ms = -1.0
-        try:
-            if self._db_check:
-                result = self._db_check()
-                if isinstance(result, (int, float)):
-                    db_response_time_ms = result
-        except Exception:
-            db_ok = False
-
-        # Probe job queue (active_jobs and queue_depth are the same value)
-        active_jobs = -1
-        queue_ok = True
-        try:
-            val = getattr(self._job_queue, "active_job_count", -1)
-            active_jobs = val() if callable(val) else val
-        except Exception:
-            active_jobs = -1
-            queue_ok = False
-        queue_depth = active_jobs
-
-        worker_count = -1
-        try:
-            wc = getattr(self._job_queue, "max_workers", -1)
-            worker_count = wc() if callable(wc) else wc
-        except Exception:
-            worker_count = -1
-
-        status = "ok" if db_ok and queue_ok else "degraded"
-
-        payload = {
-            "status": status,
-            "version": __version__,
-            "uptime_seconds": round(time.monotonic() - self._start_time, 1),
-            "database": "ok" if db_ok else "error",
-            "db_response_time_ms": db_response_time_ms,
-            "active_jobs": active_jobs,
-            "queue_depth": queue_depth,
-            "worker_count": worker_count,
-        }
-
-        body = json.dumps(payload).encode()
-        result = send(
-            {
-                "type": "http.response.start",
-                "status": 200,
-                "headers": [
-                    [b"content-type", b"application/json"],
-                    [b"content-length", str(len(body)).encode()],
-                ],
-            }
-        )
-        if result is not None:
-            await result
-        result = send({"type": "http.response.body", "body": body})
-        if result is not None:
-            await result
-
-
-_ADMIN_ONLY_ITEMS = {"Dashboard", "Partitioning", "Compare", "Ensemble", "Files", "Admin"}
+_ADMIN_ONLY_ITEMS = {"Admin"}
 
 
 def _build_sidebar_nav() -> ui.Tag:
@@ -819,6 +502,19 @@ function shyfemNavTo(name) {
   // Notify Shiny
   if (window.Shiny && Shiny.setInputValue) {
     Shiny.setInputValue('_active_nav', name, {priority: 'event'});
+
+    // Tell Shiny that outputs in the newly visible page are no longer hidden.
+    // Shiny's IntersectionObserver does not reliably re-fire after a parent
+    // transitions from display:none to display:block via class toggle.
+    if (page) {
+      setTimeout(function() {
+        page.querySelectorAll('.shiny-bound-output').forEach(function(el) {
+          if (el.id) {
+            Shiny.setInputValue('.clientdata_output_' + el.id + '_hidden', false);
+          }
+        });
+      }, 0);
+    }
   }
 
   // Auto-close sidebar on mobile after navigation
@@ -866,6 +562,19 @@ $(document).on('shiny:connected', function() {
     a.click();
     document.body.removeChild(a);
   });
+
+  // On connect, mark outputs in the currently active page as visible.
+  // Shiny's IntersectionObserver may not detect display:block pages reliably.
+  setTimeout(function() {
+    var active = document.querySelector('.sf-page.active');
+    if (active) {
+      active.querySelectorAll('.shiny-bound-output').forEach(function(el) {
+        if (el.id) {
+          Shiny.setInputValue('.clientdata_output_' + el.id + '_hidden', false);
+        }
+      });
+    }
+  }, 100);
 });
 """),
     # Meta tags
@@ -945,6 +654,9 @@ def _build_ui(config: Config) -> ui.Tag:
             class_="sf-page",
         ),
         ui.div(
+            physics.physics_ui("physics"), id="sf-page-Physics", class_="sf-page"
+        ),
+        ui.div(
             simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
         ),
         ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
@@ -966,7 +678,7 @@ def _build_ui(config: Config) -> ui.Tag:
 
     return ui.page_fillable(
         ui.head_content(_HEAD_EXTRAS),
-        deckgl_head_includes(),
+        *([] if deckgl_head_includes is None else [deckgl_head_includes()]),
         ui.busy_indicators.use(spinners=True, pulse=True),
         topbar,
         ui.div(
@@ -1048,6 +760,7 @@ def _build_server(
         "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
     )
     partitioning.partitioning_server("partitioning", config, active_project=active_project)
+    physics.physics_server("physics", config, active_project=active_project)
     simulation.simulation_server(
         "simulation", config, active_project=active_project, tutorial_context=tutorial_context
     )
