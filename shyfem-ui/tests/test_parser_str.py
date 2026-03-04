@@ -455,3 +455,13 @@ class TestCommonParams:
         # "idt" is in "para", not in "name"
         info = get_param_info("idt", section="name")
         assert info is None
+
+    def test_common_params_has_restart_params(self):
+        """Restart and offline params are defined in $para."""
+        for param in ("itrst", "itmrst", "ityrst", "idtoff", "itmoff"):
+            assert param in COMMON_PARAMS["para"], f"Missing {param}"
+
+    def test_common_params_has_wave_and_mercury(self):
+        """Wave coupling and mercury params are defined in $para."""
+        for param in ("iwave", "dtwave", "imerc"):
+            assert param in COMMON_PARAMS["para"], f"Missing {param}"

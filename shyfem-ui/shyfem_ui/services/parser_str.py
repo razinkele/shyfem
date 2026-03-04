@@ -449,6 +449,28 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "issedi": _p("Sediment module", "int", 0, "", "0/1"),
         "rtide": _p("Tidal forcing", "int", 0, "", "0/1"),
         "icemod": _p("Ice model", "int", 0, "", "0/1"),
+        # --- Waves ---
+        "iwave": _p(
+            "Wave coupling mode", "int", 0, "",
+            "0=off, 1=constant file, 2=WWMIII rad+SHYFEM wind, 3=WWMIII vort+SHYFEM wind, "
+            "4=WWMIII rad+WWM wind, 5=WWMIII vort+WWM wind",
+        ),
+        "dtwave": _p("Wave-current coupling time step", "float", 0.0, "s", ">0 when iwave>0"),
+        # --- Mercury ---
+        "imerc": _p("Mercury contamination model", "int", 0, "", "0=off, 1=on"),
+        # --- Restart ---
+        "itrst": _p("Restart file write interval", "string", "0", "s", "-1=last step only"),
+        "itmrst": _p("Restart output start time", "string", "-1", "", "date or seconds"),
+        "ityrst": _p(
+            "Restart mode", "int", 1, "",
+            "0=strict match, 1=cold-start if missing, 2=closest time",
+        ),
+        # --- Offline mode ---
+        "idtoff": _p(
+            "Offline mode", "int", 0, "",
+            "0=off, >0=write hydro, -1=read hydro, -2=read T/S, -4=read turb, -3/-7=combos",
+        ),
+        "itmoff": _p("Offline start time", "string", "-1", "", "date or seconds"),
         # --- Grid/partition ---
         "ibasin": _p("Grid optimization", "int", -1, "", "-1=none,0=renumber,1=optimize"),
         "pqual": _p("Max partition quality index (MPI)", "float", 2.5, "", ">0"),
