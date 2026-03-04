@@ -70,6 +70,11 @@ SHYELAB_OPERATIONS = {
         "flags": ["-freq"],
         "description": "Frequency/spectral analysis of time series",
     },
+    "flux": {
+        "label": "Flux / Transport Analysis",
+        "flags": ["-flux"],
+        "description": "Compute integrated transport at flux sections",
+    },
     "custom": {
         "label": "Custom Options",
         "flags": [],

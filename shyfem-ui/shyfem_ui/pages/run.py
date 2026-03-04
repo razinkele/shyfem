@@ -103,6 +103,7 @@ def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int
         content = str_path.read_text()
         parsed = StrParser.parse(content)
     except Exception:
+        logger.debug("Failed to parse STR file %s", str_path, exc_info=True)
         return None
 
     title_sec = parsed.sections.get("title")
@@ -127,6 +128,7 @@ def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int
                 grd = GrdParser.parse_file(grid_path)
                 return grd.num_nodes
             except Exception:
+                logger.debug("Failed to parse grid file %s", grid_path, exc_info=True)
                 continue
 
     return None
@@ -160,6 +162,8 @@ def run_ui():
                             "shyparts": "shyparts (Partitioning)",
                             "shyelab": "shyelab (Post-process)",
                             "shyplot": "shyplot (Plotting)",
+                            "exgrd": "exgrd (Grid Extraction)",
+                            "shyadj": "shyadj (Mesh Adjustment)",
                         },
                     ),
                     ui.input_text(
@@ -408,7 +412,7 @@ def run_server(
                     max=128,
                 )
         except Exception:
-            pass
+            logger.debug("MPI input not yet available", exc_info=True)
 
         return ui.div(
             ui.h6("MPI Options"),
