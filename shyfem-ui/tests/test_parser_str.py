@@ -535,3 +535,68 @@ class TestCommonParams:
         assert "nduge" in COMMON_PARAMS
         for p in ("nvars", "tramp", "ttau", "sigma"):
             assert p in COMMON_PARAMS["nduge"], f"Missing {p} in $nduge"
+
+
+class TestNewSectionRoundTrip:
+    """Test that new sections can be parsed and re-generated."""
+
+    def test_sedtr_roundtrip(self):
+        content = """$sedtr
+        isedi = 1
+        sedgrs = '0.063 0.125 0.25 0.5'
+        percin = '0.25 0.25 0.25 0.25'
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("sedtr", "isedi") == 1
+        generated = StrParser.generate(parsed)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_param("sedtr", "isedi") == 1
+
+    def test_lagrg_roundtrip(self):
+        content = """$lagrg
+        ilagr = 2
+        nbdy = 100
+        ioil = 1
+        lbeach = 0.5
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("lagrg", "ilagr") == 2
+        assert parsed.get_param("lagrg", "ioil") == 1
+        generated = StrParser.generate(parsed)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_param("lagrg", "ilagr") == 2
+
+    def test_nduge_roundtrip(self):
+        content = """$nduge
+        nvars = 3
+        ttau = 3600
+        sigma = 5000
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("nduge", "nvars") == 3
+        generated = StrParser.generate(parsed)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_param("nduge", "nvars") == 3
+
+    def test_multi_section_str_with_new_sections(self):
+        """Full STR with multiple new sections parses correctly."""
+        content = """$para
+        idt = 300
+        ilagr = 2
+$end
+$lagrg
+        ilagr = 2
+        nbdy = 100
+        idtl = 3600
+$end
+$sedtr
+        isedi = 1
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("para", "idt") == 300
+        assert parsed.get_param("lagrg", "nbdy") == 100
+        assert parsed.get_param("sedtr", "isedi") == 1
