@@ -87,10 +87,17 @@ def simulation_ui():
                         "tidal": "Tidal Simulation",
                         "tidal_estuary": "Tidal Estuary (3D)",
                         "baroclinic": "Baroclinic (T/S)",
-                        "lagrangian": "Lagrangian Tracking",
+                        "eulerian_tracer": "Eulerian Tracer / Water Age",
+                        "lagrangian": "Lagrangian Particle Tracking",
                         "sediment_transport": "Sediment Transport",
                         "water_quality": "Water Quality (EUTRO)",
                         "storm_surge": "Storm Surge",
+                        "thermal": "Thermal / Heat Exchange",
+                        "ice_model": "Ice Model",
+                        "oil_spill": "Oil Spill (Lagrangian)",
+                        "data_assimilation": "Data Assimilation",
+                        "offline_tracer": "Offline Tracer Run",
+                        "wave_coupled": "Wave-Coupled Storm Surge",
                     },
                 ),
                 ui.output_ui("template_preview"),
@@ -744,13 +751,13 @@ $name
         ! qflux = 'INPUT/heatflux.txt'
 $end
 """,
-        "lagrangian": """
+        "eulerian_tracer": """
 #------------------------------------------------------------------------
-# Lagrangian Particle Tracking Template
+# Eulerian Tracer / Water Age Template
 #------------------------------------------------------------------------
 
 $title
-        Lagrangian Tracking
+        Eulerian Tracer
         simulation_name
         GRID/grid_name
 $end
@@ -768,7 +775,7 @@ $para
         iwtype = 3     dragco = 2.5e-3
         ireib = 5      czdef = 2.5e-3
 
-        ! Lagrangian (concentration as tracer)
+        ! Eulerian tracer (concentration)
         iconz = 1
         iage = 1       ! Water age tracer mode
         conref = 0.0
@@ -784,6 +791,46 @@ $end
 
 $name
         wind = 'INPUT/wind.txt'
+$end
+""",
+        "lagrangian": """
+#------------------------------------------------------------------------
+# Lagrangian Particle Tracking Template
+#------------------------------------------------------------------------
+
+$title
+        Lagrangian Particle Tracking
+        lagrangian_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-06'
+        idt = '300s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3              dragco = 2.5e-3
+        ireib = 5               czdef = 2.5e-3
+$end
+
+$lagrg
+        ilagr = 2
+        nbdy = 100
+        nbdymax = 10000
+        idtl = 3600
+        rwhpar = 1.0
+        idtlgr = 3600
+$end
+
+$extra
+        1       'release point'
+$end
+
+$name
+        ! wind = 'INPUT/wind.txt'
 $end
 """,
         "tidal_estuary": """
@@ -1069,6 +1116,231 @@ $end
 
 $name
         ! Wind file with optional atmospheric pressure (3rd column)
+        wind = 'INPUT/wind.txt'
+$end
+""",
+        "thermal": """
+#------------------------------------------------------------------------
+# Thermal / Heat Exchange Simulation Template
+#------------------------------------------------------------------------
+
+$title
+        Thermal / Heat Exchange Simulation
+        thermal_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-02-01'
+        idt = '300s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3              dragco = 2.5e-3
+        ireib = 5               czdef = 2.5e-3
+
+        ibarcl = 1
+        itemp = 1
+        isalt = 0
+        iheat = 6
+$end
+
+$levels
+        0.5 1 2 3 5 7 10 15 20
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+        tempn = 'INPUT/temp_init.txt'
+$end
+""",
+        "ice_model": """
+#------------------------------------------------------------------------
+# Ice Model Simulation Template
+#------------------------------------------------------------------------
+
+$title
+        Ice Model Simulation
+        ice_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-04-01'
+        idt = '300s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3              dragco = 2.5e-3
+        ireib = 5               czdef = 2.5e-3
+
+        ibarcl = 1
+        itemp = 1
+        isalt = 1
+        iheat = 6
+        icemod = 1
+$end
+
+$levels
+        0.5 1 2 3 5 7 10 15 20
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+        tempn = 'INPUT/temp_init.txt'
+        saltn = 'INPUT/salt_init.txt'
+$end
+""",
+        "oil_spill": """
+#------------------------------------------------------------------------
+# Oil Spill Simulation Template
+#------------------------------------------------------------------------
+
+$title
+        Oil Spill Simulation
+        oil_spill_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-06'
+        idt = '300s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3              dragco = 2.5e-3
+        ireib = 5               czdef = 2.5e-3
+$end
+
+$lagrg
+        ilagr = 3
+        nbdy = 1000
+        nbdymax = 50000
+        idtl = 3600
+        rwhpar = 1.0
+        ioil = 1
+        lbeach = 0.5
+        ldecay = 86400
+        idtlgr = 3600
+$end
+
+$extra
+        1       'spill source'
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+$end
+""",
+        "data_assimilation": """
+#------------------------------------------------------------------------
+# Data Assimilation Simulation Template
+#------------------------------------------------------------------------
+
+$title
+        Data Assimilation Simulation
+        assim_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-02-01'
+        idt = '300s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3              dragco = 2.5e-3
+        ireib = 5               czdef = 2.5e-3
+
+        ibarcl = 4
+        itemp = 1
+        isalt = 1
+$end
+
+$levels
+        0.5 1 2 3 5 7 10 15 20
+$end
+
+$nduge
+        nvars = 3
+        tramp = 43200
+        ttau = 3600
+        sigma = 5000
+$end
+
+$name
+        wind = 'INPUT/wind.txt'
+        tempn = 'INPUT/temp_obs.txt'
+        saltn = 'INPUT/salt_obs.txt'
+$end
+""",
+        "offline_tracer": """
+#------------------------------------------------------------------------
+# Offline Tracer Run Template
+#------------------------------------------------------------------------
+
+$title
+        Offline Tracer Run
+        offline_tracer_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-02-01'
+        idt = '300s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+
+        idtoff = -1
+        iconz = 1
+$end
+
+$levels
+        0.5 1 2 3 5 7 10 15 20
+$end
+
+$name
+        ! wind = 'INPUT/wind.txt'
+$end
+""",
+        "wave_coupled": """
+#------------------------------------------------------------------------
+# Wave-Coupled Storm Surge Template
+#------------------------------------------------------------------------
+
+$title
+        Wave-Coupled Storm Surge
+        wave_coupled_sim
+        GRID/grid_name
+$end
+
+$para
+        itanf = '2020-01-01'    itend = '2020-01-06'
+        idt = '60s'
+        idtout = '1h'           idtext = '300s'
+
+        date = 20200101
+
+        ilin = 1
+        iwtype = 3              dragco = 2.5e-3
+        ireib = 5               czdef = 2.5e-3
+
+        iwave = 2
+        dtwave = 300
+$end
+
+$name
         wind = 'INPUT/wind.txt'
 $end
 """,
