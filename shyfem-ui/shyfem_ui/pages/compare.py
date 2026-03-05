@@ -546,15 +546,6 @@ def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
 
 def _load_ts(path: Path) -> list[list[float]]:
     """Load time series data as list of float rows."""
-    data = []
-    with open(path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if not parts:
-                continue
-            try:
-                data.append([float(p) for p in parts])
-            except ValueError:
-                logger.debug("Skipping non-numeric line in time series")
-                continue
-    return data
+    from shyfem_ui.services.timeseries_loader import load_timeseries_raw
+
+    return load_timeseries_raw(path)

@@ -22,7 +22,8 @@ class TestCacheHeaderConfig:
         assert config.static_cache_max_age == 0
 
 
-from shyfem_ui.app import CacheHeaderMiddleware, create_app
+from shyfem_ui.middleware.cache_headers import CacheHeaderMiddleware
+from shyfem_ui.app import create_app
 
 
 def _http_scope(path: str = "/") -> dict:

@@ -504,6 +504,6 @@ class CeleryJobQueue(JobQueue):
                 )
 
         except Exception:
-            pass
+            logger.debug("Failed to fetch worker stats", exc_info=True)
 
         return workers

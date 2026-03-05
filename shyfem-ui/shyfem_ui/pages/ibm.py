@@ -8,17 +8,22 @@ import logging
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
-from shiny_deckgl import (
-    MapWidget,
-    context_menu_widget,
-    deck_legend_control,
-    fullscreen_widget,
-    info_widget,
-    path_layer,
-    scatterplot_layer,
-    tile_layer,
-    zoom_widget,
-)
+
+try:
+    from shiny_deckgl import (
+        MapWidget,
+        context_menu_widget,
+        deck_legend_control,
+        fullscreen_widget,
+        info_widget,
+        path_layer,
+        scatterplot_layer,
+        tile_layer,
+        zoom_widget,
+    )
+except ImportError:
+    MapWidget = context_menu_widget = deck_legend_control = fullscreen_widget = None
+    info_widget = path_layer = scatterplot_layer = tile_layer = zoom_widget = None
 
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config

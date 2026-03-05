@@ -5,7 +5,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from argon2.exceptions import VerificationError, VerifyMismatchError
+
+try:
+    from argon2.exceptions import InvalidHashError
+except ImportError:
+    from argon2.exceptions import InvalidHash as InvalidHashError  # argon2 <23
 
 from shyfem_ui.models.user import AuthSession, User
 
@@ -183,6 +188,41 @@ class AuthService:
             if user is None:
                 return False
             user.is_active = False
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user account and all related records.
+
+        Removes the user, their sessions (via cascade), and any project
+        permissions. Does NOT delete the user's home directory on disk.
+
+        Returns:
+            True if the user was found and deleted, False if not found.
+
+        Raises:
+            ValueError: If attempting to delete the last admin user.
+        """
+        from shyfem_ui.models.user import ProjectPermission
+
+        session = self._session_factory()
+        try:
+            user = session.query(User).filter_by(id=user_id).first()
+            if user is None:
+                return False
+            # Prevent deleting the last admin
+            if user.role == "admin":
+                admin_count = session.query(User).filter_by(role="admin").count()
+                if admin_count <= 1:
+                    raise ValueError("Cannot delete the last admin user")
+            # Clean up project permissions (no cascade on this FK)
+            session.query(ProjectPermission).filter_by(user_id=user_id).delete()
+            session.delete(user)
             session.commit()
             return True
         except Exception:

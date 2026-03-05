@@ -442,42 +442,12 @@ def timeseries_server(
 
 def _load_obs_file(path: Path) -> dict:
     """Load observation data from CSV or whitespace-delimited file."""
-    import pandas as pd
+    from shyfem_ui.services.timeseries_loader import load_timeseries
 
-    try:
-        df = pd.read_csv(path, sep=None, engine="python")
-        return {
-            "columns": list(df.columns),
-            "data": df.values.tolist(),
-        }
-    except Exception:
-        logger.debug("CSV parsing failed for %s, falling back to whitespace-delimited", path)
-        # Fall back to whitespace-delimited
-        data = []
-        columns = []
-        with open(path) as f:
-            for i, line in enumerate(f):
-                parts = line.strip().split()
-                if not parts:
-                    continue
-                if (
-                    i == 0
-                    and not parts[0].replace(".", "").replace("-", "").replace("+", "").isdigit()
-                ):
-                    columns = parts
-                else:
-                    try:
-                        data.append([float(p) for p in parts])
-                    except ValueError:
-                        logger.debug("Skipping non-numeric line %d in %s", i, path)
-                        continue
-
-        if not columns and data:
-            columns = [f"col{j}" for j in range(len(data[0]))]
-
-        return {
-            "columns": columns,
-            "data": data,
+    result = load_timeseries(path)
+    return {
+        "columns": result["columns"],
+        "data": result["data"],
         }
 
 

@@ -3,7 +3,7 @@
 import pytest
 from unittest.mock import patch
 
-from shyfem_ui.app import RateLimitMiddleware
+from shyfem_ui.middleware.rate_limit import RateLimitMiddleware
 
 
 def _http_scope(client_ip: str = "192.168.1.1", port: int = 12345):

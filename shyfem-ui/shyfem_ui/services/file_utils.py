@@ -1,6 +1,9 @@
 """File utility functions for log streaming."""
 
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Seek buffer size — read last 64KB to find tail lines
 _TAIL_BUFFER_SIZE = 65536
@@ -48,4 +51,5 @@ def tail_file(path: Path | str, tail: int = 100) -> str:
             lines = lines[1:]
         return "\n".join(lines[-tail:])
     except Exception:
+        logger.debug("Failed to tail file %s", path, exc_info=True)
         return ""

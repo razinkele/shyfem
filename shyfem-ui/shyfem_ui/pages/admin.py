@@ -149,7 +149,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
             if user_role is not None:
                 return user_role() == "admin"
         except Exception:
-            pass
+            logger.debug("user_role() reactive not yet available", exc_info=True)
         return _check_admin_access(get_current_user())
 
     # Reactive value holding user list (always defined so render functions can reference it)
@@ -237,7 +237,12 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                         ui.input_action_link(
                             f"send_test_email_{u['id']}",
                             "Test Email",
-                            class_="btn btn-sm btn-outline-primary",
+                            class_="btn btn-sm btn-outline-primary me-1",
+                        ),
+                        ui.input_action_link(
+                            f"delete_user_{u['id']}",
+                            "Delete",
+                            class_="btn btn-sm btn-outline-danger",
                         ),
                     ),
                 )
@@ -375,6 +380,42 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
             except Exception as e:
                 logger.exception("Failed to send test email to user %d", user_id)
                 ui.notification_show(f"SMTP error: {e}", type="error", duration=6)
+
+        @reactive.effect
+        @reactive.event(input[f"delete_user_{user_id}"])
+        def _delete_user():
+            m = ui.modal(
+                ui.p(
+                    f"Are you sure you want to permanently delete user ",
+                    ui.tags.strong(username),
+                    "? This cannot be undone.",
+                ),
+                title=f"Delete User '{username}'",
+                easy_close=True,
+                footer=ui.div(
+                    ui.input_action_button(
+                        f"confirm_delete_{user_id}",
+                        "Delete",
+                        class_="btn-danger",
+                    ),
+                    ui.modal_button("Cancel"),
+                ),
+            )
+            ui.modal_show(m)
+
+        @reactive.effect
+        @reactive.event(input[f"confirm_delete_{user_id}"])
+        def _do_delete_user():
+            try:
+                auth_service.delete_user(user_id)
+                ui.modal_remove()
+                ui.notification_show(f"User '{username}' deleted", type="message", duration=4)
+                _refresh()
+            except ValueError as exc:
+                ui.notification_show(str(exc), type="error", duration=6)
+            except Exception as e:
+                logger.exception("Failed to delete user %d", user_id)
+                ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     @reactive.effect
     def _register_all_user_actions():

@@ -2,7 +2,7 @@
 
 Provides zoomable/pannable mesh visualization with:
 - Mesh wireframe via path_layer (deduplicated edges)
-- Filled triangles via polygon_layer (depth, quality, partitions, boundaries)
+- Filled triangles via simple_mesh_layer (depth, quality, partitions, boundaries)
 - Clickable nodes via scatterplot_layer
 - Boundary line highlighting via path_layer
 - Tooltip HTML on all features
@@ -13,23 +13,36 @@ from __future__ import annotations
 import logging
 import math
 
-from pyproj import CRS, Transformer
+try:
+    from pyproj import CRS, Transformer
+except ImportError:
+    CRS = Transformer = None
 
-from shiny_deckgl import (
-    CARTO_DARK,
-    CARTO_POSITRON,
-    OSM_LIBERTY,
-    PALETTE_CHLOROPHYLL,
-    PALETTE_OCEAN,
-    PALETTE_PLASMA,
-    PALETTE_THERMAL,
-    PALETTE_VIRIDIS,
-    color_bins,
-    path_layer,
-    polygon_layer,
-    scatterplot_layer,
-    tile_layer,
-)
+try:
+    from shiny_deckgl import (
+        CARTO_DARK,
+        CARTO_POSITRON,
+        COORDINATE_SYSTEM,
+        OSM_LIBERTY,
+        PALETTE_CHLOROPHYLL,
+        PALETTE_OCEAN,
+        PALETTE_PLASMA,
+        PALETTE_THERMAL,
+        PALETTE_VIRIDIS,
+        color_bins,
+        custom_geometry,
+        path_layer,
+        polygon_layer,
+        scatterplot_layer,
+        simple_mesh_layer,
+        tile_layer,
+    )
+except ImportError:
+    CARTO_DARK = CARTO_POSITRON = OSM_LIBERTY = PALETTE_CHLOROPHYLL = None
+    PALETTE_OCEAN = PALETTE_PLASMA = PALETTE_THERMAL = PALETTE_VIRIDIS = None
+    COORDINATE_SYSTEM = None
+    color_bins = custom_geometry = path_layer = polygon_layer = None
+    scatterplot_layer = simple_mesh_layer = tile_layer = None
 
 from shyfem_ui.services.parser_grd import GrdFile
 
@@ -411,6 +424,171 @@ def _build_triangle_data(
     return result
 
 
+def _build_mesh_geometry(
+    grd: GrdFile,
+    mode: str = "depth",
+    colorscale: str = "viridis",
+    elevation_scale: float = 1.0,
+    partition_map: dict[int, int] | None = None,
+    epsg: int | None = None,
+) -> dict:
+    """Convert a :class:`GrdFile` into indexed mesh geometry for ``simple_mesh_layer``.
+
+    Vertex positions are in **metres** relative to the mesh centre, using
+    the deck.gl ``METER_OFFSETS`` coordinate system.  Vertices are duplicated
+    per element so that per-element coloring is preserved.
+
+    Parameters
+    ----------
+    grd
+        Parsed grid.
+    mode
+        Coloring mode: ``"depth"``, ``"depth_3d"``, ``"quality"``,
+        ``"partitions"``, ``"boundaries"``.
+    colorscale
+        Palette name for depth coloring (key in :data:`PALETTES`).
+    elevation_scale
+        Vertical exaggeration for ``"depth_3d"`` mode.
+    partition_map
+        ``{elem_id: partition_index}`` for partition coloring.
+    epsg
+        Source EPSG code for coordinate reprojection.
+
+    Returns
+    -------
+    dict
+        Keys: ``positions``, ``normals``, ``colors`` (flat float lists),
+        ``indices`` (flat int list), ``center`` (``[lon, lat]``),
+        ``n_vertices``, ``n_triangles``.
+    """
+    lonlat = _get_lonlat(grd, epsg=epsg)
+
+    # Compute centre in lon/lat
+    all_lons = [pos[0] for pos in lonlat.values()]
+    all_lats = [pos[1] for pos in lonlat.values()]
+    ctr_lon = (min(all_lons) + max(all_lons)) / 2
+    ctr_lat = (min(all_lats) + max(all_lats)) / 2
+
+    # Metres-per-degree at centre latitude
+    m_per_deg_lon = 111_320 * math.cos(math.radians(ctr_lat))
+    m_per_deg_lat = 110_540
+
+    z_scale = elevation_scale if mode == "depth_3d" else 0.0
+
+    # Gather per-element data (same logic as _build_triangle_data)
+    elements_data: list[dict] = []
+    all_depths: list[float] = []
+    all_qualities: list[float] = []
+
+    for elem in grd.elements.values():
+        node_coords: list[list[float]] = []
+        node_depths: list[float] = []
+        for nid in elem.nodes:
+            if nid not in lonlat:
+                break
+            node_coords.append(lonlat[nid])
+            node = grd.nodes.get(nid)
+            d = node.depth if (node and node.depth is not None) else 0.0
+            node_depths.append(d)
+        else:
+            avg_depth = sum(node_depths) / len(node_depths) if node_depths else 0.0
+            quality = _compute_quality(node_coords)
+            elements_data.append({
+                "elem": elem,
+                "coords": node_coords,
+                "node_depths": node_depths,
+                "avg_depth": avg_depth,
+                "quality": quality,
+            })
+            all_depths.append(avg_depth)
+            all_qualities.append(quality)
+
+    empty = {
+        "positions": [], "normals": [], "colors": [], "indices": [],
+        "center": [round(ctr_lon, 5), round(ctr_lat, 5)],
+        "n_vertices": 0, "n_triangles": 0,
+    }
+    if not elements_data:
+        return empty
+
+    # Compute per-element RGBA colors (int 0-255)
+    if mode in ("depth", "depth_3d"):
+        elem_colors = _depth_to_colors(all_depths, colorscale)
+    elif mode == "quality":
+        elem_colors = _quality_to_colors(all_qualities)
+    elif mode == "partitions":
+        elem_colors = [
+            PARTITION_COLORS[(partition_map or {}).get(ed["elem"].id, 0) % len(PARTITION_COLORS)]
+            for ed in elements_data
+        ]
+    else:  # boundaries
+        elem_colors = [[200, 200, 200, 80]] * len(elements_data)
+
+    # Build geometry with duplicated vertices per element
+    positions: list[float] = []
+    colors: list[float] = []
+    indices: list[int] = []
+    vertex_idx = 0
+
+    for i, ed in enumerate(elements_data):
+        c = elem_colors[i]
+        r, g, b = c[0] / 255.0, c[1] / 255.0, c[2] / 255.0
+
+        coords = ed["coords"]
+        nd = ed["node_depths"]
+        n_verts = len(coords)
+
+        for j in range(n_verts):
+            lon, lat = coords[j]
+            dx = (lon - ctr_lon) * m_per_deg_lon
+            dy = (lat - ctr_lat) * m_per_deg_lat
+            dz = abs(nd[j]) * z_scale
+            positions.extend([dx, dy, dz])
+            colors.extend([round(r, 3), round(g, 3), round(b, 3)])
+
+        if n_verts >= 3:
+            indices.extend([vertex_idx, vertex_idx + 1, vertex_idx + 2])
+            if n_verts == 4:
+                indices.extend([vertex_idx, vertex_idx + 2, vertex_idx + 3])
+        vertex_idx += n_verts
+
+    # Compute per-vertex normals (average of adjacent face normals)
+    normals = [0.0] * len(positions)
+    for fi in range(0, len(indices), 3):
+        i0, i1, i2 = indices[fi], indices[fi + 1], indices[fi + 2]
+        p0 = positions[i0 * 3: i0 * 3 + 3]
+        p1 = positions[i1 * 3: i1 * 3 + 3]
+        p2 = positions[i2 * 3: i2 * 3 + 3]
+        e1 = [p1[k] - p0[k] for k in range(3)]
+        e2 = [p2[k] - p0[k] for k in range(3)]
+        nx = e1[1] * e2[2] - e1[2] * e2[1]
+        ny = e1[2] * e2[0] - e1[0] * e2[2]
+        nz = e1[0] * e2[1] - e1[1] * e2[0]
+        for vi in (i0, i1, i2):
+            normals[vi * 3] += nx
+            normals[vi * 3 + 1] += ny
+            normals[vi * 3 + 2] += nz
+
+    for vi in range(len(positions) // 3):
+        nx, ny, nz = normals[vi * 3], normals[vi * 3 + 1], normals[vi * 3 + 2]
+        length = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+        normals[vi * 3] = round(nx / length, 4)
+        normals[vi * 3 + 1] = round(ny / length, 4)
+        normals[vi * 3 + 2] = round(nz / length, 4)
+
+    positions = [round(v, 2) for v in positions]
+
+    return {
+        "positions": positions,
+        "normals": normals,
+        "colors": colors,
+        "indices": indices,
+        "center": [round(ctr_lon, 5), round(ctr_lat, 5)],
+        "n_vertices": len(positions) // 3,
+        "n_triangles": len(indices) // 3,
+    }
+
+
 def _triangle_tooltip(rec: dict, mode: str) -> str:
     """Build tooltip HTML for a triangle element."""
     parts = [f"<b>Elem {rec['elem_id']}</b>"]
@@ -603,18 +781,6 @@ def build_layers(
 
     has_elements = bool(grd.elements)
 
-    # --- Shared polygon layer kwargs ---
-    _poly_common: dict = {
-        "pickable": True,
-        "opacity": 0.85,
-        "autoHighlight": True,
-        "highlightColor": [255, 255, 255, 80],
-        "getFillColor": "@@d.fill_color",
-        "getPolygon": "@@d.polygon",
-        "getLineColor": [0, 0, 0, 0],
-        "getLineWidth": 0,
-    }
-
     # --- Wireframe edge data (reused across modes, only if elements exist) ---
     edge_data = _build_edge_data(grd, epsg=epsg) if has_elements else []
 
@@ -632,12 +798,13 @@ def build_layers(
         ))
 
     elif mode == "depth" and has_elements:
-        # Filled polygons + thin gray wireframe
-        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale, epsg=epsg)
-        layers.append(polygon_layer(
-            "triangles",
-            tri_data,
-            **_poly_common,
+        # Filled mesh + thin gray wireframe
+        mesh_data = _build_mesh_geometry(
+            grd, mode=mode, colorscale=colorscale, epsg=epsg,
+        )
+        layers.append(simple_mesh_layer(
+            "triangles", **custom_geometry(mesh_data),
+            pickable=True, wireframe=False,
         ))
         layers.append(path_layer(
             "wireframe",
@@ -649,27 +816,25 @@ def build_layers(
         ))
 
     elif mode == "depth_3d" and has_elements:
-        # Filled polygons with extrusion, NO wireframe
-        tri_data = _build_triangle_data(
+        # Filled mesh with Z elevation, NO wireframe
+        mesh_data = _build_mesh_geometry(
             grd, mode=mode, colorscale=colorscale,
             elevation_scale=elevation_scale, epsg=epsg,
         )
-        layers.append(polygon_layer(
-            "triangles",
-            tri_data,
-            **_poly_common,
-            extruded=True,
-            getElevation="@@d.elevation",
+        layers.append(simple_mesh_layer(
+            "triangles", **custom_geometry(mesh_data),
+            pickable=True, wireframe=False,
         ))
 
     elif mode == "boundaries" or (not has_elements and grd.lines):
         # Bold boundary lines (+ light mesh if elements exist)
         if has_elements:
-            tri_data = _build_triangle_data(grd, mode="boundaries", colorscale=colorscale, epsg=epsg)
-            layers.append(polygon_layer(
-                "triangles",
-                tri_data,
-                **_poly_common,
+            mesh_data = _build_mesh_geometry(
+                grd, mode="boundaries", colorscale=colorscale, epsg=epsg,
+            )
+            layers.append(simple_mesh_layer(
+                "triangles", **custom_geometry(mesh_data),
+                pickable=True, wireframe=False,
             ))
             layers.append(path_layer(
                 "wireframe",
@@ -693,12 +858,13 @@ def build_layers(
             ))
 
     elif mode == "quality" and has_elements:
-        # Filled polygons + thin wireframe
-        tri_data = _build_triangle_data(grd, mode=mode, colorscale=colorscale, epsg=epsg)
-        layers.append(polygon_layer(
-            "triangles",
-            tri_data,
-            **_poly_common,
+        # Filled mesh + thin wireframe
+        mesh_data = _build_mesh_geometry(
+            grd, mode=mode, colorscale=colorscale, epsg=epsg,
+        )
+        layers.append(simple_mesh_layer(
+            "triangles", **custom_geometry(mesh_data),
+            pickable=True, wireframe=False,
         ))
         layers.append(path_layer(
             "wireframe",
@@ -710,15 +876,14 @@ def build_layers(
         ))
 
     elif mode == "partitions" and has_elements:
-        # Filled polygons only (no wireframe)
-        tri_data = _build_triangle_data(
+        # Filled mesh only (no wireframe)
+        mesh_data = _build_mesh_geometry(
             grd, mode=mode, colorscale=colorscale,
             partition_map=partition_map, epsg=epsg,
         )
-        layers.append(polygon_layer(
-            "triangles",
-            tri_data,
-            **_poly_common,
+        layers.append(simple_mesh_layer(
+            "triangles", **custom_geometry(mesh_data),
+            pickable=True, wireframe=False,
         ))
 
     # --- Optional boundary overlay (not in boundaries mode, already done) ---
@@ -1026,12 +1191,15 @@ from typing import Callable
 
 from shiny import module, reactive, render, ui  # noqa: E402
 
-from shiny_deckgl import (  # noqa: E402
-    MapWidget,
-    deck_legend_control,
-    fullscreen_widget,
-    zoom_widget,
-)
+try:
+    from shiny_deckgl import (  # noqa: E402
+        MapWidget,
+        deck_legend_control,
+        fullscreen_widget,
+        zoom_widget,
+    )
+except ImportError:
+    MapWidget = deck_legend_control = fullscreen_widget = zoom_widget = None
 
 # View-mode choices for the dropdown
 _VIEW_MODES: dict[str, str] = {

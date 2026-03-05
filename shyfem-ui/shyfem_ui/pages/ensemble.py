@@ -167,7 +167,7 @@ def ensemble_server(
             if input.mpi_enabled():
                 return ui.input_numeric("mpi_np", "Processes", value=4, min=2, max=128)
         except Exception:
-            pass
+            logger.debug("MPI input not yet available", exc_info=True)
         return ui.span()
 
     # ------- Parameter Editor -------
@@ -914,23 +914,9 @@ async def _cancel_jobs(job_queue: JobQueue, job_ids: list[str]) -> int:
 
 def _load_ts(path: Path) -> list[list[float]]:
     """Load time series data as list of float rows."""
-    if not path.exists():
-        return []
-    data = []
-    try:
-        with open(path) as f:
-            for line in f:
-                parts = line.strip().split()
-                if not parts:
-                    continue
-                try:
-                    data.append([float(p) for p in parts])
-                except ValueError:
-                    continue
-    except Exception:
-        logger.warning("Failed to load time series from %s", path, exc_info=True)
-        return []
-    return data
+    from shyfem_ui.services.timeseries_loader import load_timeseries_raw
+
+    return load_timeseries_raw(path)
 
 
 def _build_duration_chart(jobs: list[JobInfo]) -> go.Figure:

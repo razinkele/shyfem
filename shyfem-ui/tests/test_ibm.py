@@ -7,6 +7,8 @@ from shiny.ui import Tag
 
 from shyfem_ui.pages import ibm
 
+pytest.importorskip("shiny_deckgl")
+
 
 def test_ibm_ui_renders():
     """ibm_ui() returns a non-None Shiny Tag."""

@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from shyfem_ui.app import HealthCheckMiddleware
+from shyfem_ui.middleware.health_check import HealthCheckMiddleware
 
 
 def _http_scope(path: str = "/", method: str = "GET") -> dict:
