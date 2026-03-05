@@ -3076,6 +3076,7 @@
 	 bdh(k) = max(bdh(k),-0.01D+0)
 	 bdh(k) = bdh(k) * MORPHO
          bh(k) = bh(k) + real(bdh(k))
+	 bh_morph(k) = bh_morph(k) + real(bdh(k))
 
 !        -------------------------------------------------------------------
 !        Update average sediment grainsize (D50)

@@ -935,6 +935,8 @@
 	use levels
 	use basin
 	use shympi
+	use mod_sediment, only : bh_morph
+	use para
 
 	implicit none
 
@@ -947,10 +949,12 @@
         logical bdebug
         logical bsigma
 	integer k,l,ie,ii,ie_mpi
+	integer :: imorph
 	integer lmax,lmin,lmink,n,nlev,nsigma,levmin
 	real hfirst,hlast,h,htot,z,zmed,hm
 	real hacu,hlevel,hsigma,hsig
 	real hmin
+	real :: hminmor
 
 	real areael,areafv
 	real areaele
@@ -966,6 +970,8 @@
         bdebug = .false.
 	hmin = -99999.
 	hmin = 0.
+	imorph = nint(getpar('imorph'))
+	hminmor = getpar('hminmor')
 
 !----------------------------------------------------------------
 ! initialize and copy
@@ -1013,6 +1019,9 @@
 	    k = nen3v(ii,ie)
 	    lmink = jlhkv(k)
 	    htot = hm3v(ii,ie)
+	    if( imorph > 0 .and. allocated(bh_morph) ) then
+	      htot = max(htot + bh_morph(k), hminmor)
+	    end if
 	    z = zenv(ii,ie)
 	    zmed = zmed + z
 	    hsig = min(htot,hsigma) + z		!total depth sigma layers

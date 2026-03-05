@@ -676,6 +676,9 @@
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
 	use pkonst
+	use mod_sediment, only : tcn, isedi
+	use mod_sediment_para, only : RHOSED
+	use para
 
 	implicit none
 
@@ -686,6 +689,7 @@
 	logical bdebug,debug,bsigma
 	integer k,l,lmax,lmin
 	integer nresid,nsigma
+	integer :: imorphd
 	real sigma0,rho0,pres,hsigma
 	real depth,hlayer,hh
 	real rhop,presbt,presbc,dpresc
@@ -705,6 +709,7 @@
 
 	if(debug) write(6,*) sigma0,rowass,rho0
 
+	imorphd = nint(getpar('imorphd'))
 	nresid = 0
 	dresid = 0.
 
@@ -736,6 +741,10 @@
 	    salt = max(0.,saltv(l,k))
 	    rhop = sigma_stp(salt,tempv(l,k),pres) - sigma0
 	    call set_rhomud(k,l,rhop)
+	    if( imorphd > 0 .and. isedi > 0 .and.			&
+     &		allocated(tcn) ) then
+	      rhop = rhop + tcn(l,k) * (1. - rho0/real(RHOSED))
+	    end if
 
 	    nresid = nresid + 1
 	    dresid = dresid + (rhov(l,k)-rhop)**2

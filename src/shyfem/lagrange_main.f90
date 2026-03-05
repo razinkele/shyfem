@@ -130,6 +130,7 @@
 ! lagranian main routine
 
 	use mod_lagrange
+	use mod_lagrange_mpi
 	use basin, only : nkn,nel,ngr,mbw
 	use levels
         use lgr_sedim_module
@@ -189,9 +190,7 @@
           if( icall .eq. -1 ) return
 	  icall = 1
 
-          if( shympi_is_parallel() ) then
-            stop 'error stop lagrange: not ready for MPI'
-          end if
+          call lgr_mpi_init
 
           call get_first_dtime(dtanf)
           call get_last_dtime(dtend)
@@ -332,6 +331,12 @@
  	call drogue(dtime)
 
 !---------------------------------------------------------------
+! exchange particles across MPI ranks after advection
+!---------------------------------------------------------------
+
+	if( bmpi_lagr ) call lgr_mpi_exchange
+
+!---------------------------------------------------------------
 ! sediment module
 !---------------------------------------------------------------
 
@@ -350,11 +355,21 @@
 	call lagrange_decay(ldecay)
 
 !---------------------------------------------------------------
+! reduce connectivity across MPI ranks before output
+!---------------------------------------------------------------
+
+	if( bmpi_lagr .and. bconnect ) call lgr_mpi_reduce_connect
+
+!---------------------------------------------------------------
 ! output : connectivity matrix or trajectiories
 !---------------------------------------------------------------
 
         if( next_output_d(da_lgr) ) then
-	  call lgr_output(iu,dtime)
+	  if( bmpi_lagr ) then
+	    call lgr_mpi_gather_output(iu,dtime)
+	  else
+	    call lgr_output(iu,dtime)
+	  end if
         end if
 
         if( bcount .and. dtime == dtlend )then
@@ -530,6 +545,8 @@
 ! advection of particles
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_check_ghost
+	use shympi, only : ip_int_elem
         use mod_geom_dynamic, only : iwegv
         use levels, only : nlv
 
@@ -605,6 +622,10 @@
 !---------------------------------------------------------------
 
         lgr_ar(i)%actual%ie = ie
+	if( ie > 0 ) then
+	  lgr_ar(i)%actual%ie_global = ip_int_elem(ie)
+	  call lgr_mpi_check_ghost(i,ie)
+	end if
 	do ii=1,3
 	  lgr_ar(i)%actual%xi(ii) = xi(ii)
 	end do

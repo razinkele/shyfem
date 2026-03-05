@@ -156,7 +156,7 @@ SHYPRE_OBJ = \
 	shypre_subs.o shypre_opti.o
 
 LAGRANGE_OBJ = \
-      lagrange_data.o lagrange_sedim.o \
+      lagrange_data.o lagrange_mpi.o lagrange_sedim.o \
       lagrange_flux.o lagrange_util.o \
       lagrange_vertical.o lagrange_utils.o lagrange_connect.o \
       lagrange_inout.o lagrange_cont.o lagrange_larve.o \
@@ -312,6 +312,9 @@ info:
 
 %.o: %.f
 	$(F77) $(FFLAGS) $(INCLUDE) -c $<
+
+lagrange_mpi.o: lagrange_mpi.f90
+	$(F77) $(FFLAG_SPECIAL) $(INCLUDE) -c $<
 
 %.o: %.f90
 	$(F77) $(FFLAGS) $(INCLUDE) -c $<

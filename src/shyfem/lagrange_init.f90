@@ -526,6 +526,7 @@
 ! release in total area
 
 	use basin, only : nkn,nel,ngr,mbw
+	use shympi, only : id_elem, my_id
 
 	implicit none
 
@@ -550,6 +551,7 @@
 	call basin_center(x0,y0)
 
 	do ie=1,nel
+	  if( id_elem(1,ie) /= my_id ) cycle  !only release on owned elements
 
 	  call xy_and_minmax(ie,xe,ye,xmin,xmax,ymin,ymax)
 

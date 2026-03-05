@@ -66,7 +66,8 @@
           double precision :: xi(3)             !internal coordinate
           double precision :: time		!time in seconds
 	  real :: z				!z-coordinate
-	  integer :: ie				!element number
+	  integer :: ie				!element number (local)
+	  integer :: ie_global			!global element number (for MPI)
 	  integer :: l				!layer number
 	end type lagr_body
 
