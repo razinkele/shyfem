@@ -12,8 +12,8 @@ from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 class TestPhysicsPanels:
     """Physics panel definitions are complete and valid."""
 
-    def test_all_20_panels_defined(self):
-        assert len(PHYSICS_PANELS) == 20
+    def test_all_21_panels_defined(self):
+        assert len(PHYSICS_PANELS) == 21
 
     def test_each_panel_has_required_keys(self):
         for pid, panel in PHYSICS_PANELS.items():
@@ -118,6 +118,26 @@ class TestTracerPanel:
         result = build_panel_params(StrFile(), "tracers")
         assert result["iconz"] == 0
         assert result["conref"] == 0.0
+
+
+class TestBoundaryPanel:
+    """Boundary conditions panel exists and has correct section."""
+
+    def test_panel_exists(self):
+        assert "boundary" in PHYSICS_PANELS
+
+    def test_boundary_section(self):
+        assert PHYSICS_PANELS["boundary"]["section"] == "bound"
+
+    def test_build_boundary_defaults(self):
+        result = build_panel_params(StrFile(), "boundary")
+        assert "ibtyp" in result
+        assert "boundn" in result
+        assert "zfact" in result
+
+    def test_output_has_idtrst(self):
+        params = PHYSICS_PANELS["output"]["params"]
+        assert "idtrst" in params
 
 
 class TestPhysicsPanelsConfig:
