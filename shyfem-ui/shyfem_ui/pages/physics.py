@@ -238,6 +238,9 @@ def physics_ui():
                 ui.hr(),
                 ui.h5("Active Modules"),
                 ui.output_ui("module_badges"),
+                ui.hr(),
+                ui.h5("Validation"),
+                ui.output_ui("validation_status"),
                 width=280,
             ),
             ui.output_ui("panels_accordion"),
@@ -379,6 +382,41 @@ def physics_server(input, output, session, config: Config, active_project=None):
         if not badges:
             return ui.p("No modules active", class_="text-muted small")
         return ui.div(*badges)
+
+    @render.ui
+    def validation_status():
+        sf = str_data.get()
+        msgs = validate_str(sf.sections)
+        errors = [m for m in msgs if m.level == "error"]
+        warnings = [m for m in msgs if m.level == "warning"]
+        infos = [m for m in msgs if m.level == "info"]
+        if not msgs:
+            return ui.span("All checks passed", class_="badge bg-success")
+        parts = []
+        if errors:
+            parts.append(ui.span(f"{len(errors)} error(s)", class_="badge bg-danger me-1 mb-1"))
+            for m in errors:
+                parts.append(ui.div(
+                    ui.tags.i(class_="bi bi-x-circle text-danger me-1"),
+                    ui.span(m.message, class_="small"),
+                    class_="ms-1",
+                ))
+        if warnings:
+            parts.append(ui.span(f"{len(warnings)} warning(s)", class_="badge bg-warning me-1 mb-1"))
+            for m in warnings:
+                parts.append(ui.div(
+                    ui.tags.i(class_="bi bi-exclamation-triangle text-warning me-1"),
+                    ui.span(m.message, class_="small"),
+                    class_="ms-1",
+                ))
+        if infos:
+            for m in infos:
+                parts.append(ui.div(
+                    ui.tags.i(class_="bi bi-info-circle text-info me-1"),
+                    ui.span(m.message, class_="small text-muted"),
+                    class_="ms-1",
+                ))
+        return ui.div(*parts)
 
     @render.ui
     def panels_accordion():
