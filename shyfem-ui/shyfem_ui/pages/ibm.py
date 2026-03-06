@@ -283,11 +283,17 @@ def ibm_server(
                 continue
             color = _TRACK_COLORS[(track.type_id - 1) % len(_TRACK_COLORS)]
             steps = len(track.path)
+            disp = _haversine_km(*track.path[0], *track.path[-1]) if len(track.path) >= 2 else 0
+            mean_d = sum(track.depths) / len(track.depths) if track.depths else 0
+            track_tip = (
+                f"<b>Type {track.type_id}</b><br>"
+                f"{steps} steps | {disp:.1f} km displacement<br>"
+                f"Mean depth: {mean_d:.1f} m"
+            )
             if show_trk:
                 layers.append(path_layer(
                     f"track_{track.type_id}",
-                    [{"path": track.path,
-                      "tooltip_html": f"<b>Type {track.type_id}</b><br>{steps} steps"}],
+                    [{"path": track.path, "tooltip_html": track_tip}],
                     getPath="@@d.path",
                     getColor=color,
                     widthMinPixels=2,
@@ -295,10 +301,12 @@ def ibm_server(
                 ))
             t0 = track.times[0] if track.times else ""
             t1 = track.times[-1] if track.times else ""
+            d0 = f"{track.depths[0]:.1f} m" if track.depths else ""
+            d1 = f"{track.depths[-1]:.1f} m" if track.depths else ""
             starts.append({"position": track.path[0],
-                           "tooltip_html": f"<b>Start type {track.type_id}</b><br>{t0}"})
+                           "tooltip_html": f"<b>Start type {track.type_id}</b><br>{t0}<br>Depth: {d0}"})
             ends.append({"position": track.path[-1],
-                         "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}"})
+                         "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}<br>Depth: {d1}"})
 
         if filtered:
             first_id = filtered[0].type_id
