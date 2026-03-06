@@ -9,6 +9,7 @@ from shyfem_ui.components.sample_data import get_progressive_str_files, sample_d
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrFile, StrParser
+from shyfem_ui.services.str_validator import validate_str
 
 
 @module.ui
@@ -320,6 +321,13 @@ def simulation_server(
             str_file = parsed_str.get()
             if str_file:
                 StrParser.save(str_file, path)
+                # Validate after save
+                msgs = validate_str(str_file.sections)
+                for m in msgs:
+                    if m.level == "error":
+                        ui.notification_show(f"Error: {m.message}", type="error", duration=8)
+                    elif m.level == "warning":
+                        ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
             current_file_path.set(path)
             ui.update_text("str_path", value=str(path))
             ui.modal_remove()
