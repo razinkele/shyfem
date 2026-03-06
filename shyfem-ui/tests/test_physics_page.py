@@ -12,8 +12,8 @@ from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 class TestPhysicsPanels:
     """Physics panel definitions are complete and valid."""
 
-    def test_all_13_panels_defined(self):
-        assert len(PHYSICS_PANELS) == 13
+    def test_all_14_panels_defined(self):
+        assert len(PHYSICS_PANELS) == 14
 
     def test_each_panel_has_required_keys(self):
         for pid, panel in PHYSICS_PANELS.items():
@@ -79,6 +79,27 @@ class TestBuildPanelParams:
         assert "idtout" in params
         assert "netcdf" in params
         assert "itrst" in params
+
+
+class TestTracerPanel:
+    """Tracer/concentration panel exists and has correct params."""
+
+    def test_panel_exists(self):
+        assert "tracers" in PHYSICS_PANELS
+
+    def test_tracer_params_present(self):
+        params = PHYSICS_PANELS["tracers"]["params"]
+        for p in ("iconz", "iage", "idecay", "conref", "chpar", "wsettl"):
+            assert p in params, f"Missing param {p}"
+
+    def test_tracer_params_in_common(self):
+        for p in ("iconz", "iage", "idecay", "conref", "chpar", "wsettl"):
+            assert p in COMMON_PARAMS["para"], f"{p} not in COMMON_PARAMS"
+
+    def test_build_tracer_defaults(self):
+        result = build_panel_params(StrFile(), "tracers")
+        assert result["iconz"] == 0
+        assert result["conref"] == 0.0
 
 
 class TestPhysicsPanelsConfig:

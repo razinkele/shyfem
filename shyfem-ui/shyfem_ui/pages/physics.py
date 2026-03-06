@@ -72,6 +72,14 @@ PHYSICS_PANELS = {
         "icon": "bi-tree",
         "params": {"ibio": "para", "imerc": "para"},
     },
+    "tracers": {
+        "label": "Tracers / Concentration",
+        "icon": "bi-droplet",
+        "params": {
+            "iconz": "para", "iage": "para", "idecay": "para",
+            "conref": "para", "chpar": "para", "wsettl": "para",
+        },
+    },
     "sediment": {
         "label": "Sediment Transport",
         "icon": "bi-reception-4",

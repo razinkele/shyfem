@@ -446,6 +446,7 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "iage": _p("Water age tracer mode", "int", 0, "", "0/1"),
         "conref": _p("Initial reference concentration", "float", 0.0, "", ""),
         "chpar": _p("Concentration horizontal diffusion", "float", -1.0, "", "-1=use dhpar"),
+        "wsettl": _p("Settling velocity", "float", 0.0, "m/s", "downward positive"),
         # --- Output averaging ---
         "iout_av": _p("Hydro output averaging", "int", 0, "", "0=instantaneous, 1=time-averaged"),
         "icon_av": _p(
