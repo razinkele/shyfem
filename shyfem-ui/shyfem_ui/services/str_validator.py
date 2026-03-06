@@ -166,4 +166,69 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
                 "iconz",
             ))
 
+    # --- Level system consistency (initialize.f90:476-555) ---
+    has_levels = "levels" in sections and sections["levels"]
+    nsigma = _get(sections, "para", "nsigma", 0) or 0
+    dzreg = _get(sections, "para", "dzreg", 0) or 0
+    hsigma = _get(sections, "para", "hsigma", 0) or 0
+
+    if has_levels and dzreg > 0:
+        msgs.append(ValidationMessage(
+            "error",
+            "Cannot set dzreg>0 when explicit $levels section is present",
+            "dzreg",
+        ))
+    if has_levels and nsigma > 0:
+        # Sigma + explicit levels only valid as hybrid (needs hsigma)
+        if hsigma <= 0:
+            msgs.append(ValidationMessage(
+                "error",
+                "nsigma>0 with $levels requires hsigma>0 for hybrid coordinates",
+                "hsigma",
+            ))
+    if nsigma > 0 and dzreg > 0 and hsigma <= 0:
+        msgs.append(ValidationMessage(
+            "error",
+            "Hybrid levels (nsigma>0, dzreg>0) requires hsigma>0",
+            "hsigma",
+        ))
+
+    # --- GOTM turbulence without T/S is ineffective ---
+    itemp = _get(sections, "para", "itemp", 1)
+    isalt = _get(sections, "para", "isalt", 1)
+    if iturb == 1 and itemp == 0 and isalt == 0:
+        msgs.append(ValidationMessage(
+            "warning",
+            "iturb=1 (GOTM) with itemp=0 and isalt=0 — turbulence model has no T/S gradients",
+            "iturb",
+        ))
+
+    # --- Physical constants sanity (common misconfiguration) ---
+    rowass = _get(sections, "para", "rowass")
+    if rowass is not None and isinstance(rowass, (int, float)):
+        if rowass < 990 or rowass > 1040:
+            msgs.append(ValidationMessage(
+                "warning",
+                "rowass={} outside typical range [990-1040 kg/m³]".format(rowass),
+                "rowass",
+            ))
+
+    roluft = _get(sections, "para", "roluft")
+    if roluft is not None and isinstance(roluft, (int, float)):
+        if roluft < 0.9 or roluft > 1.4:
+            msgs.append(ValidationMessage(
+                "warning",
+                "roluft={} outside typical air density range [0.9-1.4 kg/m³]".format(roluft),
+                "roluft",
+            ))
+
+    # --- Output interval without active module ---
+    idtcon = _get(sections, "para", "idtcon", 0)
+    if idtcon and idtcon > 0 and iconz == 0 and ibarcl == 0:
+        msgs.append(ValidationMessage(
+            "info",
+            "idtcon>0 but no scalars active (iconz=0, ibarcl=0) — output will be empty",
+            "idtcon",
+        ))
+
     return msgs
