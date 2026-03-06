@@ -49,6 +49,19 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     if "idt" not in para or para["idt"] is None:
         msgs.append(ValidationMessage("error", "idt (time step) is required", "idt"))
 
+    # --- Timing sanity checks ---
+    idt = _get(sections, "para", "idt")
+    if idt is not None and isinstance(idt, (int, float)) and idt <= 0:
+        msgs.append(ValidationMessage("error", "idt (time step) must be > 0", "idt"))
+    itanf = _get(sections, "para", "itanf", 0)
+    itend = _get(sections, "para", "itend")
+    if itend is not None and itanf is not None:
+        if isinstance(itend, (int, float)) and isinstance(itanf, (int, float)):
+            if itend <= itanf:
+                msgs.append(ValidationMessage(
+                    "error", "itend must be greater than itanf", "itend",
+                ))
+
     # --- Dependency: iturb=1 (GOTM) needs gotmpa file ---
     iturb = _get(sections, "para", "iturb", 0)
     if iturb == 1:

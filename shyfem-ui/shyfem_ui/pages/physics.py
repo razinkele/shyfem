@@ -33,6 +33,7 @@ PHYSICS_PANELS = {
             "itsplt": "para", "coumax": "para", "idtsyn": "para",
             "icor": "para", "dlat": "para", "isphe": "para",
             "hzmin": "para", "hzoff": "para", "hzon": "para",
+            "rtide": "para",
         },
     },
     "advanced_hydro": {
@@ -536,6 +537,14 @@ def physics_server(input, output, session, config: Config, active_project=None):
                     ui.input_numeric("hzon", "Rewetting threshold (m)",
                         value=float(params.get("hzon", 0.10) or 0.10),
                         min=0, step=0.01,
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("rtide", "Tidal forcing",
+                        value=float(params.get("rtide", 0) or 0),
+                        step=0.1,
                     ),
                 ),
             ),

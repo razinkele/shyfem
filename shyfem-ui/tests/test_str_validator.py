@@ -23,6 +23,16 @@ class TestBasicValidation:
         errors = [m for m in msgs if m.level == "error"]
         assert len(errors) == 0
 
+    def test_idt_zero_is_error(self):
+        msgs = validate_str({"para": {"itanf": "0", "itend": "86400", "idt": "0"}})
+        errors = [m for m in msgs if m.level == "error"]
+        assert any("idt" in m.message and "> 0" in m.message for m in errors)
+
+    def test_itend_lte_itanf_is_error(self):
+        msgs = validate_str({"para": {"itanf": "100", "itend": "50", "idt": "10"}})
+        errors = [m for m in msgs if m.level == "error"]
+        assert any("itend" in m.message and "itanf" in m.message for m in errors)
+
 
 class TestDependencyValidation:
     """Parameter dependency checks."""
