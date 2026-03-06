@@ -26,6 +26,15 @@ PHYSICS_PANELS = {
             "hzmin": "para", "hzoff": "para", "hzon": "para",
         },
     },
+    "advanced_hydro": {
+        "label": "Advanced Hydrodynamics",
+        "icon": "bi-sliders2",
+        "params": {
+            "azpar": "para", "ampar": "para", "afpar": "para",
+            "atpar": "para", "adpar": "para", "aapar": "para",
+            "href": "para", "hmin": "para", "hmax": "para", "rlin": "para",
+        },
+    },
     "vertical": {
         "label": "Vertical Structure",
         "icon": "bi-layers",
@@ -57,6 +66,14 @@ PHYSICS_PANELS = {
             "albedo": "para", "ievap": "para", "irain": "para",
         },
     },
+    "wind": {
+        "label": "Wind & Forcing",
+        "icon": "bi-wind",
+        "params": {
+            "iwtype": "para", "dragco": "para",
+            "wsmax": "para", "rfact": "para",
+        },
+    },
     "temperature_salinity": {
         "label": "Temperature & Salinity",
         "icon": "bi-droplet-half",
@@ -71,6 +88,7 @@ PHYSICS_PANELS = {
         "label": "Ecology",
         "icon": "bi-tree",
         "params": {"ibio": "para", "imerc": "para"},
+        "section": "bfmsc",
     },
     "tracers": {
         "label": "Tracers / Concentration",
@@ -90,7 +108,11 @@ PHYSICS_PANELS = {
         "label": "Lagrangian / IBM",
         "icon": "bi-pin-map",
         "section": "lagrg",
-        "params": {"ilagr": "para"},
+        "params": {
+            "ilagr": "para",
+            "icnn": "connec", "radcnn": "connec",
+            "ppscnn": "connec", "pldcnn": "connec",
+        },
     },
     "ice": {
         "label": "Ice Model",
@@ -107,6 +129,18 @@ PHYSICS_PANELS = {
         "icon": "bi-bullseye",
         "section": "nduge",
         "params": {"ibarcl": "para"},
+    },
+    "renewal_time": {
+        "label": "Water Renewal Time",
+        "icon": "bi-clock-history",
+        "section": "wrt",
+        "params": {},
+    },
+    "input_files": {
+        "label": "Input Files",
+        "icon": "bi-folder2-open",
+        "section": "name",
+        "params": {},
     },
     "output": {
         "label": "Output & Restart",

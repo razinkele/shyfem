@@ -372,6 +372,7 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "hzon": _p("Depth threshold for rewetting", "float", 0.10, "m", ">hzoff"),
         "hmin": _p("Minimum basin depth", "float", -99999, "m", ""),
         "hmax": _p("Maximum basin depth", "float", 99999, "m", ""),
+        "rlin": _p("Non-linear term strength", "float", 1.0, "", "0=off, 1=full"),
         # --- Bottom friction ---
         "ireib": _p(
             "Bottom friction type", "int", 0, "",
@@ -579,6 +580,13 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "ibtend": _p("BFM end time", "int", 0, "", ""),
         "itmbfm": _p("BFM output start time", "int", -1, "", ""),
         "idtbfm": _p("BFM output interval", "int", 0, "s", ">0"),
+    },
+    "wrt": {
+        "idtwrt": _p("Reset interval", "int", -1, "s", "-1=off, 0=no reset"),
+        "c0": _p("Initial tracer concentration", "float", 1.0, "", ""),
+        "iaout": _p("Outside area code", "int", -1, "", "-1=none"),
+        "percmin": _p("Completion percentage threshold", "float", 0.0, "%", "0-100"),
+        "iret": _p("Return flow flag", "int", 1, "", "0=explicit zero, 1=return"),
     },
     "nduge": {
         "nvars": _p("Number of nudging observation stations", "int", 0, "", "0-50"),

@@ -12,8 +12,8 @@ from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 class TestPhysicsPanels:
     """Physics panel definitions are complete and valid."""
 
-    def test_all_14_panels_defined(self):
-        assert len(PHYSICS_PANELS) == 14
+    def test_all_18_panels_defined(self):
+        assert len(PHYSICS_PANELS) == 18
 
     def test_each_panel_has_required_keys(self):
         for pid, panel in PHYSICS_PANELS.items():
@@ -217,3 +217,89 @@ $end
                 f"Remap {input_id} -> {section}.{param}: "
                 f"param not in COMMON_PARAMS[{section}]"
             )
+
+
+class TestWindPanel:
+    def test_panel_exists(self):
+        assert "wind" in PHYSICS_PANELS
+
+    def test_wind_params(self):
+        params = PHYSICS_PANELS["wind"]["params"]
+        for p in ("iwtype", "dragco", "wsmax", "rfact"):
+            assert p in params
+
+    def test_build_wind_defaults(self):
+        result = build_panel_params(StrFile(), "wind")
+        assert result["dragco"] == 2.5e-3
+        assert result["wsmax"] == 50.0
+
+
+class TestInputFilesPanel:
+    def test_panel_exists(self):
+        assert "input_files" in PHYSICS_PANELS
+
+    def test_has_name_section(self):
+        assert PHYSICS_PANELS["input_files"].get("section") == "name"
+
+    def test_build_includes_name_params(self):
+        result = build_panel_params(StrFile(), "input_files")
+        assert "wind" in result
+        assert "restrt" in result
+
+
+class TestAdvancedHydroPanel:
+    def test_panel_exists(self):
+        assert "advanced_hydro" in PHYSICS_PANELS
+
+    def test_semi_implicit_params(self):
+        params = PHYSICS_PANELS["advanced_hydro"]["params"]
+        for p in ("azpar", "ampar", "afpar", "atpar", "adpar", "aapar"):
+            assert p in params
+
+    def test_depth_params(self):
+        params = PHYSICS_PANELS["advanced_hydro"]["params"]
+        for p in ("href", "hmin", "hmax"):
+            assert p in params
+
+    def test_build_defaults(self):
+        result = build_panel_params(StrFile(), "advanced_hydro")
+        assert result["azpar"] == 0.5
+        assert result["href"] == 0.0
+
+
+class TestWrtPanel:
+    def test_panel_exists(self):
+        assert "renewal_time" in PHYSICS_PANELS
+
+    def test_has_wrt_section(self):
+        assert PHYSICS_PANELS["renewal_time"].get("section") == "wrt"
+
+    def test_wrt_in_common(self):
+        assert "wrt" in COMMON_PARAMS
+        for p in ("idtwrt", "c0", "iaout", "percmin", "iret"):
+            assert p in COMMON_PARAMS["wrt"]
+
+    def test_build_defaults(self):
+        result = build_panel_params(StrFile(), "renewal_time")
+        assert result["idtwrt"] == -1
+        assert result["c0"] == 1.0
+
+
+class TestEcologyExpanded:
+    def test_ecology_has_bfmsc_section(self):
+        assert PHYSICS_PANELS["ecology"].get("section") == "bfmsc"
+
+    def test_build_has_bfm(self):
+        result = build_panel_params(StrFile(), "ecology")
+        assert "ibfm" in result
+
+
+class TestLagrangianConnectivity:
+    def test_connectivity_params(self):
+        params = PHYSICS_PANELS["lagrangian"]["params"]
+        for p in ("icnn", "radcnn", "ppscnn", "pldcnn"):
+            assert p in params
+
+    def test_build_has_connectivity(self):
+        result = build_panel_params(StrFile(), "lagrangian")
+        assert "icnn" in result
