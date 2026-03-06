@@ -21,7 +21,7 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
-from shyfem_ui.services.parser_str import StrFile, StrParser
+from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 from shyfem_ui.services.str_validator import validate_str
 
 logger = logging.getLogger(__name__)
@@ -445,12 +445,14 @@ def ensemble_server(
 
         header_cells = [ui.tags.th("#")]
         for section, param in all_keys:
+            info = COMMON_PARAMS.get(section, {}).get(param)
+            desc = info[0] if info else ""
             header_cells.append(
                 ui.tags.th(
                     ui.div(
                         ui.code(param),
                         ui.br(),
-                        ui.span(f"${section}", class_="text-muted small"),
+                        ui.span(desc or f"${section}", class_="text-muted small"),
                     )
                 )
             )
