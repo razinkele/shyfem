@@ -12,6 +12,7 @@ from shiny import module, reactive, render, ui
 
 from shyfem_ui.config import Config
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
+from shyfem_ui.services.str_validator import validate_str
 
 logger = logging.getLogger(__name__)
 
@@ -262,6 +263,9 @@ def physics_server(input, output, session, config: Config, active_project=None):
         "idtcon_out": ("para", "idtcon"),
         "icon_av_out": ("para", "icon_av"),
     }
+    # Add name_ prefixed input IDs for $name section params
+    for _np in COMMON_PARAMS.get("name", {}):
+        _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
 
     def _collect_panel_values() -> None:
         """Read all panel input values and update str_data before saving."""
@@ -318,8 +322,20 @@ def physics_server(input, output, session, config: Config, active_project=None):
             return
         try:
             _collect_panel_values()
-            StrParser.save(str_data.get(), Path(path_str))
-            ui.notification_show(f"Saved to {path_str}", type="message", duration=3)
+            sf = str_data.get()
+            StrParser.save(sf, Path(path_str))
+            # Run cross-parameter validation
+            msgs = validate_str(sf.sections)
+            errors = [m for m in msgs if m.level == "error"]
+            warnings = [m for m in msgs if m.level == "warning"]
+            if errors:
+                for m in errors:
+                    ui.notification_show(f"Error: {m.message}", type="error", duration=8)
+            if warnings:
+                for m in warnings:
+                    ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
+            if not errors:
+                ui.notification_show(f"Saved to {path_str}", type="message", duration=3)
         except Exception as e:
             ui.notification_show(f"Save error: {e}", type="error")
 
@@ -340,6 +356,10 @@ def physics_server(input, output, session, config: Config, active_project=None):
             ("Ice", sf.get_param("para", "icemod", 0) == 1, None),
             ("Waves", (sf.get_param("para", "iwave", 0) or 0) > 0, None),
             ("Nudging", "nduge" in sf.sections, None),
+            ("Tracers", (sf.get_param("para", "iconz", 0) or 0) > 0, None),
+            ("Wind", (sf.get_param("para", "iwtype", 0) or 0) > 1, None),
+            ("WRT", "wrt" in sf.sections, None),
+            ("Non-hydro", (sf.get_param("nonhyd", "inohyd", 0) or 0) > 0, None),
         ]
         for label, active, detail in checks:
             if active:
@@ -1214,6 +1234,297 @@ def physics_server(input, output, session, config: Config, active_project=None):
                 ui.column(4,
                     ui.input_text("itmoff", "Offline start time",
                         value=str(params.get("itmoff", "-1") if params.get("itmoff") is not None else "-1"),
+                    ),
+                ),
+            ),
+        )
+
+    @render.ui
+    def panel_tracers():
+        params = build_panel_params(str_data.get(), "tracers")
+        return ui.div(
+            ui.row(
+                ui.column(4,
+                    ui.input_select("iconz", "Number of tracers",
+                        choices={str(i): str(i) for i in range(6)},
+                        selected=str(params.get("iconz", 0) or 0),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_select("iage", "Water age tracer",
+                        choices={"0": "0 - Off", "1": "1 - On"},
+                        selected=str(params.get("iage", 0) or 0),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_select("idecay", "Tracer decay type",
+                        choices={
+                            "0": "0 - None",
+                            "1": "1 - Exponential",
+                            "2": "2 - Chapra",
+                        },
+                        selected=str(params.get("idecay", 0) or 0),
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("conref", "Reference concentration",
+                        value=float(params.get("conref", 0) or 0),
+                        step=0.1,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("chpar", "Horiz. diffusion (m2/s)",
+                        value=float(params.get("chpar", -1) if params.get("chpar") is not None else -1),
+                        step=0.1,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("wsettl", "Settling velocity (m/s)",
+                        value=float(params.get("wsettl", 0) or 0),
+                        min=0, step=0.001,
+                    ),
+                ),
+            ),
+        )
+
+    @render.ui
+    def panel_wind():
+        params = build_panel_params(str_data.get(), "wind")
+        return ui.div(
+            ui.row(
+                ui.column(4,
+                    ui.input_select("iwtype", "Wind input type",
+                        choices={
+                            "1": "1 - Constant",
+                            "2": "2 - Variable (file)",
+                            "3": "3 - Wind field",
+                            "4": "4 - Spatially varying",
+                            "5": "5 - Coupled model",
+                        },
+                        selected=str(params.get("iwtype", 1) or 1),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("dragco", "Drag coefficient",
+                        value=float(params.get("dragco", 2.5e-3) or 2.5e-3),
+                        min=0, step=0.0001,
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("wsmax", "Max wind speed (m/s)",
+                        value=float(params.get("wsmax", 50) or 50),
+                        min=0, step=1.0,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("rfact", "Wind stress scaling factor",
+                        value=float(params.get("rfact", 1.0) or 1.0),
+                        min=0, step=0.01,
+                    ),
+                ),
+            ),
+        )
+
+    @render.ui
+    def panel_input_files():
+        params = build_panel_params(str_data.get(), "input_files")
+        groups = {
+            "Forcing": ["wind", "rain", "qflux", "ice"],
+            "Initial Conditions": ["zinit", "tempin", "saltin", "conzin"],
+            "Restart": ["restrt"],
+            "Observations": ["tempobs", "saltobs"],
+            "Turbulence": ["gotmpa"],
+            "System": ["basnam"],
+            "Ecology": ["bioin", "biosin", "biocon", "biolight", "mercin", "bfmini"],
+            "Sediment": ["sedp", "sedt", "sedcon"],
+            "Lagrangian / Nudging": ["lgrlin", "lgrtrj", "statcnn", "surfvel"],
+            "Boundary Conditions": ["saltn", "tempn", "conzn"],
+        }
+        name_meta = COMMON_PARAMS.get("name", {})
+        elements = []
+        for group_label, keys in groups.items():
+            elements.append(ui.hr())
+            elements.append(ui.h6(group_label, class_="text-muted"))
+            row_cols = []
+            for k in keys:
+                info = name_meta.get(k)
+                label = info[0] if info else k
+                row_cols.append(
+                    ui.column(4,
+                        ui.input_text(f"name_{k}", label,
+                            value=str(params.get(k, "") or ""),
+                        ),
+                    )
+                )
+                if len(row_cols) == 3:
+                    elements.append(ui.row(*row_cols))
+                    row_cols = []
+            if row_cols:
+                elements.append(ui.row(*row_cols))
+        return ui.div(*elements)
+
+    @render.ui
+    def panel_advanced_hydro():
+        params = build_panel_params(str_data.get(), "advanced_hydro")
+        return ui.div(
+            ui.h6("Semi-Implicit Weights", class_="text-muted"),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("azpar", "Transport weighting",
+                        value=float(params.get("azpar", 0.5) or 0.5),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("ampar", "Pressure weighting",
+                        value=float(params.get("ampar", 0.5) or 0.5),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("afpar", "Coriolis weighting",
+                        value=float(params.get("afpar", 0.5) or 0.5),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("atpar", "Vert. viscosity weighting",
+                        value=float(params.get("atpar", 1.0) or 1.0),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("adpar", "Vert. diffusion weighting",
+                        value=float(params.get("adpar", 1.0) or 1.0),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("aapar", "Vert. advection weighting",
+                        value=float(params.get("aapar", 1.0) or 1.0),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+            ),
+            ui.hr(),
+            ui.h6("Depth & Density", class_="text-muted"),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("href", "Reference depth correction (m)",
+                        value=float(params.get("href", 0) or 0),
+                        step=0.1,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("hmin", "Minimum basin depth (m)",
+                        value=float(params.get("hmin", -99999) if params.get("hmin") is not None else -99999),
+                        step=1.0,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("hmax", "Maximum basin depth (m)",
+                        value=float(params.get("hmax", 99999) if params.get("hmax") is not None else 99999),
+                        step=1.0,
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("rlin", "Non-linear term strength",
+                        value=float(params.get("rlin", 1.0) or 0),
+                        min=0, max=1, step=0.1,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("rowass", "Water density (kg/m3)",
+                        value=float(params.get("rowass", 1025.0) or 1025.0),
+                        min=0, step=1.0,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("roluft", "Air density (kg/m3)",
+                        value=float(params.get("roluft", 1.225) or 1.225),
+                        min=0, step=0.001,
+                    ),
+                ),
+            ),
+        )
+
+    @render.ui
+    def panel_renewal_time():
+        params = build_panel_params(str_data.get(), "renewal_time")
+        return ui.div(
+            ui.row(
+                ui.column(4,
+                    ui.input_text("idtwrt", "Reset interval (s)",
+                        value=str(params.get("idtwrt", "-1") if params.get("idtwrt") is not None else "-1"),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("c0", "Initial tracer concentration",
+                        value=float(params.get("c0", 1.0) or 1.0),
+                        step=0.1,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("iaout", "Outside area code",
+                        value=int(params.get("iaout", -1) if params.get("iaout") is not None else -1),
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("percmin", "Completion threshold (%)",
+                        value=float(params.get("percmin", 0) or 0),
+                        min=0, max=100, step=1.0,
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_select("iret", "Return flow",
+                        choices={"0": "0 - Explicit zero", "1": "1 - Return"},
+                        selected=str(params.get("iret", 1) or 0),
+                    ),
+                ),
+            ),
+        )
+
+    @render.ui
+    def panel_nonhydrostatic():
+        params = build_panel_params(str_data.get(), "nonhydrostatic")
+        return ui.div(
+            ui.row(
+                ui.column(4,
+                    ui.input_select("inohyd", "Non-hydrostatic mode",
+                        choices={
+                            "0": "0 - Hydrostatic",
+                            "1": "1 - Non-hydrostatic",
+                        },
+                        selected=str(params.get("inohyd", 0) or 0),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("aqpar", "Implicit parameter",
+                        value=float(params.get("aqpar", 0.5) or 0.5),
+                        min=0, max=1, step=0.05,
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_numeric("islope", "Poisson grid type",
+                        value=int(params.get("islope", 0) or 0),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_select("ivwadv", "Vert. advection of vert. momentum",
+                        choices={"0": "0 - Off", "1": "1 - On"},
+                        selected=str(params.get("ivwadv", 0) or 0),
                     ),
                 ),
             ),
