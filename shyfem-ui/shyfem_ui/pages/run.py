@@ -28,6 +28,7 @@ from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.parser_str import StrParser
+from shyfem_ui.services.str_validator import validate_str
 from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
@@ -646,6 +647,22 @@ def run_server(
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
+
+        # Validate STR parameters before submission
+        if tool == "shyfem" and validated_input.suffix == ".str":
+            try:
+                parsed_str = StrParser.parse_file(validated_input)
+                msgs = validate_str(parsed_str.sections)
+                errors = [m for m in msgs if m.level == "error"]
+                warnings = [m for m in msgs if m.level == "warning"]
+                if errors:
+                    for m in errors:
+                        ui.notification_show(f"STR error: {m.message}", type="error", duration=8)
+                    return
+                for m in warnings:
+                    ui.notification_show(f"STR warning: {m.message}", type="warning", duration=6)
+            except Exception:
+                logger.debug("STR validation skipped (parse error)", exc_info=True)
 
         if not working_dir:
             working_dir = str(validated_input.parent)
