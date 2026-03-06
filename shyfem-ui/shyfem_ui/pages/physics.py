@@ -17,6 +17,14 @@ from shyfem_ui.services.str_validator import validate_str
 logger = logging.getLogger(__name__)
 
 PHYSICS_PANELS = {
+    "timing": {
+        "label": "Simulation Timing",
+        "icon": "bi-clock",
+        "params": {
+            "itanf": "para", "itend": "para", "idt": "para",
+            "date": "para", "time": "para", "tz": "para",
+        },
+    },
     "hydrodynamics": {
         "label": "Hydrodynamics",
         "icon": "bi-water",
@@ -393,6 +401,46 @@ def physics_server(input, output, session, config: Config, active_project=None):
         return ui.accordion(*panels, id="physics_accordion", open=False)
 
     # --- Panel render functions (one per physics module) ---
+
+    @render.ui
+    def panel_timing():
+        params = build_panel_params(str_data.get(), "timing")
+        return ui.div(
+            ui.row(
+                ui.column(4,
+                    ui.input_text("itanf", "Start time",
+                        value=str(params.get("itanf", "0") or "0"),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_text("itend", "End time",
+                        value=str(params.get("itend", "") or ""),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_text("idt", "Time step (s)",
+                        value=str(params.get("idt", "") or ""),
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(4,
+                    ui.input_text("date", "Reference date (YYYYMMDD)",
+                        value=str(params.get("date", "") or ""),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_text("time", "Reference time (HHMMSS)",
+                        value=str(params.get("time", "") or ""),
+                    ),
+                ),
+                ui.column(4,
+                    ui.input_numeric("tz", "Time zone offset (h)",
+                        value=int(params.get("tz", 0) or 0),
+                    ),
+                ),
+            ),
+        )
 
     @render.ui
     def panel_hydrodynamics():

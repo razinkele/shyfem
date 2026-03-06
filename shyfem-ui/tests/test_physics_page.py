@@ -12,8 +12,8 @@ from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 class TestPhysicsPanels:
     """Physics panel definitions are complete and valid."""
 
-    def test_all_19_panels_defined(self):
-        assert len(PHYSICS_PANELS) == 19
+    def test_all_20_panels_defined(self):
+        assert len(PHYSICS_PANELS) == 20
 
     def test_each_panel_has_required_keys(self):
         for pid, panel in PHYSICS_PANELS.items():
@@ -39,6 +39,24 @@ class TestPhysicsPanels:
     def test_lagrangian_panel_has_section(self):
         panel = PHYSICS_PANELS["lagrangian"]
         assert panel.get("section") == "lagrg" or "ilagr" in panel["params"]
+
+
+class TestTimingPanel:
+    """Simulation timing panel with itanf/itend/idt."""
+
+    def test_panel_exists(self):
+        assert "timing" in PHYSICS_PANELS
+
+    def test_timing_params_present(self):
+        params = PHYSICS_PANELS["timing"]["params"]
+        for p in ("itanf", "itend", "idt", "date", "time", "tz"):
+            assert p in params, f"Missing param {p}"
+
+    def test_build_timing_defaults(self):
+        result = build_panel_params(StrFile(), "timing")
+        assert "itanf" in result
+        assert "itend" in result
+        assert "idt" in result
 
 
 class TestBuildPanelParams:
