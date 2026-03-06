@@ -384,6 +384,31 @@ def simulation_server(
             for s in parsed.sections.values()
         )
 
+        # Validate template
+        validation_msgs = validate_str(parsed.sections)
+        val_parts = []
+        errors = [m for m in validation_msgs if m.level == "error"]
+        warnings = [m for m in validation_msgs if m.level == "warning"]
+        infos = [m for m in validation_msgs if m.level == "info"]
+        if errors:
+            for m in errors:
+                val_parts.append(ui.div(
+                    ui.tags.i(class_="bi bi-x-circle text-danger me-1"),
+                    ui.span(m.message, class_="small"),
+                ))
+        if warnings:
+            for m in warnings:
+                val_parts.append(ui.div(
+                    ui.tags.i(class_="bi bi-exclamation-triangle text-warning me-1"),
+                    ui.span(m.message, class_="small"),
+                ))
+        if infos:
+            for m in infos:
+                val_parts.append(ui.div(
+                    ui.tags.i(class_="bi bi-info-circle text-info me-1"),
+                    ui.span(m.message, class_="small text-muted"),
+                ))
+
         return ui.div(
             ui.div(
                 ui.span("Sections: ", class_="small fw-bold"),
@@ -393,6 +418,13 @@ def simulation_server(
             ui.div(
                 ui.span(f"{param_count} parameters", class_="small text-muted"),
                 class_="mb-2",
+            ),
+            *(
+                [ui.div(
+                    ui.span("Needs attention:", class_="small fw-bold text-warning"),
+                    *val_parts,
+                    class_="mb-2 p-1 border-start border-warning border-3 ps-2",
+                )] if val_parts else []
             ),
             ui.pre(
                 template.strip()[:300] + ("..." if len(template.strip()) > 300 else ""),
