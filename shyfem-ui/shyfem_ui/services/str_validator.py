@@ -119,4 +119,51 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
                 "ilagr",
             ))
 
+    # --- Dependency: iturb valid range (turbulence.f90:105-114) ---
+    if iturb is not None and isinstance(iturb, int) and iturb not in (0, 1, 2, 3):
+        msgs.append(ValidationMessage(
+            "error",
+            "iturb={} is invalid — must be 0 (off), 1 (GOTM), 2 (k-epsilon), or 3 (Munk-Anderson)".format(iturb),
+            "iturb",
+        ))
+
+    # --- Dependency: ibarcl valid range (baroclinic.f90:307-312) ---
+    if ibarcl is not None and isinstance(ibarcl, int) and ibarcl not in (0, 1, 2, 3, 4, 5):
+        msgs.append(ValidationMessage(
+            "error",
+            "ibarcl={} is invalid — must be 0-5".format(ibarcl),
+            "ibarcl",
+        ))
+
+    # --- Dependency: iwave valid range (waves_admin.f90:1227-1229) ---
+    iwave = _get(sections, "para", "iwave", 0)
+    if iwave is not None and isinstance(iwave, int) and iwave not in (0, 1, 2, 3, 4, 5):
+        msgs.append(ValidationMessage(
+            "error",
+            "iwave={} is invalid — must be 0 (off), 1-5 (coupling modes)".format(iwave),
+            "iwave",
+        ))
+
+    # --- Dependency: itdrag=3 requires iwave>=2 (waves_admin.f90:190-193) ---
+    itdrag = _get(sections, "para", "itdrag", 0)
+    if itdrag == 3 and (iwave is None or iwave < 2):
+        msgs.append(ValidationMessage(
+            "error",
+            "itdrag=3 (wave-coupled drag) requires iwave>=2 (WWMIII coupling)",
+            "itdrag",
+        ))
+
+    # --- Dependency: iconz>0 but no conzin or boundary file ---
+    iconz = _get(sections, "para", "iconz", 0)
+    if iconz and iconz > 0:
+        conzin = _get(sections, "name", "conzin")
+        conzn = _get(sections, "name", "conzn")
+        conref = _get(sections, "para", "conref", 0)
+        if not conzin and not conzn and (conref is None or conref == 0):
+            msgs.append(ValidationMessage(
+                "info",
+                "iconz={} active but no conzin, conzn file, or conref set — tracers start at zero".format(iconz),
+                "iconz",
+            ))
+
     return msgs

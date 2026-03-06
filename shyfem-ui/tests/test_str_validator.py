@@ -77,3 +77,40 @@ class TestDependencyValidation:
         })
         warnings = [m for m in msgs if m.level == "warning"]
         assert not any("sedtr" in m.message.lower() for m in warnings)
+
+
+class TestRangeValidation:
+    """Parameter range checks from Fortran source."""
+
+    _VALID = {"itanf": "0", "itend": "86400", "idt": "300"}
+
+    def test_iturb_invalid_value(self):
+        msgs = validate_str({"para": {**self._VALID, "iturb": 7}})
+        errors = [m for m in msgs if m.level == "error"]
+        assert any("iturb" in m.message for m in errors)
+
+    def test_iturb_valid_values(self):
+        for val in (0, 1, 2, 3):
+            msgs = validate_str({"para": {**self._VALID, "iturb": val}})
+            errors = [m for m in msgs if m.level == "error" and "iturb" in m.message and "invalid" in m.message]
+            assert len(errors) == 0, f"iturb={val} should be valid"
+
+    def test_ibarcl_invalid_value(self):
+        msgs = validate_str({"para": {**self._VALID, "ibarcl": 9}})
+        errors = [m for m in msgs if m.level == "error"]
+        assert any("ibarcl" in m.message for m in errors)
+
+    def test_iwave_invalid_value(self):
+        msgs = validate_str({"para": {**self._VALID, "iwave": 8}})
+        errors = [m for m in msgs if m.level == "error"]
+        assert any("iwave" in m.message for m in errors)
+
+    def test_itdrag_3_without_waves(self):
+        msgs = validate_str({"para": {**self._VALID, "itdrag": 3, "iwave": 0}})
+        errors = [m for m in msgs if m.level == "error"]
+        assert any("itdrag" in m.message for m in errors)
+
+    def test_itdrag_3_with_waves_ok(self):
+        msgs = validate_str({"para": {**self._VALID, "itdrag": 3, "iwave": 2}})
+        errors = [m for m in msgs if m.level == "error" and "itdrag" in m.message]
+        assert len(errors) == 0
