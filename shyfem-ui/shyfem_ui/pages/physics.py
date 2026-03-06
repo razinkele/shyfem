@@ -33,6 +33,7 @@ PHYSICS_PANELS = {
             "azpar": "para", "ampar": "para", "afpar": "para",
             "atpar": "para", "adpar": "para", "aapar": "para",
             "href": "para", "hmin": "para", "hmax": "para", "rlin": "para",
+            "rowass": "para", "roluft": "para",
         },
     },
     "vertical": {
@@ -140,6 +141,12 @@ PHYSICS_PANELS = {
         "label": "Input Files",
         "icon": "bi-folder2-open",
         "section": "name",
+        "params": {},
+    },
+    "nonhydrostatic": {
+        "label": "Non-Hydrostatic",
+        "icon": "bi-box-arrow-up",
+        "section": "nonhyd",
         "params": {},
     },
     "output": {

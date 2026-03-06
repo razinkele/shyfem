@@ -310,6 +310,7 @@ COMMON_SECTIONS = {
     "bfmsc": "BFM biogeochemical flux model",
     "nduge": "Data assimilation via zeta/velocity nudging",
     "wrt": "Custom write sections",
+    "nonhyd": "Non-hydrostatic mode parameters",
 }
 
 # Parameter metadata: (description, type_str, default, units, valid_range_or_options)
@@ -594,6 +595,12 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "ttau": _p("Relaxation time constant", "float", 0.0, "s", ">0"),
         "sigma": _p("Spatial influence radius (Gaussian)", "float", 0.0, "m", ">0"),
         "bmulti": _p("Multi-station nudging", "int", 1, "", "0=off, 1=on"),
+    },
+    "nonhyd": {
+        "inohyd": _p("Non-hydrostatic mode", "int", 0, "", "0=hydrostatic, 1=non-hydrostatic"),
+        "aqpar": _p("Implicit parameter", "float", 0.5, "", "[0,1]"),
+        "islope": _p("Poisson grid type", "int", 0, "", ""),
+        "ivwadv": _p("Vertical advection of vertical momentum", "int", 0, "", "0=off, 1=on"),
     },
 }
 

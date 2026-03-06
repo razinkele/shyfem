@@ -12,8 +12,8 @@ from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 class TestPhysicsPanels:
     """Physics panel definitions are complete and valid."""
 
-    def test_all_18_panels_defined(self):
-        assert len(PHYSICS_PANELS) == 18
+    def test_all_19_panels_defined(self):
+        assert len(PHYSICS_PANELS) == 19
 
     def test_each_panel_has_required_keys(self):
         for pid, panel in PHYSICS_PANELS.items():
@@ -303,3 +303,35 @@ class TestLagrangianConnectivity:
     def test_build_has_connectivity(self):
         result = build_panel_params(StrFile(), "lagrangian")
         assert "icnn" in result
+
+
+class TestNonhydPanel:
+    def test_panel_exists(self):
+        assert "nonhydrostatic" in PHYSICS_PANELS
+
+    def test_has_nonhyd_section(self):
+        assert PHYSICS_PANELS["nonhydrostatic"].get("section") == "nonhyd"
+
+    def test_nonhyd_in_common(self):
+        assert "nonhyd" in COMMON_PARAMS
+        assert "inohyd" in COMMON_PARAMS["nonhyd"]
+
+    def test_build_defaults(self):
+        result = build_panel_params(StrFile(), "nonhydrostatic")
+        assert result["inohyd"] == 0
+
+
+class TestPhysicalConstants:
+    def test_constants_in_common(self):
+        for p in ("rowass", "roluft"):
+            assert p in COMMON_PARAMS["para"]
+
+    def test_constants_in_advanced_hydro(self):
+        params = PHYSICS_PANELS["advanced_hydro"]["params"]
+        assert "rowass" in params
+        assert "roluft" in params
+
+    def test_build_has_constants(self):
+        result = build_panel_params(StrFile(), "advanced_hydro")
+        assert result["rowass"] == 1025.0
+        assert result["roluft"] == 1.225
