@@ -36,7 +36,7 @@ class TestShyfemWrapper:
     def test_get_executable_not_found(self, wrapper):
         """Test getting executable that doesn't exist."""
         with pytest.raises(FileNotFoundError):
-            wrapper.get_executable("nonexistent")
+            wrapper.get_executable("shyadj")
 
     def test_check_available_true(self, wrapper):
         """Test checking tool availability when available."""
@@ -47,18 +47,18 @@ class TestShyfemWrapper:
 
     def test_check_available_false(self, wrapper):
         """Test checking tool availability when not available."""
-        assert wrapper.check_available("nonexistent") is False
+        assert wrapper.check_available("shyadj") is False
 
     @pytest.mark.asyncio
     async def test_run_command_success(self, wrapper, tmp_path):
         """Test running a command successfully."""
         # Create a fake executable (shell script)
-        exe = wrapper.bin_dir / "test_tool"
+        exe = wrapper.bin_dir / "shyfem"
         exe.write_text("#!/bin/bash\necho 'Hello World'")
         exe.chmod(0o755)
 
         result = await wrapper.run_command(
-            "test_tool",
+            "shyfem",
             [],
             tmp_path,
         )
@@ -71,12 +71,12 @@ class TestShyfemWrapper:
     async def test_run_command_failure(self, wrapper, tmp_path):
         """Test running a command that fails."""
         # Create a fake executable that fails
-        exe = wrapper.bin_dir / "fail_tool"
+        exe = wrapper.bin_dir / "shypre"
         exe.write_text("#!/bin/bash\nexit 1")
         exe.chmod(0o755)
 
         result = await wrapper.run_command(
-            "fail_tool",
+            "shypre",
             [],
             tmp_path,
         )
@@ -87,7 +87,7 @@ class TestShyfemWrapper:
     @pytest.mark.asyncio
     async def test_run_command_with_callback(self, wrapper, tmp_path):
         """Test running a command with output callback."""
-        exe = wrapper.bin_dir / "test_tool"
+        exe = wrapper.bin_dir / "shyfem"
         exe.write_text("#!/bin/bash\necho 'line1'\necho 'line2'")
         exe.chmod(0o755)
 
@@ -97,7 +97,7 @@ class TestShyfemWrapper:
             output_lines.append(line)
 
         await wrapper.run_command(
-            "test_tool",
+            "shyfem",
             [],
             tmp_path,
             output_callback=callback,
@@ -110,12 +110,12 @@ class TestShyfemWrapper:
     @pytest.mark.asyncio
     async def test_run_command_with_args(self, wrapper, tmp_path):
         """Test running a command with arguments."""
-        exe = wrapper.bin_dir / "echo_tool"
+        exe = wrapper.bin_dir / "shybas"
         exe.write_text('#!/bin/bash\necho "$@"')
         exe.chmod(0o755)
 
         result = await wrapper.run_command(
-            "echo_tool",
+            "shybas",
             ["arg1", "arg2"],
             tmp_path,
         )
@@ -301,11 +301,11 @@ class TestShyfemWrapperExtended:
     @pytest.mark.asyncio
     async def test_run_command_with_stderr(self, wrapper, tmp_path):
         """Test running a command that produces stderr."""
-        exe = wrapper.bin_dir / "stderr_tool"
+        exe = wrapper.bin_dir / "shyelab"
         exe.write_text("#!/bin/bash\necho 'error output' >&2\nexit 0")
         exe.chmod(0o755)
 
-        result = await wrapper.run_command("stderr_tool", [], tmp_path)
+        result = await wrapper.run_command("shyelab", [], tmp_path)
         assert result.success is True
         assert "error output" in result.stderr
 
@@ -313,16 +313,16 @@ class TestShyfemWrapperExtended:
     async def test_run_command_nonexistent_tool(self, wrapper, tmp_path):
         """Test running a tool that doesn't exist raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
-            await wrapper.run_command("nonexistent_tool", [], tmp_path)
+            await wrapper.run_command("shyadj", [], tmp_path)
 
     @pytest.mark.asyncio
     async def test_run_command_measures_duration(self, wrapper, tmp_path):
         """Test that command duration is measured."""
-        exe = wrapper.bin_dir / "slow_tool"
+        exe = wrapper.bin_dir / "shyplot"
         exe.write_text("#!/bin/bash\nsleep 0.1\necho done")
         exe.chmod(0o755)
 
-        result = await wrapper.run_command("slow_tool", [], tmp_path)
+        result = await wrapper.run_command("shyplot", [], tmp_path)
         assert result.duration >= 0.05
 
     def test_output_extensions_mapping(self, wrapper):
@@ -384,3 +384,27 @@ class TestRunShyfemSolver:
         (wrapper.bin_dir / "shyfem-petsc").unlink()
         with pytest.raises(FileNotFoundError):
             await wrapper.run_shyfem("test.str", tmp_path, solver="petsc")
+
+
+class TestAllowlist:
+    """Tests for ALLOWED_TOOLS security allowlist."""
+
+    @pytest.fixture
+    def wrapper(self, tmp_path):
+        """Create a wrapper with temporary SHYFEM directory."""
+        shyfem_dir = tmp_path / "shyfem"
+        shyfem_dir.mkdir()
+        (shyfem_dir / "bin").mkdir()
+        return ShyfemWrapper(shyfem_dir)
+
+    def test_get_executable_rejects_unlisted_tool(self, tmp_path):
+        """Reject tool names not in the allowlist."""
+        wrapper = ShyfemWrapper(tmp_path)
+        with pytest.raises(ValueError, match="not an allowed SHYFEM tool"):
+            wrapper.get_executable("bash")
+
+    def test_get_executable_rejects_path_traversal(self, tmp_path):
+        """Reject tool names containing path separators."""
+        wrapper = ShyfemWrapper(tmp_path)
+        with pytest.raises(ValueError, match="not an allowed SHYFEM tool"):
+            wrapper.get_executable("../../../bin/bash")
