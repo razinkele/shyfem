@@ -469,12 +469,12 @@ class TestMiddlewareRootPath:
 
     @pytest.mark.asyncio
     async def test_websocket_allowed_without_cookie_when_behind_proxy(self):
-        """Shiny Server's internal WS doesn't forward cookies — allow through."""
+        """Shiny Server's internal WS from localhost — allow through behind proxy."""
         inner_app = AsyncMock()
         auth_service = MagicMock()
         mw = SessionAuthMiddleware(inner_app, auth_service, root_path="/shyfem-ui")
 
-        scope = {"type": "websocket", "headers": []}
+        scope = {"type": "websocket", "headers": [], "client": ("127.0.0.1", 12345)}
         await mw(scope, AsyncMock(), AsyncMock())
 
         inner_app.assert_called_once()
@@ -486,10 +486,66 @@ class TestMiddlewareRootPath:
         auth_service = MagicMock()
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
-        scope = {"type": "websocket", "headers": []}
+        scope = {"type": "websocket", "headers": [], "client": ("127.0.0.1", 12345)}
         send = AsyncMock()
         await mw(scope, AsyncMock(), send)
 
         inner_app.assert_not_called()
         close_msg = send.call_args_list[0][0][0]
         assert close_msg["code"] == 4001
+
+    @pytest.mark.asyncio
+    async def test_websocket_rejected_without_auth_behind_proxy_non_local(self):
+        """WS from non-localhost behind proxy must still require auth."""
+        app_called = False
+        async def dummy_app(scope, receive, send):
+            nonlocal app_called
+            app_called = True
+
+        auth_service = MagicMock()
+        auth_service.validate_session.return_value = None
+        middleware = SessionAuthMiddleware(
+            dummy_app, auth_service=auth_service, root_path="/shyfem-ui"
+        )
+
+        scope = {
+            "type": "websocket",
+            "path": "/shyfem-ui/ws",
+            "headers": [],
+            "client": ("1.2.3.4", 12345),
+        }
+        sent = []
+        async def receive(): return {"type": "websocket.connect"}
+        async def send(msg): sent.append(msg)
+
+        await middleware(scope, receive, send)
+        assert any(m.get("code") == 4001 for m in sent), \
+            "Non-localhost unauthenticated WS should be rejected behind proxy"
+        assert not app_called
+
+    @pytest.mark.asyncio
+    async def test_websocket_allowed_from_localhost_behind_proxy(self):
+        """WS from localhost behind proxy is allowed (Shiny Server internal)."""
+        app_called = False
+        async def dummy_app(scope, receive, send):
+            nonlocal app_called
+            app_called = True
+
+        auth_service = MagicMock()
+        auth_service.validate_session.return_value = None
+        middleware = SessionAuthMiddleware(
+            dummy_app, auth_service=auth_service, root_path="/shyfem-ui"
+        )
+
+        scope = {
+            "type": "websocket",
+            "path": "/shyfem-ui/ws",
+            "headers": [],
+            "client": ("127.0.0.1", 12345),
+        }
+        sent = []
+        async def receive(): return {"type": "websocket.connect"}
+        async def send(msg): sent.append(msg)
+
+        await middleware(scope, receive, send)
+        assert app_called, "Localhost WS behind proxy should be allowed through"

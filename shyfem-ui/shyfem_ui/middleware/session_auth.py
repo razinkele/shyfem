@@ -585,13 +585,16 @@ class SessionAuthMiddleware:
             if session_token:
                 user = self.auth_service.validate_session(session_token)
 
-            if user is None and not self.root_path:
-                # Direct deployment: reject unauthenticated WebSocket.
-                # Behind reverse proxy (Shiny Server): skip WS auth
-                # because the proxy gates access at the HTTP layer and
-                # its internal WS connection doesn't forward cookies.
-                await send({"type": "websocket.close", "code": 4001})
-                return
+            if user is None:
+                # Allow unauthenticated WS only from localhost behind
+                # reverse proxy (Shiny Server's internal WS connection
+                # doesn't forward cookies, but connects from 127.0.0.1).
+                client = scope.get("client")
+                client_host = client[0] if client else None
+                is_local = client_host in ("127.0.0.1", "::1")
+                if not (self.root_path and is_local):
+                    await send({"type": "websocket.close", "code": 4001})
+                    return
 
             token = _user_var.set(user)
             try:
