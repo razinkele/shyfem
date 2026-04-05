@@ -77,7 +77,7 @@ class LocalJobQueue(JobQueue):
                     self._jobs[row.job_uuid] = self._db_row_to_job_info(row)
         except Exception:
             # DB may not be initialised yet at import time — that's fine
-            logger.debug("Could not load job history from DB", exc_info=True)
+            logger.warning("Could not load job history from DB", exc_info=True)
 
     @staticmethod
     def _db_row_to_job_info(row) -> JobInfo:
@@ -135,7 +135,7 @@ class LocalJobQueue(JobQueue):
                 row.stdout_file = job.stdout_file
                 row.stderr_file = job.stderr_file
         except Exception:
-            logger.debug("Could not persist job %s to DB", job.id, exc_info=True)
+            logger.error("Could not persist job %s to DB", job.id, exc_info=True)
 
     def _send_completion_notification(self, job: "JobInfo") -> None:
         """Send email notification for job completion. Skips if not configured."""

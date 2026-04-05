@@ -689,7 +689,7 @@ def run_server(
                 if restart_from:
                     metadata["restart_file"] = restart_from
             except Exception:
-                pass
+                logger.warning("Could not set restart_from file", exc_info=True)
 
         # Check dependency
         depends_on = input.depends_on()
