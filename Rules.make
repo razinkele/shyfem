@@ -674,9 +674,9 @@ endif
 # end of special treatment
 ##############################################
 
-FGNU_GENERAL = -cpp -std=f95
+FGNU_GENERAL = -cpp
 ifdef MODDIR
-  FGNU_GENERAL = -cpp -J$(MODDIR)
+  FGNU_GENERAL += -J$(MODDIR)
 endif
 FGNU_GENERAL += $(XFLAG)
 
@@ -806,11 +806,6 @@ ifeq ($(OPTIMIZE),HIGH)
 endif
 ifeq ($(OPTIMIZE),NONE)
   FPGI_OPT   = 
-endif
-
-FGNU_OMP   =
-ifeq ($(PARALLEL_OMP),true)
-  FGNU_OMP   =  -fopenmp
 endif
 
 FPGI_WARNING =
@@ -994,7 +989,6 @@ ifeq ($(BOUNDS),true)
 endif
 
 FINTEL_NOOPT = -g -traceback
-FINTEL_NOOPT = 
 ifeq ($(DEBUG),true)
   FINTEL_TRAP = -fp-trap-all=common
   FINTEL_TRAP = -ftrapuv -debug all -fpe0
@@ -1014,7 +1008,7 @@ endif
 
 FINTEL_OPT   = -O
 ifeq ($(OPTIMIZE),HIGH)
-  FINTEL_OPT   = -O1 -assume byterecl -no-wrap-margin # WW3_ARON
+  FINTEL_OPT   = -O3 -assume byterecl -no-wrap-margin
   #FINTEL_OPT   = -O3 -mcmodel=medium
   #FINTEL_OPT   = -O3 -mcmodel=large
 endif
