@@ -56,8 +56,15 @@ class User(Base):
 
         Returns:
             Path: {user_data_root}/{username}/
+
+        Raises:
+            ValueError: If the resolved path escapes user_data_root.
         """
-        return Path(user_data_root) / self.username
+        result = (Path(user_data_root) / self.username).resolve()
+        root = Path(user_data_root).resolve()
+        if not str(result).startswith(str(root)):
+            raise ValueError(f"Username {self.username!r} escapes data root")
+        return result
 
     def __repr__(self) -> str:
         return f"<User(id={self.id}, username='{self.username}', role='{self.role}')>"

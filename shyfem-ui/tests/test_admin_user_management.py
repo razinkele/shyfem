@@ -58,3 +58,17 @@ def test_validate_create_user_rejects_path_traversal():
     from shyfem_ui.pages.admin import _validate_create_user_form
     errors = _validate_create_user_form("../evil", "pass1234", "user", email="x@x.com")
     assert any("username" in e.lower() for e in errors)
+
+
+def test_username_rejects_dotdot():
+    """Username '..' must be rejected to prevent path traversal."""
+    from shyfem_ui.pages.admin import _validate_create_user_form
+    errors = _validate_create_user_form("..", "password123", "user", "test@example.com")
+    assert any("consecutive dots" in e.lower() or "username" in e.lower() for e in errors)
+
+
+def test_username_rejects_dotdot_embedded():
+    """Username 'foo..bar' must be rejected."""
+    from shyfem_ui.pages.admin import _validate_create_user_form
+    errors = _validate_create_user_form("foo..bar", "password123", "user", "test@example.com")
+    assert len(errors) > 0

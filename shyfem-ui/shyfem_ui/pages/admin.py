@@ -59,6 +59,8 @@ def _validate_create_user_form(
     if username and username.strip():
         if not re.match(r'^[a-zA-Z0-9._-]{1,64}$', username.strip()):
             errors.append("Username may only contain letters, digits, dots, hyphens, and underscores (1-64 characters)")
+        elif '..' in username:
+            errors.append("Username must not contain consecutive dots")
     if not password:
         errors.append("Password is required")
     elif len(password) < 8:
