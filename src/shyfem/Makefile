@@ -373,7 +373,7 @@ cleanlinks:
 #	cp $(EXES) /home/georg/work/shyfem_repo/shyfem/fem3d
 
 .PHONY: default fem links depend nothing info nuopc_info nuopc_clean \
-	libnuopc nuopc clean cleanall cleanlinks compile
+	libnuopc nuopc clean cleanall cleanlinks
 
 #------------------------------------------------------------------------
 
@@ -735,6 +735,10 @@ lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_layer_thickness.mod \
 		../../lib/mod/shyfile.mod 
 lagrange_larve.o: ../../lib/mod/mod_lagrange.mod
+lagrange_mpi.o: ../../lib/mod/basin.mod \
+		../../lib/mod/connectivity.mod \
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/shympi.mod
 lagrange_main.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/lgr_sedim_module.mod \
