@@ -955,6 +955,7 @@
 	real hacu,hlevel,hsigma,hsig
 	real hmin
 	real :: hminmor
+	integer ierr_depth
 
 	real areael,areafv
 	real areaele
@@ -1156,7 +1157,10 @@
 ! compute depth at nodes
 !----------------------------------------------------------------
 
-!$OMP PARALLEL DO PRIVATE(k,lmax,lmin,levmin,l,areafv,h) SCHEDULE(STATIC)
+	ierr_depth = 0
+
+!$OMP PARALLEL DO PRIVATE(k,lmax,lmin,levmin,l,areafv,h) &
+!$OMP &   SHARED(ierr_depth) SCHEDULE(STATIC)
 	do k=1,nkn_inner
 	  lmax = ilhkv(k)
 	  lmin = jlhkv(k)
@@ -1172,6 +1176,7 @@
 	  do l=lmin,lmax
 	    h = hdkn(l,k)
 	    if( h <= hmin ) then
+!$OMP CRITICAL
 	      write(6,*) 'error computing layer thickness'
 	      write(6,*) 'no layer depth in node: ',k,l,lmax
 	      write(6,*) 'depth: ',h
@@ -1183,11 +1188,16 @@
 	      call check_set_unit(666)
 	      call check_node(k)
 	      call check_elems_around_node(k)
-	      stop 'error stop setdepth: no layer in node'
+	      ierr_depth = 1
+!$OMP END CRITICAL
 	    end if
 	  end do
 	end do
 !$OMP END PARALLEL DO
+
+	if( ierr_depth /= 0 ) then
+	  stop 'error stop setdepth: no layer in node'
+	end if
 
 !----------------------------------------------------------------
 ! echange nodal values

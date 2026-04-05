@@ -913,6 +913,7 @@
 	real vismol,rrho0
 	real dt
 
+	integer ierr_rms
 	double precision dtime
 	double precision rmsdif,rmsmax
 	double precision tempo
@@ -984,20 +985,26 @@
 
 	call get_clock_count(count)
 
+	  ierr_rms = 0
+
 !$OMP PARALLEL DO FIRSTPRIVATE(bcolin,baroc,az,am,af,at,radv       &
 !$OMP &            ,vismol,rrho0,dt) PRIVATE(ie,rmsdif)  &
-!$OMP &     SHARED(nel,nchunk)   DEFAULT(NONE)
+!$OMP &     SHARED(nel,nchunk) REDUCTION(max:ierr_rms) DEFAULT(NONE)
 
  	  do ie=1,nel
 	    call hydro_intern(ie,bcolin,baroc,az,am,af,at,radv &
      &			,vismol,rrho0,dt,rmsdif)
 	    if( rmsdif > 1.D-10 ) then
-	      write(6,*) 'rmsdif: ',rmsdif
-	      stop 'error stop hydro_transports: rms too high'
+	      ierr_rms = 1
 	    end if
 	  end do
 
 !$OMP END PARALLEL DO
+
+	  if( ierr_rms /= 0 ) then
+	    write(6,*) 'error: rmsdif too high in hydro_transports'
+	    stop 'error stop hydro_transports: rms too high'
+	  end if
 
 !-------------------------------------------------------------
 ! end of loop over elements
