@@ -1194,12 +1194,12 @@ from shiny import module, reactive, render, ui  # noqa: E402
 try:
     from shiny_deckgl import (  # noqa: E402
         MapWidget,
-        deck_legend_control,
         fullscreen_widget,
+        legend_control,
         zoom_widget,
     )
 except ImportError:
-    MapWidget = deck_legend_control = fullscreen_widget = zoom_widget = None
+    MapWidget = fullscreen_widget = legend_control = zoom_widget = None
 
 # View-mode choices for the dropdown
 _VIEW_MODES: dict[str, str] = {
@@ -1481,7 +1481,7 @@ def grid_map_server(
 
         if legend_entries:
             await _map.set_controls(session, [
-                deck_legend_control(
+                legend_control(
                     legend_entries,
                     position="bottom-right",
                     title="Layers",

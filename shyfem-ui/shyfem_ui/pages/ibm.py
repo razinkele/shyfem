@@ -14,17 +14,17 @@ try:
     from shiny_deckgl import (
         MapWidget,
         context_menu_widget,
-        deck_legend_control,
         fullscreen_widget,
         info_widget,
+        legend_control,
         path_layer,
         scatterplot_layer,
         tile_layer,
         zoom_widget,
     )
 except ImportError:
-    MapWidget = context_menu_widget = deck_legend_control = fullscreen_widget = None
-    info_widget = path_layer = scatterplot_layer = tile_layer = zoom_widget = None
+    MapWidget = context_menu_widget = fullscreen_widget = None
+    info_widget = legend_control = path_layer = scatterplot_layer = tile_layer = zoom_widget = None
 
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
@@ -367,7 +367,7 @@ def ibm_server(
                 context_menu_widget(),
             ],
         )
-        controls = ([deck_legend_control(legend_entries, position="bottom-right", title="Layers")]
+        controls = ([legend_control(legend_entries, position="bottom-right", title="Layers")]
                     if legend_entries else [])
         await _map.set_controls(session, controls)
         await _map.set_style(session, BASEMAPS.get(basemap_key, BASEMAPS["positron"]))
