@@ -59,10 +59,12 @@ def _validate_create_user_form(
     if username and username.strip():
         if not re.match(r'^[a-zA-Z0-9._-]{1,64}$', username.strip()):
             errors.append("Username may only contain letters, digits, dots, hyphens, and underscores (1-64 characters)")
+        elif '..' in username:
+            errors.append("Username must not contain consecutive dots")
     if not password:
         errors.append("Password is required")
-    elif len(password) < 4:
-        errors.append("Password must be at least 4 characters")
+    elif len(password) < 8:
+        errors.append("Password must be at least 8 characters")
     if role not in _VALID_ROLES:
         errors.append(f"Role must be one of: {', '.join(sorted(_VALID_ROLES))}")
     # Email required for non-tutorial accounts
@@ -149,7 +151,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
             if user_role is not None:
                 return user_role() == "admin"
         except Exception:
-            pass
+            logger.debug("user_role() reactive not yet available", exc_info=True)
         return _check_admin_access(get_current_user())
 
     # Reactive value holding user list (always defined so render functions can reference it)
@@ -237,7 +239,12 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                         ui.input_action_link(
                             f"send_test_email_{u['id']}",
                             "Test Email",
-                            class_="btn btn-sm btn-outline-primary",
+                            class_="btn btn-sm btn-outline-primary me-1",
+                        ),
+                        ui.input_action_link(
+                            f"delete_user_{u['id']}",
+                            "Delete",
+                            class_="btn btn-sm btn-outline-danger",
                         ),
                     ),
                 )
@@ -301,8 +308,8 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         @reactive.event(input[f"confirm_reset_pw_{user_id}"])
         def _do_reset_pw():
             new_pw = input.reset_pw_value() or ""
-            if len(new_pw) < 4:
-                ui.notification_show("Password must be at least 4 characters", type="error", duration=6)
+            if len(new_pw) < 8:
+                ui.notification_show("Password must be at least 8 characters", type="error", duration=6)
                 return
             try:
                 auth_service.reset_password(user_id, new_pw)
@@ -375,6 +382,42 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
             except Exception as e:
                 logger.exception("Failed to send test email to user %d", user_id)
                 ui.notification_show(f"SMTP error: {e}", type="error", duration=6)
+
+        @reactive.effect
+        @reactive.event(input[f"delete_user_{user_id}"])
+        def _delete_user():
+            m = ui.modal(
+                ui.p(
+                    f"Are you sure you want to permanently delete user ",
+                    ui.tags.strong(username),
+                    "? This cannot be undone.",
+                ),
+                title=f"Delete User '{username}'",
+                easy_close=True,
+                footer=ui.div(
+                    ui.input_action_button(
+                        f"confirm_delete_{user_id}",
+                        "Delete",
+                        class_="btn-danger",
+                    ),
+                    ui.modal_button("Cancel"),
+                ),
+            )
+            ui.modal_show(m)
+
+        @reactive.effect
+        @reactive.event(input[f"confirm_delete_{user_id}"])
+        def _do_delete_user():
+            try:
+                auth_service.delete_user(user_id)
+                ui.modal_remove()
+                ui.notification_show(f"User '{username}' deleted", type="message", duration=4)
+                _refresh()
+            except ValueError as exc:
+                ui.notification_show(str(exc), type="error", duration=6)
+            except Exception as e:
+                logger.exception("Failed to delete user %d", user_id)
+                ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     @reactive.effect
     def _register_all_user_actions():

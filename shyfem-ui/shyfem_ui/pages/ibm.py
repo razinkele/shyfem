@@ -5,20 +5,26 @@ Simulation setup belongs on the Simulation + Run pages.
 """
 
 import logging
+import math
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
-from shiny_deckgl import (
-    MapWidget,
-    context_menu_widget,
-    deck_legend_control,
-    fullscreen_widget,
-    info_widget,
-    path_layer,
-    scatterplot_layer,
-    tile_layer,
-    zoom_widget,
-)
+
+try:
+    from shiny_deckgl import (
+        MapWidget,
+        context_menu_widget,
+        deck_legend_control,
+        fullscreen_widget,
+        info_widget,
+        path_layer,
+        scatterplot_layer,
+        tile_layer,
+        zoom_widget,
+    )
+except ImportError:
+    MapWidget = context_menu_widget = deck_legend_control = fullscreen_widget = None
+    info_widget = path_layer = scatterplot_layer = tile_layer = zoom_widget = None
 
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
@@ -40,6 +46,47 @@ _TRACK_COLORS = [
     [181, 222, 43, 220],
     [253, 231, 37, 220],
 ]
+
+
+def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    """Great-circle distance between two lon/lat points in km."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def compute_track_stats(tracks: list) -> list[dict]:
+    """Compute per-type statistics from ParticleTrack list.
+
+    Returns list of dicts with keys: type_id, steps, displacement_km,
+    mean_depth, max_depth, mean_age, end_lon, end_lat, duration.
+    """
+    stats = []
+    for track in tracks:
+        if not track.path or len(track.path) < 2:
+            continue
+        start_lon, start_lat = track.path[0]
+        end_lon, end_lat = track.path[-1]
+        disp = _haversine_km(start_lon, start_lat, end_lon, end_lat)
+        depths = [d for d in track.depths if d is not None]
+        ages = [a for a in track.ages if a is not None]
+        duration = ""
+        if len(track.times) >= 2:
+            duration = f"{track.times[0]} → {track.times[-1]}"
+        stats.append({
+            "type_id": track.type_id,
+            "steps": len(track.path),
+            "displacement_km": round(disp, 2),
+            "end_lon": round(end_lon, 4),
+            "end_lat": round(end_lat, 4),
+            "mean_depth": round(sum(depths) / len(depths), 2) if depths else 0.0,
+            "max_depth": round(max(depths), 2) if depths else 0.0,
+            "mean_age": round(sum(ages) / len(ages), 2) if ages else 0.0,
+            "duration": duration,
+        })
+    return stats
 
 
 @module.ui
@@ -110,6 +157,7 @@ def ibm_ui():
             ui.div(
                 _map.ui(width="100%", height="700px"),
                 ui.output_ui("ibm_status"),
+                ui.output_ui("ibm_stats_panel"),
                 class_="p-0",
             ),
         ),
@@ -235,11 +283,17 @@ def ibm_server(
                 continue
             color = _TRACK_COLORS[(track.type_id - 1) % len(_TRACK_COLORS)]
             steps = len(track.path)
+            disp = _haversine_km(*track.path[0], *track.path[-1]) if len(track.path) >= 2 else 0
+            mean_d = sum(track.depths) / len(track.depths) if track.depths else 0
+            track_tip = (
+                f"<b>Type {track.type_id}</b><br>"
+                f"{steps} steps | {disp:.1f} km displacement<br>"
+                f"Mean depth: {mean_d:.1f} m"
+            )
             if show_trk:
                 layers.append(path_layer(
                     f"track_{track.type_id}",
-                    [{"path": track.path,
-                      "tooltip_html": f"<b>Type {track.type_id}</b><br>{steps} steps"}],
+                    [{"path": track.path, "tooltip_html": track_tip}],
                     getPath="@@d.path",
                     getColor=color,
                     widthMinPixels=2,
@@ -247,10 +301,12 @@ def ibm_server(
                 ))
             t0 = track.times[0] if track.times else ""
             t1 = track.times[-1] if track.times else ""
+            d0 = f"{track.depths[0]:.1f} m" if track.depths else ""
+            d1 = f"{track.depths[-1]:.1f} m" if track.depths else ""
             starts.append({"position": track.path[0],
-                           "tooltip_html": f"<b>Start type {track.type_id}</b><br>{t0}"})
+                           "tooltip_html": f"<b>Start type {track.type_id}</b><br>{t0}<br>Depth: {d0}"})
             ends.append({"position": track.path[-1],
-                         "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}"})
+                         "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}<br>Depth: {d1}"})
 
         if filtered:
             first_id = filtered[0].type_id
@@ -318,4 +374,58 @@ def ibm_server(
             ui.span(f"{len(tracks)} type(s)", class_="badge bg-primary me-2"),
             ui.span(f"{total_steps} steps", class_="badge bg-info"),
             class_="mt-2",
+        )
+
+    @render.ui
+    def ibm_stats_panel():
+        tracks = tracks_data.get()
+        if not tracks:
+            return ui.div()
+        stats = compute_track_stats(tracks)
+        if not stats:
+            return ui.div()
+        rows = []
+        for s in stats:
+            color = _TRACK_COLORS[(s["type_id"] - 1) % len(_TRACK_COLORS)]
+            rgb = f"rgb({color[0]},{color[1]},{color[2]})"
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(
+                        ui.span(
+                            "",
+                            style=f"display:inline-block;width:12px;height:12px;border-radius:50%;background:{rgb};margin-right:6px;vertical-align:middle;",
+                        ),
+                        f"Type {s['type_id']}",
+                    ),
+                    ui.tags.td(str(s["steps"])),
+                    ui.tags.td(f"{s['displacement_km']} km"),
+                    ui.tags.td(f"{s['end_lon']}, {s['end_lat']}"),
+                    ui.tags.td(f"{s['mean_depth']} m"),
+                    ui.tags.td(f"{s['max_depth']} m"),
+                    ui.tags.td(f"{s['mean_age']} s"),
+                    ui.tags.td(s["duration"], class_="small"),
+                )
+            )
+        return ui.div(
+            ui.h6(
+                ui.tags.i(class_="bi bi-bar-chart me-1"),
+                "Particle Statistics",
+                class_="mt-3 mb-2",
+            ),
+            ui.tags.table(
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("Type"),
+                        ui.tags.th("Steps"),
+                        ui.tags.th("Displacement"),
+                        ui.tags.th("Endpoint"),
+                        ui.tags.th("Mean Depth"),
+                        ui.tags.th("Max Depth"),
+                        ui.tags.th("Mean Age"),
+                        ui.tags.th("Duration"),
+                    ),
+                ),
+                ui.tags.tbody(*rows),
+                class_="table table-sm table-striped mt-1",
+            ),
         )

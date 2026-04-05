@@ -37,6 +37,11 @@ from shyfem_ui.services.parser_grd import (
     Node,
 )
 
+pytest.importorskip("triangle")
+pytest.importorskip("fiona")
+pytest.importorskip("shapely")
+pytest.importorskip("scipy")
+
 
 # ---------------------------------------------------------------------------
 # Helpers

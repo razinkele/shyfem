@@ -305,7 +305,12 @@ COMMON_SECTIONS = {
     "levels": "Vertical layer depths (one value per line, meters)",
     "waves": "Wave parameters",
     "sedtr": "Sediment transport parameters",
+    "lagrg": "Lagrangian particle tracking (IBM, oil spill, connectivity)",
+    "connec": "Particle connectivity analysis (source-destination tracking)",
+    "bfmsc": "BFM biogeochemical flux model",
+    "nduge": "Data assimilation via zeta/velocity nudging",
     "wrt": "Custom write sections",
+    "nonhyd": "Non-hydrostatic mode parameters",
 }
 
 # Parameter metadata: (description, type_str, default, units, valid_range_or_options)
@@ -368,8 +373,14 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "hzon": _p("Depth threshold for rewetting", "float", 0.10, "m", ">hzoff"),
         "hmin": _p("Minimum basin depth", "float", -99999, "m", ""),
         "hmax": _p("Maximum basin depth", "float", 99999, "m", ""),
+        "rlin": _p("Non-linear term strength", "float", 1.0, "", "0=off, 1=full"),
         # --- Bottom friction ---
-        "ireib": _p("Bottom friction type", "int", 0, "", "0=none, 5=quadratic/Manning, 10=linear"),
+        "ireib": _p(
+            "Bottom friction type", "int", 0, "",
+            "0=none, 1=Chezy law, 2=Strickler, 3=Chezy coeff, 4=linear, "
+            "5=quadratic drag, 6=roughness z0, 7=Strickler+drag, "
+            "8=sediment z0, 9=fluid mud, 10=hybrid quad-linear",
+        ),
         "czdef": _p("Friction coefficient", "float", 0.0, "", "depends on ireib"),
         "iczv": _p("Friction coefficient type flag", "int", 1, "", "0/1"),
         # --- Wind ---
@@ -380,11 +391,9 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "rfact": _p("Wind stress scaling factor", "float", 1.0, "", ">0"),
         # --- Heat flux ---
         "iheat": _p(
-            "Heat flux algorithm",
-            "int",
-            1,
-            "",
-            "1=AREG,2=POM,3=Gill,4=Dejak,5=GOTM,6=COARE,7=direct,8=MFS",
+            "Heat flux algorithm", "int", 1, "",
+            "0=off, 1=AREG, 2=POM bulk, 3=Gill, 4=Dejak, 5=GOTM, "
+            "6=COARE 3.0, 7=read from file, 8=MFS bulk",
         ),
         "ihtype": _p("Water vapor input type", "int", 1, "", "1=RH%, 2=Tw, 3=Td, 4=q"),
         "hdecay": _p("Radiation penetration depth", "float", 0.0, "m", "0=no penetration"),
@@ -424,7 +433,8 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "itvdv": _p("Vertical advection scheme for scalars", "int", 0, "", "0=upwind, 1=TVD"),
         # --- Temperature / Salinity ---
         "ibarcl": _p(
-            "Baroclinic mode", "int", 0, "", "0=off,1=full,2=diagnostic,3=passive,4=nudging"
+            "Baroclinic mode", "int", 0, "",
+            "0=off, 1=diagnostic, 2=T/S diagnostic, 3=prognostic, 4=nudging, 5=assimilation",
         ),
         "itemp": _p("Compute temperature", "int", 1, "", "0/1"),
         "isalt": _p("Compute salinity", "int", 1, "", "0/1"),
@@ -438,6 +448,7 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "iage": _p("Water age tracer mode", "int", 0, "", "0/1"),
         "conref": _p("Initial reference concentration", "float", 0.0, "", ""),
         "chpar": _p("Concentration horizontal diffusion", "float", -1.0, "", "-1=use dhpar"),
+        "wsettl": _p("Settling velocity", "float", 0.0, "m/s", "downward positive"),
         # --- Output averaging ---
         "iout_av": _p("Hydro output averaging", "int", 0, "", "0=instantaneous, 1=time-averaged"),
         "icon_av": _p(
@@ -449,6 +460,28 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "issedi": _p("Sediment module", "int", 0, "", "0/1"),
         "rtide": _p("Tidal forcing", "int", 0, "", "0/1"),
         "icemod": _p("Ice model", "int", 0, "", "0/1"),
+        # --- Waves ---
+        "iwave": _p(
+            "Wave coupling mode", "int", 0, "",
+            "0=off, 1=constant file, 2=WWMIII rad+SHYFEM wind, 3=WWMIII vort+SHYFEM wind, "
+            "4=WWMIII rad+WWM wind, 5=WWMIII vort+WWM wind",
+        ),
+        "dtwave": _p("Wave-current coupling time step", "float", 0.0, "s", ">0 when iwave>0"),
+        # --- Mercury ---
+        "imerc": _p("Mercury contamination model", "int", 0, "", "0=off, 1=on"),
+        # --- Restart ---
+        "itrst": _p("Restart file write interval", "string", "0", "s", "-1=last step only"),
+        "itmrst": _p("Restart output start time", "string", "-1", "", "date or seconds"),
+        "ityrst": _p(
+            "Restart mode", "int", 1, "",
+            "0=strict match, 1=cold-start if missing, 2=closest time",
+        ),
+        # --- Offline mode ---
+        "idtoff": _p(
+            "Offline mode", "int", 0, "",
+            "0=off, >0=write hydro, -1=read hydro, -2=read T/S, -4=read turb, -3/-7=combos",
+        ),
+        "itmoff": _p("Offline start time", "string", "-1", "", "date or seconds"),
         # --- Grid/partition ---
         "ibasin": _p("Grid optimization", "int", -1, "", "-1=none,0=renumber,1=optimize"),
         "pqual": _p("Max partition quality index (MPI)", "float", 2.5, "", ">0"),
@@ -473,14 +506,101 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "gotmpa": _p("GOTM turbulence parameters file", "string", "", "", ""),
         # System
         "basnam": _p("Grid/basin file name", "string", "", "", ""),
+        # Ecology
+        "bioin": _p("Initial pelagic ecology state file", "string", "", "", ""),
+        "biosin": _p("Initial sediment ecology state file", "string", "", "", ""),
+        "biocon": _p("Biogeochemical constants file", "string", "", "", ""),
+        "biolight": _p("Light extinction data file", "string", "", "", ""),
+        "mercin": _p("Initial mercury concentrations file", "string", "", "", ""),
+        "bfmini": _p("Initial BFM state file", "string", "", "", ""),
+        # Sediment
+        "sedp": _p("Spatially varying sediment distribution file", "string", "", "", ""),
+        "sedt": _p("Spatially varying critical erosion stress file", "string", "", "", ""),
+        "sedcon": _p("Sediment model constants file", "string", "", "", ""),
+        # Lagrangian / Nudging
+        "lgrlin": _p("Lagrangian release area lines file", "string", "", "", ""),
+        "lgrtrj": _p("Drifter trajectory file", "string", "", "", ""),
+        "statcnn": _p("Connectivity station coordinates file", "string", "", "", ""),
+        "surfvel": _p("Surface velocity nudging file", "string", "", "", ""),
+        # Scalar boundary files
+        "saltn": _p("Boundary salinity time series file", "string", "", "", ""),
+        "tempn": _p("Boundary temperature time series file", "string", "", "", ""),
+        "conzn": _p("Boundary concentration time series file", "string", "", "", ""),
     },
     "bound": {
         "kbound": _p("Boundary node/element numbers", "int_list", None, "", ""),
-        "ibtyp": _p("Boundary type", "int", 1, "", "1=elevation,2=velocity,3=discharge"),
+        "ibtyp": _p(
+            "Boundary type", "int", 1, "",
+            "-1=closed, 0=off, 1=water level, 2=discharge, 3=volume inlet, "
+            "4=momentum, 5=fixed scalar, 31=radiation/zero-gradient",
+        ),
         "boundn": _p("Boundary time series file", "string", "", "", ""),
         "intpol": _p("Interpolation method", "int", 1, "", "1=linear, 2=spline"),
         "zfact": _p("Scaling factor for boundary values", "float", 1.0, "", ""),
         "ztilt": _p("Tilt for water level gradient", "float", 0.0, "m", ""),
+    },
+    "sedtr": {
+        "isedi": _p("Enable full sediment transport", "int", 0, "", "0=off, 1=on"),
+        "sedgrs": _p("Grain sizes (space-separated, fine to coarse)", "string", "", "mm", ""),
+        "percin": _p("Initial grain size fractions (must sum to 1.0)", "string", "", "", ""),
+        "tauin": _p("Critical erosion stress per grain class", "string", "", "Pa", ""),
+        "irocks": _p("Element type excluded from erosion", "int", -1, "", "-1=none"),
+        "sedref": _p("Initial reference sediment concentration", "float", 0.0, "kg/m3", ">=0"),
+        "sedhpar": _p("Sediment horizontal diffusion", "float", 0.0, "m2/s", ">=0"),
+        "adjtime": _p("Morphology equilibration time", "float", -1.0, "s", "-1=off"),
+        "idtsed": _p("Sediment output interval", "int", 0, "s", ""),
+        "itmsed": _p("Sediment output start time", "int", -1, "s", ""),
+    },
+    "lagrg": {
+        "ilagr": _p("Lagrangian mode", "int", 0, "", "0=off, 1=surface, 2=2D, 3=3D"),
+        "nbdy": _p("Particles per release event", "int", 0, "", ">=0"),
+        "nbdymax": _p("Max particles in domain", "int", -1, "", "-1=unlimited"),
+        "rwhpar": _p("Horizontal diffusion for particles", "float", 0.0, "m2/s", "-1=local"),
+        "idtl": _p("Particle release interval", "int", 0, "s", ">0"),
+        "ipvert": _p("Vertical distribution", "int", 0, "", "0=surface, >0=regular, <0=random"),
+        "lbeach": _p("Beaching probability", "float", 0.0, "", "[0-1]"),
+        "ldecay": _p("Particle decay time", "float", 0.0, "s", "0=no decay"),
+        "ioil": _p("Oil spill simulation", "int", 0, "", "0=off, 1=on"),
+        "ilarv": _p("Larval behavior module", "int", 0, "", "0=off, 1=on"),
+        "stkpar": _p("Stokes drift calibration", "float", 0.0, "", ""),
+        "dripar": _p("Drifter inertia multiplier", "float", 1.0, "", ">0"),
+        "itlanf": _p("Lagrangian start time", "int", -1, "", "-1=use itanf"),
+        "itlend": _p("Lagrangian end time", "int", -1, "", "-1=use itend"),
+        "idtlgr": _p("Lagrangian output interval", "int", 0, "s", ">0"),
+    },
+    "connec": {
+        "icnn": _p("Number of connectivity stations", "int", 0, "", ">=0"),
+        "radcnn": _p("Release area radius", "float", 0.0, "m", ">0"),
+        "ppscnn": _p("Particles per second per station", "float", 0.0, "1/s", ">0"),
+        "pldcnn": _p("Pelagic larval duration", "float", 0.0, "days", ">0"),
+        "idtcnn": _p("Connectivity output interval", "int", 0, "s", ">0"),
+    },
+    "bfmsc": {
+        "ibfm": _p("Enable BFM biogeochemical model", "int", 0, "", "0=off, 1=on"),
+        "ibtanf": _p("BFM start time", "int", 0, "", ""),
+        "ibtend": _p("BFM end time", "int", 0, "", ""),
+        "itmbfm": _p("BFM output start time", "int", -1, "", ""),
+        "idtbfm": _p("BFM output interval", "int", 0, "s", ">0"),
+    },
+    "wrt": {
+        "idtwrt": _p("Reset interval", "int", -1, "s", "-1=off, 0=no reset"),
+        "c0": _p("Initial tracer concentration", "float", 1.0, "", ""),
+        "iaout": _p("Outside area code", "int", -1, "", "-1=none"),
+        "percmin": _p("Completion percentage threshold", "float", 0.0, "%", "0-100"),
+        "iret": _p("Return flow flag", "int", 1, "", "0=explicit zero, 1=return"),
+    },
+    "nduge": {
+        "nvars": _p("Number of nudging observation stations", "int", 0, "", "0-50"),
+        "tramp": _p("Nudging ramp-up time", "float", 0.0, "s", ">=0"),
+        "ttau": _p("Relaxation time constant", "float", 0.0, "s", ">0"),
+        "sigma": _p("Spatial influence radius (Gaussian)", "float", 0.0, "m", ">0"),
+        "bmulti": _p("Multi-station nudging", "int", 1, "", "0=off, 1=on"),
+    },
+    "nonhyd": {
+        "inohyd": _p("Non-hydrostatic mode", "int", 0, "", "0=hydrostatic, 1=non-hydrostatic"),
+        "aqpar": _p("Implicit parameter", "float", 0.5, "", "[0,1]"),
+        "islope": _p("Poisson grid type", "int", 0, "", ""),
+        "ivwadv": _p("Vertical advection of vertical momentum", "int", 0, "", "0=off, 1=on"),
     },
 }
 

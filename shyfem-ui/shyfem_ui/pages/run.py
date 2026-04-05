@@ -28,6 +28,7 @@ from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.parser_str import StrParser
+from shyfem_ui.services.str_validator import validate_str
 from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
@@ -103,6 +104,7 @@ def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int
         content = str_path.read_text()
         parsed = StrParser.parse(content)
     except Exception:
+        logger.debug("Failed to parse STR file %s", str_path, exc_info=True)
         return None
 
     title_sec = parsed.sections.get("title")
@@ -127,6 +129,7 @@ def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int
                 grd = GrdParser.parse_file(grid_path)
                 return grd.num_nodes
             except Exception:
+                logger.debug("Failed to parse grid file %s", grid_path, exc_info=True)
                 continue
 
     return None
@@ -160,6 +163,8 @@ def run_ui():
                             "shyparts": "shyparts (Partitioning)",
                             "shyelab": "shyelab (Post-process)",
                             "shyplot": "shyplot (Plotting)",
+                            "exgrd": "exgrd (Grid Extraction)",
+                            "shyadj": "shyadj (Mesh Adjustment)",
                         },
                     ),
                     ui.input_text(
@@ -175,6 +180,8 @@ def run_ui():
                     ui.hr(),
                     # MPI + Solver options (rendered server-side for module compatibility)
                     ui.output_ui("shyfem_options"),
+                    # Restart options (shyfem only)
+                    ui.output_ui("restart_section"),
                     # Job dependency (optional)
                     ui.hr(),
                     ui.h6("Dependencies (optional)"),
@@ -408,7 +415,7 @@ def run_server(
                     max=128,
                 )
         except Exception:
-            pass
+            logger.debug("MPI input not yet available", exc_info=True)
 
         return ui.div(
             ui.h6("MPI Options"),
@@ -459,6 +466,57 @@ def run_server(
             parts.append(ui.p(rec["hint"], class_="text-muted small mb-0"))
 
         return ui.div(*parts) if parts else ui.div()
+
+    @render.ui
+    def restart_section():
+        """Render restart dropdown only when shyfem is selected."""
+        tool = input.tool_select()
+        if tool != "shyfem":
+            return ui.span()
+
+        # Build choices from completed shyfem jobs that have .rst files
+        choices: dict[str, str] = {"": "Fresh start (no restart)"}
+        jobs = all_jobs_data.get()
+        for job in jobs:
+            if job.tool_name != "shyfem" or job.status != JobStatus.COMPLETED:
+                continue
+            work_dir = Path(job.working_dir)
+            rst_files = sorted(work_dir.glob("*.rst"))
+            if rst_files:
+                label = f"{job.name} ({rst_files[-1].name})"
+                choices[str(rst_files[-1])] = label
+
+        return ui.div(
+            ui.hr(),
+            ui.h6("Restart"),
+            ui.input_select(
+                "restart_from",
+                "Continue from job",
+                choices=choices,
+            ),
+            ui.output_ui("restart_info"),
+        )
+
+    @render.ui
+    def restart_info():
+        """Show selected restart file path."""
+        try:
+            rst = input.restart_from()
+        except Exception:
+            return ui.span()
+        if not rst:
+            return ui.span()
+        rst_path = Path(rst)
+        if rst_path.exists():
+            size_kb = rst_path.stat().st_size / 1024
+            return ui.p(
+                f"Restart file: {rst_path.name} ({size_kb:.0f} KB)",
+                class_="text-muted small mb-0",
+            )
+        return ui.p(
+            f"Warning: restart file not found: {rst}",
+            class_="text-warning small mb-0",
+        )
 
     # State
     active_jobs_data = reactive.value([])
@@ -590,6 +648,22 @@ def run_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
 
+        # Validate STR parameters before submission
+        if tool == "shyfem" and validated_input.suffix == ".str":
+            try:
+                parsed_str = StrParser.parse_file(validated_input)
+                msgs = validate_str(parsed_str.sections)
+                errors = [m for m in msgs if m.level == "error"]
+                warnings = [m for m in msgs if m.level == "warning"]
+                if errors:
+                    for m in errors:
+                        ui.notification_show(f"STR error: {m.message}", type="error", duration=8)
+                    return
+                for m in warnings:
+                    ui.notification_show(f"STR warning: {m.message}", type="warning", duration=6)
+            except Exception:
+                logger.debug("STR validation skipped (parse error)", exc_info=True)
+
         if not working_dir:
             working_dir = str(validated_input.parent)
 
@@ -607,6 +681,15 @@ def run_server(
         solver = input.solver_select() if tool == "shyfem" else "sparskit"
         if solver == "petsc":
             metadata["solver"] = "petsc"
+
+        # Restart file selection
+        if tool == "shyfem":
+            try:
+                restart_from = input.restart_from()
+                if restart_from:
+                    metadata["restart_file"] = restart_from
+            except Exception:
+                logger.warning("Could not set restart_from file", exc_info=True)
 
         # Check dependency
         depends_on = input.depends_on()

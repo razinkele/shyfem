@@ -45,7 +45,7 @@ useX11 = true
 #---------------------------------------------------------------
 
 ifeq ($(SHYFEMDIR),"")
-        SHYFEMDIR := $(HOME)/shyfem
+        SHYFEMDIR := $(CURDIR)
 endif
 export SHYFEMDIR
 #$(info in Makefile of base dir: SHYFEMDIR = $(SHYFEMDIR))
@@ -106,7 +106,6 @@ endif
 FEMDIRS   = $(FEMLIBS) $(FEMEXTRA) $(FEMGRID) $(FEMMESH) $(FEMPROG) $(FEMUTIL)
 FEMNOGRAPH   = $(FEMLIBS) $(FEMEXTRA) $(FEMMESH) $(FEMPROG) $(FEMUTIL)
 
-.IGNORE: clean
 .PHONY: default all nuopc compile fem shyfem petsc para_get para_compile para_clean \
 	bfm_compile bfm_clean nograph libmod docs doc dirs dirf list depend \
 	directories links ctags nothing cleanlocal clean cleanall cleandist \

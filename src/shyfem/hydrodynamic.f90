@@ -913,6 +913,7 @@
 	real vismol,rrho0
 	real dt
 
+	integer ierr_rms
 	double precision dtime
 	double precision rmsdif,rmsmax
 	double precision tempo
@@ -984,20 +985,26 @@
 
 	call get_clock_count(count)
 
+	  ierr_rms = 0
+
 !$OMP PARALLEL DO FIRSTPRIVATE(bcolin,baroc,az,am,af,at,radv       &
 !$OMP &            ,vismol,rrho0,dt) PRIVATE(ie,rmsdif)  &
-!$OMP &     SHARED(nel,nchunk)   DEFAULT(NONE)
+!$OMP &     SHARED(nel,nchunk) REDUCTION(max:ierr_rms) DEFAULT(NONE)
 
  	  do ie=1,nel
 	    call hydro_intern(ie,bcolin,baroc,az,am,af,at,radv &
      &			,vismol,rrho0,dt,rmsdif)
 	    if( rmsdif > 1.D-10 ) then
-	      write(6,*) 'rmsdif: ',rmsdif
-	      stop 'error stop hydro_transports: rms too high'
+	      ierr_rms = 1
 	    end if
 	  end do
 
 !$OMP END PARALLEL DO
+
+	  if( ierr_rms /= 0 ) then
+	    write(6,*) 'error: rmsdif too high in hydro_transports'
+	    stop 'error stop hydro_transports: rms too high'
+	  end if
 
 !-------------------------------------------------------------
 ! end of loop over elements
@@ -1350,7 +1357,7 @@
 
 	aux = dt * radv * ruseterm	!implicit contribution
 
-	if( aux .gt. 0. ) then		!implict treatment of non-linear terms
+	if( aux .gt. 0. .and. hhi .gt. 0. ) then	!implict treatment of non-linear terms
 
 	uc = uui/hhi
 	vc = vvi/hhi
@@ -1870,7 +1877,11 @@
 		write(670,*) hdknv(l,k),hdkov(l,k)
 	    end if
 	  end do
-	  dz = dt * wlnv(lmin-1,k) / va(lmin,k)
+	  if( va(lmin,k) .gt. 0. ) then
+	    dz = dt * wlnv(lmin-1,k) / va(lmin,k)
+	  else
+	    dz = 0.	! zero area node: no free-surface correction
+	  end if
 	  dzmax = max(dzmax,abs(dz))
 	  wlnv(lmin-1,k) = 0.	! ensure no flux across surface - is very small
 	  dzeta(k) = dz

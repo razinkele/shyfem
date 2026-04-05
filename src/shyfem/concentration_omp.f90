@@ -427,13 +427,27 @@
       double precision,dimension(3) :: fw,fd,fl,fnudge
       double precision,dimension(3) :: b,c,f,wdiff
       double precision,dimension(0:nlvddi+1) :: hdv,haver,presentl
-      double precision,dimension(0:nlvddi+1,3) :: hnew,htnew,rtau,cob
-      double precision,dimension(0:nlvddi+1,3) :: hold,htold,vflux,wl
-      double precision,dimension(0:nlvddi+1,3) :: cl
-      double precision,dimension(0:nlvddi+1,3) :: finu
-      double precision,dimension(nlvddi,3) :: clc,clm,clp,cle
+      double precision,allocatable :: hnew(:,:),htnew(:,:),rtau(:,:)
+      double precision,allocatable :: cob(:,:)
+      double precision,allocatable :: hold(:,:),htold(:,:),vflux(:,:)
+      double precision,allocatable :: wl(:,:),cl(:,:),finu(:,:)
+      double precision,allocatable :: clc(:,:),clm(:,:),clp(:,:)
+      double precision,allocatable :: cle(:,:)
+      integer :: ierr_conz
 	
 	if(nlv.ne.nlev) stop 'error stop conz3d_element: nlv/=nlev'
+
+      allocate(hnew(0:nlvddi+1,3),htnew(0:nlvddi+1,3), &
+     &  rtau(0:nlvddi+1,3),cob(0:nlvddi+1,3), &
+     &  hold(0:nlvddi+1,3),htold(0:nlvddi+1,3), &
+     &  vflux(0:nlvddi+1,3),wl(0:nlvddi+1,3), &
+     &  cl(0:nlvddi+1,3),finu(0:nlvddi+1,3), &
+     &  clc(nlvddi,3),clm(nlvddi,3),clp(nlvddi,3), &
+     &  cle(nlvddi,3),stat=ierr_conz)
+      if( ierr_conz /= 0 ) then
+        write(6,*) 'error: allocation failed in conz3d_element ie=',ie
+        return
+      end if
 
 ! ----------------------------------------------------------------
 !  initialize variables and parameters
@@ -757,11 +771,9 @@
 
 ! 	deallocate(fw,fd,fl,fnudge)
 ! 	deallocate(b,c,f,wdiff)
-! 	deallocate(hdv,haver,presentl)
-! 	deallocate(hnew,htnew,rtau,cob)
-! 	deallocate(hold,htold,vflux,wl,cl)
-! 	deallocate(clc,clm,clp,cle)
-! 	
+      deallocate(hnew,htnew,rtau,cob,hold,htold,vflux,wl,cl,finu, &
+     &  clc,clm,clp,cle)
+
 ! ----------------------------------------------------------------
 !  end of routine
 ! ----------------------------------------------------------------

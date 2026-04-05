@@ -20,17 +20,29 @@ dependencies:
   - xarray>=2024.6
   - netcdf4>=1.6
   - matplotlib>=3.7
+  - pyproj
+  - fiona
+  - shapely
+  - rasterio
+  
+  # Server and Database
+  - celery
+  - redis-py
+  - psycopg2
+  - alembic
 
   # Install remaining packages via pip (pure-Python or PyPI-only)
   - pip:
       - shiny>=1.2.0
       - shinyswatch>=0.7.0
       - shinywidgets>=0.3
+      - shiny-deckgl
       - sqlalchemy>=2.0
       - pydantic>=2.0
       - pydantic-settings>=2.0
       - plotly>=5.24
       - ipyleaflet>=0.18
+      - triangle>=20220202
       - aiofiles>=23.0
       - argon2-cffi>=21.0
 

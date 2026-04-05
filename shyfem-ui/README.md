@@ -111,6 +111,7 @@ All settings can be set via environment variables (with `SHYFEM_UI_` prefix), a 
 | `SHYFEM_UI_AUTH_ENABLED` | `false` | Enable basic authentication |
 | `SHYFEM_UI_AUTH_USERNAME` | `admin` | Basic auth username |
 | `SHYFEM_UI_AUTH_PASSWORD` | (empty) | Basic auth password |
+| `SHYFEM_UI_USE_SECURE_COOKIES` | `false` | Set `Secure` flag on session cookies (enable behind HTTPS) |
 | `SHYFEM_UI_THEME` | `flatly` | Shinyswatch theme name |
 | `SHYFEM_UI_LOG_REFRESH_INTERVAL` | `5` | Log viewer refresh interval (seconds) |
 | `SHYFEM_UI_RATE_LIMIT_RPM` | `120` | Max requests per minute per session |
@@ -198,6 +199,18 @@ The test suite covers:
 - **Workflow engine** - Templates, argument resolution, workflow lifecycle, step results, cancellation
 - **Report builder** - HTML generation, sections, parameters, grid info, statistics, Plotly embedding, file I/O
 - **Configuration** - Defaults, path validation (security), global config, path resolution
+
+## Security
+
+The UI includes several security measures for server deployments:
+
+- **CSRF protection** — Login form uses a double-submit cookie pattern. A random token is set as both a cookie and a hidden form field; the server validates they match on POST.
+- **Session cookies** — `HttpOnly`, `SameSite=Lax`, configurable `Secure` flag via `SHYFEM_UI_USE_SECURE_COOKIES` (enable when behind HTTPS/TLS).
+- **Password policy** — Minimum 8 characters enforced on both user creation and password reset.
+- **Tool allowlist** — `ShyfemWrapper` only executes known SHYFEM tools (`shyfem`, `shypre`, `shybas`, `shyparts`, `shyelab`, etc.), preventing arbitrary command execution.
+- **Path validation** — Usernames reject `..` (path traversal). `User.home_dir()` resolves and validates containment under `user_data_root`. STR file references are validated with `config.validate_path()`.
+- **WebSocket auth** — The Shiny Server proxy bypass is restricted to connections from `127.0.0.1` / `::1` only.
+- **Error logging** — Job persistence and progress callback errors are logged at `warning`/`error` level instead of being silently swallowed.
 
 ## Architecture
 

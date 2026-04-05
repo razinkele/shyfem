@@ -10,19 +10,40 @@ import math
 from dataclasses import replace as _dc_replace
 from pathlib import Path
 
-import fiona
 import numpy as np
-import pyproj
-import shapely.geometry
-import shapely.ops
-import triangle
-from scipy.interpolate import (
-    CloughTocher2DInterpolator,
-    LinearNDInterpolator,
-    RBFInterpolator,
-    griddata,
-)
-from scipy.spatial import cKDTree
+
+try:
+    import fiona
+except ImportError:
+    fiona = None
+
+try:
+    import pyproj
+except ImportError:
+    pyproj = None
+
+try:
+    import shapely.geometry
+    import shapely.ops
+except ImportError:
+    shapely = None
+
+try:
+    import triangle
+except ImportError:
+    triangle = None
+
+try:
+    from scipy.interpolate import (
+        CloughTocher2DInterpolator,
+        LinearNDInterpolator,
+        RBFInterpolator,
+        griddata,
+    )
+    from scipy.spatial import cKDTree
+except ImportError:
+    CloughTocher2DInterpolator = LinearNDInterpolator = RBFInterpolator = griddata = None
+    cKDTree = None
 
 from shyfem_ui.services.parser_grd import (
     Element,

@@ -3,7 +3,7 @@
 import base64
 
 import pytest
-from shyfem_ui.app import BasicAuthMiddleware
+from shyfem_ui.middleware.basic_auth import BasicAuthMiddleware
 
 
 # ---------------------------------------------------------------------------

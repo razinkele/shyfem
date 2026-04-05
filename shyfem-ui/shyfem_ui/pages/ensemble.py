@@ -21,7 +21,8 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
-from shyfem_ui.services.parser_str import StrFile, StrParser
+from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
+from shyfem_ui.services.str_validator import validate_str
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ def ensemble_server(
             if input.mpi_enabled():
                 return ui.input_numeric("mpi_np", "Processes", value=4, min=2, max=128)
         except Exception:
-            pass
+            logger.debug("MPI input not yet available", exc_info=True)
         return ui.span()
 
     # ------- Parameter Editor -------
@@ -399,6 +400,25 @@ def ensemble_server(
             )
 
         preview_runs.set(combos)
+
+        # Validate base STR if available
+        base_str_path = input.base_str_file()
+        if base_str_path:
+            try:
+                base_file = config.validate_path(base_str_path, must_exist=True)
+                base_str = StrParser.parse_file(base_file)
+                msgs = validate_str(base_str.sections)
+                warnings = [m for m in msgs if m.level == "warning"]
+                errors = [m for m in msgs if m.level == "error"]
+                if errors:
+                    for m in errors:
+                        ui.notification_show(f"Base STR error: {m.message}", type="error", duration=6)
+                if warnings:
+                    for m in warnings:
+                        ui.notification_show(f"Base STR warning: {m.message}", type="warning", duration=5)
+            except Exception:
+                pass  # base file not accessible during preview
+
         ui.notification_show(f"{len(combos)} runs configured", type="message", duration=4)
 
     @render.ui
@@ -425,12 +445,14 @@ def ensemble_server(
 
         header_cells = [ui.tags.th("#")]
         for section, param in all_keys:
+            info = COMMON_PARAMS.get(section, {}).get(param)
+            desc = info[0] if info else ""
             header_cells.append(
                 ui.tags.th(
                     ui.div(
                         ui.code(param),
                         ui.br(),
-                        ui.span(f"${section}", class_="text-muted small"),
+                        ui.span(desc or f"${section}", class_="text-muted small"),
                     )
                 )
             )
@@ -507,6 +529,28 @@ def ensemble_server(
             base_str = StrParser.parse_file(base_file)
         except Exception as e:
             ui.notification_show(f"Failed to parse STR file: {e}", type="error", duration=6)
+            return
+
+        # Validate each variant before submitting
+        validation_errors = 0
+        for i, combo in enumerate(combos):
+            variant = _apply_param_combo(base_str, combo)
+            msgs = validate_str(variant.sections)
+            errors = [m for m in msgs if m.level == "error"]
+            if errors:
+                validation_errors += 1
+                combo_str = ", ".join(f"{p}={v}" for (s, p), v in combo.items())
+                for m in errors:
+                    ui.notification_show(
+                        f"Run {i+1} ({combo_str}): {m.message}",
+                        type="error", duration=8,
+                    )
+
+        if validation_errors > 0:
+            ui.notification_show(
+                f"{validation_errors} of {len(combos)} variants have validation errors. Fix before submitting.",
+                type="error", duration=8,
+            )
             return
 
         tool = input.tool_name()
@@ -914,23 +958,9 @@ async def _cancel_jobs(job_queue: JobQueue, job_ids: list[str]) -> int:
 
 def _load_ts(path: Path) -> list[list[float]]:
     """Load time series data as list of float rows."""
-    if not path.exists():
-        return []
-    data = []
-    try:
-        with open(path) as f:
-            for line in f:
-                parts = line.strip().split()
-                if not parts:
-                    continue
-                try:
-                    data.append([float(p) for p in parts])
-                except ValueError:
-                    continue
-    except Exception:
-        logger.warning("Failed to load time series from %s", path, exc_info=True)
-        return []
-    return data
+    from shyfem_ui.services.timeseries_loader import load_timeseries_raw
+
+    return load_timeseries_raw(path)
 
 
 def _build_duration_chart(jobs: list[JobInfo]) -> go.Figure:

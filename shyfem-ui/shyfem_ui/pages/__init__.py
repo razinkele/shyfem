@@ -21,6 +21,7 @@ __all__ = [
     "tutorial",
     "files",
     "admin",
+    "physics",
 ]
 
 _modules: dict = {}

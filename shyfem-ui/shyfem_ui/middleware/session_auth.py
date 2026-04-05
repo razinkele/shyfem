@@ -11,6 +11,7 @@ user is injected into every request.
 
 import contextvars
 import logging
+import secrets
 import urllib.parse
 
 logger = logging.getLogger(__name__)
@@ -456,13 +457,13 @@ _LOGIN_HTML = """\
         <li>\u2248 Lagoons, coastal seas &amp; estuaries</li>
         <li>\u2248 2D/3D modeling with MPI parallelization</li>
         <li>\u2248 Wind, tidal, baroclinic &amp; transport physics</li>
-        <li style="margin-top:6px;opacity:0.65;">\u2192 Try it: log in with <b>user</b> / <b>user</b></li>
       </ul>
     </div>
 
     {error}
 
     <form method="post" action="{login_action}">
+      <input type="hidden" name="csrf_token" value="{csrf_token}">
       <div class="form-group">
         <label for="username">Username</label>
         <input type="text" id="username" name="username" required autofocus
@@ -509,12 +510,13 @@ class SessionAuthMiddleware:
         Default session time-to-live passed to ``create_session``.
     """
 
-    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24, root_path=""):
+    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24, root_path="", use_secure_cookies=False):
         self.app = app
         self.auth_service = auth_service
         self.local_mode = local_mode
         self.session_ttl_hours = session_ttl_hours
         self.root_path = root_path.rstrip("/")
+        self.use_secure_cookies = use_secure_cookies
 
     async def __call__(self, scope, receive, send):
         # ----------------------------------------------------------
@@ -548,7 +550,7 @@ class SessionAuthMiddleware:
 
             # POST /login -- authenticate credentials
             if path == "/login" and method == "POST":
-                await self._handle_login_post(receive, send, root_path=root_path)
+                await self._handle_login_post(scope, receive, send, root_path=root_path)
                 return
 
             # GET /logout -- destroy session
@@ -585,13 +587,16 @@ class SessionAuthMiddleware:
             if session_token:
                 user = self.auth_service.validate_session(session_token)
 
-            if user is None and not self.root_path:
-                # Direct deployment: reject unauthenticated WebSocket.
-                # Behind reverse proxy (Shiny Server): skip WS auth
-                # because the proxy gates access at the HTTP layer and
-                # its internal WS connection doesn't forward cookies.
-                await send({"type": "websocket.close", "code": 4001})
-                return
+            if user is None:
+                # Allow unauthenticated WS only from localhost behind
+                # reverse proxy (Shiny Server's internal WS connection
+                # doesn't forward cookies, but connects from 127.0.0.1).
+                client = scope.get("client")
+                client_host = client[0] if client else None
+                is_local = client_host in ("127.0.0.1", "::1")
+                if not (self.root_path and is_local):
+                    await send({"type": "websocket.close", "code": 4001})
+                    return
 
             token = _user_var.set(user)
             try:
@@ -620,8 +625,15 @@ class SessionAuthMiddleware:
 
     async def _serve_login_page(self, send, error: str = "", root_path: str = ""):
         """Send the login page HTML as a 200 response."""
-        html = _LOGIN_HTML.format(error=error, login_action=f"{root_path}/login")
+        csrf_token = secrets.token_urlsafe(32)
+        cookie_path = root_path or "/"
+        html = _LOGIN_HTML.format(
+            error=error,
+            login_action=f"{root_path}/login",
+            csrf_token=csrf_token,
+        )
         body = html.encode("utf-8")
+        csrf_cookie = f"csrf_token={csrf_token}; Path={cookie_path}; SameSite=Lax"
         await send(
             {
                 "type": "http.response.start",
@@ -629,6 +641,7 @@ class SessionAuthMiddleware:
                 "headers": [
                     (b"content-type", b"text/html; charset=utf-8"),
                     (b"content-length", str(len(body)).encode()),
+                    (b"set-cookie", csrf_cookie.encode("utf-8")),
                 ],
             }
         )
@@ -639,11 +652,29 @@ class SessionAuthMiddleware:
             }
         )
 
-    async def _handle_login_post(self, receive, send, root_path: str = ""):
+    async def _handle_login_post(self, scope, receive, send, root_path: str = ""):
         """Parse POST form data, authenticate, and redirect or re-render."""
         message = await receive()
         raw_body = message.get("body", b"")
         form = urllib.parse.parse_qs(raw_body.decode("utf-8"))
+
+        # CSRF double-submit cookie validation
+        form_csrf = form.get("csrf_token", [""])[0]
+        cookie_csrf = ""
+        for header_name, header_value in scope.get("headers", []):
+            if header_name == b"cookie":
+                cookies = _parse_cookie(header_value)
+                cookie_csrf = cookies.get("csrf_token", "")
+                break
+        if not form_csrf or not cookie_csrf or form_csrf != cookie_csrf:
+            error_html = (
+                '<div class="error-alert" role="alert">'
+                "Invalid request. Please try again."
+                "</div>"
+            )
+            await self._serve_login_page(send, error=error_html, root_path=root_path)
+            return
+
         username = form.get("username", [""])[0]
         password = form.get("password", [""])[0]
 
@@ -661,9 +692,10 @@ class SessionAuthMiddleware:
         token = self.auth_service.create_session(user["id"], ttl_hours=self.session_ttl_hours)
         ttl_seconds = self.session_ttl_hours * 3600
         cookie_path = root_path or "/"
+        secure = "; Secure" if self.use_secure_cookies else ""
         cookie = (
             f"shyfem_session={token}; "
-            f"Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age={ttl_seconds}"
+            f"Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age={ttl_seconds}{secure}"
         )
         redirect_to = f"{root_path}/" if root_path else "/"
         await send(

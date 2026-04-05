@@ -151,6 +151,26 @@ WORKFLOW_TEMPLATES = {
             ),
         ],
     },
+    "offline_tracer": {
+        "name": "Offline Tracer Analysis",
+        "description": "Run hydrodynamics first (writes offline data), "
+                       "then run tracers on saved flow fields",
+        "steps": [
+            WorkflowStep(
+                name="Hydrodynamic run",
+                tool_name="shyfem",
+                args_template=["{input_str}"],
+                options=["# Set idtoff > 0 in STR to write offline data"],
+            ),
+            WorkflowStep(
+                name="Tracer run",
+                tool_name="shyfem",
+                args_template=["{input_str_tracer}"],
+                input_from="Hydrodynamic run",
+                options=["# Set idtoff = -1 in STR to read offline data"],
+            ),
+        ],
+    },
 }
 
 

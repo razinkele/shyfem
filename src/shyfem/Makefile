@@ -156,7 +156,7 @@ SHYPRE_OBJ = \
 	shypre_subs.o shypre_opti.o
 
 LAGRANGE_OBJ = \
-      lagrange_data.o lagrange_sedim.o \
+      lagrange_data.o lagrange_mpi.o lagrange_sedim.o \
       lagrange_flux.o lagrange_util.o \
       lagrange_vertical.o lagrange_utils.o lagrange_connect.o \
       lagrange_inout.o lagrange_cont.o lagrange_larve.o \
@@ -313,6 +313,9 @@ info:
 %.o: %.f
 	$(F77) $(FFLAGS) $(INCLUDE) -c $<
 
+lagrange_mpi.o: lagrange_mpi.f90
+	$(F77) $(FFLAG_SPECIAL) $(INCLUDE) -c $<
+
 %.o: %.f90
 	$(F77) $(FFLAGS) $(INCLUDE) -c $<
 
@@ -370,7 +373,7 @@ cleanlinks:
 #	cp $(EXES) /home/georg/work/shyfem_repo/shyfem/fem3d
 
 .PHONY: default fem links depend nothing info nuopc_info nuopc_clean \
-	libnuopc nuopc clean cleanall cleanlinks compile
+	libnuopc nuopc clean cleanall cleanlinks
 
 #------------------------------------------------------------------------
 
@@ -732,6 +735,10 @@ lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_layer_thickness.mod \
 		../../lib/mod/shyfile.mod 
 lagrange_larve.o: ../../lib/mod/mod_lagrange.mod
+lagrange_mpi.o: ../../lib/mod/basin.mod \
+		../../lib/mod/connectivity.mod \
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/shympi.mod
 lagrange_main.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/lgr_sedim_module.mod \

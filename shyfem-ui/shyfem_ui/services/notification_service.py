@@ -106,14 +106,31 @@ class NotificationService:
         msg["To"] = to_addr
 
         try:
-            ctx = ssl.create_default_context()
-            with smtplib.SMTP(self._config.smtp_host, self._config.smtp_port) as smtp:
-                smtp.ehlo()
-                smtp.starttls(context=ctx)
-                if self._config.smtp_user:
-                    smtp.login(self._config.smtp_user, self._config.smtp_password)
-                smtp.sendmail(self._config.smtp_from, to_addr, msg.as_string())
-                logger.info("Notification sent to %s: %s", to_addr, subject)
+            port = self._config.smtp_port
+            if port == 465:
+                # Implicit TLS (SMTPS)
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP_SSL(self._config.smtp_host, port, context=ctx) as smtp:
+                    if self._config.smtp_user:
+                        smtp.login(self._config.smtp_user, self._config.smtp_password)
+                    smtp.sendmail(self._config.smtp_from, to_addr, msg.as_string())
+            elif port == 587:
+                # Explicit TLS (STARTTLS)
+                ctx = ssl.create_default_context()
+                with smtplib.SMTP(self._config.smtp_host, port) as smtp:
+                    smtp.ehlo()
+                    smtp.starttls(context=ctx)
+                    if self._config.smtp_user:
+                        smtp.login(self._config.smtp_user, self._config.smtp_password)
+                    smtp.sendmail(self._config.smtp_from, to_addr, msg.as_string())
+            else:
+                # Plain SMTP (typically port 25, local relay)
+                with smtplib.SMTP(self._config.smtp_host, port) as smtp:
+                    smtp.ehlo()
+                    if self._config.smtp_user:
+                        smtp.login(self._config.smtp_user, self._config.smtp_password)
+                    smtp.sendmail(self._config.smtp_from, to_addr, msg.as_string())
+            logger.info("Notification sent to %s: %s", to_addr, subject)
         except Exception:
             logger.warning("Failed to send notification to %s", to_addr, exc_info=True)
 

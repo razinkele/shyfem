@@ -73,12 +73,13 @@
 ! this is the ultimate routine that is called for insertion
 !
 ! tin is insert time - compute with rtime
-! z = 0.5 (corresponding to larva in water) 
+! z = 0.5 (corresponding to larva in water)
 
 	use mod_lagrange
         use basin, only : neldi,iarv
+	use shympi, only : ip_int_elem
 	use femtime
- 
+
 	implicit none
 
 	integer ie	!element of particle - if unknown use 0
@@ -135,6 +136,10 @@
         lgr_ar(nbdy)%actual%ie = ie
         lgr_ar(nbdy)%actual%l  = lb
         lgr_ar(nbdy)%actual%z  = z
+	if( ie > 0 ) then
+	  lgr_ar(nbdy)%actual%ie_global = ip_int_elem(ie)
+	  lgr_ar(nbdy)%init%ie_global = ip_int_elem(ie)
+	end if
 
 	xi = 1./3.
 	if( ie > 0 ) then
@@ -514,6 +519,7 @@
 	subroutine lgr_input_shell
 
 	use mod_lagrange
+	use shympi, only : ip_int_elem
         use shyfile
 
 	implicit none
@@ -630,6 +636,10 @@
           lgr_ar(nbdy)%actual%l    = lba(i)
           lgr_ar(nbdy)%actual%z    = za(i)
           lgr_ar(nbdy)%actual%time = dtime
+	  if( iea(i) > 0 ) then
+	    lgr_ar(nbdy)%actual%ie_global = ip_int_elem(iea(i))
+	    lgr_ar(nbdy)%init%ie_global = ip_int_elem(iea(i))
+	  end if
           lgr_ar(nbdy)%id          = ida(i)
           lgr_ar(nbdy)%type        = tya(i)
           lgr_ar(nbdy)%sinking     = sa(i)

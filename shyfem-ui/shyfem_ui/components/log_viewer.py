@@ -10,9 +10,12 @@ Features:
 """
 
 import html
+import logging
 from collections.abc import Callable
 
 from shiny import module, reactive, render, ui
+
+logger = logging.getLogger(__name__)
 
 MAX_DISPLAY_LINES = 500
 LINE_TRUNCATE_LEN = 4096
@@ -147,7 +150,7 @@ def log_viewer_server(
                 if on_refresh:
                     on_refresh()
         except Exception:
-            pass
+            logger.debug("Auto-poll toggle not yet available", exc_info=True)
 
     @reactive.effect
     @reactive.event(input.refresh_btn)
@@ -197,6 +200,7 @@ def log_viewer_server(
         try:
             search = input.search_filter()
         except Exception:
+            logger.debug("Search filter input not yet available")
             search = ""
         if search:
             search_lower = search.lower()

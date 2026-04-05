@@ -466,11 +466,6 @@
 	  
 	  !call ts_dia('before T/D')
 
-!$OMP TASK PRIVATE(what,dtime) FIRSTPRIVATE(thpar,wsink,robs,itemp) &
-!$OMP&     SHARED(idtemp,tempv,difhv,difv,difmol,tobsv,ttauv) &
-!$OMP&     DEFAULT(NONE) &
-!$OMP&     IF(itemp > 0)
-
           if( itemp .gt. 0 ) then
 		what = 'temp'
                 call scal_adv_nudge(what,0 &
@@ -480,16 +475,6 @@
      &				,tobsv,robs,ttauv)
 	  end if
 
-!$OMP END TASK
-
-!	  call openmp_get_thread_num(tid)
-!	  !write(6,*) 'number of thread of salt: ',tid
-
-!$OMP TASK PRIVATE(what,dtime) FIRSTPRIVATE(shpar,wsink,robs,isalt) &
-!$OMP&     SHARED(idsalt,saltv,difhv,difv,difmol,sobsv,stauv) &
-!$OMP&     DEFAULT(NONE) &
-!$OMP&     IF(isalt > 0)
-
           if( isalt .gt. 0 ) then
 		what = 'salt'
                 call scal_adv_nudge(what,0 &
@@ -498,9 +483,6 @@
      &                          ,difhv,difv,difmol &
      &				,sobsv,robs,stauv)
           end if
-
-!$OMP END TASK
-!$OMP TASKWAIT
 
 	  !call ts_dia('after T/D')
 
@@ -676,6 +658,9 @@
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
 	use pkonst
+	use mod_sediment, only : tcn, isedi
+	use mod_sediment_para, only : RHOSED
+	use para
 
 	implicit none
 
@@ -686,6 +671,7 @@
 	logical bdebug,debug,bsigma
 	integer k,l,lmax,lmin
 	integer nresid,nsigma
+	integer :: imorphd
 	real sigma0,rho0,pres,hsigma
 	real depth,hlayer,hh
 	real rhop,presbt,presbc,dpresc
@@ -705,6 +691,7 @@
 
 	if(debug) write(6,*) sigma0,rowass,rho0
 
+	imorphd = nint(getpar('imorphd'))
 	nresid = 0
 	dresid = 0.
 
@@ -736,6 +723,10 @@
 	    salt = max(0.,saltv(l,k))
 	    rhop = sigma_stp(salt,tempv(l,k),pres) - sigma0
 	    call set_rhomud(k,l,rhop)
+	    if( imorphd > 0 .and. isedi > 0 .and.			&
+     &		allocated(tcn) ) then
+	      rhop = rhop + tcn(l,k) * (1. - rho0/real(RHOSED))
+	    end if
 
 	    nresid = nresid + 1
 	    dresid = dresid + (rhov(l,k)-rhop)**2

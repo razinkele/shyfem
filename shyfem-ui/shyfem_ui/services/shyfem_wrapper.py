@@ -30,6 +30,13 @@ class ShyfemWrapper:
     Provides async execution with output streaming and progress tracking.
     """
 
+    ALLOWED_TOOLS = frozenset({
+        "shyfem", "shyfem-petsc",
+        "shypre", "shybas", "shyparts",
+        "shyelab", "shyplot", "exgrd", "shyadj",
+        "rstinf", "lgrelab",
+    })
+
     # Map tool names to expected output file extensions
     OUTPUT_EXTENSIONS = {
         "shypre": [".bas"],
@@ -53,6 +60,11 @@ class ShyfemWrapper:
 
     def get_executable(self, tool_name: str) -> Path:
         """Get full path to a SHYFEM executable."""
+        if tool_name not in self.ALLOWED_TOOLS:
+            raise ValueError(
+                f"{tool_name!r} is not an allowed SHYFEM tool. "
+                f"Allowed: {sorted(self.ALLOWED_TOOLS)}"
+            )
         exe = self.bin_dir / tool_name
         if exe.exists():
             return exe

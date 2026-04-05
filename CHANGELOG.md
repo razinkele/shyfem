@@ -1,0 +1,75 @@
+# Changelog
+
+All notable changes to the SHYFEM project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+---
+
+## [Unreleased] — 2026-04-05
+
+### Security
+
+- **CSRF protection on login form** — Double-submit cookie pattern prevents cross-site request forgery (`session_auth.py`)
+- **Secure cookie flag** — Configurable `SHYFEM_UI_USE_SECURE_COOKIES` for HTTPS deployments (`config.py`, `session_auth.py`)
+- **Password minimum raised to 8 characters** — Was 4, now enforced in both create and reset flows (`admin.py`)
+- **Default credentials removed from login page** — "Try it: user/user" hint no longer displayed
+- **Tool name allowlist in ShyfemWrapper** — Only known SHYFEM tools can be invoked through the UI (`shyfem_wrapper.py`)
+- **WebSocket auth bypass restricted to localhost** — Shiny Server proxy bypass only accepted from `127.0.0.1` / `::1` (`session_auth.py`)
+- **Path traversal prevention** — Username `..` rejected; `User.home_dir()` validates containment; STR file paths checked with `config.validate_path()` (`admin.py`, `user.py`, `file_service.py`)
+
+### Fixed
+
+- **Race condition in baroclinic T/S computation** — Removed unsafe concurrent OMP tasks sharing `save` arrays in `scal_adv_nudge` (`baroclinic.f90`)
+- **Division-by-zero in hydrodynamic solver** — Added `hhi > 0` guard on implicit advective terms and `va > 0` guard on free-surface divergence (`hydrodynamic.f90`)
+- **Division-by-zero in serial concentration solver** — Added zero-pivot guards matching OMP version; uses `cycle`/`exit` to skip degenerate nodes (`concentration.f90`)
+- **Stack overflow in Munk-Anderson turbulence** — Converted `shearf2`/`buoyf2` from automatic (stack) to `allocatable, save` (heap); removed dead `richard` array (`turbulence.f90`)
+- **Stack overflow in OMP concentration solver** — Converted ~50KB/task automatic arrays to allocatable locals in `conz3d_element` (`concentration_omp.f90`)
+- **Undefined behavior: `stop` inside OMP parallel regions** — `hydro_transports` uses `REDUCTION(max:ierr_rms)` error flag; `setdepth` wraps diagnostics in `OMP CRITICAL` and defers `stop` (`hydrodynamic.f90`, `elems_dealing.f90`)
+- **Swallowed errors in job queue** — Job persistence failure upgraded from `debug` to `error`; DB load upgraded to `warning`; bare `pass` in progress callbacks and restart file handling replaced with `warning` logging (`job_local.py`, `job_queue.py`, `run.py`)
+
+### Changed
+
+- **Build: `.IGNORE: clean` removed** — Individual `rm -` prefix already handles errors; `.IGNORE` masked real failures (`Makefile`)
+- **Build: `MPI_TARGET` uses `$(MPI_FILE)` variable** — Second definition at line 133 was hardcoded to `MPI_NODE`, now uses the variable (`src/utils/shympi/Makefile`)
+- **Build: `SHYFEMDIR` fallback uses `$(CURDIR)`** — Was `$(HOME)/shyfem`, which fails if the repo is in a different location (`Makefile`)
+- **Build: dropped `-std=f95`** — Codebase uses Fortran 2003/2008 features (`newunit=`, `allocatable save`); `-std=f95` was silently overridden anyway (`Rules.make`)
+- **Build: removed redundant `FGNU_OMP` redefinition** — Duplicate of lines 740-742 removed (`Rules.make`)
+- **Build: Intel `FINTEL_NOOPT` unconditional clear removed** — Preserves `-g -traceback` default (`Rules.make`)
+- **Build: Intel HIGH optimization `-O1` → `-O3`** — Matches intent of HIGH profile (`Rules.make`)
+- **Build: `lagrange_mpi.o` module dependencies added** — Missing `basin`, `connectivity`, `mod_lagrange`, `shympi` (`src/shyfem/Makefile`)
+
+---
+
+## [8.1.1] — 2025-06-15
+
+### Added
+
+- Profile-Guided Optimization (PGO) build profiles (`SPEED_PGO_GEN`, `SPEED_PGO_USE`)
+- Hybrid MPI+OpenMP builds (removed incompatibility guard)
+- OpenMP parallelization for density computation (`baroclinic.f90`), depth setup (`elems_dealing.f90`), bottom friction (`chezy.f90`), diffusivity init (`diffusion_admin.f90`), Munk-Anderson turbulence (`turbulence.f90`)
+- `!$OMP SIMD` hints on vertical level loops in `hydrodynamic.f90`, `turbulence.f90`
+- Compiler optimization: `-O2` default, `-march=native -funroll-loops -ftree-vectorize` for SPEED profile
+- Allocation caching in `hydro_vertical` (~4MB/timestep) and `conz3d_omp` (~10MB/timestep)
+- Physical constants module (`mod_physical_constants.f90`): `pi`, `grav`, `vonkarman`, etc.
+- `getpar`/`dgetpar` moved to `module para` with proper module interface (163 callers updated)
+- PETSc solver support (`bin/shyfem-petsc`)
+- SHYFEM UI web application (`shyfem-ui/`)
+
+### Fixed
+
+- 365+ `allocate()` calls now have `stat=` error checking
+- 205 bare `stop` statements in MPI code paths replaced with `MPI_ABORT`
+- All `open()` calls now have `iostat=` error handling
+- 87 GOTO statements eliminated from 14 files
+- Ghost exchange barriers reduced from 11 to 2
+- Division-by-zero guards in `turbulence.f90`, `explicit.f90`, `wetdry.f90`
+- Stack overflow in `concentration.f90` (automatic arrays → allocatable)
+- Identical if/else branches in `waves_admin.f90`
+
+### Changed
+
+- `.PHONY` targets added to 68 Makefiles
+- 246 three-line `save`/`data` patterns modernized to single-line initializers
+- DOS/Lahey/g77 build remnants removed from `Rules.make`
+- `newunit=` replaces 50+ hardcoded file unit numbers

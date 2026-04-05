@@ -4,6 +4,8 @@ import pytest
 
 from shyfem_ui.app import _build_sidebar_nav, SIDEBAR_GROUPS
 
+pytest.importorskip("shiny_deckgl")
+
 
 class TestSidebarGroups:
     def test_has_five_groups(self):
@@ -13,7 +15,7 @@ class TestSidebarGroups:
         all_pages = []
         for group in SIDEBAR_GROUPS:
             all_pages.extend(item["label"] for item in group["items"])
-        assert len(all_pages) == 14
+        assert len(all_pages) == 15
 
     def test_group_names(self):
         names = [g["name"] for g in SIDEBAR_GROUPS]

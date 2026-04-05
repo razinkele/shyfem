@@ -455,3 +455,148 @@ class TestCommonParams:
         # "idt" is in "para", not in "name"
         info = get_param_info("idt", section="name")
         assert info is None
+
+    def test_common_params_has_restart_params(self):
+        """Restart and offline params are defined in $para."""
+        for param in ("itrst", "itmrst", "ityrst", "idtoff", "itmoff"):
+            assert param in COMMON_PARAMS["para"], f"Missing {param}"
+
+    def test_common_params_has_wave_and_mercury(self):
+        """Wave coupling and mercury params are defined in $para."""
+        for param in ("iwave", "dtwave", "imerc"):
+            assert param in COMMON_PARAMS["para"], f"Missing {param}"
+
+    def test_ireib_description_has_all_models(self):
+        """ireib description lists all 11 friction models (0-10)."""
+        desc = COMMON_PARAMS["para"]["ireib"][4]  # options field
+        for keyword in ("Chezy", "Strickler", "roughness", "fluid mud", "hybrid"):
+            assert keyword.lower() in desc.lower(), f"ireib missing {keyword}"
+
+    def test_iheat_description_has_coare(self):
+        """iheat description includes COARE algorithm."""
+        desc = COMMON_PARAMS["para"]["iheat"][4]
+        assert "COARE" in desc
+
+    def test_ibarcl_description_has_nudging(self):
+        """ibarcl description includes nudging and assimilation modes."""
+        desc = COMMON_PARAMS["para"]["ibarcl"][4]
+        assert "nudging" in desc.lower()
+
+    def test_bound_ibtyp_has_radiation(self):
+        """ibtyp description includes radiation boundary type."""
+        desc = COMMON_PARAMS["bound"]["ibtyp"][4]
+        assert "radiation" in desc.lower() or "31" in desc
+
+    def test_common_params_name_has_ecology_files(self):
+        """$name section has ecology input file entries."""
+        for f in ("bioin", "biosin", "biocon", "biolight", "mercin", "bfmini"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_name_has_sediment_files(self):
+        """$name section has sediment input file entries."""
+        for f in ("sedp", "sedt", "sedcon"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_name_has_lagrangian_files(self):
+        """$name section has lagrangian input file entries."""
+        for f in ("lgrlin", "lgrtrj", "statcnn", "surfvel"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_name_has_scalar_boundary_files(self):
+        """$name section has scalar boundary file entries."""
+        for f in ("saltn", "tempn", "conzn"):
+            assert f in COMMON_PARAMS["name"], f"Missing {f} in $name"
+
+    def test_common_params_has_sedtr_section(self):
+        """COMMON_PARAMS has $sedtr section with key params."""
+        assert "sedtr" in COMMON_PARAMS
+        for p in ("isedi", "sedgrs", "percin", "tauin", "sedhpar"):
+            assert p in COMMON_PARAMS["sedtr"], f"Missing {p} in $sedtr"
+
+    def test_common_params_has_lagrg_section(self):
+        """COMMON_PARAMS has $lagrg section with key params."""
+        assert "lagrg" in COMMON_PARAMS
+        for p in ("ilagr", "nbdy", "nbdymax", "ioil", "ilarv", "lbeach", "ldecay"):
+            assert p in COMMON_PARAMS["lagrg"], f"Missing {p} in $lagrg"
+
+    def test_common_params_has_connec_section(self):
+        """COMMON_PARAMS has $connec section."""
+        assert "connec" in COMMON_PARAMS
+        for p in ("icnn", "radcnn", "ppscnn", "pldcnn"):
+            assert p in COMMON_PARAMS["connec"], f"Missing {p} in $connec"
+
+    def test_common_params_has_bfmsc_section(self):
+        """COMMON_PARAMS has $bfmsc section."""
+        assert "bfmsc" in COMMON_PARAMS
+        assert "ibfm" in COMMON_PARAMS["bfmsc"]
+
+    def test_common_params_has_nduge_section(self):
+        """COMMON_PARAMS has $nduge data assimilation section."""
+        assert "nduge" in COMMON_PARAMS
+        for p in ("nvars", "tramp", "ttau", "sigma"):
+            assert p in COMMON_PARAMS["nduge"], f"Missing {p} in $nduge"
+
+
+class TestNewSectionRoundTrip:
+    """Test that new sections can be parsed and re-generated."""
+
+    def test_sedtr_roundtrip(self):
+        content = """$sedtr
+        isedi = 1
+        sedgrs = '0.063 0.125 0.25 0.5'
+        percin = '0.25 0.25 0.25 0.25'
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("sedtr", "isedi") == 1
+        generated = StrParser.generate(parsed)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_param("sedtr", "isedi") == 1
+
+    def test_lagrg_roundtrip(self):
+        content = """$lagrg
+        ilagr = 2
+        nbdy = 100
+        ioil = 1
+        lbeach = 0.5
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("lagrg", "ilagr") == 2
+        assert parsed.get_param("lagrg", "ioil") == 1
+        generated = StrParser.generate(parsed)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_param("lagrg", "ilagr") == 2
+
+    def test_nduge_roundtrip(self):
+        content = """$nduge
+        nvars = 3
+        ttau = 3600
+        sigma = 5000
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("nduge", "nvars") == 3
+        generated = StrParser.generate(parsed)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_param("nduge", "nvars") == 3
+
+    def test_multi_section_str_with_new_sections(self):
+        """Full STR with multiple new sections parses correctly."""
+        content = """$para
+        idt = 300
+        ilagr = 2
+$end
+$lagrg
+        ilagr = 2
+        nbdy = 100
+        idtl = 3600
+$end
+$sedtr
+        isedi = 1
+$end
+"""
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("para", "idt") == 300
+        assert parsed.get_param("lagrg", "nbdy") == 100
+        assert parsed.get_param("sedtr", "isedi") == 1

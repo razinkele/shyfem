@@ -169,6 +169,7 @@
       real, allocatable, save	:: tmsus(:)	!total suspended sediment load [kg/s] (> 0 -eros, < 0 depo)
       real, allocatable, save	:: bdens(:,:)	!dry bulk density of bottom sediments [kg/m**3]
       real, allocatable, save	:: bleve(:,:)	!depth below sediment surface of sediments [m]
+      real, allocatable, save	:: bh_morph(:)	!morphological offset for hydro feedback [m]
 
 !==================================================================
       contains
@@ -194,6 +195,7 @@
         deallocate(tmsus)
         deallocate(bdens)
         deallocate(bleve)
+        deallocate(bh_morph)
       end if
 
       nlv_sedim = nlv
@@ -209,11 +211,14 @@
       if( ierr /= 0 ) stop 'error stop: allocation failed'
       allocate(bleve(nlbdim,nkn),stat=ierr)
       if( ierr /= 0 ) stop 'error stop: allocation failed'
+      allocate(bh_morph(nkn),stat=ierr)
+      if( ierr /= 0 ) stop 'error stop: allocation failed'
 
       tcn = 0.
       tmsus = 0.
       bdens = 0.
       bleve = 0.
+      bh_morph = 0.
 
       end subroutine mod_sedim_init
 

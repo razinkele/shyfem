@@ -12,11 +12,18 @@ ALL_TEMPLATES = [
     "wind_driven",
     "tidal",
     "baroclinic",
+    "eulerian_tracer",
     "lagrangian",
     "tidal_estuary",
     "sediment_transport",
     "water_quality",
     "storm_surge",
+    "thermal",
+    "ice_model",
+    "oil_spill",
+    "data_assimilation",
+    "offline_tracer",
+    "wave_coupled",
 ]
 
 
@@ -105,3 +112,99 @@ class TestStormSurge:
         parsed = StrParser.parse(content)
         idt = parsed.sections["para"].parameters.get("idt", "")
         assert "60" in idt or "30" in idt
+
+
+class TestLagrangianTemplate:
+    """Proper lagrangian template has $lagrg section."""
+
+    def test_has_lagrg_section(self):
+        content = generate_template("lagrangian")
+        assert "$lagrg" in content
+
+    def test_has_ilagr(self):
+        content = generate_template("lagrangian")
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("lagrg", "ilagr") == 2
+
+    def test_has_nbdy(self):
+        content = generate_template("lagrangian")
+        assert "nbdy" in content
+
+
+class TestEulerianTracer:
+    """Renamed eulerian_tracer template has iconz and iage."""
+
+    def test_has_iconz(self):
+        content = generate_template("eulerian_tracer")
+        assert "iconz" in content
+
+    def test_has_iage(self):
+        content = generate_template("eulerian_tracer")
+        assert "iage" in content
+
+
+class TestThermalTemplate:
+    """Thermal template has heat flux and T/S."""
+
+    def test_has_iheat(self):
+        content = generate_template("thermal")
+        assert "iheat" in content
+
+    def test_has_baroclinic(self):
+        content = generate_template("thermal")
+        assert "ibarcl" in content
+
+    def test_has_levels(self):
+        content = generate_template("thermal")
+        assert "$levels" in content
+
+
+class TestOilSpillTemplate:
+    """Oil spill template has $lagrg with ioil."""
+
+    def test_has_lagrg(self):
+        content = generate_template("oil_spill")
+        assert "$lagrg" in content
+
+    def test_has_ioil(self):
+        content = generate_template("oil_spill")
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("lagrg", "ioil") == 1
+
+
+class TestDataAssimilationTemplate:
+    """Data assimilation template has $nduge."""
+
+    def test_has_nduge(self):
+        content = generate_template("data_assimilation")
+        assert "$nduge" in content
+
+    def test_has_ibarcl_4(self):
+        content = generate_template("data_assimilation")
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("para", "ibarcl") == 4
+
+
+class TestOfflineTracerTemplate:
+    """Offline tracer template has idtoff."""
+
+    def test_has_idtoff(self):
+        content = generate_template("offline_tracer")
+        assert "idtoff" in content
+
+
+class TestWaveCoupledTemplate:
+    """Wave-coupled template has iwave."""
+
+    def test_has_iwave(self):
+        content = generate_template("wave_coupled")
+        assert "iwave" in content
+
+
+class TestIceModelTemplate:
+    """Ice model template has icemod."""
+
+    def test_has_icemod(self):
+        content = generate_template("ice_model")
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("para", "icemod") == 1

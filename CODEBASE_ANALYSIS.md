@@ -338,8 +338,8 @@ end do
 
 | Category | Before | After | Phase |
 |----------|--------|-------|-------|
-| Division-by-zero guards | 3 unguarded | All guarded | 1 |
-| Stack overflow risk | 1 (concentration.f90) | Fixed (allocatable) | 1 |
+| Division-by-zero guards | 3 unguarded | All guarded (hydro, concentration, turbulence) | 1, Safety |
+| Stack overflow risk | 3 files | All fixed (allocatable/save or allocatable locals) | 1, Safety |
 | `allocate` with `stat=` | Inconsistent | 365+ checked (100%) | 2 |
 | `open` with `iostat=` | Inconsistent | All checked (100%) | 2 |
 | `open` with `newunit=` | Hardcoded units | All modernized | 2,4 |
@@ -749,6 +749,22 @@ Estimated 500+ files that are no longer built or referenced.
 - Authentication, configuration, database persistence
 - 94 Playwright browser tests + unit tests
 
-### Runtime Verification (2026-02-11)
-- Mar Menor test: serial 3.14s, MPI 4P 2.05s
-- All 1152 timesteps complete, no errors, no NaN
+### Phases 9-10: Optimization (2026-02-21)
+- Compiler flags: `-O2` default, SPEED profile with `-march=native -funroll-loops -ftree-vectorize`
+- `!$OMP SIMD` on vertical loops in hydrodynamic.f90, turbulence.f90
+- OpenMP `PARALLEL DO` on density, depth, friction, diffusivity, turbulence loops
+- Profile-Guided Optimization (PGO) build profiles
+- Hybrid MPI+OpenMP support (removed incompatibility guard)
+- Allocation caching in hydro_vertical (~4MB/timestep) and conz3d_omp (~10MB/timestep)
+- PETSc solver support (`bin/shyfem-petsc`)
+
+### Safety & Security Audit (PR #7, 2026-04-05)
+Deep codebase review (75 findings from 7 parallel agents), 12 fix tasks:
+- **Fortran:** Race condition in baroclinic OMP tasks, division-by-zero guards (hydro + concentration), stack overflow fixes (turbulence.f90, concentration_omp.f90), `stop` inside OMP regions replaced with error flags
+- **Python UI:** CSRF protection, Secure cookie flag, password min 8, default creds removed, tool allowlist, WS auth bypass restricted, path traversal prevention, swallowed error logging
+- **Build system:** `.IGNORE` removal, `MPI_TARGET` fix, `SHYFEMDIR` fallback, `-std=f95` dropped, Intel flag fixes, Makefile dependency additions
+
+### Runtime Verification (2026-04-05)
+- Mar Menor test: serial 2.78s, MPI 4P 1.67s
+- All timesteps complete, no errors, no NaN
+- Python tests: 58/58 auth tests pass, 37/37 admin tests pass

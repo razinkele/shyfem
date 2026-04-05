@@ -97,6 +97,25 @@ class TestWorkflowTemplates:
         assert "simulation" in names
         assert "postprocess" in names
 
+    def test_offline_tracer_template_exists(self):
+        """Test that offline_tracer template is defined."""
+        assert "offline_tracer" in WORKFLOW_TEMPLATES
+
+    def test_offline_tracer_has_two_steps(self):
+        """Test offline_tracer workflow has exactly 2 steps."""
+        tpl = WORKFLOW_TEMPLATES["offline_tracer"]
+        assert len(tpl["steps"]) == 2
+
+    def test_offline_tracer_step_names(self):
+        """Test offline_tracer step names and tool assignments."""
+        tpl = WORKFLOW_TEMPLATES["offline_tracer"]
+        steps = tpl["steps"]
+        assert steps[0].name == "Hydrodynamic run"
+        assert steps[0].tool_name == "shyfem"
+        assert steps[1].name == "Tracer run"
+        assert steps[1].tool_name == "shyfem"
+        assert steps[1].input_from == "Hydrodynamic run"
+
 
 class TestWorkflowEngine:
     """Tests for WorkflowEngine core functionality."""

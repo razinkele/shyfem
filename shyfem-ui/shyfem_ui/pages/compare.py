@@ -17,7 +17,7 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.job_status import format_datetime, format_duration
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus
-from shyfem_ui.services.parser_str import StrParser
+from shyfem_ui.services.parser_str import COMMON_PARAMS, StrParser
 from shyfem_ui.services.report import generate_comparison_report
 
 logger = logging.getLogger(__name__)
@@ -325,10 +325,18 @@ def compare_server(
         rows = []
         for row in diff["rows"]:
             diff_class = _DIFF_TYPE_CLASSES.get(row.get("diff_type", ""), "")
+            # Look up description from COMMON_PARAMS
+            sec_params = COMMON_PARAMS.get(row["section"], {})
+            info = sec_params.get(row["param"])
+            desc = info[0] if info else ""
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(ui.code(row["section"])),
-                    ui.tags.td(ui.code(row["param"])),
+                    ui.tags.td(
+                        ui.code(row["param"]),
+                        ui.br(),
+                        ui.span(desc, class_="text-muted small") if desc else None,
+                    ),
                     ui.tags.td(row["value_a"]),
                     ui.tags.td(row["value_b"]),
                     class_=diff_class,
@@ -546,15 +554,6 @@ def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
 
 def _load_ts(path: Path) -> list[list[float]]:
     """Load time series data as list of float rows."""
-    data = []
-    with open(path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if not parts:
-                continue
-            try:
-                data.append([float(p) for p in parts])
-            except ValueError:
-                logger.debug("Skipping non-numeric line in time series")
-                continue
-    return data
+    from shyfem_ui.services.timeseries_loader import load_timeseries_raw
+
+    return load_timeseries_raw(path)

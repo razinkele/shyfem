@@ -74,6 +74,10 @@ def generate_bound_text(boundaries: list[dict]) -> str:
         lines.append(f"        ibtyp = {b['ibtyp']}")
         if b.get("boundn"):
             lines.append(f"        boundn = '{b['boundn']}'")
+        for scalar_key in ("saltn", "tempn", "conzn"):
+            val = b.get(scalar_key, "")
+            if val:
+                lines.append(f"        {scalar_key} = '{val}'")
         if b.get("zfact", 1.0) != 1.0:
             lines.append(f"        zfact = {b['zfact']}")
         if b.get("intpol", 1) != 1:
@@ -160,6 +164,9 @@ def boundary_editor_server(
                 "boundn": str(section.parameters.get("boundn", "")),
                 "zfact": float(section.parameters.get("zfact", 1.0)),
                 "intpol": int(section.parameters.get("intpol", 1)),
+                "saltn": str(section.parameters.get("saltn", "")),
+                "tempn": str(section.parameters.get("tempn", "")),
+                "conzn": str(section.parameters.get("conzn", "")),
             }
             loaded.append(entry)
             bid += 1
@@ -182,6 +189,9 @@ def boundary_editor_server(
                 "boundn": "",
                 "zfact": 1.0,
                 "intpol": 1,
+                "saltn": "",
+                "tempn": "",
+                "conzn": "",
             }
         )
         _next_id.set(bid + 1)
@@ -272,9 +282,14 @@ def boundary_editor_server(
         for b in bounds:
             bid = b["id"]
             type_choices = {
+                "-1": "-1 - Closed wall",
+                "0": "0 - Off / Inactive",
                 "1": "1 - Water level (elevation)",
-                "2": "2 - Velocity",
-                "3": "3 - Discharge",
+                "2": "2 - Discharge (volume flux)",
+                "3": "3 - Internal volume inlet",
+                "4": "4 - Momentum input",
+                "5": "5 - Fixed scalar (no flux)",
+                "31": "31 - Radiation / zero gradient",
             }
             intpol_choices = {
                 "1": "1 - Linear",

@@ -229,11 +229,16 @@ class FileService:
         warnings: list[str] = []
 
         # Check $name file references
+        cfg = get_config()
         name_section = parsed.sections.get("name")
         if name_section:
             for param, value in name_section.parameters.items():
                 if param in cls._NAME_FILE_PARAMS and isinstance(value, str) and value:
-                    path = work_dir / value
+                    try:
+                        path = cfg.validate_path(work_dir / value, must_exist=False)
+                    except ValueError:
+                        warnings.append(f"Invalid/unsafe file path for $name/{param}: {value}")
+                        continue
                     if not path.exists():
                         warnings.append(f"Missing file for $name/{param}: {value}")
 
@@ -243,7 +248,11 @@ class FileService:
                 continue
             for param, value in section.parameters.items():
                 if param in cls._BOUND_FILE_PARAMS and isinstance(value, str) and value:
-                    path = work_dir / value
+                    try:
+                        path = cfg.validate_path(work_dir / value, must_exist=False)
+                    except ValueError:
+                        warnings.append(f"Invalid/unsafe file path for ${sec_name}/{param}: {value}")
+                        continue
                     if not path.exists():
                         warnings.append(f"Missing file for ${sec_name}/{param}: {value}")
 

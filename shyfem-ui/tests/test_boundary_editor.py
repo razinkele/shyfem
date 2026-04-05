@@ -192,3 +192,66 @@ class TestParseBoundaryCSV:
         assert entry["boundn"] == "INPUT/file.txt"
         assert entry["zfact"] == 0.8
         assert entry["intpol"] == 2
+
+
+# ---------------------------------------------------------------------------
+# Boundary type completeness
+# ---------------------------------------------------------------------------
+
+class TestBoundaryTypesComplete:
+    """Boundary type choices cover all Fortran ibtyp values."""
+
+    def test_radiation_boundary_generates(self):
+        """ibtyp=31 (radiation) generates correct $bound text."""
+        result = generate_bound_text([_bound(ibtyp=31)])
+        assert "ibtyp = 31" in result
+
+    def test_closed_wall_generates(self):
+        """ibtyp=-1 (closed wall) generates correct $bound text."""
+        result = generate_bound_text([_bound(ibtyp=-1)])
+        assert "ibtyp = -1" in result
+
+    def test_momentum_boundary_generates(self):
+        """ibtyp=4 (momentum) generates correct $bound text."""
+        result = generate_bound_text([_bound(ibtyp=4)])
+        assert "ibtyp = 4" in result
+
+    def test_csv_import_radiation_type(self):
+        """CSV import handles ibtyp=31."""
+        csv = "1 2 3, 31, INPUT/open.txt, 1.0, 1"
+        result = parse_boundary_csv(csv)
+        assert len(result) == 1
+        assert result[0]["ibtyp"] == 31
+
+
+# ---------------------------------------------------------------------------
+# Scalar boundary files
+# ---------------------------------------------------------------------------
+
+class TestScalarBoundaryFiles:
+    """Scalar file fields (saltn, tempn, conzn) in boundary text."""
+
+    def test_saltn_in_bound_text(self):
+        """saltn is emitted in $bound section when set."""
+        b = _bound()
+        b["saltn"] = "INPUT/salt.txt"
+        result = generate_bound_text([b])
+        assert "saltn = 'INPUT/salt.txt'" in result
+
+    def test_tempn_in_bound_text(self):
+        """tempn is emitted in $bound section when set."""
+        b = _bound()
+        b["tempn"] = "INPUT/temp.txt"
+        result = generate_bound_text([b])
+        assert "tempn = 'INPUT/temp.txt'" in result
+
+    def test_empty_scalar_files_omitted(self):
+        """Empty scalar file strings are not emitted."""
+        b = _bound()
+        b["saltn"] = ""
+        b["tempn"] = ""
+        b["conzn"] = ""
+        result = generate_bound_text([b])
+        assert "saltn" not in result
+        assert "tempn" not in result
+        assert "conzn" not in result

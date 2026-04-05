@@ -90,6 +90,7 @@ def build_variable_table(ds) -> list[dict]:
                 }
             )
         except Exception:
+            logger.debug("Failed to compute stats for variable %s", var_name, exc_info=True)
             continue
     return rows
 
@@ -397,6 +398,7 @@ def visualize_server(
                         return ""
                     return get_dim_label(ds_val, _d, int(idx))
                 except Exception:
+                    logger.debug("Dim slider for %s not ready", _d)
                     return ""
 
     @render.ui
@@ -408,6 +410,7 @@ def visualize_server(
         try:
             var_name = input.nc_variable()
         except Exception:
+            logger.debug("nc_variable input not ready for metadata panel")
             return None
         if not var_name:
             return None
@@ -706,6 +709,7 @@ def visualize_server(
         try:
             var_name = input.nc_variable()
         except Exception:
+            logger.debug("nc_variable input not ready for profile plot")
             var_name = list(data.data_vars)[0] if data.data_vars else None
 
         if not var_name:
@@ -724,10 +728,12 @@ def visualize_server(
         try:
             px = int(input.profile_x())
         except Exception:
+            logger.debug("profile_x input not ready")
             px = 0
         try:
             py = int(input.profile_y())
         except Exception:
+            logger.debug("profile_y input not ready")
             py = 0
 
         try:
@@ -841,38 +847,9 @@ def visualize_server(
 
 def _load_timeseries(path: Path) -> dict:
     """Load time series data from file."""
-    import pandas as pd
+    from shyfem_ui.services.timeseries_loader import load_timeseries
 
-    try:
-        df = pd.read_csv(path, sep=None, engine="python")
-        return {
-            "columns": list(df.columns),
-            "data": df.values.tolist(),
-            "df": df,
-        }
-    except Exception:
-        data = []
-        columns = []
-        with open(path) as f:
-            for i, line in enumerate(f):
-                parts = line.strip().split()
-                if parts:
-                    if i == 0 and not parts[0].replace(".", "").replace("-", "").isdigit():
-                        columns = parts
-                    else:
-                        try:
-                            data.append([float(p) for p in parts])
-                        except ValueError:
-                            continue
-
-        if not columns:
-            columns = [f"col{i}" for i in range(len(data[0]) if data else 0)]
-
-        return {
-            "columns": columns,
-            "data": data,
-            "df": None,
-        }
+    return load_timeseries(path)
 
 
 # ---------------------------------------------------------------------------
@@ -987,6 +964,7 @@ def _plotly_netcdf(
         try:
             var_name = input.nc_variable()
         except Exception:
+            logger.debug("nc_variable input not yet available, using first data var")
             var_name = list(data.data_vars)[0]
 
         var = data[var_name]
@@ -1000,7 +978,7 @@ def _plotly_netcdf(
                     var = var.isel({dim: int(idx)})
                     slice_info[dim] = int(idx)
             except Exception:
-                pass
+                logger.debug("Dimension slider for %s not available yet", dim)
 
         # Reduce to 2D if still higher-dimensional
         while len(var.dims) > 2:
@@ -1169,7 +1147,7 @@ def _build_vertical_profile(ds, var_name: str, x_idx: int, y_idx: int, input) ->
                     sel[dim] = int(idx)
                     continue
             except Exception:
-                pass
+                logger.debug("Dimension slider for %s not available yet", dim)
 
             # Use provided x/y indices for spatial dims
             dim_lower = dim.lower()
@@ -1242,7 +1220,7 @@ def _build_transect(ds, var_name: str, row_idx: int, input) -> go.Figure:
                 if idx is not None and dim.lower() == "time":
                     sel[dim] = int(idx)
             except Exception:
-                pass
+                logger.debug("Dimension slider for %s not available yet", dim)
 
         if sel:
             var = var.isel(sel)
@@ -1359,6 +1337,7 @@ def _netcdf_statistics(ds) -> ui.Tag:
                 )
             )
         except Exception:
+            logger.debug("Failed to compute stats for variable %s", var_name, exc_info=True)
             continue
 
     if not rows:
@@ -1550,6 +1529,7 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
     try:
         var_name = input.nc_variable()
     except Exception:
+        logger.debug("nc_variable input not ready for comparison")
         var_name = list(ds1.data_vars)[0] if ds1.data_vars else None
 
     if not var_name or var_name not in ds2.data_vars:
@@ -1580,7 +1560,7 @@ def _compare_netcdf(ds1, ds2, input) -> go.Figure:
                     if dim in var2.dims:
                         var2 = var2.isel({dim: int(idx)})
             except Exception:
-                pass
+                logger.debug("Dimension slider for %s not available yet", dim)
 
         while len(var1.dims) > 2:
             var1 = var1.isel({var1.dims[0]: 0})

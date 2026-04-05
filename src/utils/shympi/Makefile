@@ -130,7 +130,7 @@ main_dummy:
 
 #--------------------------------------------- var targets
 
-MPI_TARGET = $(shell [ ! -f MPI_NODE ] && echo reset )
+MPI_TARGET = $(shell [ ! -f $(MPI_FILE) ] && echo reset )
 
 mpi_node_internal.o: mpi_node_internal.f90
 	$(F77) -c $(FFLAG_SPECIAL) mpi_node_internal.f90

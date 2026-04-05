@@ -1321,6 +1321,9 @@
         call addpar('imerc',0.)		!run mercury reactor
         call addpar('issedi',0.)	!run simple sediments
 	call addpar('itoxi',0.)		!run toxicological routines
+	call addpar('imorph',0.)	!bathymetric feedback (0=off,1=on)
+	call addpar('imorphd',0.)	!sediment density coupling (0=off,1=on)
+	call addpar('hminmor',0.05)	!minimum depth with morphology [m]
 
 !c------------------------------------------------------------------------
 

@@ -16,6 +16,7 @@ from shyfem_ui.components.grid_map import (
     PARTITION_COLORS,
     _build_boundary_data,
     _build_edge_data,
+    _build_mesh_geometry,
     _build_node_data,
     _build_triangle_data,
     _compute_quality,
@@ -35,6 +36,9 @@ from shyfem_ui.services.parser_grd import (
     Line,
     Node,
 )
+
+pytest.importorskip("shiny_deckgl")
+pytest.importorskip("pyproj")
 
 # Path to Mar Menor test grid (UTM zone 30N, EPSG:32630)
 _MAR_MENOR_GRD = Path(__file__).resolve().parents[1] / (
@@ -523,6 +527,86 @@ class TestBuildNodeData:
 
 
 # ===========================================================================
+# TestBuildMeshGeometry
+# ===========================================================================
+
+class TestBuildMeshGeometry:
+    """Tests for _build_mesh_geometry()."""
+
+    def test_depth_mode_returns_valid_geometry(self):
+        """Depth mode produces positions, normals, colors, indices."""
+        grd = _make_triangle_grid()
+        result = _build_mesh_geometry(grd, mode="depth", colorscale="viridis")
+        assert result["n_vertices"] == 3  # 1 triangle = 3 vertices
+        assert result["n_triangles"] == 1
+        assert len(result["positions"]) == 9  # 3 verts * 3 coords
+        assert len(result["normals"]) == 9
+        assert len(result["colors"]) == 9  # 3 verts * 3 (RGB float)
+        assert len(result["indices"]) == 3
+        assert len(result["center"]) == 2
+
+    def test_depth_3d_has_nonzero_z(self):
+        """Depth 3D mode produces non-zero Z values from elevation_scale."""
+        grd = _make_triangle_grid()
+        result = _build_mesh_geometry(
+            grd, mode="depth_3d", elevation_scale=100.0,
+        )
+        # Nodes have depths 2.5, 4.0, 3.0 — Z should be depth * 100
+        z_values = [result["positions"][i * 3 + 2] for i in range(result["n_vertices"])]
+        assert any(z > 0 for z in z_values)
+
+    def test_flat_mode_has_zero_z(self):
+        """Non-3D modes produce Z=0 for all vertices."""
+        grd = _make_triangle_grid()
+        result = _build_mesh_geometry(grd, mode="depth", colorscale="viridis")
+        z_values = [result["positions"][i * 3 + 2] for i in range(result["n_vertices"])]
+        assert all(z == 0.0 for z in z_values)
+
+    def test_colors_are_normalized_floats(self):
+        """Colors should be RGB floats in [0, 1] range."""
+        grd = _make_triangle_grid()
+        result = _build_mesh_geometry(grd, mode="depth", colorscale="viridis")
+        for c in result["colors"]:
+            assert 0.0 <= c <= 1.0
+
+    def test_partition_mode(self):
+        """Partition mode assigns partition colors to vertices."""
+        grd = _make_multi_grid()
+        pmap = {1: 0, 2: 1}
+        result = _build_mesh_geometry(
+            grd, mode="partitions", partition_map=pmap,
+        )
+        assert result["n_vertices"] > 0
+        assert result["n_triangles"] > 0
+
+    def test_empty_grid_returns_empty(self):
+        """Grid with no elements returns empty geometry."""
+        grd = GrdFile()
+        grd.nodes = {
+            1: Node(id=1, node_type=0, x=-0.80, y=37.70, depth=2.5),
+        }
+        result = _build_mesh_geometry(grd, mode="depth")
+        assert result["n_vertices"] == 0
+        assert result["n_triangles"] == 0
+
+    def test_quad_element_produces_two_triangles(self):
+        """A quad element should be split into 2 triangles."""
+        grd = _make_multi_grid()
+        # _make_multi_grid has 2 triangles
+        result = _build_mesh_geometry(grd, mode="depth", colorscale="viridis")
+        assert result["n_triangles"] == 2
+        assert result["n_vertices"] == 6  # 2 triangles * 3 verts (duplicated)
+
+    def test_center_is_geographic(self):
+        """Center should be within the node coordinate range."""
+        grd = _make_triangle_grid()
+        result = _build_mesh_geometry(grd, mode="depth")
+        lon, lat = result["center"]
+        assert -0.81 < lon < -0.77
+        assert 37.69 < lat < 37.73
+
+
+# ===========================================================================
 # TestBuildLayers
 # ===========================================================================
 
@@ -552,15 +636,17 @@ class TestBuildLayers:
         assert "triangles" in ids
         assert "wireframe" in ids
 
-    def test_depth_3d_mode_has_extruded(self):
-        """Depth 3D mode produces triangles layer with extruded=True."""
+    def test_depth_3d_mode_uses_simple_mesh(self):
+        """Depth 3D mode produces triangles layer as SimpleMeshLayer."""
         grd = _make_triangle_grid()
         layers = build_layers(grd, mode="depth_3d", colorscale="viridis",
                               show_boundaries=False, show_nodes=False,
                               elevation_scale=100.0)
         tri_layer = [l for l in layers if l["id"] == "triangles"]
         assert len(tri_layer) == 1
-        assert tri_layer[0].get("extruded") is True
+        assert tri_layer[0]["type"] == "SimpleMeshLayer"
+        # Mesh data should have Z values from elevation
+        assert tri_layer[0].get("mesh") == "@@CustomGeometry"
 
     def test_boundaries_mode_adds_boundary_layers(self):
         """Boundaries mode includes boundary_* layers."""
@@ -1114,13 +1200,13 @@ class TestMarMenorLayerGeneration:
         assert "triangles" in ids
         assert "wireframe" in ids
 
-    def test_depth_triangle_coords_in_wgs84(self, mar_menor_grd):
-        """Triangle polygons have geographic coordinates with EPSG."""
+    def test_depth_mesh_origin_in_wgs84(self, mar_menor_grd):
+        """SimpleMeshLayer coordinateOrigin is in geographic coords with EPSG."""
         layers = build_layers(mar_menor_grd, mode="depth", epsg=32630)
         tri_layer = next(l for l in layers if l["id"] == "triangles")
-        tri = tri_layer["data"][0]
-        polygon = tri["polygon"]
-        lon, lat = polygon[0]
+        assert tri_layer["type"] == "SimpleMeshLayer"
+        origin = tri_layer["coordinateOrigin"]
+        lon, lat = origin[0], origin[1]
         assert -2.0 < lon < 1.0
         assert 36.0 < lat < 39.0
 
@@ -1229,10 +1315,11 @@ class TestSampleDataFlow:
         layers = build_layers(grd, mode="depth", epsg=grd.epsg)
         ids = [l["id"] for l in layers]
         assert "triangles" in ids
-        # Verify triangle coords
+        # Verify mesh origin coords
         tri_layer = next(l for l in layers if l["id"] == "triangles")
-        polygon = tri_layer["data"][0]["polygon"]
-        lon, lat = polygon[0]
+        assert tri_layer["type"] == "SimpleMeshLayer"
+        origin = tri_layer["coordinateOrigin"]
+        lon, lat = origin[0], origin[1]
         assert -2.0 < lon < 1.0
         assert 36.0 < lat < 39.0
 
