@@ -134,9 +134,9 @@
 ! aux arrays superposed onto other aux arrays
 !---------------------------------------------------------------
 
-	real shearf2(nlvdi,nkn)
-	real buoyf2(nlvdi,nkn)
-	real richard(nlvdi,nkn)
+	real, allocatable, save :: shearf2(:,:)
+	real, allocatable, save :: buoyf2(:,:)
+	integer ierr_alloc
 	real h(nlvdi)
 
 
@@ -156,6 +156,12 @@
 !------------------------------------------------------
 
 	if( icall .lt. 0 ) return
+
+	if( .not. allocated(shearf2) ) then
+	  allocate(shearf2(nlvdi,nkn),buoyf2(nlvdi,nkn),stat=ierr_alloc)
+	  if( ierr_alloc /= 0 ) call shympi_abort_internal( &
+     &        'munk_anderson_shell: allocation failed')
+	end if
 
 	if( icall .eq. 0 ) then
 	  write(*,*) 'starting Munk Anderson turbulence model'
@@ -202,7 +208,6 @@
 
 	      visv(l,k) = vis
 	      difv(l,k) = dif
-	      richard(l,k) = ri
 	    end do
 
             if( nlev .eq. flev ) then
@@ -210,13 +215,11 @@
 	      difv(flev-1,k) = diftur_c
 	      visv(flev,k) = vistur_c
 	      difv(flev,k) = diftur_c
-	      richard(flev,k) = 0.
             else
 	      visv(flev-1,k) = visv(flev,k)
 	      difv(flev-1,k) = difv(flev,k)
 	      visv(nlev,k) = visv(nlev-1,k)
 	      difv(nlev,k) = difv(nlev-1,k)
-	      richard(nlev,k) = richard(nlev-1,k)
             end if
 
 	end do
