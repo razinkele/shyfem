@@ -1,7 +1,7 @@
 # SHYFEM Developer Guide
 
 **Project:** SHYFEM (System of HydroDYnamic Finite Element Modules) v8.1.1
-**Last Updated:** 2026-02-11
+**Last Updated:** 2026-04-05
 
 This guide provides a comprehensive overview of the SHYFEM codebase for developers who want to understand, maintain, or extend the model.
 
@@ -662,6 +662,48 @@ call shympi_check_3d_elem_r(array, 'array_name')
 - **`.PHONY` in Makefiles:** Added to 68 Makefiles across the project
 - **Save/data modernization:** 246 three-line `save`/`data` patterns converted to single-line initializers across 36 files
 - **Build cleanup:** Removed DOS/Lahey/g77 compiler remnants from `Rules.make` and obsolete Makefiles
+
+### 11.5 Safety and Security Fixes (2026-04-05)
+
+Comprehensive safety audit addressing 3 critical, 8 high, and key medium findings from a deep codebase review (75 findings, 7 parallel review agents).
+
+#### Fortran Safety
+
+| Issue | File | Fix |
+|-------|------|-----|
+| Race condition on `save` arrays | `baroclinic.f90` | Removed unsafe concurrent OMP tasks for T/S |
+| Division by zero in hydro solver | `hydrodynamic.f90` | `hhi > 0` and `va > 0` guards |
+| Division by zero in serial concentration solver | `concentration.f90` | Zero-pivot guards (`cycle`/`exit`) |
+| Stack overflow in Munk-Anderson | `turbulence.f90` | Automatic → `allocatable, save` |
+| Stack overflow in OMP concentration | `concentration_omp.f90` | ~50KB/task automatic → allocatable locals |
+| `stop` inside OMP parallel regions | `hydrodynamic.f90`, `elems_dealing.f90` | `REDUCTION` error flags, `OMP CRITICAL` |
+
+#### Python UI Security
+
+| Issue | File | Fix |
+|-------|------|-----|
+| No CSRF protection on login | `session_auth.py` | Double-submit cookie pattern |
+| Session cookie missing `Secure` flag | `session_auth.py`, `config.py` | Configurable `use_secure_cookies` |
+| Password minimum too low (4 chars) | `admin.py` | Raised to 8 characters |
+| Default credentials on login page | `session_auth.py` | Removed hint text |
+| No tool name allowlist | `shyfem_wrapper.py` | Only known SHYFEM tools allowed |
+| WebSocket auth bypass too broad | `session_auth.py` | Restricted to localhost |
+| Path traversal via username | `admin.py`, `user.py` | `..` rejected, `home_dir()` validates containment |
+| STR file path validation | `file_service.py` | Uses `config.validate_path()` |
+| Swallowed errors in job queue | `job_local.py`, `job_queue.py`, `run.py` | Upgraded to `warning`/`error` logging |
+
+#### Build System Fixes
+
+| Issue | File | Fix |
+|-------|------|-----|
+| `.IGNORE: clean` masks errors | `Makefile` | Removed |
+| `MPI_TARGET` hardcoded | `src/utils/shympi/Makefile` | Uses `$(MPI_FILE)` variable |
+| `SHYFEMDIR` hardcoded to `$HOME/shyfem` | `Makefile` | Uses `$(CURDIR)` |
+| `-std=f95` incompatible with codebase | `Rules.make` | Dropped (codebase uses F2003/2008) |
+| Redundant `FGNU_OMP` | `Rules.make` | Removed duplicate definition |
+| Intel `FINTEL_NOOPT` cleared | `Rules.make` | Preserves `-g -traceback` |
+| Intel HIGH `-O1` instead of `-O3` | `Rules.make` | Fixed to `-O3` |
+| Missing `lagrange_mpi.o` deps | `src/shyfem/Makefile` | Added module dependencies |
 
 ---
 
