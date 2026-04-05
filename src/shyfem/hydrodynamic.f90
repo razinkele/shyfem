@@ -1350,7 +1350,7 @@
 
 	aux = dt * radv * ruseterm	!implicit contribution
 
-	if( aux .gt. 0. ) then		!implict treatment of non-linear terms
+	if( aux .gt. 0. .and. hhi .gt. 0. ) then	!implict treatment of non-linear terms
 
 	uc = uui/hhi
 	vc = vvi/hhi
@@ -1870,7 +1870,11 @@
 		write(670,*) hdknv(l,k),hdkov(l,k)
 	    end if
 	  end do
-	  dz = dt * wlnv(lmin-1,k) / va(lmin,k)
+	  if( va(lmin,k) .gt. 0. ) then
+	    dz = dt * wlnv(lmin-1,k) / va(lmin,k)
+	  else
+	    dz = 0.	! zero area node: no free-surface correction
+	  end if
 	  dzmax = max(dzmax,abs(dz))
 	  wlnv(lmin-1,k) = 0.	! ensure no flux across surface - is very small
 	  dzeta(k) = dz

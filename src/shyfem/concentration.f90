@@ -1558,11 +1558,20 @@
 	do k=1,ntot
 	  ilevel = ilhkv(k)
 	  jlevel = jlhkv(k)
+	  if( cdiag(jlevel,k) .eq. 0. ) then
+	    write(6,*) 'warning: cdiag zero at node ',k,' level ',jlevel
+	    cycle  ! skip this node — degenerate system
+	  end if
 	  aux=1./cdiag(jlevel,k)
 	  chigh(jlevel,k)=chigh(jlevel,k)*aux
 	  cn(jlevel,k)=cn(jlevel,k)*aux
 	  do l=jlevel+1,ilevel
-	    aux=1./(cdiag(l,k)-clow(l,k)*chigh(l-1,k))
+	    if( cdiag(l,k)-clow(l,k)*chigh(l-1,k) .eq. 0. ) then
+	      write(6,*) 'warning: tridiag pivot zero at node ',k,' level ',l
+	      exit  ! abandon forward sweep for this node — degenerate pivot
+	    else
+	      aux=1./(cdiag(l,k)-clow(l,k)*chigh(l-1,k))
+	    end if
 	    chigh(l,k)=chigh(l,k)*aux
 	    cn(l,k)=(cn(l,k)-clow(l,k)*cn(l-1,k))*aux
 	  end do
