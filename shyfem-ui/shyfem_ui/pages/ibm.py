@@ -92,6 +92,18 @@ def compute_track_stats(tracks: list) -> list[dict]:
 @module.ui
 def ibm_ui():
     """IBM particle tracking page UI."""
+    if MapWidget is None:
+        return ui.div(
+            ui.div(
+                ui.tags.i(class_="bi bi-exclamation-triangle me-2"),
+                "IBM page requires the ",
+                ui.tags.code("shiny_deckgl"),
+                " package. Install it with: ",
+                ui.tags.code("pip install shiny-deckgl"),
+                class_="alert alert-warning",
+            ),
+        )
+
     _map = MapWidget(
         id=module.resolve_id("ibm_map"),
         tooltip={"html": "{tooltip_html}"},
@@ -174,6 +186,9 @@ def ibm_server(
     active_project: reactive.Value,
 ):
     """IBM page server logic."""
+    if MapWidget is None:
+        return
+
     map_id = module.resolve_id("ibm_map")
     _map = MapWidget(
         id=map_id,

@@ -343,6 +343,9 @@ class TestLocalJobQueue:
     @pytest.mark.asyncio
     async def test_cleanup_keeps_recent_jobs(self, queue, job_spec):
         """Test cleanup keeps recently completed jobs."""
+        # Clear any jobs loaded from a shared DB to isolate this test
+        queue._jobs.clear()
+
         job_id = await queue.submit(job_spec)
         for _ in range(50):
             status = await queue.get_status(job_id)

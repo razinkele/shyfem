@@ -40,16 +40,16 @@ class TestNotificationServiceNoSmtp:
     def test_no_smtp_host_skips_silently(self, caplog):
         """No smtp_host configured → no exception, logs warning."""
         import logging
-        svc = NotificationService(Config())
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="shyfem_ui.services.notification_service"):
+            svc = NotificationService(Config(smtp_host=""))
             svc.notify_job_success(_make_user(), _make_job())
         assert "SMTP" in caplog.text or "smtp" in caplog.text.lower()
 
     def test_no_smtp_host_notify_failed_skips(self, caplog):
         """No smtp_host → notify_job_failed skips silently and logs warning."""
         import logging
-        svc = NotificationService(Config())
-        with caplog.at_level(logging.WARNING):
+        with caplog.at_level(logging.WARNING, logger="shyfem_ui.services.notification_service"):
+            svc = NotificationService(Config(smtp_host=""))
             svc.notify_job_failed(_make_user(), _make_job(success=False))
         assert "SMTP" in caplog.text or "smtp" in caplog.text.lower()
 

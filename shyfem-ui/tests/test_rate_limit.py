@@ -98,7 +98,7 @@ class TestRateLimitMiddleware:
 
         base_time = 1000.0
 
-        with patch("shyfem_ui.app.time") as mock_time:
+        with patch("shyfem_ui.middleware.rate_limit.time") as mock_time:
             # Two requests at t=1000
             mock_time.monotonic.return_value = base_time
             for _ in range(2):
@@ -194,7 +194,7 @@ class TestRateLimitMiddleware:
             sent.append(msg)
 
         base_time = 1000.0
-        with patch("shyfem_ui.app.time") as mock_time:
+        with patch("shyfem_ui.middleware.rate_limit.time") as mock_time:
             # Add 3 clients at t=1000
             mock_time.monotonic.return_value = base_time
             for ip in ["10.0.0.1", "10.0.0.2", "10.0.0.3"]:
@@ -224,7 +224,7 @@ class TestRateLimitMiddleware:
             sent.append(msg)
 
         base_time = 1000.0
-        with patch("shyfem_ui.app.time") as mock_time:
+        with patch("shyfem_ui.middleware.rate_limit.time") as mock_time:
             mock_time.monotonic.return_value = base_time
             # Client A makes requests
             for _ in range(2):
@@ -254,7 +254,7 @@ class TestRateLimitMiddleware:
             sent.append(msg)
 
         base_time = 1000.0
-        with patch("shyfem_ui.app.time") as mock_time:
+        with patch("shyfem_ui.middleware.rate_limit.time") as mock_time:
             # Client A at t=1000
             mock_time.monotonic.return_value = base_time
             await mw(_http_scope("10.0.0.1"), _noop_receive, capture_send)

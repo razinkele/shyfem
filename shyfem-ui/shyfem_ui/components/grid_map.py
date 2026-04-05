@@ -1236,6 +1236,19 @@ def grid_map_ui(height: str = "600px"):
     """
     # MapWidget uses a raw HTML id (not auto-namespaced by @module.ui),
     # so we must resolve the module namespace manually.
+    if MapWidget is None:
+        return ui.div(
+            ui.div(
+                ui.tags.i(class_="bi bi-exclamation-triangle me-2"),
+                "Interactive map requires the ",
+                ui.tags.code("shiny_deckgl"),
+                " package. Install it with: ",
+                ui.tags.code("pip install shiny-deckgl"),
+                class_="alert alert-warning",
+            ),
+            style=f"height: {height};",
+        )
+
     _map = MapWidget(
         id=module.resolve_id("deckgl_map"),
         tooltip={"html": "{tooltip_html}"},
@@ -1335,6 +1348,9 @@ def grid_map_server(
         Optional callback invoked with the clicked node ID.
     """
     # Create MapWidget with the RESOLVED id (module namespace prefix).
+    if MapWidget is None:
+        return
+
     map_id = module.resolve_id("deckgl_map")
     _map = MapWidget(
         id=map_id,
