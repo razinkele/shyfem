@@ -86,11 +86,21 @@ def test_build_label_map_static_entries():
         {"id": "triangles"},
         {"id": "nodes"},
     ]
-    label_map = _build_label_map(layers)
+    label_map = _build_label_map(layers, mode="depth")
     assert label_map["emodnet"] == "EMODnet Bathy"
     assert label_map["wireframe"] == "Wireframe"
-    assert label_map["triangles"] is not None  # mode-dependent label
+    assert label_map["triangles"] == "Depth"  # mode-dependent
     assert label_map["nodes"] == "Nodes"
+
+
+def test_build_label_map_mode_dependent_triangles():
+    """_build_label_map triangles label reflects the active view mode."""
+    from shyfem_ui.components.grid_map import _build_label_map
+
+    layers = [{"id": "triangles"}]
+    assert _build_label_map(layers, mode="quality")["triangles"] == "Quality"
+    assert _build_label_map(layers, mode="depth_3d")["triangles"] == "Depth 3D"
+    assert _build_label_map(layers, mode="mesh")["triangles"] == "Triangles"
 
 
 def test_build_label_map_dynamic_boundaries():
@@ -181,12 +191,19 @@ except ImportError:
 After the `_VIEW_MODES` dict (around line 1213), add:
 
 ```python
-def _build_label_map(layers: list[dict]) -> dict[str, str]:
-    """Build a layer-ID → friendly-name map for layer_legend_widget."""
+def _build_label_map(layers: list[dict], mode: str = "mesh") -> dict[str, str]:
+    """Build a layer-ID → friendly-name map for layer_legend_widget.
+
+    Note: actual layer IDs in the codebase are "emodnet", "wireframe",
+    "triangles", "nodes", "boundary_<int>" (underscore-separated).
+    The spec used hyphenated names — those are incorrect.
+    """
+    # "triangles" label depends on the active view mode
+    triangles_label = mode.replace("_", " ").title() if mode != "mesh" else "Triangles"
     _STATIC_LABELS = {
         "emodnet": "EMODnet Bathy",
         "wireframe": "Wireframe",
-        "triangles": "Triangles",
+        "triangles": triangles_label,
         "nodes": "Nodes",
     }
     label_map: dict[str, str] = {}
@@ -265,7 +282,31 @@ def build_layers(
 ) -> list[dict]:
 ```
 
-Inside the function body, replace any `if show_emodnet:` / `if show_boundaries:` / `if show_nodes:` guards with unconditional inclusion (always add the layers). The `layer_legend_widget` handles visibility client-side.
+Inside the function body, make these 3 changes to always include all layers (the `layer_legend_widget` handles visibility client-side):
+
+1. **EMODnet** (line 779): Change `if show_emodnet:` to unconditional:
+```python
+    # --- EMODnet bathymetry base layer (rendered below everything else) ---
+    layers.append(_build_emodnet_layer())
+```
+
+2. **Boundary overlay** (line 890): Change `if show_boundaries and mode != "boundaries" and has_elements:` to `if mode != "boundaries" and has_elements:` (remove `show_boundaries` guard, keep the mode check since boundaries mode already includes them above):
+```python
+    if mode != "boundaries" and has_elements:
+        boundary_data = _build_boundary_data(grd, epsg=epsg)
+        ...
+```
+
+3. **Node overlay** (line 904): Change `if show_nodes:` to unconditional:
+```python
+    # --- Node overlay ---
+    node_data = _build_node_data(grd, epsg=epsg)
+    layers.append(scatterplot_layer(
+        "nodes",
+        node_data,
+        ...
+    ))
+```
 
 - [ ] **Step 3: Update _update_map to remove input reads and adjust build_layers call**
 
@@ -335,7 +376,7 @@ In `_update_map()`, update the `_map.update()` call's `widgets` list (around lin
 Replace the entire legend construction block (from `legend_entries: list[dict] = []` through `await _map.set_controls(session, [...])`) — approximately lines 1439-1489 — with:
 
 ```python
-        label_map = _build_label_map(layers)
+        label_map = _build_label_map(layers, mode=actual_mode)
         await _map.set_controls(session, [
             layer_legend_widget(
                 auto_introspect=True,
@@ -560,9 +601,10 @@ def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
     for t in tracks:
         if not t.path:
             continue
-        assert all(len(p) == 2 for p in t.path), (
-            f"ParticleTrack paths must be 2-D [lon,lat], got {len(t.path[0])}-D"
-        )
+        if not all(len(p) == 2 for p in t.path):
+            raise ValueError(
+                f"ParticleTrack paths must be 2-D [lon,lat], got {len(t.path[0])}-D"
+            )
         paths.append(t.path)
         timestamps.append(
             [_dt.fromisoformat(ts).timestamp() for ts in t.times]
