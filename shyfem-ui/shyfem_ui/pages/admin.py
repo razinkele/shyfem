@@ -61,8 +61,8 @@ def _validate_create_user_form(
             errors.append("Username may only contain letters, digits, dots, hyphens, and underscores (1-64 characters)")
     if not password:
         errors.append("Password is required")
-    elif len(password) < 4:
-        errors.append("Password must be at least 4 characters")
+    elif len(password) < 8:
+        errors.append("Password must be at least 8 characters")
     if role not in _VALID_ROLES:
         errors.append(f"Role must be one of: {', '.join(sorted(_VALID_ROLES))}")
     # Email required for non-tutorial accounts
@@ -306,8 +306,8 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         @reactive.event(input[f"confirm_reset_pw_{user_id}"])
         def _do_reset_pw():
             new_pw = input.reset_pw_value() or ""
-            if len(new_pw) < 4:
-                ui.notification_show("Password must be at least 4 characters", type="error", duration=6)
+            if len(new_pw) < 8:
+                ui.notification_show("Password must be at least 8 characters", type="error", duration=6)
                 return
             try:
                 auth_service.reset_password(user_id, new_pw)

@@ -190,6 +190,32 @@ class TestMiddlewareHTTP:
         assert b"SHYFEM" in body_msg["body"]
 
     @pytest.mark.asyncio
+    async def test_get_login_includes_csrf_token(self):
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(method="GET", path="/login")
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        start_msg = send.call_args_list[0][0][0]
+        # Check CSRF cookie is set
+        headers_list = start_msg["headers"]
+        csrf_cookie = None
+        for name, value in headers_list:
+            if name == b"set-cookie" and b"csrf_token=" in value:
+                csrf_cookie = value.decode()
+                break
+        assert csrf_cookie is not None, "Login page should set a csrf_token cookie"
+        assert "SameSite=Lax" in csrf_cookie
+
+        # Check hidden input in HTML body
+        body_msg = send.call_args_list[1][0][0]
+        html = body_msg["body"].decode()
+        assert 'name="csrf_token"' in html
+
+    @pytest.mark.asyncio
     async def test_post_login_valid_creds_redirects(self):
         user = {"id": 5, "username": "bob", "role": "user", "is_active": True}
         auth_service = MagicMock()
@@ -199,12 +225,13 @@ class TestMiddlewareHTTP:
         inner_app = AsyncMock()
         mw = SessionAuthMiddleware(inner_app, auth_service, session_ttl_hours=8)
 
-        body = b"username=bob&password=s3cret"
+        csrf = "test-csrf-token"
+        body = f"username=bob&password=s3cret&csrf_token={csrf}".encode()
         receive = AsyncMock(return_value={
             "type": "http.request",
             "body": body,
         })
-        scope = _make_scope(method="POST", path="/login")
+        scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}")
         send = AsyncMock()
         await mw(scope, receive, send)
 
@@ -228,12 +255,13 @@ class TestMiddlewareHTTP:
         inner_app = AsyncMock()
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
-        body = b"username=bob&password=wrong"
+        csrf = "test-csrf-token"
+        body = f"username=bob&password=wrong&csrf_token={csrf}".encode()
         receive = AsyncMock(return_value={
             "type": "http.request",
             "body": body,
         })
-        scope = _make_scope(method="POST", path="/login")
+        scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}")
         send = AsyncMock()
         await mw(scope, receive, send)
 
@@ -242,6 +270,49 @@ class TestMiddlewareHTTP:
 
         body_msg = send.call_args_list[1][0][0]
         assert b"Invalid" in body_msg["body"]
+
+    @pytest.mark.asyncio
+    async def test_post_login_csrf_mismatch_shows_error(self):
+        auth_service = MagicMock()
+        inner_app = AsyncMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        body = b"username=bob&password=s3cret&csrf_token=form-token"
+        receive = AsyncMock(return_value={
+            "type": "http.request",
+            "body": body,
+        })
+        scope = _make_scope(method="POST", path="/login", cookies="csrf_token=different-token")
+        send = AsyncMock()
+        await mw(scope, receive, send)
+
+        # Should NOT authenticate
+        auth_service.authenticate.assert_not_called()
+        start_msg = send.call_args_list[0][0][0]
+        assert start_msg["status"] == 200
+        body_msg = send.call_args_list[1][0][0]
+        assert b"Invalid request" in body_msg["body"]
+
+    @pytest.mark.asyncio
+    async def test_post_login_missing_csrf_shows_error(self):
+        auth_service = MagicMock()
+        inner_app = AsyncMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        body = b"username=bob&password=s3cret"
+        receive = AsyncMock(return_value={
+            "type": "http.request",
+            "body": body,
+        })
+        scope = _make_scope(method="POST", path="/login")
+        send = AsyncMock()
+        await mw(scope, receive, send)
+
+        auth_service.authenticate.assert_not_called()
+        start_msg = send.call_args_list[0][0][0]
+        assert start_msg["status"] == 200
+        body_msg = send.call_args_list[1][0][0]
+        assert b"Invalid request" in body_msg["body"]
 
     @pytest.mark.asyncio
     async def test_get_logout_clears_cookie_and_redirects(self):
@@ -401,8 +472,9 @@ class TestMiddlewareRootPath:
         inner_app = AsyncMock()
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
-        receive = AsyncMock(return_value={"body": b"username=u&password=p"})
-        scope = _make_scope(method="POST", path="/login", root_path=self.ROOT)
+        csrf = "test-csrf-token"
+        receive = AsyncMock(return_value={"body": f"username=u&password=p&csrf_token={csrf}".encode()})
+        scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}", root_path=self.ROOT)
         send = AsyncMock()
         await mw(scope, receive, send)
 

@@ -89,9 +89,24 @@ class TestValidateCreateUserForm:
         errors = _validate_create_user_form("alice", "ab", "user")
         assert any("password" in e.lower() for e in errors)
 
-    def test_password_exactly_4_chars(self):
-        errors = _validate_create_user_form("alice", "abcd", "user", email="alice@example.com")
+    def test_password_exactly_8_chars(self):
+        errors = _validate_create_user_form("alice", "abcd1234", "user", email="alice@example.com")
         assert errors == []
+
+    def test_password_minimum_length_8(self):
+        """Password must be at least 8 characters."""
+        errors = _validate_create_user_form("testuser", "short", "user", "test@example.com")
+        assert any("at least 8" in e for e in errors)
+
+    def test_password_7_chars_rejected(self):
+        """7-character password is rejected."""
+        errors = _validate_create_user_form("testuser", "1234567", "user", "test@example.com")
+        assert any("at least 8" in e for e in errors)
+
+    def test_password_8_chars_accepted(self):
+        """8-character password is accepted."""
+        errors = _validate_create_user_form("testuser", "12345678", "user", "test@example.com")
+        assert not any("password" in e.lower() for e in errors)
 
     def test_invalid_role(self):
         errors = _validate_create_user_form("alice", "password", "superadmin")

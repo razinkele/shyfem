@@ -86,6 +86,10 @@ class Config(BaseSettings):
         default="", description="Basic auth password (required if auth_enabled)"
     )
     auth_session_ttl_hours: int = Field(default=24, description="Session cookie lifetime in hours")
+    use_secure_cookies: bool = Field(
+        default=False,
+        description="Set Secure flag on session cookies (enable when behind HTTPS)",
+    )
     default_admin_username: str = Field(
         default="admin", description="Default admin username created on first run"
     )
