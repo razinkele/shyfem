@@ -1195,11 +1195,14 @@ try:
     from shiny_deckgl import (  # noqa: E402
         MapWidget,
         fullscreen_widget,
+        layer_legend_widget,
         legend_control,
+        screenshot_widget,
         zoom_widget,
     )
 except ImportError:
-    MapWidget = fullscreen_widget = legend_control = zoom_widget = None
+    MapWidget = fullscreen_widget = layer_legend_widget = None
+    legend_control = screenshot_widget = zoom_widget = None
 
 # View-mode choices for the dropdown
 _VIEW_MODES: dict[str, str] = {
@@ -1225,6 +1228,26 @@ _BASEMAP_CHOICES: dict[str, str] = {
     "dark": "Dark",
     "osm": "OSM",
 }
+
+
+def _build_label_map(layers: list[dict], mode: str = "mesh") -> dict[str, str]:
+    """Build a layer-ID -> friendly-name map for layer_legend_widget."""
+    triangles_label = mode.replace("_", " ").title() if mode != "mesh" else "Triangles"
+    _STATIC_LABELS = {
+        "emodnet": "EMODnet Bathy",
+        "wireframe": "Wireframe",
+        "triangles": triangles_label,
+        "nodes": "Nodes",
+    }
+    label_map: dict[str, str] = {}
+    for layer in layers:
+        lid = layer.get("id", "")
+        if lid in _STATIC_LABELS:
+            label_map[lid] = _STATIC_LABELS[lid]
+        elif lid.startswith("boundary_"):
+            btype = lid.split("_", 1)[1]
+            label_map[lid] = btype.replace("_", " ").title()
+    return label_map
 
 
 @module.ui
