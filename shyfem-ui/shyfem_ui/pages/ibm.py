@@ -230,6 +230,11 @@ def ibm_server(
         picking_radius=8,
     )
 
+    if trips_animation_server is not None:
+        anim = trips_animation_server("ibm_trips", widget=_map, session=session)
+    else:
+        anim = None
+
     wrapper = ShyfemWrapper(config.shyfem_dir)
     lgr_service = LgrService(wrapper)
 
@@ -284,19 +289,6 @@ def ibm_server(
             load_error.set(str(e))
             ui.notification_show(f"Failed to load: {e}", type="error", duration=6)
 
-    @render.ui
-    def time_range_controls():
-        tracks = tracks_data.get()
-        if not tracks:
-            return ui.p("Load a .lgr file to enable filters.", class_="text-muted small")
-        all_times = sorted({t for track in tracks for t in track.times})
-        if len(all_times) < 2:
-            return ui.p(f"{len(all_times)} timestep(s) loaded.", class_="text-muted small")
-        return ui.div(
-            ui.input_select("tmin", "From", choices={t: t for t in all_times}, selected=all_times[0]),
-            ui.input_select("tmax", "To",   choices={t: t for t in all_times}, selected=all_times[-1]),
-        )
-
     @reactive.effect
     async def _update_ibm_map():
         """Rebuild map layers whenever inputs or track data change."""
@@ -306,14 +298,7 @@ def ibm_server(
         show_starts = input.show_starts()
         show_ends = input.show_ends()
         tracks = tracks_data.get()
-
-        try:
-            tmin = input.tmin()
-            tmax = input.tmax()
-        except Exception:
-            tmin, tmax = None, None
-
-        filtered = filter_by_time(tracks, tmin, tmax)
+        filtered = tracks  # trips_layer handles time via animation controls
 
         layers: list[dict] = []
         legend_entries: list[dict] = []
@@ -330,24 +315,6 @@ def ibm_server(
         for track in filtered:
             if not track.path:
                 continue
-            color = _TRACK_COLORS[(track.type_id - 1) % len(_TRACK_COLORS)]
-            steps = len(track.path)
-            disp = _haversine_km(*track.path[0], *track.path[-1]) if len(track.path) >= 2 else 0
-            mean_d = sum(track.depths) / len(track.depths) if track.depths else 0
-            track_tip = (
-                f"<b>Type {track.type_id}</b><br>"
-                f"{steps} steps | {disp:.1f} km displacement<br>"
-                f"Mean depth: {mean_d:.1f} m"
-            )
-            if show_trk:
-                layers.append(path_layer(
-                    f"track_{track.type_id}",
-                    [{"path": track.path, "tooltip_html": track_tip}],
-                    getPath="@@d.path",
-                    getColor=color,
-                    widthMinPixels=2,
-                    pickable=True,
-                ))
             t0 = track.times[0] if track.times else ""
             t1 = track.times[-1] if track.times else ""
             d0 = f"{track.depths[0]:.1f} m" if track.depths else ""
@@ -357,14 +324,25 @@ def ibm_server(
             ends.append({"position": track.path[-1],
                          "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}<br>Depth: {d1}"})
 
-        if filtered:
-            first_id = filtered[0].type_id
-            legend_entries.append({
-                "layer_id": f"track_{first_id}",
-                "label": "Tracks",
-                "color": _TRACK_COLORS[(first_id - 1) % len(_TRACK_COLORS)][:3],
-                "shape": "line",
-            })
+        if show_trk and filtered:
+            trips_data = _tracks_to_trips(filtered)
+            if trips_data:
+                trail_len = anim.trail() if anim else 180
+                layers.append(trips_layer(
+                    "particle-trips",
+                    trips_data,
+                    getColor="@@d.color",
+                    trailLength=trail_len,
+                    widthMinPixels=2,
+                    pickable=True,
+                ))
+                first_id = filtered[0].type_id
+                legend_entries.append({
+                    "layer_id": "particle-trips",
+                    "label": "Tracks",
+                    "color": _TRACK_COLORS[(first_id - 1) % len(_TRACK_COLORS)][:3],
+                    "shape": "line",
+                })
 
         if show_starts and starts:
             layers.append(scatterplot_layer(
@@ -397,6 +375,7 @@ def ibm_server(
             widgets=[
                 zoom_widget(),
                 fullscreen_widget(placement="top-right"),
+                screenshot_widget(placement="top-right"),
                 info_widget(placement="top-left"),
                 context_menu_widget(),
             ],
