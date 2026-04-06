@@ -17,18 +17,26 @@ try:
         fullscreen_widget,
         info_widget,
         legend_control,
-        path_layer,
+        screenshot_widget,
         scatterplot_layer,
         tile_layer,
+        trips_layer,
         zoom_widget,
+    )
+    from shiny_deckgl.ibm import (
+        format_trips,
+        trips_animation_ui,
+        trips_animation_server,
     )
 except ImportError:
     MapWidget = context_menu_widget = fullscreen_widget = None
-    info_widget = legend_control = path_layer = scatterplot_layer = tile_layer = zoom_widget = None
+    info_widget = legend_control = screenshot_widget = None
+    scatterplot_layer = tile_layer = trips_layer = zoom_widget = None
+    format_trips = trips_animation_ui = trips_animation_server = None
 
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
-from shyfem_ui.services.lgr_service import LgrService, ParticleTrack, filter_by_time
+from shyfem_ui.services.lgr_service import LgrService, ParticleTrack
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
@@ -46,6 +54,32 @@ _TRACK_COLORS = [
     [181, 222, 43, 220],
     [253, 231, 37, 220],
 ]
+
+
+def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
+    """Convert ParticleTrack list to format_trips output for trips_layer."""
+    if not tracks or format_trips is None:
+        return []
+    from datetime import datetime as _dt
+
+    paths: list[list[list[float]]] = []
+    timestamps: list[list[float]] = []
+    properties: list[dict] = []
+    for t in tracks:
+        if not t.path:
+            continue
+        if not all(len(p) == 2 for p in t.path):
+            raise ValueError(
+                f"ParticleTrack paths must be 2-D [lon,lat], got {len(t.path[0])}-D"
+            )
+        paths.append(t.path)
+        timestamps.append(
+            [_dt.fromisoformat(ts).timestamp() for ts in t.times]
+        )
+        properties.append(
+            {"color": _TRACK_COLORS[(t.type_id - 1) % len(_TRACK_COLORS)]}
+        )
+    return format_trips(paths, timestamps=timestamps, properties=properties)
 
 
 def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
@@ -146,8 +180,8 @@ def ibm_ui():
                     width="100%",
                 ),
                 ui.hr(),
-                ui.h6("Time Filter"),
-                ui.output_ui("time_range_controls"),
+                ui.h6("Animation"),
+                trips_animation_ui("ibm_trips") if trips_animation_ui else ui.p("Animation requires shiny_deckgl", class_="text-muted small"),
                 ui.hr(),
                 ui.h6("Display"),
                 ui.input_checkbox("show_emodnet", "EMODnet Bathymetry", value=True),
