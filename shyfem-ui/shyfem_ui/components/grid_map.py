@@ -1436,60 +1436,20 @@ def grid_map_server(
             widgets=[
                 zoom_widget(),
                 fullscreen_widget(placement="top-right"),
+                screenshot_widget(placement="top-right"),
             ],
         )
 
-        # Build layer legend entries from the layers we just created
-        legend_entries: list[dict] = []
-        for layer in layers:
-            lid = layer.get("id", "")
-            if lid == "emodnet":
-                legend_entries.append({
-                    "layer_id": "emodnet",
-                    "label": "EMODnet Bathy",
-                    "color": [0, 100, 180],
-                    "shape": "rect",
-                })
-            elif lid == "wireframe":
-                wire_color = layer.get("getColor", [150, 150, 150])
-                legend_entries.append({
-                    "layer_id": "wireframe",
-                    "label": "Wireframe",
-                    "color": wire_color[:3],
-                    "shape": "line",
-                })
-            elif lid == "triangles":
-                legend_entries.append({
-                    "layer_id": "triangles",
-                    "label": actual_mode.replace("_", " ").title(),
-                    "color": [100, 160, 200],
-                    "shape": "rect",
-                })
-            elif lid.startswith("boundary_"):
-                btype_str = lid.split("_", 1)[1]
-                b_color = layer.get("getColor", [231, 76, 60])
-                legend_entries.append({
-                    "layer_id": lid,
-                    "label": f"Boundary {btype_str}",
-                    "color": b_color[:3],
-                    "shape": "line",
-                })
-            elif lid == "nodes":
-                legend_entries.append({
-                    "layer_id": "nodes",
-                    "label": "Nodes",
-                    "color": [255, 60, 60],
-                    "shape": "circle",
-                })
-
-        if legend_entries:
-            await _map.set_controls(session, [
-                legend_control(
-                    legend_entries,
-                    position="bottom-right",
-                    title="Layers",
-                ),
-            ])
+        label_map = _build_label_map(layers, mode=actual_mode)
+        await _map.set_controls(session, [
+            layer_legend_widget(
+                auto_introspect=True,
+                show_checkbox=True,
+                label_map=label_map,
+                placement="bottom-right",
+                title="Layers",
+            ),
+        ])
 
         # Set basemap style
         basemap_url = BASEMAPS.get(basemap_key, BASEMAPS["positron"])
