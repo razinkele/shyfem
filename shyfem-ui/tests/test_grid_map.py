@@ -621,8 +621,7 @@ class TestBuildLayers:
     def test_mesh_mode_returns_wireframe(self):
         """Mesh mode returns wireframe path_layer but no triangles polygon."""
         grd = _make_triangle_grid()
-        layers = build_layers(grd, mode="mesh", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False)
+        layers = build_layers(grd, mode="mesh", colorscale="viridis")
         ids = _layer_ids(layers)
         assert "wireframe" in ids
         assert "triangles" not in ids
@@ -630,8 +629,7 @@ class TestBuildLayers:
     def test_depth_mode_returns_fill_and_wireframe(self):
         """Depth mode returns both filled triangles and wireframe."""
         grd = _make_triangle_grid()
-        layers = build_layers(grd, mode="depth", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False)
+        layers = build_layers(grd, mode="depth", colorscale="viridis")
         ids = _layer_ids(layers)
         assert "triangles" in ids
         assert "wireframe" in ids
@@ -640,7 +638,6 @@ class TestBuildLayers:
         """Depth 3D mode produces triangles layer as SimpleMeshLayer."""
         grd = _make_triangle_grid()
         layers = build_layers(grd, mode="depth_3d", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False,
                               elevation_scale=100.0)
         tri_layer = [l for l in layers if l["id"] == "triangles"]
         assert len(tri_layer) == 1
@@ -651,34 +648,30 @@ class TestBuildLayers:
     def test_boundaries_mode_adds_boundary_layers(self):
         """Boundaries mode includes boundary_* layers."""
         grd = _make_multi_grid()
-        layers = build_layers(grd, mode="boundaries", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False)
+        layers = build_layers(grd, mode="boundaries", colorscale="viridis")
         ids = _layer_ids(layers)
         boundary_ids = {i for i in ids if i.startswith("boundary_")}
         assert len(boundary_ids) >= 1
 
-    def test_show_boundaries_adds_layers(self):
-        """show_boundaries=True in mesh mode appends boundary_* layers."""
+    def test_mesh_mode_includes_boundary_layers(self):
+        """Mesh mode always includes boundary_* layers (toggled client-side)."""
         grd = _make_multi_grid()
-        layers = build_layers(grd, mode="mesh", colorscale="viridis",
-                              show_boundaries=True, show_nodes=False)
+        layers = build_layers(grd, mode="mesh", colorscale="viridis")
         ids = _layer_ids(layers)
         boundary_ids = {i for i in ids if i.startswith("boundary_")}
         assert len(boundary_ids) >= 1
 
-    def test_show_nodes_adds_scatter(self):
-        """show_nodes=True appends a nodes scatterplot layer."""
+    def test_mesh_mode_includes_nodes(self):
+        """Mesh mode always includes nodes layer (toggled client-side)."""
         grd = _make_triangle_grid()
-        layers = build_layers(grd, mode="mesh", colorscale="viridis",
-                              show_boundaries=False, show_nodes=True)
+        layers = build_layers(grd, mode="mesh", colorscale="viridis")
         ids = _layer_ids(layers)
         assert "nodes" in ids
 
     def test_empty_grid(self):
         """Empty grid returns empty layer list."""
         grd = GrdFile()
-        layers = build_layers(grd, mode="mesh", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False)
+        layers = build_layers(grd, mode="mesh", colorscale="viridis")
         assert layers == []
 
     def test_partition_mode(self):
@@ -686,7 +679,6 @@ class TestBuildLayers:
         grd = _make_multi_grid()
         pmap = {1: 0, 2: 1}
         layers = build_layers(grd, mode="partitions", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False,
                               partition_map=pmap)
         ids = _layer_ids(layers)
         assert "triangles" in ids
@@ -695,7 +687,6 @@ class TestBuildLayers:
         """Depth 3D mode should NOT have a wireframe layer."""
         grd = _make_triangle_grid()
         layers = build_layers(grd, mode="depth_3d", colorscale="viridis",
-                              show_boundaries=False, show_nodes=False,
                               elevation_scale=100.0)
         ids = _layer_ids(layers)
         assert "wireframe" not in ids
@@ -832,17 +823,20 @@ class TestBuildLayersBoundaryOnly:
         assert "triangles" not in layer_ids
         assert "wireframe" not in layer_ids
 
-    def test_nodes_only_grid_returns_empty(self):
-        """Grid with only nodes (no elements, no lines) returns empty."""
+    def test_nodes_only_grid_has_emodnet_and_nodes(self):
+        """Grid with only nodes (no elements, no lines) still has emodnet + nodes."""
         grd = GrdFile()
         grd.nodes = {
             1: Node(id=1, node_type=0, x=21.0, y=55.0),
         }
         layers = build_layers(grd, mode="mesh")
-        assert layers == []
+        ids = [l["id"] for l in layers]
+        assert "emodnet" in ids
+        assert "nodes" in ids
+        assert "wireframe" not in ids
 
-    def test_show_nodes_on_boundary_only_grid(self):
-        """show_nodes works on boundary-only grids."""
+    def test_nodes_on_boundary_only_grid(self):
+        """Nodes layer is included on boundary-only grids."""
         grd = GrdFile()
         grd.nodes = {
             1: Node(id=1, node_type=0, x=21.0, y=55.0),
@@ -851,7 +845,7 @@ class TestBuildLayersBoundaryOnly:
         grd.lines = {
             1: Line(id=1, line_type=1, nodes=[1, 2]),
         }
-        layers = build_layers(grd, mode="boundaries", show_nodes=True)
+        layers = build_layers(grd, mode="boundaries")
         layer_ids = [l["id"] for l in layers]
         assert "nodes" in layer_ids
 
@@ -1013,8 +1007,8 @@ class TestBuildLayersWithEpsg:
         """UTM grid produces wireframe when EPSG is set."""
         grd = _make_utm30n_grid()
         layers = build_layers(grd, mode="mesh", epsg=32630)
-        assert len(layers) == 1
-        assert layers[0]["id"] == "wireframe"
+        ids = [l["id"] for l in layers]
+        assert "wireframe" in ids
 
     def test_utm_depth_with_epsg(self):
         """UTM grid produces depth layers when EPSG is set."""
@@ -1029,7 +1023,8 @@ class TestBuildLayersWithEpsg:
         grd = _make_utm30n_grid()
         layers = build_layers(grd, mode="mesh")
         # Should still produce layers (with raw metre coords)
-        assert len(layers) == 1
+        ids = [l["id"] for l in layers]
+        assert "wireframe" in ids
 
     def test_view_state_with_epsg(self):
         """View state centers on reprojected coordinates."""
@@ -1173,21 +1168,22 @@ class TestMarMenorLayerGeneration:
     def test_mesh_mode_without_epsg_still_produces_layers(self, mar_menor_grd):
         """Without EPSG, mesh mode still produces wireframe (raw coords)."""
         layers = build_layers(mar_menor_grd, mode="mesh")
-        assert len(layers) == 1
-        assert layers[0]["id"] == "wireframe"
+        ids = [l["id"] for l in layers]
+        assert "wireframe" in ids
 
     def test_mesh_mode_with_epsg(self, mar_menor_grd):
         """With EPSG, mesh mode produces wireframe with correct data."""
         layers = build_layers(mar_menor_grd, mode="mesh", epsg=32630)
-        assert len(layers) == 1
-        assert layers[0]["id"] == "wireframe"
-        data = layers[0]["data"]
-        assert len(data) > 100  # Many edges
+        ids = [l["id"] for l in layers]
+        assert "wireframe" in ids
+        wire = next(l for l in layers if l["id"] == "wireframe")
+        assert len(wire["data"]) > 100  # Many edges
 
     def test_mesh_edge_coords_in_wgs84(self, mar_menor_grd):
         """Wireframe edges have geographic coordinates with EPSG."""
         layers = build_layers(mar_menor_grd, mode="mesh", epsg=32630)
-        edge = layers[0]["data"][0]
+        wire = next(l for l in layers if l["id"] == "wireframe")
+        edge = wire["data"][0]
         path = edge["path"]
         lon, lat = path[0]
         assert -2.0 < lon < 1.0
@@ -1216,10 +1212,10 @@ class TestMarMenorLayerGeneration:
         ids = [l["id"] for l in layers]
         assert "triangles" in ids
 
-    def test_show_nodes_with_epsg(self, mar_menor_grd):
-        """show_nodes produces scatterplot layer with geographic coords."""
+    def test_nodes_with_epsg(self, mar_menor_grd):
+        """Nodes layer has geographic coords when EPSG is set."""
         layers = build_layers(
-            mar_menor_grd, mode="mesh", show_nodes=True, epsg=32630,
+            mar_menor_grd, mode="mesh", epsg=32630,
         )
         ids = [l["id"] for l in layers]
         assert "nodes" in ids
@@ -1229,10 +1225,10 @@ class TestMarMenorLayerGeneration:
         assert -2.0 < lon < 1.0
         assert 36.0 < lat < 39.0
 
-    def test_show_boundaries_with_epsg(self, mar_menor_grd):
-        """show_boundaries on the mesh overlay (if grid has boundary lines)."""
+    def test_boundaries_with_epsg(self, mar_menor_grd):
+        """Boundary layers included in mesh mode with EPSG set."""
         layers = build_layers(
-            mar_menor_grd, mode="mesh", show_boundaries=True, epsg=32630,
+            mar_menor_grd, mode="mesh", epsg=32630,
         )
         # If grid has boundary lines, there should be boundary layers
         has_lines = bool(mar_menor_grd.lines)
@@ -1284,11 +1280,12 @@ class TestSampleDataFlow:
         epsg_val = grd.epsg
 
         layers = build_layers(grd, mode="mesh", epsg=epsg_val)
-        assert len(layers) == 1
-        assert layers[0]["id"] == "wireframe"
+        ids = [l["id"] for l in layers]
+        assert "wireframe" in ids
 
         # Verify edge coords are in WGS84
-        edge = layers[0]["data"][0]
+        wire = next(l for l in layers if l["id"] == "wireframe")
+        edge = wire["data"][0]
         lon, lat = edge["path"][0]
         assert -2.0 < lon < 1.0, f"lon={lon} not near Mar Menor"
         assert 36.0 < lat < 39.0, f"lat={lat} not near Mar Menor"
@@ -1331,7 +1328,7 @@ class TestSampleDataFlow:
         grd.epsg = 32630
 
         layers = build_layers(
-            grd, mode="mesh", show_nodes=True, epsg=grd.epsg,
+            grd, mode="mesh", epsg=grd.epsg,
         )
         ids = [l["id"] for l in layers]
         assert "nodes" in ids

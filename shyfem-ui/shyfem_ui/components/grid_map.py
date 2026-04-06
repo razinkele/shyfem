@@ -732,9 +732,6 @@ def build_layers(
     grd: GrdFile,
     mode: str = "mesh",
     colorscale: str = "viridis",
-    show_boundaries: bool = False,
-    show_nodes: bool = False,
-    show_emodnet: bool = False,
     elevation_scale: float = 1.0,
     partition_map: dict[int, int] | None = None,
     epsg: int | None = None,
@@ -750,12 +747,6 @@ def build_layers(
         ``"boundaries"``, ``"quality"``, ``"partitions"``.
     colorscale
         Palette name for depth coloring (key in :data:`PALETTES`).
-    show_boundaries
-        Overlay boundary lines regardless of *mode*.
-    show_nodes
-        Overlay node scatter points.
-    show_emodnet
-        Overlay EMODnet bathymetry WMS tiles as a base layer.
     elevation_scale
         Multiplier for 3-D extrusion (``"depth_3d"`` mode only).
     partition_map
@@ -776,8 +767,7 @@ def build_layers(
     layers: list[dict] = []
 
     # --- EMODnet bathymetry base layer (rendered below everything else) ---
-    if show_emodnet:
-        layers.append(_build_emodnet_layer())
+    layers.append(_build_emodnet_layer())
 
     has_elements = bool(grd.elements)
 
@@ -887,7 +877,7 @@ def build_layers(
         ))
 
     # --- Optional boundary overlay (not in boundaries mode, already done) ---
-    if show_boundaries and mode != "boundaries" and has_elements:
+    if mode != "boundaries" and has_elements:
         boundary_data = _build_boundary_data(grd, epsg=epsg)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
@@ -900,18 +890,17 @@ def build_layers(
                 pickable=True,
             ))
 
-    # --- Optional node overlay ---
-    if show_nodes:
-        node_data = _build_node_data(grd, epsg=epsg)
-        layers.append(scatterplot_layer(
-            "nodes",
-            node_data,
-            getPosition="@@d.position",
-            getFillColor=[255, 60, 60, 220],
-            radiusMinPixels=3,
-            radiusMaxPixels=6,
-            pickable=True,
-        ))
+    # --- Node overlay ---
+    node_data = _build_node_data(grd, epsg=epsg)
+    layers.append(scatterplot_layer(
+        "nodes",
+        node_data,
+        getPosition="@@d.position",
+        getFillColor=[255, 60, 60, 220],
+        radiusMinPixels=3,
+        radiusMaxPixels=6,
+        pickable=True,
+    ))
 
     return layers
 
@@ -1333,9 +1322,6 @@ def grid_map_ui(height: str = "600px"):
                     selected="",
                     width="120px",
                 ),
-                ui.input_checkbox("show_boundaries", "Boundaries", value=True),
-                ui.input_checkbox("show_nodes", "Nodes", value=False),
-                ui.input_checkbox("show_emodnet", "EMODnet", value=False),
                 class_="d-flex flex-wrap align-items-end gap-2",
             ),
             class_="mb-2",
@@ -1402,9 +1388,6 @@ def grid_map_server(
 
         mode = input.map_mode()
         colorscale = input.map_colors()
-        show_bdry = input.show_boundaries()
-        show_nd = input.show_nodes()
-        show_emod = input.show_emodnet()
         basemap_key = input.map_basemap()
 
         # EPSG for coordinate reprojection:
@@ -1438,9 +1421,6 @@ def grid_map_server(
             grd,
             mode=actual_mode,
             colorscale=colorscale,
-            show_boundaries=show_bdry,
-            show_nodes=show_nd,
-            show_emodnet=show_emod,
             elevation_scale=elev_scale,
             partition_map=pmap,
             epsg=epsg_val,
