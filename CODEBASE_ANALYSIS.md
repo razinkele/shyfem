@@ -603,7 +603,7 @@ Key test patterns:
 |-----------|---------|
 | `boundary_editor.py` | Boundary condition cards, CSV import |
 | `file_browser.py` | File picker widget |
-| `grid_map.py` | Plotly interactive mesh with depth coloring |
+| `grid_map.py` | deck.gl interactive mesh with depth coloring, layer legend, screenshot |
 | `job_status.py` | Job status badges, duration formatting |
 | `log_viewer.py` | Real-time log streaming with search |
 | `plot_widget.py` | Matplotlib embedding with colorbar |

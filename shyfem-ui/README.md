@@ -4,12 +4,13 @@ A modern Python Shiny web application providing a unified interface for the SHYF
 
 ## Features
 
-- **Grid Preparation** - Convert .grd files to .bas format using shypre/shybas, with interactive Plotly mesh map
+- **Grid Preparation** - Convert .grd files to .bas format using shypre/shybas, with interactive deck.gl mesh map (layer legend with visibility toggles, screenshot export)
 - **Mesh Partitioning** - Partition meshes for MPI parallel execution with shyparts, load balance analysis
 - **Simulation Configuration** - Rich STR parameter editor with split/form views, 100+ parameter database with tooltips, validation engine, boundary condition editor, template library
 - **Job Management** - Submit, monitor, and manage jobs with real-time progress bars, job timeline, workflow chaining (multi-step pipelines), and Celery/Redis support for server deployments
 - **Post-Processing** - Full shyelab integration with 10 operation modes, variable/layer selection, batch processing, output file browser
-- **Visualization** - Interactive Plotly plots for grids, time series, NetCDF data (contour/heatmap/3D surface), vertical profiles, transects, and difference maps
+- **Visualization** - Interactive Plotly plots for grids, time series, NetCDF data (contour/heatmap/3D surface), vertical profiles, transects, and difference maps; animated particle trajectory viewer (trips_layer with playback controls)
+- **IBM Explorer** - Lagrangian particle tracking visualization with animated trips, trail effects, start/end point markers, and screenshot export
 - **Job Comparison** - Side-by-side runtime stats, parameter diffs, overlaid time series
 - **Parameter Sweeps** - Ensemble runs with grid/zip sweep modes, result overlay with min/max envelope
 - **Report Generation** - Self-contained HTML reports with embedded Plotly charts, simulation parameters, grid info, and runtime statistics
@@ -267,11 +268,12 @@ shyfem-ui/
 │   │   ├── postprocess.py      # shyelab operations + batch processing
 │   │   ├── visualize.py        # Grid/TS/NetCDF/profile/transect plots
 │   │   ├── compare.py          # Job comparison (stats, params, time series)
+│   │   ├── ibm.py              # IBM particle tracking with animated trips
 │   │   └── ensemble.py         # Parameter sweeps + batch runs
 │   ├── components/             # Reusable Shiny module widgets
 │   │   ├── boundary_editor.py  # Boundary condition editor
 │   │   ├── file_browser.py     # File selection widget
-│   │   ├── grid_map.py         # Interactive Plotly mesh map
+│   │   ├── grid_map.py         # Interactive deck.gl mesh map with layer legend
 │   │   ├── job_status.py       # Status badges and formatters
 │   │   ├── log_viewer.py       # Real-time log viewer with streaming
 │   │   ├── plot_widget.py      # Plotly visualization widget
