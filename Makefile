@@ -113,6 +113,7 @@ FEMNOGRAPH   = $(FEMLIBS) $(FEMEXTRA) $(FEMMESH) $(FEMPROG) $(FEMUTIL)
 	check_software configure check_compilation modified changed changed_zip \
 	advance_time check_files check_copyright update_copyright install \
 	install_soft uninstall install_soft_reset ggu_help help_ggu help_dev \
+	bump-patch bump-minor bump-major \
 	rules test_compile compile_regress test_stable check_var regress \
 	revision test_mpi rules_save rules_restore rules_dist rules_new \
 	rules_diff rules_std rules_mpi rules_omp rules_petsc rules_intel \
@@ -281,6 +282,15 @@ first_time: links
 version:
 	@echo $(VERSION) $(COMMIT)
 
+bump-patch:
+	bin/bump-version.sh patch --no-commit --no-tag
+
+bump-minor:
+	bin/bump-version.sh minor --no-commit --no-tag
+
+bump-major:
+	bin/bump-version.sh major --no-commit --no-tag
+
 tags:
 	bin/git/git-tags
 
@@ -395,6 +405,9 @@ help_dev:
 	@echo "rules_new          copies Rules.make file to Rules.dist"
 	@echo "rules_diff         difference between Rules.make and Rules.dist"
 	@echo "advance_time       advances modification time of VERSION"
+	@echo "bump-patch         bump patch version (e.g., 8.1.1 -> 8.1.2)"
+	@echo "bump-minor         bump minor version (e.g., 8.1.1 -> 8.2.0)"
+	@echo "bump-major         bump major version (e.g., 8.1.1 -> 9.0.0)"
 	@echo "make_executable    makes scripts executable"
 
 rules:

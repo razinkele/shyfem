@@ -6,7 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] — 2026-04-05
+## [Unreleased] — 2026-04-09
+
+### Added
+
+- **deck.gl widget integration** — Layer legend widget and screenshot widget for grid map and IBM pages (`grid_map.py`, `ibm.py`)
+- **Trips animation** — IBM particle tracking uses deck.gl TripsLayer with animated playback, replacing static PathLayer (`ibm.py`, `trips_animation_server.py`)
+- **Physics configuration UI** — 13-panel form for STR parameter editing: timing, hydro, wind, turbulence, tracers, ecology, sediment, Lagrangian, boundary conditions, non-hydrostatic, physical constants, advanced hydro, water renewal (`physics.py`)
+- **Cross-parameter validation** — Level-based validator with Fortran range checks for iturb, ibarcl, iwave, itdrag; GOTM/T+S dependency checks; timing validation rules (`validation.py`)
+- **STR validation on save/submit** — Raw editor validates on save; job submission validates before run; ensemble validates parameter variants (`run.py`, `simulation.py`, `ensemble.py`)
+- **Particle statistics panel** — Per-type metrics in IBM page with depth and displacement tooltips (`ibm.py`)
+- **Boundary condition enhancements** — Expanded ibtyp choices, scalar boundary file fields, `$sedtr`/`$lagrg`/`$connec`/`$bfmsc`/`$nduge` parser sections (`parser.py`)
+- **Workflow templates** — 7 new physics templates (offline tracer, eulerian tracer, etc.) and simulation template preview validation (`templates.py`, `simulation.py`)
+- **Restart-from-job** — Dropdown to select a completed job for continuation runs (`run.py`)
+- **Flux analysis** — Post-processing with exgrd/shyadj tool integration (`run.py`)
+- **MPI Lagrangian tracking** — Particle transport works with domain decomposition (`lagrange_mpi.f90`)
+- **Automatic versioning** — `make bump-patch/minor/major` targets with `bin/bump-version.sh` script to update all version files and create git tags
+- **README.md** — Modern project README with badges, build matrix, feature list, and quick start guide
 
 ### Security
 
@@ -27,6 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Stack overflow in OMP concentration solver** — Converted ~50KB/task automatic arrays to allocatable locals in `conz3d_element` (`concentration_omp.f90`)
 - **Undefined behavior: `stop` inside OMP parallel regions** — `hydro_transports` uses `REDUCTION(max:ierr_rms)` error flag; `setdepth` wraps diagnostics in `OMP CRITICAL` and defers `stop` (`hydrodynamic.f90`, `elems_dealing.f90`)
 - **Swallowed errors in job queue** — Job persistence failure upgraded from `debug` to `error`; DB load upgraded to `warning`; bare `pass` in progress callbacks and restart file handling replaced with `warning` logging (`job_local.py`, `job_queue.py`, `run.py`)
+- **13 pre-existing test failures resolved** — Fixed broken tests across the UI test suite
+- **shiny_deckgl API imports** — Updated for v1.9.1 API changes
 
 ### Changed
 
