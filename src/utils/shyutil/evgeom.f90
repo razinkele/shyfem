@@ -132,7 +132,7 @@
 
 	subroutine ev_init(nel)
 
-	integer nel
+	integer, intent(in) :: nel
 	integer ierr
 
 	if( nel == nel_alloc ) return
@@ -156,7 +156,7 @@
 
 	subroutine ev_set_verbose(bverb)
 
-	logical bverb
+	logical, intent(in) :: bverb
 
 	verbose_ev = bverb
 
@@ -360,7 +360,7 @@
 
 	implicit none
 
-	logical binit
+	logical, intent(out) :: binit
 
 	binit = binit_ev
 
@@ -376,7 +376,7 @@
 
 	implicit none
 
-	integer isphe
+	integer, intent(in) :: isphe
 
 	isphe_ev = isphe
 
@@ -392,7 +392,7 @@
 
 	implicit none
 
-	integer isphe
+	integer, intent(out) :: isphe
 
 	isphe = isphe_ev
 
@@ -436,8 +436,8 @@
 	implicit none
 
 	logical is_geographical
-	integer n
-	real x(n),y(n)
+	integer, intent(in) :: n
+	real, intent(in) :: x(n),y(n)
 
 	real xmin,ymin,xmax,ymax
 
@@ -553,9 +553,9 @@
 
 	implicit none
 
-	integer ie
-	double precision x,y
-	double precision xi(3)
+	integer, intent(in) :: ie
+	double precision, intent(in) :: x,y
+	double precision, intent(out) :: xi(3)
 
 	integer ii
 	integer ierr
@@ -599,8 +599,8 @@
 
 	implicit none
 
-	double precision xi(3)
-	integer ierr
+	double precision, intent(inout) :: xi(3)
+	integer, intent(out) :: ierr
 
 	logical bdebug
 	integer ii,it,is
@@ -688,9 +688,9 @@
 
 	implicit none
 
-	integer ie
-	double precision x,y
-	double precision xi(3)
+	integer, intent(in) :: ie
+	double precision, intent(out) :: x,y
+	double precision, intent(in) :: xi(3)
 
 	!double precision, parameter :: eps = 1.e-8 !this should depend on max area
 	double precision, parameter :: eps = 1.e-10
@@ -746,10 +746,10 @@
 
 	implicit none
 
-	integer ie			!element number
-	double precision xia(3)		!internal coordinates of point a
-	double precision xib(3)		!internal coordinates of point b
-	double precision l		!length of segment (return)
+	integer, intent(in) :: ie			!element number
+	double precision, intent(in) :: xia(3)		!internal coordinates of point a
+	double precision, intent(in) :: xib(3)		!internal coordinates of point b
+	double precision, intent(out) :: l		!length of segment (return)
 
 	double precision pi,rad
 	parameter (pi=4.D+0*atan(1.D+0),rad=pi/180.D+0)
@@ -863,9 +863,9 @@
 
 	implicit none
 
-	integer ie
+	integer, intent(in) :: ie
 
-	double precision a(3),b(3),c(3)
+	double precision, intent(out) :: a(3),b(3),c(3)
 
 	integer ii
 	integer kn1,kn2,kn3
@@ -922,9 +922,9 @@
 
         implicit none
 
-        double precision x,y		!cartesian x,y [m]
-        double precision rlambda,phi	!lon,lat [rad]
-        double precision rlambda0,phi0	!center of projection [rad]
+        double precision, intent(out) :: x,y		!cartesian x,y [m]
+        double precision, intent(in) :: rlambda,phi	!lon,lat [rad]
+        double precision, intent(in) :: rlambda0,phi0	!center of projection [rad]
 
         double precision r		!earth radius [m]
 	parameter ( r = 6378206.4D0 )
@@ -943,8 +943,8 @@
 
 	implicit none
 
-	integer ie
-	double precision xm,ym
+	integer, intent(in) :: ie
+	double precision, intent(out) :: xm,ym
 
 	integer ii,k
 
@@ -972,9 +972,9 @@
 
         implicit none
 
-        double precision x,y		!cartesian x,y [m]
-        double precision lambda,phi	!lon,lat [deg]
-        double precision lambda0,phi0	!center of projection [deg]
+        double precision, intent(out) :: x,y		!cartesian x,y [m]
+        double precision, intent(in) :: lambda,phi	!lon,lat [deg]
+        double precision, intent(in) :: lambda0,phi0	!center of projection [deg]
 
         double precision r		!earth radius [m]
 	parameter ( r = 6378206.4D0 )
@@ -1003,9 +1003,9 @@
 
         implicit none
 
-        double precision x,y		!cartesian x,y [m]
-        double precision lambda,phi	!lon,lat [deg]
-        double precision lambda0,phi0	!center of projection [deg]
+        double precision, intent(in) :: x,y		!cartesian x,y [m]
+        double precision, intent(out) :: lambda,phi	!lon,lat [deg]
+        double precision, intent(in) :: lambda0,phi0	!center of projection [deg]
 
         double precision r		!earth radius [m]
 	parameter ( r = 6378206.4D0 )
@@ -1026,7 +1026,7 @@
 
 	implicit none
 
-	double precision v1,v2,v3
+	double precision, intent(inout) :: v1,v2,v3
 
 	double precision vv
 
@@ -1079,7 +1079,7 @@
 	implicit none
 
 	real area_elem
-	integer ie
+	integer, intent(in) :: ie
 
 	if( .not. binit_ev ) then
 	  stop 'error stop area_elem: ev not set up'
@@ -1100,7 +1100,7 @@
 	implicit none
 
 	real aomega_elem
-	integer ie
+	integer, intent(in) :: ie
 
 	if( .not. binit_ev ) then
 	  stop 'error stop aomega_elem: ev not set up'
@@ -1121,7 +1121,7 @@
 	implicit none
 
 	real weight_elem
-	integer ie
+	integer, intent(in) :: ie
 
 	if( binit_ev ) then
 	  weight_elem = ev(10,ie)
@@ -1143,7 +1143,7 @@
 	implicit none
 
 	real area_node
-	integer k
+	integer, intent(in) :: k
 
 	integer ie,ii,kk
 	double precision accum
@@ -1179,10 +1179,10 @@
 
 	implicit none
 
-	integer ie	!element number [1-nel]
-	integer ii	!node that is not part of the direction [1-3]
-	real gx,gy	!original vector (gradient) 
-	real gxn,gyn	!projected vector (gradient) (return)
+	integer, intent(in) :: ie	!element number [1-nel]
+	integer, intent(in) :: ii	!node that is not part of the direction [1-3]
+	real, intent(in) :: gx,gy	!original vector (gradient) 
+	real, intent(out) :: gxn,gyn	!projected vector (gradient) (return)
 
 	double precision bii,cii,gn
 
@@ -1208,10 +1208,10 @@
 
 	implicit none
 
-	integer ie	!element number [1-nel]
-	integer ii	!node that is not part of the direction [1-3]
-	real gx,gy	!original vector (gradient) 
-	real gxt,gyt	!projected vector (gradient) (return)
+	integer, intent(in) :: ie	!element number [1-nel]
+	integer, intent(in) :: ii	!node that is not part of the direction [1-3]
+	real, intent(in) :: gx,gy	!original vector (gradient) 
+	real, intent(out) :: gxt,gyt	!projected vector (gradient) (return)
 
 	double precision bii,cii,gn
 
@@ -1237,10 +1237,10 @@
 
 	implicit none
 
-	integer ie		 !element number [1-nel]
-	integer ii		 !node that is not part of the direction [1-3]
-	double precision gx,gy	 !original vector (gradient) 
-	double precision gxn,gyn !projected vector (gradient) (return)
+	integer, intent(in) :: ie		 !element number [1-nel]
+	integer, intent(in) :: ii		 !node that is not part of the direction [1-3]
+	double precision, intent(in) :: gx,gy	 !original vector (gradient) 
+	double precision, intent(out) :: gxn,gyn !projected vector (gradient) (return)
 
 	double precision bii,cii,gn
 
@@ -1266,10 +1266,10 @@
 
 	implicit none
 
-	integer ie		 !element number [1-nel]
-	integer ii		 !node that is not part of the direction [1-3]
-	double precision gx,gy	 !original vector (gradient) 
-	double precision gxt,gyt !projected vector (gradient) (return)
+	integer, intent(in) :: ie		 !element number [1-nel]
+	integer, intent(in) :: ii		 !node that is not part of the direction [1-3]
+	double precision, intent(in) :: gx,gy	 !original vector (gradient) 
+	double precision, intent(out) :: gxt,gyt !projected vector (gradient) (return)
 
 	double precision bii,cii,gn
 
@@ -1295,9 +1295,9 @@
 
 	implicit none
 
-	real xin1,yin1
-	real xin2,yin2
-	real dx,dy
+	real, intent(in) :: xin1,yin1
+	real, intent(in) :: xin2,yin2
+	real, intent(out) :: dx,dy
 
 	double precision xl1,yl1,xl2,yl2
 	double precision x1,y1,x2,y2
@@ -1332,9 +1332,9 @@
 
 	implicit none
 
-	integer n		!total number of points to convert
-	real lon(n),lat(n)	!coordinates of points to convert
-	real x(n),y(n)		!converted cartesian coordinates (return)
+	integer, intent(in) :: n		!total number of points to convert
+	real, intent(in) :: lon(n),lat(n)	!coordinates of points to convert
+	real, intent(out) :: x(n),y(n)		!converted cartesian coordinates (return)
 
 	integer i
 	double precision lambda0,phi0
@@ -1390,7 +1390,7 @@
 
 	use evgeom
 
-	logical bdebug
+	logical, intent(in) :: bdebug
 
 	bdebug_internal = bdebug
 
@@ -1409,10 +1409,10 @@
 
         use evgeom
 
-        integer ie      !element
-        real z(3)       !values on nodes
-        real xp,yp      !coordinates of point
-        real zp         !interpolated value (return)
+        integer, intent(in) :: ie      !element
+        real, intent(in) :: z(3)       !values on nodes
+        real, intent(in) :: xp,yp      !coordinates of point
+        real, intent(out) :: zp         !interpolated value (return)
 
         integer ii
         double precision zh,a,b,c,w
@@ -1443,10 +1443,10 @@
 
         use evgeom
 
-        integer ie      !element
-        real z(3)       !values on nodes
-        real xp,yp      !coordinates of point
-        real zp         !interpolated value (return)
+        integer, intent(in) :: ie      !element
+        real, intent(in) :: z(3)       !values on nodes
+        real, intent(in) :: xp,yp      !coordinates of point
+        real, intent(out) :: zp         !interpolated value (return)
 
         integer ii
         double precision zh

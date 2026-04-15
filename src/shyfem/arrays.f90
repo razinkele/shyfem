@@ -65,7 +65,7 @@
 
         subroutine init_array_i(array)
 
-	integer, allocatable :: array(:)
+	integer, allocatable, intent(inout) :: array(:)
 	integer ierr
 
 	if( allocated(array) ) deallocate(array)
@@ -78,7 +78,7 @@
 
         subroutine init_array_r(array)
 
-	real, allocatable :: array(:)
+	real, allocatable, intent(inout) :: array(:)
 	integer ierr
 
 	if( allocated(array) ) deallocate(array)
@@ -91,7 +91,7 @@
 
         subroutine init_array_d(array)
 
-	double precision, allocatable :: array(:)
+	double precision, allocatable, intent(inout) :: array(:)
 	integer ierr
 
 	if( allocated(array) ) deallocate(array)
@@ -104,8 +104,8 @@
 
         subroutine init_array_in(array,ndim)
 
-	integer, allocatable :: array(:)
-	integer ndim
+	integer, allocatable, intent(inout) :: array(:)
+	integer, intent(in) :: ndim
 	integer ierr
 
 	if( allocated(array) ) deallocate(array)
@@ -118,8 +118,8 @@
 
         subroutine init_array_rn(array,ndim)
 
-	real, allocatable :: array(:)
-	integer ndim
+	real, allocatable, intent(inout) :: array(:)
+	integer, intent(in) :: ndim
 	integer ierr
 
 	if( allocated(array) ) deallocate(array)
@@ -132,8 +132,8 @@
 
         subroutine init_array_dn(array,ndim)
 
-	double precision, allocatable :: array(:)
-	integer ndim
+	double precision, allocatable, intent(inout) :: array(:)
+	integer, intent(in) :: ndim
 	integer ierr
 
 	if( allocated(array) ) deallocate(array)
@@ -146,7 +146,7 @@
 
         subroutine extend_array_i(array)
 
-	integer, allocatable :: array(:)
+	integer, allocatable, intent(inout) :: array(:)
 
 	integer :: ndim
 	integer, allocatable :: aux(:)
@@ -174,7 +174,7 @@
 
         subroutine extend_array_r(array)
 
-	real, allocatable :: array(:)
+	real, allocatable, intent(inout) :: array(:)
 
 	integer :: ndim
 	real, allocatable :: aux(:)
@@ -202,7 +202,7 @@
 
         subroutine extend_array_d(array)
 
-	double precision, allocatable :: array(:)
+	double precision, allocatable, intent(inout) :: array(:)
 
 	integer :: ndim
 	double precision, allocatable :: aux(:)
@@ -230,9 +230,9 @@
 
         subroutine append_to_array_i(array,ifill,value)
 
-	integer, allocatable :: array(:)
-	integer ifill
-	integer value
+	integer, allocatable, intent(inout) :: array(:)
+	integer, intent(inout) :: ifill
+	integer, intent(in) :: value
 
 	ifill = ifill + 1
 	if( ifill > size(array) ) call extend_array_i(array)
@@ -244,9 +244,9 @@
 
         subroutine append_to_array_r(array,ifill,value)
 
-	real, allocatable :: array(:)
-	integer ifill
-	real value
+	real, allocatable, intent(inout) :: array(:)
+	integer, intent(inout) :: ifill
+	real, intent(in) :: value
 
 	ifill = ifill + 1
 	if( ifill > size(array) ) call extend_array_r(array)
@@ -258,9 +258,9 @@
 
         subroutine append_to_array_d(array,ifill,value)
 
-	double precision, allocatable :: array(:)
-	integer ifill
-	double precision value
+	double precision, allocatable, intent(inout) :: array(:)
+	integer, intent(inout) :: ifill
+	double precision, intent(in) :: value
 
 	ifill = ifill + 1
 	if( ifill > size(array) ) call extend_array_d(array)
@@ -272,8 +272,8 @@
 
         subroutine trim_array_i(array,ifill)
 
-	integer, allocatable :: array(:)
-	integer ifill
+	integer, allocatable, intent(inout) :: array(:)
+	integer, intent(in) :: ifill
 
 	integer :: ndim
 	integer, allocatable :: aux(:)
@@ -294,8 +294,8 @@
 
         subroutine trim_array_r(array,ifill)
 
-	real, allocatable :: array(:)
-	integer ifill
+	real, allocatable, intent(inout) :: array(:)
+	integer, intent(in) :: ifill
 
 	integer :: ndim
 	real, allocatable :: aux(:)
@@ -316,8 +316,8 @@
 
         subroutine trim_array_d(array,ifill)
 
-	double precision, allocatable :: array(:)
-	integer ifill
+	double precision, allocatable, intent(inout) :: array(:)
+	integer, intent(in) :: ifill
 
 	integer :: ndim
 	double precision, allocatable :: aux(:)

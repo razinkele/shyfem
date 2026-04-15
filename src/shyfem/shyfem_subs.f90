@@ -1749,7 +1749,7 @@
 
 	implicit none
 
-	integer itime
+	integer, intent(in) :: itime
 
 	integer kext,kint,iu,lmax
 	integer ipint
@@ -1781,7 +1781,7 @@
 
 	implicit none
 
-	double precision dtime
+	double precision, intent(in) :: dtime
 	integer kext,kint,iu
 	integer ipint
 
@@ -1810,10 +1810,10 @@
 
 	implicit none
 
-	character*(*) text
-	integer ip
-	double precision dtime
-	real scal(nlvdi,nkn)
+	character*(*), intent(in) :: text
+	integer, intent(in) :: ip
+	double precision, intent(in) :: dtime
+	real, intent(in) :: scal(nlvdi,nkn)
 
 	integer k,l
 	integer ierr
@@ -2008,7 +2008,7 @@
 
 	implicit none
 
-	character*(*) text
+	character*(*), intent(in) :: text
 	integer ip
 	integer ierr
 	real, allocatable :: aux3d(:,:)
@@ -2074,7 +2074,7 @@
 	subroutine trace_point_0(text)
 	use mod_trace_point
 	implicit none
-	character(*) text
+	character(*), intent(in) :: text
 	call trace_point(text)
 	if( btrace ) call check_arrays_with_crc(text)
 	end
