@@ -30,6 +30,8 @@
 
 	program zinit
 
+	implicit none
+
 ! prepares initial z condition
 
 	use basin
@@ -43,6 +45,11 @@
 	include 'simul.h'
 
 	integer ierr
+	integer k1,k2,mode
+	integer kk1,kk2,i
+	real z1,z2
+	real x1,y1,x2,y2,xi,yi
+	real r,rl,zm,za
 	real, allocatable :: hv(:)
 !
 !----------------------------------------------------------------

@@ -28,10 +28,16 @@
 ! 24.01.2018	ggu	changed VERS_7_5_41
 ! 14.02.2019	ggu	changed VERS_7_5_56
 
+	program test_modulus_main
+
+	implicit none
+
+	integer i,j
+
 	do i=-10,10
 	  j=mod(i,7)
 	  write(6,*) i,j
 	end do
 
-	end
+	end program test_modulus_main
 

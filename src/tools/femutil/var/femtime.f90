@@ -29,18 +29,22 @@
 
 	program test
 
+	implicit none
+
 	call set_include
 	call set_module
 	call write_include
 	call write_module
 
-	end
+	end program test
 
 	module femtime
+	implicit none
 	include 'femtime.h'
 	end module
 
 	module femtime1
+	implicit none
 	integer itanf,itend,idt,nits,niter,it
 	common /femtim/ itanf,itend,idt,nits,niter,it
         integer itunit,idtorig
@@ -55,22 +59,26 @@
 	end module
 
 	subroutine set_include
+	implicit none
 	include 'femtime.h'
 	it = 99
-	end
+	end subroutine set_include
 
 	subroutine set_module
 	use femtime
-	dt = 88
-	end
+	implicit none
+	dt_act = 88
+	end subroutine set_module
 
 	subroutine write_include
+	implicit none
 	include 'femtime.h'
-	write(6,*) 'include: ',it,dt
-	end
+	write(6,*) 'include: ',it,dt_act
+	end subroutine write_include
 
 	subroutine write_module
 	use femtime1
-	write(6,*) 'module: ',it,dt
-	end
+	implicit none
+	write(6,*) 'module: ',it,dt_act
+	end subroutine write_module
 

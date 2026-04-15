@@ -27,10 +27,16 @@
 !
 ! 13.03.2019	ggu	changed VERS_7_5_61
 
+	program tsmooth_main
+
+	implicit none
+
 	integer ndim
 	parameter(ndim=10000)
 
 	logical bperiod
+	integer i,n
+	real sigma,taux,vaux
 	real t(ndim)
 	real v(ndim)
 
@@ -55,7 +61,7 @@
 	  write(6,*) t(i),v(i)
 	end do
 
-	end
+	end program tsmooth_main
 
 !********************************************************
 

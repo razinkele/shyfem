@@ -42,6 +42,8 @@
 
 	program extelab_main
 
+	implicit none
+
 	call extelab
 
 	end

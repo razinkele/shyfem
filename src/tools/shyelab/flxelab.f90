@@ -43,6 +43,8 @@
 
 	program flxelab_main
 
+	implicit none
+
 	call flxelab
 
 	end

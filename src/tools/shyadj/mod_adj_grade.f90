@@ -37,6 +37,8 @@
 	module mod_adj_grade
 !===================================================================
 
+	implicit none
+
 	integer, save :: ngrdi = 0
 
 	integer, save, allocatable :: ngrade(:)
@@ -83,6 +85,8 @@
 !===================================================================
 	module mod_adj_static
 !===================================================================
+
+	implicit none
 
         integer, parameter :: iastatic = -1
         integer, parameter :: nbstatic = 4

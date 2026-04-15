@@ -30,10 +30,12 @@
 
 	program whdf
 
+	implicit none
+
 ! writes hdf files
 
-	parameter (irank=3)
-	parameter (idimx=25,idimy=10,idimz=50)
+	integer, parameter :: irank=3
+	integer, parameter :: idimx=25,idimy=10,idimz=50
 
 	real u(idimx,idimy,idimz)
 	real v(idimx,idimy,idimz)
@@ -45,6 +47,9 @@
 
 	integer idim(irank)
 	integer iaux(irank)
+	integer lu,lv,lw,ls
+	integer it,ir,iwhat,i,ix,iy,iret
+	integer dsadata
 	data idim /idimx,idimy,0/
 	data iaux /idimx,idimy,0/
 
