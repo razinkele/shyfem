@@ -41,6 +41,35 @@ jobs:
           make init
           bash mm_hyd_00.sh
 
+  fortran-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
+
+      - name: Build and capture warnings
+        run: |
+          make fem 2>&1 | tee build.log
+          echo "=== Compiler warnings summary ==="
+          grep -c 'Warning:' build.log || echo "0 warnings"
+          echo ""
+          echo "=== Warnings in src/shyfem/ and src/utils/ ==="
+          grep 'Warning:' build.log | grep -E 'src/(shyfem|utils)/' | head -50 || echo "No warnings in core"
+
+      - name: Check for implicit none gaps
+        run: |
+          echo "Files missing implicit none (excluding obsolete/external/contrib):"
+          find src -name '*.f90' \
+            ! -path '*/obsolete/*' \
+            ! -path '*/external/*' \
+            ! -path '*/contrib/*' \
+            | xargs grep -rL 'implicit none' || echo "All files have implicit none"
+
   mpi-build:
     runs-on: ubuntu-latest
     steps:
