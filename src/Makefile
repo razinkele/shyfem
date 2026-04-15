@@ -31,7 +31,7 @@ status: nothing
 list:
 	pwd; ls
 
-libmod: $(FEMDIR)/lib/mod
+libmod: | $(FEMDIR)/lib/mod
 $(FEMDIR)/lib/mod:
 	mkdir -p $(FEMDIR)/lib/mod
 

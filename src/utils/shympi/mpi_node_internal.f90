@@ -463,7 +463,10 @@
           call MPI_Irecv(val_out,n,MPI_REAL,id &
      &	          ,tag,MPI_COMM_WORLD,request(ir),ierr)
 	end if
-	if( ierr /= 0 ) write(6,*) 'internal error 1: ',ierr
+	if( ierr /= 0 ) then
+	  write(6,*) 'internal error 1: ',ierr
+	  call shympi_abort_internal('MPI_Irecv error')
+	end if
 
 	if( my_p_id == id_from ) then
 	  ir = ir + 1
@@ -471,18 +474,20 @@
           call MPI_Isend(val_in,n,MPI_REAL,id &
      &	          ,tag,MPI_COMM_WORLD,request(ir),ierr)
 	end if
-	if( ierr /= 0 ) write(6,*) 'internal error 2: ',ierr
+	if( ierr /= 0 ) then
+	  write(6,*) 'internal error 2: ',ierr
+	  call shympi_abort_internal('MPI_Isend error')
+	end if
 
 	if( ir > 0 ) then
           call MPI_WaitAll(ir,request,status,ierr)
-	  if( ierr /= 0 ) write(6,*) 'internal error 3: ',ierr
+	  if( ierr /= 0 ) then
+	    write(6,*) 'internal error 3: ',ierr
+	    call shympi_abort_internal('MPI_WaitAll error')
+	  end if
 	end if
 
 !$OMP END CRITICAL
-
-	if( ierr > 0 ) then
-	  call shympi_abort_internal('error stop shympi_receive_internal: exchange error')
-	end if
 
 	call shympi_icomment('shympi_receive_internal_r')
 

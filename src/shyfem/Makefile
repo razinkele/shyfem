@@ -137,7 +137,7 @@ endif
 #---------------------  NETCDF   -----------------------
 
 ifeq ($(NETCDF),true)
-  LIB_NETCDF = -L$(NETCDFDIR)/lib -lnetcdf -L$(NETCDFDIR)/lib -lnetcdff
+  LIB_NETCDF = -L$(NETCDFDIR)/lib -lnetcdf -L$(NETCDFFDIR)/lib -lnetcdff
 endif
 
 #---------------------	all libs	-----------------------

@@ -1538,7 +1538,7 @@
 	open(iu,file=file,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
-	  stop 'error stop write_tvd_debug: error opening file'
+	  call shympi_abort_internal('error opening file')
 	end if
 	write(iu,*) 'debug information written by write_tvd_debug'
 	do ie=1,nel_global

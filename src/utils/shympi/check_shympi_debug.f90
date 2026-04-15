@@ -233,7 +233,7 @@
 	  open(iu,file=dump,status='unknown',form='formatted',iostat=ios)
 	  if( ios /= 0 ) then
 	    write(6,*) 'error opening file: ',trim(dump)
-	    stop 'error stop dump_data_record1: error opening file'
+	    call shympi_abort_internal('error opening file')
 	  end if
 	end if
 
@@ -1411,6 +1411,3 @@
 	stop 'error stop'
 
 	end subroutine shympi_abort_internal
-
-!*******************************************************************
-

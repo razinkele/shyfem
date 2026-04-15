@@ -1116,7 +1116,7 @@
 	!call shympi_barrier_internal
 	call shympi_finalize_internal
 	call exit(ierr)
-	stop 'exiting...'
+	call shympi_abort_internal('exiting...')
 
 	end subroutine shympi_exit
 

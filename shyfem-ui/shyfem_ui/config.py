@@ -78,8 +78,9 @@ class Config(BaseSettings):
     )
 
     # Authentication (server mode only)
-    auth_enabled: bool = Field(
-        default=False, description="Enable basic auth (recommended for server mode)"
+    auth_enabled: bool | None = Field(
+        default=None,
+        description="Enable basic auth (auto-enabled in server mode, default off in local)",
     )
     auth_username: str = Field(default="admin", description="Basic auth username")
     auth_password: str = Field(
@@ -124,7 +125,9 @@ class Config(BaseSettings):
 
     @model_validator(mode="after")
     def _check_server_mode_passwords(self):
-        """Require an admin password when running in server mode."""
+        """Require an admin password when running in server mode and auto-enable auth."""
+        if self.auth_enabled is None:
+            self.auth_enabled = self.deployment_mode == "server"
         if self.deployment_mode == "server":
             if not self.default_admin_password and not self.auth_password:
                 raise ValueError(

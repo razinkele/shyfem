@@ -46,8 +46,25 @@ class TestConfigDefaults:
         assert config.mpirun_path == "mpirun"
 
     def test_default_auth_disabled(self):
-        """Test auth is disabled by default."""
+        """Test auth is disabled by default in local mode."""
         config = _clean_config()
+        assert config.auth_enabled is False
+
+    def test_auth_auto_enabled_server_mode(self):
+        """Test auth is auto-enabled in server mode when not explicitly set."""
+        config = _clean_config(
+            deployment_mode="server",
+            default_admin_password="strongpass123",
+        )
+        assert config.auth_enabled is True
+
+    def test_auth_explicit_false_server_mode(self):
+        """Test auth can be explicitly disabled in server mode."""
+        config = _clean_config(
+            deployment_mode="server",
+            default_admin_password="strongpass123",
+            auth_enabled=False,
+        )
         assert config.auth_enabled is False
 
     def test_default_theme(self):

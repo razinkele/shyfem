@@ -129,7 +129,7 @@
 	open(newunit=iu,file=name,form='formatted',status='unknown',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(name)
-	  stop 'error stop info_partition: error opening file'
+	  call shympi_abort_internal('error opening file')
 	end if
 	write(iu,'(a)') '        np       nkn       nel'
 	write(iu,'(3i10)') nparts,nkn,nel
@@ -366,7 +366,7 @@
         open(iu,file=name,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(name)
-	  stop 'error stop write_single_nodes: error opening file'
+	  call shympi_abort_internal('error opening file')
 	end if
 
 	do i=1,n

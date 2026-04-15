@@ -1,0 +1,57 @@
+name: Fortran CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Rules.make'
+      - 'Makefile'
+      - 'testcases/**'
+      - 'bin/**'
+      - '.github/workflows/fortran-ci.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'Rules.make'
+      - 'Makefile'
+      - 'testcases/**'
+      - 'bin/**'
+      - '.github/workflows/fortran-ci.yml'
+
+jobs:
+  serial-build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
+
+      - name: Serial build
+        run: make fem
+
+      - name: Run Mar Menor test
+        run: |
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/mar_menor
+          make init
+          bash mm_hyd_00.sh
+
+  mpi-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gfortran openmpi-bin libopenmpi-dev libmetis-dev \
+            libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
+
+      - name: MPI build
+        run: make clean && make fem OMP=false MPI=true PARTS=METIS METISDIR=/usr

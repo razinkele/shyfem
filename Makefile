@@ -172,7 +172,7 @@ bfm_clean:
 
 nograph: checkv directories links test_executable
 
-libmod: $(FEMDIR)/lib/mod nothing
+libmod: | $(FEMDIR)/lib/mod
 $(FEMDIR)/lib/mod:
 	mkdir -p lib/mod
 
@@ -197,7 +197,6 @@ depend:
 directories:
 	@-mkdir -p tmp arc
 	@-mkdir -p $(HOME)/tmp
-	@-mkdir -p lib/mod
 	@if [ ! -f ./tmp/Makefile ]; then cp ./var/rules/Makefile ./tmp; fi
 	@if [ ! -f ./arc/Makefile ]; then cp ./var/rules/Makefile ./arc; fi
 
