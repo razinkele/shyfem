@@ -10,12 +10,15 @@ Start workers with:
     celery -A shyfem_ui.services.job_celery worker --loglevel=info
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import os
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
@@ -25,7 +28,7 @@ logger = logging.getLogger(__name__)
 _celery_app = None
 
 
-def get_celery_app(redis_url: str = "redis://localhost:6379/0"):
+def get_celery_app(redis_url: str = "redis://localhost:6379/0") -> Any:
     """Get or create the module-level Celery application."""
     global _celery_app
     if _celery_app is None:
@@ -53,7 +56,7 @@ def get_celery_app(redis_url: str = "redis://localhost:6379/0"):
     return _celery_app
 
 
-def _get_redis_client(redis_url: str = "redis://localhost:6379/0"):
+def _get_redis_client(redis_url: str = "redis://localhost:6379/0") -> Any:
     """Create a Redis client."""
     try:
         import redis
@@ -133,7 +136,7 @@ def _load_job_info(redis_client, job_id: str) -> JobInfo | None:
 # ---------------------------------------------------------------------------
 
 
-def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
+def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str) -> None:
     """Execute a SHYFEM job (called by Celery worker).
 
     This runs synchronously using asyncio.run() since Celery workers
@@ -229,7 +232,7 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str):
 
 
 # Register the task with Celery when the module is imported by a worker
-def _register_celery_task(app):
+def _register_celery_task(app: Any) -> Any:
     """Register the execute task with the Celery app."""
 
     @app.task(bind=True, name="shyfem_ui.execute_job")

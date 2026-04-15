@@ -5,6 +5,7 @@ errors (missing required params) and warnings (likely misconfigurations).
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -14,7 +15,7 @@ class ValidationMessage:
     param: str = ""
 
 
-def _get(sections: dict, section: str, param: str, default=None):
+def _get(sections: dict, section: str, param: str, default: Any = None) -> Any:
     """Get param value from nested section dict."""
     sec = sections.get(section, {})
     val = sec.get(param, default)
