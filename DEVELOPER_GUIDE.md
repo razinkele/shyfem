@@ -531,16 +531,61 @@ $end
 
 ## 9. Testing
 
-### 9.1 Test Cases
+### 9.1 Fortran Test Cases
 
-Test cases are in `testcases/`:
+Test cases live in `testcases/examples/`. The primary verification test is **Mar Menor**:
 
 ```bash
+# Run the Mar Menor hydrodynamic test (serial)
 cd testcases/examples/mar_menor
-./run.sh
+make init                    # prepare mesh and input files
+shyfem mm_hyd_00.str         # run a single simulation
+
+# Run all 17 Mar Menor simulations (used in CI)
+./make_all_sims.sh           # sequential, validates exit codes
+
+# Run with MPI (4 processes)
+PATH=/usr/bin:$PATH mpirun --oversubscribe -np 4 shyfem mm_hyd_00.str
 ```
 
-### 9.2 Verification Checks
+**Adding a new Fortran test case:**
+1. Create a directory under `testcases/examples/<name>/`
+2. Add mesh files (`.grd`), boundary files (`.bnd`), and a steering file (`.str`)
+3. Add a `Makefile` with `init` and `clean` targets
+4. Add a run script that returns non-zero on failure
+
+### 9.2 UI Tests (Python)
+
+The SHYFEM UI has both unit tests and end-to-end (Playwright) tests:
+
+```bash
+cd shyfem-ui
+
+# Unit tests (fast, no browser needed)
+pytest tests/ --ignore-glob='*playwright*' -p no:zarr
+
+# End-to-end tests (requires Chromium via Playwright)
+playwright install chromium
+pytest tests/test_playwright_*.py -p no:zarr
+
+# All tests
+pytest tests/ -p no:zarr
+```
+
+**Test file conventions:**
+- Unit tests: `tests/test_<module>.py` (e.g., `test_config.py`, `test_auth_service.py`)
+- E2E tests: `tests/test_playwright_<feature>.py`
+
+### 9.3 CI/CD Pipelines
+
+Two GitHub Actions workflows run automatically:
+
+| Workflow | File | Triggers | Jobs |
+|----------|------|----------|------|
+| Fortran CI | `.github/workflows/fortran-ci.yml` | Push to main, PRs touching `src/`, `Makefile`, `testcases/` | Serial build + Mar Menor test, MPI build |
+| UI CI | `.github/workflows/ui-ci.yml` | Push to main, PRs touching `shyfem-ui/` | Unit tests, E2E (Playwright) tests |
+
+### 9.4 Runtime Verification Checks
 
 ```fortran
 ! Runtime consistency checks (src/shyfem/check.f90)
@@ -548,13 +593,22 @@ call check_fem()           ! Full state verification
 call check_special(k,val)  ! Check specific node
 ```
 
-### 9.3 MPI Verification
+### 9.5 MPI Verification
 
 ```fortran
 ! MPI array consistency (src/utils/shympi/check_shympi_*.f90)
 call shympi_check_2d_node_r(array, 'array_name')
 call shympi_check_3d_elem_r(array, 'array_name')
 ```
+
+### 9.6 Regression Testing Workflow
+
+For changes to numerical code (hydrodynamics, transport, turbulence):
+
+1. **Before changes:** Run Mar Menor test, save output files
+2. **After changes:** Run the same test, compare outputs
+3. **Compare:** Use `diff` or numerical comparison tools on `.shy` output files
+4. **MPI consistency:** Run the same test with 1 and 4 processes, verify identical results
 
 ---
 

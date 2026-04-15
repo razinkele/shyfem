@@ -34,6 +34,8 @@
 
 	module mkonst
 
+	implicit none
+
         real, save :: eps1,eps2,pi,flag,high,higi
 
 	end module mkonst

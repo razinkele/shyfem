@@ -85,6 +85,7 @@
         !! We have already seen how to create a component with the aid of the NUOPC
         !! layer.
 	subroutine SetServices(model, rc)
+	implicit none
 	  type(ESMF_GridComp)  :: model
 	  integer, intent(out) :: rc
         
@@ -164,6 +165,7 @@
 	!! will accept pointers to pre-allocated memory, it is usually not necessary to 
 	!! change how memory is allocated for your model's variables. 
 	subroutine Advertise(model, rc)
+	implicit none
 
 	  type(ESMF_GridComp)  :: model
 	  integer, intent(out) :: rc
@@ -331,6 +333,7 @@
 	!! it is added to the appropriate \textsf{ESMF\_State}, either import or export.
 	!! To create a field it is necessary to import the mesh from SHYFEM.
 	subroutine Realize(model, rc)
+	implicit none
 	  type(ESMF_GridComp)  :: model
 	  integer, intent(out) :: rc
 
@@ -529,6 +532,7 @@
 	!! SHYFEM.
 	subroutine Advance(model, rc)
 	  use para
+	implicit none
 	  type(ESMF_GridComp)  :: model
 	  integer, intent(out) :: rc
 
@@ -754,6 +758,7 @@
   	!! closed and the processes is killed with the memory cleaned through the 
 	!! deallocations of the data structures. 
 	subroutine Finalize(model, rc)
+	implicit none
 	  type(ESMF_GridComp)  :: model
 	  integer, intent(out) :: rc
 
@@ -835,6 +840,7 @@
 	subroutine SHYFEM_MeshGet(SHYFEM_mesh, rc)
 
           use para
+	implicit none
           type(ESMF_Mesh), intent(out)    :: SHYFEM_mesh
           integer, intent(out) 		  :: rc
 
@@ -1134,6 +1140,7 @@
 	!! The reconstruction of the correct node list, and of the
 	!! corresponding connetivity is what is done here:
         subroutine SHYFEM_ConvertMeshToEsmf(mesh)
+	implicit none
 
 	  type(SHYFEM_Mesh), intent(inout) :: mesh
           integer                          :: i, j, ie
@@ -1263,6 +1270,7 @@
 	!! the interpolation algorithm in atmosphere-ocean models. Here
 	!! we use a trick to compute rapidly such mask.
 	subroutine SHYFEM_MaskCreate(SHYFEM_mesh, nodeMask, rc)
+	implicit none
 
           type(ESMF_Mesh), intent(in)           :: SHYFEM_mesh
 	  integer, dimension(:), intent(inout)  :: nodeMask
@@ -1389,6 +1397,7 @@
 	!! is skipped. This is not important because all interpolation fields are nodal
 	!! and no useful information is attached to this elements.
         subroutine SHYFEM_FieldWrite(field, filename, rc)
+	implicit none
 
           type(ESMF_Field), intent(in)  :: field
 	  character(len=*), intent(in)  :: filename
@@ -1518,6 +1527,7 @@
 	!! syncronization, which is encapsulated in the SHYFEM call
 	!! \textsf{shympi\_exchange\_2d\_node}.
         subroutine SHYFEM_FieldSet(fieldPtr, fieldName, rc)
+	implicit none
 
           double precision, pointer, intent(in) :: fieldPtr(:)
           character(len=*), intent(in)          :: fieldName
@@ -1573,6 +1583,7 @@
 	!! a segmentation fault occurs. By the way passing inner
 	!! nodes seems enough for ESMF: remapped sst field are correct.
         subroutine SHYFEM_FieldGet(fieldPtr, fieldName, rc)
+	implicit none
 
           double precision, pointer, intent(inout) :: fieldPtr(:)
           character(len=*), intent(in)             :: fieldName

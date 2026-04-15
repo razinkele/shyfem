@@ -309,6 +309,7 @@
 	use shympi
 
 	use para
+	implicit none
 	character*60 windfile,heatfile,rainfile,icefile
 	character*4 what
 
@@ -561,6 +562,7 @@
 	subroutine output_debug_data
 
 	use mod_meteo
+	implicit none
 
 	integer, parameter :: nvarm = 4	!total number of meteo vars written
 	integer, save :: icall = 0
@@ -594,6 +596,7 @@
 	use shympi
 
 	use para
+	implicit none
 	integer			:: id
 	integer			:: nvar_act
 	integer			:: ierr
@@ -695,6 +698,7 @@
 ! iwtype = 4 wind data in format (speed,dir) (speed in nodes)
 
 	use para
+	implicit none
 	integer id
 	integer nvar
 
@@ -867,6 +871,7 @@
 
 	use basin
 	use shympi
+	implicit none
 
 	integer id
 	integer n
@@ -1043,6 +1048,7 @@
 	subroutine meteo_set_rain_data(id,nvar)
 
 	use para
+	implicit none
 	integer id
 	integer nvar
 
@@ -1119,6 +1125,7 @@
 !*********************************************************************
 
 	subroutine meteo_convert_rain_data(id,n,r)
+	implicit none
 
 ! convert rain from mm/day to m/s
 
@@ -1145,6 +1152,7 @@
 	subroutine meteo_set_ice_data(id,nvar)
 
 	use para
+	implicit none
 	integer id
 	integer nvar
 
@@ -1233,6 +1241,7 @@
 	use basin
 	use shympi
 	use mod_info_output
+	implicit none
 
 	integer id
 	integer n
@@ -1326,6 +1335,7 @@
 	use shyfem_strings
 
 	use para
+	implicit none
 	integer id
 	integer nvar
 
@@ -1452,6 +1462,7 @@
 !*********************************************************************
 
         subroutine meteo_convert_heat_data(id,n,metaux,mettair,metcc,ppv,methum)
+	implicit none
 
 	integer id
 	integer n

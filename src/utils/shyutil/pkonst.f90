@@ -34,6 +34,8 @@
 
 	module pkonst
 
+	implicit none
+
 	real, save :: grav,fcor,dcor,dirn,rowass,roluft
 
 	end module pkonst

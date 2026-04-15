@@ -117,6 +117,7 @@ class AuthService:
             return self._user_to_dict(user)
         except Exception:
             session.rollback()
+            logger.exception("Database error in operation")
             raise
         finally:
             session.close()
@@ -172,6 +173,7 @@ class AuthService:
             return self._user_to_dict(user)
         except Exception:
             session.rollback()
+            logger.exception("Database error in update_user")
             raise
         finally:
             session.close()
@@ -192,6 +194,7 @@ class AuthService:
             return True
         except Exception:
             session.rollback()
+            logger.exception("Database error in deactivate_user")
             raise
         finally:
             session.close()
@@ -227,6 +230,7 @@ class AuthService:
             return True
         except Exception:
             session.rollback()
+            logger.exception("Database error in delete_user")
             raise
         finally:
             session.close()
@@ -247,6 +251,7 @@ class AuthService:
             return True
         except Exception:
             session.rollback()
+            logger.exception("Database error in reset_password")
             raise
         finally:
             session.close()
@@ -310,6 +315,7 @@ class AuthService:
             return token
         except Exception:
             session.rollback()
+            logger.exception("Database error in operation")
             raise
         finally:
             session.close()
@@ -341,6 +347,7 @@ class AuthService:
             return self._user_to_dict(user)
         except Exception:
             session.rollback()
+            logger.exception("Database error in validate_session")
             raise
         finally:
             session.close()
@@ -361,6 +368,7 @@ class AuthService:
             return True
         except Exception:
             session.rollback()
+            logger.exception("Database error in delete_session")
             raise
         finally:
             session.close()
@@ -382,6 +390,7 @@ class AuthService:
             return count
         except Exception:
             session.rollback()
+            logger.exception("Database error in cleanup_expired_sessions")
             raise
         finally:
             session.close()
