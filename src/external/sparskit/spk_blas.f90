@@ -97,6 +97,7 @@
 !>
 !  =====================================================================
       SUBROUTINE DCOPY(N,DX,INCX,DY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -235,6 +236,7 @@
 !>
 !  =====================================================================
       DOUBLE PRECISION FUNCTION DNRM2(N,X,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -375,6 +377,7 @@
 !>
 !  =====================================================================
       SUBROUTINE DSWAP(N,DX,INCX,DY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -538,6 +541,7 @@
 !>
 !  =====================================================================
       SUBROUTINE DROT(N,DX,INCX,DY,INCY,C,S)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -657,6 +661,7 @@
 !>
 !  =====================================================================
       SUBROUTINE DROTG(DA,DB,C,S)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -778,6 +783,7 @@
 !>
 !  =====================================================================
       SUBROUTINE CCOPY(N,CX,INCX,CY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -900,6 +906,7 @@
 !>
 !  =====================================================================
       SUBROUTINE CSCAL(N,CA,CX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1037,6 +1044,7 @@
 !
 !  =====================================================================
       SUBROUTINE CSROT( N, CX, INCX, CY, INCY, C, S )
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.7.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1170,6 +1178,7 @@
 !>
 !  =====================================================================
       SUBROUTINE CSWAP(N,CX,INCX,CY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1296,6 +1305,7 @@
 !>
 !  =====================================================================
       SUBROUTINE CSSCAL(N,SA,CX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1410,6 +1420,7 @@
 !>
 !  =====================================================================
       REAL FUNCTION SASUM(N,SX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1549,6 +1560,7 @@
 !>
 !  =====================================================================
       SUBROUTINE SSCAL(N,SA,SX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1695,6 +1707,7 @@
 !>
 !  =====================================================================
       SUBROUTINE SAXPY(N,SA,SX,INCX,SY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1829,6 +1842,7 @@
 !>
 !  =====================================================================
       INTEGER FUNCTION ISAMAX(N,SX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -1966,6 +1980,7 @@
 !>
 !  =====================================================================
       REAL FUNCTION SDOT(N,SX,INCX,SY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -2103,6 +2118,7 @@
 !>
 !  =====================================================================
       DOUBLE PRECISION FUNCTION DASUM(N,DX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -2242,6 +2258,7 @@
 !>
 !  =====================================================================
       SUBROUTINE DSCAL(N,DA,DX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -2388,6 +2405,7 @@
 !>
 !  =====================================================================
       SUBROUTINE DAXPY(N,DA,DX,INCX,DY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -2522,6 +2540,7 @@
 !>
 !  =====================================================================
       INTEGER FUNCTION IDAMAX(N,DX,INCX)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --
@@ -2659,6 +2678,7 @@
 !>
 !  =====================================================================
       DOUBLE PRECISION FUNCTION DDOT(N,DX,INCX,DY,INCY)
+      implicit none
 !
 !  -- Reference BLAS level1 routine (version 3.8.0) --
 !  -- Reference BLAS is a software package provided by Univ. of Tennessee,    --

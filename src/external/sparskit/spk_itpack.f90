@@ -28,6 +28,9 @@
 !--------------------------------------------------------------------------
 
       SUBROUTINE JCG (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM,IERR)
+      implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  JCG  (JACOBI CONJUGATE GRADIENT)   
 !     EACH OF THE MAIN SUBROUTINES:   
@@ -419,6 +422,9 @@
       RETURN      
       END 
       SUBROUTINE JSI (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM,IERR)
+      implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  JSI  (JACOBI SEMI-ITERATIVE)       
 !     EACH OF THE MAIN SUBROUTINES:   
@@ -790,6 +796,9 @@
       RETURN      
       END 
       SUBROUTINE SOR (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM,IERR)
+      implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  SOR  (SUCCESSIVE OVERRELATION)     
 !     EACH OF THE MAIN SUBROUTINES:   
@@ -1146,6 +1155,9 @@
       END 
       SUBROUTINE SSORCG (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM, &
      &   IERR)    
+     implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  SSORCG  (SYMMETRIC SUCCESSIVE OVER-
 !                                        RELAXATION CONJUGATE GRADIENT) 
@@ -1557,6 +1569,9 @@
       END 
       SUBROUTINE SSORSI (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM, &
      &   IERR)    
+     implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  SSORSI  (SYMMETRIC SUCCESSIVE RELAX- 
 !                                         ATION SEMI-ITERATION)     
@@ -1948,6 +1963,9 @@
       RETURN      
       END 
       SUBROUTINE RSCG (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM,IERR) 
+      implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  RSCG  (REDUCED SYSTEM CONJUGATE    
 !                                       GRADIENT) 
@@ -2367,6 +2385,9 @@
       RETURN      
       END 
       SUBROUTINE RSSI (NN,IA,JA,A,RHS,U,IWKSP,NW,WKSP,IPARM,RPARM,IERR) 
+      implicit none
+      REAL DUMMY, TIMI1, TIMI2, TIMJ1, TIMJ2
+      REAL TIMER
 !       
 !     ITPACK 2C MAIN SUBROUTINE  RSSI  (REDUCED SYSTEM SEMI-ITERATIVE)
 !     EACH OF THE MAIN SUBROUTINES:   
@@ -2762,6 +2783,7 @@
       RETURN      
       END 
       SUBROUTINE ITJCG (NN,IA,JA,A,U,U1,D,D1,DTWD,TRI)    
+      implicit none
 !       
 ! ... FUNCTION:   
 !       
@@ -2863,6 +2885,7 @@
       RETURN      
       END 
       SUBROUTINE ITJSI (NN,IA,JA,A,RHS,U,U1,D,ICNT)       
+      implicit none
 !       
 ! ... FUNCTION:   
 !       
@@ -2973,6 +2996,8 @@
       RETURN      
       END 
       SUBROUTINE ITSOR (NN,IA,JA,A,RHS,U,WK)    
+      implicit none
+      INTEGER IPSTR
 !       
 ! ... FUNCTION:   
 !       
@@ -3114,6 +3139,7 @@
       RETURN      
       END 
       SUBROUTINE ITSRCG (NN,IA,JA,A,RHS,U,U1,C,C1,D,DL,WK,TRI)      
+      implicit none
 !       
 ! ... FUNCTION:   
 !       
@@ -3272,6 +3298,7 @@
       RETURN      
       END 
       SUBROUTINE ITSRSI (NN,IA,JA,A,RHS,U,U1,C,D,CTWD,WK) 
+      implicit none
 !       
 ! ... FUNCTION:   
 !       
@@ -3401,6 +3428,7 @@
       RETURN      
       END 
       SUBROUTINE ITRSCG (N,NNB,IA,JA,A,UB,UB1,DB,DB1,WB,TRI)
+      implicit none
 !       
 ! ... FUNCTION:   
 !       
@@ -3506,6 +3534,7 @@
       RETURN      
       END 
       SUBROUTINE ITRSSI (N,NNB,IA,JA,A,RHS,UB,UB1,DB)     
+      implicit none
 !       
 ! ... FUNCTION:   
 !       
@@ -3619,6 +3648,7 @@
       RETURN      
       END 
       INTEGER FUNCTION BISRCH (N,K,L) 
+      implicit none
 !       
 ! ... BISRCH IS AN INTEGER FUNCTION WHICH USES A BISECTION SEARCH   
 !     TO FIND THE ENTRY J IN THE ARRAY K SUCH THAT THE VALUE L IS   
@@ -3668,6 +3698,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION CHEBY (QA,QT,RRR,IP,CME,SME)
+      implicit none
 !       
 !     COMPUTES THE SOLUTION TO THE CHEBYSHEV EQUATION     
 !       
@@ -3699,6 +3730,7 @@
       RETURN      
       END 
       SUBROUTINE CHGCON (TRI,GAMOLD,RHOOLD,IBMTH) 
+      implicit none
 !       
 !     COMPUTES THE NEW ESTIMATE FOR THE LARGEST EIGENVALUE FOR      
 !     CONJUGATE GRADIENT ACCELERATION.
@@ -3839,6 +3871,7 @@
       RETURN      
       END 
       SUBROUTINE CHGSI (DTNRM,IBMTH)  
+      implicit none
 !       
 ! ... COMPUTES NEW CHEBYSHEV ACCELERATION PARAMETERS ADAPTIVELY.    
 !       
@@ -4010,6 +4043,7 @@
 !       
       END 
       LOGICAL FUNCTION CHGSME (OLDNRM,ICNT)     
+      implicit none
 !       
 ! ... THIS FUNCTION TESTS FOR JACOBI SI WHETHER SME SHOULD BE CHANGED 
 ! ... WHEN CASEII = .FALSE..  IF THE TEST IS POSITIVE THE NEW VALUE 
@@ -4097,6 +4131,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION DETERM (N,TRI,XLMDA)      
+      implicit none
 !       
 !     THIS SUBROUTINE COMPUTES THE DETERMINANT OF A SYMMETRIC       
 !     TRIDIAGONAL MATRIX GIVEN BY TRI. DET(TRI - XLMDA*I) = 0       
@@ -4138,6 +4173,7 @@
       RETURN      
       END 
       SUBROUTINE DFAULT (IPARM,RPARM) 
+      implicit none
 !       
 ! ... THIS SUBROUTINE SETS THE DEFAULT VALUES OF IPARM AND RPARM.   
 !       
@@ -4227,6 +4263,7 @@
       RETURN      
       END 
       SUBROUTINE ECHALL (NN,IA,JA,A,RHS,IPARM,RPARM,ICALL)
+      implicit none
 !       
 ! ... THIS ROUTINE INITIALIZES THE ITPACK COMMON BLOCKS FROM THE    
 ! ... INFORMATION CONTAINED IN IPARM AND RPARM. ECHALL ALSO PRINTS THE
@@ -4368,6 +4405,7 @@
       RETURN      
       END 
       SUBROUTINE ECHOUT (IPARM,RPARM,IMTHD)     
+      implicit none
 !       
 !     THIS ROUTINE INITIALIZES THE ITPACK COMMON BLOCKS FROM THE    
 !     INFORMATION CONTAINED IN IPARM AND RPARM. 
@@ -4500,6 +4538,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION EIGVNS (N,TRI,D,E2,IER)   
+      implicit none
 !       
 !     COMPUTES THE LARGEST EIGENVALUE OF A SYMMETRIC TRIDIAGONAL MATRIX 
 !     FOR CONJUGATE GRADIENT ACCELERATION.      
@@ -4536,6 +4575,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION EIGVSS (N,TRI,START,ZETA,ITMAX,IER) 
+      implicit none
 !       
 !     COMPUTES THE LARGEST EIGENVALUE OF A SYMMETRIC TRIDIAGONAL MATRIX 
 !     FOR CONJUGATE GRADIENT ACCELERATION.      
@@ -4575,6 +4615,7 @@
       RETURN      
       END 
       SUBROUTINE EQRT1S (D,E2,NN,M,ISW,IERR)    
+      implicit none
 !       
 !   MODIFIED IMSL ROUTINE NAME   - EQRT1S       
 !       
@@ -4793,6 +4834,7 @@
       RETURN      
       END 
       INTEGER FUNCTION IPSTR (OMEGA)  
+      implicit none
 !       
 !     FINDS THE SMALLEST INTEGER, IPSTR, GREATER THAN 5 SUCH THAT   
 !          IPSTR * (OMEGA-1)**(IPSTR-1) .LE. 0.50. IPSTR WILL BE SET
@@ -4823,6 +4865,7 @@
 !       
       END 
       SUBROUTINE ITERM (NN,A,U,WK,IMTHDD)       
+      implicit none
 !       
 !     THIS ROUTINE PRODUCES THE ITERATION SUMMARY LINE AT THE END   
 !     OF EACH ITERATION. IF LEVEL = 5, THE LATEST APPROXIMATION     
@@ -5002,6 +5045,7 @@
       RETURN      
       END 
       SUBROUTINE IVFILL (N,IV,IVAL)   
+      implicit none
 !       
 !     FILLS AN INTEGER VECTOR, IV, WITH AN INTEGER VALUE, IVAL.     
 !       
@@ -5047,6 +5091,7 @@
       RETURN      
       END 
       SUBROUTINE OMEG (DNRM,IFLAG)    
+      implicit none
 !       
 !     COMPUTES NEW VALUES FOR  CME, OMEGA, AND SPECR FOR  
 !     FULLY ADAPTIVE SSOR METHODS.    
@@ -5135,6 +5180,7 @@
       RETURN      
       END 
       LOGICAL FUNCTION OMGCHG (NDUMMY)
+      implicit none
 !       
 ! ... THIS FUNCTION TESTS TO SEE WHETHER OMEGA SHOULD BE CHANGED    
 ! ... FOR SSOR CG METHOD.   
@@ -5187,6 +5233,7 @@
       RETURN      
       END 
       LOGICAL FUNCTION OMGSTR (NDUMMY)
+      implicit none
 !       
 !     TESTS FOR FULLY ADAPTIVE SSOR METHODS WHETHER OMEGA-STAR      
 !     SHOULD BE USED FOR OMEGA AND THE ADAPTIVE PROCESS TURNED      
@@ -5262,6 +5309,7 @@
       RETURN      
       END 
       SUBROUTINE PARCON (DTNRM,C1,C2,C3,C4,GAMOLD,RHOTMP,IBMTH)     
+      implicit none
 !       
 !     COMPUTES ACCELERATION PARAMETERS FOR CONJUGATE GRADIENT       
 !     ACCELERATED METHODS.  
@@ -5345,6 +5393,7 @@
       RETURN      
       END 
       SUBROUTINE PARSI (C1,C2,C3,IBMTH) 
+      implicit none
 !       
 !     COMPUTES ACCELERATION PARAMETERS FOR SEMI-ITERATIVE 
 !     ACCELERATED METHODS.  
@@ -5433,6 +5482,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION PBETA (NN,IA,JA,A,V,W1,W2)
+      implicit none
 !       
 !     ... COMPUTES THE NUMERATOR FOR THE COMPUTATION OF BETAB IN    
 !     ...  SSOR METHODS.    
@@ -5540,6 +5590,7 @@
 !       
       END 
       SUBROUTINE PBSOR (NN,IA,JA,A,U,RHS)       
+      implicit none
 !       
 !     ... THIS SUBROUTINE COMPUTES A BACKWARD SOR SWEEP.  
 !       
@@ -5629,6 +5680,8 @@
 !       
       END 
       SUBROUTINE PERMAT (NN,IA,JA,A,P,NEWIA,ISYM,LEVEL,NOUT,IERR)   
+      implicit none
+      INTEGER LEVEL, NOUT
 !       
 !*********************************************************************
 !       
@@ -5828,6 +5881,7 @@
       RETURN      
       END 
       SUBROUTINE PERROR1 (NN,IA,JA,A,RHS,U,W,DIGTT1,DIGTT2,IDGTTS)   
+      implicit none
 !       
 !     PERROR1 COMPUTES THE RESIDUAL, R = RHS - A*U.  THE USER
 !     ALSO HAS THE OPTION OF PRINTING THE RESIDUAL AND/OR THE       
@@ -5921,6 +5975,7 @@
       RETURN      
       END 
       SUBROUTINE PERVEC (N,V,P)       
+      implicit none
 !       
 !     THIS SUBROUTINE PERMUTES A D.P. VECTOR AS DICTATED BY THE     
 !     PERMUTATION VECTOR, P.  IF P(I) = J, THEN V(J) GETS V(I).     
@@ -5968,6 +6023,7 @@
       RETURN      
       END 
       SUBROUTINE PFSOR (NN,IA,JA,A,U,RHS)       
+      implicit none
 !       
 !         THIS SUBROUTINE COMPUTES A FORWARD SOR SWEEP.   
 !       
@@ -6050,6 +6106,7 @@
 !       
       END 
       SUBROUTINE PFSOR1 (NN,IA,JA,A,U,RHS)      
+      implicit none
 !       
 !         THIS SUBROUTINE COMPUTES A FORWARD SOR SWEEP ON U AND     
 !         COMPUTES THE NORM OF THE PSEUDO-RESIDUAL VECTOR.
@@ -6140,6 +6197,7 @@
 !       
       END 
       SUBROUTINE PJAC (NN,IA,JA,A,U,RHS)
+      implicit none
 !       
 !     ... THIS SUBROUTINE PERFORMS ONE JACOBI ITERATION.  
 !       
@@ -6217,6 +6275,8 @@
 !       
       END 
       SUBROUTINE PMULT (NN,IA,JA,A,U,W) 
+      implicit none
+      INTEGER JAJJ
 !       
 !     ... THIS SUBROUTINE PERFORMS ONE MATRIX-VECTOR MULTIPLICATION.
 !       
@@ -6294,6 +6354,8 @@
 !       
       END 
       SUBROUTINE PRBNDX (NN,NBLACK,IA,JA,P,IP,LEVEL,NOUT,IER)       
+      implicit none
+      INTEGER LEVEL, NOUT
 !       
 !**************************************************************     
 !       
@@ -6537,6 +6599,7 @@
       RETURN      
       END 
       SUBROUTINE PRSBLK (NNB,NNR,IA,JA,A,UR,VB) 
+      implicit none
 !       
 ! ... COMPUTE A BLACK-RS SWEEP ON A RED VECTOR INTO A BLACK VECTOR  
 !       
@@ -6613,6 +6676,7 @@
       RETURN      
       END 
       SUBROUTINE PRSRED (NNB,NNR,IA,JA,A,UB,VR) 
+      implicit none
 !       
 ! ... COMPUTES A RED-RS SWEEP ON A BLACK VECTOR INTO A RED VECTOR.  
 !       
@@ -6652,6 +6716,7 @@
       RETURN      
       END 
       SUBROUTINE PSSOR1 (NN,IA,JA,A,U,RHS,FR,BR)
+      implicit none
 !       
 !     ... COMPUTES COMPLETE SSOR SWEEP ON U.  U IS OVERWRITTEN      
 !     ... WITH THE NEW ITERANT, FR AND BR WILL CONTAIN    
@@ -6763,6 +6828,7 @@
 !       
       END 
       SUBROUTINE PSTOP (N,U,DNRM,CCON,IFLAG,Q1) 
+      implicit none
 !       
 !     THIS SUBROUTINE PERFORMS A TEST TO SEE IF THE ITERATIVE       
 !     METHOD HAS CONVERGED TO A SOLUTION INSIDE THE ERROR 
@@ -6851,6 +6917,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION PVTBV (N,IA,JA,A,V)       
+      implicit none
 !       
 !     THIS FUNCTION COMPUTES  (V**T)*A*V.       
 !       
@@ -6908,6 +6975,8 @@
       RETURN      
       END 
       SUBROUTINE QSORT (NN,KEY,DATA,ERROR)      
+      implicit none
+      INTEGER LFRH2
 !       
 !     ==================================================================
 !       
@@ -7165,6 +7234,7 @@
 !       
       END 
       SUBROUTINE SBAGN (N,NZ,IA,JA,A,IWORK,LEVELL,NOUTT,IERR)       
+      implicit none
 !       
 ! ... THE ROUTINES SBINI, SBSIJ, AND SBEND CREATE A SPARSE
 !     MATRIX STRUCTURE BY MEANS OF A LINKED LIST WHICH IS 
@@ -7264,6 +7334,8 @@
       RETURN      
       END 
       SUBROUTINE SBELM (NN,IA,JA,A,RHS,IW,RW,TOL,ISYM,LEVEL,NOUT,IER) 
+      implicit none
+      INTEGER II
 !       
 ! ... SBELM IS DESIGNED TO REMOVE ROWS AND COLUMNS OF THE MATRIX    
 ! ... WHERE DABS(A(I,J))/A(I,I) .LE. TOL FOR J = 1 TO N AND A(I,I)  
@@ -7451,6 +7523,7 @@
       RETURN      
       END 
       SUBROUTINE SBEND (N,NZ,IA,JA,A,IWORK)     
+      implicit none
 !       
 !***********************************************************************
 !       
@@ -7642,6 +7715,7 @@
       RETURN      
       END 
       SUBROUTINE SBINI (N,NZ,IA,JA,A,IWORK)     
+      implicit none
 !       
 !***********************************************************************
 !       
@@ -7694,6 +7768,7 @@
       END 
       SUBROUTINE SBSIJ (N,NZ,IA,JA,A,IWORK,II,JJ,VALL,MODE,LEVELL,NOUTT, &
      &   IERR)    
+     implicit none
 !       
 !***********************************************************************
 !       
@@ -7867,6 +7942,7 @@
       RETURN      
       END 
       SUBROUTINE SCAL (NN,IA,JA,A,RHS,U,D,LEVEL,NOUT,IER) 
+      implicit none
 !       
 ! ... ORIGINAL MATRIX IS SCALED TO A UNIT DIAGONAL MATRIX.  RHS     
 ! ... AND U ARE SCALED ACCORDINGLY.  THE MATRIX IS THEN SPLIT AND   
@@ -7976,6 +8052,8 @@
       RETURN      
       END 
       SUBROUTINE SUM3 (N,C1,X1,C2,X2,C3,X3)     
+      implicit none
+      INTEGER N
 !       
 ! ... COMPUTES X3 = C1*X1 + C2*X2 + C3*X3       
 !       
@@ -8025,6 +8103,7 @@
       RETURN      
       END 
       DOUBLE PRECISION FUNCTION TAU (II)
+      implicit none
 !       
 ! ... THIS SUBROUTINE SETS TAU(II) FOR THE SOR METHOD.    
 !       
@@ -8049,6 +8128,8 @@
       RETURN      
       END 
       FUNCTION TIMER (TIMDMY) 
+      implicit none
+      REAL TARRAY(2), TOTAL
 !
 ! ... TIMER IS A ROUTINE TO RETURN THE EXECUTION TIME IN
 ! ... SECONDS.
@@ -8073,7 +8154,6 @@
 ! ... UNIX ETIME FACILITY.
 !
       EXTERNAL ETIME
-      DIMENSION TARRAY(2)
       REAL ETIME, TIMER
 !      TOTAL = ETIME (TARRAY)	!ggu
       TOTAL = 0
@@ -8086,6 +8166,7 @@
       RETURN
       END 
       LOGICAL FUNCTION TSTCHG (IBMTH) 
+      implicit none
 !       
 !     THIS FUNCTION PERFORMS A TEST TO DETERMINE IF PARAMETERS      
 !     SHOULD BE CHANGED FOR SEMI-ITERATION ACCELERATED METHODS.     
@@ -8144,6 +8225,7 @@
 !       
       END 
       SUBROUTINE UNSCAL (N,IA,JA,A,RHS,U,D)     
+      implicit none
 !       
 ! ... THIS SUBROUTINE REVERSES THE PROCESS OF SCAL.       
 !       
@@ -8211,6 +8293,7 @@
       RETURN      
       END 
       SUBROUTINE VEVMW (N,V,W)
+      implicit none
 !       
 ! ... VEVMW COMPUTES V = V - W
 !       
@@ -8249,6 +8332,7 @@
 !       
       END 
       SUBROUTINE VEVPW (N,V,W)
+      implicit none
 !       
 ! ... VPW COMPUTES    V = V + W       
 !       
@@ -8287,6 +8371,7 @@
       RETURN      
       END 
       SUBROUTINE VFILL (N,V,VAL)      
+      implicit none
 !       
 !     FILLS A VECTOR, V, WITH A CONSTANT VALUE, VAL.      
 !       
@@ -8333,6 +8418,7 @@
       RETURN      
       END 
       SUBROUTINE VOUT (N,V,ISWT,NOUTT)
+      implicit none
 !       
 !     THIS SUBROUTINE EFFECTS PRINTING OF RESIDUAL AND SOLUTION     
 !     VECTORS - CALLED FROM PERROR1    
@@ -8376,6 +8462,7 @@
       RETURN      
       END 
       SUBROUTINE WEVMW (N,V,W)
+      implicit none
 !       
 ! ... WEVMW COMPUTES W = V - W
 !       
@@ -8413,6 +8500,8 @@
       RETURN      
       END 
       SUBROUTINE ZBRENT (N,TRI,EPS,NSIG,AA,BB,MAXFNN,IER) 
+      implicit none
+      INTEGER N
 !       
 !   MODIFIED IMSL ROUTINE NAME   - ZBRENT       
 !       
@@ -8654,3 +8743,4 @@
       MAXFNN = MAXFN
       RETURN      
       END 
+! MARKER_1776261347
