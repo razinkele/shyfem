@@ -124,7 +124,7 @@ def compute_track_stats(tracks: list) -> list[dict]:
 
 
 @module.ui
-def ibm_ui():
+def ibm_ui() -> ui.Tag:
     """IBM particle tracking page UI."""
     if MapWidget is None:
         return ui.div(
@@ -218,7 +218,7 @@ def ibm_server(
     session,
     config: Config,
     active_project: reactive.Value,
-):
+) -> None:
     """IBM page server logic."""
     if MapWidget is None:
         return

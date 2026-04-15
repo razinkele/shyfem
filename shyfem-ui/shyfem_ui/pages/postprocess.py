@@ -112,7 +112,7 @@ def _format_size(size: int) -> str:
 
 
 @module.ui
-def postprocess_ui():
+def postprocess_ui() -> ui.Tag:
     """Post-processing page UI."""
     return ui.div(
         ui.h3("Post-Processing"),
@@ -230,7 +230,7 @@ def postprocess_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
-):
+) -> None:
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
@@ -992,7 +992,7 @@ def postprocess_server(
 
 def _register_preset(
     preset_key, preset_info, input, config, wrapper, log_content, generated_files, batch_results
-):
+) -> None:
     """Register a preset button handler. Must be called in a loop to capture closure."""
 
     @reactive.effect

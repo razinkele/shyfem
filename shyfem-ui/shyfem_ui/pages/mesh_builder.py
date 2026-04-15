@@ -45,7 +45,7 @@ _STEPS = {
 # ---------------------------------------------------------------------------
 
 
-def _step_import_panel():
+def _step_import_panel() -> ui.Tag:
     """Step 1 UI — static panel content."""
     return ui.nav_panel(
         "import",
@@ -77,7 +77,7 @@ def _step_import_panel():
     )
 
 
-def _step_refine_panel():
+def _step_refine_panel() -> ui.Tag:
     """Step 2 UI — static panel content."""
     return ui.nav_panel(
         "refine",
@@ -89,7 +89,7 @@ def _step_refine_panel():
     )
 
 
-def _step_mesh_panel():
+def _step_mesh_panel() -> ui.Tag:
     """Step 3 UI — static panel content."""
     return ui.nav_panel(
         "mesh",
@@ -127,7 +127,7 @@ def _step_mesh_panel():
     )
 
 
-def _step_bathy_panel():
+def _step_bathy_panel() -> ui.Tag:
     """Step 4 UI — static panel content."""
     return ui.nav_panel(
         "bathy",
@@ -243,7 +243,7 @@ def _step_bathy_panel():
     )
 
 
-def _step_export_panel():
+def _step_export_panel() -> ui.Tag:
     """Step 5 UI — static panel content."""
     return ui.nav_panel(
         "export",
@@ -272,7 +272,7 @@ def _step_export_panel():
 
 
 @module.ui
-def mesh_builder_ui():
+def mesh_builder_ui() -> ui.Tag:
     """Mesh builder page UI — 5-step wizard."""
     return ui.div(
         ui.h3("Mesh Builder"),
@@ -334,7 +334,7 @@ def mesh_builder_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
-):
+) -> None:
     """Mesh builder page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 

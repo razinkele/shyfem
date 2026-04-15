@@ -102,30 +102,80 @@ def _check_admin_access(user: dict | None) -> bool:
 
 
 @module.ui
-def admin_ui():
+def admin_ui() -> ui.Tag:
     """Admin panel UI."""
     return ui.div(
-        ui.h3("User Management"),
+        ui.h3("Administration"),
         ui.hr(),
-        ui.row(
-            ui.column(
-                3,
+        ui.navset_tab(
+            ui.nav_panel(
+                "Users",
                 ui.div(
-                    ui.output_ui("user_summary"),
-                    ui.hr(),
-                    ui.input_action_button(
-                        "create_user_btn", "Create User", class_="btn-primary w-100"
+                    ui.row(
+                        ui.column(
+                            3,
+                            ui.div(
+                                ui.output_ui("user_summary"),
+                                ui.hr(),
+                                ui.input_action_button(
+                                    "create_user_btn", "Create User", class_="btn-primary w-100"
+                                ),
+                                class_="card p-3",
+                            ),
+                        ),
+                        ui.column(
+                            9,
+                            ui.div(
+                                ui.output_ui("user_table"),
+                                class_="card p-3",
+                            ),
+                        ),
                     ),
-                    class_="card p-3",
+                    class_="mt-3",
                 ),
             ),
-            ui.column(
-                9,
+            ui.nav_panel(
+                "Logs",
                 ui.div(
-                    ui.output_ui("user_table"),
-                    class_="card p-3",
+                    ui.row(
+                        ui.column(
+                            3,
+                            ui.div(
+                                ui.h6("Filters"),
+                                ui.input_select(
+                                    "log_user_filter", "User",
+                                    choices={"": "All users"},
+                                ),
+                                ui.input_select(
+                                    "log_action_filter", "Action",
+                                    choices={"": "All actions"},
+                                ),
+                                ui.input_action_button(
+                                    "log_refresh_btn", "Refresh", class_="btn-outline-secondary w-100 mt-2"
+                                ),
+                                ui.hr(),
+                                ui.output_ui("log_summary"),
+                                class_="card p-3",
+                            ),
+                        ),
+                        ui.column(
+                            9,
+                            ui.div(
+                                ui.output_ui("log_table"),
+                                ui.div(
+                                    ui.input_action_button("log_prev_btn", "Previous", class_="btn-sm btn-outline-secondary me-2"),
+                                    ui.output_ui("log_page_info"),
+                                    ui.input_action_button("log_next_btn", "Next", class_="btn-sm btn-outline-secondary ms-2"),
+                                    class_="d-flex align-items-center justify-content-center mt-3",
+                                ),
+                                class_="card p-3",
+                            ),
+                        ),
+                    ),
+                    class_="mt-3",
                 ),
             ),
+            id="admin_tabs",
         ),
     )
 
@@ -136,9 +186,16 @@ def admin_ui():
 
 
 @module.server
-def admin_server(input, output, session, config: Config, auth_service: AuthService, user_role=None):
+def admin_server(input, output, session, config: Config, auth_service: AuthService, user_role=None, audit_service=None) -> None:
     """Admin panel server logic."""
     from shyfem_ui.middleware.session_auth import get_current_user
+
+    def _audit(action: str, detail: str | None = None):
+        """Write an audit log entry for the current admin user."""
+        if audit_service is not None:
+            user = get_current_user()
+            username = user["username"] if user else "unknown"
+            audit_service.log(username=username, action=action, detail=detail)
 
     def _is_admin() -> bool:
         """Check admin access reactively.
@@ -313,6 +370,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                 return
             try:
                 auth_service.reset_password(user_id, new_pw)
+                _audit("reset_password", f"target={username}")
                 ui.modal_remove()
                 ui.notification_show(f"Password reset for '{username}'", type="message", duration=4)
             except Exception as e:
@@ -329,6 +387,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                 new_active = not user.get("is_active", True)
                 auth_service.update_user(user_id, is_active=new_active)
                 status = "activated" if new_active else "deactivated"
+                _audit(f"user_{status}", f"target={username}")
                 ui.notification_show(f"User '{username}' {status}", type="message", duration=4)
                 _refresh()
             except Exception as e:
@@ -351,6 +410,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                     new_role = "user"  # promote tutorial to user first
                 auth_service.update_user(user_id, role=new_role)
                 action = "demoted to user" if new_role == "user" else "promoted to admin"
+                _audit("change_role", f"target={username}, new_role={new_role}")
                 ui.notification_show(f"User '{username}' {action}", type="message", duration=4)
                 _refresh()
             except Exception as e:
@@ -410,6 +470,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         def _do_delete_user():
             try:
                 auth_service.delete_user(user_id)
+                _audit("delete_user", f"target={username}")
                 ui.modal_remove()
                 ui.notification_show(f"User '{username}' deleted", type="message", duration=4)
                 _refresh()
@@ -482,6 +543,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
                 email=email,
                 user_data_root=config.user_data_root,
             )
+            _audit("create_user", f"target={clean_username}, role={role}")
             ui.modal_remove()
             home_path = config.user_data_root / clean_username if role != "tutorial" else None
             if home_path:
@@ -502,3 +564,124 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         except Exception as exc:
             logger.exception("Failed to create user")
             ui.notification_show(f"Error creating user: {exc}", type="error", duration=5)
+
+    # ------------------------------------------------------------------
+    # Audit log viewer
+    # ------------------------------------------------------------------
+
+    _LOG_PAGE_SIZE = 50
+    log_page: reactive.Value[int] = reactive.value(0)
+    log_trigger: reactive.Value[int] = reactive.value(0)
+
+    @reactive.effect
+    def _populate_log_filters():
+        """Populate the user and action filter dropdowns."""
+        if not _is_admin() or audit_service is None:
+            return
+        users = auth_service.list_users()
+        user_choices = {"": "All users"}
+        user_choices.update({u["username"]: u["username"] for u in users})
+        ui.update_select("log_user_filter", choices=user_choices)
+
+        actions = audit_service.distinct_actions()
+        action_choices = {"": "All actions"}
+        action_choices.update({a: a for a in actions})
+        ui.update_select("log_action_filter", choices=action_choices)
+
+    @reactive.effect
+    @reactive.event(input.log_refresh_btn)
+    def _on_log_refresh():
+        log_page.set(0)
+        log_trigger.set(log_trigger.get() + 1)
+
+    @reactive.effect
+    @reactive.event(input.log_prev_btn)
+    def _on_log_prev():
+        if log_page.get() > 0:
+            log_page.set(log_page.get() - 1)
+
+    @reactive.effect
+    @reactive.event(input.log_next_btn)
+    def _on_log_next():
+        log_page.set(log_page.get() + 1)
+
+    @render.ui
+    def log_summary():
+        if not _is_admin() or audit_service is None:
+            return ui.div()
+        _ = log_trigger.get()
+        user_filter = input.log_user_filter() or None
+        action_filter = input.log_action_filter() or None
+        total = audit_service.count(username=user_filter, action=action_filter)
+        return ui.div(
+            ui.h6("Log Stats"),
+            ui.p(f"Total entries: {total}"),
+        )
+
+    @render.ui
+    def log_page_info():
+        if not _is_admin() or audit_service is None:
+            return ui.span()
+        _ = log_trigger.get()
+        page = log_page.get()
+        user_filter = input.log_user_filter() or None
+        action_filter = input.log_action_filter() or None
+        total = audit_service.count(username=user_filter, action=action_filter)
+        total_pages = max(1, (total + _LOG_PAGE_SIZE - 1) // _LOG_PAGE_SIZE)
+        return ui.span(f"Page {page + 1} of {total_pages}", class_="mx-2 text-muted")
+
+    @render.ui
+    def log_table():
+        if not _is_admin() or audit_service is None:
+            return ui.p("Audit logging is not available.", class_="text-muted")
+        _ = log_trigger.get()
+        page = log_page.get()
+        user_filter = input.log_user_filter() or None
+        action_filter = input.log_action_filter() or None
+
+        entries = audit_service.query(
+            username=user_filter,
+            action=action_filter,
+            limit=_LOG_PAGE_SIZE,
+            offset=page * _LOG_PAGE_SIZE,
+        )
+        if not entries:
+            return ui.p("No log entries found.", class_="text-muted")
+
+        action_badge_cls = {
+            "login": "bg-success",
+            "logout": "bg-secondary",
+            "login_failed": "bg-danger",
+            "create_user": "bg-primary",
+            "delete_user": "bg-danger",
+            "reset_password": "bg-warning text-dark",
+            "change_role": "bg-info text-dark",
+        }
+
+        rows = []
+        for e in entries:
+            badge_cls = action_badge_cls.get(e["action"], "bg-secondary")
+            action_html = f'<span class="badge {badge_cls}">{e["action"]}</span>'
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(e["timestamp"], style="white-space:nowrap;font-size:0.85em;"),
+                    ui.tags.td(e["username"]),
+                    ui.tags.td(ui.HTML(action_html)),
+                    ui.tags.td(e["detail"], style="font-size:0.85em;"),
+                    ui.tags.td(e["ip_address"], style="font-size:0.85em;"),
+                )
+            )
+
+        return ui.tags.table(
+            ui.tags.thead(
+                ui.tags.tr(
+                    ui.tags.th("Timestamp"),
+                    ui.tags.th("User"),
+                    ui.tags.th("Action"),
+                    ui.tags.th("Detail"),
+                    ui.tags.th("IP"),
+                )
+            ),
+            ui.tags.tbody(*rows),
+            class_="table table-hover table-sm",
+        )

@@ -211,7 +211,7 @@ def build_panel_params(str_file: StrFile, panel_id: str) -> dict:
 
 
 @module.ui
-def physics_ui():
+def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
     return ui.div(
         ui.h3("Physics Configuration"),
@@ -256,7 +256,7 @@ def physics_ui():
 
 
 @module.server
-def physics_server(input, output, session, config: Config, active_project=None):
+def physics_server(input, output, session, config: Config, active_project=None) -> None:
     """Physics configuration page server."""
 
     str_data: reactive.Value[StrFile] = reactive.Value(StrFile())

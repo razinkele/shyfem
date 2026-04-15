@@ -5,6 +5,7 @@ dependencies (plotly, numpy, shinywidgets) at startup.
 """
 
 import importlib
+import types
 
 __all__ = [
     "home",
@@ -27,7 +28,7 @@ __all__ = [
 _modules: dict = {}
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> types.ModuleType:
     if name in __all__:
         if name not in _modules:
             _modules[name] = importlib.import_module(f"shyfem_ui.pages.{name}")

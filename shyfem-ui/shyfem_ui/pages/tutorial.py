@@ -237,7 +237,7 @@ def _render_progress_bar(completed: int, total: int) -> ui.Tag:
 
 
 @module.ui
-def tutorial_ui():
+def tutorial_ui() -> ui.Tag:
     """Tutorial page UI -- two-column with phase navigator and step content."""
     return ui.layout_columns(
         # Left: phase navigator
@@ -268,7 +268,7 @@ def tutorial_server(
     active_project,
     nav_callback=None,
     tutorial_context=None,
-):
+) -> None:
     """Tutorial page server logic."""
 
     # Reactive state --------------------------------------------------------

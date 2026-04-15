@@ -31,7 +31,7 @@ def _safe_filename(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
 
 
-def get_visible_projects(db, user_id: int, role: str, limit: int = 10):
+def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
     """Return projects visible to a user based on ownership and permissions.
 
     Admins see all projects. Regular users see their own projects
@@ -84,7 +84,7 @@ def _build_permissions_table_data(permissions: list[dict]) -> list[dict]:
 
 
 @module.ui
-def home_ui():
+def home_ui() -> ui.Tag:
     """Dashboard page UI — rich metrics, project cards, activity timeline."""
     return ui.div(
         # Welcome header
@@ -234,7 +234,7 @@ def home_server(
     job_queue: JobQueue | None = None,
     active_project=None,
     nav_callback=None,
-):
+) -> None:
     """Dashboard page server logic."""
     projects = reactive.value([])
     recent_jobs_list = reactive.value([])

@@ -195,7 +195,10 @@
 	double precision xlon1,ylat1,xlon2,ylat2,xlon3,ylat3	!lat/long [rad]
 	double precision dlat0,dlon0			!center of projection
 
-	if( .not. basin_has_basin() ) goto 97
+	if( .not. basin_has_basin() ) then
+          write(6,*) 'no basin has been read'
+	  stop 'error stop set_ev: no basin'
+	end if
 
 	call ev_init(nel)	!initializes ev array
 
@@ -258,7 +261,11 @@
 	a3=x1*y2-x2*y1
 	!aj=a1+a2+a3
 	aj = (x2-x1)*(y3-y1) - (x3-x1)*(y2-y1)		!bug_f_64bit
-        if( aj <= 0 ) goto 96
+        if( aj <= 0 ) then
+          write(6,*) ie,aj
+          write(6,*) x1,x2,x3,y1,y2,y3
+          stop 'error stop set_ev: internal error (3)'
+        end if
 	aji=one/aj
 	b1=(y2-y3)*aji
 	c1=(x3-x2)*aji
@@ -289,7 +296,15 @@
 	  write(6,*) '============ ev debug end =================='
 	end if
 
-	if(aj.le.0.) goto 99
+	if(aj.le.0.) then
+          write(6,*) 'set_ev : nodes not in anticlockwise sense'
+          write(6,*) 'elem = ',ie,'  area = ',aj/2.,'  aj = ',aj
+          write(6,*) 'nodes  x  y'
+          write(6,*) kn1,x1,y1
+          write(6,*) kn2,x2,y2
+          write(6,*) kn3,x3,y3
+	  stop 'error stop set_ev: clockwise'
+	end if
 
 	ss1=(x3-x2)*(x3-x2)+(y3-y2)*(y3-y2)
 	s1=sqrt(ss1)
@@ -330,24 +345,7 @@
 
 	end do
 
-	!write(68,*) 'maxmax: ',maxmax
-
 	return
-   96	continue
-        write(6,*) ie,aj
-        write(6,*) x1,x2,x3,y1,y2,y3
-        stop 'error stop set_ev: internal error (3)'
-   97	continue
-        write(6,*) 'no basin has been read'
-	stop 'error stop set_ev: no basin'
-   99	continue
-        write(6,*) 'set_ev : nodes not in anticlockwise sense'
-        write(6,*) 'elem = ',ie,'  area = ',aj/2.,'  aj = ',aj
-        write(6,*) 'nodes  x  y'
-        write(6,*) kn1,x1,y1
-        write(6,*) kn2,x2,y2
-        write(6,*) kn3,x3,y3
-	stop 'error stop set_ev: clockwise'
 	end
 
 !****************************************************************
@@ -500,25 +498,44 @@
 	  end do
 
 	  ip=1
-	  if(ev(10,ie) .le. 0.) goto 99
+	  if(ev(10,ie) .le. 0.) then
+	    call check_ev_error(ip,ie,ev,evdim,alpha,bmax,cmax,bs,cs)
+	  end if
 	  ip=2
-	  if(bmax.le.0. .or. abs(bs)/bmax.gt.eps) goto 99
-	  if(cmax.le.0. .or. abs(cs)/cmax.gt.eps) goto 99
+	  if(bmax.le.0. .or. abs(bs)/bmax.gt.eps) then
+	    call check_ev_error(ip,ie,ev,evdim,alpha,bmax,cmax,bs,cs)
+	  end if
+	  if(cmax.le.0. .or. abs(cs)/cmax.gt.eps) then
+	    call check_ev_error(ip,ie,ev,evdim,alpha,bmax,cmax,bs,cs)
+	  end if
 	  ip=3
-	  if( abs(alpha-atria)/180. .gt. eps ) goto 99
+	  if( abs(alpha-atria)/180. .gt. eps ) then
+	    call check_ev_error(ip,ie,ev,evdim,alpha,bmax,cmax,bs,cs)
+	  end if
 
 	end do
 
 	write(6,*) 'test of ev passed...'
 
 	return
-   99	continue
+	end
+
+!***********************************************************
+
+	subroutine check_ev_error(ip,ie,ev,evdim,alpha,bmax,cmax,bs,cs)
+
+	implicit none
+	integer, intent(in) :: ip,ie,evdim
+	double precision, intent(in) :: ev(evdim,*)
+	real, intent(in) :: alpha,bmax,cmax,bs,cs
+	integer :: i
+
 	write(6,*) 'error: ',ip
 	write(6,*) 'ie,area,alpha: ',ie,ev(10,ie),alpha
 	write(6,*) 'bmax,cmax,bs,cs: ',bmax,cmax,bs,cs
 	write(6,*) 'ev: ',(ev(i,ie),i=1,evdim)
 	stop 'error stop check_ev: errors in array ev'
-	end
+	end subroutine check_ev_error
 
 !***********************************************************
 !***********************************************************
@@ -698,7 +715,16 @@
 	  end do
 	end if
 
-        if( abs(det) < eps ) goto 99
+        if( abs(det) < eps ) then
+	  write(6,*) 'det too small: ',ie,det
+	  write(6,*) i1,i2
+	  write(6,*) x,y
+	  write(6,*) xi
+	  write(6,*) a
+	  write(6,*) b
+	  write(6,*) c
+	  stop 'error stop xi2xy: det == 0'
+	end if
 
 	a1 = (xi(i1)-a(i1))
 	a2 = (xi(i2)-a(i2))
@@ -706,15 +732,6 @@
 	x = -(a1*c(i2) - a2*c(i1)) / det
 
 	return
-   99	continue
-	write(6,*) 'det too small: ',ie,det
-	write(6,*) i1,i2
-	write(6,*) x,y
-	write(6,*) xi
-	write(6,*) a
-	write(6,*) b
-	write(6,*) c
-	stop 'error stop xi2xy: det == 0'
 	end
 	
 !***********************************************************
@@ -767,7 +784,11 @@
 
 	if( na0 == 0 .or. nb0 == 0 ) then	!points must lie on side
 	  write(6,*) 'points not on side of triangle...'
-	  goto 99
+	  write(6,*) 'error in computing distance:'
+	  write(6,*) ia0,ib0,na0,nb0
+	  write(6,*) xia
+	  write(6,*) xib
+	  stop 'error stop xi_dist: generic error'
 	end if
 
 	if( na0 == 2 .and. nb0 == 2 ) then	!line through two vertices
@@ -817,18 +838,16 @@
 	  end if
 	else
 	  write(6,*) 'impossible... internal error'
-	  goto 99
+	  write(6,*) 'error in computing distance:'
+	  write(6,*) ia0,ib0,na0,nb0
+	  write(6,*) xia
+	  write(6,*) xib
+	  stop 'error stop xi_dist: generic error'
 	end if
 
 	l = sqrt( dla**2 + dlb**2 - 2.*dla*dlb*cc )
 
 	return
-   99	continue
-	write(6,*) 'error in computing distance:'
-	write(6,*) ia0,ib0,na0,nb0
-	write(6,*) xia
-	write(6,*) xib
-	stop 'error stop xi_dist: generic error'
 	end
 
 !***********************************************************
@@ -1015,9 +1034,18 @@
 
 	if( vv .eq. 0. ) return
 
-	if( v1 .eq. 0. .and. v2 .eq. 0. ) goto 99
-	if( v1 .eq. 0. .and. v3 .eq. 0. ) goto 99
-	if( v2 .eq. 0. .and. v3 .eq. 0. ) goto 99
+	if( v1 .eq. 0. .and. v2 .eq. 0. ) then
+	  write(6,*) v1,v2,v3
+	  stop 'error stop adjust_bc: internal error'
+	end if
+	if( v1 .eq. 0. .and. v3 .eq. 0. ) then
+	  write(6,*) v1,v2,v3
+	  stop 'error stop adjust_bc: internal error'
+	end if
+	if( v2 .eq. 0. .and. v3 .eq. 0. ) then
+	  write(6,*) v1,v2,v3
+	  stop 'error stop adjust_bc: internal error'
+	end if
 
 	if( v1 .eq. 0. ) then
 	  v2 = v2 - vv/2.
@@ -1036,9 +1064,6 @@
 	end if
 
 	return
-   99	continue
-	write(6,*) v1,v2,v3
-	stop 'error stop adjust_bc: internal error'
 	end
 
 !***********************************************************

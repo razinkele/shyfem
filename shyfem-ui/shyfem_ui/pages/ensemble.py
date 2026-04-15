@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 @module.ui
-def ensemble_ui():
+def ensemble_ui() -> ui.Tag:
     """Ensemble / parameter sweep page UI."""
     return ui.div(
         ui.h3("Ensemble / Parameter Sweep"),
@@ -127,7 +127,7 @@ def ensemble_server(
     config: Config,
     job_queue: JobQueue | None = None,
     active_project=None,
-):
+) -> None:
     """Ensemble page server logic."""
     if job_queue is None:
         queue_mode = "celery" if config.use_celery else "local"

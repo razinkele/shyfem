@@ -30,7 +30,7 @@ _DIFF_TYPE_CLASSES = {
 
 
 @module.ui
-def compare_ui():
+def compare_ui() -> ui.Tag:
     """Job comparison page UI."""
     return ui.div(
         ui.h3("Compare Simulations"),
@@ -103,7 +103,7 @@ def compare_server(
     config: Config,
     job_queue: JobQueue | None = None,
     active_project=None,
-):
+) -> dict:
     """Job comparison page server logic."""
     if job_queue is None:
         queue_mode = "celery" if config.use_celery else "local"

@@ -136,7 +136,7 @@ def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int
 
 
 @module.ui
-def run_ui():
+def run_ui() -> ui.Tag:
     """Job execution page UI."""
     return ui.div(
         ui.h3("Run Simulation"),
@@ -335,7 +335,7 @@ def run_server(
     active_project=None,
     tutorial_context=None,
     user_role=None,
-):
+) -> None:
     """Job execution page server logic."""
     # Initialize job queue if not provided
     if job_queue is None:

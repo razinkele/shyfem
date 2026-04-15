@@ -81,7 +81,7 @@ def _has_tutorial_data() -> bool:
 
 
 @module.ui
-def files_ui():
+def files_ui() -> ui.Tag:
     """Project files page UI."""
     return ui.div(
         ui.h3("Project Files"),
@@ -100,7 +100,7 @@ def files_server(
     session,
     config: Config,
     active_project=None,
-):
+) -> None:
     """Project files page server logic."""
     refresh_trigger = reactive.value(0)
     current_filter = reactive.value(None)
@@ -412,7 +412,7 @@ def files_server(
                 ui.modal_remove()
 
 
-def _register_filter_handler(label, type_val, current_filter, refresh_trigger, input):
+def _register_filter_handler(label, type_val, current_filter, refresh_trigger, input) -> None:
     btn_id = f"filter_{label}"
 
     @reactive.effect

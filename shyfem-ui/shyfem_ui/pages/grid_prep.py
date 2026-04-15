@@ -41,7 +41,7 @@ def grid_stats_to_json(stats: dict, grid_name: str) -> str:
     return json.dumps(payload, indent=4, default=_default)
 
 
-def _get_triangle_vertices(elem, nodes_dict):
+def _get_triangle_vertices(elem, nodes_dict) -> list[int] | None:
     """Extract 3 vertex node IDs from an element, handling the parser quirk.
 
     The .grd format is ``2 id type num_nodes n1 n2 n3 [depth]``, but the
@@ -59,7 +59,7 @@ def _get_triangle_vertices(elem, nodes_dict):
     return None
 
 
-def compute_element_quality(grd):
+def compute_element_quality(grd) -> dict:
     """Compute min-side / max-side quality ratio for each triangle.
 
     Returns:
@@ -107,7 +107,7 @@ def compute_element_quality(grd):
     return {"qualities": qualities, "elem_ids": elem_ids, "stats": stats}
 
 
-def compute_element_areas(grd):
+def compute_element_areas(grd) -> dict:
     """Compute triangle areas using the shoelace formula.
 
     Returns:
@@ -151,7 +151,7 @@ def compute_element_areas(grd):
     return {"areas": areas, "elem_ids": elem_ids, "stats": stats}
 
 
-def compute_min_angles(grd):
+def compute_min_angles(grd) -> dict:
     """Compute the minimum interior angle (degrees) for each triangle.
 
     Uses the law of cosines to find all three angles.
@@ -221,7 +221,7 @@ def compute_min_angles(grd):
     return {"min_angles": min_angles, "elem_ids": elem_ids, "stats": stats}
 
 
-def compute_boundary_summary(grd):
+def compute_boundary_summary(grd) -> list[dict]:
     """Summarize boundary line assignments.
 
     Returns:
@@ -242,7 +242,7 @@ def compute_boundary_summary(grd):
 
 
 @module.ui
-def grid_prep_ui():
+def grid_prep_ui() -> ui.Tag:
     """Grid preparation page UI."""
     return ui.div(
         ui.h3("Grid Preparation"),
@@ -331,7 +331,7 @@ def grid_prep_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
-):
+) -> None:
     """Grid preparation page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 

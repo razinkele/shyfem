@@ -151,7 +151,7 @@ def get_variable_attrs(ds, var_name: str) -> dict:
 
 
 @module.ui
-def visualize_ui():
+def visualize_ui() -> ui.Tag:
     """Visualization page UI."""
     return ui.div(
         ui.h3("Visualization"),
@@ -251,7 +251,7 @@ def visualize_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
-):
+) -> None:
     """Visualization page server logic."""
 
     # Auto-fill from active project

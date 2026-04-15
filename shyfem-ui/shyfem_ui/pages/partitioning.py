@@ -15,7 +15,7 @@ from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 
 @module.ui
-def partitioning_ui():
+def partitioning_ui() -> ui.Tag:
     """Mesh partitioning page UI."""
     return ui.div(
         ui.h3("Mesh Partitioning"),
@@ -116,7 +116,7 @@ def partitioning_server(
     session,
     config: Config,
     active_project=None,
-):
+) -> None:
     """Mesh partitioning page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 

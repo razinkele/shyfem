@@ -411,7 +411,8 @@
      &		stat=ierr)
 	  if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
 	else
-	  allocate(global_buf(1))
+	  allocate(global_buf(1),stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
 	end if
 
 	call MPI_Gatherv(local_buf, nbdy_local*lgr_pack_size,		&

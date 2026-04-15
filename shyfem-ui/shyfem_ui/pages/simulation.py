@@ -13,7 +13,7 @@ from shyfem_ui.services.str_validator import validate_str
 
 
 @module.ui
-def simulation_ui():
+def simulation_ui() -> ui.Tag:
     """Simulation configuration page UI."""
     return ui.div(
         ui.h3("Simulation Configuration"),
@@ -135,7 +135,7 @@ def simulation_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
-):
+) -> None:
     """Simulation configuration page server logic."""
 
     # Auto-fill from active project
