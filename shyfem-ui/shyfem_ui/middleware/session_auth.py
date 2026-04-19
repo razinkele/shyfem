@@ -510,13 +510,14 @@ class SessionAuthMiddleware:
         Default session time-to-live passed to ``create_session``.
     """
 
-    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24, root_path="", use_secure_cookies=False):
+    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24, root_path="", use_secure_cookies=False, audit_service=None):
         self.app = app
         self.auth_service = auth_service
         self.local_mode = local_mode
         self.session_ttl_hours = session_ttl_hours
         self.root_path = root_path.rstrip("/")
         self.use_secure_cookies = use_secure_cookies
+        self.audit_service = audit_service
 
     async def __call__(self, scope, receive, send):
         # ----------------------------------------------------------
@@ -555,7 +556,14 @@ class SessionAuthMiddleware:
 
             # GET /logout -- destroy session
             if path == "/logout" and method == "GET":
-                await self._handle_logout(session_token, send, root_path=root_path)
+                user = None
+                if session_token:
+                    user = self.auth_service.validate_session(session_token)
+                await self._handle_logout(
+                    session_token, send, root_path=root_path,
+                    username=(user or {}).get("username"),
+                    client_ip=self._client_ip(scope),
+                )
                 return
 
             # GET /api/whoami -- return current user as JSON
@@ -623,6 +631,34 @@ class SessionAuthMiddleware:
                 return cookies.get("shyfem_session")
         return None
 
+    @staticmethod
+    def _client_ip(scope) -> str | None:
+        """Return the client IP, preferring X-Forwarded-For when present.
+
+        Behind nginx, the real client IP is in the X-Forwarded-For header;
+        scope["client"][0] is just the upstream proxy.
+        """
+        for header_name, header_value in scope.get("headers", []):
+            if header_name == b"x-forwarded-for":
+                first = header_value.decode("utf-8", errors="replace").split(",", 1)[0]
+                return first.strip() or None
+        client = scope.get("client")
+        if isinstance(client, (tuple, list)) and len(client) >= 1:
+            return client[0]
+        return None
+
+    def _audit(self, username, action, detail=None, ip_address=None):
+        """Best-effort audit log. Never propagates exceptions."""
+        if self.audit_service is None:
+            return
+        try:
+            self.audit_service.log(
+                username=username, action=action,
+                detail=detail, ip_address=ip_address,
+            )
+        except Exception:
+            logger.exception("Failed to write audit log entry")
+
     async def _serve_login_page(self, send, error: str = "", root_path: str = ""):
         """Send the login page HTML as a 200 response."""
         csrf_token = secrets.token_urlsafe(32)
@@ -680,6 +716,11 @@ class SessionAuthMiddleware:
 
         user = self.auth_service.authenticate(username, password)
         if user is None:
+            self._audit(
+                username=username or "<empty>",
+                action="login_failed",
+                ip_address=self._client_ip(scope),
+            )
             error_html = (
                 '<div class="error-alert" role="alert">'
                 "Invalid username or password."
@@ -687,6 +728,12 @@ class SessionAuthMiddleware:
             )
             await self._serve_login_page(send, error=error_html, root_path=root_path)
             return
+
+        self._audit(
+            username=user["username"],
+            action="login_success",
+            ip_address=self._client_ip(scope),
+        )
 
         # Create session and set cookie
         token = self.auth_service.create_session(user["id"], ttl_hours=self.session_ttl_hours)
@@ -710,10 +757,16 @@ class SessionAuthMiddleware:
         )
         await send({"type": "http.response.body", "body": b""})
 
-    async def _handle_logout(self, session_token, send, root_path: str = ""):
+    async def _handle_logout(self, session_token, send, root_path: str = "", username=None, client_ip=None):
         """Delete the session and redirect to /login with cookie cleared."""
         if session_token:
             self.auth_service.delete_session(session_token)
+
+        self._audit(
+            username=username or "unknown",
+            action="logout",
+            ip_address=client_ip,
+        )
 
         cookie_path = root_path or "/"
         cookie = f"shyfem_session=; Path={cookie_path}; HttpOnly; SameSite=Lax; Max-Age=0"

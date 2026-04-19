@@ -621,3 +621,135 @@ class TestMiddlewareRootPath:
 
         await middleware(scope, receive, send)
         assert app_called, "Localhost WS behind proxy should be allowed through"
+
+
+# ------------------------------------------------------------------
+# Audit logging integration
+# ------------------------------------------------------------------
+
+
+class TestMiddlewareAuditLogging:
+
+    def _make_http_scope(self, method, path, body=b"", cookies="", xff=None, client_ip="127.0.0.1"):
+        headers = [(b"content-type", b"application/x-www-form-urlencoded")]
+        if cookies:
+            headers.append((b"cookie", cookies.encode("utf-8")))
+        if xff:
+            headers.append((b"x-forwarded-for", xff.encode("utf-8")))
+        return {
+            "type": "http",
+            "method": method,
+            "path": path,
+            "headers": headers,
+            "client": (client_ip, 12345),
+        }
+
+    @pytest.mark.asyncio
+    async def test_successful_login_emits_audit_event(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = {"id": 1, "username": "alice"}
+        auth_service.create_session.return_value = "tok"
+        audit_service = MagicMock()
+
+        mw = SessionAuthMiddleware(
+            AsyncMock(), auth_service, audit_service=audit_service
+        )
+
+        body = b"username=alice&password=pw&csrf_token=xyz"
+        scope = self._make_http_scope("POST", "/login", cookies="csrf_token=xyz")
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        await mw._handle_login_post(scope, receive, send)
+
+        audit_service.log.assert_called_once()
+        kwargs = audit_service.log.call_args.kwargs
+        assert kwargs["username"] == "alice"
+        assert kwargs["action"] == "login_success"
+        assert kwargs["ip_address"] == "127.0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_failed_login_emits_audit_event(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        audit_service = MagicMock()
+
+        mw = SessionAuthMiddleware(
+            AsyncMock(), auth_service, audit_service=audit_service
+        )
+
+        body = b"username=alice&password=wrong&csrf_token=xyz"
+        scope = self._make_http_scope("POST", "/login", cookies="csrf_token=xyz")
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        await mw._handle_login_post(scope, receive, send)
+
+        audit_service.log.assert_called_once()
+        kwargs = audit_service.log.call_args.kwargs
+        assert kwargs["username"] == "alice"
+        assert kwargs["action"] == "login_failed"
+        assert kwargs["ip_address"] == "127.0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_logout_emits_audit_event(self):
+        auth_service = MagicMock()
+        auth_service.validate_session.return_value = {"id": 1, "username": "alice"}
+        audit_service = MagicMock()
+
+        mw = SessionAuthMiddleware(
+            AsyncMock(), auth_service, audit_service=audit_service
+        )
+
+        send = AsyncMock()
+        await mw._handle_logout(
+            session_token="tok", send=send, root_path="",
+            username="alice", client_ip="127.0.0.1",
+        )
+
+        audit_service.log.assert_called_once()
+        kwargs = audit_service.log.call_args.kwargs
+        assert kwargs["username"] == "alice"
+        assert kwargs["action"] == "logout"
+        assert kwargs["ip_address"] == "127.0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_x_forwarded_for_takes_precedence(self):
+        """Behind nginx, client IP must come from X-Forwarded-For."""
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        audit_service = MagicMock()
+
+        mw = SessionAuthMiddleware(
+            AsyncMock(), auth_service, audit_service=audit_service
+        )
+
+        body = b"username=alice&password=wrong&csrf_token=xyz"
+        scope = self._make_http_scope(
+            "POST", "/login", cookies="csrf_token=xyz",
+            xff="203.0.113.42, 10.0.0.1", client_ip="127.0.0.1",
+        )
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        await mw._handle_login_post(scope, receive, send)
+
+        kwargs = audit_service.log.call_args.kwargs
+        assert kwargs["ip_address"] == "203.0.113.42"
+
+    @pytest.mark.asyncio
+    async def test_audit_is_optional(self):
+        """Middleware must work fine when audit_service is None (no regression)."""
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = {"id": 1, "username": "alice"}
+        auth_service.create_session.return_value = "tok"
+
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)  # no audit_service
+
+        body = b"username=alice&password=pw&csrf_token=xyz"
+        scope = self._make_http_scope("POST", "/login", cookies="csrf_token=xyz")
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        # Must not raise
+        await mw._handle_login_post(scope, receive, send)
