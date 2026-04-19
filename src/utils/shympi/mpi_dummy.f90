@@ -2503,16 +2503,19 @@
 !******************************************************************
 
 	subroutine shympi_barrier_internal
+	implicit none
 	end subroutine shympi_barrier_internal
 
 !******************************************************************
 
 	subroutine shympi_syncronize_internal
+	implicit none
 	end subroutine shympi_syncronize_internal
 
 !******************************************************************
 
 	subroutine shympi_finalize_internal
+	implicit none
 	end subroutine shympi_finalize_internal
 
 !******************************************************************
@@ -2535,6 +2538,7 @@
 !******************************************************************
 
 	subroutine shympi_syncronize_initial
+	implicit none
 	end subroutine shympi_syncronize_initial
 
 !******************************************************************

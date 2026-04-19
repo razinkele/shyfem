@@ -708,21 +708,23 @@
 
 	use shympi_internal
 	use shympi
-	
-	logical belem
-	integer n0,nlvddi,n
-	integer il(n)
-	integer g_in(n_ghost_max,n_ghost_areas)
-	integer g_out(n_ghost_max,n_ghost_areas)
-	double precision val(n0:nlvddi,n)
 
-        integer tag,ir,ia,id
-        integer i,k,nc,ierr
-        integer nb
-        integer iout,iin
-        integer nbs(2,n_ghost_areas)
-        integer status(status_size,2*n_threads)
-        integer request(2*n_threads)
+	implicit none
+
+	logical, intent(in) :: belem
+	integer, intent(in) :: n0,nlvddi,n
+	integer, intent(in) :: il(n)
+	integer, intent(in) :: g_in(n_ghost_max,n_ghost_areas)
+	integer, intent(in) :: g_out(n_ghost_max,n_ghost_areas)
+	double precision, intent(inout) :: val(n0:nlvddi,n)
+
+        integer :: tag,ir,ia,id
+        integer :: i,k,nc,ierr
+        integer :: nb
+        integer :: iout,iin
+        integer :: nbs(2,n_ghost_areas)
+        integer :: status(status_size,2*n_threads)
+        integer :: request(2*n_threads)
         double precision, allocatable :: buffer_in(:,:)
         double precision, allocatable :: buffer_out(:,:)
 
@@ -2161,11 +2163,14 @@
 
 	use shympi
 
-        integer nv,nh
-        real vals(nh*nv,n_threads)
+	implicit none
 
-	integer ia,ip,it,nlv,nextra
-	integer ierr
+        integer, intent(in) :: nv,nh
+        real, intent(inout) :: vals(nh*nv,n_threads)
+
+	integer :: ia,ip,it,nlv,nextra
+	integer :: n
+	integer :: ierr
         real, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
@@ -2195,11 +2200,14 @@
 
 	use shympi
 
-        integer nv,nh
-        integer vals(nh*nv,n_threads)
+	implicit none
 
-	integer ia,ip,it,nlv,nextra
-	integer ierr
+        integer, intent(in) :: nv,nh
+        integer, intent(inout) :: vals(nh*nv,n_threads)
+
+	integer :: ia,ip,it,nlv,nextra
+	integer :: n
+	integer :: ierr
         integer, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
@@ -2229,11 +2237,14 @@
 
 	use shympi
 
-        integer nv,nh
-        double precision vals(nh*nv,n_threads)
+	implicit none
 
-	integer ia,ip,it,nlv,nextra
-	integer ierr
+        integer, intent(in) :: nv,nh
+        double precision, intent(inout) :: vals(nh*nv,n_threads)
+
+	integer :: ia,ip,it,nlv,nextra
+	integer :: n
+	integer :: ierr
         double precision, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)

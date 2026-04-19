@@ -1439,7 +1439,10 @@
 
 	use dts
 
-	double precision dtime,atime
+	implicit none
+
+	double precision, intent(in)  :: dtime
+	double precision, intent(out) :: atime
 
 	if( dtime > atime1000 ) then	!already absolute time
 	  atime = dtime
@@ -1455,7 +1458,10 @@
 
 	use dts
 
-	double precision atime,dtime
+	implicit none
+
+	double precision, intent(in)  :: atime
+	double precision, intent(out) :: dtime
 
 	if( atime > atime1000 ) then
 	  dtime = atime - atime0
@@ -1687,7 +1693,9 @@
 !************************************************************************
 
         subroutine check_j2date(jd,year,iprint)
-        integer jdd,jd,year,month,day,iprint
+        implicit none
+        integer, intent(in) :: jd,year,iprint
+        integer :: jdd,month,day
         call j2date(jd,year,month,day)
         call date2j(year,month,day,jdd)
         if( iprint .ne. 0 ) write(6,*) year,month,day,jd,jdd
@@ -1733,8 +1741,10 @@
 !************************************************************************
 
         subroutine check_secs_pack(secs,iprint)
-        integer secs,secs0,iprint
-        integer hour,min,sec
+        implicit none
+        integer, intent(in) :: secs,iprint
+        integer :: secs0
+        integer :: hour,min,sec
         call secs2hms(secs,hour,min,sec)
         call hms2secs(secs0,hour,min,sec)
         if( secs .ne. secs0 ) then
@@ -1746,8 +1756,10 @@
 !************************************************************************
 
         subroutine check_days_pack(days,iprint)
-        integer days,days0,iprint
-        integer year,month,day
+        implicit none
+        integer, intent(in) :: days,iprint
+        integer :: days0
+        integer :: year,month,day
         call days2date(days,year,month,day)
         call date2days(days0,year,month,day)
         if( days .ne. days0 ) then
@@ -1786,9 +1798,10 @@
 !************************************************************************
 
         subroutine check_dpack(year,month,day,iprint)
-        integer year,month,day,iprint
-        integer year0,month0,day0
-        integer date
+        implicit none
+        integer, intent(in) :: year,month,day,iprint
+        integer :: year0,month0,day0
+        integer :: date
         call packdate(date,year,month,day)
         call unpackdate(date,year0,month0,day0)
         if( year .ne. year0 .or. month .ne. month0 .or. day .ne. day0 ) then
@@ -1796,13 +1809,14 @@
         end if
         if( iprint .ne. 0 ) write(6,*) year,month,day,date
         end
-        
+
 !************************************************************************
 
         subroutine check_tpack(year,month,day,iprint)
-        integer year,month,day,iprint
-        integer year0,month0,day0
-        integer date
+        implicit none
+        integer, intent(in) :: year,month,day,iprint
+        integer :: year0,month0,day0
+        integer :: date
         call packdate(date,year,month,day)
         call unpackdate(date,year0,month0,day0)
         if( year .ne. year0 .or. month .ne. month0 .or. day .ne. day0 ) then
@@ -1966,6 +1980,8 @@
 !************************************************************************
 
         subroutine test_timespan
+
+	implicit none
 
 	write(6,*) 'test_timespan:'
 
@@ -2216,6 +2232,8 @@
 !************************************************************************
 
         subroutine test_date_all
+
+	implicit none
 
 	call datetest
 	call test_j2date

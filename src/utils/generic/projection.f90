@@ -1306,7 +1306,10 @@
 
 ! transforms deg min sec to decimal degrees
 
-        double precision :: d,m,s,sign,a
+        implicit none
+
+        double precision, intent(in)  :: d,m,s,sign
+        double precision, intent(out) :: a
 
         double precision :: sixty,sixty2
         parameter(sixty=60.,sixty2=3600.)
@@ -1629,6 +1632,7 @@
 !********************************************************************
 
         subroutine genproj_all_test
+        implicit none
         end subroutine genproj_all_test
 
 !********************************************************************
@@ -1640,6 +1644,7 @@
 !*******************************************************************
 
         subroutine proj_all_test
+        implicit none
         end subroutine proj_all_test
 
 !*******************************************************************
@@ -1651,6 +1656,7 @@
 !*******************************************************************
 
         subroutine all_test
+        implicit none
         write(6,*) '================================================='
         call genproj_all_test
         write(6,*) '================================================='
@@ -1676,6 +1682,7 @@
 !********************************************************************
 
         subroutine cpp_all_test
+        implicit none
         end subroutine cpp_all_test
 
 !********************************************************************
@@ -1852,6 +1859,7 @@
 !********************************************************************
 
         subroutine lcc_all_test
+        implicit none
 	call lcc_snyder_test
 	call lcc_nador_test
 	call lcc_error_test
@@ -2012,6 +2020,7 @@
 !****************************************
 
         subroutine gb_all_test
+        implicit none
         call gb_sl_test
         call deg_test
         call gb_rand_test
@@ -2150,6 +2159,7 @@
 !****************************************
 
         subroutine utm_all_test
+        implicit none
 !call utm_band_test
         call utm_sl_test
         call utm_rand_test
