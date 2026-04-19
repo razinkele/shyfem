@@ -744,14 +744,17 @@
 
 ! swaps two integers
 
-        integer a,b,c
+        implicit none
+
+        integer, intent(inout) :: a,b
+        integer :: c
 
         c=a
         a=b
         b=c
 
         return
-	end
+        end subroutine iiswap
 
 !--------------------------------------------------------------------------
 !

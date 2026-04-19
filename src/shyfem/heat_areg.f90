@@ -342,14 +342,27 @@
 
 	use heat_const
 
-	!implicit none
+	implicit none
 
-      parameter ( pstd = 1013.25 )
-      parameter (const = 0.622/pstd)
-      parameter (cgs = 1.e-4/4.19)
-      parameter (cavaleri=1.00)
+	real, intent(in)  :: sst, tair, rhnow, speed_in, cldnow
+	real, intent(out) :: qsw, qbw, ha, elat, qsurf, evap
+
+	real, parameter :: pstd = 1013.25
+	real, parameter :: const = 0.622/pstd
+	real, parameter :: cgs = 1.e-4/4.19
+	real, parameter :: cavaleri = 1.00
 ! ---- DENSITY OF PURE WATER ---------
-      parameter (rho0 = 1000.e0)
+	real, parameter :: rho0 = 1000.e0
+
+	! externals
+	real :: esk, heatlat, cd
+
+	! locals
+	real :: ce, ch, ps, airden, cgstau, precip
+	real :: speed, speedC, ckelv, sstk, tnow
+	real :: esatair, esatoce, wsatair, wsatoce, wair
+	real :: vtnow, rhom, ea, deltemp
+	real :: s, stp, fe, fh, dsatp, qu, cdx
 !---------------------------------------------------------------------
 !     coefficients ( in MKS )  :
 !---------------------------------------------------------------------
