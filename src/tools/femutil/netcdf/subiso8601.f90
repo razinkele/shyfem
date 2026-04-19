@@ -36,6 +36,7 @@
 ! 13.07.2018	ggu	changed VERS_7_4_1
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 21.10.2021	ggu	allow for short version of date: YYYY-M-D
+! 07.02.2024	ggu	bug fix for YYYY-M-D (bless) — back-ported 2026-04-19
 !
 ! notes :
 !
