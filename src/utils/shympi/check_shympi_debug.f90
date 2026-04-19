@@ -549,7 +549,9 @@
 
 	use mod_shympi_debug
 
-	double precision dtime
+	implicit none
+
+	double precision, intent(in) :: dtime
 
 	integer, save :: irec = 0
 
@@ -1405,7 +1407,9 @@
 
 ! local stub for standalone debug tool - just stops execution
 
-	character*(*) message
+	implicit none
+
+	character*(*), intent(in) :: message
 
 	write(6,*) 'ERROR: ',trim(message)
 	stop 'error stop'

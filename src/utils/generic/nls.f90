@@ -1575,10 +1575,12 @@
 
 	subroutine petras_read
 
-	integer iunit,iw
-	integer nrdnxt
-	character*256 name,text
-	double precision dvalue
+	implicit none
+
+	integer :: iunit,iw
+	integer :: nrdnxt
+	character*256 :: name,text
+	double precision :: dvalue
 
 	iunit = 5
 	call nrdini(iunit)

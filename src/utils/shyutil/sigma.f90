@@ -382,15 +382,17 @@
 
 	subroutine adjust_layer_index(nel,nlv,hev,hlv,ilhv)
 
-	integer nel,nlv
-	real hev(nel)
-	real hlv(nlv)
-	integer ilhv(nel)
+	implicit none
 
-	integer ie,l
-	integer nlvaux,nsigma
-	real hsigma,z,h
-	real hdl(nlv)
+	integer, intent(in)  :: nel,nlv
+	real,    intent(in)  :: hev(nel)
+	real,    intent(in)  :: hlv(nlv)
+	integer, intent(out) :: ilhv(nel)
+
+	integer :: ie,l
+	integer :: nlvaux,nsigma
+	real :: hsigma,z,h
+	real :: hdl(nlv)
 
 	z = 0.
 	call get_sigma_info(nlvaux,nsigma,hsigma)
@@ -437,11 +439,13 @@
 
 	subroutine sigma_test
 
+	implicit none
+
 	integer, parameter :: ndim = 5
-	integer lmax,nsigma
-	real hsigma,z,h
-	real hlv(ndim)
-	real hdl(ndim)
+	integer :: lmax,nsigma
+	real :: hsigma,z,h
+	real :: hlv(ndim)
+	real :: hdl(ndim)
 
 	hlv = (/2,4,6,8,10/)
 

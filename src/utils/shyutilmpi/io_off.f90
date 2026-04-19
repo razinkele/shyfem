@@ -1137,7 +1137,9 @@
 
 	use mod_offline
 
-	real t,s
+	implicit none
+
+	real, intent(in) :: t,s
 
 	idef = 1
 	tdef = t

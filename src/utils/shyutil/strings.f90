@@ -952,8 +952,11 @@
 
 ! finds direction and unit - does not change string
 
-	character*(*) string,dir,unit
-        character*256 aux
+	implicit none
+
+	character*(*), intent(in)    :: string
+	character*(*), intent(inout) :: dir,unit
+        character*256 :: aux
 
         aux = string
 
@@ -1081,8 +1084,10 @@
 
 ! checks if we have to use meteo convention for this variable
 
-	integer ivar
-	logical bmeteo
+	implicit none
+
+	integer, intent(in)  :: ivar
+	logical, intent(out) :: bmeteo
 
 	if( ivar == 21 .or. ivar == 28 .or. ivar == 29 ) then
 	  bmeteo = .true.
@@ -1559,6 +1564,7 @@
 
 	subroutine test_strings_all
 	use shyfem_strings
+	implicit none
 	call populate_strings
 	call test_strings
         call strings_check_consistency(.true.)

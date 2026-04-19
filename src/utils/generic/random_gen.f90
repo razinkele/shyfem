@@ -301,7 +301,10 @@
 !******************************************************
 
 	subroutine shydes(inp,key,newkey,i,jot)
-        integer inp(1),jot(1),key(1)
+	implicit none
+	integer, intent(inout) :: inp(1),jot(1),key(1)
+	integer, intent(inout) :: newkey
+	integer, intent(in)    :: i
 	end
 
 !******************************************************

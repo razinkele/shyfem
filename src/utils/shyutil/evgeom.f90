@@ -1390,6 +1390,8 @@
 
 	use evgeom
 
+	implicit none
+
 	logical, intent(in) :: bdebug
 
 	bdebug_internal = bdebug
@@ -1409,13 +1411,15 @@
 
         use evgeom
 
+        implicit none
+
         integer, intent(in) :: ie      !element
         real, intent(in) :: z(3)       !values on nodes
         real, intent(in) :: xp,yp      !coordinates of point
         real, intent(out) :: zp         !interpolated value (return)
 
-        integer ii
-        double precision zh,a,b,c,w
+        integer :: ii
+        double precision :: zh,a,b,c,w
 
         zh=0.
         do ii=1,3
@@ -1443,15 +1447,17 @@
 
         use evgeom
 
+        implicit none
+
         integer, intent(in) :: ie      !element
         real, intent(in) :: z(3)       !values on nodes
         real, intent(in) :: xp,yp      !coordinates of point
         real, intent(out) :: zp         !interpolated value (return)
 
-        integer ii
-        double precision zh
-        double precision x,y
-        double precision xi(3)
+        integer :: ii
+        double precision :: zh
+        double precision :: x,y
+        double precision :: xi(3)
 
 	x = xp
 	y = yp

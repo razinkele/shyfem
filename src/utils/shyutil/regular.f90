@@ -1943,17 +1943,18 @@
 !
 ! needs no other vectors but needs x,y of nodes
 
-        real x(3),y(3)  !coordinates of nodes
-        real z(3)       !values on nodes
-        real xp,yp      !coordinates of point
-        real zp         !interpolated value (return)
+        implicit none
 
-        double precision eps
-        parameter ( eps = 1.d-14 )
+        real, intent(in)  :: x(3),y(3)  !coordinates of nodes
+        real, intent(in)  :: z(3)       !values on nodes
+        real, intent(in)  :: xp,yp      !coordinates of point
+        real, intent(out) :: zp         !interpolated value (return)
 
-        integer i,ii,iii
-        double precision zh,f,fh
-        double precision a(3),b(3),c(3)
+        double precision, parameter :: eps = 1.d-14
+
+        integer :: i,ii,iii
+        double precision :: zh,f,fh
+        double precision :: a(3),b(3),c(3)
 
         f = 0.
         do i=1,3

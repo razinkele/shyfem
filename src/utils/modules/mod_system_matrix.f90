@@ -419,6 +419,7 @@
 
         subroutine spk_solve_system(matrix,buse3d,nndim,n,z)
         use mod_system
+        implicit none
         type(smatrix), target :: matrix
         logical buse3d
         integer nndim           !dimension of non zeros in system
@@ -428,11 +429,13 @@
 
         subroutine coo_adjust_3d(matrix)
         use mod_system
+        implicit none
         type(smatrix), target :: matrix
         end
 
         subroutine coo_init_new(matrix)
         use mod_system
+        implicit none
         type(smatrix), target :: matrix
         end
 

@@ -1410,7 +1410,9 @@
 !************************************************************
 
 	subroutine fem_file_make_type(ntype,imax,itype)
-        integer ntype,imax,itype(imax)
+        implicit none
+        integer, intent(in)  :: ntype,imax
+        integer, intent(out) :: itype(imax)
         call fem_file_to_itype(ntype,imax,itype)
         end
 
@@ -1463,11 +1465,13 @@
 
         subroutine fem_file_set_ntype(ntype,ipos,ival)
 
-	integer ntype
-	integer ipos
-	integer ival
+	implicit none
 
-        integer imax,ierr
+	integer, intent(inout) :: ntype
+	integer, intent(in)    :: ipos
+	integer, intent(in)    :: ival
+
+        integer :: imax,ierr
 	integer, allocatable :: itype(:)
 
         imax = nint(log10(float(ntype)))
@@ -1526,8 +1530,10 @@
 
 	subroutine test_type
 
-	integer imax,ntype
-	integer itype(4)
+	implicit none
+
+	integer :: imax,ntype
+	integer :: itype(4)
 
 	imax = 4
 	ntype = 101

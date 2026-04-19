@@ -238,6 +238,8 @@
 
 	subroutine write_data_header
 
+	implicit none
+
 	if( bover ) then
 	  write(6,*) '      l       i   i_int   i_ext' // &
      &			'            rmin            rmax' // &
@@ -365,7 +367,9 @@
 
 ! local stub for standalone debug tool - just stops execution
 
-	character*(*) message
+	implicit none
+
+	character*(*), intent(in) :: message
 
 	write(6,*) 'ERROR: ',trim(message)
 	stop 'error stop'

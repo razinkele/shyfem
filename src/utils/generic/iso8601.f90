@@ -216,11 +216,13 @@
 
 	subroutine parse_time(time,dt,nl)
 
-	character*(*) time
-	integer dt(8)
-	integer nl
+	implicit none
 
-	integer n
+	character*(*), intent(in)    :: time
+	integer,       intent(inout) :: dt(8)
+	integer,       intent(out)   :: nl
+
+	integer :: n
 
 	nl = -1
 	n = len_trim(time)
@@ -256,12 +258,14 @@
 
 	subroutine dt2string(dt,string)
 
-	integer dt(8)		!year,month,day,hour,min,sec,msec,tz (return)
-	character*(*) string	!date string
+	implicit none
 
-	integer ilen,i
+	integer,       intent(in)  :: dt(8)	!year,month,day,hour,min,sec,msec,tz
+	character*(*), intent(out) :: string	!date string
+
+	integer :: ilen,i
 	character*1, save :: sep = ':'
-	character*20 lineaux
+	character*20 :: lineaux
 
 	lineaux = ' '
 

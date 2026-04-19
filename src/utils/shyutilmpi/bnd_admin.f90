@@ -1217,6 +1217,9 @@
 !********************************************************************
 
         subroutine ksinget(ibc,ampli,period,phase,zref)
+        implicit none
+        integer, intent(in)  :: ibc
+        real,    intent(out) :: ampli,period,phase,zref
         call chkibc(ibc,'ksinget:')
         call get_bnd_par(ibc,'ampli',ampli)
         call get_bnd_par(ibc,'period',period)

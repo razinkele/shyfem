@@ -340,7 +340,9 @@
 
 	use grd
 
-	integer nk,ne,nl,nne,nnl
+	implicit none
+
+	integer, intent(out) :: nk,ne,nl,nne,nnl
 
 	nk = nk_grd
 	ne = ne_grd
@@ -1077,13 +1079,15 @@
 
 ! handles unknown type
 
-	logical berr
+	implicit none
 
-	integer iwhat
-	integer iline
-	character*132 line
+	integer, intent(in)    :: iwhat
+	logical, intent(inout) :: berr
 
-	integer ner
+	integer :: iline
+	character*132 :: line
+
+	integer :: ner
 
 	ner = 6
 

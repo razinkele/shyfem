@@ -100,7 +100,11 @@
 
 	use shyelab_unit
 
-	character*(*) string
+	implicit none
+
+	character*(*), intent(in) :: string
+
+	integer :: i
 
 	string_save = string
 
