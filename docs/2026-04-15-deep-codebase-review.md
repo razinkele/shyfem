@@ -73,6 +73,16 @@ The most depended-upon modules (by `use` count in src/shyfem/):
 
 ## 2. Fortran Core Quality
 
+> **Correction 2026-04-19:** The `implicit none` figures in this section
+> were computed with case-sensitive grep and over-count violations.
+> A subroutine-scoped scan that honors module-level inheritance reports
+> **131 total missing** (not ~150 files — this is per-subroutine) across
+> 5,154 subroutines, or 2.5%. `sedim_util.f90` is actually **100% compliant
+> (40/40 `IMPLICIT NONE` in UPPERCASE)** — not 0% as reported below.
+> See `bin/check_implicit_none.py` and
+> `docs/superpowers/plans/2026-04-19-codebase-review-fixes.md` for
+> authoritative counts and fixes.
+
 ### 2.1 Convention Violations Summary
 
 | Issue | Count | Severity | Files Affected |
