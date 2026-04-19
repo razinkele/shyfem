@@ -37,6 +37,7 @@ try:
 except ImportError:
     deckgl_head_includes = None
 
+from shyfem_ui.services.audit_service import AuditService
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import JobTransitionDetector, NotificationService as EmailNotificationService
@@ -239,8 +240,9 @@ def create_app(config: Config | None = None) -> App:
     from shyfem_ui.plotly_theme import register_shyfem_template
     register_shyfem_template(dark=False)
 
-    # Initialize auth service and ensure default admin exists
+    # Initialize auth + audit services
     auth_service = AuthService()
+    audit_service = AuditService()
     if config.deployment_mode == "server":
         if config.default_admin_password:
             admin = auth_service.ensure_admin(
@@ -275,7 +277,7 @@ def create_app(config: Config | None = None) -> App:
 
     # Build server
     def server(input, output, session):
-        _build_server(input, output, session, config, job_queue, auth_service)
+        _build_server(input, output, session, config, job_queue, auth_service, audit_service)
 
     app = App(app_ui, server, static_assets=Path(__file__).parent / "www")
 
@@ -292,6 +294,7 @@ def create_app(config: Config | None = None) -> App:
         session_ttl_hours=config.auth_session_ttl_hours,
         root_path=config.root_path,
         use_secure_cookies=config.use_secure_cookies,
+        audit_service=audit_service,
     )
     if not is_local and not config.default_admin_password and not config.auth_password:
         logger.warning(
@@ -699,6 +702,7 @@ def _build_server(
     config: Config,
     job_queue: JobQueue,
     auth_service: AuthService | None = None,
+    audit_service: AuditService | None = None,
 ):
     """Build the application server logic."""
     active_project = reactive.value(None)
@@ -781,7 +785,7 @@ def _build_server(
     files.files_server("files", config, active_project=active_project)
 
     if auth_service:
-        admin.admin_server("admin", config, auth_service, user_role=_current_role)
+        admin.admin_server("admin", config, auth_service, user_role=_current_role, audit_service=audit_service)
 
     # --- Cross-page job notifications ---
     _notification_svc = JobTransitionDetector()
