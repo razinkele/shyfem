@@ -80,7 +80,7 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--ignore-glob=tests/test_playwright_*.py"
+addopts = "--ignore-glob=tests/test_playwright_*.py -p no:zarr"
 markers = [
     "e2e: end-to-end browser tests (require Playwright + live server)",
     "slow: tests that take more than 5 seconds",
