@@ -1,0 +1,97 @@
+digraph mpi_parallel {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=9, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=8];
+    bgcolor="white";
+    label=<<B>MPI Domain Decomposition and OpenMP Parallelism</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    subgraph cluster_mpi {
+        label=<<B>MPI Infrastructure (src/utils/shympi/)</B>>;
+        style="rounded,filled"; fillcolor="#E8F4FD"; color="#4A90D9";
+
+        api [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>module shympi</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Public API: exchange, gather, reduce</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Serial stub: mpi_dummy.f90</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">(no #ifdef needed in physics)</FONT></TD></TR>
+            </TABLE>> fillcolor="#B8D4F0"];
+
+        internal [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>shympi_internal</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">All raw MPI calls</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">MPI_THREAD_FUNNELED</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">OMP CRITICAL guards</FONT></TD></TR>
+            </TABLE>> fillcolor="#90CAF9"];
+
+        basin [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>mpi_basin.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">partition, domain, indices</FONT></TD></TR>
+            </TABLE>> fillcolor="#B8D4F0"];
+
+        ghost [label="mpi_ghost.f90" fillcolor="#B8D4F0"];
+        buffer [label="mpi_buffer.f90\npack/unpack" fillcolor="#B8D4F0"];
+        tripple [label="mpi_tripple.f90\ntriple-point exchange" fillcolor="#B8D4F0"];
+        tvd [label="mpi_tvd.f90\nTVD upwind exchange" fillcolor="#B8D4F0"];
+        metis [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>shyparts_metis.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">METIS_PartMeshNodal</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Weight by vertical levels</FONT></TD></TR>
+            </TABLE>> fillcolor="#B8D4F0"];
+    }
+
+    subgraph cluster_omp {
+        label=<<B>OpenMP Parallelism</B>>;
+        style="rounded,filled"; fillcolor="#E8F5E9"; color="#4CAF50";
+
+        subset [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>mod_subset</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Graph-coloring: independent</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">element subsets for OMP TASK</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+
+        omp1 [label="hydro_zeta\nOMP TASK per subset" fillcolor="#A5D6A7"];
+        omp2 [label="conz3d_omp\nOMP TASK per subset" fillcolor="#A5D6A7"];
+        omp3 [label="hydro_transports\nOMP PARALLEL DO" fillcolor="#A5D6A7"];
+        omp4 [label="rhoset\nOMP PARALLEL DO" fillcolor="#A5D6A7"];
+        omp5 [label="run_scalar\nOMP TASK fanout" fillcolor="#A5D6A7"];
+        omp6 [label="drogue\nOMP PARALLEL DO" fillcolor="#A5D6A7"];
+    }
+
+    subgraph cluster_lgr_mpi {
+        label=<<B>Lagrangian MPI</B>>;
+        style="rounded,filled"; fillcolor="#FBE9E7"; color="#D84315";
+        lgr_mpi [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>lagrange_mpi.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Alltoall + Alltoallv</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Gatherv, Allreduce</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFCCBC"];
+    }
+
+    elem [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Element Ownership</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">[1..nel_inner] internal</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">[inner+1..unique] border-own</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">[unique+1..local] ghost</FONT></TD></TR>
+        </TABLE>> fillcolor="#CFD8DC"];
+
+    api -> internal [label="delegates"];
+    api -> basin [label="setup"];
+    basin -> metis;
+    basin -> ghost;
+    internal -> buffer;
+    api -> tripple;
+    api -> tvd;
+    subset -> omp1;
+    subset -> omp2;
+    lgr_mpi -> api [label="uses shympi" style=dashed];
+}

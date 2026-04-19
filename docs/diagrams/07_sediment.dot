@@ -1,0 +1,88 @@
+digraph sediment {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=9, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=8];
+    bgcolor="white";
+    label=<<B>Sediment Transport System (SEDTRANS05)</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    subgraph cluster_pipeline {
+        label=<<B>Per-Timestep Pipeline</B>>;
+        style="rounded,filled"; fillcolor="#FBE9E7"; color="#D84315";
+        s1 [label="1. tvd_grad_2d\nbed slope gradients" fillcolor="#FFCCBC"];
+        s2 [label="2. sed_loop\nSEDTRANS05 per node" fillcolor="#FFAB91"];
+        s3 [label="3. export taubot" fillcolor="#FFCCBC"];
+        s4 [label="4. bedload\nflux divergence" fillcolor="#FFCCBC"];
+        s5 [label="5. scn_compute\nadvect SSC (scal_adv)" fillcolor="#FFAB91"];
+        s6 [label="6. bedman\nbed layers, bh_morph" fillcolor="#FFAB91"];
+        s7 [label="7. smooth_node" fillcolor="#FFCCBC"];
+        s8 [label="8. totcon\nsum to tcn" fillcolor="#FFCCBC"];
+        s1 -> s2 -> s3 -> s4 -> s5 -> s6 -> s7 -> s8;
+    }
+
+    subgraph cluster_physics {
+        label=<<B>SEDTRANS05 Physics</B>>;
+        style="rounded,filled"; fillcolor="#FFF3E0"; color="#E8A838";
+        oscil [label="OSCIL\nlinear wave theory" fillcolor="#FFE0B2"];
+        thresh [label="THRESH\ncritical velocities" fillcolor="#FFE0B2"];
+        fricfac [label="FRICFAC\nGrant-Madsen BL" fillcolor="#FFE0B2"];
+        vmix [label="vmixcoef\nvertical diffusion" fillcolor="#FFE0B2"];
+        active [label="activelayer\nmixing depth" fillcolor="#FFE0B2"];
+        oscil -> thresh -> fricfac -> vmix -> active;
+    }
+
+    subgraph cluster_transport {
+        label=<<B>Transport Branches</B>>;
+        style="rounded,filled"; fillcolor="#E8F5E9"; color="#4CAF50";
+        cohse [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>COHESIVE</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Erosion: EROS1 per layer</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Deposition: Krone formula</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Drag reduction</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+        nonco [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>NON-COHESIVE</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">IOPT formulas:</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">1:Engelund-Hansen 2:Einstein</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">3:Bagnold 4:Yalin</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">5:Van Rijn (default)</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+    }
+
+    bed [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Bed Layer Stack (10 layers)</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">depth, erosion stress, density</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">grain fractions per layer</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">newlayer / unilayer / compact</FONT></TD></TR>
+        </TABLE>> fillcolor="#CFD8DC"];
+
+    grain [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Grain Size Classes</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">nscls classes from STR file</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">1..nbcc: cohesive (gs&lt;63um)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">nbcc+1..nscls: non-cohesive</FONT></TD></TR>
+        </TABLE>> fillcolor="#E1BEE7"];
+
+    out_morph [label="bh_morph\nto setdepth" shape=ellipse fillcolor="#90CAF9"];
+    out_tcn [label="tcn\nto rhoset" shape=ellipse fillcolor="#90CAF9"];
+    out_tau [label="taubot\nto mod_bstress" shape=ellipse fillcolor="#90CAF9"];
+    out_z0 [label=<z0bk to chezy<BR/><FONT COLOR="#D32F2F" POINT-SIZE="8">(DISABLED)</FONT>> shape=ellipse fillcolor="#FFF9C4" style="filled,dashed"];
+
+    s2 -> oscil [lhead=cluster_physics];
+    active -> cohse [label="mud fraction high"];
+    active -> nonco [label="sand dominant"];
+    cohse -> s4;
+    nonco -> s4;
+    s6 -> bed;
+    grain -> s2;
+    s6 -> out_morph;
+    s8 -> out_tcn;
+    s3 -> out_tau;
+    fricfac -> out_z0 [style=dashed color="#999999"];
+}

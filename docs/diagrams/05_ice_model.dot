@@ -1,0 +1,73 @@
+digraph ice_model {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=9, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=8];
+    bgcolor="white";
+    label=<<B>Ice Model Integration (ESIM2)</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    atm [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Atmospheric Forcing</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Ta, wind, clouds, pressure</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">precipitation, shortwave</FONT></TD></TR>
+        </TABLE>> fillcolor="#B3E5FC"];
+
+    qflux [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>heat_admin2.f90 : qflux3d</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Solar: qss scaled by ice-free frac</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Longwave, latent: scaled by ice-free</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Sensible: weighted ice + open water</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFE0B2"];
+
+    icerun [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>ice_run (icemodel.f90)</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">46-variable state per node</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Freezing point from salinity</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Snow + albedo computation</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Surface temp iteration (max 100)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Growth/melt: 5 layer configs</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Halodynamics: brine segregation</FONT></TD></TR>
+        </TABLE>> fillcolor="#C5CAE9"];
+
+    metice [label="ice cover [0/1]" shape=ellipse fillcolor="#9FA8DA"];
+
+    ocean [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Ocean Surface Layer</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">SST modified, brine rejection</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">evap=0 under ice</FONT></TD></TR>
+        </TABLE>> fillcolor="#C8E6C9"];
+
+    wind [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Wind Stress</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">tau *= (1 - ice_cover)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Full ice = zero wind to ocean</FONT></TD></TR>
+        </TABLE>> fillcolor="#CFD8DC"];
+
+    waves [label="Wave Model" fillcolor="#B2EBF2"];
+
+    limits [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><FONT COLOR="#D32F2F"><B>Limitations</B></FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="7">No ice advection (thermodynamic only)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="7">Binary cover (0 or 1), no partial</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="7">Not thread-safe (module scratch)</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="7">No ice-ocean drag or pressure</FONT></TD></TR>
+        </TABLE>> shape=note fillcolor="#FFF9C4"];
+
+    atm -> qflux;
+    qflux -> icerun [label="Qs, Ta, wind, dt"];
+    icerun -> metice [label="set_ice_cover"];
+    icerun -> ocean [label="T,S updated\n(brine rejection)" color="#3F51B5" penwidth=2];
+    metice -> qflux [label="flux weighting" color="#3F51B5"];
+    metice -> wind [label="stress attenuation" color="#3F51B5" penwidth=2];
+    metice -> waves [label="attenuates waves" color="#3F51B5" style=dashed];
+    ocean -> icerun [label="SST, SSS" color="#4CAF50"];
+    qflux -> ocean [label="heat flux\n(ice-free fraction)"];
+}

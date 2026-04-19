@@ -1,0 +1,96 @@
+digraph system_overview {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=10, style=filled];
+    edge [fontname="Helvetica", fontsize=8];
+    compound=true;
+    bgcolor="white";
+    label=<<B>SHYFEM System Architecture</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    subgraph cluster_control {
+        label=<<B>Program Control</B>>;
+        style="rounded,filled"; fillcolor="#E8F4FD"; color="#4A90D9";
+        main [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="2">
+            <TR><TD><B>shyfem_subs.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">shyfem_initialize</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">shyfem_run (time loop)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">shyfem_finalize</FONT></TD></TR>
+            </TABLE>> fillcolor="#B8D4F0"];
+    }
+
+    subgraph cluster_hydro {
+        label=<<B>Hydrodynamics Core</B>>;
+        style="rounded,filled"; fillcolor="#FFF3E0"; color="#E8A838";
+        hydro [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>hydrodynamic.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">hydro_transports, hydro_zeta</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">hydro_transports_final</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">hydro_vertical</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFE0B2"];
+        explicit [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>explicit.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">horizontal diffusion</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">nonlinear advection</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">baroclinic pressure</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFE0B2"];
+        depth [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>elems_dealing.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">setdepth, ele2node</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFE0B2"];
+        wetdry [shape=box label="wetdry.f90" fillcolor="#FFE0B2"];
+        chezy [shape=box label="chezy.f90" fillcolor="#FFE0B2"];
+    }
+
+    subgraph cluster_scalar {
+        label=<<B>Scalar Transport</B>>;
+        style="rounded,filled"; fillcolor="#E8F5E9"; color="#4CAF50";
+        conc [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>concentration.f90</B></TD></TR>
+            <TR><TD><B>concentration_omp.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">scal_adv, conz3d_omp</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+        barocl [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>baroclinic.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">T/S advection</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">rhoset (density EOS)</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+    }
+
+    subgraph cluster_turb {
+        label=<<B>Turbulence Closure</B>>;
+        style="rounded,filled"; fillcolor="#F3E5F5"; color="#9C27B0";
+        turb [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>turbulence.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">GOTM / k-eps / Munk-Anderson</FONT></TD></TR>
+            </TABLE>> fillcolor="#E1BEE7"];
+    }
+
+    subgraph cluster_solver {
+        label=<<B>Linear Solvers</B>>;
+        style="rounded,filled"; fillcolor="#ECEFF1"; color="#607D8B";
+        solver [shape=box label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>system_solve</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">SPARSKIT / PETSc / Gauss</FONT></TD></TR>
+            </TABLE>> fillcolor="#CFD8DC"];
+    }
+
+    main -> hydro [label="  hydro()"];
+    main -> conc [label="  run_scalar() [OMP TASK]"];
+    main -> turb [label="  turb_closure()"];
+    hydro -> explicit [label="set_explicit"];
+    hydro -> depth [label="make_new_depth"];
+    hydro -> wetdry [label="setweg"];
+    hydro -> chezy [label="bottom_friction"];
+    hydro -> solver [label="system_solve"];
+    barocl -> conc [label="scal_adv_nudge"];
+}

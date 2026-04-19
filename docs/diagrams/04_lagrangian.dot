@@ -1,0 +1,153 @@
+digraph lagrangian {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=9, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=8];
+    bgcolor="white";
+    label=<<B>Lagrangian Particle Tracking System</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    subgraph cluster_main {
+        label=<<B>Main Driver</B>>;
+        style="rounded,filled"; fillcolor="#E8F4FD"; color="#4A90D9";
+        lagrange [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>lagrange_main.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">1. release particles</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">2. setup fluxes from hydro</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">3. drogue [OMP PARALLEL DO]</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">4. MPI exchange</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">5. sediment / larvae / decay</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">6. output / compress</FONT></TD></TR>
+            </TABLE>> fillcolor="#B8D4F0"];
+    }
+
+    subgraph cluster_advect {
+        label=<<B>Advection Engine</B>>;
+        style="rounded,filled"; fillcolor="#FFF3E0"; color="#E8A838";
+        track [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>track_xi</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Barycentric coords xi(3)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">xi(i)=0: on opposite side</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Compute th, tv to boundary</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Cross elements or stay</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFE0B2"];
+        flux [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>lagrange_flux.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">flux3d from hydro velocities</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFE0B2"];
+    }
+
+    subgraph cluster_diff {
+        label=<<B>Diffusion</B>>;
+        style="rounded,filled"; fillcolor="#E8F5E9"; color="#4CAF50";
+        vdiff [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Vertical</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Milstein scheme (default)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Adaptive sub-timestep</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+        hdiff [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Horizontal</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Random walk in x,y</FONT></TD></TR>
+            </TABLE>> fillcolor="#C8E6C9"];
+    }
+
+    subgraph cluster_sub {
+        label=<<B>Physics Sub-Modules</B>>;
+        style="rounded,filled"; fillcolor="#F3E5F5"; color="#9C27B0";
+        sedim [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Sediment</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">3 classes: clay/silt/sand</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Deposition / erosion</FONT></TD></TR>
+            </TABLE>> fillcolor="#E1BEE7"];
+        stokes [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Wind/Stokes Drift</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Surface particles only</FONT></TD></TR>
+            </TABLE>> fillcolor="#E1BEE7"];
+        beach [label="Beaching" fillcolor="#E1BEE7"];
+        decay [label="Exp. Decay / Survival" fillcolor="#E1BEE7"];
+        larvae [label=<
+            <FONT COLOR="#999999">Larvae (stub)</FONT>
+            > fillcolor="#FFF9C4" style="filled,dashed"];
+    }
+
+    subgraph cluster_connect {
+        label=<<B>Connectivity</B>>;
+        style="rounded,filled"; fillcolor="#FBE9E7"; color="#D84315";
+        connect [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>lagrange_connect.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">64-bit bitmaps per particle</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Up to 50 stations</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Transit count, time, age</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFCCBC"];
+    }
+
+    subgraph cluster_mpi {
+        label=<<B>MPI Exchange</B>>;
+        style="rounded,filled"; fillcolor="#ECEFF1"; color="#607D8B";
+        mpi [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>lagrange_mpi.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Ghost detection, pack/unpack</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">MPI_Alltoall + Alltoallv</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Gatherv (output to rank 0)</FONT></TD></TR>
+            </TABLE>> fillcolor="#CFD8DC"];
+    }
+
+    subgraph cluster_release {
+        label=<<B>Release Mechanisms</B>>;
+        style="rounded,filled"; fillcolor="#E0F7FA"; color="#00ACC1";
+        release [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>lagrange_init.f90</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Domain-wide grid</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Polygon seeding</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Trajectory file</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Continuous boundary</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Connectivity stations</FONT></TD></TR>
+            </TABLE>> fillcolor="#B2EBF2"];
+    }
+
+    hydro_in [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Hydro Input</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">flux3d, wlnv, zenv, hev</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">difv, taubot, wxv/wyv</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFE0B2"];
+
+    particle [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>lagr_entry</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">xi(3), time, z, ie, ie_global</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">id, type, sinking, bitmaps</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">custom(1:ncust)</FONT></TD></TR>
+        </TABLE>> fillcolor="#CFD8DC"];
+
+    lagrange -> flux;
+    lagrange -> track [label="drogue"];
+    flux -> track [label="flux3d"];
+    track -> vdiff [label="diff_body"];
+    track -> hdiff;
+    lagrange -> sedim;
+    lagrange -> stokes;
+    lagrange -> beach;
+    lagrange -> decay;
+    lagrange -> larvae [style=dashed];
+    lagrange -> connect;
+    lagrange -> mpi [label="after drogue"];
+    lagrange -> release;
+    hydro_in -> flux [color="#E8A838"];
+    hydro_in -> vdiff [label="difv" color="#E8A838"];
+    hydro_in -> sedim [label="taubot" color="#E8A838"];
+    hydro_in -> stokes [label="wind" color="#E8A838"];
+    release -> particle;
+    mpi -> particle [label="pack/unpack"];
+}

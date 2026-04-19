@@ -1,0 +1,91 @@
+digraph coupling {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=9, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=8];
+    bgcolor="white";
+    label=<<B>Two-Way Physics Coupling</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    hydro [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Hydrodynamics</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">u, v, w, zeta</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFE0B2"];
+
+    setdepth [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>setdepth</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">imorph: htot += bh_morph</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFE0B2"];
+
+    rhoset [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>rhoset</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">imorphd: density += SSC effect</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFE0B2"];
+
+    friction [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>bottom_friction</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">ireib=8: reads z0bk</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFE0B2"];
+
+    sedi [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Sediment (SEDTRANS05)</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">sed_loop, bedman, totcon</FONT></TD></TR>
+        </TABLE>> fillcolor="#FFCCBC"];
+
+    waves [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Wave Model</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">empirical or WWMIII</FONT></TD></TR>
+        </TABLE>> fillcolor="#B2EBF2"];
+
+    ice [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Ice Model (ESIM2)</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">thermodynamic growth/melt</FONT></TD></TR>
+        </TABLE>> fillcolor="#C5CAE9"];
+
+    turb [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Turbulence</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">visv, difv</FONT></TD></TR>
+        </TABLE>> fillcolor="#E1BEE7"];
+
+    bmorph [label="bh_morph [m]" shape=ellipse fillcolor="#FF8A65"];
+    tcn [label="tcn [kg/m3]" shape=ellipse fillcolor="#FF8A65"];
+    z0bk [label="z0bk [m]\n(DISABLED)" shape=ellipse fillcolor="#FFF9C4" style="filled,dashed"];
+    taubot [label="taubot [N/m2]" shape=ellipse fillcolor="#FF8A65"];
+    metice [label="metice [0/1]" shape=ellipse fillcolor="#9FA8DA"];
+
+    // Sediment coupling
+    sedi -> bmorph [dir=none];
+    bmorph -> setdepth [label="  Ch.1: bathymetric" color="#D84315" fontcolor="#D84315" penwidth=2];
+    sedi -> tcn [dir=none];
+    tcn -> rhoset [label="  Ch.2: density" color="#D84315" fontcolor="#D84315" penwidth=2];
+    sedi -> z0bk [dir=none style=dashed];
+    z0bk -> friction [label="  Ch.3: roughness" color="#999999" fontcolor="#999999" style=dashed];
+    sedi -> taubot [dir=none];
+
+    // Hydro -> Sediment
+    hydro -> sedi [label="  u,v,depths" color="#E8A838"];
+
+    // Waves
+    waves -> sedi [label="  Hs, orbital vel" color="#00ACC1"];
+    waves -> hydro [label="  radiation stress" color="#00ACC1"];
+    hydro -> waves [label="  u,v,zeta" color="#E8A838"];
+
+    // Ice
+    ice -> metice [dir=none];
+    metice -> hydro [label="  wind stress\n  attenuation" color="#3F51B5" penwidth=2];
+    ice -> rhoset [label="  brine rejection" color="#3F51B5"];
+    metice -> waves [label="  attenuates waves" color="#3F51B5" style=dashed];
+
+    // Turbulence
+    turb -> hydro [label="  visv" color="#9C27B0"];
+    turb -> sedi [label="  difv" color="#9C27B0" style=dashed];
+}

@@ -1,0 +1,108 @@
+digraph ecology {
+    rankdir=TB;
+    fontname="Helvetica";
+    node [fontname="Helvetica", fontsize=9, style=filled, shape=box];
+    edge [fontname="Helvetica", fontsize=8];
+    bgcolor="white";
+    label=<<B>Ecology / Biogeochemistry Integration</B>>;
+    labelloc=t;
+    fontsize=16;
+
+    acc [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Hydrodynamic Accessors (read-only)</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">getts: T, S  |  getuv: velocities</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">dvanode: depth, vol, area</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">get_light: solar  |  get_wind: wind</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">difhv, difv: diffusivity arrays</FONT></TD></TR>
+        </TABLE>> fillcolor="#CFD8DC"];
+
+    transport [label=<
+        <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+        <TR><TD><B>Shared Transport Engine</B></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">scal_adv / scal_adv_fact</FONT></TD></TR>
+        <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">(handles MPI ghost exchange)</FONT></TD></TR>
+        </TABLE>> fillcolor="#C8E6C9"];
+
+    subgraph cluster_eco {
+        label=<<B>Ecological Modules (compile-time selectable)</B>>;
+        style="rounded,filled"; fillcolor="#FFF8E1"; color="#FFA000";
+
+        weutro [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>WEUTRO</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">9 pelagic + 2 sediment vars</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">NH3, NO3, OPO4, Phyto, CBOD</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">DO, ON, OP, Zoo</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">+ shellfish + macroalgae (Ulva)</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFECB3"];
+
+        aquabc [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>AQUABC (ALUKAS)</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">30 water + 24 sediment vars</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Full C/N/P/Si/Fe/Mn/S/CH4</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">CO2 system chemistry</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Vectorized fast-array layout</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFECB3"];
+
+        bfm [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>BFM (ERSEM)</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8" COLOR="#999999">External library (not linked)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8" COLOR="#999999">Dummy stub only</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Runs inside OMP TASK</FONT></TD></TR>
+            </TABLE>> fillcolor="#FFF9C4" style="filled,dashed"];
+    }
+
+    subgraph cluster_extra {
+        label=<<B>Additional Modules (always compiled)</B>>;
+        style="rounded,filled"; fillcolor="#F3E5F5"; color="#9C27B0";
+
+        mercury [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Mercury</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Hg0, HgII, MeHg (pelagic)</FONT></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">+ 2 sediment + 2 carriers</FONT></TD></TR>
+            </TABLE>> fillcolor="#E1BEE7"];
+
+        atoxi [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Toxicant (atoxi3d)</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8" COLOR="#D32F2F">NOT FUNCTIONAL</FONT></TD></TR>
+            </TABLE>> fillcolor="#F8BBD0" style="filled,dashed"];
+
+        renewal [label=<
+            <TABLE BORDER="0" CELLBORDER="0" CELLSPACING="1">
+            <TR><TD><B>Water Renewal Time</B></TD></TR>
+            <TR><TD ALIGN="LEFT"><FONT POINT-SIZE="8">Passive tracer diagnostic</FONT></TD></TR>
+            </TABLE>> fillcolor="#E1BEE7"];
+    }
+
+    nofeedback [label=<
+        <TABLE BORDER="0" CELLBORDER="0">
+        <TR><TD><FONT COLOR="#D32F2F" POINT-SIZE="11"><B>NO FEEDBACK to hydrodynamics</B></FONT></TD></TR>
+        <TR><TD><FONT POINT-SIZE="8">One-way consumers only</FONT></TD></TR>
+        </TABLE>> shape=plaintext];
+
+    subgraph cluster_order {
+        label=<<B>Call Order in Timestep</B>>;
+        style="rounded,filled"; fillcolor="#E8F4FD"; color="#4A90D9";
+        node [shape=box fillcolor="#B8D4F0" fontsize=8];
+        o1 [label="1. hydro"];
+        o2 [label="2. run_scalar (T/S + BFM)"];
+        o3 [label="3. turb_closure"];
+        o4 [label="4. sedi / waves"];
+        o5 [label="5. renewal_time"];
+        o6 [label="6. ecological_module"];
+        o7 [label="7. atoxi3d / mercury"];
+        o1 -> o2 -> o3 -> o4 -> o5 -> o6 -> o7;
+    }
+
+    acc -> weutro;
+    acc -> aquabc;
+    acc -> mercury;
+    weutro -> transport [label="9 vars"];
+    aquabc -> transport [label="30 vars"];
+    mercury -> transport [label="5 vars"];
+}
