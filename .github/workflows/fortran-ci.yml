@@ -61,14 +61,11 @@ jobs:
           echo "=== Warnings in src/shyfem/ and src/utils/ ==="
           grep 'Warning:' build.log | grep -E 'src/(shyfem|utils)/' | head -50 || echo "No warnings in core"
 
-      - name: Check for implicit none gaps
+      - name: Check for implicit none gaps (subroutine-scoped)
         run: |
-          echo "Files missing implicit none (excluding obsolete/external/contrib):"
-          find src -name '*.f90' \
-            ! -path '*/obsolete/*' \
-            ! -path '*/external/*' \
-            ! -path '*/contrib/*' \
-            | xargs grep -rL 'implicit none' || echo "All files have implicit none"
+          ./bin/check_implicit_none.py src/shyfem --max-violations 0
+          # Informational: count offenders in other dirs but don't fail
+          ./bin/check_implicit_none.py src/utils src/tools --max-violations 500 || true
 
   mpi-build:
     runs-on: ubuntu-latest
