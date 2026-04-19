@@ -1,29 +1,30 @@
 # Follow-up: Fully Deduplicate iso8601 / subiso8601
 
-**Blocking reason:** The netcdf-tools `Makefile` at
-`src/tools/femutil/netcdf/Makefile:67,148` compiles `subiso8601.f90`
-locally into `iso8601.mod`. Deletion requires modifying that Makefile
-to either vpath-compile the canonical source or link the top-level
-library.
+**STATUS: COMPLETED 2026-04-19.**
 
-**Completed 2026-04-19 (partial):** back-ported the 2024 YYYY-M-D fix
-so both copies behave identically.
+The netcdf-tools `Makefile` (`src/tools/femutil/netcdf/Makefile`) now compiles
+the canonical `src/utils/generic/iso8601.f90` directly into a local `iso8601.o`
+via a vpath-style rule. The redundant `subiso8601.f90` copy has been deleted.
 
-**Note on actual divergence found:** The task description assumed
-`iso8601.f90` (canonical) had the fix and `subiso8601.f90` was missing
-it. Inspection revealed the opposite: `subiso8601.f90` already had the
-corrected parse_time code, while `iso8601.f90` still had the old buggy
-version. Both changes were applied: the code fix was ported into
-`iso8601.f90`, and the revision-log comment was added to
-`subiso8601.f90`. The parse_time subroutines are now byte-identical.
+**Changes:**
 
-**TODO:** Edit `src/tools/femutil/netcdf/Makefile` to drop `subiso8601.o`
-from `OBJS_TIME` and add a rule like:
+1. `OBJS_TIME` now lists `iso8601.o` instead of `subiso8601.o`.
+2. New rule:
+   ```make
+   iso8601.o: ../../../utils/generic/iso8601.f90
+       $(F77) -c $(FFLAGS) $< -o $@
+   ```
+3. Module dependency line updated: `iso8601.mod: iso8601.o` (was `subiso8601.o`).
+4. `src/tools/femutil/netcdf/subiso8601.f90` removed.
 
-```make
-iso8601.o: ../../../utils/generic/iso8601.f90
-	$(F90) $(FFLAGS) -c $< -o $@
-```
+**Verification:** Compiling with `make iso8601.o ncf_tutil.o subdts.o` from
+the netcdf-tools dir succeeds — `gfortran -c -g -O ../../../utils/generic/iso8601.f90 -o iso8601.o`,
+and `ncf_tutil.f90` (which depends on `iso8601.mod`) builds cleanly. Full
+SHYFEM `make fem` build remains clean. (The full link of `ncinfo`/`ncbgc`/`ncelab`
+requires libnetcdff.a, not installed in this dev environment, but is unaffected
+by this change since the same `iso8601.mod` is produced.)
 
-Then `git rm src/tools/femutil/netcdf/subiso8601.f90` and verify
-`make` in that dir succeeds.
+**Earlier partial step (2026-04-19):** prior to this dedup, the 2024 YYYY-M-D
+parse fix was synced between the two copies so both behaved identically. With
+the local copy now removed, that synchronization is no longer necessary —
+everything reads from the canonical source.

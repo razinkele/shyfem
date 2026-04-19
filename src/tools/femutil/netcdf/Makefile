@@ -64,7 +64,12 @@ OBJS_INFO = ncf_util.o subclo.o
 OBJS_ELAB = ncf_util.o subclo.o
 OBJS_BGC = ncf_util.o ncf_dim_coords.o subclo.o convert.o bgc_util.o subgeo.o
 OBJS_GR = ncf_util.o subclo.o
-OBJS_TIME = ncf_tutil.o subiso8601.o subdts.o
+OBJS_TIME = ncf_tutil.o iso8601.o subdts.o
+
+# Build iso8601.o from the canonical source in src/utils/generic/
+# (was a local subiso8601.f90 copy; deduplicated 2026-04-19).
+iso8601.o: ../../../utils/generic/iso8601.f90
+	$(F77) -c $(FFLAGS) $< -o $@
 OBJS_BGC += $(OBJS_TIME)
 
 EXES = gr gw ncinfo ncelab
@@ -145,7 +150,7 @@ bgc_util.o: ncf.mod
 clo.mod: subclo.o
 dts.mod: subdts.o
 gr.o: ncf.mod
-iso8601.mod: subiso8601.o
+iso8601.mod: iso8601.o
 mod_ncbgc.mod: ncbgc.o
 mod_ncinfo.mod: ncelab.o
 mod_ncinfo.mod: ncinfo.o
