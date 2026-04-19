@@ -63,9 +63,12 @@ jobs:
 
       - name: Check for implicit none gaps (subroutine-scoped)
         run: |
+          # src/shyfem and src/tools are clean — block any regression.
           ./bin/check_implicit_none.py src/shyfem --max-violations 0
-          # Informational: count offenders in other dirs but don't fail
-          ./bin/check_implicit_none.py src/utils src/tools --max-violations 500 || true
+          ./bin/check_implicit_none.py src/tools  --max-violations 0
+          # src/utils has 31 known offenders; gate prevents new ones,
+          # ratchet down as files get cleaned up.
+          ./bin/check_implicit_none.py src/utils  --max-violations 31
 
   mpi-build:
     runs-on: ubuntu-latest
