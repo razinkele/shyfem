@@ -486,14 +486,15 @@
 !		...wird beendet wenn in do-90-loop kein index-
 !		...paar mehr vertauscht werden kann.
 !
-        integer ndim
-        parameter (ndim=10)
+        implicit none
 
-	integer nkn,ngrddi
-	integer iphv(nkn),kphv(nkn)
-	integer ng(nkn),iknot(ngrddi*nkn)
-	integer kvert(2,nkn)
-	logical bwrite
+        integer, parameter :: ndim = 10
+
+	integer, intent(in) :: nkn,ngrddi
+	integer, intent(inout) :: iphv(nkn),kphv(nkn)
+	integer, intent(in) :: ng(nkn),iknot(ngrddi*nkn)
+	integer, intent(inout) :: kvert(2,nkn)
+	logical, intent(in) :: bwrite
 
         integer ipaar(2,ndim),khil(2,ndim)
 
@@ -504,12 +505,10 @@
         integer ipp,ipa1,ipa2,kk,kmax
         integer kanf,k,mhhmax,mhh,mmin
         integer kmerk,k1,k2,kmin
+        integer ia,kend
 
-        logical true
-        integer msmax
-        save true,msmax
-        data true  / .true. /
-        data msmax /  100   /
+        logical, save :: true  = .true.
+        integer, save :: msmax = 100
 !
 	if( bwrite ) write(6,*) 'Applying Rosen algorithm...'
 
@@ -737,14 +736,17 @@
 
 ! swaps two integers
 
-        integer a,b,c
+        implicit none
+
+        integer, intent(inout) :: a,b
+        integer :: c
 
         c=a
         a=b
         b=c
 
         return
-	end
+        end subroutine iiswap
 
 !--------------------------------------------------------------------------
 !

@@ -192,6 +192,10 @@ c call qclose at the end of the session
 
 	subroutine wait
 
+	implicit none
+
+	integer i
+
 	read(5,'(i10)') i
 
-	end
+	end subroutine wait

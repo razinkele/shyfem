@@ -93,11 +93,12 @@ program simple_xy_wr
 
   contains
   subroutine check(status)
+    implicit none
     integer, intent ( in) :: status
-    
-    if(status /= nf90_noerr) then 
+
+    if(status /= nf90_noerr) then
       print *, trim(nf90_strerror(status))
       stop "Stopped"
     end if
-  end subroutine check  
+  end subroutine check
 end program simple_xy_wr

@@ -127,12 +127,18 @@
 ! *****************************************************************
 
         subroutine taylor_set(sigma_tot,sigma_r,d_sigma,ndec)
+	implicit none
+	real, intent(inout) :: sigma_tot,sigma_r,d_sigma
+	integer, intent(inout) :: ndec
 	call taylor_set_param(sigma_tot,sigma_r,d_sigma,ndec)
-	end
+	end subroutine taylor_set
 
         subroutine taylor_get(sigma_tot,sigma_r,d_sigma,ndec)
+	implicit none
+	real, intent(inout) :: sigma_tot,sigma_r,d_sigma
+	integer, intent(inout) :: ndec
 	call taylor_get_param(sigma_tot,sigma_r,d_sigma,ndec)
-	end
+	end subroutine taylor_get
 
 ! *****************************************************************
 !  finished compatibility section

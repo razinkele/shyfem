@@ -265,8 +265,13 @@
 
 	subroutine node_debug(k,nkn,nel,nen3v,xgv,ygv)
 
-	integer nen3v(3,nel)
-	real xgv(nkn),ygv(nkn)
+	implicit none
+
+	integer, intent(in) :: k,nkn,nel
+	integer, intent(in) :: nen3v(3,nel)
+	real, intent(in) :: xgv(nkn),ygv(nkn)
+
+	integer :: iu,i,ii
 
 	iu = 79
 
@@ -280,7 +285,7 @@
 	  write(iu,*) xgv(i),ygv(i)
 	end do
 
-	end
+	end subroutine node_debug
 
 ! *******************************************************
 

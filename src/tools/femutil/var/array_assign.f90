@@ -36,8 +36,9 @@
 
 	interface
 	subroutine write_array(a1,a2)
-        integer a1(:),a2(:)
-	end
+        implicit none
+        integer :: a1(:),a2(:)
+	end subroutine write_array
 	end interface
 
 

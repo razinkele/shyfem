@@ -205,11 +205,21 @@ c**************************************************************
 
 	subroutine wait
 
+	implicit none
+
+	integer i
+
 	read(5,'(i10)') i
 
-	end
+	end subroutine wait
 
 	subroutine slow(ns)
+
+	implicit none
+
+	integer, intent(in) :: ns
+	integer :: i
+	real :: a
 
 	a=2.
 	do i=1,ns
@@ -218,7 +228,7 @@ c**************************************************************
 	end do
 
 	return
-	end
+	end subroutine slow
 
 c**************************************************************
 

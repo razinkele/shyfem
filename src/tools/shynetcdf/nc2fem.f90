@@ -144,8 +144,9 @@
 
 	interface
 	  subroutine parse_strings(line,n,vars)
-	  character*(*) line
-	  integer n
+	  implicit none
+	  character*(*) :: line
+	  integer :: n
 	  character(len=256), allocatable :: vars(:)
 	  end subroutine parse_strings
 	end interface

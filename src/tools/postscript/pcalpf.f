@@ -41,12 +41,19 @@ c 10.11.2021	ggu	avoid compiler warnings for arithmetic if
 
       subroutine axis(xpage,ypage,ibcd,nchar,axlen,angle,firstv,deltav)
 
-	dimension ibcd(1)
-	!data isym/4h*10 /
+      implicit none
+
+      real, intent(in) :: xpage,ypage
+      integer, intent(in) :: ibcd(1)
+      integer, intent(in) :: nchar
+      real, intent(in) :: axlen,angle,firstv,deltav
 
       character symb*40
       integer isym(40)          !CW -> avoid compiler warning
       equivalence (symb,isym(1))
+
+      integer k,kn,ntic,ntc,nt,i,ii,isym1
+      real a,ex,adx,sth,cth,cth2,sth2,dxb,dyb,xn,yn,xval,z,xt,yt
 
       do k=1,10
         symb(k:k)=' '
@@ -195,7 +202,15 @@ c set constants for annotation on cw or ccw side of axis
 
       subroutine scale(array,axlen,npts,inc)
 
-      dimension  array(1),save(7)
+      implicit none
+
+      real, intent(inout) :: array(1)
+      real, intent(in) :: axlen
+      integer, intent(in) :: npts,inc
+
+      real save(7)
+      real fad,y0,yn,ys,firstv,deltav,p,t
+      integer k,n,i,is
 
       save(1)= 1.0
       save(2)= 2.0
@@ -331,7 +346,14 @@ c set constants for annotation on cw or ccw side of axis
 
       subroutine line(xarray,yarray,npts,inc,lintyp,inteq)
 
-      dimension xarray(1),yarray(1)
+      implicit none
+
+      real, intent(in) :: xarray(1),yarray(1)
+      integer, intent(in) :: npts,inc,lintyp,inteq
+
+      integer lmin,ldx,nl,ipen,icode,nt,nf,na,kk
+      integer ipena,icodea,lsw,i
+      real firstx,deltax,firsty,deltay,xn,yn,df,dl
 
       lmin = npts*inc+1
       ldx  = lmin+inc
@@ -397,9 +419,16 @@ c set constants for annotation on cw or ccw side of axis
 
       subroutine number(xpage,ypage,height,fpn,angle,ndec)
 
+      implicit none
+
+      real, intent(in) :: xpage,ypage,height,fpn,angle
+      integer, intent(in) :: ndec
+
       character num*20,iar*10,minus*1,ipoint*1,blank*1
       integer inum(20)          !ggu CW -> avoid compiler warning
       equivalence (num,inum(1)) !ggu CW -> avoid compiler warning
+      integer k,ii,n,maxn,mn,i,ilp,j,isb,nchar,inum1
+      real fpv
       data iar/'0123456789'/
       data minus/'-'/,ipoint/'.'/,blank/' '/
 

@@ -442,12 +442,14 @@
 
 !  tests conversion routines from and to internal coordinates
 
+	implicit none
+
 	double precision xx(3),yy(3)
 	double precision xi(3),xip(3)
 	double precision x,y
 	double precision xis,xips,xidiff
 	double precision eps,area,reg
-	integer i,n,ii
+	integer i,n,ii,ifreq
 
 	n = 500000
 	ifreq = n / 10
