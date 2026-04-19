@@ -871,6 +871,16 @@ git commit -m "fortran: add implicit none + intent to iiswap and areg_fluxes"
 
 ### Task 8: Back-port `YYYY-M-D` bug fix to `subiso8601.f90` (safer than deletion)
 
+> **Post-execution correction (2026-04-19, commit 81b26e1):** The direction of
+> divergence described in "Context" below was **inverted**. Reality was:
+> `iso8601.f90` had the 2024 revision-log *comment* but still contained the
+> *buggy* `parse_time` code (`i1` for day, `nl=8`, commented-out digit check),
+> while `subiso8601.f90` had the *fixed* code (`i2`, `nl=9`, active digit
+> check) but was *missing* the comment. The implementer correctly applied the
+> fix bidirectionally: ported the code fix into `iso8601.f90` and added the
+> revision-log comment into `subiso8601.f90`. Both `parse_time` subroutines
+> are now byte-identical.
+
 **Files:**
 - Modify: `src/tools/femutil/netcdf/subiso8601.f90` (parse_time routine)
 
