@@ -384,7 +384,7 @@ class FileService:
                 db.add_all([ProjectFile(**r) for r in rows])
 
     @staticmethod
-    def get_project_storage(project_id: int) -> dict:
+    def get_project_storage(project_id: int) -> dict[str, int]:
         """Get storage usage for a project.
 
         Returns:

@@ -417,7 +417,7 @@ class CeleryJobQueue(JobQueue):
 
         return count
 
-    async def health_check(self) -> dict:
+    async def health_check(self) -> dict[str, bool | list[str] | int]:
         """Check Redis connectivity and Celery worker health.
 
         Returns:

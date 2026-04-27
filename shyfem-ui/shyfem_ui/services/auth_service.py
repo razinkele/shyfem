@@ -3,6 +3,7 @@
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
@@ -60,7 +61,7 @@ class AuthService:
         role: str = "user",
         display_name: str | None = None,
         email: str | None = None,
-        user_data_root: "Path | None" = None,
+        user_data_root: Path | None = None,
     ) -> dict:
         """Create a new user account.
 
@@ -80,7 +81,6 @@ class AuthService:
             ValueError: If username or email already exists, or email missing for non-tutorial.
             PermissionError: If directory creation fails.
         """
-        from pathlib import Path
         from shyfem_ui.models.user import ROLE_TUTORIAL
 
         # Validate email requirement

@@ -466,6 +466,17 @@ document.addEventListener('DOMContentLoaded', function() {
       shyfemNavTo('Tutorial');
     }
   }).catch(function() {});
+
+  // Auto-close mobile sidebar overlay when viewport grows past the
+  // mobile breakpoint. Without this, resizing from mobile to desktop
+  // leaves the overlay state stuck open. Debounced to avoid spam.
+  var resizeTimer = null;
+  window.addEventListener('resize', function() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() {
+      if (window.innerWidth > 768) shyfemCloseMobile();
+    }, 200);
+  });
 });
 
 function shyfemToggleDark() {
