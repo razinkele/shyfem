@@ -373,7 +373,7 @@ def simulation_server(
     def template_preview():
         template_name = input.template_select()
         if not template_name:
-            return None
+            return ui.div()
 
         template = generate_template(template_name)
         # Show a compact preview of what the template contains

@@ -1,5 +1,6 @@
 """Access control helper for project-level permission checks."""
 
+from shyfem_ui.models.user import ROLE_ADMIN
 from shyfem_ui.services.sharing_service import SharingService
 
 ROLE_HIERARCHY = {"owner": 3, "editor": 2, "viewer": 1}
@@ -24,8 +25,8 @@ def check_project_access(
     """
     if user is None:
         return None
-    if user.get("role") == "admin":
-        return "admin"
+    if user.get("role") == ROLE_ADMIN:
+        return ROLE_ADMIN
 
     svc = SharingService(session_factory=session_factory)
     actual_role = svc.get_user_role(project_id, user["id"])

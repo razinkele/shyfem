@@ -1428,6 +1428,7 @@ def grid_map_server(
 
         vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"), epsg=epsg_val)
 
+        label_map = _build_label_map(layers, mode=actual_mode)
         await _map.update(
             session,
             layers=layers,
@@ -1437,19 +1438,15 @@ def grid_map_server(
                 zoom_widget(),
                 fullscreen_widget(placement="top-right"),
                 screenshot_widget(placement="top-right"),
+                layer_legend_widget(
+                    auto_introspect=True,
+                    show_checkbox=True,
+                    label_map=label_map,
+                    placement="bottom-right",
+                    title="Layers",
+                ),
             ],
         )
-
-        label_map = _build_label_map(layers, mode=actual_mode)
-        await _map.set_controls(session, [
-            layer_legend_widget(
-                auto_introspect=True,
-                show_checkbox=True,
-                label_map=label_map,
-                placement="bottom-right",
-                title="Layers",
-            ),
-        ])
 
         # Set basemap style
         basemap_url = BASEMAPS.get(basemap_key, BASEMAPS["positron"])

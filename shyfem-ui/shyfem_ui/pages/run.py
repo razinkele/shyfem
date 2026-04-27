@@ -1044,7 +1044,7 @@ def run_server(
         # Output files
         files_section = None
         if job.output_files:
-            file_items = [ui.li(ui.code(f, class_="small")) for f in job.output_files]
+            file_items = [ui.tags.li(ui.code(f, class_="small")) for f in job.output_files]
             files_section = ui.div(
                 ui.strong("Output Files:"),
                 ui.tags.ul(*file_items, class_="mb-0 mt-1"),
@@ -1165,7 +1165,7 @@ def run_server(
             return None
 
         steps_list = [
-            ui.li(
+            ui.tags.li(
                 ui.code(step.tool_name),
                 ui.span(f" - {step.name}", class_="text-muted"),
             )

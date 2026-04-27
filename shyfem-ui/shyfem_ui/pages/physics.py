@@ -259,9 +259,9 @@ def physics_ui() -> ui.Tag:
 def physics_server(input, output, session, config: Config, active_project=None) -> None:
     """Physics configuration page server."""
 
-    str_data: reactive.Value[StrFile] = reactive.Value(StrFile())
+    str_data: reactive.Value[StrFile] = reactive.value(StrFile())
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.load_btn)
     def load_file():
         path = Path(input.str_path())
@@ -332,7 +332,7 @@ def physics_server(input, output, session, config: Config, active_project=None) 
 
         sf.set_param(section, param, value)
 
-    @reactive.Effect
+    @reactive.effect
     @reactive.event(input.save_btn)
     def save_file():
         path_str = input.str_path()

@@ -6,13 +6,14 @@ from datetime import datetime, timedelta, timezone
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError, VerifyMismatchError
+from sqlalchemy.exc import IntegrityError
 
 try:
     from argon2.exceptions import InvalidHashError
 except ImportError:
     from argon2.exceptions import InvalidHash as InvalidHashError  # argon2 <23
 
-from shyfem_ui.models.user import AuthSession, User
+from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User
 
 logger = logging.getLogger(__name__)
 _ph = PasswordHasher()
@@ -115,9 +116,15 @@ class AuthService:
 
             session.commit()
             return self._user_to_dict(user)
+        except IntegrityError as e:
+            # Concurrent insert raced past the existence checks above.
+            session.rollback()
+            raise ValueError(
+                "Username or email already taken — choose another."
+            ) from e
         except Exception:
             session.rollback()
-            logger.exception("Database error in operation")
+            logger.exception("Database error in create_user")
             raise
         finally:
             session.close()
@@ -219,8 +226,8 @@ class AuthService:
             if user is None:
                 return False
             # Prevent deleting the last admin
-            if user.role == "admin":
-                admin_count = session.query(User).filter_by(role="admin").count()
+            if user.role == ROLE_ADMIN:
+                admin_count = session.query(User).filter_by(role=ROLE_ADMIN).count()
                 if admin_count <= 1:
                     raise ValueError("Cannot delete the last admin user")
             # Clean up project permissions (no cascade on this FK)

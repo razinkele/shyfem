@@ -132,10 +132,10 @@ def job_status_server(
         # Output files
         files_section = None
         if job.output_files:
-            file_items = [ui.li(ui.code(f), class_="small") for f in job.output_files]
+            file_items = [ui.tags.li(ui.code(f), class_="small") for f in job.output_files]
             files_section = ui.div(
                 ui.strong("Output Files:"),
-                ui.ul(*file_items, class_="mb-0"),
+                ui.tags.ul(*file_items, class_="mb-0"),
                 class_="mt-2",
             )
 

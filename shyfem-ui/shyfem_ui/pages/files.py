@@ -105,6 +105,13 @@ def files_server(
     refresh_trigger = reactive.value(0)
     current_filter = reactive.value(None)
 
+    # Dedup sets — handlers are registered once per file_id and persist for
+    # the session. Without this, every re-render of files_content() (and
+    # every click on a delete button) would stack additional listeners,
+    # causing one user action to fire N times.
+    _dl_registered: set[int] = set()
+    _rm_registered: set[int] = set()
+
     @render.ui
     def files_content():
         _ = refresh_trigger.get()
@@ -344,6 +351,9 @@ def files_server(
             ui.notification_show(f"Error seeding tutorial files: {e}", type="error", duration=6)
 
     def _register_download_handler(file_id: int):
+        if file_id in _dl_registered:
+            return
+        _dl_registered.add(file_id)
         btn_id = f"dl_{file_id}"
 
         @reactive.effect
@@ -367,10 +377,14 @@ def files_server(
                 ui.notification_show(f"Download error: {e}", type="error", duration=6)
 
     def _register_delete_handler(file_id: int, filename: str):
-        btn_id = f"rm_{file_id}"
+        if file_id in _rm_registered:
+            return
+        _rm_registered.add(file_id)
+        rm_btn = f"rm_{file_id}"
+        confirm_btn = f"confirm_rm_{file_id}"
 
         @reactive.effect
-        @reactive.event(getattr(input, btn_id))
+        @reactive.event(getattr(input, rm_btn))
         def _confirm_delete():
             m = ui.modal(
                 ui.p(f"Delete '{filename}'? This cannot be undone."),
@@ -378,7 +392,7 @@ def files_server(
                 easy_close=True,
                 footer=ui.div(
                     ui.input_action_button(
-                        f"confirm_rm_{file_id}",
+                        confirm_btn,
                         "Delete",
                         class_="btn-danger",
                     ),
@@ -387,29 +401,29 @@ def files_server(
             )
             ui.modal_show(m)
 
-            @reactive.effect
-            @reactive.event(getattr(input, f"confirm_rm_{file_id}"))
-            def _do_delete():
-                # Access check: require editor role to delete
-                from shyfem_ui.middleware.session_auth import get_current_user
-                from shyfem_ui.services.access_control import check_project_access
+        @reactive.effect
+        @reactive.event(getattr(input, confirm_btn))
+        def _do_delete():
+            # Access check: require editor role to delete
+            from shyfem_ui.middleware.session_auth import get_current_user
+            from shyfem_ui.services.access_control import check_project_access
 
-                user = get_current_user()
-                proj = active_project.get() if active_project else None
-                if user is not None and proj is not None:
-                    if check_project_access(proj["id"], user, min_role="editor") is None:
-                        ui.notification_show(
-                            "Permission denied: editor role required to delete files", type="error"
-                        , duration=6)
-                        ui.modal_remove()
-                        return
-                try:
-                    FileService.delete_file(file_id)
-                    ui.notification_show(f"Deleted: {filename}", type="message", duration=4)
-                    refresh_trigger.set(refresh_trigger.get() + 1)
-                except Exception as e:
-                    ui.notification_show(f"Delete error: {e}", type="error", duration=6)
-                ui.modal_remove()
+            user = get_current_user()
+            proj = active_project.get() if active_project else None
+            if user is not None and proj is not None:
+                if check_project_access(proj["id"], user, min_role="editor") is None:
+                    ui.notification_show(
+                        "Permission denied: editor role required to delete files", type="error"
+                    , duration=6)
+                    ui.modal_remove()
+                    return
+            try:
+                FileService.delete_file(file_id)
+                ui.notification_show(f"Deleted: {filename}", type="message", duration=4)
+                refresh_trigger.set(refresh_trigger.get() + 1)
+            except Exception as e:
+                ui.notification_show(f"Delete error: {e}", type="error", duration=6)
+            ui.modal_remove()
 
 
 def _register_filter_handler(label, type_val, current_filter, refresh_trigger, input) -> None:

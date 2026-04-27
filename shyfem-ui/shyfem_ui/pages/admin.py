@@ -10,6 +10,7 @@ import re
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.config import Config
+from shyfem_ui.models.user import ROLE_ADMIN, ROLE_TUTORIAL, ROLE_USER
 from shyfem_ui.services.auth_service import AuthService
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Pure functions (testable without Shiny runtime)
 # ---------------------------------------------------------------------------
 
-_VALID_ROLES = {"admin", "user", "tutorial"}
+_VALID_ROLES = {ROLE_ADMIN, ROLE_USER, ROLE_TUTORIAL}
 
 
 def _build_user_table_data(users: list[dict]) -> list[dict]:

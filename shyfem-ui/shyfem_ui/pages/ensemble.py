@@ -162,6 +162,11 @@ def ensemble_server(
     ensemble_state = reactive.value(None)  # {id, name, job_ids, submitted_at}
     ensemble_jobs = reactive.value([])
 
+    # Dedup set for remove-var handlers — without this, _register_remove_var_handlers
+    # would re-register a fresh _remove effect every time param_variations changed,
+    # stacking listeners and causing one click to remove multiple rows.
+    _remove_var_registered: set[int] = set()
+
     @render.ui
     def mpi_np_control():
         try:
@@ -277,6 +282,10 @@ def ensemble_server(
             _make_remove_var(i)
 
     def _make_remove_var(index: int):
+        if index in _remove_var_registered:
+            return
+        _remove_var_registered.add(index)
+
         @reactive.effect
         @reactive.event(input[f"remove_var_{index}"])
         def _remove():

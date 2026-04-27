@@ -14,6 +14,7 @@ from shyfem_ui.services.mesh_builder import (
     _compute_depths_only,
     adjust_depths,
     compute_mesh_stats,
+    count_below_area,
     estimate_element_count,
     export_grd,
     import_boundaries,
@@ -22,6 +23,7 @@ from shyfem_ui.services.mesh_builder import (
     load_bathymetry_file,
     reduce_boundary,
     smooth_boundary,
+    suggest_max_area_for_limit,
     triangulate,
     validate_boundary,
 )
@@ -708,6 +710,12 @@ def mesh_builder_server(
                             value=None,
                             min=0.001,
                         ),
+                        ui.input_numeric(
+                            "min_area",
+                            "Min Triangle Area (warning only)",
+                            value=None,
+                            min=0.0,
+                        ),
                         ui.output_ui("element_estimate"),
                     ),
                     ui.column(
@@ -717,18 +725,46 @@ def mesh_builder_server(
                             "Min Angle (degrees)",
                             min=10, max=33, value=20,
                         ),
+                        ui.input_numeric(
+                            "max_elements",
+                            "Max Elements (cap, blank = no limit)",
+                            value=None,
+                            min=1,
+                        ),
                     ),
                 )
             )
         elif method == "delaunay_conforming":
             controls.append(
-                ui.input_slider(
-                    "min_angle",
-                    "Min Angle (degrees)",
-                    min=10, max=33, value=20,
+                ui.row(
+                    ui.column(
+                        6,
+                        ui.input_slider(
+                            "min_angle",
+                            "Min Angle (degrees)",
+                            min=10, max=33, value=20,
+                        ),
+                    ),
+                    ui.column(
+                        6,
+                        ui.input_numeric(
+                            "max_elements",
+                            "Max Elements (cap, blank = no limit)",
+                            value=None,
+                            min=1,
+                        ),
+                    ),
+                )
+            )
+        else:  # delaunay_minimal
+            controls.append(
+                ui.input_numeric(
+                    "max_elements",
+                    "Max Elements (cap, blank = no limit)",
+                    value=None,
+                    min=1,
                 ),
             )
-        # Minimal: no controls needed
         return ui.div(*controls) if controls else ui.span()
 
     @render.ui
@@ -740,6 +776,14 @@ def mesh_builder_server(
         count = estimate_element_count(grd, area)
         return ui.p(f"Estimated elements: ~{count:,}", class_="small text-info")
 
+    def _safe_input(name: str):
+        """Read a dynamically-rendered numeric input, returning None if it
+        does not exist for the current method."""
+        try:
+            return input[name]()
+        except Exception:
+            return None
+
     @reactive.effect
     @reactive.event(input.generate_mesh)
     async def _on_generate_mesh():
@@ -749,16 +793,45 @@ def mesh_builder_server(
             return
         method = input.mesh_method()
 
-        # Read controls that exist for the selected method
+        # Read controls that exist for the selected method. Some inputs are
+        # only mounted for certain methods, so use a tolerant accessor.
         if method == "delaunay_quality":
-            eff_area = input.max_area()
+            eff_area = _safe_input("max_area")
             eff_angle = input.min_angle()
         elif method == "delaunay_conforming":
             eff_area = None
             eff_angle = input.min_angle()
-        else:  # minimal
+        else:  # delaunay_minimal
             eff_area = None
             eff_angle = 0.0
+
+        min_area_threshold = _safe_input("min_area")
+        max_elements = _safe_input("max_elements")
+
+        # Pre-flight: hard cap on element count (applies to all methods).
+        if max_elements and max_elements > 0:
+            estimate_pf = estimate_element_count(grd, eff_area) if eff_area else 0
+            if estimate_pf > max_elements:
+                suggested = suggest_max_area_for_limit(grd, max_elements)
+                msg = (
+                    f"Estimated {estimate_pf:,} elements exceeds the limit "
+                    f"of {max_elements:,}."
+                )
+                if suggested is not None:
+                    msg += f" Increase Max Area to ≥ {suggested:.4f} or raise the cap."
+                _log(msg)
+                ui.notification_show(msg, type="warning", duration=8)
+                return
+            # If the cap is set but no max_area was given, the user needs at
+            # least one of the two. For "minimal", element count is governed
+            # entirely by boundary geometry — surface a clear note.
+            if not eff_area and method != "delaunay_minimal":
+                ui.notification_show(
+                    "Set a Max Triangle Area so the element-count cap can be checked.",
+                    type="warning",
+                    duration=6,
+                )
+                return
 
         _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
         busy_message.set("Generating mesh…")
@@ -774,6 +847,21 @@ def mesh_builder_server(
             mesh_grd.set(new_mesh)
             preview_grd.set(new_mesh)
             _log(f"Mesh generated: {new_mesh.num_nodes} nodes, {new_mesh.num_elements} elements")
+
+            # Post-flight: warn (don't block) if min_area threshold was set
+            # and slivers exist. Triangle has no native min-area constraint;
+            # post-validation is the most we can do without changing topology.
+            if min_area_threshold and min_area_threshold > 0:
+                slivers = count_below_area(new_mesh, min_area_threshold)
+                if slivers > 0:
+                    warn = (
+                        f"⚠ {slivers:,} triangle(s) below Min Triangle Area "
+                        f"({min_area_threshold:g}). Increase Min Angle or "
+                        "redesign the boundary to reduce slivers."
+                    )
+                    _log(warn)
+                    ui.notification_show(warn, type="warning", duration=8)
+
             ui.notification_show(
                 f"Generated {new_mesh.num_elements} elements",
                 type="message",

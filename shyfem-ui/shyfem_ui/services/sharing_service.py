@@ -2,6 +2,8 @@
 
 import logging
 
+from sqlalchemy.exc import IntegrityError
+
 from shyfem_ui.models.project import Project
 from shyfem_ui.models.user import ProjectPermission, User
 
@@ -34,8 +36,23 @@ class SharingService:
                 db.add(perm)
             db.commit()
             return True
+        except IntegrityError:
+            # Concurrent insert won the race; fold into the update path.
+            db.rollback()
+            existing = (
+                db.query(ProjectPermission)
+                .filter_by(project_id=project_id, user_id=user_id)
+                .first()
+            )
+            if existing:
+                existing.role = role
+                db.commit()
+                return True
+            logger.exception("share_project IntegrityError without existing permission")
+            raise
         except Exception:
             db.rollback()
+            logger.exception("Failed to share project %s with user %s", project_id, user_id)
             raise
         finally:
             db.close()
@@ -56,6 +73,7 @@ class SharingService:
             return True
         except Exception:
             db.rollback()
+            logger.exception("Failed to unshare project %s from user %s", project_id, user_id)
             raise
         finally:
             db.close()

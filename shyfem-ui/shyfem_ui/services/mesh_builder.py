@@ -409,6 +409,61 @@ def estimate_element_count(grd: GrdFile, max_area: float) -> int:
     return max(1, int(boundary_poly.area / max_area))
 
 
+def suggest_max_area_for_limit(
+    grd: GrdFile, max_elements: int, safety: float = 1.10
+) -> float | None:
+    """Inverse of estimate_element_count — pick a max_area that respects a hard
+    element-count cap.
+
+    Args:
+        grd: Grid with boundary lines.
+        max_elements: Desired upper bound on element count (must be > 0).
+        safety: Multiplier applied to the suggested area to leave headroom for
+                estimation error (default 10%).
+
+    Returns:
+        Suggested max_area, or None if the boundary has no area.
+    """
+    if max_elements <= 0:
+        return None
+    boundary_poly = _boundary_to_polygon(grd)
+    if boundary_poly is None or boundary_poly.is_empty:
+        return None
+    return safety * boundary_poly.area / max_elements
+
+
+def count_below_area(grd: GrdFile, threshold: float) -> int:
+    """Count triangles whose area is strictly less than ``threshold``.
+
+    Used to warn users that their mesh contains slivers below the requested
+    Min Triangle Area. Triangle (the library) cannot enforce a minimum area
+    constraint, so we report after the fact.
+
+    Args:
+        grd: Grid produced by :func:`triangulate`.
+        threshold: Minimum acceptable triangle area (must be > 0).
+
+    Returns:
+        Number of triangles below the threshold (0 if threshold <= 0 or no
+        triangle elements exist).
+    """
+    if threshold <= 0 or not grd.elements:
+        return 0
+    count = 0
+    for elem in grd.elements.values():
+        nodes = [grd.nodes[n] for n in elem.nodes if n in grd.nodes]
+        if len(nodes) < 3:
+            continue
+        # Shoelace area for a triangle (works for the first 3 nodes).
+        x1, y1 = nodes[0].x, nodes[0].y
+        x2, y2 = nodes[1].x, nodes[1].y
+        x3, y3 = nodes[2].x, nodes[2].y
+        area = abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) / 2.0
+        if area < threshold:
+            count += 1
+    return count
+
+
 # ---------------------------------------------------------------------------
 # 5. Triangulate
 # ---------------------------------------------------------------------------

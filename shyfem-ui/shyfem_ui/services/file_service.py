@@ -326,7 +326,10 @@ class FileService:
                 raise ValueError(f"Project {project_id} not found")
             work_dir = Path(project.work_dir)
 
-        # Walk tutorial directory and copy relevant files
+        # Walk tutorial directory and copy relevant files. Accumulate row dicts
+        # and insert in a single transaction at the end so we don't pay one
+        # round-trip per file.
+        rows: list[dict] = []
         for src_file in sorted(tutorial_dir.rglob("*")):
             if not src_file.is_file():
                 continue
@@ -354,16 +357,20 @@ class FileService:
             file_data = src_file.read_bytes()
             checksum = hashlib.sha256(file_data).hexdigest()
 
+            rows.append(
+                {
+                    "project_id": project_id,
+                    "filename": src_file.name,
+                    "rel_path": rel_str,
+                    "file_type": file_type,
+                    "size_bytes": len(file_data),
+                    "checksum": checksum,
+                }
+            )
+
+        if rows:
             with db_session() as db:
-                pf = ProjectFile(
-                    project_id=project_id,
-                    filename=src_file.name,
-                    rel_path=rel_str,
-                    file_type=file_type,
-                    size_bytes=len(file_data),
-                    checksum=checksum,
-                )
-                db.add(pf)
+                db.add_all([ProjectFile(**r) for r in rows])
 
     @staticmethod
     def get_project_storage(project_id: int) -> dict:

@@ -308,10 +308,10 @@ def str_editor_server(
 
         is_success = len(errors) == 1 and "valid" in errors[0].lower()
 
-        items = [ui.li(error, class_="small") for error in errors]
+        items = [ui.tags.li(error, class_="small") for error in errors]
 
         return ui.div(
-            ui.ul(*items, class_="mb-0"),
+            ui.tags.ul(*items, class_="mb-0"),
             class_=f"alert {'alert-success' if is_success else 'alert-warning'} mt-2 py-2",
         )
 

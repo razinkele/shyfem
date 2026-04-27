@@ -16,6 +16,7 @@ from shyfem_ui.services.mesh_builder import (
     _remove_ring_loops,
     adjust_depths,
     compute_mesh_stats,
+    count_below_area,
     estimate_element_count,
     export_grd,
     extract_boundary_zero_points,
@@ -26,6 +27,7 @@ from shyfem_ui.services.mesh_builder import (
     reduce_boundary,
     set_resolution,
     smooth_boundary,
+    suggest_max_area_for_limit,
     triangulate,
     validate_boundary,
 )
@@ -806,6 +808,49 @@ class TestEstimateElementCount:
         """Zero max_area returns 0."""
         grd = _make_square_boundary()
         assert estimate_element_count(grd, max_area=0.0) == 0
+
+
+class TestSuggestMaxAreaForLimit:
+    """Tests for suggest_max_area_for_limit()."""
+
+    def test_round_trip_with_estimate(self):
+        """Suggested area used as max_area should yield <= max_elements."""
+        grd = _make_square_boundary()  # area = 100
+        max_elements = 50
+        suggested = suggest_max_area_for_limit(grd, max_elements)
+        assert suggested is not None
+        # Estimate must respect the cap (10% safety baked in)
+        assert estimate_element_count(grd, suggested) <= max_elements
+
+    def test_invalid_limit_returns_none(self):
+        grd = _make_square_boundary()
+        assert suggest_max_area_for_limit(grd, 0) is None
+        assert suggest_max_area_for_limit(grd, -1) is None
+
+
+class TestCountBelowArea:
+    """Tests for count_below_area()."""
+
+    def test_no_elements(self):
+        """Boundary-only grid has zero triangles below threshold."""
+        grd = _make_square_boundary()
+        assert count_below_area(grd, threshold=1.0) == 0
+
+    def test_zero_threshold_returns_zero(self):
+        """A non-positive threshold short-circuits to 0."""
+        grd = triangulate(_make_square_boundary(), max_area=5.0, min_angle=20.0)
+        assert count_below_area(grd, threshold=0.0) == 0
+        assert count_below_area(grd, threshold=-1.0) == 0
+
+    def test_counts_slivers(self):
+        """A coarse mesh has triangles ≈max_area; threshold above max
+        catches all of them."""
+        grd = triangulate(_make_square_boundary(), max_area=5.0, min_angle=20.0)
+        # All triangles should be below an artificially high threshold
+        n_total = len(grd.elements)
+        assert count_below_area(grd, threshold=1e9) == n_total
+        # And none below an artificially low one
+        assert count_below_area(grd, threshold=1e-9) == 0
 
 
 # ---------------------------------------------------------------------------
