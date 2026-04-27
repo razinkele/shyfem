@@ -161,6 +161,17 @@ class FileService:
             project = db.query(Project).filter_by(id=pf.project_id).first()
             return Path(project.work_dir) / pf.rel_path
 
+    @staticmethod
+    def get_file_project_id(file_id: int) -> int | None:
+        """Return the project_id that owns a file, or None if file not found.
+
+        Used by download/preview handlers to verify the requesting user has
+        access to the file's project before serving its bytes.
+        """
+        with db_session() as db:
+            pf = db.query(ProjectFile).filter_by(id=file_id).first()
+            return pf.project_id if pf else None
+
     # Parameters in $name that reference files
     _NAME_FILE_PARAMS = frozenset(
         {

@@ -359,6 +359,24 @@ def files_server(
         @reactive.effect
         @reactive.event(getattr(input, btn_id))
         def _download():
+            # Access check: viewer role on the file's *actual* project (not
+            # active_project — defense-in-depth against crafted file_ids).
+            from shyfem_ui.middleware.session_auth import get_current_user
+            from shyfem_ui.services.access_control import check_project_access
+
+            file_project_id = FileService.get_file_project_id(file_id)
+            if file_project_id is None:
+                ui.notification_show("File not found", type="error", duration=4)
+                return
+            user = get_current_user()
+            if user is not None:
+                if check_project_access(file_project_id, user, min_role="viewer") is None:
+                    ui.notification_show(
+                        "Permission denied: viewer role required to download this file",
+                        type="error",
+                        duration=6,
+                    )
+                    return
             try:
                 path = FileService.get_file_path(file_id)
                 data = path.read_bytes()

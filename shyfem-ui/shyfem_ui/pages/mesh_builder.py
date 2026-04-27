@@ -396,8 +396,25 @@ def mesh_builder_server(
             dest = work / f["name"]
             shutil.copy2(f["datapath"], dest)
 
-        # Find the primary file to open
-        for ext in (".shp", ".geojson", ".json", ".gpkg"):
+        # Find the primary file to open. For Shapefiles, also check that the
+        # required companion files (.shx, .dbf) are present — GDAL refuses to
+        # open a bare .shp with a cryptic "flags=68" error otherwise.
+        shp_files = list(work.glob("*.shp"))
+        if shp_files:
+            primary = shp_files[0]
+            stem = primary.stem
+            present = {p.suffix.lower() for p in work.glob(f"{stem}.*")}
+            required = {".shp", ".shx", ".dbf"}
+            missing = sorted(required - present)
+            if missing:
+                raise ValueError(
+                    f"Shapefile incomplete — missing companion file(s): "
+                    f"{', '.join(missing)}. Re-select all files together "
+                    f"(.shp, .shx, .dbf, .prj) or upload them as a .zip archive."
+                )
+            return primary
+
+        for ext in (".geojson", ".json", ".gpkg"):
             found = list(work.glob(f"*{ext}"))
             if found:
                 return found[0]

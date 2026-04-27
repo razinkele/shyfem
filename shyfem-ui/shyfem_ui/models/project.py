@@ -2,7 +2,6 @@
 
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -141,7 +140,7 @@ class Simulation(Base):
 
     # Relationships
     project: Mapped["Project"] = relationship("Project", back_populates="simulations")
-    grid: Mapped[Optional["Grid"]] = relationship("Grid", back_populates="simulations")
+    grid: Mapped["Grid | None"] = relationship("Grid", back_populates="simulations")
     jobs: Mapped[list["Job"]] = relationship(
         "Job", back_populates="simulation", cascade="all, delete-orphan"
     )
@@ -195,7 +194,7 @@ class Job(Base):
     stderr_file: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     return_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    output_files: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    output_files: Mapped[list[str] | None] = mapped_column(JSON, nullable=True, default=list)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(
@@ -209,7 +208,7 @@ class Job(Base):
     celery_task_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Relationships
-    simulation: Mapped[Optional["Simulation"]] = relationship("Simulation", back_populates="jobs")
+    simulation: Mapped["Simulation | None"] = relationship("Simulation", back_populates="jobs")
 
     @property
     def duration(self) -> float | None:
