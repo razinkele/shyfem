@@ -410,16 +410,23 @@ def estimate_element_count(grd: GrdFile, max_area: float) -> int:
 
 
 def suggest_max_area_for_limit(
-    grd: GrdFile, max_elements: int, safety: float = 1.10
+    grd: GrdFile, max_elements: int, safety: float = 1.5
 ) -> float | None:
-    """Inverse of estimate_element_count — pick a max_area that respects a hard
+    """Inverse of estimate_element_count — pick a max_area that respects an
     element-count cap.
+
+    The naive ``boundary_area / max_area`` estimator is roughly the floor of
+    actual element count: Triangle's quality refinement (when ``min_angle``
+    is set) splits triangles further to honor the angle constraint, typically
+    inflating the count by 30-60%. The default ``safety=1.5`` accounts for
+    that — it is a hint, not a guarantee, and very irregular boundaries can
+    still exceed the cap.
 
     Args:
         grd: Grid with boundary lines.
         max_elements: Desired upper bound on element count (must be > 0).
-        safety: Multiplier applied to the suggested area to leave headroom for
-                estimation error (default 10%).
+        safety: Multiplier applied to the suggested area to leave headroom
+                for refinement-induced inflation (default 1.5).
 
     Returns:
         Suggested max_area, or None if the boundary has no area.

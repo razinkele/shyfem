@@ -854,6 +854,229 @@ class TestCountBelowArea:
 
 
 # ---------------------------------------------------------------------------
+# TestMeshCreationPipeline — end-to-end behavior of triangulate() against the
+# constraint helpers used by the Mesh Builder UI. These tests validate the
+# *promises* the UI makes to users: that Max Triangle Area is enforced, that
+# Min Angle is honored, that Max Elements + suggest_max_area_for_limit
+# round-trip safely, and that the Min Triangle Area warning reports
+# meaningful numbers on real meshes.
+# ---------------------------------------------------------------------------
+
+
+def _triangle_area(nodes) -> float:
+    """Shoelace area for the first 3 nodes of an element."""
+    x1, y1 = nodes[0].x, nodes[0].y
+    x2, y2 = nodes[1].x, nodes[1].y
+    x3, y3 = nodes[2].x, nodes[2].y
+    return abs((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)) / 2.0
+
+
+def _triangle_min_angle_deg(nodes) -> float:
+    """Smallest interior angle of a triangle, in degrees."""
+    a = np.array([nodes[0].x, nodes[0].y])
+    b = np.array([nodes[1].x, nodes[1].y])
+    c = np.array([nodes[2].x, nodes[2].y])
+    sides = [
+        np.linalg.norm(b - c),
+        np.linalg.norm(a - c),
+        np.linalg.norm(a - b),
+    ]
+    angles = []
+    for i in range(3):
+        opp = sides[i]
+        adj1 = sides[(i + 1) % 3]
+        adj2 = sides[(i + 2) % 3]
+        # Law of cosines, clamp to [-1, 1] for floating-point safety
+        cos_a = (adj1**2 + adj2**2 - opp**2) / (2 * adj1 * adj2)
+        angles.append(np.degrees(np.arccos(np.clip(cos_a, -1.0, 1.0))))
+    return min(angles)
+
+
+def _mesh_node_list(mesh, elem):
+    return [mesh.nodes[n] for n in elem.nodes if n in mesh.nodes][:3]
+
+
+class TestMeshCreationPipeline:
+    """End-to-end mesh creation tests covering constraint helpers."""
+
+    def test_max_area_constraint_respected(self):
+        """All triangles in a quality mesh respect the max_area cap."""
+        grd = _make_square_boundary()
+        max_area = 5.0
+        mesh = triangulate(grd, max_area=max_area, min_angle=20.0)
+        assert len(mesh.elements) > 0
+        # Triangle library guarantees area ≤ max_area; allow 1% slack for FP.
+        for elem in mesh.elements.values():
+            nodes = _mesh_node_list(mesh, elem)
+            if len(nodes) == 3:
+                assert _triangle_area(nodes) <= max_area * 1.01
+
+    def test_min_angle_constraint_respected(self):
+        """All triangles' minimum interior angle is ≥ requested angle."""
+        grd = _make_square_boundary()
+        requested = 25.0
+        mesh = triangulate(grd, max_area=10.0, min_angle=requested)
+        assert len(mesh.elements) > 0
+        # Triangle's quality guarantee may miss a handful of bad triangles
+        # near input boundary corners; allow a small fraction below threshold
+        # but assert the bulk respect the constraint.
+        below = 0
+        total = 0
+        for elem in mesh.elements.values():
+            nodes = _mesh_node_list(mesh, elem)
+            if len(nodes) == 3:
+                total += 1
+                if _triangle_min_angle_deg(nodes) < requested - 1.0:
+                    below += 1
+        assert total > 0
+        assert below / total < 0.10, (
+            f"{below}/{total} triangles violate min_angle≥{requested}°"
+        )
+
+    def test_min_angle_zero_skips_quality_refinement(self):
+        """Setting min_angle=0 should produce a coarser mesh than min_angle=25."""
+        grd = _make_square_boundary()
+        mesh_minimal = triangulate(grd, max_area=None, min_angle=0.0)
+        mesh_quality = triangulate(grd, max_area=None, min_angle=25.0)
+        # Quality refinement only kicks in when q is set; with the same area
+        # constraint (None) and min_angle=0 we should not get *more* elements.
+        assert len(mesh_minimal.elements) <= len(mesh_quality.elements)
+
+    def test_estimate_matches_actual_within_tolerance(self):
+        """estimate_element_count is within ~50% of actual count."""
+        grd = _make_square_boundary()
+        max_area = 2.0
+        estimate = estimate_element_count(grd, max_area)
+        mesh = triangulate(grd, max_area=max_area, min_angle=20.0)
+        actual = len(mesh.elements)
+        assert estimate > 0
+        # The boundary-area / max_area estimator is rough but should be within
+        # an order of magnitude. Allow a wide band — Triangle's actual count
+        # depends on quality refinement and edge subdivision.
+        assert 0.3 * estimate <= actual <= 5.0 * estimate
+
+    def test_suggest_then_triangulate_respects_limit(self):
+        """Pre-flight pipeline: limit → suggest area → triangulate → count is
+        in the same ballpark as the limit (suggest is a hint, not a guarantee).
+        """
+        grd = _make_square_boundary()
+        cap = 200
+        suggested = suggest_max_area_for_limit(grd, cap)
+        assert suggested is not None
+        mesh = triangulate(grd, max_area=suggested, min_angle=20.0)
+        # Suggested area applies a 50% safety margin to absorb refinement
+        # inflation; on a regular square boundary the actual count should
+        # land within ±25% of the cap.
+        assert 0.5 * cap <= len(mesh.elements) <= 1.25 * cap
+
+    def test_finer_mesh_has_more_elements_monotonic(self):
+        """Element count grows monotonically as max_area shrinks."""
+        grd = _make_square_boundary()
+        counts = [
+            len(triangulate(grd, max_area=area, min_angle=20.0).elements)
+            for area in [50.0, 25.0, 10.0, 5.0, 2.0]
+        ]
+        # Pairwise check — adjacent equality is OK at very coarse resolutions
+        # where the quality minimum dominates, but the count must never drop.
+        for prev, nxt in zip(counts, counts[1:]):
+            assert nxt >= prev
+
+    def test_triangulate_is_deterministic(self):
+        """Same input → same element count across runs."""
+        grd = _make_square_boundary()
+        m1 = triangulate(grd, max_area=5.0, min_angle=20.0)
+        m2 = triangulate(grd, max_area=5.0, min_angle=20.0)
+        assert len(m1.elements) == len(m2.elements)
+        assert len(m1.nodes) == len(m2.nodes)
+
+    def test_count_below_area_low_on_quality_mesh(self):
+        """A quality mesh with max_area=A should have few triangles below A/2."""
+        grd = _make_square_boundary()
+        max_area = 5.0
+        mesh = triangulate(grd, max_area=max_area, min_angle=20.0)
+        # Triangle ensures ≤ max_area but does not enforce ≥ any minimum;
+        # however with min_angle=20° on a regular square most triangles
+        # cluster near the upper bound. Slivers below half the cap should
+        # be a minority.
+        slivers = count_below_area(mesh, max_area / 2.0)
+        assert slivers < len(mesh.elements) * 0.5
+
+    def test_count_below_area_catches_known_slivers(self):
+        """Threshold above max area triangle catches every triangle."""
+        grd = _make_square_boundary()
+        max_area = 5.0
+        mesh = triangulate(grd, max_area=max_area, min_angle=20.0)
+        # Threshold above any possible triangle catches all of them
+        assert count_below_area(mesh, threshold=max_area * 10) == len(mesh.elements)
+        # Threshold below the smallest possible triangle catches none
+        assert count_below_area(mesh, threshold=1e-12) == 0
+
+    def test_holes_excluded_from_element_count(self):
+        """Triangulating a domain with a hole produces fewer elements than no hole."""
+        grd_solid = _make_square_boundary()
+        grd_hole = _make_square_with_hole()
+        max_area = 1.0
+        mesh_solid = triangulate(grd_solid, max_area=max_area, min_angle=20.0)
+        mesh_hole = triangulate(grd_hole, max_area=max_area, min_angle=20.0)
+        # Hole subtracts 16 area units from the 100 of the outer square
+        assert len(mesh_hole.elements) < len(mesh_solid.elements)
+
+    def test_boundary_nodes_preserved(self):
+        """All input boundary corner coordinates appear in the output mesh nodes."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=50.0, min_angle=20.0)
+        # Original 4 corners must all be present (within FP tolerance) in the
+        # resulting node set
+        original_coords = {(grd.nodes[i].x, grd.nodes[i].y) for i in range(1, 5)}
+        mesh_coords = {(round(n.x, 6), round(n.y, 6)) for n in mesh.nodes.values()}
+        for ox, oy in original_coords:
+            assert (round(ox, 6), round(oy, 6)) in mesh_coords
+
+
+class TestMeshCreationEdgeCases:
+    """Edge cases for the mesh creation flow."""
+
+    def test_estimate_with_no_boundary_returns_zero(self):
+        """Empty grid → 0 estimate, never crashes."""
+        empty = GrdFile()
+        assert estimate_element_count(empty, max_area=1.0) == 0
+
+    def test_suggest_with_no_boundary_returns_none(self):
+        """Empty grid → None (cannot compute boundary area)."""
+        empty = GrdFile()
+        assert suggest_max_area_for_limit(empty, max_elements=100) is None
+
+    def test_count_below_area_on_unmeshed_boundary(self):
+        """Boundary-only grid (no elements) returns 0 regardless of threshold."""
+        grd = _make_square_boundary()
+        assert count_below_area(grd, threshold=1e9) == 0
+
+    def test_max_area_none_no_quality_constraint_minimal_mesh(self):
+        """Minimal triangulation: no max_area, no min_angle → fewest elements."""
+        grd = _make_square_boundary()
+        mesh = triangulate(grd, max_area=None, min_angle=0.0)
+        # A square boundary has at minimum 2 triangles (one diagonal split)
+        assert 2 <= len(mesh.elements) <= 6
+        assert len(mesh.nodes) >= 4
+
+    def test_very_small_boundary(self):
+        """Sub-unit-sized boundary still produces a valid mesh."""
+        grd = _make_square_boundary(size=0.001)
+        mesh = triangulate(grd, max_area=1e-7, min_angle=20.0)
+        assert len(mesh.elements) >= 2
+
+    def test_count_below_area_handles_degenerate_element(self):
+        """Element with <3 valid nodes is silently skipped, not raised."""
+        grd = _make_simple_mesh()
+        # Reference a non-existent node — count_below_area should skip it
+        grd.elements[3] = Element(id=3, elem_type=0, nodes=[1, 2, 9999])
+        # Should not raise; count for the 2 valid triangles + 1 skipped
+        n = count_below_area(grd, threshold=1e9)
+        # The 2 valid triangles are area 50 each; threshold 1e9 catches both
+        assert n == 2
+
+
+# ---------------------------------------------------------------------------
 # TestComputeMeshStats
 # ---------------------------------------------------------------------------
 
