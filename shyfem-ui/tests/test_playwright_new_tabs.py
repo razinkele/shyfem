@@ -73,7 +73,8 @@ class TestAdminTab:
 
     def test_admin_renders_heading(self, pw_page):
         _switch_tab(pw_page, "Admin")
-        assert pw_page.locator("text=User Management").count() >= 1
+        # Heading is "Administration" with a "Users" sub-section.
+        assert pw_page.get_by_role("heading", name="Administration").count() >= 1
 
     def test_admin_create_user_button(self, pw_page):
         _switch_tab(pw_page, "Admin")

@@ -67,6 +67,54 @@ def _stub_run_server(
     def job_details_panel():
         return ui.p("Select a job.", class_="text-muted")
 
+    # Render the MPI checkbox unconditionally so it has a stable position in
+    # the DOM, then have a separate output for the conditional mpi_np input.
+    # This avoids the @render.ui re-run not picking up input.mpi_enabled
+    # changes when the checkbox is itself defined inside the same render.
+
+    @render.ui
+    def shyfem_options():
+        """MPI/solver options for shyfem (reactive, no polling)."""
+        try:
+            tool = input.tool_select()
+        except Exception:
+            tool = None
+        if tool != "shyfem":
+            return ui.span()
+        return ui.div(
+            ui.h6("MPI Options"),
+            ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
+            ui.output_ui("mpi_np_control"),
+            ui.hr(),
+            ui.h6("Solver Options"),
+            ui.input_select(
+                "solver_select",
+                "Solver",
+                choices={
+                    "sparskit": "Direct Solver (SPARSKIT)",
+                    "petsc": "Iterative Solver (PETSc)",
+                },
+                selected="sparskit",
+            ),
+        )
+
+    @render.ui
+    def mpi_np_control():
+        """Show the process-count input only when MPI is enabled."""
+        try:
+            enabled = bool(input.mpi_enabled())
+        except Exception:
+            return ui.span()
+        if not enabled:
+            return ui.span()
+        return ui.input_numeric(
+            "mpi_np", "Number of Processes", value=4, min=2, max=128,
+        )
+
+    @render.ui
+    def solver_hint():
+        return ui.span()
+
 
 def create_test_app(config=None):
     """Create a Shiny app suitable for browser testing."""

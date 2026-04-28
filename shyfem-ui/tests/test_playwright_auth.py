@@ -42,7 +42,9 @@ class TestLoginFlow:
         # domcontentloaded to avoid CDN timeouts.
         with page.expect_navigation(wait_until="domcontentloaded", timeout=15000):
             page.locator("button[type='submit']").click()
-        assert page.locator(".alert-danger").count() >= 1
+        # Login error uses class "error-alert" (rendered by SessionAuthMiddleware
+        # in middleware/session_auth.py:_serve_login_page).
+        assert page.locator(".error-alert").count() >= 1
         page.close()
         ctx.close()
 
@@ -107,9 +109,12 @@ class TestAdminPanel:
         pw_auth_page.locator("#admin-create_user_btn").click(force=True)
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
 
-        # Fill form
+        # Fill form. Email is required for user/admin roles per recent
+        # validation hardening — supply one to avoid creation failure.
         pw_auth_page.locator("#admin-new_username").fill("testuser")
         pw_auth_page.locator("#admin-new_password").fill("testpass123")
+        # Form validation requires a "." after "@" — localhost alone fails.
+        pw_auth_page.locator("#admin-new_email").fill("testuser@example.com")
         pw_auth_page.wait_for_timeout(300)
 
         # Submit via the confirm button

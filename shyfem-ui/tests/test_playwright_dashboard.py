@@ -23,7 +23,7 @@ def _open_new_project_modal(pw_page):
     _ensure_dashboard(pw_page)
     _dismiss_modals(pw_page)
     # Ensure Shiny reactives are ready before clicking
-    pw_page.locator("#home-system_status").wait_for(state="attached", timeout=5000)
+    pw_page.locator("#home-system_health_count").wait_for(state="attached", timeout=5000)
     pw_page.wait_for_timeout(500)
     # force=True bypasses any residual overlay that may intercept pointer events
     pw_page.locator("#home-new_project_btn").click(force=True)
@@ -52,10 +52,12 @@ class TestDashboardRendering:
         assert pw_page.locator("text=Quick Start").is_visible()
 
     def test_system_status_card(self, pw_page):
-        assert pw_page.locator("text=System Status").is_visible()
+        # The dashboard now shows a "Tools Ready" metric card instead of a
+        # standalone "System Status" heading.
+        assert pw_page.locator("text=Tools Ready").is_visible()
 
     def test_recent_jobs_card(self, pw_page):
-        assert pw_page.get_by_role("heading", name="Recent Jobs").is_visible()
+        assert pw_page.get_by_role("heading", name="Recent Activity").is_visible()
 
     def test_projects_card(self, pw_page):
         assert pw_page.locator("text=Projects").count() >= 1
@@ -73,10 +75,14 @@ class TestDashboardRendering:
         assert pw_page.locator("#home-tutorial_btn").is_visible()
 
     def test_system_status_shows_tools(self, pw_page):
+        # Tools are now shown as an aggregate count (e.g., "6/6") inside the
+        # Tools Ready card rather than as individual labels. Verify the
+        # count output rendered with a non-empty value.
         pw_page.wait_for_timeout(1000)
-        for tool in ["shypre", "shybas", "shyfem", "shyelab"]:
-            assert pw_page.locator(f"text={tool}").count() >= 1, \
-                f"Tool '{tool}' not listed in system status"
+        count_el = pw_page.locator("#home-system_health_count")
+        assert count_el.count() >= 1
+        text = count_el.inner_text().strip()
+        assert text and "/" in text, f"Expected 'N/M' tools count, got {text!r}"
 
     def test_no_projects_message(self, pw_page):
         pw_page.wait_for_timeout(1000)
@@ -111,8 +117,10 @@ class TestNewProjectModal:
 
     def test_modal_cancel_button(self, pw_page):
         _open_new_project_modal(pw_page)
-        pw_page.locator("#home-cancel_create_btn").click()
-        pw_page.wait_for_timeout(1000)
+        # Cancel is now a Bootstrap dismiss button (ui.modal_button). Real
+        # click without force=True so Bootstrap's dismiss handler fires.
+        pw_page.locator(f"{_MODAL} button[data-bs-dismiss='modal']").first.click()
+        pw_page.locator(_MODAL).wait_for(state="hidden", timeout=5000)
         assert not pw_page.locator(_MODAL).is_visible()
 
     def test_create_project_empty_name_shows_error(self, pw_page):
@@ -144,7 +152,7 @@ class TestTutorialModal:
     def _open_modal(self, pw_page):
         _ensure_dashboard(pw_page)
         _dismiss_modals(pw_page)
-        pw_page.locator("#home-system_status").wait_for(state="attached", timeout=5000)
+        pw_page.locator("#home-system_health_count").wait_for(state="attached", timeout=5000)
         pw_page.wait_for_timeout(500)
         pw_page.locator("#home-tutorial_btn").click(force=True)
         pw_page.locator(_MODAL).wait_for(state="visible", timeout=15000)
@@ -163,12 +171,15 @@ class TestTutorialModal:
     def test_tutorial_modal_phases(self, pw_page):
         self._open_modal(pw_page)
         modal_text = pw_page.locator(_MODAL).inner_text()
-        for keyword in ["Hydrodynamics", "Tidal", "Coriolis", "Salinity", "Temperature"]:
+        # Keywords must match the actual phase titles in TUTORIAL_CONTENT.
+        for keyword in [
+            "Hydrodynamics", "Boundaries", "Coriolis", "Salinity", "Temperature",
+        ]:
             assert keyword in modal_text
         _close_modal(pw_page)
 
     def test_tutorial_modal_cancel(self, pw_page):
         self._open_modal(pw_page)
-        pw_page.locator("#home-cancel_tutorial_btn").click()
-        pw_page.wait_for_timeout(1000)
+        pw_page.locator(f"{_MODAL} button[data-bs-dismiss='modal']").first.click()
+        pw_page.locator(_MODAL).wait_for(state="hidden", timeout=5000)
         assert not pw_page.locator(_MODAL).is_visible()

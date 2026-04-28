@@ -54,8 +54,10 @@ class TestProjectWorkflow:
         """Click project link to activate it."""
         _switch_tab(pw_page, "Dashboard")
         pw_page.wait_for_timeout(1000)
-        # Find and click the project link -- uses pattern #home-project_{id}
-        project_link = pw_page.locator("[id^='home-project_']").first
+        # input_action_link renders as <a> — narrow the selector to anchors
+        # so we don't accidentally match #home-project_count (a render.ui
+        # div), #home-project_name (the modal text input), etc.
+        project_link = pw_page.locator("a[id^='home-project_']").first
         project_link.click(force=True)
         pw_page.wait_for_timeout(3000)
         _dismiss_modals(pw_page)

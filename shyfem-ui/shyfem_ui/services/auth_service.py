@@ -438,6 +438,12 @@ class AuthService:
         finally:
             session.close()
 
+        # Tutorial users don't require email; everyone else gets a localhost
+        # placeholder when none is supplied so first-run bootstrap doesn't fail.
+        from shyfem_ui.models.user import ROLE_TUTORIAL
+
+        if email is None and role != ROLE_TUTORIAL:
+            email = f"{username}@localhost"
         return self.create_user(
             username=username,
             password=password,
@@ -454,14 +460,16 @@ class AuthService:
         Args:
             username: Login name for the admin account.
             password: Plaintext password.
-            email: Email address. Required when creating a new admin user.
+            email: Email address. If omitted when creating, defaults to
+                ``{username}@localhost`` so first-run bootstrap doesn't fail
+                when the operator hasn't configured an email.
 
         Returns:
             Dict with admin user fields.
         """
         session = self._session_factory()
         try:
-            admin = session.query(User).filter_by(role="admin").first()
+            admin = session.query(User).filter_by(role=ROLE_ADMIN).first()
             if admin is not None:
                 return self._user_to_dict(admin)
         finally:
@@ -471,8 +479,8 @@ class AuthService:
         return self.create_user(
             username=username,
             password=password,
-            role="admin",
-            email=email,
+            role=ROLE_ADMIN,
+            email=email or f"{username}@localhost",
         )
 
     # ------------------------------------------------------------------

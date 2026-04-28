@@ -42,13 +42,18 @@ class TestJobSubmissionForm:
         """Test enabling MPI shows the process count input."""
         _switch_tab(pw_page, "Run")
         pw_page.locator("#run-tool_select").select_option("shyfem")
-        pw_page.wait_for_timeout(500)
+        pw_page.wait_for_timeout(800)
 
+        # Ensure shyfem_options has rendered and the checkbox exists.
         mpi_cb = pw_page.locator("#run-mpi_enabled")
-        mpi_cb.check()
-        pw_page.wait_for_timeout(500)
+        mpi_cb.wait_for(state="attached", timeout=5000)
+        # Use click() — .check() can be ambiguous in headless mode if the
+        # element wraps a hidden native input under a styled label.
+        mpi_cb.click()
+        pw_page.wait_for_timeout(800)
 
         np_input = pw_page.locator("#run-mpi_np")
+        np_input.wait_for(state="visible", timeout=5000)
         assert np_input.is_visible()
 
     def test_submit_without_input_no_crash(self, pw_page):
@@ -104,8 +109,12 @@ class TestGridPrepInteractions:
     def test_switch_subtabs(self, pw_page):
         """Test switching between sub-tabs on Grid Prep page."""
         _switch_tab(pw_page, "Grid Prep")
+        # Scope tab lookup to the visible Grid Prep page div — other pages
+        # (e.g., Mesh Builder) also have nav tabs with overlapping names like
+        # "Log" that would otherwise be matched first.
+        page_scope = pw_page.locator("#sf-page-Grid-Prep")
         for tab in ["Statistics", "Node Inspector", "Log", "Interactive Map"]:
-            pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").first.click()
+            page_scope.locator(f"[role='tab']:has-text('{tab}')").first.click()
             pw_page.wait_for_timeout(300)
 
 
@@ -187,8 +196,9 @@ class TestWebSocketConnection:
     def test_websocket_connected(self, pw_page):
         """Test that the Shiny WebSocket connection is established."""
         pw_page.wait_for_timeout(2000)
-        # Reactive outputs only render after WS connects
-        system_status = pw_page.locator("#home-system_status")
+        # Reactive outputs only render after WS connects — probe the
+        # "Tools Ready" badge which is one of the earliest reactive renders.
+        system_status = pw_page.locator("#home-system_health_count")
         assert system_status.count() >= 1
 
     def test_reactive_update_on_tab_switch(self, pw_page):
