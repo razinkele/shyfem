@@ -175,10 +175,13 @@ def pw_page(pw_browser, live_server):
     page = ctx.new_page()
     page.set_default_timeout(15000)
     page.goto(live_server, wait_until="networkidle", timeout=30000)
-    # Wait for Shiny to fully connect AND reactive outputs to render
+    # Wait for Shiny to fully connect AND reactive outputs to render.
+    # We probe `home-system_health_count` (the dashboard "Tools Ready" badge)
+    # — a small reactive output that renders early, so once it's no longer
+    # `recalculating`, the WebSocket is live and the home page is hydrated.
     page.wait_for_function(
         '() => {'
-        '  const el = document.getElementById("home-system_status");'
+        '  const el = document.getElementById("home-system_health_count");'
         '  return el && !el.classList.contains("recalculating") && el.children.length > 0;'
         '}',
         timeout=30000,

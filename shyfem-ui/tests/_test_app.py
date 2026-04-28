@@ -30,7 +30,10 @@ from shyfem_ui.pages import (
     files,
     grid_prep,
     home,
+    ibm,
+    mesh_builder,
     partitioning,
+    physics,
     postprocess,
     run,
     simulation,
@@ -97,6 +100,11 @@ def create_test_app(config=None):
     content_panels = ui.div(
         ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
         ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
+        ui.div(
+            mesh_builder.mesh_builder_ui("mesh_builder"),
+            id="sf-page-Mesh-Builder",
+            class_="sf-page",
+        ),
         ui.div(grid_prep.grid_prep_ui("grid_prep"), id="sf-page-Grid-Prep", class_="sf-page"),
         ui.div(
             partitioning.partitioning_ui("partitioning"),
@@ -104,9 +112,13 @@ def create_test_app(config=None):
             class_="sf-page",
         ),
         ui.div(
+            physics.physics_ui("physics"), id="sf-page-Physics", class_="sf-page"
+        ),
+        ui.div(
             simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
         ),
         ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
+        ui.div(ibm.ibm_ui("ibm"), id="sf-page-IBM", class_="sf-page"),
         ui.div(
             postprocess.postprocess_ui("postprocess"),
             id="sf-page-Post-Process",
@@ -143,14 +155,19 @@ def create_test_app(config=None):
                                  active_project=active_project,
                                  nav_callback=None,
                                  tutorial_context=tutorial_context)
+        mesh_builder.mesh_builder_server("mesh_builder", config,
+                                         active_project=active_project,
+                                         tutorial_context=tutorial_context)
         grid_prep.grid_prep_server("grid_prep", config,
                                    active_project=active_project,
                                    tutorial_context=tutorial_context)
         partitioning.partitioning_server("partitioning", config,
                                          active_project=active_project)
+        physics.physics_server("physics", config, active_project=active_project)
         simulation.simulation_server("simulation", config,
                                      active_project=active_project,
                                      tutorial_context=tutorial_context)
+        ibm.ibm_server("ibm", config, active_project=active_project)
         # Use stub run_server to avoid event loop deadlock
         _stub_run_server("run", config, job_queue)
         postprocess.postprocess_server("postprocess", config,
