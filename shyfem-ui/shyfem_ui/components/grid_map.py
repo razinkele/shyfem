@@ -117,6 +117,14 @@ _QUALITY_PALETTE: list[list[int]] = [
 
 _logger = logging.getLogger(__name__)
 
+# Deduplication set for the "could not determine projection" warning.
+# build_layers() invokes _get_lonlat() up to 5 times per render (once per
+# builder), so without this every map render would emit 4-5 identical
+# warnings. Keyed on (id(grd), epsg) — a (grd, epsg) pair won't change its
+# detect result mid-session. Capped to prevent unbounded growth.
+_warned_unprojected: set[tuple[int, int | None]] = set()
+_WARNED_MAX = 256
+
 
 def _is_geographic(grd: GrdFile) -> bool:
     """Return ``True`` if the grid appears to use geographic (lon/lat) coords.
@@ -190,8 +198,13 @@ def _get_lonlat(
     # Projected grid — use explicit EPSG or try auto-detection
     source_epsg = epsg or _detect_projected_crs(grd)
     if source_epsg is None:
-        _logger.warning("Could not determine projection for grid; "
-                        "using raw coordinates (set EPSG in map controls)")
+        key = (id(grd), epsg)
+        if key not in _warned_unprojected:
+            _logger.warning("Could not determine projection for grid; "
+                            "using raw coordinates (set EPSG in map controls)")
+            if len(_warned_unprojected) >= _WARNED_MAX:
+                _warned_unprojected.clear()
+            _warned_unprojected.add(key)
         return {
             nid: [float(node.x), float(node.y)]
             for nid, node in grd.nodes.items()
