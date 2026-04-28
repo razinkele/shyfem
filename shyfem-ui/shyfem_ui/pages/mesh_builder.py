@@ -865,6 +865,23 @@ def mesh_builder_server(
             preview_grd.set(new_mesh)
             _log(f"Mesh generated: {new_mesh.num_nodes} nodes, {new_mesh.num_elements} elements")
 
+            # Post-flight: warn (don't block) if the actual element count
+            # exceeded the user's cap. The pre-flight estimate is a lower
+            # bound — Triangle's quality refinement (when min_angle is set)
+            # adds 30-60% to the boundary_area / max_area floor. Surface
+            # the discrepancy so the user can choose to regenerate with a
+            # larger Max Area or accept the overshoot.
+            if max_elements and max_elements > 0 and new_mesh.num_elements > max_elements:
+                overshoot = new_mesh.num_elements - max_elements
+                pct = 100.0 * overshoot / max_elements
+                warn = (
+                    f"⚠ Generated {new_mesh.num_elements:,} elements — "
+                    f"{overshoot:,} ({pct:.0f}%) over the {max_elements:,} cap. "
+                    "Increase Max Area to reduce, or raise the cap."
+                )
+                _log(warn)
+                ui.notification_show(warn, type="warning", duration=8)
+
             # Post-flight: warn (don't block) if min_area threshold was set
             # and slivers exist. Triangle has no native min-area constraint;
             # post-validation is the most we can do without changing topology.
