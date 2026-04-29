@@ -406,21 +406,25 @@ class TestTriangulate:
             triangulate(grd)
 
     def test_min_angle_above_34_raises(self):
+        """min_angle > 34 is rejected; Triangle's quality refinement may not converge above 34."""
         grd = _make_square_boundary()
         with pytest.raises(ValueError, match="min_angle"):
             triangulate(grd, max_area=10.0, min_angle=40.0)
 
     def test_zero_max_area_raises(self):
+        """max_area = 0 is rejected (would silently disable the constraint)."""
         grd = _make_square_boundary()
         with pytest.raises(ValueError, match="max_area"):
             triangulate(grd, max_area=0.0, min_angle=20.0)
 
     def test_negative_max_area_raises(self):
+        """max_area < 0 is rejected."""
         grd = _make_square_boundary()
         with pytest.raises(ValueError, match="max_area"):
             triangulate(grd, max_area=-1.0, min_angle=20.0)
 
     def test_min_angle_exactly_34_passes(self):
+        """min_angle = 34 is accepted as the documented ceiling."""
         # 34 is the upper bound the guard allows; 33 is the documented
         # practical max. Triangle accepts up to 34 but can fail to converge
         # above it.
@@ -428,6 +432,7 @@ class TestTriangulate:
         triangulate(grd, max_area=10.0, min_angle=34.0)  # must not raise
 
     def test_max_area_none_still_allowed(self):
+        """max_area = None means 'no constraint' — the existing minimal-mesh path."""
         # None means "no global area constraint" — the existing minimal-mesh
         # path. Must continue to work.
         grd = _make_square_boundary()
