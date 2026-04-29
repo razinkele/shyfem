@@ -28,6 +28,7 @@ from shyfem_ui.services.mesh_builder import (
     triangulate,
     validate_boundary,
     warn_if_min_geq_max_area,
+    warn_if_minimal_with_cap,
 )
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser, Node
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -873,6 +874,12 @@ def mesh_builder_server(
                     duration=6,
                 )
                 return
+
+            # Minimal mode does not honor max_area, so the cap can't be enforced.
+            minimal_msg = warn_if_minimal_with_cap(method, max_elements)
+            if minimal_msg:
+                _log(minimal_msg)
+                ui.notification_show(minimal_msg, type="warning", duration=8)
 
         _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
         busy_message.set("Generating mesh…")

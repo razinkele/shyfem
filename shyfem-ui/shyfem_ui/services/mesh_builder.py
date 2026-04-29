@@ -487,6 +487,17 @@ def warn_if_min_geq_max_area(
     return None
 
 
+def warn_if_minimal_with_cap(method: str, max_elements: int | None) -> str | None:
+    """Warn the user that Max Elements has no effect in minimal mode."""
+    if method == "delaunay_minimal" and max_elements:
+        return (
+            "Max Elements is ignored for Delaunay (minimal) — the element "
+            "count depends only on the boundary geometry. Switch to a quality "
+            "method if you want the cap to be enforced."
+        )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 5. Triangulate
 # ---------------------------------------------------------------------------

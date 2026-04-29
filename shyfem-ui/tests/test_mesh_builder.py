@@ -32,6 +32,7 @@ from shyfem_ui.services.mesh_builder import (
     triangulate,
     validate_boundary,
     warn_if_min_geq_max_area,
+    warn_if_minimal_with_cap,
 )
 from shyfem_ui.services.parser_grd import (
     Element,
@@ -1661,3 +1662,25 @@ class TestWarnIfMinGeqMaxArea:
         msg = warn_if_min_geq_max_area(0.5, 0.1)
         assert msg is not None
         assert "sliver" in msg
+
+
+class TestWarnIfMinimalWithCap:
+
+    def test_minimal_with_cap_warns(self):
+        """Minimal method + non-zero cap → warn."""
+        msg = warn_if_minimal_with_cap("delaunay_minimal", 5000)
+        assert msg is not None
+        assert "ignored" in msg.lower()
+
+    def test_minimal_without_cap_silent(self):
+        """Minimal method + None or 0 cap → silent."""
+        assert warn_if_minimal_with_cap("delaunay_minimal", None) is None
+        assert warn_if_minimal_with_cap("delaunay_minimal", 0) is None
+
+    def test_quality_with_cap_silent(self):
+        """Quality method honors the cap → silent."""
+        assert warn_if_minimal_with_cap("delaunay_quality", 5000) is None
+
+    def test_conforming_with_cap_silent(self):
+        """Conforming method (caller has separate guard) → silent."""
+        assert warn_if_minimal_with_cap("delaunay_conforming", 5000) is None
