@@ -513,3 +513,152 @@ class TestCeleryReadsConfigShyfemDir:
         # The constructor stored shyfem_dir from CONFIG, not from ENV.
         assert "/correct/from/config" in str(queue.shyfem_dir)
         assert "/wrong/path/from/env" not in str(queue.shyfem_dir)
+
+
+# ---------------------------------------------------------------------------
+# TestCeleryParity
+# ---------------------------------------------------------------------------
+
+
+class TestCeleryParity:
+    """CeleryJobQueue must have parity with LocalJobQueue for DB persistence
+    and notification emails."""
+
+    def _fake_config(self, monkeypatch, tmp_path):
+        fake_config = MagicMock()
+        fake_config.shyfem_dir = "/usr/local/shyfem"
+        fake_config.work_dir = str(tmp_path)
+        monkeypatch.setattr(
+            "shyfem_ui.services.job_celery.get_config", lambda: fake_config
+        )
+        return fake_config
+
+    def test_celery_init_accepts_session_factory_and_notification_service(
+        self, monkeypatch, tmp_path
+    ):
+        """CeleryJobQueue.__init__ must accept the same kwargs as LocalJobQueue."""
+        self._fake_config(monkeypatch, tmp_path)
+
+        sf = MagicMock(name="session_factory")
+        ns = MagicMock(name="notification_service")
+        q = CeleryJobQueue(session_factory=sf, notification_service=ns)
+        # Both must be stored on the instance for the task callbacks to use.
+        assert q.session_factory is sf
+        assert q.notification_service is ns
+
+    def test_factory_passes_session_factory_and_notification_to_celery(
+        self, monkeypatch, tmp_path
+    ):
+        """JobQueueFactory.create(mode='celery', ...) must propagate both kwargs."""
+        from shyfem_ui.services.job_queue import JobQueueFactory
+
+        self._fake_config(monkeypatch, tmp_path)
+
+        sf = MagicMock(name="session_factory")
+        ns = MagicMock(name="notification_service")
+        cfg = MagicMock(
+            work_dir=str(tmp_path),
+            shyfem_dir="/usr/local/shyfem",
+            redis_url="redis://localhost:6379/0",
+        )
+
+        q = JobQueueFactory.create(
+            mode="celery",
+            config=cfg,
+            session_factory=sf,
+            notification_service=ns,
+        )
+        assert q.session_factory is sf
+        assert q.notification_service is ns
+
+    def test_celery_persists_job_state_to_db(self, monkeypatch, tmp_path):
+        """On terminal status transition, _persist_job must write to the DB."""
+        from shyfem_ui.services.job_queue import JobInfo, JobStatus
+
+        self._fake_config(monkeypatch, tmp_path)
+
+        # Build a mock session that acts as a context manager
+        session = MagicMock()
+        session.__enter__ = MagicMock(return_value=session)
+        session.__exit__ = MagicMock(return_value=False)
+        # query chain: session.query(Job).filter(...).first() → None (new row)
+        session.query.return_value.filter.return_value.first.return_value = None
+
+        sf = MagicMock(return_value=session)
+
+        q = CeleryJobQueue(session_factory=sf)
+
+        job = JobInfo(
+            id="parity-job-1",
+            name="parity_test",
+            tool_name="shyfem",
+            args=["test.str"],
+            working_dir=str(tmp_path),
+            status=JobStatus.COMPLETED,
+            created_at=datetime(2026, 4, 28, 10, 0, 0),
+        )
+
+        # Patch the Job ORM model so we don't need a real DB schema
+        fake_job_cls = MagicMock()
+        monkeypatch.setattr("shyfem_ui.models.project.Job", fake_job_cls)
+
+        q._persist_job(job)
+
+        # session_factory was called once (to open the session)
+        sf.assert_called_once()
+        # add() must have been called (new row path)
+        session.add.assert_called_once()
+
+    def test_celery_sends_completion_notification_on_success(
+        self, monkeypatch, tmp_path
+    ):
+        """notification_service.notify_job_success is called for COMPLETED jobs."""
+        import shyfem_ui.services.job_celery as mod
+        from shyfem_ui.services.job_queue import JobInfo, JobStatus
+
+        self._fake_config(monkeypatch, tmp_path)
+
+        ns = MagicMock(name="notification_service")
+        q = CeleryJobQueue(notification_service=ns)  # noqa: F841 — side effect sets global
+
+        job = JobInfo(
+            id="notify-job-1",
+            name="notify_test",
+            tool_name="shyfem",
+            args=[],
+            working_dir=str(tmp_path),
+            status=JobStatus.COMPLETED,
+            created_at=datetime(2026, 4, 28, 10, 0, 0),
+            started_at=datetime(2026, 4, 28, 10, 0, 0),
+            completed_at=datetime(2026, 4, 28, 10, 0, 5),
+        )
+
+        # Call the module-level function directly (as the Celery worker would)
+        mod._send_completion_notification(job)
+        ns.notify_job_success.assert_called_once()
+
+    def test_celery_sends_failure_notification_on_failure(
+        self, monkeypatch, tmp_path
+    ):
+        """notification_service.notify_job_failed is called for FAILED jobs."""
+        import shyfem_ui.services.job_celery as mod
+        from shyfem_ui.services.job_queue import JobInfo, JobStatus
+
+        self._fake_config(monkeypatch, tmp_path)
+
+        ns = MagicMock(name="notification_service")
+        q = CeleryJobQueue(notification_service=ns)  # noqa: F841 — side effect sets global
+
+        job = JobInfo(
+            id="notify-job-2",
+            name="notify_fail_test",
+            tool_name="shyfem",
+            args=[],
+            working_dir=str(tmp_path),
+            status=JobStatus.FAILED,
+            created_at=datetime(2026, 4, 28, 10, 0, 0),
+            error_message="Something went wrong",
+        )
+
+        mod._send_completion_notification(job)
+        ns.notify_job_failed.assert_called_once()

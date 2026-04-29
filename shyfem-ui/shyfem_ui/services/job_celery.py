@@ -23,6 +23,13 @@ from typing import Any
 from shyfem_ui.config import get_config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
+# Module-level sentinel for the optional session_factory / notification_service
+# injected at queue-construction time.  Celery task functions run in worker
+# processes and cannot reach the queue object directly; see _persist_job_standalone
+# / _send_notification_standalone for the worker-side equivalents.
+_queue_session_factory: Callable | None = None
+_queue_notification_service: Any | None = None
+
 logger = logging.getLogger(__name__)
 
 # Module-level Celery app (created lazily, shared across imports)
@@ -230,6 +237,109 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str) -> None:
     finally:
         job_info.completed_at = datetime.now()
         _store_job_info(rc, job_info)
+        # Persist terminal state to DB if a session_factory is available
+        _persist_job_to_db(job_info)
+        # Send completion notification if a notification_service is available
+        _send_completion_notification(job_info)
+
+
+# ---------------------------------------------------------------------------
+# DB persistence + notification helpers (worker-side, module-level)
+# ---------------------------------------------------------------------------
+
+
+def _persist_job_to_db(job_info: JobInfo) -> None:
+    """Write or update a job row in the database.
+
+    Uses ``_queue_session_factory`` if set (injected by ``CeleryJobQueue``
+    when running in-process), otherwise falls back to the app-wide
+    ``db_session`` context manager.
+    """
+    session_factory = _queue_session_factory
+    try:
+        from shyfem_ui.models.project import Job
+
+        if session_factory is not None:
+            ctx = session_factory()
+        else:
+            try:
+                from shyfem_ui.db.base import db_session
+                ctx = db_session()
+            except Exception:
+                return
+
+        with ctx as db:
+            row = db.query(Job).filter(Job.job_uuid == job_info.id).first()
+            if row is None:
+                row = Job(
+                    job_uuid=job_info.id,
+                    name=job_info.name,
+                    job_type=job_info.tool_name,
+                    command=" ".join(job_info.args),
+                    working_dir=job_info.working_dir,
+                    simulation_id=job_info.simulation_id,
+                    session_id=job_info.metadata.get("session_id"),
+                    user_id=job_info.metadata.get("user_id"),
+                )
+                db.add(row)
+
+            row.status = job_info.status
+            row.progress = job_info.progress
+            row.progress_message = job_info.progress_message
+            row.queued_at = job_info.queued_at
+            row.started_at = job_info.started_at
+            row.completed_at = job_info.completed_at
+            row.return_code = job_info.return_code
+            row.error_message = job_info.error_message
+            row.stdout_file = job_info.stdout_file
+            row.stderr_file = job_info.stderr_file
+    except Exception:
+        logger.error("Could not persist job %s to DB", job_info.id, exc_info=True)
+
+
+def _send_completion_notification(job_info: JobInfo) -> None:
+    """Send email notification for job completion.
+
+    Uses ``_queue_notification_service`` if set (injected by
+    ``CeleryJobQueue``).  Skips silently if not configured.
+    """
+    notification_service = _queue_notification_service
+    if notification_service is None:
+        return
+    try:
+        user_id = job_info.metadata.get("user_id")
+        user_dict: dict = {}
+        if user_id:
+            try:
+                from shyfem_ui.db.base import db_session
+                from shyfem_ui.models.user import User
+
+                with db_session() as db:
+                    user = db.query(User).filter_by(id=user_id).first()
+                if user:
+                    user_dict = {"username": user.username, "email": user.email}
+            except Exception:
+                logger.debug(
+                    "Could not look up user %s for notification", user_id, exc_info=True
+                )
+
+        duration = None
+        if job_info.started_at and job_info.completed_at:
+            duration = (job_info.completed_at - job_info.started_at).total_seconds()
+        job_dict = {
+            "name": job_info.name,
+            "duration": duration,
+            "working_dir": job_info.working_dir,
+            "stderr": job_info.error_message or "",
+        }
+        if job_info.status == JobStatus.COMPLETED:
+            notification_service.notify_job_success(user_dict, job_dict)
+        else:
+            notification_service.notify_job_failed(user_dict, job_dict)
+    except Exception:
+        logger.warning(
+            "Failed to send completion notification for job %s", job_info.id, exc_info=True
+        )
 
 
 # Register the task with Celery when the module is imported by a worker
@@ -259,13 +369,47 @@ class CeleryJobQueue(JobQueue):
         self,
         shyfem_dir: Path | None = None,
         redis_url: str | None = None,
+        *,
+        session_factory: Callable | None = None,
+        notification_service: Any | None = None,
     ):
         self.shyfem_dir = shyfem_dir or Path(str(get_config().shyfem_dir))
         self.redis_url = redis_url or "redis://localhost:6379/0"
+        self.session_factory = session_factory
+        self.notification_service = notification_service
         self._progress_callback: Callable[[str, float, str], None] | None = None
         self._celery_app = None
         self._redis_client = None
         self._task = None
+
+        # Publish to module-level globals so Celery task callbacks
+        # (running in the same process) can reach these services.
+        global _queue_session_factory, _queue_notification_service
+        if session_factory is not None:
+            _queue_session_factory = session_factory
+        if notification_service is not None:
+            _queue_notification_service = notification_service
+
+    # ------------------------------------------------------------------
+    # Database persistence and notification helpers (instance-level)
+    # Mirror the same method names used by LocalJobQueue so callers
+    # can treat both queues uniformly.
+    # ------------------------------------------------------------------
+
+    def _persist_job(self, job: JobInfo) -> None:
+        """Write or update a job row in the database."""
+        global _queue_session_factory
+        orig_sf = _queue_session_factory
+        try:
+            if self.session_factory is not None:
+                _queue_session_factory = self.session_factory
+            _persist_job_to_db(job)
+        finally:
+            _queue_session_factory = orig_sf
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
 
     def _get_celery_app(self):
         if self._celery_app is None:
