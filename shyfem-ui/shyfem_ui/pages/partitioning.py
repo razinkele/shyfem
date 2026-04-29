@@ -10,6 +10,8 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.session_auth import get_current_user
+from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
@@ -172,6 +174,20 @@ def partitioning_server(
     @reactive.effect
     @reactive.event(input.run_shyparts_btn)
     async def _run_shyparts():
+        _usr = get_current_user()
+        if active_project is not None:
+            _proj = active_project.get()
+            if _proj is not None and (
+                _usr is not None
+                and check_project_access(_proj["id"], _usr, min_role="editor") is None
+            ):
+                ui.notification_show(
+                    "Permission denied: editor role required to run partitioning",
+                    type="error",
+                    duration=6,
+                )
+                return
+
         bas_path = input.bas_path()
         if not bas_path:
             log_content.set("Error: No basin file specified")

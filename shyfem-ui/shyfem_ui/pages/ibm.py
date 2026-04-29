@@ -36,6 +36,8 @@ except ImportError:
 
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.session_auth import get_current_user
+from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.lgr_service import LgrService, ParticleTrack
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
@@ -257,6 +259,19 @@ def ibm_server(
     @reactive.effect
     @reactive.event(input.load_btn)
     async def _load_trajectories():
+        _usr = get_current_user()
+        _proj = active_project.get()
+        if _proj is not None and (
+            _usr is not None
+            and check_project_access(_proj["id"], _usr, min_role="editor") is None
+        ):
+            ui.notification_show(
+                "Permission denied: editor role required to load trajectories",
+                type="error",
+                duration=6,
+            )
+            return
+
         path_str = input.lgr_path()
         if not path_str:
             ui.notification_show("Enter a .lgr file path", type="warning")

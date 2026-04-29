@@ -8,6 +8,8 @@ from shyfem_ui.components.boundary_editor import boundary_editor_server, boundar
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.session_auth import get_current_user
+from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrFile, StrParser
 from shyfem_ui.services.str_validator import validate_str
 
@@ -304,6 +306,20 @@ def simulation_server(
     @reactive.effect
     @reactive.event(input.confirm_save_btn)
     def _confirm_save():
+        _usr = get_current_user()
+        if active_project is not None:
+            _proj = active_project.get()
+            if _proj is not None and (
+                _usr is not None
+                and check_project_access(_proj["id"], _usr, min_role="editor") is None
+            ):
+                ui.notification_show(
+                    "Permission denied: editor role required to save files",
+                    type="error",
+                    duration=6,
+                )
+                return
+
         path_str = input.save_path()
         if not path_str:
             ui.notification_show("Please enter a save path", type="warning")
