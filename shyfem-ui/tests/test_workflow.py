@@ -6,6 +6,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from shyfem_ui.db.base import Base
+from shyfem_ui.models import project as _p  # noqa: F401 -- register models
+from shyfem_ui.models import user as _u  # noqa: F401 -- register models
+from shyfem_ui.models import workflow as _wf_model  # noqa: F401 -- register models
 from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
 from shyfem_ui.services.workflow import (
     WORKFLOW_TEMPLATES,
@@ -14,6 +21,23 @@ from shyfem_ui.services.workflow import (
     WorkflowStatus,
     WorkflowStep,
 )
+
+
+@pytest.fixture()
+def db_session():
+    """In-memory SQLite session for workflow persistence tests."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
+
+
+@pytest.fixture()
+def session_factory(db_session):
+    """Session factory that always returns the same in-memory session."""
+    return lambda: db_session
 
 
 @pytest.fixture
@@ -57,9 +81,9 @@ def mock_queue():
 
 
 @pytest.fixture
-def engine(mock_queue):
-    """Create a WorkflowEngine with mock queue."""
-    return WorkflowEngine(mock_queue)
+def engine(mock_queue, session_factory):
+    """Create a WorkflowEngine with mock queue and in-memory DB."""
+    return WorkflowEngine(mock_queue, session_factory=session_factory)
 
 
 class TestWorkflowTemplates:
@@ -116,6 +140,15 @@ class TestWorkflowTemplates:
         assert steps[1].tool_name == "shyfem"
         assert steps[1].input_from == "Hydrodynamic run"
 
+    def test_offline_tracer_steps_have_no_options(self):
+        """Test that WorkflowStep no longer carries an 'options' field."""
+        tpl = WORKFLOW_TEMPLATES["offline_tracer"]
+        for step in tpl["steps"]:
+            assert not hasattr(step, "options"), (
+                "WorkflowStep.options was removed as part of U5 fix; "
+                f"step {step.name!r} still has it"
+            )
+
 
 class TestWorkflowEngine:
     """Tests for WorkflowEngine core functionality."""
@@ -165,7 +198,7 @@ class TestWorkflowEngine:
     @pytest.mark.asyncio
     async def test_get_workflow_nonexistent(self, engine):
         """Test getting nonexistent workflow returns None."""
-        assert engine.get_workflow("nonexistent") is None
+        assert engine.get_workflow("99999") is None
 
     @pytest.mark.asyncio
     async def test_list_workflows(self, engine, tmp_path):
@@ -259,7 +292,7 @@ class TestWorkflowEngine:
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_workflow(self, engine):
         """Test cancelling nonexistent workflow returns False."""
-        result = await engine.cancel_workflow("nonexistent")
+        result = await engine.cancel_workflow("99999")
         assert result is False
 
 
@@ -269,7 +302,7 @@ class TestWorkflowInstance:
     def test_is_active(self):
         """Test is_active property."""
         wf = WorkflowInstance(
-            id="test", name="Test", steps=[], working_dir="/tmp",
+            id="1", name="Test", steps=[], working_dir="/tmp",
             status=WorkflowStatus.RUNNING,
         )
         assert wf.is_active is True
@@ -284,7 +317,7 @@ class TestWorkflowInstance:
             WorkflowStep(name="b", tool_name="shyfem"),
         ]
         wf = WorkflowInstance(
-            id="test", name="Test", steps=steps, working_dir="/tmp",
+            id="1", name="Test", steps=steps, working_dir="/tmp",
             current_step_index=1,
         )
         assert wf.progress == pytest.approx(0.5)
@@ -292,7 +325,7 @@ class TestWorkflowInstance:
     def test_progress_empty_steps(self):
         """Test progress with no steps."""
         wf = WorkflowInstance(
-            id="test", name="Test", steps=[], working_dir="/tmp",
+            id="1", name="Test", steps=[], working_dir="/tmp",
         )
         assert wf.progress == 0.0
 
@@ -303,7 +336,7 @@ class TestWorkflowInstance:
             WorkflowStep(name="b", tool_name="shyfem"),
         ]
         wf = WorkflowInstance(
-            id="test", name="Test", steps=steps, working_dir="/tmp",
+            id="1", name="Test", steps=steps, working_dir="/tmp",
             current_step_index=1,
         )
         assert wf.current_step.name == "b"
@@ -311,7 +344,7 @@ class TestWorkflowInstance:
     def test_current_step_out_of_range(self):
         """Test current_step when index is out of range."""
         wf = WorkflowInstance(
-            id="test", name="Test", steps=[], working_dir="/tmp",
+            id="1", name="Test", steps=[], working_dir="/tmp",
             current_step_index=5,
         )
         assert wf.current_step is None
@@ -319,7 +352,7 @@ class TestWorkflowInstance:
     def test_duration(self):
         """Test duration property."""
         wf = WorkflowInstance(
-            id="test", name="Test", steps=[], working_dir="/tmp",
+            id="1", name="Test", steps=[], working_dir="/tmp",
             started_at=datetime(2024, 1, 1, 12, 0, 0),
             completed_at=datetime(2024, 1, 1, 12, 5, 0),
         )
@@ -328,7 +361,7 @@ class TestWorkflowInstance:
     def test_duration_not_completed(self):
         """Test duration when not yet completed."""
         wf = WorkflowInstance(
-            id="test", name="Test", steps=[], working_dir="/tmp",
+            id="1", name="Test", steps=[], working_dir="/tmp",
             started_at=datetime.now(),
         )
         assert wf.duration is None
@@ -390,3 +423,92 @@ class TestResolveArgs:
             {},
         )
         assert result == ["{missing_param}"]
+
+
+class TestWorkflowPersistence:
+
+    def test_engine_loads_workflows_from_db(self, db_session):
+        from shyfem_ui.models.workflow import Workflow, WorkflowStatus
+        from shyfem_ui.services.workflow import WorkflowEngine, _pack_steps, WorkflowInstance, WorkflowStep
+
+        # Build a minimal WorkflowInstance so _pack_steps produces correct JSON
+        step = WorkflowStep(name="step1", tool_name="shyfem")
+        instance = WorkflowInstance(
+            id="",
+            name="hydro",
+            steps=[step],
+            working_dir="/tmp",
+            status=WorkflowStatus.RUNNING,
+            metadata={"template": "hydro_setup", "params": {}},
+        )
+        wf = Workflow(
+            name="hydro",
+            template="hydro_setup",
+            status=WorkflowStatus.RUNNING,
+            steps=_pack_steps(instance),
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        )
+        db_session.add(wf)
+        db_session.commit()
+
+        engine = WorkflowEngine(session_factory=lambda: db_session)
+        loaded = engine.list_workflows()
+        assert len(loaded) >= 1
+        # The freshly created workflow appears in the list
+        names = [w.name for w in loaded]
+        assert "hydro" in names
+
+    @pytest.mark.asyncio
+    async def test_step_completion_persists(self, db_session, tmp_path):
+        from shyfem_ui.services.workflow import WorkflowEngine
+
+        # Build a mock queue that instantly completes jobs
+        mock_queue = MagicMock()
+        _counter = [0]
+        _jobs = {}
+
+        async def mock_submit(spec):
+            _counter[0] += 1
+            job_id = f"persist-job-{_counter[0]}"
+            _jobs[job_id] = JobInfo(
+                id=job_id,
+                name=spec.name,
+                tool_name=spec.tool_name,
+                args=spec.args,
+                working_dir=str(spec.working_dir),
+                status=JobStatus.COMPLETED,
+                return_code=0,
+                output_files=[],
+                created_at=datetime.now(),
+                completed_at=datetime.now(),
+            )
+            return job_id
+
+        async def mock_get_status(job_id):
+            return _jobs.get(job_id)
+
+        mock_queue.submit = mock_submit
+        mock_queue.get_status = mock_get_status
+
+        engine = WorkflowEngine(mock_queue, session_factory=lambda: db_session)
+        wf_id = await engine.create_workflow(
+            "grid_only",
+            working_dir=tmp_path,
+            params={"input_grd": "/tmp/test.grd"},
+        )
+
+        # Wait for workflow to complete
+        for _ in range(50):
+            wf = engine.get_workflow(wf_id)
+            if wf and not wf.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        # Construct a NEW engine instance -- proves state is in DB, not cache.
+        engine2 = WorkflowEngine(session_factory=lambda: db_session)
+        loaded = engine2.get_workflow(wf_id)
+        assert loaded is not None
+        assert loaded.status == WorkflowStatus.COMPLETED
+        # The first step (grid_prep) result is persisted in the JSON column.
+        assert "grid_prep" in loaded.step_results

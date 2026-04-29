@@ -65,7 +65,7 @@ def init_db() -> None:
     Falls back to create_all() if Alembic is unavailable.
     """
     # Import models to register them with Base
-    from shyfem_ui.models import project, user  # noqa: F401
+    from shyfem_ui.models import project, user, workflow  # noqa: F401
 
     engine = get_engine()
 

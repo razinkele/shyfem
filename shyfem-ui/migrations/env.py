@@ -21,6 +21,7 @@ if config.config_file_name is not None:
 # Import our models so Base.metadata is fully populated
 from shyfem_ui.db.base import Base
 from shyfem_ui.models import project  # noqa: F401
+from shyfem_ui.models import workflow  # noqa: F401
 
 target_metadata = Base.metadata
 
