@@ -1,8 +1,11 @@
 """Simulation configuration page - .str file editor."""
 
+import logging
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
+
+logger = logging.getLogger(__name__)
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
@@ -237,6 +240,7 @@ def simulation_server(
                 duration=4,
             )
         except Exception as e:
+            logger.exception("Failed to load sample STR file %r", selected)
             ui.notification_show(f"Error loading sample STR: {e}", type="error", duration=6)
 
     @reactive.effect
@@ -250,6 +254,7 @@ def simulation_server(
         try:
             path = config.validate_path(path_str, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
+            logger.exception("Invalid STR file path %r", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
 
@@ -259,6 +264,7 @@ def simulation_server(
             parsed_str.set(str_file)
             ui.notification_show(f"Loaded: {path.name}", type="message", duration=4)
         except Exception as e:
+            logger.exception("Failed to parse STR file %s", path_str)
             ui.notification_show(f"Error loading file: {e}", type="error", duration=6)
 
     @reactive.effect
@@ -272,6 +278,7 @@ def simulation_server(
             current_file_path.set(None)
             ui.notification_show("Created new parameter file", type="message", duration=4)
         except Exception as e:
+            logger.exception("Failed to create new STR file from template")
             ui.notification_show(f"Error creating new file: {e}", type="error", duration=6)
 
     @reactive.effect
@@ -307,6 +314,7 @@ def simulation_server(
     @reactive.event(input.confirm_save_btn)
     def _confirm_save():
         _usr = get_current_user()
+        logger.info("User saving STR file to %r", input.save_path())
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None and (
@@ -328,6 +336,7 @@ def simulation_server(
         try:
             path = config.validate_save_path(path_str)
         except ValueError as e:
+            logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
 
@@ -349,11 +358,16 @@ def simulation_server(
             ui.modal_remove()
             ui.notification_show(f"Saved: {path.name}", type="message", duration=4)
         except Exception as e:
+            logger.exception("Failed to save STR file to %s", path_str)
             ui.notification_show(f"Error saving file: {e}", type="error", duration=6)
 
     @reactive.effect
     @reactive.event(input.apply_quick_btn)
     def _apply_quick_settings():
+        logger.info(
+            "User applying quick settings: start=%r end=%r dt=%r output=%r",
+            input.quick_start(), input.quick_end(), input.quick_dt(), input.quick_output(),
+        )
         try:
             str_file = parsed_str.get()
             if str_file is None:
@@ -383,6 +397,7 @@ def simulation_server(
             editor_state["set_content"](StrParser.generate(str_file))
             ui.notification_show("Applied quick settings", type="message", duration=4)
         except Exception as e:
+            logger.exception("Failed to apply quick settings to STR file")
             ui.notification_show(f"Error applying settings: {e}", type="error", duration=6)
 
     @render.ui
@@ -462,6 +477,7 @@ def simulation_server(
         if not template_name:
             return
 
+        logger.info("User applying STR template %r", template_name)
         try:
             template = generate_template(template_name)
             str_file = StrParser.parse(template)
@@ -473,6 +489,7 @@ def simulation_server(
             # Reset dropdown
             ui.update_select("template_select", selected="")
         except Exception as e:
+            logger.exception("Failed to apply template %r", template_name)
             ui.notification_show(f"Error loading template: {e}", type="error", duration=6)
 
     @render.ui

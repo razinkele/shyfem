@@ -1,8 +1,11 @@
 """Grid preparation page - shypre/shybas interface."""
 
+import logging
 import math
 import shutil
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 from shiny import module, reactive, render, ui
@@ -390,6 +393,7 @@ def grid_prep_server(
                 f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
             )
         except Exception as e:
+            logger.exception("Failed to parse uploaded GRD file %r", file_info.get("name"))
             log_content.set(f"Error loading grid: {e}")
 
     # Initialize child modules
@@ -427,6 +431,7 @@ def grid_prep_server(
                 duration=4,
             )
         except Exception as e:
+            logger.exception("Failed to load sample Mar Menor grid")
             ui.notification_show(f"Error loading sample grid: {e}", type="error", duration=6)
 
     @reactive.effect
@@ -439,6 +444,7 @@ def grid_prep_server(
         try:
             path = config.validate_path(path_str, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
+            logger.exception("Invalid GRD file path %r", path_str)
             log_content.set(f"Error: {e}")
             return
 
@@ -451,12 +457,14 @@ def grid_prep_server(
                 f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}"
             )
         except Exception as e:
+            logger.exception("Failed to parse GRD file %s", path_str)
             log_content.set(f"Error loading grid: {e}")
 
     @reactive.effect
     @reactive.event(input.run_shypre_btn)
     async def _run_shypre():
         _usr = get_current_user()
+        logger.info("User running shypre on %r", str(current_grd_path.get()))
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None and (
@@ -485,6 +493,7 @@ def grid_prep_server(
         try:
             output_path = config.validate_path(output_dir)
         except ValueError as e:
+            logger.exception("Invalid shypre output directory %r", output_dir)
             log_content.set(f"Error: {e}")
             ui.notification_show(f"Invalid output directory: {e}", type="error", duration=5)
             return
@@ -497,6 +506,7 @@ def grid_prep_server(
                 shutil.copy2(grd_path, dest_grd)
                 grd_path = dest_grd
             except OSError as e:
+                logger.exception("Failed to copy GRD file to output directory %s", output_path)
                 log_content.set(f"Error copying grid file: {e}")
                 ui.notification_show(
                     f"Cannot copy grid to output directory: {e}", type="error", duration=5,
@@ -554,6 +564,7 @@ def grid_prep_server(
                 )
 
         except FileNotFoundError:
+            logger.exception("shypre executable not found")
             msg = (
                 "shypre executable not found. "
                 "Check that SHYFEM is built and the bin/ directory is accessible."
@@ -561,6 +572,7 @@ def grid_prep_server(
             log_content.set(log_content.get() + f"\nError: {msg}\n")
             ui.notification_show(msg, type="error", duration=8)
         except Exception as e:
+            logger.exception("Unexpected error running shypre on %s", grd_path)
             log_content.set(log_content.get() + f"\nError: {e}\n")
             ui.notification_show(f"shypre error: {e}", type="error", duration=8)
         finally:
@@ -569,6 +581,7 @@ def grid_prep_server(
     @reactive.effect
     @reactive.event(input.run_shybas_btn)
     async def _run_shybas():
+        logger.info("User running shybas")
         # Find .bas file
         out_files = output_files.get()
         bas_files = [f for f in out_files if f.endswith(".bas")]
@@ -631,6 +644,7 @@ def grid_prep_server(
                 )
 
         except FileNotFoundError:
+            logger.exception("shybas executable not found")
             msg = (
                 "shybas executable not found. "
                 "Check that SHYFEM is built and the bin/ directory is accessible."
@@ -638,6 +652,7 @@ def grid_prep_server(
             log_content.set(log_content.get() + f"\nError: {msg}\n")
             ui.notification_show(msg, type="error", duration=8)
         except Exception as e:
+            logger.exception("Unexpected error running shybas on %s", bas_path)
             log_content.set(log_content.get() + f"\nError: {e}\n")
             ui.notification_show(f"shybas error: {e}", type="error", duration=8)
         finally:
