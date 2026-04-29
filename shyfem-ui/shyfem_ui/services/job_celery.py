@@ -20,6 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from shyfem_ui.config import get_config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
 logger = logging.getLogger(__name__)
@@ -259,9 +260,7 @@ class CeleryJobQueue(JobQueue):
         shyfem_dir: Path | None = None,
         redis_url: str | None = None,
     ):
-        self.shyfem_dir = shyfem_dir or Path(
-            os.environ.get("SHYFEM_UI_SHYFEM_DIR", "/usr/local/shyfem")
-        )
+        self.shyfem_dir = shyfem_dir or Path(str(get_config().shyfem_dir))
         self.redis_url = redis_url or "redis://localhost:6379/0"
         self._progress_callback: Callable[[str, float, str], None] | None = None
         self._celery_app = None
