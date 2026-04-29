@@ -7,8 +7,6 @@ from io import BytesIO
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
-
-logger = logging.getLogger(__name__)
 from sqlalchemy import or_
 
 from shyfem_ui.config import Config
@@ -17,6 +15,8 @@ from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.models.user import ProjectPermission
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_filename(name: str) -> str:

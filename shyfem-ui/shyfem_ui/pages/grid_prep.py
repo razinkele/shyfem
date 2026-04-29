@@ -5,8 +5,6 @@ import math
 import shutil
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
-
 import numpy as np
 from shiny import module, reactive, render, ui
 
@@ -20,6 +18,8 @@ from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+logger = logging.getLogger(__name__)
 
 
 def grid_stats_to_json(stats: dict, grid_name: str) -> str:
