@@ -13,8 +13,10 @@ import numpy as np
 import pytest
 
 from shyfem_ui.services.mesh_builder import (
+    _check_boundary_gates,
     _remove_ring_loops,
     adjust_depths,
+    check_bathy_extent,
     compute_mesh_stats,
     count_below_area,
     estimate_element_count,
@@ -28,8 +30,12 @@ from shyfem_ui.services.mesh_builder import (
     set_resolution,
     smooth_boundary,
     suggest_max_area_for_limit,
+    summarize_depth_stats,
     triangulate,
     validate_boundary,
+    warn_if_degenerate_bathy,
+    warn_if_min_geq_max_area,
+    warn_if_minimal_with_cap,
 )
 from shyfem_ui.services.parser_grd import (
     Element,
@@ -403,6 +409,39 @@ class TestTriangulate:
         grd = GrdFile()
         with pytest.raises(Exception):
             triangulate(grd)
+
+    def test_min_angle_above_34_raises(self):
+        """min_angle > 34 is rejected; Triangle's quality refinement may not converge above 34."""
+        grd = _make_square_boundary()
+        with pytest.raises(ValueError, match="min_angle"):
+            triangulate(grd, max_area=10.0, min_angle=40.0)
+
+    def test_zero_max_area_raises(self):
+        """max_area = 0 is rejected (would silently disable the constraint)."""
+        grd = _make_square_boundary()
+        with pytest.raises(ValueError, match="max_area"):
+            triangulate(grd, max_area=0.0, min_angle=20.0)
+
+    def test_negative_max_area_raises(self):
+        """max_area < 0 is rejected."""
+        grd = _make_square_boundary()
+        with pytest.raises(ValueError, match="max_area"):
+            triangulate(grd, max_area=-1.0, min_angle=20.0)
+
+    def test_min_angle_exactly_34_passes(self):
+        """min_angle = 34 is accepted as the documented ceiling."""
+        # 34 is the upper bound the guard allows; 33 is the documented
+        # practical max. Triangle accepts up to 34 but can fail to converge
+        # above it.
+        grd = _make_square_boundary()
+        triangulate(grd, max_area=10.0, min_angle=34.0)  # must not raise
+
+    def test_max_area_none_still_allowed(self):
+        """max_area = None means 'no constraint' — the existing minimal-mesh path."""
+        # None means "no global area constraint" — the existing minimal-mesh
+        # path. Must continue to work.
+        grd = _make_square_boundary()
+        triangulate(grd, max_area=None, min_angle=20.0)
 
 
 # ---------------------------------------------------------------------------
@@ -788,6 +827,62 @@ class TestValidateBoundary:
         grd = GrdFile()
         issues = validate_boundary(grd)
         assert any("No boundary" in i for i in issues)
+
+
+# ---------------------------------------------------------------------------
+# TestCheckBoundaryGates
+# ---------------------------------------------------------------------------
+
+
+class TestCheckBoundaryGates:
+    """The fail-closed gate around triangulate()."""
+
+    def test_clean_square_passes(self):
+        ok, reason = _check_boundary_gates(_make_square_boundary())
+        assert ok
+        assert reason is None
+
+    def test_no_lines_blocks(self):
+        ok, reason = _check_boundary_gates(GrdFile())
+        assert not ok
+        assert "no boundary lines" in reason.lower()
+
+    def test_only_holes_blocks(self):
+        # No line_type=1 — turn the square's exterior into a hole.
+        grd = _make_square_boundary()
+        grd.lines[1].line_type = 2
+        ok, reason = _check_boundary_gates(grd)
+        assert not ok
+        assert "exterior" in reason.lower()
+
+    def test_fewer_than_three_nodes_blocks(self):
+        grd = GrdFile()
+        grd.nodes[1] = Node(id=1, node_type=0, x=0.0, y=0.0)
+        grd.nodes[2] = Node(id=2, node_type=0, x=1.0, y=0.0)
+        grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2])
+        ok, reason = _check_boundary_gates(grd)
+        assert not ok
+        assert "fewer than 3 nodes" in reason.lower()
+
+    def test_self_intersecting_blocks(self):
+        # Bowtie / figure-8: diagonals (0,0)-(1,1) and (1,0)-(0,1) cross.
+        grd = GrdFile()
+        for i, (x, y) in enumerate(
+            [(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)], start=1
+        ):
+            grd.nodes[i] = Node(id=i, node_type=0, x=float(x), y=float(y))
+        grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1])
+        ok, reason = _check_boundary_gates(grd)
+        assert not ok
+        assert "self-intersect" in reason.lower()
+
+    def test_unclosed_ring_passes(self):
+        # WARNING: not a closed ring — left non-blocking; Triangle closes it.
+        grd = _make_square_boundary()
+        # Drop the closing repeat node
+        grd.lines[1].nodes = [1, 2, 3, 4]
+        ok, reason = _check_boundary_gates(grd)
+        assert ok
 
 
 # ---------------------------------------------------------------------------
@@ -1538,3 +1633,186 @@ class TestAdjustDepths:
         for nid in grd.nodes:
             assert result.nodes[nid].depth == grd.nodes[nid].depth
         assert grd.nodes[1].depth == -10.0
+
+
+class TestWarnIfMinGeqMaxArea:
+
+    def test_returns_none_when_both_unset(self):
+        """Both bounds None — silent."""
+        assert warn_if_min_geq_max_area(None, None) is None
+
+    def test_returns_none_when_one_unset(self):
+        """One bound None — silent."""
+        assert warn_if_min_geq_max_area(0.1, None) is None
+        assert warn_if_min_geq_max_area(None, 0.5) is None
+
+    def test_returns_none_when_min_lt_max(self):
+        """Normal case (min < max) — silent."""
+        assert warn_if_min_geq_max_area(0.01, 0.1) is None
+
+    def test_returns_none_when_min_zero(self):
+        """min=0 is the 'no constraint' sentinel; never warn."""
+        assert warn_if_min_geq_max_area(0.0, 0.1) is None
+
+    def test_warns_when_min_eq_max(self):
+        """Equal bounds — warn (every triangle below or equal counts as sliver)."""
+        msg = warn_if_min_geq_max_area(0.1, 0.1)
+        assert msg is not None
+        assert "sliver" in msg
+
+    def test_warns_when_min_gt_max(self):
+        """min > max — warn (input is logically reversed)."""
+        msg = warn_if_min_geq_max_area(0.5, 0.1)
+        assert msg is not None
+        assert "sliver" in msg
+
+
+class TestWarnIfMinimalWithCap:
+
+    def test_minimal_with_cap_warns(self):
+        """Minimal method + non-zero cap → warn."""
+        msg = warn_if_minimal_with_cap("delaunay_minimal", 5000)
+        assert msg is not None
+        assert "ignored" in msg.lower()
+
+    def test_minimal_without_cap_silent(self):
+        """Minimal method + None or 0 cap → silent."""
+        assert warn_if_minimal_with_cap("delaunay_minimal", None) is None
+        assert warn_if_minimal_with_cap("delaunay_minimal", 0) is None
+
+    def test_quality_with_cap_silent(self):
+        """Quality method honors the cap → silent."""
+        assert warn_if_minimal_with_cap("delaunay_quality", 5000) is None
+
+    def test_conforming_with_cap_silent(self):
+        """Conforming method (caller has separate guard) → silent."""
+        assert warn_if_minimal_with_cap("delaunay_conforming", 5000) is None
+
+
+class TestCheckBathyExtent:
+
+    def test_overlapping_returns_none(self):
+        """Bathy bbox inside mesh bbox — silent."""
+        grd = _make_square_boundary()  # 10x10 at origin
+        bathy = np.array([[5.0, 5.0, -1.0], [3.0, 7.0, -2.0]])
+        assert check_bathy_extent(grd, bathy) is None
+
+    def test_disjoint_east_returns_warning(self):
+        """Bathy bbox far east of mesh bbox — warn."""
+        grd = _make_square_boundary()
+        bathy = np.array([[100.0, 5.0, -1.0], [200.0, 5.0, -1.0]])
+        msg = check_bathy_extent(grd, bathy)
+        assert msg is not None
+        assert "does not overlap" in msg
+
+    def test_disjoint_north_returns_warning(self):
+        """Bathy bbox far north of mesh bbox — warn."""
+        grd = _make_square_boundary()
+        bathy = np.array([[5.0, 100.0, -1.0]])
+        msg = check_bathy_extent(grd, bathy)
+        assert msg is not None
+
+    def test_partial_overlap_returns_none(self):
+        """Bathy bbox extends beyond mesh on east but they intersect — silent."""
+        grd = _make_square_boundary()
+        bathy = np.array([[5.0, 5.0, -1.0], [50.0, 5.0, -1.0]])
+        assert check_bathy_extent(grd, bathy) is None
+
+    def test_empty_bathy_returns_none(self):
+        """Empty bathy → None (nothing to compare)."""
+        grd = _make_square_boundary()
+        assert check_bathy_extent(grd, np.empty((0, 3))) is None
+
+    def test_no_exterior_returns_none(self):
+        """No line_type=1 boundary → None (cannot establish polygon)."""
+        grd = GrdFile()
+        bathy = np.array([[1.0, 1.0, -1.0]])
+        assert check_bathy_extent(grd, bathy) is None
+
+
+# ---------------------------------------------------------------------------
+# TestBathyUploadStats
+# ---------------------------------------------------------------------------
+
+
+class TestBathyUploadStats:
+
+    def test_summary_min_max_mean(self):
+        """Plain xyz array: summary contains min/max/mean numbers."""
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, 3.0], [2.0, 2.0, 5.0]])
+        s = summarize_depth_stats(bathy)
+        assert "1.00" in s and "5.00" in s and "3.00" in s
+
+    def test_summary_empty(self):
+        """Empty array → 'empty' marker."""
+        assert "empty" in summarize_depth_stats(np.empty((0, 3)))
+
+    def test_summary_excludes_nan(self):
+        """Regression: numpy.min/max/mean propagate NaN by default; the
+        summary must use NaN-aware reductions."""
+        bathy = np.array(
+            [[0.0, 0.0, 1.0], [1.0, 1.0, np.nan], [2.0, 2.0, 5.0]]
+        )
+        s = summarize_depth_stats(bathy)
+        assert "min=1.00" in s
+        assert "max=5.00" in s
+        assert "1 NaN excluded" in s
+
+    def test_summary_all_nan(self):
+        """All-NaN → explicit message (no nan in min/max/mean output)."""
+        bathy = np.array([[0.0, 0.0, np.nan], [1.0, 1.0, np.nan]])
+        s = summarize_depth_stats(bathy)
+        assert "all depths are nan" in s.lower()
+
+    def test_warn_all_nan(self):
+        """All-NaN depths → warn (interpolation will fail)."""
+        bathy = np.array([[0.0, 0.0, np.nan], [1.0, 1.0, np.nan]])
+        msg = warn_if_degenerate_bathy(bathy)
+        assert msg is not None
+        assert "nan" in msg.lower()
+
+    def test_warn_all_zero(self):
+        """All-zero depths → warn (likely missing depth data)."""
+        bathy = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]])
+        msg = warn_if_degenerate_bathy(bathy)
+        assert msg is not None
+        assert "0" in msg
+
+    def test_warn_all_identical(self):
+        """All-identical-nonzero depths → warn (flat bottom)."""
+        bathy = np.array([[0.0, 0.0, 5.0], [1.0, 1.0, 5.0]])
+        msg = warn_if_degenerate_bathy(bathy)
+        assert msg is not None
+        assert "identical" in msg
+
+    def test_no_warn_normal(self):
+        """Normal varying depths → no warning."""
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, 5.0]])
+        assert warn_if_degenerate_bathy(bathy) is None
+
+    def test_no_warn_some_nan(self):
+        """Mixed NaN with valid varying depths → no warning."""
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, np.nan], [2.0, 2.0, 3.0]])
+        assert warn_if_degenerate_bathy(bathy) is None
+
+    def test_empty_returns_none(self):
+        """Empty array → None."""
+        assert warn_if_degenerate_bathy(np.empty((0, 3))) is None
+
+
+class TestUploadRejectsUnknownExt:
+    """Smoke test: the page-level upload helper must explicitly reject
+    unknown extensions instead of letting fiona raise a cryptic error."""
+
+    def test_error_message_lists_accepted_formats(self):
+        """Static check that the user-facing error message mentions all
+        accepted formats. If someone removes one, this catches it."""
+        # `Path` is already imported at the top of test_mesh_builder.py.
+        page_src = (
+            Path(__file__).resolve().parent.parent / "shyfem_ui" / "pages"
+            / "mesh_builder.py"
+        ).read_text()
+        # The branch that raises must be present and mention the formats.
+        assert "Unrecognized boundary file format" in page_src
+        for fmt in (".geojson", ".json", ".gpkg", ".shp", ".zip"):
+            assert fmt in page_src

@@ -471,6 +471,33 @@ def count_below_area(grd: GrdFile, threshold: float) -> int:
     return count
 
 
+def warn_if_min_geq_max_area(
+    min_area: float | None, max_area: float | None
+) -> str | None:
+    """Return a warning string if both bounds are set and min >= max."""
+    if min_area is None or max_area is None:
+        return None
+    if min_area <= 0 or max_area <= 0:
+        return None
+    if min_area >= max_area:
+        return (
+            f"Min Triangle Area ({min_area:g}) is ≥ Max Triangle Area "
+            f"({max_area:g}); every triangle will be flagged as a sliver."
+        )
+    return None
+
+
+def warn_if_minimal_with_cap(method: str, max_elements: int | None) -> str | None:
+    """Warn the user that Max Elements has no effect in minimal mode."""
+    if method == "delaunay_minimal" and max_elements:
+        return (
+            "Max Elements is ignored for Delaunay (minimal) — the element "
+            "count depends only on the boundary geometry. Switch to a quality "
+            "method if you want the cap to be enforced."
+        )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 5. Triangulate
 # ---------------------------------------------------------------------------
@@ -493,6 +520,15 @@ def triangulate(
     Returns:
         New GrdFile with nodes, elements, and preserved boundary lines.
     """
+    if max_area is not None and max_area <= 0:
+        raise ValueError(
+            f"max_area must be positive (got {max_area!r}); pass None for no constraint"
+        )
+    if min_angle > 34.0:
+        raise ValueError(
+            f"min_angle must be <= 34 degrees (got {min_angle!r}); "
+            "Triangle's quality refinement may not converge above 34"
+        )
     pslg = _build_pslg(grd)
 
     opts = "p"  # PSLG mode
@@ -1222,6 +1258,34 @@ def validate_boundary(grd: GrdFile) -> list[str]:
     return issues
 
 
+def _check_boundary_gates(grd: GrdFile) -> tuple[bool, str | None]:
+    """Decide whether ``grd`` is safe to hand to Triangle.
+
+    Returns ``(True, None)`` if the boundary is mesh-ready. Otherwise returns
+    ``(False, reason)`` where ``reason`` is a human-readable explanation.
+
+    Blocks on:
+    - any ERROR-prefixed issue from :func:`validate_boundary`
+    - self-intersecting lines (Triangle can hang or segfault)
+    - missing exterior boundary (line_type=1)
+
+    Allows:
+    - unclosed rings (Triangle closes them automatically)
+    """
+    issues = validate_boundary(grd)
+    blocking: list[str] = []
+    for issue in issues:
+        if issue.startswith("ERROR"):
+            blocking.append(issue)
+        elif "self-intersect" in issue.lower():
+            blocking.append(issue)
+        elif "no exterior boundary" in issue.lower():
+            blocking.append(issue)
+    if blocking:
+        return False, "; ".join(blocking)
+    return True, None
+
+
 def compute_mesh_stats(grd: GrdFile) -> dict:
     """Compute mesh quality statistics.
 
@@ -1280,4 +1344,78 @@ def _boundary_to_polygon(grd: GrdFile) -> shapely.geometry.Polygon | None:
             ]
             if len(coords) >= 3:
                 return shapely.geometry.Polygon(coords)
+    return None
+
+
+def check_bathy_extent(
+    grd: GrdFile, bathy: np.ndarray
+) -> str | None:
+    """Return a warning if bathymetry points fall outside the mesh bbox.
+
+    The check is bbox-vs-bbox (cheap). Disjoint bboxes almost certainly
+    indicate a CRS mismatch (e.g. UTM-meter XYZ for a WGS84-degree mesh).
+
+    Returns ``None`` if extents overlap or the boundary has no exterior.
+    """
+    if bathy.size == 0:
+        return None
+    poly = _boundary_to_polygon(grd)
+    if poly is None or poly.is_empty:
+        return None
+    min_x, min_y, max_x, max_y = poly.bounds
+    bx_min, by_min = float(bathy[:, 0].min()), float(bathy[:, 1].min())
+    bx_max, by_max = float(bathy[:, 0].max()), float(bathy[:, 1].max())
+    disjoint = (
+        bx_max < min_x or bx_min > max_x or by_max < min_y or by_min > max_y
+    )
+    if disjoint:
+        return (
+            f"Bathymetry extent [{bx_min:.3g}, {by_min:.3g}] – "
+            f"[{bx_max:.3g}, {by_max:.3g}] does not overlap mesh boundary "
+            f"[{min_x:.3g}, {min_y:.3g}] – [{max_x:.3g}, {max_y:.3g}]. "
+            "Likely cause: CRS mismatch — re-export bathymetry in the mesh's "
+            "coordinate system (mesh is in WGS84 lon/lat after import)."
+        )
+    return None
+
+
+def summarize_depth_stats(bathy: np.ndarray) -> str:
+    """Return a one-line min/max/mean summary of bathymetry depths.
+
+    NaN-aware: NaN values are excluded from min/max/mean (so partial-NaN
+    arrays still report meaningful stats); the count of NaN-stripped
+    points is appended when non-zero.
+    """
+    if bathy.size == 0:
+        return "Bathymetry: empty"
+    z = bathy[:, 2]
+    valid = z[~np.isnan(z)]
+    if valid.size == 0:
+        return "Bathymetry: all depths are NaN"
+    nan_count = z.size - valid.size
+    nan_note = f" ({nan_count} NaN excluded)" if nan_count else ""
+    return (
+        f"Depth: min={float(valid.min()):.2f}, max={float(valid.max()):.2f}, "
+        f"mean={float(valid.mean()):.2f}{nan_note} "
+        f"(SHYFEM convention: depth>0 below surface)"
+    )
+
+
+def warn_if_degenerate_bathy(bathy: np.ndarray) -> str | None:
+    """Return a warning if depths are obviously broken; otherwise None."""
+    if bathy.size == 0:
+        return None
+    z = bathy[:, 2]
+    if np.all(np.isnan(z)):
+        return "All bathymetry values are NaN — interpolation will fail."
+    valid = z[~np.isnan(z)]
+    if valid.size == 0:
+        return None
+    if np.all(valid == 0):
+        return "All bathymetry depths are 0 — likely missing depth data."
+    if np.all(valid == valid[0]):
+        return (
+            f"All bathymetry depths are identical ({float(valid[0]):.2f}); "
+            "interpolation will produce a flat bottom."
+        )
     return None

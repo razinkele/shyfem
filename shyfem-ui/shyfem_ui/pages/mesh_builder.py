@@ -11,8 +11,10 @@ from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.mesh_builder import (
+    _check_boundary_gates,
     _compute_depths_only,
     adjust_depths,
+    check_bathy_extent,
     compute_mesh_stats,
     count_below_area,
     estimate_element_count,
@@ -24,8 +26,12 @@ from shyfem_ui.services.mesh_builder import (
     reduce_boundary,
     smooth_boundary,
     suggest_max_area_for_limit,
+    summarize_depth_stats,
     triangulate,
     validate_boundary,
+    warn_if_degenerate_bathy,
+    warn_if_min_geq_max_area,
+    warn_if_minimal_with_cap,
 )
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser, Node
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -419,8 +425,12 @@ def mesh_builder_server(
             if found:
                 return found[0]
 
-        # Fallback: return the first file
-        return work / files[0]["name"]
+        names = ", ".join(f["name"] for f in files)
+        raise ValueError(
+            f"Unrecognized boundary file format. Got: {names}. "
+            "Accepted: .geojson, .json, .gpkg, .shp (with companions), or "
+            ".zip containing one of the above."
+        )
 
     # --- Sync radio buttons → hidden navset ---
     @reactive.effect
@@ -734,6 +744,7 @@ def mesh_builder_server(
                             min=0.0,
                         ),
                         ui.output_ui("element_estimate"),
+                        ui.output_ui("area_bounds_warning"),
                     ),
                     ui.column(
                         6,
@@ -793,6 +804,21 @@ def mesh_builder_server(
         count = estimate_element_count(grd, area)
         return ui.p(f"Estimated elements: ~{count:,}", class_="small text-info")
 
+    @render.ui
+    def area_bounds_warning():
+        # Only the quality method renders both inputs.
+        if input.mesh_method() != "delaunay_quality":
+            return ui.span()
+        try:
+            min_a = input.min_area()
+            max_a = input.max_area()
+        except Exception:
+            return ui.span()
+        msg = warn_if_min_geq_max_area(min_a, max_a)
+        if msg is None:
+            return ui.span()
+        return ui.p(msg, class_="alert alert-warning py-2 px-3 small mb-2")
+
     def _safe_input(name: str):
         """Read a dynamically-rendered numeric input, returning None if it
         does not exist for the current method."""
@@ -807,6 +833,12 @@ def mesh_builder_server(
         grd = refined_grd.get()
         if grd is None:
             ui.notification_show("No boundary data to mesh.", type="warning")
+            return
+        ok, reason = _check_boundary_gates(grd)
+        if not ok:
+            msg = f"Cannot generate mesh: {reason}. Fix Step 1/2 issues first."
+            _log(msg)
+            ui.notification_show(msg, type="error", duration=8)
             return
         method = input.mesh_method()
 
@@ -849,6 +881,12 @@ def mesh_builder_server(
                     duration=6,
                 )
                 return
+
+            # Minimal mode does not honor max_area, so the cap can't be enforced.
+            minimal_msg = warn_if_minimal_with_cap(method, max_elements)
+            if minimal_msg:
+                _log(minimal_msg)
+                ui.notification_show(minimal_msg, type="warning", duration=8)
 
         _log(f"Generating mesh: method={method}, max_area={eff_area}, min_angle={eff_angle} deg...")
         busy_message.set("Generating mesh…")
@@ -1045,12 +1083,22 @@ def mesh_builder_server(
         temp_path = Path(file_info["datapath"])
         try:
             data = load_bathymetry_file(temp_path)
+            mesh = mesh_grd.get()
+            if mesh is not None:
+                msg = check_bathy_extent(mesh, data)
+                if msg is not None:
+                    _log(f"Bathymetry warning: {msg}")
+                    ui.notification_show(msg, type="warning", duration=10)
             bathy_data.set(data)
             _log(f"Loaded bathymetry points: {file_info['name']} ({len(data)} points)")
-            _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
+            _log(f"  {summarize_depth_stats(data)}")
             ui.notification_show(
                 f"Loaded {len(data)} bathymetry points", type="message", duration=3
             )
+            warn = warn_if_degenerate_bathy(data)
+            if warn:
+                _log(f"Bathymetry warning: {warn}")
+                ui.notification_show(warn, type="warning", duration=8)
         except Exception as e:
             _log(f"Error loading bathymetry: {e}")
             ui.notification_show(f"Load error: {e}", type="error", duration=5)
@@ -1069,15 +1117,25 @@ def mesh_builder_server(
             data = load_bathymetry_contours(
                 open_path, depth_attr=depth_attr, sample_distance=sample_dist
             )
+            mesh = mesh_grd.get()
+            if mesh is not None:
+                msg = check_bathy_extent(mesh, data)
+                if msg is not None:
+                    _log(f"Bathymetry warning: {msg}")
+                    ui.notification_show(msg, type="warning", duration=10)
             bathy_data.set(data)
             names = ", ".join(f["name"] for f in files)
             _log(f"Loaded contour isobaths: {names} ({len(data)} points)")
-            _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
+            _log(f"  {summarize_depth_stats(data)}")
             ui.notification_show(
                 f"Extracted {len(data)} points from contour isobaths",
                 type="message",
                 duration=3,
             )
+            warn = warn_if_degenerate_bathy(data)
+            if warn:
+                _log(f"Bathymetry warning: {warn}")
+                ui.notification_show(warn, type="warning", duration=8)
         except Exception as e:
             _log(f"Error loading contours: {e}")
             ui.notification_show(f"Contour load error: {e}", type="error", duration=5)
@@ -1090,6 +1148,11 @@ def mesh_builder_server(
         if grd is None or data is None:
             ui.notification_show("Load mesh and bathymetry data first.", type="warning")
             return
+        msg = check_bathy_extent(grd, data)
+        if msg is not None:
+            _log(f"Bathymetry warning: {msg}")
+            ui.notification_show(msg, type="warning", duration=10)
+            # Non-blocking — let the user proceed if they understand the warning.
         method = input.bathy_method()
         boundary_zero = input.use_boundary_zero()
         _log(f"Interpolating bathymetry: method={method}, boundary_zero={boundary_zero}...")
