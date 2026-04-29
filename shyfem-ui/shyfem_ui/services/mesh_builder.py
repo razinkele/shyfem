@@ -493,6 +493,15 @@ def triangulate(
     Returns:
         New GrdFile with nodes, elements, and preserved boundary lines.
     """
+    if max_area is not None and max_area <= 0:
+        raise ValueError(
+            f"max_area must be positive (got {max_area!r}); pass None for no constraint"
+        )
+    if min_angle > 34.0:
+        raise ValueError(
+            f"min_angle must be <= 34 degrees (got {min_angle!r}); "
+            "Triangle's quality refinement may not converge above 34"
+        )
     pslg = _build_pslg(grd)
 
     opts = "p"  # PSLG mode

@@ -405,6 +405,34 @@ class TestTriangulate:
         with pytest.raises(Exception):
             triangulate(grd)
 
+    def test_min_angle_above_34_raises(self):
+        grd = _make_square_boundary()
+        with pytest.raises(ValueError, match="min_angle"):
+            triangulate(grd, max_area=10.0, min_angle=40.0)
+
+    def test_zero_max_area_raises(self):
+        grd = _make_square_boundary()
+        with pytest.raises(ValueError, match="max_area"):
+            triangulate(grd, max_area=0.0, min_angle=20.0)
+
+    def test_negative_max_area_raises(self):
+        grd = _make_square_boundary()
+        with pytest.raises(ValueError, match="max_area"):
+            triangulate(grd, max_area=-1.0, min_angle=20.0)
+
+    def test_min_angle_exactly_34_passes(self):
+        # 34 is the upper bound the guard allows; 33 is the documented
+        # practical max. Triangle accepts up to 34 but can fail to converge
+        # above it.
+        grd = _make_square_boundary()
+        triangulate(grd, max_area=10.0, min_angle=34.0)  # must not raise
+
+    def test_max_area_none_still_allowed(self):
+        # None means "no global area constraint" — the existing minimal-mesh
+        # path. Must continue to work.
+        grd = _make_square_boundary()
+        triangulate(grd, max_area=None, min_angle=20.0)
+
 
 # ---------------------------------------------------------------------------
 # TestInterpolateScipy
