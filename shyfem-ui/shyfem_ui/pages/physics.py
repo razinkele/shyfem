@@ -11,6 +11,8 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.session_auth import get_current_user
+from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 from shyfem_ui.services.str_validator import validate_str
 
@@ -335,6 +337,20 @@ def physics_server(input, output, session, config: Config, active_project=None) 
     @reactive.effect
     @reactive.event(input.save_btn)
     def save_file():
+        _usr = get_current_user()
+        if active_project is not None:
+            _proj = active_project.get()
+            if _proj is not None and (
+                _usr is not None
+                and check_project_access(_proj["id"], _usr, min_role="editor") is None
+            ):
+                ui.notification_show(
+                    "Permission denied: editor role required to save files",
+                    type="error",
+                    duration=6,
+                )
+                return
+
         path_str = input.str_path()
         if not path_str:
             ui.notification_show("No file path specified", type="warning")

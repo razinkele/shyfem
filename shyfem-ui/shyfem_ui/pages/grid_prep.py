@@ -13,6 +13,8 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.session_auth import get_current_user
+from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
@@ -454,6 +456,20 @@ def grid_prep_server(
     @reactive.effect
     @reactive.event(input.run_shypre_btn)
     async def _run_shypre():
+        _usr = get_current_user()
+        if active_project is not None:
+            _proj = active_project.get()
+            if _proj is not None and (
+                _usr is not None
+                and check_project_access(_proj["id"], _usr, min_role="editor") is None
+            ):
+                ui.notification_show(
+                    "Permission denied: editor role required to run shypre",
+                    type="error",
+                    duration=6,
+                )
+                return
+
         grd_path = current_grd_path.get()
         if not grd_path:
             log_content.set("Error: No grid file loaded")

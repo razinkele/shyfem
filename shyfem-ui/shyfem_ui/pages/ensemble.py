@@ -20,6 +20,8 @@ from shinywidgets import output_widget, render_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.session_auth import get_current_user
+from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 from shyfem_ui.services.str_validator import validate_str
@@ -499,6 +501,20 @@ def ensemble_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_ensemble():
+        _usr = get_current_user()
+        if active_project is not None:
+            _proj = active_project.get()
+            if _proj is not None and (
+                _usr is not None
+                and check_project_access(_proj["id"], _usr, min_role="editor") is None
+            ):
+                ui.notification_show(
+                    "Permission denied: editor role required to submit ensemble jobs",
+                    type="error",
+                    duration=6,
+                )
+                return
+
         base_str_path = input.base_str_file()
         working_dir_path = input.working_dir()
         name = input.ensemble_name() or f"ensemble_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
