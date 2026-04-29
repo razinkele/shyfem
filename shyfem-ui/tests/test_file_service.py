@@ -200,3 +200,37 @@ class TestGetProjectStorage:
         storage = FileService.get_project_storage(pid)
         assert storage["used_bytes"] == 0
         assert storage["file_count"] == 0
+
+
+class TestFileServiceUpload:
+
+    def test_upload_same_path_twice_is_idempotent(self, project_with_dir):
+        """Two uploads of the same rel_path must produce one row, latest content,
+        and a quota that reflects ONLY the latest size — not the sum of both."""
+        from shyfem_ui.services.file_service import FileService, _sum_project_bytes
+        from shyfem_ui.db.base import db_session
+
+        pid, work = project_with_dir
+
+        FileService.upload_file(
+            project_id=pid, file_data=b"v1", filename="foo.txt",
+            file_type="other", subdir="data",
+        )
+        FileService.upload_file(
+            project_id=pid, file_data=b"v22", filename="foo.txt",
+            file_type="other", subdir="data",
+        )
+        files = FileService.list_files(project_id=pid)
+        paths = [f["rel_path"] for f in files]
+        assert paths.count("data/foo.txt") == 1, (
+            f"Got {len(paths)} rows for same rel_path: {paths}"
+        )
+        assert (work / "data" / "foo.txt").read_bytes() == b"v22"
+        # CRITICAL regression: quota must NOT double-count after re-upload.
+        # Old bug: row count grew with each upload, summing to len(b"v1")+len(b"v22") = 5.
+        # New: single row of len(b"v22") = 3.
+        with db_session() as db:
+            total = _sum_project_bytes(db, pid)
+        assert total == 3, (
+            "Quota inflated: per-path row should be replaced, not duplicated"
+        )
