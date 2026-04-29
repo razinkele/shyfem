@@ -16,7 +16,7 @@ _PAGES_DIR = pathlib.Path(__file__).parent.parent / "shyfem_ui" / "pages"
 WRITE_HANDLERS = [
     ("simulation", "_confirm_save", "editor"),              # saves .str to filesystem
     ("partitioning", "_run_shyparts", "editor"),             # runs shyparts external process
-    ("compare", "_generate_comparison_report", "viewer"),    # writes HTML report to disk
+    ("compare", "_generate_comparison_report", "editor"),    # writes HTML report to disk
     ("physics", "save_file", "editor"),                     # saves .str to filesystem
     ("grid_prep", "_run_shypre", "editor"),                  # runs shypre external process
     ("postprocess", "_run_shyelab", "editor"),               # runs shyelab external process

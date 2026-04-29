@@ -460,7 +460,7 @@ def compare_server(
             _proj = active_project.get()
             if _proj is not None and (
                 _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="viewer") is None
+                and check_project_access(_proj["id"], _usr, min_role="editor") is None
             ):
                 ui.notification_show(
                     "Permission denied: viewer role required to generate reports",
