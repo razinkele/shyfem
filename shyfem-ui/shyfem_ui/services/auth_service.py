@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from argon2 import PasswordHasher
-from argon2.exceptions import VerificationError, VerifyMismatchError
-from sqlalchemy.exc import IntegrityError
+from argon2.exceptions import HashingError, VerificationError, VerifyMismatchError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 try:
     from argon2.exceptions import InvalidHashError
@@ -282,6 +282,23 @@ class AuthService:
                 return None
             if not self.verify_password(password, user.password_hash):
                 return None
+            if _ph.check_needs_rehash(user.password_hash):
+                try:
+                    user.password_hash = _ph.hash(password)
+                    session.commit()
+                    logger.info(
+                        "Rehashed password for user %s with current argon2 params",
+                        user.username,
+                    )
+                except (HashingError, InvalidHashError, SQLAlchemyError):
+                    logger.exception(
+                        "Failed to persist rehashed password for user %s",
+                        user.username,
+                    )
+                    try:
+                        session.rollback()
+                    except SQLAlchemyError:
+                        logger.exception("Rollback after rehash failure also raised")
             return self._user_to_dict(user)
         finally:
             session.close()
