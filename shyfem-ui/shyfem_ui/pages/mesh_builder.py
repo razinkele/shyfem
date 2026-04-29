@@ -14,6 +14,7 @@ from shyfem_ui.services.mesh_builder import (
     _check_boundary_gates,
     _compute_depths_only,
     adjust_depths,
+    check_bathy_extent,
     compute_mesh_stats,
     count_below_area,
     estimate_element_count,
@@ -1076,6 +1077,12 @@ def mesh_builder_server(
         temp_path = Path(file_info["datapath"])
         try:
             data = load_bathymetry_file(temp_path)
+            mesh = mesh_grd.get()
+            if mesh is not None:
+                msg = check_bathy_extent(mesh, data)
+                if msg is not None:
+                    _log(f"Bathymetry warning: {msg}")
+                    ui.notification_show(msg, type="warning", duration=10)
             bathy_data.set(data)
             _log(f"Loaded bathymetry points: {file_info['name']} ({len(data)} points)")
             _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
@@ -1100,6 +1107,12 @@ def mesh_builder_server(
             data = load_bathymetry_contours(
                 open_path, depth_attr=depth_attr, sample_distance=sample_dist
             )
+            mesh = mesh_grd.get()
+            if mesh is not None:
+                msg = check_bathy_extent(mesh, data)
+                if msg is not None:
+                    _log(f"Bathymetry warning: {msg}")
+                    ui.notification_show(msg, type="warning", duration=10)
             bathy_data.set(data)
             names = ", ".join(f["name"] for f in files)
             _log(f"Loaded contour isobaths: {names} ({len(data)} points)")
@@ -1121,6 +1134,11 @@ def mesh_builder_server(
         if grd is None or data is None:
             ui.notification_show("Load mesh and bathymetry data first.", type="warning")
             return
+        msg = check_bathy_extent(grd, data)
+        if msg is not None:
+            _log(f"Bathymetry warning: {msg}")
+            ui.notification_show(msg, type="warning", duration=10)
+            # Non-blocking — let the user proceed if they understand the warning.
         method = input.bathy_method()
         boundary_zero = input.use_boundary_zero()
         _log(f"Interpolating bathymetry: method={method}, boundary_zero={boundary_zero}...")

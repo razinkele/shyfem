@@ -1345,3 +1345,35 @@ def _boundary_to_polygon(grd: GrdFile) -> shapely.geometry.Polygon | None:
             if len(coords) >= 3:
                 return shapely.geometry.Polygon(coords)
     return None
+
+
+def check_bathy_extent(
+    grd: GrdFile, bathy: np.ndarray
+) -> str | None:
+    """Return a warning if bathymetry points fall outside the mesh bbox.
+
+    The check is bbox-vs-bbox (cheap). Disjoint bboxes almost certainly
+    indicate a CRS mismatch (e.g. UTM-meter XYZ for a WGS84-degree mesh).
+
+    Returns ``None`` if extents overlap or the boundary has no exterior.
+    """
+    if bathy.size == 0:
+        return None
+    poly = _boundary_to_polygon(grd)
+    if poly is None or poly.is_empty:
+        return None
+    min_x, min_y, max_x, max_y = poly.bounds
+    bx_min, by_min = float(bathy[:, 0].min()), float(bathy[:, 1].min())
+    bx_max, by_max = float(bathy[:, 0].max()), float(bathy[:, 1].max())
+    disjoint = (
+        bx_max < min_x or bx_min > max_x or by_max < min_y or by_min > max_y
+    )
+    if disjoint:
+        return (
+            f"Bathymetry extent [{bx_min:.3g}, {by_min:.3g}] – "
+            f"[{bx_max:.3g}, {by_max:.3g}] does not overlap mesh boundary "
+            f"[{min_x:.3g}, {min_y:.3g}] – [{max_x:.3g}, {max_y:.3g}]. "
+            "Likely cause: CRS mismatch — re-export bathymetry in the mesh's "
+            "coordinate system (mesh is in WGS84 lon/lat after import)."
+        )
+    return None

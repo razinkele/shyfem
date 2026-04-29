@@ -16,6 +16,7 @@ from shyfem_ui.services.mesh_builder import (
     _check_boundary_gates,
     _remove_ring_loops,
     adjust_depths,
+    check_bathy_extent,
     compute_mesh_stats,
     count_below_area,
     estimate_element_count,
@@ -1684,3 +1685,44 @@ class TestWarnIfMinimalWithCap:
     def test_conforming_with_cap_silent(self):
         """Conforming method (caller has separate guard) → silent."""
         assert warn_if_minimal_with_cap("delaunay_conforming", 5000) is None
+
+
+class TestCheckBathyExtent:
+
+    def test_overlapping_returns_none(self):
+        """Bathy bbox inside mesh bbox — silent."""
+        grd = _make_square_boundary()  # 10x10 at origin
+        bathy = np.array([[5.0, 5.0, -1.0], [3.0, 7.0, -2.0]])
+        assert check_bathy_extent(grd, bathy) is None
+
+    def test_disjoint_east_returns_warning(self):
+        """Bathy bbox far east of mesh bbox — warn."""
+        grd = _make_square_boundary()
+        bathy = np.array([[100.0, 5.0, -1.0], [200.0, 5.0, -1.0]])
+        msg = check_bathy_extent(grd, bathy)
+        assert msg is not None
+        assert "does not overlap" in msg
+
+    def test_disjoint_north_returns_warning(self):
+        """Bathy bbox far north of mesh bbox — warn."""
+        grd = _make_square_boundary()
+        bathy = np.array([[5.0, 100.0, -1.0]])
+        msg = check_bathy_extent(grd, bathy)
+        assert msg is not None
+
+    def test_partial_overlap_returns_none(self):
+        """Bathy bbox extends beyond mesh on east but they intersect — silent."""
+        grd = _make_square_boundary()
+        bathy = np.array([[5.0, 5.0, -1.0], [50.0, 5.0, -1.0]])
+        assert check_bathy_extent(grd, bathy) is None
+
+    def test_empty_bathy_returns_none(self):
+        """Empty bathy → None (nothing to compare)."""
+        grd = _make_square_boundary()
+        assert check_bathy_extent(grd, np.empty((0, 3))) is None
+
+    def test_no_exterior_returns_none(self):
+        """No line_type=1 boundary → None (cannot establish polygon)."""
+        grd = GrdFile()
+        bathy = np.array([[1.0, 1.0, -1.0]])
+        assert check_bathy_extent(grd, bathy) is None
