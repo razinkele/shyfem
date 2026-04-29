@@ -95,27 +95,97 @@ All settings can be set via environment variables (with `SHYFEM_UI_` prefix), a 
 
 ### Environment Variables
 
+All variables use the `SHYFEM_UI_` prefix and can also be set in a `.env` file.
+
+#### Core / Deployment
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SHYFEM_UI_SHYFEM_DIR` | auto-detected | SHYFEM installation directory |
+| `SHYFEM_UI_DEPLOYMENT_MODE` | `local` | `local` (single-user, no auth) or `server` (multi-user, auth required) |
 | `SHYFEM_UI_HOST` | `127.0.0.1` | Host to bind to |
 | `SHYFEM_UI_PORT` | `8000` | Port to bind to |
-| `SHYFEM_UI_DEPLOYMENT_MODE` | `local` | `local` or `server` |
-| `SHYFEM_UI_WORK_DIR` | `~/.shyfem-ui/projects` | Working directory for projects |
-| `SHYFEM_UI_DATABASE_URL` | `sqlite:///./shyfem_ui.db` | Database connection URL |
-| `SHYFEM_UI_USE_CELERY` | `false` | Use Celery/Redis for job queue |
-| `SHYFEM_UI_REDIS_URL` | `redis://localhost:6379/0` | Redis URL for Celery |
-| `SHYFEM_UI_MAX_WORKERS` | `4` | Maximum concurrent jobs (local mode) |
+| `SHYFEM_UI_SHYFEM_DIR` | auto-detected | Path to SHYFEM installation directory |
+| `SHYFEM_UI_WORK_DIR` | `~/.shyfem-ui/projects` | Working directory for projects and outputs |
+| `SHYFEM_UI_USER_DATA_ROOT` | `/data/shyfem` | Root directory under which per-user home dirs are created: `{user_data_root}/{username}/` (server mode) |
+| `SHYFEM_UI_DEBUG` | `false` | Enable debug mode (verbose WebSocket logging, etc.) |
+
+#### Database
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_DATABASE_URL` | `sqlite:///./shyfem_ui.db` | SQLAlchemy database URL. **Use an absolute path in production** (e.g. `sqlite:////var/lib/shyfem/shyfem_ui.db`) so it does not depend on cwd. |
+| `SHYFEM_UI_DB_POOL_SIZE` | `5` | SQLAlchemy connection pool size (PostgreSQL only) |
+| `SHYFEM_UI_DB_POOL_OVERFLOW` | `10` | Max overflow connections beyond pool_size (PostgreSQL only) |
+| `SHYFEM_UI_DB_POOL_RECYCLE` | `3600` | Seconds before recycling idle connections (PostgreSQL only) |
+
+#### Job Queue
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_USE_CELERY` | `false` | Use Celery/Redis for distributed job queue (server mode) |
+| `SHYFEM_UI_MAX_WORKERS` | `4` | Maximum concurrent jobs (local mode, ignored when Celery is enabled) |
+| `SHYFEM_UI_REDIS_URL` | `redis://localhost:6379/0` | Redis URL for Celery broker |
+
+#### MPI
+
+| Variable | Default | Description |
+|----------|---------|-------------|
 | `SHYFEM_UI_MPI_ENABLED` | `true` | Enable MPI support |
 | `SHYFEM_UI_MPI_DEFAULT_NP` | `4` | Default MPI process count |
 | `SHYFEM_UI_MPIRUN_PATH` | `mpirun` | Path to mpirun executable |
-| `SHYFEM_UI_AUTH_ENABLED` | `false` | Enable basic authentication |
-| `SHYFEM_UI_AUTH_USERNAME` | `admin` | Basic auth username |
-| `SHYFEM_UI_AUTH_PASSWORD` | (empty) | Basic auth password |
-| `SHYFEM_UI_USE_SECURE_COOKIES` | `false` | Set `Secure` flag on session cookies (enable behind HTTPS) |
-| `SHYFEM_UI_THEME` | `flatly` | Shinyswatch theme name |
-| `SHYFEM_UI_LOG_REFRESH_INTERVAL` | `5` | Log viewer refresh interval (seconds) |
-| `SHYFEM_UI_RATE_LIMIT_RPM` | `120` | Max requests per minute per session |
+
+#### Solver
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_SOLVER_NODE_THRESHOLD` | `50000` | Node count above which PETSc is recommended over SPARSKIT |
+
+#### Authentication (server mode)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_AUTH_ENABLED` | auto | Enable auth (`true` auto-set in server mode; `false` in local mode). Override explicitly to force. |
+| `SHYFEM_UI_AUTH_USERNAME` | `admin` | Legacy basic auth username |
+| `SHYFEM_UI_AUTH_PASSWORD` | (unset) | Legacy basic auth password |
+| `SHYFEM_UI_AUTH_SESSION_TTL_HOURS` | `24` | Session cookie lifetime in hours |
+| `SHYFEM_UI_USE_SECURE_COOKIES` | `false` | Set `Secure` flag on session cookies — **enable when behind HTTPS** |
+| `SHYFEM_UI_DEFAULT_ADMIN_USERNAME` | `admin` | Bootstrap admin account name (server mode first run) |
+| `SHYFEM_UI_DEFAULT_ADMIN_PASSWORD` | **(required in server mode)** | Bootstrap admin password — **server mode aborts at startup if unset** (and `AUTH_PASSWORD` is also unset) |
+| `SHYFEM_UI_DEFAULT_USER_USERNAME` | `user` | Tutorial/demo user account name |
+| `SHYFEM_UI_DEFAULT_USER_PASSWORD` | (unset) | Tutorial user password — leave unset to disable the tutorial account |
+
+#### Reverse Proxy / TLS (server mode)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_ROOT_PATH` | (empty) | ASGI root_path for reverse proxy sub-path deployment (e.g., `/shyfem-ui`) |
+| `SHYFEM_UI_TRUSTED_PROXIES` | `[]` | JSON list of trusted proxy CIDR ranges for `X-Forwarded-For` (e.g., `["127.0.0.1/8","10.0.0.0/8"]`) |
+
+#### Upload & Storage Limits
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_MAX_UPLOAD_SIZE_MB` | `500` | Maximum single file upload size in MB |
+| `SHYFEM_UI_MAX_PROJECT_STORAGE_MB` | `5000` | Maximum total storage per project in MB |
+| `SHYFEM_UI_STATIC_CACHE_MAX_AGE` | `86400` | `Cache-Control max-age` for static assets in seconds (`0` disables caching) |
+| `SHYFEM_UI_RATE_LIMIT_RPM` | `120` | Max requests per minute per session (server mode) |
+
+#### SMTP / Email Notifications (server mode)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_SMTP_HOST` | (unset) | SMTP server hostname — leave empty to disable email notifications |
+| `SHYFEM_UI_SMTP_PORT` | `587` | SMTP port (`587` = STARTTLS, `465` = implicit TLS) |
+| `SHYFEM_UI_SMTP_USER` | (unset) | SMTP login username |
+| `SHYFEM_UI_SMTP_PASSWORD` | (unset) | SMTP login password |
+| `SHYFEM_UI_SMTP_FROM` | `SHYFEM UI <noreply@localhost>` | From address for notification emails |
+
+#### UI
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_THEME` | `flatly` | Shinyswatch Bootstrap theme name |
+| `SHYFEM_UI_LOG_REFRESH_INTERVAL` | `5` | Log viewer auto-refresh interval in seconds |
 
 ### Command-Line Arguments
 
