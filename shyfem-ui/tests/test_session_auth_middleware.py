@@ -353,6 +353,44 @@ class TestMiddlewareHTTP:
         headers = dict(start_msg["headers"])
         assert headers[b"location"] == b"/login"
 
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_has_httponly(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+        sent = []
+        async def send(msg):
+            sent.append(msg)
+        await mw._serve_login_page(send, error="", root_path="")
+        set_cookie_headers = [
+            v.decode() for msg in sent if msg.get("type") == "http.response.start"
+            for k, v in msg["headers"] if k == b"set-cookie"
+        ]
+        csrf_cookies = [h for h in set_cookie_headers if h.startswith("csrf_token=")]
+        assert csrf_cookies, "Expected csrf_token Set-Cookie header"
+        assert "HttpOnly" in csrf_cookies[0], (
+            f"CSRF cookie missing HttpOnly: {csrf_cookies[0]!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_csrf_cookie_secure_when_use_secure_cookies(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, use_secure_cookies=True)
+        sent = []
+        async def send(msg):
+            sent.append(msg)
+        await mw._serve_login_page(send, error="", root_path="")
+        set_cookie_headers = [
+            v.decode() for msg in sent if msg.get("type") == "http.response.start"
+            for k, v in msg["headers"] if k == b"set-cookie"
+        ]
+        csrf_cookies = [h for h in set_cookie_headers if h.startswith("csrf_token=")]
+        assert csrf_cookies
+        assert "Secure" in csrf_cookies[0], (
+            f"CSRF cookie missing Secure when use_secure_cookies=True: {csrf_cookies[0]!r}"
+        )
+
 
 # ------------------------------------------------------------------
 # WebSocket handling

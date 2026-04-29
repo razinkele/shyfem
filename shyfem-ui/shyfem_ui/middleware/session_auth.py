@@ -669,7 +669,9 @@ class SessionAuthMiddleware:
             csrf_token=csrf_token,
         )
         body = html.encode("utf-8")
-        csrf_cookie = f"csrf_token={csrf_token}; Path={cookie_path}; SameSite=Lax"
+        csrf_cookie = f"csrf_token={csrf_token}; Path={cookie_path}; HttpOnly; SameSite=Lax"
+        if self.use_secure_cookies:
+            csrf_cookie += "; Secure"
         await send(
             {
                 "type": "http.response.start",
