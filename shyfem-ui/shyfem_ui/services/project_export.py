@@ -84,7 +84,7 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
         name = project_info.get("name", "imported_project")
 
         # Check for path traversal using resolved-path containment
-        project_dir_resolved = (base_dir / _sanitize_dirname(name)).resolve()
+        base_dir_resolved = base_dir.resolve()
         for member in zf.namelist():
             if member == "manifest.json":
                 continue
@@ -92,10 +92,10 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
                 raise ValueError(f"path traversal in archive (absolute): {member!r}")
             target = (base_dir / member).resolve()
             try:
-                target.relative_to(base_dir.resolve())
+                target.relative_to(base_dir_resolved)
             except ValueError:
                 raise ValueError(
-                    f"path traversal in archive: {member!r} resolves outside {base_dir.resolve()}"
+                    f"path traversal in archive: {member!r} resolves outside {base_dir_resolved}"
                 )
 
         # Determine unique directory name
