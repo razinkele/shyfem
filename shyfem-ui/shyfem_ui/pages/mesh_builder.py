@@ -26,8 +26,10 @@ from shyfem_ui.services.mesh_builder import (
     reduce_boundary,
     smooth_boundary,
     suggest_max_area_for_limit,
+    summarize_depth_stats,
     triangulate,
     validate_boundary,
+    warn_if_degenerate_bathy,
     warn_if_min_geq_max_area,
     warn_if_minimal_with_cap,
 )
@@ -1085,10 +1087,14 @@ def mesh_builder_server(
                     ui.notification_show(msg, type="warning", duration=10)
             bathy_data.set(data)
             _log(f"Loaded bathymetry points: {file_info['name']} ({len(data)} points)")
-            _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
+            _log(f"  {summarize_depth_stats(data)}")
             ui.notification_show(
                 f"Loaded {len(data)} bathymetry points", type="message", duration=3
             )
+            warn = warn_if_degenerate_bathy(data)
+            if warn:
+                _log(f"Bathymetry warning: {warn}")
+                ui.notification_show(warn, type="warning", duration=8)
         except Exception as e:
             _log(f"Error loading bathymetry: {e}")
             ui.notification_show(f"Load error: {e}", type="error", duration=5)
@@ -1116,12 +1122,16 @@ def mesh_builder_server(
             bathy_data.set(data)
             names = ", ".join(f["name"] for f in files)
             _log(f"Loaded contour isobaths: {names} ({len(data)} points)")
-            _log(f"  Depth range: {data[:,2].min():.2f} to {data[:,2].max():.2f}")
+            _log(f"  {summarize_depth_stats(data)}")
             ui.notification_show(
                 f"Extracted {len(data)} points from contour isobaths",
                 type="message",
                 duration=3,
             )
+            warn = warn_if_degenerate_bathy(data)
+            if warn:
+                _log(f"Bathymetry warning: {warn}")
+                ui.notification_show(warn, type="warning", duration=8)
         except Exception as e:
             _log(f"Error loading contours: {e}")
             ui.notification_show(f"Contour load error: {e}", type="error", duration=5)

@@ -1377,3 +1377,45 @@ def check_bathy_extent(
             "coordinate system (mesh is in WGS84 lon/lat after import)."
         )
     return None
+
+
+def summarize_depth_stats(bathy: np.ndarray) -> str:
+    """Return a one-line min/max/mean summary of bathymetry depths.
+
+    NaN-aware: NaN values are excluded from min/max/mean (so partial-NaN
+    arrays still report meaningful stats); the count of NaN-stripped
+    points is appended when non-zero.
+    """
+    if bathy.size == 0:
+        return "Bathymetry: empty"
+    z = bathy[:, 2]
+    valid = z[~np.isnan(z)]
+    if valid.size == 0:
+        return "Bathymetry: all depths are NaN"
+    nan_count = z.size - valid.size
+    nan_note = f" ({nan_count} NaN excluded)" if nan_count else ""
+    return (
+        f"Depth: min={float(valid.min()):.2f}, max={float(valid.max()):.2f}, "
+        f"mean={float(valid.mean()):.2f}{nan_note} "
+        f"(SHYFEM convention: depth>0 below surface)"
+    )
+
+
+def warn_if_degenerate_bathy(bathy: np.ndarray) -> str | None:
+    """Return a warning if depths are obviously broken; otherwise None."""
+    if bathy.size == 0:
+        return None
+    z = bathy[:, 2]
+    if np.all(np.isnan(z)):
+        return "All bathymetry values are NaN — interpolation will fail."
+    valid = z[~np.isnan(z)]
+    if valid.size == 0:
+        return None
+    if np.all(valid == 0):
+        return "All bathymetry depths are 0 — likely missing depth data."
+    if np.all(valid == valid[0]):
+        return (
+            f"All bathymetry depths are identical ({float(valid[0]):.2f}); "
+            "interpolation will produce a flat bottom."
+        )
+    return None

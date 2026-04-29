@@ -30,8 +30,10 @@ from shyfem_ui.services.mesh_builder import (
     set_resolution,
     smooth_boundary,
     suggest_max_area_for_limit,
+    summarize_depth_stats,
     triangulate,
     validate_boundary,
+    warn_if_degenerate_bathy,
     warn_if_min_geq_max_area,
     warn_if_minimal_with_cap,
 )
@@ -1726,3 +1728,73 @@ class TestCheckBathyExtent:
         grd = GrdFile()
         bathy = np.array([[1.0, 1.0, -1.0]])
         assert check_bathy_extent(grd, bathy) is None
+
+
+# ---------------------------------------------------------------------------
+# TestBathyUploadStats
+# ---------------------------------------------------------------------------
+
+
+class TestBathyUploadStats:
+
+    def test_summary_min_max_mean(self):
+        """Plain xyz array: summary contains min/max/mean numbers."""
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, 3.0], [2.0, 2.0, 5.0]])
+        s = summarize_depth_stats(bathy)
+        assert "1.00" in s and "5.00" in s and "3.00" in s
+
+    def test_summary_empty(self):
+        """Empty array → 'empty' marker."""
+        assert "empty" in summarize_depth_stats(np.empty((0, 3)))
+
+    def test_summary_excludes_nan(self):
+        """Regression: numpy.min/max/mean propagate NaN by default; the
+        summary must use NaN-aware reductions."""
+        bathy = np.array(
+            [[0.0, 0.0, 1.0], [1.0, 1.0, np.nan], [2.0, 2.0, 5.0]]
+        )
+        s = summarize_depth_stats(bathy)
+        assert "min=1.00" in s
+        assert "max=5.00" in s
+        assert "1 NaN excluded" in s
+
+    def test_summary_all_nan(self):
+        """All-NaN → explicit message (no nan in min/max/mean output)."""
+        bathy = np.array([[0.0, 0.0, np.nan], [1.0, 1.0, np.nan]])
+        s = summarize_depth_stats(bathy)
+        assert "all depths are nan" in s.lower()
+
+    def test_warn_all_nan(self):
+        """All-NaN depths → warn (interpolation will fail)."""
+        bathy = np.array([[0.0, 0.0, np.nan], [1.0, 1.0, np.nan]])
+        msg = warn_if_degenerate_bathy(bathy)
+        assert msg is not None
+        assert "nan" in msg.lower()
+
+    def test_warn_all_zero(self):
+        """All-zero depths → warn (likely missing depth data)."""
+        bathy = np.array([[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]])
+        msg = warn_if_degenerate_bathy(bathy)
+        assert msg is not None
+        assert "0" in msg
+
+    def test_warn_all_identical(self):
+        """All-identical-nonzero depths → warn (flat bottom)."""
+        bathy = np.array([[0.0, 0.0, 5.0], [1.0, 1.0, 5.0]])
+        msg = warn_if_degenerate_bathy(bathy)
+        assert msg is not None
+        assert "identical" in msg
+
+    def test_no_warn_normal(self):
+        """Normal varying depths → no warning."""
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, 5.0]])
+        assert warn_if_degenerate_bathy(bathy) is None
+
+    def test_no_warn_some_nan(self):
+        """Mixed NaN with valid varying depths → no warning."""
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, np.nan], [2.0, 2.0, 3.0]])
+        assert warn_if_degenerate_bathy(bathy) is None
+
+    def test_empty_returns_none(self):
+        """Empty array → None."""
+        assert warn_if_degenerate_bathy(np.empty((0, 3))) is None
