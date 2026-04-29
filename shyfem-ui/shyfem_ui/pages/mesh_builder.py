@@ -11,6 +11,7 @@ from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.mesh_builder import (
+    _check_boundary_gates,
     _compute_depths_only,
     adjust_depths,
     compute_mesh_stats,
@@ -807,6 +808,12 @@ def mesh_builder_server(
         grd = refined_grd.get()
         if grd is None:
             ui.notification_show("No boundary data to mesh.", type="warning")
+            return
+        ok, reason = _check_boundary_gates(grd)
+        if not ok:
+            msg = f"Cannot generate mesh: {reason}. Fix Step 1/2 issues first."
+            _log(msg)
+            ui.notification_show(msg, type="error", duration=8)
             return
         method = input.mesh_method()
 

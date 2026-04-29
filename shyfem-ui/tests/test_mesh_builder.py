@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 from shyfem_ui.services.mesh_builder import (
+    _check_boundary_gates,
     _remove_ring_loops,
     adjust_depths,
     compute_mesh_stats,
@@ -788,6 +789,62 @@ class TestValidateBoundary:
         grd = GrdFile()
         issues = validate_boundary(grd)
         assert any("No boundary" in i for i in issues)
+
+
+# ---------------------------------------------------------------------------
+# TestCheckBoundaryGates
+# ---------------------------------------------------------------------------
+
+
+class TestCheckBoundaryGates:
+    """The fail-closed gate around triangulate()."""
+
+    def test_clean_square_passes(self):
+        ok, reason = _check_boundary_gates(_make_square_boundary())
+        assert ok
+        assert reason is None
+
+    def test_no_lines_blocks(self):
+        ok, reason = _check_boundary_gates(GrdFile())
+        assert not ok
+        assert "no boundary lines" in reason.lower()
+
+    def test_only_holes_blocks(self):
+        # No line_type=1 — turn the square's exterior into a hole.
+        grd = _make_square_boundary()
+        grd.lines[1].line_type = 2
+        ok, reason = _check_boundary_gates(grd)
+        assert not ok
+        assert "exterior" in reason.lower()
+
+    def test_fewer_than_three_nodes_blocks(self):
+        grd = GrdFile()
+        grd.nodes[1] = Node(id=1, node_type=0, x=0.0, y=0.0)
+        grd.nodes[2] = Node(id=2, node_type=0, x=1.0, y=0.0)
+        grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2])
+        ok, reason = _check_boundary_gates(grd)
+        assert not ok
+        assert "fewer than 3 nodes" in reason.lower()
+
+    def test_self_intersecting_blocks(self):
+        # Bowtie / figure-8: diagonals (0,0)-(1,1) and (1,0)-(0,1) cross.
+        grd = GrdFile()
+        for i, (x, y) in enumerate(
+            [(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)], start=1
+        ):
+            grd.nodes[i] = Node(id=i, node_type=0, x=float(x), y=float(y))
+        grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1])
+        ok, reason = _check_boundary_gates(grd)
+        assert not ok
+        assert "self-intersect" in reason.lower()
+
+    def test_unclosed_ring_passes(self):
+        # WARNING: not a closed ring — left non-blocking; Triangle closes it.
+        grd = _make_square_boundary()
+        # Drop the closing repeat node
+        grd.lines[1].nodes = [1, 2, 3, 4]
+        ok, reason = _check_boundary_gates(grd)
+        assert ok
 
 
 # ---------------------------------------------------------------------------

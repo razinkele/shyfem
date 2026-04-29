@@ -1222,6 +1222,34 @@ def validate_boundary(grd: GrdFile) -> list[str]:
     return issues
 
 
+def _check_boundary_gates(grd: GrdFile) -> tuple[bool, str | None]:
+    """Decide whether ``grd`` is safe to hand to Triangle.
+
+    Returns ``(True, None)`` if the boundary is mesh-ready. Otherwise returns
+    ``(False, reason)`` where ``reason`` is a human-readable explanation.
+
+    Blocks on:
+    - any ERROR-prefixed issue from :func:`validate_boundary`
+    - self-intersecting lines (Triangle can hang or segfault)
+    - missing exterior boundary (line_type=1)
+
+    Allows:
+    - unclosed rings (Triangle closes them automatically)
+    """
+    issues = validate_boundary(grd)
+    blocking: list[str] = []
+    for issue in issues:
+        if issue.startswith("ERROR"):
+            blocking.append(issue)
+        elif "self-intersect" in issue.lower():
+            blocking.append(issue)
+        elif "no exterior boundary" in issue.lower():
+            blocking.append(issue)
+    if blocking:
+        return False, "; ".join(blocking)
+    return True, None
+
+
 def compute_mesh_stats(grd: GrdFile) -> dict:
     """Compute mesh quality statistics.
 
