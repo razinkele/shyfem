@@ -471,6 +471,22 @@ def count_below_area(grd: GrdFile, threshold: float) -> int:
     return count
 
 
+def warn_if_min_geq_max_area(
+    min_area: float | None, max_area: float | None
+) -> str | None:
+    """Return a warning string if both bounds are set and min >= max."""
+    if min_area is None or max_area is None:
+        return None
+    if min_area <= 0 or max_area <= 0:
+        return None
+    if min_area >= max_area:
+        return (
+            f"Min Triangle Area ({min_area:g}) is ≥ Max Triangle Area "
+            f"({max_area:g}); every triangle will be flagged as a sliver."
+        )
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 5. Triangulate
 # ---------------------------------------------------------------------------

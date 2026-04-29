@@ -31,6 +31,7 @@ from shyfem_ui.services.mesh_builder import (
     suggest_max_area_for_limit,
     triangulate,
     validate_boundary,
+    warn_if_min_geq_max_area,
 )
 from shyfem_ui.services.parser_grd import (
     Element,
@@ -1628,3 +1629,35 @@ class TestAdjustDepths:
         for nid in grd.nodes:
             assert result.nodes[nid].depth == grd.nodes[nid].depth
         assert grd.nodes[1].depth == -10.0
+
+
+class TestWarnIfMinGeqMaxArea:
+
+    def test_returns_none_when_both_unset(self):
+        """Both bounds None — silent."""
+        assert warn_if_min_geq_max_area(None, None) is None
+
+    def test_returns_none_when_one_unset(self):
+        """One bound None — silent."""
+        assert warn_if_min_geq_max_area(0.1, None) is None
+        assert warn_if_min_geq_max_area(None, 0.5) is None
+
+    def test_returns_none_when_min_lt_max(self):
+        """Normal case (min < max) — silent."""
+        assert warn_if_min_geq_max_area(0.01, 0.1) is None
+
+    def test_returns_none_when_min_zero(self):
+        """min=0 is the 'no constraint' sentinel; never warn."""
+        assert warn_if_min_geq_max_area(0.0, 0.1) is None
+
+    def test_warns_when_min_eq_max(self):
+        """Equal bounds — warn (every triangle below or equal counts as sliver)."""
+        msg = warn_if_min_geq_max_area(0.1, 0.1)
+        assert msg is not None
+        assert "sliver" in msg
+
+    def test_warns_when_min_gt_max(self):
+        """min > max — warn (input is logically reversed)."""
+        msg = warn_if_min_geq_max_area(0.5, 0.1)
+        assert msg is not None
+        assert "sliver" in msg

@@ -27,6 +27,7 @@ from shyfem_ui.services.mesh_builder import (
     suggest_max_area_for_limit,
     triangulate,
     validate_boundary,
+    warn_if_min_geq_max_area,
 )
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser, Node
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -735,6 +736,7 @@ def mesh_builder_server(
                             min=0.0,
                         ),
                         ui.output_ui("element_estimate"),
+                        ui.output_ui("area_bounds_warning"),
                     ),
                     ui.column(
                         6,
@@ -793,6 +795,21 @@ def mesh_builder_server(
             return ui.p("Enter max area to see estimate.", class_="text-muted small")
         count = estimate_element_count(grd, area)
         return ui.p(f"Estimated elements: ~{count:,}", class_="small text-info")
+
+    @render.ui
+    def area_bounds_warning():
+        # Only the quality method renders both inputs.
+        if input.mesh_method() != "delaunay_quality":
+            return ui.span()
+        try:
+            min_a = input.min_area()
+            max_a = input.max_area()
+        except Exception:
+            return ui.span()
+        msg = warn_if_min_geq_max_area(min_a, max_a)
+        if msg is None:
+            return ui.span()
+        return ui.p(msg, class_="alert alert-warning py-2 px-3 small mb-2")
 
     def _safe_input(name: str):
         """Read a dynamically-rendered numeric input, returning None if it
