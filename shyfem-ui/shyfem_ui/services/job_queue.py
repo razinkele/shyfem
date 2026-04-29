@@ -170,6 +170,8 @@ class JobQueueFactory:
         max_workers: int = 4,
         redis_url: str | None = None,
         notification_service=None,
+        session_factory=None,
+        config=None,
     ) -> JobQueue:
         """Create a job queue instance.
 
@@ -179,6 +181,8 @@ class JobQueueFactory:
             max_workers: Max concurrent jobs (local mode)
             redis_url: Redis URL (celery mode)
             notification_service: Optional NotificationService for job completion emails
+            session_factory: Optional DB session factory for job persistence
+            config: Optional config object (used for celery mode to extract redis_url/shyfem_dir)
         """
         if mode == "local":
             from shyfem_ui.services.job_local import LocalJobQueue
@@ -191,6 +195,19 @@ class JobQueueFactory:
         elif mode == "celery":
             from shyfem_ui.services.job_celery import CeleryJobQueue
 
-            return CeleryJobQueue(shyfem_dir=shyfem_dir, redis_url=redis_url)
+            effective_shyfem_dir = shyfem_dir
+            effective_redis_url = redis_url
+            if config is not None:
+                if effective_shyfem_dir is None and hasattr(config, "shyfem_dir"):
+                    effective_shyfem_dir = config.shyfem_dir
+                if effective_redis_url is None and hasattr(config, "redis_url"):
+                    effective_redis_url = config.redis_url
+
+            return CeleryJobQueue(
+                shyfem_dir=effective_shyfem_dir,
+                redis_url=effective_redis_url,
+                session_factory=session_factory,
+                notification_service=notification_service,
+            )
         else:
             raise ValueError(f"Unknown job queue mode: {mode}")

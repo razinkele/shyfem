@@ -3,7 +3,7 @@
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from shyfem_ui.db.base import Base
@@ -52,6 +52,7 @@ class ProjectFile(Base):
 
     __tablename__ = "project_files"
     __table_args__ = (
+        UniqueConstraint("project_id", "rel_path", name="uq_project_file_path"),
         Index("ix_project_files_project_id", "project_id"),
         Index("ix_project_files_file_type", "file_type"),
     )

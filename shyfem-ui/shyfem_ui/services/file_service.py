@@ -1,11 +1,17 @@
 """File management service for project data files."""
 
 import hashlib
+import logging
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
+
+from sqlalchemy.exc import IntegrityError
 
 from shyfem_ui.config import get_config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Project, ProjectFile
+
+logger = logging.getLogger(__name__)
 
 
 class FileService:
@@ -80,17 +86,49 @@ class FileService:
             # Compute checksum
             checksum = hashlib.sha256(file_data).hexdigest()
 
-            # Create DB record
-            pf = ProjectFile(
-                project_id=project_id,
-                filename=safe_name,
-                rel_path=rel_path,
-                file_type=file_type,
-                size_bytes=size,
-                checksum=checksum,
-            )
-            db.add(pf)
-            db.flush()
+            # Upsert DB record — handle re-upload of the same rel_path
+            try:
+                existing = db.query(ProjectFile).filter_by(
+                    project_id=project_id, rel_path=rel_path
+                ).one_or_none()
+                if existing is None:
+                    pf = ProjectFile(
+                        project_id=project_id,
+                        filename=safe_name,
+                        rel_path=rel_path,
+                        file_type=file_type,
+                        size_bytes=size,
+                        checksum=checksum,
+                    )
+                    db.add(pf)
+                else:
+                    pf = existing
+                    pf.size_bytes = size
+                    pf.checksum = checksum
+                    pf.uploaded_at = datetime.now(UTC)
+                db.flush()
+            except IntegrityError:
+                # Concurrent upload of the same path lost the read-then-insert race
+                # against the UNIQUE constraint. Retry as a pure update — but use
+                # one_or_none() because the concurrent winner may also have rolled back.
+                db.rollback()
+                existing = db.query(ProjectFile).filter_by(
+                    project_id=project_id, rel_path=rel_path
+                ).one_or_none()
+                if existing is None:
+                    logger.error(
+                        "Both concurrent uploads of %s failed; disk file may be orphaned",
+                        rel_path,
+                    )
+                    raise RuntimeError(
+                        f"Upload of {rel_path} failed due to concurrent write conflict; "
+                        "please retry"
+                    )
+                pf = existing
+                pf.size_bytes = size
+                pf.checksum = checksum
+                pf.uploaded_at = datetime.now(UTC)
+                db.flush()
 
             return {
                 "id": pf.id,

@@ -11,22 +11,11 @@ import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from shyfem_ui.models.workflow import Workflow, WorkflowStatus
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
-
-
-class WorkflowStatus(Enum):
-    """Workflow execution status."""
-
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-    PAUSED = "paused"
 
 
 @dataclass
@@ -40,15 +29,38 @@ class WorkflowStep:
     mpi_np: int = 1
     # Reference previous step outputs: "{step_name.output_dir}" or "{step_name.output_files[0]}"
     input_from: str | None = None
-    # Additional options passed to the tool
-    options: list[str] = field(default_factory=list)
     # Whether to continue the workflow if this step fails
     continue_on_failure: bool = False
+
+    def to_dict(self) -> dict:
+        """Serialize to a plain dict for JSON storage."""
+        return {
+            "name": self.name,
+            "tool_name": self.tool_name,
+            "args_template": list(self.args_template),
+            "mpi_enabled": self.mpi_enabled,
+            "mpi_np": self.mpi_np,
+            "input_from": self.input_from,
+            "continue_on_failure": self.continue_on_failure,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "WorkflowStep":
+        """Deserialize from a plain dict (JSON column read)."""
+        return cls(
+            name=d["name"],
+            tool_name=d["tool_name"],
+            args_template=d.get("args_template", []),
+            mpi_enabled=d.get("mpi_enabled", False),
+            mpi_np=d.get("mpi_np", 1),
+            input_from=d.get("input_from"),
+            continue_on_failure=d.get("continue_on_failure", False),
+        )
 
 
 @dataclass
 class WorkflowInstance:
-    """A running workflow instance."""
+    """A running workflow instance (in-memory view of a DB row)."""
 
     id: str
     name: str
@@ -160,30 +172,107 @@ WORKFLOW_TEMPLATES = {
                 name="Hydrodynamic run",
                 tool_name="shyfem",
                 args_template=["{input_str}"],
-                options=["# Set idtoff > 0 in STR to write offline data"],
             ),
             WorkflowStep(
                 name="Tracer run",
                 tool_name="shyfem",
                 args_template=["{input_str_tracer}"],
                 input_from="Hydrodynamic run",
-                options=["# Set idtoff = -1 in STR to read offline data"],
             ),
         ],
     },
 }
 
 
+def _parse_dt(value: str | datetime | None) -> datetime | None:
+    """Parse an ISO 8601 string or pass through a datetime / None."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _row_to_instance(row: Workflow) -> WorkflowInstance:
+    """Convert a DB ORM row to a WorkflowInstance dataclass.
+
+    The steps JSON column stores actual WorkflowStep dicts followed by a
+    sentinel entry ``{"__meta__": {...}}`` that carries transient runtime
+    fields (working_dir, step indices, job IDs, results, etc.).
+    """
+    steps_raw = row.steps or []
+    meta_entry: dict = {}
+    clean_steps: list[WorkflowStep] = []
+    for s in steps_raw:
+        if "__meta__" in s:
+            meta_entry = s["__meta__"]
+        else:
+            clean_steps.append(WorkflowStep.from_dict(s))
+
+    return WorkflowInstance(
+        id=str(row.id),
+        name=row.name,
+        steps=clean_steps,
+        working_dir=meta_entry.get("working_dir", ""),
+        status=row.status,
+        current_step_index=meta_entry.get("current_step_index", 0),
+        step_job_ids=meta_entry.get("step_job_ids", {}),
+        step_results=meta_entry.get("step_results", {}),
+        created_at=row.created_at or datetime.utcnow(),
+        started_at=_parse_dt(meta_entry.get("started_at")),
+        completed_at=row.completed_at,
+        error_message=meta_entry.get("error_message"),
+        metadata=meta_entry.get("metadata", {}),
+    )
+
+
+def _pack_steps(wf: "WorkflowInstance") -> list[dict]:
+    """Serialize WorkflowInstance state into the steps JSON column.
+
+    The step list is stored as a plain list of dicts. A special sentinel
+    entry ``{"__meta__": {...}}`` is appended to carry transient runtime
+    fields (working_dir, step results, indices, etc.) that have no dedicated
+    columns.
+    """
+    step_dicts = [s.to_dict() for s in wf.steps]
+    # Parse string datetimes back if needed (they come in as datetime objects)
+    started_at = wf.started_at.isoformat() if isinstance(wf.started_at, datetime) else wf.started_at
+    step_dicts.append({
+        "__meta__": {
+            "working_dir": wf.working_dir,
+            "current_step_index": wf.current_step_index,
+            "step_job_ids": wf.step_job_ids,
+            "step_results": wf.step_results,
+            "started_at": started_at,
+            "error_message": wf.error_message,
+            "metadata": wf.metadata,
+        }
+    })
+    return step_dicts
+
+
 class WorkflowEngine:
     """Engine for managing multi-step workflows.
 
     Coordinates job submission and chaining through a JobQueue.
+    All workflow state is persisted to the database; no in-memory cache is kept.
     """
 
-    def __init__(self, job_queue: JobQueue):
+    def __init__(self, job_queue: JobQueue | None = None, session_factory=None):
         self._queue = job_queue
-        self._workflows: dict[str, WorkflowInstance] = {}
+        self._session_factory = session_factory
         self._polling_tasks: dict[str, asyncio.Task] = {}
+
+    def _get_session(self):
+        """Open and return a new DB session."""
+        if self._session_factory is None:
+            from shyfem_ui.db.base import get_session_factory
+            factory = get_session_factory()
+            return factory()
+        return self._session_factory()
 
     def list_templates(self) -> dict[str, dict]:
         """List available workflow templates."""
@@ -199,7 +288,7 @@ class WorkflowEngine:
     async def create_workflow(
         self,
         template_key: str,
-        working_dir: Path | str,
+        working_dir: Path | str = "",
         params: dict[str, str] | None = None,
         name: str | None = None,
     ) -> str:
@@ -213,16 +302,15 @@ class WorkflowEngine:
             name: Custom workflow name
 
         Returns:
-            Workflow ID
+            Workflow ID (as string representation of the DB integer PK)
         """
         template = WORKFLOW_TEMPLATES.get(template_key)
         if not template:
             raise ValueError(f"Unknown workflow template: {template_key}")
 
-        wf_id = str(uuid.uuid4())
         params = params or {}
 
-        # Deep copy steps from template
+        # Deep copy steps from template (no options field)
         steps = []
         for step in template["steps"]:
             steps.append(
@@ -233,39 +321,65 @@ class WorkflowEngine:
                     mpi_enabled=step.mpi_enabled,
                     mpi_np=int(params.get("mpi_np", step.mpi_np)),
                     input_from=step.input_from,
-                    options=list(step.options),
                     continue_on_failure=step.continue_on_failure,
                 )
             )
 
         wf = WorkflowInstance(
-            id=wf_id,
+            id="",  # will be set after DB insert
             name=name or template["name"],
             steps=steps,
             working_dir=str(working_dir),
             metadata={"template": template_key, "params": params},
         )
-        self._workflows[wf_id] = wf
 
-        # Start execution
-        task = asyncio.create_task(self._run_workflow(wf_id))
-        self._polling_tasks[wf_id] = task
+        # Persist to DB
+        session = self._get_session()
+        try:
+            row = Workflow(
+                name=wf.name,
+                template=template_key,
+                status=WorkflowStatus.PENDING,
+                steps=_pack_steps(wf),
+                created_at=wf.created_at,
+                updated_at=wf.created_at,
+            )
+            session.add(row)
+            session.commit()
+            session.refresh(row)
+            wf_id = str(row.id)
+        finally:
+            session.close()
+
+        # Start execution if we have a queue
+        if self._queue is not None:
+            task = asyncio.create_task(self._run_workflow(wf_id))
+            self._polling_tasks[wf_id] = task
 
         return wf_id
 
     async def cancel_workflow(self, workflow_id: str) -> bool:
         """Cancel a running workflow."""
-        wf = self._workflows.get(workflow_id)
-        if not wf or not wf.is_active:
-            return False
+        session = self._get_session()
+        try:
+            row = session.query(Workflow).filter(Workflow.id == int(workflow_id)).first()
+            if not row:
+                return False
+            wf = _row_to_instance(row)
+            if not wf.is_active:
+                return False
 
-        wf.status = WorkflowStatus.CANCELLED
-        wf.completed_at = datetime.now()
+            # Cancel current job
+            step = wf.current_step
+            if step and step.name in wf.step_job_ids and self._queue is not None:
+                await self._queue.cancel(wf.step_job_ids[step.name])
 
-        # Cancel current job
-        step = wf.current_step
-        if step and step.name in wf.step_job_ids:
-            await self._queue.cancel(wf.step_job_ids[step.name])
+            row.status = WorkflowStatus.CANCELLED
+            row.completed_at = datetime.utcnow()
+            row.updated_at = datetime.utcnow()
+            session.commit()
+        finally:
+            session.close()
 
         # Cancel polling task
         task = self._polling_tasks.pop(workflow_id, None)
@@ -275,23 +389,61 @@ class WorkflowEngine:
         return True
 
     def get_workflow(self, workflow_id: str) -> WorkflowInstance | None:
-        """Get workflow status."""
-        return self._workflows.get(workflow_id)
+        """Get workflow status from DB."""
+        session = self._get_session()
+        try:
+            try:
+                pk = int(workflow_id)
+            except (ValueError, TypeError):
+                return None
+            row = session.query(Workflow).filter(Workflow.id == pk).first()
+            if row is None:
+                return None
+            return _row_to_instance(row)
+        finally:
+            session.close()
 
     def list_workflows(self, limit: int = 50) -> list[WorkflowInstance]:
         """List all workflows, newest first."""
-        workflows = list(self._workflows.values())
-        workflows.sort(key=lambda w: w.created_at, reverse=True)
-        return workflows[:limit]
+        session = self._get_session()
+        try:
+            rows = (
+                session.query(Workflow)
+                .order_by(Workflow.created_at.desc())
+                .limit(limit)
+                .all()
+            )
+            return [_row_to_instance(r) for r in rows]
+        finally:
+            session.close()
+
+    def _save_instance(self, wf: WorkflowInstance) -> None:
+        """Persist a WorkflowInstance back to DB."""
+        session = self._get_session()
+        try:
+            pk = int(wf.id)
+            row = session.query(Workflow).filter(Workflow.id == pk).first()
+            if row is None:
+                return
+            row.status = wf.status
+            row.steps = _pack_steps(wf)
+            row.updated_at = datetime.utcnow()
+            if wf.completed_at:
+                row.completed_at = wf.completed_at
+            session.commit()
+        finally:
+            session.close()
 
     async def _run_workflow(self, workflow_id: str) -> None:
         """Execute workflow steps sequentially."""
-        wf = self._workflows.get(workflow_id)
+        # Load fresh from DB
+        wf = self.get_workflow(workflow_id)
         if not wf:
             return
 
         wf.status = WorkflowStatus.RUNNING
         wf.started_at = datetime.now()
+        self._save_instance(wf)
 
         params = wf.metadata.get("params", {})
 
@@ -300,6 +452,7 @@ class WorkflowEngine:
                 break
 
             wf.current_step_index = i
+            self._save_instance(wf)
 
             # Resolve template arguments
             args = self._resolve_args(step.args_template, params, wf.step_results)
@@ -309,7 +462,7 @@ class WorkflowEngine:
                 name=f"{wf.name}/{step.name}",
                 tool_name=step.tool_name,
                 args=args,
-                working_dir=Path(wf.working_dir),
+                working_dir=Path(wf.working_dir) if wf.working_dir else Path("."),
                 mpi_enabled=step.mpi_enabled,
                 mpi_np=step.mpi_np,
                 metadata={"workflow_id": workflow_id, "step": step.name},
@@ -318,6 +471,7 @@ class WorkflowEngine:
             try:
                 job_id = await self._queue.submit(spec)
                 wf.step_job_ids[step.name] = job_id
+                self._save_instance(wf)
 
                 # Poll until job completes
                 job_info = await self._wait_for_job(job_id)
@@ -330,6 +484,7 @@ class WorkflowEngine:
                     "output_dir": wf.working_dir,
                     "return_code": job_info.return_code if job_info else -1,
                 }
+                self._save_instance(wf)
 
                 if job_info and job_info.status != JobStatus.COMPLETED:
                     if not step.continue_on_failure:
@@ -353,6 +508,7 @@ class WorkflowEngine:
             wf.current_step_index = len(wf.steps)
 
         wf.completed_at = datetime.now()
+        self._save_instance(wf)
         self._polling_tasks.pop(workflow_id, None)
 
     async def _wait_for_job(self, job_id: str, poll_interval: float = 2.0) -> JobInfo | None:

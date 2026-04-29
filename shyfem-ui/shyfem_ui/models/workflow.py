@@ -1,0 +1,46 @@
+"""SQLAlchemy model for persisted workflow instances."""
+from datetime import datetime
+from enum import Enum as PyEnum
+
+from sqlalchemy import Column, DateTime, Enum, Integer, JSON, String
+
+from shyfem_ui.db.base import Base
+
+
+class WorkflowStatus(PyEnum):
+    """Workflow execution status. Defined here (not in services) to avoid
+    a service->model circular import -- services/workflow.py imports this
+    model class for DB queries, so the enum must live model-side."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    PAUSED = "paused"
+
+
+class Workflow(Base):
+    __tablename__ = "workflows"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    template = Column(String, nullable=False)
+    status = Column(
+        Enum(WorkflowStatus, name="workflow_status"),
+        nullable=False,
+        default=WorkflowStatus.PENDING,
+    )
+    # JSON column stores list[dict] -- the WorkflowStep schema is owned by
+    # the service (de)serialization layer; not enforced at the DB level.
+    steps = Column(JSON, nullable=False, default=list)
+    project_id = Column(Integer, nullable=True, index=True)
+    user_id = Column(Integer, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+    completed_at = Column(DateTime, nullable=True)

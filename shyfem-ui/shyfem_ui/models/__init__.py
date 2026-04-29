@@ -9,10 +9,13 @@ Models:
     User: A registered user with role-based access.
     AuthSession: An authenticated session tied to a user.
     ProjectPermission: Permission granting a user access to a project.
+    Workflow: A persisted multi-step workflow instance.
+    WorkflowStatus: Enum for workflow execution status.
 """
 
 from shyfem_ui.models.project import Grid, Job, Project, ProjectFile, Simulation
 from shyfem_ui.models.user import AuthSession, ProjectPermission, User
+from shyfem_ui.models.workflow import Workflow, WorkflowStatus
 
 __all__ = [
     "Project",
@@ -23,4 +26,6 @@ __all__ = [
     "User",
     "AuthSession",
     "ProjectPermission",
+    "Workflow",
+    "WorkflowStatus",
 ]
