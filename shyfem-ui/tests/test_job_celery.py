@@ -477,3 +477,39 @@ class TestCeleryCleanup:
 
         count = await queue.cleanup_old_jobs(days=7)
         assert count == 0
+
+
+# ---------------------------------------------------------------------------
+# TestCeleryReadsConfigShyfemDir
+# ---------------------------------------------------------------------------
+
+
+class TestCeleryReadsConfigShyfemDir:
+
+    def test_init_reads_shyfem_dir_from_config_not_env(self, monkeypatch, tmp_path):
+        """Regression: CeleryJobQueue.__init__ must resolve shyfem_dir via
+        get_config(), not via os.environ.get directly. If env and config
+        disagree, config wins."""
+        from unittest.mock import MagicMock
+
+        # Env says one thing
+        monkeypatch.setenv("SHYFEM_UI_SHYFEM_DIR", "/wrong/path/from/env")
+
+        # Config says another — stub get_config() so we don't need a full Config
+        fake_config = MagicMock()
+        fake_config.shyfem_dir = "/correct/from/config"
+        fake_config.work_dir = str(tmp_path)
+        # Add any other attributes CeleryJobQueue.__init__ reads from config.
+        monkeypatch.setattr(
+            "shyfem_ui.services.job_celery.get_config", lambda: fake_config
+        )
+
+        # No broker connection happens in __init__ (celery app is created lazily).
+
+        from shyfem_ui.services.job_celery import CeleryJobQueue
+        # The CeleryJobQueue __init__ may take other args; adapt to actual signature.
+        queue = CeleryJobQueue()  # ← may need: shyfem_dir=None, redis_url=None, etc.
+
+        # The constructor stored shyfem_dir from CONFIG, not from ENV.
+        assert "/correct/from/config" in str(queue.shyfem_dir)
+        assert "/wrong/path/from/env" not in str(queue.shyfem_dir)

@@ -19,6 +19,20 @@ def auth_service():
     return AuthService(session_factory=Session)
 
 
+@pytest.fixture()
+def db_session():
+    """Raw SQLAlchemy session backed by an in-memory SQLite database.
+
+    Yields a single open session for use in tests that need direct DB access.
+    """
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(bind=engine)
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    yield session
+    session.close()
+
+
 # ------------------------------------------------------------------
 # Password hashing
 # ------------------------------------------------------------------
@@ -282,3 +296,45 @@ class TestCreateUserEmailAndDirectory:
             assert not any(u["username"] == "dave" for u in users)
         finally:
             os.chmod(tmp_path, 0o755)
+
+
+# ------------------------------------------------------------------
+# Password rehashing on login
+# ------------------------------------------------------------------
+
+
+class TestAuthenticateRehash:
+
+    def test_authenticate_rehashes_when_needed(self, db_session):
+        """Regression: when a stored hash uses weaker argon2 params than current
+        defaults, authenticate() must rehash and persist on a successful login."""
+        from argon2 import PasswordHasher
+        from shyfem_ui.services.auth_service import AuthService
+        from shyfem_ui.models.user import User
+
+        # Create a hash with weaker-than-default parameters that needs_rehash
+        weak = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+        user = User(username="alice", email="a@x.com",
+                    password_hash=weak.hash("pw"), role="user")
+        db_session.add(user)
+        db_session.commit()
+        old_hash = user.password_hash
+
+        svc = AuthService(session_factory=lambda: db_session)
+        result = svc.authenticate("alice", "pw")
+        assert result is not None, "authenticate must return user on success"
+
+        # Re-query the user to see the persisted hash (authenticate() calls
+        # session.close() which expires attached objects).
+        from shyfem_ui.models.user import User as _User
+        updated_user = db_session.query(_User).filter_by(username="alice").first()
+        assert updated_user is not None
+        assert updated_user.password_hash != old_hash, (
+            "expected hash to be rehashed with stronger params"
+        )
+
+        # Bonus: the rehashed user must still authenticate with the same password
+        result2 = svc.authenticate("alice", "pw")
+        assert result2 is not None, (
+            "rehashed user must continue to authenticate with same password"
+        )
