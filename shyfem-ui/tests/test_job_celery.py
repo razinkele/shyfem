@@ -662,3 +662,57 @@ class TestCeleryParity:
 
         mod._send_completion_notification(job)
         ns.notify_job_failed.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TestPersistJobThreadSafety
+# ---------------------------------------------------------------------------
+
+
+class TestPersistJobThreadSafety:
+    """Regression tests for the racy global save/restore pattern removed in
+    the thread-safety fix."""
+
+    def test_persist_job_does_not_mutate_global(self, monkeypatch, tmp_path):
+        """Regression: _persist_job must not save/swap/restore the global —
+        that pattern was racy across concurrent instances."""
+        import shyfem_ui.services.job_celery as mod
+        from shyfem_ui.services.job_queue import JobInfo, JobStatus
+
+        fake_config = MagicMock()
+        fake_config.shyfem_dir = "/usr/local/shyfem"
+        fake_config.work_dir = str(tmp_path)
+        monkeypatch.setattr(
+            "shyfem_ui.services.job_celery.get_config", lambda: fake_config
+        )
+
+        sentinel = MagicMock(name="original_global_factory")
+        monkeypatch.setattr(mod, "_queue_session_factory", sentinel)
+
+        q1_sf = MagicMock(name="q1_factory")
+        q1 = CeleryJobQueue(session_factory=q1_sf)
+        # CeleryJobQueue.__init__ publishes session_factory to the global —
+        # record its state *after* construction so we're testing _persist_job.
+        pre_persist_global = mod._queue_session_factory
+
+        info = JobInfo(
+            id="x",
+            name="t",
+            tool_name="shyfem",
+            args=[],
+            working_dir=str(tmp_path),
+            status=JobStatus.COMPLETED,
+        )
+
+        # Stub _persist_job_to_db to avoid touching a real DB.
+        stub = MagicMock()
+        monkeypatch.setattr(mod, "_persist_job_to_db", stub)
+
+        q1._persist_job(info)
+
+        post_persist_global = mod._queue_session_factory
+        assert post_persist_global is pre_persist_global, (
+            "Module global must not be mutated by _persist_job"
+        )
+        # And the stub must have been called with the instance's own factory.
+        stub.assert_called_once_with(info, session_factory=q1_sf)

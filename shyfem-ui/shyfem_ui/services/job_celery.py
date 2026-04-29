@@ -248,19 +248,23 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _persist_job_to_db(job_info: JobInfo) -> None:
+def _persist_job_to_db(
+    job_info: JobInfo,
+    session_factory: Callable[[], Any] | None = None,
+) -> None:
     """Write or update a job row in the database.
 
-    Uses ``_queue_session_factory`` if set (injected by ``CeleryJobQueue``
-    when running in-process), otherwise falls back to the app-wide
-    ``db_session`` context manager.
+    If ``session_factory`` is provided it is used directly.  Otherwise
+    falls back to the module-level ``_queue_session_factory`` (set by the
+    most recent ``CeleryJobQueue`` construction), and finally to the
+    app-wide ``db_session`` context manager if neither is available.
     """
-    session_factory = _queue_session_factory
+    factory = session_factory or _queue_session_factory
     try:
         from shyfem_ui.models.project import Job
 
-        if session_factory is not None:
-            ctx = session_factory()
+        if factory is not None:
+            ctx = factory()
         else:
             try:
                 from shyfem_ui.db.base import db_session
@@ -397,15 +401,12 @@ class CeleryJobQueue(JobQueue):
     # ------------------------------------------------------------------
 
     def _persist_job(self, job: JobInfo) -> None:
-        """Write or update a job row in the database."""
-        global _queue_session_factory
-        orig_sf = _queue_session_factory
-        try:
-            if self.session_factory is not None:
-                _queue_session_factory = self.session_factory
-            _persist_job_to_db(job)
-        finally:
-            _queue_session_factory = orig_sf
+        """Write or update a job row in the database.
+
+        Thread-safe — passes ``session_factory`` explicitly and does not
+        mutate module-level globals.
+        """
+        _persist_job_to_db(job, session_factory=self.session_factory)
 
     # ------------------------------------------------------------------
     # Internal helpers
