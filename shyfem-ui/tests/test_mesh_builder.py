@@ -1798,3 +1798,21 @@ class TestBathyUploadStats:
     def test_empty_returns_none(self):
         """Empty array → None."""
         assert warn_if_degenerate_bathy(np.empty((0, 3))) is None
+
+
+class TestUploadRejectsUnknownExt:
+    """Smoke test: the page-level upload helper must explicitly reject
+    unknown extensions instead of letting fiona raise a cryptic error."""
+
+    def test_error_message_lists_accepted_formats(self):
+        """Static check that the user-facing error message mentions all
+        accepted formats. If someone removes one, this catches it."""
+        # `Path` is already imported at the top of test_mesh_builder.py.
+        page_src = (
+            Path(__file__).resolve().parent.parent / "shyfem_ui" / "pages"
+            / "mesh_builder.py"
+        ).read_text()
+        # The branch that raises must be present and mention the formats.
+        assert "Unrecognized boundary file format" in page_src
+        for fmt in (".geojson", ".json", ".gpkg", ".shp", ".zip"):
+            assert fmt in page_src

@@ -425,8 +425,12 @@ def mesh_builder_server(
             if found:
                 return found[0]
 
-        # Fallback: return the first file
-        return work / files[0]["name"]
+        names = ", ".join(f["name"] for f in files)
+        raise ValueError(
+            f"Unrecognized boundary file format. Got: {names}. "
+            "Accepted: .geojson, .json, .gpkg, .shp (with companions), or "
+            ".zip containing one of the above."
+        )
 
     # --- Sync radio buttons → hidden navset ---
     @reactive.effect
