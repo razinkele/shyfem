@@ -83,3 +83,72 @@ class TestGetUserRole:
     def test_no_access(self, service, setup):
         role = service.get_user_role(setup["project_id"], setup["bob_id"])
         assert role is None
+
+
+@pytest.fixture
+def setup_three_users(db_factory):
+    db = db_factory()
+    alice = User(username="alice3", password_hash="x", role="user")
+    bob = User(username="bob3", password_hash="x", role="user")
+    carol = User(username="carol3", password_hash="x", role="user")
+    db.add_all([alice, bob, carol])
+    db.flush()
+    proj = Project(name="P3", work_dir="/tmp/p3", owner_id=alice.id)
+    db.add(proj)
+    db.commit()
+    data = {
+        "alice_id": alice.id,
+        "bob_id": bob.id,
+        "carol_id": carol.id,
+        "project_id": proj.id,
+    }
+    db.close()
+    return data
+
+
+class TestListShareableUsers:
+    """Edge cases for list_shareable_users — the largest untested surface
+    in sharing_service."""
+
+    def test_excludes_owner(self, service, setup):
+        """The project owner should NEVER be returned as a sharing candidate
+        — they already have full access (excluded via exclude_user_id)."""
+        candidates = service.list_shareable_users(
+            project_id=setup["project_id"], exclude_user_id=setup["alice_id"]
+        )
+        ids = [u["id"] for u in candidates]
+        assert setup["alice_id"] not in ids
+
+    def test_excludes_already_shared(self, service, setup):
+        """A user who already has a permission on the project should NOT
+        appear as a sharing candidate."""
+        service.share_project(setup["project_id"], setup["bob_id"], "viewer")
+        candidates = service.list_shareable_users(
+            project_id=setup["project_id"], exclude_user_id=setup["alice_id"]
+        )
+        ids = [u["id"] for u in candidates]
+        assert setup["bob_id"] not in ids
+
+    def test_returns_remaining_users(
+        self, db_factory, setup_three_users
+    ):
+        """Of three users, with one shared and the owner excluded, the
+        single remaining user is returned."""
+        svc = SharingService(session_factory=db_factory)
+        data = setup_three_users
+        svc.share_project(data["project_id"], data["bob_id"], "viewer")
+        candidates = svc.list_shareable_users(
+            project_id=data["project_id"], exclude_user_id=data["alice_id"]
+        )
+        ids = [u["id"] for u in candidates]
+        assert data["carol_id"] in ids
+        assert data["alice_id"] not in ids
+        assert data["bob_id"] not in ids
+
+    def test_empty_when_all_users_have_access(self, service, setup):
+        """When the only non-owner user is already shared, no candidates."""
+        service.share_project(setup["project_id"], setup["bob_id"], "viewer")
+        candidates = service.list_shareable_users(
+            project_id=setup["project_id"], exclude_user_id=setup["alice_id"]
+        )
+        assert candidates == []
