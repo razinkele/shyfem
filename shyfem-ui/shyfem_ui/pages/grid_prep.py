@@ -22,54 +22,15 @@ from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat
     compute_element_quality,
     compute_min_angles,
 )
+from shyfem_ui.services.grid_prep_logic import (  # re-exported for backward compat
+    compute_boundary_summary,
+    format_element_shape,
+    grid_stats_to_json,
+)
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
-
-
-def grid_stats_to_json(stats: dict, grid_name: str) -> str:
-    """Serialize grid statistics to formatted JSON.
-
-    Args:
-        stats: Dictionary from GrdParser.get_statistics().
-        grid_name: Name of the grid file for metadata.
-
-    Returns:
-        Formatted JSON string.
-    """
-    import json
-
-    def _default(obj):
-        if isinstance(obj, set):
-            return sorted(obj)
-        raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
-
-    payload = {
-        "grid_name": grid_name,
-        "statistics": stats,
-    }
-    return json.dumps(payload, indent=4, default=_default)
-
-
-def compute_boundary_summary(grd) -> list[dict]:
-    """Summarize boundary line assignments.
-
-    Returns:
-        List of dicts with ``line_id``, ``line_type``, ``node_count``,
-        ``node_range_str`` (e.g. "1-50"), sorted by line_id.
-    """
-    result = []
-    for lid, line in sorted(grd.lines.items()):
-        nids = line.nodes
-        node_range = f"{min(nids)}-{max(nids)}" if nids else ""
-        result.append({
-            "line_id": lid,
-            "line_type": line.line_type,
-            "node_count": len(nids),
-            "node_range_str": node_range,
-        })
-    return result
 
 
 @module.ui
@@ -686,11 +647,7 @@ def grid_prep_server(
                                     ui.tags.td(str(eid)),
                                     ui.tags.td(str(e.elem_type)),
                                     ui.tags.td(" ".join(str(n) for n in e.nodes)),
-                                    ui.tags.td(
-                                        "Tri"
-                                        if e.is_triangle
-                                        else "Quad" if e.is_quad else f"{len(e.nodes)}-gon"
-                                    ),
+                                    ui.tags.td(format_element_shape(e)),
                                 )
                                 for eid, e in list(grd.elements.items())[:20]
                             ]
