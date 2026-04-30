@@ -14,6 +14,11 @@ from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_grd import GrdParser
+from shyfem_ui.services.partitioning_logic import (
+    analyze_partitions,
+    compute_load_balance,
+    validate_partition_files,
+)
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
@@ -256,35 +261,8 @@ def partitioning_server(
             log_content.set(log_content.get() + f"\nError: {e}\n")
 
     def _analyze_partitions(output_dir: Path, np_val: int):
-        """Analyze partition files for statistics and build partition map."""
-        stats = {
-            "num_partitions": np_val,
-            "partition_files": [],
-            "elements_per_partition": [],
-        }
-
-        pmap = {}
-        for i in range(np_val):
-            par_file = output_dir / f"partition.{i:04d}.par"
-            if par_file.exists():
-                stats["partition_files"].append(str(par_file))
-                try:
-                    with open(par_file) as f:
-                        elem_lines = f.readlines()
-                    stats["elements_per_partition"].append(len(elem_lines))
-                    # Build partition map: each line contains an element ID
-                    for line in elem_lines:
-                        line = line.strip()
-                        if line:
-                            try:
-                                elem_id = int(line.split()[0])
-                                pmap[elem_id] = i
-                            except (ValueError, IndexError):
-                                continue
-                except Exception:
-                    logger.exception("Failed to read partition file %s", par_file)
-                    stats["elements_per_partition"].append(0)
-
+        """Analyze partition files and update reactive state."""
+        stats, pmap = analyze_partitions(output_dir, np_val)
         partition_stats_data.set(stats)
         if pmap:
             partition_map_data.set(pmap)
@@ -299,15 +277,8 @@ def partitioning_server(
             return
 
         log_content.set("Validating partition files...\n\n")
-
-        for f in files:
-            path = Path(f)
-            if path.exists():
-                size = path.stat().st_size
-                log_content.set(log_content.get() + f"  {path.name}: {size:,} bytes - OK\n")
-            else:
-                log_content.set(log_content.get() + f"  {path.name}: MISSING\n")
-
+        for filename, status in validate_partition_files(files):
+            log_content.set(log_content.get() + f"  {filename}: {status}\n")
         log_content.set(log_content.get() + "\nValidation complete.\n")
 
     @render_widget
@@ -330,7 +301,8 @@ def partitioning_server(
             return fig
 
         elements = stats.get("elements_per_partition", [])
-        if not elements:
+        metrics = compute_load_balance(elements)
+        if metrics["is_empty"]:
             fig = go.Figure()
             fig.add_annotation(
                 text="No partition data available",
@@ -345,9 +317,9 @@ def partitioning_server(
             fig.update_layout(height=500)
             return fig
 
-        n_parts = len(elements)
-        avg = sum(elements) / n_parts if n_parts > 0 else 0
-        labels = [f"P{i}" for i in range(n_parts)]
+        n_parts = metrics["n_parts"]
+        avg = metrics["avg"]
+        labels = metrics["labels"]
         colors = [PARTITION_COLORS[i % len(PARTITION_COLORS)] for i in range(n_parts)]
 
         fig = go.Figure()
@@ -370,9 +342,9 @@ def partitioning_server(
             annotation_position="top right",
         )
 
-        imbalance = (max(elements) - min(elements)) / avg * 100 if avg > 0 else 0
+        imbalance_pct = metrics["imbalance_pct"]
         fig.update_layout(
-            title=f"Load Balance ({n_parts} partitions, imbalance: {imbalance:.1f}%)",
+            title=f"Load Balance ({n_parts} partitions, imbalance: {imbalance_pct:.1f}%)",
             xaxis_title="Partition",
             yaxis_title="Elements",
             height=500,
