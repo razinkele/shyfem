@@ -37,8 +37,8 @@ class TestParseShyelabInfo:
 
     @staticmethod
     def _parse(text: str) -> dict:
-        from shyfem_ui.pages.postprocess import _parse_shyelab_info
-        return _parse_shyelab_info(text)
+        from shyfem_ui.services.postprocess_logic import parse_shyelab_info
+        return parse_shyelab_info(text)
 
     def test_empty_input(self):
         result = self._parse("")

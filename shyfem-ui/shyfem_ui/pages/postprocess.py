@@ -10,7 +10,6 @@ Features:
 """
 
 import logging
-import re
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
@@ -22,6 +21,12 @@ from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.postprocess_logic import (
+    build_shyelab_options,
+    discover_shy_files,
+    format_size,
+    parse_shyelab_info,
+)
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
@@ -104,14 +109,6 @@ PRESETS = {
     },
 }
 
-
-def _format_size(size: int) -> str:
-    """Format a byte count as a human-readable string."""
-    if size < 1024:
-        return f"{size} B"
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f} KB"
-    return f"{size / 1024 / 1024:.1f} MB"
 
 
 @module.ui
@@ -389,7 +386,7 @@ def postprocess_server(
             )
 
             if result.success:
-                info = _parse_shyelab_info(result.stdout)
+                info = parse_shyelab_info(result.stdout)
                 file_info_data.set(info)
 
                 # Extract variables and layers from info
@@ -425,39 +422,30 @@ def postprocess_server(
         """Build shyelab CLI options from current UI state."""
         op = input.operation()
         op_info = SHYELAB_OPERATIONS.get(op, {})
+        custom = input.custom_options() if op == "custom" else ""
 
-        if op == "custom":
-            custom = input.custom_options()
-            return custom.split() if custom else []
-
-        options = list(op_info.get("flags", []))
-
-        # Time range
-        tmin = input.tmin()
-        tmax = input.tmax()
-        if tmin:
-            options.extend(["-tmin", tmin])
-        if tmax:
-            options.extend(["-tmax", tmax])
-
-        # Variable filter
         try:
-            selected_vars = input.selected_vars()
-            if selected_vars and len(selected_vars) < len(scanned_variables.get()):
-                for var in selected_vars:
-                    options.append(f"-{var}")
+            sel_vars = list(input.selected_vars()) if input.selected_vars() else None
         except Exception:
             logger.debug("Variable selection input unavailable")
+            sel_vars = None
 
-        # Layer selection
         try:
             layer = input.selected_layer()
-            if layer != "all":
-                options.extend(["-layer", layer])
         except Exception:
             logger.debug("Layer selection input unavailable")
+            layer = "all"
 
-        return options
+        return build_shyelab_options(
+            operation=op,
+            op_flags=op_info.get("flags", []),
+            custom_options=custom,
+            tmin=input.tmin(),
+            tmax=input.tmax(),
+            selected_vars=sel_vars,
+            scanned_vars_count=len(scanned_variables.get()),
+            selected_layer=layer,
+        )
 
     @reactive.effect
     @reactive.event(input.run_btn)
@@ -702,7 +690,7 @@ def postprocess_server(
                 "No .shy files found. Enter a path or select a project.",
                 class_="text-muted small",
             )
-        files = _discover_shy_files(work_dir)
+        files = discover_shy_files(work_dir)
         if files:
             return ui.input_checkbox_group(
                 "batch_convert_files",
@@ -892,7 +880,7 @@ def postprocess_server(
                 size = 0
             total_size += size
 
-            size_str = _format_size(size)
+            size_str = format_size(size)
 
             ext = path.suffix.lower()
             type_labels = {
@@ -1116,146 +1104,3 @@ def _register_preset(
             duration=4,
         )
 
-
-def _parse_shyelab_info(output: str) -> dict:
-    """Parse shyelab -info output into a structured dictionary.
-
-    Handles the Fortran write(6,*) output format from io_shy.f90's shy_info
-    subroutine, including:
-    - Label: value pairs (main file info)
-    - Basin info (nkn = N  nel = N format)
-    - Variable descriptions table
-    - Layer depth listings
-    """
-    info = {}
-    lines = output.splitlines()
-    i = 0
-
-    variables = []
-    layer_depths = []
-    in_variables = False
-    parsing_layer_values = False
-
-    while i < len(lines):
-        line = lines[i]
-        stripped = line.strip()
-        i += 1
-
-        if not stripped:
-            in_variables = False
-            parsing_layer_values = False
-            continue
-
-        # Detect section headers
-        if "information on shy file" in stripped.lower():
-            continue
-
-        # Variable descriptions table
-        if "total number of available variables" in stripped.lower():
-            match = re.search(r"(\d+)", stripped)
-            if match:
-                info["Total Variables"] = match.group(1)
-            continue
-
-        if "varnum" in stripped.lower() and "varid" in stripped.lower():
-            in_variables = True
-            continue
-
-        if in_variables:
-            var_match = re.match(r"\s*(\d+)\s+(\d+)\s*(.*)", stripped)
-            if var_match:
-                var_name = var_match.group(3).strip()
-                variables.append(var_name)
-                continue
-            else:
-                in_variables = False
-
-        # Layer depths header
-        if re.match(r"levels\s*:", stripped, re.IGNORECASE):
-            match = re.search(r":\s*(\d+)", stripped)
-            if match:
-                info["Levels"] = match.group(1)
-            parsing_layer_values = True
-            continue
-
-        # Layer depth values
-        if parsing_layer_values:
-            floats = re.findall(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?", stripped)
-            if floats:
-                layer_depths.extend(floats)
-                continue
-            else:
-                parsing_layer_values = False
-
-        # Layer statistics table
-        if (
-            "layer" in stripped.lower()
-            and "count" in stripped.lower()
-            and "accumulated" in stripped.lower()
-        ):
-            continue
-
-        # Basin info: nkn = N   nel = N
-        basin_match = re.findall(r"(\w+)\s*=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)", stripped)
-        if basin_match and len(basin_match) >= 2 and "=" in stripped:
-            for key, value in basin_match:
-                display_key = key.lower()
-                if display_key in ("nkn", "nel", "mbw", "ngr", "isphe"):
-                    info[display_key] = value
-                elif display_key in ("dcor", "dirn"):
-                    info[display_key] = value
-                elif "min" in display_key or "max" in display_key:
-                    info[display_key] = value
-            continue
-
-        # Label: value pairs (primary shy_info output)
-        colon_match = re.match(r"\s*([\w/]+)\s*:\s+(.*)", stripped)
-        if colon_match:
-            key = colon_match.group(1).strip()
-            value = colon_match.group(2).strip()
-            key_map = {
-                "filename": "File Name",
-                "nvers": "Version",
-                "ftype": "File Type",
-                "nkn": "Nodes",
-                "nel": "Elements",
-                "nlv": "Layers",
-                "nvar": "Variables",
-                "date": "Reference Date",
-                "time": "Reference Time",
-                "title": "Title",
-                "femver": "SHYFEM Version",
-                "hzmin/off": "Min Depth / Offset",
-                "dtaver": "Averaging Period",
-            }
-            display_key = key_map.get(key, key)
-            if value in ("T", ".TRUE."):
-                value = "Yes"
-            elif value in ("F", ".FALSE."):
-                value = "No"
-            info[display_key] = value
-            continue
-
-    if variables:
-        info["Variable Names"] = ", ".join(variables)
-    if layer_depths:
-        info["Layer Depths"] = ", ".join(layer_depths)
-
-    return info
-
-
-def _discover_shy_files(directory: str | Path) -> list[dict]:
-    """Discover .shy files in a directory, returning sorted metadata."""
-    dir_path = Path(directory)
-    if not dir_path.is_dir():
-        return []
-    files = sorted(dir_path.glob("*.shy"), key=lambda p: p.name)
-    result = []
-    for f in files:
-        try:
-            size = f.stat().st_size
-        except OSError:
-            size = 0
-        size_str = _format_size(size)
-        result.append({"path": str(f), "name": f.name, "size_str": size_str})
-    return result
