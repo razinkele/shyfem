@@ -33,107 +33,17 @@ from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
+from shyfem_ui.services.run_logic import (  # re-exported for backward compat
+    _estimate_eta,
+    _get_job_metadata,
+    _preflight_validate,
+    _stat_card,
+    build_job_spec,
+    detect_mesh_node_count,
+    get_solver_recommendation,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _preflight_validate(simulation_id: int | None) -> list[str]:
-    """Run pre-flight file validation for a simulation.
-
-    Returns list of warning strings. Empty = all OK.
-    Returns empty list for None or invalid simulation IDs (non-blocking).
-    """
-    if simulation_id is None:
-        return []
-    try:
-        from shyfem_ui.services.file_service import FileService
-
-        return FileService.validate_simulation_files(simulation_id)
-    except (ValueError, Exception):
-        return []
-
-
-def _get_job_metadata(session_id: str, user_id: int | None = None) -> dict:
-    """Build job metadata dict with session_id and optional user_id."""
-    meta = {"session_id": session_id}
-    if user_id is not None:
-        meta["user_id"] = user_id
-    return meta
-
-
-def get_solver_recommendation(num_nodes: int | None, threshold: int) -> dict[str, str | None]:
-    """Return solver recommendation based on mesh node count.
-
-    Returns dict with 'solver' ('sparskit'/'petsc'/None) and 'hint' (display text).
-    """
-    if num_nodes is None:
-        return {
-            "solver": None,
-            "hint": "Could not detect mesh size — select solver manually",
-        }
-    if num_nodes >= threshold:
-        return {
-            "solver": "petsc",
-            "hint": (
-                f"Mesh has {num_nodes:,} nodes. "
-                f"Recommended: Iterative Solver (PETSc) — scales better for large meshes"
-            ),
-        }
-    return {
-        "solver": "sparskit",
-        "hint": (
-            f"Mesh has {num_nodes:,} nodes. "
-            f"Recommended: Direct Solver (SPARSKIT) — fastest for small/medium meshes"
-        ),
-    }
-
-
-def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int | None:
-    """Detect mesh node count from the grid file referenced in a STR file.
-
-    The STR $title section's 3rd non-empty line is the basin name (e.g. 'GRID/MM_coarse').
-    The grid file is {basnam}.grd relative to working_dir.
-    Returns node count or None if detection fails.
-    """
-    str_path = Path(str_file)
-    work_path = Path(working_dir)
-
-    if not str_path.exists():
-        return None
-
-    try:
-        content = str_path.read_text()
-        parsed = StrParser.parse(content)
-    except Exception:
-        logger.debug("Failed to parse STR file %s", str_path, exc_info=True)
-        return None
-
-    title_sec = parsed.sections.get("title")
-    if title_sec is None or len(title_sec.raw_lines) < 3:
-        return None
-
-    # 3rd non-empty, non-comment line in $title is the basin name
-    lines = [
-        ln.strip()
-        for ln in title_sec.raw_lines
-        if ln.strip() and not ln.strip().startswith(("#", "!"))
-    ]
-    if len(lines) < 3:
-        return None
-    basnam = lines[2]
-
-    # Try .grd then .bas extension
-    for ext in (".grd", ".bas"):
-        grid_path = work_path / f"{basnam}{ext}"
-        if grid_path.exists():
-            try:
-                grd = GrdParser.parse_file(grid_path)
-                return grd.num_nodes
-            except Exception:
-                logger.debug("Failed to parse grid file %s", grid_path, exc_info=True)
-                continue
-
-    return None
 
 
 @module.ui
@@ -677,37 +587,27 @@ def run_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
 
-        # Build job spec
-        args = [str(validated_input)]
-        metadata = _get_job_metadata(_session_id, _user_id)
-
-        # Solver selection
-        solver = input.solver_select() if tool == "shyfem" else "sparskit"
-        if solver == "petsc":
-            metadata["solver"] = "petsc"
-
-        # Restart file selection
-        if tool == "shyfem":
-            try:
-                restart_from = input.restart_from()
-                if restart_from:
-                    metadata["restart_file"] = restart_from
-            except Exception:
-                logger.warning("Could not set restart_from file", exc_info=True)
-
-        # Check dependency
+        # Read all the form values + flags BEFORE delegating
+        try:
+            restart_from = input.restart_from() if tool == "shyfem" else None
+        except Exception:
+            logger.warning("Could not set restart_from file", exc_info=True)
+            restart_from = None
         depends_on = input.depends_on()
-        if depends_on:
-            metadata["depends_on"] = depends_on
+        solver = input.solver_select() if tool == "shyfem" else "sparskit"
 
-        spec = JobSpec(
+        spec = build_job_spec(
             name=name,
             tool_name=tool,
-            args=args,
-            working_dir=validated_workdir,
+            validated_input=validated_input,
+            validated_workdir=validated_workdir,
             mpi_enabled=input.mpi_enabled() if tool == "shyfem" else False,
             mpi_np=input.mpi_np() if (tool == "shyfem" and input.mpi_enabled()) else 1,
-            metadata=metadata,
+            solver=solver,
+            session_id=_session_id,
+            user_id=_user_id,
+            restart_from=restart_from or None,
+            depends_on=depends_on or None,
         )
 
         try:
@@ -1420,36 +1320,4 @@ def run_server(
     }
 
 
-def _stat_card(label: str, value: str, bg_class: str) -> ui.Tag:
-    """Create a small stat card."""
-    return ui.div(
-        ui.span(value, class_="fs-4 fw-bold"),
-        ui.br(),
-        ui.span(label, class_="small"),
-        class_=f"text-center text-white px-3 py-2 rounded {bg_class}",
-        style="min-width: 80px;",
-    )
-
-
-def _estimate_eta(job: JobInfo) -> str:
-    """Estimate time remaining for a running job."""
-    if job.status != JobStatus.RUNNING or not job.started_at:
-        return ""
-    if job.progress <= 0:
-        return "calculating..."
-
-    elapsed = (datetime.now() - job.started_at).total_seconds()
-    if elapsed <= 0:
-        return ""
-
-    estimated_total = elapsed / job.progress
-    remaining = estimated_total - elapsed
-
-    if remaining < 60:
-        return f"{int(remaining)}s"
-    elif remaining < 3600:
-        return f"{int(remaining // 60)}m {int(remaining % 60)}s"
-    else:
-        h = int(remaining // 3600)
-        m = int((remaining % 3600) // 60)
-        return f"{h}h {m}m"
+# _stat_card and _estimate_eta moved to services/run_logic.py; re-exported above.
