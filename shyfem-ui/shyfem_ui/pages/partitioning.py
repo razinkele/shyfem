@@ -385,11 +385,13 @@ def partitioning_server(
         if not elements:
             return ui.p("No element data available.", class_="text-muted")
 
+        # Reuse compute_load_balance — single source of truth for these metrics.
+        metrics = compute_load_balance(elements)
         total = sum(elements)
-        avg = total / len(elements) if elements else 0
-        min_el = min(elements) if elements else 0
-        max_el = max(elements) if elements else 0
-        imbalance = (max_el - min_el) / avg * 100 if avg > 0 else 0
+        avg = metrics["avg"]
+        min_el = metrics["min"]
+        max_el = metrics["max"]
+        imbalance = metrics["imbalance_pct"]
 
         return ui.div(
             ui.h5("Partition Statistics"),
