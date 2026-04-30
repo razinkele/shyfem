@@ -117,6 +117,7 @@ def partitioning_server(
     session,
     config: Config,
     active_project=None,
+    tutorial_context=None,
 ) -> None:
     """Mesh partitioning page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)

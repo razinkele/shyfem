@@ -100,6 +100,7 @@ def files_server(
     session,
     config: Config,
     active_project=None,
+    tutorial_context=None,
 ) -> None:
     """Project files page server logic."""
     refresh_trigger = reactive.value(0)

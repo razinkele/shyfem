@@ -102,6 +102,7 @@ def compare_server(
     config: Config,
     job_queue: JobQueue | None = None,
     active_project=None,
+    tutorial_context=None,
 ) -> dict:
     """Job comparison page server logic."""
     if job_queue is None:
