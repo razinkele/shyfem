@@ -129,6 +129,7 @@ def ensemble_server(
     config: Config,
     job_queue: JobQueue | None = None,
     active_project=None,
+    tutorial_context=None,
 ) -> None:
     """Ensemble page server logic."""
     if job_queue is None:
@@ -840,6 +841,28 @@ def ensemble_server(
                     combo = j.metadata.get("param_combo", {})
                     label = ", ".join(f"{k}={v}" for k, v in combo.items()) or j.name
                     run_data.append({"data": data, "label": label, "job": j})
+
+        # Count jobs whose only outputs are binary .shy (no time-series chart possible)
+        shy_only_jobs = sum(
+            1 for j in completed_jobs
+            if not any(f.endswith((".ts", ".ext", ".csv")) for f in j.output_files)
+            and any(f.endswith(".shy") for f in j.output_files)
+        )
+        # Always warn when any job is shy-only — even if other runs DO have .ts data,
+        # the shy-only runs are silently absent from the chart.
+        if shy_only_jobs > 0:
+            total = len(completed_jobs)
+            detail = (
+                "no time-series chart can be drawn"
+                if not run_data
+                else f"{shy_only_jobs}/{total} runs are missing from the chart"
+            )
+            ui.notification_show(
+                f"{shy_only_jobs} run(s) produced .shy binary output only — "
+                f"{detail}. Use the Visualize page to inspect binary output.",
+                type="warning",
+                duration=10,
+            )
 
         if not run_data:
             # Fall back to duration comparison bar chart

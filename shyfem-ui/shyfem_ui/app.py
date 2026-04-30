@@ -775,7 +775,10 @@ def _build_server(
     grid_prep.grid_prep_server(
         "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
     )
-    partitioning.partitioning_server("partitioning", config, active_project=active_project)
+    partitioning.partitioning_server(
+        "partitioning", config, active_project=active_project,
+        tutorial_context=tutorial_context,
+    )
     physics.physics_server("physics", config, active_project=active_project)
     simulation.simulation_server(
         "simulation", config, active_project=active_project, tutorial_context=tutorial_context
@@ -784,16 +787,28 @@ def _build_server(
         "run", config, job_queue, active_project=active_project,
         tutorial_context=tutorial_context, user_role=_current_role,
     )
-    ibm.ibm_server("ibm", config, active_project=active_project)
+    ibm.ibm_server(
+        "ibm", config, active_project=active_project,
+        tutorial_context=tutorial_context,
+    )
     postprocess.postprocess_server(
         "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
     )
     visualize.visualize_server(
         "visualize", config, active_project=active_project, tutorial_context=tutorial_context
     )
-    compare.compare_server("compare", config, job_queue, active_project=active_project)
-    ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
-    files.files_server("files", config, active_project=active_project)
+    compare.compare_server(
+        "compare", config, job_queue, active_project=active_project,
+        tutorial_context=tutorial_context,
+    )
+    ensemble.ensemble_server(
+        "ensemble", config, job_queue, active_project=active_project,
+        tutorial_context=tutorial_context,
+    )
+    files.files_server(
+        "files", config, active_project=active_project,
+        tutorial_context=tutorial_context,
+    )
 
     if auth_service:
         admin.admin_server("admin", config, auth_service, user_role=_current_role, audit_service=audit_service)

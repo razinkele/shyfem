@@ -51,15 +51,12 @@ def compare_ui() -> ui.Tag:
                 ),
                 ui.hr(),
                 ui.h5("Compare Time Series"),
-                ui.input_text(
-                    "ts_file_a",
-                    "Time Series A",
-                    placeholder="/path/to/result_a.ts",
-                ),
-                ui.input_text(
-                    "ts_file_b",
-                    "Time Series B",
-                    placeholder="/path/to/result_b.ts",
+                ui.output_ui("ts_picker_a"),
+                ui.output_ui("ts_picker_b"),
+                ui.tags.small(
+                    "Accepted: .ts (column-text time series) and .ext (BFM extension). "
+                    "Binary .shy files are not supported here — use Visualize for binary outputs.",
+                    class_="text-muted d-block mb-2",
                 ),
                 ui.input_action_button(
                     "compare_ts_btn",
@@ -105,6 +102,7 @@ def compare_server(
     config: Config,
     job_queue: JobQueue | None = None,
     active_project=None,
+    tutorial_context=None,
 ) -> dict:
     """Job comparison page server logic."""
     if job_queue is None:
@@ -186,6 +184,38 @@ def compare_server(
                 "STR File B",
                 placeholder="/path/to/file_b.str",
             ),
+        )
+
+    @render.ui
+    def ts_picker_a():
+        proj = active_project.get() if active_project is not None else None
+        choices = _extract_ts_choices(proj)
+        if choices:
+            return ui.input_select(
+                "ts_file_a",
+                "Time Series A",
+                choices={"": "— select —", **choices},
+            )
+        return ui.input_text(
+            "ts_file_a",
+            "Time Series A",
+            placeholder="/path/to/result_a.ts (no active project — use absolute path)",
+        )
+
+    @render.ui
+    def ts_picker_b():
+        proj = active_project.get() if active_project is not None else None
+        choices = _extract_ts_choices(proj)
+        if choices:
+            return ui.input_select(
+                "ts_file_b",
+                "Time Series B",
+                choices={"": "— select —", **choices},
+            )
+        return ui.input_text(
+            "ts_file_b",
+            "Time Series B",
+            placeholder="/path/to/result_b.ts (no active project — use absolute path)",
         )
 
     @reactive.effect
@@ -496,6 +526,23 @@ def compare_server(
             ui.notification_show(f"Report generation failed: {e}", type="error", duration=6)
 
     return {}
+
+
+def _extract_ts_choices(active_project: dict | None) -> dict[str, str]:
+    """Discover .ts and .ext time-series files in the active project's
+    work directory. Returns {abs_path: display_label} suitable for
+    ui.input_select(choices=...)."""
+    if active_project is None:
+        return {}
+    work_dir = Path(active_project["work_dir"])
+    if not work_dir.exists():
+        return {}
+    choices: dict[str, str] = {}
+    for ext in (".ts", ".ext"):
+        for p in sorted(work_dir.rglob(f"*{ext}")):
+            rel = p.relative_to(work_dir).as_posix()
+            choices[str(p)] = f"{active_project['name']} / {rel}"
+    return choices
 
 
 def _extract_str_choices(project_ctx: dict | None) -> dict[str, str]:

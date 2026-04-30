@@ -32,6 +32,7 @@ from shyfem_ui.services.str_validator import validate_str
 from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
+from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +197,8 @@ def run_ui() -> ui.Tag:
                         "Submit Job",
                         class_="btn-primary w-100",
                     ),
+                    # Next-step card shown after successful job submit
+                    ui.output_ui("next_step_html_out"),
                     class_="card p-3",
                 ),
             ),
@@ -524,6 +527,7 @@ def run_server(
     selected_job_id = reactive.value(None)
     selected_job = reactive.value(None)
     log_content = reactive.value("")
+    next_step_html = reactive.value(None)
 
     # Initialize log viewer with auto-refresh callback
     async def _refresh_log():
@@ -710,9 +714,43 @@ def run_server(
             job_id = await job_queue.submit(spec)
             ui.notification_show(f"Job submitted: {job_id}", type="message", duration=4)
             selected_job_id.set(job_id)
+            next_step_html.set(
+                next_step_card(
+                    title="Job submitted — what next?",
+                    links=[
+                        NextStepLink(
+                            "Watch progress",
+                            "Run",
+                            "Live log + progress on this page",
+                        ),
+                        NextStepLink(
+                            "Post-process results",
+                            "Post-Process",
+                            "Run shyelab on outputs once finished",
+                        ),
+                        NextStepLink(
+                            "Visualize results",
+                            "Visualize",
+                            "Inspect grid + bathymetry + time series",
+                        ),
+                    ],
+                )
+            )
             await _refresh_jobs()
         except Exception as e:
             ui.notification_show(f"Failed to submit job: {e}", type="error", duration=6)
+
+    @render.ui
+    def next_step_html_out():
+        """Render the contextual next-step card after job submit, or nothing."""
+        return next_step_html.get() or ui.span()
+
+    @reactive.effect
+    def _reset_next_step_on_project_change():
+        """Clear the next-step card when the active project changes."""
+        if active_project is not None:
+            active_project.get()  # establishes reactive dependency
+        next_step_html.set(None)
 
     @render.ui
     def dashboard():

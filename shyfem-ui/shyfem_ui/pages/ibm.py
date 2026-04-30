@@ -220,6 +220,7 @@ def ibm_server(
     session,
     config: Config,
     active_project: reactive.Value,
+    tutorial_context=None,
 ) -> None:
     """IBM page server logic."""
     if MapWidget is None:

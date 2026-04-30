@@ -16,6 +16,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
@@ -120,6 +121,8 @@ def postprocess_ui() -> ui.Tag:
         ui.h3("Post-Processing"),
         ui.p("Process SHYFEM output files using shyelab.", class_="text-muted"),
         sample_data_card_ui("postprocess"),
+        # Next-step card shown after batch or single-run completion
+        ui.output_ui("next_step_html_out"),
         ui.layout_sidebar(
             ui.sidebar(
                 # Input files
@@ -282,6 +285,7 @@ def postprocess_server(
     scanned_variables = reactive.value([])
     scanned_layers = reactive.value([])
     batch_results = reactive.value([])
+    next_step_html = reactive.value(None)
 
     # Time series preview data
     ts_preview_data = reactive.value(None)
@@ -291,6 +295,18 @@ def postprocess_server(
 
     # Initialize timeseries preview component
     timeseries_server("ts_preview", ts_preview_data, config=config)
+
+    @render.ui
+    def next_step_html_out():
+        """Render the contextual next-step card after shyelab run, or nothing."""
+        return next_step_html.get() or ui.span()
+
+    @reactive.effect
+    def _reset_next_step_on_project_change():
+        """Clear the next-step card when the active project changes."""
+        if active_project is not None:
+            active_project.get()  # establishes reactive dependency
+        next_step_html.set(None)
 
     @render.ui
     def operation_description():
@@ -506,6 +522,23 @@ def postprocess_server(
                     type="message",
                     duration=4,
                 )
+                next_step_html.set(
+                    next_step_card(
+                        title="Post-process complete — what next?",
+                        links=[
+                            NextStepLink(
+                                "View results",
+                                "Visualize",
+                                "Inspect the processed outputs",
+                            ),
+                            NextStepLink(
+                                "Compare runs",
+                                "Compare",
+                                "Diff this run against another",
+                            ),
+                        ],
+                    )
+                )
             else:
                 log_content.set(
                     f"{stdout_section}{stderr_section}\n\n"
@@ -628,6 +661,23 @@ def postprocess_server(
             f"Batch done: {success_count}/{len(paths)} succeeded",
             type="message" if success_count == len(paths) else "warning",
             duration=4,
+        )
+        next_step_html.set(
+            next_step_card(
+                title="Post-process complete — what next?",
+                links=[
+                    NextStepLink(
+                        "View results",
+                        "Visualize",
+                        "Inspect the processed outputs",
+                    ),
+                    NextStepLink(
+                        "Compare runs",
+                        "Compare",
+                        "Diff this run against another",
+                    ),
+                ],
+            )
         )
 
     # --- Batch convert to NetCDF ---
