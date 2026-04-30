@@ -15,6 +15,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from shyfem_ui.config import Config, get_config
+
 
 class ReportBuilder:
     """Builds HTML reports for SHYFEM simulation results.
@@ -29,8 +31,9 @@ class ReportBuilder:
         builder.save("/path/to/report.html")
     """
 
-    def __init__(self, title: str = "SHYFEM Simulation Report"):
+    def __init__(self, title: str = "SHYFEM Simulation Report", config: Config | None = None):
         self.title = title
+        self.config = config or get_config()
         self.sections: list[dict[str, Any]] = []
         self._created_at = datetime.now()
 
@@ -317,11 +320,29 @@ class ReportBuilder:
             for i, sec in enumerate(self.sections)
         )
 
+        # Plotly JS loader — cdn (default) or inline bundle for air-gapped use
+        if self.config.report_plotly_mode == "inline":
+            # Inline the full Plotly JS bundle — same path that
+            # fig.to_html(include_plotlyjs=True) uses internally.
+            try:
+                from plotly.offline.offline import get_plotlyjs
+                plotly_loader = f"<script>{get_plotlyjs()}</script>"
+            except ImportError:
+                # Fall back gracefully if plotly's internal layout changes.
+                plotly_loader = (
+                    '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
+                )
+        else:
+            plotly_loader = (
+                '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
+            )
+
         return _REPORT_TEMPLATE.format(
             title=_esc(self.title),
             created_at=self._created_at.strftime("%Y-%m-%d %H:%M:%S"),
             toc=toc_items,
             sections="\n".join(sections_html),
+            plotly_loader=plotly_loader,
         )
 
     def save(self, path: str | Path) -> Path:
@@ -499,7 +520,7 @@ _REPORT_TEMPLATE = """<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{title}</title>
-<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+{plotly_loader}
 <style>
   :root {{
     --bg: #ffffff;

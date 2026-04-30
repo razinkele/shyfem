@@ -358,6 +358,41 @@ class TestConvenienceFunctions:
         assert "No jobs provided" in content
 
 
+class TestReportPlotlyMode:
+    """Tests for configurable Plotly JS embedding mode."""
+
+    def test_inline_mode_bundles_js(self, tmp_path):
+        """Inline mode embeds the full Plotly bundle; no CDN <script> tag."""
+        import plotly.graph_objects as go
+
+        cfg = MagicMock(report_plotly_mode="inline")
+        rb = ReportBuilder(title="Test", config=cfg)
+        rb.add_plotly_figure(go.Figure())
+        html_out = rb.render()
+
+        # Inline mode must NOT emit a CDN <script src="..."> tag.
+        # (The bundle itself contains the string "cdn.plot.ly" for TopoJSON
+        # data URLs — that's expected and unavoidable.)
+        assert 'src="https://cdn.plot.ly/plotly-' not in html_out
+        # Plotly's bundle is large; CDN reference is ~80 chars
+        assert len(html_out) > 500_000, (
+            f"inline html should be >500KB, got {len(html_out)}"
+        )
+        # The bundle exposes a global Plotly identifier
+        assert "Plotly" in html_out
+
+    def test_cdn_mode_uses_cdn(self, tmp_path):
+        """CDN mode emits a CDN script tag (default behaviour)."""
+        import plotly.graph_objects as go
+
+        cfg = MagicMock(report_plotly_mode="cdn")
+        rb = ReportBuilder(title="Test", config=cfg)
+        rb.add_plotly_figure(go.Figure())
+        html_out = rb.render()
+
+        assert "cdn.plot.ly/plotly-2.35.2.min.js" in html_out
+
+
 class TestHelpers:
     """Tests for helper functions."""
 

@@ -115,6 +115,17 @@ class Config(BaseSettings):
         default=5, description="Log viewer refresh interval in seconds"
     )
 
+    # Report settings
+    report_plotly_mode: Literal["cdn", "inline"] = Field(
+        default="cdn",
+        description=(
+            "How to embed Plotly JS in generated HTML reports. "
+            "'cdn' — link to plot.ly CDN (small files, requires net). "
+            "'inline' — bundle Plotly JS in each report (~3MB per file, "
+            "offline-capable)."
+        ),
+    )
+
     @field_validator("shyfem_dir", "work_dir", mode="before")
     @classmethod
     def resolve_path(cls, v):
