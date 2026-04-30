@@ -1,9 +1,9 @@
-"""Tests for helper functions in pages/postprocess.py."""
+"""Tests for helper functions extracted to services/postprocess_logic.py."""
 
-from shyfem_ui.pages.postprocess import (
-    _discover_shy_files,
-    _format_size,
-    _parse_shyelab_info,
+from shyfem_ui.services.postprocess_logic import (
+    discover_shy_files as _discover_shy_files,
+    format_size as _format_size,
+    parse_shyelab_info as _parse_shyelab_info,
 )
 
 
