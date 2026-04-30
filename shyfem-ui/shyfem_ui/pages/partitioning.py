@@ -55,13 +55,9 @@ def partitioning_ui() -> ui.Tag:
                     max=1024,
                     step=1,
                 ),
-                ui.input_select(
-                    "partition_method",
-                    "Partitioning Method",
-                    choices={
-                        "metis": "METIS (default)",
-                        "manual": "Manual assignment",
-                    },
+                ui.div(
+                    ui.tags.label("Partitioning Method", class_="form-label"),
+                    ui.tags.div("METIS", class_="form-control-plaintext"),
                 ),
                 ui.input_checkbox(
                     "weighted",
@@ -229,11 +225,15 @@ def partitioning_server(
             current = log_content.get()
             log_content.set(current + line + "\n")
 
+        weighted = input.weighted()
+        options = ["-weighted"] if weighted else None
+
         try:
             result = await wrapper.run_shyparts(
                 bas_file,
                 output_path,
                 np=np_val,
+                options=options,
                 output_callback=update_log,
             )
 
