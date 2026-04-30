@@ -54,17 +54,34 @@ def test_tutorial_user_bootstrap_function_exists():
 
 
 def test_tutorial_readonly_guard_in_run_server():
-    """run_server() must accept a user_role parameter for the tutorial guard.
+    """run_server() must accept user_role and tutorial_context parameters.
 
-    The tutorial read-only block is gated on user_role returning 'tutorial'.
-    Verifying the parameter exists in the function signature confirms the
-    guard infrastructure has not been silently removed.
+    run_server is a @module.server — Shiny wraps it, hiding the original
+    signature. We inspect the closure to find the underlying function and
+    verify that user_role and tutorial_context parameters are present.
+    Those parameters are the hooks for the tutorial read-only guard and
+    tutorial navigation auto-fill respectively.
     """
     import inspect
 
     from shyfem_ui.pages.run import run_server
 
-    sig = inspect.signature(run_server)
+    # @module.server wraps the original; find it in the closure
+    original = None
+    if run_server.__closure__:
+        for cell in run_server.__closure__:
+            try:
+                v = cell.cell_contents
+                if callable(v) and hasattr(v, "__code__") and v.__name__ == "run_server":
+                    original = v
+                    break
+            except ValueError:
+                pass
+
+    assert original is not None, (
+        "Could not locate the underlying run_server function in the @module.server closure"
+    )
+    sig = inspect.signature(original)
     assert "user_role" in sig.parameters, (
         "run_server() must have a user_role parameter for the tutorial read-only guard"
     )
