@@ -1,7 +1,5 @@
 """Tests for tutorial role access control."""
 
-import inspect
-
 import pytest
 
 
@@ -40,14 +38,53 @@ def test_filter_sidebar_for_admin_keeps_all():
     assert "Tutorial" in all_values
 
 
-def test_tutorial_user_bootstrap_uses_tutorial_role():
-    """Bootstrap creates default tutorial user with role='tutorial'."""
-    source = inspect.getsource(__import__("shyfem_ui.app", fromlist=["app"]))
-    assert "tutorial" in source
+def test_tutorial_user_bootstrap_function_exists():
+    """Bootstrap helper for tutorial user must be present in app module.
+
+    The existing sidebar-filter and allowed-pages behavioral tests already
+    cover the tutorial role being wired. This test confirms the bootstrap
+    helper that creates the tutorial account is callable (i.e. not removed).
+    """
+    import shyfem_ui.app as app_mod
+
+    assert hasattr(app_mod, "_bootstrap_tutorial_project"), (
+        "_bootstrap_tutorial_project must exist in app.py to seed the tutorial account"
+    )
+    assert callable(app_mod._bootstrap_tutorial_project)
 
 
-def test_tutorial_readonly_guard_in_source():
-    """At least one page server checks for tutorial role and blocks writes."""
-    import shyfem_ui.pages.run as run_mod
-    source = inspect.getsource(run_mod)
-    assert "tutorial" in source or "is_tutorial" in source
+def test_tutorial_readonly_guard_in_run_server():
+    """run_server() must accept user_role and tutorial_context parameters.
+
+    run_server is a @module.server — Shiny wraps it, hiding the original
+    signature. We inspect the closure to find the underlying function and
+    verify that user_role and tutorial_context parameters are present.
+    Those parameters are the hooks for the tutorial read-only guard and
+    tutorial navigation auto-fill respectively.
+    """
+    import inspect
+
+    from shyfem_ui.pages.run import run_server
+
+    # @module.server wraps the original; find it in the closure
+    original = None
+    if run_server.__closure__:
+        for cell in run_server.__closure__:
+            try:
+                v = cell.cell_contents
+                if callable(v) and hasattr(v, "__code__") and v.__name__ == "run_server":
+                    original = v
+                    break
+            except ValueError:
+                pass
+
+    assert original is not None, (
+        "Could not locate the underlying run_server function in the @module.server closure"
+    )
+    sig = inspect.signature(original)
+    assert "user_role" in sig.parameters, (
+        "run_server() must have a user_role parameter for the tutorial read-only guard"
+    )
+    assert "tutorial_context" in sig.parameters, (
+        "run_server() must have a tutorial_context parameter for tutorial navigation"
+    )

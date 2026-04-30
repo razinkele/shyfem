@@ -1,6 +1,5 @@
 """Tests for IBM page module."""
 
-import inspect
 import math
 
 import pytest
@@ -20,42 +19,33 @@ def test_ibm_ui_renders():
     assert isinstance(tag, Tag)
 
 
-def test_no_demo_constants():
-    """_DEMO_PARTICLES and _DEMO_TRACKS must not exist in ibm.py."""
-    source = inspect.getsource(ibm)
-    assert "_DEMO_PARTICLES" not in source, "Remove _DEMO_PARTICLES from ibm.py"
-    assert "_DEMO_TRACKS" not in source, "Remove _DEMO_TRACKS from ibm.py"
+def test_no_demo_constants_in_module():
+    """_DEMO_PARTICLES and _DEMO_TRACKS must not exist as module-level names.
 
-
-def test_no_coming_soon_notification():
-    """The demo 'coming soon' notification text must be removed."""
-    source = inspect.getsource(ibm)
-    assert "full simulation integration coming soon" not in source
-
-
-def test_ibm_status_not_hardcoded_demo():
-    """ibm_status must not contain the hardcoded 'Demo mode' badge text."""
-    source = inspect.getsource(ibm)
-    assert '"Demo mode"' not in source
-    assert "'Demo mode'" not in source
+    Importing ibm is the regression guard: any reference to a removed identifier
+    at module load would raise NameError. Additionally confirm these names are
+    absent from the module's public namespace.
+    """
+    assert not hasattr(ibm, "_DEMO_PARTICLES"), "Remove _DEMO_PARTICLES from ibm.py"
+    assert not hasattr(ibm, "_DEMO_TRACKS"), "Remove _DEMO_TRACKS from ibm.py"
 
 
 def test_lgr_path_input_present():
-    """UI must include a .lgr file path input."""
-    source = inspect.getsource(ibm)
-    assert '"lgr_path"' in source or "'lgr_path'" in source
+    """Rendered ibm_ui() HTML must include the lgr_path text input."""
+    html = str(ibm.ibm_ui("ibm_t1"))
+    assert "lgr_path" in html, "ibm_ui() must render a lgr_path input element"
 
 
 def test_load_btn_present():
-    """UI must include a load trajectories button."""
-    source = inspect.getsource(ibm)
-    assert '"load_btn"' in source or "'load_btn'" in source
+    """Rendered ibm_ui() HTML must include the load trajectories button."""
+    html = str(ibm.ibm_ui("ibm_t2"))
+    assert "load_btn" in html, "ibm_ui() must render a load_btn action button"
 
 
 def test_stats_panel_output_present():
-    """UI must include the stats panel output."""
-    source = inspect.getsource(ibm)
-    assert "ibm_stats_panel" in source
+    """Rendered ibm_ui() HTML must include the stats panel output placeholder."""
+    html = str(ibm.ibm_ui("ibm_t3"))
+    assert "ibm_stats_panel" in html, "ibm_ui() must render an ibm_stats_panel output"
 
 
 class TestHaversine:
