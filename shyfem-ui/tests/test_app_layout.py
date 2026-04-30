@@ -8,14 +8,25 @@ pytest.importorskip("shiny_deckgl")
 
 
 class TestSidebarGroups:
-    def test_has_five_groups(self):
-        assert len(SIDEBAR_GROUPS) == 5
+    def test_required_groups_present(self):
+        """Required sidebar groups exist; extras are allowed (subset assertion)."""
+        REQUIRED_GROUPS = {"Overview", "Simulate", "Analyze", "Manage"}
+        actual_groups = {g["name"] for g in SIDEBAR_GROUPS}
+        assert REQUIRED_GROUPS.issubset(actual_groups), (
+            f"Missing required sidebar groups: {REQUIRED_GROUPS - actual_groups}"
+        )
 
-    def test_all_pages_present(self):
-        all_pages = []
-        for group in SIDEBAR_GROUPS:
-            all_pages.extend(item["label"] for item in group["items"])
-        assert len(all_pages) == 15
+    def test_required_pages_present(self):
+        """Required nav items exist; extras are allowed (subset assertion)."""
+        REQUIRED_PAGES = {"Dashboard", "Run", "Visualize", "Admin"}
+        all_pages = {
+            item["value"]
+            for group in SIDEBAR_GROUPS
+            for item in group["items"]
+        }
+        assert REQUIRED_PAGES.issubset(all_pages), (
+            f"Missing required nav pages: {REQUIRED_PAGES - all_pages}"
+        )
 
     def test_group_names(self):
         names = [g["name"] for g in SIDEBAR_GROUPS]

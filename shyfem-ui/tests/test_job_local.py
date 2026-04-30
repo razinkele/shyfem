@@ -173,11 +173,14 @@ class TestLocalJobQueue:
         assert len(jobs) <= 2
 
     @pytest.mark.asyncio
-    @pytest.mark.xfail(reason="Flaky: async cancel timing race condition", strict=False)
     async def test_cancel_running_job(self, queue, tmp_path):
-        """Test cancelling a running job."""
-        # Use a slow command that actually blocks
+        """Test cancelling a running job — deterministic via an asyncio.Event
+        that the mock coroutine sets as soon as it begins executing.
+        No fixed sleep on the critical path."""
+        started_event = asyncio.Event()
+
         async def slow_command(*args, **kwargs):
+            started_event.set()  # signal that we are now running
             await asyncio.sleep(10)
             return CommandResult(
                 success=True, return_code=0, stdout="", stderr="",
@@ -186,17 +189,32 @@ class TestLocalJobQueue:
 
         queue.wrapper.run_command = slow_command
 
-        spec = JobSpec(name="slow_job", tool_name="shyfem", args=["test.str"],
+        # Use tool_name != "shyfem" so the queue routes through run_command.
+        spec = JobSpec(name="slow_job", tool_name="shypre", args=["test.str"],
                        working_dir=tmp_path / "w")
         job_id = await queue.submit(spec)
-        # Give it time to start running
-        await asyncio.sleep(0.2)
+
+        # Wait deterministically for the mock to start; bound at 5s.
+        try:
+            await asyncio.wait_for(started_event.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pytest.fail("Mock command did not start within 5s")
 
         result = await queue.cancel(job_id)
         assert result is True
 
-        status = await queue.get_status(job_id)
-        assert status.status == JobStatus.CANCELLED
+        # Status should reach CANCELLED (with a short bounded wait for the
+        # state machine to update after task cancellation).
+        for _ in range(20):
+            info = await queue.get_status(job_id)
+            if info and info.status == JobStatus.CANCELLED:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            info = await queue.get_status(job_id)
+            pytest.fail(
+                f"Expected CANCELLED status; got {info.status if info else 'None'}"
+            )
 
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_job(self, queue):
@@ -298,11 +316,15 @@ class TestLocalJobQueue:
 
     @pytest.mark.asyncio
     async def test_active_job_count(self, queue, tmp_path):
-        """Test active_job_count property."""
+        """Test active_job_count property — deterministic via an asyncio.Event
+        that the mock coroutine sets as soon as it begins executing."""
         assert queue.active_job_count == 0
+
+        started_event = asyncio.Event()
 
         # Submit with slow command that actually blocks
         async def slow_command(*args, **kwargs):
+            started_event.set()  # signal that we are now running
             await asyncio.sleep(10)
             return CommandResult(
                 success=True, return_code=0, stdout="", stderr="",
@@ -314,7 +336,12 @@ class TestLocalJobQueue:
         spec = JobSpec(name="active", tool_name="shypre", args=[],
                        working_dir=tmp_path / "w")
         job_id = await queue.submit(spec)
-        await asyncio.sleep(0.2)
+
+        # Wait deterministically for the mock to start; bound at 5s.
+        try:
+            await asyncio.wait_for(started_event.wait(), timeout=5.0)
+        except asyncio.TimeoutError:
+            pytest.fail("Mock command did not start within 5s")
 
         assert queue.active_job_count >= 1
 
