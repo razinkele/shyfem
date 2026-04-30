@@ -1,5 +1,6 @@
 """Mesh partitioning page - shyparts interface."""
 
+import logging
 from pathlib import Path
 
 import plotly.graph_objects as go
@@ -14,6 +15,8 @@ from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+logger = logging.getLogger(__name__)
 
 
 @module.ui
@@ -159,6 +162,7 @@ def partitioning_server(
         try:
             path = config.validate_path(grd_path, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
+            logger.exception("Invalid GRD path for partitioning: %r", grd_path)
             log_content.set(f"Error: {e}")
             return
         try:
@@ -169,12 +173,17 @@ def partitioning_server(
                 f"Nodes: {grd.num_nodes}, Elements: {grd.num_elements}\n"
             )
         except Exception as e:
+            logger.exception("Failed to parse GRD file %s for partitioning", grd_path)
             log_content.set(f"Error loading grid: {e}")
 
     @reactive.effect
     @reactive.event(input.run_shyparts_btn)
     async def _run_shyparts():
         _usr = get_current_user()
+        logger.info(
+            "User running shyparts on %r with %s partitions",
+            input.bas_path(), input.num_partitions(),
+        )
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None and (
@@ -196,6 +205,7 @@ def partitioning_server(
         try:
             bas_file = config.validate_path(bas_path, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
+            logger.exception("Invalid basin file path for shyparts: %r", bas_path)
             log_content.set(f"Error: {e}")
             return
 
@@ -204,6 +214,7 @@ def partitioning_server(
         try:
             output_path = config.validate_path(output_dir)
         except ValueError as e:
+            logger.exception("Invalid shyparts output directory %r", output_dir)
             log_content.set(f"Error: {e}")
             return
         output_path.mkdir(parents=True, exist_ok=True)
@@ -240,6 +251,7 @@ def partitioning_server(
                 )
 
         except Exception as e:
+            logger.exception("Unexpected error running shyparts on %s", bas_path)
             log_content.set(log_content.get() + f"\nError: {e}\n")
 
     def _analyze_partitions(output_dir: Path, np_val: int):
@@ -269,6 +281,7 @@ def partitioning_server(
                             except (ValueError, IndexError):
                                 continue
                 except Exception:
+                    logger.exception("Failed to read partition file %s", par_file)
                     stats["elements_per_partition"].append(0)
 
         partition_stats_data.set(stats)
@@ -279,6 +292,7 @@ def partitioning_server(
     @reactive.event(input.validate_btn)
     def _validate_partitions():
         files = partition_files.get()
+        logger.info("User validating %d partition files", len(files))
         if not files:
             log_content.set("No partition files to validate. Run shyparts first.")
             return

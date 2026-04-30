@@ -1,5 +1,6 @@
 """Home/Dashboard page for SHYFEM UI."""
 
+import logging
 import shutil
 from datetime import datetime
 from io import BytesIO
@@ -14,6 +15,8 @@ from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.models.user import ProjectPermission
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_filename(name: str) -> str:
@@ -258,6 +261,7 @@ def home_server(
             _refresh_projects()
             await _refresh_jobs()
         except Exception as e:
+            logger.exception("Failed to load initial dashboard data")
             ui.notification_show(f"Error loading data: {e}", type="error", duration=6)
 
     def _refresh_projects():
@@ -288,6 +292,7 @@ def home_server(
             try:
                 show_all = input.show_all_jobs() if _is_server_mode else True
             except Exception:
+                logger.debug("show_all_jobs input not yet rendered, defaulting to False")
                 show_all = False  # input not yet rendered on startup
             sid = None if show_all else _session_id
             jobs = await job_queue.list_jobs(limit=5, session_id=sid)
@@ -446,6 +451,8 @@ def home_server(
         description = input.project_description()
         work_dir = input.project_dir()
 
+        logger.info("User creating project %r in %r", name, work_dir)
+
         if not name:
             ui.notification_show("Project name is required", type="error", duration=6)
             return
@@ -464,6 +471,7 @@ def home_server(
         try:
             project_path.mkdir(parents=True, exist_ok=True)
         except Exception as e:
+            logger.exception("Failed to create project directory %s", project_path)
             ui.notification_show(f"Failed to create directory: {e}", type="error", duration=6)
             return
 
@@ -486,6 +494,7 @@ def home_server(
             _refresh_projects()
 
         except Exception as e:
+            logger.exception("Failed to create project %r", name)
             ui.notification_show(f"Failed to create project: {e}", type="error", duration=6)
 
     # Tutorial handlers
@@ -537,6 +546,7 @@ def home_server(
     @reactive.event(input.confirm_tutorial_btn)
     def _create_tutorial_project():
         name = input.tutorial_project_name().strip()
+        logger.info("User creating tutorial project %r", name)
         if not name:
             ui.notification_show("Project name is required", type="error", duration=6)
             return
@@ -556,6 +566,7 @@ def home_server(
                 return
             shutil.copytree(mar_menor_src, project_path)
         except Exception as e:
+            logger.exception("Failed to copy tutorial files to %s", project_path)
             ui.notification_show(f"Failed to copy tutorial files: {e}", type="error", duration=6)
             return
 
@@ -617,6 +628,7 @@ def home_server(
             # Clean up copied directory on DB failure
             if project_path.exists():
                 shutil.rmtree(project_path, ignore_errors=True)
+            logger.exception("Failed to save tutorial project %r to database", name)
             ui.notification_show(f"Failed to create tutorial project: {e}", type="error", duration=6)
 
     # --- Active project handlers ---
@@ -738,6 +750,8 @@ def home_server(
         project_id_str = input.import_project_id()
         grid_name = input.import_grid_name().strip()
 
+        logger.info("User importing grid %r into project %s", grd_path_str, project_id_str)
+
         if not grd_path_str:
             ui.notification_show("Grid file path is required", type="error", duration=6)
             return
@@ -772,6 +786,7 @@ def home_server(
         try:
             shutil.copy2(src_path, dest_path)
         except Exception as e:
+            logger.exception("Failed to copy grid file %s to %s", src_path, dest_path)
             ui.notification_show(f"Failed to copy grid file: {e}", type="error", duration=6)
             return
 
@@ -789,6 +804,7 @@ def home_server(
             ui.modal_remove()
             _refresh_projects()
         except Exception as e:
+            logger.exception("Failed to create grid record for %r in project %s", grid_name, project_id)
             ui.notification_show(f"Failed to create grid record: {e}", type="error", duration=6)
 
     # --- Export/Import/Clone project handlers ---
@@ -811,6 +827,8 @@ def home_server(
 
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import export_project
+
+        logger.info("User exporting project %s %r", project_id, project_name)
 
         ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
@@ -839,6 +857,7 @@ def home_server(
             )
             ui.notification_show(f"Exported '{project_name}'", type="message", duration=4)
         except Exception as e:
+            logger.exception("Failed to export project %s %r", project_id, project_name)
             ui.notification_show(f"Export failed: {e}", type="error", duration=6)
 
     @reactive.effect
@@ -857,6 +876,8 @@ def home_server(
         """Clone a project."""
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import clone_project
+
+        logger.info("User cloning project %s %r", project_id, project_name)
 
         ctx = load_project_context(project_id, user=_current_user)
         if ctx is None:
@@ -878,6 +899,7 @@ def home_server(
         try:
             result = clone_project(work_dir, meta, config.work_dir)
         except Exception as e:
+            logger.exception("Failed to clone project %s %r", project_id, project_name)
             ui.notification_show(f"Clone failed: {e}", type="error", duration=6)
             return
 
@@ -925,6 +947,7 @@ def home_server(
             wd = result.get("work_dir")
             if wd and Path(wd).exists():
                 shutil.rmtree(wd, ignore_errors=True)
+            logger.exception("Failed to save cloned project %r to database", project_name)
             ui.notification_show(f"Clone failed: {e}", type="error", duration=6)
 
     # Import project from ZIP
@@ -956,6 +979,7 @@ def home_server(
     @reactive.event(input.confirm_import_project_btn)
     def _do_import_project():
         file_info = input.import_zip_file()
+        logger.info("User importing project from ZIP")
         if not file_info:
             ui.notification_show("No file selected", type="error", duration=6)
             return
@@ -969,9 +993,11 @@ def home_server(
                 zip_data = BytesIO(f.read())
             result = import_project(zip_data, config.work_dir)
         except ValueError as e:
+            logger.exception("Project ZIP import rejected: %s", file_path)
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)
             return
         except Exception as e:
+            logger.exception("Unexpected error importing project ZIP: %s", file_path)
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)
             return
 
@@ -1030,6 +1056,7 @@ def home_server(
             wd = result.get("work_dir")
             if wd and Path(wd).exists():
                 shutil.rmtree(wd, ignore_errors=True)
+            logger.exception("Failed to save imported project to database")
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)
 
     # ------------------------------------------------------------------
