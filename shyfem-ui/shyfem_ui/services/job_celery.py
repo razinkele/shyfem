@@ -270,6 +270,13 @@ def _persist_job_to_db(
                 from shyfem_ui.db.base import db_session
                 ctx = db_session()
             except Exception:
+                # No factory injected and the app-wide db_session() can't be
+                # constructed (e.g. DATABASE_URL misconfigured). Log so the
+                # operator can diagnose; persistence is skipped for this job.
+                logger.warning(
+                    "Cannot persist job %s: no session_factory and "
+                    "db_session() failed", job_info.id, exc_info=True,
+                )
                 return
 
         with ctx as db:

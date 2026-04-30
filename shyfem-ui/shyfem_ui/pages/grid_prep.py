@@ -17,6 +17,7 @@ from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat
+    _get_triangle_vertices,
     compute_element_areas,
     compute_element_quality,
     compute_min_angles,
@@ -49,24 +50,6 @@ def grid_stats_to_json(stats: dict, grid_name: str) -> str:
         "statistics": stats,
     }
     return json.dumps(payload, indent=4, default=_default)
-
-
-def _get_triangle_vertices(elem, nodes_dict) -> list[int] | None:
-    """Extract 3 vertex node IDs from an element, handling the parser quirk.
-
-    The .grd format is ``2 id type num_nodes n1 n2 n3 [depth]``, but the
-    parser consumes ``num_nodes`` as a node ID.  Triangles thus arrive with
-    ``nodes=[3, n1, n2, n3]`` (length 4) instead of ``[n1, n2, n3]``.
-
-    Returns:
-        List of 3 node IDs, or None if the element is not a triangle.
-    """
-    nids = elem.nodes
-    if len(nids) == 3:
-        return list(nids)
-    if len(nids) == 4 and nids[0] == 3:
-        return list(nids[1:4])
-    return None
 
 
 def compute_boundary_summary(grd) -> list[dict]:
