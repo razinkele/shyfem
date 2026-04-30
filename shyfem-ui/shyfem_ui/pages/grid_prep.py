@@ -1,7 +1,6 @@
 """Grid preparation page - shypre/shybas interface."""
 
 import logging
-import math
 import shutil
 from pathlib import Path
 
@@ -16,8 +15,8 @@ from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
-from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat
-    _get_triangle_vertices,
+from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat (test_grid_inspect)
+    _get_triangle_vertices,  # noqa: F401
     compute_element_areas,
     compute_element_quality,
     compute_min_angles,
