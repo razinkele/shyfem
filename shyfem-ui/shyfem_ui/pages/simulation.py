@@ -13,7 +13,7 @@ from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
-from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrFile, StrParser
+from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrParser
 from shyfem_ui.services.simulation_logic import (  # re-exported for backward compat
     apply_quick_settings,
     generate_template,
