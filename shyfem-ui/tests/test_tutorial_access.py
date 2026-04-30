@@ -1,7 +1,5 @@
 """Tests for tutorial role access control."""
 
-import inspect
-
 import pytest
 
 
@@ -40,14 +38,36 @@ def test_filter_sidebar_for_admin_keeps_all():
     assert "Tutorial" in all_values
 
 
-def test_tutorial_user_bootstrap_uses_tutorial_role():
-    """Bootstrap creates default tutorial user with role='tutorial'."""
-    source = inspect.getsource(__import__("shyfem_ui.app", fromlist=["app"]))
-    assert "tutorial" in source
+def test_tutorial_user_bootstrap_function_exists():
+    """Bootstrap helper for tutorial user must be present in app module.
+
+    The existing sidebar-filter and allowed-pages behavioral tests already
+    cover the tutorial role being wired. This test confirms the bootstrap
+    helper that creates the tutorial account is callable (i.e. not removed).
+    """
+    import shyfem_ui.app as app_mod
+
+    assert hasattr(app_mod, "_bootstrap_tutorial_project"), (
+        "_bootstrap_tutorial_project must exist in app.py to seed the tutorial account"
+    )
+    assert callable(app_mod._bootstrap_tutorial_project)
 
 
-def test_tutorial_readonly_guard_in_source():
-    """At least one page server checks for tutorial role and blocks writes."""
-    import shyfem_ui.pages.run as run_mod
-    source = inspect.getsource(run_mod)
-    assert "tutorial" in source or "is_tutorial" in source
+def test_tutorial_readonly_guard_in_run_server():
+    """run_server() must accept a user_role parameter for the tutorial guard.
+
+    The tutorial read-only block is gated on user_role returning 'tutorial'.
+    Verifying the parameter exists in the function signature confirms the
+    guard infrastructure has not been silently removed.
+    """
+    import inspect
+
+    from shyfem_ui.pages.run import run_server
+
+    sig = inspect.signature(run_server)
+    assert "user_role" in sig.parameters, (
+        "run_server() must have a user_role parameter for the tutorial read-only guard"
+    )
+    assert "tutorial_context" in sig.parameters, (
+        "run_server() must have a tutorial_context parameter for tutorial navigation"
+    )
