@@ -1286,20 +1286,197 @@ def _check_boundary_gates(grd: GrdFile) -> tuple[bool, str | None]:
     return True, None
 
 
+# ---------------------------------------------------------------------------
+# Pure geometry helpers (no Shiny / UI dependencies)
+# ---------------------------------------------------------------------------
+
+def _get_triangle_vertices(elem, nodes_dict) -> list[int] | None:
+    """Extract 3 vertex node IDs from an element, handling the parser quirk.
+
+    The .grd format is ``2 id type num_nodes n1 n2 n3 [depth]``, but the
+    parser consumes ``num_nodes`` as a node ID.  Triangles thus arrive with
+    ``nodes=[3, n1, n2, n3]`` (length 4) instead of ``[n1, n2, n3]``.
+
+    Returns:
+        List of 3 node IDs, or None if the element is not a triangle.
+    """
+    nids = elem.nodes
+    if len(nids) == 3:
+        return list(nids)
+    if len(nids) == 4 and nids[0] == 3:
+        return list(nids[1:4])
+    return None
+
+
+def compute_element_quality(grd) -> dict:
+    """Compute min-side / max-side quality ratio for each triangle.
+
+    Returns:
+        Dict with ``qualities``, ``elem_ids``, and ``stats`` sub-dict
+        (min, max, mean, median, std, count, below_03, below_05).
+    """
+    qualities = []
+    elem_ids = []
+    for eid, elem in grd.elements.items():
+        verts = _get_triangle_vertices(elem, grd.nodes)
+        if verts is None:
+            continue
+        coords = []
+        for nid in verts:
+            node = grd.nodes.get(nid)
+            if node is None:
+                break
+            coords.append((node.x, node.y))
+        if len(coords) != 3:
+            continue
+        sides = [
+            math.sqrt((coords[(i + 1) % 3][0] - coords[i][0]) ** 2
+                       + (coords[(i + 1) % 3][1] - coords[i][1]) ** 2)
+            for i in range(3)
+        ]
+        max_s = max(sides)
+        q = min(sides) / max_s if max_s > 0 else 0.0
+        qualities.append(q)
+        elem_ids.append(eid)
+
+    if not qualities:
+        return {"qualities": [], "elem_ids": [], "stats": None}
+
+    arr = np.array(qualities)
+    stats = {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "median": float(np.median(arr)),
+        "std": float(arr.std()),
+        "count": len(arr),
+        "below_03": int(np.sum(arr < 0.3)),
+        "below_05": int(np.sum(arr < 0.5)),
+    }
+    return {"qualities": qualities, "elem_ids": elem_ids, "stats": stats}
+
+
+def compute_element_areas(grd) -> dict:
+    """Compute triangle areas using the shoelace formula.
+
+    Returns:
+        Dict with ``areas``, ``elem_ids``, and ``stats`` sub-dict
+        (min, max, mean, median, std, count, area_ratio).
+    """
+    areas = []
+    elem_ids = []
+    for eid, elem in grd.elements.items():
+        verts = _get_triangle_vertices(elem, grd.nodes)
+        if verts is None:
+            continue
+        coords = []
+        for nid in verts:
+            node = grd.nodes.get(nid)
+            if node is None:
+                break
+            coords.append((node.x, node.y))
+        if len(coords) != 3:
+            continue
+        x1, y1 = coords[0]
+        x2, y2 = coords[1]
+        x3, y3 = coords[2]
+        area = 0.5 * abs(x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2))
+        areas.append(area)
+        elem_ids.append(eid)
+
+    if not areas:
+        return {"areas": [], "elem_ids": [], "stats": None}
+
+    arr = np.array(areas)
+    stats = {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "median": float(np.median(arr)),
+        "std": float(arr.std()),
+        "count": len(arr),
+        "area_ratio": float(arr.max() / arr.min()) if arr.min() > 0 else float("inf"),
+    }
+    return {"areas": areas, "elem_ids": elem_ids, "stats": stats}
+
+
+def compute_min_angles(grd) -> dict:
+    """Compute the minimum interior angle (degrees) for each triangle.
+
+    Uses the law of cosines to find all three angles.
+
+    Returns:
+        Dict with ``min_angles``, ``elem_ids``, and ``stats`` sub-dict
+        (min, max, mean, median, count, below_20).
+    """
+    min_angles = []
+    elem_ids = []
+    for eid, elem in grd.elements.items():
+        verts = _get_triangle_vertices(elem, grd.nodes)
+        if verts is None:
+            continue
+        coords = []
+        for nid in verts:
+            node = grd.nodes.get(nid)
+            if node is None:
+                break
+            coords.append((node.x, node.y))
+        if len(coords) != 3:
+            continue
+        # Side lengths squared
+        sides_sq = []
+        sides = []
+        for i in range(3):
+            dx = coords[(i + 1) % 3][0] - coords[i][0]
+            dy = coords[(i + 1) % 3][1] - coords[i][1]
+            s2 = dx * dx + dy * dy
+            sides_sq.append(s2)
+            sides.append(math.sqrt(s2))
+        # Angles via law of cosines: angle at vertex i is opposite side i
+        # side opposite vertex 0 is sides[1] (vertex 1→2), etc.
+        # Actually: side[i] connects vertex i to vertex (i+1)
+        # Angle at vertex 0: opposite side connects vertex 1 to vertex 2 = sides[1]
+        # Adjacent sides: sides[2] (vertex 2→0) and sides[0] (vertex 0→1)
+        angles = []
+        # a = side opposite vertex, b,c = adjacent sides
+        # side[0] = v0→v1, side[1] = v1→v2, side[2] = v2→v0
+        # angle at v0: opposite = side[1], adjacent = side[0], side[2]
+        # angle at v1: opposite = side[2], adjacent = side[0], side[1]
+        # angle at v2: opposite = side[0], adjacent = side[1], side[2]
+        for i in range(3):
+            a = sides[(i + 1) % 3]  # opposite side
+            b = sides[i]
+            c = sides[(i + 2) % 3]
+            if b > 0 and c > 0:
+                cos_angle = (b * b + c * c - a * a) / (2 * b * c)
+                cos_angle = max(-1.0, min(1.0, cos_angle))
+                angles.append(math.degrees(math.acos(cos_angle)))
+        if angles:
+            min_angles.append(min(angles))
+            elem_ids.append(eid)
+
+    if not min_angles:
+        return {"min_angles": [], "elem_ids": [], "stats": None}
+
+    arr = np.array(min_angles)
+    stats = {
+        "min": float(arr.min()),
+        "max": float(arr.max()),
+        "mean": float(arr.mean()),
+        "median": float(np.median(arr)),
+        "count": len(arr),
+        "below_20": int(np.sum(arr < 20.0)),
+    }
+    return {"min_angles": min_angles, "elem_ids": elem_ids, "stats": stats}
+
+
 def compute_mesh_stats(grd: GrdFile) -> dict:
     """Compute mesh quality statistics.
-
-    Reuses quality metrics from grid_prep page functions.
 
     Returns:
         Dict with node_count, elem_count, line_count, quality, areas,
         min_angles sub-dicts.
     """
-    from shyfem_ui.pages.grid_prep import (
-        compute_element_areas,
-        compute_element_quality,
-        compute_min_angles,
-    )
 
     stats = {
         "node_count": len(grd.nodes),
