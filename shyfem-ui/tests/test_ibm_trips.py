@@ -84,10 +84,14 @@ def test_tracks_to_trips_timestamps_monotonic():
 
 
 def test_path_layer_not_imported():
-    """ibm.py should not import path_layer (replaced by trips_layer)."""
-    import inspect
+    """ibm.py must not expose path_layer in its module namespace.
+
+    trips_layer replaces path_layer; having path_layer in the namespace
+    would mean it was imported (intentionally or accidentally).
+    """
     import shyfem_ui.pages.ibm as ibm_mod
-    source = inspect.getsource(ibm_mod)
-    # path_layer should not appear in import statements
-    import_lines = [ln for ln in source.split("\n") if "import" in ln and "path_layer" in ln]
-    assert len(import_lines) == 0, f"path_layer still imported: {import_lines}"
+
+    assert not hasattr(ibm_mod, "path_layer"), (
+        "path_layer is present in ibm module namespace — it should have been "
+        "replaced by trips_layer"
+    )
