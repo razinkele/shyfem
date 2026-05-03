@@ -8,6 +8,7 @@ from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
 # Reuse the partition color palette from grid_map
+from shyfem_ui.components.file_picker import file_picker_ui
 from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
@@ -34,11 +35,13 @@ def partitioning_ui() -> ui.Tag:
             ui.sidebar(
                 # Input file
                 ui.h5("Input Basin"),
+                file_picker_ui("fp_bas", label="Pick basin from project"),
                 ui.input_text(
                     "bas_path",
                     "Basin File (.bas)",
                     placeholder="/path/to/basin.bas",
                 ),
+                file_picker_ui("fp_grd", label="Pick grid from project"),
                 ui.input_text(
                     "grd_path",
                     "Grid File (.grd) for visualization",
