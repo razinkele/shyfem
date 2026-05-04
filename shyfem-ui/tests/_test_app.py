@@ -182,8 +182,23 @@ def create_test_app(config=None):
         class_="sf-content",
     )
 
+    # Test-only debug hook: exposes window.__test_set_active_project so
+    # Playwright can drive `active_project` from the test side. Mirrored
+    # by a server-side @reactive.event listener on
+    # input._test_set_active_project (defined inside `server` below).
+    # This is scoped to the test app -- it never ships in production.
+    _test_active_project_script = ui.tags.script("""
+window.__test_set_active_project = function(projectDict) {
+    Shiny.setInputValue(
+        '_test_set_active_project',
+        projectDict,
+        {priority: 'event'}
+    );
+};
+""")
+
     app_ui = ui.page_fillable(
-        ui.head_content(_HEAD_EXTRAS),
+        ui.head_content(_HEAD_EXTRAS, _test_active_project_script),
         topbar,
         ui.div(
             sidebar,
@@ -196,6 +211,16 @@ def create_test_app(config=None):
     def server(input, output, session):
         active_project = reactive.value(None)
         tutorial_context = reactive.value(None)
+
+        # Test-only debug hook: lets Playwright tests inject an
+        # active_project value directly via Shiny.setInputValue.
+        # The corresponding JS-side helper is registered above in the
+        # head_content extras (window.__test_set_active_project).
+        @reactive.effect
+        @reactive.event(input._test_set_active_project)
+        def _test_active_project_hook():
+            value = input._test_set_active_project()
+            active_project.set(value if value else None)
 
         home.home_server("home", config, job_queue,
                          active_project=active_project, nav_callback=None)

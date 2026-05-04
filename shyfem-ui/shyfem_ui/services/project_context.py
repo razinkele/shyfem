@@ -1,15 +1,46 @@
 """Load full project context from DB for active-project state."""
 
+from typing import TypedDict
+
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, ProjectFile, Simulation
 from shyfem_ui.services.access_control import check_project_access
+
+
+class GridEntry(TypedDict):
+    name: str
+    grd_file: str | None
+    bas_file: str | None
+
+
+class SimulationEntry(TypedDict):
+    name: str
+    str_file: str | None
+
+
+class FileEntry(TypedDict):
+    id: int
+    filename: str
+    rel_path: str
+    file_type: str
+    size_bytes: int
+
+
+class ProjectContext(TypedDict):
+    id: int
+    name: str
+    work_dir: str
+    description: str | None
+    grids: list[GridEntry]
+    simulations: list[SimulationEntry]
+    files: list[FileEntry]
 
 
 def load_project_context(
     project_id: int,
     user: dict | None = None,
     session_factory=None,
-) -> dict | None:
+) -> ProjectContext | None:
     """Load project with its grids, simulations, and files as a plain dict.
 
     Returns None if the project_id does not exist or if the user
@@ -39,7 +70,7 @@ def load_project_context(
             return _load(db, project_id)
 
 
-def _load(db, project_id: int) -> dict | None:
+def _load(db, project_id: int) -> ProjectContext | None:
     """Internal: load project data from an open session."""
     project = db.query(Project).filter_by(id=project_id).first()
     if project is None:

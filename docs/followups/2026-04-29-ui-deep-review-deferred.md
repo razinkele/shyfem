@@ -150,3 +150,55 @@ globals being set when the queue is constructed in the app server.
 today. When it does, the right fix is `celery.signals.worker_init` to
 re-bootstrap globals from config in the worker process. Track here so
 the limitation isn't silently inherited.
+
+## L. Output-directory picker (LOW)
+
+**Source:** Section B pilot (partitioning file-picker integration, 2026-05-01).
+
+The pilot wires file pickers for INPUT files (`.bas`, `.grd`) but not for
+the OUTPUT directory (`output_dir` text input on partitioning, run, and
+similar pages). Output picking is a different abstraction — directory
+picker, not file picker — and was deferred from the pilot.
+
+When designing this:
+- The picker must list directories (not files) under `work_dir`, and
+  optionally allow creating a new subdirectory.
+- It should integrate via the same coexistence pattern (picker + text
+  input) the file picker uses, so the migration cost matches.
+- Consider whether to share infrastructure with `components/file_picker.py`
+  (e.g. a `directory_picker_server` sibling) or build a separate component.
+
+## M. File-picker rollout to remaining 6 pages (MED)
+
+**Source:** Section B pilot (partitioning file-picker integration, 2026-05-01).
+
+The pilot scopes only `pages/partitioning.py`. The remaining pages with
+free-text path inputs are:
+
+- `pages/grid_prep.py` (mesh import paths)
+- `pages/postprocess.py` (input `.shy`/`.nc` files)
+- `pages/physics.py` (forcing files)
+- `pages/simulation.py` (STR file)
+- `pages/run.py` (STR file)
+- `pages/ibm.py` (Lagrangian config — `.lgr` may not map to a FileService
+  category; check the taxonomy first)
+
+Apply the same pattern as the pilot:
+1. Add `file_picker_ui` above each text input.
+2. Add `file_picker_server` with the appropriate `file_types` filter.
+3. Add an `_fill_X` wrapper that calls `resolve_picker_path`, logs +
+   notifies on resolution failure.
+
+**Hard deadline (from spec lessons):** by the SECOND follow-up page,
+extract the per-page `_fill_X` wrapper bodies into a shared helper
+`fill_picker_input(text_input_id, active_project, rel_path)` in
+`components/file_picker.py`. This prevents user-visible string drift
+across pages.
+
+Before each page is wired:
+- Confirm the page's file inputs map cleanly to `FileService` file_types.
+  `.lgr` for ibm.py may need a new taxonomy entry (`lagrangian` or
+  similar).
+- Audit `_on_project_changed` (or equivalent) for the same patterns
+  fixed in the pilot: missing `reactive.isolate()` around input reads,
+  missing empty-guards on auto-fill.

@@ -2,8 +2,13 @@
 
 import logging
 from collections.abc import Callable
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from shiny import module, reactive, ui
+
+if TYPE_CHECKING:
+    from shyfem_ui.services.project_context import ProjectContext
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +134,47 @@ def build_file_choices(
         label = f"{f['rel_path']} ({f['file_type']})"
         choices[label] = f["rel_path"]
     return choices
+
+
+def resolve_picker_path(
+    active_project: "ProjectContext | None",
+    rel_path: str | None,
+) -> str | None:
+    """Resolve a project-relative path to an absolute path.
+
+    Returns None if the project is unknown, rel_path is empty, or the
+    resolved path would escape the project work_dir (path traversal
+    guard — Path(work_dir) / "/etc/passwd" silently yields /etc/passwd,
+    and Path(work_dir) / "../../etc" escapes the root).
+
+    Returns None on five distinct conditions: None project, empty
+    rel_path, missing work_dir key, empty work_dir, traversal guard.
+    Callers needing branch info must consume the WARNING log records
+    — the return value alone does not differentiate. The
+    security-relevant branches (missing/empty work_dir, traversal)
+    emit logger.warning so containment failures don't disappear
+    silently across the 6 follow-up pages that will reuse this helper.
+    """
+    if active_project is None or not rel_path:
+        return None
+    work_dir = active_project.get("work_dir")
+    if not work_dir:
+        logger.warning(
+            "Picker resolution failed: project %r has no work_dir "
+            "(legacy/corrupt row?)",
+            active_project.get("id"),
+        )
+        return None
+    root = Path(work_dir).resolve()
+    resolved = (root / rel_path).resolve()
+    if not resolved.is_relative_to(root):
+        logger.warning(
+            "Picker rel_path %r escapes work_dir %r — "
+            "dropdown/project state mismatch",
+            rel_path, work_dir,
+        )
+        return None
+    return str(resolved)
 
 
 @module.ui
