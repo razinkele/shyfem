@@ -202,3 +202,27 @@ Before each page is wired:
 - Audit `_on_project_changed` (or equivalent) for the same patterns
   fixed in the pilot: missing `reactive.isolate()` around input reads,
   missing empty-guards on auto-fill.
+
+## Section M.1 — run.py reactive-effect deadlock (open)
+
+**Source:** Section M file-picker rollout (2026-05-04 → 2026-05-05).
+
+`run_server` cannot be mounted in the test app due to event-loop
+deadlocks in its reactive effects (job-queue + tutorial-context
+interplay). The Section M rollout works around this for picker
+coverage by extending `_stub_run_server` to mount the picker without
+the deadlocking effects (`_test_app.py:245`).
+
+**Open work:** the underlying deadlock means run_server cannot be
+exercised end-to-end in tests at all. Picker coverage is workable but
+fragile: any future picker-adjacent change to run_server must also
+update the stub, or stub drift silently breaks Playwright coverage.
+
+**Resolution options:**
+1. Refactor run_server to extract the deadlock-causing effects into a
+   helper that the test can replace via dependency injection.
+2. Identify the specific deadlocking interaction and break the cycle
+   directly (likely the right fix; needs investigation).
+
+Tracked but not scoped.
+
