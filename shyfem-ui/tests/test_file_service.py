@@ -234,3 +234,21 @@ class TestFileServiceUpload:
         assert total == 3, (
             "Quota inflated: per-path row should be replaced, not duplicated"
         )
+
+
+class TestInferFileType:
+
+    def test_infer_file_type_lagrangian_lgr(self):
+        """`.lgr` (Lagrangian particle output) maps to 'lagrangian' file_type.
+
+        Used by pages/ibm.py to filter the file picker to Lagrangian files
+        only. Without this, .lgr files fall through to 'other' and would
+        require the picker filter to include 'other' — which pollutes the
+        dropdown with any unrecognized file type.
+        """
+        from shyfem_ui.services.file_service import FileService
+
+        assert FileService._infer_file_type("trajectories.lgr") == "lagrangian"
+        assert FileService._infer_file_type("OUTPUT/sim.lgr") == "lagrangian"
+        # Case-insensitive on extension (the existing branches use .lower())
+        assert FileService._infer_file_type("OUT.LGR") == "lagrangian"

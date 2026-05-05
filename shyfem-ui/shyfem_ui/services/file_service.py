@@ -344,6 +344,8 @@ class FileService:
             return "config"
         if ext in (".shy", ".ext", ".flx", ".nc"):
             return "output"
+        if ext == ".lgr":
+            return "lagrangian"
         # Subdirectory hints
         if len(parts) > 1 and parts[0].upper() == "INPUT":
             return "forcing"
