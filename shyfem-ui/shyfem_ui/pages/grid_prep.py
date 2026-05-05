@@ -8,6 +8,11 @@ import numpy as np
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.file_browser import file_browser_server, file_browser_ui
+from shyfem_ui.components.file_picker import (
+    file_picker_server,
+    file_picker_ui,
+    fill_picker_input,
+)
 from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
@@ -50,6 +55,7 @@ def grid_prep_ui() -> ui.Tag:
                 ),
                 ui.hr(),
                 # Or use path input
+                file_picker_ui("fp_grd", label="Pick grid from project"),
                 ui.input_text(
                     "grd_path",
                     "Or enter path:",
@@ -124,6 +130,10 @@ def grid_prep_server(
     tutorial_context=None,
 ) -> None:
     """Grid preparation page server logic."""
+    # Reactive value driven by `_on_project_changed`; consumed by the
+    # file picker to filter dropdown choices to the active project.
+    project_id_val: reactive.Value[int | None] = reactive.value(None)
+
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
     # Auto-fill from active project
@@ -133,12 +143,28 @@ def grid_prep_server(
             return
         proj = active_project.get()
         if proj is None:
+            project_id_val.set(None)
             return
+        project_id_val.set(proj.get("id"))
+        work = proj["work_dir"]
         if proj["grids"]:
             grid = proj["grids"][0]
-            if grid.get("grd_file"):
-                grd_path = str(Path(proj["work_dir"]) / grid["grd_file"])
-                ui.update_text("grd_path", value=grd_path)
+            with reactive.isolate():
+                grd_empty = not input.grd_path()
+            if grid.get("grd_file") and grd_empty:
+                ui.update_text("grd_path", value=str(Path(work) / grid["grd_file"]))
+
+    # File picker delegates resolve/log/notify branching to
+    # fill_picker_input (see its docstring in components/file_picker.py).
+    file_picker_server(
+        "fp_grd",
+        project_id=project_id_val,
+        file_types=["grid"],
+        on_selected=(
+            lambda rel: fill_picker_input("grd_path",
+                active_project.get() if active_project else None, rel)
+        ),
+    )
 
     # Auto-fill from tutorial navigation
     @reactive.effect
