@@ -7,6 +7,7 @@ Extracted from `pages/simulation.py` for unit-testability:
   the StrFile and 4 strings; the page wrapper still does I/O and
   reactive notification on top of this.
 """
+
 from __future__ import annotations
 
 from shyfem_ui.services.parser_str import StrFile

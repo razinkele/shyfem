@@ -52,7 +52,9 @@ class NotificationService:
             job: Dict with 'name', 'duration', 'working_dir' keys.
         """
         if not self._config.smtp_host:
-            logger.warning("SMTP not configured — skipping success notification for %s", user.get("username"))
+            logger.warning(
+                "SMTP not configured — skipping success notification for %s", user.get("username")
+            )
             return
         if not user.get("email"):
             return
@@ -73,7 +75,9 @@ class NotificationService:
             job: Dict with 'name', 'stderr' keys.
         """
         if not self._config.smtp_host:
-            logger.warning("SMTP not configured — skipping failure notification for %s", user.get("username"))
+            logger.warning(
+                "SMTP not configured — skipping failure notification for %s", user.get("username")
+            )
             return
         if not user.get("email"):
             return
@@ -97,7 +101,9 @@ class NotificationService:
         subject_line = lines[0] if lines else "Subject: SHYFEM Notification"
         subject = subject_line.removeprefix("Subject:").strip()
         if len(lines) >= 2 and lines[1].strip() != "":
-            logger.warning("Email template missing blank separator after Subject line; body may be incomplete")
+            logger.warning(
+                "Email template missing blank separator after Subject line; body may be incomplete"
+            )
         body = "\n".join(lines[2:]).strip()  # skip subject + blank line
 
         msg = MIMEText(body, "plain")

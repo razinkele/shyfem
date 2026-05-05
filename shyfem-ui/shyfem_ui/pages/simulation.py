@@ -210,8 +210,9 @@ def simulation_server(
         "fp_str",
         project_id=project_id_reactive,  # reuse existing reactive
         file_types=["str"],
-        on_selected=lambda rel: fill_picker_input("str_path",
-            active_project.get() if active_project else None, rel),
+        on_selected=lambda rel: fill_picker_input(
+            "str_path", active_project.get() if active_project else None, rel
+        ),
     )
 
     # Initialize str_editor and wire up its reactive state
@@ -254,9 +255,7 @@ def simulation_server(
             selected = "mm_hyd_03.str"
         str_path = config.testcases_dir / "mar_menor" / selected
         if not str_path.exists():
-            ui.notification_show(
-                f"Sample STR not found: {str_path}", type="error"
-            , duration=6)
+            ui.notification_show(f"Sample STR not found: {str_path}", type="error", duration=6)
             return
         ui.update_text("str_path", value=str(str_path))
         try:
@@ -395,7 +394,10 @@ def simulation_server(
     def _apply_quick_settings():
         logger.info(
             "User applying quick settings: start=%r end=%r dt=%r output=%r",
-            input.quick_start(), input.quick_end(), input.quick_dt(), input.quick_output(),
+            input.quick_start(),
+            input.quick_end(),
+            input.quick_dt(),
+            input.quick_output(),
         )
         try:
             str_file = apply_quick_settings(
@@ -435,22 +437,28 @@ def simulation_server(
         infos = [m for m in validation_msgs if m.level == "info"]
         if errors:
             for m in errors:
-                val_parts.append(ui.div(
-                    ui.tags.i(class_="bi bi-x-circle text-danger me-1"),
-                    ui.span(m.message, class_="small"),
-                ))
+                val_parts.append(
+                    ui.div(
+                        ui.tags.i(class_="bi bi-x-circle text-danger me-1"),
+                        ui.span(m.message, class_="small"),
+                    )
+                )
         if warnings:
             for m in warnings:
-                val_parts.append(ui.div(
-                    ui.tags.i(class_="bi bi-exclamation-triangle text-warning me-1"),
-                    ui.span(m.message, class_="small"),
-                ))
+                val_parts.append(
+                    ui.div(
+                        ui.tags.i(class_="bi bi-exclamation-triangle text-warning me-1"),
+                        ui.span(m.message, class_="small"),
+                    )
+                )
         if infos:
             for m in infos:
-                val_parts.append(ui.div(
-                    ui.tags.i(class_="bi bi-info-circle text-info me-1"),
-                    ui.span(m.message, class_="small text-muted"),
-                ))
+                val_parts.append(
+                    ui.div(
+                        ui.tags.i(class_="bi bi-info-circle text-info me-1"),
+                        ui.span(m.message, class_="small text-muted"),
+                    )
+                )
 
         return ui.div(
             ui.div(
@@ -463,11 +471,15 @@ def simulation_server(
                 class_="mb-2",
             ),
             *(
-                [ui.div(
-                    ui.span("Needs attention:", class_="small fw-bold text-warning"),
-                    *val_parts,
-                    class_="mb-2 p-1 border-start border-warning border-3 ps-2",
-                )] if val_parts else []
+                [
+                    ui.div(
+                        ui.span("Needs attention:", class_="small fw-bold text-warning"),
+                        *val_parts,
+                        class_="mb-2 p-1 border-start border-warning border-3 ps-2",
+                    )
+                ]
+                if val_parts
+                else []
             ),
             ui.pre(
                 template.strip()[:300] + ("..." if len(template.strip()) > 300 else ""),

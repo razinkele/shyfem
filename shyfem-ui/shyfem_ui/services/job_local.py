@@ -150,12 +150,15 @@ class LocalJobQueue(JobQueue):
                 try:
                     from shyfem_ui.db.base import db_session
                     from shyfem_ui.models.user import User
+
                     with db_session() as db:
                         user = db.query(User).filter_by(id=user_id).first()
                     if user:
                         user_dict = {"username": user.username, "email": user.email}
                 except Exception:
-                    logger.debug("Could not look up user %s for notification", user_id, exc_info=True)
+                    logger.debug(
+                        "Could not look up user %s for notification", user_id, exc_info=True
+                    )
 
             duration = None
             if job.started_at and job.completed_at:

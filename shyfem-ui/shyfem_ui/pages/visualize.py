@@ -497,7 +497,9 @@ def visualize_server(
                     data_type.set("grid")
                     stats = GrdParser.get_statistics(grd)
                     data_info_val.set(stats)
-                ui.notification_show(f"Loaded grid: {grd.num_nodes} nodes", type="message", duration=4)
+                ui.notification_show(
+                    f"Loaded grid: {grd.num_nodes} nodes", type="message", duration=4
+                )
 
             elif dtype == "timeseries":
                 ts = _load_timeseries(path)

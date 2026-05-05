@@ -115,7 +115,6 @@ PRESETS = {
 }
 
 
-
 @module.ui
 def postprocess_ui() -> ui.Tag:
     """Post-processing page UI."""
@@ -282,8 +281,9 @@ def postprocess_server(
         "fp_shy",
         project_id=project_id_val,
         file_types=["output"],
-        on_selected=lambda rel: fill_picker_input("shy_path",
-            active_project.get() if active_project else None, rel),
+        on_selected=lambda rel: fill_picker_input(
+            "shy_path", active_project.get() if active_project else None, rel
+        ),
     )
 
     # Auto-fill from tutorial navigation
@@ -304,8 +304,8 @@ def postprocess_server(
         work_dir = config.testcases_dir / "mar_menor"
         if not work_dir.exists():
             ui.notification_show(
-                f"Sample directory not found: {work_dir}", type="error"
-            , duration=6)
+                f"Sample directory not found: {work_dir}", type="error", duration=6
+            )
             return
         ui.update_text("shy_path", value=str(work_dir))
         ui.notification_show(
@@ -1143,4 +1143,3 @@ def _register_preset(
             type="message",
             duration=4,
         )
-

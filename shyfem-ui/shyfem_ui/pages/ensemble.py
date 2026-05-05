@@ -424,10 +424,14 @@ def ensemble_server(
                 errors = [m for m in msgs if m.level == "error"]
                 if errors:
                     for m in errors:
-                        ui.notification_show(f"Base STR error: {m.message}", type="error", duration=6)
+                        ui.notification_show(
+                            f"Base STR error: {m.message}", type="error", duration=6
+                        )
                 if warnings:
                     for m in warnings:
-                        ui.notification_show(f"Base STR warning: {m.message}", type="warning", duration=5)
+                        ui.notification_show(
+                            f"Base STR warning: {m.message}", type="warning", duration=5
+                        )
             except Exception:
                 pass  # base file not accessible during preview
 
@@ -541,7 +545,9 @@ def ensemble_server(
 
         variations = _read_current_variations()
         if not variations:
-            ui.notification_show("Define at least one parameter variation", type="error", duration=6)
+            ui.notification_show(
+                "Define at least one parameter variation", type="error", duration=6
+            )
             return
 
         mode = input.sweep_mode()
@@ -569,13 +575,15 @@ def ensemble_server(
                 for m in errors:
                     ui.notification_show(
                         f"Run {i+1} ({combo_str}): {m.message}",
-                        type="error", duration=8,
+                        type="error",
+                        duration=8,
                     )
 
         if validation_errors > 0:
             ui.notification_show(
                 f"{validation_errors} of {len(combos)} variants have validation errors. Fix before submitting.",
-                type="error", duration=8,
+                type="error",
+                duration=8,
             )
             return
 
@@ -844,7 +852,8 @@ def ensemble_server(
 
         # Count jobs whose only outputs are binary .shy (no time-series chart possible)
         shy_only_jobs = sum(
-            1 for j in completed_jobs
+            1
+            for j in completed_jobs
             if not any(f.endswith((".ts", ".ext", ".csv")) for f in j.output_files)
             and any(f.endswith(".shy") for f in j.output_files)
         )

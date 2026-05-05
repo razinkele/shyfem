@@ -27,5 +27,5 @@ class TestModuleImports:
         src = get_server_source(page_mod, "postprocess_server")
         assert src.count("file_picker_server(") >= 1
         assert 'file_types=["output"]' in src
-        assert 'fill_picker_input("shy_path"' in src
+        import re; assert re.search(r'fill_picker_input\(\s*"shy_path"', src)
         assert "reactive.isolate()" in src

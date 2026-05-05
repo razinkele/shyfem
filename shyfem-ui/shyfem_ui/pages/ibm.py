@@ -76,16 +76,10 @@ def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
         if not t.path:
             continue
         if not all(len(p) == 2 for p in t.path):
-            raise ValueError(
-                f"ParticleTrack paths must be 2-D [lon,lat], got {len(t.path[0])}-D"
-            )
+            raise ValueError(f"ParticleTrack paths must be 2-D [lon,lat], got {len(t.path[0])}-D")
         paths.append(t.path)
-        timestamps.append(
-            [_dt.fromisoformat(ts).timestamp() for ts in t.times]
-        )
-        properties.append(
-            {"color": _TRACK_COLORS[(t.type_id - 1) % len(_TRACK_COLORS)]}
-        )
+        timestamps.append([_dt.fromisoformat(ts).timestamp() for ts in t.times])
+        properties.append({"color": _TRACK_COLORS[(t.type_id - 1) % len(_TRACK_COLORS)]})
     return format_trips(paths, timestamps=timestamps, properties=properties)
 
 
@@ -94,7 +88,10 @@ def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
     R = 6371.0
     dlat = math.radians(lat2 - lat1)
     dlon = math.radians(lon2 - lon1)
-    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
@@ -116,17 +113,19 @@ def compute_track_stats(tracks: list) -> list[dict]:
         duration = ""
         if len(track.times) >= 2:
             duration = f"{track.times[0]} → {track.times[-1]}"
-        stats.append({
-            "type_id": track.type_id,
-            "steps": len(track.path),
-            "displacement_km": round(disp, 2),
-            "end_lon": round(end_lon, 4),
-            "end_lat": round(end_lat, 4),
-            "mean_depth": round(sum(depths) / len(depths), 2) if depths else 0.0,
-            "max_depth": round(max(depths), 2) if depths else 0.0,
-            "mean_age": round(sum(ages) / len(ages), 2) if ages else 0.0,
-            "duration": duration,
-        })
+        stats.append(
+            {
+                "type_id": track.type_id,
+                "steps": len(track.path),
+                "displacement_km": round(disp, 2),
+                "end_lon": round(end_lon, 4),
+                "end_lat": round(end_lat, 4),
+                "mean_depth": round(sum(depths) / len(depths), 2) if depths else 0.0,
+                "max_depth": round(max(depths), 2) if depths else 0.0,
+                "mean_age": round(sum(ages) / len(ages), 2) if ages else 0.0,
+                "duration": duration,
+            }
+        )
     return stats
 
 
@@ -189,7 +188,11 @@ def ibm_ui() -> ui.Tag:
                 ),
                 ui.hr(),
                 ui.h6("Animation"),
-                trips_animation_ui("ibm_trips") if trips_animation_ui else ui.p("Animation requires shiny_deckgl", class_="text-muted small"),
+                (
+                    trips_animation_ui("ibm_trips")
+                    if trips_animation_ui
+                    else ui.p("Animation requires shiny_deckgl", class_="text-muted small")
+                ),
                 ui.hr(),
                 ui.h6("Display"),
                 ui.input_checkbox("show_emodnet", "EMODnet Bathymetry", value=True),
@@ -283,8 +286,9 @@ def ibm_server(
         "fp_lgr",
         project_id=project_id_val,
         file_types=["lagrangian"],
-        on_selected=lambda rel: fill_picker_input("lgr_path",
-            active_project.get() if active_project else None, rel),
+        on_selected=lambda rel: fill_picker_input(
+            "lgr_path", active_project.get() if active_project else None, rel
+        ),
     )
 
     @reactive.effect
@@ -293,8 +297,7 @@ def ibm_server(
         _usr = get_current_user()
         _proj = active_project.get()
         if _proj is not None and (
-            _usr is not None
-            and check_project_access(_proj["id"], _usr, min_role="editor") is None
+            _usr is not None and check_project_access(_proj["id"], _usr, min_role="editor") is None
         ):
             ui.notification_show(
                 "Permission denied: editor role required to load trajectories",
@@ -350,12 +353,25 @@ def ibm_server(
         legend_entries: list[dict] = []
 
         if show_emod:
-            layers.append(tile_layer(
-                "emodnet", EMODNET_WMS_URL,
-                minZoom=0, maxZoom=18, tileSize=256, opacity=0.6, pickable=False,
-            ))
-            legend_entries.append({"layer_id": "emodnet", "label": "EMODnet Bathy",
-                                    "color": [0, 100, 180], "shape": "rect"})
+            layers.append(
+                tile_layer(
+                    "emodnet",
+                    EMODNET_WMS_URL,
+                    minZoom=0,
+                    maxZoom=18,
+                    tileSize=256,
+                    opacity=0.6,
+                    pickable=False,
+                )
+            )
+            legend_entries.append(
+                {
+                    "layer_id": "emodnet",
+                    "label": "EMODnet Bathy",
+                    "color": [0, 100, 180],
+                    "shape": "rect",
+                }
+            )
 
         starts, ends = [], []
         for track in filtered:
@@ -365,46 +381,74 @@ def ibm_server(
             t1 = track.times[-1] if track.times else ""
             d0 = f"{track.depths[0]:.1f} m" if track.depths else ""
             d1 = f"{track.depths[-1]:.1f} m" if track.depths else ""
-            starts.append({"position": track.path[0],
-                           "tooltip_html": f"<b>Start type {track.type_id}</b><br>{t0}<br>Depth: {d0}"})
-            ends.append({"position": track.path[-1],
-                         "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}<br>Depth: {d1}"})
+            starts.append(
+                {
+                    "position": track.path[0],
+                    "tooltip_html": f"<b>Start type {track.type_id}</b><br>{t0}<br>Depth: {d0}",
+                }
+            )
+            ends.append(
+                {
+                    "position": track.path[-1],
+                    "tooltip_html": f"<b>End type {track.type_id}</b><br>{t1}<br>Depth: {d1}",
+                }
+            )
 
         if show_trk and filtered:
             trips_data = _tracks_to_trips(filtered)
             if trips_data:
                 trail_len = anim.trail() if anim else 180
-                layers.append(trips_layer(
-                    "particle-trips",
-                    trips_data,
-                    getColor="@@d.color",
-                    trailLength=trail_len,
-                    widthMinPixels=2,
-                    pickable=True,
-                ))
+                layers.append(
+                    trips_layer(
+                        "particle-trips",
+                        trips_data,
+                        getColor="@@d.color",
+                        trailLength=trail_len,
+                        widthMinPixels=2,
+                        pickable=True,
+                    )
+                )
                 first_id = filtered[0].type_id
-                legend_entries.append({
-                    "layer_id": "particle-trips",
-                    "label": "Tracks",
-                    "color": _TRACK_COLORS[(first_id - 1) % len(_TRACK_COLORS)][:3],
-                    "shape": "line",
-                })
+                legend_entries.append(
+                    {
+                        "layer_id": "particle-trips",
+                        "label": "Tracks",
+                        "color": _TRACK_COLORS[(first_id - 1) % len(_TRACK_COLORS)][:3],
+                        "shape": "line",
+                    }
+                )
 
         if show_starts and starts:
-            layers.append(scatterplot_layer(
-                "starts", starts, getPosition="@@d.position",
-                getFillColor=[0, 200, 100, 230], radiusMinPixels=6, radiusMaxPixels=12, pickable=True,
-            ))
-            legend_entries.append({"layer_id": "starts", "label": "Start",
-                                    "color": [0, 200, 100], "shape": "circle"})
+            layers.append(
+                scatterplot_layer(
+                    "starts",
+                    starts,
+                    getPosition="@@d.position",
+                    getFillColor=[0, 200, 100, 230],
+                    radiusMinPixels=6,
+                    radiusMaxPixels=12,
+                    pickable=True,
+                )
+            )
+            legend_entries.append(
+                {"layer_id": "starts", "label": "Start", "color": [0, 200, 100], "shape": "circle"}
+            )
 
         if show_ends and ends:
-            layers.append(scatterplot_layer(
-                "ends", ends, getPosition="@@d.position",
-                getFillColor=[230, 50, 50, 230], radiusMinPixels=6, radiusMaxPixels=12, pickable=True,
-            ))
-            legend_entries.append({"layer_id": "ends", "label": "End",
-                                    "color": [230, 50, 50], "shape": "circle"})
+            layers.append(
+                scatterplot_layer(
+                    "ends",
+                    ends,
+                    getPosition="@@d.position",
+                    getFillColor=[230, 50, 50, 230],
+                    radiusMinPixels=6,
+                    radiusMaxPixels=12,
+                    pickable=True,
+                )
+            )
+            legend_entries.append(
+                {"layer_id": "ends", "label": "End", "color": [230, 50, 50], "shape": "circle"}
+            )
 
         # Center on first loaded track, or default to Adriatic
         if filtered and filtered[0].path:
@@ -426,8 +470,11 @@ def ibm_server(
                 context_menu_widget(),
             ],
         )
-        controls = ([legend_control(legend_entries, position="bottom-right", title="Layers")]
-                    if legend_entries else [])
+        controls = (
+            [legend_control(legend_entries, position="bottom-right", title="Layers")]
+            if legend_entries
+            else []
+        )
         await _map.set_controls(session, controls)
         await _map.set_style(session, BASEMAPS.get(basemap_key, BASEMAPS["positron"]))
 

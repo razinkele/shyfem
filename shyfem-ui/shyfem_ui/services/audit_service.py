@@ -111,12 +111,7 @@ class AuditService:
         """Return all distinct action values in the log."""
         session = self._session_factory()
         try:
-            rows = (
-                session.query(AuditLog.action)
-                .distinct()
-                .order_by(AuditLog.action)
-                .all()
-            )
+            rows = session.query(AuditLog.action).distinct().order_by(AuditLog.action).all()
             return [r[0] for r in rows]
         finally:
             session.close()

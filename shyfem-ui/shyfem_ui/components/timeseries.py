@@ -448,7 +448,7 @@ def _load_obs_file(path: Path) -> dict:
     return {
         "columns": result["columns"],
         "data": result["data"],
-        }
+    }
 
 
 def compute_statistics(values) -> dict:

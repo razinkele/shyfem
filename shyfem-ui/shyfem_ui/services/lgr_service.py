@@ -27,8 +27,8 @@ class ParticleTrack:
     """Mean trajectory for one particle type group from lgrelab -lgmean."""
 
     type_id: int
-    path: list[list[float]] = field(default_factory=list)   # [[lon, lat], ...]
-    times: list[str] = field(default_factory=list)           # "YYYY-MM-DD HH:MM:SS"
+    path: list[list[float]] = field(default_factory=list)  # [[lon, lat], ...]
+    times: list[str] = field(default_factory=list)  # "YYYY-MM-DD HH:MM:SS"
     depths: list[float] = field(default_factory=list)
     ages: list[float] = field(default_factory=list)
 
@@ -69,15 +69,11 @@ class LgrService:
                     "lgrelab executable not found — ensure SHYFEM bin directory is configured"
                 ) from e
             if not result.success:
-                raise RuntimeError(
-                    f"lgrelab failed (code {result.return_code}): {result.stderr}"
-                )
+                raise RuntimeError(f"lgrelab failed (code {result.return_code}): {result.stderr}")
 
             traj_files = sorted(tmp_path.glob("lagrange_mean_traj.*"))
             if not traj_files:
-                logger.warning(
-                    "lgrelab produced no lagrange_mean_traj.* files for %s", lgr_path
-                )
+                logger.warning("lgrelab produced no lagrange_mean_traj.* files for %s", lgr_path)
                 return []
 
             tracks = []
@@ -154,7 +150,8 @@ def filter_by_time(
     filtered = []
     for track in tracks:
         indices = [
-            i for i, t in enumerate(track.times)
+            i
+            for i, t in enumerate(track.times)
             if (tmin is None or t >= tmin) and (tmax is None or t <= tmax)
         ]
         if indices:

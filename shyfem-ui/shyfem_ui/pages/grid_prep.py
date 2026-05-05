@@ -161,8 +161,9 @@ def grid_prep_server(
         project_id=project_id_val,
         file_types=["grid"],
         on_selected=(
-            lambda rel: fill_picker_input("grd_path",
-                active_project.get() if active_project else None, rel)
+            lambda rel: fill_picker_input(
+                "grd_path", active_project.get() if active_project else None, rel
+            )
         ),
     )
 
@@ -220,9 +221,7 @@ def grid_prep_server(
     def _load_sample_data():
         grd_path = config.testcases_dir / "mar_menor" / "GRID" / "MM_coarse.grd"
         if not grd_path.exists():
-            ui.notification_show(
-                f"Sample grid not found: {grd_path}", type="error"
-            , duration=6)
+            ui.notification_show(f"Sample grid not found: {grd_path}", type="error", duration=6)
             return
         ui.update_text("grd_path", value=str(grd_path))
         try:
@@ -321,7 +320,9 @@ def grid_prep_server(
                 logger.exception("Failed to copy GRD file to output directory %s", output_path)
                 log_content.set(f"Error copying grid file: {e}")
                 ui.notification_show(
-                    f"Cannot copy grid to output directory: {e}", type="error", duration=5,
+                    f"Cannot copy grid to output directory: {e}",
+                    type="error",
+                    duration=5,
                 )
                 return
 
@@ -709,40 +710,42 @@ def grid_prep_server(
             hist_text = "\n".join(hist_lines)
 
             status_class = (
-                "text-success" if qs["below_03"] == 0
-                else "text-warning" if qs["below_03"] < qs["count"] * 0.05
-                else "text-danger"
+                "text-success"
+                if qs["below_03"] == 0
+                else "text-warning" if qs["below_03"] < qs["count"] * 0.05 else "text-danger"
             )
-            sections.append(ui.div(
-                ui.h5("Quality Summary (min/max side ratio)"),
-                ui.tags.table(
-                    ui.tags.tbody(
-                        ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{qs['count']:,}")),
-                        ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{qs['min']:.4f}")),
-                        ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{qs['max']:.4f}")),
-                        ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{qs['mean']:.4f}")),
-                        ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{qs['median']:.4f}")),
-                        ui.tags.tr(ui.tags.th("Std Dev"), ui.tags.td(f"{qs['std']:.4f}")),
-                        ui.tags.tr(
-                            ui.tags.th("Below 0.3"),
-                            ui.tags.td(
-                                ui.span(str(qs["below_03"]), class_=status_class),
-                                f" ({100 * qs['below_03'] / qs['count']:.1f}%)",
+            sections.append(
+                ui.div(
+                    ui.h5("Quality Summary (min/max side ratio)"),
+                    ui.tags.table(
+                        ui.tags.tbody(
+                            ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{qs['count']:,}")),
+                            ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{qs['min']:.4f}")),
+                            ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{qs['max']:.4f}")),
+                            ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{qs['mean']:.4f}")),
+                            ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{qs['median']:.4f}")),
+                            ui.tags.tr(ui.tags.th("Std Dev"), ui.tags.td(f"{qs['std']:.4f}")),
+                            ui.tags.tr(
+                                ui.tags.th("Below 0.3"),
+                                ui.tags.td(
+                                    ui.span(str(qs["below_03"]), class_=status_class),
+                                    f" ({100 * qs['below_03'] / qs['count']:.1f}%)",
+                                ),
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Below 0.5"),
+                                ui.tags.td(
+                                    f"{qs['below_05']} ({100 * qs['below_05'] / qs['count']:.1f}%)"
+                                ),
                             ),
                         ),
-                        ui.tags.tr(
-                            ui.tags.th("Below 0.5"),
-                            ui.tags.td(
-                                f"{qs['below_05']} ({100 * qs['below_05'] / qs['count']:.1f}%)"
-                            ),
-                        ),
+                        class_="table table-sm",
                     ),
-                    class_="table table-sm",
-                ),
-                ui.h6("Distribution"),
-                ui.tags.pre(hist_text, style="font-size: 0.8rem;"),
-                class_="mb-4",
-            ))
+                    ui.h6("Distribution"),
+                    ui.tags.pre(hist_text, style="font-size: 0.8rem;"),
+                    class_="mb-4",
+                )
+            )
         else:
             sections.append(ui.p("No triangles found for quality analysis.", class_="text-muted"))
 
@@ -753,25 +756,37 @@ def grid_prep_server(
             # Detect units
             cs = grd.coordinate_system or grd.detect_coordinate_system()
             area_unit = "deg\u00b2" if cs.is_geographic else "m\u00b2"
-            sections.append(ui.div(
-                ui.h5("Element Area Statistics"),
-                ui.tags.table(
-                    ui.tags.tbody(
-                        ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{a_s['count']:,}")),
-                        ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{a_s['min']:.6g} {area_unit}")),
-                        ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{a_s['max']:.6g} {area_unit}")),
-                        ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{a_s['mean']:.6g} {area_unit}")),
-                        ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{a_s['median']:.6g} {area_unit}")),
-                        ui.tags.tr(ui.tags.th("Std Dev"), ui.tags.td(f"{a_s['std']:.6g} {area_unit}")),
-                        ui.tags.tr(
-                            ui.tags.th("Area Ratio (max/min)"),
-                            ui.tags.td(f"{a_s['area_ratio']:.1f}x"),
+            sections.append(
+                ui.div(
+                    ui.h5("Element Area Statistics"),
+                    ui.tags.table(
+                        ui.tags.tbody(
+                            ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{a_s['count']:,}")),
+                            ui.tags.tr(
+                                ui.tags.th("Min"), ui.tags.td(f"{a_s['min']:.6g} {area_unit}")
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Max"), ui.tags.td(f"{a_s['max']:.6g} {area_unit}")
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Mean"), ui.tags.td(f"{a_s['mean']:.6g} {area_unit}")
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Median"), ui.tags.td(f"{a_s['median']:.6g} {area_unit}")
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Std Dev"), ui.tags.td(f"{a_s['std']:.6g} {area_unit}")
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Area Ratio (max/min)"),
+                                ui.tags.td(f"{a_s['area_ratio']:.1f}x"),
+                            ),
                         ),
+                        class_="table table-sm",
                     ),
-                    class_="table table-sm",
-                ),
-                class_="mb-4",
-            ))
+                    class_="mb-4",
+                )
+            )
         else:
             sections.append(ui.p("No triangles found for area analysis.", class_="text-muted"))
 
@@ -788,34 +803,38 @@ def grid_prep_server(
             else:
                 badge_cls = "bg-danger"
                 badge_text = "Poor"
-            sections.append(ui.div(
-                ui.h5(
-                    "Minimum Angle Analysis ",
-                    ui.span(badge_text, class_=f"badge {badge_cls}"),
-                ),
-                ui.tags.table(
-                    ui.tags.tbody(
-                        ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{ms['count']:,}")),
-                        ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{ms['min']:.2f}\u00b0")),
-                        ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{ms['max']:.2f}\u00b0")),
-                        ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{ms['mean']:.2f}\u00b0")),
-                        ui.tags.tr(ui.tags.th("Median"), ui.tags.td(f"{ms['median']:.2f}\u00b0")),
-                        ui.tags.tr(
-                            ui.tags.th("Below 20\u00b0"),
-                            ui.tags.td(
-                                f"{ms['below_20']} ({100 * ms['below_20'] / ms['count']:.1f}%)"
+            sections.append(
+                ui.div(
+                    ui.h5(
+                        "Minimum Angle Analysis ",
+                        ui.span(badge_text, class_=f"badge {badge_cls}"),
+                    ),
+                    ui.tags.table(
+                        ui.tags.tbody(
+                            ui.tags.tr(ui.tags.th("Count"), ui.tags.td(f"{ms['count']:,}")),
+                            ui.tags.tr(ui.tags.th("Min"), ui.tags.td(f"{ms['min']:.2f}\u00b0")),
+                            ui.tags.tr(ui.tags.th("Max"), ui.tags.td(f"{ms['max']:.2f}\u00b0")),
+                            ui.tags.tr(ui.tags.th("Mean"), ui.tags.td(f"{ms['mean']:.2f}\u00b0")),
+                            ui.tags.tr(
+                                ui.tags.th("Median"), ui.tags.td(f"{ms['median']:.2f}\u00b0")
+                            ),
+                            ui.tags.tr(
+                                ui.tags.th("Below 20\u00b0"),
+                                ui.tags.td(
+                                    f"{ms['below_20']} ({100 * ms['below_20'] / ms['count']:.1f}%)"
+                                ),
                             ),
                         ),
+                        class_="table table-sm",
                     ),
-                    class_="table table-sm",
-                ),
-                ui.p(
-                    "FEM stability requires minimum angles above 20\u00b0; "
-                    "angles above 30\u00b0 are preferred.",
-                    class_="text-muted small",
-                ),
-                class_="mb-4",
-            ))
+                    ui.p(
+                        "FEM stability requires minimum angles above 20\u00b0; "
+                        "angles above 30\u00b0 are preferred.",
+                        class_="text-muted small",
+                    ),
+                    class_="mb-4",
+                )
+            )
         else:
             sections.append(ui.p("No triangles found for angle analysis.", class_="text-muted"))
 
@@ -831,26 +850,30 @@ def grid_prep_server(
                 )
                 for b in bdata
             ]
-            sections.append(ui.div(
-                ui.h5("Boundary Assignments"),
-                ui.tags.table(
-                    ui.tags.thead(
-                        ui.tags.tr(
-                            ui.tags.th("Line ID"),
-                            ui.tags.th("Type"),
-                            ui.tags.th("Node Count"),
-                            ui.tags.th("Node Range"),
+            sections.append(
+                ui.div(
+                    ui.h5("Boundary Assignments"),
+                    ui.tags.table(
+                        ui.tags.thead(
+                            ui.tags.tr(
+                                ui.tags.th("Line ID"),
+                                ui.tags.th("Type"),
+                                ui.tags.th("Node Count"),
+                                ui.tags.th("Node Range"),
+                            ),
                         ),
+                        ui.tags.tbody(*rows),
+                        class_="table table-sm table-striped",
                     ),
-                    ui.tags.tbody(*rows),
-                    class_="table table-sm table-striped",
-                ),
-            ))
+                )
+            )
         else:
-            sections.append(ui.div(
-                ui.h5("Boundary Assignments"),
-                ui.p("No boundary lines defined in this grid.", class_="text-muted"),
-            ))
+            sections.append(
+                ui.div(
+                    ui.h5("Boundary Assignments"),
+                    ui.p("No boundary lines defined in this grid.", class_="text-muted"),
+                )
+            )
 
         return ui.div(*sections)
 

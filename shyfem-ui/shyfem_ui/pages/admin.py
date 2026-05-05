@@ -58,9 +58,11 @@ def _validate_create_user_form(
     if not username or not username.strip():
         errors.append("Username is required")
     if username and username.strip():
-        if not re.match(r'^[a-zA-Z0-9._-]{1,64}$', username.strip()):
-            errors.append("Username may only contain letters, digits, dots, hyphens, and underscores (1-64 characters)")
-        elif '..' in username:
+        if not re.match(r"^[a-zA-Z0-9._-]{1,64}$", username.strip()):
+            errors.append(
+                "Username may only contain letters, digits, dots, hyphens, and underscores (1-64 characters)"
+            )
+        elif ".." in username:
             errors.append("Username must not contain consecutive dots")
     if not password:
         errors.append("Password is required")
@@ -144,15 +146,19 @@ def admin_ui() -> ui.Tag:
                             ui.div(
                                 ui.h6("Filters"),
                                 ui.input_select(
-                                    "log_user_filter", "User",
+                                    "log_user_filter",
+                                    "User",
                                     choices={"": "All users"},
                                 ),
                                 ui.input_select(
-                                    "log_action_filter", "Action",
+                                    "log_action_filter",
+                                    "Action",
                                     choices={"": "All actions"},
                                 ),
                                 ui.input_action_button(
-                                    "log_refresh_btn", "Refresh", class_="btn-outline-secondary w-100 mt-2"
+                                    "log_refresh_btn",
+                                    "Refresh",
+                                    class_="btn-outline-secondary w-100 mt-2",
                                 ),
                                 ui.hr(),
                                 ui.output_ui("log_summary"),
@@ -164,9 +170,17 @@ def admin_ui() -> ui.Tag:
                             ui.div(
                                 ui.output_ui("log_table"),
                                 ui.div(
-                                    ui.input_action_button("log_prev_btn", "Previous", class_="btn-sm btn-outline-secondary me-2"),
+                                    ui.input_action_button(
+                                        "log_prev_btn",
+                                        "Previous",
+                                        class_="btn-sm btn-outline-secondary me-2",
+                                    ),
                                     ui.output_ui("log_page_info"),
-                                    ui.input_action_button("log_next_btn", "Next", class_="btn-sm btn-outline-secondary ms-2"),
+                                    ui.input_action_button(
+                                        "log_next_btn",
+                                        "Next",
+                                        class_="btn-sm btn-outline-secondary ms-2",
+                                    ),
                                     class_="d-flex align-items-center justify-content-center mt-3",
                                 ),
                                 class_="card p-3",
@@ -187,7 +201,15 @@ def admin_ui() -> ui.Tag:
 
 
 @module.server
-def admin_server(input, output, session, config: Config, auth_service: AuthService, user_role=None, audit_service=None) -> None:
+def admin_server(
+    input,
+    output,
+    session,
+    config: Config,
+    auth_service: AuthService,
+    user_role=None,
+    audit_service=None,
+) -> None:
     """Admin panel server logic."""
     from shyfem_ui.middleware.session_auth import get_current_user
 
@@ -328,9 +350,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
     # Dynamic action handlers for user table buttons
     # ------------------------------------------------------------------
 
-    def _register_user_actions(
-        user_id: int, username: str, email: str | None = None
-    ):
+    def _register_user_actions(user_id: int, username: str, email: str | None = None):
         """Register action handlers for a specific user row.
 
         Safe to call multiple times — subsequent calls for an already-registered
@@ -367,7 +387,9 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         def _do_reset_pw():
             new_pw = input.reset_pw_value() or ""
             if len(new_pw) < 8:
-                ui.notification_show("Password must be at least 8 characters", type="error", duration=6)
+                ui.notification_show(
+                    "Password must be at least 8 characters", type="error", duration=6
+                )
                 return
             try:
                 auth_service.reset_password(user_id, new_pw)

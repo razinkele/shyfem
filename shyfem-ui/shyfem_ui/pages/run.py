@@ -319,8 +319,9 @@ def run_server(
         "fp_input",
         project_id=project_id_val,
         file_types=["str"],
-        on_selected=lambda rel: fill_picker_input("input_file",
-            active_project.get() if active_project else None, rel),
+        on_selected=lambda rel: fill_picker_input(
+            "input_file", active_project.get() if active_project else None, rel
+        ),
     )
 
     # Auto-fill from tutorial navigation
@@ -346,9 +347,7 @@ def run_server(
         str_path = config.testcases_dir / "mar_menor" / "mm_hyd_03.str"
         work_dir = config.testcases_dir / "mar_menor"
         if not str_path.exists():
-            ui.notification_show(
-                f"Sample STR not found: {str_path}", type="error"
-            , duration=6)
+            ui.notification_show(f"Sample STR not found: {str_path}", type="error", duration=6)
             return
         ui.update_text("input_file", value=str(str_path))
         ui.update_text("working_dir", value=str(work_dir))
@@ -592,8 +591,10 @@ def run_server(
                     and check_project_access(_proj["id"], _usr, min_role="editor") is None
                 ):
                     ui.notification_show(
-                        "Permission denied: editor role required to submit jobs", type="error"
-                    , duration=6)
+                        "Permission denied: editor role required to submit jobs",
+                        type="error",
+                        duration=6,
+                    )
                     return
 
         name = input.job_name() or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

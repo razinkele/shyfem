@@ -28,18 +28,30 @@ PHYSICS_PANELS = {
         "label": "Simulation Timing",
         "icon": "bi-clock",
         "params": {
-            "itanf": "para", "itend": "para", "idt": "para",
-            "date": "para", "time": "para", "tz": "para",
+            "itanf": "para",
+            "itend": "para",
+            "idt": "para",
+            "date": "para",
+            "time": "para",
+            "tz": "para",
         },
     },
     "hydrodynamics": {
         "label": "Hydrodynamics",
         "icon": "bi-water",
         "params": {
-            "ilin": "para", "itlin": "para", "iclin": "para",
-            "itsplt": "para", "coumax": "para", "idtsyn": "para",
-            "icor": "para", "dlat": "para", "isphe": "para",
-            "hzmin": "para", "hzoff": "para", "hzon": "para",
+            "ilin": "para",
+            "itlin": "para",
+            "iclin": "para",
+            "itsplt": "para",
+            "coumax": "para",
+            "idtsyn": "para",
+            "icor": "para",
+            "dlat": "para",
+            "isphe": "para",
+            "hzmin": "para",
+            "hzoff": "para",
+            "hzon": "para",
             "rtide": "para",
         },
     },
@@ -47,18 +59,30 @@ PHYSICS_PANELS = {
         "label": "Advanced Hydrodynamics",
         "icon": "bi-sliders2",
         "params": {
-            "azpar": "para", "ampar": "para", "afpar": "para",
-            "atpar": "para", "adpar": "para", "aapar": "para",
-            "href": "para", "hmin": "para", "hmax": "para", "rlin": "para",
-            "rowass": "para", "roluft": "para",
+            "azpar": "para",
+            "ampar": "para",
+            "afpar": "para",
+            "atpar": "para",
+            "adpar": "para",
+            "aapar": "para",
+            "href": "para",
+            "hmin": "para",
+            "hmax": "para",
+            "rlin": "para",
+            "rowass": "para",
+            "roluft": "para",
         },
     },
     "vertical": {
         "label": "Vertical Structure",
         "icon": "bi-layers",
         "params": {
-            "dzreg": "para", "ilytyp": "para", "hlvmin": "para",
-            "nzadapt": "para", "nsigma": "para", "hsigma": "para",
+            "dzreg": "para",
+            "ilytyp": "para",
+            "hlvmin": "para",
+            "nzadapt": "para",
+            "nsigma": "para",
+            "hsigma": "para",
         },
     },
     "friction": {
@@ -70,36 +94,54 @@ PHYSICS_PANELS = {
         "label": "Turbulence & Mixing",
         "icon": "bi-tornado",
         "params": {
-            "iturb": "para", "difmol": "para", "vismol": "para",
-            "diftur": "para", "vistur": "para",
-            "idhtyp": "para", "ahpar": "para", "dhpar": "para",
-            "itvd": "para", "itvdv": "para", "noslip": "para",
+            "iturb": "para",
+            "difmol": "para",
+            "vismol": "para",
+            "diftur": "para",
+            "vistur": "para",
+            "idhtyp": "para",
+            "ahpar": "para",
+            "dhpar": "para",
+            "itvd": "para",
+            "itvdv": "para",
+            "noslip": "para",
         },
     },
     "heat": {
         "label": "Heat Flux",
         "icon": "bi-thermometer-sun",
         "params": {
-            "iheat": "para", "ihtype": "para", "hdecay": "para",
-            "albedo": "para", "ievap": "para", "irain": "para",
+            "iheat": "para",
+            "ihtype": "para",
+            "hdecay": "para",
+            "albedo": "para",
+            "ievap": "para",
+            "irain": "para",
         },
     },
     "wind": {
         "label": "Wind & Forcing",
         "icon": "bi-wind",
         "params": {
-            "iwtype": "para", "dragco": "para",
-            "wsmax": "para", "rfact": "para",
+            "iwtype": "para",
+            "dragco": "para",
+            "wsmax": "para",
+            "rfact": "para",
         },
     },
     "temperature_salinity": {
         "label": "Temperature & Salinity",
         "icon": "bi-droplet-half",
         "params": {
-            "ibarcl": "para", "itemp": "para", "isalt": "para",
-            "temref": "para", "salref": "para",
-            "thpar": "para", "shpar": "para",
-            "idtcon": "para", "icon_av": "para",
+            "ibarcl": "para",
+            "itemp": "para",
+            "isalt": "para",
+            "temref": "para",
+            "salref": "para",
+            "thpar": "para",
+            "shpar": "para",
+            "idtcon": "para",
+            "icon_av": "para",
         },
     },
     "ecology": {
@@ -112,8 +154,12 @@ PHYSICS_PANELS = {
         "label": "Tracers / Concentration",
         "icon": "bi-droplet",
         "params": {
-            "iconz": "para", "iage": "para", "idecay": "para",
-            "conref": "para", "chpar": "para", "wsettl": "para",
+            "iconz": "para",
+            "iage": "para",
+            "idecay": "para",
+            "conref": "para",
+            "chpar": "para",
+            "wsettl": "para",
         },
     },
     "sediment": {
@@ -128,8 +174,10 @@ PHYSICS_PANELS = {
         "section": "lagrg",
         "params": {
             "ilagr": "para",
-            "icnn": "connec", "radcnn": "connec",
-            "ppscnn": "connec", "pldcnn": "connec",
+            "icnn": "connec",
+            "radcnn": "connec",
+            "ppscnn": "connec",
+            "pldcnn": "connec",
             "idtcnn": "connec",
         },
     },
@@ -177,12 +225,24 @@ PHYSICS_PANELS = {
         "label": "Output & Restart",
         "icon": "bi-save",
         "params": {
-            "idtout": "para", "idtext": "para", "idtcon": "para",
-            "idtflx": "para", "idtres": "para", "idtrst": "para", "idtrms": "para",
-            "idtvol": "para", "idtmet": "para", "idtstb": "para",
-            "netcdf": "para", "iout_av": "para", "icon_av": "para",
-            "itrst": "para", "itmrst": "para", "ityrst": "para",
-            "idtoff": "para", "itmoff": "para",
+            "idtout": "para",
+            "idtext": "para",
+            "idtcon": "para",
+            "idtflx": "para",
+            "idtres": "para",
+            "idtrst": "para",
+            "idtrms": "para",
+            "idtvol": "para",
+            "idtmet": "para",
+            "idtstb": "para",
+            "netcdf": "para",
+            "iout_av": "para",
+            "icon_av": "para",
+            "itrst": "para",
+            "itmrst": "para",
+            "ityrst": "para",
+            "idtoff": "para",
+            "itmoff": "para",
         },
     },
 }
@@ -223,8 +283,7 @@ def physics_ui() -> ui.Tag:
     return ui.div(
         ui.h3("Physics Configuration"),
         ui.p(
-            "Configure simulation physics modules. "
-            "Load a .str file, adjust settings, and save.",
+            "Configure simulation physics modules. " "Load a .str file, adjust settings, and save.",
             class_="text-muted",
         ),
         ui.layout_sidebar(
@@ -232,20 +291,24 @@ def physics_ui() -> ui.Tag:
                 ui.h5("Parameter File"),
                 file_picker_ui("fp_str", label="Pick STR file from project"),
                 ui.input_text(
-                    "str_path", "File Path (.str)",
+                    "str_path",
+                    "File Path (.str)",
                     placeholder="/path/to/simulation.str",
                 ),
                 ui.div(
                     ui.input_action_button(
-                        "load_btn", "Load",
+                        "load_btn",
+                        "Load",
                         class_="btn-outline-primary btn-sm me-2",
                     ),
                     ui.input_action_button(
-                        "save_btn", "Save",
+                        "save_btn",
+                        "Save",
                         class_="btn-outline-success btn-sm me-2",
                     ),
                     ui.input_action_button(
-                        "preview_btn", "Preview STR",
+                        "preview_btn",
+                        "Preview STR",
                         class_="btn-outline-secondary btn-sm",
                     ),
                     class_="mt-2",
@@ -293,8 +356,9 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         "fp_str",
         project_id=project_id_val,
         file_types=["str"],
-        on_selected=lambda rel: fill_picker_input("str_path",
-            active_project.get() if active_project else None, rel),
+        on_selected=lambda rel: fill_picker_input(
+            "str_path", active_project.get() if active_project else None, rel
+        ),
     )
 
     str_data: reactive.Value[StrFile] = reactive.value(StrFile())
@@ -345,7 +409,10 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             _read_input_and_set(sf, input_id, section, param)
 
     def _read_input_and_set(
-        sf: StrFile, input_id: str, section: str, param: str,
+        sf: StrFile,
+        input_id: str,
+        section: str,
+        param: str,
     ) -> None:
         """Try reading a single input value and write it into *sf*."""
         try:
@@ -421,8 +488,12 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             ("Turbulence", (sf.get_param("para", "iturb", 0) or 0) > 0, None),
             ("Heat", (sf.get_param("para", "iheat", 0) or 0) > 0, None),
             ("Ecology", (sf.get_param("para", "ibio", 0) or 0) > 0, None),
-            ("Sediment", (sf.get_param("para", "issedi", 0) or 0) > 0
-                or sf.get_param("sedtr", "isedi", 0) == 1, None),
+            (
+                "Sediment",
+                (sf.get_param("para", "issedi", 0) or 0) > 0
+                or sf.get_param("sedtr", "isedi", 0) == 1,
+                None,
+            ),
             ("Lagrangian", "lagrg" in sf.sections, None),
             ("Ice", sf.get_param("para", "icemod", 0) == 1, None),
             ("Waves", (sf.get_param("para", "iwave", 0) or 0) > 0, None),
@@ -435,9 +506,7 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         for label, active, detail in checks:
             if active:
                 text = f"{label}: {detail}" if detail else label
-                badges.append(
-                    ui.span(text, class_="badge bg-primary me-1 mb-1")
-                )
+                badges.append(ui.span(text, class_="badge bg-primary me-1 mb-1"))
         if not badges:
             return ui.p("No modules active", class_="text-muted small")
         return ui.div(*badges)
@@ -455,26 +524,34 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         if errors:
             parts.append(ui.span(f"{len(errors)} error(s)", class_="badge bg-danger me-1 mb-1"))
             for m in errors:
-                parts.append(ui.div(
-                    ui.tags.i(class_="bi bi-x-circle text-danger me-1"),
-                    ui.span(m.message, class_="small"),
-                    class_="ms-1",
-                ))
+                parts.append(
+                    ui.div(
+                        ui.tags.i(class_="bi bi-x-circle text-danger me-1"),
+                        ui.span(m.message, class_="small"),
+                        class_="ms-1",
+                    )
+                )
         if warnings:
-            parts.append(ui.span(f"{len(warnings)} warning(s)", class_="badge bg-warning me-1 mb-1"))
+            parts.append(
+                ui.span(f"{len(warnings)} warning(s)", class_="badge bg-warning me-1 mb-1")
+            )
             for m in warnings:
-                parts.append(ui.div(
-                    ui.tags.i(class_="bi bi-exclamation-triangle text-warning me-1"),
-                    ui.span(m.message, class_="small"),
-                    class_="ms-1",
-                ))
+                parts.append(
+                    ui.div(
+                        ui.tags.i(class_="bi bi-exclamation-triangle text-warning me-1"),
+                        ui.span(m.message, class_="small"),
+                        class_="ms-1",
+                    )
+                )
         if infos:
             for m in infos:
-                parts.append(ui.div(
-                    ui.tags.i(class_="bi bi-info-circle text-info me-1"),
-                    ui.span(m.message, class_="small text-muted"),
-                    class_="ms-1",
-                ))
+                parts.append(
+                    ui.div(
+                        ui.tags.i(class_="bi bi-info-circle text-info me-1"),
+                        ui.span(m.message, class_="small text-muted"),
+                        class_="ms-1",
+                    )
+                )
         return ui.div(*parts)
 
     @render.ui
@@ -505,35 +582,53 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "timing")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_text("itanf", "Start time",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "itanf",
+                        "Start time",
                         value=str(params.get("itanf", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("itend", "End time",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "itend",
+                        "End time",
                         value=str(params.get("itend", "") or ""),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idt", "Time step (s)",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idt",
+                        "Time step (s)",
                         value=str(params.get("idt", "") or ""),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("date", "Reference date (YYYYMMDD)",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "date",
+                        "Reference date (YYYYMMDD)",
                         value=str(params.get("date", "") or ""),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("time", "Reference time (HHMMSS)",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "time",
+                        "Reference time (HHMMSS)",
                         value=str(params.get("time", "") or ""),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("tz", "Time zone offset (h)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "tz",
+                        "Time zone offset (h)",
                         value=int(params.get("tz", 0) or 0),
                     ),
                 ),
@@ -545,28 +640,40 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "hydrodynamics")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("ilin", "Advective terms",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ilin",
+                        "Advective terms",
                         choices={"0": "0 - Linear", "1": "1 - Nonlinear"},
                         selected=str(params.get("ilin", 1) or 1),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("itlin", "Advection scheme",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "itlin",
+                        "Advection scheme",
                         choices={"0": "0 - Finite Element", "1": "1 - Semi-Lagrangian"},
                         selected=str(params.get("itlin", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("iclin", "Linearize continuity",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iclin",
+                        "Linearize continuity",
                         choices={"0": "0 - Nonlinear", "1": "1 - Linear"},
                         selected=str(params.get("iclin", 0) or 0),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_select("itsplt", "Time step mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "itsplt",
+                        "Time step mode",
                         choices={
                             "0": "0 - Constant",
                             "1": "1 - Splitting mode 1",
@@ -576,22 +683,32 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("itsplt", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("coumax", "Max Courant number",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "coumax",
+                        "Max Courant number",
                         value=float(params.get("coumax", 1.0) or 1.0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("idtsyn", "Sync interval (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "idtsyn",
+                        "Sync interval (s)",
                         value=int(params.get("idtsyn", 0) or 0),
                         min=0,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_select("icor", "Coriolis force",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "icor",
+                        "Coriolis force",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - Beta-plane",
@@ -600,46 +717,69 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("icor", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("dlat", "Latitude (deg N)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "dlat",
+                        "Latitude (deg N)",
                         value=float(params.get("dlat", 100.0) or 100.0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("isphe", "Coordinate system",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "isphe",
+                        "Coordinate system",
                         choices={
                             "-1": "-1 - Auto-detect",
                             "0": "0 - Cartesian",
                             "1": "1 - Spherical",
                         },
-                        selected=str(params.get("isphe", -1) if params.get("isphe") is not None else -1),
+                        selected=str(
+                            params.get("isphe", -1) if params.get("isphe") is not None else -1
+                        ),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("hzmin", "Min water depth (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hzmin",
+                        "Min water depth (m)",
                         value=float(params.get("hzmin", 0.01) or 0.01),
-                        min=0, step=0.01,
+                        min=0,
+                        step=0.01,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hzoff", "Drying threshold (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hzoff",
+                        "Drying threshold (m)",
                         value=float(params.get("hzoff", 0.05) or 0.05),
-                        min=0, step=0.01,
+                        min=0,
+                        step=0.01,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hzon", "Rewetting threshold (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hzon",
+                        "Rewetting threshold (m)",
                         value=float(params.get("hzon", 0.10) or 0.10),
-                        min=0, step=0.01,
+                        min=0,
+                        step=0.01,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("rtide", "Tidal forcing",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "rtide",
+                        "Tidal forcing",
                         value=float(params.get("rtide", 0) or 0),
                         step=0.1,
                     ),
@@ -652,14 +792,21 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "vertical")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("dzreg", "Regular layer spacing (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "dzreg",
+                        "Regular layer spacing (m)",
                         value=float(params.get("dzreg", 0) or 0),
-                        min=0, step=0.5,
+                        min=0,
+                        step=0.5,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("ilytyp", "Bottom layer treatment",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ilytyp",
+                        "Bottom layer treatment",
                         choices={
                             "0": "0 - None",
                             "1": "1 - Delete",
@@ -669,30 +816,45 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ilytyp", 3) or 3),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hlvmin", "Min bottom layer fraction",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hlvmin",
+                        "Min bottom layer fraction",
                         value=float(params.get("hlvmin", 0.25) or 0.25),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_select("nzadapt", "Moving surface layers (z-star)",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "nzadapt",
+                        "Moving surface layers (z-star)",
                         choices={"0": "0 - Z-layers only", "1": "1 - Enabled"},
                         selected=str(params.get("nzadapt", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("nsigma", "Number of sigma layers",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "nsigma",
+                        "Number of sigma layers",
                         value=int(params.get("nsigma", 0) or 0),
                         min=0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hsigma", "Sigma-zeta transition depth (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hsigma",
+                        "Sigma-zeta transition depth (m)",
                         value=float(params.get("hsigma", 10000.0) or 10000.0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
             ),
@@ -703,8 +865,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "friction")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("ireib", "Bottom friction type",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ireib",
+                        "Bottom friction type",
                         choices={
                             "0": "0 - None",
                             "1": "1 - Chezy law",
@@ -721,14 +886,21 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ireib", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("czdef", "Friction coefficient",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "czdef",
+                        "Friction coefficient",
                         value=float(params.get("czdef", 0) or 0),
-                        min=0, step=0.001,
+                        min=0,
+                        step=0.001,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("iczv", "Variable friction flag",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "iczv",
+                        "Variable friction flag",
                         value=int(params.get("iczv", 1) or 1),
                     ),
                 ),
@@ -740,8 +912,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "turbulence")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("iturb", "Turbulence closure",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iturb",
+                        "Turbulence closure",
                         choices={
                             "0": "0 - None",
                             "1": "1 - GOTM",
@@ -751,34 +926,53 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("iturb", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("difmol", "Molecular diffusivity (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "difmol",
+                        "Molecular diffusivity (m2/s)",
                         value=float(params.get("difmol", 1.0e-6) or 1.0e-6),
-                        min=0, step=1e-7,
+                        min=0,
+                        step=1e-7,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("vismol", "Molecular viscosity (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "vismol",
+                        "Molecular viscosity (m2/s)",
                         value=float(params.get("vismol", 1.0e-6) or 1.0e-6),
-                        min=0, step=1e-7,
+                        min=0,
+                        step=1e-7,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("diftur", "Turbulent diffusivity (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "diftur",
+                        "Turbulent diffusivity (m2/s)",
                         value=float(params.get("diftur", 0) or 0),
-                        min=0, step=0.001,
+                        min=0,
+                        step=0.001,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("vistur", "Turbulent viscosity (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "vistur",
+                        "Turbulent viscosity (m2/s)",
                         value=float(params.get("vistur", 0) or 0),
-                        min=0, step=0.001,
+                        min=0,
+                        step=0.001,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("idhtyp", "Horizontal diffusion type",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "idhtyp",
+                        "Horizontal diffusion type",
                         choices={
                             "0": "0 - Constant",
                             "1": "1 - Area-weighted",
@@ -789,20 +983,31 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("ahpar", "Horizontal viscosity (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ahpar",
+                        "Horizontal viscosity (m2/s)",
                         value=float(params.get("ahpar", 0) or 0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("dhpar", "Horizontal diffusion (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "dhpar",
+                        "Horizontal diffusion (m2/s)",
                         value=float(params.get("dhpar", 0) or 0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("noslip", "Boundary condition",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "noslip",
+                        "Boundary condition",
                         choices={
                             "0": "0 - Free-slip",
                             "1": "1 - No-slip",
@@ -812,8 +1017,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_select("itvd", "Horizontal advection (scalars)",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "itvd",
+                        "Horizontal advection (scalars)",
                         choices={
                             "0": "0 - Upwind",
                             "1": "1 - TVD mode 1",
@@ -822,8 +1030,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("itvd", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("itvdv", "Vertical advection (scalars)",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "itvdv",
+                        "Vertical advection (scalars)",
                         choices={
                             "0": "0 - Upwind",
                             "1": "1 - TVD",
@@ -839,8 +1050,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "heat")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("iheat", "Heat flux algorithm",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iheat",
+                        "Heat flux algorithm",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - AREG",
@@ -855,8 +1069,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("iheat", 1) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("ihtype", "Water vapor input type",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ihtype",
+                        "Water vapor input type",
                         choices={
                             "1": "1 - Relative humidity (%)",
                             "2": "2 - Wet-bulb temperature",
@@ -866,28 +1083,43 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ihtype", 1) or 1),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hdecay", "Radiation penetration depth (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hdecay",
+                        "Radiation penetration depth (m)",
                         value=float(params.get("hdecay", 0) or 0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("albedo", "Surface albedo",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "albedo",
+                        "Surface albedo",
                         value=float(params.get("albedo", 0.06) or 0.06),
-                        min=0, max=1, step=0.01,
+                        min=0,
+                        max=1,
+                        step=0.01,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("ievap", "Evaporation mass flux",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ievap",
+                        "Evaporation mass flux",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("ievap", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("irain", "Precipitation mass flux",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "irain",
+                        "Precipitation mass flux",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("irain", 1) or 0),
                     ),
@@ -900,8 +1132,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "temperature_salinity")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("ibarcl", "Baroclinic mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ibarcl",
+                        "Baroclinic mode",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - Diagnostic",
@@ -913,48 +1148,74 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ibarcl", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("itemp", "Compute temperature",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "itemp",
+                        "Compute temperature",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("itemp", 1) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("isalt", "Compute salinity",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "isalt",
+                        "Compute salinity",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("isalt", 1) or 0),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("temref", "Reference temperature (C)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "temref",
+                        "Reference temperature (C)",
                         value=float(params.get("temref", 0) or 0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("salref", "Reference salinity (PSU)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "salref",
+                        "Reference salinity (PSU)",
                         value=float(params.get("salref", 0) or 0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("thpar", "Temp horiz. diffusion",
-                        value=float(params.get("thpar", -1) if params.get("thpar") is not None else -1),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "thpar",
+                        "Temp horiz. diffusion",
+                        value=float(
+                            params.get("thpar", -1) if params.get("thpar") is not None else -1
+                        ),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("shpar", "Salt horiz. diffusion",
-                        value=float(params.get("shpar", -1) if params.get("shpar") is not None else -1),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "shpar",
+                        "Salt horiz. diffusion",
+                        value=float(
+                            params.get("shpar", -1) if params.get("shpar") is not None else -1
+                        ),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("icon_av", "Scalar output averaging",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "icon_av",
+                        "Scalar output averaging",
                         choices={
                             "0": "0 - Instantaneous",
                             "1": "1 - Time-averaged",
@@ -965,8 +1226,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("idtcon", "Scalar output interval",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtcon",
+                        "Scalar output interval",
                         value=str(params.get("idtcon", "0") or "0"),
                     ),
                 ),
@@ -978,8 +1242,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "ecology")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("ibio", "Biological module",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ibio",
+                        "Biological module",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - WEUTRO",
@@ -988,8 +1255,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ibio", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("imerc", "Mercury contamination",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "imerc",
+                        "Mercury contamination",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("imerc", 0) or 0),
                     ),
@@ -998,31 +1268,48 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             ui.hr(),
             ui.h6("BFM Biogeochemical Model", class_="text-muted"),
             ui.row(
-                ui.column(4,
-                    ui.input_select("ibfm", "BFM model",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ibfm",
+                        "BFM model",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("ibfm", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("ibtanf", "BFM start time",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "ibtanf",
+                        "BFM start time",
                         value=str(params.get("ibtanf", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("ibtend", "BFM end time",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "ibtend",
+                        "BFM end time",
                         value=str(params.get("ibtend", "0") or "0"),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("itmbfm", "BFM output start time",
-                        value=str(params.get("itmbfm", "-1") if params.get("itmbfm") is not None else "-1"),
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "itmbfm",
+                        "BFM output start time",
+                        value=str(
+                            params.get("itmbfm", "-1") if params.get("itmbfm") is not None else "-1"
+                        ),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtbfm", "BFM output interval (s)",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtbfm",
+                        "BFM output interval (s)",
                         value=str(params.get("idtbfm", "0") or "0"),
                     ),
                 ),
@@ -1034,65 +1321,101 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "sediment")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("issedi", "Sediment module (para)",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "issedi",
+                        "Sediment module (para)",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("issedi", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("isedi", "Full sediment transport",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "isedi",
+                        "Full sediment transport",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("isedi", 0) or 0),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("sedgrs", "Grain sizes (mm, space-sep)",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "sedgrs",
+                        "Grain sizes (mm, space-sep)",
                         value=str(params.get("sedgrs", "") or ""),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("percin", "Grain size fractions",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "percin",
+                        "Grain size fractions",
                         value=str(params.get("percin", "") or ""),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("tauin", "Critical erosion stress (Pa)",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "tauin",
+                        "Critical erosion stress (Pa)",
                         value=str(params.get("tauin", "") or ""),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("sedref", "Ref sediment conc (kg/m3)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "sedref",
+                        "Ref sediment conc (kg/m3)",
                         value=float(params.get("sedref", 0) or 0),
-                        min=0, step=0.001,
+                        min=0,
+                        step=0.001,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("sedhpar", "Sediment horiz. diffusion (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "sedhpar",
+                        "Sediment horiz. diffusion (m2/s)",
                         value=float(params.get("sedhpar", 0) or 0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("adjtime", "Morphology equil. time (s)",
-                        value=float(params.get("adjtime", -1) if params.get("adjtime") is not None else -1),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "adjtime",
+                        "Morphology equil. time (s)",
+                        value=float(
+                            params.get("adjtime", -1) if params.get("adjtime") is not None else -1
+                        ),
                         step=1.0,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("idtsed", "Sediment output interval",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtsed",
+                        "Sediment output interval",
                         value=str(params.get("idtsed", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("itmsed", "Sediment output start time",
-                        value=str(params.get("itmsed", "-1") if params.get("itmsed") is not None else "-1"),
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "itmsed",
+                        "Sediment output start time",
+                        value=str(
+                            params.get("itmsed", "-1") if params.get("itmsed") is not None else "-1"
+                        ),
                     ),
                 ),
             ),
@@ -1103,8 +1426,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "lagrangian")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("ilagr", "Lagrangian mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ilagr",
+                        "Lagrangian mode",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - Surface",
@@ -1114,80 +1440,122 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ilagr", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("nbdy", "Particles per release",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "nbdy",
+                        "Particles per release",
                         value=int(params.get("nbdy", 0) or 0),
                         min=0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("nbdymax", "Max particles",
-                        value=int(params.get("nbdymax", -1) if params.get("nbdymax") is not None else -1),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "nbdymax",
+                        "Max particles",
+                        value=int(
+                            params.get("nbdymax", -1) if params.get("nbdymax") is not None else -1
+                        ),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("rwhpar", "Horiz. diffusion (m2/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "rwhpar",
+                        "Horiz. diffusion (m2/s)",
                         value=float(params.get("rwhpar", 0) or 0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("idtl", "Release interval (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "idtl",
+                        "Release interval (s)",
                         value=int(params.get("idtl", 0) or 0),
                         min=0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("ipvert", "Vertical distribution",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ipvert",
+                        "Vertical distribution",
                         value=int(params.get("ipvert", 0) or 0),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("lbeach", "Beaching probability",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "lbeach",
+                        "Beaching probability",
                         value=float(params.get("lbeach", 0) or 0),
-                        min=0, max=1, step=0.01,
+                        min=0,
+                        max=1,
+                        step=0.01,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("ldecay", "Decay time (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ldecay",
+                        "Decay time (s)",
                         value=float(params.get("ldecay", 0) or 0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("ioil", "Oil spill simulation",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ioil",
+                        "Oil spill simulation",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("ioil", 0) or 0),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_select("ilarv", "Larval behavior",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ilarv",
+                        "Larval behavior",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("ilarv", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("stkpar", "Stokes drift calibration",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "stkpar",
+                        "Stokes drift calibration",
                         value=float(params.get("stkpar", 0) or 0),
                         step=0.01,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("dripar", "Drifter inertia multiplier",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "dripar",
+                        "Drifter inertia multiplier",
                         value=float(params.get("dripar", 1.0) or 1.0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("idtlgr", "Lagrangian output interval (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "idtlgr",
+                        "Lagrangian output interval (s)",
                         value=int(params.get("idtlgr", 0) or 0),
                         min=0,
                     ),
@@ -1196,34 +1564,52 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             ui.hr(),
             ui.h6("Connectivity Analysis", class_="text-muted"),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("icnn", "Connectivity stations",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "icnn",
+                        "Connectivity stations",
                         value=int(params.get("icnn", 0) or 0),
                         min=0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("radcnn", "Release radius (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "radcnn",
+                        "Release radius (m)",
                         value=float(params.get("radcnn", 0) or 0),
-                        min=0, step=10.0,
+                        min=0,
+                        step=10.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("ppscnn", "Particles/s/station",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ppscnn",
+                        "Particles/s/station",
                         value=float(params.get("ppscnn", 0) or 0),
-                        min=0, step=0.1,
+                        min=0,
+                        step=0.1,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("pldcnn", "Pelagic larval duration (days)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "pldcnn",
+                        "Pelagic larval duration (days)",
                         value=float(params.get("pldcnn", 0) or 0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("idtcnn", "Connectivity output interval (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "idtcnn",
+                        "Connectivity output interval (s)",
                         value=int(params.get("idtcnn", 0) or 0),
                         min=0,
                     ),
@@ -1236,8 +1622,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "ice")
         return ui.div(
             ui.row(
-                ui.column(6,
-                    ui.input_select("icemod", "Ice model",
+                ui.column(
+                    6,
+                    ui.input_select(
+                        "icemod",
+                        "Ice model",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("icemod", 0) or 0),
                     ),
@@ -1250,8 +1639,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "waves")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("iwave", "Wave coupling mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iwave",
+                        "Wave coupling mode",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - Constant file",
@@ -1263,14 +1655,21 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("iwave", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("dtwave", "Coupling time step (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "dtwave",
+                        "Coupling time step (s)",
                         value=float(params.get("dtwave", 0) or 0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("itdrag", "Drag calculation type",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "itdrag",
+                        "Drag calculation type",
                         value=int(params.get("itdrag", 0) or 0),
                     ),
                 ),
@@ -1282,8 +1681,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "assimilation")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("ibarcl_assim", "Baroclinic mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ibarcl_assim",
+                        "Baroclinic mode",
                         choices={
                             "0": "0 - Off",
                             "4": "4 - Nudging",
@@ -1292,34 +1694,53 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ibarcl", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("nvars", "Observation stations",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "nvars",
+                        "Observation stations",
                         value=int(params.get("nvars", 0) or 0),
-                        min=0, max=50,
+                        min=0,
+                        max=50,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("tramp", "Ramp-up time (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "tramp",
+                        "Ramp-up time (s)",
                         value=float(params.get("tramp", 0) or 0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("ttau", "Relaxation time (s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ttau",
+                        "Relaxation time (s)",
                         value=float(params.get("ttau", 0) or 0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("sigma", "Spatial influence radius (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "sigma",
+                        "Spatial influence radius (m)",
                         value=float(params.get("sigma", 0) or 0),
-                        min=0, step=100.0,
+                        min=0,
+                        step=100.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("bmulti", "Multi-station nudging",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "bmulti",
+                        "Multi-station nudging",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("bmulti", 1) or 0),
                     ),
@@ -1333,52 +1754,79 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         return ui.div(
             ui.h6("Output Intervals", class_="text-muted mt-1"),
             ui.row(
-                ui.column(4,
-                    ui.input_text("idtout", "Hydrodynamic output",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtout",
+                        "Hydrodynamic output",
                         value=str(params.get("idtout", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtext", "Extra point time series",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtext",
+                        "Extra point time series",
                         value=str(params.get("idtext", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtcon_out", "Scalar/concentration",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtcon_out",
+                        "Scalar/concentration",
                         value=str(params.get("idtcon", "0") or "0"),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("idtflx", "Flux/discharge",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtflx",
+                        "Flux/discharge",
                         value=str(params.get("idtflx", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtres", "Residual data",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtres",
+                        "Residual data",
                         value=str(params.get("idtres", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtrms", "RMS velocity",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtrms",
+                        "RMS velocity",
                         value=str(params.get("idtrms", "0") or "0"),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_text("idtvol", "Volume monitoring",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtvol",
+                        "Volume monitoring",
                         value=str(params.get("idtvol", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtmet", "Meteo variables",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtmet",
+                        "Meteo variables",
                         value=str(params.get("idtmet", "0") or "0"),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("idtstb", "Stability index",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtstb",
+                        "Stability index",
                         value=str(params.get("idtstb", "0") or "0"),
                     ),
                 ),
@@ -1386,14 +1834,20 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             ui.hr(),
             ui.h6("Format & Averaging", class_="text-muted"),
             ui.row(
-                ui.column(4,
-                    ui.input_select("netcdf", "Output format",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "netcdf",
+                        "Output format",
                         choices={"0": "0 - Fortran", "1": "1 - NetCDF"},
                         selected=str(params.get("netcdf", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("iout_av", "Hydro output averaging",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iout_av",
+                        "Hydro output averaging",
                         choices={
                             "0": "0 - Instantaneous",
                             "1": "1 - Time-averaged",
@@ -1401,8 +1855,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("iout_av", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("icon_av_out", "Scalar output averaging",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "icon_av_out",
+                        "Scalar output averaging",
                         choices={
                             "0": "0 - Instantaneous",
                             "1": "1 - Time-averaged",
@@ -1415,23 +1872,37 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             ui.hr(),
             ui.h6("Restart", class_="text-muted"),
             ui.row(
-                ui.column(3,
-                    ui.input_text("idtrst", "Restart file interval (s)",
+                ui.column(
+                    3,
+                    ui.input_text(
+                        "idtrst",
+                        "Restart file interval (s)",
                         value=str(params.get("idtrst", "0") or "0"),
                     ),
                 ),
-                ui.column(3,
-                    ui.input_text("itrst", "Restart write interval",
+                ui.column(
+                    3,
+                    ui.input_text(
+                        "itrst",
+                        "Restart write interval",
                         value=str(params.get("itrst", "0") or "0"),
                     ),
                 ),
-                ui.column(3,
-                    ui.input_text("itmrst", "Restart output start time",
-                        value=str(params.get("itmrst", "-1") if params.get("itmrst") is not None else "-1"),
+                ui.column(
+                    3,
+                    ui.input_text(
+                        "itmrst",
+                        "Restart output start time",
+                        value=str(
+                            params.get("itmrst", "-1") if params.get("itmrst") is not None else "-1"
+                        ),
                     ),
                 ),
-                ui.column(3,
-                    ui.input_select("ityrst", "Restart mode",
+                ui.column(
+                    3,
+                    ui.input_select(
+                        "ityrst",
+                        "Restart mode",
                         choices={
                             "0": "0 - Strict match",
                             "1": "1 - Cold-start if missing",
@@ -1444,8 +1915,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
             ui.hr(),
             ui.h6("Offline Mode", class_="text-muted"),
             ui.row(
-                ui.column(4,
-                    ui.input_select("idtoff", "Offline mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "idtoff",
+                        "Offline mode",
                         choices={
                             "0": "0 - Off",
                             "1": "1 - Write hydro",
@@ -1455,12 +1929,19 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                             "-3": "-3 - Read hydro+T/S",
                             "-7": "-7 - Read all",
                         },
-                        selected=str(params.get("idtoff", 0) if params.get("idtoff") is not None else 0),
+                        selected=str(
+                            params.get("idtoff", 0) if params.get("idtoff") is not None else 0
+                        ),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("itmoff", "Offline start time",
-                        value=str(params.get("itmoff", "-1") if params.get("itmoff") is not None else "-1"),
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "itmoff",
+                        "Offline start time",
+                        value=str(
+                            params.get("itmoff", "-1") if params.get("itmoff") is not None else "-1"
+                        ),
                     ),
                 ),
             ),
@@ -1471,20 +1952,29 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "tracers")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("iconz", "Number of tracers",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iconz",
+                        "Number of tracers",
                         choices={str(i): str(i) for i in range(6)},
                         selected=str(params.get("iconz", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("iage", "Water age tracer",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iage",
+                        "Water age tracer",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("iage", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("idecay", "Tracer decay type",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "idecay",
+                        "Tracer decay type",
                         choices={
                             "0": "0 - None",
                             "1": "1 - Exponential",
@@ -1495,22 +1985,34 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("conref", "Reference concentration",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "conref",
+                        "Reference concentration",
                         value=float(params.get("conref", 0) or 0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("chpar", "Horiz. diffusion (m2/s)",
-                        value=float(params.get("chpar", -1) if params.get("chpar") is not None else -1),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "chpar",
+                        "Horiz. diffusion (m2/s)",
+                        value=float(
+                            params.get("chpar", -1) if params.get("chpar") is not None else -1
+                        ),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("wsettl", "Settling velocity (m/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "wsettl",
+                        "Settling velocity (m/s)",
                         value=float(params.get("wsettl", 0) or 0),
-                        min=0, step=0.001,
+                        min=0,
+                        step=0.001,
                     ),
                 ),
             ),
@@ -1521,8 +2023,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "wind")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("iwtype", "Wind input type",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iwtype",
+                        "Wind input type",
                         choices={
                             "1": "1 - Constant",
                             "2": "2 - Variable (file)",
@@ -1533,24 +2038,36 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("iwtype", 1) or 1),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("dragco", "Drag coefficient",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "dragco",
+                        "Drag coefficient",
                         value=float(params.get("dragco", 2.5e-3) or 2.5e-3),
-                        min=0, step=0.0001,
+                        min=0,
+                        step=0.0001,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("wsmax", "Max wind speed (m/s)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "wsmax",
+                        "Max wind speed (m/s)",
                         value=float(params.get("wsmax", 50) or 50),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("rfact", "Wind stress scaling factor",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "rfact",
+                        "Wind stress scaling factor",
                         value=float(params.get("rfact", 1.0) or 1.0),
-                        min=0, step=0.01,
+                        min=0,
+                        step=0.01,
                     ),
                 ),
             ),
@@ -1581,8 +2098,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                 info = name_meta.get(k)
                 label = info[0] if info else k
                 row_cols.append(
-                    ui.column(4,
-                        ui.input_text(f"name_{k}", label,
+                    ui.column(
+                        4,
+                        ui.input_text(
+                            f"name_{k}",
+                            label,
                             value=str(params.get(k, "") or ""),
                         ),
                     )
@@ -1600,84 +2120,140 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         return ui.div(
             ui.h6("Semi-Implicit Weights", class_="text-muted"),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("azpar", "Transport weighting",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "azpar",
+                        "Transport weighting",
                         value=float(params.get("azpar", 0.5) or 0.5),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("ampar", "Pressure weighting",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ampar",
+                        "Pressure weighting",
                         value=float(params.get("ampar", 0.5) or 0.5),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("afpar", "Coriolis weighting",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "afpar",
+                        "Coriolis weighting",
                         value=float(params.get("afpar", 0.5) or 0.5),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("atpar", "Vert. viscosity weighting",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "atpar",
+                        "Vert. viscosity weighting",
                         value=float(params.get("atpar", 1.0) or 1.0),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("adpar", "Vert. diffusion weighting",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "adpar",
+                        "Vert. diffusion weighting",
                         value=float(params.get("adpar", 1.0) or 1.0),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("aapar", "Vert. advection weighting",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "aapar",
+                        "Vert. advection weighting",
                         value=float(params.get("aapar", 1.0) or 1.0),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
             ),
             ui.hr(),
             ui.h6("Depth & Density", class_="text-muted"),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("href", "Reference depth correction (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "href",
+                        "Reference depth correction (m)",
                         value=float(params.get("href", 0) or 0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hmin", "Minimum basin depth (m)",
-                        value=float(params.get("hmin", -99999) if params.get("hmin") is not None else -99999),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hmin",
+                        "Minimum basin depth (m)",
+                        value=float(
+                            params.get("hmin", -99999) if params.get("hmin") is not None else -99999
+                        ),
                         step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("hmax", "Maximum basin depth (m)",
-                        value=float(params.get("hmax", 99999) if params.get("hmax") is not None else 99999),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "hmax",
+                        "Maximum basin depth (m)",
+                        value=float(
+                            params.get("hmax", 99999) if params.get("hmax") is not None else 99999
+                        ),
                         step=1.0,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("rlin", "Non-linear term strength",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "rlin",
+                        "Non-linear term strength",
                         value=float(params.get("rlin", 1.0) or 0),
-                        min=0, max=1, step=0.1,
+                        min=0,
+                        max=1,
+                        step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("rowass", "Water density (kg/m3)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "rowass",
+                        "Water density (kg/m3)",
                         value=float(params.get("rowass", 1025.0) or 1025.0),
-                        min=0, step=1.0,
+                        min=0,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("roluft", "Air density (kg/m3)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "roluft",
+                        "Air density (kg/m3)",
                         value=float(params.get("roluft", 1.225) or 1.225),
-                        min=0, step=0.001,
+                        min=0,
+                        step=0.001,
                     ),
                 ),
             ),
@@ -1688,32 +2264,53 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "renewal_time")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_text("idtwrt", "Reset interval (s)",
-                        value=str(params.get("idtwrt", "-1") if params.get("idtwrt") is not None else "-1"),
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "idtwrt",
+                        "Reset interval (s)",
+                        value=str(
+                            params.get("idtwrt", "-1") if params.get("idtwrt") is not None else "-1"
+                        ),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("c0", "Initial tracer concentration",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "c0",
+                        "Initial tracer concentration",
                         value=float(params.get("c0", 1.0) or 1.0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("iaout", "Outside area code",
-                        value=int(params.get("iaout", -1) if params.get("iaout") is not None else -1),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "iaout",
+                        "Outside area code",
+                        value=int(
+                            params.get("iaout", -1) if params.get("iaout") is not None else -1
+                        ),
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("percmin", "Completion threshold (%)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "percmin",
+                        "Completion threshold (%)",
                         value=float(params.get("percmin", 0) or 0),
-                        min=0, max=100, step=1.0,
+                        min=0,
+                        max=100,
+                        step=1.0,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("iret", "Return flow",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "iret",
+                        "Return flow",
                         choices={"0": "0 - Explicit zero", "1": "1 - Return"},
                         selected=str(params.get("iret", 1) or 0),
                     ),
@@ -1726,8 +2323,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         params = build_panel_params(str_data.get(), "nonhydrostatic")
         return ui.div(
             ui.row(
-                ui.column(4,
-                    ui.input_select("inohyd", "Non-hydrostatic mode",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "inohyd",
+                        "Non-hydrostatic mode",
                         choices={
                             "0": "0 - Hydrostatic",
                             "1": "1 - Non-hydrostatic",
@@ -1735,21 +2335,32 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("inohyd", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("aqpar", "Implicit parameter",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "aqpar",
+                        "Implicit parameter",
                         value=float(params.get("aqpar", 0.5) or 0.5),
-                        min=0, max=1, step=0.05,
+                        min=0,
+                        max=1,
+                        step=0.05,
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("islope", "Poisson grid type",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "islope",
+                        "Poisson grid type",
                         value=int(params.get("islope", 0) or 0),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("ivwadv", "Vert. advection of vert. momentum",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ivwadv",
+                        "Vert. advection of vert. momentum",
                         choices={"0": "0 - Off", "1": "1 - On"},
                         selected=str(params.get("ivwadv", 0) or 0),
                     ),
@@ -1767,8 +2378,11 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                 class_="text-muted small",
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_select("ibtyp", "Boundary type",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ibtyp",
+                        "Boundary type",
                         choices={
                             "1": "1 - Water level",
                             "2": "2 - Discharge",
@@ -1780,34 +2394,49 @@ def physics_server(input, output, session, config: Config, active_project=None) 
                         selected=str(params.get("ibtyp", 1) or 1),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_select("intpol", "Interpolation",
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "intpol",
+                        "Interpolation",
                         choices={"1": "1 - Linear", "2": "2 - Spline"},
                         selected=str(params.get("intpol", 1) or 1),
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("boundn", "Boundary file",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "boundn",
+                        "Boundary file",
                         value=str(params.get("boundn", "") or ""),
                         placeholder="timeseries.dat",
                     ),
                 ),
             ),
             ui.row(
-                ui.column(4,
-                    ui.input_numeric("zfact", "Scaling factor",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "zfact",
+                        "Scaling factor",
                         value=float(params.get("zfact", 1.0) or 1.0),
                         step=0.1,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_numeric("ztilt", "Water level tilt (m)",
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "ztilt",
+                        "Water level tilt (m)",
                         value=float(params.get("ztilt", 0.0) or 0.0),
                         step=0.01,
                     ),
                 ),
-                ui.column(4,
-                    ui.input_text("kbound", "Boundary nodes",
+                ui.column(
+                    4,
+                    ui.input_text(
+                        "kbound",
+                        "Boundary nodes",
                         value=str(params.get("kbound", "") or ""),
                         placeholder="Node numbers",
                     ),

@@ -212,13 +212,17 @@ def home_ui() -> ui.Tag:
                     ),
                     ui.input_action_button(
                         "import_project_btn",
-                        ui.TagList(ui.tags.i(class_="bi bi-box-arrow-in-down me-2"), "Import Project"),
+                        ui.TagList(
+                            ui.tags.i(class_="bi bi-box-arrow-in-down me-2"), "Import Project"
+                        ),
                         class_="btn-outline-primary w-100 mb-2",
                     ),
                     ui.hr(),
                     ui.input_action_button(
                         "tutorial_btn",
-                        ui.TagList(ui.tags.i(class_="bi bi-mortarboard me-2"), "Mar Menor Tutorial"),
+                        ui.TagList(
+                            ui.tags.i(class_="bi bi-mortarboard me-2"), "Mar Menor Tutorial"
+                        ),
                         class_="btn-success w-100",
                     ),
                     class_="card p-3",
@@ -489,7 +493,9 @@ def home_server(
                 )
                 db.add(project)
 
-            ui.notification_show(f"Project '{name}' created successfully", type="message", duration=4)
+            ui.notification_show(
+                f"Project '{name}' created successfully", type="message", duration=4
+            )
             ui.modal_remove()
             _refresh_projects()
 
@@ -554,7 +560,9 @@ def home_server(
         # Check source directory exists
         mar_menor_src = config.testcases_dir / "mar_menor"
         if not mar_menor_src.is_dir():
-            ui.notification_show(f"Tutorial source not found: {mar_menor_src}", type="error", duration=6)
+            ui.notification_show(
+                f"Tutorial source not found: {mar_menor_src}", type="error", duration=6
+            )
             return
 
         # Create project directory
@@ -562,7 +570,9 @@ def home_server(
         try:
             config.ensure_work_dir()
             if project_path.exists():
-                ui.notification_show(f"Directory already exists: {project_path}", type="error", duration=6)
+                ui.notification_show(
+                    f"Directory already exists: {project_path}", type="error", duration=6
+                )
                 return
             shutil.copytree(mar_menor_src, project_path)
         except Exception as e:
@@ -618,7 +628,9 @@ def home_server(
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
-            ui.notification_show(f"Tutorial project '{name}' created successfully!", type="message", duration=4)
+            ui.notification_show(
+                f"Tutorial project '{name}' created successfully!", type="message", duration=4
+            )
             ui.modal_remove()
             _refresh_projects()
             if nav_callback:
@@ -629,7 +641,9 @@ def home_server(
             if project_path.exists():
                 shutil.rmtree(project_path, ignore_errors=True)
             logger.exception("Failed to save tutorial project %r to database", name)
-            ui.notification_show(f"Failed to create tutorial project: {e}", type="error", duration=6)
+            ui.notification_show(
+                f"Failed to create tutorial project: {e}", type="error", duration=6
+            )
 
     # --- Active project handlers ---
 
@@ -800,11 +814,15 @@ def home_server(
                 )
                 db.add(grid)
 
-            ui.notification_show(f"Imported grid '{grid_name}' into project", type="message", duration=4)
+            ui.notification_show(
+                f"Imported grid '{grid_name}' into project", type="message", duration=4
+            )
             ui.modal_remove()
             _refresh_projects()
         except Exception as e:
-            logger.exception("Failed to create grid record for %r in project %s", grid_name, project_id)
+            logger.exception(
+                "Failed to create grid record for %r in project %s", grid_name, project_id
+            )
             ui.notification_show(f"Failed to create grid record: {e}", type="error", duration=6)
 
     # --- Export/Import/Clone project handlers ---
@@ -940,7 +958,9 @@ def home_server(
                     )
                     db.add(sim)
 
-            ui.notification_show(f"Cloned '{project_name}' as '{result['name']}'", type="message", duration=4)
+            ui.notification_show(
+                f"Cloned '{project_name}' as '{result['name']}'", type="message", duration=4
+            )
             _refresh_projects()
 
         except Exception as e:

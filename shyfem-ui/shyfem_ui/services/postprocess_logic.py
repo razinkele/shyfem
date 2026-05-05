@@ -5,6 +5,7 @@ discovery, formatting, and CLI-option construction independently
 testable. The page imports these and wires them into Shiny reactive
 state.
 """
+
 from __future__ import annotations
 
 import re

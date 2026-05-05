@@ -51,14 +51,14 @@ from shyfem_ui.services.parser_grd import GrdFile
 # ---------------------------------------------------------------------------
 
 BOUNDARY_COLORS: list[list[int]] = [
-    [231, 76, 60, 255],    # red
-    [46, 204, 113, 255],   # green
-    [243, 156, 18, 255],   # orange
-    [155, 89, 182, 255],   # purple
-    [26, 188, 156, 255],   # teal
-    [230, 126, 34, 255],   # dark orange
-    [52, 152, 219, 255],   # blue
-    [233, 30, 99, 255],    # pink
+    [231, 76, 60, 255],  # red
+    [46, 204, 113, 255],  # green
+    [243, 156, 18, 255],  # orange
+    [155, 89, 182, 255],  # purple
+    [26, 188, 156, 255],  # teal
+    [230, 126, 34, 255],  # dark orange
+    [52, 152, 219, 255],  # blue
+    [233, 30, 99, 255],  # pink
 ]
 
 PARTITION_COLORS: list[list[int]] = [
@@ -102,12 +102,12 @@ BASEMAPS: dict[str, str] = {
 
 # RdYlGn-like palette for quality coloring (red=bad, green=good)
 _QUALITY_PALETTE: list[list[int]] = [
-    [215, 48, 39],    # 0.0 - red (bad)
-    [253, 174, 97],   # ~0.2
+    [215, 48, 39],  # 0.0 - red (bad)
+    [253, 174, 97],  # ~0.2
     [254, 224, 139],  # ~0.4
     [217, 239, 139],  # ~0.6
-    [145, 207, 96],   # ~0.8
-    [26, 152, 80],    # 1.0 - green (good)
+    [145, 207, 96],  # ~0.8
+    [26, 152, 80],  # 1.0 - green (good)
 ]
 
 
@@ -135,10 +135,7 @@ def _is_geographic(grd: GrdFile) -> bool:
     """
     if not grd.nodes:
         return True
-    return all(
-        abs(n.x) <= 180 and abs(n.y) <= 90
-        for n in grd.nodes.values()
-    )
+    return all(abs(n.x) <= 180 and abs(n.y) <= 90 for n in grd.nodes.values())
 
 
 def _detect_projected_crs(grd: GrdFile) -> int | None:
@@ -190,25 +187,21 @@ def _get_lonlat(
         return {}
 
     if _is_geographic(grd) and epsg is None:
-        return {
-            nid: [float(node.x), float(node.y)]
-            for nid, node in grd.nodes.items()
-        }
+        return {nid: [float(node.x), float(node.y)] for nid, node in grd.nodes.items()}
 
     # Projected grid — use explicit EPSG or try auto-detection
     source_epsg = epsg or _detect_projected_crs(grd)
     if source_epsg is None:
         key = (id(grd), epsg)
         if key not in _warned_unprojected:
-            _logger.warning("Could not determine projection for grid; "
-                            "using raw coordinates (set EPSG in map controls)")
+            _logger.warning(
+                "Could not determine projection for grid; "
+                "using raw coordinates (set EPSG in map controls)"
+            )
             if len(_warned_unprojected) >= _WARNED_MAX:
                 _warned_unprojected.clear()
             _warned_unprojected.add(key)
-        return {
-            nid: [float(node.x), float(node.y)]
-            for nid, node in grd.nodes.items()
-        }
+        return {nid: [float(node.x), float(node.y)] for nid, node in grd.nodes.items()}
 
     t = Transformer.from_crs(source_epsg, 4326, always_xy=True)
     result: dict[int, list[float]] = {}
@@ -221,6 +214,7 @@ def _get_lonlat(
 # ---------------------------------------------------------------------------
 # Task 2: _build_edge_data
 # ---------------------------------------------------------------------------
+
 
 def _build_edge_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
     """Build deduplicated wireframe edges for all elements.
@@ -258,6 +252,7 @@ def _build_edge_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Task 3: _build_triangle_data + helpers
 # ---------------------------------------------------------------------------
+
 
 def _compute_quality(coords: list[list[float]]) -> float:
     """Compute element quality as min(side) / max(side).
@@ -388,13 +383,15 @@ def _build_triangle_data(
             # All nodes resolved
             avg_depth = sum(node_depths) / len(node_depths) if node_depths else 0.0
             quality = _compute_quality(coords)
-            records.append({
-                "polygon": coords,
-                "elem_id": elem.id,
-                "depth": round(avg_depth, 6),
-                "quality": round(quality, 6),
-                "node_depths": node_depths,
-            })
+            records.append(
+                {
+                    "polygon": coords,
+                    "elem_id": elem.id,
+                    "depth": round(avg_depth, 6),
+                    "quality": round(quality, 6),
+                    "node_depths": node_depths,
+                }
+            )
             all_depths.append(avg_depth)
             all_qualities.append(quality)
 
@@ -506,20 +503,26 @@ def _build_mesh_geometry(
         else:
             avg_depth = sum(node_depths) / len(node_depths) if node_depths else 0.0
             quality = _compute_quality(node_coords)
-            elements_data.append({
-                "elem": elem,
-                "coords": node_coords,
-                "node_depths": node_depths,
-                "avg_depth": avg_depth,
-                "quality": quality,
-            })
+            elements_data.append(
+                {
+                    "elem": elem,
+                    "coords": node_coords,
+                    "node_depths": node_depths,
+                    "avg_depth": avg_depth,
+                    "quality": quality,
+                }
+            )
             all_depths.append(avg_depth)
             all_qualities.append(quality)
 
     empty = {
-        "positions": [], "normals": [], "colors": [], "indices": [],
+        "positions": [],
+        "normals": [],
+        "colors": [],
+        "indices": [],
         "center": [round(ctr_lon, 5), round(ctr_lat, 5)],
-        "n_vertices": 0, "n_triangles": 0,
+        "n_vertices": 0,
+        "n_triangles": 0,
     }
     if not elements_data:
         return empty
@@ -569,9 +572,9 @@ def _build_mesh_geometry(
     normals = [0.0] * len(positions)
     for fi in range(0, len(indices), 3):
         i0, i1, i2 = indices[fi], indices[fi + 1], indices[fi + 2]
-        p0 = positions[i0 * 3: i0 * 3 + 3]
-        p1 = positions[i1 * 3: i1 * 3 + 3]
-        p2 = positions[i2 * 3: i2 * 3 + 3]
+        p0 = positions[i0 * 3 : i0 * 3 + 3]
+        p1 = positions[i1 * 3 : i1 * 3 + 3]
+        p2 = positions[i2 * 3 : i2 * 3 + 3]
         e1 = [p1[k] - p0[k] for k in range(3)]
         e2 = [p2[k] - p0[k] for k in range(3)]
         nx = e1[1] * e2[2] - e1[2] * e2[1]
@@ -617,6 +620,7 @@ def _triangle_tooltip(rec: dict, mode: str) -> str:
 # ---------------------------------------------------------------------------
 # Task 4: _build_boundary_data + _build_node_data
 # ---------------------------------------------------------------------------
+
 
 def _build_boundary_data(grd: GrdFile, epsg: int | None = None) -> dict[int, list[dict]]:
     """Build boundary line data grouped by line type.
@@ -699,13 +703,15 @@ def _build_node_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
         parts.append(f"Type: {node.node_type}")
         tooltip = "<br>".join(parts)
 
-        result.append({
-            "position": pos,
-            "node_id": nid,
-            "depth": float(depth),
-            "node_type": node.node_type,
-            "tooltip_html": tooltip,
-        })
+        result.append(
+            {
+                "position": pos,
+                "node_id": nid,
+                "depth": float(depth),
+                "node_type": node.node_type,
+                "tooltip_html": tooltip,
+            }
+        )
 
     return result
 
@@ -740,6 +746,7 @@ def _build_emodnet_layer() -> dict:
 # ---------------------------------------------------------------------------
 # Task 5: build_layers
 # ---------------------------------------------------------------------------
+
 
 def build_layers(
     grd: GrdFile,
@@ -791,129 +798,178 @@ def build_layers(
 
     if mode == "mesh" and has_elements:
         # Wireframe only, blue edges
-        layers.append(path_layer(
-            "wireframe",
-            edge_data,
-            getPath="@@d.path",
-            getColor=[45, 156, 186, 255],
-            widthMinPixels=1,
-            pickable=False,
-        ))
+        layers.append(
+            path_layer(
+                "wireframe",
+                edge_data,
+                getPath="@@d.path",
+                getColor=[45, 156, 186, 255],
+                widthMinPixels=1,
+                pickable=False,
+            )
+        )
 
     elif mode == "depth" and has_elements:
         # Filled mesh + thin gray wireframe
         mesh_data = _build_mesh_geometry(
-            grd, mode=mode, colorscale=colorscale, epsg=epsg,
+            grd,
+            mode=mode,
+            colorscale=colorscale,
+            epsg=epsg,
         )
-        layers.append(simple_mesh_layer(
-            "triangles", **custom_geometry(mesh_data),
-            pickable=True, wireframe=False,
-        ))
-        layers.append(path_layer(
-            "wireframe",
-            edge_data,
-            getPath="@@d.path",
-            getColor=[150, 150, 150, 80],
-            widthMinPixels=0.5,
-            pickable=False,
-        ))
-
-    elif mode == "depth_3d" and has_elements:
-        # Filled mesh with Z elevation, NO wireframe
-        mesh_data = _build_mesh_geometry(
-            grd, mode=mode, colorscale=colorscale,
-            elevation_scale=elevation_scale, epsg=epsg,
-        )
-        layers.append(simple_mesh_layer(
-            "triangles", **custom_geometry(mesh_data),
-            pickable=True, wireframe=False,
-        ))
-
-    elif mode == "boundaries" or (not has_elements and grd.lines):
-        # Bold boundary lines (+ light mesh if elements exist)
-        if has_elements:
-            mesh_data = _build_mesh_geometry(
-                grd, mode="boundaries", colorscale=colorscale, epsg=epsg,
+        layers.append(
+            simple_mesh_layer(
+                "triangles",
+                **custom_geometry(mesh_data),
+                pickable=True,
+                wireframe=False,
             )
-            layers.append(simple_mesh_layer(
-                "triangles", **custom_geometry(mesh_data),
-                pickable=True, wireframe=False,
-            ))
-            layers.append(path_layer(
+        )
+        layers.append(
+            path_layer(
                 "wireframe",
                 edge_data,
                 getPath="@@d.path",
                 getColor=[150, 150, 150, 80],
                 widthMinPixels=0.5,
                 pickable=False,
-            ))
+            )
+        )
+
+    elif mode == "depth_3d" and has_elements:
+        # Filled mesh with Z elevation, NO wireframe
+        mesh_data = _build_mesh_geometry(
+            grd,
+            mode=mode,
+            colorscale=colorscale,
+            elevation_scale=elevation_scale,
+            epsg=epsg,
+        )
+        layers.append(
+            simple_mesh_layer(
+                "triangles",
+                **custom_geometry(mesh_data),
+                pickable=True,
+                wireframe=False,
+            )
+        )
+
+    elif mode == "boundaries" or (not has_elements and grd.lines):
+        # Bold boundary lines (+ light mesh if elements exist)
+        if has_elements:
+            mesh_data = _build_mesh_geometry(
+                grd,
+                mode="boundaries",
+                colorscale=colorscale,
+                epsg=epsg,
+            )
+            layers.append(
+                simple_mesh_layer(
+                    "triangles",
+                    **custom_geometry(mesh_data),
+                    pickable=True,
+                    wireframe=False,
+                )
+            )
+            layers.append(
+                path_layer(
+                    "wireframe",
+                    edge_data,
+                    getPath="@@d.path",
+                    getColor=[150, 150, 150, 80],
+                    widthMinPixels=0.5,
+                    pickable=False,
+                )
+            )
         # Add bold boundary path_layers
         boundary_data = _build_boundary_data(grd, epsg=epsg)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
-            layers.append(path_layer(
-                f"boundary_{btype}",
-                blines,
-                getPath="@@d.path",
-                getColor=color,
-                widthMinPixels=3,
-                pickable=True,
-            ))
+            layers.append(
+                path_layer(
+                    f"boundary_{btype}",
+                    blines,
+                    getPath="@@d.path",
+                    getColor=color,
+                    widthMinPixels=3,
+                    pickable=True,
+                )
+            )
 
     elif mode == "quality" and has_elements:
         # Filled mesh + thin wireframe
         mesh_data = _build_mesh_geometry(
-            grd, mode=mode, colorscale=colorscale, epsg=epsg,
+            grd,
+            mode=mode,
+            colorscale=colorscale,
+            epsg=epsg,
         )
-        layers.append(simple_mesh_layer(
-            "triangles", **custom_geometry(mesh_data),
-            pickable=True, wireframe=False,
-        ))
-        layers.append(path_layer(
-            "wireframe",
-            edge_data,
-            getPath="@@d.path",
-            getColor=[150, 150, 150, 80],
-            widthMinPixels=0.5,
-            pickable=False,
-        ))
+        layers.append(
+            simple_mesh_layer(
+                "triangles",
+                **custom_geometry(mesh_data),
+                pickable=True,
+                wireframe=False,
+            )
+        )
+        layers.append(
+            path_layer(
+                "wireframe",
+                edge_data,
+                getPath="@@d.path",
+                getColor=[150, 150, 150, 80],
+                widthMinPixels=0.5,
+                pickable=False,
+            )
+        )
 
     elif mode == "partitions" and has_elements:
         # Filled mesh only (no wireframe)
         mesh_data = _build_mesh_geometry(
-            grd, mode=mode, colorscale=colorscale,
-            partition_map=partition_map, epsg=epsg,
+            grd,
+            mode=mode,
+            colorscale=colorscale,
+            partition_map=partition_map,
+            epsg=epsg,
         )
-        layers.append(simple_mesh_layer(
-            "triangles", **custom_geometry(mesh_data),
-            pickable=True, wireframe=False,
-        ))
+        layers.append(
+            simple_mesh_layer(
+                "triangles",
+                **custom_geometry(mesh_data),
+                pickable=True,
+                wireframe=False,
+            )
+        )
 
     # --- Optional boundary overlay (not in boundaries mode, already done) ---
     if mode != "boundaries" and has_elements:
         boundary_data = _build_boundary_data(grd, epsg=epsg)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
-            layers.append(path_layer(
-                f"boundary_{btype}",
-                blines,
-                getPath="@@d.path",
-                getColor=color,
-                widthMinPixels=3,
-                pickable=True,
-            ))
+            layers.append(
+                path_layer(
+                    f"boundary_{btype}",
+                    blines,
+                    getPath="@@d.path",
+                    getColor=color,
+                    widthMinPixels=3,
+                    pickable=True,
+                )
+            )
 
     # --- Node overlay ---
     node_data = _build_node_data(grd, epsg=epsg)
-    layers.append(scatterplot_layer(
-        "nodes",
-        node_data,
-        getPosition="@@d.position",
-        getFillColor=[255, 60, 60, 220],
-        radiusMinPixels=3,
-        radiusMaxPixels=6,
-        pickable=True,
-    ))
+    layers.append(
+        scatterplot_layer(
+            "nodes",
+            node_data,
+            getPosition="@@d.position",
+            getFillColor=[255, 60, 60, 220],
+            radiusMinPixels=3,
+            radiusMaxPixels=6,
+            pickable=True,
+        )
+    )
 
     return layers
 
@@ -921,6 +977,7 @@ def build_layers(
 # ---------------------------------------------------------------------------
 # Task 6: _compute_view_state
 # ---------------------------------------------------------------------------
+
 
 def _compute_view_state(
     grd: GrdFile,
@@ -998,6 +1055,7 @@ def _compute_view_state(
 # Backward-compatibility stubs (removed when migration is complete)
 # ---------------------------------------------------------------------------
 
+
 def _build_edge_arrays(grd: GrdFile):
     """Legacy Plotly edge builder -- kept for backward compatibility.
 
@@ -1044,8 +1102,13 @@ def build_mesh_figure(
         fig = go.Figure()
         fig.add_annotation(
             text="No grid data loaded",
-            xref="paper", yref="paper", x=0.5, y=0.5,
-            showarrow=False, font_size=18, font_color="gray",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font_size=18,
+            font_color="gray",
         )
         fig.update_layout(height=600)
         return fig
@@ -1054,34 +1117,58 @@ def build_mesh_figure(
     fig = go.Figure()
 
     if mode == "mesh":
-        fig.add_trace(go.Scattergl(
-            x=edge_x, y=edge_y, mode="lines",
-            line=dict(color="#2D9CBA", width=0.5),
-            hoverinfo="skip", name="Mesh",
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line=dict(color="#2D9CBA", width=0.5),
+                hoverinfo="skip",
+                name="Mesh",
+            )
+        )
     elif mode == "depth":
-        fig.add_trace(go.Scattergl(
-            x=edge_x, y=edge_y, mode="lines",
-            line=dict(color="rgba(200,200,200,0.3)", width=0.3),
-            hoverinfo="skip", showlegend=False,
-        ))
-        depths = np.array([
-            grd.nodes[nid].depth if grd.nodes[nid].depth is not None else 0.0
-            for nid in node_ids
-        ])
+        fig.add_trace(
+            go.Scattergl(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line=dict(color="rgba(200,200,200,0.3)", width=0.3),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+        depths = np.array(
+            [grd.nodes[nid].depth if grd.nodes[nid].depth is not None else 0.0 for nid in node_ids]
+        )
         if not np.all(depths == 0):
-            fig.add_trace(go.Scattergl(
-                x=x.tolist(), y=y.tolist(), mode="markers",
-                marker=dict(size=4, color=depths.tolist(), colorscale=colorscale,
-                            colorbar=dict(title="Depth", thickness=15), showscale=True),
-                hoverinfo="text", name="Depth",
-            ))
+            fig.add_trace(
+                go.Scattergl(
+                    x=x.tolist(),
+                    y=y.tolist(),
+                    mode="markers",
+                    marker=dict(
+                        size=4,
+                        color=depths.tolist(),
+                        colorscale=colorscale,
+                        colorbar=dict(title="Depth", thickness=15),
+                        showscale=True,
+                    ),
+                    hoverinfo="text",
+                    name="Depth",
+                )
+            )
     elif mode == "quality":
-        fig.add_trace(go.Scattergl(
-            x=edge_x, y=edge_y, mode="lines",
-            line=dict(color="rgba(200,200,200,0.3)", width=0.3),
-            hoverinfo="skip", showlegend=False,
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line=dict(color="rgba(200,200,200,0.3)", width=0.3),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
         qualities, cx_arr, cy_arr = [], [], []
         for elem in grd.elements.values():
             if not elem.is_triangle:
@@ -1099,25 +1186,49 @@ def build_mesh_figure(
             cx_arr.append(float(np.mean(ex)))
             cy_arr.append(float(np.mean(ey)))
         if qualities:
-            fig.add_trace(go.Scattergl(
-                x=cx_arr, y=cy_arr, mode="markers",
-                marker=dict(size=5, color=qualities, colorscale="RdYlGn",
-                            cmin=0, cmax=1,
-                            colorbar=dict(title="Quality", thickness=15), showscale=True),
-                hoverinfo="text", name="Quality",
-            ))
+            fig.add_trace(
+                go.Scattergl(
+                    x=cx_arr,
+                    y=cy_arr,
+                    mode="markers",
+                    marker=dict(
+                        size=5,
+                        color=qualities,
+                        colorscale="RdYlGn",
+                        cmin=0,
+                        cmax=1,
+                        colorbar=dict(title="Quality", thickness=15),
+                        showscale=True,
+                    ),
+                    hoverinfo="text",
+                    name="Quality",
+                )
+            )
     elif mode == "boundaries":
-        fig.add_trace(go.Scattergl(
-            x=edge_x, y=edge_y, mode="lines",
-            line=dict(color="rgba(200,200,200,0.4)", width=0.3),
-            hoverinfo="skip", showlegend=False,
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line=dict(color="rgba(200,200,200,0.4)", width=0.3),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
         show_boundaries = True
     elif mode == "partitions" and partition_map:
         num_parts = max(partition_map.values()) + 1 if partition_map else 1
         _pcolors = [
-            "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",
-            "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf",
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
         ]
         part_edges: dict[int, tuple[list, list]] = {p: ([], []) for p in range(num_parts)}
         for elem in grd.elements.values():
@@ -1133,20 +1244,39 @@ def build_mesh_figure(
         for p in range(num_parts):
             color = _pcolors[p % len(_pcolors)]
             if part_edges[p][0]:
-                fig.add_trace(go.Scattergl(
-                    x=part_edges[p][0], y=part_edges[p][1], mode="lines",
-                    line=dict(color=color, width=0.7), hoverinfo="skip", name=f"P{p}",
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=part_edges[p][0],
+                        y=part_edges[p][1],
+                        mode="lines",
+                        line=dict(color=color, width=0.7),
+                        hoverinfo="skip",
+                        name=f"P{p}",
+                    )
+                )
     else:
-        fig.add_trace(go.Scattergl(
-            x=edge_x, y=edge_y, mode="lines",
-            line=dict(color="#2D9CBA", width=0.5),
-            hoverinfo="skip", name="Mesh",
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line=dict(color="#2D9CBA", width=0.5),
+                hoverinfo="skip",
+                name="Mesh",
+            )
+        )
 
     if show_boundaries and grd.lines:
-        _bcolors = ["#e74c3c", "#2ecc71", "#f39c12", "#9b59b6",
-                     "#1abc9c", "#e67e22", "#3498db", "#e91e63"]
+        _bcolors = [
+            "#e74c3c",
+            "#2ecc71",
+            "#f39c12",
+            "#9b59b6",
+            "#1abc9c",
+            "#e67e22",
+            "#3498db",
+            "#e91e63",
+        ]
         line_types = sorted(grd.get_line_types())
         for lt_idx, lt in enumerate(line_types):
             bx, by = [], []
@@ -1162,25 +1292,37 @@ def build_mesh_figure(
                     by.extend([float(y[indices[i]]), float(y[indices[i + 1]]), None])
             if bx:
                 color = _bcolors[lt_idx % len(_bcolors)]
-                fig.add_trace(go.Scattergl(
-                    x=bx, y=by, mode="lines",
-                    line=dict(color=color, width=3),
-                    hoverinfo="skip", name=f"Boundary type {lt}",
-                ))
+                fig.add_trace(
+                    go.Scattergl(
+                        x=bx,
+                        y=by,
+                        mode="lines",
+                        line=dict(color=color, width=3),
+                        hoverinfo="skip",
+                        name=f"Boundary type {lt}",
+                    )
+                )
 
     if show_nodes:
-        fig.add_trace(go.Scattergl(
-            x=x.tolist(), y=y.tolist(), mode="markers",
-            marker=dict(size=3, color="red"),
-            hoverinfo="text", name="Nodes",
-        ))
+        fig.add_trace(
+            go.Scattergl(
+                x=x.tolist(),
+                y=y.tolist(),
+                mode="markers",
+                marker=dict(size=3, color="red"),
+                hoverinfo="text",
+                name="Nodes",
+            )
+        )
 
     fig.update_layout(
         xaxis=dict(scaleanchor="y", scaleratio=1, title="X"),
         yaxis=dict(title="Y"),
-        hovermode="closest", showlegend=True,
+        hovermode="closest",
+        showlegend=True,
         margin=dict(l=50, r=20, t=60, b=50),
-        height=600, dragmode="pan",
+        height=600,
+        dragmode="pan",
     )
     return fig
 

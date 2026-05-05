@@ -1,4 +1,5 @@
 """Inline 'next step' navigation card for completion handlers."""
+
 from __future__ import annotations
 
 import json as _json
@@ -42,9 +43,7 @@ def next_step_card(*, title: str, links: list[NextStepLink]) -> ui.Tag:
         # alnum + hyphen + underscore (e.g. "Post-Process"). Reject anything
         # else as defense-in-depth — Shiny HTML-escapes attributes too,
         # but this surfaces typos at construction time.
-        if not link.nav_target or not all(
-            c.isalnum() or c in "-_" for c in link.nav_target
-        ):
+        if not link.nav_target or not all(c.isalnum() or c in "-_" for c in link.nav_target):
             raise ValueError(
                 f"NextStepLink.nav_target must be alphanumeric / hyphen / "
                 f"underscore (got {link.nav_target!r}); shyfemNavTo arg "

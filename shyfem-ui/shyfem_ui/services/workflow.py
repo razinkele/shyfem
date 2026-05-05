@@ -165,7 +165,7 @@ WORKFLOW_TEMPLATES = {
     "offline_tracer": {
         "name": "Offline Tracer Analysis",
         "description": "Run hydrodynamics first (writes offline data), "
-                       "then run tracers on saved flow fields",
+        "then run tracers on saved flow fields",
         "steps": [
             WorkflowStep(
                 name="Hydrodynamic run",
@@ -239,17 +239,19 @@ def _pack_steps(wf: "WorkflowInstance") -> list[dict]:
     step_dicts = [s.to_dict() for s in wf.steps]
     # Parse string datetimes back if needed (they come in as datetime objects)
     started_at = wf.started_at.isoformat() if isinstance(wf.started_at, datetime) else wf.started_at
-    step_dicts.append({
-        "__meta__": {
-            "working_dir": wf.working_dir,
-            "current_step_index": wf.current_step_index,
-            "step_job_ids": wf.step_job_ids,
-            "step_results": wf.step_results,
-            "started_at": started_at,
-            "error_message": wf.error_message,
-            "metadata": wf.metadata,
+    step_dicts.append(
+        {
+            "__meta__": {
+                "working_dir": wf.working_dir,
+                "current_step_index": wf.current_step_index,
+                "step_job_ids": wf.step_job_ids,
+                "step_results": wf.step_results,
+                "started_at": started_at,
+                "error_message": wf.error_message,
+                "metadata": wf.metadata,
+            }
         }
-    })
+    )
     return step_dicts
 
 
@@ -269,6 +271,7 @@ class WorkflowEngine:
         """Open and return a new DB session."""
         if self._session_factory is None:
             from shyfem_ui.db.base import get_session_factory
+
             factory = get_session_factory()
             return factory()
         return self._session_factory()
@@ -406,12 +409,7 @@ class WorkflowEngine:
         """List all workflows, newest first."""
         session = self._get_session()
         try:
-            rows = (
-                session.query(Workflow)
-                .order_by(Workflow.created_at.desc())
-                .limit(limit)
-                .all()
-            )
+            rows = session.query(Workflow).order_by(Workflow.created_at.desc()).limit(limit).all()
             return [_row_to_instance(r) for r in rows]
         finally:
             session.close()

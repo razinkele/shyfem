@@ -267,14 +267,16 @@ def _persist_job_to_db(
         else:
             try:
                 from shyfem_ui.db.base import db_session
+
                 ctx = db_session()
             except Exception:
                 # No factory injected and the app-wide db_session() can't be
                 # constructed (e.g. DATABASE_URL misconfigured). Log so the
                 # operator can diagnose; persistence is skipped for this job.
                 logger.warning(
-                    "Cannot persist job %s: no session_factory and "
-                    "db_session() failed", job_info.id, exc_info=True,
+                    "Cannot persist job %s: no session_factory and " "db_session() failed",
+                    job_info.id,
+                    exc_info=True,
                 )
                 return
 
@@ -329,9 +331,7 @@ def _send_completion_notification(job_info: JobInfo) -> None:
                 if user:
                     user_dict = {"username": user.username, "email": user.email}
             except Exception:
-                logger.debug(
-                    "Could not look up user %s for notification", user_id, exc_info=True
-                )
+                logger.debug("Could not look up user %s for notification", user_id, exc_info=True)
 
         duration = None
         if job_info.started_at and job_info.completed_at:

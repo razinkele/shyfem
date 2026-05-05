@@ -119,9 +119,7 @@ class AuthService:
         except IntegrityError as e:
             # Concurrent insert raced past the existence checks above.
             session.rollback()
-            raise ValueError(
-                "Username or email already taken — choose another."
-            ) from e
+            raise ValueError("Username or email already taken — choose another.") from e
         except Exception:
             session.rollback()
             logger.exception("Database error in create_user")

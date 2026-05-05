@@ -510,7 +510,16 @@ class SessionAuthMiddleware:
         Default session time-to-live passed to ``create_session``.
     """
 
-    def __init__(self, app, auth_service, local_mode=False, session_ttl_hours=24, root_path="", use_secure_cookies=False, audit_service=None):
+    def __init__(
+        self,
+        app,
+        auth_service,
+        local_mode=False,
+        session_ttl_hours=24,
+        root_path="",
+        use_secure_cookies=False,
+        audit_service=None,
+    ):
         self.app = app
         self.auth_service = auth_service
         self.local_mode = local_mode
@@ -560,7 +569,9 @@ class SessionAuthMiddleware:
                 if session_token:
                     user = self.auth_service.validate_session(session_token)
                 await self._handle_logout(
-                    session_token, send, root_path=root_path,
+                    session_token,
+                    send,
+                    root_path=root_path,
                     username=(user or {}).get("username"),
                     client_ip=self._client_ip(scope),
                 )
@@ -653,8 +664,10 @@ class SessionAuthMiddleware:
             return
         try:
             self.audit_service.log(
-                username=username, action=action,
-                detail=detail, ip_address=ip_address,
+                username=username,
+                action=action,
+                detail=detail,
+                ip_address=ip_address,
             )
         except Exception:
             logger.exception("Failed to write audit log entry")
@@ -724,9 +737,7 @@ class SessionAuthMiddleware:
                 ip_address=self._client_ip(scope),
             )
             error_html = (
-                '<div class="error-alert" role="alert">'
-                "Invalid username or password."
-                "</div>"
+                '<div class="error-alert" role="alert">' "Invalid username or password." "</div>"
             )
             await self._serve_login_page(send, error=error_html, root_path=root_path)
             return
@@ -759,7 +770,9 @@ class SessionAuthMiddleware:
         )
         await send({"type": "http.response.body", "body": b""})
 
-    async def _handle_logout(self, session_token, send, root_path: str = "", username=None, client_ip=None):
+    async def _handle_logout(
+        self, session_token, send, root_path: str = "", username=None, client_ip=None
+    ):
         """Delete the session and redirect to /login with cookie cleared."""
         if session_token:
             self.auth_service.delete_session(session_token)
@@ -808,11 +821,13 @@ class SessionAuthMiddleware:
             await send({"type": "http.response.body", "body": body})
             return
 
-        body = json.dumps({
-            "username": user.get("username", ""),
-            "display_name": user.get("display_name", ""),
-            "role": user.get("role", ""),
-        }).encode()
+        body = json.dumps(
+            {
+                "username": user.get("username", ""),
+                "display_name": user.get("display_name", ""),
+                "role": user.get("role", ""),
+            }
+        ).encode()
         await send(
             {
                 "type": "http.response.start",

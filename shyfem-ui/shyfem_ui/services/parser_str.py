@@ -376,7 +376,10 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "rlin": _p("Non-linear term strength", "float", 1.0, "", "0=off, 1=full"),
         # --- Bottom friction ---
         "ireib": _p(
-            "Bottom friction type", "int", 0, "",
+            "Bottom friction type",
+            "int",
+            0,
+            "",
             "0=none, 1=Chezy law, 2=Strickler, 3=Chezy coeff, 4=linear, "
             "5=quadratic drag, 6=roughness z0, 7=Strickler+drag, "
             "8=sediment z0, 9=fluid mud, 10=hybrid quad-linear",
@@ -391,7 +394,10 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "rfact": _p("Wind stress scaling factor", "float", 1.0, "", ">0"),
         # --- Heat flux ---
         "iheat": _p(
-            "Heat flux algorithm", "int", 1, "",
+            "Heat flux algorithm",
+            "int",
+            1,
+            "",
             "0=off, 1=AREG, 2=POM bulk, 3=Gill, 4=Dejak, 5=GOTM, "
             "6=COARE 3.0, 7=read from file, 8=MFS bulk",
         ),
@@ -433,7 +439,10 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "itvdv": _p("Vertical advection scheme for scalars", "int", 0, "", "0=upwind, 1=TVD"),
         # --- Temperature / Salinity ---
         "ibarcl": _p(
-            "Baroclinic mode", "int", 0, "",
+            "Baroclinic mode",
+            "int",
+            0,
+            "",
             "0=off, 1=diagnostic, 2=T/S diagnostic, 3=prognostic, 4=nudging, 5=assimilation",
         ),
         "itemp": _p("Compute temperature", "int", 1, "", "0/1"),
@@ -462,7 +471,10 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "icemod": _p("Ice model", "int", 0, "", "0/1"),
         # --- Waves ---
         "iwave": _p(
-            "Wave coupling mode", "int", 0, "",
+            "Wave coupling mode",
+            "int",
+            0,
+            "",
             "0=off, 1=constant file, 2=WWMIII rad+SHYFEM wind, 3=WWMIII vort+SHYFEM wind, "
             "4=WWMIII rad+WWM wind, 5=WWMIII vort+WWM wind",
         ),
@@ -473,12 +485,18 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "itrst": _p("Restart file write interval", "string", "0", "s", "-1=last step only"),
         "itmrst": _p("Restart output start time", "string", "-1", "", "date or seconds"),
         "ityrst": _p(
-            "Restart mode", "int", 1, "",
+            "Restart mode",
+            "int",
+            1,
+            "",
             "0=strict match, 1=cold-start if missing, 2=closest time",
         ),
         # --- Offline mode ---
         "idtoff": _p(
-            "Offline mode", "int", 0, "",
+            "Offline mode",
+            "int",
+            0,
+            "",
             "0=off, >0=write hydro, -1=read hydro, -2=read T/S, -4=read turb, -3/-7=combos",
         ),
         "itmoff": _p("Offline start time", "string", "-1", "", "date or seconds"),
@@ -530,7 +548,10 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
     "bound": {
         "kbound": _p("Boundary node/element numbers", "int_list", None, "", ""),
         "ibtyp": _p(
-            "Boundary type", "int", 1, "",
+            "Boundary type",
+            "int",
+            1,
+            "",
             "-1=closed, 0=off, 1=water level, 2=discharge, 3=volume inlet, "
             "4=momentum, 5=fixed scalar, 31=radiation/zero-gradient",
         ),

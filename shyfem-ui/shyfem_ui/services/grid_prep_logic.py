@@ -5,6 +5,7 @@ operate on the `GrdFile` parsed structure or on the dict returned by
 `GrdParser.get_statistics()`. The page module re-exports these at
 the same names so test files don't need migration.
 """
+
 from __future__ import annotations
 
 import json
@@ -50,12 +51,14 @@ def compute_boundary_summary(grd) -> list[dict]:
     for lid, line in sorted(grd.lines.items()):
         nids = line.nodes
         node_range = f"{min(nids)}-{max(nids)}" if nids else ""
-        result.append({
-            "line_id": lid,
-            "line_type": line.line_type,
-            "node_count": len(nids),
-            "node_range_str": node_range,
-        })
+        result.append(
+            {
+                "line_id": lid,
+                "line_type": line.line_type,
+                "node_count": len(nids),
+                "node_range_str": node_range,
+            }
+        )
     return result
 
 

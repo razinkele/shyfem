@@ -326,16 +326,13 @@ class ReportBuilder:
             # fig.to_html(include_plotlyjs=True) uses internally.
             try:
                 from plotly.offline.offline import get_plotlyjs
+
                 plotly_loader = f"<script>{get_plotlyjs()}</script>"
             except ImportError:
                 # Fall back gracefully if plotly's internal layout changes.
-                plotly_loader = (
-                    '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
-                )
+                plotly_loader = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
         else:
-            plotly_loader = (
-                '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
-            )
+            plotly_loader = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
 
         return _REPORT_TEMPLATE.format(
             title=_esc(self.title),

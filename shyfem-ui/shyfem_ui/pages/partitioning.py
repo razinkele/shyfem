@@ -233,7 +233,8 @@ def partitioning_server(
         _usr = get_current_user()
         logger.info(
             "User running shyparts on %r with %s partitions",
-            input.bas_path(), input.num_partitions(),
+            input.bas_path(),
+            input.num_partitions(),
         )
         if active_project is not None:
             _proj = active_project.get()

@@ -173,9 +173,7 @@ def import_boundaries(file_path: Path) -> GrdFile:
                     _add_ring(line.coords, 1)
                 continue
             else:
-                grd.parse_warnings.append(
-                    f"Skipped unsupported geometry type: {geom.geom_type}"
-                )
+                grd.parse_warnings.append(f"Skipped unsupported geometry type: {geom.geom_type}")
                 continue
 
             for poly in polygons:
@@ -273,9 +271,7 @@ def _gaussian_smooth(coords: np.ndarray, iterations: int, sigma: float) -> np.nd
     return pts
 
 
-def _rebuild_grd_with_new_line(
-    grd: GrdFile, line_id: int, new_coords: np.ndarray
-) -> GrdFile:
+def _rebuild_grd_with_new_line(grd: GrdFile, line_id: int, new_coords: np.ndarray) -> GrdFile:
     """Create a new GrdFile replacing one line's nodes with new coordinates."""
     new_grd = GrdFile()
     old_line = grd.lines[line_id]
@@ -291,10 +287,7 @@ def _rebuild_grd_with_new_line(
     # Assign new node IDs for the smoothed line.
     # If closed ring (last coord ≈ first coord), reuse the first node ID
     # for the closing position to avoid duplicate vertices that crash Triangle.
-    is_closed = (
-        len(new_coords) >= 3
-        and np.allclose(new_coords[0], new_coords[-1], atol=1e-8)
-    )
+    is_closed = len(new_coords) >= 3 and np.allclose(new_coords[0], new_coords[-1], atol=1e-8)
     max_id = max(grd.nodes.keys()) if grd.nodes else 0
     new_node_ids = []
     n_unique = len(new_coords) - 1 if is_closed else len(new_coords)
@@ -309,9 +302,7 @@ def _rebuild_grd_with_new_line(
     # Copy all lines, replacing the target
     for lid, line in grd.lines.items():
         if lid == line_id:
-            new_grd.lines[lid] = Line(
-                id=lid, line_type=line.line_type, nodes=new_node_ids
-            )
+            new_grd.lines[lid] = Line(id=lid, line_type=line.line_type, nodes=new_node_ids)
         else:
             # Remap nodes for other lines if they shared nodes with the target
             new_grd.lines[lid] = Line(
@@ -471,9 +462,7 @@ def count_below_area(grd: GrdFile, threshold: float) -> int:
     return count
 
 
-def warn_if_min_geq_max_area(
-    min_area: float | None, max_area: float | None
-) -> str | None:
+def warn_if_min_geq_max_area(min_area: float | None, max_area: float | None) -> str | None:
     """Return a warning string if both bounds are set and min >= max."""
     if min_area is None or max_area is None:
         return None
@@ -628,9 +617,7 @@ def _triangle_result_to_grd(result: dict, original_grd: GrdFile) -> GrdFile:
     return new_grd
 
 
-def _rebuild_boundary_lines(
-    new_grd: GrdFile, original_grd: GrdFile, vertices: np.ndarray
-) -> None:
+def _rebuild_boundary_lines(new_grd: GrdFile, original_grd: GrdFile, vertices: np.ndarray) -> None:
     """Map original boundary lines onto new mesh nodes using nearest-neighbor."""
     if not original_grd.lines:
         return
@@ -646,9 +633,7 @@ def _rebuild_boundary_lines(
                 new_nid = int(idx) + 1  # 1-indexed
                 new_node_ids.append(new_nid)
         if new_node_ids:
-            new_grd.lines[lid] = Line(
-                id=lid, line_type=line.line_type, nodes=new_node_ids
-            )
+            new_grd.lines[lid] = Line(id=lid, line_type=line.line_type, nodes=new_node_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -739,19 +724,44 @@ def load_bathymetry_contours(
     # Common depth attribute names to try
     depth_candidates = [
         depth_attr,
-        "depth", "DEPTH", "Depth",
-        "z", "Z",
-        "elev", "ELEV", "elevation", "ELEVATION", "Elevation",
-        "contour", "CONTOUR", "Contour",
-        "value", "VALUE", "Value",
-        "level", "LEVEL", "Level",
+        "depth",
+        "DEPTH",
+        "Depth",
+        "z",
+        "Z",
+        "elev",
+        "ELEV",
+        "elevation",
+        "ELEVATION",
+        "Elevation",
+        "contour",
+        "CONTOUR",
+        "Contour",
+        "value",
+        "VALUE",
+        "Value",
+        "level",
+        "LEVEL",
+        "Level",
     ]
 
     # Attribute names that are almost certainly not depth values
-    _NON_DEPTH_NAMES = frozenset({
-        "count", "fid", "id", "gid", "oid", "objectid",
-        "shape_length", "shape_len", "shape_area", "perimeter", "area", "length",
-    })
+    _NON_DEPTH_NAMES = frozenset(
+        {
+            "count",
+            "fid",
+            "id",
+            "gid",
+            "oid",
+            "objectid",
+            "shape_length",
+            "shape_len",
+            "shape_area",
+            "perimeter",
+            "area",
+            "length",
+        }
+    )
 
     points = []
     with fiona.open(str(path)) as src:
@@ -875,17 +885,13 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
             try:
                 src_crs = pyproj.CRS.from_user_input(src.crs)
                 if src_crs.is_projected:
-                    transformer = pyproj.Transformer.from_crs(
-                        src_crs, "EPSG:4326", always_xy=True
-                    )
+                    transformer = pyproj.Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
                     logger.info(
                         "Reprojecting raster bathymetry from %s to WGS84",
                         src_crs.name,
                     )
             except Exception as exc:
-                logger.warning(
-                    "Could not determine raster CRS, using raw coordinates: %s", exc
-                )
+                logger.warning("Could not determine raster CRS, using raw coordinates: %s", exc)
 
         points = []
         for row in range(band.shape[0]):
@@ -984,7 +990,8 @@ def _compute_depths_only(
             bathy_points = np.vstack([zero_pts, bathy_points])
             logger.info(
                 "Injected %d boundary-zero points (total: %d)",
-                len(zero_pts), len(bathy_points),
+                len(zero_pts),
+                len(bathy_points),
             )
 
     bathy_xy = bathy_points[:, :2]
@@ -1010,9 +1017,7 @@ def _compute_depths_only(
     return node_ids, depths
 
 
-def _build_grd_from_depths(
-    grd: GrdFile, node_ids: list[int], depths: np.ndarray
-) -> GrdFile:
+def _build_grd_from_depths(grd: GrdFile, node_ids: list[int], depths: np.ndarray) -> GrdFile:
     """Build a new GrdFile from precomputed depth values.
 
     Args:
@@ -1027,7 +1032,10 @@ def _build_grd_from_depths(
     for i, nid in enumerate(node_ids):
         node = grd.nodes[nid]
         new_grd.nodes[nid] = Node(
-            id=nid, node_type=node.node_type, x=node.x, y=node.y,
+            id=nid,
+            node_type=node.node_type,
+            x=node.x,
+            y=node.y,
             depth=float(depths[i]),
         )
     new_grd.elements = dict(grd.elements)
@@ -1087,9 +1095,7 @@ def _rbf_interpolate(
     n_pts = len(src_xy)
     if neighbors is None and n_pts > 10_000:
         neighbors = min(32, n_pts)
-    rbf = RBFInterpolator(
-        src_xy, src_z, kernel=kernel, neighbors=neighbors
-    )
+    rbf = RBFInterpolator(src_xy, src_z, kernel=kernel, neighbors=neighbors)
     return rbf(query_xy)
 
 
@@ -1154,7 +1160,6 @@ async def interpolate_bathymetry_shybas(
         output_path = work_dir / "_mesh_temp.bas"
 
     return GrdParser.parse_file(output_path)
-
 
 
 # ---------------------------------------------------------------------------
@@ -1290,6 +1295,7 @@ def _check_boundary_gates(grd: GrdFile) -> tuple[bool, str | None]:
 # Pure geometry helpers (no Shiny / UI dependencies)
 # ---------------------------------------------------------------------------
 
+
 def _get_triangle_vertices(elem, nodes_dict) -> list[int] | None:
     """Extract 3 vertex node IDs from an element, handling the parser quirk.
 
@@ -1330,8 +1336,10 @@ def compute_element_quality(grd) -> dict:
         if len(coords) != 3:
             continue
         sides = [
-            math.sqrt((coords[(i + 1) % 3][0] - coords[i][0]) ** 2
-                       + (coords[(i + 1) % 3][1] - coords[i][1]) ** 2)
+            math.sqrt(
+                (coords[(i + 1) % 3][0] - coords[i][0]) ** 2
+                + (coords[(i + 1) % 3][1] - coords[i][1]) ** 2
+            )
             for i in range(3)
         ]
         max_s = max(sides)
@@ -1515,18 +1523,14 @@ def _boundary_to_polygon(grd: GrdFile) -> shapely.geometry.Polygon | None:
     for line in grd.lines.values():
         if line.line_type == 1:
             coords = [
-                (grd.nodes[nid].x, grd.nodes[nid].y)
-                for nid in line.nodes
-                if nid in grd.nodes
+                (grd.nodes[nid].x, grd.nodes[nid].y) for nid in line.nodes if nid in grd.nodes
             ]
             if len(coords) >= 3:
                 return shapely.geometry.Polygon(coords)
     return None
 
 
-def check_bathy_extent(
-    grd: GrdFile, bathy: np.ndarray
-) -> str | None:
+def check_bathy_extent(grd: GrdFile, bathy: np.ndarray) -> str | None:
     """Return a warning if bathymetry points fall outside the mesh bbox.
 
     The check is bbox-vs-bbox (cheap). Disjoint bboxes almost certainly
@@ -1542,9 +1546,7 @@ def check_bathy_extent(
     min_x, min_y, max_x, max_y = poly.bounds
     bx_min, by_min = float(bathy[:, 0].min()), float(bathy[:, 1].min())
     bx_max, by_max = float(bathy[:, 0].max()), float(bathy[:, 1].max())
-    disjoint = (
-        bx_max < min_x or bx_min > max_x or by_max < min_y or by_min > max_y
-    )
+    disjoint = bx_max < min_x or bx_min > max_x or by_max < min_y or by_min > max_y
     if disjoint:
         return (
             f"Bathymetry extent [{bx_min:.3g}, {by_min:.3g}] – "

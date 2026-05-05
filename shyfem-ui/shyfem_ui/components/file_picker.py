@@ -160,8 +160,7 @@ def resolve_picker_path(
     work_dir = active_project.get("work_dir")
     if not work_dir:
         logger.warning(
-            "Picker resolution failed: project %r has no work_dir "
-            "(legacy/corrupt row?)",
+            "Picker resolution failed: project %r has no work_dir " "(legacy/corrupt row?)",
             active_project.get("id"),
         )
         return None
@@ -169,9 +168,9 @@ def resolve_picker_path(
     resolved = (root / rel_path).resolve()
     if not resolved.is_relative_to(root):
         logger.warning(
-            "Picker rel_path %r escapes work_dir %r — "
-            "dropdown/project state mismatch",
-            rel_path, work_dir,
+            "Picker rel_path %r escapes work_dir %r — " "dropdown/project state mismatch",
+            rel_path,
+            work_dir,
         )
         return None
     return str(resolved)
@@ -182,8 +181,12 @@ def resolve_picker_path(
 # at type-check time rather than as silent ui.update_text("bad_path",
 # ...) no-ops.
 PickerTargetId = Literal[
-    "bas_path", "grd_path", "shy_path",
-    "str_path", "input_file", "lgr_path",
+    "bas_path",
+    "grd_path",
+    "shy_path",
+    "str_path",
+    "input_file",
+    "lgr_path",
 ]
 
 
@@ -215,12 +218,15 @@ def fill_picker_input(
                 "Picker selection %r could not be resolved for "
                 "project %r (target=%s, work_dir missing or "
                 "traversal guard rejected)",
-                rel_path, project.get("id"), target_id,
+                rel_path,
+                project.get("id"),
+                target_id,
             )
             ui.notification_show(
                 "Could not resolve selected file. Try re-selecting "
                 "after the project finishes loading.",
-                type="warning", duration=5,
+                type="warning",
+                duration=5,
             )
         return
     ui.update_text(target_id, value=absolute)

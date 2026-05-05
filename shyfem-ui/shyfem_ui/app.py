@@ -239,6 +239,7 @@ def create_app(config: Config | None = None) -> App:
 
     # Register Plotly theme
     from shyfem_ui.plotly_theme import register_shyfem_template
+
     register_shyfem_template(dark=False)
 
     # Initialize auth + audit services
@@ -669,12 +670,8 @@ def _build_ui(config: Config) -> ui.Tag:
             id="sf-page-Partitioning",
             class_="sf-page",
         ),
-        ui.div(
-            physics.physics_ui("physics"), id="sf-page-Physics", class_="sf-page"
-        ),
-        ui.div(
-            simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
-        ),
+        ui.div(physics.physics_ui("physics"), id="sf-page-Physics", class_="sf-page"),
+        ui.div(simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"),
         ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
         ui.div(ibm.ibm_ui("ibm"), id="sf-page-IBM", class_="sf-page"),
         ui.div(
@@ -682,9 +679,7 @@ def _build_ui(config: Config) -> ui.Tag:
             id="sf-page-Post-Process",
             class_="sf-page",
         ),
-        ui.div(
-            visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"
-        ),
+        ui.div(visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"),
         ui.div(compare.compare_ui("compare"), id="sf-page-Compare", class_="sf-page"),
         ui.div(ensemble.ensemble_ui("ensemble"), id="sf-page-Ensemble", class_="sf-page"),
         ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
@@ -702,7 +697,9 @@ def _build_ui(config: Config) -> ui.Tag:
             content_panels,
             class_="sf-layout",
         ),
-        ui.div(class_="sf-sidebar-backdrop", id="sf-sidebar-backdrop", onclick="shyfemCloseMobile()"),
+        ui.div(
+            class_="sf-sidebar-backdrop", id="sf-sidebar-backdrop", onclick="shyfemCloseMobile()"
+        ),
         title="SHYFEM Workbench",
     )
 
@@ -747,6 +744,7 @@ def _build_server(
     @reactive.event(input._dark_mode)
     def _update_plotly_theme():
         from shyfem_ui.plotly_theme import register_shyfem_template
+
         is_dark = input._dark_mode()
         register_shyfem_template(dark=bool(is_dark))
 
@@ -777,7 +775,9 @@ def _build_server(
         "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
     )
     partitioning.partitioning_server(
-        "partitioning", config, active_project=active_project,
+        "partitioning",
+        config,
+        active_project=active_project,
         tutorial_context=tutorial_context,
     )
     physics.physics_server("physics", config, active_project=active_project)
@@ -785,11 +785,17 @@ def _build_server(
         "simulation", config, active_project=active_project, tutorial_context=tutorial_context
     )
     run.run_server(
-        "run", config, job_queue, active_project=active_project,
-        tutorial_context=tutorial_context, user_role=_current_role,
+        "run",
+        config,
+        job_queue,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        user_role=_current_role,
     )
     ibm.ibm_server(
-        "ibm", config, active_project=active_project,
+        "ibm",
+        config,
+        active_project=active_project,
         tutorial_context=tutorial_context,
     )
     postprocess.postprocess_server(
@@ -799,20 +805,30 @@ def _build_server(
         "visualize", config, active_project=active_project, tutorial_context=tutorial_context
     )
     compare.compare_server(
-        "compare", config, job_queue, active_project=active_project,
+        "compare",
+        config,
+        job_queue,
+        active_project=active_project,
         tutorial_context=tutorial_context,
     )
     ensemble.ensemble_server(
-        "ensemble", config, job_queue, active_project=active_project,
+        "ensemble",
+        config,
+        job_queue,
+        active_project=active_project,
         tutorial_context=tutorial_context,
     )
     files.files_server(
-        "files", config, active_project=active_project,
+        "files",
+        config,
+        active_project=active_project,
         tutorial_context=tutorial_context,
     )
 
     if auth_service:
-        admin.admin_server("admin", config, auth_service, user_role=_current_role, audit_service=audit_service)
+        admin.admin_server(
+            "admin", config, auth_service, user_role=_current_role, audit_service=audit_service
+        )
 
     # --- Cross-page job notifications ---
     _notification_svc = JobTransitionDetector()

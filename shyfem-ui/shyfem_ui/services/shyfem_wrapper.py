@@ -30,12 +30,21 @@ class ShyfemWrapper:
     Provides async execution with output streaming and progress tracking.
     """
 
-    ALLOWED_TOOLS = frozenset({
-        "shyfem", "shyfem-petsc",
-        "shypre", "shybas", "shyparts",
-        "shyelab", "shyplot", "exgrd", "shyadj",
-        "rstinf", "lgrelab",
-    })
+    ALLOWED_TOOLS = frozenset(
+        {
+            "shyfem",
+            "shyfem-petsc",
+            "shypre",
+            "shybas",
+            "shyparts",
+            "shyelab",
+            "shyplot",
+            "exgrd",
+            "shyadj",
+            "rstinf",
+            "lgrelab",
+        }
+    )
 
     # Map tool names to expected output file extensions
     OUTPUT_EXTENSIONS = {

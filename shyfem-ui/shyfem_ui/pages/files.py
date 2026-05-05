@@ -302,8 +302,8 @@ def files_server(
         user = get_current_user()
         if user is not None and check_project_access(proj["id"], user, min_role="editor") is None:
             ui.notification_show(
-                "Permission denied: editor role required to upload files", type="error"
-            , duration=6)
+                "Permission denied: editor role required to upload files", type="error", duration=6
+            )
             return
 
         for f in files:
@@ -432,8 +432,10 @@ def files_server(
             if user is not None and proj is not None:
                 if check_project_access(proj["id"], user, min_role="editor") is None:
                     ui.notification_show(
-                        "Permission denied: editor role required to delete files", type="error"
-                    , duration=6)
+                        "Permission denied: editor role required to delete files",
+                        type="error",
+                        duration=6,
+                    )
                     ui.modal_remove()
                     return
             try:

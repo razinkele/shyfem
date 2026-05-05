@@ -145,9 +145,7 @@ class JobQueue(ABC):
                 try:
                     cb(job_id, progress, message)
                 except Exception:
-                    logging.getLogger(__name__).warning(
-                        "Progress callback error", exc_info=True
-                    )
+                    logging.getLogger(__name__).warning("Progress callback error", exc_info=True)
 
     @abstractmethod
     async def cleanup_old_jobs(self, days: int = 7) -> int:

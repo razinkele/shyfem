@@ -4,6 +4,7 @@ This module is the test-friendly extraction of logic that previously lived
 inline inside `pages/partitioning.py` reactive handlers. The page wires
 these helpers into Shiny reactive state; testing happens here.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

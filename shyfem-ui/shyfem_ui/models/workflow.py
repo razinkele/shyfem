@@ -1,4 +1,5 @@
 """SQLAlchemy model for persisted workflow instances."""
+
 from datetime import datetime
 from enum import Enum as PyEnum
 

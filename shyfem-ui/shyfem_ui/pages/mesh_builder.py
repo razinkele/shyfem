@@ -68,9 +68,17 @@ def _step_import_panel() -> ui.Tag:
                 "boundary_file",
                 "Upload Boundary File",
                 accept=[
-                    ".geojson", ".json", ".shp", ".shx", ".dbf", ".prj",
-                    ".cpg", ".gpkg", ".zip",
-                    "application/geopackage+sqlite3", "application/geo+json",
+                    ".geojson",
+                    ".json",
+                    ".shp",
+                    ".shx",
+                    ".dbf",
+                    ".prj",
+                    ".cpg",
+                    ".gpkg",
+                    ".zip",
+                    "application/geopackage+sqlite3",
+                    "application/geo+json",
                 ],
                 multiple=True,
             ),
@@ -200,8 +208,7 @@ def _step_bathy_panel() -> ui.Tag:
                         ui.tags.strong("RBF (thin-plate spline)"),
                         " — globally smooth surface that ",
                         ui.tags.em("naturally extrapolates"),
-                        " beyond the data extent. Best for sparse bathymetry "
-                        "and coastal edges.",
+                        " beyond the data extent. Best for sparse bathymetry " "and coastal edges.",
                     ),
                     ui.tags.li(
                         ui.tags.strong("Clough-Tocher (C1 cubic)"),
@@ -355,9 +362,9 @@ def mesh_builder_server(
     log_content = reactive.value("")
     bathy_data = reactive.value(None)  # Loaded bathymetry points
     busy_message = reactive.value("")  # Non-empty string = busy with that message
-    staged_grd = reactive.value(None)    # After interpolation, before Accept
+    staged_grd = reactive.value(None)  # After interpolation, before Accept
     comparison_runs = reactive.value({})  # {label: GrdFile}, max 3 entries
-    progress_value = reactive.value(0)   # 0-100 = percent; -1 = indeterminate
+    progress_value = reactive.value(0)  # 0-100 = percent; -1 = indeterminate
     progress_label = reactive.value("")  # empty = bar hidden
 
     # --- Initialize child modules ---
@@ -630,11 +637,16 @@ def mesh_builder_server(
                 ui.column(
                     6,
                     ui.input_slider(
-                        "reduce_tolerance", "Simplify Tolerance",
-                        min=0.0, max=1000.0, value=0.0, step=1.0,
+                        "reduce_tolerance",
+                        "Simplify Tolerance",
+                        min=0.0,
+                        max=1000.0,
+                        value=0.0,
+                        step=1.0,
                     ),
                     ui.input_action_button(
-                        "apply_reduce", "Apply Simplification",
+                        "apply_reduce",
+                        "Apply Simplification",
                         class_="btn-outline-primary btn-sm mb-2",
                     ),
                 ),
@@ -667,7 +679,9 @@ def mesh_builder_server(
                 _log(f"Smoothed all {len(line_ids)} lines: {method}, {iterations} iters")
             else:
                 lid = line_ids[0]
-                _log(f"Smoothed line {lid}: {method}, {iterations} iters -> {len(new_grd.lines[lid].nodes)} nodes")
+                _log(
+                    f"Smoothed line {lid}: {method}, {iterations} iters -> {len(new_grd.lines[lid].nodes)} nodes"
+                )
         except Exception as e:
             _log(f"Smoothing error: {e}")
             ui.notification_show(str(e), type="error", duration=3)
@@ -688,10 +702,14 @@ def mesh_builder_server(
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
             if selection == "all":
-                _log(f"Reduced all {len(line_ids)} lines: tolerance={tolerance}, {new_grd.num_nodes} total nodes")
+                _log(
+                    f"Reduced all {len(line_ids)} lines: tolerance={tolerance}, {new_grd.num_nodes} total nodes"
+                )
             else:
                 lid = line_ids[0]
-                _log(f"Reduced line {lid}: tolerance={tolerance} -> {len(new_grd.lines[lid].nodes)} nodes")
+                _log(
+                    f"Reduced line {lid}: tolerance={tolerance} -> {len(new_grd.lines[lid].nodes)} nodes"
+                )
         except Exception as e:
             _log(f"Reduction error: {e}")
             ui.notification_show(str(e), type="error", duration=3)
@@ -751,7 +769,9 @@ def mesh_builder_server(
                         ui.input_slider(
                             "min_angle",
                             "Min Angle (degrees)",
-                            min=10, max=33, value=20,
+                            min=10,
+                            max=33,
+                            value=20,
                         ),
                         ui.input_numeric(
                             "max_elements",
@@ -770,7 +790,9 @@ def mesh_builder_server(
                         ui.input_slider(
                             "min_angle",
                             "Min Angle (degrees)",
-                            min=10, max=33, value=20,
+                            min=10,
+                            max=33,
+                            value=20,
                         ),
                     ),
                     ui.column(
@@ -863,8 +885,7 @@ def mesh_builder_server(
             if estimate_pf > max_elements:
                 suggested = suggest_max_area_for_limit(grd, max_elements)
                 msg = (
-                    f"Estimated {estimate_pf:,} elements exceeds the limit "
-                    f"of {max_elements:,}."
+                    f"Estimated {estimate_pf:,} elements exceeds the limit " f"of {max_elements:,}."
                 )
                 if suggested is not None:
                     msg += f" Increase Max Area to ≥ {suggested:.4f} or raise the cap."
@@ -1005,8 +1026,15 @@ def mesh_builder_server(
                     "bathy_contour_file",
                     "Upload Contour Isobaths",
                     accept=[
-                        ".shp", ".shx", ".dbf", ".prj", ".cpg",
-                        ".geojson", ".json", ".gpkg", ".zip",
+                        ".shp",
+                        ".shx",
+                        ".dbf",
+                        ".prj",
+                        ".cpg",
+                        ".geojson",
+                        ".json",
+                        ".gpkg",
+                        ".zip",
                     ],
                     multiple=True,
                 ),
@@ -1176,7 +1204,11 @@ def mesh_builder_server(
                 progress_label.set(f"Running {method} on {n_nodes:,} nodes…")
                 await asyncio.sleep(0)
                 node_ids, depths = await asyncio.to_thread(
-                    _compute_depths_only, grd, data, method, boundary_zero,
+                    _compute_depths_only,
+                    grd,
+                    data,
+                    method,
+                    boundary_zero,
                 )
                 # Phase 3: assign depths in async chunks for smooth progress
                 new_grd = GrdFile()
@@ -1187,15 +1219,15 @@ def mesh_builder_server(
                         nid = node_ids[i]
                         node = grd.nodes[nid]
                         new_grd.nodes[nid] = Node(
-                            id=nid, node_type=node.node_type,
-                            x=node.x, y=node.y,
+                            id=nid,
+                            node_type=node.node_type,
+                            x=node.x,
+                            y=node.y,
                             depth=float(depths[i]),
                         )
                     pct = min(99, 10 + int(end / n_nodes * 90))
                     progress_value.set(pct)
-                    progress_label.set(
-                        f"Assigning depths… {end:,} / {n_nodes:,} nodes"
-                    )
+                    progress_label.set(f"Assigning depths… {end:,} / {n_nodes:,} nodes")
                     await asyncio.sleep(0)
                 new_grd.elements = dict(grd.elements)
                 new_grd.lines = dict(grd.lines)

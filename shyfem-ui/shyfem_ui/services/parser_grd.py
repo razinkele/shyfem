@@ -385,9 +385,7 @@ class GrdParser:
                     # New record header encountered — finalize pending line
                     pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
                     if len(pl_nodes) >= 2:
-                        result.lines[pl_id] = Line(
-                            id=pl_id, line_type=pl_type, nodes=pl_nodes
-                        )
+                        result.lines[pl_id] = Line(id=pl_id, line_type=pl_type, nodes=pl_nodes)
                     else:
                         result.parse_warnings.append(
                             f"Line {pl_start}: line {pl_id} expected {pl_nvert} nodes, "
@@ -492,9 +490,7 @@ class GrdParser:
         if pending_line is not None:
             pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
             if len(pl_nodes) >= 2:
-                result.lines[pl_id] = Line(
-                    id=pl_id, line_type=pl_type, nodes=pl_nodes
-                )
+                result.lines[pl_id] = Line(id=pl_id, line_type=pl_type, nodes=pl_nodes)
             else:
                 result.parse_warnings.append(
                     f"Line {pl_start}: line {pl_id} expected {pl_nvert} nodes, "
@@ -572,9 +568,7 @@ class GrdParser:
         for elem in sorted(grd_file.elements.values(), key=lambda e: e.id):
             nodes_str = " ".join(str(n) for n in elem.nodes)
             depth_str = f" {elem.depth:.6f}" if elem.depth is not None else ""
-            lines.append(
-                f"2 {elem.id} {elem.elem_type} {len(elem.nodes)} {nodes_str}{depth_str}"
-            )
+            lines.append(f"2 {elem.id} {elem.elem_type} {len(elem.nodes)} {nodes_str}{depth_str}")
 
         # Lines: 3 id type nvert node1 node2 ...
         for ln in sorted(grd_file.lines.values(), key=lambda ln_: ln_.id):

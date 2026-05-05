@@ -88,9 +88,11 @@ class FileService:
 
             # Upsert DB record — handle re-upload of the same rel_path
             try:
-                existing = db.query(ProjectFile).filter_by(
-                    project_id=project_id, rel_path=rel_path
-                ).one_or_none()
+                existing = (
+                    db.query(ProjectFile)
+                    .filter_by(project_id=project_id, rel_path=rel_path)
+                    .one_or_none()
+                )
                 if existing is None:
                     pf = ProjectFile(
                         project_id=project_id,
@@ -112,9 +114,11 @@ class FileService:
                 # against the UNIQUE constraint. Retry as a pure update — but use
                 # one_or_none() because the concurrent winner may also have rolled back.
                 db.rollback()
-                existing = db.query(ProjectFile).filter_by(
-                    project_id=project_id, rel_path=rel_path
-                ).one_or_none()
+                existing = (
+                    db.query(ProjectFile)
+                    .filter_by(project_id=project_id, rel_path=rel_path)
+                    .one_or_none()
+                )
                 if existing is None:
                     logger.error(
                         "Both concurrent uploads of %s failed; disk file may be orphaned",
@@ -300,7 +304,9 @@ class FileService:
                     try:
                         path = cfg.validate_path(work_dir / value, must_exist=False)
                     except ValueError:
-                        warnings.append(f"Invalid/unsafe file path for ${sec_name}/{param}: {value}")
+                        warnings.append(
+                            f"Invalid/unsafe file path for ${sec_name}/{param}: {value}"
+                        )
                         continue
                     if not path.exists():
                         warnings.append(f"Missing file for ${sec_name}/{param}: {value}")
