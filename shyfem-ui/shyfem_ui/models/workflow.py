@@ -2,7 +2,7 @@
 from datetime import datetime
 from enum import Enum as PyEnum
 
-from sqlalchemy import Column, DateTime, Enum, Integer, JSON, String
+from sqlalchemy import JSON, Column, DateTime, Enum, Integer, String
 
 from shyfem_ui.db.base import Base
 

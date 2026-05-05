@@ -20,16 +20,16 @@ from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.grid_prep_logic import (  # re-exported for backward compat
+    compute_boundary_summary,
+    format_element_shape,
+    grid_stats_to_json,
+)
 from shyfem_ui.services.mesh_builder import (  # re-exported for backward compat (test_grid_inspect)
     _get_triangle_vertices,  # noqa: F401
     compute_element_areas,
     compute_element_quality,
     compute_min_angles,
-)
-from shyfem_ui.services.grid_prep_logic import (  # re-exported for backward compat
-    compute_boundary_summary,
-    format_element_shape,
-    grid_stats_to_json,
 )
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper

@@ -93,10 +93,10 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
             target = (base_dir / member).resolve()
             try:
                 target.relative_to(base_dir_resolved)
-            except ValueError:
+            except ValueError as e:
                 raise ValueError(
                     f"path traversal in archive: {member!r} resolves outside {base_dir_resolved}"
-                )
+                ) from e
 
         # Determine unique directory name
         project_dir = base_dir / _sanitize_dirname(name)
@@ -150,11 +150,11 @@ def import_project_zip(zip_path: Path, project_dir: Path) -> None:
             target = (project_dir / member).resolve()
             try:
                 target.relative_to(project_dir_resolved)
-            except ValueError:
+            except ValueError as e:
                 raise ValueError(
                     f"path traversal in archive: {member!r} resolves outside"
                     f" {project_dir_resolved}"
-                )
+                ) from e
 
         # All members are safe — extract
         project_dir.mkdir(parents=True, exist_ok=True)

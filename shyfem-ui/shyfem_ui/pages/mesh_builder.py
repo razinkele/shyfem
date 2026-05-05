@@ -33,7 +33,7 @@ from shyfem_ui.services.mesh_builder import (
     warn_if_min_geq_max_area,
     warn_if_minimal_with_cap,
 )
-from shyfem_ui.services.parser_grd import GrdFile, GrdParser, Node
+from shyfem_ui.services.parser_grd import GrdFile, Node
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)

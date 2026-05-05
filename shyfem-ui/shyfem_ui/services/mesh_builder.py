@@ -686,7 +686,7 @@ def load_bathymetry_file(file_path: Path) -> np.ndarray:
     # Text-based formats
     points = []
     with open(path, errors="replace") as f:
-        for line_num, line in enumerate(f, 1):
+        for line in f:
             line = line.strip()
             if not line or line.startswith("#") or line.startswith("!"):
                 continue

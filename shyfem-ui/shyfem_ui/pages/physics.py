@@ -328,7 +328,7 @@ def physics_server(input, output, session, config: Config, active_project=None) 
         """Read all panel input values and update str_data before saving."""
         sf = str_data.get()
 
-        for panel_id, panel in PHYSICS_PANELS.items():
+        for panel in PHYSICS_PANELS.values():
             # --- params explicitly listed in the panel definition ---
             for param, section in panel["params"].items():
                 _read_input_and_set(sf, param, section, param)

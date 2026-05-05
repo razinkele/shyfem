@@ -123,7 +123,7 @@ class FileService:
                     raise RuntimeError(
                         f"Upload of {rel_path} failed due to concurrent write conflict; "
                         "please retry"
-                    )
+                    ) from None
                 pf = existing
                 pf.size_bytes = size
                 pf.checksum = checksum

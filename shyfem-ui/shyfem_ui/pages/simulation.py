@@ -5,8 +5,6 @@ from pathlib import Path
 
 from shiny import module, reactive, render, ui
 
-logger = logging.getLogger(__name__)
-
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
 from shyfem_ui.components.file_picker import (
     file_picker_server,
@@ -24,6 +22,8 @@ from shyfem_ui.services.simulation_logic import (  # re-exported for backward co
     generate_template,
 )
 from shyfem_ui.services.str_validator import validate_str
+
+logger = logging.getLogger(__name__)
 
 
 @module.ui

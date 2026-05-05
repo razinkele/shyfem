@@ -449,7 +449,7 @@ def admin_server(input, output, session, config: Config, auth_service: AuthServi
         def _delete_user():
             m = ui.modal(
                 ui.p(
-                    f"Are you sure you want to permanently delete user ",
+                    "Are you sure you want to permanently delete user ",
                     ui.tags.strong(username),
                     "? This cannot be undone.",
                 ),

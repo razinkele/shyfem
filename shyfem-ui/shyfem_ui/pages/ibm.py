@@ -17,16 +17,16 @@ try:
         fullscreen_widget,
         info_widget,
         legend_control,
-        screenshot_widget,
         scatterplot_layer,
+        screenshot_widget,
         tile_layer,
         trips_layer,
         zoom_widget,
     )
     from shiny_deckgl.ibm import (
         format_trips,
-        trips_animation_ui,
         trips_animation_server,
+        trips_animation_ui,
     )
 except ImportError:
     MapWidget = context_menu_widget = fullscreen_widget = None

@@ -10,10 +10,9 @@ from shiny import App, reactive, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
-from shyfem_ui.middleware.basic_auth import BasicAuthMiddleware
 from shyfem_ui.middleware.cache_headers import CacheHeaderMiddleware
 from shyfem_ui.middleware.health_check import HealthCheckMiddleware
-from shyfem_ui.middleware.rate_limit import RateLimitMiddleware, get_client_ip
+from shyfem_ui.middleware.rate_limit import RateLimitMiddleware
 from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current_user
 from shyfem_ui.pages import (
     admin,
@@ -32,6 +31,7 @@ from shyfem_ui.pages import (
     tutorial,
     visualize,
 )
+
 try:
     from shiny_deckgl import head_includes as deckgl_head_includes
 except ImportError:
@@ -40,7 +40,8 @@ except ImportError:
 from shyfem_ui.services.audit_service import AuditService
 from shyfem_ui.services.auth_service import AuthService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
-from shyfem_ui.services.notification_service import JobTransitionDetector, NotificationService as EmailNotificationService
+from shyfem_ui.services.notification_service import JobTransitionDetector
+from shyfem_ui.services.notification_service import NotificationService as EmailNotificationService
 
 logger = logging.getLogger(__name__)
 

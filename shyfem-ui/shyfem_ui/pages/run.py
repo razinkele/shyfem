@@ -28,15 +28,12 @@ from shyfem_ui.components.job_status import (
     job_list_table,
 )
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
-from shyfem_ui.services.str_validator import validate_str
 from shyfem_ui.services.report import generate_job_report
-from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
-from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
-from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.services.run_logic import (  # re-exported for backward compat (test_*.py)
     _estimate_eta,
     _get_job_metadata,  # noqa: F401  -- used by tests/test_job_ownership.py
@@ -46,6 +43,9 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
     detect_mesh_node_count,
     get_solver_recommendation,
 )
+from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+from shyfem_ui.services.str_validator import validate_str
+from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 

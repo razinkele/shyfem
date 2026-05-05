@@ -1189,7 +1189,7 @@ def build_mesh_figure(
 # Shiny module: grid_map_ui + grid_map_server (Task 7 — deck.gl)
 # ---------------------------------------------------------------------------
 
-from typing import Callable
+from collections.abc import Callable  # noqa: E402
 
 from shiny import module, reactive, render, ui  # noqa: E402
 

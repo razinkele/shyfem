@@ -82,7 +82,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         if itemp == 0 and isalt == 0:
             msgs.append(ValidationMessage(
                 "warning",
-                "ibarcl={} (baroclinic) but both itemp=0 and isalt=0 — no T/S computed".format(ibarcl),
+                f"ibarcl={ibarcl} (baroclinic) but both itemp=0 and isalt=0 — no T/S computed",
                 "ibarcl",
             ))
 
@@ -91,7 +91,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     if iheat > 0 and ibarcl == 0:
         msgs.append(ValidationMessage(
             "warning",
-            "iheat={} active but ibarcl=0 — heat flux has no effect without baroclinic mode".format(iheat),
+            f"iheat={iheat} active but ibarcl=0 — heat flux has no effect without baroclinic mode",
             "iheat",
         ))
 
@@ -116,7 +116,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         if not lagrg:
             msgs.append(ValidationMessage(
                 "warning",
-                "ilagr={} active but $lagrg section missing".format(ilagr),
+                f"ilagr={ilagr} active but $lagrg section missing",
                 "ilagr",
             ))
 
@@ -124,7 +124,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     if iturb is not None and isinstance(iturb, int) and iturb not in (0, 1, 2, 3):
         msgs.append(ValidationMessage(
             "error",
-            "iturb={} is invalid — must be 0 (off), 1 (GOTM), 2 (k-epsilon), or 3 (Munk-Anderson)".format(iturb),
+            f"iturb={iturb} is invalid — must be 0 (off), 1 (GOTM), 2 (k-epsilon), or 3 (Munk-Anderson)",
             "iturb",
         ))
 
@@ -132,7 +132,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     if ibarcl is not None and isinstance(ibarcl, int) and ibarcl not in (0, 1, 2, 3, 4, 5):
         msgs.append(ValidationMessage(
             "error",
-            "ibarcl={} is invalid — must be 0-5".format(ibarcl),
+            f"ibarcl={ibarcl} is invalid — must be 0-5",
             "ibarcl",
         ))
 
@@ -141,7 +141,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     if iwave is not None and isinstance(iwave, int) and iwave not in (0, 1, 2, 3, 4, 5):
         msgs.append(ValidationMessage(
             "error",
-            "iwave={} is invalid — must be 0 (off), 1-5 (coupling modes)".format(iwave),
+            f"iwave={iwave} is invalid — must be 0 (off), 1-5 (coupling modes)",
             "iwave",
         ))
 
@@ -163,7 +163,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         if not conzin and not conzn and (conref is None or conref == 0):
             msgs.append(ValidationMessage(
                 "info",
-                "iconz={} active but no conzin, conzn file, or conref set — tracers start at zero".format(iconz),
+                f"iconz={iconz} active but no conzin, conzn file, or conref set — tracers start at zero",
                 "iconz",
             ))
 
@@ -210,7 +210,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         if rowass < 990 or rowass > 1040:
             msgs.append(ValidationMessage(
                 "warning",
-                "rowass={} outside typical range [990-1040 kg/m³]".format(rowass),
+                f"rowass={rowass} outside typical range [990-1040 kg/m³]",
                 "rowass",
             ))
 
@@ -219,7 +219,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         if roluft < 0.9 or roluft > 1.4:
             msgs.append(ValidationMessage(
                 "warning",
-                "roluft={} outside typical air density range [0.9-1.4 kg/m³]".format(roluft),
+                f"roluft={roluft} outside typical air density range [0.9-1.4 kg/m³]",
                 "roluft",
             ))
 

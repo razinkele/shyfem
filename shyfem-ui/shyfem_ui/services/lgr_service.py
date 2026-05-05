@@ -64,10 +64,10 @@ class LgrService:
                     ["-lgmean", str(lgr_path.resolve())],
                     working_dir=tmp_path,
                 )
-            except FileNotFoundError:
+            except FileNotFoundError as e:
                 raise RuntimeError(
                     "lgrelab executable not found — ensure SHYFEM bin directory is configured"
-                )
+                ) from e
             if not result.success:
                 raise RuntimeError(
                     f"lgrelab failed (code {result.return_code}): {result.stderr}"
