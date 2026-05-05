@@ -34,6 +34,11 @@ except ImportError:
     scatterplot_layer = tile_layer = trips_layer = zoom_widget = None
     format_trips = trips_animation_ui = trips_animation_server = None
 
+from shyfem_ui.components.file_picker import (
+    file_picker_server,
+    file_picker_ui,
+    fill_picker_input,
+)
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
 from shyfem_ui.middleware.session_auth import get_current_user
@@ -158,6 +163,7 @@ def ibm_ui() -> ui.Tag:
         ui.layout_sidebar(
             ui.sidebar(
                 ui.h5("Trajectory File"),
+                file_picker_ui("fp_lgr", label="Pick Lagrangian output from project"),
                 ui.input_text(
                     "lgr_path",
                     "LGR File (.lgr)",
@@ -226,6 +232,8 @@ def ibm_server(
     if MapWidget is None:
         return
 
+    project_id_val: reactive.Value[int | None] = reactive.value(None)
+
     map_id = module.resolve_id("ibm_map")
     _map = MapWidget(
         id=map_id,
@@ -245,17 +253,39 @@ def ibm_server(
     tracks_data: reactive.Value[list[ParticleTrack]] = reactive.value([])
     load_error: reactive.Value[str | None] = reactive.value(None)
 
-    # Auto-fill from active project: pick the first .lgr in work_dir
+    # Auto-fill from active project: prefer FileService-tracked .lgr
+    # files surfaced via the picker, fall back to glob-search of
+    # work_dir for .lgr files generated mid-run before the next scan.
     @reactive.effect
     def _on_project_changed():
+        if active_project is None:
+            return
         proj = active_project.get()
         if proj is None:
+            project_id_val.set(None)
             return
-        work_dir = proj.get("work_dir", "")
-        if work_dir:
-            lgr_files = sorted(Path(work_dir).glob("*.lgr"))
-            if lgr_files:
-                ui.update_text("lgr_path", value=str(lgr_files[0]))
+        project_id_val.set(proj.get("id"))
+        work = proj["work_dir"]
+        # Existing glob fallback - keep it for .lgr files that aren't
+        # tracked in FileService (e.g., generated mid-run before scan).
+        # Only fill if the input is empty so picker selections survive.
+        with reactive.isolate():
+            lgr_empty = not input.lgr_path()
+        if lgr_empty:
+            if work:
+                lgr_files = sorted(Path(work).glob("*.lgr"))
+                if lgr_files:
+                    ui.update_text("lgr_path", value=str(lgr_files[0]))
+
+    # File picker delegates resolve/log/notify branching to
+    # fill_picker_input (see its docstring in components/file_picker.py).
+    file_picker_server(
+        "fp_lgr",
+        project_id=project_id_val,
+        file_types=["lagrangian"],
+        on_selected=lambda rel: fill_picker_input("lgr_path",
+            active_project.get() if active_project else None, rel),
+    )
 
     @reactive.effect
     @reactive.event(input.load_btn)
