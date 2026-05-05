@@ -25,6 +25,7 @@ jobs:
         with:
           environment-file: shyfem-ui/environment.yml
           cache-environment: true
+          init-shell: bash
       - name: Ruff check
         shell: micromamba-shell {0}
         run: python -m ruff check shyfem_ui/
@@ -41,6 +42,7 @@ jobs:
         with:
           environment-file: shyfem-ui/environment.yml
           cache-environment: true
+          init-shell: bash
       - name: Install package
         shell: micromamba-shell {0}
         run: pip install -e ".[dev]"
@@ -68,6 +70,7 @@ jobs:
         with:
           environment-file: shyfem-ui/environment.yml
           cache-environment: true
+          init-shell: bash
       - name: Install package
         shell: micromamba-shell {0}
         run: pip install -e ".[dev]"
