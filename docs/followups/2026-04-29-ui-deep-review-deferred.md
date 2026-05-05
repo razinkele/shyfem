@@ -168,40 +168,75 @@ When designing this:
 - Consider whether to share infrastructure with `components/file_picker.py`
   (e.g. a `directory_picker_server` sibling) or build a separate component.
 
-## M. File-picker rollout to remaining 6 pages (MED)
+## Section M — File-picker rollout to remaining 6 pages — COMPLETE 2026-05-05
 
-**Source:** Section B pilot (partitioning file-picker integration, 2026-05-01).
+**Original problem:** 6 pages (`grid_prep`, `postprocess`, `physics`,
+`simulation`, `run`, `ibm`) had free-text path inputs not wired to
+FileService. Duplicating the partitioning pilot's wrapper across pages
+would have caused user-visible string drift.
 
-The pilot scopes only `pages/partitioning.py`. The remaining pages with
-free-text path inputs are:
+**Shipped:** 2026-05-05, branch `feat/section-m-file-picker-rollout`,
+commits `ff3e6a1` (lagrangian taxonomy) → `54e1480` (ibm picker). The
+file-picker pattern is now live on all 7 pages: partitioning (pilot),
+grid_prep, postprocess, physics, simulation, run, ibm.
 
-- `pages/grid_prep.py` (mesh import paths)
-- `pages/postprocess.py` (input `.shy`/`.nc` files)
-- `pages/physics.py` (forcing files)
-- `pages/simulation.py` (STR file)
-- `pages/run.py` (STR file)
-- `pages/ibm.py` (Lagrangian config — `.lgr` may not map to a FileService
-  category; check the taxonomy first)
+**Helper extraction:** `fill_picker_input(target_id: PickerTargetId,
+project: ProjectContext | None, rel_path: str)` in
+`components/file_picker.py` owns the resolve+log+notify+update_text
+branching. All 7 pages delegate via lambdas that unwrap the active
+project (`active_project.get() if active_project else None`) before
+calling.
 
-Apply the same pattern as the pilot:
-1. Add `file_picker_ui` above each text input.
-2. Add `file_picker_server` with the appropriate `file_types` filter.
-3. Add an `_fill_X` wrapper that calls `resolve_picker_path`, logs +
-   notifies on resolution failure.
+**Taxonomy addition:** `.lgr → "lagrangian"` added to FileService
+(`_infer_file_type`); legacy rows backfilled by Alembic migration
+`379248193d58_lagrangian_file_type_for_lgr`.
 
-**Hard deadline (from spec lessons):** by the SECOND follow-up page,
-extract the per-page `_fill_X` wrapper bodies into a shared helper
-`fill_picker_input(text_input_id, active_project, rel_path)` in
-`components/file_picker.py`. This prevents user-visible string drift
-across pages.
+**Pattern adoption per page:** `_on_project_changed` effects get
+`reactive.isolate()` + empty-guard. `_on_tutorial_context` effects
+get `reactive.isolate()` only (no empty-guard — tutorial nav is
+intentional override). Pages with project-tied directory prefills
+(`postprocess.shy_path` ← `work_dir`, `run.working_dir` ← `work_dir`)
+also get a `last_project_id` change-detector that forces re-fill on
+ACTUAL project switch (A → B), but preserves user input on metadata
+refresh and on first project load (None → A). `physics.py` had no
+prior `_on_project_changed`; one was added as part of the rollout.
 
-Before each page is wired:
-- Confirm the page's file inputs map cleanly to `FileService` file_types.
-  `.lgr` for ibm.py may need a new taxonomy entry (`lagrangian` or
-  similar).
-- Audit `_on_project_changed` (or equivalent) for the same patterns
-  fixed in the pilot: missing `reactive.isolate()` around input reads,
-  missing empty-guards on auto-fill.
+**Test coverage shipped:**
+- 5 helper-level unit tests for `fill_picker_input` branches
+  (success / no-project / empty-rel_path / traversal-warning /
+  target_id-in-log).
+- 2 unit tests per page (UI render + import-style/wiring guard) ×
+  6 pages = 12 new unit tests.
+- 4 Playwright tests per page (placeholder / isolate-regression /
+  empty-guard / traversal-warning) for `grid_prep`, `postprocess`,
+  `physics`, `simulation`, `ibm` = 20 tests; 2 Playwright tests for
+  `run.py` (placeholder + traversal — fewer because the stub server
+  doesn't replicate auto-fill semantics).
+- Pilot's 5 partitioning Playwright tests still pass after the
+  helper-extraction refactor (no behavioural regression).
+
+**Test infrastructure additions:**
+- `tests/_test_helpers.py:get_server_source` — closure-unwrap helper
+  for `@module.server`-decorated functions. Required because
+  `inspect.getsource` on the decorated name returns the wrapper, not
+  the inner body. Used by all 6 per-page wiring assertions.
+- All Playwright classes now use an autouse `_reset_active_project`
+  fixture so test order is no longer load-bearing across files
+  (`pw_page` is session-scoped).
+
+**Outstanding gaps:**
+- Section M.1 — `run_server`'s reactive-effect deadlock blocks
+  end-to-end test mounting. Picker coverage works around this via
+  `_stub_run_server` extension; the underlying deadlock remains
+  unresolved.
+- Section M.2 — `pages/ibm.py` retains a glob fallback for `.lgr`
+  files outside the FileService index. Picker dropdown and the glob
+  can disagree on which file is shown; provenance is unobservable.
+  Resolution: drop the glob (picker becomes canonical) or emit
+  `logger.info` when glob fills `lgr_path`.
+
+**Section L (output-directory picker) remains deferred** — different
+abstraction (directory picker, not file picker). Tracked separately.
 
 ## Section M.1 — run.py reactive-effect deadlock (open)
 
