@@ -14,6 +14,11 @@ from pathlib import Path
 
 from shiny import module, reactive, render, ui
 
+from shyfem_ui.components.file_picker import (
+    file_picker_server,
+    file_picker_ui,
+    fill_picker_input,
+)
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
@@ -124,6 +129,7 @@ def postprocess_ui() -> ui.Tag:
             ui.sidebar(
                 # Input files
                 ui.h5("Input"),
+                file_picker_ui("fp_shy", label="Pick output file from project"),
                 ui.input_text(
                     "shy_path",
                     "Output File (.shy)",
@@ -236,6 +242,12 @@ def postprocess_server(
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
+    project_id_val: reactive.Value[int | None] = reactive.value(None)
+    # Tracks the last-seen project id so _on_project_changed can
+    # distinguish "metadata refresh of same project" (preserve user
+    # input) from "user switched to different project" (force re-fill).
+    last_project_id: reactive.Value[int | None] = reactive.value(None)
+
     # Auto-fill from active project
     @reactive.effect
     def _on_project_changed():
@@ -243,8 +255,36 @@ def postprocess_server(
             return
         proj = active_project.get()
         if proj is None:
+            project_id_val.set(None)
+            last_project_id.set(None)
             return
-        ui.update_text("shy_path", value=proj["work_dir"])
+        pid = proj.get("id")
+        project_id_val.set(pid)
+        prev_pid = last_project_id.get()
+        # Treat None -> pid as "first arrival" (don't overwrite typed
+        # input); only nonNone -> different nonNone counts as a real
+        # project switch that must force re-fill.
+        project_changed = prev_pid is not None and prev_pid != pid
+        last_project_id.set(pid)
+        work = proj["work_dir"]
+        with reactive.isolate():
+            shy_empty = not input.shy_path()
+        # Force re-fill on actual project change (not just metadata
+        # refresh). Without project_changed, switching from project A
+        # to B would leak A's work_dir into shy_path until the user
+        # manually clears it.
+        if shy_empty or project_changed:
+            ui.update_text("shy_path", value=work)
+
+    # File picker delegates resolve/log/notify branching to
+    # fill_picker_input (see its docstring in components/file_picker.py).
+    file_picker_server(
+        "fp_shy",
+        project_id=project_id_val,
+        file_types=["output"],
+        on_selected=lambda rel: fill_picker_input("shy_path",
+            active_project.get() if active_project else None, rel),
+    )
 
     # Auto-fill from tutorial navigation
     @reactive.effect
