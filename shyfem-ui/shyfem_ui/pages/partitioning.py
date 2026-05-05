@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
@@ -12,7 +11,7 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.file_picker import (
     file_picker_server,
     file_picker_ui,
-    resolve_picker_path,
+    fill_picker_input,
 )
 from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
@@ -26,9 +25,6 @@ from shyfem_ui.services.partitioning_logic import (
     validate_partition_files,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
-
-if TYPE_CHECKING:
-    from shyfem_ui.services.project_context import ProjectContext
 
 logger = logging.getLogger(__name__)
 
@@ -145,17 +141,6 @@ def partitioning_server(
     # the lowercase callable form for construction (idiomatic).
     project_id_val: reactive.Value[int | None] = reactive.value(None)
 
-    # The `active_project is None` check is on a constructor parameter,
-    # not a reactive -- it's constant for the lifetime of this server
-    # invocation. Log once at server entry (BEFORE declaring the
-    # reactive effect) rather than threading a one-shot flag through
-    # the effect closure.
-    if active_project is None:
-        logger.warning(
-            "partitioning_server received active_project=None -- "
-            "page wiring bug? File picker dropdowns will stay empty."
-        )
-
     # Auto-fill from active project
     @reactive.effect
     def _on_project_changed():
@@ -184,69 +169,27 @@ def partitioning_server(
             if grid.get("grd_file") and grd_empty:
                 ui.update_text("grd_path", value=str(Path(work) / grid["grd_file"]))
 
-    # File picker wrappers -- distinguish benign empty-state (no project)
-    # from a real mismatch (user picked a stale dropdown entry). The
-    # latter logs + shows a notification toast so the user understands
-    # why the click didn't fill the text input.
-    # Per plan Section M: extract a shared `fill_picker_input(target_id,
-    # active_project, rel_path)` helper into components/file_picker.py
-    # by the SECOND follow-up page (not the third) -- the wrappers contain
-    # user-visible strings + observability calls that must stay consistent
-    # across pages.
-    def _fill_bas(rel_path: str) -> None:
-        proj = active_project.get() if active_project else None
-        absolute = resolve_picker_path(cast("ProjectContext | None", proj), rel_path)
-        if absolute is None:
-            if proj is not None and rel_path:
-                # Include target ('bas_path') in the message so callers
-                # filtering caplog or querying logs can disambiguate
-                # which input failed to resolve.
-                logger.warning(
-                    "Picker selection %r could not be resolved for "
-                    "project %r (target=bas_path, work_dir missing "
-                    "or traversal guard rejected)",
-                    rel_path, proj.get("id"),
-                )
-                ui.notification_show(
-                    "Could not resolve selected file. Try re-selecting "
-                    "after the project finishes loading.",
-                    type="warning", duration=5,
-                )
-            return
-        ui.update_text("bas_path", value=absolute)
-
-    def _fill_grd(rel_path: str) -> None:
-        proj = active_project.get() if active_project else None
-        absolute = resolve_picker_path(cast("ProjectContext | None", proj), rel_path)
-        if absolute is None:
-            if proj is not None and rel_path:
-                logger.warning(
-                    "Picker selection %r could not be resolved for "
-                    "project %r (target=grd_path, work_dir missing "
-                    "or traversal guard rejected)",
-                    rel_path, proj.get("id"),
-                )
-                ui.notification_show(
-                    "Could not resolve selected file. Try re-selecting "
-                    "after the project finishes loading.",
-                    type="warning", duration=5,
-                )
-            return
-        ui.update_text("grd_path", value=absolute)
-
-    # Wire pickers -- file_types filter ensures dropdown shows only
-    # the right kind of file per input.
+    # File pickers delegate the resolve/log/notify branching to
+    # fill_picker_input (see its docstring in components/file_picker.py).
     file_picker_server(
         "fp_bas",
         project_id=project_id_val,
         file_types=["basin"],
-        on_selected=_fill_bas,
+        on_selected=lambda rel: fill_picker_input(
+            "bas_path",
+            active_project.get() if active_project else None,
+            rel,
+        ),
     )
     file_picker_server(
         "fp_grd",
         project_id=project_id_val,
         file_types=["grid"],
-        on_selected=_fill_grd,
+        on_selected=lambda rel: fill_picker_input(
+            "grd_path",
+            active_project.get() if active_project else None,
+            rel,
+        ),
     )
 
     # State

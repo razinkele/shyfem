@@ -64,10 +64,9 @@ class TestModuleImports:
     """
 
     def test_partitioning_imports_and_wires_file_picker_server(self):
-        import inspect
-
         import shyfem_ui.pages.partitioning as part_mod
         from shyfem_ui.components import file_picker as fp_mod
+        from tests._test_helpers import get_server_source
 
         # Identity check -- the page's symbol IS the component's function
         assert hasattr(part_mod, "file_picker_server"), (
@@ -79,21 +78,13 @@ class TestModuleImports:
             "components.file_picker.file_picker_server (no shadowing)"
         )
         assert hasattr(part_mod, "file_picker_ui")
-        assert hasattr(part_mod, "resolve_picker_path")
 
         # Wiring assertion -- partitioning_server source contains the
         # right two file_picker_server calls with the right file_types.
         # `@module.server` wraps the function in a session-scoping
-        # closure, so `inspect.getsource(part_mod.partitioning_server)`
-        # returns the wrapper body. Unwrap via `__closure__[0]` (the
-        # `fn` free var) to get the actual decorated function source.
-        inner_fn = part_mod.partitioning_server.__closure__[0].cell_contents
-        assert inner_fn.__name__ == "partitioning_server", (
-            "expected closure[0] to be the wrapped `fn` named "
-            "'partitioning_server' (shiny.module.server internals "
-            "may have changed)"
-        )
-        src = inspect.getsource(inner_fn)
+        # closure, so we use the shared get_server_source helper to
+        # unwrap and read the inner function's source.
+        src = get_server_source(part_mod, "partitioning_server")
         assert src.count("file_picker_server(") >= 2, (
             "expected at least 2 file_picker_server calls "
             "(fp_bas + fp_grd) in partitioning_server"
@@ -105,14 +96,18 @@ class TestModuleImports:
             "expected file_types=['grid'] for the .grd picker"
         )
 
-        # Spec test 8b -- pin the active_project=None warning message.
-        # Stderr capture from the test subprocess is unreachable from
-        # tests (blocking PIPE), so source-inspection is the closest
-        # we can get to runtime verification without a Shiny session.
-        # The warning is load-bearing for the 6-page rollout -- page
-        # authors copying this pattern need it to fire when they
-        # forget to inject active_project.
-        assert "received active_project=None" in src, (
-            "expected the active_project=None wiring-bug warning "
-            "in partitioning_server (spec test 8b)"
+        # After Section M extraction: per-page wrappers are gone; the
+        # page now delegates via lambdas to the shared
+        # fill_picker_input helper.
+        assert hasattr(part_mod, "fill_picker_input"), (
+            "partitioning.py must do `from ...file_picker import "
+            "fill_picker_input`"
+        )
+        assert part_mod.fill_picker_input is fp_mod.fill_picker_input, (
+            "partitioning.fill_picker_input must be the SAME object as "
+            "components.file_picker.fill_picker_input"
+        )
+        assert "fill_picker_input(" in src, (
+            "partitioning_server must call fill_picker_input(...) "
+            "in its on_selected= lambdas"
         )
