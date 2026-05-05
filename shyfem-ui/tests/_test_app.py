@@ -47,17 +47,47 @@ from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 @module.server
 def _stub_run_server(
     input, output, session, config: Config, job_queue: JobQueue = None,
+    active_project=None,
 ):
     """Minimal run_server that doesn't block the event loop.
 
     Provides just enough state for the UI elements to render without
     the polling/refresh effects that deadlock the async event loop.
+
+    The picker is mounted here (mirroring run_server) so Playwright
+    tests can exercise the picker UI. Auto-fill semantics aren't
+    replicated — see Section M.1 followup.
     """
+    from shyfem_ui.components.file_picker import (
+        file_picker_server,
+        fill_picker_input,
+    )
+
     active_jobs_data = reactive.value([])
     all_jobs_data = reactive.value([])
     selected_job_id = reactive.value(None)
     selected_job = reactive.value(None)
     log_content = reactive.value("")
+
+    project_id_val: reactive.Value[int | None] = reactive.value(None)
+
+    @reactive.effect
+    def _stub_on_project_changed():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        project_id_val.set(proj.get("id") if proj else None)
+
+    file_picker_server(
+        "fp_input",
+        project_id=project_id_val,
+        file_types=["str"],
+        on_selected=lambda rel: fill_picker_input(
+            "input_file",
+            active_project.get() if active_project else None,
+            rel,
+        ),
+    )
 
     @render.ui
     def dashboard():
@@ -242,7 +272,7 @@ window.__test_set_active_project = function(projectDict) {
                                      tutorial_context=tutorial_context)
         ibm.ibm_server("ibm", config, active_project=active_project)
         # Use stub run_server to avoid event loop deadlock
-        _stub_run_server("run", config, job_queue)
+        _stub_run_server("run", config, job_queue, active_project=active_project)
         postprocess.postprocess_server("postprocess", config,
                                        active_project=active_project,
                                        tutorial_context=tutorial_context)

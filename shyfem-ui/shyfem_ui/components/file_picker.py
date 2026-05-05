@@ -3,7 +3,7 @@
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from shiny import module, reactive, ui
 
@@ -175,6 +175,55 @@ def resolve_picker_path(
         )
         return None
     return str(resolved)
+
+
+# Set of input ids that the file picker can target. Literal-typed so
+# typos at call sites (e.g. fill_picker_input("bad_path", ...)) surface
+# at type-check time rather than as silent ui.update_text("bad_path",
+# ...) no-ops.
+PickerTargetId = Literal[
+    "bas_path", "grd_path", "shy_path",
+    "str_path", "input_file", "lgr_path",
+]
+
+
+def fill_picker_input(
+    target_id: PickerTargetId,
+    project: "ProjectContext | None",
+    rel_path: str,
+) -> None:
+    """Resolve a picker selection and write it to a Shiny text input.
+
+    Bridges resolve_picker_path's pure logic to the session-bound
+    ui.update_text + ui.notification_show calls. Silent on the benign
+    empty-state (no project / empty rel_path); logs a WARNING naming
+    target_id and shows a warning toast when a non-empty selection
+    fails to resolve. See resolve_picker_path's docstring for the
+    containment / traversal contract.
+
+    Args:
+        target_id: Shiny text input id (no namespace prefix).
+        project: unwrapped ProjectContext, or None for benign empty-state.
+            Callers pass `active_project.get() if active_project else None`.
+        rel_path: project-relative path from the picker, "" for the
+            empty-placeholder selection.
+    """
+    absolute = resolve_picker_path(project, rel_path)
+    if absolute is None:
+        if project is not None and rel_path:
+            logger.warning(
+                "Picker selection %r could not be resolved for "
+                "project %r (target=%s, work_dir missing or "
+                "traversal guard rejected)",
+                rel_path, project.get("id"), target_id,
+            )
+            ui.notification_show(
+                "Could not resolve selected file. Try re-selecting "
+                "after the project finishes loading.",
+                type="warning", duration=5,
+            )
+        return
+    ui.update_text(target_id, value=absolute)
 
 
 @module.ui

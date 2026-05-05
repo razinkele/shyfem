@@ -16,6 +16,11 @@ import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
+from shyfem_ui.components.file_picker import (
+    file_picker_server,
+    file_picker_ui,
+    fill_picker_input,
+)
 from shyfem_ui.components.job_status import (
     format_datetime,
     format_duration,
@@ -77,6 +82,7 @@ def run_ui() -> ui.Tag:
                             "shyadj": "shyadj (Mesh Adjustment)",
                         },
                     ),
+                    file_picker_ui("fp_input", label="Pick STR file from project"),
                     ui.input_text(
                         "input_file",
                         "Input File",
@@ -259,6 +265,12 @@ def run_server(
             redis_url=config.redis_url if config.use_celery else None,
         )
 
+    project_id_val: reactive.Value[int | None] = reactive.value(None)
+    # Tracks the last-seen project id so _on_project_changed can
+    # distinguish "metadata refresh of same project" (preserve user
+    # input) from "user switched to different project" (force re-fill).
+    last_project_id: reactive.Value[int | None] = reactive.value(None)
+
     # Auto-fill from active project
     @reactive.effect
     def _on_project_changed():
@@ -266,12 +278,50 @@ def run_server(
             return
         proj = active_project.get()
         if proj is None:
+            project_id_val.set(None)
+            last_project_id.set(None)
             return
-        ui.update_text("working_dir", value=proj["work_dir"])
+        pid = proj.get("id")
+        project_id_val.set(pid)
+        prev_pid = last_project_id.get()
+        # Treat None -> pid as "first arrival" (don't overwrite typed
+        # input); only nonNone -> different nonNone counts as a real
+        # project switch that must force re-fill.
+        project_changed = prev_pid is not None and prev_pid != pid
+        last_project_id.set(pid)
+        work = proj["work_dir"]
+
+        # working_dir is a directory prefill (project-tied).
+        # Force re-fill on actual project change (A->B) so project A's
+        # directory doesn't leak into project B. Preserve user input
+        # on metadata refresh and on first project load (None->A).
+        with reactive.isolate():
+            wd_empty = not input.working_dir()
+        if wd_empty or project_changed:
+            ui.update_text("working_dir", value=work)
+
+        # input_file is a file prefill (project-tied, picker can override).
+        # Standard isolate + empty-guard.
         if proj["simulations"]:
             sim = proj["simulations"][0]
             if sim.get("str_file"):
-                ui.update_text("input_file", value=str(Path(proj["work_dir"]) / sim["str_file"]))
+                with reactive.isolate():
+                    input_file_empty = not input.input_file()
+                if input_file_empty:
+                    ui.update_text(
+                        "input_file",
+                        value=str(Path(work) / sim["str_file"]),
+                    )
+
+    # File picker delegates resolve/log/notify branching to
+    # fill_picker_input (see its docstring in components/file_picker.py).
+    file_picker_server(
+        "fp_input",
+        project_id=project_id_val,
+        file_types=["str"],
+        on_selected=lambda rel: fill_picker_input("input_file",
+            active_project.get() if active_project else None, rel),
+    )
 
     # Auto-fill from tutorial navigation
     @reactive.effect

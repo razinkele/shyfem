@@ -8,6 +8,11 @@ from shiny import module, reactive, render, ui
 logger = logging.getLogger(__name__)
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
+from shyfem_ui.components.file_picker import (
+    file_picker_server,
+    file_picker_ui,
+    fill_picker_input,
+)
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
@@ -32,6 +37,7 @@ def simulation_ui() -> ui.Tag:
             ui.sidebar(
                 # File selection
                 ui.h5("Parameter File"),
+                file_picker_ui("fp_str", label="Pick STR file from project"),
                 ui.input_text(
                     "str_path",
                     "File Path (.str)",
@@ -155,11 +161,20 @@ def simulation_server(
         proj = active_project.get()
         if proj is None:
             return
+        # NOTE: project_id_reactive is updated by the existing
+        # _sync_project_id effect (defined below); do NOT duplicate
+        # that work here.
+        work_dir = proj["work_dir"]
         if proj["simulations"]:
             sim = proj["simulations"][0]
             if sim.get("str_file"):
-                str_path = str(Path(proj["work_dir"]) / sim["str_file"])
-                ui.update_text("str_path", value=str_path)
+                with reactive.isolate():
+                    str_empty = not input.str_path()
+                if str_empty:
+                    ui.update_text(
+                        "str_path",
+                        value=str(Path(work_dir) / sim["str_file"]),
+                    )
 
     # Auto-fill from tutorial navigation
     @reactive.effect
@@ -188,6 +203,16 @@ def simulation_server(
             return
         proj = active_project.get()
         project_id_reactive.set(proj["id"] if proj else None)
+
+    # File picker delegates resolve/log/notify branching to
+    # fill_picker_input (see its docstring in components/file_picker.py).
+    file_picker_server(
+        "fp_str",
+        project_id=project_id_reactive,  # reuse existing reactive
+        file_types=["str"],
+        on_selected=lambda rel: fill_picker_input("str_path",
+            active_project.get() if active_project else None, rel),
+    )
 
     # Initialize str_editor and wire up its reactive state
     editor_state = str_editor_server(
