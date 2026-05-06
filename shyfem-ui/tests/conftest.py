@@ -185,28 +185,23 @@ def _reset_active_project_state(request):
         yield
         return
     page = request.getfixturevalue("pw_page")
-    # Step 1: navigate to Dashboard so any page-specific reactive
-    # outputs (e.g. files_content) drop their cached state. The nav
-    # value is "Dashboard" (per app.py:52, NOT "Home").
-    dashboard_link = page.locator(".sf-nav-item[data-nav='Dashboard']")
-    if dashboard_link.count() >= 1:
-        dashboard_link.click(force=True)
-        page.wait_for_timeout(100)
-    # Step 2: clear active_project via the test hook. The hook in
-    # _test_app.py uses `value if value else None`, so empty string
-    # is coerced to None — and Shiny.setInputValue handles "" more
-    # reliably than null (null can be silently dropped). This fires
-    # _test_active_project_hook which sets active_project.set(None).
+    # Reset active_project via the test hook. Use empty string (not
+    # null) — Shiny.setInputValue silently drops null, but coerces
+    # "" through the @reactive.event hook in _test_app.py whose
+    # `value if value else None` then sets active_project.set(None).
+    #
+    # We do NOT navigate to a specific tab here: cumulative test
+    # classes (e.g. TestMeshCreationFlow) rely on the page state
+    # left by the previous test in their class. Each test that
+    # depends on no-active-project navigates to its target tab
+    # itself, which fires a fresh render against the now-None
+    # active_project value.
     page.evaluate("""
         if (typeof window.__test_set_active_project === 'function') {
             window.__test_set_active_project("");
         }
     """)
-    # Step 3: give Shiny enough time for the reactive cascade to
-    # propagate to all observing pages. 150ms is too short under
-    # full-suite load (verified — 2 Files-tab tests fail at 150ms,
-    # pass at 500ms).
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(300)
     yield
 
 
