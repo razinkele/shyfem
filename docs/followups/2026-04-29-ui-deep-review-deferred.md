@@ -229,11 +229,15 @@ prior `_on_project_changed`; one was added as part of the rollout.
   end-to-end test mounting. Picker coverage works around this via
   `_stub_run_server` extension; the underlying deadlock remains
   unresolved.
-- Section M.2 — `pages/ibm.py` retains a glob fallback for `.lgr`
+- ~~Section M.2 — `pages/ibm.py` retains a glob fallback for `.lgr`
   files outside the FileService index. Picker dropdown and the glob
-  can disagree on which file is shown; provenance is unobservable.
-  Resolution: drop the glob (picker becomes canonical) or emit
-  `logger.info` when glob fills `lgr_path`.
+  can disagree on which file is shown; provenance is unobservable.~~
+  **CLOSED 2026-05-06 (commit `2660bcf`):** glob-fill branch now emits
+  a `logger.info` naming the file path so log consumers can distinguish
+  picker-click provenance from glob-fallback provenance. Glob retained
+  to preserve auto-discovery of mid-run-generated `.lgr` files; the log
+  closes the observability gap. Pinned by `TestGlobFallbackProvenance`
+  in `test_ibm_file_picker.py`.
 
 **Section L (output-directory picker) remains deferred** — different
 abstraction (directory picker, not file picker). Tracked separately.
