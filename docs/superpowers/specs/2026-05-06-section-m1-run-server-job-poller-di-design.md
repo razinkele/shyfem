@@ -1,11 +1,68 @@
-# Section M.1 — `run_server` Job-Poller DI Design
+# Section M.1 — `run_server` Job-Poller DI Design  **[DEFERRED 2026-05-06]**
+
+> ## Status: DEFERRED
+>
+> This spec was reviewed by 8 specialist agents on 2026-05-06. The
+> review surfaced ~30 concrete defects (construction-order bug, tests
+> won't execute outside a Shiny session, factory belongs in
+> `services/run_logic.py` not `pages/run.py`, `tests/test_run_helpers.py`
+> already exists, etc.) AND a strategic challenge from the independent
+> reviewer: **the design's central premise — that `_auto_refresh` is
+> the deadlock-causer — is unconfirmed** (the existing stub omits ALL
+> ~20 effects, not just `_auto_refresh`), and **no consumer is waiting
+> on M.1** (Section L is independent, the stub has been stable 3
+> months, drift risk is real but accumulates slowly).
+>
+> Decision: **defer with trigger conditions** rather than ship
+> preventive maintenance based on an unconfirmed hypothesis. The spec
+> is preserved as design-history, not as an implementation plan.
+>
+> **Pickup conditions, pre-pickup actions, and the alternative design
+> worth comparing (`polling_enabled: reactive.value(True)` toggle vs.
+> the 7-arg factory in this spec)** are documented in
+> `docs/followups/2026-04-29-ui-deep-review-deferred.md` Section M.1.
+> Read that BEFORE re-engaging.
+>
+> **Known defects in this spec** (do not implement as-written):
+> 1. Factory call site at line ~540 fails — `workflow_engine`,
+>    `active_workflow_id`, `_refresh_tick` are at run.py:1139-1141.
+>    Eager parameter binding raises `UnboundLocalError`. Hoist the
+>    vars OR move the factory call past line 1141.
+> 2. Unit tests use `asyncio.run(poller())` and expect `reactive.Value.get()`
+>    to work outside a Shiny session — verified empirically that this
+>    raises `RuntimeError: No current reactive context`. Mock the
+>    reactive values OR wrap in `reactive.isolate()`.
+> 3. `tests/test_run_helpers.py` ALREADY EXISTS — extend, don't create.
+> 4. Project uses `asyncio_mode = "auto"`; tests should be `async def`,
+>    not sync with `asyncio.run()`.
+> 5. Factory should live in `services/run_logic.py` (codebase pattern),
+>    not `pages/run.py`.
+> 6. Imports must be `from collections.abc import Awaitable, Callable`
+>    (codebase uses stdlib path 10/10).
+> 7. `job_queue` parameter to `_make_default_job_poller` is unused
+>    inside the closure body — drop it.
+> 8. `lambda: None` cannot be a `JobPollerFn` — `await None` TypeErrors.
+> 9. The `try/except Exception:` + `logger.debug` silent-swallow at
+>    run.py:527 should be addressed (at minimum flip to `warning`)
+>    in any future version.
+> 10. ~20 more findings (test coverage gaps, comment rot, type-design,
+>     output-ID divergence, noop-poller leakage detection, etc.) —
+>     see review transcripts in this session's logs.
+>
+> **Lesson captured:** the multi-agent spec-review process caught a
+> strategic "should we do this at all" issue, not just technical
+> defects. The cost of producing this spec (~1 hour brainstorm, ~30 min
+> writing, ~15 min reviewing in parallel) saved ~6 hours of misdirected
+> implementation. Validates the workflow.
+
+---
 
 **Origin:** Section M file-picker rollout (2026-05-04 → 2026-05-05) flagged
 that `pages/run.py:run_server` cannot be mounted in `tests/_test_app.py`
 due to event-loop deadlocks during initial flush. The Section M rollout
 worked around this by mounting `_stub_run_server` (a parallel
 implementation that omits the deadlocking effects). Section M.1 is the
-underlying fix.
+underlying fix — DEFERRED, see status block above.
 
 ## Goal
 

@@ -228,7 +228,9 @@ prior `_on_project_changed`; one was added as part of the rollout.
 - Section M.1 — `run_server`'s reactive-effect deadlock blocks
   end-to-end test mounting. Picker coverage works around this via
   `_stub_run_server` extension; the underlying deadlock remains
-  unresolved.
+  unresolved. **DEFERRED 2026-05-06** after design + 8-agent review
+  found ~30 issues plus a strategic "no consumer waiting" challenge.
+  See the M.1 entry below for trigger conditions and pre-pickup steps.
 - ~~Section M.2 — `pages/ibm.py` retains a glob fallback for `.lgr`
   files outside the FileService index. Picker dropdown and the glob
   can disagree on which file is shown; provenance is unobservable.~~
@@ -242,7 +244,7 @@ prior `_on_project_changed`; one was added as part of the rollout.
 **Section L (output-directory picker) remains deferred** — different
 abstraction (directory picker, not file picker). Tracked separately.
 
-## Section M.1 — run.py reactive-effect deadlock (open)
+## Section M.1 — run.py reactive-effect deadlock (DEFERRED 2026-05-06)
 
 **Source:** Section M file-picker rollout (2026-05-04 → 2026-05-05).
 
@@ -250,18 +252,68 @@ abstraction (directory picker, not file picker). Tracked separately.
 deadlocks in its reactive effects (job-queue + tutorial-context
 interplay). The Section M rollout works around this for picker
 coverage by extending `_stub_run_server` to mount the picker without
-the deadlocking effects (`_test_app.py:245`).
+the deadlocking effects (`_test_app.py:48-146`).
 
 **Open work:** the underlying deadlock means run_server cannot be
 exercised end-to-end in tests at all. Picker coverage is workable but
 fragile: any future picker-adjacent change to run_server must also
 update the stub, or stub drift silently breaks Playwright coverage.
 
-**Resolution options:**
-1. Refactor run_server to extract the deadlock-causing effects into a
-   helper that the test can replace via dependency injection.
-2. Identify the specific deadlocking interaction and break the cycle
-   directly (likely the right fix; needs investigation).
+**Status (2026-05-06):** A design pass was completed
+(`docs/superpowers/specs/2026-05-06-section-m1-run-server-job-poller-di-design.md`)
+proposing a DI seam on `_auto_refresh`'s polling body. An 8-agent
+review found ~30 concrete issues PLUS a strategic "no consumer
+waiting, stub is stable, cost-benefit doesn't justify shipping
+preventive maintenance now" challenge. **Deferred** with the trigger
+conditions and pre-pickup actions below.
 
-Tracked but not scoped.
+**Trigger conditions for picking up M.1:**
+- Next non-trivial change to `run_server`'s reactive surface (esp.
+  `_auto_refresh`, `_refresh_jobs`, `_refresh_log`, `_on_tutorial_context`,
+  any new polling effect) needs end-to-end test coverage that the stub
+  can't provide; OR
+- Observable drift bug — a Section M-style picker rollout shows the
+  stub diverged from the real `run_server` and the divergence wasn't
+  caught in review; OR
+- A future contributor needs to refactor `run_server`'s polling cadence
+  (e.g., make the 2s interval configurable, or replace polling with
+  push notifications) — at that point the test seam pays for itself.
+
+**Pre-pickup actions (do these first when M.1 is reactivated):**
+
+1. **Phase 0 — confirm the deadlock-causer hypothesis.** The 2026-05-06
+   spec ASSUMED `_auto_refresh` is the deadlock-causer. The stub omits
+   ALL ~20 effects, so the existing evidence supports "*one or more of
+   them deadlocks*", not the specific identity. Cheap experiment
+   (~30 min): in a throwaway branch, modify `_stub_run_server` to add
+   ONE more thing at a time (event-gated handlers first since they're
+   idle by construction; then `_on_tutorial_context`; then
+   `_auto_refresh` last). If everything except `_auto_refresh` mounts
+   cleanly, the hypothesis is confirmed and proceed with that design.
+   If something else also deadlocks, the M.1 design is materially
+   wrong and needs re-architecture.
+
+2. **Reconsider the design alternative.** The 2026-05-06 spec proposed
+   a 7-arg factory closure injecting an async callable. An independent
+   reviewer suggested `polling_enabled: reactive.value(True)` —
+   single-boolean DI-lite, 1 closure capture, much less surface to
+   test. Compare both before committing.
+
+3. **Re-read the 2026-05-06 spec's review findings** (8 reviewer
+   reports). Notable defects to fix in any new spec: construction-order
+   bug (workflow_engine/active_workflow_id/_refresh_tick at lines
+   1139-1141, NOT 491/539); tests fail to execute due to missing
+   reactive context (use `reactive.isolate()` or mock); factory belongs
+   in `services/run_logic.py` not `pages/run.py`; `from collections.abc`
+   not `from typing`; `asyncio_mode="auto"` means `async def` tests, not
+   `asyncio.run()`; `tests/test_run_helpers.py` already exists (extend,
+   don't create); silent-swallow `try/except + logger.debug` should
+   become `warning` minimum; missing DI-seam test, multi-cycle test,
+   workflow-engine sub-branch tests, production smoke test for
+   `job_queue.list_jobs(limit=50, ...)` call shape; comment rot
+   ("today's _auto_refresh body", "See Section M.1 design").
+
+**Tracked but not scheduled.** Spec at
+`docs/superpowers/specs/2026-05-06-section-m1-run-server-job-poller-di-design.md`
+remains in the repo as design-history, marked DEFERRED with reasoning.
 
