@@ -278,7 +278,18 @@ def ibm_server(
             if work:
                 lgr_files = sorted(Path(work).glob("*.lgr"))
                 if lgr_files:
-                    ui.update_text("lgr_path", value=str(lgr_files[0]))
+                    chosen = str(lgr_files[0])
+                    # Section M.2: log provenance so ops can see when
+                    # lgr_path comes from the work_dir glob (e.g. a
+                    # mid-run generated file) rather than a picker
+                    # click. Picker dropdown only lists FileService-
+                    # tracked files; the glob can fill ahead of scan.
+                    logger.info(
+                        "ibm_server: filled lgr_path from work_dir glob "
+                        "(file not yet tracked by FileService): %s",
+                        chosen,
+                    )
+                    ui.update_text("lgr_path", value=chosen)
 
     # File picker delegates resolve/log/notify branching to
     # fill_picker_input (see its docstring in components/file_picker.py).

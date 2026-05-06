@@ -38,3 +38,26 @@ class TestLagrangianFileType:
         from shyfem_ui.services.file_service import FileService
 
         assert FileService._infer_file_type("trajectories.lgr") == "lagrangian"
+
+
+class TestGlobFallbackProvenance:
+    """Section M.2: when ibm_server's _on_project_changed fills lgr_path
+    from the work_dir glob (rather than a picker click), it must emit a
+    logger.info so ops can distinguish the two provenance paths.
+
+    Pins the log-string contract: a future refactor that drops the log
+    line silently brings back the unobservable-provenance bug.
+    """
+
+    def test_glob_fallback_path_emits_info_log(self):
+        """Source-inspection: the source of ibm_server contains the
+        provenance log call inside the glob-fill branch.
+        """
+        import shyfem_ui.pages.ibm as page_mod
+        from tests._test_helpers import get_server_source
+
+        src = get_server_source(page_mod, "ibm_server")
+        # The log message must mention "filled lgr_path from" and
+        # "glob" so log consumers can grep for the provenance event.
+        assert "logger.info(" in src
+        assert "filled lgr_path from work_dir glob" in src
