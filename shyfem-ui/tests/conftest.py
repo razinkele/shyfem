@@ -185,12 +185,25 @@ def _reset_active_project_state(request):
         yield
         return
     page = request.getfixturevalue("pw_page")
+    # Step 1: navigate to Dashboard so any page-specific reactive
+    # outputs (e.g. files_content) drop their cached state.
+    home_link = page.locator(".sf-nav-item[data-nav='Home']")
+    if home_link.count() >= 1:
+        home_link.click(force=True)
+        page.wait_for_timeout(100)
+    # Step 2: clear active_project via the test hook. This fires the
+    # _test_active_project_hook effect in _test_app.py which sets
+    # active_project.set(None) — observed by every page server.
     page.evaluate("""
         if (typeof window.__test_set_active_project === 'function') {
             window.__test_set_active_project(null);
         }
     """)
-    page.wait_for_timeout(150)
+    # Step 3: give Shiny enough time for the reactive cascade to
+    # propagate to all observing pages. 150ms is too short under
+    # full-suite load (verified — 2 Files-tab tests fail at 150ms,
+    # pass at 500ms).
+    page.wait_for_timeout(500)
     yield
 
 
