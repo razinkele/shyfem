@@ -70,11 +70,17 @@ class TestPartitioningPage:
         num_parts = pw_page.locator("#partitioning-num_partitions")
         assert num_parts.is_visible()
 
-    def test_partition_method_select(self, pw_page):
-        """Test partition method dropdown exists."""
+    def test_weighted_checkbox_present(self, pw_page):
+        """Test 'Use weighted partitioning' checkbox is present.
+
+        Replaces test_partition_method_select — the partition_method
+        select (metis/manual) was removed in 75ee406 (2026-04-30) when
+        the non-functional 'manual' method was deleted. The remaining
+        partition control is the weighted checkbox.
+        """
         _switch_tab(pw_page, "Partitioning")
-        method = pw_page.locator("#partitioning-partition_method")
-        assert method.is_visible()
+        weighted = pw_page.locator("#partitioning-weighted")
+        assert weighted.is_visible()
 
     def test_run_shyparts_button(self, pw_page):
         """Test Run shyparts button is present."""

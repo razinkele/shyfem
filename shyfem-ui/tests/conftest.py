@@ -162,6 +162,38 @@ def pw_browser():
     pw.stop()
 
 
+@pytest.fixture(autouse=True)
+def _reset_active_project_state(request):
+    """Reset `active_project` to None before every Playwright test.
+
+    `pw_page` is session-scoped (Shiny's single-threaded asyncio server
+    can't reliably accept new WebSocket connections after disconnect) so
+    page state — including `active_project = reactive.value(None)` in
+    `_test_app.py` — leaks across tests. Without this reset, the first
+    test in alphabetically-prior file `test_playwright_*.py` to set an
+    active_project pollutes every subsequent test that expects None.
+
+    Originally added per-class in Section M's picker tests (autouse on
+    `TestGridPrepPickerNoProject` etc.). Promoted to conftest in
+    Section M.2 follow-up so existing TestFilesTab tests (which assume
+    no-project state but have no class-level reset) also pass.
+
+    Skipped if the `pw_page` fixture isn't requested by the test —
+    avoids importing playwright in non-Playwright tests.
+    """
+    if "pw_page" not in request.fixturenames:
+        yield
+        return
+    page = request.getfixturevalue("pw_page")
+    page.evaluate("""
+        if (typeof window.__test_set_active_project === 'function') {
+            window.__test_set_active_project(null);
+        }
+    """)
+    page.wait_for_timeout(150)
+    yield
+
+
 @pytest.fixture(scope="session")
 def pw_page(pw_browser, live_server):
     """A single Playwright page (Shiny session) shared across ALL tests.
