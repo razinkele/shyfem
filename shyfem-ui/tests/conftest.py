@@ -186,17 +186,20 @@ def _reset_active_project_state(request):
         return
     page = request.getfixturevalue("pw_page")
     # Step 1: navigate to Dashboard so any page-specific reactive
-    # outputs (e.g. files_content) drop their cached state.
-    home_link = page.locator(".sf-nav-item[data-nav='Home']")
-    if home_link.count() >= 1:
-        home_link.click(force=True)
+    # outputs (e.g. files_content) drop their cached state. The nav
+    # value is "Dashboard" (per app.py:52, NOT "Home").
+    dashboard_link = page.locator(".sf-nav-item[data-nav='Dashboard']")
+    if dashboard_link.count() >= 1:
+        dashboard_link.click(force=True)
         page.wait_for_timeout(100)
-    # Step 2: clear active_project via the test hook. This fires the
-    # _test_active_project_hook effect in _test_app.py which sets
-    # active_project.set(None) — observed by every page server.
+    # Step 2: clear active_project via the test hook. The hook in
+    # _test_app.py uses `value if value else None`, so empty string
+    # is coerced to None — and Shiny.setInputValue handles "" more
+    # reliably than null (null can be silently dropped). This fires
+    # _test_active_project_hook which sets active_project.set(None).
     page.evaluate("""
         if (typeof window.__test_set_active_project === 'function') {
-            window.__test_set_active_project(null);
+            window.__test_set_active_project("");
         }
     """)
     # Step 3: give Shiny enough time for the reactive cascade to

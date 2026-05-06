@@ -10,7 +10,7 @@ class TestPostprocessPickerNoProject:
         """Reset session-scoped state."""
         pw_page.evaluate("""
             if (typeof window.__test_set_active_project === 'function') {
-                window.__test_set_active_project(null);
+                window.__test_set_active_project("");
             }
         """)
         pw_page.wait_for_timeout(200)
