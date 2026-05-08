@@ -151,22 +151,90 @@ today. When it does, the right fix is `celery.signals.worker_init` to
 re-bootstrap globals from config in the worker process. Track here so
 the limitation isn't silently inherited.
 
-## L. Output-directory picker (LOW)
+## L. Output-directory picker (DEFERRED 2026-05-08, LOW)
 
 **Source:** Section B pilot (partitioning file-picker integration, 2026-05-01).
 
 The pilot wires file pickers for INPUT files (`.bas`, `.grd`) but not for
-the OUTPUT directory (`output_dir` text input on partitioning, run, and
-similar pages). Output picking is a different abstraction — directory
+the OUTPUT directory (`output_dir` text input on partitioning, grid_prep,
+postprocess pages). Output picking is a different abstraction — directory
 picker, not file picker — and was deferred from the pilot.
 
-When designing this:
-- The picker must list directories (not files) under `work_dir`, and
-  optionally allow creating a new subdirectory.
-- It should integrate via the same coexistence pattern (picker + text
-  input) the file picker uses, so the migration cost matches.
-- Consider whether to share infrastructure with `components/file_picker.py`
-  (e.g. a `directory_picker_server` sibling) or build a separate component.
+**Status (2026-05-08):** A design pass was completed
+(`docs/superpowers/specs/2026-05-08-section-l-directory-picker-design.md`)
+proposing a parallel `components/directory_picker.py` module with `+ Create`
+modal. An 8-agent review found ~50 issues (11 critical) AND a strategic
+challenge from the independent reviewer: the followups doc itself rates
+Section L as **LOW priority**, no user complaints, the fallback at use-time
+(`output_dir = input.output_dir() or str(<input_file>.parent)`) handles the
+empty case unchanged, and the Pattern Drift Audit on 2026-05-11 has higher
+concrete value. **Deferred** with trigger conditions and pre-pickup actions
+below. Same playbook as Section M.1.
+
+**Trigger conditions for picking up Section L:**
+- Concrete user complaint about the copy-paste-the-absolute-path workflow
+  on partitioning, grid_prep, or postprocess; OR
+- Next non-trivial change to one of the 3 pages' output-flow that needs
+  to interact with the picker (e.g., per-page output-format selectors); OR
+- A second deferred picker abstraction (e.g., remote-file picker) is also
+  picked up — at that point address Section L + the picker module's name
+  drift (see action 3 below) together.
+
+**Pre-pickup actions (do these first when Section L is reactivated):**
+
+1. **Re-design with `active_project` directly, not `project_id`.** Three
+   reviewers (type-design + bug-focused + test analyzer) converged on
+   passing `active_project: reactive.Value[ProjectContext | None] | None`
+   into `directory_picker_server` instead of `project_id`. Pages already
+   maintain `active_project` from Section M; threading it directly
+   eliminates the per-refresh DB query AND eliminates the `load_project_context(pid)`
+   access-control bypass entirely (server-mode security gap, 95% confidence
+   from the bug-focused reviewer).
+
+2. **Add containment guard at mkdir time.** The `+ Create` flow's
+   `(Path(wd) / name).mkdir(...)` doesn't re-run the `resolve_picker_path`
+   containment guard. If `wd/runs` is a pre-existing symlink to `/etc`,
+   `name="runs/passwd"` writes outside work_dir even though every individual
+   path component looks safe. Mirror `resolve_picker_path`'s
+   `is_relative_to(root)` check on the resolved path BEFORE `mkdir`.
+
+3. **Decide on `file_picker.py` rename.** Once Section L lands, the file
+   `components/file_picker.py` houses BOTH file-specific UI/server AND the
+   shared helpers (`resolve_picker_path`, `fill_picker_input`, `PickerTargetId`)
+   used by both pickers. The filename becomes a misnomer. Independent
+   reviewer recommends rename to `picker_helpers.py` OR splitting helpers
+   into a separate module. Decide and commit before adding the second picker.
+
+4. **Switch to `Path.walk(follow_symlinks=False)` (3.12+) or `os.walk(followlinks=False)`.**
+   The original spec used `Path.rglob("*")` which follows symlinks by
+   default — both data-leakage risk (foreign tree pushes real subdirs past
+   the cap) and infinite-loop risk (symlink loops on non-POSIX FS hang the
+   reactive effect; bare except doesn't catch `RuntimeError`).
+
+5. **Re-read the 2026-05-08 spec's review findings** (8 reviewer reports;
+   summary in this doc + memory `feedback_subagent_driven_dev.md`). Notable
+   defects to fix in any new spec: missing `import logging`; modal `footer=`
+   slot pattern violation (codebase canonical at `admin.py:370-383`); `# Refresh
+   + select` comment factually wrong about reactive causality; cap truncation
+   silent (deferred indicator unshippable per multiple reviewers); 5 distinct
+   `list_project_directories` failure modes collapse to `[]` (return tagged
+   status instead); validator missing null-byte / backslash / length checks;
+   modal `input_text` no `maxlength=255`; project-switch race during Create
+   modal submit; tests for project-switch refresh / mkdir failure branches
+   / `on_selected` fires on mkdir / symlink-loop all missing; test file
+   naming should be `test_<page>_directory_picker.py` (not `_dir_picker.py`)
+   for symmetry with Section M's `_file_picker.py` siblings.
+
+6. **Reconsider whether the `+ Create` flow belongs in the picker at all.**
+   The picker shifts from "read-only selector" to "filesystem mutator" with
+   the Create modal. Independent reviewer suggests evaluating whether
+   `directory_create_button` should be a separate component wired into
+   the same row, so the picker stays read-only and the create flow is
+   independently testable.
+
+**Tracked but not scheduled.** Spec at
+`docs/superpowers/specs/2026-05-08-section-l-directory-picker-design.md`
+remains in the repo as design-history, marked DEFERRED with reasoning.
 
 ## Section M — File-picker rollout to remaining 6 pages — COMPLETE 2026-05-05
 

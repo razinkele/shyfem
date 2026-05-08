@@ -1,11 +1,82 @@
-# Section L — Output-Directory Picker Design
+# Section L — Output-Directory Picker Design  **[DEFERRED 2026-05-08]**
+
+> ## Status: DEFERRED
+>
+> This spec was reviewed by 8 specialist agents on 2026-05-08. The review
+> found ~50 concrete issues (11 critical) AND a strategic challenge from
+> the independent reviewer: the followups doc itself rates Section L as
+> **LOW priority**, no user complaints exist, the fallback at use-time
+> handles the empty case, and the Pattern Drift Audit on 2026-05-11 has
+> higher concrete value. **Deferred** with trigger conditions, same
+> playbook as Section M.1.
+>
+> **Pre-pickup actions, design alternatives worth comparing
+> (`active_project` plumbing vs `project_id`, separate `+ Create`
+> component vs picker-internal modal), and trigger conditions** are
+> documented in `docs/followups/2026-04-29-ui-deep-review-deferred.md`
+> Section L. Read that BEFORE re-engaging.
+>
+> **Known critical defects in this spec** (do not implement as-written):
+> 1. `import logging` missing in module header — `NameError` on first
+>    log path. Add to imports.
+> 2. `load_project_context(pid)` access-control bypass — server-mode
+>    security gap. Pass `active_project` directly instead of looking up
+>    via `project_id`.
+> 3. Modal `footer=` slot pattern violation — codebase canonical
+>    (`admin.py:370-383`) uses explicit `footer=ui.div(...)`, not inline
+>    button positional children.
+> 4. Containment check missing at mkdir — symlink-targeted attack
+>    vector: pre-existing `wd/runs -> /etc` symlink lets `name="runs/passwd"`
+>    write outside work_dir. Mirror `resolve_picker_path`'s
+>    `is_relative_to(root)` check before `mkdir`.
+> 5. `Path.rglob("*")` follows symlinks — data leakage + infinite-loop
+>    risk; bare `except (PermissionError, OSError)` doesn't catch
+>    `RuntimeError`. Use `Path.walk(follow_symlinks=False)` (3.12+).
+> 6. Project-switch race in Create modal — submit may land in different
+>    project than user opened modal in. Need project-id snapshot at
+>    modal-open with abort-if-changed.
+> 7. `# Refresh + select` inline comment is factually wrong about
+>    reactive causality — `_work_dir` doesn't depend on mkdir, so
+>    `_refresh_choices` would not auto-fire. Either fix the comment or
+>    introduce a `dir_list_version` reactive trigger.
+> 8. `directory_picker_ui` docstring says "three controls" but lists
+>    two — count is wrong.
+> 9. Cap-truncation is silent — multiple reviewers argue this is
+>    unshippable as-is. Minimum: log warning + synthetic last entry
+>    "(showing 100 of N)".
+> 10. Playwright tests 3 + 4 under-specified — no mechanism shown for
+>     `tmp_path` getting into the running subprocess's reactive state;
+>     the tests will fail at "assert text input fills" because the
+>     dropdown will show "No directories available."
+> 11. `list_project_directories` collapses 5 distinct failure modes to
+>     `[]` (no work_dir, missing dir, PermissionError, OSError, genuinely
+>     empty). Return a tagged result with status field so the placeholder
+>     reflects the actual issue.
+>
+> **~30 more findings** (test gaps, missing maxlength on input_text,
+> errno-aware toast decoder, `selected: reactive.Value[str]` Shiny stub
+> bug annotation, `_validate_new_dir_name(name: str)` signature lies,
+> validator missing null byte / backslash / length checks, test file
+> naming `_dir_picker` should be `_directory_picker`, etc.) — see review
+> transcripts in this session's logs and the followups doc Section L
+> action list.
+>
+> **Lesson reinforced:** the multi-agent spec-review process now has a
+> two-out-of-two record of catching strategic "should we ship this at
+> all?" issues for preventive-maintenance specs (M.1 and L). The
+> independent second-opinion reviewer with explicit "challenge the
+> premise" framing is the load-bearing reviewer for this category of
+> work. Both M.1 and L's design passes consumed ~2 hours; both saved
+> ~3-6 hours of misdirected implementation. Process validated.
+
+---
 
 **Origin:** Section B file-picker pilot (2026-05-04) deferred output-directory
 picking as Section L because it is a different abstraction — a directory
 picker, not a file picker. The Section M rollout (2026-05-05) closed
 file-picker coverage on 7 pages but left the 3 pages with `output_dir`
 text inputs (`partitioning`, `grid_prep`, `postprocess`) unchanged. Section
-L is that work.
+L is that work — DEFERRED, see status block above.
 
 ## Goal
 
