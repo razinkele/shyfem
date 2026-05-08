@@ -41,7 +41,7 @@ class User(Base):
     @property
     def is_admin(self) -> bool:
         """Check if the user has admin role."""
-        return self.role == "admin"
+        return self.role == ROLE_ADMIN
 
     @property
     def is_tutorial(self) -> bool:

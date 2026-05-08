@@ -12,7 +12,7 @@ from sqlalchemy import or_
 from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
-from shyfem_ui.models.user import ProjectPermission
+from shyfem_ui.models.user import ROLE_ADMIN, ProjectPermission
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
 
@@ -40,7 +40,7 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
     Admins see all projects. Regular users see their own projects
     plus projects shared with them.
     """
-    if role == "admin":
+    if role == ROLE_ADMIN:
         return db.query(Project).order_by(Project.updated_at.desc()).limit(limit).all()
 
     return (
@@ -68,7 +68,7 @@ def _should_show_share_button(project: dict, user: dict | None) -> bool:
     """
     if user is None:
         return False
-    if user.get("role") == "admin":
+    if user.get("role") == ROLE_ADMIN:
         return True
     return project.get("owner_id") == user.get("id")
 

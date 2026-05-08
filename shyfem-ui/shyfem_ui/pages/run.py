@@ -31,6 +31,7 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
+from shyfem_ui.models.user import ROLE_TUTORIAL
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.report import generate_job_report
@@ -570,7 +571,7 @@ def run_server(
             _role = user_role() if user_role is not None else None
         except Exception:
             _role = _current_user.get("role") if _current_user else None
-        if _role == "tutorial":
+        if _role == ROLE_TUTORIAL:
             ui.notification_show(
                 "Tutorial accounts are read-only. Contact your admin for a full account.",
                 type="warning",

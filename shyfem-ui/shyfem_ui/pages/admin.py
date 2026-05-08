@@ -81,7 +81,7 @@ def _validate_create_user_form(
 
 def _role_badge(role: str) -> str:
     """Return HTML badge for a role."""
-    cls = "bg-danger" if role == "admin" else "bg-primary"
+    cls = "bg-danger" if role == ROLE_ADMIN else "bg-primary"
     return f'<span class="badge {cls}">{role}</span>'
 
 
@@ -96,7 +96,7 @@ def _check_admin_access(user: dict | None) -> bool:
     """Check if user has admin role. Returns False for None or non-admin users."""
     if user is None:
         return False
-    return user.get("role") == "admin"
+    return user.get("role") == ROLE_ADMIN
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +229,7 @@ def admin_server(
         """
         try:
             if user_role is not None:
-                return user_role() == "admin"
+                return user_role() == ROLE_ADMIN
         except Exception:
             logger.debug("user_role() reactive not yet available", exc_info=True)
         return _check_admin_access(get_current_user())
@@ -263,7 +263,7 @@ def admin_server(
             )
         users = users_data.get()
         total = len(users)
-        admins = sum(1 for u in users if u["role"] == "admin")
+        admins = sum(1 for u in users if u["role"] == ROLE_ADMIN)
         active = sum(1 for u in users if u.get("is_active", True))
         return ui.div(
             ui.h6("Summary"),
@@ -288,7 +288,7 @@ def admin_server(
         rows = []
         for u in rows_data:
             # Home directory: N/A for tutorial users
-            if u["role"] == "tutorial":
+            if u["role"] == ROLE_TUTORIAL:
                 home_dir_text = "N/A"
             else:
                 home_dir_text = str(config.user_data_root / u["username"])
@@ -313,7 +313,7 @@ def admin_server(
                         ),
                         ui.input_action_link(
                             f"toggle_role_{u['id']}",
-                            "Demote" if u["role"] == "admin" else "Promote",
+                            "Demote" if u["role"] == ROLE_ADMIN else "Promote",
                             class_="btn btn-sm btn-outline-info me-1",
                         ),
                         ui.input_action_link(
@@ -425,14 +425,14 @@ def admin_server(
                 return
             role = user["role"]
             try:
-                if role == "admin":
+                if role == ROLE_ADMIN:
                     new_role = "user"
-                elif role == "user":
+                elif role == ROLE_USER:
                     new_role = "admin"
                 else:  # tutorial or unknown
                     new_role = "user"  # promote tutorial to user first
                 auth_service.update_user(user_id, role=new_role)
-                action = "demoted to user" if new_role == "user" else "promoted to admin"
+                action = "demoted to user" if new_role == ROLE_USER else "promoted to admin"
                 _audit("change_role", f"target={username}, new_role={new_role}")
                 ui.notification_show(f"User '{username}' {action}", type="message", duration=4)
                 _refresh()
