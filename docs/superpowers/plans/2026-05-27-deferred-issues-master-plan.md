@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Close the **11 actionable** deferred items from `docs/followups/2026-04-29-ui-deep-review-deferred.md` (A, C, D, E, F, G, H, I, J, K, plus the IBM-LGR P3 items). Items **L and M.1 remain DEFERRED** — their phases below are reference-only and MUST NOT be executed until a tracker trigger condition fires AND the user approves pickup (see the banner below).
+**Goal:** Close the deferred items from `docs/followups/2026-04-29-ui-deep-review-deferred.md`. **Post-review status (2026-05-27):** of the original 11, **9 phases are executable** (K, A, C, H, J, E, D, P3 + the residual). **F is DROPPED** (no metrics consumer) and **G is reduced to two completed deletions** (broken ops removed; features deferred) — both resolved this session. **Phase I is BLOCKED** — a multi-angle review found it is built on a `.par` file format that `shyparts` does not produce and an element-ownership model that contradicts SHYFEM's node-based partitioning (see the Phase I banner). Items **L and M.1 remain DEFERRED** — reference-only, MUST NOT be executed until a tracker trigger fires AND the user approves pickup (see the banner below).
 
 > ⚠️ **DEFERRED-WORK BANNER — read before executing anything.**
 > **Phase L** (output-directory picker) and **Phase M.1** (run.py job-poller DI seam) were each killed twice by 8-agent strategic reviews: *"no consumer waiting; cost-benefit doesn't justify shipping preventive maintenance now."* They are documented here for completeness only. An executing agent MUST treat their task checkboxes as inert. Do not write code for L or M.1 unless (a) a trigger condition in the tracker has fired and (b) the user has explicitly approved pickup. Each phase repeats this STOP gate inline.
@@ -19,18 +19,19 @@
 - Commit after each task with conventional-commit messages.
 - All paths below are relative to `/home/razinka/shyfem/shyfem-ui/` unless absolute.
 
-**Phase ordering (by value × readiness):**
-1. Phase A — page-helper extraction + tests (HIGH)
-2. Phase C — `ProjectService` for home.py DB access (MED)
-3. Phase H — behavioral access-control Playwright tests (MED)
-4. Phase J — end-to-end Celery task test (MED)
-5. Phase K — multi-process Celery worker bootstrapping (MED)
-6. Phase I — deepen partition validation (LOW)
-7. Phase F — request-timing/metrics middleware (LOW; **decision checkpoint**)
-8. Phase G — flux/frequency postprocess controls (LOW; **domain checkpoint**)
-9. Phase E — service-layer naming consistency (LOW)
-10. Phase D — split god modules (LOW; highest risk)
-11. Phase P3 — IBM-LGR enhancements
+**Phase ordering (revised 2026-05-27 after multi-angle review — by value × readiness):**
+1. Phase K — multi-process Celery worker bootstrapping (**HIGH** — the only confirmed production-down bug; promoted from MED). **Must add a real worker-boot test** — the current eager-mode + import-time checks do not exercise the broken `celery … worker` path (see phase).
+2. Phase A — page-helper extraction + tests (HIGH; trim trivial extracts A5/A13)
+3. Phase C — `ProjectService` for home.py DB access (MED) — **fix the test fixtures before executing** (cached-engine reset + `password_hash`; see phase). C must precede H.
+4. Phase H — behavioral access-control Playwright tests (MED → **partly BLOCKED**) — the tests as designed run against `root_path=""`, where the prod viewer-write bypass does NOT reproduce; needs a prod-config (`root_path` set) variant and likely a guard fix first (see phase).
+5. Phase J — end-to-end Celery task test (MED; fix mock-result fixtures — see phase)
+6. Phase E — service-layer naming consistency (LOW; low value but has live re-export consumers — trim, don't expand)
+7. Phase D — split god modules (LOW; **D1 only** — D2–D5 deferred, no functional driver)
+8. Phase P3 — IBM-LGR enhancements (LOW; **defer** — net-new features, no driver this cycle)
+— — — (resolved this session — not phases) — — —
+   Phase F — DROPPED (no metrics consumer). Phase G — broken `flux`/`frequency` ops removed; stride + `.flx` features deferred.
+— — — (BLOCKED — invalid as designed) — — —
+   Phase I — partition validation: built on a `.par` format `shyparts` does not write and a wrong element-ownership model. Needs rework + a fix to the pre-existing `.par` mismatch first (see Phase I banner).
 — — — (deferred — reference only, DO NOT execute) — — —
 D1. Phase L — output-directory picker (DEFERRED)
 D2. Phase M.1 — run.py job-poller DI seam (DEFERRED)
@@ -203,7 +204,18 @@ from shyfem_ui.models.project import Project
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):
+    # CRITICAL (2026-05-27 review): config + engine are cached module singletons
+    # (config.py:_config, db/base.py:_engine/_SessionLocal). Without resetting them,
+    # the per-test setenv is IGNORED — every test silently shares whatever DB was
+    # first initialized in the suite run, breaking isolation (test_stranger_sees_none
+    # could see rows from a prior test). Mirror the existing reset pattern used by
+    # test_project_context.py / test_db_pool.py.
+    import shyfem_ui.config as cfg_mod
+    import shyfem_ui.db.base as db_mod
     monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path/'t.db'}")
+    cfg_mod._config = None
+    db_mod._engine = None
+    db_mod._SessionLocal = None
     init_db()                                  # create schema (confirm helper name)
     factory = get_session_factory()
     session = factory()
@@ -211,7 +223,10 @@ def db(tmp_path, monkeypatch):
     session.close()
 
 def _user(db, username, role):
-    u = User(username=username, role=role, email=f"{username}@example.com")
+    # password_hash is nullable=False with no default (models/user.py:26) — omitting it
+    # raises IntegrityError on flush. Match test_access_control.py which passes a stub hash.
+    u = User(username=username, role=role, email=f"{username}@example.com",
+             password_hash="x")
     db.add(u); db.flush(); return u
 
 @pytest.fixture
@@ -295,7 +310,20 @@ git commit -m "feat(services): add ProjectService.list_visible_projects, route h
 
 **Goal:** Prove that an account-role `user` with only `viewer` project permission cannot perform the 9 editor-gated writes (the static AST check in the 2026-04-29 plan only verified a `check_project_access` call *exists*).
 
-**Role model (do not conflate):** account roles are `admin`/`user`/`tutorial` (`models/user.py:12-14`); project roles are `owner`/`editor`/`viewer` (`access_control.py:6`). A "non-editor" = account `user` + `viewer` permission. Behavioral tests MUST run against the **auth server** (`_test_auth_app.py`, which mounts `SessionAuthMiddleware`), NOT the local stub app.
+> 🔴 **CRITICAL FINDING (2026-05-27 security review) — read before writing any H test.** The 9 editor guards are written `if user is not None and check_project_access(..., min_role="editor") is None: deny` (e.g. `run.py:590-592`, `files.py:432-433`). **They short-circuit to ALLOW when `user is None`.** In the laguna.ku.lt deployment (`root_path="/shyfem-ui"`), Shiny Server's internal WebSocket connects from 127.0.0.1 WITHOUT the session cookie, and `session_auth.py:616` (`if not (self.root_path and is_local)`) ADMITS that WS with `user=None`. Reactive handlers therefore run with `get_current_user() == None`, so **all 9 guards are bypassed in production** — any authenticated user can perform editor-gated writes on a project they hold only `viewer` rights to. (8/9 handlers have no other guard; `run.py`'s second `user_role()` guard blocks only `tutorial`, not `viewer`. `current_user_role` exists only in `app.py`/`run.py`.)
+>
+> **Consequence for this phase:** the test harness mounts the auth server with `root_path=""` (`_test_auth_app.py:39`), where the bypass is INACTIVE and the cookie validates — so the guards fire and a naive "viewer is denied" test would pass **green while production stays exploitable.** Phase H as originally written validates a non-production code path and gives false assurance.
+>
+> **Required approach (pick one, record the choice):**
+> - **(recommended) Fix the guards first, then test against prod config.** Make the 9 write handlers use the WS-safe role signal the rest of the app uses (`input.current_user_role()` set via `Shiny.setInputValue`) AND/OR pass the active user/role explicitly into the handler context, so the check does not depend on `get_current_user()` in the WS scope. Then add a `root_path`-set auth-server variant (below) and assert the viewer is denied there. A failing test against prod config IS the bug — fix the guard, do not weaken the test.
+> - **(minimum) Add the prod-config variant and let it fail.** Add the `root_path`-set auth server and write the 9 tests against it; they will FAIL (viewer CAN write), documenting the live bypass as a tracked defect, before any guard fix lands.
+>
+> Either way, **Task H0 below is now a prerequisite**, and the original H1–H10 against `root_path=""` are NOT sufficient on their own.
+
+**Task H0 (NEW — prerequisite): prod-config auth server + a guard-fires assertion.**
+- [ ] Add a second auth-server fixture (or parametrize `_test_auth_app.py`) with `root_path="/shyfem-ui"` set, reproducing the production WS-admit-`user=None` path. Add one diagnostic test that, inside a live reactive write handler, asserts the editor guard actually denies a viewer in this config (today it will not — that failure is the documented bug). Decide and record the "fix guards first" vs "fail-and-track" path above. Only once the guard fires in prod config do H1–H10 become meaningful.
+
+**Role model (do not conflate):** account roles are `admin`/`user`/`tutorial` (`models/user.py:12-14`); project roles are `owner`/`editor`/`viewer` (`access_control.py:6`). A "non-editor" = account `user` + `viewer` permission. Behavioral tests MUST run against the **auth server** (`_test_auth_app.py`, which mounts `SessionAuthMiddleware`), NOT the local stub app — **and, per the critical finding above, against a `root_path`-set variant** so the prod WS-bypass path is exercised, not just the `root_path=""` path where the guards trivially work.
 
 **The 9 editor-gated write handlers (one test each):**
 
@@ -330,7 +358,10 @@ from shyfem_ui.services.project_service import ProjectService  # Phase C (Task C
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.user import User
 
-auth = AuthService(config)
+auth = AuthService()  # ctor is AuthService(session_factory=None) — NOT a Config.
+                       # Passing `config` makes create_user() call config() and crash
+                       # (auth_service.py:26). No-arg falls back to the real factory,
+                       # same as the SharingService() correction below.
 with db_session() as db:                       # idempotency probe
     already = db.query(User).filter_by(username="viewer1").first() is not None
 if not already:
@@ -421,9 +452,10 @@ class TestViewerCannotWrite:
 **Files:**
 - Modify: `tests/test_job_celery.py` (extend — do NOT create a new file)
 
-**Pre-work (do before J1 Step 1): write the test helpers.** None of `_make_mock_redis`, `_seed_fake_redis`, `_ok_result`, `_fail_result` exist. Add to `tests/test_job_celery.py`:
-- `_make_mock_redis()` + `_seed_fake_redis(rc, job_id)` — **`MagicMock`'s `hset` and `hget` are independent**, so calling `_store_job_info(rc, job)` does NOT make `rc.hget(...)` return the data. You MUST explicitly configure the read: `rc.hget.return_value = _job_info_to_json(job)` (a PENDING `JobInfo`), matching the key/shape `_load_job_info` reads. If skipped, `_load_job_info` returns falsy and `execute_shyfem_job` early-returns at `job_celery.py:158`, skipping the whole try/finally — a silent false pass (the exact trap this phase exists to avoid).
-- `_ok_result()` / `_fail_result()` — minimal objects matching what `ShyfemWrapper.run_shyfem` returns (inspect its return type; likely a result object with `.success`/`.return_code`).
+**Pre-work (do before J1 Step 1): reuse the EXISTING helpers; add only what's missing.** Correction (2026-05-27 review): the plan's claim that none exist is wrong — `tests/test_job_celery.py` ALREADY has a `mock_redis` fixture (line ~74) and `_job_info_to_json` (line ~39). **Reuse them** — re-implementing the redis mock risks diverging from the real serialization shape `_load_job_info` reads. Add only the result factories. In `tests/test_job_celery.py`:
+- **Redis read must be configured (not just written).** **`MagicMock`'s `hset` and `hget` are independent**, so calling `_store_job_info(rc, job)` does NOT make `rc.hget(...)` return the data. You MUST explicitly configure the read: `rc.hget.return_value = _job_info_to_json(job)` (reusing the existing helper), matching the key/shape `_load_job_info` reads. If skipped, `_load_job_info` returns falsy and `execute_shyfem_job` early-returns at `job_celery.py:158`, skipping the whole try/finally — a silent false pass (the exact trap this phase exists to avoid).
+- **The seeded `JobInfo` must have a non-None `created_at`.** `execute_shyfem_job` → `_store_job_info` calls `rc.zadd(..., {id: created_at.timestamp()})` (`job_celery.py:104`); a `None` `created_at` raises `AttributeError` *before* the assertion, masking the test. Seed a PENDING `JobInfo` with a real `created_at` (e.g. `datetime.now(timezone.utc)`).
+- `_ok_result()` / `_fail_result()` — minimal objects matching what `ShyfemWrapper.run_shyfem` returns. Beyond `.success`/`.return_code`, they **must carry `.stdout`/`.stderr` strings** — the success branch writes `result.stdout`/`result.stderr` to files (`job_celery.py:229-231`); a result lacking them raises inside the `try`, not at the assertion, hiding the real check. Inspect the real return type and mirror its attributes.
 - Patch the **existing** `_get_redis_client` (module function at `job_celery.py:66`, called at line 156), NOT a new `_get_redis_client_for`. No product-code seam is needed.
 - **Patch `ShyfemWrapper.__init__` to a no-op** (`monkeypatch.setattr(mod.ShyfemWrapper, "__init__", lambda self, *a, **k: None)`), else constructing it with a fake `shyfem_dir="/tmp/shyfem"` may raise *before* the `try` block — the `finally` chain never runs and the test fails with a misleading constructor error instead of an assertion. Use a real temp dir for `working_dir` (e.g. `tmp_path`) so the `working_dir.mkdir(...)` inside the task is harmless.
 - `run_shyfem` is **async** — patch it with `unittest.mock.AsyncMock(return_value=_ok_result())`, not a plain lambda (`asyncio.run(await None)` would raise).
@@ -501,11 +533,27 @@ _register_celery_task(app)
 ### Task K3: eager-mode flag
 - [ ] **Test:** with `config.celery_task_always_eager=True`, `get_celery_app(url).conf.task_always_eager is True`. Note the `_celery_app is None` singleton guard — the test must reset `_celery_app = None` (monkeypatch) before calling so a fresh app is built. Implement the conf branch. Commit.
 
+### Task K4 (NEW — the test that actually proves the fix): worker bootstrap, not just import + eager
+
+> **Why this task exists (2026-05-27 review):** K1's `assert "shyfem_ui.execute_job" in w.app.tasks` only proves the task is registered *at import time in-process*, and K3 only flips an eager-mode flag — eager runs the task inline in the caller and **bypasses the broker/prefork-worker bootstrap path that is the literal prod defect** (`celery -A … worker` failing to start, docker-compose.yml:46). K1+K3 can both be green while the real worker still fails on broker connect, serialization, or pool init. This is the same "green in test, broken in prod" trap as Phase H — close it.
+
+- [ ] **Test:** spin up a real Celery worker against an in-process/in-memory broker and assert it boots and registers the task worker-side. Concretely: build the app via the new `celery_worker.app` with `broker_url="memory://"` + `result_backend="cache+memory://"` (no external Redis), call `app.Worker(pool="solo", concurrency=1)` (or `worker_main(["worker", "--pool=solo", "-Q", "...", "--loglevel=info"])` in a subprocess/thread with a short timeout), and assert: (a) the worker reaches the `ready`/`worker_ready` signal without raising, and (b) `worker.app.tasks` contains `shyfem_ui.execute_job` *in the worker process/instance* (not just the importing test process). If a full boot is too heavy for CI, the minimum acceptable substitute is `app.Worker(...).setup_defaults(); app.loader.import_default_modules()` + asserting the task is in the registry after the loader runs — i.e. exercise the *registration* path the entrypoint triggers, not a bare `import`. Run → confirm it would FAIL against the current `-A shyfem_ui.services.job_celery` target, PASS against the new `celery_worker` entrypoint. Commit.
+- [ ] **Note:** this also smoke-tests that `task_serializer/accept_content=["json"]` (job_celery.py:54-58) round-trips the `JobInfo` payload through the worker — the serialization path eager mode never touches.
+
 **Phase K self-check:** `python -c "import shyfem_ui.services.celery_worker as w; print(list(w.app.tasks))"` lists `shyfem_ui.execute_job`; importing `shyfem_ui.app` does NOT build a Celery app; worker no longer silently drops notifications. Note in the tracker that K was reframed from "track the limitation" to a concrete fix (the `worker_init` signal the tracker suggested is replaced by the lazier call-time resolution + dedicated entrypoint). Update tracker item K to CLOSED.
 
 ---
 
-## Phase I — Deepen "Validate Partitions"
+## Phase I — Deepen "Validate Partitions"  *(BLOCKED — invalid as designed)*
+
+> 🛑 **STOP — DO NOT EXECUTE I1–I4 AS WRITTEN.** A 2026-05-27 domain review found Phase I rests on two false premises:
+>
+> 1. **The `.par` file format does not exist.** `shyparts` writes `partition.<np>.txt` (summary), `<grd>.<np>.node.grd`, and `<grd>.<np>.elem.grd` (`src/utils/shympi/shyparts_util.f90:128/277/294`). The UI reads `partition.{i:04d}.par` (`partitioning_logic.py:61`) and globs `.par` (`shyfem_wrapper.py:53`) — **a format nothing produces.** This means the *existing* `analyze_partitions`/`validate_partition_files` already operate on phantom files (returning empty) against real shyparts output. **This is a pre-existing bug to file and fix BEFORE deepening anything.**
+> 2. **SHYFEM partitions nodes, not elements, and ghost/halo elements are shared by design.** `count_elements` (`shyparts_util.f90`/`basutil_part.f`) counts a boundary element toward *every* partition owning ≥1 of its nodes (`netot`); the `info_partition` table prints a dedicated "ghost" column = `netot − neint`. So the plan's "each element in exactly one partition" model is wrong — `analyze_partitions_detailed`'s duplicate check and `validate_element_coverage`'s phantom check would flag **false alarms on every correctly-partitioned mesh**. `find_empty_partitions` should WARN, not error (METIS can legitimately leave a near-empty domain at high `np` on small/disconnected meshes; `shyparts.f90:137` treats connectivity issues as ignorable).
+>
+> **Required rework before pickup (gate on user/domain approval):** (a) first fix the existing `.par`-vs-`.txt/.grd` format mismatch in `partitioning_logic.py`/`shyfem_wrapper.py` so partition analysis reads real shyparts output; (b) re-scope I's validators to the *node* set and the actual `.node.grd`/`.elem.grd`/`partition.<np>.txt` artifacts; (c) treat ghost-element overlap as EXPECTED, not a duplicate error. Only `validate_partition_count` (found vs requested `np`) survives unchanged — and it is moot until per-partition files are read correctly. The reference-mesh claim (`current_grd.get()` → `GrdFile.elements/.nodes`, `parser_grd.py:99-118`) is the one correct premise.
+>
+> The tasks below are retained for reference only and reflect the *invalid* element-ownership model.
 
 **Goal:** Upgrade `_validate_partitions` (`partitioning.py:320-332`) from file-existence/size checks (`validate_partition_files`, `partitioning_logic.py:107-125`) to semantic checks against the source mesh.
 
@@ -584,7 +632,7 @@ So move the new `MetricsMiddleware(app)` line to immediately *before* the existi
 > - **`-freq` needs an integer `n`** (`elabutil.f90:624`, "frequency for aver/sum/min/max/std/rms"); the UI emits a bare `-freq` (defaults to 0). It only pairs meaningfully with an aggregation op.
 > - **`-flux` is NOT a valid `.shy` shyelab option.** Flux/transport analysis runs on **`.flx` files** (FLX type, `shyelab.f90:82`), with sections defined in the STR `$flux` section; node selection uses `-node <n1,n2,...>` or `-nodes <file>` (`elabutil.f90:464-468`).
 >
-> **Decide and record here:** (a) what frequency control the UI should expose (`n` as a count, plus which aggregation it modifies); (b) whether flux support means discovering `.flx` files + a node-list input, or is out of scope. G1 (frequency `n`) is safe to implement once (a) is decided. **G3's "remove flux" branch is a user-visible change — do NOT remove the `flux` operation without the domain owner's recorded sign-off; if undecided, leave it untouched and note it open.**
+> **Decided and recorded above (2026-05-27, domain-owner sign-off):** (a) the standalone "Frequency Analysis" op is REMOVED (it emitted a no-op `-freq`); the averaging-stride feature is deferred. (b) the broken `flux` op is REMOVED (`-flux` is not a valid shyelab option); the `.flx`+node-list workflow is deferred. The G3 "remove flux" branch was the executed path — the sign-off it required is now on record, so the "leave it untouched if undecided" caveat below no longer applies. Tasks G1/G2 and the G3 "in scope" branch are reference-only (deferred).
 
 **Files:**
 - Modify: `shyfem_ui/services/postprocess_logic.py:170-215` (`build_shyelab_options` — add kwargs)
@@ -775,8 +823,9 @@ From `docs/plans/2026-03-03-ibm-lgr-integration-design.md:195-200` (P3, out of s
 
 ## Cross-cutting self-review (run after the full plan executes)
 
-1. **Spec coverage:** every tracker item maps to a phase or a documented status — A,C,D,E,F,G,H,I,J,K + P3 are actionable phases; **B is already COMPLETE** (Section M rollout, not a phase); Section M / M.2 are COMPLETE/CLOSED; **L and M.1 are DEFERRED reference-only** (STOP-gated, not executed). ✔
-2. **Decision gates honored:** Phase F is a BLOCKING decision (drop vs. in-house vs. prometheus) with the no-consumer caveat surfaced; Phase G is a BLOCKING domain decision (flux removal needs sign-off); Phases L & M.1 carry inline STOP gates and run only on a fired trigger + user approval. The deferred banner is hoisted to the header.
+1. **Spec coverage (revised 2026-05-27):** every tracker item maps to a phase or a documented status. Of the original 11, **9 phases are executable** — K (promoted to #1), A, C, H, J, E, D (D1 only), P3, plus the residual. **F is DROPPED** (no metrics consumer). **G is CLOSED to two completed deletions** (broken ops removed; stride + `.flx` features deferred). **I is BLOCKED** — invalid as designed (`.par` format `shyparts` never writes + wrong element-ownership model); needs rework. **B is already COMPLETE** (Section M rollout, not a phase); Section M / M.2 are COMPLETE/CLOSED; **L and M.1 are DEFERRED reference-only** (STOP-gated). ✔
+2. **Decision gates resolved:** Phase F BLOCKING decision → DROPPED (no-consumer caveat upheld). Phase G BLOCKING domain decision → broken ops removed with recorded domain-owner sign-off; features deferred. Phases L & M.1 carry inline STOP gates and run only on a fired trigger + user approval. The deferred banner is hoisted to the header.
+   - **Note:** the headline review finding is that the two phases with real production stakes — H (a live viewer-write bypass the tests can't see in `root_path=""` config) and I (a partition format that doesn't exist) — are NOT closed; both surfaced pre-existing bugs that exceed the original "deferred follow-ups" scope. Track those separately.
 3. **Pattern fidelity:** every extraction lands in `services/*_logic.py` (or `*_service.py`), is re-exported from its page, and is unit-tested in `tests/test_*_logic.py` — matching the `2026-04-30` Section-A commits.
 4. **Backward-compat:** every god-module split preserves prior import paths via shims; renames (Phase E) update all sites.
 5. **Update the tracker:** as each phase closes, mark the corresponding item in `docs/followups/2026-04-29-ui-deep-review-deferred.md` CLOSED with the commit hash.
