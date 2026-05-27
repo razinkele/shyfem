@@ -131,6 +131,12 @@ job not submitted, etc.). This is 9 e2e tests — substantial work, best
 batched after Task 8 lands and a single representative page (e.g. simulation)
 is verified manually first.
 
+> ⚠️ **2026-05-27 review escalation:** writing these tests surfaced a live
+> production bug — the 9 editor guards are **bypassed in the deployed app**
+> (they short-circuit on `user=None`, which is exactly what the prod Shiny WS
+> context yields). The naive test config (`root_path=""`) cannot see it. See
+> **`2026-05-27-prod-viewer-write-bypass.md`** — fix the guards before/with H.
+
 ---
 
 ## I. "Validate Partitions" depth (LOW)
@@ -141,6 +147,12 @@ element counts vs original mesh, orphaned nodes, or empty partitions.
 **Why deferred:** Requires parsing `.par` files end-to-end and cross-referencing
 with the original `.grd`. Scope as a small plan once the partition-method
 fix in Task 16 has soaked in production.
+
+> ⚠️ **2026-05-27 review escalation — BLOCKED on a wrong premise.** There are
+> no `.par` files: `shyparts` writes `partition.<np>.txt` + `.node.grd`/`.elem.grd`.
+> The existing partition reader already targets a non-existent format, and the
+> "one element per partition" model ignores SHYFEM's shared ghost elements. Fix
+> the format mismatch first. See **`2026-05-27-shyparts-output-format-mismatch.md`**.
 
 ---
 
