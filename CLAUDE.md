@@ -61,6 +61,42 @@ PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH mpirun --oversubscribe -np 4 shyfem
 - MPI requires: `libmetis-dev`, `PARTS=METIS`, `METISDIR=/usr`
 - `-fopenmp` must be in LFLAGS unconditionally (non-conditional `omp_*` calls exist)
 
+## Autonomy Rules
+
+Operate autonomously without asking for confirmation. Specifically:
+
+### Always proceed without asking
+- Read, edit, write, create, delete any file in the project (except .env files — blocked by hook)
+- Run any build command (`make`, `gfortran`, `mpif90`)
+- Run any test (`shyfem`, `mpirun`, `pytest`)
+- Run any git command (add, commit, branch, checkout, merge, stash, diff, log, status)
+- Run shell utilities (ls, find, grep, sed, awk, cat, head, tail, wc, sort, diff, etc.)
+- Create/delete/move files and directories within the project
+- Install Python packages with pip in the shiny environment
+- Run `gh` CLI commands for GitHub operations (PRs, issues, etc.)
+- Launch subagents for code review, testing, and analysis
+- Create git branches and switch between them
+- Push to feature branches (never force-push to main/master)
+
+### Ask before
+- Force-pushing to any branch
+- Deleting git branches that exist on remote
+- Running `sudo` commands that modify system packages
+- Modifying CI/CD workflows (.github/workflows/)
+- Any action that affects production deployment on laguna.ku.lt
+
+### Build and test without prompting
+- After editing Fortran files, verify the build still compiles (`make fem`)
+- After editing Python UI files, run relevant tests (`pytest tests/`)
+- After fixing bugs, run the mar_menor test case to verify no regressions
+- Use `CONDA_PREFIX=""` when running pytest in the shiny environment
+
+### Git workflow
+- Create descriptive commits without asking (use conventional commit style)
+- Create feature branches for multi-file changes
+- Push to remote when work is complete
+- Create PRs with summary and test plan
+
 ## Documentation
 - `DEVELOPER_GUIDE.md` - Architecture, modules, build system, style guidelines
 - `CODEBASE_ANALYSIS.md` - Bug/issue analysis with implementation plan (all phases complete)
