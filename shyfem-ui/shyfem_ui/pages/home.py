@@ -252,6 +252,13 @@ def home_server(
 
     _current_user = _get_user()
 
+    # Dedup set prevents effect accumulation (Shiny for Python does not
+    # auto-destroy child effects when a parent @reactive.effect re-runs).
+    # Per-session (declared inside home_server); keys are prefix-namespaced
+    # (open_proj_, project_, export_, clone_, share_, confirm_share_, unshare_)
+    # so all per-project handler factories share this one set without collision.
+    _registered_handlers: set = set()
+
     @render.ui
     def show_all_toggle_ui():
         if not _is_server_mode:
@@ -273,7 +280,7 @@ def home_server(
 
         user = get_current_user()
         with db_session() as db:
-            if user and user.get("role") != "admin":
+            if user and user.get("role") != ROLE_ADMIN:
                 project_list = get_visible_projects(db, user["id"], user["role"])
             else:
                 project_list = db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
@@ -706,8 +713,13 @@ def home_server(
             _make_open_proj_handler(p["id"])
 
     def _make_open_proj_handler(pid: int):
+        key = f"open_proj_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
         @reactive.effect
-        @reactive.event(input[f"open_proj_{pid}"])
+        @reactive.event(input[key])
         def _open():
             ui.modal_remove()
             _activate_project(pid)
@@ -719,8 +731,13 @@ def home_server(
             _make_project_link_handler(p["id"])
 
     def _make_project_link_handler(pid: int):
+        key = f"project_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
         @reactive.effect
-        @reactive.event(input[f"project_{pid}"])
+        @reactive.event(input[key])
         def _click():
             _activate_project(pid)
 
@@ -834,8 +851,13 @@ def home_server(
             _make_export_handler(p["id"], p["name"])
 
     def _make_export_handler(pid: int, pname: str):
+        key = f"export_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
         @reactive.effect
-        @reactive.event(input[f"export_{pid}"])
+        @reactive.event(input[key])
         async def _export():
             await _do_export(pid, pname)
 
@@ -885,8 +907,13 @@ def home_server(
             _make_clone_handler(p["id"], p["name"])
 
     def _make_clone_handler(pid: int, pname: str):
+        key = f"clone_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
         @reactive.effect
-        @reactive.event(input[f"clone_{pid}"])
+        @reactive.event(input[key])
         def _clone():
             _do_clone(pid, pname)
 
@@ -1084,10 +1111,6 @@ def home_server(
     # ------------------------------------------------------------------
 
     from shyfem_ui.services.sharing_service import SharingService
-
-    # Dedup set prevents effect accumulation (Shiny for Python does not
-    # auto-destroy child effects when a parent @reactive.effect re-runs).
-    _registered_handlers: set = set()
 
     @reactive.effect
     def _register_share_handlers():

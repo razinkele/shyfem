@@ -71,7 +71,7 @@ def _validate_create_user_form(
     if role not in _VALID_ROLES:
         errors.append(f"Role must be one of: {', '.join(sorted(_VALID_ROLES))}")
     # Email required for non-tutorial accounts
-    if role != "tutorial":
+    if role != ROLE_TUTORIAL:
         if not email or not email.strip():
             errors.append("Email is required")
         elif "@" not in email or "." not in email.split("@")[-1]:
@@ -568,7 +568,7 @@ def admin_server(
             )
             _audit("create_user", f"target={clean_username}, role={role}")
             ui.modal_remove()
-            home_path = config.user_data_root / clean_username if role != "tutorial" else None
+            home_path = config.user_data_root / clean_username if role != ROLE_TUTORIAL else None
             if home_path:
                 ui.notification_show(
                     f"User '{clean_username}' created. Home: {home_path}",
