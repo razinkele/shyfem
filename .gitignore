@@ -235,6 +235,9 @@ lib/st??????
 #-----------------------------------------------
 testcases/examples/mar_menor/GRID/MM_coarse_smooth.bas
 testcases/examples/mar_menor/mm_hyd_00.inf
+testcases/examples/mar_menor/mm_hyd_long.ext
+testcases/examples/mar_menor/mm_hyd_long.hydro.shy
+testcases/examples/mar_menor/mm_hyd_long.inf
 
 #-----------------------------------------------
 # shyplot/util auxiliary build executables (EXESAUX in its Makefile)
