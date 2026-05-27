@@ -75,7 +75,7 @@ zero behavior change. Defer until a major-version cleanup is planned.
 
 ---
 
-## F. Metrics / request IDs / tracing (LOW)
+## F. Metrics / request IDs / tracing (LOW) — DROPPED 2026-05-27
 
 **Problem:** Beyond `/health`, the app has no per-request observability.
 No timing histograms, no request-correlation IDs, no per-endpoint counters.
@@ -83,16 +83,37 @@ No timing histograms, no request-correlation IDs, no per-endpoint counters.
 **Why deferred:** Requires architectural decisions (Prometheus vs OTel,
 sync vs async middleware, per-route timing). Standalone proposal needed.
 
+**Resolution (2026-05-27, domain owner sign-off):** DROPPED. Request-correlation
+IDs are already implemented (`middleware/request_id.py`). The remaining
+metrics/timing work has no consumer — there is no Prometheus/Grafana scraper on
+laguna.ku.lt — and a `/metrics` endpoint adds public attack surface for nothing.
+Revisit only if a scraper is deployed and confirmed reachable past nginx.
+
 ---
 
-## G. Postprocess flux/frequency domain UI (LOW)
+## G. Postprocess flux/frequency domain UI (LOW) — PARTIALLY CLOSED 2026-05-27
 
-**Problem:** `postprocess.py:69-76` lists `frequency` and `flux` operations
+**Problem:** `postprocess.py` listed `frequency` and `flux` operations
 that map to bare CLI flags but provide no domain controls (node lists for
 flux sections, frequency bin counts).
 
 **Why deferred:** Requires SHYFEM-domain expertise on what controls users
 need. Pair with a SHYFEM developer to scope.
+
+**Resolution (2026-05-27, domain owner sign-off):** Both ops were not just
+under-built but *broken*, so they were removed from `SHYELAB_OPERATIONS`:
+- `frequency` emitted a bare `-freq` (→ `0`, a no-op) and was mislabeled as
+  spectral analysis. In shyelab, `-freq n` (`elabutil.f90:624`) is an averaging
+  *stride* for `aver/sum/min/max/std/rms`, not a standalone operation.
+- `flux` emitted `-flux`, which is **not a registered shyelab option** at all —
+  it silently did nothing. Flux/transport runs on `.flx` files
+  (`shyelab.f90:82`) with `-node`/`-nodes` node selection (`elabutil.f90:464`).
+
+**Deferred (no current consumer):**
+- Averaging-stride control: add `freq_n` to `build_shyelab_options` + a numeric
+  UI field on the averaging ops, emitting e.g. `-aver -freq n`.
+- Flux workflow: `.flx`-file discovery + a node-list input emitting `-node <list>`.
+  This is a separate FLX pipeline, not a `.shy` shyelab op.
 
 ---
 
