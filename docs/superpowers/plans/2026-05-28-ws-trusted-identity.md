@@ -24,7 +24,9 @@
 
 > ⚠️ Part 2 below **requires a Shiny-Server-backed environment** (a local Shiny Server install or the staging/laguna deployment). It cannot be validated on a bare dev box. If no such environment is available at all, skip to Phase 3B (Approach 2) and record that decision.
 
-- [ ] **Step 1: Add a temporary probe in the middleware WS branch.** In `shyfem_ui/middleware/session_auth.py`, inside the `if scope["type"] == "websocket":` block (around line 604), add at the top:
+- [x] **Step 1: Add a temporary probe in the middleware WS branch.** In `shyfem_ui/middleware/session_auth.py`, inside the `if scope["type"] == "websocket":` block (around line 604), add at the top:
+
+> **Executed 2026-05-28.** Placed the probe at the top of `__call__` (not inside the WS branch) so it fires before the `local_mode` shortcut at line 535 — necessary for local-mode validation. Probe reverted in Step 5.
 
 ```python
 import logging as _spike_log
@@ -33,13 +35,21 @@ _spike_log.getLogger("shyfem_ui").warning(
 )
 ```
 
-- [ ] **Step 2: Add a temporary client probe.** In `shyfem_ui/app.py`, in the `DOMContentLoaded` JS (near line 408), before Shiny initializes, log `window.location` and attempt to set a WS-URL param via whatever hook Shiny exposes (try, in order: a `Shiny`/`window` config global read at connect time; wrapping `WebSocket`; a query param on the page URL that Shiny echoes). The goal is to discover the working hook, not to finalize it.
+- [x] **Step 2: Add a temporary client probe.** In `shyfem_ui/app.py`, in the `DOMContentLoaded` JS (near line 408), before Shiny initializes, log `window.location` and attempt to set a WS-URL param via whatever hook Shiny exposes (try, in order: a `Shiny`/`window` config global read at connect time; wrapping `WebSocket`; a query param on the page URL that Shiny echoes). The goal is to discover the working hook, not to finalize it.
 
-- [ ] **Step 3: Local run.** Start the app locally (`/opt/micromamba/envs/shiny/bin/python -m shyfem_ui.app`), open it, and confirm the SPIKE log shows the param arriving in `query_string`. Records the client hook that worked. Expected: param visible (proves the client half only — there is no proxy locally).
+> **Executed 2026-05-28.** Hook = the existing `window.WebSocket` reconnect wrapper at `app.py:386-405`. No Shiny-specific global needed. Probe reverted in Step 5.
+
+- [x] **Step 3: Local run.** Start the app locally (`/opt/micromamba/envs/shiny/bin/python -m shyfem_ui.app`), open it, and confirm the SPIKE log shows the param arriving in `query_string`. Records the client hook that worked. Expected: param visible (proves the client half only — there is no proxy locally).
+
+> **Executed 2026-05-28.** Confirmed: `query_string=b'_wsauth=SPIKE_PROBE_TOKEN'`, path `/shyfem-ui/websocket/`, uvicorn accepted. Details in the spec's "Spike results (2026-05-28)" section.
 
 - [ ] **Step 4: Behind Shiny Server (decisive).** Deploy the probe build to a Shiny-Server-backed env. Open the app through the proxy and confirm whether the SPIKE log shows the param surviving the internal-WS hop. Also confirm: (a) Shiny's auto-reconnect (kill the network briefly) reuses the URL with the param intact; (b) Shiny Server does not open its own token-less internal WS that a strict middleware would wrongly close.
 
-- [ ] **Step 5: Record the decision + revert the probes.** Write the findings (which client hook works; did the param survive the proxy; reconnect behavior) into a new section "Spike results (YYYY-MM-DD)" at the bottom of `docs/superpowers/specs/2026-05-28-ws-trusted-identity-design.md`. Revert the Step 1–2 probe code. Commit:
+> **PENDING 2026-05-28.** Not run from the dev box (no Shiny-Server-backed env reachable). Must run on staging or laguna before the A1/A2 branch is taken. Note for executor: in this codebase the reconnect wrapper does `window.location.reload()` rather than a Shiny native reconnect, so part (a) collapses to "page reload re-runs the JS, which re-attaches the token" — still worth verifying that a closed-then-reopened WS shows the param.
+
+- [x] **Step 5: Record the decision + revert the probes.** Write the findings (which client hook works; did the param survive the proxy; reconnect behavior) into a new section "Spike results (YYYY-MM-DD)" at the bottom of `docs/superpowers/specs/2026-05-28-ws-trusted-identity-design.md`. Revert the Step 1–2 probe code. Commit:
+
+> **Partially executed 2026-05-28** (commit `746c7ee`). Local findings appended. Step 4 still pending — when it runs, append a "Spike results — Step 4 (YYYY-MM-DD)" subsection and only **then** take the A1/A2 branch.
 
 ```bash
 git add docs/superpowers/specs/2026-05-28-ws-trusted-identity-design.md
