@@ -114,3 +114,31 @@ The browser must attach `?_wsauth=<token>` to Shiny's client WebSocket URL befor
 1. **Spike outcome** decides Approach 1 vs 2 — the single biggest risk. Mitigated by making the spike the first milestone and writing the plan to branch.
 2. **Exact token storage** (reuse `auth_sessions` with `kind` vs sibling table) — pinned in the plan against the live schema + migration conventions.
 3. **Shiny client WS-URL hook** — which mechanism reliably injects the query param across Shiny-for-Python's connect/reconnect, confirmed by the spike.
+
+## Spike results (2026-05-28)
+
+**Status: PARTIAL.** Local (no-proxy) half confirmed; the decisive Shiny-Server-behind-the-proxy half (Step 4) is **PENDING** — no Shiny-Server-backed env reachable from the dev box. **A1 vs A2 decision is NOT made yet** — execute Step 4 on staging/laguna before branching the plan.
+
+### What was tested
+
+App started locally at `127.0.0.1:8123` with `SHYFEM_UI_DEPLOYMENT_MODE=local` (and `SHYFEM_UI_ROOT_PATH=/shyfem-ui` from `.env`); a headless browser (Playwright MCP) loaded `/`, which triggered Shiny's WS handshake. Probes:
+
+- **Client (`shyfem_ui/app.py`)**: extended the existing `window.WebSocket` reconnect wrapper at lines 386-405 to log the incoming `url`, append `?_wsauth=SPIKE_PROBE_TOKEN`, and log the mutated URL before calling `new origWS(...)`.
+- **Server (`shyfem_ui/middleware/session_auth.py`)**: logged `scope["path"|"raw_path"|"query_string"|"client"|"root_path"|"local_mode"]` for every WS scope at the very top of `SessionAuthMiddleware.__call__`.
+
+### Findings
+
+1. **Client hook = the existing reconnect wrapper.** Shiny constructs the WS via plain `new WebSocket(url, protocols)`. Wrapping `window.WebSocket` (which the codebase already does for reconnect/backoff) is the natural and sufficient injection point — no need to discover a Shiny-specific config global or hook. Trivial URL mutation worked.
+2. **Server sees the query string intact** (direct ASGI, no proxy): `query_string=b'_wsauth=SPIKE_PROBE_TOKEN'`; `path='/shyfem-ui/websocket/'`; uvicorn logged `WebSocket /shyfem-ui/websocket/?_wsauth=SPIKE_PROBE_TOKEN [accepted]`. The client → server transport works at the ASGI layer.
+3. **Shiny WS endpoint shape.** Client constructs `ws://host:port/websocket/`; with `root_path=/shyfem-ui`, the path becomes `/shyfem-ui/websocket/`. Plan code paths that need the path prefix should use `root_path` (already done in HTTP redirects).
+4. **Middleware probe placement matters for any future local-mode validation.** The `local_mode` shortcut at line 535 returns *before* the WS branch is reached, so a probe placed inside the WS branch never fires in local mode. Doesn't affect production (server mode), but the plan's Phase 4 integration test (the `root_path`-set variant) must keep `local_mode=False` to exercise the new WS-token path.
+5. **"Reconnect" is replaced by full reload in this codebase.** The existing wrapper at lines 386-405 calls `window.location.reload()` on non-clean close instead of letting Shiny reconnect. That means Shiny-for-Python's native WS-URL reuse is moot here: the token is re-fetched and re-attached on each reload because the JS re-runs. Session-lived token + reload-based reconnect is consistent. The plan's reconnect concern collapses to "token must outlive a page reload," which `AuthSession`-bound tokens already do.
+
+### What's NOT proven (blocks A1/A2 decision)
+
+- **Step 4 (Shiny Server → app internal-WS hop).** Whether the query string survives nginx → Shiny Server → app `/websocket/` connection is untested. The existing deployment notes (commits `f2f2ecc` / `d48b6a7` / `8e1f254`) show the proxy hop strips cookies but pass WS through; nginx and most proxies pass query strings by default. Expectation: works. Must verify on staging/laguna.
+- **Token-less internal WS by Shiny Server.** Whether Shiny Server opens any token-less internal WS that a strict middleware would (correctly, per spec) close with 4001. Must verify on the same env.
+
+### Next concrete action
+
+Deploy a probe build to staging/laguna (or local Shiny-Server install), repeat the Playwright drive-through, and append a "Spike results — Step 4 (YYYY-MM-DD)" subsection. **Only then** check off the Phase 3A-vs-3B branch.
