@@ -393,6 +393,71 @@ class TestMiddlewareHTTP:
 
 
 # ------------------------------------------------------------------
+# /api/whoami
+# ------------------------------------------------------------------
+
+
+class TestWhoami:
+    """Drive _handle_whoami directly against a real AuthService + in-memory DB
+    so the ws_token round-trip is end-to-end, not mock-shaped."""
+
+    @pytest.fixture()
+    def auth_service(self):
+        import json  # noqa: F401  -- referenced below
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from shyfem_ui.db.base import Base
+        from shyfem_ui.models import project as _p  # noqa: F401 -- register models
+        from shyfem_ui.models import user as _u  # noqa: F401 -- register models
+        from shyfem_ui.services.auth_service import AuthService
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=engine)
+        return AuthService(session_factory=sessionmaker(bind=engine))
+
+    @staticmethod
+    async def _drive(mw, session_token):
+        sent = []
+
+        async def send(msg):
+            sent.append(msg)
+
+        await mw._handle_whoami(session_token, send)
+        return sent
+
+    @staticmethod
+    def _decode(sent):
+        import json
+        start = next(m for m in sent if m["type"] == "http.response.start")
+        body = b"".join(m["body"] for m in sent if m["type"] == "http.response.body")
+        return start["status"], json.loads(body)
+
+    @pytest.mark.asyncio
+    async def test_returns_ws_token_for_authenticated_user(self, auth_service):
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        session_token = auth_service.create_session(user["id"])
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+        sent = await self._drive(mw, session_token)
+        status, body = self._decode(sent)
+        assert status == 200
+        assert body["username"] == "alice"
+        assert body["ws_token"]
+        assert body["ws_token"] != session_token  # distinct from cookie token
+        # The minted token must be accepted by validate_ws_token.
+        resolved = auth_service.validate_ws_token(body["ws_token"])
+        assert resolved is not None
+        assert resolved["id"] == user["id"]
+
+    @pytest.mark.asyncio
+    async def test_unauthenticated_returns_401_without_ws_token(self, auth_service):
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+        sent = await self._drive(mw, session_token=None)
+        status, body = self._decode(sent)
+        assert status == 401
+        assert "ws_token" not in body
+
+
+# ------------------------------------------------------------------
 # WebSocket handling
 # ------------------------------------------------------------------
 

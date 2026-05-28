@@ -821,11 +821,13 @@ class SessionAuthMiddleware:
             await send({"type": "http.response.body", "body": body})
             return
 
+        ws_token = self.auth_service.create_ws_token(user["id"], session_token)
         body = json.dumps(
             {
                 "username": user.get("username", ""),
                 "display_name": user.get("display_name", ""),
                 "role": user.get("role", ""),
+                "ws_token": ws_token,
             }
         ).encode()
         await send(
