@@ -256,6 +256,31 @@ class TestWSToken:
         auth_service.deactivate_user(user["id"])
         assert auth_service.validate_ws_token(ws) is None
 
+    def test_logout_purges_ws_token_rows(self, auth_service):
+        """delete_session must remove WS tokens spawned by the session, not
+        just rely on validate_ws_token refusing them by inheritance."""
+        from shyfem_ui.models.user import WSAuthToken
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        sess = auth_service.create_session(user["id"])
+        auth_service.create_ws_token(user["id"], sess)
+        auth_service.create_ws_token(user["id"], sess)
+        auth_service.delete_session(sess)
+        with auth_service._session_factory() as db:
+            remaining = db.query(WSAuthToken).filter_by(session_token=sess).count()
+        assert remaining == 0
+
+    def test_cleanup_removes_expired_ws_tokens(self, auth_service):
+        """cleanup_expired_sessions must also purge expired WS tokens and
+        include them in the returned count."""
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        sess = auth_service.create_session(user["id"], ttl_hours=24)
+        expired_ws = auth_service.create_ws_token(user["id"], sess, ttl_hours=-1)
+        valid_ws = auth_service.create_ws_token(user["id"], sess, ttl_hours=24)
+        removed = auth_service.cleanup_expired_sessions()
+        assert removed >= 1
+        assert auth_service.validate_ws_token(expired_ws) is None
+        assert auth_service.validate_ws_token(valid_ws) is not None
+
 
 # ------------------------------------------------------------------
 # Bootstrap

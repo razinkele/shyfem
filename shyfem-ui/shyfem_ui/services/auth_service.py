@@ -377,6 +377,9 @@ class AuthService:
     def delete_session(self, token: str) -> bool:
         """Delete a session by token.
 
+        Also purges any WS-auth tokens minted from this session so a logout
+        cleanly retires the WebSocket-side identity bridge.
+
         Returns:
             True if the session was found and deleted, False otherwise.
         """
@@ -385,6 +388,7 @@ class AuthService:
             auth_session = session.query(AuthSession).filter_by(token=token).first()
             if auth_session is None:
                 return False
+            session.query(WSAuthToken).filter_by(session_token=token).delete()
             session.delete(auth_session)
             session.commit()
             return True
@@ -396,10 +400,10 @@ class AuthService:
             session.close()
 
     def cleanup_expired_sessions(self) -> int:
-        """Remove all expired sessions.
+        """Remove all expired sessions and WS-auth tokens.
 
         Returns:
-            Number of sessions removed.
+            Combined count of rows removed (sessions + WS tokens).
         """
         now = datetime.now(timezone.utc)
         session = self._session_factory()
@@ -408,6 +412,10 @@ class AuthService:
             count = len(expired)
             for s in expired:
                 session.delete(s)
+            expired_ws = session.query(WSAuthToken).filter(WSAuthToken.expires_at <= now).all()
+            count += len(expired_ws)
+            for w in expired_ws:
+                session.delete(w)
             session.commit()
             return count
         except Exception:
