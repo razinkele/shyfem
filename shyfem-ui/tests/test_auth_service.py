@@ -214,6 +214,50 @@ class TestSessionManagement:
 
 
 # ------------------------------------------------------------------
+# WS-auth tokens (bridge HTTP session → Shiny WebSocket scope)
+# ------------------------------------------------------------------
+
+
+class TestWSToken:
+
+    def test_create_and_validate_returns_user(self, auth_service):
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        sess = auth_service.create_session(user["id"])
+        ws = auth_service.create_ws_token(user["id"], sess)
+        assert isinstance(ws, str)
+        assert ws != sess  # distinct from cookie token
+        resolved = auth_service.validate_ws_token(ws)
+        assert resolved is not None
+        assert resolved["id"] == user["id"]
+        assert resolved["username"] == "alice"
+
+    def test_unknown_token_returns_none(self, auth_service):
+        assert auth_service.validate_ws_token("nope") is None
+
+    def test_invalid_when_parent_session_gone(self, auth_service):
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        sess = auth_service.create_session(user["id"])
+        ws = auth_service.create_ws_token(user["id"], sess)
+        auth_service.delete_session(sess)  # logout
+        # WS token inherits session death even though its own row may linger
+        # until cleanup; validation must refuse it.
+        assert auth_service.validate_ws_token(ws) is None
+
+    def test_invalid_when_parent_session_expired(self, auth_service):
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        sess = auth_service.create_session(user["id"], ttl_hours=0)
+        ws = auth_service.create_ws_token(user["id"], sess)
+        assert auth_service.validate_ws_token(ws) is None
+
+    def test_invalid_when_user_deactivated(self, auth_service):
+        user = auth_service.create_user("alice", "pass", email="alice@example.com")
+        sess = auth_service.create_session(user["id"])
+        ws = auth_service.create_ws_token(user["id"], sess)
+        auth_service.deactivate_user(user["id"])
+        assert auth_service.validate_ws_token(ws) is None
+
+
+# ------------------------------------------------------------------
 # Bootstrap
 # ------------------------------------------------------------------
 

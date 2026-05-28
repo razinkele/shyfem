@@ -14,7 +14,7 @@ try:
 except ImportError:
     from argon2.exceptions import InvalidHash as InvalidHashError  # argon2 <23
 
-from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User
+from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User, WSAuthToken
 
 logger = logging.getLogger(__name__)
 _ph = PasswordHasher()
@@ -416,6 +416,67 @@ class AuthService:
             raise
         finally:
             session.close()
+
+    # ------------------------------------------------------------------
+    # WS-auth tokens (bridge HTTP session into Shiny WebSocket scope)
+    # ------------------------------------------------------------------
+
+    def create_ws_token(
+        self,
+        user_id: int,
+        session_token: str,
+        ttl_hours: int = 24,
+    ) -> str:
+        """Mint a WS-auth token bound to an existing HTTP session.
+
+        Distinct from the session cookie value; validity inherits from the
+        owning AuthSession (purged on logout, refused once expired).
+        """
+        token = secrets.token_hex(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+        session = self._session_factory()
+        try:
+            session.add(
+                WSAuthToken(
+                    token=token,
+                    session_token=session_token,
+                    user_id=user_id,
+                    expires_at=expires_at,
+                )
+            )
+            session.commit()
+            return token
+        except Exception:
+            session.rollback()
+            logger.exception("Database error in create_ws_token")
+            raise
+        finally:
+            session.close()
+
+    def validate_ws_token(self, token: str) -> dict | None:
+        """Validate a WS-auth token.
+
+        Returns the user dict only if the token row exists, is unexpired,
+        AND its parent HTTP session still validates (covers logout, parent
+        expiry, and user deactivation in a single delegated check).
+        """
+        session = self._session_factory()
+        try:
+            row = session.query(WSAuthToken).filter_by(token=token).first()
+            if row is None:
+                return None
+            if row.is_expired:
+                session.delete(row)
+                session.commit()
+                return None
+            parent_token = row.session_token
+        except Exception:
+            session.rollback()
+            logger.exception("Database error in validate_ws_token")
+            raise
+        finally:
+            session.close()
+        return self.validate_session(parent_token)
 
     # ------------------------------------------------------------------
     # Bootstrap
