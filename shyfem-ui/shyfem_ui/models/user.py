@@ -103,6 +103,38 @@ class AuthSession(Base):
         return f"<AuthSession(id={self.id}, user_id={self.user_id}, expired={self.is_expired})>"
 
 
+class WSAuthToken(Base):
+    """Server-issued token that bridges the authenticated HTTP session into
+    the Shiny WebSocket scope.
+
+    Distinct from the session cookie value; a pointer to the owning
+    ``AuthSession`` whose validity it inherits (expires no later, dies on
+    logout, dies on session expiry).
+    """
+
+    __tablename__ = "ws_auth_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    session_token: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+    @property
+    def is_expired(self) -> bool:
+        now = datetime.now(timezone.utc)
+        expires = self.expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return now >= expires
+
+    def __repr__(self) -> str:
+        return f"<WSAuthToken(id={self.id}, user_id={self.user_id}, expired={self.is_expired})>"
+
+
 class ProjectPermission(Base):
     """Permission granting a user access to a project with a specific role."""
 
