@@ -62,13 +62,15 @@ git commit -m "docs(spec): record WS-token transport feasibility spike results"
 
 ## Phase 1 — Shared backend: WS-auth token model + service methods
 
+> **Executed 2026-05-28** on branch `feat/ws-auth-token-backend`. Task 1.1 (`f640c55`) added model + migration; the autogenerate run also flagged a spurious `audit_logs` drop because `audit_log` is not imported by `migrations/env.py` — followup filed at `docs/followups/2026-05-28-alembic-env-missing-audit-log-import.md`, audit_logs DDL stripped from this migration. Task 1.2 (`0fba808`) added `create_ws_token`/`validate_ws_token` with five TDD-first tests covering happy path, unknown token, parent logout, parent expiry, user deactivation. Task 1.3 (`e8b726b`) wired purge into `delete_session` + `cleanup_expired_sessions` with two TDD-first tests; pre-existing `test_cleanup_expired_sessions` invariant preserved. Full suite green (1912 passed).
+
 ### Task 1.1: `WSAuthToken` model + migration
 
 **Files:**
 - Modify: `shyfem_ui/models/user.py` (add model near `AuthSession`, ~line 103)
 - Create: `migrations/versions/<generated>_ws_auth_tokens.py`
 
-- [ ] **Step 1: Add the model.** In `shyfem_ui/models/user.py`, after the `AuthSession` class, add (mirroring `AuthSession`'s column style and `is_expired`):
+- [x] **Step 1: Add the model.** In `shyfem_ui/models/user.py`, after the `AuthSession` class, add (mirroring `AuthSession`'s column style and `is_expired`):
 
 ```python
 class WSAuthToken(Base):
@@ -99,13 +101,13 @@ class WSAuthToken(Base):
         return f"<WSAuthToken(id={self.id}, user_id={self.user_id}, expired={self.is_expired})>"
 ```
 
-- [ ] **Step 2: Generate the migration.** Current Alembic head is `379248193d58`. Run:
+- [x] **Step 2: Generate the migration.** Current Alembic head is `379248193d58`. Run:
 
 ```bash
 CONDA_PREFIX="" /opt/micromamba/envs/shiny/bin/python -m alembic revision --autogenerate -m "ws_auth_tokens"
 ```
 
-- [ ] **Step 3: Verify the migration.** Open the generated file. Confirm `down_revision = '379248193d58'` and that `upgrade()` creates the table; if autogenerate missed it, write it manually:
+- [x] **Step 3: Verify the migration.** Open the generated file. Confirm `down_revision = '379248193d58'` and that `upgrade()` creates the table; if autogenerate missed it, write it manually:
 
 ```python
 def upgrade() -> None:
@@ -128,7 +130,7 @@ def downgrade() -> None:
     op.drop_table("ws_auth_tokens")
 ```
 
-- [ ] **Step 4: Apply + verify.**
+- [x] **Step 4: Apply + verify.**
 
 ```bash
 CONDA_PREFIX="" /opt/micromamba/envs/shiny/bin/python -m alembic upgrade head
@@ -136,7 +138,7 @@ CONDA_PREFIX="" /opt/micromamba/envs/shiny/bin/python -m alembic heads   # new r
 ```
 Expected: upgrade runs cleanly; `ws_auth_tokens` exists.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add shyfem_ui/models/user.py migrations/versions/*ws_auth_tokens*.py
@@ -149,7 +151,7 @@ git commit -m "feat(auth): add WSAuthToken model + migration"
 - Modify: `shyfem_ui/services/auth_service.py` (after `cleanup_expired_sessions`, ~line 418; import `WSAuthToken`)
 - Test: `tests/test_auth_service.py` (extend; if absent, create)
 
-- [ ] **Step 1: Write the failing test.** In `tests/test_auth_service.py`:
+- [x] **Step 1: Write the failing test.** In `tests/test_auth_service.py`:
 
 ```python
 from datetime import datetime, timedelta, timezone
@@ -179,9 +181,9 @@ class TestWSToken:
 
 (Build `auth_service`/`a_user` fixtures from the existing patterns in `tests/test_auth_service.py` / `tests/test_access_control.py`; bind `AuthService(session_factory=...)` to the test DB. Create an active `User` with a `password_hash`.)
 
-- [ ] **Step 2: Run → FAIL.** `CONDA_PREFIX="" /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_auth_service.py::TestWSToken -v` → `AttributeError: 'AuthService' object has no attribute 'create_ws_token'`.
+- [x] **Step 2: Run → FAIL.** `CONDA_PREFIX="" /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_auth_service.py::TestWSToken -v` → `AttributeError: 'AuthService' object has no attribute 'create_ws_token'`.
 
-- [ ] **Step 3: Implement.** Add `WSAuthToken` to the model import at the top of `auth_service.py` (the line importing `AuthSession`, `User`), then:
+- [x] **Step 3: Implement.** Add `WSAuthToken` to the model import at the top of `auth_service.py` (the line importing `AuthSession`, `User`), then:
 
 ```python
 def create_ws_token(self, user_id: int, session_token: str, ttl_hours: int = 24) -> str:
@@ -229,8 +231,8 @@ def validate_ws_token(self, token: str) -> dict | None:
     return self.validate_session(parent)
 ```
 
-- [ ] **Step 4: Run → PASS.** Same pytest command → green.
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run → PASS.** Same pytest command → green.
+- [x] **Step 5: Commit.**
 
 ```bash
 git add shyfem_ui/services/auth_service.py tests/test_auth_service.py
@@ -243,7 +245,7 @@ git commit -m "feat(auth): create_ws_token + validate_ws_token (session-inherite
 - Modify: `shyfem_ui/services/auth_service.py` (`delete_session` ~377, `cleanup_expired_sessions` ~398)
 - Test: `tests/test_auth_service.py`
 
-- [ ] **Step 1: Write the failing test.** Add to `TestWSToken`:
+- [x] **Step 1: Write the failing test.** Add to `TestWSToken`:
 
 ```python
 def test_cleanup_removes_expired_ws_tokens(self, auth_service, a_user):
@@ -255,8 +257,8 @@ def test_cleanup_removes_expired_ws_tokens(self, auth_service, a_user):
     assert auth_service.validate_ws_token(ws) is None
 ```
 
-- [ ] **Step 2: Run → FAIL** (`cleanup_expired_sessions` doesn't touch `ws_auth_tokens` yet; the count won't include it).
-- [ ] **Step 3: Implement.** In `delete_session`, after deleting the `AuthSession`, also purge its WS tokens (before `commit()`):
+- [x] **Step 2: Run → FAIL** (`cleanup_expired_sessions` doesn't touch `ws_auth_tokens` yet; the count won't include it).
+- [x] **Step 3: Implement.** In `delete_session`, after deleting the `AuthSession`, also purge its WS tokens (before `commit()`):
 
 ```python
             session.query(WSAuthToken).filter_by(session_token=token).delete()
@@ -271,8 +273,8 @@ In `cleanup_expired_sessions`, after computing `count` for expired sessions, als
                 session.delete(w)
 ```
 
-- [ ] **Step 4: Run → PASS.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run → PASS.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add shyfem_ui/services/auth_service.py tests/test_auth_service.py
@@ -283,13 +285,15 @@ git commit -m "feat(auth): purge WS tokens on logout and during expiry cleanup"
 
 ## Phase 2 — `whoami` returns the WS token
 
+> **Executed 2026-05-28** on branch `feat/ws-auth-token-backend` (`74f9ba6`). Drove `_handle_whoami` end-to-end against a real `AuthService` + in-memory SQLite — round-trip `whoami body → validate_ws_token → real user dict` verified, and the 401 branch confirmed not to leak a `ws_token` field. No client consumer yet; that wiring is Phase 3A.
+
 ### Task 2.1: mint + return the token from `_handle_whoami`
 
 **Files:**
 - Modify: `shyfem_ui/middleware/session_auth.py` (`_handle_whoami`, ~801-841)
 - Test: `tests/test_session_auth.py` (extend; if absent, create — drive `_handle_whoami` directly)
 
-- [ ] **Step 1: Write the failing test.** In `tests/test_session_auth.py`, exercise `_handle_whoami` with a valid session and assert the JSON body contains a non-empty `ws_token` that `validate_ws_token` accepts:
+- [x] **Step 1: Write the failing test.** In `tests/test_session_auth.py`, exercise `_handle_whoami` with a valid session and assert the JSON body contains a non-empty `ws_token` that `validate_ws_token` accepts:
 
 ```python
 import json, asyncio
@@ -310,8 +314,8 @@ def test_whoami_returns_ws_token(auth_middleware, valid_session_token, auth_serv
 
 (Reuse/adapt existing `session_auth` test fixtures; build the middleware with the test DB-backed `AuthService`.)
 
-- [ ] **Step 2: Run → FAIL** (`KeyError: 'ws_token'`).
-- [ ] **Step 3: Implement.** In `_handle_whoami`, after the `user is None` guard, mint the token and add it to the body:
+- [x] **Step 2: Run → FAIL** (`KeyError: 'ws_token'`).
+- [x] **Step 3: Implement.** In `_handle_whoami`, after the `user is None` guard, mint the token and add it to the body:
 
 ```python
         ws_token = self.auth_service.create_ws_token(user["id"], session_token)
@@ -325,8 +329,8 @@ def test_whoami_returns_ws_token(auth_middleware, valid_session_token, auth_serv
         ).encode()
 ```
 
-- [ ] **Step 4: Run → PASS.**
-- [ ] **Step 5: Commit.**
+- [x] **Step 4: Run → PASS.**
+- [x] **Step 5: Commit.**
 
 ```bash
 git add shyfem_ui/middleware/session_auth.py tests/test_session_auth.py
