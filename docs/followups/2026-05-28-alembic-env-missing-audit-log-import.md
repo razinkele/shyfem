@@ -1,5 +1,7 @@
 # Follow-up: `migrations/env.py` does not import `audit_log`, so autogenerate proposes to drop `audit_logs`
 
+> **Resolved 2026-05-28** on branch `fix/alembic-env-import-audit-log`. Fixed by adding explicit `audit_log` + `user` imports to `migrations/env.py`, with a new `tests/test_migrations_env.py` guard that fails if any model submodule under `shyfem_ui/models/` is missing from env.py's import list. Mutation-verified: backing the `audit_log` import out makes both guard tests fail with a clear, actionable message. Empty-autogenerate check confirms no spurious DDL is proposed.
+
 **Severity:** High (any next `alembic revision --autogenerate` run, on any branch, will produce a migration that silently drops the live `audit_logs` table and all audit history with it).
 
 **Origin:** 2026-05-28, Task 1.1 of `docs/superpowers/plans/2026-05-28-ws-trusted-identity.md`. Running `alembic revision --autogenerate -m "ws_auth_tokens"` for the new `WSAuthToken` model produced — alongside the expected `ws_auth_tokens` `create_table` — an unrequested `drop_table('audit_logs')` plus three `drop_index` calls. Stripped from the committed migration (`f640c55`); the trap remains in `env.py`.
