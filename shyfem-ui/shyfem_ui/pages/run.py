@@ -254,6 +254,7 @@ def run_server(
     active_project=None,
     tutorial_context=None,
     user_role=None,
+    current_user=None,
 ) -> None:
     """Job execution page server logic."""
     # Initialize job queue if not provided
@@ -583,10 +584,9 @@ def run_server(
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None:
-                from shyfem_ui.middleware.session_auth import get_current_user as _get_user
                 from shyfem_ui.services.access_control import check_project_access
 
-                _usr = _get_user()
+                _usr = current_user() if current_user is not None else None
                 if (
                     _usr is not None
                     and check_project_access(_proj["id"], _usr, min_role="editor") is None

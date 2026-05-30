@@ -789,7 +789,14 @@ def _build_server(
         return _ws_user.get()
 
     # Initialize page servers
-    home.home_server("home", config, job_queue, active_project=active_project, nav_callback=nav_to)
+    home.home_server(
+        "home",
+        config,
+        job_queue,
+        active_project=active_project,
+        nav_callback=nav_to,
+        current_user=current_user,
+    )
     tutorial.tutorial_server(
         "tutorial",
         config,
@@ -801,17 +808,28 @@ def _build_server(
         "mesh_builder", config, active_project=active_project, tutorial_context=tutorial_context
     )
     grid_prep.grid_prep_server(
-        "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
+        "grid_prep",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     partitioning.partitioning_server(
         "partitioning",
         config,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
-    physics.physics_server("physics", config, active_project=active_project)
+    physics.physics_server(
+        "physics", config, active_project=active_project, current_user=current_user
+    )
     simulation.simulation_server(
-        "simulation", config, active_project=active_project, tutorial_context=tutorial_context
+        "simulation",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     run.run_server(
         "run",
@@ -820,6 +838,7 @@ def _build_server(
         active_project=active_project,
         tutorial_context=tutorial_context,
         user_role=_current_role,
+        current_user=current_user,
     )
     ibm.ibm_server(
         "ibm",
@@ -828,7 +847,11 @@ def _build_server(
         tutorial_context=tutorial_context,
     )
     postprocess.postprocess_server(
-        "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
+        "postprocess",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     visualize.visualize_server(
         "visualize", config, active_project=active_project, tutorial_context=tutorial_context
@@ -846,12 +869,14 @@ def _build_server(
         job_queue,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     files.files_server(
         "files",
         config,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
 
     if auth_service:
