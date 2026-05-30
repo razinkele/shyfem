@@ -763,6 +763,24 @@ def _build_server(
         except Exception:
             return _current_user.get("role") if _current_user else None
 
+    # WS-scope identity fallback — resolves the per-session WS-auth token
+    # pushed by the browser as input._wsauth (Task 3B.1) into a real user dict.
+    # Imports are lazy to avoid import-time DB/engine setup and circular imports.
+    # current_user() is not yet consumed here; Task 3B.3 wires page-server consumers.
+    _ws_user: reactive.Value[dict | None] = reactive.value(None)
+
+    @reactive.effect
+    def _resolve_ws_identity():
+        from shyfem_ui.services.auth_service import AuthService
+        from shyfem_ui.services.ws_identity import resolve_ws_user
+
+        tok = input._wsauth() if "_wsauth" in input else None
+        _ws_user.set(resolve_ws_user(tok, AuthService()))
+
+    def current_user() -> dict | None:
+        """Return the real, server-validated user in the WS scope (fallback path)."""
+        return _ws_user.get()
+
     # Initialize page servers
     home.home_server("home", config, job_queue, active_project=active_project, nav_callback=nav_to)
     tutorial.tutorial_server(
