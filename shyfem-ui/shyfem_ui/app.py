@@ -427,6 +427,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.Shiny && window.Shiny.setInputValue) {
       window.Shiny.setInputValue('current_user_role', data.role || '');
     }
+    // Push WS-auth token so the server can resolve identity in the WebSocket scope
+    if (data.ws_token && window.Shiny && window.Shiny.setInputValue) {
+      window.Shiny.setInputValue('_wsauth', data.ws_token, {priority: 'event'});
+    }
 
     // Hide admin-only sidebar items and pages for non-admin users
     if (data.role && data.role !== 'admin') {
