@@ -14,7 +14,6 @@ from shyfem_ui.components.file_picker import (
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrParser
 from shyfem_ui.services.simulation_logic import (  # re-exported for backward compat
@@ -150,6 +149,7 @@ def simulation_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Simulation configuration page server logic."""
 
@@ -341,7 +341,7 @@ def simulation_server(
     @reactive.effect
     @reactive.event(input.confirm_save_btn)
     def _confirm_save():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         logger.info("User saving STR file to %r", input.save_path())
         if active_project is not None:
             _proj = active_project.get()
