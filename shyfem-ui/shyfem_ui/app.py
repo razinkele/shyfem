@@ -771,11 +771,18 @@ def _build_server(
 
     @reactive.effect
     def _resolve_ws_identity():
-        from shyfem_ui.services.auth_service import AuthService
         from shyfem_ui.services.ws_identity import resolve_ws_user
 
         tok = input._wsauth() if "_wsauth" in input else None
-        _ws_user.set(resolve_ws_user(tok, AuthService()))
+        svc = auth_service
+        if svc is None:
+            from shyfem_ui.services.auth_service import AuthService
+            svc = AuthService()
+        try:
+            _ws_user.set(resolve_ws_user(tok, svc))
+        except Exception:
+            logger.warning("WS identity resolution failed; user set to None", exc_info=True)
+            _ws_user.set(None)
 
     def current_user() -> dict | None:
         """Return the real, server-validated user in the WS scope (fallback path)."""

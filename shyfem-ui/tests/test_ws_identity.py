@@ -30,3 +30,14 @@ def test_resolve_none_for_blank_or_invalid(fake_auth):
     assert resolve_ws_user("", fake_auth) is None
     assert resolve_ws_user("bad", fake_auth) is None
     assert resolve_ws_user(None, fake_auth) is None
+
+
+def test_resolve_propagates_service_exception():
+    """resolve_ws_user is a pure wrapper — it must NOT swallow exceptions."""
+
+    class _RaisingAuth:
+        def validate_ws_token(self, token):
+            raise RuntimeError("db error")
+
+    with pytest.raises(RuntimeError):
+        resolve_ws_user("tok", _RaisingAuth())
