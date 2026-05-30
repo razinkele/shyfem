@@ -101,6 +101,7 @@ def files_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Project files page server logic."""
     refresh_trigger = reactive.value(0)
@@ -296,10 +297,9 @@ def files_server(
             return
 
         # Access check: require editor role to upload
-        from shyfem_ui.middleware.session_auth import get_current_user
         from shyfem_ui.services.access_control import check_project_access
 
-        user = get_current_user()
+        user = current_user() if current_user is not None else None
         if user is not None and check_project_access(proj["id"], user, min_role="editor") is None:
             ui.notification_show(
                 "Permission denied: editor role required to upload files", type="error", duration=6
@@ -424,10 +424,9 @@ def files_server(
         @reactive.event(getattr(input, confirm_btn))
         def _do_delete():
             # Access check: require editor role to delete
-            from shyfem_ui.middleware.session_auth import get_current_user
             from shyfem_ui.services.access_control import check_project_access
 
-            user = get_current_user()
+            user = current_user() if current_user is not None else None
             proj = active_project.get() if active_project else None
             if user is not None and proj is not None:
                 if check_project_access(proj["id"], user, min_role="editor") is None:
