@@ -241,6 +241,7 @@ def home_server(
     job_queue: JobQueue | None = None,
     active_project=None,
     nav_callback=None,
+    current_user=None,
 ) -> None:
     """Dashboard page server logic."""
     projects = reactive.value([])
@@ -276,9 +277,7 @@ def home_server(
             ui.notification_show(f"Error loading data: {e}", type="error", duration=6)
 
     def _refresh_projects():
-        from shyfem_ui.middleware.session_auth import get_current_user
-
-        user = get_current_user()
+        user = current_user() if current_user is not None else None
         with db_session() as db:
             if user and user.get("role") != ROLE_ADMIN:
                 project_list = get_visible_projects(db, user["id"], user["role"])
@@ -489,9 +488,7 @@ def home_server(
         # Create project in database
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = current_user() if current_user is not None else None
                 project = Project(
                     name=name,
                     description=description or None,
@@ -590,9 +587,7 @@ def home_server(
         # Create database records
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = current_user() if current_user is not None else None
                 project = Project(
                     name=name,
                     description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
@@ -950,9 +945,7 @@ def home_server(
 
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = current_user() if current_user is not None else None
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
@@ -1050,9 +1043,7 @@ def home_server(
 
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = current_user() if current_user is not None else None
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
