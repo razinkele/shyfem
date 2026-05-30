@@ -20,7 +20,6 @@ from shinywidgets import output_widget, render_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
@@ -130,6 +129,7 @@ def ensemble_server(
     job_queue: JobQueue | None = None,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Ensemble page server logic."""
     if job_queue is None:
@@ -506,7 +506,7 @@ def ensemble_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_ensemble():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None and (
