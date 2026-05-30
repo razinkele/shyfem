@@ -142,3 +142,38 @@ App started locally at `127.0.0.1:8123` with `SHYFEM_UI_DEPLOYMENT_MODE=local` (
 ### Next concrete action
 
 Deploy a probe build to staging/laguna (or local Shiny-Server install), repeat the Playwright drive-through, and append a "Spike results — Step 4 (YYYY-MM-DD)" subsection. **Only then** check off the Phase 3A-vs-3B branch.
+
+## Spike results — Step 4 (2026-05-30) — DECISIVE
+
+**Status: COMPLETE. Decision made → execute Approach 2 (Phase 3B). Skip Phase 3A.**
+
+### Environment
+
+Run on **laguna.ku.lt itself** (which turned out to be this same dev box — `hostname laguna`; DNS, SSH host key, and egress IP all confirm one machine). The live production deployment is the real proxy chain: **nginx (443) → Shiny Server (`X-Powered-By: Shiny Server`, `127.0.0.1:3838`) → Python worker** (server mode: `/` → 302 `/login`, `api/whoami` → 401). The worker's `app_dir` symlinks to the git working tree, so the probe build was the working tree itself. Authenticated by minting a short-lived `AuthSession` for user `razinka` via `AuthService.create_session` and injecting the `shyfem_session` cookie into a headless browser (the live account password was not used; the session row was deleted afterward).
+
+### What was observed
+
+Client probe (WS-URL wrapper) console output:
+
+```
+[SHYFEM][SPIKE] ws url -> wss://laguna.ku.lt/shyfem-ui/__sockjs__/n=RLw5prKTZ9ciVCvCEo/043/4w25fxjf/websocket?_wsauth=SPIKE_PROBE_TOKEN
+```
+
+Server probe (middleware, top of `__call__`) in the live worker log:
+
+```
+[SPIKE] ws scope: path='/websocket/' raw_path=b'/websocket/' query_string=b'' client=('127.0.0.1', 43352) root_path='' local_mode=False
+INFO:     127.0.0.1:43352 - "WebSocket /websocket/" [accepted]
+INFO:     connection open
+```
+
+### Findings (decisive)
+
+1. **The query string does NOT survive the Shiny Server hop.** The browser opens a **SockJS** WS (`/shyfem-ui/__sockjs__/n=…/<server>/<session>/websocket?_wsauth=…`) against `shiny-server-client.min.js` — it never connects to the worker's `/websocket/` directly. Shiny Server terminates that SockJS connection and opens its **own fresh internal WS** to the worker, which arrives with **`query_string=b''`**. The client appends the token correctly; **Shiny Server strips it.** → **Approach 1 (URL transport) is not viable behind Shiny Server.**
+2. **The internal WS is inherently token-less, from `127.0.0.1`, and carries no cookie** (`client=('127.0.0.1', 43352)`, `root_path=''`). This is exactly the connection commit `8e1f254` exempts. A strict Phase-3A middleware that closed token-less WS with `4001` would **wrongly kill this legitimate connection** — a second, independent reason Approach 1 fails.
+3. **`root_path` is empty at the worker** (`root_path=''`), unlike the local direct-ASGI spike (`/shyfem-ui`). Shiny Server consumes the `/shyfem-ui` prefix; the worker sees a bare `/websocket/`. Any Phase 3B code must not assume `scope['root_path']` is set on the WS path.
+4. **Reconnect** collapses to full page reload (per the local finding); since Approach 1 is dead regardless of reconnect, this is moot. Session-lived token + `setInputValue` re-fire on reload remains consistent.
+
+### DECISION
+
+**Execute Approach 2 / Phase 3B** (token delivered via `Shiny.setInputValue` + a session-scoped identity reactive + rewired guards). **Skip Phase 3A** (URL transport + middleware enforcement) — the transport it depends on is stripped by Shiny Server's SockJS proxy. Phases 1, 2, 4, 5 proceed as written.

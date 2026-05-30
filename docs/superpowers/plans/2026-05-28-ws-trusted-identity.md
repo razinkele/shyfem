@@ -43,9 +43,9 @@ _spike_log.getLogger("shyfem_ui").warning(
 
 > **Executed 2026-05-28.** Confirmed: `query_string=b'_wsauth=SPIKE_PROBE_TOKEN'`, path `/shyfem-ui/websocket/`, uvicorn accepted. Details in the spec's "Spike results (2026-05-28)" section.
 
-- [ ] **Step 4: Behind Shiny Server (decisive).** Deploy the probe build to a Shiny-Server-backed env. Open the app through the proxy and confirm whether the SPIKE log shows the param surviving the internal-WS hop. Also confirm: (a) Shiny's auto-reconnect (kill the network briefly) reuses the URL with the param intact; (b) Shiny Server does not open its own token-less internal WS that a strict middleware would wrongly close.
+- [x] **Step 4: Behind Shiny Server (decisive).** Deploy the probe build to a Shiny-Server-backed env. Open the app through the proxy and confirm whether the SPIKE log shows the param surviving the internal-WS hop. Also confirm: (a) Shiny's auto-reconnect (kill the network briefly) reuses the URL with the param intact; (b) Shiny Server does not open its own token-less internal WS that a strict middleware would wrongly close.
 
-> **PENDING 2026-05-28.** Not run from the dev box (no Shiny-Server-backed env reachable). Must run on staging or laguna before the A1/A2 branch is taken. Note for executor: in this codebase the reconnect wrapper does `window.location.reload()` rather than a Shiny native reconnect, so part (a) collapses to "page reload re-runs the JS, which re-attaches the token" — still worth verifying that a closed-then-reopened WS shows the param.
+> **EXECUTED 2026-05-30 on laguna (the live deployment).** Result: **the `_wsauth` query string does NOT survive the Shiny Server hop.** The browser opens a SockJS WS (`/__sockjs__/…/websocket?_wsauth=…`); Shiny Server terminates it and opens its own internal WS to the worker, which arrives with `query_string=b''`, `client=('127.0.0.1',…)`, `root_path=''`. The internal WS is inherently token-less, so a strict 3A middleware would wrongly close it. → **Approach 1 is not viable. Decision: execute Phase 3B (Approach 2).** Full evidence in the design doc's "Spike results — Step 4 (2026-05-30)" section.
 
 - [x] **Step 5: Record the decision + revert the probes.** Write the findings (which client hook works; did the param survive the proxy; reconnect behavior) into a new section "Spike results (YYYY-MM-DD)" at the bottom of `docs/superpowers/specs/2026-05-28-ws-trusted-identity-design.md`. Revert the Step 1–2 probe code. Commit:
 
@@ -57,6 +57,8 @@ git commit -m "docs(spec): record WS-token transport feasibility spike results"
 ```
 
 **Branch decision:** param survives the proxy + reconnect intact → execute **Phase 3A** (and skip 3B). Otherwise → execute **Phase 3B** (and skip 3A). Phases 1, 2, 4, 5 run regardless.
+
+> **DECIDED 2026-05-30 → Phase 3B (Approach 2).** The Step 4 spike proved Shiny Server's SockJS proxy strips the WS query string, so Approach 1's URL transport cannot work. Execute **Phase 3B** and **skip Phase 3A**.
 
 ---
 
