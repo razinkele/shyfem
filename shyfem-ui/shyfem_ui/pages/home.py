@@ -249,9 +249,6 @@ def home_server(
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
 
-    from shyfem_ui.middleware.session_auth import get_current_user as _get_user
-
-    _current_user = _get_user()
 
     # Dedup set prevents effect accumulation (Shiny for Python does not
     # auto-destroy child effects when a parent @reactive.effect re-runs).
@@ -373,7 +370,7 @@ def home_server(
         rows = []
         for p in project_data:
             share_btn = ui.span()
-            if _should_show_share_button(p, _current_user):
+            if _should_show_share_button(p, (current_user() if current_user is not None else None)):
                 share_btn = ui.input_action_link(
                     f"share_{p['id']}",
                     "Share",
@@ -626,7 +623,7 @@ def home_server(
             # Activate project so target pages can auto-fill fields
             from shyfem_ui.services.project_context import load_project_context
 
-            ctx = load_project_context(project_id, user=_current_user)
+            ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
@@ -653,7 +650,7 @@ def home_server(
         """Load project context, set active, navigate to Grid Prep."""
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -796,7 +793,7 @@ def home_server(
         project_id = int(project_id_str)
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -865,7 +862,7 @@ def home_server(
 
         logger.info("User exporting project %s %r", project_id, project_name)
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -919,7 +916,7 @@ def home_server(
 
         logger.info("User cloning project %s %r", project_id, project_name)
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -1140,7 +1137,8 @@ def home_server(
 
     def _show_share_modal(project_id: int, project_name: str):
         svc = SharingService()
-        user_id = _current_user["id"] if _current_user else 0
+        _u = current_user() if current_user is not None else None
+        user_id = _u["id"] if _u else 0
         shareable = svc.list_shareable_users(project_id, exclude_user_id=user_id)
         perms = svc.list_permissions(project_id)
         perm_data = _build_permissions_table_data(perms)
