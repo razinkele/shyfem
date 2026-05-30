@@ -24,7 +24,6 @@ from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
 from shyfem_ui.services.access_control import check_project_access
 from shyfem_ui.services.postprocess_logic import (
     build_shyelab_options,
@@ -227,6 +226,7 @@ def postprocess_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
@@ -480,7 +480,7 @@ def postprocess_server(
     @reactive.effect
     @reactive.event(input.run_btn)
     async def _run_shyelab():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None and (
