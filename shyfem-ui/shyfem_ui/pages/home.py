@@ -249,13 +249,16 @@ def home_server(
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
 
-
     # Dedup set prevents effect accumulation (Shiny for Python does not
     # auto-destroy child effects when a parent @reactive.effect re-runs).
     # Per-session (declared inside home_server); keys are prefix-namespaced
     # (open_proj_, project_, export_, clone_, share_, confirm_share_, unshare_)
     # so all per-project handler factories share this one set without collision.
     _registered_handlers: set = set()
+
+    def _user():
+        # Server-validated user in the WS scope (None in local mode).
+        return current_user() if current_user is not None else None
 
     @render.ui
     def show_all_toggle_ui():
@@ -274,7 +277,7 @@ def home_server(
             ui.notification_show(f"Error loading data: {e}", type="error", duration=6)
 
     def _refresh_projects():
-        user = current_user() if current_user is not None else None
+        user = _user()
         with db_session() as db:
             if user and user.get("role") != ROLE_ADMIN:
                 project_list = get_visible_projects(db, user["id"], user["role"])
@@ -370,7 +373,7 @@ def home_server(
         rows = []
         for p in project_data:
             share_btn = ui.span()
-            if _should_show_share_button(p, (current_user() if current_user is not None else None)):
+            if _should_show_share_button(p, (_user())):
                 share_btn = ui.input_action_link(
                     f"share_{p['id']}",
                     "Share",
@@ -485,7 +488,7 @@ def home_server(
         # Create project in database
         try:
             with db_session() as db:
-                user = current_user() if current_user is not None else None
+                user = _user()
                 project = Project(
                     name=name,
                     description=description or None,
@@ -584,7 +587,7 @@ def home_server(
         # Create database records
         try:
             with db_session() as db:
-                user = current_user() if current_user is not None else None
+                user = _user()
                 project = Project(
                     name=name,
                     description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
@@ -623,7 +626,7 @@ def home_server(
             # Activate project so target pages can auto-fill fields
             from shyfem_ui.services.project_context import load_project_context
 
-            ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
+            ctx = load_project_context(project_id, user=(_user()))
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
@@ -650,7 +653,7 @@ def home_server(
         """Load project context, set active, navigate to Grid Prep."""
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -793,7 +796,7 @@ def home_server(
         project_id = int(project_id_str)
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -862,7 +865,7 @@ def home_server(
 
         logger.info("User exporting project %s %r", project_id, project_name)
 
-        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -916,7 +919,7 @@ def home_server(
 
         logger.info("User cloning project %s %r", project_id, project_name)
 
-        ctx = load_project_context(project_id, user=(current_user() if current_user is not None else None))
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -942,7 +945,7 @@ def home_server(
 
         try:
             with db_session() as db:
-                user = current_user() if current_user is not None else None
+                user = _user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
@@ -1040,7 +1043,7 @@ def home_server(
 
         try:
             with db_session() as db:
-                user = current_user() if current_user is not None else None
+                user = _user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
@@ -1137,7 +1140,7 @@ def home_server(
 
     def _show_share_modal(project_id: int, project_name: str):
         svc = SharingService()
-        _u = current_user() if current_user is not None else None
+        _u = _user()
         user_id = _u["id"] if _u else 0
         shareable = svc.list_shareable_users(project_id, exclude_user_id=user_id)
         perms = svc.list_permissions(project_id)

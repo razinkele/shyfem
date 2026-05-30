@@ -777,6 +777,7 @@ def _build_server(
         svc = auth_service
         if svc is None:
             from shyfem_ui.services.auth_service import AuthService
+
             svc = AuthService()
         try:
             _ws_user.set(resolve_ws_user(tok, svc))
