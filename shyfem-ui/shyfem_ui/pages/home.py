@@ -73,6 +73,28 @@ def _should_show_share_button(project: dict, user: dict | None) -> bool:
     return project.get("owner_id") == user.get("id")
 
 
+def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=None) -> str | None:
+    """Return a user-facing error if ``user`` may NOT modify sharing, else None.
+
+    Only project owners and admins may share or unshare. The rendered Share
+    button is only a visibility hint; a client can fire ``confirm_share_<pid>``
+    / ``unshare_<pid>_<uid>`` directly over the WebSocket, so the mutation
+    handlers must re-check server-validated identity. Distinguishes an
+    unresolved actor (not signed in / WS identity missing) from a resolved but
+    unauthorized one so each case surfaces its own notification.
+    """
+    from shyfem_ui.services.access_control import check_project_access
+
+    if user is None:
+        return "You must be signed in to manage sharing."
+    if (
+        check_project_access(project_id, user, min_role="owner", session_factory=session_factory)
+        is None
+    ):
+        return "You are not authorized to manage sharing for this project."
+    return None
+
+
 def _build_permissions_table_data(permissions: list[dict]) -> list[dict]:
     """Format permission dicts for display in the share modal table."""
     return [
@@ -1130,6 +1152,10 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _do_share():
+            denied = _sharing_denied_reason(pid, _user())
+            if denied:
+                ui.notification_show(denied, type="error", duration=6)
+                return
             uid = int(input.share_user_id())
             role = input.share_role()
             svc_inner = SharingService()
@@ -1139,8 +1165,12 @@ def home_server(
             _refresh_projects()
 
     def _show_share_modal(project_id: int, project_name: str):
-        svc = SharingService()
         _u = _user()
+        denied = _sharing_denied_reason(project_id, _u)
+        if denied:
+            ui.notification_show(denied, type="error", duration=6)
+            return
+        svc = SharingService()
         user_id = _u["id"] if _u else 0
         shareable = svc.list_shareable_users(project_id, exclude_user_id=user_id)
         perms = svc.list_permissions(project_id)
@@ -1226,6 +1256,10 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _unshare():
+            denied = _sharing_denied_reason(project_id, _user())
+            if denied:
+                ui.notification_show(denied, type="error", duration=6)
+                return
             svc = SharingService()
             svc.unshare_project(project_id, target_user_id)
             ui.notification_show("Access removed", type="message", duration=4)
