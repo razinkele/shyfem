@@ -24,7 +24,7 @@ from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.postprocess_logic import (
     build_shyelab_options,
     discover_shy_files,
@@ -483,16 +483,11 @@ def postprocess_server(
         _usr = current_user() if current_user is not None else None
         if active_project is not None:
             _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to run post-processing",
-                    type="error",
-                    duration=6,
-                )
-                return
+            if _proj is not None:
+                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
+                if _denied:
+                    ui.notification_show(_denied, type="error", duration=6)
+                    return
 
         shy_path = input.shy_path()
         if not shy_path:

@@ -18,7 +18,7 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.grid_prep_logic import (  # re-exported for backward compat
     compute_boundary_summary,
     format_element_shape,
@@ -278,16 +278,11 @@ def grid_prep_server(
         logger.info("User running shypre on %r", str(current_grd_path.get()))
         if active_project is not None:
             _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to run shypre",
-                    type="error",
-                    duration=6,
-                )
-                return
+            if _proj is not None:
+                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
+                if _denied:
+                    ui.notification_show(_denied, type="error", duration=6)
+                    return
 
         grd_path = current_grd_path.get()
         if not grd_path:

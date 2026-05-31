@@ -21,8 +21,7 @@ from shinywidgets import output_widget, render_widget
 from shyfem_ui.components.grid_map import build_mesh_figure
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 
 logger = logging.getLogger(__name__)
@@ -253,6 +252,7 @@ def visualize_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Visualization page server logic."""
 
@@ -440,19 +440,14 @@ def visualize_server(
     @reactive.effect
     @reactive.event(input.load_data_btn)
     def _load_data():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         if active_project is not None:
             _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="viewer") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: viewer role required to access project data",
-                    type="error",
-                    duration=6,
-                )
-                return
+            if _proj is not None:
+                _denied = editor_denied_reason(_proj["id"], _usr, min_role="viewer")
+                if _denied:
+                    ui.notification_show(_denied, type="error", duration=6)
+                    return
 
         dtype = input.data_type()
         path_str = input.data_path()

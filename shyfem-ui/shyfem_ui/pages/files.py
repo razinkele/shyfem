@@ -296,14 +296,13 @@ def files_server(
         if proj is None:
             return
 
-        # Access check: require editor role to upload
-        from shyfem_ui.services.access_control import check_project_access
+        # Access check: require editor role to upload (fail-closed in server mode)
+        from shyfem_ui.services.access_control import editor_denied_reason
 
         user = current_user() if current_user is not None else None
-        if user is not None and check_project_access(proj["id"], user, min_role="editor") is None:
-            ui.notification_show(
-                "Permission denied: editor role required to upload files", type="error", duration=6
-            )
+        _denied = editor_denied_reason(proj["id"], user, min_role="editor")
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
             return
 
         for f in files:
@@ -344,6 +343,17 @@ def files_server(
         proj = active_project.get() if active_project else None
         if proj is None:
             return
+        # Access check: seeding mutates the active project — require editor.
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        _denied = editor_denied_reason(
+            proj["id"],
+            current_user() if current_user is not None else None,
+            min_role="editor",
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
         try:
             FileService.seed_tutorial_files(proj["id"])
             ui.notification_show("Tutorial files seeded successfully!", type="message", duration=4)
@@ -362,21 +372,17 @@ def files_server(
         def _download():
             # Access check: viewer role on the file's *actual* project (not
             # active_project — defense-in-depth against crafted file_ids).
-            from shyfem_ui.services.access_control import check_project_access
+            from shyfem_ui.services.access_control import editor_denied_reason
 
             file_project_id = FileService.get_file_project_id(file_id)
             if file_project_id is None:
                 ui.notification_show("File not found", type="error", duration=4)
                 return
             user = current_user() if current_user is not None else None
-            if user is not None:
-                if check_project_access(file_project_id, user, min_role="viewer") is None:
-                    ui.notification_show(
-                        "Permission denied: viewer role required to download this file",
-                        type="error",
-                        duration=6,
-                    )
-                    return
+            _denied = editor_denied_reason(file_project_id, user, min_role="viewer")
+            if _denied:
+                ui.notification_show(_denied, type="error", duration=6)
+                return
             try:
                 path = FileService.get_file_path(file_id)
                 data = path.read_bytes()
@@ -422,18 +428,15 @@ def files_server(
         @reactive.effect
         @reactive.event(getattr(input, confirm_btn))
         def _do_delete():
-            # Access check: require editor role to delete
-            from shyfem_ui.services.access_control import check_project_access
+            # Access check: require editor role to delete (fail-closed in server mode)
+            from shyfem_ui.services.access_control import editor_denied_reason
 
             user = current_user() if current_user is not None else None
             proj = active_project.get() if active_project else None
-            if user is not None and proj is not None:
-                if check_project_access(proj["id"], user, min_role="editor") is None:
-                    ui.notification_show(
-                        "Permission denied: editor role required to delete files",
-                        type="error",
-                        duration=6,
-                    )
+            if proj is not None:
+                _denied = editor_denied_reason(proj["id"], user, min_role="editor")
+                if _denied:
+                    ui.notification_show(_denied, type="error", duration=6)
                     ui.modal_remove()
                     return
             try:

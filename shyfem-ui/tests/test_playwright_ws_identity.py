@@ -142,3 +142,49 @@ class TestShareHandlerWSAuthBypass:
         assert (
             page.locator(".shiny-notification").get_by_text("User added", exact=False).count() == 0
         )
+
+
+class TestWriteGuardWSAuthBypass:
+    def test_viewer_cannot_save_physics_via_direct_ws_input(self, pw_viewer_page):
+        """A viewer firing physics-save_btn over the WS is rejected.
+
+        Per-page write guards must re-check server-validated identity, not just
+        page/button visibility: the ``save_btn`` input is live for the whole
+        session regardless of which tab is shown. viewer1 has only *viewer*
+        access to ``Shared``, so ``editor_denied_reason`` denies the save with
+        an error notification — proving the guard is the enforcement point and
+        the fix is wired end-to-end through the real ``_wsauth`` identity path.
+        """
+        page = pw_viewer_page
+        _wait_identity_resolved_for_viewer(page)
+
+        pid = _project_pid(page, "Shared")
+        assert pid is not None, "Shared project link not found for viewer1"
+
+        # Activate Shared — viewer access is sufficient to OPEN it, so the
+        # write handler then has a non-None active project to guard against.
+        page.evaluate(
+            "(pid) => window.Shiny.setInputValue("
+            "'home-project_' + pid, Date.now(), {priority: 'event'})",
+            pid,
+        )
+        # Wait until activation has taken effect server-side.
+        page.wait_for_timeout(1500)
+
+        # Clear notifications left over from prior tests (this page/session is
+        # shared) so we observe only the response to our save attempt.
+        page.evaluate(
+            "() => document.querySelectorAll('.shiny-notification')" ".forEach(e => e.remove())"
+        )
+
+        # Fire the privileged save directly over the WS, bypassing the UI.
+        page.evaluate(
+            "() => window.Shiny.setInputValue("
+            "'physics-save_btn', Date.now(), {priority: 'event'})"
+        )
+
+        # The guard must reject with an editor-permission error.
+        err = page.locator(".shiny-notification-error")
+        err.first.wait_for(state="visible", timeout=10000)
+        txt = err.first.inner_text().lower()
+        assert "permission denied" in txt and "editor" in txt

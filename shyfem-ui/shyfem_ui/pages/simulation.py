@@ -14,7 +14,7 @@ from shyfem_ui.components.file_picker import (
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_str import COMMON_PARAMS, COMMON_SECTIONS, StrParser
 from shyfem_ui.services.simulation_logic import (  # re-exported for backward compat
     apply_quick_settings,
@@ -345,16 +345,11 @@ def simulation_server(
         logger.info("User saving STR file to %r", input.save_path())
         if active_project is not None:
             _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to save files",
-                    type="error",
-                    duration=6,
-                )
-                return
+            if _proj is not None:
+                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
+                if _denied:
+                    ui.notification_show(_denied, type="error", duration=6)
+                    return
 
         path_str = input.save_path()
         if not path_str:

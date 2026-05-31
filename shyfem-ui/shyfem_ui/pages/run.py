@@ -584,18 +584,12 @@ def run_server(
         if active_project is not None:
             _proj = active_project.get()
             if _proj is not None:
-                from shyfem_ui.services.access_control import check_project_access
+                from shyfem_ui.services.access_control import editor_denied_reason
 
                 _usr = current_user() if current_user is not None else None
-                if (
-                    _usr is not None
-                    and check_project_access(_proj["id"], _usr, min_role="editor") is None
-                ):
-                    ui.notification_show(
-                        "Permission denied: editor role required to submit jobs",
-                        type="error",
-                        duration=6,
-                    )
+                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
+                if _denied:
+                    ui.notification_show(_denied, type="error", duration=6)
                     return
 
         name = input.job_name() or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"

@@ -41,8 +41,7 @@ from shyfem_ui.components.file_picker import (
 )
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.lgr_service import LgrService, ParticleTrack
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
@@ -230,6 +229,7 @@ def ibm_server(
     config: Config,
     active_project: reactive.Value,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """IBM page server logic."""
     if MapWidget is None:
@@ -305,17 +305,13 @@ def ibm_server(
     @reactive.effect
     @reactive.event(input.load_btn)
     async def _load_trajectories():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         _proj = active_project.get()
-        if _proj is not None and (
-            _usr is not None and check_project_access(_proj["id"], _usr, min_role="editor") is None
-        ):
-            ui.notification_show(
-                "Permission denied: editor role required to load trajectories",
-                type="error",
-                duration=6,
-            )
-            return
+        if _proj is not None:
+            _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
+            if _denied:
+                ui.notification_show(_denied, type="error", duration=6)
+                return
 
         path_str = input.lgr_path()
         if not path_str:

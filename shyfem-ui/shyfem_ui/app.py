@@ -763,10 +763,11 @@ def _build_server(
         except Exception:
             return _current_user.get("role") if _current_user else None
 
-    # WS-scope identity fallback — resolves the per-session WS-auth token
-    # pushed by the browser as input._wsauth (Task 3B.1) into a real user dict.
+    # WS-scope identity — resolves the per-session WS-auth token pushed by the
+    # browser as input._wsauth into a real user dict. Consumed by current_user()
+    # below, which every page server receives and feeds to the fail-closed
+    # editor_denied_reason / load_project_context guards.
     # Imports are lazy to avoid import-time DB/engine setup and circular imports.
-    # current_user() is not yet consumed here; Task 3B.3 wires page-server consumers.
     _ws_user: reactive.Value[dict | None] = reactive.value(None)
 
     @reactive.effect
@@ -782,6 +783,9 @@ def _build_server(
         try:
             _ws_user.set(resolve_ws_user(tok, svc))
         except Exception:
+            # Fail closed: leaving the user unresolved (None) denies every
+            # edit-level mutation in server mode (editor_denied_reason), so a
+            # transient validation/DB error can never silently fail OPEN.
             logger.warning("WS identity resolution failed; user set to None", exc_info=True)
             _ws_user.set(None)
 
@@ -846,6 +850,7 @@ def _build_server(
         config,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     postprocess.postprocess_server(
         "postprocess",
@@ -855,7 +860,11 @@ def _build_server(
         current_user=current_user,
     )
     visualize.visualize_server(
-        "visualize", config, active_project=active_project, tutorial_context=tutorial_context
+        "visualize",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     compare.compare_server(
         "compare",
@@ -863,6 +872,7 @@ def _build_server(
         job_queue,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     ensemble.ensemble_server(
         "ensemble",
