@@ -507,13 +507,13 @@ def ensemble_server(
     @reactive.event(input.submit_btn)
     async def _submit_ensemble():
         _usr = current_user() if current_user is not None else None
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None:
-                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         base_str_path = input.base_str_file()
         working_dir_path = input.working_dir()

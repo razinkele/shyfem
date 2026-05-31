@@ -276,13 +276,13 @@ def grid_prep_server(
     async def _run_shypre():
         _usr = current_user() if current_user is not None else None
         logger.info("User running shypre on %r", str(current_grd_path.get()))
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None:
-                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         grd_path = current_grd_path.get()
         if not grd_path:
@@ -390,6 +390,15 @@ def grid_prep_server(
     @reactive.event(input.run_shybas_btn)
     async def _run_shybas():
         logger.info("User running shybas")
+        # Access check: require editor role (fail-closed in server mode).
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
         # Find .bas file
         out_files = output_files.get()
         bas_files = [f for f in out_files if f.endswith(".bas")]

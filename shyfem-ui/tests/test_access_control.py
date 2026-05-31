@@ -224,6 +224,46 @@ class TestEditorDeniedReason:
         )
         assert unresolved != unauthorized
 
+    def test_server_mode_none_project_denied_for_authenticated_user(self, db_factory, setup):
+        """A write with no active project must be DENIED in server mode, even for
+        a fully-authenticated owner/admin — there is no project to authorize
+        against, so the only safe answer is deny. This closes the bypass where a
+        guard nested inside ``if active_project is not None`` was skipped entirely
+        when no project was active."""
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        for user in (
+            _user(setup["alice_id"]),  # owner
+            _user(setup["admin_id"], "admin"),  # admin
+        ):
+            reason = editor_denied_reason(
+                None, user, is_server_mode=True, session_factory=db_factory
+            )
+            assert reason is not None, f"no-project write must be denied for {user!r}"
+
+    def test_server_mode_none_project_message_differs_from_unauthorized(self, db_factory, setup):
+        """The no-active-project denial is its own actionable message."""
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        no_project = editor_denied_reason(
+            None, _user(setup["alice_id"]), is_server_mode=True, session_factory=db_factory
+        )
+        unauthorized = editor_denied_reason(
+            setup["project_id"],
+            _user(setup["bob_id"]),
+            is_server_mode=True,
+            session_factory=db_factory,
+        )
+        assert no_project != unauthorized
+
+    def test_local_mode_none_project_allowed(self, db_factory, setup):
+        """Local desktop mode has no auth — a None project with None user is
+        allowed (backward-compatible single-user contract)."""
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        reason = editor_denied_reason(None, None, is_server_mode=False, session_factory=db_factory)
+        assert reason is None
+
     def test_min_role_viewer_allows_viewer(self, db_factory, setup):
         """With min_role='viewer', charlie (a viewer) is allowed in server mode."""
         from shyfem_ui.services.access_control import editor_denied_reason

@@ -217,7 +217,10 @@ def simulation_server(
 
     # Initialize str_editor and wire up its reactive state
     editor_state = str_editor_server(
-        "str_editor", current_file_path, project_id=project_id_reactive
+        "str_editor",
+        current_file_path,
+        project_id=project_id_reactive,
+        current_user=current_user,
     )
 
     # Initialize boundary editor
@@ -343,13 +346,13 @@ def simulation_server(
     def _confirm_save():
         _usr = current_user() if current_user is not None else None
         logger.info("User saving STR file to %r", input.save_path())
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None:
-                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         path_str = input.save_path()
         if not path_str:

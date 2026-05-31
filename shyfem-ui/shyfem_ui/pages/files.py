@@ -428,17 +428,23 @@ def files_server(
         @reactive.effect
         @reactive.event(getattr(input, confirm_btn))
         def _do_delete():
-            # Access check: require editor role to delete (fail-closed in server mode)
+            # Access check: require editor role on the file's *actual* project
+            # (not active_project — defense-in-depth against crafted file_ids,
+            # and so the guard still runs when no project is active). Fail-closed
+            # in server mode.
             from shyfem_ui.services.access_control import editor_denied_reason
 
             user = current_user() if current_user is not None else None
-            proj = active_project.get() if active_project else None
-            if proj is not None:
-                _denied = editor_denied_reason(proj["id"], user, min_role="editor")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    ui.modal_remove()
-                    return
+            file_project_id = FileService.get_file_project_id(file_id)
+            if file_project_id is None:
+                ui.notification_show("File not found", type="error", duration=4)
+                ui.modal_remove()
+                return
+            _denied = editor_denied_reason(file_project_id, user, min_role="editor")
+            if _denied:
+                ui.notification_show(_denied, type="error", duration=6)
+                ui.modal_remove()
+                return
             try:
                 FileService.delete_file(file_id)
                 ui.notification_show(f"Deleted: {filename}", type="message", duration=4)

@@ -61,6 +61,23 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
     )
 
 
+def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
+    """Return the Project rows to show on the dashboard, fail-CLOSED on an
+    unresolved identity in server mode.
+
+    Behind the Shiny Server proxy the reactive layer runs with ``user=None``
+    until the ``_wsauth`` token resolves. A ``None`` user in server mode must
+    see NOTHING — otherwise the first reactive flush of every session lists
+    every user's recent projects (read-isolation failure). In local desktop
+    mode there is no auth, so ``None`` legitimately lists all projects.
+    """
+    if is_server_mode and user is None:
+        return []
+    if user and user.get("role") != ROLE_ADMIN:
+        return get_visible_projects(db, user["id"], user["role"])
+    return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
+
+
 def _should_show_share_button(project: dict, user: dict | None) -> bool:
     """Return True if user should see the Share button for this project.
 
@@ -301,10 +318,7 @@ def home_server(
     def _refresh_projects():
         user = _user()
         with db_session() as db:
-            if user and user.get("role") != ROLE_ADMIN:
-                project_list = get_visible_projects(db, user["id"], user["role"])
-            else:
-                project_list = db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
+            project_list = _dashboard_projects(db, user, _is_server_mode)
             projects.set(
                 [
                     {

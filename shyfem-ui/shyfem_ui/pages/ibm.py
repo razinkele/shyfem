@@ -306,12 +306,13 @@ def ibm_server(
     @reactive.event(input.load_btn)
     async def _load_trajectories():
         _usr = current_user() if current_user is not None else None
-        _proj = active_project.get()
-        if _proj is not None:
-            _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
-            if _denied:
-                ui.notification_show(_denied, type="error", duration=6)
-                return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         path_str = input.lgr_path()
         if not path_str:

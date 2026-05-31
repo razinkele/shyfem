@@ -892,7 +892,12 @@ def _build_server(
 
     if auth_service:
         admin.admin_server(
-            "admin", config, auth_service, user_role=_current_role, audit_service=audit_service
+            "admin",
+            config,
+            auth_service,
+            user_role=_current_role,
+            audit_service=audit_service,
+            current_user=current_user,
         )
 
     # --- Cross-page job notifications ---

@@ -236,13 +236,13 @@ def partitioning_server(
             input.bas_path(),
             input.num_partitions(),
         )
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None:
-                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         bas_path = input.bas_path()
         if not bas_path:

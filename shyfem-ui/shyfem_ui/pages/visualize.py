@@ -441,13 +441,13 @@ def visualize_server(
     @reactive.event(input.load_data_btn)
     def _load_data():
         _usr = current_user() if current_user is not None else None
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None:
-                _denied = editor_denied_reason(_proj["id"], _usr, min_role="viewer")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="viewer"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         dtype = input.data_type()
         path_str = input.data_path()

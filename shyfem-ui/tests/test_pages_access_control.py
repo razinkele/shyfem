@@ -31,10 +31,15 @@ WRITE_HANDLERS = [
     ("ensemble", "_submit_ensemble", "editor"),  # submits jobs to queue
     ("ibm", "_load_trajectories", "editor"),  # runs lgrelab external process
     ("run", "_submit_job", "editor"),  # submits shyfem jobs to queue
+    ("run", "_launch_workflow", "editor"),  # queues a chained tool workflow
     ("files", "_handle_upload", "editor"),  # writes uploaded files to disk
     ("files", "_seed_tutorial", "editor"),  # seeds files into the project
     ("files", "_download", "viewer"),  # reads a project file
     ("files", "_do_delete", "editor"),  # deletes a project file
+    ("grid_prep", "_run_shybas", "editor"),  # runs shybas external process
+    ("postprocess", "_batch_run", "editor"),  # runs shyelab on a batch of paths
+    ("postprocess", "_batch_convert", "editor"),  # converts a batch to NetCDF
+    ("postprocess", "_run_preset", "editor"),  # runs a preset shyelab pipeline
 ]
 
 _PLACEHOLDER_PREFIX = "<TODO"
@@ -152,6 +157,56 @@ def _guard_is_enforced(func_def: ast.AST) -> bool:
     return bool(visitor.guard_vars & visitor.enforced_vars)
 
 
+def _stmt_directly_calls_guard(stmt: ast.stmt) -> bool:
+    """True if a *simple* statement (assign/expr/return — no nested statement
+    bodies) contains an editor_denied_reason call. Compound statements
+    (If/For/While/Try/With/def) are handled by the caller, so we never descend
+    into a conditional here."""
+    if isinstance(
+        stmt,
+        (
+            ast.If,
+            ast.For,
+            ast.AsyncFor,
+            ast.While,
+            ast.Try,
+            ast.With,
+            ast.AsyncWith,
+            ast.FunctionDef,
+            ast.AsyncFunctionDef,
+        ),
+    ):
+        return False
+    return any(_is_guard_call(node) for node in ast.walk(stmt))
+
+
+def _guard_call_is_unconditional(stmts: "list[ast.stmt]") -> bool:
+    """True if an editor_denied_reason call is reachable on EVERY path through
+    ``stmts`` — i.e. it is a direct statement of the body (or of a Try/With body
+    or a Try.finalbody, which also always execute), and NOT nested only inside
+    an ``if active_project`` / ``if _proj`` conditional.
+
+    This is the negative-control that catches the double-nesting bypass: a guard
+    placed inside ``if active_project is not None: if _proj is not None:`` is
+    silently skipped when no project is active, so the mutation runs unguarded
+    in production. Such a guard is *conditional* and must fail this check.
+    """
+    for stmt in stmts:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue  # don't descend into nested closures
+        if _stmt_directly_calls_guard(stmt):
+            return True
+        if isinstance(stmt, ast.Try):
+            if _guard_call_is_unconditional(stmt.body) or _guard_call_is_unconditional(
+                stmt.finalbody
+            ):
+                return True
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+            if _guard_call_is_unconditional(stmt.body):
+                return True
+    return False
+
+
 @pytest.mark.parametrize("page,handler,role", WRITE_HANDLERS)
 def test_handler_calls_editor_denied_reason(page, handler, role):
     """Static AST check: the named handler must call the fail-closed
@@ -178,6 +233,105 @@ def test_handler_calls_editor_denied_reason(page, handler, role):
         f"{path}::{handler} (line {fn.lineno}) calls editor_denied_reason but "
         f"never acts on the result — the denial must be assigned and checked in "
         f"an `if <reason>: ...; return` before the mutation, else the guard is a no-op"
+    )
+    assert _guard_call_is_unconditional(fn.body), (
+        f"{path}::{handler} (line {fn.lineno}) calls editor_denied_reason only "
+        f"inside a conditional (e.g. `if active_project is not None: if _proj is "
+        f"not None:`) — the guard is skipped when no project is active, so the "
+        f"mutation runs unguarded in production. Hoist the guard to the function "
+        f"body and pass project_id=None through it (the gate denies a None "
+        f"project in server mode)."
+    )
+
+
+def test_str_editor_inline_save_is_guarded():
+    """The str_editor component's inline Save handler writes the .str to disk
+    directly (``path.write_text``). It must route through the fail-closed
+    ``editor_denied_reason`` gate before the write, unconditionally — otherwise a
+    server-mode client with no resolved identity can overwrite any file the
+    worker can reach. The component lives outside pages/, so it is checked here
+    explicitly rather than via the parametrized pages table."""
+    path = pathlib.Path(__file__).parent.parent / "shyfem_ui" / "components" / "str_editor.py"
+    tree = ast.parse(path.read_text())
+    fn = _find_function_def(tree, "_handle_save")
+    assert fn is not None, f"_handle_save not found in {path}"
+    call = _find_guard_call(fn)
+    assert call is not None, (
+        f"{path}::_handle_save (line {fn.lineno}) does not call editor_denied_reason "
+        f"— add the fail-closed guard before path.write_text"
+    )
+    assert (
+        _guard_min_role(call) == "editor"
+    ), f"{path}::_handle_save guards with min_role={_guard_min_role(call)!r}, expected 'editor'"
+    assert _guard_is_enforced(
+        fn
+    ), f"{path}::_handle_save calls editor_denied_reason but never acts on the result"
+    assert _guard_call_is_unconditional(fn.body), (
+        f"{path}::_handle_save calls editor_denied_reason only inside a conditional "
+        f"— the guard must run on every path before the disk write"
+    )
+
+
+ADMIN_MUTATION_HANDLERS = [
+    "_do_reset_pw",
+    "_toggle_active",
+    "_toggle_role",
+    "_do_delete_user",
+    "_do_create_user",
+]
+
+_AUTH_SERVICE_MUTATIONS = {"reset_password", "update_user", "delete_user", "create_user"}
+
+
+def _admin_guard_precedes_mutation(func_def: ast.AST) -> bool:
+    """True if the handler checks ``_is_admin()`` and returns BEFORE the first
+    auth_service mutating call, at unconditional depth.
+
+    The admin panel's privilege boundary cannot rely on ``_is_admin()`` being
+    consulted only by the renderer or by ``user_role()`` (a client-spoofable
+    signal): every mutation handler must independently re-check the
+    server-validated admin identity, or a console
+    ``Shiny.setInputValue('current_user_role','admin')`` (or an unresolved WS
+    session) reaches the mutation unchecked.
+    """
+    saw_guard = False
+    for stmt in func_def.body:
+        if isinstance(stmt, ast.If):
+            test_checks_admin = any(
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Name)
+                and n.func.id == "_is_admin"
+                for n in ast.walk(stmt.test)
+            )
+            body_returns = any(isinstance(s, ast.Return) for s in ast.walk(stmt))
+            if test_checks_admin and body_returns:
+                saw_guard = True
+                continue
+        for n in ast.walk(stmt):
+            if (
+                isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and isinstance(n.func.value, ast.Name)
+                and n.func.value.id == "auth_service"
+                and n.func.attr in _AUTH_SERVICE_MUTATIONS
+            ):
+                return saw_guard  # mutation reached — guard must already be seen
+    return saw_guard
+
+
+@pytest.mark.parametrize("handler", ADMIN_MUTATION_HANDLERS)
+def test_admin_mutation_rechecks_server_validated_admin(handler):
+    """Each admin mutation handler must re-check ``_is_admin()`` (backed by the
+    server-validated WS identity, not input.current_user_role()) and return
+    before mutating any user, closing the admin privilege-escalation bypass."""
+    path = _PAGES_DIR / "admin.py"
+    tree = ast.parse(path.read_text())
+    fn = _find_function_def(tree, handler)
+    assert fn is not None, f"admin handler {handler!r} not found in {path}"
+    assert _admin_guard_precedes_mutation(fn), (
+        f"{path}::{handler} (line {fn.lineno}) calls auth_service to mutate a "
+        f"user without first checking `_is_admin()` and returning — add "
+        f"`if not _is_admin(): notify; return` at the top of the handler"
     )
 
 

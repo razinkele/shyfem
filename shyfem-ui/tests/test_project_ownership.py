@@ -12,6 +12,7 @@ from shyfem_ui.models.user import ProjectPermission, User
 @pytest.fixture
 def db_session_factory():
     from shyfem_ui.models import project as _p, user as _u  # noqa
+
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
     return sessionmaker(bind=engine)
@@ -41,7 +42,10 @@ def setup_data(db_session_factory):
         "admin": {"id": admin.id, "role": "admin"},
         "alice": {"id": alice.id, "role": "user"},
         "bob": {"id": bob.id, "role": "user"},
-        "p1_id": p1.id, "p2_id": p2.id, "p3_id": p3.id, "p4_id": p4.id,
+        "p1_id": p1.id,
+        "p2_id": p2.id,
+        "p3_id": p3.id,
+        "p4_id": p4.id,
     }
     db.close()
     return data
@@ -49,6 +53,7 @@ def setup_data(db_session_factory):
 
 def _query_user_projects(db, user_id: int, role: str) -> list:
     from shyfem_ui.pages.home import get_visible_projects
+
     return get_visible_projects(db, user_id, role)
 
 
@@ -92,6 +97,54 @@ class TestProjectVisibility:
             alice_names = {p.name for p in alice_projects}
             assert "Unowned" in admin_names
             assert "Unowned" not in alice_names
+        finally:
+            db.close()
+
+
+class TestDashboardProjectsFailClosed:
+    """The dashboard project listing must NOT leak every user's projects when
+    the WS identity is unresolved (user=None) in server mode. Behind the Shiny
+    Server proxy the reactive layer runs with user=None until ``_wsauth``
+    resolves, and the old ``if user and ...: ... else: <all projects>`` shape
+    fell to the unfiltered else branch — listing all projects on the first
+    reactive flush of every server-mode session."""
+
+    def test_server_mode_unresolved_user_sees_nothing(self):
+        from shyfem_ui.pages.home import _dashboard_projects
+
+        # user=None in server mode is fail-closed: empty list, and no db query
+        # is issued (passing db=None proves the db is never touched).
+        assert _dashboard_projects(None, None, is_server_mode=True) == []
+
+    def test_local_mode_unresolved_user_sees_all(self, db_session_factory, setup_data):
+        from shyfem_ui.pages.home import _dashboard_projects
+
+        db = db_session_factory()
+        try:
+            result = _dashboard_projects(db, None, is_server_mode=False)
+            assert len(result) >= 1, "local desktop mode lists projects with no auth"
+        finally:
+            db.close()
+
+    def test_server_mode_regular_user_sees_only_own(self, db_session_factory, setup_data):
+        from shyfem_ui.pages.home import _dashboard_projects
+
+        db = db_session_factory()
+        try:
+            result = _dashboard_projects(db, setup_data["alice"], is_server_mode=True)
+            names = {p.name for p in result}
+            assert "Bob Project" not in names
+            assert "Alice Project" in names
+        finally:
+            db.close()
+
+    def test_server_mode_admin_sees_all(self, db_session_factory, setup_data):
+        from shyfem_ui.pages.home import _dashboard_projects
+
+        db = db_session_factory()
+        try:
+            result = _dashboard_projects(db, setup_data["admin"], is_server_mode=True)
+            assert len(result) >= 4, "admin sees every project including unowned"
         finally:
             db.close()
 

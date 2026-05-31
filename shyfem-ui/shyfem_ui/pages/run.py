@@ -580,17 +580,21 @@ def run_server(
             )
             return
 
-        # Access check: require editor role on active project
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None:
-                from shyfem_ui.services.access_control import editor_denied_reason
+        # Access check: require editor role on active project. Fail-closed in
+        # server mode — a None project (no active project) or unresolved
+        # identity is denied. The guard must run unconditionally; nesting it
+        # inside `if active_project is not None` would skip it when no project
+        # is active and let the mutation run unguarded.
+        from shyfem_ui.services.access_control import editor_denied_reason
 
-                _usr = current_user() if current_user is not None else None
-                _denied = editor_denied_reason(_proj["id"], _usr, min_role="editor")
-                if _denied:
-                    ui.notification_show(_denied, type="error", duration=6)
-                    return
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         name = input.job_name() or f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         tool = input.tool_select()
@@ -1165,6 +1169,20 @@ def run_server(
     @reactive.effect
     @reactive.event(input.wf_launch_btn)
     async def _launch_workflow():
+        # Access check: require editor role (fail-closed in server mode). A
+        # workflow chains several SHYFEM tool runs, so it is as privileged as a
+        # job submit and must be guarded the same way.
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         template_key = input.wf_template()
         wf_name = input.wf_name() or None
         input_str = input.wf_input_str()
