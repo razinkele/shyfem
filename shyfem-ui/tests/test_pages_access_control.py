@@ -92,6 +92,66 @@ def _guard_min_role(call: ast.Call) -> "str | None":
     return None
 
 
+def _is_guard_call(node: ast.AST) -> bool:
+    """True if node is a Call to editor_denied_reason."""
+    if not isinstance(node, ast.Call):
+        return False
+    callee = node.func
+    return (isinstance(callee, ast.Name) and callee.id == "editor_denied_reason") or (
+        isinstance(callee, ast.Attribute) and callee.attr == "editor_denied_reason"
+    )
+
+
+class _GuardEnforcementVisitor(ast.NodeVisitor):
+    """Within a function body (excluding nested defs), record which names are
+    assigned the result of ``editor_denied_reason`` and which names are tested
+    in an ``if`` whose then-branch short-circuits with ``return``/``raise``.
+
+    The intersection proves the guard's verdict is actually *consumed* — not
+    computed and ignored. Without this, a refactor that kept the call but
+    dropped ``if _denied: ... return`` would silently re-open the fail-open
+    write bypass while the call-presence assertion stayed green.
+    """
+
+    def __init__(self):
+        self.guard_vars: set[str] = set()
+        self.enforced_vars: set[str] = set()
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return  # stop at nested definitions
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        if _is_guard_call(node.value):
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name):
+                    self.guard_vars.add(tgt.id)
+        self.generic_visit(node)
+
+    def visit_If(self, node: ast.If) -> None:
+        test_names = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+        then_exits = any(
+            isinstance(s, (ast.Return, ast.Raise)) for stmt in node.body for s in ast.walk(stmt)
+        )
+        if then_exits:
+            self.enforced_vars |= test_names
+        self.generic_visit(node)
+
+
+def _guard_is_enforced(func_def: ast.AST) -> bool:
+    """True if a name assigned from editor_denied_reason is tested in an
+    if-block that returns/raises — i.e. the denial is acted upon."""
+    visitor = _GuardEnforcementVisitor()
+    for stmt in func_def.body:
+        visitor.visit(stmt)
+    return bool(visitor.guard_vars & visitor.enforced_vars)
+
+
 @pytest.mark.parametrize("page,handler,role", WRITE_HANDLERS)
 def test_handler_calls_editor_denied_reason(page, handler, role):
     """Static AST check: the named handler must call the fail-closed
@@ -113,6 +173,11 @@ def test_handler_calls_editor_denied_reason(page, handler, role):
     )
     assert _guard_min_role(call) == role, (
         f"{path}::{handler} guards with min_role={_guard_min_role(call)!r}, " f"expected {role!r}"
+    )
+    assert _guard_is_enforced(fn), (
+        f"{path}::{handler} (line {fn.lineno}) calls editor_denied_reason but "
+        f"never acts on the result — the denial must be assigned and checked in "
+        f"an `if <reason>: ...; return` before the mutation, else the guard is a no-op"
     )
 
 
