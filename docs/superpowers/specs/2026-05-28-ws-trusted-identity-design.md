@@ -177,3 +177,52 @@ INFO:     connection open
 ### DECISION
 
 **Execute Approach 2 / Phase 3B** (token delivered via `Shiny.setInputValue` + a session-scoped identity reactive + rewired guards). **Skip Phase 3A** (URL transport + middleware enforcement) — the transport it depends on is stripped by Shiny Server's SockJS proxy. Phases 1, 2, 4, 5 proceed as written.
+
+## Pre-merge specialist review #2 — Phase 3B (2026-05-31) — DO-NOT-MERGE
+
+**Branch:** `feat/ws-auth-phase3b` (worktree), 17 commits ahead of `main`.
+**Method:** 8-specialist parallel review (fail-closed gate, WS identity, guard
+coverage, project ops, local-mode regression, test efficacy, residual triage,
+code quality) + adversarial verification of each open critical/high + real
+pytest run. **Tests: 60 passed, 0 failed.**
+
+### Originally-flagged criticals — CONFIRMED CLOSED ✅
+1. Fail-open viewer-write guards on the **primary** per-page mutation handlers
+   (job submit, STR/physics save, file up/delete, shypre/shyparts, ensemble,
+   IBM) — `editor_denied_reason` (`access_control.py:82`) fail-closes on
+   `user=None` in server mode and is called + acted-on at each.
+2. Project activation/clone/export read bypass — `load_project_context`
+   (`project_context.py:68`) `if user is None and is_server_mode: return None`.
+3. Share/unshare fail-open — `_sharing_denied_reason` (`home.py:88`) gates both.
+
+### Why still DO-NOT-MERGE — the sweep missed sibling handlers (NEW bypasses, same class)
+**Merge-blocking:**
+1. **Admin panel privilege escalation (critical)** — `_is_admin()` (`admin.py:230`)
+   trusts client-spoofable `input.current_user_role()`; 5 admin mutations
+   (`_do_reset_pw`,`_toggle_active`,`_toggle_role`,`_do_delete_user`,
+   `_do_create_user`) have no server-side admin re-check. Console
+   `Shiny.setInputValue('current_user_role','admin')` → account takeover.
+2. **`_launch_workflow` (critical)** — `run.py:1167`, no gate; queues chained tool runs.
+3. **`_batch_run`/`_batch_convert`/`_run_preset` (critical)** — `postprocess.py:582/731/1072`, run shyelab on arbitrary paths, ungated.
+4. **`_do_delete` (high)** — `files.py:436`, gate nested in `if proj is not None:`; deletes when no active project (file_id known).
+5. **Guards double-nested (high)** — all 14 handlers inside `if active_project: if _proj:` (`run.py:583`, `physics.py:443`); write with no active project skips the gate. **AST-enforcement test (`test_pages_access_control.py:105`) gives false assurance** — doesn't detect guards under falsy-able conditionals.
+6. **`_run_shybas` (high)** — `grid_prep.py:390`, ungated (`_run_shypre` above it is guarded).
+7. **`str_editor` inline Save (high)** — `str_editor.py:197`, writes to disk ungated; only Save-As modal guarded.
+8. **Dashboard `_refresh_projects` (high)** — `home.py:304`, lists ALL projects on first reactive flush when `user=None` (read-isolation half of the bug).
+
+**Non-blocking (ship with the fixes):** create/clone/import stamp `owner_id=None`
+in server mode (`home.py:480/577/937/1040`); `_do_import_grid`/`_do_clone`
+authorize a write at viewer level not editor; job-cancel handlers ungated
+(`run.py:869/1097`, `ensemble.py:675`).
+
+**Residual / acknowledged out-of-scope:** `mesh_builder._on_save` ungated;
+run.py owner_id stamping; ibm/compare over-restrictive `min_role='editor'`;
+no Playwright E2E for the `user=None` server-mode admit path;
+`_resolve_ws_identity` conditional-dependency timing.
+
+### Fix strategy
+The fail-closed pattern already exists — apply it to the missed handlers, hoist
+the 14 guards out of the `active_project` nesting (server-mode deny when
+`_proj is None`), thread WS-resolved `current_user` into `admin_server` and
+re-check on every admin mutation, and tighten `_GuardEnforcementVisitor` to fail
+when a guard is reachable only inside an `If` testing `active_project`/`_proj`.
