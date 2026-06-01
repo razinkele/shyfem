@@ -11,7 +11,6 @@ from shyfem_ui.models.user import ProjectPermission, User
 
 @pytest.fixture
 def db_factory():
-    from shyfem_ui.models import project as _p, user as _u  # noqa: F841
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(bind=engine)
     return sessionmaker(bind=engine)
@@ -51,6 +50,7 @@ def _user(uid, role="user"):
 class TestProjectContextEnforcement:
     def test_load_with_access(self, db_factory, setup):
         from shyfem_ui.services.project_context import load_project_context
+
         # Owner should be able to load
         ctx = load_project_context(
             setup["project_id"],
@@ -62,6 +62,7 @@ class TestProjectContextEnforcement:
 
     def test_load_denied(self, db_factory, setup):
         from shyfem_ui.services.project_context import load_project_context
+
         # Create a second user with no access
         db = db_factory()
         eve = User(username="eve", password_hash="x", role="user")
@@ -79,6 +80,7 @@ class TestProjectContextEnforcement:
 
     def test_load_admin_bypass(self, db_factory, setup):
         from shyfem_ui.services.project_context import load_project_context
+
         ctx = load_project_context(
             setup["project_id"],
             user=_user(setup["admin_id"], "admin"),
@@ -88,16 +90,22 @@ class TestProjectContextEnforcement:
 
     def test_load_no_user_returns_all(self, db_factory, setup):
         from shyfem_ui.services.project_context import load_project_context
-        # When user is None (local mode), no filtering
+
+        # In LOCAL mode, an unresolved user (None) is legitimate and loads the
+        # project unfiltered. Pin is_server_mode=False so the test asserts that
+        # intent deterministically — under a server .env the gate fails closed
+        # on user=None (covered by test_server_mode_denies_unresolved_user).
         ctx = load_project_context(
             setup["project_id"],
             user=None,
+            is_server_mode=False,
             session_factory=db_factory,
         )
         assert ctx is not None
 
     def test_viewer_can_load(self, db_factory, setup):
         from shyfem_ui.services.project_context import load_project_context
+
         ctx = load_project_context(
             setup["project_id"],
             user=_user(setup["bob_id"]),

@@ -52,7 +52,10 @@ class TestLoadProjectContext:
             db.flush()
             pid = p.id
 
-        ctx = load_project_context(pid)
+        # Context shape/content is auth-agnostic; pin local mode so the test is
+        # deterministic regardless of the ambient .env deployment_mode (server
+        # mode fails closed on user=None — covered separately below).
+        ctx = load_project_context(pid, user=None, is_server_mode=False)
         assert ctx is not None
         assert ctx["name"] == "test_proj"
         assert len(ctx["grids"]) == 1
@@ -71,7 +74,10 @@ class TestLoadProjectContext:
             db.flush()
             pid = p.id
 
-        ctx = load_project_context(pid)
+        # Context shape/content is auth-agnostic; pin local mode so the test is
+        # deterministic regardless of the ambient .env deployment_mode (server
+        # mode fails closed on user=None — covered separately below).
+        ctx = load_project_context(pid, user=None, is_server_mode=False)
         assert ctx["grids"] == []
         assert ctx["simulations"] == []
 
@@ -95,7 +101,10 @@ class TestLoadProjectContext:
             db.flush()
             pid = p.id
 
-        ctx = load_project_context(pid)
+        # Context shape/content is auth-agnostic; pin local mode so the test is
+        # deterministic regardless of the ambient .env deployment_mode (server
+        # mode fails closed on user=None — covered separately below).
+        ctx = load_project_context(pid, user=None, is_server_mode=False)
         assert "files" in ctx
         assert len(ctx["files"]) == 1
         assert ctx["files"][0]["filename"] == "wind.fem"
@@ -208,7 +217,10 @@ class TestProjectContextShape:
             db.flush()
             pid = p.id
 
-        ctx = load_project_context(pid)
+        # Context shape/content is auth-agnostic; pin local mode so the test is
+        # deterministic regardless of the ambient .env deployment_mode (server
+        # mode fails closed on user=None — covered separately below).
+        ctx = load_project_context(pid, user=None, is_server_mode=False)
 
         # Top-level ProjectContext keys
         assert ctx is not None
