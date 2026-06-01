@@ -108,6 +108,7 @@ def str_editor_server(
     file_path: reactive.Value[Path | None],
     on_save: Callable[[Path, str], None] | None = None,
     project_id: reactive.Value | None = None,
+    current_user: Callable[[], dict | None] | None = None,
 ):
     """STR file editor component server logic with split view support.
 
@@ -115,6 +116,9 @@ def str_editor_server(
         file_path: Reactive value containing the file path to edit
         on_save: Callback when file is saved
         project_id: Reactive value with current project ID (enables file pickers)
+        current_user: Callable returning the server-validated user dict (or
+            None). Used to fail-closed the inline Save in server mode — the
+            handler writes to disk directly, so it must re-check identity.
     """
     content = reactive.value("")
     parsed_file = reactive.value(None)
@@ -200,6 +204,19 @@ def str_editor_server(
         path = file_path.get()
         if not path:
             validation_errors.set(["No file path specified"])
+            return
+
+        # Access check before writing to disk: require editor role on the
+        # active project (fail-closed in server mode). The inline Save writes
+        # path.write_text directly, so it must re-check server-validated
+        # identity rather than rely on button visibility.
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        _usr = current_user() if current_user is not None else None
+        _pid = project_id.get() if project_id is not None else None
+        _denied = editor_denied_reason(_pid, _usr, min_role="editor")
+        if _denied:
+            validation_errors.set([_denied])
             return
 
         text = input.editor_content()

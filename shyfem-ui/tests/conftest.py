@@ -16,10 +16,10 @@ from pathlib import Path
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Environment isolation — prevent host env vars from leaking into tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_env():
@@ -65,6 +65,7 @@ def _wait_for_server(host: str, port: int, timeout: float = 30.0) -> bool:
 # App server fixture (session-scoped – one server for all browser tests)
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="session")
 def app_port():
     """Return the port the test app will listen on."""
@@ -89,15 +90,17 @@ def _app_server(tmp_path_factory, app_port):
     work_dir.mkdir()
 
     env = os.environ.copy()
-    env.update({
-        "SHYFEM_UI_HOST": "127.0.0.1",
-        "SHYFEM_UI_PORT": str(app_port),
-        "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
-        "SHYFEM_UI_WORK_DIR": str(work_dir),
-        "SHYFEM_UI_DEPLOYMENT_MODE": "local",
-        "SHYFEM_UI_AUTH_ENABLED": "false",
-        "SHYFEM_UI_DEBUG": "false",
-    })
+    env.update(
+        {
+            "SHYFEM_UI_HOST": "127.0.0.1",
+            "SHYFEM_UI_PORT": str(app_port),
+            "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
+            "SHYFEM_UI_WORK_DIR": str(work_dir),
+            "SHYFEM_UI_DEPLOYMENT_MODE": "local",
+            "SHYFEM_UI_AUTH_ENABLED": "false",
+            "SHYFEM_UI_DEBUG": "false",
+        }
+    )
 
     python = sys.executable
     # Use the test-specific app entry point that stubs the run module's
@@ -105,9 +108,12 @@ def _app_server(tmp_path_factory, app_port):
     test_app = str(Path(__file__).resolve().parent / "_test_app.py")
     proc = subprocess.Popen(
         [
-            python, test_app,
-            "--port", str(app_port),
-            "--host", "127.0.0.1",
+            python,
+            test_app,
+            "--port",
+            str(app_port),
+            "--host",
+            "127.0.0.1",
         ],
         env=env,
         stdout=subprocess.PIPE,
@@ -139,6 +145,7 @@ def live_server(_app_server, app_url):
 # ---------------------------------------------------------------------------
 # Playwright fixtures
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def pw_browser():
@@ -223,10 +230,10 @@ def pw_page(pw_browser, live_server):
     # — a small reactive output that renders early, so once it's no longer
     # `recalculating`, the WebSocket is live and the home page is hydrated.
     page.wait_for_function(
-        '() => {'
+        "() => {"
         '  const el = document.getElementById("home-system_health_count");'
         '  return el && !el.classList.contains("recalculating") && el.children.length > 0;'
-        '}',
+        "}",
         timeout=30000,
     )
     # Dismiss any modal / backdrop that may have appeared during initialization
@@ -260,6 +267,7 @@ def _dismiss_modals(page):
 # Server-mode app (with authentication) for auth/sharing E2E tests
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="session")
 def auth_app_port():
     """Return a free port for the server-mode test app."""
@@ -276,27 +284,34 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
 
     env = os.environ.copy()
     env = {k: v for k, v in env.items() if not k.startswith("SHYFEM_UI_")}
-    env.update({
-        "SHYFEM_UI_HOST": "127.0.0.1",
-        "SHYFEM_UI_PORT": str(auth_app_port),
-        "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
-        "SHYFEM_UI_WORK_DIR": str(work_dir),
-        "SHYFEM_UI_DEPLOYMENT_MODE": "server",
-        "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
-        "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
-        "SHYFEM_UI_AUTH_SESSION_TTL_HOURS": "24",
-        "SHYFEM_UI_DEBUG": "false",
-    })
+    env.update(
+        {
+            "SHYFEM_UI_HOST": "127.0.0.1",
+            "SHYFEM_UI_PORT": str(auth_app_port),
+            "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
+            "SHYFEM_UI_WORK_DIR": str(work_dir),
+            "SHYFEM_UI_DEPLOYMENT_MODE": "server",
+            "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
+            "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
+            "SHYFEM_UI_AUTH_SESSION_TTL_HOURS": "24",
+            "SHYFEM_UI_DEBUG": "false",
+        }
+    )
 
     python = sys.executable
     test_app = str(Path(__file__).resolve().parent / "_test_auth_app.py")
     proc = subprocess.Popen(
         [
-            python, test_app,
-            "--port", str(auth_app_port),
-            "--host", "127.0.0.1",
-            "--db", str(db_path),
-            "--workdir", str(work_dir),
+            python,
+            test_app,
+            "--port",
+            str(auth_app_port),
+            "--host",
+            "127.0.0.1",
+            "--db",
+            str(db_path),
+            "--workdir",
+            str(work_dir),
         ],
         env=env,
         stdout=subprocess.PIPE,
@@ -342,6 +357,120 @@ def pw_auth_page(pw_browser, auth_live_server):
     page = ctx.new_page()
     page.set_default_timeout(15000)
     _login(page, auth_live_server, "admin", "testpass")
+    _dismiss_modals(page)
+    yield page
+    page.close()
+    ctx.close()
+
+
+# ---------------------------------------------------------------------------
+# WS trusted-identity (Phase 4) — seeded server with a non-admin viewer
+# ---------------------------------------------------------------------------
+#
+# A SEPARATE server (own DB, own port) from `_auth_app_server` so the seeded
+# users/projects can't interfere with the admin-only auth E2E suite. Seeds
+# `viewer1` + a `Shared` project (viewer permission) + a `Private` project
+# (not shared) — see tests/_test_ws_identity_app.py.
+
+VIEWER_USERNAME = "viewer1"
+VIEWER_PASSWORD = "viewerpass"
+
+
+@pytest.fixture(scope="session")
+def ws_identity_app_port():
+    """Return a free port for the seeded WS-identity test app."""
+    return _find_free_port()
+
+
+@pytest.fixture(scope="session")
+def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
+    """Start the seeded server-mode app for WS trusted-identity E2E tests."""
+    tmp_dir = tmp_path_factory.mktemp("shyfem_ui_ws_identity")
+    db_path = tmp_dir / "ws_identity.db"
+    work_dir = tmp_dir / "work"
+    work_dir.mkdir()
+
+    env = os.environ.copy()
+    env = {k: v for k, v in env.items() if not k.startswith("SHYFEM_UI_")}
+    env.update(
+        {
+            "SHYFEM_UI_HOST": "127.0.0.1",
+            "SHYFEM_UI_PORT": str(ws_identity_app_port),
+            "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
+            "SHYFEM_UI_WORK_DIR": str(work_dir),
+            "SHYFEM_UI_DEPLOYMENT_MODE": "server",
+            "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
+            "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
+            "SHYFEM_UI_AUTH_SESSION_TTL_HOURS": "24",
+            "SHYFEM_UI_DEBUG": "false",
+        }
+    )
+
+    python = sys.executable
+    test_app = str(Path(__file__).resolve().parent / "_test_ws_identity_app.py")
+    proc = subprocess.Popen(
+        [
+            python,
+            test_app,
+            "--port",
+            str(ws_identity_app_port),
+            "--host",
+            "127.0.0.1",
+            "--db",
+            str(db_path),
+            "--workdir",
+            str(work_dir),
+        ],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        cwd=str(Path(__file__).resolve().parent.parent),
+    )
+
+    if not _wait_for_server("127.0.0.1", ws_identity_app_port, timeout=30):
+        proc.kill()
+        stdout = proc.stdout.read().decode() if proc.stdout else ""
+        pytest.fail(f"WS-identity app did not start within 30 s.\nOutput:\n{stdout}")
+
+    yield proc
+
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
+@pytest.fixture(scope="session")
+def ws_identity_live_server(_ws_identity_app_server, ws_identity_app_port):
+    """Ensure the seeded WS-identity server is running and return its base URL."""
+    return f"http://127.0.0.1:{ws_identity_app_port}"
+
+
+def _wait_hydrated(page):
+    """Block until Shiny's WS is live and the dashboard health badge rendered."""
+    page.wait_for_function(
+        "() => {"
+        '  const el = document.getElementById("home-system_health_count");'
+        '  return el && !el.classList.contains("recalculating") && el.children.length > 0;'
+        "}",
+        timeout=30000,
+    )
+
+
+@pytest.fixture(scope="session")
+def pw_viewer_page(pw_browser, ws_identity_live_server):
+    """A Playwright page logged into the seeded server as the viewer1 account.
+
+    Session-scoped: Shiny can't reliably accept a fresh WS after disconnect,
+    so the whole WS-identity suite shares this one logged-in viewer session.
+    """
+    ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(15000)
+    _login(page, ws_identity_live_server, VIEWER_USERNAME, VIEWER_PASSWORD)
+    _wait_hydrated(page)
     _dismiss_modals(page)
     yield page
     page.close()

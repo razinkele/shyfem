@@ -16,8 +16,7 @@ from shyfem_ui.components.file_picker import (
     fill_picker_input,
 )
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
 from shyfem_ui.services.str_validator import validate_str
 
@@ -327,7 +326,9 @@ def physics_ui() -> ui.Tag:
 
 
 @module.server
-def physics_server(input, output, session, config: Config, active_project=None) -> None:
+def physics_server(
+    input, output, session, config: Config, active_project=None, current_user=None
+) -> None:
     """Physics configuration page server."""
 
     project_id_val: reactive.Value[int | None] = reactive.value(None)
@@ -440,19 +441,14 @@ def physics_server(input, output, session, config: Config, active_project=None) 
     @reactive.effect
     @reactive.event(input.save_btn)
     def save_file():
-        _usr = get_current_user()
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to save files",
-                    type="error",
-                    duration=6,
-                )
-                return
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         path_str = input.str_path()
         if not path_str:

@@ -209,8 +209,15 @@ def admin_server(
     auth_service: AuthService,
     user_role=None,
     audit_service=None,
+    current_user=None,
 ) -> None:
-    """Admin panel server logic."""
+    """Admin panel server logic.
+
+    ``current_user`` is the server-validated WS identity resolver (returns the
+    user dict bound to the ``_wsauth`` token, or None). It — NOT the
+    client-pushed ``user_role()`` signal — is the authorization source for
+    every admin mutation.
+    """
     from shyfem_ui.middleware.session_auth import get_current_user
 
     def _audit(action: str, detail: str | None = None):
@@ -221,17 +228,22 @@ def admin_server(
             audit_service.log(username=username, action=action, detail=detail)
 
     def _is_admin() -> bool:
-        """Check admin access reactively.
+        """Authorize admin access from the SERVER-VALIDATED WS identity.
 
-        Uses user_role() passed from the top-level app server, where
-        input.current_user_role is reachable without Shiny module namespacing.
-        Falls back to the HTTP-context value (always None behind Shiny Server).
+        Authorization must derive from ``current_user()`` (the user dict bound
+        server-side to the ``_wsauth`` token) or, in the HTTP scope, from
+        ``get_current_user()``. It must NEVER trust ``user_role()`` — that
+        signal is set by the browser (``Shiny.setInputValue('current_user_role',
+        ...)``) and is trivially spoofable from the console, so using it as an
+        authorization boundary lets any authenticated user self-promote to
+        admin. ``user_role()`` remains only a cosmetic hint for rendering.
         """
-        try:
-            if user_role is not None:
-                return user_role() == ROLE_ADMIN
-        except Exception:
-            logger.debug("user_role() reactive not yet available", exc_info=True)
+        if current_user is not None:
+            try:
+                if _check_admin_access(current_user()):
+                    return True
+            except Exception:
+                logger.debug("current_user() not yet available", exc_info=True)
         return _check_admin_access(get_current_user())
 
     # Reactive value holding user list (always defined so render functions can reference it)
@@ -385,6 +397,9 @@ def admin_server(
         @reactive.effect
         @reactive.event(input[f"confirm_reset_pw_{user_id}"])
         def _do_reset_pw():
+            if not _is_admin():
+                ui.notification_show("Administrator access required.", type="error", duration=6)
+                return
             new_pw = input.reset_pw_value() or ""
             if len(new_pw) < 8:
                 ui.notification_show(
@@ -403,6 +418,9 @@ def admin_server(
         @reactive.effect
         @reactive.event(input[f"toggle_active_{user_id}"])
         def _toggle_active():
+            if not _is_admin():
+                ui.notification_show("Administrator access required.", type="error", duration=6)
+                return
             user = _get_user()
             if user is None:
                 return
@@ -420,6 +438,9 @@ def admin_server(
         @reactive.effect
         @reactive.event(input[f"toggle_role_{user_id}"])
         def _toggle_role():
+            if not _is_admin():
+                ui.notification_show("Administrator access required.", type="error", duration=6)
+                return
             user = _get_user()
             if user is None:
                 return
@@ -446,6 +467,9 @@ def admin_server(
             """Send a test notification email to this user."""
             from shyfem_ui.services.notification_service import NotificationService
 
+            if not _is_admin():
+                ui.notification_show("Administrator access required.", type="error", duration=6)
+                return
             if not email:
                 ui.notification_show("User has no email address.", type="warning")
                 return
@@ -491,6 +515,9 @@ def admin_server(
         @reactive.effect
         @reactive.event(input[f"confirm_delete_{user_id}"])
         def _do_delete_user():
+            if not _is_admin():
+                ui.notification_show("Administrator access required.", type="error", duration=6)
+                return
             try:
                 auth_service.delete_user(user_id)
                 _audit("delete_user", f"target={username}")
@@ -545,6 +572,9 @@ def admin_server(
     @reactive.effect
     @reactive.event(input.confirm_create_user)
     def _do_create_user():
+        if not _is_admin():
+            ui.notification_show("Administrator access required.", type="error", duration=6)
+            return
         username = input.new_username() or ""
         password = input.new_password() or ""
         role = input.new_role() or "user"

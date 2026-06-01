@@ -18,8 +18,7 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.grid_prep_logic import (  # re-exported for backward compat
     compute_boundary_summary,
     format_element_shape,
@@ -128,6 +127,7 @@ def grid_prep_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Grid preparation page server logic."""
     # Reactive value driven by `_on_project_changed`; consumed by the
@@ -274,20 +274,15 @@ def grid_prep_server(
     @reactive.effect
     @reactive.event(input.run_shypre_btn)
     async def _run_shypre():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         logger.info("User running shypre on %r", str(current_grd_path.get()))
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to run shypre",
-                    type="error",
-                    duration=6,
-                )
-                return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         grd_path = current_grd_path.get()
         if not grd_path:
@@ -395,6 +390,15 @@ def grid_prep_server(
     @reactive.event(input.run_shybas_btn)
     async def _run_shybas():
         logger.info("User running shybas")
+        # Access check: require editor role (fail-closed in server mode).
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
         # Find .bas file
         out_files = output_files.get()
         bas_files = [f for f in out_files if f.endswith(".bas")]

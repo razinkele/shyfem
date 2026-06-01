@@ -40,19 +40,36 @@ def load_project_context(
     project_id: int,
     user: dict | None = None,
     session_factory=None,
+    is_server_mode: bool | None = None,
 ) -> ProjectContext | None:
     """Load project with its grids, simulations, and files as a plain dict.
 
     Returns None if the project_id does not exist or if the user
     lacks at least viewer access.
 
+    Access check is fail-CLOSED in server mode: an unresolved identity
+    (``user is None``) is denied, because behind the Shiny Server proxy the WS
+    is admitted with ``user=None`` and skipping the check would let any client
+    open/export/clone arbitrary projects by id. Local desktop mode has no auth,
+    so ``user`` is legitimately None and the check is skipped (backward compat).
+
     Args:
         project_id: Project database ID.
-        user: User dict from get_current_user(). None skips access check (local mode).
+        user: User dict from get_current_user() / the WS-resolved identity.
         session_factory: Optional session factory for testing.
+        is_server_mode: Whether the app runs in multi-user server mode. When
+            None, resolved from the global config's ``deployment_mode``.
     """
-    # Access check (skip when user is None — local mode backward compat)
-    if user is not None:
+    if is_server_mode is None:
+        from shyfem_ui.config import get_config
+
+        is_server_mode = get_config().deployment_mode == "server"
+
+    if user is None:
+        # Fail closed in server mode; local mode skips the check (no auth).
+        if is_server_mode:
+            return None
+    else:
         role = check_project_access(
             project_id, user, min_role="viewer", session_factory=session_factory
         )

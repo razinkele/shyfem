@@ -427,6 +427,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.Shiny && window.Shiny.setInputValue) {
       window.Shiny.setInputValue('current_user_role', data.role || '');
     }
+    // Push WS-auth token so the server can resolve identity in the WebSocket scope
+    if (data.ws_token && window.Shiny && window.Shiny.setInputValue) {
+      window.Shiny.setInputValue('_wsauth', data.ws_token, {priority: 'event'});
+    }
 
     // Hide admin-only sidebar items and pages for non-admin users
     if (data.role && data.role !== 'admin') {
@@ -759,8 +763,45 @@ def _build_server(
         except Exception:
             return _current_user.get("role") if _current_user else None
 
+    # WS-scope identity — resolves the per-session WS-auth token pushed by the
+    # browser as input._wsauth into a real user dict. Consumed by current_user()
+    # below, which every page server receives and feeds to the fail-closed
+    # editor_denied_reason / load_project_context guards.
+    # Imports are lazy to avoid import-time DB/engine setup and circular imports.
+    _ws_user: reactive.Value[dict | None] = reactive.value(None)
+
+    @reactive.effect
+    def _resolve_ws_identity():
+        from shyfem_ui.services.ws_identity import resolve_ws_user
+
+        tok = input._wsauth() if "_wsauth" in input else None
+        svc = auth_service
+        if svc is None:
+            from shyfem_ui.services.auth_service import AuthService
+
+            svc = AuthService()
+        try:
+            _ws_user.set(resolve_ws_user(tok, svc))
+        except Exception:
+            # Fail closed: leaving the user unresolved (None) denies every
+            # edit-level mutation in server mode (editor_denied_reason), so a
+            # transient validation/DB error can never silently fail OPEN.
+            logger.warning("WS identity resolution failed; user set to None", exc_info=True)
+            _ws_user.set(None)
+
+    def current_user() -> dict | None:
+        """Return the real, server-validated user in the WS scope (fallback path)."""
+        return _ws_user.get()
+
     # Initialize page servers
-    home.home_server("home", config, job_queue, active_project=active_project, nav_callback=nav_to)
+    home.home_server(
+        "home",
+        config,
+        job_queue,
+        active_project=active_project,
+        nav_callback=nav_to,
+        current_user=current_user,
+    )
     tutorial.tutorial_server(
         "tutorial",
         config,
@@ -772,17 +813,28 @@ def _build_server(
         "mesh_builder", config, active_project=active_project, tutorial_context=tutorial_context
     )
     grid_prep.grid_prep_server(
-        "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
+        "grid_prep",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     partitioning.partitioning_server(
         "partitioning",
         config,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
-    physics.physics_server("physics", config, active_project=active_project)
+    physics.physics_server(
+        "physics", config, active_project=active_project, current_user=current_user
+    )
     simulation.simulation_server(
-        "simulation", config, active_project=active_project, tutorial_context=tutorial_context
+        "simulation",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     run.run_server(
         "run",
@@ -791,18 +843,28 @@ def _build_server(
         active_project=active_project,
         tutorial_context=tutorial_context,
         user_role=_current_role,
+        current_user=current_user,
     )
     ibm.ibm_server(
         "ibm",
         config,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     postprocess.postprocess_server(
-        "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
+        "postprocess",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     visualize.visualize_server(
-        "visualize", config, active_project=active_project, tutorial_context=tutorial_context
+        "visualize",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     compare.compare_server(
         "compare",
@@ -810,6 +872,7 @@ def _build_server(
         job_queue,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     ensemble.ensemble_server(
         "ensemble",
@@ -817,17 +880,24 @@ def _build_server(
         job_queue,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     files.files_server(
         "files",
         config,
         active_project=active_project,
         tutorial_context=tutorial_context,
+        current_user=current_user,
     )
 
     if auth_service:
         admin.admin_server(
-            "admin", config, auth_service, user_role=_current_role, audit_service=audit_service
+            "admin",
+            config,
+            auth_service,
+            user_role=_current_role,
+            audit_service=audit_service,
+            current_user=current_user,
         )
 
     # --- Cross-page job notifications ---

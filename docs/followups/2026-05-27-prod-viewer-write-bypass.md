@@ -1,5 +1,22 @@
 # Follow-up: Project access control is unenforced in the production reactive layer
 
+> **Status: RESOLVED (2026-05-31).** Fixed on `feat/ws-auth-phase3b`
+> (commits `fd8a1ef`..`2fb5e45`). WS identity now flows through
+> `Shiny.setInputValue('_wsauth')` → `resolve_ws_user()` → `current_user()`,
+> and a fail-CLOSED `services/access_control.editor_denied_reason` gate (deny on
+> `user is None` in server mode; allow in local desktop mode) replaces the
+> fail-open `if user is not None and …` shape across all 14 write/read handlers
+> plus `load_project_context` (activation/clone/export). Verified by unit tests,
+> a static-AST guard-enforcement harness (asserts all 14 handlers call the gate
+> *and* act on its verdict), and a Playwright direct-WS bypass test.
+>
+> **Remaining (pre-existing, out of this fix's 9-handler scope — tracked):**
+> the **admin panel** still gates on the spoofable `input.current_user_role()`
+> signal (`admin_server` not threaded `current_user`); `mesh_builder` save is
+> unguarded; the dashboard transiently lists all projects unfiltered before
+> `_wsauth` resolves; and create/clone/import can stamp `owner_id=None` if
+> identity is unresolved.
+
 **Severity:** High (multi-user isolation failure — in the deployed app any authenticated user can view, open, and edit projects they were never granted access to; the editor-write bypass is one facet). Requires an authenticated account (not anonymous), which is the main mitigating factor.
 
 > **Scope note:** originally filed as a "viewer-write bypass," investigation on 2026-05-27 found the root cause is singular and broader — `get_current_user()` is `None` across the whole reactive layer in production, so read-listing, project activation, AND the 9 write guards all fail open. The naive fixes (`input.current_user_role()`, "pass user at mount") are insecure or non-functional; see the fix section.

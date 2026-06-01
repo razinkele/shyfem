@@ -24,8 +24,7 @@ from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.postprocess_logic import (
     build_shyelab_options,
     discover_shy_files,
@@ -227,6 +226,7 @@ def postprocess_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
@@ -480,19 +480,14 @@ def postprocess_server(
     @reactive.effect
     @reactive.event(input.run_btn)
     async def _run_shyelab():
-        _usr = get_current_user()
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to run post-processing",
-                    type="error",
-                    duration=6,
-                )
-                return
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         shy_path = input.shy_path()
         if not shy_path:
@@ -580,6 +575,8 @@ def postprocess_server(
             log_content,
             generated_files,
             batch_results,
+            active_project=active_project,
+            current_user=current_user,
         )
 
     # --- Batch mode ---
@@ -587,6 +584,16 @@ def postprocess_server(
     @reactive.effect
     @reactive.event(input.batch_run_btn)
     async def _batch_run():
+        # Access check: require editor role (fail-closed in server mode).
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         paths_text = input.batch_paths()
         if not paths_text:
             ui.notification_show("No batch files specified", type="warning")
@@ -736,6 +743,16 @@ def postprocess_server(
     @reactive.effect
     @reactive.event(input.batch_convert_btn)
     async def _batch_convert():
+        # Access check: require editor role (fail-closed in server mode).
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         try:
             selected = input.batch_convert_files()
         except Exception:
@@ -1075,13 +1092,33 @@ def postprocess_server(
 
 
 def _register_preset(
-    preset_key, preset_info, input, config, wrapper, log_content, generated_files, batch_results
+    preset_key,
+    preset_info,
+    input,
+    config,
+    wrapper,
+    log_content,
+    generated_files,
+    batch_results,
+    active_project=None,
+    current_user=None,
 ) -> None:
     """Register a preset button handler. Must be called in a loop to capture closure."""
 
     @reactive.effect
     @reactive.event(input[f"preset_{preset_key}"])
     async def _run_preset():
+        # Access check: require editor role (fail-closed in server mode). A
+        # preset runs a chained shyelab pipeline, as privileged as _run_shyelab.
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         shy_path = input.shy_path()
         if not shy_path:
             ui.notification_show("Specify an input file first", type="warning")

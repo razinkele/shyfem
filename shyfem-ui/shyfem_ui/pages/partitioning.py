@@ -16,8 +16,7 @@ from shyfem_ui.components.file_picker import (
 from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
-from shyfem_ui.middleware.session_auth import get_current_user
-from shyfem_ui.services.access_control import check_project_access
+from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.partitioning_logic import (
     analyze_partitions,
@@ -130,6 +129,7 @@ def partitioning_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
     """Mesh partitioning page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
@@ -230,24 +230,19 @@ def partitioning_server(
     @reactive.effect
     @reactive.event(input.run_shyparts_btn)
     async def _run_shyparts():
-        _usr = get_current_user()
+        _usr = current_user() if current_user is not None else None
         logger.info(
             "User running shyparts on %r with %s partitions",
             input.bas_path(),
             input.num_partitions(),
         )
-        if active_project is not None:
-            _proj = active_project.get()
-            if _proj is not None and (
-                _usr is not None
-                and check_project_access(_proj["id"], _usr, min_role="editor") is None
-            ):
-                ui.notification_show(
-                    "Permission denied: editor role required to run partitioning",
-                    type="error",
-                    duration=6,
-                )
-                return
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
 
         bas_path = input.bas_path()
         if not bas_path:

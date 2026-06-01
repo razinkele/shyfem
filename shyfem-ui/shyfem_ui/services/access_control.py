@@ -35,3 +35,68 @@ def check_project_access(
     if ROLE_HIERARCHY.get(actual_role, 0) >= ROLE_HIERARCHY.get(min_role, 0):
         return actual_role
     return None
+
+
+def editor_denied_reason(
+    project_id: int | None,
+    user: dict | None,
+    *,
+    min_role: str = "editor",
+    is_server_mode: bool | None = None,
+    session_factory=None,
+) -> str | None:
+    """Return a user-facing error if ``user`` may NOT perform a write, else None.
+
+    This is the single, fail-CLOSED authorization gate for every mutation
+    handler reachable over the Shiny WebSocket (job submit, STR/physics save,
+    file upload/delete, partitioning/grid runs, ...). Button visibility is only
+    a hint: the reactive inputs are live for any project a client can address,
+    so each handler must re-check server-validated identity.
+
+    Fail-closed semantics, gated by deployment mode:
+
+    * **Server mode** — a missing/unresolved identity (``user is None``) is
+      DENIED. Behind the Shiny Server proxy the WS is admitted with
+      ``user=None`` (cookies are not forwarded), so treating None as "allow"
+      re-opens the prod viewer-write bypass for any client that simply never
+      pushes its ``_wsauth`` token.
+    * **Local mode** — single-user desktop has no auth and ``user`` is
+      legitimately None; access is allowed (backward-compatible).
+
+    A ``project_id`` of None means no project is active. In server mode that is
+    DENIED unconditionally (there is nothing to authorize against, and treating
+    it as "allow" re-opens the bypass where a guard nested inside
+    ``if active_project is not None`` was skipped when no project was active);
+    in local mode it is allowed.
+
+    Distinguishes the unresolved-actor, no-active-project, and
+    resolved-but-unauthorized cases so each surfaces its own notification (no
+    silent ``return``).
+
+    Args:
+        project_id: Project being mutated, or None if no project is active.
+        user: Server-validated user dict (or None).
+        min_role: Minimum role required ("viewer", "editor", "owner").
+        is_server_mode: Whether the app runs in multi-user server mode. When
+            None, resolved from the global config's ``deployment_mode``.
+        session_factory: Optional SQLAlchemy session factory for testing.
+    """
+    if is_server_mode is None:
+        from shyfem_ui.config import get_config
+
+        is_server_mode = get_config().deployment_mode == "server"
+
+    if is_server_mode and user is None:
+        return "Session identity could not be verified. Please reload the page and sign in again."
+    if is_server_mode and project_id is None:
+        return "No active project. Open a project before performing this action."
+    if (
+        user is not None
+        and project_id is not None
+        and check_project_access(
+            project_id, user, min_role=min_role, session_factory=session_factory
+        )
+        is None
+    ):
+        return f"Permission denied: {min_role} role required for this project."
+    return None

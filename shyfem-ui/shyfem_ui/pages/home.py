@@ -61,6 +61,23 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
     )
 
 
+def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
+    """Return the Project rows to show on the dashboard, fail-CLOSED on an
+    unresolved identity in server mode.
+
+    Behind the Shiny Server proxy the reactive layer runs with ``user=None``
+    until the ``_wsauth`` token resolves. A ``None`` user in server mode must
+    see NOTHING — otherwise the first reactive flush of every session lists
+    every user's recent projects (read-isolation failure). In local desktop
+    mode there is no auth, so ``None`` legitimately lists all projects.
+    """
+    if is_server_mode and user is None:
+        return []
+    if user and user.get("role") != ROLE_ADMIN:
+        return get_visible_projects(db, user["id"], user["role"])
+    return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
+
+
 def _should_show_share_button(project: dict, user: dict | None) -> bool:
     """Return True if user should see the Share button for this project.
 
@@ -71,6 +88,28 @@ def _should_show_share_button(project: dict, user: dict | None) -> bool:
     if user.get("role") == ROLE_ADMIN:
         return True
     return project.get("owner_id") == user.get("id")
+
+
+def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=None) -> str | None:
+    """Return a user-facing error if ``user`` may NOT modify sharing, else None.
+
+    Only project owners and admins may share or unshare. The rendered Share
+    button is only a visibility hint; a client can fire ``confirm_share_<pid>``
+    / ``unshare_<pid>_<uid>`` directly over the WebSocket, so the mutation
+    handlers must re-check server-validated identity. Distinguishes an
+    unresolved actor (not signed in / WS identity missing) from a resolved but
+    unauthorized one so each case surfaces its own notification.
+    """
+    from shyfem_ui.services.access_control import check_project_access
+
+    if user is None:
+        return "You must be signed in to manage sharing."
+    if (
+        check_project_access(project_id, user, min_role="owner", session_factory=session_factory)
+        is None
+    ):
+        return "You are not authorized to manage sharing for this project."
+    return None
 
 
 def _build_permissions_table_data(permissions: list[dict]) -> list[dict]:
@@ -241,6 +280,7 @@ def home_server(
     job_queue: JobQueue | None = None,
     active_project=None,
     nav_callback=None,
+    current_user=None,
 ) -> None:
     """Dashboard page server logic."""
     projects = reactive.value([])
@@ -248,16 +288,16 @@ def home_server(
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
 
-    from shyfem_ui.middleware.session_auth import get_current_user as _get_user
-
-    _current_user = _get_user()
-
     # Dedup set prevents effect accumulation (Shiny for Python does not
     # auto-destroy child effects when a parent @reactive.effect re-runs).
     # Per-session (declared inside home_server); keys are prefix-namespaced
     # (open_proj_, project_, export_, clone_, share_, confirm_share_, unshare_)
     # so all per-project handler factories share this one set without collision.
     _registered_handlers: set = set()
+
+    def _user():
+        # Server-validated user in the WS scope (None in local mode).
+        return current_user() if current_user is not None else None
 
     @render.ui
     def show_all_toggle_ui():
@@ -276,14 +316,9 @@ def home_server(
             ui.notification_show(f"Error loading data: {e}", type="error", duration=6)
 
     def _refresh_projects():
-        from shyfem_ui.middleware.session_auth import get_current_user
-
-        user = get_current_user()
+        user = _user()
         with db_session() as db:
-            if user and user.get("role") != ROLE_ADMIN:
-                project_list = get_visible_projects(db, user["id"], user["role"])
-            else:
-                project_list = db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
+            project_list = _dashboard_projects(db, user, _is_server_mode)
             projects.set(
                 [
                     {
@@ -374,7 +409,7 @@ def home_server(
         rows = []
         for p in project_data:
             share_btn = ui.span()
-            if _should_show_share_button(p, _current_user):
+            if _should_show_share_button(p, (_user())):
                 share_btn = ui.input_action_link(
                     f"share_{p['id']}",
                     "Share",
@@ -489,9 +524,7 @@ def home_server(
         # Create project in database
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = _user()
                 project = Project(
                     name=name,
                     description=description or None,
@@ -590,9 +623,7 @@ def home_server(
         # Create database records
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = _user()
                 project = Project(
                     name=name,
                     description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
@@ -631,7 +662,7 @@ def home_server(
             # Activate project so target pages can auto-fill fields
             from shyfem_ui.services.project_context import load_project_context
 
-            ctx = load_project_context(project_id, user=_current_user)
+            ctx = load_project_context(project_id, user=(_user()))
             if ctx and active_project is not None:
                 active_project.set(ctx)
 
@@ -658,7 +689,7 @@ def home_server(
         """Load project context, set active, navigate to Grid Prep."""
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -801,7 +832,7 @@ def home_server(
         project_id = int(project_id_str)
         from shyfem_ui.services.project_context import load_project_context
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -870,7 +901,7 @@ def home_server(
 
         logger.info("User exporting project %s %r", project_id, project_name)
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -924,7 +955,7 @@ def home_server(
 
         logger.info("User cloning project %s %r", project_id, project_name)
 
-        ctx = load_project_context(project_id, user=_current_user)
+        ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
@@ -950,9 +981,7 @@ def home_server(
 
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = _user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
@@ -1050,9 +1079,7 @@ def home_server(
 
         try:
             with db_session() as db:
-                from shyfem_ui.middleware.session_auth import get_current_user
-
-                user = get_current_user()
+                user = _user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),
@@ -1139,6 +1166,10 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _do_share():
+            denied = _sharing_denied_reason(pid, _user())
+            if denied:
+                ui.notification_show(denied, type="error", duration=6)
+                return
             uid = int(input.share_user_id())
             role = input.share_role()
             svc_inner = SharingService()
@@ -1148,8 +1179,13 @@ def home_server(
             _refresh_projects()
 
     def _show_share_modal(project_id: int, project_name: str):
+        _u = _user()
+        denied = _sharing_denied_reason(project_id, _u)
+        if denied:
+            ui.notification_show(denied, type="error", duration=6)
+            return
         svc = SharingService()
-        user_id = _current_user["id"] if _current_user else 0
+        user_id = _u["id"] if _u else 0
         shareable = svc.list_shareable_users(project_id, exclude_user_id=user_id)
         perms = svc.list_permissions(project_id)
         perm_data = _build_permissions_table_data(perms)
@@ -1234,6 +1270,10 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _unshare():
+            denied = _sharing_denied_reason(project_id, _user())
+            if denied:
+                ui.notification_show(denied, type="error", duration=6)
+                return
             svc = SharingService()
             svc.unshare_project(project_id, target_user_id)
             ui.notification_show("Access removed", type="message", duration=4)
