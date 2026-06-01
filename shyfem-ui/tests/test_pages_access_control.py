@@ -373,31 +373,33 @@ def _call_index(stmts: "list[ast.stmt]", callee_attr: str) -> "int | None":
     return None
 
 
-# STR-save handlers that persist a user-supplied path to disk. Each must route
-# that path through config.validate_save_path (rejects traversal outside
-# work_dir + null bytes) BEFORE StrParser.save writes it — otherwise an editor
-# can write outside the project tree.
-STR_SAVE_HANDLERS = [
-    ("simulation", "_confirm_save"),
-    ("physics", "save_file"),
+# Handlers that persist a user-supplied path/filename to disk. Each must route
+# the target through config.validate_save_path (rejects traversal outside
+# work_dir + null bytes) BEFORE the write call — otherwise an editor can write
+# outside the project tree via an absolute path or '..' segments.
+# (page, handler, write_call_name)
+PATH_SAVE_HANDLERS = [
+    ("simulation", "_confirm_save", "save"),
+    ("physics", "save_file", "save"),
+    ("mesh_builder", "_on_save", "export_grd"),
 ]
 
 
-@pytest.mark.parametrize("page,handler", STR_SAVE_HANDLERS)
-def test_str_save_validates_path_before_write(page, handler):
+@pytest.mark.parametrize("page,handler,write_call", PATH_SAVE_HANDLERS)
+def test_save_validates_path_before_write(page, handler, write_call):
     path = _PAGES_DIR / f"{page}.py"
     fn = _find_function_def(ast.parse(path.read_text()), handler)
     assert fn is not None, f"{handler!r} not found in {path}"
     vidx = _call_index(fn.body, "validate_save_path")
-    sidx = _call_index(fn.body, "save")
+    sidx = _call_index(fn.body, write_call)
     assert vidx is not None, (
         f"{path}::{handler} (line {fn.lineno}) writes a user-supplied path "
         f"without config.validate_save_path — a traversal path (e.g. "
-        f"'../../other/x.str' or '/etc/x') escapes the work dir. Validate first."
+        f"'../../other/x' or '/etc/x') escapes the work dir. Validate first."
     )
     assert (
         sidx is not None and vidx < sidx
-    ), f"{path}::{handler}: validate_save_path must precede StrParser.save"
+    ), f"{path}::{handler}: validate_save_path must precede {write_call}()"
 
 
 def test_str_editor_inline_save_is_guarded():

@@ -1458,14 +1458,22 @@ def mesh_builder_server(
             ui.notification_show(_denied, type="error", duration=6)
             return
         filename = input.export_filename() or "mesh_output.grd"
+        # Use active project dir if available, fallback to global work_dir
+        project = active_project.get() if active_project else None
+        if project and project.get("work_dir"):
+            output_dir = Path(project["work_dir"])
+        else:
+            output_dir = Path(config.work_dir) / "mesh_builder"
+        # Reject traversal: export_filename() is free text, so an absolute path
+        # or '..' segments would escape the work tree. Confine the target to
+        # work_dir before writing (mirrors physics/simulation save handlers).
         try:
-            # Use active project dir if available, fallback to global work_dir
-            project = active_project.get() if active_project else None
-            if project and project.get("work_dir"):
-                output_dir = Path(project["work_dir"])
-            else:
-                output_dir = Path(config.work_dir) / "mesh_builder"
-            output_path = output_dir / filename
+            output_path = config.validate_save_path(output_dir / filename)
+        except ValueError as e:
+            _log(f"Invalid export path: {e}")
+            ui.notification_show(str(e), type="error", duration=6)
+            return
+        try:
             export_grd(grd, output_path)
             _log(f"Exported mesh to: {output_path}")
             ui.notification_show(f"Saved: {output_path}", type="message", duration=5)

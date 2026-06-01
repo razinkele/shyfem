@@ -462,6 +462,7 @@ def physics_server(
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
+        path.parent.mkdir(parents=True, exist_ok=True)
         try:
             _collect_panel_values()
             sf = str_data.get()
@@ -477,7 +478,7 @@ def physics_server(
                 for m in warnings:
                     ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
             if not errors:
-                ui.notification_show(f"Saved to {path_str}", type="message", duration=3)
+                ui.notification_show(f"Saved to {path}", type="message", duration=3)
         except Exception as e:
             ui.notification_show(f"Save error: {e}", type="error")
 

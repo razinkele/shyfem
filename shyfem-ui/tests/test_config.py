@@ -8,9 +8,13 @@ from shyfem_ui.config import Config, get_config, set_config
 
 
 def _clean_config(**overrides) -> Config:
-    """Create a Config isolated from host environment variables.
+    """Create a Config isolated from the ambient ``.env`` file.
 
-    Strips all SHYFEM_UI_* env vars so tests always see defaults.
+    ``_env_file=None`` disables ``.env`` reading. NOTE: it does NOT strip
+    SHYFEM_UI_* OS env vars — those still win (pydantic precedence). The conftest
+    pins SHYFEM_UI_DEPLOYMENT_MODE=local for the session, so do not rely on
+    _clean_config() to observe the *code* default of deployment_mode; assert the
+    Field default directly (see test_default_deployment_mode).
     """
     return Config(_env_file=None, **overrides)
 
@@ -19,9 +23,13 @@ class TestConfigDefaults:
     """Tests for default configuration values."""
 
     def test_default_deployment_mode(self):
-        """Test default deployment mode is local."""
-        config = _clean_config()
-        assert config.deployment_mode == "local"
+        """The code default for deployment_mode is 'local'.
+
+        Asserted on the field itself, not on a Config() instance: conftest pins
+        SHYFEM_UI_DEPLOYMENT_MODE=local in the OS env (for determinism), which
+        Config(_env_file=None) still reads — so an instance check would silently
+        pass even if the Field default were changed to 'server'."""
+        assert Config.model_fields["deployment_mode"].default == "local"
 
     def test_default_host(self):
         """Test default host binding."""
