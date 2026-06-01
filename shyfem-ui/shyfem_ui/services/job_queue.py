@@ -74,6 +74,23 @@ class JobInfo:
         return None
 
 
+def job_identity_metadata(row) -> dict[str, Any]:
+    """Extract the identity/ownership fields from a Job ORM row into a metadata
+    dict, omitting absent values.
+
+    session_id, user_id and project_id drive job cancel authorization
+    (job_cancel_denied_reason). They must be restored from the DB on reload —
+    earlier code restored only session_id, silently dropping ownership after a
+    server restart.
+    """
+    meta: dict[str, Any] = {}
+    for key in ("session_id", "user_id", "project_id"):
+        val = getattr(row, key, None)
+        if val is not None:
+            meta[key] = val
+    return meta
+
+
 class JobQueue(ABC):
     """Abstract base class for job queues."""
 

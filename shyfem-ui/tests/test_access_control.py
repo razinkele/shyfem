@@ -354,3 +354,110 @@ class TestResolveEffectiveRole:
         from shyfem_ui.services.access_control import resolve_effective_role
 
         assert resolve_effective_role({"id": 1}, "user") is None
+
+
+class TestJobCancelDeniedReason:
+    """A job may be cancelled by its owner (user_id match), an admin, OR a user
+    with editor access to the job's project. Fail-closed on user=None in server
+    mode; allowed in local mode."""
+
+    def _call(self, **kw):
+        from shyfem_ui.services.access_control import job_cancel_denied_reason
+
+        return job_cancel_denied_reason(**kw)
+
+    def test_local_mode_allows_none_user(self, db_factory, setup):
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=None,
+                is_server_mode=False,
+                session_factory=db_factory,
+            )
+            is None
+        )
+
+    def test_server_mode_denies_none_user(self, db_factory, setup):
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=None,
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is not None
+        )
+
+    def test_owner_may_cancel_own_job(self, db_factory, setup):
+        # bob owns the job but has NO project access — ownership alone suffices.
+        assert (
+            self._call(
+                job_user_id=setup["bob_id"],
+                job_project_id=setup["project_id"],
+                user=_user(setup["bob_id"]),
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is None
+        )
+
+    def test_admin_may_cancel_any_job(self, db_factory, setup):
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=_user(setup["admin_id"], "admin"),
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is None
+        )
+
+    def test_project_editor_may_cancel(self, db_factory, setup):
+        # Give bob editor on alice's project; bob is not the job owner.
+        db = db_factory()
+        db.add(
+            ProjectPermission(
+                project_id=setup["project_id"], user_id=setup["bob_id"], role="editor"
+            )
+        )
+        db.commit()
+        db.close()
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=_user(setup["bob_id"]),
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is None
+        )
+
+    def test_viewer_denied(self, db_factory, setup):
+        # charlie is a viewer (set up in fixture) and not the job owner.
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=_user(setup["charlie_id"]),
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is not None
+        )
+
+    def test_stranger_denied(self, db_factory, setup):
+        # bob: not owner, no project access.
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=_user(setup["bob_id"]),
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is not None
+        )

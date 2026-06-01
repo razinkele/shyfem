@@ -7,7 +7,13 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
+from shyfem_ui.services.job_queue import (
+    JobInfo,
+    JobQueue,
+    JobSpec,
+    JobStatus,
+    job_identity_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +106,7 @@ class LocalJobQueue(JobQueue):
             stdout_file=row.stdout_file,
             stderr_file=row.stderr_file,
             simulation_id=row.simulation_id,
-            metadata={"session_id": row.session_id} if row.session_id else {},
+            metadata=job_identity_metadata(row),
         )
 
     def _persist_job(self, job: JobInfo) -> None:
@@ -121,6 +127,7 @@ class LocalJobQueue(JobQueue):
                         simulation_id=job.simulation_id,
                         session_id=job.metadata.get("session_id"),
                         user_id=job.metadata.get("user_id"),
+                        project_id=job.metadata.get("project_id"),
                     )
                     db.add(row)
 

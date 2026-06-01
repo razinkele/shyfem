@@ -402,6 +402,99 @@ def test_save_validates_path_before_write(page, handler, write_call):
     ), f"{path}::{handler}: validate_save_path must precede {write_call}()"
 
 
+# Job-cancel handlers must authorize (job_cancel_denied_reason for per-job
+# cancels; editor_denied_reason for the ensemble stop) BEFORE the cancel sink —
+# the job id / ensemble state is client-addressable, so an unauthorized client
+# could otherwise cancel a collaborator's job.
+# (page, handler, guard_call, cancel_sink)
+CANCEL_HANDLERS = [
+    ("run", "_cancel_active_job", "job_cancel_denied_reason", "cancel"),
+    ("run", "_cancel_selected_job", "job_cancel_denied_reason", "cancel"),
+    ("ensemble", "_stop_all_ensemble", "editor_denied_reason", "_cancel_jobs"),
+]
+
+
+def _call_name(node: ast.AST) -> "str | None":
+    if not isinstance(node, ast.Call):
+        return None
+    c = node.func
+    return c.attr if isinstance(c, ast.Attribute) else (c.id if isinstance(c, ast.Name) else None)
+
+
+def _guard_enforced_by_name(func_def: ast.AST, guard_name: str) -> bool:
+    """True if a name assigned from a call to ``guard_name`` is tested with
+    DENIAL-truthy polarity in an if-block that returns/raises — i.e. the denial
+    is actually consumed (not computed and ignored, not inverted). Generalizes
+    _guard_is_enforced to an arbitrary guard function name."""
+    guard_vars: set[str] = set()
+    enforced: set[str] = set()
+    for stmt in func_def.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(stmt, ast.Assign) and any(
+            _call_name(n) == guard_name for n in ast.walk(stmt.value)
+        ):
+            for tgt in stmt.targets:
+                if isinstance(tgt, ast.Name):
+                    guard_vars.add(tgt.id)
+        if isinstance(stmt, ast.If):
+            then_exits = any(
+                isinstance(s, (ast.Return, ast.Raise)) for b in stmt.body for s in ast.walk(b)
+            )
+            if then_exits:
+                for nm in {n.id for n in ast.walk(stmt.test) if isinstance(n, ast.Name)}:
+                    if not _name_is_negated_in_test(stmt.test, nm):
+                        enforced.add(nm)
+    return bool(guard_vars & enforced)
+
+
+@pytest.mark.parametrize("page,handler,guard,sink", CANCEL_HANDLERS)
+def test_cancel_handler_authorizes_before_cancel(page, handler, guard, sink):
+    path = _PAGES_DIR / f"{page}.py"
+    fn = _find_function_def(ast.parse(path.read_text()), handler)
+    assert fn is not None, f"{handler!r} not found in {path}"
+    gidx = _call_index(fn.body, guard)
+    sidx = _call_index(fn.body, sink)
+    assert gidx is not None, (
+        f"{path}::{handler} (line {fn.lineno}) cancels a job without calling "
+        f"{guard} — an unauthorized client could cancel a collaborator's job."
+    )
+    assert (
+        sidx is not None and gidx < sidx
+    ), f"{path}::{handler}: {guard} must precede the cancel ({sink})"
+    assert _guard_enforced_by_name(fn, guard), (
+        f"{path}::{handler}: the {guard} result must be assigned and acted on "
+        f"(`if _denied: ...; return`, denial-truthy polarity) before the cancel — "
+        f"computing it and ignoring/inverting it re-opens the bypass."
+    )
+
+
+def test_submit_job_stamps_ws_resolved_owner():
+    """run._submit_job must stamp the job OWNER from the WS-validated identity
+    (_usr = current_user()), not the HTTP-scope _user_id.
+
+    get_current_user() (the source of _user_id) returns None in the proxied
+    Shiny WebSocket scope, so stamping user_id=_user_id persists owner=None for
+    every server-mode job — killing the owner-cancel branch of
+    job_cancel_denied_reason. The project_id stamp already uses _proj (WS); the
+    owner must come from the same WS identity (mirrors ensemble.py)."""
+    fn = _find_function_def(ast.parse((_PAGES_DIR / "run.py").read_text()), "_submit_job")
+    assert fn is not None
+    call = next(
+        (n for n in ast.walk(fn) if _call_name(n) == "build_job_spec"),
+        None,
+    )
+    assert call is not None, "_submit_job must build the job spec via build_job_spec"
+    uid_kw = next((k for k in call.keywords if k.arg == "user_id"), None)
+    assert uid_kw is not None, "build_job_spec must receive a user_id"
+    names = {n.id for n in ast.walk(uid_kw.value) if isinstance(n, ast.Name)}
+    assert "_usr" in names and "_user_id" not in names, (
+        "job owner (user_id) must be sourced from the WS-resolved identity "
+        "(_usr = current_user()), not the HTTP-scope _user_id (None behind the "
+        "Shiny proxy WS, which kills the owner-cancel right)."
+    )
+
+
 def test_str_editor_inline_save_is_guarded():
     """The str_editor component's inline Save handler writes the .str to disk
     directly (``path.write_text``). It must route through the fail-closed

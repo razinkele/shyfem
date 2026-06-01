@@ -292,6 +292,7 @@ def _persist_job_to_db(
                     simulation_id=job_info.simulation_id,
                     session_id=job_info.metadata.get("session_id"),
                     user_id=job_info.metadata.get("user_id"),
+                    project_id=job_info.metadata.get("project_id"),
                 )
                 db.add(row)
 

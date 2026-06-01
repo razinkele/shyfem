@@ -1,6 +1,5 @@
 """Tests for job ownership via user_id."""
 
-import pytest
 from shyfem_ui.pages.run import _get_job_metadata
 
 
@@ -19,3 +18,11 @@ class TestGetJobMetadata:
         meta = _get_job_metadata(session_id="s", user_id=1)
         assert "session_id" in meta
         assert "user_id" in meta
+
+    def test_includes_project_id_when_available(self):
+        meta = _get_job_metadata(session_id="s", user_id=1, project_id=7)
+        assert meta["project_id"] == 7
+
+    def test_omits_project_id_when_none(self):
+        meta = _get_job_metadata(session_id="s", user_id=1, project_id=None)
+        assert "project_id" not in meta

@@ -619,6 +619,10 @@ def ensemble_server(
                     "ensemble_name": name,
                     "run_index": i,
                     "param_combo": {f"{s}.{p}": v for (s, p), v in combo.items()},
+                    # Ownership/project for cancel authorization (owner / admin /
+                    # project-editor); _usr/_proj resolved at the editor gate above.
+                    "user_id": _usr["id"] if _usr else None,
+                    "project_id": _proj["id"] if _proj else None,
                 },
             )
 
@@ -674,8 +678,21 @@ def ensemble_server(
     @reactive.effect
     @reactive.event(input.stop_all_btn)
     async def _stop_all_ensemble():
+        from shyfem_ui.services.access_control import editor_denied_reason
+
         state = ensemble_state.get()
         if not state:
+            return
+        # Authorize: stopping the ensemble mutates jobs on the active project,
+        # so require editor access to it (owner / project-editor / admin) —
+        # fail-closed in server mode. Mirrors the submit gate.
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
             return
         cancelled = await _cancel_jobs(job_queue, state["job_ids"])
         total = len(state["job_ids"])

@@ -171,6 +171,7 @@ class Job(Base):
         Index("ix_jobs_created_at", "created_at"),
         Index("ix_jobs_simulation_id", "simulation_id"),
         Index("ix_jobs_job_uuid", "job_uuid", unique=True),
+        Index("ix_jobs_project_id", "project_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -184,6 +185,9 @@ class Job(Base):
         String(255), nullable=True
     )  # Shiny session ID for multi-user filtering
     user_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    project_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("projects.id"), nullable=True
+    )  # Owning project — basis for cancel authorization (owner/admin/project-editor)
 
     # Job identification
     name: Mapped[str] = mapped_column(String(255), nullable=False)

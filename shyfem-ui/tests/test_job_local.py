@@ -2,12 +2,12 @@
 
 import asyncio
 from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
+
 from shyfem_ui.services.job_local import LocalJobQueue
+from shyfem_ui.services.job_queue import JobSpec, JobStatus
 from shyfem_ui.services.shyfem_wrapper import CommandResult
 
 
@@ -15,26 +15,30 @@ from shyfem_ui.services.shyfem_wrapper import CommandResult
 def mock_wrapper():
     """Create a mock ShyfemWrapper."""
     wrapper = MagicMock()
-    wrapper.run_command = AsyncMock(return_value=CommandResult(
-        success=True,
-        return_code=0,
-        stdout="mock output",
-        stderr="",
-        command="test",
-        working_dir="/tmp",
-        duration=1.0,
-        output_files=[],
-    ))
-    wrapper.run_shyfem = AsyncMock(return_value=CommandResult(
-        success=True,
-        return_code=0,
-        stdout="mock mpi output",
-        stderr="",
-        command="mpirun shyfem",
-        working_dir="/tmp",
-        duration=2.0,
-        output_files=[],
-    ))
+    wrapper.run_command = AsyncMock(
+        return_value=CommandResult(
+            success=True,
+            return_code=0,
+            stdout="mock output",
+            stderr="",
+            command="test",
+            working_dir="/tmp",
+            duration=1.0,
+            output_files=[],
+        )
+    )
+    wrapper.run_shyfem = AsyncMock(
+        return_value=CommandResult(
+            success=True,
+            return_code=0,
+            stdout="mock mpi output",
+            stderr="",
+            command="mpirun shyfem",
+            working_dir="/tmp",
+            duration=2.0,
+            output_files=[],
+        )
+    )
     return wrapper
 
 
@@ -117,8 +121,9 @@ class TestLocalJobQueue:
         """Test listing all jobs."""
         id1 = await queue.submit(job_spec)
         id2 = await queue.submit(
-            JobSpec(name="job2", tool_name="shyfem", args=["test.str"],
-                    working_dir=job_spec.working_dir)
+            JobSpec(
+                name="job2", tool_name="shyfem", args=["test.str"], working_dir=job_spec.working_dir
+            )
         )
         await asyncio.sleep(0.1)
 
@@ -148,10 +153,20 @@ class TestLocalJobQueue:
     @pytest.mark.asyncio
     async def test_list_jobs_filter_simulation_id(self, queue, tmp_path):
         """Test listing jobs filtered by simulation ID."""
-        spec1 = JobSpec(name="sim1", tool_name="shyfem", args=["t.str"],
-                        working_dir=tmp_path / "w1", simulation_id=42)
-        spec2 = JobSpec(name="sim2", tool_name="shyfem", args=["t.str"],
-                        working_dir=tmp_path / "w2", simulation_id=99)
+        spec1 = JobSpec(
+            name="sim1",
+            tool_name="shyfem",
+            args=["t.str"],
+            working_dir=tmp_path / "w1",
+            simulation_id=42,
+        )
+        spec2 = JobSpec(
+            name="sim2",
+            tool_name="shyfem",
+            args=["t.str"],
+            working_dir=tmp_path / "w2",
+            simulation_id=99,
+        )
 
         await queue.submit(spec1)
         await queue.submit(spec2)
@@ -164,8 +179,9 @@ class TestLocalJobQueue:
     async def test_list_jobs_limit(self, queue, tmp_path):
         """Test list_jobs respects limit parameter."""
         for i in range(5):
-            spec = JobSpec(name=f"job{i}", tool_name="shypre", args=[],
-                           working_dir=tmp_path / f"w{i}")
+            spec = JobSpec(
+                name=f"job{i}", tool_name="shypre", args=[], working_dir=tmp_path / f"w{i}"
+            )
             await queue.submit(spec)
 
         await asyncio.sleep(0.1)
@@ -183,15 +199,20 @@ class TestLocalJobQueue:
             started_event.set()  # signal that we are now running
             await asyncio.sleep(10)
             return CommandResult(
-                success=True, return_code=0, stdout="", stderr="",
-                command="test", working_dir=str(tmp_path),
+                success=True,
+                return_code=0,
+                stdout="",
+                stderr="",
+                command="test",
+                working_dir=str(tmp_path),
             )
 
         queue.wrapper.run_command = slow_command
 
         # Use tool_name != "shyfem" so the queue routes through run_command.
-        spec = JobSpec(name="slow_job", tool_name="shypre", args=["test.str"],
-                       working_dir=tmp_path / "w")
+        spec = JobSpec(
+            name="slow_job", tool_name="shypre", args=["test.str"], working_dir=tmp_path / "w"
+        )
         job_id = await queue.submit(spec)
 
         # Wait deterministically for the mock to start; bound at 5s.
@@ -212,9 +233,7 @@ class TestLocalJobQueue:
             await asyncio.sleep(0.1)
         else:
             info = await queue.get_status(job_id)
-            pytest.fail(
-                f"Expected CANCELLED status; got {info.status if info else 'None'}"
-            )
+            pytest.fail(f"Expected CANCELLED status; got {info.status if info else 'None'}")
 
     @pytest.mark.asyncio
     async def test_cancel_nonexistent_job(self, queue):
@@ -272,8 +291,12 @@ class TestLocalJobQueue:
     async def test_mpi_metadata_stored(self, queue, tmp_path):
         """Test MPI settings are stored in job metadata."""
         spec = JobSpec(
-            name="mpi_job", tool_name="shyfem", args=["test.str"],
-            working_dir=tmp_path / "w", mpi_enabled=True, mpi_np=8,
+            name="mpi_job",
+            tool_name="shyfem",
+            args=["test.str"],
+            working_dir=tmp_path / "w",
+            mpi_enabled=True,
+            mpi_np=8,
         )
         job_id = await queue.submit(spec)
         status = await queue.get_status(job_id)
@@ -296,14 +319,17 @@ class TestLocalJobQueue:
             if progress_callback:
                 progress_callback(0.5, "halfway")
             return CommandResult(
-                success=True, return_code=0, stdout="", stderr="",
-                command="test", working_dir=str(wd),
+                success=True,
+                return_code=0,
+                stdout="",
+                stderr="",
+                command="test",
+                working_dir=str(wd),
             )
 
         queue.wrapper.run_command = mock_run
 
-        spec = JobSpec(name="prog_job", tool_name="shypre", args=[],
-                       working_dir=tmp_path / "w")
+        spec = JobSpec(name="prog_job", tool_name="shypre", args=[], working_dir=tmp_path / "w")
         job_id = await queue.submit(spec)
         for _ in range(50):
             status = await queue.get_status(job_id)
@@ -327,14 +353,17 @@ class TestLocalJobQueue:
             started_event.set()  # signal that we are now running
             await asyncio.sleep(10)
             return CommandResult(
-                success=True, return_code=0, stdout="", stderr="",
-                command="test", working_dir=str(tmp_path),
+                success=True,
+                return_code=0,
+                stdout="",
+                stderr="",
+                command="test",
+                working_dir=str(tmp_path),
             )
 
         queue.wrapper.run_command = slow_command
 
-        spec = JobSpec(name="active", tool_name="shypre", args=[],
-                       working_dir=tmp_path / "w")
+        spec = JobSpec(name="active", tool_name="shypre", args=[], working_dir=tmp_path / "w")
         job_id = await queue.submit(spec)
 
         # Wait deterministically for the mock to start; bound at 5s.
@@ -402,29 +431,39 @@ class TestJobUserIdAndNotifications:
     async def test_notification_called_on_success(self, queue, job_spec):
         """NotificationService.notify_job_success is called when job succeeds."""
         from unittest.mock import MagicMock
+
         mock_notif = MagicMock()
         mock_notif.notify_job_success = MagicMock()
         queue.notification_service = mock_notif
 
-        job_id = await queue.submit(job_spec)
+        await queue.submit(job_spec)
         await asyncio.sleep(0.3)
         mock_notif.notify_job_success.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_notification_called_on_failure(self, queue, job_spec, mock_wrapper):
         """NotificationService.notify_job_failed is called when job fails."""
-        from unittest.mock import MagicMock, AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
+
         from shyfem_ui.services.shyfem_wrapper import CommandResult
 
-        mock_wrapper.run_command = AsyncMock(return_value=CommandResult(
-            success=False, return_code=1, stdout="", stderr="error",
-            command="test", working_dir="/tmp", duration=0.1, output_files=[],
-        ))
+        mock_wrapper.run_command = AsyncMock(
+            return_value=CommandResult(
+                success=False,
+                return_code=1,
+                stdout="",
+                stderr="error",
+                command="test",
+                working_dir="/tmp",
+                duration=0.1,
+                output_files=[],
+            )
+        )
         mock_notif = MagicMock()
         mock_notif.notify_job_failed = MagicMock()
         queue.notification_service = mock_notif
 
-        job_id = await queue.submit(job_spec)
+        await queue.submit(job_spec)
         await asyncio.sleep(0.3)
         mock_notif.notify_job_failed.assert_called_once()
 
@@ -436,10 +475,16 @@ class TestLocalJobQueueEviction:
     async def test_evict_old_jobs(self, tmp_path):
         """Test eviction of old completed jobs."""
         mock_wrapper = MagicMock()
-        mock_wrapper.run_command = AsyncMock(return_value=CommandResult(
-            success=True, return_code=0, stdout="", stderr="",
-            command="test", working_dir="/tmp",
-        ))
+        mock_wrapper.run_command = AsyncMock(
+            return_value=CommandResult(
+                success=True,
+                return_code=0,
+                stdout="",
+                stderr="",
+                command="test",
+                working_dir="/tmp",
+            )
+        )
 
         q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2)
         q.wrapper = mock_wrapper
@@ -449,8 +494,9 @@ class TestLocalJobQueueEviction:
         # Submit 5 jobs and let them complete
         ids = []
         for i in range(5):
-            spec = JobSpec(name=f"j{i}", tool_name="shypre", args=[],
-                           working_dir=tmp_path / f"w{i}")
+            spec = JobSpec(
+                name=f"j{i}", tool_name="shypre", args=[], working_dir=tmp_path / f"w{i}"
+            )
             job_id = await q.submit(spec)
             ids.append(job_id)
             await asyncio.sleep(0.15)
@@ -460,3 +506,49 @@ class TestLocalJobQueueEviction:
 
         # Eviction should have capped storage
         assert len(q._jobs) <= q.MAX_STORED_JOBS + 2  # allow some slack for timing
+
+
+class TestDbRowToJobInfo:
+    """The DB->JobInfo conversion must restore user_id AND project_id into
+    metadata (not just session_id) so cancel authorization survives a reload /
+    server restart."""
+
+    def _row(self, **over):
+        from types import SimpleNamespace
+
+        base = dict(
+            job_uuid="u1",
+            name="n",
+            job_type="shyfem",
+            working_dir="/tmp",
+            status=JobStatus.RUNNING,
+            progress=0.0,
+            progress_message="",
+            created_at=datetime.now(),
+            queued_at=None,
+            started_at=None,
+            completed_at=None,
+            return_code=None,
+            error_message=None,
+            stdout_file=None,
+            stderr_file=None,
+            simulation_id=None,
+            session_id="sess",
+            user_id=42,
+            project_id=7,
+        )
+        base.update(over)
+        return SimpleNamespace(**base)
+
+    def test_restores_owner_and_project_into_metadata(self):
+        info = LocalJobQueue._db_row_to_job_info(self._row())
+        assert info.metadata.get("user_id") == 42
+        assert info.metadata.get("project_id") == 7
+        assert info.metadata.get("session_id") == "sess"
+
+    def test_omits_absent_owner_and_project(self):
+        info = LocalJobQueue._db_row_to_job_info(
+            self._row(user_id=None, project_id=None, session_id=None)
+        )
+        assert "user_id" not in info.metadata
+        assert "project_id" not in info.metadata
