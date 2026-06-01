@@ -53,6 +53,61 @@ def resolve_effective_role(server_user: dict | None, fallback_role: str | None) 
     return fallback_role
 
 
+def job_cancel_denied_reason(
+    *,
+    job_user_id: int | None,
+    job_project_id: int | None,
+    user: dict | None,
+    is_server_mode: bool | None = None,
+    session_factory=None,
+) -> str | None:
+    """Return a user-facing error if ``user`` may NOT cancel the job, else None.
+
+    A job may be cancelled by its **owner** (``user_id`` match), an **admin**, or
+    a user with **editor** access to the job's project. This is broader than
+    ``editor_denied_reason`` (which gates per-project writes): a user may own a
+    job — and thus cancel it — without holding a project role, and a project
+    editor may cancel a collaborator's job on a shared project.
+
+    Fail-closed, gated by deployment mode (same as ``editor_denied_reason``):
+
+    * **Server mode** — an unresolved identity (``user is None``) is DENIED.
+    * **Local mode** — single-user desktop has no auth; ``user`` is legitimately
+      None and cancellation is allowed.
+
+    Args:
+        job_user_id: The job's owner user id (from job metadata), or None.
+        job_project_id: The job's project id (from job metadata), or None.
+        user: Server-validated user dict (or None).
+        is_server_mode: When None, resolved from the global config.
+        session_factory: Optional SQLAlchemy session factory for testing.
+    """
+    if is_server_mode is None:
+        from shyfem_ui.config import get_config
+
+        is_server_mode = get_config().deployment_mode == "server"
+
+    if not is_server_mode:
+        return None
+    if user is None:
+        return "Session identity could not be verified. Please reload the page and sign in again."
+    if user.get("role") == ROLE_ADMIN:
+        return None
+    if job_user_id is not None and user.get("id") == job_user_id:
+        return None
+    if (
+        job_project_id is not None
+        and check_project_access(
+            job_project_id, user, min_role="editor", session_factory=session_factory
+        )
+        is not None
+    ):
+        return None
+    return (
+        "Permission denied: only the job owner, a project editor, or an admin may cancel this job."
+    )
+
+
 def editor_denied_reason(
     project_id: int | None,
     user: dict | None,

@@ -662,6 +662,7 @@ def run_server(
             solver=solver,
             session_id=_session_id,
             user_id=_user_id,
+            project_id=_proj["id"] if _proj is not None else None,
             restart_from=restart_from or None,
             depends_on=depends_on or None,
         )
@@ -879,8 +880,25 @@ def run_server(
     @reactive.effect
     @reactive.event(input.cancel_active_job_btn)
     async def _cancel_active_job():
+        from shyfem_ui.services.access_control import job_cancel_denied_reason
+
         job_id = input.active_job_select()
         if not job_id:
+            return
+        # Authorize: only the job owner, a project editor, or an admin may
+        # cancel. Fetch the job to read its server-side owner/project (the
+        # job_id input is client-spoofable). Fail-closed in server mode.
+        job = await job_queue.get_status(job_id)
+        if job is None:
+            ui.notification_show("Job not found", type="error", duration=6)
+            return
+        _denied = job_cancel_denied_reason(
+            job_user_id=job.metadata.get("user_id"),
+            job_project_id=job.metadata.get("project_id"),
+            user=current_user() if current_user is not None else None,
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
             return
         try:
             success = await job_queue.cancel(job_id)
@@ -1106,10 +1124,21 @@ def run_server(
     @reactive.effect
     @reactive.event(input.cancel_selected_btn)
     async def _cancel_selected_job():
+        from shyfem_ui.services.access_control import job_cancel_denied_reason
+
         job = selected_job.get()
         if job is None or not job.is_active:
             return
-
+        # Authorize against the job's server-side owner/project (owner, project
+        # editor, or admin). Fail-closed in server mode.
+        _denied = job_cancel_denied_reason(
+            job_user_id=job.metadata.get("user_id"),
+            job_project_id=job.metadata.get("project_id"),
+            user=current_user() if current_user is not None else None,
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
         try:
             success = await job_queue.cancel(job.id)
             if success:

@@ -402,6 +402,34 @@ def test_save_validates_path_before_write(page, handler, write_call):
     ), f"{path}::{handler}: validate_save_path must precede {write_call}()"
 
 
+# Job-cancel handlers must authorize (job_cancel_denied_reason for per-job
+# cancels; editor_denied_reason for the ensemble stop) BEFORE the cancel sink —
+# the job id / ensemble state is client-addressable, so an unauthorized client
+# could otherwise cancel a collaborator's job.
+# (page, handler, guard_call, cancel_sink)
+CANCEL_HANDLERS = [
+    ("run", "_cancel_active_job", "job_cancel_denied_reason", "cancel"),
+    ("run", "_cancel_selected_job", "job_cancel_denied_reason", "cancel"),
+    ("ensemble", "_stop_all_ensemble", "editor_denied_reason", "_cancel_jobs"),
+]
+
+
+@pytest.mark.parametrize("page,handler,guard,sink", CANCEL_HANDLERS)
+def test_cancel_handler_authorizes_before_cancel(page, handler, guard, sink):
+    path = _PAGES_DIR / f"{page}.py"
+    fn = _find_function_def(ast.parse(path.read_text()), handler)
+    assert fn is not None, f"{handler!r} not found in {path}"
+    gidx = _call_index(fn.body, guard)
+    sidx = _call_index(fn.body, sink)
+    assert gidx is not None, (
+        f"{path}::{handler} (line {fn.lineno}) cancels a job without calling "
+        f"{guard} — an unauthorized client could cancel a collaborator's job."
+    )
+    assert (
+        sidx is not None and gidx < sidx
+    ), f"{path}::{handler}: {guard} must precede the cancel ({sink})"
+
+
 def test_str_editor_inline_save_is_guarded():
     """The str_editor component's inline Save handler writes the .str to disk
     directly (``path.write_text``). It must route through the fail-closed

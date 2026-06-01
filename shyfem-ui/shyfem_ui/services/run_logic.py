@@ -37,11 +37,20 @@ def _preflight_validate(simulation_id: int | None) -> list[str]:
         return []
 
 
-def _get_job_metadata(session_id: str, user_id: int | None = None) -> dict:
-    """Build job metadata dict with session_id and optional user_id."""
+def _get_job_metadata(
+    session_id: str, user_id: int | None = None, project_id: int | None = None
+) -> dict:
+    """Build job metadata dict with session_id and optional user_id/project_id.
+
+    ``user_id`` (owner) and ``project_id`` are the basis for cancel
+    authorization (job_cancel_denied_reason): the owner, an admin, or a
+    project-editor may cancel the job.
+    """
     meta = {"session_id": session_id}
     if user_id is not None:
         meta["user_id"] = user_id
+    if project_id is not None:
+        meta["project_id"] = project_id
     return meta
 
 
@@ -166,6 +175,7 @@ def build_job_spec(
     solver: str | None = None,
     session_id: str,
     user_id: int | None = None,
+    project_id: int | None = None,
     restart_from: str | None = None,
     depends_on: str | None = None,
 ) -> JobSpec:
@@ -185,13 +195,15 @@ def build_job_spec(
         solver: "petsc" or "sparskit" or None. petsc is recorded in metadata.
         session_id: Session ID for ownership tracking.
         user_id: User ID for ownership tracking (None in local mode).
+        project_id: Active project ID, basis for cancel authorization (None when
+            no project is active).
         restart_from: Optional restart file path (recorded in metadata).
         depends_on: Optional parent job ID (recorded in metadata).
 
     Returns:
         JobSpec ready for queue.submit().
     """
-    metadata = _get_job_metadata(session_id, user_id)
+    metadata = _get_job_metadata(session_id, user_id, project_id)
     if solver == "petsc":
         metadata["solver"] = "petsc"
     if restart_from:
