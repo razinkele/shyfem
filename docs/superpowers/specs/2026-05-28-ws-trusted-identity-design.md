@@ -226,3 +226,46 @@ the 14 guards out of the `active_project` nesting (server-mode deny when
 `_proj is None`), thread WS-resolved `current_user` into `admin_server` and
 re-check on every admin mutation, and tighten `_GuardEnforcementVisitor` to fail
 when a guard is reachable only inside an `If` testing `active_project`/`_proj`.
+
+## Pre-merge specialist review #3 — Phase 3B (2026-06-01) — MERGE ✅
+
+**Branch:** `feat/ws-auth-phase3b`, re-reviewed after fix commit `5959612`
+("close 8 residual WS auth-bypasses from review #2").
+**Method:** 8-specialist parallel adversarial review (fail-closed gate, WS
+identity, guard coverage, admin escalation, project ops, local-mode regression,
+test efficacy, code quality) → adversarial verification of every crit/high
+(default refute) → synthesis. **Verdict: MERGE, 0 confirmed-real crit/high.**
+
+### All 8 review-#2 blockers — CONFIRMED CLOSED against source ✅
+Admin `_is_admin()` derives solely from the server-validated `current_user()`
+and never from the spoofable `input.current_user_role()`; `_launch_workflow`,
+`_batch_run`/`_batch_convert`/`_run_preset`, `_do_delete`, `_run_shybas`, and
+`str_editor` inline Save are all gated unconditionally; the 14 double-nested
+guards are hoisted (server-mode deny when `_proj is None`); dashboard
+`_dashboard_projects` returns `[]` for `user=None` in server mode. The WS token
+chain (server-minted, delegates to `validate_session`, fail-closed on any error)
+cannot be forged, confused, or replayed. Independent sibling-handler sweep found
+no missed merge-blocker (the recurring failure mode).
+
+### Hardened before merge (review-#3 finding, latent false-assurance)
+The write-handler AST test did not constrain guard-before-mutation **ordering**
+and accepted **inverted polarity** (`if not _denied: return`, `if _is_admin():
+return`) — empirically reproduced. Latent only (live source was correct
+everywhere), but it is the regression guard for the whole fix, so it was
+hardened: `_guard_precedes_mutation` (ordering) + `_name_is_negated_in_test`
+(polarity) + negated-`_is_admin` requirement, with +8 unit tests. `_send_test_email`
+gained the in-body `_is_admin()` recheck and joined `ADMIN_MUTATION_HANDLERS`.
+
+### Acknowledged non-blocking / fast-follow (not merge-blockers)
+Tutorial read-only gate still keys off spoofable `user_role()` (real RBAC gate
+runs after on server-validated identity — only tutorial policy weakened);
+create/clone/import stamp `owner_id=None` in server mode; import-grid/clone
+authorize at viewer not editor; job-cancel handlers ungated;
+`mesh_builder._on_save` ungated; physics.save_file lacks `validate_save_path`;
+no Playwright E2E for the `user=None` server-mode admit path.
+
+### Merge
+Merged to `main` as `0753c44` (--no-ff). Post-merge, the production server
+`.env` (`deployment_mode=server`) in the main checkout exposed 5 env-dependent
+context-shape tests that did not pin `is_server_mode`; pinned them to local mode
+(`e42bc20`). **Full suite under the server `.env`: 1967 passed, 9 skipped.**
