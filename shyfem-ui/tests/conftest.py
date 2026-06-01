@@ -23,17 +23,26 @@ import pytest
 
 @pytest.fixture(autouse=True, scope="session")
 def _isolate_env():
-    """Strip all SHYFEM_UI_* environment variables for the test session.
+    """Isolate the test session from ambient SHYFEM_UI_* configuration.
 
-    Pydantic Settings reads env vars automatically.  If the host shell has
-    e.g. SHYFEM_UI_DEPLOYMENT_MODE=server, tests that create Config() without
-    explicit overrides will see the host value instead of the default.
+    Pydantic Settings reads env vars automatically AND from an ``.env`` file
+    (``env_file=".env"``). Stripping env VARS alone is not enough: the
+    production checkout carries ``SHYFEM_UI_DEPLOYMENT_MODE=server`` in ``.env``,
+    which still leaks into ``Config()`` after the strip and flips the
+    fail-closed auth gates (editor_denied_reason / load_project_context) to deny
+    on user=None — making the suite pass in a worktree (no .env) but fail in the
+    main checkout (this broke the Phase 3B merge). So we also pin
+    DEPLOYMENT_MODE=local explicitly; an env var overrides the .env file in
+    pydantic's precedence, giving a deterministic default. Tests that need
+    server mode opt in with monkeypatch.setenv (which overrides per-test).
     """
     saved = {}
     for key in list(os.environ):
         if key.startswith("SHYFEM_UI_"):
             saved[key] = os.environ.pop(key)
+    os.environ["SHYFEM_UI_DEPLOYMENT_MODE"] = "local"
     yield
+    os.environ.pop("SHYFEM_UI_DEPLOYMENT_MODE", None)
     os.environ.update(saved)
 
 

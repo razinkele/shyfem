@@ -1,9 +1,9 @@
 """Tests for configuration management."""
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+
 from shyfem_ui.config import Config, get_config, set_config
 
 
@@ -282,3 +282,17 @@ def test_smtp_settings_env(monkeypatch):
     c = Config(_env_file=None)
     assert c.smtp_host == "smtp.example.com"
     assert c.smtp_port == 587
+
+
+def test_test_env_pins_local_deployment_mode():
+    """conftest._isolate_env must neutralize any ambient .env file.
+
+    The production checkout carries SHYFEM_UI_DEPLOYMENT_MODE=server in .env;
+    pydantic reads it even after env VARS are stripped (env_file=".env"). A
+    Config() created without overrides must default to local in the test
+    session — otherwise the fail-closed auth gates (editor_denied_reason /
+    load_project_context) deny nondeterministically depending on whether a .env
+    happens to sit in the checkout (this broke the Phase 3B merge)."""
+    from shyfem_ui.config import Config
+
+    assert Config().deployment_mode == "local"
