@@ -661,7 +661,11 @@ def run_server(
             mpi_np=input.mpi_np() if (tool == "shyfem" and input.mpi_enabled()) else 1,
             solver=solver,
             session_id=_session_id,
-            user_id=_user_id,
+            # Owner from the WS-validated identity (_usr = current_user(), bound
+            # above for the editor gate) — NOT the HTTP-scope _user_id, which is
+            # None in the proxied Shiny WS and would persist owner=None, killing
+            # the owner-cancel branch of job_cancel_denied_reason. Mirrors ensemble.
+            user_id=_usr["id"] if _usr is not None else None,
             project_id=_proj["id"] if _proj is not None else None,
             restart_from=restart_from or None,
             depends_on=depends_on or None,
