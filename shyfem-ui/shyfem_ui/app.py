@@ -810,7 +810,11 @@ def _build_server(
         tutorial_context=tutorial_context,
     )
     mesh_builder.mesh_builder_server(
-        "mesh_builder", config, active_project=active_project, tutorial_context=tutorial_context
+        "mesh_builder",
+        config,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
     )
     grid_prep.grid_prep_server(
         "grid_prep",
