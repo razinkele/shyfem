@@ -467,6 +467,9 @@ def admin_server(
             """Send a test notification email to this user."""
             from shyfem_ui.services.notification_service import NotificationService
 
+            if not _is_admin():
+                ui.notification_show("Administrator access required.", type="error", duration=6)
+                return
             if not email:
                 ui.notification_show("User has no email address.", type="warning")
                 return

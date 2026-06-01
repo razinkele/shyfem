@@ -10,6 +10,7 @@ are unit-tested in test_access_control.py::TestEditorDeniedReason."""
 
 import ast
 import pathlib
+import textwrap
 
 import pytest
 
@@ -107,6 +108,100 @@ def _is_guard_call(node: ast.AST) -> bool:
     )
 
 
+def _name_is_negated_in_test(test: ast.AST, name: str) -> bool:
+    """True if ``name`` appears in ``test`` under a logical negation — i.e.
+    ``not name`` or ``name is None`` / ``name == None``. Such a test, when used
+    as an early-exit guard (``if <test>: return``), returns on the ALLOW case
+    (denial reason falsy/None) and falls through on the DENY case, inverting the
+    guard's polarity. Used to reject backwards guards in the enforcement check.
+    """
+    for node in ast.walk(test):
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            if any(isinstance(n, ast.Name) and n.id == name for n in ast.walk(node.operand)):
+                return True
+        if isinstance(node, ast.Compare):
+            left_is_name = any(
+                isinstance(n, ast.Name) and n.id == name for n in ast.walk(node.left)
+            )
+            none_cmp = any(isinstance(op, (ast.Is, ast.Eq)) for op in node.ops) and any(
+                isinstance(c, ast.Constant) and c.value is None for c in node.comparators
+            )
+            if left_is_name and none_cmp:
+                return True
+    return False
+
+
+# Call names that mutate state in a write handler (disk write, subprocess,
+# job submission). Used to assert the fail-closed guard runs BEFORE the side
+# effect, not after — mirrors _AUTH_SERVICE_MUTATIONS for the admin panel.
+_WRITE_MUTATION_CALLS = {
+    "write_text",
+    "write_bytes",
+    "mkdir",
+    "unlink",
+    "rmtree",
+    "rename",
+    "replace",
+    "run",
+    "Popen",
+    "check_call",
+    "check_output",
+    "submit",
+    "enqueue",
+    "add_job",
+}
+
+
+def _stmt_has_write_mutation(stmt: ast.stmt) -> bool:
+    """True if ``stmt`` (not descending into nested defs) contains a call whose
+    name is in _WRITE_MUTATION_CALLS."""
+    for node in ast.walk(stmt):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Call):
+            callee = node.func
+            name = (
+                callee.attr
+                if isinstance(callee, ast.Attribute)
+                else (callee.id if isinstance(callee, ast.Name) else "")
+            )
+            if name in _WRITE_MUTATION_CALLS:
+                return True
+    return False
+
+
+def _guard_precedes_mutation(func_def: ast.AST) -> bool:
+    """True if a fail-closed ``editor_denied_reason`` guard is assigned, enforced
+    with DENIAL-truthy polarity (``if _denied: ...; return``), and that
+    enforcement appears BEFORE the first write-mutation call in the body.
+
+    Closes the latent false-assurance hole where a mutation-first body
+    (``path.write_text(...); _denied = editor_denied_reason(...); if _denied:
+    return``) passed the call-presence + enforcement + unconditional checks while
+    running the side effect unguarded. Mirrors _admin_guard_precedes_mutation.
+    """
+    guard_vars: set[str] = set()
+    saw_enforced_guard = False
+    for stmt in func_def.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if isinstance(stmt, ast.Assign) and _is_guard_call(stmt.value):
+            for tgt in stmt.targets:
+                if isinstance(tgt, ast.Name):
+                    guard_vars.add(tgt.id)
+        if isinstance(stmt, ast.If):
+            then_exits = any(
+                isinstance(s, (ast.Return, ast.Raise)) for b in stmt.body for s in ast.walk(b)
+            )
+            hit = {n.id for n in ast.walk(stmt.test) if isinstance(n, ast.Name)} & guard_vars
+            if then_exits and any(not _name_is_negated_in_test(stmt.test, v) for v in hit):
+                saw_enforced_guard = True
+                continue
+        if _stmt_has_write_mutation(stmt):
+            return saw_enforced_guard  # mutation reached — guard must already hold
+    return saw_enforced_guard
+
+
 class _GuardEnforcementVisitor(ast.NodeVisitor):
     """Within a function body (excluding nested defs), record which names are
     assigned the result of ``editor_denied_reason`` and which names are tested
@@ -139,12 +234,17 @@ class _GuardEnforcementVisitor(ast.NodeVisitor):
         self.generic_visit(node)
 
     def visit_If(self, node: ast.If) -> None:
-        test_names = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
         then_exits = any(
             isinstance(s, (ast.Return, ast.Raise)) for stmt in node.body for s in ast.walk(stmt)
         )
         if then_exits:
-            self.enforced_vars |= test_names
+            # Only count names tested with DENIAL-truthy polarity. `if not
+            # _denied: return` / `if _denied is None: return` return on ALLOW
+            # and fall through on DENY — a backwards guard — so the negated
+            # name must NOT be recorded as enforced.
+            for name in {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}:
+                if not _name_is_negated_in_test(node.test, name):
+                    self.enforced_vars.add(name)
         self.generic_visit(node)
 
 
@@ -242,6 +342,14 @@ def test_handler_calls_editor_denied_reason(page, handler, role):
         f"body and pass project_id=None through it (the gate denies a None "
         f"project in server mode)."
     )
+    if role != "viewer":
+        assert _guard_precedes_mutation(fn), (
+            f"{path}::{handler} (line {fn.lineno}) performs a write-mutation "
+            f"(disk write / subprocess / job submit) BEFORE the fail-closed "
+            f"guard returns — the side effect runs unguarded. Move the "
+            f"`_denied = editor_denied_reason(...); if _denied: ...; return` "
+            f"above the first mutating call (and keep denial-truthy polarity)."
+        )
 
 
 def test_str_editor_inline_save_is_guarded():
@@ -270,6 +378,10 @@ def test_str_editor_inline_save_is_guarded():
         f"{path}::_handle_save calls editor_denied_reason only inside a conditional "
         f"— the guard must run on every path before the disk write"
     )
+    assert _guard_precedes_mutation(fn), (
+        f"{path}::_handle_save writes to disk BEFORE the fail-closed guard returns "
+        f"— move the guard above path.write_text"
+    )
 
 
 ADMIN_MUTATION_HANDLERS = [
@@ -278,6 +390,7 @@ ADMIN_MUTATION_HANDLERS = [
     "_toggle_role",
     "_do_delete_user",
     "_do_create_user",
+    "_send_test_email",  # sends SMTP mail — admin-only side effect
 ]
 
 _AUTH_SERVICE_MUTATIONS = {"reset_password", "update_user", "delete_user", "create_user"}
@@ -297,14 +410,22 @@ def _admin_guard_precedes_mutation(func_def: ast.AST) -> bool:
     saw_guard = False
     for stmt in func_def.body:
         if isinstance(stmt, ast.If):
-            test_checks_admin = any(
-                isinstance(n, ast.Call)
-                and isinstance(n.func, ast.Name)
-                and n.func.id == "_is_admin"
+            # Require the NEGATED form `if not _is_admin(): ...; return`. The
+            # un-negated `if _is_admin(): return` returns for admins and falls
+            # through to the mutation for everyone else — the inverse of a guard.
+            test_checks_not_admin = any(
+                isinstance(n, ast.UnaryOp)
+                and isinstance(n.op, ast.Not)
+                and any(
+                    isinstance(c, ast.Call)
+                    and isinstance(c.func, ast.Name)
+                    and c.func.id == "_is_admin"
+                    for c in ast.walk(n.operand)
+                )
                 for n in ast.walk(stmt.test)
             )
-            body_returns = any(isinstance(s, ast.Return) for s in ast.walk(stmt))
-            if test_checks_admin and body_returns:
+            body_returns = any(isinstance(s, ast.Return) for b in stmt.body for s in ast.walk(b))
+            if test_checks_not_admin and body_returns:
                 saw_guard = True
                 continue
         for n in ast.walk(stmt):
@@ -333,6 +454,140 @@ def test_admin_mutation_rechecks_server_validated_admin(handler):
         f"user without first checking `_is_admin()` and returning — add "
         f"`if not _is_admin(): notify; return` at the top of the handler"
     )
+
+
+def _fn_from_src(src: str, name: str) -> ast.AST:
+    """Parse a dedented source snippet and return the named function def."""
+    fn = _find_function_def(ast.parse(textwrap.dedent(src)), name)
+    assert fn is not None, f"{name!r} not found in snippet"
+    return fn
+
+
+# --- Polarity: the enforcing `if` must test the denial truthy, not negated ---
+# Latent false-assurance defect (review #3): `if not _denied: return` returns on
+# ALLOW and proceeds on DENY — a backwards guard. The enforcement check must
+# reject it, not certify it.
+
+
+def test_enforcement_accepts_denial_truthy_polarity():
+    fn = _fn_from_src(
+        """
+        def _h():
+            _denied = editor_denied_reason(1, u, min_role="editor")
+            if _denied:
+                notify(_denied)
+                return
+            do_mutation()
+        """,
+        "_h",
+    )
+    assert _guard_is_enforced(fn)
+
+
+def test_enforcement_rejects_inverted_not_polarity():
+    fn = _fn_from_src(
+        """
+        def _h():
+            _denied = editor_denied_reason(1, u, min_role="editor")
+            if not _denied:
+                return
+            do_mutation()
+        """,
+        "_h",
+    )
+    assert not _guard_is_enforced(fn)
+
+
+def test_enforcement_rejects_inverted_is_none_polarity():
+    fn = _fn_from_src(
+        """
+        def _h():
+            _denied = editor_denied_reason(1, u, min_role="editor")
+            if _denied is None:
+                return
+            do_mutation()
+        """,
+        "_h",
+    )
+    assert not _guard_is_enforced(fn)
+
+
+# --- Ordering: the enforced guard must precede the first mutating call ---
+# Latent false-assurance defect (review #3): a mutation-first body
+# (write_text(); _denied = ...; if _denied: return) passed every assertion.
+
+
+def test_ordering_accepts_guard_before_mutation():
+    fn = _fn_from_src(
+        """
+        def _h():
+            _denied = editor_denied_reason(1, u, min_role="editor")
+            if _denied:
+                return
+            path.write_text(text)
+        """,
+        "_h",
+    )
+    assert _guard_precedes_mutation(fn)
+
+
+def test_ordering_rejects_mutation_before_guard():
+    fn = _fn_from_src(
+        """
+        def _h():
+            path.write_text(text)
+            _denied = editor_denied_reason(1, u, min_role="editor")
+            if _denied:
+                return
+        """,
+        "_h",
+    )
+    assert not _guard_precedes_mutation(fn)
+
+
+def test_ordering_rejects_subprocess_before_guard():
+    fn = _fn_from_src(
+        """
+        def _h():
+            subprocess.run([prog])
+            _denied = editor_denied_reason(1, u, min_role="editor")
+            if _denied:
+                return
+        """,
+        "_h",
+    )
+    assert not _guard_precedes_mutation(fn)
+
+
+# --- Admin polarity: the recheck must be `if not _is_admin(): return` ---
+# Review #3: `if _is_admin(): return` (returns when admin, proceeds otherwise)
+# was accepted — the inverse of a guard. Only the negated form is a real gate.
+
+
+def test_admin_guard_accepts_negated_isadmin():
+    fn = _fn_from_src(
+        """
+        def _do_delete_user():
+            if not _is_admin():
+                return
+            auth_service.delete_user(1)
+        """,
+        "_do_delete_user",
+    )
+    assert _admin_guard_precedes_mutation(fn)
+
+
+def test_admin_guard_rejects_unnegated_isadmin():
+    fn = _fn_from_src(
+        """
+        def _do_delete_user():
+            if _is_admin():
+                return
+            auth_service.delete_user(1)
+        """,
+        "_do_delete_user",
+    )
+    assert not _admin_guard_precedes_mutation(fn)
 
 
 def test_step2_handler_table_is_complete():
