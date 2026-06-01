@@ -330,3 +330,27 @@ class TestRoleHierarchy:
             session_factory=db_factory,
         )
         assert result is None
+
+
+class TestResolveEffectiveRole:
+    """resolve_effective_role must prefer the SERVER-VALIDATED identity's role
+    over the client-spoofable fallback, so a tutorial account cannot escape the
+    read-only policy by spoofing input.current_user_role()."""
+
+    def test_server_role_wins_over_spoofed_fallback(self):
+        from shyfem_ui.services.access_control import resolve_effective_role
+
+        # Tutorial user spoofs the client signal to "user" — server role holds.
+        assert resolve_effective_role({"id": 1, "role": "tutorial"}, "user") == "tutorial"
+
+    def test_fallback_used_only_when_no_server_identity(self):
+        from shyfem_ui.services.access_control import resolve_effective_role
+
+        # HTTP/local path: no WS-resolved identity, trust the fallback.
+        assert resolve_effective_role(None, "tutorial") == "tutorial"
+        assert resolve_effective_role(None, None) is None
+
+    def test_server_identity_without_role_key(self):
+        from shyfem_ui.services.access_control import resolve_effective_role
+
+        assert resolve_effective_role({"id": 1}, "user") is None

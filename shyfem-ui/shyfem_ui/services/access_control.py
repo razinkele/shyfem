@@ -37,6 +37,22 @@ def check_project_access(
     return None
 
 
+def resolve_effective_role(server_user: dict | None, fallback_role: str | None) -> str | None:
+    """Resolve the role to enforce policy against, preferring the
+    server-validated WS identity.
+
+    ``server_user`` is the dict from the ``_wsauth``-resolved ``current_user()``
+    (authoritative, server-side). ``fallback_role`` is the client-supplied
+    ``input.current_user_role()`` signal, which is spoofable from the browser
+    console. The fallback is consulted ONLY when there is no server-validated
+    identity (the HTTP / local-mode path); otherwise a tutorial account could
+    spoof ``current_user_role`` to escape the read-only policy gate.
+    """
+    if server_user is not None:
+        return server_user.get("role")
+    return fallback_role
+
+
 def editor_denied_reason(
     project_id: int | None,
     user: dict | None,

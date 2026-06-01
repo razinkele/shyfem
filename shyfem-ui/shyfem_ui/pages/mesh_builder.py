@@ -349,8 +349,15 @@ def mesh_builder_server(
     config: Config,
     active_project=None,
     tutorial_context=None,
+    current_user=None,
 ) -> None:
-    """Mesh builder page server logic."""
+    """Mesh builder page server logic.
+
+    ``current_user`` is the server-validated WS identity resolver (returns the
+    user dict bound to the ``_wsauth`` token, or None). It feeds the fail-closed
+    ``editor_denied_reason`` gate in ``_on_save`` so a viewer / unresolved WS
+    client cannot export a .grd into the project dir in server mode.
+    """
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
     # --- State ---
@@ -1439,15 +1446,34 @@ def mesh_builder_server(
         if grd is None:
             ui.notification_show("No mesh to export.", type="warning")
             return
+        # Fail-closed authorization: writing a .grd into the project dir is an
+        # editor-level mutation. Re-check the server-validated WS identity (the
+        # save button is live for any client that can address the page).
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        _usr = current_user() if current_user else None
+        _proj = active_project.get() if active_project else None
+        _denied = editor_denied_reason(_proj["id"] if _proj else None, _usr, min_role="editor")
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
         filename = input.export_filename() or "mesh_output.grd"
+        # Use active project dir if available, fallback to global work_dir
+        project = active_project.get() if active_project else None
+        if project and project.get("work_dir"):
+            output_dir = Path(project["work_dir"])
+        else:
+            output_dir = Path(config.work_dir) / "mesh_builder"
+        # Reject traversal: export_filename() is free text, so an absolute path
+        # or '..' segments would escape the work tree. Confine the target to
+        # work_dir before writing (mirrors physics/simulation save handlers).
         try:
-            # Use active project dir if available, fallback to global work_dir
-            project = active_project.get() if active_project else None
-            if project and project.get("work_dir"):
-                output_dir = Path(project["work_dir"])
-            else:
-                output_dir = Path(config.work_dir) / "mesh_builder"
-            output_path = output_dir / filename
+            output_path = config.validate_save_path(output_dir / filename)
+        except ValueError as e:
+            _log(f"Invalid export path: {e}")
+            ui.notification_show(str(e), type="error", duration=6)
+            return
+        try:
             export_grd(grd, output_path)
             _log(f"Exported mesh to: {output_path}")
             ui.notification_show(f"Saved: {output_path}", type="message", duration=5)

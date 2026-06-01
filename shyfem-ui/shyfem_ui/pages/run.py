@@ -565,13 +565,23 @@ def run_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_job():
-        # Tutorial accounts are read-only.
-        # Use user_role() from the top-level server where input.current_user_role
-        # is reachable (Shiny module namespacing prevents accessing it here).
+        from shyfem_ui.services.access_control import (
+            editor_denied_reason,
+            resolve_effective_role,
+        )
+
+        _usr = current_user() if current_user is not None else None
+
+        # Tutorial accounts are read-only. Derive the role from the
+        # server-validated WS identity (_usr) so a tutorial account cannot
+        # escape this gate by spoofing input.current_user_role(); the
+        # user_role()/_current_user fallback is used only when there is no
+        # server-resolved identity (HTTP / local-mode path).
         try:
-            _role = user_role() if user_role is not None else None
+            _fallback_role = user_role() if user_role is not None else None
         except Exception:
-            _role = _current_user.get("role") if _current_user else None
+            _fallback_role = _current_user.get("role") if _current_user else None
+        _role = resolve_effective_role(_usr, _fallback_role)
         if _role == ROLE_TUTORIAL:
             ui.notification_show(
                 "Tutorial accounts are read-only. Contact your admin for a full account.",
@@ -585,9 +595,6 @@ def run_server(
         # identity is denied. The guard must run unconditionally; nesting it
         # inside `if active_project is not None` would skip it when no project
         # is active and let the mutation run unguarded.
-        from shyfem_ui.services.access_control import editor_denied_reason
-
-        _usr = current_user() if current_user is not None else None
         _proj = active_project.get() if active_project is not None else None
         _denied = editor_denied_reason(
             _proj["id"] if _proj is not None else None, _usr, min_role="editor"

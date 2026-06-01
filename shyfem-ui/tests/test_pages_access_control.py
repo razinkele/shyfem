@@ -41,6 +41,7 @@ WRITE_HANDLERS = [
     ("postprocess", "_batch_run", "editor"),  # runs shyelab on a batch of paths
     ("postprocess", "_batch_convert", "editor"),  # converts a batch to NetCDF
     ("postprocess", "_run_preset", "editor"),  # runs a preset shyelab pipeline
+    ("mesh_builder", "_on_save", "editor"),  # exports .grd into the project dir
 ]
 
 _PLACEHOLDER_PREFIX = "<TODO"
@@ -149,6 +150,7 @@ _WRITE_MUTATION_CALLS = {
     "submit",
     "enqueue",
     "add_job",
+    "export_grd",
 }
 
 
@@ -350,6 +352,54 @@ def test_handler_calls_editor_denied_reason(page, handler, role):
             f"`_denied = editor_denied_reason(...); if _denied: ...; return` "
             f"above the first mutating call (and keep denial-truthy polarity)."
         )
+
+
+def _call_index(stmts: "list[ast.stmt]", callee_attr: str) -> "int | None":
+    """Index of the first top-level statement (no descent into nested defs)
+    containing a call whose Name.id or Attribute.attr equals ``callee_attr``."""
+    for i, stmt in enumerate(stmts):
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Call):
+                c = node.func
+                name = (
+                    c.attr
+                    if isinstance(c, ast.Attribute)
+                    else (c.id if isinstance(c, ast.Name) else "")
+                )
+                if name == callee_attr:
+                    return i
+    return None
+
+
+# Handlers that persist a user-supplied path/filename to disk. Each must route
+# the target through config.validate_save_path (rejects traversal outside
+# work_dir + null bytes) BEFORE the write call — otherwise an editor can write
+# outside the project tree via an absolute path or '..' segments.
+# (page, handler, write_call_name)
+PATH_SAVE_HANDLERS = [
+    ("simulation", "_confirm_save", "save"),
+    ("physics", "save_file", "save"),
+    ("mesh_builder", "_on_save", "export_grd"),
+]
+
+
+@pytest.mark.parametrize("page,handler,write_call", PATH_SAVE_HANDLERS)
+def test_save_validates_path_before_write(page, handler, write_call):
+    path = _PAGES_DIR / f"{page}.py"
+    fn = _find_function_def(ast.parse(path.read_text()), handler)
+    assert fn is not None, f"{handler!r} not found in {path}"
+    vidx = _call_index(fn.body, "validate_save_path")
+    sidx = _call_index(fn.body, write_call)
+    assert vidx is not None, (
+        f"{path}::{handler} (line {fn.lineno}) writes a user-supplied path "
+        f"without config.validate_save_path — a traversal path (e.g. "
+        f"'../../other/x' or '/etc/x') escapes the work dir. Validate first."
+    )
+    assert (
+        sidx is not None and vidx < sidx
+    ), f"{path}::{handler}: validate_save_path must precede {write_call}()"
 
 
 def test_str_editor_inline_save_is_guarded():
