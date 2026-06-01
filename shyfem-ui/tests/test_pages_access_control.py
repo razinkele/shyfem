@@ -354,6 +354,52 @@ def test_handler_calls_editor_denied_reason(page, handler, role):
         )
 
 
+def _call_index(stmts: "list[ast.stmt]", callee_attr: str) -> "int | None":
+    """Index of the first top-level statement (no descent into nested defs)
+    containing a call whose Name.id or Attribute.attr equals ``callee_attr``."""
+    for i, stmt in enumerate(stmts):
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(stmt):
+            if isinstance(node, ast.Call):
+                c = node.func
+                name = (
+                    c.attr
+                    if isinstance(c, ast.Attribute)
+                    else (c.id if isinstance(c, ast.Name) else "")
+                )
+                if name == callee_attr:
+                    return i
+    return None
+
+
+# STR-save handlers that persist a user-supplied path to disk. Each must route
+# that path through config.validate_save_path (rejects traversal outside
+# work_dir + null bytes) BEFORE StrParser.save writes it — otherwise an editor
+# can write outside the project tree.
+STR_SAVE_HANDLERS = [
+    ("simulation", "_confirm_save"),
+    ("physics", "save_file"),
+]
+
+
+@pytest.mark.parametrize("page,handler", STR_SAVE_HANDLERS)
+def test_str_save_validates_path_before_write(page, handler):
+    path = _PAGES_DIR / f"{page}.py"
+    fn = _find_function_def(ast.parse(path.read_text()), handler)
+    assert fn is not None, f"{handler!r} not found in {path}"
+    vidx = _call_index(fn.body, "validate_save_path")
+    sidx = _call_index(fn.body, "save")
+    assert vidx is not None, (
+        f"{path}::{handler} (line {fn.lineno}) writes a user-supplied path "
+        f"without config.validate_save_path — a traversal path (e.g. "
+        f"'../../other/x.str' or '/etc/x') escapes the work dir. Validate first."
+    )
+    assert (
+        sidx is not None and vidx < sidx
+    ), f"{path}::{handler}: validate_save_path must precede StrParser.save"
+
+
 def test_str_editor_inline_save_is_guarded():
     """The str_editor component's inline Save handler writes the .str to disk
     directly (``path.write_text``). It must route through the fail-closed

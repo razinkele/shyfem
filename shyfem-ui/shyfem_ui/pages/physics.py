@@ -454,10 +454,18 @@ def physics_server(
         if not path_str:
             ui.notification_show("No file path specified", type="warning")
             return
+        # Reject path traversal: an editor must not write outside the work dir
+        # (mirrors simulation._confirm_save). Resolves symlinks + null bytes.
+        try:
+            path = config.validate_save_path(path_str)
+        except ValueError as e:
+            logger.exception("Invalid save path %r for STR file", path_str)
+            ui.notification_show(str(e), type="error", duration=6)
+            return
         try:
             _collect_panel_values()
             sf = str_data.get()
-            StrParser.save(sf, Path(path_str))
+            StrParser.save(sf, path)
             # Run cross-parameter validation
             msgs = validate_str(sf.sections)
             errors = [m for m in msgs if m.level == "error"]
