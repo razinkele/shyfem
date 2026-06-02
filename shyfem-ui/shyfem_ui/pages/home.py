@@ -846,8 +846,18 @@ def home_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
 
-        # Look up project work_dir
         project_id = int(project_id_str)
+
+        # Importing a grid WRITES into the target project, so require editor
+        # access (load_project_context below is only a viewer-level read gate).
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        _denied = editor_denied_reason(project_id, _user(), min_role="editor")
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
+        # Look up project work_dir
         from shyfem_ui.services.project_context import load_project_context
 
         ctx = load_project_context(project_id, user=(_user()))
