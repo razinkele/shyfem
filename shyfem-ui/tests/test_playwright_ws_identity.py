@@ -20,8 +20,11 @@ pytest run (see pyproject ``addopts``); run it explicitly with the other
 Playwright suites.
 """
 
+import json
+
 import pytest
 
+from tests._test_ws_identity_app import VIEWER_PASSWORD, VIEWER_USERNAME
 from tests.conftest import _dismiss_modals, _login, _wait_hydrated
 
 PROJECTS_LIST = "#home-projects_list"
@@ -142,6 +145,68 @@ class TestShareHandlerWSAuthBypass:
         assert (
             page.locator(".shiny-notification").get_by_text("User added", exact=False).count() == 0
         )
+
+
+@pytest.fixture(scope="module")
+def pw_unresolved_identity_page(pw_browser, ws_identity_live_server):
+    """A logged-in viewer whose ``_wsauth`` NEVER resolves.
+
+    Simulates the production proxy admit path: the user authenticates over HTTP
+    (so the page loads), but the WebSocket carries no identity (Shiny Server's
+    internal WS does not forward cookies) and the ``_wsauth`` token is never
+    pushed. Here we reproduce that by intercepting ``api/whoami`` and stripping
+    ``ws_token``, so ``resolve_ws_user`` never runs and ``current_user()`` stays
+    None in the WS scope. Server-mode write guards must then fail CLOSED — the
+    one path unit tests cannot reach end to end.
+    """
+    ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(15000)
+
+    def _strip_ws_token(route):
+        resp = route.fetch()
+        try:
+            data = resp.json()
+        except Exception:
+            data = {}
+        data.pop("ws_token", None)  # identity never resolves in the WS scope
+        route.fulfill(status=resp.status, content_type="application/json", body=json.dumps(data))
+
+    page.route("**/api/whoami", _strip_ws_token)
+    _login(page, ws_identity_live_server, VIEWER_USERNAME, VIEWER_PASSWORD)
+    _wait_hydrated(page)
+    _dismiss_modals(page)
+    yield page
+    page.close()
+    ctx.close()
+
+
+class TestUnresolvedIdentityFailsClosed:
+    def test_unresolved_identity_cannot_save_physics(self, pw_unresolved_identity_page):
+        """With no resolved WS identity (``_wsauth`` never pushed), a physics
+        save fired directly over the WS is denied fail-CLOSED in server mode —
+        editor_denied_reason's ``user is None`` branch, not the viewer/permission
+        branch. Proves the gate denies the unresolved-identity admit path, not
+        just resolved-but-unauthorized users."""
+        page = pw_unresolved_identity_page
+
+        # Clear any prior notifications so we observe only our save attempt.
+        page.evaluate(
+            "() => document.querySelectorAll('.shiny-notification').forEach(e => e.remove())"
+        )
+        # Fire the privileged save directly over the WS, bypassing the UI.
+        page.evaluate(
+            "() => window.Shiny.setInputValue("
+            "'physics-save_btn', Date.now(), {priority: 'event'})"
+        )
+
+        err = page.locator(".shiny-notification-error")
+        err.first.wait_for(state="visible", timeout=10000)
+        txt = err.first.inner_text().lower()
+        # The server-mode unresolved-identity branch of editor_denied_reason.
+        assert "could not be verified" in txt
+        # ...and definitely NOT a successful save.
+        assert page.locator(".shiny-notification").get_by_text("Saved", exact=False).count() == 0
 
 
 class TestWriteGuardWSAuthBypass:
