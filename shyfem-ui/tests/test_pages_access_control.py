@@ -474,13 +474,17 @@ def test_cancel_handler_authorizes_before_cancel(page, handler, guard, sink):
     )
 
 
-# Project create/import handlers must fail closed on an unresolved identity in
-# server mode (identity_denied_reason) BEFORE constructing the Project —
-# otherwise the project is created with owner_id=None (orphaned). _do_clone is
-# NOT listed: it is already fail-closed via load_project_context(user=_user())
-# (returns None for an unresolved identity in server mode → early return before
-# Project()), which is the correct "must be able to read the source" gate.
-CREATE_HANDLERS = ["_create_project", "_create_tutorial_project", "_do_import_project"]
+# Project create/clone/import handlers must fail closed via identity_denied_reason
+# BEFORE constructing the Project — both to avoid an owner_id=None orphan on an
+# unresolved identity and to enforce tutorial read-only on the create-class path.
+# _do_clone additionally reads its source via load_project_context (viewer gate)
+# but still needs identity_denied_reason because cloning WRITES a new project.
+CREATE_HANDLERS = [
+    "_create_project",
+    "_create_tutorial_project",
+    "_do_import_project",
+    "_do_clone",
+]
 
 
 @pytest.mark.parametrize("handler", CREATE_HANDLERS)

@@ -99,11 +99,21 @@ def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=N
     handlers must re-check server-validated identity. Distinguishes an
     unresolved actor (not signed in / WS identity missing) from a resolved but
     unauthorized one so each case surfaces its own notification.
+
+    Sharing is a mutation, so the central tutorial read-only policy applies
+    here too: a ROLE_TUTORIAL account that owns a project (e.g. a regular user
+    later demoted to tutorial — ``update_user`` changes the role but leaves
+    ownership/permission rows intact) would otherwise pass the owner check and
+    mutate sharing. Deny it before the owner check, from the server-validated
+    ``user`` dict, mirroring ``editor_denied_reason``.
     """
-    from shyfem_ui.services.access_control import check_project_access
+    from shyfem_ui.models.user import ROLE_TUTORIAL
+    from shyfem_ui.services.access_control import _TUTORIAL_READONLY_MSG, check_project_access
 
     if user is None:
         return "You must be signed in to manage sharing."
+    if user.get("role") == ROLE_TUTORIAL:
+        return _TUTORIAL_READONLY_MSG
     if (
         check_project_access(project_id, user, min_role="owner", session_factory=session_factory)
         is None
@@ -986,6 +996,16 @@ def home_server(
         ctx = load_project_context(project_id, user=(_user()))
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
+            return
+
+        # Cloning creates a NEW owned project (a write). load_project_context
+        # above is only a viewer-level read gate, so also fail closed on an
+        # unresolved identity AND on a read-only tutorial account before writing.
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        _denied = identity_denied_reason(_user())
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
             return
 
         work_dir = Path(ctx["work_dir"])

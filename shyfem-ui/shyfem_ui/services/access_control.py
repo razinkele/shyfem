@@ -1,9 +1,14 @@
 """Access control helper for project-level permission checks."""
 
-from shyfem_ui.models.user import ROLE_ADMIN
+from shyfem_ui.models.user import ROLE_ADMIN, ROLE_TUTORIAL
 from shyfem_ui.services.sharing_service import SharingService
 
 ROLE_HIERARCHY = {"owner": 3, "editor": 2, "viewer": 1}
+
+# Shown when a read-only tutorial account attempts any mutation. Tutorial
+# read-only is enforced centrally in every mutation gate (editor /
+# identity / job-cancel), from the server-validated user dict.
+_TUTORIAL_READONLY_MSG = "Tutorial accounts are read-only. Contact your admin for a full account."
 
 
 def check_project_access(
@@ -37,22 +42,6 @@ def check_project_access(
     return None
 
 
-def resolve_effective_role(server_user: dict | None, fallback_role: str | None) -> str | None:
-    """Resolve the role to enforce policy against, preferring the
-    server-validated WS identity.
-
-    ``server_user`` is the dict from the ``_wsauth``-resolved ``current_user()``
-    (authoritative, server-side). ``fallback_role`` is the client-supplied
-    ``input.current_user_role()`` signal, which is spoofable from the browser
-    console. The fallback is consulted ONLY when there is no server-validated
-    identity (the HTTP / local-mode path); otherwise a tutorial account could
-    spoof ``current_user_role`` to escape the read-only policy gate.
-    """
-    if server_user is not None:
-        return server_user.get("role")
-    return fallback_role
-
-
 def identity_denied_reason(
     user: dict | None,
     *,
@@ -78,6 +67,8 @@ def identity_denied_reason(
 
     if is_server_mode and user is None:
         return "Session identity could not be verified. Please reload the page and sign in again."
+    if user is not None and user.get("role") == ROLE_TUTORIAL:
+        return _TUTORIAL_READONLY_MSG
     return None
 
 
@@ -119,6 +110,8 @@ def job_cancel_denied_reason(
         return None
     if user is None:
         return "Session identity could not be verified. Please reload the page and sign in again."
+    if user.get("role") == ROLE_TUTORIAL:
+        return _TUTORIAL_READONLY_MSG
     if user.get("role") == ROLE_ADMIN:
         return None
     if job_user_id is not None and user.get("id") == job_user_id:
@@ -189,6 +182,17 @@ def editor_denied_reason(
         return "Session identity could not be verified. Please reload the page and sign in again."
     if is_server_mode and project_id is None:
         return "No active project. Open a project before performing this action."
+    # Tutorial accounts are READ-ONLY everywhere. Enforced centrally here (every
+    # write handler routes through this gate) rather than per-handler, and from
+    # the server-validated ``user`` dict — so it cannot be escaped by spoofing
+    # the client role signal, and a project-editor grant does not override it. A
+    # write is any min_role at or above editor; viewer-level reads are allowed.
+    if (
+        user is not None
+        and user.get("role") == ROLE_TUTORIAL
+        and ROLE_HIERARCHY.get(min_role, 0) >= ROLE_HIERARCHY["editor"]
+    ):
+        return _TUTORIAL_READONLY_MSG
     if (
         user is not None
         and project_id is not None

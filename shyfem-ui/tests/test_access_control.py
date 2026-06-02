@@ -277,6 +277,54 @@ class TestEditorDeniedReason:
         )
         assert reason is None
 
+    def test_tutorial_denied_for_write_despite_editor_grant(self, db_factory, setup):
+        """A ROLE_TUTORIAL account is read-only: it is denied a write (min_role
+        editor) even if it was granted project-editor access. Enforced centrally
+        in the gate so it applies to every write handler."""
+        from shyfem_ui.models.user import ProjectPermission, User
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        db = db_factory()
+        tut = User(username="tut", password_hash="x", role="tutorial")
+        db.add(tut)
+        db.flush()
+        db.add(ProjectPermission(project_id=setup["project_id"], user_id=tut.id, role="editor"))
+        db.commit()
+        tut_id = tut.id
+        db.close()
+
+        reason = editor_denied_reason(
+            setup["project_id"],
+            _user(tut_id, "tutorial"),
+            min_role="editor",
+            is_server_mode=True,
+            session_factory=db_factory,
+        )
+        assert reason is not None
+
+    def test_tutorial_allowed_for_read(self, db_factory, setup):
+        """A ROLE_TUTORIAL account may still READ (min_role viewer)."""
+        from shyfem_ui.models.user import ProjectPermission, User
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        db = db_factory()
+        tut = User(username="tut2", password_hash="x", role="tutorial")
+        db.add(tut)
+        db.flush()
+        db.add(ProjectPermission(project_id=setup["project_id"], user_id=tut.id, role="viewer"))
+        db.commit()
+        tut_id = tut.id
+        db.close()
+
+        reason = editor_denied_reason(
+            setup["project_id"],
+            _user(tut_id, "tutorial"),
+            min_role="viewer",
+            is_server_mode=True,
+            session_factory=db_factory,
+        )
+        assert reason is None
+
     def test_is_server_mode_auto_detected_from_config(self, db_factory, setup, monkeypatch):
         """Omitting is_server_mode resolves it from the global config."""
         import shyfem_ui.config as cfg_mod
@@ -330,30 +378,6 @@ class TestRoleHierarchy:
             session_factory=db_factory,
         )
         assert result is None
-
-
-class TestResolveEffectiveRole:
-    """resolve_effective_role must prefer the SERVER-VALIDATED identity's role
-    over the client-spoofable fallback, so a tutorial account cannot escape the
-    read-only policy by spoofing input.current_user_role()."""
-
-    def test_server_role_wins_over_spoofed_fallback(self):
-        from shyfem_ui.services.access_control import resolve_effective_role
-
-        # Tutorial user spoofs the client signal to "user" — server role holds.
-        assert resolve_effective_role({"id": 1, "role": "tutorial"}, "user") == "tutorial"
-
-    def test_fallback_used_only_when_no_server_identity(self):
-        from shyfem_ui.services.access_control import resolve_effective_role
-
-        # HTTP/local path: no WS-resolved identity, trust the fallback.
-        assert resolve_effective_role(None, "tutorial") == "tutorial"
-        assert resolve_effective_role(None, None) is None
-
-    def test_server_identity_without_role_key(self):
-        from shyfem_ui.services.access_control import resolve_effective_role
-
-        assert resolve_effective_role({"id": 1}, "user") is None
 
 
 class TestJobCancelDeniedReason:
@@ -481,3 +505,36 @@ class TestIdentityDeniedReason:
 
     def test_local_mode_allows_none_user(self):
         assert self._call(user=None, is_server_mode=False) is None
+
+
+class TestTutorialReadOnlyAcrossGates:
+    """ROLE_TUTORIAL is read-only across EVERY mutation gate, not just the
+    per-handler editor gate: project create/import (identity_denied_reason) and
+    job cancel (job_cancel_denied_reason) must also deny a tutorial account."""
+
+    _TUT = {"id": 99, "role": "tutorial"}
+
+    def test_identity_denies_tutorial(self):
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        assert identity_denied_reason(self._TUT, is_server_mode=True) is not None
+
+    def test_identity_allows_regular_user(self):
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        assert identity_denied_reason({"id": 1, "role": "user"}, is_server_mode=True) is None
+
+    def test_job_cancel_denies_tutorial(self, db_factory, setup):
+        from shyfem_ui.services.access_control import job_cancel_denied_reason
+
+        # Even as the job owner, a tutorial account may not cancel (read-only).
+        assert (
+            job_cancel_denied_reason(
+                job_user_id=self._TUT["id"],
+                job_project_id=setup["project_id"],
+                user=self._TUT,
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is not None
+        )

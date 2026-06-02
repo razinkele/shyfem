@@ -31,7 +31,6 @@ from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
-from shyfem_ui.models.user import ROLE_TUTORIAL
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.report import generate_job_report
@@ -565,36 +564,17 @@ def run_server(
     @reactive.effect
     @reactive.event(input.submit_btn)
     async def _submit_job():
-        from shyfem_ui.services.access_control import (
-            editor_denied_reason,
-            resolve_effective_role,
-        )
+        from shyfem_ui.services.access_control import editor_denied_reason
 
         _usr = current_user() if current_user is not None else None
-
-        # Tutorial accounts are read-only. Derive the role from the
-        # server-validated WS identity (_usr) so a tutorial account cannot
-        # escape this gate by spoofing input.current_user_role(); the
-        # user_role()/_current_user fallback is used only when there is no
-        # server-resolved identity (HTTP / local-mode path).
-        try:
-            _fallback_role = user_role() if user_role is not None else None
-        except Exception:
-            _fallback_role = _current_user.get("role") if _current_user else None
-        _role = resolve_effective_role(_usr, _fallback_role)
-        if _role == ROLE_TUTORIAL:
-            ui.notification_show(
-                "Tutorial accounts are read-only. Contact your admin for a full account.",
-                type="warning",
-                duration=6,
-            )
-            return
 
         # Access check: require editor role on active project. Fail-closed in
         # server mode — a None project (no active project) or unresolved
         # identity is denied. The guard must run unconditionally; nesting it
         # inside `if active_project is not None` would skip it when no project
-        # is active and let the mutation run unguarded.
+        # is active and let the mutation run unguarded. editor_denied_reason
+        # also enforces the tutorial read-only policy centrally (tutorial
+        # accounts are denied any editor-level write).
         _proj = active_project.get() if active_project is not None else None
         _denied = editor_denied_reason(
             _proj["id"] if _proj is not None else None, _usr, min_role="editor"
@@ -1397,14 +1377,6 @@ def run_server(
     # Session ID for multi-user isolation and per-session callbacks
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
-
-    # HTTP-scope user, used only as the tutorial-role fallback below. The job
-    # OWNER is stamped from the WS-validated current_user() (_usr) in
-    # _submit_job, NOT from here — get_current_user() is None over the proxied
-    # Shiny WS, which would persist owner=None and kill the owner-cancel right.
-    from shyfem_ui.middleware.session_auth import get_current_user
-
-    _current_user = get_current_user()
 
     @render.ui
     def run_show_all_toggle_ui():
