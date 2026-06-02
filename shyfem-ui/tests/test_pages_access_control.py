@@ -42,6 +42,7 @@ WRITE_HANDLERS = [
     ("postprocess", "_batch_convert", "editor"),  # converts a batch to NetCDF
     ("postprocess", "_run_preset", "editor"),  # runs a preset shyelab pipeline
     ("mesh_builder", "_on_save", "editor"),  # exports .grd into the project dir
+    ("home", "_do_import_grid", "editor"),  # writes a Grid into an existing project
 ]
 
 _PLACEHOLDER_PREFIX = "<TODO"
@@ -151,6 +152,9 @@ _WRITE_MUTATION_CALLS = {
     "enqueue",
     "add_job",
     "export_grd",
+    "copy2",
+    "copyfile",
+    "copytree",
 }
 
 
