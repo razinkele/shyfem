@@ -407,10 +407,11 @@ def test_save_validates_path_before_write(page, handler, write_call):
 # the job id / ensemble state is client-addressable, so an unauthorized client
 # could otherwise cancel a collaborator's job.
 # (page, handler, guard_call, cancel_sink)
+# Ensemble stop authorizes per-job INSIDE _cancel_jobs (behaviorally covered by
+# tests/test_ensemble_helpers.py), so it is not an AST row here.
 CANCEL_HANDLERS = [
     ("run", "_cancel_active_job", "job_cancel_denied_reason", "cancel"),
     ("run", "_cancel_selected_job", "job_cancel_denied_reason", "cancel"),
-    ("ensemble", "_stop_all_ensemble", "editor_denied_reason", "_cancel_jobs"),
 ]
 
 

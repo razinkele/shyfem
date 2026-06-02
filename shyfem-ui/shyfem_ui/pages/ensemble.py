@@ -678,26 +678,21 @@ def ensemble_server(
     @reactive.effect
     @reactive.event(input.stop_all_btn)
     async def _stop_all_ensemble():
-        from shyfem_ui.services.access_control import editor_denied_reason
-
         state = ensemble_state.get()
         if not state:
             return
-        # Authorize: stopping the ensemble mutates jobs on the active project,
-        # so require editor access to it (owner / project-editor / admin) —
-        # fail-closed in server mode. Mirrors the submit gate.
+        # Authorize per-job (owner / admin / project-editor) against each job's
+        # stored metadata — fail-closed in server mode. Gating on the job's own
+        # project (not the live active project) means an owner can always stop
+        # their own ensemble even after switching the active project.
         _usr = current_user() if current_user is not None else None
-        _proj = active_project.get() if active_project is not None else None
-        _denied = editor_denied_reason(
-            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
-        )
-        if _denied:
-            ui.notification_show(_denied, type="error", duration=6)
-            return
-        cancelled = await _cancel_jobs(job_queue, state["job_ids"])
+        cancelled, denied = await _cancel_jobs(job_queue, state["job_ids"], user=_usr)
         total = len(state["job_ids"])
+        msg = f"Cancelled {cancelled} of {total} jobs"
+        if denied:
+            msg += f" ({denied} not authorized)"
         ui.notification_show(
-            f"Cancelled {cancelled} of {total} jobs",
+            msg,
             type="message" if cancelled > 0 else "warning",
             duration=4,
         )
@@ -1013,16 +1008,50 @@ def _badge(text: str, bg_class: str) -> ui.Tag:
     return ui.span(text, class_=f"badge {bg_class}")
 
 
-async def _cancel_jobs(job_queue: JobQueue, job_ids: list[str]) -> int:
-    """Cancel multiple jobs, returning count of successful cancellations."""
+async def _cancel_jobs(
+    job_queue: JobQueue,
+    job_ids: list[str],
+    *,
+    user: dict | None = None,
+    is_server_mode: bool | None = None,
+    session_factory=None,
+) -> tuple[int, int]:
+    """Cancel the jobs the actor is authorized to cancel.
+
+    Each job is gated per-job via ``job_cancel_denied_reason`` against the job's
+    OWN stored owner/project metadata (owner / admin / project-editor),
+    fail-closed in server mode — not against any live active-project state. This
+    lets an owner stop their own ensemble regardless of which project is
+    currently active, and never cancels a job the actor is not entitled to.
+
+    Returns ``(cancelled, denied)`` counts.
+    """
+    from shyfem_ui.services.access_control import job_cancel_denied_reason
+
     cancelled = 0
+    denied = 0
     for job_id in job_ids:
         try:
+            job = await job_queue.get_status(job_id)
+            if job is None:
+                continue
+            if (
+                job_cancel_denied_reason(
+                    job_user_id=job.metadata.get("user_id"),
+                    job_project_id=job.metadata.get("project_id"),
+                    user=user,
+                    is_server_mode=is_server_mode,
+                    session_factory=session_factory,
+                )
+                is not None
+            ):
+                denied += 1
+                continue
             if await job_queue.cancel(job_id):
                 cancelled += 1
         except Exception:
             logger.debug("Failed to cancel job %s", job_id, exc_info=True)
-    return cancelled
+    return cancelled, denied
 
 
 def _load_ts(path: Path) -> list[list[float]]:

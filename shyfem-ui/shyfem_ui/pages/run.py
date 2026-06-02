@@ -1398,11 +1398,13 @@ def run_server(
     _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
 
-    # User context for job ownership
+    # HTTP-scope user, used only as the tutorial-role fallback below. The job
+    # OWNER is stamped from the WS-validated current_user() (_usr) in
+    # _submit_job, NOT from here — get_current_user() is None over the proxied
+    # Shiny WS, which would persist owner=None and kill the owner-cancel right.
     from shyfem_ui.middleware.session_auth import get_current_user
 
     _current_user = get_current_user()
-    _user_id = _current_user["id"] if _current_user else None
 
     @render.ui
     def run_show_all_toggle_ui():
