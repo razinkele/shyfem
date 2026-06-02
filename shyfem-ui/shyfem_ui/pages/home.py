@@ -507,6 +507,16 @@ def home_server(
             ui.notification_show("Project directory is required", type="error", duration=6)
             return
 
+        # Fail-closed: in server mode an unresolved identity must not create an
+        # owner_id=None orphan project.
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        user = _user()
+        _denied = identity_denied_reason(user)
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         # Validate and create directory
         try:
             project_path = config.validate_save_path(work_dir)
@@ -524,7 +534,6 @@ def home_server(
         # Create project in database
         try:
             with db_session() as db:
-                user = _user()
                 project = Project(
                     name=name,
                     description=description or None,
@@ -597,6 +606,16 @@ def home_server(
             ui.notification_show("Project name is required", type="error", duration=6)
             return
 
+        # Fail-closed: in server mode an unresolved identity must not create an
+        # owner_id=None orphan project.
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        user = _user()
+        _denied = identity_denied_reason(user)
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         # Check source directory exists
         mar_menor_src = config.testcases_dir / "mar_menor"
         if not mar_menor_src.is_dir():
@@ -623,7 +642,6 @@ def home_server(
         # Create database records
         try:
             with db_session() as db:
-                user = _user()
                 project = Project(
                     name=name,
                     description="Mar Menor tutorial — 6-phase guided introduction to SHYFEM",
@@ -1060,6 +1078,16 @@ def home_server(
             ui.notification_show("No file selected", type="error", duration=6)
             return
 
+        # Fail-closed: in server mode an unresolved identity must not create an
+        # owner_id=None orphan project.
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        user = _user()
+        _denied = identity_denied_reason(user)
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         file_path = file_info[0]["datapath"]
 
         from shyfem_ui.services.project_export import import_project
@@ -1079,7 +1107,6 @@ def home_server(
 
         try:
             with db_session() as db:
-                user = _user()
                 project = Project(
                     name=result["name"],
                     description=result.get("description"),

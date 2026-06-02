@@ -53,6 +53,34 @@ def resolve_effective_role(server_user: dict | None, fallback_role: str | None) 
     return fallback_role
 
 
+def identity_denied_reason(
+    user: dict | None,
+    *,
+    is_server_mode: bool | None = None,
+) -> str | None:
+    """Return a user-facing error if an action requiring a signed-in user may
+    NOT proceed, else None.
+
+    For create-class actions (project create / clone / import) there is no
+    pre-existing project to authorize against, so ``editor_denied_reason`` does
+    not apply — but in server mode an unresolved identity must still be DENIED,
+    otherwise the new project is stamped ``owner_id=None`` (an orphan nobody
+    owns). Local mode has no auth and is allowed.
+
+    Args:
+        user: Server-validated user dict (or None).
+        is_server_mode: When None, resolved from the global config.
+    """
+    if is_server_mode is None:
+        from shyfem_ui.config import get_config
+
+        is_server_mode = get_config().deployment_mode == "server"
+
+    if is_server_mode and user is None:
+        return "Session identity could not be verified. Please reload the page and sign in again."
+    return None
+
+
 def job_cancel_denied_reason(
     *,
     job_user_id: int | None,

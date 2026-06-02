@@ -470,6 +470,36 @@ def test_cancel_handler_authorizes_before_cancel(page, handler, guard, sink):
     )
 
 
+# Project create/import handlers must fail closed on an unresolved identity in
+# server mode (identity_denied_reason) BEFORE constructing the Project —
+# otherwise the project is created with owner_id=None (orphaned). _do_clone is
+# NOT listed: it is already fail-closed via load_project_context(user=_user())
+# (returns None for an unresolved identity in server mode → early return before
+# Project()), which is the correct "must be able to read the source" gate.
+CREATE_HANDLERS = ["_create_project", "_create_tutorial_project", "_do_import_project"]
+
+
+@pytest.mark.parametrize("handler", CREATE_HANDLERS)
+def test_create_handler_requires_identity(handler):
+    path = _PAGES_DIR / "home.py"
+    fn = _find_function_def(ast.parse(path.read_text()), handler)
+    assert fn is not None, f"{handler!r} not found in {path}"
+    gidx = _call_index(fn.body, "identity_denied_reason")
+    sidx = _call_index(fn.body, "Project")
+    assert gidx is not None, (
+        f"home.py::{handler} (line {fn.lineno}) creates a Project without "
+        f"identity_denied_reason — in server mode an unresolved identity would "
+        f"create an owner_id=None orphan. Add the fail-closed identity guard."
+    )
+    assert _guard_enforced_by_name(fn, "identity_denied_reason"), (
+        f"home.py::{handler}: the identity_denied_reason result must be acted on "
+        f"(`if _denied: ...; return`) before creating the Project."
+    )
+    assert (
+        sidx is not None and gidx < sidx
+    ), f"home.py::{handler}: identity_denied_reason must precede Project(...)"
+
+
 def test_submit_job_stamps_ws_resolved_owner():
     """run._submit_job must stamp the job OWNER from the WS-validated identity
     (_usr = current_user()), not the HTTP-scope _user_id.

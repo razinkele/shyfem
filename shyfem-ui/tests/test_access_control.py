@@ -461,3 +461,23 @@ class TestJobCancelDeniedReason:
             )
             is not None
         )
+
+
+class TestIdentityDeniedReason:
+    """Create/clone/import have no pre-existing project to authorize against,
+    but in server mode an unresolved identity must still be DENIED — otherwise a
+    project is created with owner_id=None (orphaned). Local mode allows None."""
+
+    def _call(self, **kw):
+        from shyfem_ui.services.access_control import identity_denied_reason
+
+        return identity_denied_reason(**kw)
+
+    def test_server_mode_denies_none_user(self):
+        assert self._call(user=None, is_server_mode=True) is not None
+
+    def test_server_mode_allows_resolved_user(self):
+        assert self._call(user={"id": 1, "role": "user"}, is_server_mode=True) is None
+
+    def test_local_mode_allows_none_user(self):
+        assert self._call(user=None, is_server_mode=False) is None
