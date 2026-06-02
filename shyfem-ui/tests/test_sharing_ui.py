@@ -144,6 +144,22 @@ class TestSharingDeniedReason:
             is None
         )
 
+    def test_tutorial_owner_denied_readonly(self, db_factory, setup):
+        """A ROLE_TUTORIAL account is read-only even if it OWNS the project
+        (e.g. a user demoted via update_user, which keeps ownership rows). The
+        tutorial check must fire before the owner allow-check, mirroring the
+        other central gates."""
+        from shyfem_ui.pages.home import _sharing_denied_reason
+
+        # alice owns the project; as a tutorial she must still be denied.
+        reason = _sharing_denied_reason(
+            setup["project_id"],
+            _user(setup["alice_id"], "tutorial"),
+            session_factory=db_factory,
+        )
+        assert reason is not None
+        assert "read-only" in reason.lower()
+
     def test_unresolved_actor_denied_with_signin_message(self, db_factory, setup):
         from shyfem_ui.pages.home import _sharing_denied_reason
 
