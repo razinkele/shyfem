@@ -425,6 +425,7 @@
       real volold,volnew      !volume [m**3]
       real mass            !mass [g]
       real mder            !derivative [g/day]
+      real, parameter :: cmin = 1.e-5   !positivity floor [g/m**3] (Phase 1 C5)
 
       volold = vol
       volnew = vol
@@ -434,7 +435,7 @@
         mass = c(i) * volold
         mder = cds(i)
         c(i) = ( mass + dt * mder ) / volnew
-        !if(c(i).lt.0.00001) c(i)=0.00001
+        if( c(i) .lt. cmin ) c(i) = cmin   !enforce positivity (was disabled)
       end do
 
       end
@@ -465,18 +466,20 @@
       real loads(nstate)  !loading for c [g/(m**3 day)]
 
         integer i
-        logical berror
+        logical berror,bfatal
+        real, parameter :: cmin = 1.e-5   !positivity floor [g/m**3] (Phase 1 C5)
 
         berror = .false.
+        bfatal = .false.
 
-        if( vol .lt. 0. ) berror = .true.
-        if( depth .lt. 0. ) berror = .true.
+        if( vol .lt. 0. ) bfatal = .true.     !geometry error: not recoverable
+        if( depth .lt. 0. ) bfatal = .true.
 
        do i=1,nstate
-          if( c(i) .lt. 0. ) berror = .true.
+          if( c(i) .lt. 0. ) berror = .true.   !state negative: recoverable (clamp)
         end do
 
-        if( berror ) then
+        if( berror .or. bfatal ) then
           write(6,*) '*** eutro_check: error in eutro0d'
           call write_debug_param(id,nstate,t,dt &
      &                ,vol,depth,vel,stp,sal,qss,c,cold,cds,loads)
@@ -496,9 +499,14 @@
           write(6,*) 'cds=', cds
           write(6,*) 'loads=', loads
           write(6,*)
-          stop 'error stop eutro_check: negative values'
+        end if
+
+        if( bfatal ) then       !MPI-safe abort instead of bare stop (was: stop)
+          call shympi_abort_internal &
+     &        ('eutro_check: negative volume or depth')
+        else if( berror ) then  !clamp negatives and continue (was dead code)
           do i=1,nstate
-            if( c(i) .lt. 0. ) c(i) = 0.00001
+            if( c(i) .lt. 0. ) c(i) = cmin
           end do
         end if
 
@@ -667,7 +675,7 @@
       h = depth0
       vol = vol0
 
-        SA = vol0/depth0
+        SA = vol0/max(depth0,1.e-10)    !depth floor (Phase 1 H2/BIO-06)
 
       iinst=qss0
 !      write(6,*)iinst
@@ -1501,7 +1509,7 @@
 !
 !             Sediment Oxygen Demand (1-D Networks)
 !
-      SK19S = SOD1D (ISEG)*SODTA(ISEG)**stp20/H
+      SK19S = SOD1D (ISEG)*SODTA(ISEG)**stp20/max(H,1.e-10)   !depth floor (Phase 1 NU-3)
 !
 !======================================================================
 !                     Formulate Derivative
@@ -1656,7 +1664,7 @@
       SKE = KESG (ISEG)
       IF (IKE .GT. 0 .AND. IKE .LE. 5) SKE = SKE*KE (IKE)
       SKE = SKE + KESHD
-      TEMP1 = SKE*H
+      TEMP1 = max(SKE*H,1.e-10)    !light-denominator floor (Phase 1 NU-4)
 
 !         Get average solar radiation during daylight hours
 
@@ -1724,7 +1732,7 @@
          SKE = KESG (ISEG)
          IF (IKE .GT. 0 .AND. IKE .LE. 5) SKE = SKE*KE (IKE)
          SKE = SKE + KESHD
-         TEMP1 = SKE*H
+         TEMP1 = max(SKE*H,1.e-10)    !light-denominator floor (Phase 1 NU-4)
          TEMP2 = 0.083*PHIMX*XKC/(GITMAX*CCHL1*2.718)
          TEMP3 = EXP ( - TEMP1)
          RLGHTS (ITO, 2) = RLGHTS (ISEG, 2)*TEMP3

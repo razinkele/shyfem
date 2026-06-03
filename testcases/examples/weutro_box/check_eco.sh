@@ -18,7 +18,7 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 cd "$HERE"
 export PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH
-TOL=1e-6          # allowed slack below zero (pre-fix; should tighten after Phase 1)
+TOL=0.0           # strict positivity: Phase 1 added a cmin=1e-5 floor in euler()
 DO_MAX=25.0
 rc=0
 
