@@ -37,8 +37,11 @@ Nothing downstream can be validated without this. **Status: complete** (branch `
 
 ---
 
-## Phase 1 — Robustness / anti-crash (lowest risk, do first)
-Goal: a stiff/over-large step can never crash or NaN the run.
+## Phase 1 — Robustness / anti-crash (lowest risk, do first) ✅ DONE
+Goal: a stiff/over-large step can never crash or NaN the run. **Status: complete** (commit on `fix/weutro-eco`).
+- C5: `euler()` cmin=1e-5 positivity floor (re-enabled the disabled clip); `eutro_check()` split fatal (neg vol/depth → `shympi_abort_internal`) from recoverable (neg state → clamp-and-continue); bare `stop` removed.
+- H2/NU-3/NU-4/BIO-06: `max(.,1e-10)` floors on `SA=vol0/depth0`, `SOD/H`, and both `TEMP1=SKE*H` light denominators.
+- Gate tightened to strict positivity (TOL=0); 2D+3D pass, values identical to baseline (no regression).
 
 - **C5 — positivity + safe abort.** `weutro.f90`
   - Add `MIN_CONCENTRATION = 1.0e-5` (match existing intended floor; AQUABC uses 1e-10 in double — pick a single-precision-safe floor) as a named constant.
