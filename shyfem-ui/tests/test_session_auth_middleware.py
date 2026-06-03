@@ -1,16 +1,15 @@
 """Tests for SessionAuthMiddleware -- cookie auth, login page, WebSocket gating."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 from shyfem_ui.middleware.session_auth import (
     SessionAuthMiddleware,
-    _LOGIN_HTML,
     _parse_cookie,
     _user_var,
     get_current_user,
 )
-
 
 # ------------------------------------------------------------------
 # Cookie parsing
@@ -404,8 +403,10 @@ class TestWhoami:
     @pytest.fixture()
     def auth_service(self):
         import json  # noqa: F401  -- referenced below
+
         from sqlalchemy import create_engine
         from sqlalchemy.orm import sessionmaker
+
         from shyfem_ui.db.base import Base
         from shyfem_ui.models import project as _p  # noqa: F401 -- register models
         from shyfem_ui.models import user as _u  # noqa: F401 -- register models

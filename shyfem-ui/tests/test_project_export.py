@@ -7,7 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from shyfem_ui.services.project_export import export_project, import_project, clone_project, MANIFEST_VERSION
+from shyfem_ui.services.project_export import (
+    MANIFEST_VERSION,
+    clone_project,
+    export_project,
+    import_project,
+)
 
 
 @pytest.fixture

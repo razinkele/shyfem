@@ -1,10 +1,9 @@
 """Tests for SHYFEM tool wrappers."""
 
-import asyncio
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
 from shyfem_ui.services.shyfem_wrapper import CommandResult, ShyfemWrapper
 
 

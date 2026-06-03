@@ -1,10 +1,7 @@
 """Tests for partitioning page and wrapper integration."""
 
 import asyncio
-from pathlib import Path
 from unittest.mock import MagicMock
-
-import pytest
 
 
 def test_run_shyparts_passes_weighted_flag(monkeypatch, tmp_path):

@@ -1,7 +1,6 @@
 """Tests for NetCDF variable explorer pure functions."""
 
 import numpy as np
-import pytest
 import xarray as xr
 
 

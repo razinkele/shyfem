@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from shyfem_ui.db.base import Base
 from shyfem_ui.models.project import Project
-from shyfem_ui.models.user import ProjectPermission, User
+from shyfem_ui.models.user import User
 from shyfem_ui.services.sharing_service import SharingService
 
 

@@ -1,6 +1,5 @@
 """Tests for admin page access guard."""
 
-import pytest
 
 
 class TestAdminGuard:

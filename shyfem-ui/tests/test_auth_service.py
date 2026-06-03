@@ -378,8 +378,9 @@ class TestAuthenticateRehash:
         """Regression: when a stored hash uses weaker argon2 params than current
         defaults, authenticate() must rehash and persist on a successful login."""
         from argon2 import PasswordHasher
-        from shyfem_ui.services.auth_service import AuthService
+
         from shyfem_ui.models.user import User
+        from shyfem_ui.services.auth_service import AuthService
 
         # Create a hash with weaker-than-default parameters that needs_rehash
         weak = PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)

@@ -27,7 +27,9 @@ class TestModuleImports:
         src = get_server_source(page_mod, "simulation_server")
         assert src.count("file_picker_server(") >= 1
         assert 'file_types=["str"]' in src
-        import re; assert re.search(r'fill_picker_input\(\s*"str_path"', src)
+        import re
+
+        assert re.search(r'fill_picker_input\(\s*"str_path"', src)
         # _on_project_changed gets isolate+empty-guard.
         # _on_tutorial_context typically does not read input.X() so
         # may add no isolate block. Pin to >= 1.

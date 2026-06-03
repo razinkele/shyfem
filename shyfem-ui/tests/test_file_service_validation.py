@@ -1,7 +1,7 @@
 """Tests for FileService.validate_simulation_files."""
 
+
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture(autouse=True)

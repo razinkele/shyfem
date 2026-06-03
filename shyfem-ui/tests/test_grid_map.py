@@ -12,8 +12,6 @@ from pathlib import Path
 import pytest
 
 from shyfem_ui.components.grid_map import (
-    BOUNDARY_COLORS,
-    PARTITION_COLORS,
     _build_boundary_data,
     _build_edge_data,
     _build_mesh_geometry,
@@ -639,7 +637,7 @@ class TestBuildLayers:
         grd = _make_triangle_grid()
         layers = build_layers(grd, mode="depth_3d", colorscale="viridis",
                               elevation_scale=100.0)
-        tri_layer = [l for l in layers if l["id"] == "triangles"]
+        tri_layer = [ln for ln in layers if ln["id"] == "triangles"]
         assert len(tri_layer) == 1
         assert tri_layer[0]["type"] == "SimpleMeshLayer"
         # Mesh data should have Z values from elevation
@@ -787,7 +785,7 @@ class TestBuildLayersBoundaryOnly:
         layers = build_layers(grd, mode="mesh")
         # Should auto-switch to boundaries mode for boundary-only grids
         assert len(layers) >= 1
-        layer_ids = [l["id"] for l in layers]
+        layer_ids = [ln["id"] for ln in layers]
         assert any("boundary" in lid for lid in layer_ids)
 
     def test_boundary_only_grid_no_crash_on_depth_mode(self):
@@ -819,7 +817,7 @@ class TestBuildLayersBoundaryOnly:
         layers = build_layers(grd, mode="boundaries")
         assert len(layers) >= 1
         # Should NOT have triangle or wireframe layers
-        layer_ids = [l["id"] for l in layers]
+        layer_ids = [ln["id"] for ln in layers]
         assert "triangles" not in layer_ids
         assert "wireframe" not in layer_ids
 
@@ -830,7 +828,7 @@ class TestBuildLayersBoundaryOnly:
             1: Node(id=1, node_type=0, x=21.0, y=55.0),
         }
         layers = build_layers(grd, mode="mesh")
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "emodnet" in ids
         assert "nodes" in ids
         assert "wireframe" not in ids
@@ -846,7 +844,7 @@ class TestBuildLayersBoundaryOnly:
             1: Line(id=1, line_type=1, nodes=[1, 2]),
         }
         layers = build_layers(grd, mode="boundaries")
-        layer_ids = [l["id"] for l in layers]
+        layer_ids = [ln["id"] for ln in layers]
         assert "nodes" in layer_ids
 
 
@@ -1007,14 +1005,14 @@ class TestBuildLayersWithEpsg:
         """UTM grid produces wireframe when EPSG is set."""
         grd = _make_utm30n_grid()
         layers = build_layers(grd, mode="mesh", epsg=32630)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "wireframe" in ids
 
     def test_utm_depth_with_epsg(self):
         """UTM grid produces depth layers when EPSG is set."""
         grd = _make_utm30n_grid()
         layers = build_layers(grd, mode="depth", epsg=32630)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "triangles" in ids
         assert "wireframe" in ids
 
@@ -1023,7 +1021,7 @@ class TestBuildLayersWithEpsg:
         grd = _make_utm30n_grid()
         layers = build_layers(grd, mode="mesh")
         # Should still produce layers (with raw metre coords)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "wireframe" in ids
 
     def test_view_state_with_epsg(self):
@@ -1168,21 +1166,21 @@ class TestMarMenorLayerGeneration:
     def test_mesh_mode_without_epsg_still_produces_layers(self, mar_menor_grd):
         """Without EPSG, mesh mode still produces wireframe (raw coords)."""
         layers = build_layers(mar_menor_grd, mode="mesh")
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "wireframe" in ids
 
     def test_mesh_mode_with_epsg(self, mar_menor_grd):
         """With EPSG, mesh mode produces wireframe with correct data."""
         layers = build_layers(mar_menor_grd, mode="mesh", epsg=32630)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "wireframe" in ids
-        wire = next(l for l in layers if l["id"] == "wireframe")
+        wire = next(ln for ln in layers if ln["id"] == "wireframe")
         assert len(wire["data"]) > 100  # Many edges
 
     def test_mesh_edge_coords_in_wgs84(self, mar_menor_grd):
         """Wireframe edges have geographic coordinates with EPSG."""
         layers = build_layers(mar_menor_grd, mode="mesh", epsg=32630)
-        wire = next(l for l in layers if l["id"] == "wireframe")
+        wire = next(ln for ln in layers if ln["id"] == "wireframe")
         edge = wire["data"][0]
         path = edge["path"]
         lon, lat = path[0]
@@ -1192,14 +1190,14 @@ class TestMarMenorLayerGeneration:
     def test_depth_mode_with_epsg(self, mar_menor_grd):
         """Depth mode produces triangles + wireframe."""
         layers = build_layers(mar_menor_grd, mode="depth", epsg=32630)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "triangles" in ids
         assert "wireframe" in ids
 
     def test_depth_mesh_origin_in_wgs84(self, mar_menor_grd):
         """SimpleMeshLayer coordinateOrigin is in geographic coords with EPSG."""
         layers = build_layers(mar_menor_grd, mode="depth", epsg=32630)
-        tri_layer = next(l for l in layers if l["id"] == "triangles")
+        tri_layer = next(ln for ln in layers if ln["id"] == "triangles")
         assert tri_layer["type"] == "SimpleMeshLayer"
         origin = tri_layer["coordinateOrigin"]
         lon, lat = origin[0], origin[1]
@@ -1209,7 +1207,7 @@ class TestMarMenorLayerGeneration:
     def test_quality_mode_with_epsg(self, mar_menor_grd):
         """Quality mode produces layers."""
         layers = build_layers(mar_menor_grd, mode="quality", epsg=32630)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "triangles" in ids
 
     def test_nodes_with_epsg(self, mar_menor_grd):
@@ -1217,9 +1215,9 @@ class TestMarMenorLayerGeneration:
         layers = build_layers(
             mar_menor_grd, mode="mesh", epsg=32630,
         )
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "nodes" in ids
-        node_layer = next(l for l in layers if l["id"] == "nodes")
+        node_layer = next(ln for ln in layers if ln["id"] == "nodes")
         node = node_layer["data"][0]
         lon, lat = node["position"]
         assert -2.0 < lon < 1.0
@@ -1233,7 +1231,7 @@ class TestMarMenorLayerGeneration:
         # If grid has boundary lines, there should be boundary layers
         has_lines = bool(mar_menor_grd.lines)
         if has_lines:
-            ids = [l["id"] for l in layers]
+            ids = [ln["id"] for ln in layers]
             assert any("boundary" in i for i in ids)
 
     def test_all_view_modes_no_crash(self, mar_menor_grd):
@@ -1280,11 +1278,11 @@ class TestSampleDataFlow:
         epsg_val = grd.epsg
 
         layers = build_layers(grd, mode="mesh", epsg=epsg_val)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "wireframe" in ids
 
         # Verify edge coords are in WGS84
-        wire = next(l for l in layers if l["id"] == "wireframe")
+        wire = next(ln for ln in layers if ln["id"] == "wireframe")
         edge = wire["data"][0]
         lon, lat = edge["path"][0]
         assert -2.0 < lon < 1.0, f"lon={lon} not near Mar Menor"
@@ -1310,10 +1308,10 @@ class TestSampleDataFlow:
         grd.epsg = 32630
 
         layers = build_layers(grd, mode="depth", epsg=grd.epsg)
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "triangles" in ids
         # Verify mesh origin coords
-        tri_layer = next(l for l in layers if l["id"] == "triangles")
+        tri_layer = next(ln for ln in layers if ln["id"] == "triangles")
         assert tri_layer["type"] == "SimpleMeshLayer"
         origin = tri_layer["coordinateOrigin"]
         lon, lat = origin[0], origin[1]
@@ -1330,9 +1328,9 @@ class TestSampleDataFlow:
         layers = build_layers(
             grd, mode="mesh", epsg=grd.epsg,
         )
-        ids = [l["id"] for l in layers]
+        ids = [ln["id"] for ln in layers]
         assert "nodes" in ids
-        node_layer = next(l for l in layers if l["id"] == "nodes")
+        node_layer = next(ln for ln in layers if ln["id"] == "nodes")
         pos = node_layer["data"][0]["position"]
         assert -2.0 < pos[0] < 1.0
         assert 36.0 < pos[1] < 39.0

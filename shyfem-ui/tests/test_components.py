@@ -1,6 +1,6 @@
 """Unit tests for pure helper functions in shyfem_ui/components/."""
 
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import numpy as np
 import pytest
@@ -15,7 +15,6 @@ from shyfem_ui.components.job_status import (
 from shyfem_ui.components.timeseries import compute_statistics
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 from shyfem_ui.services.parser_grd import Element, GrdFile, Node
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

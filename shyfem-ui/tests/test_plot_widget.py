@@ -1,6 +1,7 @@
 """Tests for plot_widget pure plotting functions."""
 
 import matplotlib
+
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt

@@ -1,6 +1,5 @@
 """Tests for IBM page module."""
 
-import math
 
 import pytest
 from shiny.ui import Tag

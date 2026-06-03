@@ -240,7 +240,7 @@ class TestTutorialWorkflow:
         _switch_tab(pw_page, "Tutorial")
         pw_page.wait_for_timeout(1500)
         # Get initial content
-        initial_text = pw_page.locator("#tutorial-step_content").inner_text()
+        pw_page.locator("#tutorial-step_content").inner_text()
         # Click a different simulation link -- look for any select_ link
         links = pw_page.locator("[id^='tutorial-select_']")
         if links.count() >= 2:

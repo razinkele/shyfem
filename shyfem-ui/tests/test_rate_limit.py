@@ -1,7 +1,8 @@
 """Tests for RateLimitMiddleware ASGI middleware."""
 
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 from shyfem_ui.middleware.rate_limit import RateLimitMiddleware
 

@@ -1,7 +1,6 @@
 """Tests for helper functions in pages/run.py."""
 
 from datetime import datetime, timedelta
-from pathlib import Path
 
 from shyfem_ui.pages.run import (
     _estimate_eta,

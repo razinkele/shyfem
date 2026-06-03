@@ -1,4 +1,6 @@
 """Tests for next_step_card component."""
+import dataclasses
+
 import pytest
 
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
@@ -9,7 +11,7 @@ class TestNextStepLink:
     def test_frozen_dataclass(self):
         """frozen=True means link can't be mutated after construction."""
         link = NextStepLink("L", "Run", "D")
-        with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
+        with pytest.raises(dataclasses.FrozenInstanceError):
             link.label = "X"
 
     def test_named_access(self):

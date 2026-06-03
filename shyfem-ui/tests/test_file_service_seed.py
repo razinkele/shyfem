@@ -1,7 +1,7 @@
 """Tests for FileService.seed_tutorial_files."""
 
+
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture(autouse=True)

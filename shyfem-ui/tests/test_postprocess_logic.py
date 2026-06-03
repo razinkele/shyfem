@@ -1,5 +1,4 @@
 """Tests for pure helpers extracted from pages/postprocess.py."""
-import pytest
 
 from shyfem_ui.services.postprocess_logic import (
     build_shyelab_options,

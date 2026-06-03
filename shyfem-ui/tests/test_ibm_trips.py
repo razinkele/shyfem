@@ -1,7 +1,6 @@
 """Tests for IBM page trips_layer animation integration."""
 
 from datetime import datetime
-from unittest.mock import MagicMock
 
 import pytest
 
@@ -55,7 +54,7 @@ def test_tracks_to_trips_empty():
 
 def test_tracks_to_trips_preserves_colors():
     """Per-type colors from _TRACK_COLORS are passed through."""
-    from shyfem_ui.pages.ibm import _tracks_to_trips, _TRACK_COLORS
+    from shyfem_ui.pages.ibm import _TRACK_COLORS, _tracks_to_trips
     tracks = [_make_track(type_id=1, n=3), _make_track(type_id=2, n=3)]
     result = _tracks_to_trips(tracks)
     assert result[0].get("color") == _TRACK_COLORS[0]

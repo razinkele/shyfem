@@ -2,7 +2,9 @@
 
 import pytest
 
+from shyfem_ui.app import create_app
 from shyfem_ui.config import Config
+from shyfem_ui.middleware.cache_headers import CacheHeaderMiddleware
 
 
 class TestCacheHeaderConfig:
@@ -21,9 +23,6 @@ class TestCacheHeaderConfig:
         config = Config(shyfem_dir="/tmp/fake", static_cache_max_age=0)
         assert config.static_cache_max_age == 0
 
-
-from shyfem_ui.middleware.cache_headers import CacheHeaderMiddleware
-from shyfem_ui.app import create_app
 
 
 def _http_scope(path: str = "/") -> dict:

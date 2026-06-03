@@ -1,6 +1,5 @@
 """Tests for proxy-aware client IP extraction."""
 
-import pytest
 from shyfem_ui.middleware.rate_limit import get_client_ip
 
 

@@ -1,7 +1,7 @@
 """Tests for file_browser persistence via FileService."""
 
+
 import pytest
-from pathlib import Path
 
 
 @pytest.fixture(autouse=True)

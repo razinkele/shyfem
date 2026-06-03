@@ -2,11 +2,8 @@
 
 from pathlib import Path
 
-import pytest
-
 from shyfem_ui.pages.compare import _compute_param_diff, _extract_str_choices, _load_ts
 from shyfem_ui.services.parser_str import StrFile, StrSection
-
 
 # ── helpers ──────────────────────────────────────────────────────
 

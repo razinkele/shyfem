@@ -1,6 +1,5 @@
 """Tests for STR editor file picker integration."""
 
-import pytest
 
 
 class TestDetectFileParams:
@@ -26,8 +25,8 @@ class TestBuildFormPanelWithFilePicker:
     """Test that _build_form_panel uses file picker for file params when project_id is set."""
 
     def test_form_panel_renders_file_picker_for_wind(self):
-        from shyfem_ui.services.parser_str import StrParser
         from shyfem_ui.components.str_editor import _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
 
         content = "$name\n    wind = 'INPUT/wind.fem'\n$end\n"
         parsed = StrParser.parse(content)
@@ -38,8 +37,8 @@ class TestBuildFormPanelWithFilePicker:
         assert "file-picker-component" in rendered
 
     def test_form_panel_renders_text_input_without_project(self):
-        from shyfem_ui.services.parser_str import StrParser
         from shyfem_ui.components.str_editor import _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
 
         content = "$name\n    wind = 'INPUT/wind.fem'\n$end\n"
         parsed = StrParser.parse(content)
@@ -49,8 +48,8 @@ class TestBuildFormPanelWithFilePicker:
         assert "file-picker-component" not in rendered
 
     def test_form_panel_regular_param_unaffected(self):
-        from shyfem_ui.services.parser_str import StrParser
         from shyfem_ui.components.str_editor import _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
 
         content = "$para\n    idt = 300\n$end\n"
         parsed = StrParser.parse(content)

@@ -1,6 +1,5 @@
 """Tests for admin panel user management improvements."""
 
-import pytest
 
 from shyfem_ui.pages import admin
 

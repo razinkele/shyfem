@@ -6,7 +6,6 @@ validation, and statistics.
 """
 
 import json
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -428,7 +427,7 @@ class TestTriangulate:
     def test_empty_boundary_raises(self):
         """Grid with no lines raises error."""
         grd = GrdFile()
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017 - smoke test: any error on empty grid
             triangulate(grd)
 
     def test_min_angle_above_34_raises(self):
@@ -1125,7 +1124,7 @@ class TestMeshCreationPipeline:
         ]
         # Pairwise check — adjacent equality is OK at very coarse resolutions
         # where the quality minimum dominates, but the count must never drop.
-        for prev, nxt in zip(counts, counts[1:]):
+        for prev, nxt in zip(counts, counts[1:], strict=False):
             assert nxt >= prev
 
     def test_triangulate_is_deterministic(self):
@@ -1413,7 +1412,7 @@ class TestCuronianIntegration:
         assert grd.num_nodes > 5000
         assert grd.num_lines >= 20  # outer rings + holes
         # Check we have both exterior (type 1) and hole (type 2) lines
-        types = {l.line_type for l in grd.lines.values()}
+        types = {ln.line_type for ln in grd.lines.values()}
         assert 1 in types, "Should have exterior boundaries"
         assert 2 in types, "Should have interior holes (islands)"
         issues = validate_boundary(grd)
@@ -1429,7 +1428,7 @@ class TestCuronianIntegration:
             grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
         assert grd.num_nodes < original_nodes / 10  # significant reduction
         # Main coastline should still have meaningful detail
-        main_line = max(grd.lines.values(), key=lambda l: len(l.nodes))
+        main_line = max(grd.lines.values(), key=lambda ln: len(ln.nodes))
         assert len(main_line.nodes) > 50
 
     def test_reduce_and_triangulate(self):

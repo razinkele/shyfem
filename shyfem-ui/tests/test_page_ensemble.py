@@ -1,7 +1,6 @@
 """Tests for ensemble page pure functions."""
 
 from datetime import datetime, timedelta
-from pathlib import Path
 
 import plotly.graph_objects as go
 import pytest
@@ -14,7 +13,6 @@ from shyfem_ui.pages.ensemble import (
     _try_convert,
 )
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
-
 
 # ── _try_convert ─────────────────────────────────────────────────
 
