@@ -249,7 +249,7 @@
 ! read in file
 !--------------------------------------------------------------
 
-        open(newunit=iu,file='lux.dat',status='old',form='formatted'
+        open(newunit=iu,file='lux.dat',status='old',form='formatted' &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: lux.dat'

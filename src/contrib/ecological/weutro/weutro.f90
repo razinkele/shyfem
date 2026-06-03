@@ -2215,8 +2215,8 @@
 
         integer i,iu,ierr
 
-        open(newunit=iu,file='michol.dat',status='old',
-     +       form='formatted',iostat=ierr)
+        open(newunit=iu,file='michol.dat',status='old', &
+     &       form='formatted',iostat=ierr)
         if( ierr /= 0 ) then
           write(6,*) 'error opening file: michol.dat'
           stop 'error stop: cannot open file'
