@@ -271,8 +271,12 @@ class StrParser:
         if isinstance(value, bool):
             return ".true." if value else ".false."
         if isinstance(value, str):
+            # Already single-quoted (e.g. from apply_quick_settings) — emit as-is
+            # so we never double-wrap into ''value''.
+            if len(value) >= 2 and value.startswith("'") and value.endswith("'"):
+                return value
             # Quote strings that contain spaces or are date-like
-            if " " in value or value.startswith("'") or "-" in value:
+            if " " in value or "-" in value:
                 return f"'{value}'"
             return value
         if isinstance(value, float):

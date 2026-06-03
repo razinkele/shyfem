@@ -1,4 +1,5 @@
 """Tests for pure helpers extracted from pages/simulation.py."""
+
 import pytest
 
 from shyfem_ui.services.simulation_logic import (
@@ -7,7 +8,6 @@ from shyfem_ui.services.simulation_logic import (
     generate_template,
 )
 from shyfem_ui.services.parser_str import StrFile
-
 
 ALL_TEMPLATES = [
     "basic_2d",
@@ -207,3 +207,23 @@ class TestApplyQuickSettings:
         result = apply_quick_settings(None, output_int="30m")
         assert result.get_param("para", "idtout") == "'30m'"
         assert result.get_param("para", "itanf") is None
+
+
+class TestQuickSettingsRoundTrip:
+    """apply_quick_settings -> generate -> parse must round-trip cleanly. The
+    bug: values were pre-quoted by apply_quick_settings AND re-quoted by
+    _format_value, emitting itanf = ''2020-01-01'' (double-quoted), which the
+    parser then can't read — so the run the user just configured was broken."""
+
+    def test_no_double_quoting_and_round_trips(self):
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = apply_quick_settings(None, start="2020-01-01", end="2020-12-31", dt="60s")
+        text = StrParser.generate(sf)
+        # No doubled quotes anywhere in the emitted .str
+        assert "''" not in text, f"double-quoting present:\n{text}"
+        # Parses back to usable raw values (parser strips the single quotes)
+        reparsed = StrParser.parse(text)
+        assert reparsed.get_param("para", "itanf") == "2020-01-01"
+        assert reparsed.get_param("para", "itend") == "2020-12-31"
+        assert reparsed.get_param("para", "idt") == "60s"

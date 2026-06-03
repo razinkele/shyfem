@@ -160,8 +160,11 @@ class LocalJobQueue(JobQueue):
 
                     with db_session() as db:
                         user = db.query(User).filter_by(id=user_id).first()
-                    if user:
-                        user_dict = {"username": user.username, "email": user.email}
+                        # Read scalar fields INSIDE the session — after the block
+                        # the instance is expired (expire_on_commit) and attribute
+                        # access raises DetachedInstanceError, dropping the email.
+                        if user:
+                            user_dict = {"username": user.username, "email": user.email}
                 except Exception:
                     logger.debug(
                         "Could not look up user %s for notification", user_id, exc_info=True

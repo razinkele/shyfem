@@ -67,9 +67,11 @@ class FileService:
 
             # Determine target path
             if subdir:
-                # Validate subdir
+                # Validate subdir: reject traversal AND absolute paths. An
+                # absolute subdir would make ``work_dir / subdir`` resolve to the
+                # absolute path (RHS wins in pathlib), escaping the sandbox.
                 safe_sub = PurePosixPath(subdir)
-                if ".." in safe_sub.parts:
+                if safe_sub.is_absolute() or ".." in safe_sub.parts:
                     raise ValueError(f"Invalid subdir: {subdir!r}")
                 target_dir = work_dir / str(safe_sub)
                 rel_path = f"{safe_sub}/{safe_name}"
@@ -77,8 +79,14 @@ class FileService:
                 target_dir = work_dir
                 rel_path = safe_name
 
+            # Defense in depth: the resolved final target must stay within
+            # work_dir (covers symlinks and any traversal that slipped through).
+            work_root = work_dir.resolve()
+            target = (target_dir / safe_name).resolve()
+            if target != work_root and not str(target).startswith(str(work_root) + "/"):
+                raise ValueError(f"Upload path escapes the project directory: {subdir!r}")
+
             target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / safe_name
 
             # Write file
             target.write_bytes(file_data)

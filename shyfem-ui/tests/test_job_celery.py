@@ -13,7 +13,6 @@ from shyfem_ui.services.job_celery import (
 )
 from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -50,9 +49,7 @@ def _job_info_to_json(job_info):
             "created_at": job_info.created_at.isoformat() if job_info.created_at else None,
             "queued_at": job_info.queued_at.isoformat() if job_info.queued_at else None,
             "started_at": job_info.started_at.isoformat() if job_info.started_at else None,
-            "completed_at": job_info.completed_at.isoformat()
-            if job_info.completed_at
-            else None,
+            "completed_at": job_info.completed_at.isoformat() if job_info.completed_at else None,
             "return_code": job_info.return_code,
             "error_message": job_info.error_message,
             "stdout_file": job_info.stdout_file,
@@ -306,12 +303,8 @@ class TestCeleryListJobs:
 
     async def test_list_jobs_filter_by_session_id(self, queue, mock_redis):
         """list_jobs(session_id=...) should only return matching jobs."""
-        info1 = _make_job_info(
-            job_id="job-1", metadata={"session_id": "sess-A"}
-        )
-        info2 = _make_job_info(
-            job_id="job-2", metadata={"session_id": "sess-B"}
-        )
+        info1 = _make_job_info(job_id="job-1", metadata={"session_id": "sess-A"})
+        info2 = _make_job_info(job_id="job-2", metadata={"session_id": "sess-B"})
 
         mock_redis.zrevrange.return_value = [b"job-1", b"job-2"]
         mock_redis.hget.side_effect = lambda key, jid: {
@@ -325,17 +318,10 @@ class TestCeleryListJobs:
 
     async def test_list_jobs_respects_limit(self, queue, mock_redis):
         """list_jobs(limit=N) should return at most N jobs."""
-        infos = {
-            f"job-{i}": _make_job_info(job_id=f"job-{i}")
-            for i in range(5)
-        }
+        infos = {f"job-{i}": _make_job_info(job_id=f"job-{i}") for i in range(5)}
 
-        mock_redis.zrevrange.return_value = [
-            f"job-{i}".encode() for i in range(5)
-        ]
-        mock_redis.hget.side_effect = lambda key, jid: _job_info_to_json(
-            infos[jid]
-        )
+        mock_redis.zrevrange.return_value = [f"job-{i}".encode() for i in range(5)]
+        mock_redis.hget.side_effect = lambda key, jid: _job_info_to_json(infos[jid])
 
         jobs = await queue.list_jobs(limit=2)
         assert len(jobs) == 2
@@ -414,15 +400,11 @@ class TestCeleryHealthCheck:
         assert result["redis_connected"] is False
         assert result["workers"] == []
 
-    async def test_health_check_active_task_counting(
-        self, queue, mock_redis, mock_celery_app
-    ):
+    async def test_health_check_active_task_counting(self, queue, mock_redis, mock_celery_app):
         """health_check() should correctly sum active tasks across workers."""
         inspect_mock = MagicMock()
         inspect_mock.ping.return_value = {"w1": {"ok": "pong"}}
-        inspect_mock.active.return_value = {
-            "w1": [{"id": "a"}, {"id": "b"}, {"id": "c"}]
-        }
+        inspect_mock.active.return_value = {"w1": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
         inspect_mock.scheduled.return_value = None
         inspect_mock.reserved.return_value = None
         mock_celery_app.control.inspect.return_value = inspect_mock
@@ -500,13 +482,12 @@ class TestCeleryReadsConfigShyfemDir:
         fake_config.shyfem_dir = "/correct/from/config"
         fake_config.work_dir = str(tmp_path)
         # Add any other attributes CeleryJobQueue.__init__ reads from config.
-        monkeypatch.setattr(
-            "shyfem_ui.services.job_celery.get_config", lambda: fake_config
-        )
+        monkeypatch.setattr("shyfem_ui.services.job_celery.get_config", lambda: fake_config)
 
         # No broker connection happens in __init__ (celery app is created lazily).
 
         from shyfem_ui.services.job_celery import CeleryJobQueue
+
         # The CeleryJobQueue __init__ may take other args; adapt to actual signature.
         queue = CeleryJobQueue()  # ← may need: shyfem_dir=None, redis_url=None, etc.
 
@@ -528,9 +509,7 @@ class TestCeleryParity:
         fake_config = MagicMock()
         fake_config.shyfem_dir = "/usr/local/shyfem"
         fake_config.work_dir = str(tmp_path)
-        monkeypatch.setattr(
-            "shyfem_ui.services.job_celery.get_config", lambda: fake_config
-        )
+        monkeypatch.setattr("shyfem_ui.services.job_celery.get_config", lambda: fake_config)
         return fake_config
 
     def test_celery_init_accepts_session_factory_and_notification_service(
@@ -546,9 +525,7 @@ class TestCeleryParity:
         assert q.session_factory is sf
         assert q.notification_service is ns
 
-    def test_factory_passes_session_factory_and_notification_to_celery(
-        self, monkeypatch, tmp_path
-    ):
+    def test_factory_passes_session_factory_and_notification_to_celery(self, monkeypatch, tmp_path):
         """JobQueueFactory.create(mode='celery', ...) must propagate both kwargs."""
         from shyfem_ui.services.job_queue import JobQueueFactory
 
@@ -609,9 +586,7 @@ class TestCeleryParity:
         # add() must have been called (new row path)
         session.add.assert_called_once()
 
-    def test_celery_sends_completion_notification_on_success(
-        self, monkeypatch, tmp_path
-    ):
+    def test_celery_sends_completion_notification_on_success(self, monkeypatch, tmp_path):
         """notification_service.notify_job_success is called for COMPLETED jobs."""
         import shyfem_ui.services.job_celery as mod
         from shyfem_ui.services.job_queue import JobInfo, JobStatus
@@ -637,9 +612,7 @@ class TestCeleryParity:
         mod._send_completion_notification(job)
         ns.notify_job_success.assert_called_once()
 
-    def test_celery_sends_failure_notification_on_failure(
-        self, monkeypatch, tmp_path
-    ):
+    def test_celery_sends_failure_notification_on_failure(self, monkeypatch, tmp_path):
         """notification_service.notify_job_failed is called for FAILED jobs."""
         import shyfem_ui.services.job_celery as mod
         from shyfem_ui.services.job_queue import JobInfo, JobStatus
@@ -682,9 +655,7 @@ class TestPersistJobThreadSafety:
         fake_config = MagicMock()
         fake_config.shyfem_dir = "/usr/local/shyfem"
         fake_config.work_dir = str(tmp_path)
-        monkeypatch.setattr(
-            "shyfem_ui.services.job_celery.get_config", lambda: fake_config
-        )
+        monkeypatch.setattr("shyfem_ui.services.job_celery.get_config", lambda: fake_config)
 
         sentinel = MagicMock(name="original_global_factory")
         monkeypatch.setattr(mod, "_queue_session_factory", sentinel)
@@ -711,8 +682,54 @@ class TestPersistJobThreadSafety:
         q1._persist_job(info)
 
         post_persist_global = mod._queue_session_factory
-        assert post_persist_global is pre_persist_global, (
-            "Module global must not be mutated by _persist_job"
-        )
+        assert (
+            post_persist_global is pre_persist_global
+        ), "Module global must not be mutated by _persist_job"
         # And the stub must have been called with the instance's own factory.
         stub.assert_called_once_with(info, session_factory=q1_sf)
+
+
+class TestCeleryCompletionNotificationUserLookup:
+    """The Celery backend's completion email must include the user's email —
+    same DetachedInstanceError class as the local backend: the User was read
+    inside `with db_session()` but accessed after the block closed, dropping
+    the email."""
+
+    def test_notification_includes_user_email(self, tmp_path, monkeypatch):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        import shyfem_ui.db.base as dbbase
+        import shyfem_ui.services.job_celery as jc
+        from shyfem_ui.db.base import Base
+        from shyfem_ui.models.user import User
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=engine)
+        factory = sessionmaker(bind=engine)
+        monkeypatch.setattr(dbbase, "_SessionLocal", factory)
+
+        db = factory()
+        u = User(username="carol", password_hash="x", role="user", email="carol@example.com")
+        db.add(u)
+        db.commit()
+        uid = u.id
+        db.close()
+
+        notif = MagicMock()
+        monkeypatch.setattr(jc, "_queue_notification_service", notif)
+
+        job = JobInfo(
+            id="cj1",
+            name="n",
+            tool_name="shyfem",
+            args=[],
+            working_dir="/tmp",
+            status=JobStatus.COMPLETED,
+            metadata={"user_id": uid},
+        )
+        jc._send_completion_notification(job)
+
+        notif.notify_job_success.assert_called_once()
+        user_dict = notif.notify_job_success.call_args[0][0]
+        assert user_dict.get("email") == "carol@example.com"
