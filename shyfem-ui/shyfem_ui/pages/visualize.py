@@ -77,6 +77,11 @@ def _variable_stats(var):
     mean/std match numpy to floating-point tolerance.
     """
     try:
+        # Skip non-numeric (e.g. datetime64/string) data variables explicitly,
+        # rather than relying on a reduction to raise. In practice time is a
+        # coordinate, not a data_var, so these don't reach here.
+        if not np.issubdtype(var.dtype, np.number):
+            return None, None, None, None
         if getattr(var, "nbytes", 0) and var.nbytes > _STATS_MAX_BYTES:
             return None, None, None, None
         mn = float(var.min(skipna=True))

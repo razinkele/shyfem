@@ -304,3 +304,19 @@ def test_test_env_pins_local_deployment_mode():
     from shyfem_ui.config import Config
 
     assert Config().deployment_mode == "local"
+
+
+def test_command_timeout_zero_rejected():
+    """command_timeout_seconds=0 must be rejected, not silently treated as
+    disabled (None=disabled, positive=enabled). Avoids an operator
+    accidentally turning off the timeout with a 0."""
+    import pytest
+    from pydantic import ValidationError
+
+    from shyfem_ui.config import Config
+
+    with pytest.raises(ValidationError):
+        Config(command_timeout_seconds=0)
+    # None and positive are valid.
+    assert Config(command_timeout_seconds=None).command_timeout_seconds is None
+    assert Config(command_timeout_seconds=3600).command_timeout_seconds == 3600

@@ -216,3 +216,20 @@ class TestVariableStats:
         monkeypatch.setattr(viz, "_STATS_MAX_BYTES", 8)  # tiny cap
         var = xr.DataArray(np.arange(100.0), dims=["x"])  # 800 bytes > cap
         assert viz._variable_stats(var) == (None, None, None, None)
+
+
+class TestVariableStatsNonNumeric:
+    """Non-numeric (e.g. datetime64) data variables are skipped intentionally
+    (None) rather than crashing or showing epoch-floats — they are coordinates
+    in practice, not data_vars, but the gate keeps both consumers consistent."""
+
+    def test_datetime_data_var_returns_none(self):
+        import numpy as np
+        import xarray as xr
+
+        from shyfem_ui.pages.visualize import _variable_stats
+
+        var = xr.DataArray(
+            np.array(["2024-01-01", "2024-01-02"], dtype="datetime64[ns]"), dims=["t"]
+        )
+        assert _variable_stats(var) == (None, None, None, None)
