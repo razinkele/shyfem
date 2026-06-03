@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from shyfem_ui.services.job_local import LocalJobQueue
-from shyfem_ui.services.job_queue import JobSpec, JobStatus
+from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
 from shyfem_ui.services.shyfem_wrapper import CommandResult
 
 
@@ -552,3 +552,51 @@ class TestDbRowToJobInfo:
         )
         assert "user_id" not in info.metadata
         assert "project_id" not in info.metadata
+
+
+class TestCompletionNotificationUserLookup:
+    """The job-completion email must include the user's email. The lookup
+    queried the User inside a `with db_session()` block but read user.email
+    AFTER the block closed -> DetachedInstanceError (expire_on_commit) swallowed
+    at debug -> user_dict={} -> email silently dropped for every server job."""
+
+    @pytest.mark.asyncio
+    async def test_notification_includes_user_email(self, tmp_path, monkeypatch):
+        from unittest.mock import MagicMock
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        import shyfem_ui.db.base as dbbase
+        from shyfem_ui.db.base import Base
+        from shyfem_ui.models.user import User
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=engine)
+        factory = sessionmaker(bind=engine)
+        monkeypatch.setattr(dbbase, "_SessionLocal", factory)
+
+        db = factory()
+        u = User(username="bob", password_hash="x", role="user", email="bob@example.com")
+        db.add(u)
+        db.commit()
+        uid = u.id
+        db.close()
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q.notification_service = MagicMock()
+        job = JobInfo(
+            id="j1",
+            name="n",
+            tool_name="shyfem",
+            args=[],
+            working_dir="/tmp",
+            status=JobStatus.COMPLETED,
+            metadata={"user_id": uid},
+        )
+        q._send_completion_notification(job)
+
+        q.notification_service.notify_job_success.assert_called_once()
+        user_dict = q.notification_service.notify_job_success.call_args[0][0]
+        assert user_dict.get("email") == "bob@example.com"
+        assert user_dict.get("username") == "bob"
