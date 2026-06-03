@@ -450,7 +450,11 @@ class LocalJobQueue(JobQueue):
                             try:
                                 path.unlink()
                             except Exception:
-                                pass
+                                # Best-effort cleanup — never fail eviction if a
+                                # stale output file can't be removed, but log it.
+                                logger.debug(
+                                    "Could not remove job output file %s", path, exc_info=True
+                                )
 
         return len(to_remove)
 
