@@ -1484,12 +1484,18 @@ def mesh_builder_server(
     @render.download(filename=lambda: input.export_filename() or "mesh_output.grd")
     def download_grd():
         """Download .grd file to the browser."""
+        import os
         import tempfile
 
         grd = final_grd.get() or mesh_grd.get()
         if grd is None:
             return
-        tmp = Path(tempfile.mktemp(suffix=".grd"))
+        # mkstemp creates the file atomically with a non-predictable name (no
+        # TOCTOU race, unlike the deprecated tempfile.mktemp). We only need the
+        # path; export_grd reopens it to write.
+        fd, tmp_name = tempfile.mkstemp(suffix=".grd")
+        os.close(fd)
+        tmp = Path(tmp_name)
         export_grd(grd, tmp)
         return str(tmp)
 

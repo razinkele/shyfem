@@ -9,12 +9,22 @@ Steps can reference outputs from previous steps.
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from shyfem_ui.models.workflow import Workflow, WorkflowStatus
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
+
+
+def _utcnow() -> datetime:
+    """Naive UTC timestamp — drop-in for the deprecated ``datetime.utcnow()``.
+
+    Returns a tz-naive datetime (tzinfo stripped) to stay compatible with the
+    naive DateTime columns and the naive ``datetime.now()`` values this module
+    already produces; mixing aware and naive datetimes would raise on compare.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 @dataclass
@@ -220,7 +230,7 @@ def _row_to_instance(row: Workflow) -> WorkflowInstance:
         current_step_index=meta_entry.get("current_step_index", 0),
         step_job_ids=meta_entry.get("step_job_ids", {}),
         step_results=meta_entry.get("step_results", {}),
-        created_at=row.created_at or datetime.utcnow(),
+        created_at=row.created_at or _utcnow(),
         started_at=_parse_dt(meta_entry.get("started_at")),
         completed_at=row.completed_at,
         error_message=meta_entry.get("error_message"),
@@ -377,8 +387,8 @@ class WorkflowEngine:
                 await self._queue.cancel(wf.step_job_ids[step.name])
 
             row.status = WorkflowStatus.CANCELLED
-            row.completed_at = datetime.utcnow()
-            row.updated_at = datetime.utcnow()
+            row.completed_at = _utcnow()
+            row.updated_at = _utcnow()
             session.commit()
         finally:
             session.close()
@@ -424,7 +434,7 @@ class WorkflowEngine:
                 return
             row.status = wf.status
             row.steps = _pack_steps(wf)
-            row.updated_at = datetime.utcnow()
+            row.updated_at = _utcnow()
             if wf.completed_at:
                 row.completed_at = wf.completed_at
             session.commit()
