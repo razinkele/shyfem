@@ -1,11 +1,10 @@
 """Tests for admin page pure functions."""
 
-import pytest
 from shyfem_ui.pages.admin import (
-    _build_user_table_data,
-    _validate_create_user_form,
-    _role_badge,
     _active_badge,
+    _build_user_table_data,
+    _role_badge,
+    _validate_create_user_form,
 )
 
 

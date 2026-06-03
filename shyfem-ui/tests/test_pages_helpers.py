@@ -2,11 +2,9 @@
 
 from datetime import datetime, timedelta
 
-import pytest
 from shiny import ui
 
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

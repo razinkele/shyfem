@@ -5,10 +5,8 @@ by their existing test files (test_run_helpers, test_run_validation,
 test_job_ownership)."""
 from pathlib import Path
 
-import pytest
-
-from shyfem_ui.services.run_logic import build_job_spec
 from shyfem_ui.services.job_queue import JobSpec
+from shyfem_ui.services.run_logic import build_job_spec
 
 
 class TestBuildJobSpec:

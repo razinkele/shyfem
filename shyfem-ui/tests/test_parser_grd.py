@@ -1,7 +1,7 @@
 """Tests for .grd file parser."""
 
-import numpy as np
 import pytest
+
 from shyfem_ui.services.parser_grd import (
     CoordinateSystem,
     Element,
@@ -562,7 +562,7 @@ class TestNvertFormat:
 
         output = GrdParser.generate(grd)
         # Element line should be: 2 1 0 3 1 2 3
-        elem_line = [l for l in output.splitlines() if l.startswith("2 ")][0]
+        elem_line = [ln for ln in output.splitlines() if ln.startswith("2 ")][0]
         parts = elem_line.split()
         assert parts[3] == "3"  # nvert
         assert parts[4:7] == ["1", "2", "3"]  # node IDs
@@ -575,7 +575,7 @@ class TestNvertFormat:
         grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2])
 
         output = GrdParser.generate(grd)
-        line = [l for l in output.splitlines() if l.startswith("3 ")][0]
+        line = [ln for ln in output.splitlines() if ln.startswith("3 ")][0]
         parts = line.split()
         assert parts[3] == "2"  # nvert
         assert parts[4:6] == ["1", "2"]  # node IDs
@@ -589,7 +589,7 @@ class TestNvertFormat:
         grd.elements[1] = Element(id=1, elem_type=0, nodes=[1, 2, 3], depth=7.5)
 
         output = GrdParser.generate(grd)
-        elem_line = [l for l in output.splitlines() if l.startswith("2 ")][0]
+        elem_line = [ln for ln in output.splitlines() if ln.startswith("2 ")][0]
         parts = elem_line.split()
         assert float(parts[7]) == pytest.approx(7.5)
 

@@ -71,9 +71,9 @@ class TestBuildFileChoices:
         assert "GRID/mesh.grd" in values
 
     def test_empty_project_returns_empty(self, tmp_path):
+        from shyfem_ui.components.file_picker import build_file_choices
         from shyfem_ui.db.base import db_session
         from shyfem_ui.models.project import Project
-        from shyfem_ui.components.file_picker import build_file_choices
 
         work = tmp_path / "projects" / "empty"
         work.mkdir(parents=True)

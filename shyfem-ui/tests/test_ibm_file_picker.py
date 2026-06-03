@@ -27,7 +27,9 @@ class TestModuleImports:
         src = get_server_source(page_mod, "ibm_server")
         assert src.count("file_picker_server(") >= 1
         assert 'file_types=["lagrangian"]' in src
-        import re; assert re.search(r'fill_picker_input\(\s*"lgr_path"', src)
+        import re
+
+        assert re.search(r'fill_picker_input\(\s*"lgr_path"', src)
         assert "reactive.isolate()" in src
 
 

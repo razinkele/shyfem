@@ -15,7 +15,6 @@ env.py's import list. If you add a new model module under
 import re
 from pathlib import Path
 
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _MODELS_DIR = _REPO_ROOT / "shyfem_ui" / "models"
 _ENV_PY = _REPO_ROOT / "migrations" / "env.py"

@@ -25,7 +25,6 @@ from shyfem_ui.components.str_editor import (
 )
 from shyfem_ui.services.parser_str import StrParser
 
-
 # ---------------------------------------------------------------------------
 # Shared fixtures / helpers
 # ---------------------------------------------------------------------------

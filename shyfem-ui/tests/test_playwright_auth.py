@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.conftest import _dismiss_modals, _login
+from tests.conftest import _dismiss_modals
 
 pytestmark = [pytest.mark.e2e]
 

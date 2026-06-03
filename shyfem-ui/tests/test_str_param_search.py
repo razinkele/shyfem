@@ -101,6 +101,6 @@ $end
     def test_returns_count_info(self, sample_str):
         """Result dict only contains param name lists."""
         result = filter_sections("idt", sample_str)
-        for section, params in result.items():
+        for _section, params in result.items():
             assert isinstance(params, list)
             assert all(isinstance(p, str) for p in params)

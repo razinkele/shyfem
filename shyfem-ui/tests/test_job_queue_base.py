@@ -1,12 +1,15 @@
 """Tests for the JobQueue abstract base class and factory."""
 from datetime import datetime, timedelta
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from shyfem_ui.services.job_queue import (
-    JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus,
+    JobInfo,
+    JobQueue,
+    JobQueueFactory,
+    JobSpec,
+    JobStatus,
 )
 
 

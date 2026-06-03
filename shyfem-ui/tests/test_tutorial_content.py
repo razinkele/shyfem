@@ -41,6 +41,7 @@ class TestTutorialContentStructure:
     def test_all_str_files_exist_in_mar_menor(self):
         """Every referenced .str file must exist in the testcases source."""
         from pathlib import Path
+
         from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
         mar_menor = Path("/home/razinka/shyfem/testcases/examples/mar_menor")
         if not mar_menor.is_dir():

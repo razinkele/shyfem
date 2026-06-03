@@ -1,6 +1,5 @@
 """Tests for visualize page pure functions."""
 
-from pathlib import Path
 
 import plotly.graph_objects as go
 import pytest
@@ -11,8 +10,7 @@ from shyfem_ui.pages.visualize import (
     _load_timeseries,
     _plotly_timeseries,
 )
-from shyfem_ui.services.parser_grd import Element, GrdFile, Line, Node
-
+from shyfem_ui.services.parser_grd import Element, GrdFile, Node
 
 # ── fixtures ─────────────────────────────────────────────────────
 

@@ -5,7 +5,6 @@ import pytest
 from shyfem_ui.pages.simulation import generate_template
 from shyfem_ui.services.parser_str import StrParser
 
-
 ALL_TEMPLATES = [
     "basic_2d",
     "basic_3d",

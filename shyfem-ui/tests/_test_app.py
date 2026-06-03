@@ -20,7 +20,7 @@ from shiny import App, module, reactive, render, ui
 # Ensure the package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from shyfem_ui.app import SIDEBAR_GROUPS, _HEAD_EXTRAS, _build_sidebar_nav
+from shyfem_ui.app import _HEAD_EXTRAS, _build_sidebar_nav
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
@@ -63,11 +63,11 @@ def _stub_run_server(
         fill_picker_input,
     )
 
-    active_jobs_data = reactive.value([])
-    all_jobs_data = reactive.value([])
-    selected_job_id = reactive.value(None)
-    selected_job = reactive.value(None)
-    log_content = reactive.value("")
+    reactive.value([])
+    reactive.value([])
+    reactive.value(None)
+    reactive.value(None)
+    reactive.value("")
 
     project_id_val: reactive.Value[int | None] = reactive.value(None)
 

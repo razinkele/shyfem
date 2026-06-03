@@ -1,8 +1,7 @@
 """Tests for STR cross-parameter validation."""
 
-import pytest
 
-from shyfem_ui.services.str_validator import validate_str, ValidationMessage
+from shyfem_ui.services.str_validator import validate_str
 
 
 class TestBasicValidation:

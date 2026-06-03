@@ -1,6 +1,5 @@
 """Tests for project storage config."""
 
-import pytest
 
 
 class TestStorageConfig:

@@ -1,9 +1,6 @@
 """Tests for grid_map deck.gl widget integration (layer_legend_widget, screenshot_widget)."""
 
-import re
-from unittest.mock import MagicMock
 
-import pytest
 
 
 def test_screenshot_widget_importable():
@@ -30,6 +27,7 @@ def test_grid_map_ui_no_manual_toggle_checkboxes():
 def test_grid_map_ui_fallback_without_deckgl():
     """When MapWidget is None, grid_map_ui returns an alert div."""
     from unittest.mock import patch
+
     import shyfem_ui.components.grid_map as gm
 
     with patch.object(gm, "MapWidget", None):
@@ -81,6 +79,7 @@ def test_build_label_map_dynamic_boundaries():
 def test_build_layers_no_toggle_params():
     """build_layers no longer accepts show_emodnet/show_boundaries/show_nodes params."""
     import inspect
+
     from shyfem_ui.components.grid_map import build_layers
 
     sig = inspect.signature(build_layers)

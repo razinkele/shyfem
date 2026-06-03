@@ -27,7 +27,9 @@ class TestModuleImports:
         src = get_server_source(page_mod, "physics_server")
         assert src.count("file_picker_server(") >= 1
         assert 'file_types=["str"]' in src
-        import re; assert re.search(r'fill_picker_input\(\s*"str_path"', src)
+        import re
+
+        assert re.search(r'fill_picker_input\(\s*"str_path"', src)
         # Pin that physics_server has an _on_project_changed effect
         # (historically absent; the rollout adds one).
         assert "_on_project_changed" in src

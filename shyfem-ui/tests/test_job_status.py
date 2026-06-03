@@ -12,7 +12,6 @@ from shyfem_ui.components.job_status import (
 )
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 
-
 # ── format_duration ──────────────────────────────────────────────
 
 

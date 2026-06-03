@@ -2,14 +2,11 @@
 
 from pathlib import Path
 
-import pytest
-
 from shyfem_ui.services.timeseries_loader import (
     _looks_numeric,
     load_timeseries,
     load_timeseries_raw,
 )
-
 
 # ── _looks_numeric ──────────────────────────────────────────────
 

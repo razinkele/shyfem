@@ -13,7 +13,6 @@ from shyfem_ui.pages.grid_prep import (
 )
 from shyfem_ui.services.parser_grd import Element, GrdFile, Line, Node
 
-
 # ---------------------------------------------------------------------------
 # Helpers to build test grids
 # ---------------------------------------------------------------------------

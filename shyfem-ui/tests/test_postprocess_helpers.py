@@ -2,10 +2,10 @@
 
 from shyfem_ui.services.postprocess_logic import (
     discover_shy_files as _discover_shy_files,
-    format_size as _format_size,
+)
+from shyfem_ui.services.postprocess_logic import (
     parse_shyelab_info as _parse_shyelab_info,
 )
-
 
 SAMPLE_SHYELAB_OUTPUT = """\
  Information on shy file

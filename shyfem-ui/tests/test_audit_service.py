@@ -7,7 +7,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from shyfem_ui.db.base import Base
-from shyfem_ui.models.audit_log import AuditLog
 from shyfem_ui.services.audit_service import AuditService
 
 

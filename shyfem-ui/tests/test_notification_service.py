@@ -3,8 +3,6 @@
 import smtplib
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from shyfem_ui.config import Config
 from shyfem_ui.services.notification_service import NotificationService
 

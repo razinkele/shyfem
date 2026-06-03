@@ -1,7 +1,7 @@
 """Tests for ProjectFile model."""
 
+
 import pytest
-from datetime import datetime
 
 
 @pytest.fixture(autouse=True)

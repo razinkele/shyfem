@@ -5,7 +5,7 @@ replicate its logic in a standalone async function and test the behavioral
 pattern with mocked dependencies.
 """
 
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

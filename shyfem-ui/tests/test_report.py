@@ -1,18 +1,16 @@
 """Tests for HTML report generator."""
 
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock
 
-import pytest
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 from shyfem_ui.services.report import (
     ReportBuilder,
-    generate_comparison_report,
-    generate_job_report,
     _esc,
     _format_duration,
     _format_size,
+    generate_comparison_report,
+    generate_job_report,
 )
 
 

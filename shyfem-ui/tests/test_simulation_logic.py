@@ -2,12 +2,12 @@
 
 import pytest
 
+from shyfem_ui.services.parser_str import StrFile
 from shyfem_ui.services.simulation_logic import (
     _quote_value,
     apply_quick_settings,
     generate_template,
 )
-from shyfem_ui.services.parser_str import StrFile
 
 ALL_TEMPLATES = [
     "basic_2d",

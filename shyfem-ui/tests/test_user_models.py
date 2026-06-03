@@ -1,9 +1,8 @@
 """Tests for user management database models."""
 
-import pytest
 from datetime import datetime, timedelta, timezone
 
-from shyfem_ui.models.user import User, AuthSession, ProjectPermission
+from shyfem_ui.models.user import AuthSession, ProjectPermission, User
 
 
 class TestUserModel:
@@ -85,6 +84,7 @@ class TestJobUserColumn:
 def test_home_dir_returns_root_slash_username():
     """User.home_dir(root) returns Path(root) / username."""
     from pathlib import Path
+
     from shyfem_ui.models.user import User
     u = User(username="alice", password_hash="x", role="user")
     assert u.home_dir(Path("/data/shyfem")) == Path("/data/shyfem/alice")
@@ -93,6 +93,7 @@ def test_home_dir_returns_root_slash_username():
 def test_home_dir_tutorial_user():
     """Tutorial user home_dir is computed the same way (directory skipped at creation)."""
     from pathlib import Path
+
     from shyfem_ui.models.user import User
     u = User(username="user", password_hash="x", role="tutorial")
     assert u.home_dir(Path("/data/shyfem")) == Path("/data/shyfem/user")

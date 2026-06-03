@@ -2,7 +2,7 @@
 
 import pytest
 
-from shyfem_ui.app import _build_sidebar_nav, SIDEBAR_GROUPS
+from shyfem_ui.app import SIDEBAR_GROUPS, _build_sidebar_nav
 
 pytest.importorskip("shiny_deckgl")
 

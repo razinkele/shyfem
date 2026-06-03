@@ -1,6 +1,5 @@
 """Tests for Tutorial page rendering helpers."""
 
-import pytest
 from shiny import ui
 
 
@@ -251,7 +250,7 @@ class TestRenderStep:
         assert "border-success" in rendered
 
     def test_render_step_with_screenshot(self):
-        from shyfem_ui.pages.tutorial import _render_step, _WWW_DIR
+        from shyfem_ui.pages.tutorial import _WWW_DIR, _render_step
 
         # Create a temporary screenshot file so the existence check passes
         img_path = _WWW_DIR / "tutorial" / "grid_prep_stats.png"

@@ -1,6 +1,5 @@
 """Tests for file browser upload validation."""
 
-import pytest
 from shyfem_ui.components.file_browser import validate_upload
 
 

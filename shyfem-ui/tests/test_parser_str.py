@@ -1,11 +1,11 @@
 """Tests for .str file parser."""
 
 import pytest
+
 from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
     StrFile,
     StrParser,
-    StrSection,
     get_param_info,
 )
 

@@ -1,10 +1,11 @@
 """Tests for HealthCheckMiddleware."""
 
 import json
-import time
 
 import pytest
 
+from shyfem_ui.app import create_app
+from shyfem_ui.config import Config
 from shyfem_ui.middleware.health_check import HealthCheckMiddleware
 
 
@@ -170,10 +171,6 @@ class TestHealthCheckMiddleware:
         await mw(_http_scope("/health"), _noop_receive, sent.append)
         body = json.loads(sent[1]["body"])
         assert body["worker_count"] == 8
-
-
-from shyfem_ui.app import create_app
-from shyfem_ui.config import Config
 
 
 class TestHealthIntegration:
