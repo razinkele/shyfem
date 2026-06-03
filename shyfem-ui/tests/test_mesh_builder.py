@@ -179,14 +179,18 @@ class TestImportBoundaries:
 
         schema = {"geometry": "Polygon", "properties": {"name": "str"}}
         path = tmp_path / "test.shp"
-        with fiona.open(str(path), "w", driver="ESRI Shapefile", schema=schema, crs=CRS.from_epsg(4326)) as dst:
-            dst.write({
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[[0, 0], [5, 0], [5, 5], [0, 5], [0, 0]]],
-                },
-                "properties": {"name": "test"},
-            })
+        with fiona.open(
+            str(path), "w", driver="ESRI Shapefile", schema=schema, crs=CRS.from_epsg(4326)
+        ) as dst:
+            dst.write(
+                {
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [[[0, 0], [5, 0], [5, 5], [0, 5], [0, 0]]],
+                    },
+                    "properties": {"name": "test"},
+                }
+            )
         grd = import_boundaries(path)
         assert len(grd.nodes) >= 4
         assert len(grd.lines) == 1
@@ -224,22 +228,29 @@ class TestImportBoundaries:
         schema = {"geometry": "Polygon", "properties": {}}
         path = tmp_path / "projected.shp"
         with fiona.open(
-            str(path), "w", driver="ESRI Shapefile",
-            schema=schema, crs=CRS.from_epsg(32635),
+            str(path),
+            "w",
+            driver="ESRI Shapefile",
+            schema=schema,
+            crs=CRS.from_epsg(32635),
         ) as dst:
-            dst.write({
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[
-                        [300000, 6100000],
-                        [350000, 6100000],
-                        [350000, 6150000],
-                        [300000, 6150000],
-                        [300000, 6100000],
-                    ]],
-                },
-                "properties": {},
-            })
+            dst.write(
+                {
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [300000, 6100000],
+                                [350000, 6100000],
+                                [350000, 6150000],
+                                [300000, 6150000],
+                                [300000, 6100000],
+                            ]
+                        ],
+                    },
+                    "properties": {},
+                }
+            )
         grd = import_boundaries(path)
         # After reprojection, coordinates should be in WGS84 range
         xs = [n.x for n in grd.nodes.values()]
@@ -256,16 +267,23 @@ class TestImportBoundaries:
         schema = {"geometry": "Polygon", "properties": {}}
         path = tmp_path / "wgs84.shp"
         with fiona.open(
-            str(path), "w", driver="ESRI Shapefile",
-            schema=schema, crs=CRS.from_epsg(4326),
+            str(path),
+            "w",
+            driver="ESRI Shapefile",
+            schema=schema,
+            crs=CRS.from_epsg(4326),
         ) as dst:
-            dst.write({
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [[[21.0, 55.0], [21.5, 55.0], [21.5, 55.5], [21.0, 55.5], [21.0, 55.0]]],
-                },
-                "properties": {},
-            })
+            dst.write(
+                {
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [[21.0, 55.0], [21.5, 55.0], [21.5, 55.5], [21.0, 55.5], [21.0, 55.0]]
+                        ],
+                    },
+                    "properties": {},
+                }
+            )
         grd = import_boundaries(path)
         xs = [round(n.x, 1) for n in grd.nodes.values()]
         ys = [round(n.y, 1) for n in grd.nodes.values()]
@@ -274,7 +292,10 @@ class TestImportBoundaries:
 
     def test_gpkg_projected_crs(self):
         """Real GeoPackage in LKS94 (EPSG:3346) reprojects to WGS84."""
-        path = Path(__file__).resolve().parent.parent.parent / "testcases/examples/curoninan/curonian_boundary.gpkg"
+        path = (
+            Path(__file__).resolve().parent.parent.parent
+            / "testcases/examples/curoninan/curonian_boundary.gpkg"
+        )
         if not path.exists():
             pytest.skip("curonian_boundary.gpkg not available")
         grd = import_boundaries(path)
@@ -457,10 +478,17 @@ class TestInterpolateScipy:
         grd = _make_square_boundary()
         mesh = triangulate(grd, max_area=10.0)
         # Bathymetry: z = x + y (linear, easy to verify)
-        bathy = np.array([
-            [0, 0, 0], [10, 0, 10], [0, 10, 10], [10, 10, 20],
-            [5, 5, 10], [5, 0, 5], [0, 5, 5],
-        ])
+        bathy = np.array(
+            [
+                [0, 0, 0],
+                [10, 0, 10],
+                [0, 10, 10],
+                [10, 10, 20],
+                [5, 5, 10],
+                [5, 0, 5],
+                [0, 5, 5],
+            ]
+        )
         return mesh, bathy
 
     def test_linear_interpolation(self):
@@ -506,10 +534,17 @@ class TestRBFInterpolation:
     def _make_mesh_and_bathy(self):
         grd = _make_square_boundary()
         mesh = triangulate(grd, max_area=10.0)
-        bathy = np.array([
-            [0, 0, 0], [10, 0, 10], [0, 10, 10], [10, 10, 20],
-            [5, 5, 10], [5, 0, 5], [0, 5, 5],
-        ])
+        bathy = np.array(
+            [
+                [0, 0, 0],
+                [10, 0, 10],
+                [0, 10, 10],
+                [10, 10, 20],
+                [5, 5, 10],
+                [5, 0, 5],
+                [0, 5, 5],
+            ]
+        )
         return mesh, bathy
 
     def test_rbf_sets_all_depths(self):
@@ -525,9 +560,14 @@ class TestRBFInterpolation:
         grd = _make_square_boundary(size=20.0)
         mesh = triangulate(grd, max_area=20.0)
         # Bathy covers only center 5x5 area
-        bathy = np.array([
-            [8, 8, 5], [12, 8, 5], [8, 12, 5], [12, 12, 10],
-        ])
+        bathy = np.array(
+            [
+                [8, 8, 5],
+                [12, 8, 5],
+                [8, 12, 5],
+                [12, 12, 10],
+            ]
+        )
         result = interpolate_bathymetry_scipy(mesh, bathy, method="rbf")
         depths = [n.depth for n in result.nodes.values()]
         assert all(d is not None for d in depths)
@@ -553,10 +593,17 @@ class TestCloughTocherInterpolation:
     def _make_mesh_and_bathy(self):
         grd = _make_square_boundary()
         mesh = triangulate(grd, max_area=10.0)
-        bathy = np.array([
-            [0, 0, 0], [10, 0, 10], [0, 10, 10], [10, 10, 20],
-            [5, 5, 10], [5, 0, 5], [0, 5, 5],
-        ])
+        bathy = np.array(
+            [
+                [0, 0, 0],
+                [10, 0, 10],
+                [0, 10, 10],
+                [10, 10, 20],
+                [5, 5, 10],
+                [5, 0, 5],
+                [0, 5, 5],
+            ]
+        )
         return mesh, bathy
 
     def test_cloughtocher_sets_all_depths(self):
@@ -579,9 +626,14 @@ class TestCloughTocherInterpolation:
         """Nodes outside hull get nearest-neighbor fallback, not NaN."""
         grd = _make_square_boundary(size=20.0)
         mesh = triangulate(grd, max_area=20.0)
-        bathy = np.array([
-            [8, 8, 5], [12, 8, 5], [8, 12, 5], [12, 12, 10],
-        ])
+        bathy = np.array(
+            [
+                [8, 8, 5],
+                [12, 8, 5],
+                [8, 12, 5],
+                [12, 12, 10],
+            ]
+        )
         result = interpolate_bathymetry_scipy(mesh, bathy, method="cloughtocher")
         depths = [n.depth for n in result.nodes.values()]
         assert all(d is not None for d in depths)
@@ -609,9 +661,15 @@ class TestBoundaryZeroInjection:
         grd = _make_square_boundary()
         mesh = triangulate(grd, max_area=10.0)
         # Bathy: constant depth=10 everywhere
-        bathy = np.array([
-            [2, 2, 10], [8, 2, 10], [2, 8, 10], [8, 8, 10], [5, 5, 10],
-        ])
+        bathy = np.array(
+            [
+                [2, 2, 10],
+                [8, 2, 10],
+                [2, 8, 10],
+                [8, 8, 10],
+                [5, 5, 10],
+            ]
+        )
         # Without boundary zero: all nodes ~10
         result_no_bz = interpolate_bathymetry_scipy(
             mesh, bathy, method="linear", use_boundary_zero=False
@@ -629,22 +687,20 @@ class TestBoundaryZeroInjection:
         """RBF + boundary_zero produces zero at coastline."""
         grd = _make_square_boundary()
         mesh = triangulate(grd, max_area=10.0)
-        bathy = np.array([
-            [5, 5, 20], [3, 3, 15], [7, 7, 15],
-        ])
-        result = interpolate_bathymetry_scipy(
-            mesh, bathy, method="rbf", use_boundary_zero=True
+        bathy = np.array(
+            [
+                [5, 5, 20],
+                [3, 3, 15],
+                [7, 7, 15],
+            ]
         )
+        result = interpolate_bathymetry_scipy(mesh, bathy, method="rbf", use_boundary_zero=True)
         # Interior should have high depth, edges should be near zero
         boundary_nids = set()
         for line in mesh.lines.values():
             boundary_nids.update(line.nodes)
-        boundary_depths = [
-            result.nodes[nid].depth for nid in boundary_nids if nid in result.nodes
-        ]
-        interior_depths = [
-            n.depth for nid, n in result.nodes.items() if nid not in boundary_nids
-        ]
+        boundary_depths = [result.nodes[nid].depth for nid in boundary_nids if nid in result.nodes]
+        interior_depths = [n.depth for nid, n in result.nodes.items() if nid not in boundary_nids]
         if boundary_depths and interior_depths:
             assert np.mean(boundary_depths) < np.mean(interior_depths)
 
@@ -867,9 +923,7 @@ class TestCheckBoundaryGates:
     def test_self_intersecting_blocks(self):
         # Bowtie / figure-8: diagonals (0,0)-(1,1) and (1,0)-(0,1) cross.
         grd = GrdFile()
-        for i, (x, y) in enumerate(
-            [(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)], start=1
-        ):
+        for i, (x, y) in enumerate([(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)], start=1):
             grd.nodes[i] = Node(id=i, node_type=0, x=float(x), y=float(y))
         grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1])
         ok, reason = _check_boundary_gates(grd)
@@ -1024,9 +1078,7 @@ class TestMeshCreationPipeline:
                 if _triangle_min_angle_deg(nodes) < requested - 1.0:
                     below += 1
         assert total > 0
-        assert below / total < 0.10, (
-            f"{below}/{total} triangles violate min_angle≥{requested}°"
-        )
+        assert below / total < 0.10, f"{below}/{total} triangles violate min_angle≥{requested}°"
 
     def test_min_angle_zero_skips_quality_refinement(self):
         """Setting min_angle=0 should produce a coarser mesh than min_angle=25."""
@@ -1240,7 +1292,9 @@ class TestExportGrd:
 # TestMarMenorIntegration — end-to-end with real sample data
 # ---------------------------------------------------------------------------
 
-_MAR_MENOR_DIR = Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "mar_menor"
+_MAR_MENOR_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "mar_menor"
+)
 
 _HAS_MAR_MENOR = (
     (_MAR_MENOR_DIR / "mar_menor_boundary.geojson").exists()
@@ -1292,9 +1346,7 @@ class TestMarMenorIntegration:
         grd = import_boundaries(_MAR_MENOR_DIR / "mar_menor_boundary.geojson")
         mesh = triangulate(grd, max_area=200000.0, min_angle=20.0)
         contours = load_bathymetry_contours(_MAR_MENOR_DIR / "mar_menor_isobaths.geojson")
-        result = interpolate_bathymetry_scipy(
-            mesh, contours, method="rbf", use_boundary_zero=True
-        )
+        result = interpolate_bathymetry_scipy(mesh, contours, method="rbf", use_boundary_zero=True)
         depths = [n.depth for n in result.nodes.values()]
         assert all(d is not None for d in depths)
         assert min(depths) >= -1.0  # boundary zero should keep near-shore close to 0
@@ -1337,12 +1389,13 @@ class TestSetResolution:
 # TestCuronianIntegration — end-to-end with real Curonian Lagoon data
 # ---------------------------------------------------------------------------
 
-_CURONIAN_DIR = Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "curoninan"
-
-_HAS_CURONIAN = (
-    (_CURONIAN_DIR / "curonian_boundary.gpkg").exists()
-    and (_CURONIAN_DIR / "depth_isobates.gpkg").exists()
+_CURONIAN_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "curoninan"
 )
+
+_HAS_CURONIAN = (_CURONIAN_DIR / "curonian_boundary.gpkg").exists() and (
+    _CURONIAN_DIR / "depth_isobates.gpkg"
+).exists()
 
 
 @pytest.mark.skipif(not _HAS_CURONIAN, reason="Curonian lagoon sample data not found")
@@ -1452,9 +1505,7 @@ class TestCuronianIntegration:
         # Subsample for speed (251k points is too many for test)
         sub = data[::10]
         for method in ["linear", "nearest", "idw", "rbf", "cloughtocher"]:
-            result = interpolate_bathymetry_scipy(
-                mesh, sub, method=method, use_boundary_zero=True
-            )
+            result = interpolate_bathymetry_scipy(mesh, sub, method=method, use_boundary_zero=True)
             depths = [n.depth for n in result.nodes.values()]
             assert all(d is not None for d in depths), f"{method} has None depths"
             assert not any(np.isnan(d) for d in depths), f"{method} has NaN depths"
@@ -1467,9 +1518,7 @@ class TestCuronianIntegration:
         mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
         sub = data[::20]
-        result = interpolate_bathymetry_scipy(
-            mesh, sub, method="linear", use_boundary_zero=True
-        )
+        result = interpolate_bathymetry_scipy(mesh, sub, method="linear", use_boundary_zero=True)
         out = tmp_path / "curonian_output.grd"
         export_grd(result, out)
         reloaded = GrdParser.parse_file(out)
@@ -1546,9 +1595,9 @@ class TestTriangulateElementFormat:
         grd = _make_square_boundary()
         mesh = triangulate(grd, max_area=50.0)
         for elem in mesh.elements.values():
-            assert len(elem.nodes) == 3, (
-                f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
-            )
+            assert (
+                len(elem.nodes) == 3
+            ), f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
 
     def test_no_nvert_in_node_list(self):
         """Regression: nvert value (3) must NOT appear as first node ID."""
@@ -1571,9 +1620,9 @@ class TestTriangulateElementFormat:
         grd = _make_square_with_hole()
         mesh = triangulate(grd, max_area=5.0)
         for elem in mesh.elements.values():
-            assert len(elem.nodes) == 3, (
-                f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
-            )
+            assert (
+                len(elem.nodes) == 3
+            ), f"Element {elem.id} has {len(elem.nodes)} nodes: {elem.nodes}"
 
 
 # ---------------------------------------------------------------------------
@@ -1750,9 +1799,7 @@ class TestBathyUploadStats:
     def test_summary_excludes_nan(self):
         """Regression: numpy.min/max/mean propagate NaN by default; the
         summary must use NaN-aware reductions."""
-        bathy = np.array(
-            [[0.0, 0.0, 1.0], [1.0, 1.0, np.nan], [2.0, 2.0, 5.0]]
-        )
+        bathy = np.array([[0.0, 0.0, 1.0], [1.0, 1.0, np.nan], [2.0, 2.0, 5.0]])
         s = summarize_depth_stats(bathy)
         assert "min=1.00" in s
         assert "max=5.00" in s
@@ -1809,10 +1856,81 @@ class TestUploadRejectsUnknownExt:
         accepted formats. If someone removes one, this catches it."""
         # `Path` is already imported at the top of test_mesh_builder.py.
         page_src = (
-            Path(__file__).resolve().parent.parent / "shyfem_ui" / "pages"
-            / "mesh_builder.py"
+            Path(__file__).resolve().parent.parent / "shyfem_ui" / "pages" / "mesh_builder.py"
         ).read_text()
         # The branch that raises must be present and mention the formats.
         assert "Unrecognized boundary file format" in page_src
         for fmt in (".geojson", ".json", ".gpkg", ".shp", ".zip"):
             assert fmt in page_src
+
+
+class TestBathymetryRasterVectorization:
+    """_load_bathymetry_raster equivalence guard: the vectorized implementation
+    must return EXACTLY the same points (same values, same row-major order) as
+    the original per-pixel loop. Characterization test for the perf refactor."""
+
+    def _write_raster(self, path, band, nodata, transform, crs="EPSG:4326"):
+        import rasterio
+
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=band.shape[0],
+            width=band.shape[1],
+            count=1,
+            dtype=str(band.dtype),
+            crs=crs,
+            transform=transform,
+            nodata=nodata,
+        ) as dst:
+            dst.write(band, 1)
+
+    def _reference_loop(self, path):
+        """The original row-major loop algorithm (no reprojection for EPSG:4326)."""
+        import numpy as np
+        import rasterio
+
+        with rasterio.open(path) as src:
+            b = src.read(1)
+            nd = src.nodata
+            pts = []
+            for r in range(b.shape[0]):
+                for c in range(b.shape[1]):
+                    v = b[r, c]
+                    if nd is not None and v == nd:
+                        continue
+                    x, y = src.xy(r, c)
+                    pts.append([x, y, float(v)])
+        return np.array(pts)
+
+    def test_matches_loop_with_nodata(self, tmp_path):
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.array([[1.0, 2.0, -999.0], [3.0, 4.0, 5.0]], dtype="float32")
+        transform = from_origin(10.0, 50.0, 0.5, 0.5)  # west, north, xsize, ysize
+        path = tmp_path / "b.tif"
+        self._write_raster(path, band, -999.0, transform)
+
+        expected = self._reference_loop(path)
+        got = _load_bathymetry_raster(path)
+        assert got.shape == expected.shape
+        np.testing.assert_allclose(got, expected, rtol=0, atol=0)
+
+    def test_matches_loop_no_nodata(self, tmp_path):
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.array([[7.0, 8.0], [9.0, 10.0], [11.0, 12.0]], dtype="float32")
+        transform = from_origin(0.0, 0.0, 1.0, 1.0)
+        path = tmp_path / "b2.tif"
+        self._write_raster(path, band, None, transform)
+
+        expected = self._reference_loop(path)
+        got = _load_bathymetry_raster(path)
+        np.testing.assert_allclose(got, expected, rtol=0, atol=0)

@@ -295,8 +295,12 @@ class TestShyfemWrapperExtended:
 
     def test_parse_progress_shyelab_various(self, wrapper):
         """Test shyelab progress with various record counts."""
-        assert wrapper._parse_progress("shyelab", "processing record 1 of 100") == pytest.approx(0.01)
-        assert wrapper._parse_progress("shyelab", "processing record 100 of 100") == pytest.approx(1.0)
+        assert wrapper._parse_progress("shyelab", "processing record 1 of 100") == pytest.approx(
+            0.01
+        )
+        assert wrapper._parse_progress("shyelab", "processing record 100 of 100") == pytest.approx(
+            1.0
+        )
 
     @pytest.mark.asyncio
     async def test_run_command_with_stderr(self, wrapper, tmp_path):
@@ -408,3 +412,34 @@ class TestAllowlist:
         wrapper = ShyfemWrapper(tmp_path)
         with pytest.raises(ValueError, match="not an allowed SHYFEM tool"):
             wrapper.get_executable("../../../bin/bash")
+
+
+class TestCommandTimeout:
+    """command_timeout_seconds (default None) bounds a single tool subprocess so
+    a hung tool can't wedge the job/queue forever. Verified with a real
+    /bin/sleep that exceeds a 1s timeout."""
+
+    @pytest.mark.asyncio
+    async def test_subprocess_killed_on_timeout(self, tmp_path, monkeypatch):
+        from pathlib import Path as _P
+
+        import shyfem_ui.config as cfg_mod
+        from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+
+        monkeypatch.setenv("SHYFEM_UI_COMMAND_TIMEOUT_SECONDS", "1")
+        cfg_mod._config = None
+        try:
+            w = ShyfemWrapper(shyfem_dir=tmp_path)
+            monkeypatch.setattr(w, "get_executable", lambda tool: _P("/bin/sleep"))
+
+            import time as _t
+
+            t0 = _t.monotonic()
+            result = await w.run_command("sleep", ["10"], tmp_path)
+            elapsed = _t.monotonic() - t0
+
+            assert result.success is False
+            assert "timed out" in result.stderr.lower()
+            assert elapsed < 5, f"timeout did not fire promptly (took {elapsed:.1f}s)"
+        finally:
+            cfg_mod._config = None

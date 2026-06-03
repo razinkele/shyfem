@@ -1,6 +1,7 @@
 """Wrapper for SHYFEM Fortran CLI tools."""
 
 import asyncio
+import logging
 import os
 import re
 import shutil
@@ -8,6 +9,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -153,6 +156,11 @@ class ShyfemWrapper:
         stdout_lines = []
         stderr_lines = []
 
+        # Optional wall-clock timeout (None = disabled; preserves long sims).
+        from shyfem_ui.config import get_config
+
+        timeout = get_config().command_timeout_seconds
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -180,14 +188,35 @@ class ShyfemWrapper:
                         if progress is not None:
                             progress_callback(progress, decoded)
 
-            await asyncio.gather(
-                read_stream(proc.stdout, stdout_lines),
-                read_stream(proc.stderr, stderr_lines, is_stderr=True),
-            )
+            async def _drain_and_wait():
+                await asyncio.gather(
+                    read_stream(proc.stdout, stdout_lines),
+                    read_stream(proc.stderr, stderr_lines, is_stderr=True),
+                )
+                await proc.wait()
 
-            await proc.wait()
+            if timeout:
+                await asyncio.wait_for(_drain_and_wait(), timeout=timeout)
+            else:
+                await _drain_and_wait()
             return_code = proc.returncode
 
+        except asyncio.TimeoutError:
+            # A hung tool would otherwise wedge the job (and queue) forever.
+            logger.warning("Command %r exceeded %ss timeout; terminating", cmd_str, timeout)
+            proc.kill()
+            try:
+                await proc.wait()
+            except Exception:
+                logger.debug("Error awaiting killed process", exc_info=True)
+            return CommandResult(
+                success=False,
+                return_code=-1,
+                stdout="\n".join(stdout_lines),
+                stderr=f"Command timed out after {timeout}s and was terminated",
+                command=cmd_str,
+                working_dir=str(working_dir),
+            )
         except Exception as e:
             return CommandResult(
                 success=False,

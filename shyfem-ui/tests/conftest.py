@@ -22,7 +22,7 @@ import pytest
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _isolate_env():
+def _isolate_env(tmp_path_factory):
     """Isolate the test session from ambient SHYFEM_UI_* configuration.
 
     Pydantic Settings reads env vars automatically AND from an ``.env`` file
@@ -35,15 +35,37 @@ def _isolate_env():
     DEPLOYMENT_MODE=local explicitly; an env var overrides the .env file in
     pydantic's precedence, giving a deterministic default. Tests that need
     server mode opt in with monkeypatch.setenv (which overrides per-test).
+
+    Also pin DATABASE_URL to a session-temp path. The default url is a RELATIVE
+    ``sqlite:///./shyfem_ui.db`` — i.e. the PRODUCTION DB — so any test that
+    inits the global engine (e.g. a LocalJobQueue load/persist) would otherwise
+    read and WRITE the real database (this had leaked hundreds of test job rows
+    into prod). The temp DB is left uninitialised, so the job-queue load/persist
+    paths no-op exactly as the tests expect, and prod is never touched. Tests
+    needing a real schema set up their own DB (monkeypatch + init_db).
     """
     saved = {}
     for key in list(os.environ):
         if key.startswith("SHYFEM_UI_"):
             saved[key] = os.environ.pop(key)
     os.environ["SHYFEM_UI_DEPLOYMENT_MODE"] = "local"
+    _db = tmp_path_factory.mktemp("global_db") / "session.db"
+    os.environ["SHYFEM_UI_DATABASE_URL"] = f"sqlite:///{_db}"
+
+    # Drop any cached engine/config so the temp URL takes effect from first use.
+    import shyfem_ui.config as _cfg
+    import shyfem_ui.db.base as _db_base
+
+    _cfg._config = None
+    _db_base._engine = None
+    _db_base._SessionLocal = None
     yield
     os.environ.pop("SHYFEM_UI_DEPLOYMENT_MODE", None)
+    os.environ.pop("SHYFEM_UI_DATABASE_URL", None)
     os.environ.update(saved)
+    _cfg._config = None
+    _db_base._engine = None
+    _db_base._SessionLocal = None
 
 
 # ---------------------------------------------------------------------------

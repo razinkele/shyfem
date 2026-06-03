@@ -63,6 +63,14 @@ class Config(BaseSettings):
         default=False, description="Use Celery/Redis for job queue (server mode)"
     )
     max_workers: int = Field(default=4, description="Maximum concurrent jobs (local mode)")
+    command_timeout_seconds: int | None = Field(
+        default=None,
+        description=(
+            "Wall-clock timeout (s) for a single SHYFEM tool subprocess. None "
+            "disables it (default — preserves long-running simulations). Set it "
+            "to free the worker if a tool hangs; size it to your longest job."
+        ),
+    )
     redis_url: str = Field(
         default="redis://localhost:6379/0", description="Redis URL for Celery broker"
     )
