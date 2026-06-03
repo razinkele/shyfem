@@ -2,6 +2,7 @@
 
 import logging
 
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from shyfem_ui.models.project import Project
@@ -122,10 +123,8 @@ class SharingService:
         """List users that can be shared with (active, not owner, not already shared)."""
         db = self._session_factory()
         try:
-            already_shared = (
-                db.query(ProjectPermission.user_id)
-                .filter(ProjectPermission.project_id == project_id)
-                .subquery()
+            already_shared = select(ProjectPermission.user_id).where(
+                ProjectPermission.project_id == project_id
             )
             users = (
                 db.query(User)
