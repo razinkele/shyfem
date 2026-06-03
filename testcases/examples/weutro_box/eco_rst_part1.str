@@ -1,0 +1,16 @@
+
+$title
+        weutro restart part1 (0->1 day, writes restart)
+        eco_rst_part1
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-02'
+        idt = '300s'
+        date = 20090101
+        ilin = 1
+        ibio = 1
+        idtrst = -1            # write restart: only the last record
+        idtcon = '3h'
+$end

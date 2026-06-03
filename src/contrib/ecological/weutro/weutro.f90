@@ -2598,27 +2598,64 @@
 !**************************************************************
 !**************************************************************
 
+! Eco restart (Phase 2 C4): serialize the full pelagic + sediment + shell +
+! ulva state. Format: 1 header record (state counts + grid dims) followed by
+! 4 array records (e, es, esh, eul). write/read/skip share this fixed layout.
+
         subroutine write_restart_eco(iunit)
+        use eutro
+        use levels, only : nlvdi
+        use basin, only : nkn
         implicit none
         integer iunit
-        integer nstate,nkn,i
-        nstate = 0
-        nkn = 0
-        write(iunit) nstate,nkn
+        write(iunit) nstate,nsstate,nshstate,nulstate,nkn,nlvdi
+        write(iunit) e
+        write(iunit) es
+        write(iunit) esh
+        write(iunit) eul
         end
+
         subroutine skip_restart_eco(iunit)
         implicit none
         integer iunit
-        integer nstate,nkn,i
-        read(iunit) nstate,nkn
-        do i=1,nstate
-          read(iunit)
+        integer i
+        read(iunit)                     !header
+        do i=1,4
+          read(iunit)                   !e, es, esh, eul
         end do
         end
+
         subroutine read_restart_eco(iunit)
+        use eutro
+        use levels, only : nlvdi
+        use basin, only : nkn, nkndi
         implicit none
         integer iunit
-        call skip_restart_eco(iunit)
+        integer nst,nss,nsh,nul,nkr,nlr
+        read(iunit) nst,nss,nsh,nul,nkr,nlr
+        if( nst /= nstate .or. nss /= nsstate .or. nsh /= nshstate &
+     &        .or. nul /= nulstate ) then
+          write(6,*) 'read_restart_eco: state-count mismatch'
+          write(6,*) ' file:',nst,nss,nsh,nul
+          write(6,*) ' run :',nstate,nsstate,nshstate,nulstate
+          call shympi_abort_internal('read_restart_eco: state mismatch')
+        end if
+        if( nkr /= nkn .or. nlr /= nlvdi ) then
+          write(6,*) 'read_restart_eco: grid mismatch (nkn/nlvdi)'
+          write(6,*) ' file:',nkr,nlr,' run:',nkn,nlvdi
+          call shympi_abort_internal('read_restart_eco: grid mismatch')
+        end if
+        if( .not. allocated(e) ) then   !runs before bio3d allocates (C4)
+          allocate(e(nlvdi,nkndi,nstate))
+          allocate(es(nkndi,nsstate))
+          allocate(esh(nkndi,nshstate))
+          allocate(eul(nkndi,nulstate))
+        end if
+        read(iunit) e
+        read(iunit) es
+        read(iunit) esh
+        read(iunit) eul
+        brst_loaded = .true.
         end
 
 !***************************************************************

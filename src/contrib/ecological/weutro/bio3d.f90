@@ -183,6 +183,7 @@
         logical, save :: bshell = .false.
         logical, save :: bulva = .true.
         logical, save :: bflux = .true.
+        logical, save :: brst_loaded = .false.  !state restored from restart (Phase 2 C4)
 
 !====================================================================
         end module eutro
@@ -346,33 +347,37 @@
 !	  initialize state variables with einit
 !         --------------------------------------------------
 
-	  allocate(e(nlvdi,nkndi,nstate))	!pelagic variables
-	  allocate(eload(nlvdi,nkndi,nstate))	!pelagic loading
-	  allocate(es(nkndi,nsstate))		!sediment variables
-          allocate(esh(nkndi,nshstate))		!shell fish variables
-          allocate(eul(nkndi,nulstate))		!ulva variables
+	  if( .not. allocated(e) ) then		!may be pre-allocated by restart (C4)
+	    allocate(e(nlvdi,nkndi,nstate))	!pelagic variables
+	    allocate(es(nkndi,nsstate))		!sediment variables
+            allocate(esh(nkndi,nshstate))	!shell fish variables
+            allocate(eul(nkndi,nulstate))	!ulva variables
+          end if
 
+	  allocate(eload(nlvdi,nkndi,nstate))	!pelagic loading (not restart-saved)
           allocate(eseed(nlvdi,nkndi,nshstate))	!eseed is needed 2D but has been
                                                 !set 3D in weutro_seed
                                                 !seeding occurs only in l=1
           allocate(ulseed(nlvdi,nkndi,nulstate))!ulva
 
+	  if( .not. brst_loaded ) then		!restart provides e/es/esh/eul (C4)
+	    do i=1,nstate
+	      e(:,:,i) = einit(i)
+	    end do
+	    do i=1,nsstate
+	      es(:,i) = esinit(i)
+            end do
+            do i=1,nshstate
+              esh(:,i) = eshinit(i)
+            end do
+            do i=1,nulstate          ! ulva
+              eul(:,i) = eulinit(i)
+            end do
+          end if
+
 	  do i=1,nstate
-	    e(:,:,i) = einit(i)
 	    eload(:,:,i) = elinit(i)
 	  end do
-
-	  do i=1,nsstate
-	    es(:,i) = esinit(i)
-          end do
-
-          do i=1,nshstate
-            esh(:,i) = eshinit(i)
-          end do
-
-          do i=1,nulstate          ! ulva
-            eul(:,i) = eulinit(i)
-          end do
 
 !         --------------------------------------------------
 !	  initialize state variables from external file
@@ -380,6 +385,7 @@
 
 	  call get_first_dtime(dtime0)
 
+	  if( .not. brst_loaded ) then		!restart takes precedence over IC files (C4)
 	  nvar = nstate
           call tracer_file_init('bio init','bioin',dtime0 &
      &                          ,nvar,nlvdi,nlv,nkn,einit,e)
@@ -387,6 +393,7 @@
 	  nvar = nsstate
           call tracer_file_init('bio sed init','biosin',dtime0 &
      &                          ,nvar,1,1,nkn,esinit,es)
+          end if
 
 !         --------------------------------------------------
 !	  set loadings for special state variables

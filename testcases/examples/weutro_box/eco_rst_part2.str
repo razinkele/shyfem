@@ -1,0 +1,20 @@
+
+$title
+        weutro restart part2 (1->2 day, reads restart)
+        eco_rst_part2
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-02'    itend = '2009-01-03'
+        idt = '300s'
+        date = 20090101
+        ilin = 1
+        ibio = 1
+        itrst = -1            # read the last restart record
+        idtcon = '3h'
+$end
+
+$name
+        restrt = 'eco_rst_part1.rst'
+$end

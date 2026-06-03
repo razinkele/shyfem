@@ -33,6 +33,11 @@ run: run2d run3d
 check:
 	./check_eco.sh
 
+check-restart:
+	./check_restart.sh
+
+check-all: check check-restart
+
 clean:
 	-rm -f *.shy *.inf *.run.log *.ext *.flx *.rst fort.* GRID/*.bas
 
