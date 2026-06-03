@@ -2,8 +2,7 @@
 
 import asyncio
 from datetime import datetime
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import create_engine
@@ -13,7 +12,7 @@ from shyfem_ui.db.base import Base
 from shyfem_ui.models import project as _p  # noqa: F401 -- register models
 from shyfem_ui.models import user as _u  # noqa: F401 -- register models
 from shyfem_ui.models import workflow as _wf_model  # noqa: F401 -- register models
-from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
+from shyfem_ui.services.job_queue import JobInfo, JobStatus
 from shyfem_ui.services.workflow import (
     WORKFLOW_TEMPLATES,
     WorkflowEngine,
@@ -97,7 +96,7 @@ class TestWorkflowTemplates:
 
     def test_template_structure(self):
         """Test template structure has required keys."""
-        for key, tpl in WORKFLOW_TEMPLATES.items():
+        for _key, tpl in WORKFLOW_TEMPLATES.items():
             assert "name" in tpl
             assert "description" in tpl
             assert "steps" in tpl
@@ -105,7 +104,7 @@ class TestWorkflowTemplates:
 
     def test_template_steps_are_workflow_steps(self):
         """Test all steps are WorkflowStep instances."""
-        for key, tpl in WORKFLOW_TEMPLATES.items():
+        for _key, tpl in WORKFLOW_TEMPLATES.items():
             for step in tpl["steps"]:
                 assert isinstance(step, WorkflowStep)
                 assert step.name
@@ -264,13 +263,18 @@ class TestWorkflowEngine:
     @pytest.mark.asyncio
     async def test_cancel_workflow(self, engine, tmp_path, mock_queue):
         """Test cancelling a workflow."""
+
         # Make jobs take longer
         async def slow_submit(spec):
-            job_id = f"slow-job"
+            job_id = "slow-job"
             mock_queue._jobs[job_id] = JobInfo(
-                id=job_id, name=spec.name, tool_name=spec.tool_name,
-                args=spec.args, working_dir=str(spec.working_dir),
-                status=JobStatus.RUNNING, created_at=datetime.now(),
+                id=job_id,
+                name=spec.name,
+                tool_name=spec.tool_name,
+                args=spec.args,
+                working_dir=str(spec.working_dir),
+                status=JobStatus.RUNNING,
+                created_at=datetime.now(),
             )
             return job_id
 
@@ -302,7 +306,10 @@ class TestWorkflowInstance:
     def test_is_active(self):
         """Test is_active property."""
         wf = WorkflowInstance(
-            id="1", name="Test", steps=[], working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=[],
+            working_dir="/tmp",
             status=WorkflowStatus.RUNNING,
         )
         assert wf.is_active is True
@@ -317,7 +324,10 @@ class TestWorkflowInstance:
             WorkflowStep(name="b", tool_name="shyfem"),
         ]
         wf = WorkflowInstance(
-            id="1", name="Test", steps=steps, working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=steps,
+            working_dir="/tmp",
             current_step_index=1,
         )
         assert wf.progress == pytest.approx(0.5)
@@ -325,7 +335,10 @@ class TestWorkflowInstance:
     def test_progress_empty_steps(self):
         """Test progress with no steps."""
         wf = WorkflowInstance(
-            id="1", name="Test", steps=[], working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=[],
+            working_dir="/tmp",
         )
         assert wf.progress == 0.0
 
@@ -336,7 +349,10 @@ class TestWorkflowInstance:
             WorkflowStep(name="b", tool_name="shyfem"),
         ]
         wf = WorkflowInstance(
-            id="1", name="Test", steps=steps, working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=steps,
+            working_dir="/tmp",
             current_step_index=1,
         )
         assert wf.current_step.name == "b"
@@ -344,7 +360,10 @@ class TestWorkflowInstance:
     def test_current_step_out_of_range(self):
         """Test current_step when index is out of range."""
         wf = WorkflowInstance(
-            id="1", name="Test", steps=[], working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=[],
+            working_dir="/tmp",
             current_step_index=5,
         )
         assert wf.current_step is None
@@ -352,7 +371,10 @@ class TestWorkflowInstance:
     def test_duration(self):
         """Test duration property."""
         wf = WorkflowInstance(
-            id="1", name="Test", steps=[], working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=[],
+            working_dir="/tmp",
             started_at=datetime(2024, 1, 1, 12, 0, 0),
             completed_at=datetime(2024, 1, 1, 12, 5, 0),
         )
@@ -361,7 +383,10 @@ class TestWorkflowInstance:
     def test_duration_not_completed(self):
         """Test duration when not yet completed."""
         wf = WorkflowInstance(
-            id="1", name="Test", steps=[], working_dir="/tmp",
+            id="1",
+            name="Test",
+            steps=[],
+            working_dir="/tmp",
             started_at=datetime.now(),
         )
         assert wf.duration is None
@@ -429,7 +454,12 @@ class TestWorkflowPersistence:
 
     def test_engine_loads_workflows_from_db(self, db_session):
         from shyfem_ui.models.workflow import Workflow, WorkflowStatus
-        from shyfem_ui.services.workflow import WorkflowEngine, _pack_steps, WorkflowInstance, WorkflowStep
+        from shyfem_ui.services.workflow import (
+            WorkflowEngine,
+            WorkflowInstance,
+            WorkflowStep,
+            _pack_steps,
+        )
 
         # Build a minimal WorkflowInstance so _pack_steps produces correct JSON
         step = WorkflowStep(name="step1", tool_name="shyfem")
@@ -512,3 +542,66 @@ class TestWorkflowPersistence:
         assert loaded.status == WorkflowStatus.COMPLETED
         # The first step (grid_prep) result is persisted in the JSON column.
         assert "grid_prep" in loaded.step_results
+
+
+class TestWorkflowTimestampsAreUTC:
+    """All workflow timestamps must be naive UTC (via _utcnow), consistent with
+    how they are persisted/reloaded. A mix of local datetime.now() (in-memory)
+    and UTC (persisted) makes duration wrong by the server's UTC offset after a
+    reload."""
+
+    def test_created_at_tracks_utc_not_local(self, monkeypatch):
+        import time
+
+        from shyfem_ui.services.workflow import WorkflowInstance, _utcnow
+
+        # Force a non-UTC local zone so local and UTC clocks differ measurably.
+        monkeypatch.setenv("TZ", "America/New_York")  # UTC-4/-5
+        time.tzset()
+        try:
+            before = _utcnow()
+            wf = WorkflowInstance(id="t", name="t", steps=[], working_dir="/tmp")
+            after = _utcnow()
+            # created_at must be on the UTC clock (within the _utcnow bracket),
+            # not local time (which would be hours behind -> outside the bracket).
+            assert before <= wf.created_at <= after
+        finally:
+            monkeypatch.delenv("TZ", raising=False)
+            time.tzset()
+
+    def test_module_datetime_now_always_passes_a_timezone(self):
+        """Static guard: every `datetime.now` in workflow.py must be called with
+        a tz arg (i.e. datetime.now(timezone.utc) inside _utcnow); no bare
+        `datetime.now` reference and no zero-arg `datetime.now()` (local)."""
+        import ast
+        import pathlib
+
+        import shyfem_ui.services.workflow as wf_mod
+
+        tree = ast.parse(pathlib.Path(wf_mod.__file__).read_text())
+        good_call_funcs = set()
+        bad = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "now"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "datetime"
+            ):
+                if node.args or node.keywords:
+                    good_call_funcs.add(id(node.func))
+                else:
+                    bad.append(f"zero-arg datetime.now() at line {node.lineno}")
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr == "now"
+                and isinstance(node.value, ast.Name)
+                and node.value.id == "datetime"
+                and id(node) not in good_call_funcs
+            ):
+                bad.append(f"bare/zero-arg datetime.now at line {node.lineno}")
+        assert not bad, "workflow.py must use _utcnow()/datetime.now(tz): " + "; ".join(
+            sorted(set(bad))
+        )
