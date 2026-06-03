@@ -10,6 +10,7 @@ Features:
 """
 
 import html
+import inspect
 import logging
 from collections.abc import Callable
 
@@ -19,6 +20,20 @@ logger = logging.getLogger(__name__)
 
 MAX_DISPLAY_LINES = 500
 LINE_TRUNCATE_LEN = 4096
+
+
+async def _maybe_await_refresh(on_refresh: "Callable[[], object] | None") -> None:
+    """Invoke an on_refresh callback, awaiting it if it returns a coroutine.
+
+    on_refresh may be sync or async (run.py passes an async def). Calling an
+    async callback without awaiting it just builds a discarded coroutine (and
+    a RuntimeWarning), so the Refresh button / auto-poll silently did nothing.
+    """
+    if on_refresh is None:
+        return
+    result = on_refresh()
+    if inspect.isawaitable(result):
+        await result
 
 
 @module.ui
@@ -143,20 +158,18 @@ def log_viewer_server(
 
     # Auto-polling effect
     @reactive.effect
-    def _auto_poll_effect():
+    async def _auto_poll_effect():
         try:
             if input.auto_poll():
                 reactive.invalidate_later(refresh_interval)
-                if on_refresh:
-                    on_refresh()
+                await _maybe_await_refresh(on_refresh)
         except Exception:
             logger.debug("Auto-poll toggle not yet available", exc_info=True)
 
     @reactive.effect
     @reactive.event(input.refresh_btn)
-    def _handle_refresh():
-        if on_refresh:
-            on_refresh()
+    async def _handle_refresh():
+        await _maybe_await_refresh(on_refresh)
 
     @reactive.effect
     @reactive.event(input.clear_btn)

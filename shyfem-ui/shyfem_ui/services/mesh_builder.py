@@ -872,8 +872,15 @@ def load_bathymetry_contours(
 
 
 def _load_bathymetry_raster(path: Path) -> np.ndarray:
-    """Sample points from a GeoTIFF raster, reprojecting to WGS84 if needed."""
+    """Sample points from a GeoTIFF raster, reprojecting to WGS84 if needed.
+
+    Vectorized: builds the valid-pixel index arrays once and computes pixel
+    centres + reprojection in batch, instead of a per-pixel Python loop (which
+    is O(rows*cols) and hangs on large DEMs). Produces the same points, in the
+    same row-major order, as the original loop.
+    """
     import rasterio
+    from rasterio.transform import xy as rio_xy
 
     with rasterio.open(path) as src:
         band = src.read(1)
@@ -893,21 +900,28 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
             except Exception as exc:
                 logger.warning("Could not determine raster CRS, using raw coordinates: %s", exc)
 
-        points = []
-        for row in range(band.shape[0]):
-            for col in range(band.shape[1]):
-                val = band[row, col]
-                if nodata is not None and val == nodata:
-                    continue
-                x, y = src.xy(row, col)
-                if transformer is not None:
-                    x, y = transformer.transform(x, y)
-                points.append([x, y, float(val)])
+        # Valid-pixel mask matching the original loop's `val == nodata` skip.
+        # np.nonzero yields row-major (C-order) indices, preserving point order.
+        if nodata is not None:
+            valid = band != nodata
+        else:
+            valid = np.ones(band.shape, dtype=bool)
+        rows_idx, cols_idx = np.nonzero(valid)
 
-    if not points:
-        raise ValueError(f"No valid data in raster {path}")
+        if rows_idx.size == 0:
+            raise ValueError(f"No valid data in raster {path}")
 
-    return np.array(points)
+        vals = band[rows_idx, cols_idx].astype(float)
+        # Pixel centres (rio_xy defaults to offset='center', like src.xy).
+        xs, ys = rio_xy(src.transform, rows_idx, cols_idx)
+        xs = np.asarray(xs, dtype=float)
+        ys = np.asarray(ys, dtype=float)
+        if transformer is not None:
+            xs, ys = transformer.transform(xs, ys)
+            xs = np.asarray(xs, dtype=float)
+            ys = np.asarray(ys, dtype=float)
+
+    return np.column_stack([xs, ys, vals])
 
 
 def extract_boundary_zero_points(grd: GrdFile) -> np.ndarray:

@@ -4,7 +4,6 @@ import pytest
 
 from shyfem_ui.components.log_viewer import LINE_TRUNCATE_LEN, format_log_line
 
-
 # ── Plain text ───────────────────────────────────────────────────
 
 
@@ -40,29 +39,29 @@ def test_html_entities_escaped():
 
 def test_error_line_red():
     result = format_log_line("ERROR: something failed")
-    assert 'color: #f44747' in result
+    assert "color: #f44747" in result
     assert "ERROR: something failed" in result
 
 
 def test_warning_line_yellow():
     result = format_log_line("WARNING: low memory")
-    assert 'color: #cca700' in result
+    assert "color: #cca700" in result
 
 
 def test_success_line_green():
     result = format_log_line("Task completed successfully")
-    assert 'color: #4ec9b0' in result
+    assert "color: #4ec9b0" in result
 
 
 def test_header_line_blue():
     result = format_log_line(">>> Starting phase 1")
     # ">>>" becomes "&gt;&gt;&gt;" after escaping, which triggers blue
-    assert 'color: #569cd6' in result
+    assert "color: #569cd6" in result
 
 
 def test_time_line_highlighted():
     result = format_log_line("time = 3600.0")
-    assert 'color: #9cdcfe' in result
+    assert "color: #9cdcfe" in result
 
 
 # ── Truncation ───────────────────────────────────────────────────
@@ -93,3 +92,38 @@ def test_non_string_coerced():
 def test_none_coerced():
     result = format_log_line(None)
     assert "None" in result
+
+
+@pytest.mark.asyncio
+class TestMaybeAwaitRefresh:
+    """on_refresh may be sync OR async (run.py passes an async def). The helper
+    must AWAIT a coroutine result — previously the reactive effects just called
+    on_refresh(), discarding the coroutine, so the Refresh button + auto-poll
+    were dead for the async callback (and raised RuntimeWarning)."""
+
+    async def test_awaits_async_callback(self):
+        from shyfem_ui.components.log_viewer import _maybe_await_refresh
+
+        called = []
+
+        async def cb():
+            called.append("async")
+
+        await _maybe_await_refresh(cb)
+        assert called == ["async"]
+
+    async def test_runs_sync_callback(self):
+        from shyfem_ui.components.log_viewer import _maybe_await_refresh
+
+        called = []
+
+        def cb():
+            called.append("sync")
+
+        await _maybe_await_refresh(cb)
+        assert called == ["sync"]
+
+    async def test_none_is_noop(self):
+        from shyfem_ui.components.log_viewer import _maybe_await_refresh
+
+        await _maybe_await_refresh(None)  # must not raise

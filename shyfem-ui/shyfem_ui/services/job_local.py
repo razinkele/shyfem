@@ -276,9 +276,6 @@ class LocalJobQueue(JobQueue):
             self._persist_job(job)
 
             stdout_fh = None
-            if job.stdout_file:
-                Path(job.stdout_file).touch()
-                stdout_fh = open(job.stdout_file, "a")
 
             def progress_callback(progress: float, message: str):
                 job.progress = progress
@@ -295,6 +292,13 @@ class LocalJobQueue(JobQueue):
                     stdout_fh.flush()
 
             try:
+                # Open the stdout log INSIDE the try so a touch/open failure
+                # (disk full, permissions) marks the job FAILED and releases
+                # _running_count via the finally — instead of leaking both.
+                if job.stdout_file:
+                    Path(job.stdout_file).touch()
+                    stdout_fh = open(job.stdout_file, "a")
+
                 solver = spec.metadata.get("solver", "sparskit")
                 if spec.tool_name == "shyfem" and spec.mpi_enabled and spec.mpi_np > 1:
                     # MPI execution

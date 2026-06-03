@@ -600,3 +600,32 @@ class TestCompletionNotificationUserLookup:
         user_dict = q.notification_service.notify_job_success.call_args[0][0]
         assert user_dict.get("email") == "bob@example.com"
         assert user_dict.get("username") == "bob"
+
+
+class TestStdoutOpenFailureNoLeak:
+    """If opening the stdout log fails, the job must end FAILED and the
+    running-count must be released. Previously touch()/open() ran OUTSIDE the
+    try/finally, so a failure left the job stuck RUNNING and leaked
+    _running_count (eventually wedging the queue)."""
+
+    @pytest.mark.asyncio
+    async def test_stdout_open_failure_marks_failed_and_releases_count(
+        self, queue, job_spec, monkeypatch
+    ):
+        from pathlib import Path as _P
+
+        def _boom(self):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(_P, "touch", _boom)
+
+        job_id = await queue.submit(job_spec)
+        for _ in range(50):
+            status = await queue.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.05)
+
+        status = await queue.get_status(job_id)
+        assert status.status == JobStatus.FAILED
+        assert queue._running_count == 0

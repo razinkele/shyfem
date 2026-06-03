@@ -62,6 +62,36 @@ COLORMAPS = {
 }
 
 
+# Above this many bytes a variable's stats are skipped (returned as None) rather
+# than reduced, so a single large 3D field can't OOM / hang the shared worker.
+_STATS_MAX_BYTES = 256 * 1024 * 1024
+
+
+def _variable_stats(var):
+    """Return (min, max, mean, std) for an xarray variable.
+
+    Uses chunk-aware xarray reductions (skipna) instead of
+    ``var.values.flatten()``, so a lazily-opened (dask-backed) dataset is not
+    fully materialised into a flat numpy copy. Returns all-None when the
+    variable exceeds the size cap or has no finite values. min/max are exact;
+    mean/std match numpy to floating-point tolerance.
+    """
+    try:
+        if getattr(var, "nbytes", 0) and var.nbytes > _STATS_MAX_BYTES:
+            return None, None, None, None
+        mn = float(var.min(skipna=True))
+        if np.isnan(mn):  # all-NaN or empty
+            return None, None, None, None
+        return (
+            mn,
+            float(var.max(skipna=True)),
+            float(var.mean(skipna=True)),
+            float(var.std(skipna=True)),
+        )
+    except Exception:
+        return None, None, None, None
+
+
 def build_variable_table(ds) -> list[dict]:
     """Build a summary table of all variables in a NetCDF Dataset.
 
@@ -75,10 +105,7 @@ def build_variable_table(ds) -> list[dict]:
     for var_name in ds.data_vars:
         try:
             var = ds[var_name]
-            values = var.values.flatten()
-            valid = (
-                values[~np.isnan(values)] if np.issubdtype(values.dtype, np.floating) else values
-            )
+            mn, mx, _mean, _std = _variable_stats(var)
             rows.append(
                 {
                     "name": var_name,
@@ -86,8 +113,8 @@ def build_variable_table(ds) -> list[dict]:
                     "dtype": str(var.dtype),
                     "units": str(var.attrs.get("units", "-")),
                     "long_name": str(var.attrs.get("long_name", "-")),
-                    "min": float(np.min(valid)) if len(valid) > 0 else None,
-                    "max": float(np.max(valid)) if len(valid) > 0 else None,
+                    "min": mn,
+                    "max": mx,
                 }
             )
         except Exception:
@@ -1333,19 +1360,19 @@ def _netcdf_statistics(ds) -> ui.Tag:
     for var_name in ds.data_vars:
         try:
             var = ds[var_name]
-            values = var.values.flatten()
-            values = values[~np.isnan(values)]
-            if len(values) == 0:
+            mn, mx, mean, std = _variable_stats(var)
+            if mn is None:
+                # all-NaN, or skipped because over the size cap
                 continue
             rows.append(
                 ui.tags.tr(
                     ui.tags.td(ui.strong(var_name)),
                     ui.tags.td(str(var.dims)),
                     ui.tags.td(str(var.shape)),
-                    ui.tags.td(f"{np.min(values):.4g}"),
-                    ui.tags.td(f"{np.max(values):.4g}"),
-                    ui.tags.td(f"{np.mean(values):.4g}"),
-                    ui.tags.td(f"{np.std(values):.4g}"),
+                    ui.tags.td(f"{mn:.4g}"),
+                    ui.tags.td(f"{mx:.4g}"),
+                    ui.tags.td(f"{mean:.4g}"),
+                    ui.tags.td(f"{std:.4g}"),
                     ui.tags.td(str(var.attrs.get("units", "-"))),
                 )
             )

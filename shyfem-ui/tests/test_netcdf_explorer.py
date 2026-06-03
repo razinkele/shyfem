@@ -17,17 +17,25 @@ def _make_dataset():
 
     ds = xr.Dataset(
         {
-            "temperature": (["time", "depth", "y", "x"], temp, {
-                "units": "degC",
-                "long_name": "Sea Water Temperature",
-                "standard_name": "sea_water_temperature",
-                "valid_range": [0.0, 40.0],
-            }),
-            "salinity": (["time", "depth", "y", "x"], salt, {
-                "units": "PSU",
-                "long_name": "Sea Water Salinity",
-                "_FillValue": -999.0,
-            }),
+            "temperature": (
+                ["time", "depth", "y", "x"],
+                temp,
+                {
+                    "units": "degC",
+                    "long_name": "Sea Water Temperature",
+                    "standard_name": "sea_water_temperature",
+                    "valid_range": [0.0, 40.0],
+                },
+            ),
+            "salinity": (
+                ["time", "depth", "y", "x"],
+                salt,
+                {
+                    "units": "PSU",
+                    "long_name": "Sea Water Salinity",
+                    "_FillValue": -999.0,
+                },
+            ),
         },
         coords={
             "time": time,
@@ -168,3 +176,43 @@ class TestGetVariableAttrs:
         ds = _make_dataset()
         attrs = get_variable_attrs(ds, "nonexistent")
         assert all(v is None for v in attrs.values())
+
+
+class TestVariableStats:
+    """_variable_stats computes min/max/mean/std via chunk-aware xarray
+    reductions (no full .values.flatten() materialization) and returns all-None
+    over a size cap or for all-NaN, preserving the values for normal vars."""
+
+    def test_matches_numpy_with_nans(self):
+        import numpy as np
+        import xarray as xr
+
+        from shyfem_ui.pages.visualize import _variable_stats
+
+        data = np.array([[1.0, 2.0, np.nan], [3.0, 4.0, 5.0]], dtype="float64")
+        var = xr.DataArray(data, dims=["y", "x"])
+        mn, mx, mean, std = _variable_stats(var)
+        valid = data.flatten()[~np.isnan(data.flatten())]
+        assert mn == float(np.min(valid))
+        assert mx == float(np.max(valid))
+        assert np.isclose(mean, float(np.mean(valid)))
+        assert np.isclose(std, float(np.std(valid)))
+
+    def test_all_nan_returns_none(self):
+        import numpy as np
+        import xarray as xr
+
+        from shyfem_ui.pages.visualize import _variable_stats
+
+        var = xr.DataArray(np.full((2, 2), np.nan), dims=["y", "x"])
+        assert _variable_stats(var) == (None, None, None, None)
+
+    def test_over_size_cap_returns_none(self, monkeypatch):
+        import numpy as np
+        import xarray as xr
+
+        import shyfem_ui.pages.visualize as viz
+
+        monkeypatch.setattr(viz, "_STATS_MAX_BYTES", 8)  # tiny cap
+        var = xr.DataArray(np.arange(100.0), dims=["x"])  # 800 bytes > cap
+        assert viz._variable_stats(var) == (None, None, None, None)
