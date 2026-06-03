@@ -65,10 +65,12 @@ class Config(BaseSettings):
     max_workers: int = Field(default=4, description="Maximum concurrent jobs (local mode)")
     command_timeout_seconds: int | None = Field(
         default=None,
+        gt=0,
         description=(
             "Wall-clock timeout (s) for a single SHYFEM tool subprocess. None "
-            "disables it (default — preserves long-running simulations). Set it "
-            "to free the worker if a tool hangs; size it to your longest job."
+            "disables it (default — preserves long-running simulations). Must be "
+            "positive when set (0 is rejected, not silently disabled). Set it to "
+            "free the worker if a tool hangs; size it to your longest job."
         ),
     )
     redis_url: str = Field(

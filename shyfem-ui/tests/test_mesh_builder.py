@@ -1934,3 +1934,94 @@ class TestBathymetryRasterVectorization:
         expected = self._reference_loop(path)
         got = _load_bathymetry_raster(path)
         np.testing.assert_allclose(got, expected, rtol=0, atol=0)
+
+
+class TestBathymetryRasterVectorizationBranches:
+    """Lock down the branches the vectorization actually changed but the
+    original characterization tests didn't cover: projected-CRS reprojection,
+    integer band, and the all-nodata ValueError path."""
+
+    def _write_raster(self, path, band, nodata, transform, crs="EPSG:4326"):
+        import rasterio
+
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=band.shape[0],
+            width=band.shape[1],
+            count=1,
+            dtype=str(band.dtype),
+            crs=crs,
+            transform=transform,
+            nodata=nodata,
+        ) as dst:
+            dst.write(band, 1)
+
+    def _reference_loop_full(self, path):
+        """Original per-pixel loop INCLUDING the reprojection branch."""
+        import numpy as np
+        import pyproj
+        import rasterio
+
+        with rasterio.open(path) as src:
+            b = src.read(1)
+            nd = src.nodata
+            transformer = None
+            if src.crs:
+                src_crs = pyproj.CRS.from_user_input(src.crs)
+                if src_crs.is_projected:
+                    transformer = pyproj.Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
+            pts = []
+            for r in range(b.shape[0]):
+                for c in range(b.shape[1]):
+                    v = b[r, c]
+                    if nd is not None and v == nd:
+                        continue
+                    x, y = src.xy(r, c)
+                    if transformer is not None:
+                        x, y = transformer.transform(x, y)
+                    pts.append([x, y, float(v)])
+        return np.array(pts)
+
+    def test_matches_loop_projected_crs(self, tmp_path):
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.array([[1.0, 2.0], [3.0, 4.0]], dtype="float32")
+        transform = from_origin(500000.0, 4500000.0, 100.0, 100.0)  # UTM metres
+        path = tmp_path / "proj.tif"
+        self._write_raster(path, band, None, transform, crs="EPSG:32635")
+        expected = self._reference_loop_full(path)
+        got = _load_bathymetry_raster(path)
+        np.testing.assert_allclose(got, expected, rtol=0, atol=1e-9)
+
+    def test_integer_band(self, tmp_path):
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.array([[10, 20], [30, 40]], dtype="int16")
+        transform = from_origin(0.0, 0.0, 1.0, 1.0)
+        path = tmp_path / "int.tif"
+        self._write_raster(path, band, None, transform)
+        expected = self._reference_loop_full(path)
+        got = _load_bathymetry_raster(path)
+        np.testing.assert_allclose(got, expected, rtol=0, atol=0)
+
+    def test_all_nodata_raises(self, tmp_path):
+        import numpy as np
+        import pytest
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.full((2, 2), -999.0, dtype="float32")
+        transform = from_origin(0.0, 0.0, 1.0, 1.0)
+        path = tmp_path / "nd.tif"
+        self._write_raster(path, band, -999.0, transform)
+        with pytest.raises(ValueError):
+            _load_bathymetry_raster(path)
