@@ -79,7 +79,7 @@ class WorkflowInstance:
     current_step_index: int = 0
     step_job_ids: dict[str, str] = field(default_factory=dict)  # step_name -> job_id
     step_results: dict[str, dict[str, Any]] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=_utcnow)
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
@@ -449,7 +449,7 @@ class WorkflowEngine:
             return
 
         wf.status = WorkflowStatus.RUNNING
-        wf.started_at = datetime.now()
+        wf.started_at = _utcnow()
         self._save_instance(wf)
 
         params = wf.metadata.get("params", {})
@@ -514,7 +514,7 @@ class WorkflowEngine:
             wf.status = WorkflowStatus.COMPLETED
             wf.current_step_index = len(wf.steps)
 
-        wf.completed_at = datetime.now()
+        wf.completed_at = _utcnow()
         self._save_instance(wf)
         self._polling_tasks.pop(workflow_id, None)
 
