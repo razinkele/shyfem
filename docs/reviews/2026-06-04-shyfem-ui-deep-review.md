@@ -77,3 +77,19 @@ The **4 highs + the privilege escalation are FIXED, reviewed (MERGE), and merged
 **Deploy note:** the `use_secure_cookies` default now derives from server mode (no `.env` change needed). Laguna's Shiny Server symlinks the tree, so the worker may need a reload/restart to serve the new code.
 
 **Remaining backlog (mediums/lows, not yet fixed):** SMTP event-loop hang (high-reliability), FK constraints not enforced, `delete_user` orphans, `/health` 200-on-DB-fail, raster NaN/OOM, rate-limiter single-bucket, reactive-effect accumulation in file_picker/boundary_editor, and the 3 false-passing tests. Prioritize the SMTP hang next.
+
+---
+
+## Mediums shipped 2026-06-04 (merged to origin/main → laguna)
+The medium backlog is now **fully cleared** (the SMTP hang + `to_thread` had already shipped with the highs). All TDD'd, full suite green (2080), ruff clean:
+
+1. **`delete_user` orphans** + **`/health` 503-on-DB-fail** — `delete_user` now NULLs `Project.owner_id`/`Job.user_id`/`Workflow.user_id` and deletes `WSAuthToken`/`ProjectPermission`; `/health` returns 503 when degraded.
+2. **Raster NaN/OOM** (`mesh_builder`) — drop non-finite pixels (fixes `NaN != nodata`), `MAX_RASTER_PIXELS` header guard before `read(1)`; also fixed the `mkdtemp` upload temp-dir leak (`stage_boundary_upload` + `TemporaryDirectory`).
+3. **Rate-limiter single-bucket** — warns when `trusted_proxies` is empty behind the proxy (real per-client limiting needs `SHYFEM_UI_TRUSTED_PROXIES` set — a deploy decision; cookie-keying rejected as a threat-model regression).
+4. **FK enforcement** — `PRAGMA foreign_keys=ON` on the prod engine after a delete-path audit (every test engine now enforces FKs; zero violations); no migration needed.
+5. **3 false-passing tests** — `test_dashboard_jobs`/`test_session_cleanup`/`test_incremental_output` retargeted at extracted real handlers (`recent_jobs_session_id`, `cancel_active_jobs_for_session`, `write_output_line`); copies had silently diverged.
+6. **Reactive-effect accumulation** — `set()` dedup guards in `file_picker` (pick handlers) + `boundary_editor` (remove handlers).
+7. **`cleanup_old_jobs` left DB rows** (local + celery) — now deletes the persisted rows by `job_uuid` (the prod row-buildup source).
+8. **Audit-log page reset** — viewer resets to page 0 on filter change (no more spurious empty page).
+
+**Status: the 2026-06-04 deep review is fully remediated** — all highs, the escalation, and all mediums shipped to laguna.
