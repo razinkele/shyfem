@@ -281,6 +281,13 @@ def file_picker_server(
     """
     selected_path = reactive.value("")
 
+    # Per-file pick handlers are registered when the browse modal opens. A
+    # reactive.effect registered inside another effect is NOT destroyed when
+    # the outer effect re-runs, so reopening the modal would stack a fresh
+    # handler on the same pick_<id> button each time, firing _pick (and
+    # on_selected / modal_remove) N times. Register each button id at most once.
+    _registered_pick_btns: set[str] = set()
+
     @reactive.effect
     def _update_choices():
         pid = project_id.get() if project_id else None
@@ -374,6 +381,9 @@ def file_picker_server(
 
     def _register_pick_handler(file_id: int, rel_path: str):
         btn_id = f"pick_{file_id}"
+        if btn_id in _registered_pick_btns:
+            return  # handler already live for this button — don't stack another
+        _registered_pick_btns.add(btn_id)
 
         @reactive.effect
         @reactive.event(getattr(input, btn_id))
