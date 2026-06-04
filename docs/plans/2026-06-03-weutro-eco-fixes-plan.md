@@ -135,3 +135,17 @@ Align with CLAUDE.md Fortran conventions. Low correctness risk but large surface
 **Estimated commits:** ~6 (one per phase) on `fix/weutro-eco`, multi-agent review before PR merge.
 
 **Definition of done:** all phases merged; `ECOLOGICAL=EUTRO` builds; eco testcases pass the check script (no NaN, mass conserved, stratified profiles physical); `ECOLOGICAL=NONE` + mar_menor regress clean; NUTLIM/science decisions resolved by owner.
+
+---
+
+## Pre-merge review outcome (2026-06-04)
+Multi-agent adversarial review (7 dimensions → verify) returned **DO_NOT_MERGE** with 2 high blockers, both in C4 restart:
+- **Blocker 1** — bio3d shell/ulva seeding overwrote restart-restored esh/eul (only e/es survived). Fixed: guard the esh/eul seed-copy with `.not.brst_loaded`. Validated: ulva (var 741) now restarts bit-for-bit.
+- **Blocker 2** — write/read_restart_eco did raw local-array I/O → corrupt MPI restart. Fixed: rewritten to use `mod_restart` gather/scatter helpers (mirrors `write_restart_conz`).
+Also fixed: C3 ulva min-quota cds (zero uptake when growth-arrested); gate hardening (restart TOL=0 bit-for-bit min/aver/max, empty-output/empty-join guards); C2 comment accuracy.
+**Focused re-verification: both blockers RESOLVED, no new defects.** All 4 gates pass. Branch is correctness-complete and ready for the owner's merge decision + science choices (NUTLIM/wsink/IS2).
+
+## Remaining (deferred, low / owner)
+- Low/cosmetic: eutro_check recoverable-clamp now dead (euler floors first); NaN-not-finite test (moot under FPE trap); restart format-version bump; OMP-gate assert-threads; light-gate isolate-C2-from-C1.
+- Phase 4 science mediums (TR-05 wsink off, TR-06 eload unwired, ECO-04 air temp, ECO-05 IS2 units) and Phase 5 conventions (intent/GOTO/pi, remaining init bare stops) — owner decisions / low-value sweep.
+- **Science checkpoint (owner): NUTLIM multiplicative→Liebig-minimum default; respiration N/P routing.**
