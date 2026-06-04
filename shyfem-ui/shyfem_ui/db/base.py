@@ -46,6 +46,11 @@ def get_engine():
                 cur = dbapi_conn.cursor()
                 cur.execute("PRAGMA busy_timeout=5000")
                 cur.execute("PRAGMA journal_mode=WAL")
+                # SQLite ignores foreign keys unless this is set per-connection.
+                # Without it a deleted user/project leaves dangling child rows
+                # (the delete paths now clean up or SET NULL their children so
+                # enforcement does not reject legitimate deletes).
+                cur.execute("PRAGMA foreign_keys=ON")
                 cur.close()
 
         else:
