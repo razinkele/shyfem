@@ -441,6 +441,25 @@ class TestJobUserIdAndNotifications:
         mock_notif.notify_job_success.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_notification_offloaded_to_thread(self, queue, job_spec):
+        """The (blocking) SMTP send must run via asyncio.to_thread, not on the
+        event loop — a slow/dead relay must not freeze other sessions."""
+        from unittest.mock import MagicMock, patch
+
+        queue.notification_service = MagicMock()
+        real_to_thread = asyncio.to_thread
+        offloaded = []
+
+        async def _spy(fn, *a, **k):
+            offloaded.append(getattr(fn, "__name__", str(fn)))
+            return await real_to_thread(fn, *a, **k)
+
+        with patch("asyncio.to_thread", side_effect=_spy):
+            await queue.submit(job_spec)
+            await asyncio.sleep(0.3)
+        assert "_send_completion_notification" in offloaded
+
+    @pytest.mark.asyncio
     async def test_notification_called_on_failure(self, queue, job_spec, mock_wrapper):
         """NotificationService.notify_job_failed is called when job fails."""
         from unittest.mock import AsyncMock, MagicMock

@@ -113,17 +113,20 @@ class NotificationService:
 
         try:
             port = self._config.smtp_port
+            timeout = self._config.smtp_timeout_seconds
             if port == 465:
                 # Implicit TLS (SMTPS)
                 ctx = ssl.create_default_context()
-                with smtplib.SMTP_SSL(self._config.smtp_host, port, context=ctx) as smtp:
+                with smtplib.SMTP_SSL(
+                    self._config.smtp_host, port, context=ctx, timeout=timeout
+                ) as smtp:
                     if self._config.smtp_user:
                         smtp.login(self._config.smtp_user, self._config.smtp_password)
                     smtp.sendmail(self._config.smtp_from, to_addr, msg.as_string())
             elif port == 587:
                 # Explicit TLS (STARTTLS)
                 ctx = ssl.create_default_context()
-                with smtplib.SMTP(self._config.smtp_host, port) as smtp:
+                with smtplib.SMTP(self._config.smtp_host, port, timeout=timeout) as smtp:
                     smtp.ehlo()
                     smtp.starttls(context=ctx)
                     if self._config.smtp_user:
@@ -131,7 +134,7 @@ class NotificationService:
                     smtp.sendmail(self._config.smtp_from, to_addr, msg.as_string())
             else:
                 # Plain SMTP (typically port 25, local relay)
-                with smtplib.SMTP(self._config.smtp_host, port) as smtp:
+                with smtplib.SMTP(self._config.smtp_host, port, timeout=timeout) as smtp:
                     smtp.ehlo()
                     if self._config.smtp_user:
                         smtp.login(self._config.smtp_user, self._config.smtp_password)
