@@ -253,7 +253,7 @@
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: lux.dat'
-	  stop 'error stop: cannot open file'
+	  call shympi_abort_internal('weutro_light: cannot open lux.dat')
 	end if
 	do n=1,365
           read(iu,*) tdummy,luxv(n),fdayv(n)

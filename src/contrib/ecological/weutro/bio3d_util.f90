@@ -153,7 +153,7 @@
 
         return
    99   continue
-        stop 'error stop loicz1: error opening file'
+        call shympi_abort_internal('loicz1: error opening file')
 	end
 
 !********************************************************************
