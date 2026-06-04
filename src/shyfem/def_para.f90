@@ -1319,6 +1319,9 @@
 
 	call addpar('ibio',0.)		!run biological reactor
 	call addpar('wsphyt',0.)	!EUTRO phytoplankton settling velocity [m/s] (0=off)
+	call addpar('iwcal',1.)		!EUTRO param calibration set: 0=generic
+					!defaults, 1=Venice (default=legacy), 2=Taranto,
+					!3=read michol.dat
         call addpar('imerc',0.)		!run mercury reactor
         call addpar('issedi',0.)	!run simple sediments
 	call addpar('itoxi',0.)		!run toxicological routines
