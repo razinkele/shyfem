@@ -361,8 +361,11 @@ class LocalJobQueue(JobQueue):
                 self._tasks.pop(job_id, None)
                 # Persist final state to DB
                 self._persist_job(job)
-                # Send completion notification (best-effort, never raises)
-                self._send_completion_notification(job)
+                # Send completion notification (best-effort, never raises).
+                # Offload to a worker thread: it does blocking SMTP I/O (now
+                # bounded by smtp_timeout_seconds) which must not block the
+                # asyncio event loop / other sessions on job completion.
+                await asyncio.to_thread(self._send_completion_notification, job)
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a running job."""

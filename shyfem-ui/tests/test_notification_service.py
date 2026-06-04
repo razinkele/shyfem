@@ -208,3 +208,43 @@ class TestJobTransitionDetector:
         self.svc.check_transitions([{"id": "j1", "name": "sim1", "status": "pending"}])
         events = self.svc.check_transitions([{"id": "j1", "name": "sim1", "status": "running"}])
         assert events == []
+
+
+class TestSmtpTimeout:
+    """SMTP must be constructed with a timeout so a slow/dead relay cannot hang
+    the single-process async app forever (event-loop block on job completion)."""
+
+    def _mock_ctx(self, m):
+        m.return_value.__enter__ = MagicMock(return_value=MagicMock())
+        m.return_value.__exit__ = MagicMock(return_value=False)
+
+    def test_starttls_587_passes_timeout(self):
+        cfg = _make_config(smtp_port=587)
+        svc = NotificationService(cfg)
+        with patch("smtplib.SMTP") as m:
+            self._mock_ctx(m)
+            svc.notify_job_success(_make_user(), _make_job())
+        assert m.call_args.kwargs.get("timeout") == cfg.smtp_timeout_seconds
+
+    def test_ssl_465_passes_timeout(self):
+        cfg = _make_config(smtp_port=465)
+        svc = NotificationService(cfg)
+        with patch("smtplib.SMTP_SSL") as m:
+            self._mock_ctx(m)
+            svc.notify_job_success(_make_user(), _make_job())
+        assert m.call_args.kwargs.get("timeout") == cfg.smtp_timeout_seconds
+
+    def test_plain_25_passes_timeout(self):
+        cfg = _make_config(smtp_port=25)
+        svc = NotificationService(cfg)
+        with patch("smtplib.SMTP") as m:
+            self._mock_ctx(m)
+            svc.notify_job_success(_make_user(), _make_job())
+        assert m.call_args.kwargs.get("timeout") == cfg.smtp_timeout_seconds
+
+    def test_config_default_and_positive(self):
+        assert Config().smtp_timeout_seconds > 0
+        import pytest
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            Config(smtp_timeout_seconds=0)

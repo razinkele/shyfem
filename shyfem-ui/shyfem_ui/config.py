@@ -220,6 +220,12 @@ class Config(BaseSettings):
         default="SHYFEM UI <noreply@localhost>",
         description="From address for notification emails",
     )
+    smtp_timeout_seconds: int = Field(
+        default=10,
+        gt=0,
+        description="Socket timeout for SMTP connect/login/send — bounds a slow "
+        "or dead mail relay so it cannot hang the job-completion path.",
+    )
 
     def validate_path(self, path: Path | str, must_exist: bool = False) -> Path:
         """Validate that a user-supplied path is within allowed directories.
