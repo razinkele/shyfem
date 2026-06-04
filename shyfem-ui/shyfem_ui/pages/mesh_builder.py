@@ -341,6 +341,73 @@ def mesh_builder_ui() -> ui.Tag:
 # ---------------------------------------------------------------------------
 
 
+def stage_boundary_upload(files: list[dict], work: Path) -> Path:
+    """Stage uploaded boundary files into ``work`` and return the file to open.
+
+    Boundary uploads arrive as a list of ``{"name", "datapath"}`` dicts that
+    Shiny stored under opaque temp names; multi-file formats like Shapefiles
+    need their companions (.shx/.dbf/.prj) alongside the .shp under the original
+    names, so we copy them into ``work``. ``.zip`` archives are extracted.
+
+    ``work`` is owned by the caller (a TemporaryDirectory) so the staged copies
+    are cleaned up after import — previously this allocated its own ``mkdtemp``
+    that was never removed, leaking a ``mesh_import_*`` dir per upload.
+    """
+    import shutil
+    import zipfile
+
+    # Check for zip first
+    for f in files:
+        if f["name"].lower().endswith(".zip"):
+            with zipfile.ZipFile(f["datapath"], "r") as zf:
+                zf.extractall(work)
+            # Find the .shp inside
+            shps = list(work.rglob("*.shp"))
+            if shps:
+                return shps[0]
+            # Maybe it's a GeoJSON or GPKG inside the zip
+            for ext in (".geojson", ".json", ".gpkg"):
+                found = list(work.rglob(f"*{ext}"))
+                if found:
+                    return found[0]
+            raise ValueError("No .shp, .geojson, or .gpkg found inside zip")
+
+    # Copy all files to work dir with original names
+    for f in files:
+        dest = work / f["name"]
+        shutil.copy2(f["datapath"], dest)
+
+    # Find the primary file to open. For Shapefiles, also check that the
+    # required companion files (.shx, .dbf) are present — GDAL refuses to
+    # open a bare .shp with a cryptic "flags=68" error otherwise.
+    shp_files = list(work.glob("*.shp"))
+    if shp_files:
+        primary = shp_files[0]
+        stem = primary.stem
+        present = {p.suffix.lower() for p in work.glob(f"{stem}.*")}
+        required = {".shp", ".shx", ".dbf"}
+        missing = sorted(required - present)
+        if missing:
+            raise ValueError(
+                f"Shapefile incomplete — missing companion file(s): "
+                f"{', '.join(missing)}. Re-select all files together "
+                f"(.shp, .shx, .dbf, .prj) or upload them as a .zip archive."
+            )
+        return primary
+
+    for ext in (".geojson", ".json", ".gpkg"):
+        found = list(work.glob(f"*{ext}"))
+        if found:
+            return found[0]
+
+    names = ", ".join(f["name"] for f in files)
+    raise ValueError(
+        f"Unrecognized boundary file format. Got: {names}. "
+        "Accepted: .geojson, .json, .gpkg, .shp (with companions), or "
+        ".zip containing one of the above."
+    )
+
+
 @module.server
 def mesh_builder_server(
     input,
@@ -380,71 +447,6 @@ def mesh_builder_server(
 
     def _log(msg: str) -> None:
         log_content.set(log_content.get() + msg + "\n")
-
-    def _prepare_upload_files(files: list[dict]) -> Path:
-        """Reassemble uploaded files into a single directory for fiona.
-
-        Shiny renames uploads to temp names (0.shp, 1.shx, etc.), breaking
-        multi-file formats like Shapefiles.  This copies them into a temp
-        directory with their original names so fiona can find companions.
-        Also handles .zip archives.
-        """
-        import shutil
-        import tempfile
-        import zipfile
-
-        work = Path(tempfile.mkdtemp(prefix="mesh_import_"))
-
-        # Check for zip first
-        for f in files:
-            if f["name"].lower().endswith(".zip"):
-                with zipfile.ZipFile(f["datapath"], "r") as zf:
-                    zf.extractall(work)
-                # Find the .shp inside
-                shps = list(work.rglob("*.shp"))
-                if shps:
-                    return shps[0]
-                # Maybe it's a GeoJSON or GPKG inside the zip
-                for ext in (".geojson", ".json", ".gpkg"):
-                    found = list(work.rglob(f"*{ext}"))
-                    if found:
-                        return found[0]
-                raise ValueError("No .shp, .geojson, or .gpkg found inside zip")
-
-        # Copy all files to work dir with original names
-        for f in files:
-            dest = work / f["name"]
-            shutil.copy2(f["datapath"], dest)
-
-        # Find the primary file to open. For Shapefiles, also check that the
-        # required companion files (.shx, .dbf) are present — GDAL refuses to
-        # open a bare .shp with a cryptic "flags=68" error otherwise.
-        shp_files = list(work.glob("*.shp"))
-        if shp_files:
-            primary = shp_files[0]
-            stem = primary.stem
-            present = {p.suffix.lower() for p in work.glob(f"{stem}.*")}
-            required = {".shp", ".shx", ".dbf"}
-            missing = sorted(required - present)
-            if missing:
-                raise ValueError(
-                    f"Shapefile incomplete — missing companion file(s): "
-                    f"{', '.join(missing)}. Re-select all files together "
-                    f"(.shp, .shx, .dbf, .prj) or upload them as a .zip archive."
-                )
-            return primary
-
-        for ext in (".geojson", ".json", ".gpkg"):
-            found = list(work.glob(f"*{ext}"))
-            if found:
-                return found[0]
-
-        names = ", ".join(f["name"] for f in files)
-        raise ValueError(
-            f"Unrecognized boundary file format. Got: {names}. "
-            "Accepted: .geojson, .json, .gpkg, .shp (with companions), or "
-            ".zip containing one of the above."
-        )
 
     # --- Sync radio buttons → hidden navset ---
     @reactive.effect
@@ -557,8 +559,14 @@ def mesh_builder_server(
         if not files:
             return
         try:
-            open_path = _prepare_upload_files(files)
-            grd = import_boundaries(open_path)
+            import tempfile
+
+            # Stage + import inside a TemporaryDirectory so the staged copies
+            # (and any extracted archive) are removed once import_boundaries has
+            # read the data into memory — no leaked mesh_import_* dir per upload.
+            with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
+                open_path = stage_boundary_upload(files, Path(tmp))
+                grd = import_boundaries(open_path)
             issues = validate_boundary(grd)
             boundary_grd.set(grd)
             refined_grd.set(grd)  # Start refine step with same data
@@ -1145,13 +1153,18 @@ def mesh_builder_server(
         if not files:
             return
         try:
-            open_path = _prepare_upload_files(files)
+            import tempfile
+
             depth_attr = input.contour_depth_attr() or "depth"
             sample_dist = input.contour_sample_dist()
             sample_dist = sample_dist if sample_dist and sample_dist > 0 else None
-            data = load_bathymetry_contours(
-                open_path, depth_attr=depth_attr, sample_distance=sample_dist
-            )
+            # Stage + parse inside a TemporaryDirectory so staged copies are
+            # cleaned up once load_bathymetry_contours has read the data.
+            with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
+                open_path = stage_boundary_upload(files, Path(tmp))
+                data = load_bathymetry_contours(
+                    open_path, depth_attr=depth_attr, sample_distance=sample_dist
+                )
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)

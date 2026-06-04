@@ -2024,3 +2024,146 @@ class TestBathymetryRasterVectorizationBranches:
         self._write_raster(path, band, -999.0, transform)
         with pytest.raises(ValueError):
             _load_bathymetry_raster(path)
+
+
+class TestBathymetryRasterRobustness:
+    """NaN-pixel filtering and the oversized-raster guard added after the
+    2026-06-04 deep review: NaN!=NaN meant NaN pixels leaked past the nodata
+    mask and poisoned IDW; an unbounded src.read(1) could OOM the shared
+    worker on a large DEM."""
+
+    def _write_raster(self, path, band, nodata, transform, crs="EPSG:4326"):
+        import rasterio
+
+        with rasterio.open(
+            path,
+            "w",
+            driver="GTiff",
+            height=band.shape[0],
+            width=band.shape[1],
+            count=1,
+            dtype=str(band.dtype),
+            crs=crs,
+            transform=transform,
+            nodata=nodata,
+        ) as dst:
+            dst.write(band, 1)
+
+    def test_nan_pixels_dropped_with_no_nodata(self, tmp_path):
+        """A float band with NaN pixels and nodata=None: NaN must be dropped,
+        not returned as a poisoned value."""
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.array([[1.0, np.nan], [3.0, 4.0]], dtype="float32")
+        transform = from_origin(10.0, 50.0, 0.5, 0.5)
+        path = tmp_path / "nan.tif"
+        self._write_raster(path, band, None, transform)
+
+        got = _load_bathymetry_raster(path)
+        assert got.shape[0] == 3, "NaN pixel should be excluded"
+        assert not np.any(np.isnan(got[:, 2])), "no NaN depth may survive"
+
+    def test_nan_valued_nodata_drops_nan_pixels(self, tmp_path):
+        """When the raster declares nodata as NaN itself, band != nodata is
+        True everywhere (NaN != NaN) — the NaN pixels must still be dropped."""
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services.mesh_builder import _load_bathymetry_raster
+
+        band = np.array([[1.0, np.nan], [3.0, 4.0]], dtype="float32")
+        transform = from_origin(10.0, 50.0, 0.5, 0.5)
+        path = tmp_path / "nannd.tif"
+        self._write_raster(path, band, float("nan"), transform)
+
+        got = _load_bathymetry_raster(path)
+        assert got.shape[0] == 3
+        assert not np.any(np.isnan(got[:, 2]))
+
+    def test_oversized_raster_raises(self, tmp_path, monkeypatch):
+        """A raster whose pixel count exceeds the cap is rejected with a clear
+        error BEFORE the band is read into memory."""
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services import mesh_builder
+
+        band = np.ones((4, 4), dtype="float32")
+        transform = from_origin(0.0, 0.0, 1.0, 1.0)
+        path = tmp_path / "big.tif"
+        self._write_raster(path, band, None, transform)
+
+        monkeypatch.setattr(mesh_builder, "MAX_RASTER_PIXELS", 4)
+        with pytest.raises(ValueError, match="too large|exceeds"):
+            mesh_builder._load_bathymetry_raster(path)
+
+    def test_within_cap_still_loads(self, tmp_path, monkeypatch):
+        """A raster at/under the cap loads normally — the guard must not reject
+        legitimate DEMs."""
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services import mesh_builder
+
+        band = np.array([[1.0, 2.0], [3.0, 4.0]], dtype="float32")
+        transform = from_origin(0.0, 0.0, 1.0, 1.0)
+        path = tmp_path / "ok.tif"
+        self._write_raster(path, band, None, transform)
+
+        monkeypatch.setattr(mesh_builder, "MAX_RASTER_PIXELS", 4)  # exactly 4 px
+        got = mesh_builder._load_bathymetry_raster(path)
+        assert got.shape[0] == 4
+
+
+class TestStageBoundaryUpload:
+    """stage_boundary_upload stages uploaded boundary files into a caller-owned
+    work directory (so the caller's TemporaryDirectory cleans them up — the old
+    mkdtemp leaked a mesh_import_* dir per upload). Logic extracted from the
+    page closure to make it testable."""
+
+    def test_stages_geojson_into_work(self, tmp_path):
+        from shyfem_ui.pages.mesh_builder import stage_boundary_upload
+
+        src = tmp_path / "src.geojson"
+        src.write_text('{"type":"FeatureCollection","features":[]}')
+        work = tmp_path / "work"
+        work.mkdir()
+        files = [{"name": "coast.geojson", "datapath": str(src)}]
+
+        out = stage_boundary_upload(files, work)
+        assert out.parent == work
+        assert out.name == "coast.geojson"
+        assert out.exists()
+
+    def test_bare_shp_missing_companions_raises(self, tmp_path):
+        from shyfem_ui.pages.mesh_builder import stage_boundary_upload
+
+        shp = tmp_path / "x.shp"
+        shp.write_bytes(b"\x00")
+        work = tmp_path / "w"
+        work.mkdir()
+        files = [{"name": "x.shp", "datapath": str(shp)}]
+
+        with pytest.raises(ValueError, match="companion"):
+            stage_boundary_upload(files, work)
+
+    def test_zip_with_geojson_extracted(self, tmp_path):
+        import zipfile
+
+        from shyfem_ui.pages.mesh_builder import stage_boundary_upload
+
+        inner = tmp_path / "a.geojson"
+        inner.write_text("{}")
+        zpath = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(zpath, "w") as zf:
+            zf.write(inner, "a.geojson")
+        work = tmp_path / "wz"
+        work.mkdir()
+        files = [{"name": "bundle.zip", "datapath": str(zpath)}]
+
+        out = stage_boundary_upload(files, work)
+        assert out.name == "a.geojson"
+        assert out.exists()

@@ -640,6 +640,14 @@ def _rebuild_boundary_lines(new_grd: GrdFile, original_grd: GrdFile, vertices: n
 # 6. Bathymetry interpolation
 # ---------------------------------------------------------------------------
 
+# Upper bound on raster pixel count before we refuse to read the band into
+# memory. A DEM band is read in full (src.read(1)) and then expanded into
+# float64 x/y/value arrays for the valid pixels, so peak memory is several
+# bytes per pixel; on the shared laguna worker an unbounded read can OOM the
+# process. 100 megapixels (~10000x10000) keeps a single import well under a
+# gigabyte while still admitting any realistic lagoon/coastal DEM.
+MAX_RASTER_PIXELS = 100_000_000
+
 
 def load_bathymetry_file(file_path: Path) -> np.ndarray:
     """Load bathymetry data from CSV/XYZ file (x y z per line).
@@ -883,6 +891,16 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
     from rasterio.transform import xy as rio_xy
 
     with rasterio.open(path) as src:
+        # Guard against an unbounded read OOMing the shared worker: reject
+        # oversized rasters from the cheap header dimensions, before read(1).
+        n_pixels = int(src.width) * int(src.height)
+        if n_pixels > MAX_RASTER_PIXELS:
+            raise ValueError(
+                f"Raster {path} is too large: {src.width}x{src.height} = "
+                f"{n_pixels:,} pixels exceeds the {MAX_RASTER_PIXELS:,}-pixel "
+                "limit. Crop or downsample the DEM before importing."
+            )
+
         band = src.read(1)
         nodata = src.nodata
 
@@ -900,12 +918,17 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
             except Exception as exc:
                 logger.warning("Could not determine raster CRS, using raw coordinates: %s", exc)
 
-        # Valid-pixel mask matching the original loop's `val == nodata` skip.
-        # np.nonzero yields row-major (C-order) indices, preserving point order.
+        # Valid-pixel mask. Start from the nodata skip, then drop any
+        # non-finite pixels: a NaN sentinel makes `band != nodata` True
+        # everywhere (NaN != NaN), so NaN/inf would otherwise leak through and
+        # poison the IDW interpolation. np.nonzero yields row-major (C-order)
+        # indices, preserving point order.
         if nodata is not None:
             valid = band != nodata
         else:
             valid = np.ones(band.shape, dtype=bool)
+        if np.issubdtype(band.dtype, np.floating):
+            valid &= np.isfinite(band)
         rows_idx, cols_idx = np.nonzero(valid)
 
         if rows_idx.size == 0:
