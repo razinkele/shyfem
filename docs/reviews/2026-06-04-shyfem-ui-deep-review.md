@@ -63,3 +63,17 @@ Mostly hardening/cosmetic — see the raw result in the workflow output.
 6. Mediums: FK enforcement, `delete_user` cleanup, `/health` status, raster NaN/OOM, rate-limiter bucket, the false-passing tests.
 
 All four highs + the escalation are **confirmed, defensible, and mostly on the live multi-user box** — they warrant prompt fixing (TDD'd + gated + reviewed, as with the eco work).
+
+---
+
+## Shipped 2026-06-04 (merge `90d3192`, pushed to origin/main → laguna)
+The **4 highs + the privilege escalation are FIXED, reviewed (MERGE), and merged**:
+- IDOR read/list gates — `job_read_denied_reason` + admin-only listing across run/home/compare/visualize, plus the `_refresh_log` parity gate and **read-gate AST enforcement** (`test_pages_access_control.py`).
+- Share-role allowlist (`SharingService.SHAREABLE_ROLES`) — escalation closed.
+- Secure cookies default-on in server mode.
+- Batch-shyelab mutable-options bug — wrappers now copy.
+14+ new tests; full suite 2052 passed; ruff clean.
+
+**Deploy note:** the `use_secure_cookies` default now derives from server mode (no `.env` change needed). Laguna's Shiny Server symlinks the tree, so the worker may need a reload/restart to serve the new code.
+
+**Remaining backlog (mediums/lows, not yet fixed):** SMTP event-loop hang (high-reliability), FK constraints not enforced, `delete_user` orphans, `/health` 200-on-DB-fail, raster NaN/OOM, rate-limiter single-bucket, reactive-effect accumulation in file_picker/boundary_editor, and the 3 false-passing tests. Prioritize the SMTP hang next.
