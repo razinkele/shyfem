@@ -85,6 +85,8 @@
 
 	integer, save :: iubp,iubs,iubsolw,iubsols
 
+	logical, save :: brst_loaded = .false.	!state restored from restart
+
 !====================================================================
 	end module mercury
 !====================================================================
@@ -319,15 +321,18 @@
 !	  initialize state variables
 !         --------------------------------------------------
 
+	  if( .not. allocated(emp) ) then	!may be pre-allocated by restart
 	  allocate(emp(nlvdi,nkndi,npstate))
 	  allocate(ems(nkndi,nsstate))
 	  allocate(emsolw(nlvdi,nkndi,nsolwst))
 	  allocate(emsols(nkndi,nsolsst))
 	  allocate(etau(nkndi))      !claurent-OGS: created to produce outputs fields
-	  allocate(dZbed(nkndi))     !claurent-OGS: created to produce outputs fields
-	  allocate(dZactiv(nkndi))   !claurent-OGS: created to produce outputs fields 
+	  allocate(dZbed(nkndi))     !claurent-OGS: evolving sea-bed depth variation
+	  allocate(dZactiv(nkndi))   !claurent-OGS: evolving active-layer thickness
+	  end if
 
 
+	  if( .not. brst_loaded ) then	!restart provides emp/ems/emsolw/emsols
            do i=1,npstate
             emp(:,:,i) = epinit(i)
           end do
@@ -343,20 +348,25 @@
            do i=1,nsolsst
             emsols(:,i) = esolsinit(i)
           end do
-          
-          etau(:)=0.0                  !claurent-OGS: created to produce outputs fields
-          dZbed(:)=0.0    ! [meters]   !claurent-OGS: created to produce outputs fields
-          dZactiv(:)=0.05 ! [meters]   !claurent-OGS: created to produce outputs fields 
+          end if
+
+          etau(:)=0.0                  !transient: recomputed each step
+          if( .not. brst_loaded ) then !dZbed/dZactiv are evolving state -> restored
+            dZbed(:)=0.0    ! [meters]
+            dZactiv(:)=0.05 ! [meters]
+          end if
 !         --------------------------------------------------
 !	  initial conditions from file (only for pelagic part)
 !         --------------------------------------------------
 
+	  if( .not. brst_loaded ) then	!restart takes precedence over IC files
 	  nvar = npstate
 	  call mercury_init_file('mercury pelagic','mercin' &
      &			,dtime0,nvar,nlvdi,nlv,nkn,epinit,emp)
 	  nvar = nsolwst
 	  call mercury_init_file('mercury solids','mercsolin' &
      &			,dtime0,nvar,nlvdi,nlv,nkn,esolwinit,emsolw)
+	  end if
 
 !         --------------------------------------------------
 !	  set boundary conditions for all state variables
@@ -927,41 +937,93 @@
 
 !*************************************************************
 
+! Mercury restart: serialize the pelagic/sediment Hg and solids state
+! (emp/ems/emsolw/emsols) via the MPI-aware restart_write_value/read_value
+! helpers, same pattern as write_restart_conz / weutro. Header is (nvers,narray)
+! where narray = total node-array records that follow; read/skip consume exactly
+! that. nvers>=2 = real state; nvers<2 = legacy stub (no state) handled cleanly.
+
         subroutine write_restart_mercury(iunit)
+        use mercury
+        use mod_restart
         implicit none
         integer iunit
-	integer, save :: nvers = 1
-	integer, save :: narray = 0	!no mercury state serialized yet; MUST match
-					!the records read/skip consume (was 1 but
-					!no array was written -> stream desync).
-					!Full state serialization is a follow-up.
-	write(iunit) nvers
-	write(iunit) narray
+	integer i
+	integer, save :: nvers = 2
+	integer narray
+	logical, parameter :: belem = .false.
+	narray = npstate + nsstate + nsolwst + nsolsst + 2  !+ dZbed, dZactiv
+	call restart_write_value(iunit,nvers)	!bmaster-guarded (MPI-safe);
+	call restart_write_value(iunit,narray)	!plain write(iunit) would have
+						!ALL ranks write -> corrupt header
+	do i=1,npstate
+	  call restart_write_value(iunit,belem,emp(:,:,i))
+	end do
+	do i=1,nsstate
+	  call restart_write_value(iunit,belem,ems(:,i))
+	end do
+	do i=1,nsolwst
+	  call restart_write_value(iunit,belem,emsolw(:,:,i))
+	end do
+	do i=1,nsolsst
+	  call restart_write_value(iunit,belem,emsols(:,i))
+	end do
+	call restart_write_value(iunit,belem,dZbed)	!evolving bed state
+	call restart_write_value(iunit,belem,dZactiv)
         end
 
         subroutine skip_restart_mercury(iunit)
         implicit none
         integer iunit
-	integer i
-	integer, save :: nvers = 1
-	integer, save :: narray = 1
+	integer i,nvers,narray
 	read(iunit) nvers
 	read(iunit) narray
-	do i=1,narray
+	do i=1,narray			!narray records follow (0 for legacy stub)
 	  read(iunit)
 	end do
         end
 
         subroutine read_restart_mercury(iunit)
+        use mercury
+        use mod_restart
+        use levels, only : nlvdi
+        use basin, only : nkndi
         implicit none
         integer iunit
-	integer i
-	integer nvers,narray
-	read(iunit) nvers		!must consume exactly what write_restart_
-	read(iunit) narray		!mercury wrote (was empty -> left records in
-	do i=1,narray			!the stream -> corrupted later modules).
-	  read(iunit)
+	integer i,nvers,narray
+	logical, parameter :: belem = .false.
+	read(iunit) nvers
+	read(iunit) narray
+	if( nvers < 2 ) then		!legacy stub: no state stored
+	  do i=1,narray
+	    read(iunit)
+	  end do
+	  return			!brst_loaded stays .false. -> init uses epinit
+	end if
+	if( .not. allocated(emp) ) then	!runs before mercury3d allocates
+	  allocate(emp(nlvdi,nkndi,npstate))
+	  allocate(ems(nkndi,nsstate))
+	  allocate(emsolw(nlvdi,nkndi,nsolwst))
+	  allocate(emsols(nkndi,nsolsst))
+	  allocate(etau(nkndi))
+	  allocate(dZbed(nkndi))
+	  allocate(dZactiv(nkndi))
+	end if
+	do i=1,npstate
+	  call restart_read_value(iunit,belem,emp(:,:,i))
 	end do
+	do i=1,nsstate
+	  call restart_read_value(iunit,belem,ems(:,i))
+	end do
+	do i=1,nsolwst
+	  call restart_read_value(iunit,belem,emsolw(:,:,i))
+	end do
+	do i=1,nsolsst
+	  call restart_read_value(iunit,belem,emsols(:,i))
+	end do
+	call restart_read_value(iunit,belem,dZbed)	!evolving bed state
+	call restart_read_value(iunit,belem,dZactiv)
+	brst_loaded = .true.
         end
 
 !*************************************************************

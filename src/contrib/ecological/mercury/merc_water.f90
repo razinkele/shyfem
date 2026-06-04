@@ -648,9 +648,9 @@
       	real tempk	!temperature [K]
     	
         mw=18.0		!molecular weight of water [g mol-1]
-	molhg = 0.
-        !molHg = 12.74	!molal volume of mercury at its normal boiling
-     			!temperature [cm3 mol-1]
+        molHg = 12.74	!molal volume of mercury at its normal boiling
+     			!temperature [cm3 mol-1]  (was molhg=0 -> div-by-zero
+     			!in the Wilke-Chang diffusivity at line ~725)
         phiw=2.26	!solvent association factor 
        	AW=0.25		!Weibull Constant based on wind distribution
 

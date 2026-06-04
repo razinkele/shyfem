@@ -1,0 +1,15 @@
+
+$title
+        mercury restart part1
+        merc_rst_part1
+        GRID/MM_coarse
+$end
+$para
+        itanf = '2009-01-01'    itend = '2009-01-02'
+        idt = '300s'
+        date = 20090101
+        ilin = 1
+        imerc = 1
+        idtrst = -1
+        idtcon = '3h'
+$end
