@@ -78,6 +78,24 @@ def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
     return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
 
 
+def recent_jobs_session_id(
+    is_server_mode: bool, show_all: bool, user: dict | None, session_id
+):
+    """Decide which session_id to filter the Dashboard's recent-jobs list by.
+
+    Returns None to list every session's jobs, or ``session_id`` to scope to the
+    current session. Local (single-user) mode always lists all. In server mode
+    only admins may list every user's jobs — a non-admin (or unresolved WS
+    identity) asking to "show all" is downgraded to their own session (IDOR
+    guard).
+    """
+    if not is_server_mode:
+        return None
+    if show_all and not (user and user.get("role") == ROLE_ADMIN):
+        show_all = False
+    return None if show_all else session_id
+
+
 def _should_show_share_button(project: dict, user: dict | None) -> bool:
     """Return True if user should see the Share button for this project.
 
@@ -350,14 +368,8 @@ def home_server(
             except Exception:
                 logger.debug("show_all_jobs input not yet rendered, defaulting to False")
                 show_all = False  # input not yet rendered on startup
-            if _is_server_mode and show_all:
-                # IDOR fix: only admins may list every user's jobs.
-                from shyfem_ui.models.user import ROLE_ADMIN
-
-                _usr = _user()
-                if not (_usr and _usr.get("role") == ROLE_ADMIN):
-                    show_all = False
-            sid = None if show_all else _session_id
+            # IDOR guard (admin-only "show all") lives in recent_jobs_session_id.
+            sid = recent_jobs_session_id(_is_server_mode, show_all, _user(), _session_id)
             jobs = await job_queue.list_jobs(limit=5, session_id=sid)
             recent_jobs_list.set(jobs)
 
