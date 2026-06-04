@@ -493,6 +493,18 @@ def run_server(
         job = selected_job.get()
         if job is None:
             return
+        # IDOR fix: gate this auto-poll log path too, for parity with
+        # _view_job_log (defense-in-depth if the selected_job data flow changes).
+        from shyfem_ui.services.access_control import job_read_denied_reason
+
+        _denied = job_read_denied_reason(
+            job_user_id=job.metadata.get("user_id"),
+            job_project_id=job.metadata.get("project_id"),
+            user=current_user() if current_user is not None else None,
+        )
+        if _denied:
+            log_content.set(_denied)
+            return
         try:
             stdout = await job_queue.get_output(job.id, "stdout", tail=500)
             stderr = await job_queue.get_output(job.id, "stderr", tail=100)

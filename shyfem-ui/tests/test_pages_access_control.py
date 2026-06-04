@@ -474,6 +474,49 @@ def test_cancel_handler_authorizes_before_cancel(page, handler, guard, sink):
     )
 
 
+# Job-OUTPUT read handlers must authorize via job_read_denied_reason BEFORE
+# serving stdout/stderr (get_output). The "All jobs" list can surface other
+# users' jobs in server mode, so an ungated reader is an IDOR leak.
+READ_HANDLERS = [
+    ("run", "_view_job_log", "job_read_denied_reason", "get_output"),
+    ("run", "_refresh_log", "job_read_denied_reason", "get_output"),
+]
+
+
+@pytest.mark.parametrize("page,handler,guard,sink", READ_HANDLERS)
+def test_read_handler_authorizes_before_serving(page, handler, guard, sink):
+    path = _PAGES_DIR / f"{page}.py"
+    fn = _find_function_def(ast.parse(path.read_text()), handler)
+    assert fn is not None, f"{handler!r} not found in {path}"
+    gidx = _call_index(fn.body, guard)
+    sidx = _call_index(fn.body, sink)
+    assert gidx is not None, (
+        f"{path}::{handler} (line {fn.lineno}) serves job output without calling "
+        f"{guard} — any user could read a collaborator's stdout/stderr (IDOR)."
+    )
+    assert (
+        sidx is not None and gidx < sidx
+    ), f"{path}::{handler}: {guard} must precede serving output ({sink})"
+    assert _guard_enforced_by_name(fn, guard), (
+        f"{path}::{handler}: the {guard} result must be assigned and acted on "
+        f"(`if _denied: ...; return`) before serving output."
+    )
+
+
+def test_selected_job_details_authorizes_read():
+    """The job-details render must gate on job_read_denied_reason (it exposes
+    working_dir / error_message / output-file paths of the selected job)."""
+    path = _PAGES_DIR / "run.py"
+    fn = _find_function_def(ast.parse(path.read_text()), "selected_job_details")
+    assert fn is not None, "selected_job_details not found in run.py"
+    assert _call_index(fn.body, "job_read_denied_reason") is not None, (
+        "selected_job_details renders job metadata without job_read_denied_reason (IDOR)."
+    )
+    assert _guard_enforced_by_name(fn, "job_read_denied_reason"), (
+        "selected_job_details must enforce the read gate (if _denied: return ...)."
+    )
+
+
 # Project create/clone/import handlers must fail closed via identity_denied_reason
 # BEFORE constructing the Project — both to avoid an owner_id=None orphan on an
 # unresolved identity and to enforce tutorial read-only on the create-class path.
