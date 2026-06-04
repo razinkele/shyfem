@@ -129,6 +129,54 @@ def job_cancel_denied_reason(
     )
 
 
+def job_read_denied_reason(
+    *,
+    job_user_id: int | None,
+    job_project_id: int | None,
+    user: dict | None,
+    is_server_mode: bool | None = None,
+    session_factory=None,
+) -> str | None:
+    """Return a user-facing error if ``user`` may NOT READ the job's output /
+    details, else None.
+
+    A job's stdout/stderr/working-dir/metadata may be read by its **owner**, an
+    **admin**, or any **project member (viewer+)** — broader than the cancel gate
+    (which needs editor) since reading is non-destructive, and a tutorial account
+    may read jobs it owns or has access to. Fail-closed on an unresolved identity
+    in server mode; allowed in local (single-user) mode.
+
+    Args:
+        job_user_id: The job's owner user id (from job metadata), or None.
+        job_project_id: The job's project id (from job metadata), or None.
+        user: Server-validated user dict (or None).
+        is_server_mode: When None, resolved from the global config.
+        session_factory: Optional SQLAlchemy session factory for testing.
+    """
+    if is_server_mode is None:
+        from shyfem_ui.config import get_config
+
+        is_server_mode = get_config().deployment_mode == "server"
+
+    if not is_server_mode:
+        return None
+    if user is None:
+        return "Session identity could not be verified. Please reload the page and sign in again."
+    if user.get("role") == ROLE_ADMIN:
+        return None
+    if job_user_id is not None and user.get("id") == job_user_id:
+        return None
+    if (
+        job_project_id is not None
+        and check_project_access(
+            job_project_id, user, min_role="viewer", session_factory=session_factory
+        )
+        is not None
+    ):
+        return None
+    return "Permission denied: you do not have access to this job."
+
+
 def editor_denied_reason(
     project_id: int | None,
     user: dict | None,

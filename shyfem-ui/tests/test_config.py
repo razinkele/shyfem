@@ -320,3 +320,24 @@ def test_command_timeout_zero_rejected():
     # None and positive are valid.
     assert Config(command_timeout_seconds=None).command_timeout_seconds is None
     assert Config(command_timeout_seconds=3600).command_timeout_seconds == 3600
+
+
+class TestSecureCookiesDefault:
+    """Server mode (HTTPS) should default Secure cookies ON; local stays off;
+    explicit override is honoured."""
+
+    def _cfg(self, **kw):
+        return Config(_env_file=None, **kw)
+
+    def test_server_mode_defaults_secure_cookies_on(self):
+        c = self._cfg(deployment_mode="server", default_admin_password="strongpass123")
+        assert c.use_secure_cookies is True
+
+    def test_server_mode_explicit_false_is_honoured(self):
+        c = self._cfg(deployment_mode="server", default_admin_password="strongpass123",
+                      use_secure_cookies=False)
+        assert c.use_secure_cookies is False
+
+    def test_local_mode_keeps_secure_cookies_off(self):
+        c = self._cfg(deployment_mode="local")
+        assert c.use_secure_cookies is False

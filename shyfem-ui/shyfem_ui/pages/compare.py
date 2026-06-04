@@ -124,7 +124,16 @@ def compare_server(
     @reactive.effect
     async def _load_jobs():
         try:
-            jobs = await job_queue.list_jobs(limit=100)
+            # IDOR fix: in server mode non-admins only see their own jobs in the
+            # comparison selector; admins (and local mode) see all.
+            sid = None
+            if config.deployment_mode == "server":
+                from shyfem_ui.models.user import ROLE_ADMIN
+
+                _usr = current_user() if current_user is not None else None
+                if not (_usr and _usr.get("role") == ROLE_ADMIN):
+                    sid = str(id(session))
+            jobs = await job_queue.list_jobs(limit=100, session_id=sid)
             all_jobs.set(jobs)
         except Exception as e:
             ui.notification_show(f"Failed to load jobs: {e}", type="error", duration=6)
