@@ -1,8 +1,9 @@
 #!/bin/bash
 #------------------------------------------------------------------------
 # mercury hardening gate: mercury must RUN (was blocked by mercsolin param +
-# molhg=0 div-by-zero) and its restart must be bit-for-bit (full 0->2d vs
-# part1 0->1d + restart part2 1->2d), for all mercury state vars.
+# molhg=0 div-by-zero) and its restart must reproduce the continuous run to
+# output precision (rel < 1e-5; observed exactly 0) for all mercury state vars
+# — full 0->2d vs part1 0->1d + restart part2 1->2d.
 # Requires a MERCURY=true build + shyfem/shyelab on PATH + `make init`.
 #------------------------------------------------------------------------
 set -u
