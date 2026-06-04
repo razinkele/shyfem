@@ -931,7 +931,10 @@
         implicit none
         integer iunit
 	integer, save :: nvers = 1
-	integer, save :: narray = 1
+	integer, save :: narray = 0	!no mercury state serialized yet; MUST match
+					!the records read/skip consume (was 1 but
+					!no array was written -> stream desync).
+					!Full state serialization is a follow-up.
 	write(iunit) nvers
 	write(iunit) narray
         end
@@ -952,6 +955,13 @@
         subroutine read_restart_mercury(iunit)
         implicit none
         integer iunit
+	integer i
+	integer nvers,narray
+	read(iunit) nvers		!must consume exactly what write_restart_
+	read(iunit) narray		!mercury wrote (was empty -> left records in
+	do i=1,narray			!the stream -> corrupted later modules).
+	  read(iunit)
+	end do
         end
 
 !*************************************************************
