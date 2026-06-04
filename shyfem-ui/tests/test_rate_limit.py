@@ -279,3 +279,27 @@ class TestRateLimitMiddleware:
             assert "10.0.0.1" not in mw._requests
             assert "10.0.0.2" in mw._requests
             assert "10.0.0.3" in mw._requests
+
+
+class TestProxyMisconfigWarning:
+    """RateLimitMiddleware is only wired in server mode (always behind the
+    nginx -> Shiny Server proxy on laguna), so being constructed with an empty
+    trusted_proxies means it sees the proxy's IP for every request and collapses
+    all users into one bucket. That misconfiguration must be logged loudly, not
+    silently degrade per-client limiting to per-server."""
+
+    def test_warns_when_trusted_proxies_empty(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            RateLimitMiddleware(_mock_app, rpm=120, trusted_proxies=[])
+        msgs = " ".join(r.getMessage() for r in caplog.records)
+        assert "trusted_proxies" in msgs.lower() or "one bucket" in msgs.lower()
+
+    def test_no_warning_when_trusted_proxies_set(self, caplog):
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            RateLimitMiddleware(_mock_app, rpm=120, trusted_proxies=["127.0.0.0/8"])
+        msgs = " ".join(r.getMessage() for r in caplog.records).lower()
+        assert "trusted_proxies" not in msgs and "one bucket" not in msgs

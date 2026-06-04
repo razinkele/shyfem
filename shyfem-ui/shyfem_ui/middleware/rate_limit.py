@@ -1,8 +1,11 @@
 """ASGI middleware for per-client request rate limiting."""
 
 import ipaddress
+import logging
 import time
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
@@ -83,6 +86,20 @@ class RateLimitMiddleware:
         self._window = 60.0  # 1 minute sliding window
         self._requests: dict[str, list[float]] = defaultdict(list)
         self._max_clients = max_clients
+
+        # This middleware is only wired in server mode, which on laguna always
+        # sits behind the nginx -> Shiny Server proxy. With no trusted_proxies
+        # the only client address we ever see is the proxy's, so every user
+        # shares a single bucket and one busy client throttles everyone. Warn
+        # loudly rather than silently degrading to per-server limiting.
+        if not self.trusted_proxies:
+            logger.warning(
+                "Rate limiting is active but trusted_proxies is empty: behind a "
+                "reverse proxy every request carries the proxy's IP, so all "
+                "clients collapse into one bucket (per-server, not per-client). "
+                "Set SHYFEM_UI_TRUSTED_PROXIES to your proxy's CIDR(s) so the "
+                "real client IP is read from X-Forwarded-For."
+            )
 
     def _prune_clients(self, now: float):
         """Evict stale client entries when dict exceeds max_clients."""
