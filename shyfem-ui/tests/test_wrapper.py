@@ -442,3 +442,50 @@ class TestCommandTimeout:
             assert elapsed < 5, f"timeout did not fire promptly (took {elapsed:.1f}s)"
         finally:
             cfg_mod._config = None
+
+
+class TestOptionsNotMutated:
+    """run_shy* must not mutate the caller's options list (batch-shyelab bug)."""
+
+    @pytest.fixture
+    def wrapper(self, tmp_path):
+        shyfem_dir = tmp_path / "shyfem"
+        shyfem_dir.mkdir()
+        (shyfem_dir / "bin").mkdir()
+        return ShyfemWrapper(shyfem_dir)
+
+    @pytest.mark.asyncio
+    async def test_run_shyelab_does_not_mutate_options(self, wrapper, tmp_path, monkeypatch):
+        captured = []
+
+        async def fake_run(name, args, *a, **k):
+            captured.append(list(args))
+            return CommandResult(True, 0, "", "", name, str(tmp_path))
+
+        monkeypatch.setattr(wrapper, "run_command", fake_run)
+        opts = ["-split", "-tmin", "0"]
+
+        await wrapper.run_shyelab("file1.shy", tmp_path, opts)
+        # the caller's list must be untouched
+        assert opts == ["-split", "-tmin", "0"]
+        assert captured[0][-1].endswith("file1.shy")
+
+        # a second run with the SAME list must not carry file1 as an extra arg
+        await wrapper.run_shyelab("file2.shy", tmp_path, opts)
+        assert opts == ["-split", "-tmin", "0"]
+        assert captured[1].count("file1.shy") == 0
+        assert "file1.shy" not in [s.split("/")[-1] for s in captured[1][:-1]]
+        assert captured[1][-1].endswith("file2.shy")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("method,posarg", [
+        ("run_shypre", "g.grd"), ("run_shybas", "b.bas"),
+        ("run_shyparts", "b.bas"), ("run_shyplot", "i.shy"),
+    ])
+    async def test_other_wrappers_do_not_mutate_options(self, wrapper, tmp_path, monkeypatch, method, posarg):
+        async def fake_run(name, args, *a, **k):
+            return CommandResult(True, 0, "", "", name, str(tmp_path))
+        monkeypatch.setattr(wrapper, "run_command", fake_run)
+        opts = ["-x"]
+        await getattr(wrapper, method)(posarg, tmp_path, opts)
+        assert opts == ["-x"], f"{method} mutated the options list"
