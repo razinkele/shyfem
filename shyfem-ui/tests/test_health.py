@@ -186,3 +186,24 @@ class TestHealthIntegration:
         app = create_app(config)
         assert app._db_check is not None
         assert callable(app._db_check)
+
+
+class TestHealthHttpStatus:
+    """Degraded health must surface as HTTP 503 (not 200) so load balancers and
+    monitoring detect a failed dependency; healthy stays 200."""
+
+    @pytest.mark.asyncio
+    async def test_db_failure_returns_503(self):
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_fail, job_queue=_mock_job_queue())
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        assert sent[0]["status"] == 503
+        assert json.loads(sent[1]["body"])["status"] == "degraded"
+
+    @pytest.mark.asyncio
+    async def test_healthy_returns_200(self):
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_ok, job_queue=_mock_job_queue())
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        assert sent[0]["status"] == 200
+        assert json.loads(sent[1]["body"])["status"] == "ok"

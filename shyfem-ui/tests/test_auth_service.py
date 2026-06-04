@@ -408,3 +408,47 @@ class TestAuthenticateRehash:
         assert result2 is not None, (
             "rehashed user must continue to authenticate with same password"
         )
+
+
+class TestDeleteUserOrphanCleanup:
+    """delete_user must not leave rows pointing at the deleted user: WSAuthToken
+    rows are deleted; owned Projects, Jobs and Workflows have their user/owner
+    FK NULLed (non-destructive — an admin can reassign)."""
+
+    def test_delete_user_clears_orphans(self, auth_service):
+        from datetime import datetime, timedelta
+
+        from shyfem_ui.models.project import Job, Project
+        from shyfem_ui.models.user import User, WSAuthToken
+        from shyfem_ui.models.workflow import Workflow, WorkflowStatus
+
+        S = auth_service._session_factory
+        db = S()
+        u = User(username="victim", password_hash="x", role="user")
+        db.add(u)
+        db.flush()
+        uid = u.id
+        db.add(WSAuthToken(token="t1", session_token="s1", user_id=uid,
+                           expires_at=datetime.now() + timedelta(hours=1)))
+        p = Project(name="P", work_dir="/tmp/p", owner_id=uid)
+        db.add(p)
+        db.flush()
+        j = Job(job_uuid="u-1", name="j", job_type="shyfem", working_dir="/tmp/p",
+                user_id=uid, project_id=p.id)
+        w = Workflow(name="w", template="t", status=WorkflowStatus.PENDING, user_id=uid)
+        db.add_all([j, w])
+        db.commit()
+        pid, jid, wid = p.id, j.id, w.id
+        db.close()
+
+        assert auth_service.delete_user(uid) is True
+
+        db = S()
+        try:
+            assert db.query(WSAuthToken).filter_by(user_id=uid).count() == 0
+            assert db.get(Project, pid).owner_id is None
+            assert db.get(Job, jid).user_id is None
+            assert db.get(Workflow, wid).user_id is None
+            assert db.query(User).filter_by(id=uid).first() is None
+        finally:
+            db.close()
