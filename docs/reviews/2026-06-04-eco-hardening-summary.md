@@ -50,6 +50,12 @@ Validation surfaced + fixed a pre-existing weutro MPI bug (ulva seeding not deco
 ## Eco-model survey — complete
 All four ecological models characterized: **weutro** (hardened), **mercury** (hardened), **AQUABC** (in-tree superseded/bit-rotted → port AQUABCv0.2 if needed), **BFM** (external dependency, not in-tree). No further in-tree eco-model hardening remains.
 
-## Owner decisions still open (weutro)
-- `wsphyt` default velocity (settling is opt-in; give a value to enable by default).
-- `eload` loading spec (TR-06); ECO-04 air temp; ECO-05 `IS2` units.
+## weutro science — resolved
+- **Calibration set now selectable** (`iwcal`): was hardcoded to Venice-lagoon params for every run; now 0=generic / 1=Venice / 2=Taranto / 3=file, with the active set logged. **Owner decision: default stays Venice (`iwcal=1`)** — preserves legacy results.
+- **ECO-05 (`IS2` units): not a bug** — the active path (`param_venezia` → `IS2=200`) is W/m²-consistent with `iinst=qrad`; the lux/day value is overridden.
+- **NUTLIM** → Liebig minimum (owner-decided, merged).
+
+## Owner decisions still open (weutro) — need a concrete value
+- `wsphyt` default velocity (settling wired but opt-in; give a value to enable by default).
+- `eload` loading spec (TR-06): which states/nodes/rates.
+- ECO-04 air temp (low value); detritus particulate settling (needs partition fractions).
