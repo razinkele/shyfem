@@ -21,8 +21,20 @@ class SharingService:
             session_factory = get_session_factory()
         self._session_factory = session_factory
 
+    #: roles a project may be *shared* with (owner is implicit, not assignable)
+    SHAREABLE_ROLES = ("viewer", "editor")
+
     def share_project(self, project_id: int, user_id: int, role: str = "viewer") -> bool:
-        """Grant or update a user's access to a project."""
+        """Grant or update a user's access to a project.
+
+        ``role`` must be one of :attr:`SHAREABLE_ROLES`; anything else (e.g. a
+        client-supplied ``"owner"`` over the WS) raises ``ValueError`` — without
+        this the string was stored verbatim, allowing escalation to project owner.
+        """
+        if role not in self.SHAREABLE_ROLES:
+            raise ValueError(
+                f"invalid share role: {role!r} (allowed: {', '.join(self.SHAREABLE_ROLES)})"
+            )
         db = self._session_factory()
         try:
             existing = (

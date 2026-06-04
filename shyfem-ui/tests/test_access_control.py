@@ -538,3 +538,44 @@ class TestTutorialReadOnlyAcrossGates:
             )
             is not None
         )
+
+
+class TestJobReadDeniedReason:
+    """A job's output/details may be READ by its owner, an admin, or any project
+    member (viewer+). Stricter than cancel only in that reads allow viewers.
+    Fail-closed on user=None in server mode; allowed in local mode."""
+
+    def _call(self, **kw):
+        from shyfem_ui.services.access_control import job_read_denied_reason
+
+        return job_read_denied_reason(**kw)
+
+    def test_local_mode_allows_none(self, db_factory, setup):
+        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
+                          user=None, is_server_mode=False, session_factory=db_factory) is None
+
+    def test_server_denies_none(self, db_factory, setup):
+        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
+                          user=None, is_server_mode=True, session_factory=db_factory) is not None
+
+    def test_owner_allowed(self, db_factory, setup):
+        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
+                          user={"id": setup["alice_id"], "role": "user"},
+                          is_server_mode=True, session_factory=db_factory) is None
+
+    def test_admin_allowed(self, db_factory, setup):
+        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
+                          user={"id": setup["admin_id"], "role": "admin"},
+                          is_server_mode=True, session_factory=db_factory) is None
+
+    def test_viewer_allowed_to_read(self, db_factory, setup):
+        # charlie is a project viewer -> may READ (would be DENIED to cancel)
+        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
+                          user={"id": setup["charlie_id"], "role": "user"},
+                          is_server_mode=True, session_factory=db_factory) is None
+
+    def test_non_member_denied(self, db_factory, setup):
+        # bob owns nothing and has no project role -> the IDOR victim path
+        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
+                          user={"id": setup["bob_id"], "role": "user"},
+                          is_server_mode=True, session_factory=db_factory) is not None

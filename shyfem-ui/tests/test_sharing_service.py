@@ -152,3 +152,36 @@ class TestListShareableUsers:
             project_id=setup["project_id"], exclude_user_id=setup["alice_id"]
         )
         assert candidates == []
+
+
+class TestShareRoleAllowlist:
+    """share_project must reject roles outside {viewer, editor} — a client could
+    otherwise push role='owner' over the WS and escalate to project owner."""
+
+    def test_rejects_owner_role(self, service, setup):
+        with pytest.raises(ValueError):
+            service.share_project(setup["project_id"], setup["bob_id"], "owner")
+
+    def test_rejects_admin_role(self, service, setup):
+        with pytest.raises(ValueError):
+            service.share_project(setup["project_id"], setup["bob_id"], "admin")
+
+    def test_rejects_arbitrary_role(self, service, setup):
+        with pytest.raises(ValueError):
+            service.share_project(setup["project_id"], setup["bob_id"], "superuser")
+
+    def test_no_permission_row_created_on_reject(self, service, setup, db_factory):
+        from shyfem_ui.models.user import ProjectPermission
+        try:
+            service.share_project(setup["project_id"], setup["bob_id"], "owner")
+        except ValueError:
+            pass
+        db = db_factory()
+        n = db.query(ProjectPermission).filter_by(
+            project_id=setup["project_id"], user_id=setup["bob_id"]).count()
+        db.close()
+        assert n == 0
+
+    def test_viewer_and_editor_still_accepted(self, service, setup):
+        assert service.share_project(setup["project_id"], setup["bob_id"], "viewer") is True
+        assert service.share_project(setup["project_id"], setup["bob_id"], "editor") is True

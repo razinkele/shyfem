@@ -499,6 +499,16 @@ def visualize_server(
     @reactive.effect
     @reactive.event(input.load_compare_btn)
     def _load_compare():
+        # IDOR fix: same viewer-level access gate as _load_data (was missing).
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="viewer"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
         path_str = input.compare_path()
         if not path_str:
             ui.notification_show("Enter a comparison file path", type="warning")

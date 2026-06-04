@@ -493,6 +493,18 @@ def run_server(
         job = selected_job.get()
         if job is None:
             return
+        # IDOR fix: gate this auto-poll log path too, for parity with
+        # _view_job_log (defense-in-depth if the selected_job data flow changes).
+        from shyfem_ui.services.access_control import job_read_denied_reason
+
+        _denied = job_read_denied_reason(
+            job_user_id=job.metadata.get("user_id"),
+            job_project_id=job.metadata.get("project_id"),
+            user=current_user() if current_user is not None else None,
+        )
+        if _denied:
+            log_content.set(_denied)
+            return
         try:
             stdout = await job_queue.get_output(job.id, "stdout", tail=500)
             stderr = await job_queue.get_output(job.id, "stderr", tail=100)
@@ -540,6 +552,13 @@ def run_server(
     async def _refresh_jobs():
         """Refresh job lists."""
         show_all = input.show_all_run_jobs() if _is_server_mode else True
+        if _is_server_mode and show_all:
+            # IDOR fix: only admins may list every user's jobs; others get own.
+            from shyfem_ui.models.user import ROLE_ADMIN
+
+            _usr = current_user() if current_user is not None else None
+            if not (_usr and _usr.get("role") == ROLE_ADMIN):
+                show_all = False
         sid = None if show_all else _session_id
         jobs = await job_queue.list_jobs(limit=50, session_id=sid)
         _update_job_lists(jobs)
@@ -989,6 +1008,18 @@ def run_server(
         if job is None:
             return ui.p("Select a job to view details", class_="text-muted text-center")
 
+        # IDOR fix: authorize read of this job (the "All jobs" list can surface
+        # other users' jobs in server mode; reading must be gated like cancel).
+        from shyfem_ui.services.access_control import job_read_denied_reason
+
+        _denied = job_read_denied_reason(
+            job_user_id=job.metadata.get("user_id"),
+            job_project_id=job.metadata.get("project_id"),
+            user=current_user() if current_user is not None else None,
+        )
+        if _denied:
+            return ui.p(_denied, class_="text-danger text-center")
+
         eta_str = _estimate_eta(job)
 
         details = [
@@ -1094,6 +1125,18 @@ def run_server(
     async def _view_job_log():
         job = selected_job.get()
         if job is None:
+            return
+
+        # IDOR fix: authorize read before serving stdout/stderr of any job.
+        from shyfem_ui.services.access_control import job_read_denied_reason
+
+        _denied = job_read_denied_reason(
+            job_user_id=job.metadata.get("user_id"),
+            job_project_id=job.metadata.get("project_id"),
+            user=current_user() if current_user is not None else None,
+        )
+        if _denied:
+            log_content.set(_denied)
             return
 
         try:

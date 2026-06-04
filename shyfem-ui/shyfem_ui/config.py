@@ -153,6 +153,11 @@ class Config(BaseSettings):
                     "Server mode requires either SHYFEM_UI_DEFAULT_ADMIN_PASSWORD or "
                     "SHYFEM_UI_AUTH_PASSWORD to be set."
                 )
+            # Server mode is HTTPS (nginx terminates TLS); default Secure cookies
+            # ON so session/CSRF cookies are never sent in clear. Explicit
+            # override still honoured (e.g. SHYFEM_UI_USE_SECURE_COOKIES=false).
+            if "use_secure_cookies" not in self.model_fields_set:
+                self.use_secure_cookies = True
         return self
 
     @property

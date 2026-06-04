@@ -350,6 +350,13 @@ def home_server(
             except Exception:
                 logger.debug("show_all_jobs input not yet rendered, defaulting to False")
                 show_all = False  # input not yet rendered on startup
+            if _is_server_mode and show_all:
+                # IDOR fix: only admins may list every user's jobs.
+                from shyfem_ui.models.user import ROLE_ADMIN
+
+                _usr = _user()
+                if not (_usr and _usr.get("role") == ROLE_ADMIN):
+                    show_all = False
             sid = None if show_all else _session_id
             jobs = await job_queue.list_jobs(limit=5, session_id=sid)
             recent_jobs_list.set(jobs)
@@ -1229,6 +1236,11 @@ def home_server(
                 return
             uid = int(input.share_user_id())
             role = input.share_role()
+            if role not in SharingService.SHAREABLE_ROLES:
+                ui.notification_show(
+                    "Invalid role; choose viewer or editor.", type="error", duration=6
+                )
+                return
             svc_inner = SharingService()
             svc_inner.share_project(pid, uid, role)
             ui.notification_show("User added", type="message", duration=4)
