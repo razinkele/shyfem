@@ -183,6 +183,7 @@
         logical, save :: bshell = .false.
         logical, save :: bulva = .true.
         logical, save :: bflux = .true.
+        logical, save :: brst_loaded = .false.  !state restored from restart (Phase 2 C4)
 
 !====================================================================
         end module eutro
@@ -273,7 +274,11 @@
 	real wsink
         real shellfarm
         real ulvabiomass
-        real qrad       !solar radiation Watt/m2
+        real qrad       !solar radiation Watt/m2 (surface)
+        real qrad_l     !solar radiation at top of current layer (C2)
+        real ke_bg      !background light-extinction coeff [1/m] (C2)
+        real depth_top  !depth from surface to top of current layer [m] (C2)
+        real, external :: get_weutro_ke
 	real uws,wx,wy
 
 	integer nbnds
@@ -346,33 +351,37 @@
 !	  initialize state variables with einit
 !         --------------------------------------------------
 
-	  allocate(e(nlvdi,nkndi,nstate))	!pelagic variables
-	  allocate(eload(nlvdi,nkndi,nstate))	!pelagic loading
-	  allocate(es(nkndi,nsstate))		!sediment variables
-          allocate(esh(nkndi,nshstate))		!shell fish variables
-          allocate(eul(nkndi,nulstate))		!ulva variables
+	  if( .not. allocated(e) ) then		!may be pre-allocated by restart (C4)
+	    allocate(e(nlvdi,nkndi,nstate))	!pelagic variables
+	    allocate(es(nkndi,nsstate))		!sediment variables
+            allocate(esh(nkndi,nshstate))	!shell fish variables
+            allocate(eul(nkndi,nulstate))	!ulva variables
+          end if
 
+	  allocate(eload(nlvdi,nkndi,nstate))	!pelagic loading (not restart-saved)
           allocate(eseed(nlvdi,nkndi,nshstate))	!eseed is needed 2D but has been
                                                 !set 3D in weutro_seed
                                                 !seeding occurs only in l=1
           allocate(ulseed(nlvdi,nkndi,nulstate))!ulva
 
+	  if( .not. brst_loaded ) then		!restart provides e/es/esh/eul (C4)
+	    do i=1,nstate
+	      e(:,:,i) = einit(i)
+	    end do
+	    do i=1,nsstate
+	      es(:,i) = esinit(i)
+            end do
+            do i=1,nshstate
+              esh(:,i) = eshinit(i)
+            end do
+            do i=1,nulstate          ! ulva
+              eul(:,i) = eulinit(i)
+            end do
+          end if
+
 	  do i=1,nstate
-	    e(:,:,i) = einit(i)
 	    eload(:,:,i) = elinit(i)
 	  end do
-
-	  do i=1,nsstate
-	    es(:,i) = esinit(i)
-          end do
-
-          do i=1,nshstate
-            esh(:,i) = eshinit(i)
-          end do
-
-          do i=1,nulstate          ! ulva
-            eul(:,i) = eulinit(i)
-          end do
 
 !         --------------------------------------------------
 !	  initialize state variables from external file
@@ -380,6 +389,7 @@
 
 	  call get_first_dtime(dtime0)
 
+	  if( .not. brst_loaded ) then		!restart takes precedence over IC files (C4)
 	  nvar = nstate
           call tracer_file_init('bio init','bioin',dtime0 &
      &                          ,nvar,nlvdi,nlv,nkn,einit,e)
@@ -387,6 +397,7 @@
 	  nvar = nsstate
           call tracer_file_init('bio sed init','biosin',dtime0 &
      &                          ,nvar,1,1,nkn,esinit,es)
+          end if
 
 !         --------------------------------------------------
 !	  set loadings for special state variables
@@ -399,9 +410,11 @@
             call setseed_new(eseed) !seeding for benthic filters feeding
 	  end if
 
+	  if( .not. brst_loaded ) then	!do not overwrite restored esh (C4)
           do i=1,nshstate
             esh(:,i) = eseed(1,:,i)	!eseed is the initial value of esh
           end do
+          end if
 
 !         --- ulva ---
 
@@ -410,9 +423,11 @@
             call setseed_ulva(ulseed) !seeding for benthic filters feeding
 	  end if
 
+	  if( .not. brst_loaded ) then	!do not overwrite restored eul (C4)
           do i=1,nulstate
             eul(:,i) = ulseed(1,:,i)	!ulseed is the initial value of eul
           end do
+          end if
 
 !         --------------------------------------------------
 !	  set boundary conditions for all state variables
@@ -505,6 +520,8 @@
 	  bspec = k .eq. kspec
 
           call get_light(k,qrad)
+          ke_bg = get_weutro_ke()       !background extinction [1/m] (C2)
+          depth_top = 0.                !surface (top of layer 1) (C2)
 
           do l=1,lmax
             call dvanode(l,k,mode,d,vol,area)   !gets depth, volume and area
@@ -522,12 +539,28 @@
 	    if( bspec ) write(6,*) 'bio3d 1: ',eaux
 	    if( bspec ) write(6,*) 'bio3d 1a: ',elaux
 
-	    call eutro0d(id,tday,dtday,vol,d,vel,uws,t,s,qrad,eaux,elaux)
+!	    per-layer surface/bottom flags so reaeration acts only at the
+!	    surface and SOD/benthic flux only at the bottom layer (C1)
+	    call settopseg(l .eq. 1)
+	    call setbotseg(l .eq. lmax)
+	    call setsedseg(.false.)
+
+!	    attenuate incident light (Beer-Lambert) to the TOP of this layer.
+!	    The active light-limitation formula (STEELE by default) uses this
+!	    incident value as iinst; it does not integrate over the layer
+!	    thickness, so this between-layer attenuation is what supplies the
+!	    vertical light structure. ke_bg is background (non-algal) extinction;
+!	    algal self-shading between layers is not included here (C2).
+	    qrad_l = qrad * exp(-ke_bg*depth_top)
+
+	    call eutro0d(id,tday,dtday,vol,d,vel,uws,t,s,qrad_l,eaux,elaux)
             !call haka0d(tsec,dt,vol,d,t,ai,eaux,elaux)
 
 	    if( bspec ) write(6,*) 'bio3d 3: ',eaux
 
 	    e(l,k,:) = eaux(:)
+
+	    depth_top = depth_top + d   !accumulate for next layer's light (C2)
           end do
 
 	  l = lmax
@@ -589,8 +622,12 @@
 
 	call bnds_read_new(what,idbio,dtime)
 
-!$OMP PARALLEL PRIVATE(i)
-!$OMP DO SCHEDULE(DYNAMIC)	
+! NOTE (Phase 2 H1): the per-variable advection loop must NOT be wrapped in an
+! OMP PARALLEL DO. scal_adv -> scal3sh -> conz3d use module/SAVE scratch arrays
+! written for serial (one-scalar-at-a-time) invocation; calling them
+! concurrently races on that shared state and crashes with >1 thread. The real
+! transport parallelism is the node/element OMP inside the transport kernel, not
+! this variable loop. Keep this loop serial.
 
 	do i=1,nstate
 
@@ -602,9 +639,6 @@
           call tsmass (e(1,1,i),1,nlvdi,tstot(i)) !mass control
 
 	end do
-
-!$OMP END DO NOWAIT	
-!$OMP END PARALLEL	
 
 	if( bcheck ) call check_bio('after advection',e,es)
 

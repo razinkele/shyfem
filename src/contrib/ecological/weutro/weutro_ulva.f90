@@ -148,7 +148,7 @@
         nh3   = c(1)
         nox   = c(2)
         opo4  = c(3)
-        oxy   = c(4)
+        oxy   = c(6)        !DO is state 6, NOT phyto c(4) (Phase 2 C3)
         Wdt   = culva(1)
         Quota = culva(2)
 
@@ -205,13 +205,13 @@
 !
 !...    Uptake from the water column
 !
-        ca(1)   =  nh3  
-        ca(2)   =  nox  
-        ca(3)   =  opo4 
-        ca(4)   =  oxy  
-        cds(1)  = (-1.0)*  tsrp * Wdt  ! D_opo4        
-        cds(2)  = (-1.0)*  tsnh * Wdt  ! D_nh3   
-        cds(3)  = (-1.0)*  tsno * Wdt  ! D_nox   
+        ca(1)   =  nh3
+        ca(2)   =  nox
+        ca(3)   =  opo4
+        ca(4)   =  oxy
+        cds(1)  = (-1.0)*  tsnh * Wdt  ! D_nh3   (Phase 2 C3: was tsrp, rotated)
+        cds(2)  = (-1.0)*  tsno * Wdt  ! D_nox   (Phase 2 C3: was tsnh, rotated)
+        cds(3)  = (-1.0)*  tsrp * Wdt  ! D_opo4  (Phase 2 C3: was tsno, rotated)
         cds(4)  = (+1.0)*  (fu - ru)   ! D_oxy          !!!proportional to growth
 
 !...    Dead matter to sediment
@@ -256,12 +256,18 @@
         Quonew  = Quota              ! è una sorta di luxury uptake
         WetWnew = Wdtnew * p_ud2fw
 !
-!...     Uptake from the water column
-        ca(1)   = nh3   ! D_opo4 = 0.    
-        ca(2)   = nox   ! D_nh3 = 0.     
-        ca(3)   = opo4  ! D_nox = 0.     
-        ca(4)   = oxy   ! D_oxy = - ru   
-             ! D_dic = 0.    
+!...     Growth arrested (quota below minimum): no nutrient uptake, O2 only
+!...     loses respiration. Zero the source terms so euler does not re-apply
+!...     the growth-phase uptake set above (Phase 2 C3).
+        ca(1)   = nh3
+        ca(2)   = nox
+        ca(3)   = opo4
+        ca(4)   = oxy
+        cds(1)  = 0.            ! D_nh3  = 0
+        cds(2)  = 0.            ! D_nox  = 0
+        cds(3)  = 0.            ! D_opo4 = 0
+        cds(4)  = (-1.0)*ru     ! D_oxy  = -respiration
+             ! D_dic = 0.
 !
 !...    Dead matter to sediment 
 !        D_sedC  = mtu * p_ruc   
@@ -283,10 +289,10 @@
 !
 !...    Transfer to state vector
 !
-        c(1) = ca(1)  
-        c(2) = ca(2)  
-        c(3) = ca(3)  
-        c(4) = ca(4)  
+        c(1) = ca(1)
+        c(2) = ca(2)
+        c(3) = ca(3)
+        c(6) = ca(4)        !write oxygen back to DO state 6, NOT phyto c(4) (Phase 2 C3)
         c(7)= ca(7)
         c(8)= ca(8)
 

@@ -425,6 +425,7 @@
       real volold,volnew      !volume [m**3]
       real mass            !mass [g]
       real mder            !derivative [g/day]
+      real, parameter :: cmin = 1.e-5   !positivity floor [g/m**3] (Phase 1 C5)
 
       volold = vol
       volnew = vol
@@ -434,7 +435,7 @@
         mass = c(i) * volold
         mder = cds(i)
         c(i) = ( mass + dt * mder ) / volnew
-        !if(c(i).lt.0.00001) c(i)=0.00001
+        if( c(i) .lt. cmin ) c(i) = cmin   !enforce positivity (was disabled)
       end do
 
       end
@@ -465,18 +466,20 @@
       real loads(nstate)  !loading for c [g/(m**3 day)]
 
         integer i
-        logical berror
+        logical berror,bfatal
+        real, parameter :: cmin = 1.e-5   !positivity floor [g/m**3] (Phase 1 C5)
 
         berror = .false.
+        bfatal = .false.
 
-        if( vol .lt. 0. ) berror = .true.
-        if( depth .lt. 0. ) berror = .true.
+        if( vol .lt. 0. ) bfatal = .true.     !geometry error: not recoverable
+        if( depth .lt. 0. ) bfatal = .true.
 
        do i=1,nstate
-          if( c(i) .lt. 0. ) berror = .true.
+          if( c(i) .lt. 0. ) berror = .true.   !state negative: recoverable (clamp)
         end do
 
-        if( berror ) then
+        if( berror .or. bfatal ) then
           write(6,*) '*** eutro_check: error in eutro0d'
           call write_debug_param(id,nstate,t,dt &
      &                ,vol,depth,vel,stp,sal,qss,c,cold,cds,loads)
@@ -496,9 +499,14 @@
           write(6,*) 'cds=', cds
           write(6,*) 'loads=', loads
           write(6,*)
-          stop 'error stop eutro_check: negative values'
+        end if
+
+        if( bfatal ) then       !MPI-safe abort instead of bare stop (was: stop)
+          call shympi_abort_internal &
+     &        ('eutro_check: negative volume or depth')
+        else if( berror ) then  !clamp negatives and continue (was dead code)
           do i=1,nstate
-            if( c(i) .lt. 0. ) c(i) = 0.00001
+            if( c(i) .lt. 0. ) c(i) = cmin
           end do
         end if
 
@@ -667,7 +675,7 @@
       h = depth0
       vol = vol0
 
-        SA = vol0/depth0
+        SA = vol0/max(depth0,1.e-10)    !depth floor (Phase 1 H2/BIO-06)
 
       iinst=qss0
 !      write(6,*)iinst
@@ -741,6 +749,25 @@
       !ke(1)   = 1.
 
       kesg(1) = turbid
+
+      end
+
+!********************************************************************
+
+      function get_weutro_ke()
+
+! returns the background (non-algal) light-extinction coefficient [1/m]
+! for segment 1. Used by the 3D coupling (bio3d) to attenuate the incident
+! light between layers so deeper layers receive less light (Phase 3 C2).
+
+      implicit none
+      real get_weutro_ke
+      include 'weutro.h'
+      integer ik
+
+      get_weutro_ke = kesg(1)
+      ik = kefn(1)
+      if( ik .gt. 0 .and. ik .le. 5 ) get_weutro_ke = get_weutro_ke * ke(ik)
 
       end
 
@@ -1501,7 +1528,7 @@
 !
 !             Sediment Oxygen Demand (1-D Networks)
 !
-      SK19S = SOD1D (ISEG)*SODTA(ISEG)**stp20/H
+      SK19S = SOD1D (ISEG)*SODTA(ISEG)**stp20/max(H,1.e-10)   !depth floor (Phase 1 NU-3)
 !
 !======================================================================
 !                     Formulate Derivative
@@ -1656,7 +1683,7 @@
       SKE = KESG (ISEG)
       IF (IKE .GT. 0 .AND. IKE .LE. 5) SKE = SKE*KE (IKE)
       SKE = SKE + KESHD
-      TEMP1 = SKE*H
+      TEMP1 = max(SKE*H,1.e-10)    !light-denominator floor (Phase 1 NU-4)
 
 !         Get average solar radiation during daylight hours
 
@@ -1724,7 +1751,7 @@
          SKE = KESG (ISEG)
          IF (IKE .GT. 0 .AND. IKE .LE. 5) SKE = SKE*KE (IKE)
          SKE = SKE + KESHD
-         TEMP1 = SKE*H
+         TEMP1 = max(SKE*H,1.e-10)    !light-denominator floor (Phase 1 NU-4)
          TEMP2 = 0.083*PHIMX*XKC/(GITMAX*CCHL1*2.718)
          TEMP3 = EXP ( - TEMP1)
          RLGHTS (ITO, 2) = RLGHTS (ISEG, 2)*TEMP3
@@ -1990,8 +2017,8 @@
             LAM = 3.0
             GAM = 6.5
       else
-!            write(6,*) 'iwtype: ',iwtype
-            stop 'error stop'
+            write(6,*) 'kawind: unknown water body type WTYPE = ',iwtype
+            call shympi_abort_internal('kawind: unknown WTYPE')
       END IF
 !*
 ! CALCULATE DIFFUSIVITY OF OXYGEN IN WATER (DIFF) (CM**2/SEC), VISCOSIT
@@ -2215,8 +2242,8 @@
 
         integer i,iu,ierr
 
-        open(newunit=iu,file='michol.dat',status='old',
-     +       form='formatted',iostat=ierr)
+        open(newunit=iu,file='michol.dat',status='old', &
+     &       form='formatted',iostat=ierr)
         if( ierr /= 0 ) then
           write(6,*) 'error opening file: michol.dat'
           stop 'error stop: cannot open file'
@@ -2590,27 +2617,77 @@
 !**************************************************************
 !**************************************************************
 
+! Eco restart (Phase 2 C4): serialize the pelagic + sediment + shell + ulva
+! state via the MPI-aware restart_write_value/read_value helpers (gather on
+! write, scatter on read, bmaster-guarded) — same pattern as write_restart_conz.
+! Layout: nstate 3D node records (e) then nsstate/nshstate/nulstate 1D node
+! records (es/esh/eul). NOTE: this is a new format; eco sections written by an
+! older binary (the pre-C4 stub) are NOT readable — but that stub stored no
+! state, so nothing of value is lost.
+
         subroutine write_restart_eco(iunit)
+        use eutro
+        use mod_restart
         implicit none
         integer iunit
-        integer nstate,nkn,i
-        nstate = 0
-        nkn = 0
-        write(iunit) nstate,nkn
-        end
-        subroutine skip_restart_eco(iunit)
-        implicit none
-        integer iunit
-        integer nstate,nkn,i
-        read(iunit) nstate,nkn
+        integer i
+        logical, parameter :: belem = .false.
+
         do i=1,nstate
+          call restart_write_value(iunit,belem,e(:,:,i))
+        end do
+        do i=1,nsstate
+          call restart_write_value(iunit,belem,es(:,i))
+        end do
+        do i=1,nshstate
+          call restart_write_value(iunit,belem,esh(:,i))
+        end do
+        do i=1,nulstate
+          call restart_write_value(iunit,belem,eul(:,i))
+        end do
+        end
+
+        subroutine skip_restart_eco(iunit)
+        use eutro, only : nstate,nsstate,nshstate,nulstate
+        implicit none
+        integer iunit
+        integer i
+
+        do i=1,nstate+nsstate+nshstate+nulstate
           read(iunit)
         end do
         end
+
         subroutine read_restart_eco(iunit)
+        use eutro
+        use mod_restart
+        use levels, only : nlvdi
+        use basin, only : nkndi
         implicit none
         integer iunit
-        call skip_restart_eco(iunit)
+        integer i
+        logical, parameter :: belem = .false.
+
+        if( .not. allocated(e) ) then   !runs before bio3d allocates (C4)
+          allocate(e(nlvdi,nkndi,nstate))
+          allocate(es(nkndi,nsstate))
+          allocate(esh(nkndi,nshstate))
+          allocate(eul(nkndi,nulstate))
+        end if
+
+        do i=1,nstate
+          call restart_read_value(iunit,belem,e(:,:,i))
+        end do
+        do i=1,nsstate
+          call restart_read_value(iunit,belem,es(:,i))
+        end do
+        do i=1,nshstate
+          call restart_read_value(iunit,belem,esh(:,i))
+        end do
+        do i=1,nulstate
+          call restart_read_value(iunit,belem,eul(:,i))
+        end do
+        brst_loaded = .true.
         end
 
 !***************************************************************
