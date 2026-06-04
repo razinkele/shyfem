@@ -179,9 +179,11 @@
         CCHL=50      !range 20-50
       CCHLX(1) = CCHL
 
-        NUTLIM=1.       !nutrient limitation option 0=minimum, 1=multiplicative.
-                  ! Default=0
-                        ! GGU new value (was 1) ?
+        NUTLIM=0.       !nutrient limitation option 0=minimum, 1=multiplicative.
+                  ! Default=0 (Liebig minimum): the single most-limiting nutrient
+                  ! governs growth. Better-supported for phytoplankton than the
+                  ! multiplicative form, which compounds co-limitation and biases
+                  ! growth low (Droop 1974; Tang & Riley 2021).
 
 !--------------------------------------------------------------
 !       subroutine phyto
