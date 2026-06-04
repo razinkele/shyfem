@@ -754,6 +754,25 @@
 
 !********************************************************************
 
+      function get_weutro_ke()
+
+! returns the background (non-algal) light-extinction coefficient [1/m]
+! for segment 1. Used by the 3D coupling (bio3d) to attenuate the incident
+! light between layers so deeper layers receive less light (Phase 3 C2).
+
+      implicit none
+      real get_weutro_ke
+      include 'weutro.h'
+      integer ik
+
+      get_weutro_ke = kesg(1)
+      ik = kefn(1)
+      if( ik .gt. 0 .and. ik .le. 5 ) get_weutro_ke = get_weutro_ke * ke(ik)
+
+      end
+
+!********************************************************************
+
       subroutine wlight(fracday,itotal)
 
 ! sets light parameters

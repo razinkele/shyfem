@@ -274,7 +274,11 @@
 	real wsink
         real shellfarm
         real ulvabiomass
-        real qrad       !solar radiation Watt/m2
+        real qrad       !solar radiation Watt/m2 (surface)
+        real qrad_l     !solar radiation at top of current layer (C2)
+        real ke_bg      !background light-extinction coeff [1/m] (C2)
+        real depth_top  !depth from surface to top of current layer [m] (C2)
+        real, external :: get_weutro_ke
 	real uws,wx,wy
 
 	integer nbnds
@@ -512,6 +516,8 @@
 	  bspec = k .eq. kspec
 
           call get_light(k,qrad)
+          ke_bg = get_weutro_ke()       !background extinction [1/m] (C2)
+          depth_top = 0.                !surface (top of layer 1) (C2)
 
           do l=1,lmax
             call dvanode(l,k,mode,d,vol,area)   !gets depth, volume and area
@@ -529,12 +535,24 @@
 	    if( bspec ) write(6,*) 'bio3d 1: ',eaux
 	    if( bspec ) write(6,*) 'bio3d 1a: ',elaux
 
-	    call eutro0d(id,tday,dtday,vol,d,vel,uws,t,s,qrad,eaux,elaux)
+!	    per-layer surface/bottom flags so reaeration acts only at the
+!	    surface and SOD/benthic flux only at the bottom layer (C1)
+	    call settopseg(l .eq. 1)
+	    call setbotseg(l .eq. lmax)
+	    call setsedseg(.false.)
+
+!	    attenuate incident light to the top of this layer; source() then
+!	    averages over the layer thickness internally (C2)
+	    qrad_l = qrad * exp(-ke_bg*depth_top)
+
+	    call eutro0d(id,tday,dtday,vol,d,vel,uws,t,s,qrad_l,eaux,elaux)
             !call haka0d(tsec,dt,vol,d,t,ai,eaux,elaux)
 
 	    if( bspec ) write(6,*) 'bio3d 3: ',eaux
 
 	    e(l,k,:) = eaux(:)
+
+	    depth_top = depth_top + d   !accumulate for next layer's light (C2)
           end do
 
 	  l = lmax
