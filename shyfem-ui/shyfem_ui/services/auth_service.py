@@ -228,8 +228,18 @@ class AuthService:
                 admin_count = session.query(User).filter_by(role=ROLE_ADMIN).count()
                 if admin_count <= 1:
                     raise ValueError("Cannot delete the last admin user")
-            # Clean up project permissions (no cascade on this FK)
+            from shyfem_ui.models.project import Job, Project
+            from shyfem_ui.models.workflow import Workflow
+
+            # No DB-level FK cascade, so clean up everything referencing this
+            # user. Permissions + WS tokens are deleted; nullable ownership FKs
+            # are NULLed so the underlying data survives (an admin can reassign)
+            # rather than dangling at a now-deleted user id.
             session.query(ProjectPermission).filter_by(user_id=user_id).delete()
+            session.query(WSAuthToken).filter_by(user_id=user_id).delete()
+            session.query(Project).filter_by(owner_id=user_id).update({"owner_id": None})
+            session.query(Job).filter_by(user_id=user_id).update({"user_id": None})
+            session.query(Workflow).filter_by(user_id=user_id).update({"user_id": None})
             session.delete(user)
             session.commit()
             return True

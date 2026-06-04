@@ -68,10 +68,13 @@ class HealthCheckMiddleware:
         }
 
         body = json.dumps(payload).encode()
+        # 503 when degraded so load balancers / monitoring detect a failed
+        # dependency (a 200 with status:"degraded" reads as healthy to them).
+        http_status = 200 if status == "ok" else 503
         result = send(
             {
                 "type": "http.response.start",
-                "status": 200,
+                "status": http_status,
                 "headers": [
                     [b"content-type", b"application/json"],
                     [b"content-length", str(len(body)).encode()],
