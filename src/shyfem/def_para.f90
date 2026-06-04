@@ -2094,6 +2094,7 @@
         call addfnm('biosin',' ')
         call addfnm('toxi',' ')
         call addfnm('mercin',' ')	!mercury
+        call addfnm('mercsolin',' ')	!mercury solids initial conditions
 
 
 ! |petsc_zcfg|	Name of file containing the configuration of 
