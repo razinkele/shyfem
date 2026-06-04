@@ -44,7 +44,11 @@ Validation surfaced + fixed a pre-existing weutro MPI bug (ulva seeding not deco
 
 ## Deliberately NOT done
 - **In-tree AQUABC** (`ECOLOGICAL=AQUABC`): does not compile (incomplete 2024 module conversion) and is **superseded** by the standalone `AQUABCv0.2` (`razinkele/ESTAS-AQUABC`), whose sediment diagenesis is a full modular rewrite (`..._sediment_model_1_fast.f90` + `SEDIMENT_LIBRARY`). Hardening the in-tree fork is low-value; integrating AQUABCv0.2 into the tree is a separate major port if AQUABC sediment is a priority.
-- **BFM**, lagrange, hydro core: out of eco scope.
+- **BFM**: not an in-tree model — only `bfm_dummy.f90` (a no-op stub; its restart stubs are empty-and-consistent) lives in the repo. The real BFM is an **external library** (`BFMDIR/lib/libbfm` + NETCDF), marked experimental/unsupported. Nothing to harden in-tree.
+- lagrange, hydro core: out of eco scope.
+
+## Eco-model survey — complete
+All four ecological models characterized: **weutro** (hardened), **mercury** (hardened), **AQUABC** (in-tree superseded/bit-rotted → port AQUABCv0.2 if needed), **BFM** (external dependency, not in-tree). No further in-tree eco-model hardening remains.
 
 ## Owner decisions still open (weutro)
 - `wsphyt` default velocity (settling is opt-in; give a value to enable by default).
