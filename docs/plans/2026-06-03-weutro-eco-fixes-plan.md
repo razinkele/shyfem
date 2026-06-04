@@ -75,8 +75,9 @@ Goal: a stiff/over-large step can never crash or NaN the run. **Status: complete
 
 ---
 
-## Phase 3 — 3D physics regressions (validate against the stratified case)
+## Phase 3 — 3D physics regressions (validate against the stratified case)  ✅ DONE
 This is where scientific output changes; gate hard on the Phase-0.3 stratified baseline.
+**Status: complete** (committed). TDD via `check_light.sh` (stratified column + constant 250 W/m² forcing): RED = PHYT bit-identical at all 12 depths; GREEN = PHYT decreases 0.03264 (surface) → 0.03165 (dark below ~4 m). C1 = per-layer `settopseg/setbotseg/setsedseg` in bio3d loop; C2 = Beer-Lambert light attenuation to each layer top via new `get_weutro_ke()` accessor (source() still averages within the layer → no double-count). 2D paths unchanged; eco/restart/omp gates still pass. `make check-all` runs all 4 gates.
 
 - **C1 — per-layer segment flags.** `bio3d.f90:509–531`
   - Inside the layer loop, before each `eutro0d`: `call settopseg(l==1)`, `call setbotseg(l==lmax)`, `call setsedseg(.false.)` (pelagic).
