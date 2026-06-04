@@ -36,7 +36,10 @@ check:
 check-restart:
 	./check_restart.sh
 
-check-all: check check-restart
+check-omp:
+	./check_omp.sh
+
+check-all: check check-restart check-omp
 
 clean:
 	-rm -f *.shy *.inf *.run.log *.ext *.flx *.rst fort.* GRID/*.bas

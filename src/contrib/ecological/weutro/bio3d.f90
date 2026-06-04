@@ -596,8 +596,12 @@
 
 	call bnds_read_new(what,idbio,dtime)
 
-!$OMP PARALLEL PRIVATE(i)
-!$OMP DO SCHEDULE(DYNAMIC)	
+! NOTE (Phase 2 H1): the per-variable advection loop must NOT be wrapped in an
+! OMP PARALLEL DO. scal_adv -> scal3sh -> conz3d use module/SAVE scratch arrays
+! written for serial (one-scalar-at-a-time) invocation; calling them
+! concurrently races on that shared state and crashes with >1 thread. The real
+! transport parallelism is the node/element OMP inside the transport kernel, not
+! this variable loop. Keep this loop serial.
 
 	do i=1,nstate
 
@@ -609,9 +613,6 @@
           call tsmass (e(1,1,i),1,nlvdi,tstot(i)) !mass control
 
 	end do
-
-!$OMP END DO NOWAIT	
-!$OMP END PARALLEL	
 
 	if( bcheck ) call check_bio('after advection',e,es)
 
