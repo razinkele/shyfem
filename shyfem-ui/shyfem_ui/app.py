@@ -39,7 +39,11 @@ except ImportError:
 
 from shyfem_ui.services.audit_service import AuditService
 from shyfem_ui.services.auth_service import AuthService
-from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
+from shyfem_ui.services.job_queue import (
+    JobQueue,
+    JobQueueFactory,
+    cancel_active_jobs_for_session,
+)
 from shyfem_ui.services.notification_service import JobTransitionDetector
 from shyfem_ui.services.notification_service import NotificationService as EmailNotificationService
 
@@ -732,15 +736,9 @@ def _build_server(
     _user_id = _current_user["id"] if _current_user else None
 
     async def _on_session_ended():
-        try:
-            sid = _cleanup_session_id if _is_server else None
-            jobs = await job_queue.list_jobs(limit=100, session_id=sid)
-            for job in jobs:
-                if job.is_active:
-                    logger.info("Session ended — cancelling orphaned job %s", job.id)
-                    await job_queue.cancel(job.id)
-        except Exception as exc:
-            logger.warning("Session cleanup failed: %s", exc)
+        await cancel_active_jobs_for_session(
+            job_queue, _cleanup_session_id, _is_server, logger
+        )
 
     session.on_ended(_on_session_ended)
 

@@ -197,7 +197,13 @@ def boundary_editor_server(
         _next_id.set(bid + 1)
         boundaries.set(current)
 
-    # Dynamic remove handlers for remove_bound_{bid} buttons
+    # Dynamic remove handlers for remove_bound_{bid} buttons. This effect re-runs
+    # every time `boundaries` changes; a reactive.effect registered inside it is
+    # not destroyed on re-run, so without the dedup guard each boundary's
+    # remove_bound_<id> handler would stack a new copy on every change, firing
+    # _remove N times. Register each boundary id's handler at most once.
+    _registered_remove_bids: set[int] = set()
+
     @reactive.effect
     def _register_remove_handlers():
         bounds = boundaries.get()
@@ -205,6 +211,10 @@ def boundary_editor_server(
             _make_remove_bound(b["id"])
 
     def _make_remove_bound(bid: int):
+        if bid in _registered_remove_bids:
+            return  # handler already live for this boundary — don't stack another
+        _registered_remove_bids.add(bid)
+
         @reactive.effect
         @reactive.event(input[f"remove_bound_{bid}"])
         def _remove():

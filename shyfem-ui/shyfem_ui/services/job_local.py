@@ -18,6 +18,19 @@ from shyfem_ui.services.job_queue import (
 logger = logging.getLogger(__name__)
 
 
+def write_output_line(stdout_fh, line: str) -> None:
+    """Append ``line`` (with a trailing newline) to the open stdout file handle
+    and flush immediately, so the log viewer sees output as it streams.
+
+    A no-op when ``stdout_fh`` is None — the handle may be None if opening the
+    stdout file failed (disk full / permissions), in which case the job still
+    runs and this must not raise.
+    """
+    if stdout_fh:
+        stdout_fh.write(line + "\n")
+        stdout_fh.flush()
+
+
 class LocalJobQueue(JobQueue):
     """Local job queue using asyncio for concurrent execution.
 
@@ -287,9 +300,7 @@ class LocalJobQueue(JobQueue):
                 self._notify_progress(job_id, progress, message)
 
             def output_callback(line: str):
-                if stdout_fh:
-                    stdout_fh.write(line + "\n")
-                    stdout_fh.flush()
+                write_output_line(stdout_fh, line)
 
             try:
                 # Open the stdout log INSIDE the try so a touch/open failure

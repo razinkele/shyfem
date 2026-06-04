@@ -15,6 +15,25 @@ import time
 from pathlib import Path
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+# ---------------------------------------------------------------------------
+# Foreign-key enforcement for the whole test session
+# ---------------------------------------------------------------------------
+# Production turns on PRAGMA foreign_keys via the base.py connect-listener, but
+# most DB test fixtures build their own create_engine("sqlite:///:memory:") and
+# would bypass it — so the suite couldn't prove the delete paths are FK-clean.
+# Register the PRAGMA on the Engine class so EVERY SQLite connection opened
+# during tests enforces foreign keys, matching production exactly.
+
+
+@event.listens_for(Engine, "connect")
+def _tests_enforce_sqlite_foreign_keys(dbapi_conn, _record):
+    cur = dbapi_conn.cursor()
+    cur.execute("PRAGMA foreign_keys=ON")
+    cur.close()
+
 
 # ---------------------------------------------------------------------------
 # Environment isolation — prevent host env vars from leaking into tests
