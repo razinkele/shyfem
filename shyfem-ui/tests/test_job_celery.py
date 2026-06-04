@@ -460,6 +460,50 @@ class TestCeleryCleanup:
         count = await queue.cleanup_old_jobs(days=7)
         assert count == 0
 
+    async def test_cleanup_deletes_persisted_db_row(self, queue, mock_redis, tmp_path, monkeypatch):
+        """cleanup must also delete the persisted SQL Job row (CeleryJobQueue
+        writes one via _persist_job_to_db), not just the Redis entry — else the
+        jobs table grows unbounded."""
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'celery.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+
+        with dbb.db_session() as db:
+            db.add(
+                Job(
+                    job_uuid="old-db-job",
+                    name="old",
+                    job_type="shyfem",
+                    working_dir="/tmp",
+                    status=JobStatus.COMPLETED,
+                )
+            )
+
+        info = _make_job_info(
+            job_id="old-db-job",
+            status=JobStatus.COMPLETED,
+            created_at=datetime(2026, 1, 1),
+            completed_at=datetime(2026, 1, 1, 1, 0, 0),
+        )
+        mock_redis.zrangebyscore.return_value = [b"old-db-job"]
+        mock_redis.hget.return_value = _job_info_to_json(info)
+
+        count = await queue.cleanup_old_jobs(days=7)
+        assert count == 1
+        with dbb.db_session() as db:
+            assert db.query(Job).filter(Job.job_uuid == "old-db-job").first() is None
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
 
 # ---------------------------------------------------------------------------
 # TestCeleryReadsConfigShyfemDir

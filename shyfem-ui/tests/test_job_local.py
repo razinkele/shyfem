@@ -648,3 +648,51 @@ class TestStdoutOpenFailureNoLeak:
         status = await queue.get_status(job_id)
         assert status.status == JobStatus.FAILED
         assert queue._running_count == 0
+
+
+class TestCleanupDeletesDbRows:
+    """cleanup_old_jobs must delete the persisted Job rows too, not just evict
+    the in-memory dict + output files. Leaving rows behind grew the jobs table
+    unbounded (thousands of stale rows had to be purged from prod)."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_deletes_persisted_rows(self, tmp_path, monkeypatch):
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q._jobs.clear()
+
+        spec = JobSpec(name="old", tool_name="shypre", args=[], working_dir=tmp_path / "w")
+        job_id = await q.submit(spec)
+        for _ in range(50):
+            status = await q.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.1)
+
+        # The row is persisted while the job is retained.
+        with dbb.db_session() as db:
+            assert db.query(Job).filter(Job.job_uuid == job_id).first() is not None
+
+        # Backdate so cleanup evicts it, then verify the DB row is gone too.
+        job = q._jobs[job_id]
+        job.completed_at = datetime.now() - timedelta(days=30)
+        job.created_at = datetime.now() - timedelta(days=30)
+        removed = await q.cleanup_old_jobs(days=7)
+        assert removed >= 1
+
+        with dbb.db_session() as db:
+            assert db.query(Job).filter(Job.job_uuid == job_id).first() is None
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
