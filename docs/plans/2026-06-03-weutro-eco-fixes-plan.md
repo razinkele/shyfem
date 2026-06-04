@@ -55,10 +55,11 @@ Goal: a stiff/over-large step can never crash or NaN the run. **Status: complete
 
 ---
 
-## Phase 2 — Correctness bugs (non-3D)  🚧 C3 + C4 DONE, H1 remaining
+## Phase 2 — Correctness bugs (non-3D)  ✅ DONE (C3 + C4 + H1)
 - ✅ **C3** (ulva DO + nutrient indices) — committed. Inspection-verified + no-regression; **not** gate-exercised (ulva unseeded). Also fixed rotated nutrient `cds`; noted (unfixed) the min-quota cds-not-zeroed kinetics call.
 - ✅ **C4** (real restart serialization) — committed. **TDD-validated**: `check_restart.sh` round-trip RED→GREEN (bit-for-bit, 0 diff). Touches weutro.f90 (serialize) + bio3d.f90 (alloc guard + skip einit when `brst_loaded`).
-- ⏳ **H1** (OMP race on `scal_adv` SAVE arrays) — pending; needs a multi-thread gate run + care (touches core `concentration.f90`).
+- ✅ **H1** (OMP race) — committed. **TDD-validated**: `check_omp.sh` (1 vs 4 threads). RED = 4-thread SIGSEGV; GREEN = bit-identical. Root cause deeper than `scal_adv` (whole transport chain is serial-only), so fix = remove the OMP-over-variables loop in bio3d.f90 (core `concentration.f90` left untouched — THREADPRIVATE attempt reverted).
+- Gate now: `make check-all` runs eco + restart + omp gates.
 
 - **C3 — ulva oxygen index.** `weutro_ulva.f90:151,211,215,289`
   - Replace phyto `c(4)` with DO `c(6)` for oxygen read/build/write (`oxy=c(6)`, `cds(6)`, `c(6)=ca(6)`).
