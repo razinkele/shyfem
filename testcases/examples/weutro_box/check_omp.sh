@@ -24,10 +24,10 @@ fr(){ shyelab -write "$1" 2>/dev/null | grep "l,ivar,min,aver,max" \
 
 echo "=== OMP thread-safety: 1-thread vs 4-thread final bio ==="
 join <(fr eco_2d.eutro.shy) <(fr eco_2d_mt.eutro.shy) \
-  | awk '{d=$2-$3; ad=(d<0?-d:d);
+  | awk '{seen++; d=$2-$3; ad=(d<0?-d:d);
           if(ad>1e-6){fail=1; tag="  <-- DIFF"} else tag="";
           printf "var %d  1thr=%-13s 4thr=%-13s |diff|=%g%s\n",$1,$2,$3,ad,tag}
-         END{exit fail}' || rc=1
+         END{if(seen<9){print "FAIL: only "seen" vars compared (expected 9)"; exit 1}; exit fail}' || rc=1
 
 echo "=================================================================="
 if [ "$rc" -eq 0 ]; then echo "OMP GATE: PASS"; else echo "OMP GATE: FAIL"; fi

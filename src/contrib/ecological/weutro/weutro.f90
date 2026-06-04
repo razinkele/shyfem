@@ -2617,63 +2617,76 @@
 !**************************************************************
 !**************************************************************
 
-! Eco restart (Phase 2 C4): serialize the full pelagic + sediment + shell +
-! ulva state. Format: 1 header record (state counts + grid dims) followed by
-! 4 array records (e, es, esh, eul). write/read/skip share this fixed layout.
+! Eco restart (Phase 2 C4): serialize the pelagic + sediment + shell + ulva
+! state via the MPI-aware restart_write_value/read_value helpers (gather on
+! write, scatter on read, bmaster-guarded) — same pattern as write_restart_conz.
+! Layout: nstate 3D node records (e) then nsstate/nshstate/nulstate 1D node
+! records (es/esh/eul). NOTE: this is a new format; eco sections written by an
+! older binary (the pre-C4 stub) are NOT readable — but that stub stored no
+! state, so nothing of value is lost.
 
         subroutine write_restart_eco(iunit)
         use eutro
-        use levels, only : nlvdi
-        use basin, only : nkn
-        implicit none
-        integer iunit
-        write(iunit) nstate,nsstate,nshstate,nulstate,nkn,nlvdi
-        write(iunit) e
-        write(iunit) es
-        write(iunit) esh
-        write(iunit) eul
-        end
-
-        subroutine skip_restart_eco(iunit)
+        use mod_restart
         implicit none
         integer iunit
         integer i
-        read(iunit)                     !header
-        do i=1,4
-          read(iunit)                   !e, es, esh, eul
+        logical, parameter :: belem = .false.
+
+        do i=1,nstate
+          call restart_write_value(iunit,belem,e(:,:,i))
+        end do
+        do i=1,nsstate
+          call restart_write_value(iunit,belem,es(:,i))
+        end do
+        do i=1,nshstate
+          call restart_write_value(iunit,belem,esh(:,i))
+        end do
+        do i=1,nulstate
+          call restart_write_value(iunit,belem,eul(:,i))
+        end do
+        end
+
+        subroutine skip_restart_eco(iunit)
+        use eutro, only : nstate,nsstate,nshstate,nulstate
+        implicit none
+        integer iunit
+        integer i
+
+        do i=1,nstate+nsstate+nshstate+nulstate
+          read(iunit)
         end do
         end
 
         subroutine read_restart_eco(iunit)
         use eutro
+        use mod_restart
         use levels, only : nlvdi
-        use basin, only : nkn, nkndi
+        use basin, only : nkndi
         implicit none
         integer iunit
-        integer nst,nss,nsh,nul,nkr,nlr
-        read(iunit) nst,nss,nsh,nul,nkr,nlr
-        if( nst /= nstate .or. nss /= nsstate .or. nsh /= nshstate &
-     &        .or. nul /= nulstate ) then
-          write(6,*) 'read_restart_eco: state-count mismatch'
-          write(6,*) ' file:',nst,nss,nsh,nul
-          write(6,*) ' run :',nstate,nsstate,nshstate,nulstate
-          call shympi_abort_internal('read_restart_eco: state mismatch')
-        end if
-        if( nkr /= nkn .or. nlr /= nlvdi ) then
-          write(6,*) 'read_restart_eco: grid mismatch (nkn/nlvdi)'
-          write(6,*) ' file:',nkr,nlr,' run:',nkn,nlvdi
-          call shympi_abort_internal('read_restart_eco: grid mismatch')
-        end if
+        integer i
+        logical, parameter :: belem = .false.
+
         if( .not. allocated(e) ) then   !runs before bio3d allocates (C4)
           allocate(e(nlvdi,nkndi,nstate))
           allocate(es(nkndi,nsstate))
           allocate(esh(nkndi,nshstate))
           allocate(eul(nkndi,nulstate))
         end if
-        read(iunit) e
-        read(iunit) es
-        read(iunit) esh
-        read(iunit) eul
+
+        do i=1,nstate
+          call restart_read_value(iunit,belem,e(:,:,i))
+        end do
+        do i=1,nsstate
+          call restart_read_value(iunit,belem,es(:,i))
+        end do
+        do i=1,nshstate
+          call restart_read_value(iunit,belem,esh(:,i))
+        end do
+        do i=1,nulstate
+          call restart_read_value(iunit,belem,eul(:,i))
+        end do
         brst_loaded = .true.
         end
 

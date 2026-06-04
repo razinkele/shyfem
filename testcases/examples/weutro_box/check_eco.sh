@@ -37,14 +37,18 @@ run_case() {
   local shy="${str%.str}.eutro.shy"
   if [ ! -f "$shy" ]; then echo "FAIL[$tag]: no bio output $shy"; rc=1; return; fi
 
+  local nrec
+  nrec=$(shyelab -write "$shy" 2>/dev/null | grep -c "l,ivar,min,aver,max")
+  if [ "${nrec:-0}" -lt 1 ]; then echo "FAIL[$tag]: shyelab produced no bio records"; rc=1; return; fi
+
   shyelab -write "$shy" 2>/dev/null | grep "l,ivar,min,aver,max" \
     | awk -v tol="$TOL" -v domax="$DO_MAX" -v tag="$tag" '
-      { l=$3; ivar=$4; mn=$5+0; av=$6+0; mx=$7+0;
+      { seen++; l=$3; ivar=$4; mn=$5+0; av=$6+0; mx=$7+0;
         if (mn ~ /[Nn][Aa][Nn]/ || mx ~ /[Nn][Aa][Nn]/) {print "FAIL["tag"]: NaN var "ivar" layer "l; bad=1}
         if (ivar>=701 && ivar<=709 && mn < -tol) {printf "FAIL[%s]: negative var %d layer %d min=%g\n",tag,ivar,l,mn; bad=1}
         if (ivar==706 && (mx > domax)) {printf "FAIL[%s]: DO out of range var706 layer %d max=%g\n",tag,l,mx; bad=1}
       }
-      END{ if(bad) exit 1 }' || rc=1
+      END{ if(seen==0){print "FAIL: no records parsed"; exit 1}; if(bad) exit 1 }' || rc=1
 
   echo "--- baseline final-record summary (layer 1) ---"
   shyelab -write "$shy" 2>/dev/null | grep "l,ivar,min,aver,max" \

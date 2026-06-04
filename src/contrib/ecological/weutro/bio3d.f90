@@ -410,9 +410,11 @@
             call setseed_new(eseed) !seeding for benthic filters feeding
 	  end if
 
+	  if( .not. brst_loaded ) then	!do not overwrite restored esh (C4)
           do i=1,nshstate
             esh(:,i) = eseed(1,:,i)	!eseed is the initial value of esh
           end do
+          end if
 
 !         --- ulva ---
 
@@ -421,9 +423,11 @@
             call setseed_ulva(ulseed) !seeding for benthic filters feeding
 	  end if
 
+	  if( .not. brst_loaded ) then	!do not overwrite restored eul (C4)
           do i=1,nulstate
             eul(:,i) = ulseed(1,:,i)	!ulseed is the initial value of eul
           end do
+          end if
 
 !         --------------------------------------------------
 !	  set boundary conditions for all state variables
@@ -541,8 +545,12 @@
 	    call setbotseg(l .eq. lmax)
 	    call setsedseg(.false.)
 
-!	    attenuate incident light to the top of this layer; source() then
-!	    averages over the layer thickness internally (C2)
+!	    attenuate incident light (Beer-Lambert) to the TOP of this layer.
+!	    The active light-limitation formula (STEELE by default) uses this
+!	    incident value as iinst; it does not integrate over the layer
+!	    thickness, so this between-layer attenuation is what supplies the
+!	    vertical light structure. ke_bg is background (non-algal) extinction;
+!	    algal self-shading between layers is not included here (C2).
 	    qrad_l = qrad * exp(-ke_bg*depth_top)
 
 	    call eutro0d(id,tday,dtday,vol,d,vel,uws,t,s,qrad_l,eaux,elaux)

@@ -256,12 +256,18 @@
         Quonew  = Quota              ! è una sorta di luxury uptake
         WetWnew = Wdtnew * p_ud2fw
 !
-!...     Uptake from the water column
-        ca(1)   = nh3   ! D_opo4 = 0.    
-        ca(2)   = nox   ! D_nh3 = 0.     
-        ca(3)   = opo4  ! D_nox = 0.     
-        ca(4)   = oxy   ! D_oxy = - ru   
-             ! D_dic = 0.    
+!...     Growth arrested (quota below minimum): no nutrient uptake, O2 only
+!...     loses respiration. Zero the source terms so euler does not re-apply
+!...     the growth-phase uptake set above (Phase 2 C3).
+        ca(1)   = nh3
+        ca(2)   = nox
+        ca(3)   = opo4
+        ca(4)   = oxy
+        cds(1)  = 0.            ! D_nh3  = 0
+        cds(2)  = 0.            ! D_nox  = 0
+        cds(3)  = 0.            ! D_opo4 = 0
+        cds(4)  = (-1.0)*ru     ! D_oxy  = -respiration
+             ! D_dic = 0.
 !
 !...    Dead matter to sediment 
 !        D_sedC  = mtu * p_ruc   
