@@ -2017,8 +2017,8 @@
             LAM = 3.0
             GAM = 6.5
       else
-!            write(6,*) 'iwtype: ',iwtype
-            stop 'error stop'
+            write(6,*) 'kawind: unknown water body type WTYPE = ',iwtype
+            call shympi_abort_internal('kawind: unknown WTYPE')
       END IF
 !*
 ! CALCULATE DIFFUSIVITY OF OXYGEN IN WATER (DIFF) (CM**2/SEC), VISCOSIT
