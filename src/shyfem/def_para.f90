@@ -1318,6 +1318,7 @@
 !c------------------------------------------------------------------------
 
 	call addpar('ibio',0.)		!run biological reactor
+	call addpar('wsphyt',0.)	!EUTRO phytoplankton settling velocity [m/s] (0=off)
         call addpar('imerc',0.)		!run mercury reactor
         call addpar('issedi',0.)	!run simple sediments
 	call addpar('itoxi',0.)		!run toxicological routines

@@ -272,6 +272,7 @@
 	real stp
         real mass
 	real wsink
+	real, save :: wsphyt		!phytoplankton settling velocity [m/s] (TR-05)
         real shellfarm
         real ulvabiomass
         real qrad       !solar radiation Watt/m2 (surface)
@@ -454,6 +455,7 @@
 
           rkpar=getpar('chpar')
           difmol=getpar('difmol')
+          wsphyt=getpar('wsphyt')	!phytoplankton settling [m/s], 0=off
 
 !         --------------------------------------------------
 !	  initialize output 
@@ -630,6 +632,16 @@
 ! this variable loop. Keep this loop serial.
 
 	do i=1,nstate
+
+!	  only particulate states settle; phytoplankton (state 4) at wsphyt,
+!	  dissolved/mobile states (nutrients, DO, zooplankton) do not (TR-05).
+!	  Detritus (particulate ON/OP/CBOD) settling needs partition fractions
+!	  and is left as a follow-up.
+	  if( i .eq. 4 ) then
+	    wsink = wsphyt
+	  else
+	    wsink = 0.
+	  end if
 
           call scal_adv(what,i &
      &                          ,e(1,1,i),idbio &

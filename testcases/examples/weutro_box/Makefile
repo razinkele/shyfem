@@ -42,7 +42,10 @@ check-omp:
 check-light:
 	./check_light.sh
 
-check-all: check check-restart check-omp check-light
+check-settle:
+	./check_settle.sh
+
+check-all: check check-restart check-omp check-light check-settle
 
 clean:
 	-rm -f *.shy *.inf *.run.log *.ext *.flx *.rst fort.* GRID/*.bas
