@@ -154,6 +154,7 @@
 ! initializes area array
 
 	use basin
+	use shympi, only : bmpi
 
         implicit none
 
@@ -166,11 +167,15 @@
         logical berror
 
 	call n2int(n,nodes,berror)
-	if( berror ) call shympi_abort_internal('load_init_area: bad node')
+!	under MPI a seed node not owned by this rank is reported as "no such
+!	node" by n2int (k<=0); that is not an error — the owning rank seeds it.
+!	Only treat a bad node as fatal in serial.
+	if( berror .and. .not. bmpi ) &
+     &     call shympi_abort_internal('load_init_area: bad node')
 
         do i=1,n
 	  k = nodes(i)
-	  aree(k) = iarea
+	  if( k > 0 ) aree(k) = iarea	!seed only local nodes (skip k<=0)
         end do
 
         end
