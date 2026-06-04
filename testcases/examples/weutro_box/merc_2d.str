@@ -1,0 +1,15 @@
+
+$title
+        mercury 2D smoke test
+        merc_2d
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-03'
+        idt = '300s'
+        date = 20090101
+        ilin = 1
+        imerc = 1
+        idtcon = '3h'
+$end

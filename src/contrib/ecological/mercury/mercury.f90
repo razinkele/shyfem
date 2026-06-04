@@ -326,10 +326,10 @@
 	  allocate(ems(nkndi,nsstate))
 	  allocate(emsolw(nlvdi,nkndi,nsolwst))
 	  allocate(emsols(nkndi,nsolsst))
-	  end if
 	  allocate(etau(nkndi))      !claurent-OGS: created to produce outputs fields
-	  allocate(dZbed(nkndi))     !claurent-OGS: created to produce outputs fields
-	  allocate(dZactiv(nkndi))   !claurent-OGS: created to produce outputs fields
+	  allocate(dZbed(nkndi))     !claurent-OGS: evolving sea-bed depth variation
+	  allocate(dZactiv(nkndi))   !claurent-OGS: evolving active-layer thickness
+	  end if
 
 
 	  if( .not. brst_loaded ) then	!restart provides emp/ems/emsolw/emsols
@@ -350,9 +350,11 @@
           end do
           end if
 
-          etau(:)=0.0                  !claurent-OGS: created to produce outputs fields
-          dZbed(:)=0.0    ! [meters]   !claurent-OGS: created to produce outputs fields
-          dZactiv(:)=0.05 ! [meters]   !claurent-OGS: created to produce outputs fields
+          etau(:)=0.0                  !transient: recomputed each step
+          if( .not. brst_loaded ) then !dZbed/dZactiv are evolving state -> restored
+            dZbed(:)=0.0    ! [meters]
+            dZactiv(:)=0.05 ! [meters]
+          end if
 !         --------------------------------------------------
 !	  initial conditions from file (only for pelagic part)
 !         --------------------------------------------------
@@ -950,9 +952,10 @@
 	integer, save :: nvers = 2
 	integer narray
 	logical, parameter :: belem = .false.
-	narray = npstate + nsstate + nsolwst + nsolsst
-	write(iunit) nvers
-	write(iunit) narray
+	narray = npstate + nsstate + nsolwst + nsolsst + 2  !+ dZbed, dZactiv
+	call restart_write_value(iunit,nvers)	!bmaster-guarded (MPI-safe);
+	call restart_write_value(iunit,narray)	!plain write(iunit) would have
+						!ALL ranks write -> corrupt header
 	do i=1,npstate
 	  call restart_write_value(iunit,belem,emp(:,:,i))
 	end do
@@ -965,6 +968,8 @@
 	do i=1,nsolsst
 	  call restart_write_value(iunit,belem,emsols(:,i))
 	end do
+	call restart_write_value(iunit,belem,dZbed)	!evolving bed state
+	call restart_write_value(iunit,belem,dZactiv)
         end
 
         subroutine skip_restart_mercury(iunit)
@@ -1000,6 +1005,9 @@
 	  allocate(ems(nkndi,nsstate))
 	  allocate(emsolw(nlvdi,nkndi,nsolwst))
 	  allocate(emsols(nkndi,nsolsst))
+	  allocate(etau(nkndi))
+	  allocate(dZbed(nkndi))
+	  allocate(dZactiv(nkndi))
 	end if
 	do i=1,npstate
 	  call restart_read_value(iunit,belem,emp(:,:,i))
@@ -1013,6 +1021,8 @@
 	do i=1,nsolsst
 	  call restart_read_value(iunit,belem,emsols(:,i))
 	end do
+	call restart_read_value(iunit,belem,dZbed)	!evolving bed state
+	call restart_read_value(iunit,belem,dZactiv)
 	brst_loaded = .true.
         end
 

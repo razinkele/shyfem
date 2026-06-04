@@ -8,3 +8,6 @@
 fort.*
 # generated basin (rebuild via `make init`)
 GRID/*.bas
+
+# MPI partition artifacts (generated)
+partition.*
