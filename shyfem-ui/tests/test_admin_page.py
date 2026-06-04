@@ -150,3 +150,26 @@ class TestBadges:
         html = _active_badge(True)
         assert html.startswith("<span")
         assert html.endswith("</span>")
+
+
+class TestAuditLogFilterResetsPage:
+    """Changing the audit-log user/action filter must reset the viewer to page
+    0. Otherwise, sitting on (say) page 3 and narrowing the filter to a user
+    with few entries leaves log_page at 3 — the offset overshoots the result
+    set and the table shows a spurious 'No log entries found'. The fix mirrors
+    _on_log_refresh, which already resets the page. Locked in source so the
+    wiring can't be silently dropped."""
+
+    def test_filter_change_effect_resets_page(self):
+        import inspect
+
+        from shyfem_ui.pages import admin
+
+        src = inspect.getsource(admin)
+        assert "@reactive.event(input.log_user_filter, input.log_action_filter)" in src, (
+            "no effect reacting to both audit-log filter inputs"
+        )
+        # The reset effect must zero the page (same idiom as _on_log_refresh).
+        marker = "input.log_user_filter, input.log_action_filter)"
+        after = src.split(marker, 1)[1][:300]
+        assert "log_page.set(0)" in after, "filter-change effect does not reset log_page to 0"

@@ -551,6 +551,7 @@ class CeleryJobQueue(JobQueue):
         old_job_ids = rc.zrangebyscore("shyfem:jobs:by_time", "-inf", cutoff_timestamp)
 
         count = 0
+        removed_uuids: list[str] = []
         for job_id in old_job_ids:
             if isinstance(job_id, bytes):
                 job_id = job_id.decode()
@@ -567,7 +568,24 @@ class CeleryJobQueue(JobQueue):
                         except Exception:
                             logger.debug("Failed to clean up file %s", fp)
 
+                removed_uuids.append(job_id)
                 count += 1
+
+        # Also delete the persisted SQL rows (written by _persist_job_to_db),
+        # else the jobs table grows unbounded alongside the cleaned Redis store.
+        if removed_uuids:
+            try:
+                from shyfem_ui.db.base import db_session
+                from shyfem_ui.models.project import Job
+
+                with db_session() as db:
+                    db.query(Job).filter(Job.job_uuid.in_(removed_uuids)).delete(
+                        synchronize_session=False
+                    )
+            except Exception:
+                logger.error(
+                    "Could not delete %d job row(s) from DB", len(removed_uuids), exc_info=True
+                )
 
         return count
 

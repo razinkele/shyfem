@@ -648,6 +648,13 @@ def admin_server(
         log_trigger.set(log_trigger.get() + 1)
 
     @reactive.effect
+    @reactive.event(input.log_user_filter, input.log_action_filter)
+    def _on_log_filter_change():
+        # Narrowing/changing the filter shrinks the result set, so a stale page
+        # number would overshoot it and show an empty table — reset to page 0.
+        log_page.set(0)
+
+    @reactive.effect
     @reactive.event(input.log_prev_btn)
     def _on_log_prev():
         if log_page.get() > 0:

@@ -477,7 +477,27 @@ class LocalJobQueue(JobQueue):
                                     "Could not remove job output file %s", path, exc_info=True
                                 )
 
+        # Also delete the persisted rows, else the jobs table grows unbounded
+        # (eviction from the in-memory dict alone left thousands of stale rows).
+        self._delete_job_rows(to_remove)
+
         return len(to_remove)
+
+    def _delete_job_rows(self, job_uuids: list[str]) -> None:
+        """Delete persisted Job rows by uuid. Best-effort — a DB failure must
+        not abort in-memory eviction."""
+        if not job_uuids:
+            return
+        try:
+            from shyfem_ui.db.base import db_session
+            from shyfem_ui.models.project import Job
+
+            with db_session() as db:
+                db.query(Job).filter(Job.job_uuid.in_(job_uuids)).delete(
+                    synchronize_session=False
+                )
+        except Exception:
+            logger.error("Could not delete %d job row(s) from DB", len(job_uuids), exc_info=True)
 
     @property
     def active_job_count(self) -> int:
