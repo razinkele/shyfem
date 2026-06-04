@@ -520,13 +520,33 @@
 
 ! initializes eutro routines
 
+      use para
       implicit none
 
-        call param_init
-        !call param_taranto
-        call param_venezia
+      integer iwcal
 
-        !call param_read        !GGU new for Michol
+        call param_init			!generic defaults (always)
+
+!	select the site calibration that overrides the defaults. Default
+!	iwcal=1 reproduces the legacy hardcoded behaviour (Venice lagoon).
+!	Previously param_venezia was called unconditionally, so EVERY weutro
+!	run silently used Venice-lagoon parameters regardless of the system.
+        iwcal = nint(getpar('iwcal'))
+        if( iwcal .eq. 0 ) then
+          write(6,*) 'weutro: calibration set = 0 (generic param_init defaults)'
+        else if( iwcal .eq. 1 ) then
+          write(6,*) 'weutro: calibration set = 1 (Venice lagoon) [default]'
+          call param_venezia
+        else if( iwcal .eq. 2 ) then
+          write(6,*) 'weutro: calibration set = 2 (Taranto)'
+          call param_taranto
+        else if( iwcal .eq. 3 ) then
+          write(6,*) 'weutro: calibration set = 3 (michol.dat)'
+          call param_read
+        else
+          write(6,*) 'weutro: unknown iwcal = ',iwcal
+          call shympi_abort_internal('eutroini: unknown iwcal')
+        end if
 
         call EUTROINT
       call param_print
