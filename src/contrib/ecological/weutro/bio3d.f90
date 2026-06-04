@@ -1205,7 +1205,7 @@
         if( icall .eq. 0 ) then
           icall = 1
           call n2int(ndim,nodes,berror)
-          if( berror ) stop 'error stop cprint'
+          if( berror ) call shympi_abort_internal('bio cprint: error')
         end if
 
         write(84,*)

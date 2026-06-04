@@ -166,7 +166,7 @@
         logical berror
 
 	call n2int(n,nodes,berror)
-	if( berror ) stop 'error stop: load_init_area'
+	if( berror ) call shympi_abort_internal('load_init_area: bad node')
 
         do i=1,n
 	  k = nodes(i)
@@ -202,7 +202,7 @@
 
         do k=1,nkn
 	  ia = aree(k)
-	  if( ia .gt. nareas ) stop 'error stop ia'
+	  if( ia .gt. nareas ) call shympi_abort_internal('seed: area index > nareas')
 	  if( ia .gt. 0 ) then
             lmax = ilhkv(k)
             do l=1,lmax

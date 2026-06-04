@@ -2246,10 +2246,11 @@
      &       form='formatted',iostat=ierr)
         if( ierr /= 0 ) then
           write(6,*) 'error opening file: michol.dat'
-          stop 'error stop: cannot open file'
+          call shympi_abort_internal('param_read: cannot open michol.dat')
         end if
         read(iu,*) n_params
-        if( n_params .gt. ndim ) stop 'error stop: ndim - n_params'
+        if( n_params .gt. ndim ) &
+     &     call shympi_abort_internal('param_read: n_params > ndim')
         read(iu,*) (v_params(i),i=1,n_params)
         close(iu)
 
@@ -2417,7 +2418,8 @@
         integer ns,i
 
         read(5,*) id,ns,t,dt
-        if( ns .ne. nstate ) stop 'error stop read_debug_param: nstate'
+        if( ns .ne. nstate ) &
+     &     call shympi_abort_internal('read_debug_param: nstate mismatch')
 
         read(5,*) vel,stp,sal,vol,depth,qss
         read(5,*) tair,wspeed,turbid,fracday,itotal
