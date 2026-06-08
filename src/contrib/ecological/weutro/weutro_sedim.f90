@@ -50,16 +50,16 @@
         integer nsstate          !total number of state parameters
         parameter( nsstate = 2 )
 
-	integer k
-	real t			!actual time [day]
-        real dt                 !time step [day]
-        real vol                !volume [m**3]
-        real depth              !depth of box [m]
-        real vel                !velocity [m/s]
-        real stp                !temperature [C]
-        real c(nstate)          !state variable [mg/L] == [g/m**3]
+	integer, intent(in) :: k
+	real, intent(in) :: t			!actual time [day]
+        real, intent(in) :: dt                 !time step [day]
+        real, intent(in) :: vol                !volume [m**3]
+        real, intent(in) :: depth              !depth of box [m]
+        real, intent(in) :: vel                !velocity [m/s]
+        real, intent(in) :: stp                !temperature [C]
+        real, intent(inout) :: c(nstate)          !state variable [mg/L] == [g/m**3]
         real cold(nstate)       !old state variable [mg/L] == [g/m**3]
-        real cs(nsstate)        !state variable (sediments) [mg/L] == [g/m**3]
+        real, intent(inout) :: cs(nsstate)        !state variable (sediments) [mg/L] == [g/m**3]
 
 	include 'donata.h'
 
@@ -207,7 +207,8 @@
 
 	implicit none
 
-	real stemp,kpt,knt
+	real, intent(in) :: stemp
+	real, intent(out) :: kpt,knt
 	real stemp20
 
 	include 'weutro.h'
@@ -226,9 +227,9 @@
 
         implicit none
 
-        integer it
-        integer nstate,nsstate
-        real tstot(nstate), tsstot(nsstate)
+        integer, intent(in) :: it
+        integer, intent(in) :: nstate,nsstate
+        real, intent(in) :: tstot(nstate), tsstot(nsstate)
 
         real Ntstot,Ptstot
         integer i
@@ -260,14 +261,14 @@
 	integer nlstate
 	parameter(nlstate=3)
 
-        integer k
-        real t                  !actual time [day]
-        real dt                 !time step [day]
-        real vol                !volume [m**3]
-        real depth              !depth of box [m]
-        real vel                !velocity [m/s]
-        real stp                !temperature [C]
-        real cs(nlstate)        !state variable (sediments) [mg/L] == [g/m**3]
+        integer, intent(in) :: k
+        real, intent(in) :: t                  !actual time [day]
+        real, intent(in) :: dt                 !time step [day]
+        real, intent(in) :: vol                !volume [m**3]
+        real, intent(in) :: depth              !depth of box [m]
+        real, intent(in) :: vel                !velocity [m/s]
+        real, intent(in) :: stp                !temperature [C]
+        real, intent(inout) :: cs(nlstate)        !state variable (sediments) [mg/L] == [g/m**3]
 
         include 'donata.h'
 

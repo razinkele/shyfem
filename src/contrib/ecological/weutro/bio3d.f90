@@ -701,12 +701,12 @@
 
 	implicit none
 
-	integer iunit
-	integer it,k,l
-	integer nlvddi,nknddi,nstate
-	real e(nlvddi,nknddi,nstate)
-	real t
-	real s
+	integer, intent(in) :: iunit
+	integer, intent(in) :: it,k,l
+	integer, intent(in) :: nlvddi,nknddi,nstate
+	real, intent(in) :: e(nlvddi,nknddi,nstate)
+	real, intent(in) :: t
+	real, intent(in) :: s
 
 	integer i
 
@@ -741,7 +741,7 @@
 	integer nstate
 	parameter( nstate = 9 )
 
-	real e(nlvdi,nkndi,nstate)	!state vector
+	real, intent(in) :: e(nlvdi,nkndi,nstate)	!state vector
 
 ! local
 	integer idtc,itmc,itsmed
@@ -843,9 +843,9 @@
 	integer nsstate
 	parameter( nsstate = 2 )
 
-	character*(*) title
-	real e(nlvdi,nkndi,nstate)	!state vector
-	real es(nkndi,nsstate)		!sediment state variables
+	character*(*), intent(in) :: title
+	real, intent(in) :: e(nlvdi,nkndi,nstate)	!state vector
+	real, intent(in) :: es(nkndi,nsstate)		!sediment state variables
 
 
         character*20 text
@@ -881,8 +881,8 @@
 	integer nstate
 	parameter( nstate = 9 )
 
-        real dt
-	real e(nlvdi,nkndi,nstate)	!state vector
+        real, intent(in) :: dt
+	real, intent(inout) :: e(nlvdi,nkndi,nstate)	!state vector
 
 
         integer k,l,i,lmax
@@ -991,9 +991,9 @@
 	integer nstate
 	parameter( nstate = 9 )
 
-	integer it
-	real dt
-	real e(nlvdi,nkndi,nstate)	!state vector
+	integer, intent(in) :: it
+	real, intent(in) :: dt
+	real, intent(inout) :: e(nlvdi,nkndi,nstate)	!state vector
 
 	integer k,lmax,l,i
 	integer istate,itper
@@ -1129,7 +1129,7 @@
 
 	implicit none
 
-	real val(1)
+	real, intent(out) :: val(1)
 
 	integer k,ie,ii,ia
 	integer iaout
@@ -1168,9 +1168,9 @@
 	integer nstate
 	parameter( nstate = 9 )
 
-	real e(nlvdi,nkndi,nstate)	!state vector
-	real v1v(nkn)
-	double precision mass(nstate)
+	real, intent(in) :: e(nlvdi,nkndi,nstate)	!state vector
+	real, intent(in) :: v1v(nkn)
+	double precision, intent(out) :: mass(nstate)
 
 
 	integer k,lmax,l,i
@@ -1206,8 +1206,8 @@
 
         implicit none
 
-        integer it,nstate
-	real e(nlvdi,nkndi,nstate)	!state vector
+        integer, intent(in) :: it,nstate
+	real, intent(in) :: e(nlvdi,nkndi,nstate)	!state vector
 
         integer i,k,n
         logical berror
@@ -1274,7 +1274,7 @@
 
         implicit none
 
-        double precision dtime
+        double precision, intent(in) :: dtime
 
         integer nvar,id,idc,i
         logical next_output_d
