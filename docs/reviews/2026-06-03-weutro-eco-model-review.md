@@ -3,7 +3,7 @@
 **Date:** 2026-06-03
 **Scope:** `src/contrib/ecological/weutro/` (weutro.f90, bio3d.f90, weutro_light/sedim/wdia/seed/ulva/shell.f90, bio3d_util.f90) and the operator-split coupling to the hydro core (`src/shyfem/shyfem_subs.f90`, `concentration.f90`, `restart.f90`).
 **Method:** 29-agent multi-dimension workflow (6 lenses: loop-coupling, transport-reaction, numerics/units, ecology-science, bugs/edge-cases, fortran-conventions) → adversarial refute pass on every crit/high → synthesis. 39 raw findings, **20 confirmed**. Cross-checked against the newer **AQUABC-II** model (`/home/razinka/AQUABCv0.2`, git `razinkele/ESTAS-AQUABC`, 2026-02-27) as a reference oracle, and against the WASP/EUTRO literature (scite).
-**Status:** REVIEW ONLY — no code modified.
+**Status:** REVIEW ONLY at time of writing. **REMEDIATION (as of 2026-06-08): all critical + high + safe-medium findings are FIXED and merged to `main`** via the hardening campaign (see `docs/reviews/2026-06-04-eco-hardening-summary.md`): C1–C5, H1–H2, BIO-08, TR-05 (settling), FC-04 (bare `stop`s), and FC-02 (`stat=` on all 27 allocations, merge `1d64806`). All validated by the 6-gate `weutro_box` suite (bit-for-bit restart/mercury, OMP 1≡4, light, settle). **Still open:** owner-decision items only — `wsphyt` default velocity, `eload` spec (TR-06), `ECO-04` air-temp — plus low-value style (FC-01/03/05/06, LC-3). ECO-05/NU-7 verified NOT bugs.
 
 > The 20 confirmed findings collapse to **~7 distinct defects** (several were surfaced redundantly by multiple lenses). They are deduped below. IDs in brackets are the originating lens findings.
 
