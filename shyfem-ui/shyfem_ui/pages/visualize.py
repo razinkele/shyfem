@@ -49,6 +49,15 @@ def _with_export_config(fig: go.Figure, filename: str = "shyfem_plot") -> go.Fig
     return fig
 
 
+def _apply_equal_aspect(fig: go.Figure, enabled: bool) -> go.Figure:
+    """Lock 1:1 x/y scaling on a spatial figure so geographic maps aren't
+    stretched. No-op when disabled. Only call on map-like plots (mesh, netcdf
+    heatmap/contour) — not timeseries or depth profiles."""
+    if enabled:
+        fig.update_yaxes(scaleanchor="x", scaleratio=1)
+    return fig
+
+
 COLORMAPS = {
     "Viridis": "Viridis",
     "Plasma": "Plasma",
@@ -614,6 +623,7 @@ def visualize_server(
             colormap = input.colormap()
             show_cb = input.show_colorbar()
             show_grid = input.show_grid_lines()
+            equal_aspect = input.equal_aspect()
 
             if dtype == "grid":
                 fig = build_mesh_figure(
@@ -626,6 +636,7 @@ def visualize_server(
                 if show_grid:
                     fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
                     fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor="rgba(0,0,0,0.1)")
+                _apply_equal_aspect(fig, equal_aspect)
                 return _with_export_config(fig, "shyfem_main_plot")
             elif dtype == "timeseries":
                 return _with_export_config(
@@ -633,14 +644,14 @@ def visualize_server(
                 )
             elif dtype == "netcdf":
                 if plot_type in ("profile", "transect"):
+                    # depth profile / section — equal aspect is not meaningful here
                     return _with_export_config(
                         _plotly_netcdf(data, "contour", colormap, show_cb, show_grid, input),
                         "shyfem_main_plot",
                     )
-                return _with_export_config(
-                    _plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input),
-                    "shyfem_main_plot",
-                )
+                fig = _plotly_netcdf(data, plot_type, colormap, show_cb, show_grid, input)
+                _apply_equal_aspect(fig, equal_aspect)
+                return _with_export_config(fig, "shyfem_main_plot")
             else:
                 fig = go.Figure()
                 fig.add_annotation(

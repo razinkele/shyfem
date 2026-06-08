@@ -482,6 +482,28 @@ def physics_server(
         except Exception as e:
             ui.notification_show(f"Save error: {e}", type="error")
 
+    @reactive.effect
+    @reactive.event(input.preview_btn)
+    def preview_str():
+        # Read-only: render the STR that the current panel values would generate,
+        # without writing to disk (so no editor permission gate). Mirrors what
+        # save_file serializes via StrParser.generate.
+        _collect_panel_values()
+        content = StrParser.generate(str_data.get())
+        ui.modal_show(
+            ui.modal(
+                ui.tags.pre(
+                    content,
+                    style="max-height:60vh;overflow:auto;white-space:pre-wrap;"
+                    "font-family:var(--bs-font-monospace,monospace);font-size:0.85rem;",
+                ),
+                title="STR Preview",
+                size="l",
+                easy_close=True,
+                footer=ui.modal_button("Close"),
+            )
+        )
+
     @render.ui
     def module_badges():
         sf = str_data.get()
