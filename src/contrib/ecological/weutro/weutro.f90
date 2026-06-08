@@ -1403,21 +1403,20 @@
 !                *-*-*-*-* SYSTEM 5 - CBOD  *-*-*-*-*
 !                             Sources
 !
-      IF ( .NOT. SEDSEG) GO TO 1000
+      IF ( SEDSEG ) THEN
       SR18P = OCRB*DPP
-      GO TO 1010
+      ELSE
 !
 !                        Phytoplankton 'DEATH'
 !
- 1000 CONTINUE
       DEATH = K1D*PHYT
       SR18P = OCRB*DEATH
       GRC= ZOOSK * OCRB
+      END IF
 !
 !                              Sinks
 !                            Oxidation
 !
- 1010 CONTINUE
       IF ( .NOT. SEDSEG) THEN
 !         IF (DO .GT. 1.0E-15) THEN
          IF (DO .GT. 1.0E-15 .AND. CBOD .GT. 1.0E-5) THEN
@@ -1469,16 +1468,15 @@
 !                          Sources
 !
       K20 = 0.0
-      IF ( .NOT. SEDSEG) GO TO 1000
+      IF ( SEDSEG ) THEN
       SR190 = 0.0
       SR19PA = 0.0
       SR19PB = 0.0
       SK19P = 0.0
-      GO TO 1010
+      ELSE
 !
 !                         Reaeration
 !
- 1000 CONTINUE
       IF ( topseg .AND. XICECVR .GT. 0.0) THEN
 
 ! if surface element and not completly covered with ice
@@ -1543,7 +1541,7 @@
 !
 !        Nitrification (NH3-N + 2O2 = NO3-N + H2O + H)
 !
- 1010 CONTINUE
+      END IF
       SK1913 = 64./14.*SK1314
 !
 !                      Oxidation of CBOD
@@ -1781,14 +1779,13 @@
          RLGHTS (ITO, 2) = RLGHTS (ISEG, 2)*TEMP3
          IMAX = PI*ITOT*RLGHTS (ISEG, 2)/(2.*FDAY)
          SUM = 0.0
-         DO 1000 I = 1, 25
+         DO I = 1, 25
             DTDAY = FLOAT (I - 1)/24.
-            IF (DTDAY .GT. FDAY) GO TO 1010
+            IF (DTDAY .GT. FDAY) EXIT
             I0 = IMAX*SIN (PI*DTDAY/FDAY)
             SUM = SUM + 2.7183/TEMP1* &
      &         (EXP ( - TEMP2*I0*TEMP3) - EXP ( - TEMP2*I0))
- 1000    CONTINUE
- 1010    CONTINUE
+         END DO
          RLIGHT = SUM/24.
          RLGHTS (ISEG, 1) = RLIGHT
 !RBA--Date: Tuesday, 1 June 1993.  Time: 09:06:22.
