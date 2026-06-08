@@ -189,7 +189,7 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str) -> None:
                     working_dir,
                     mpi_enabled=True,
                     mpi_np=mpi_np,
-                    mpirun_path="mpirun",
+                    mpirun_path=get_config().mpirun_path,
                     options=job_info.args[:-1] if len(job_info.args) > 1 else None,
                     solver=solver,
                     progress_callback=progress_callback,

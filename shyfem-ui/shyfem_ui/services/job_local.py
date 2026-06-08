@@ -7,6 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from shyfem_ui.config import get_config
 from shyfem_ui.services.job_queue import (
     JobInfo,
     JobQueue,
@@ -318,7 +319,7 @@ class LocalJobQueue(JobQueue):
                         spec.working_dir,
                         mpi_enabled=True,
                         mpi_np=spec.mpi_np,
-                        mpirun_path="mpirun",
+                        mpirun_path=get_config().mpirun_path,
                         options=spec.args[:-1] if len(spec.args) > 1 else None,
                         solver=solver,
                         progress_callback=progress_callback,
