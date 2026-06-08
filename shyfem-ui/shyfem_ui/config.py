@@ -158,6 +158,16 @@ class Config(BaseSettings):
             # override still honoured (e.g. SHYFEM_UI_USE_SECURE_COOKIES=false).
             if "use_secure_cookies" not in self.model_fields_set:
                 self.use_secure_cookies = True
+            # Server mode always sits behind the local nginx -> Shiny Server
+            # proxy, which sets X-Forwarded-For and forwards it to the worker;
+            # the worker's direct peer is therefore always loopback. Trusting
+            # loopback lets the rate limiter recover the real client IP from XFF
+            # (per-client, not per-server) — and it stays spoof-safe because the
+            # rightmost-untrusted walk skips the loopback hops to the real
+            # client IP nginx appended. Without this the limiter collapses every
+            # user into one bucket. Explicit override still honoured.
+            if "trusted_proxies" not in self.model_fields_set:
+                self.trusted_proxies = ["127.0.0.0/8", "::1/128"]
         return self
 
     @property

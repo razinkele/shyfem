@@ -96,8 +96,35 @@ class TestConfigDefaults:
         assert config.max_upload_size_mb == 500
 
     def test_default_trusted_proxies(self):
-        """Test trusted_proxies defaults to empty list."""
+        """Test trusted_proxies defaults to empty list in local mode."""
         config = _clean_config()
+        assert config.trusted_proxies == []
+
+    def test_trusted_proxies_defaults_to_loopback_in_server_mode(self):
+        """Server mode always sits behind the local nginx -> Shiny Server proxy
+        (which forwards X-Forwarded-For), so default trusted_proxies to loopback
+        — this restores real per-client rate limiting without a deploy change."""
+        config = _clean_config(
+            deployment_mode="server", default_admin_password="strongpass123"
+        )
+        assert config.trusted_proxies == ["127.0.0.0/8", "::1/128"]
+
+    def test_trusted_proxies_explicit_honored_in_server_mode(self):
+        """An explicit trusted_proxies value is never overridden by the default."""
+        config = _clean_config(
+            deployment_mode="server",
+            default_admin_password="strongpass123",
+            trusted_proxies=["10.0.0.0/8"],
+        )
+        assert config.trusted_proxies == ["10.0.0.0/8"]
+
+    def test_trusted_proxies_explicit_empty_honored_in_server_mode(self):
+        """Explicitly emptying trusted_proxies is honored (no loopback default)."""
+        config = _clean_config(
+            deployment_mode="server",
+            default_admin_password="strongpass123",
+            trusted_proxies=[],
+        )
         assert config.trusted_proxies == []
 
 
