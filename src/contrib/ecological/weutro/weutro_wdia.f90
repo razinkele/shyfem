@@ -46,15 +46,15 @@
         integer nstate          !total number of state parameters
         parameter( nstate = 3 )
 
-	integer k
-	real t			!actual time [day]
-        real dt                 !time step [day]
-        real vol                !volume [m**3]
-        real depth              !depth of box [m]
+	integer, intent(in) :: k
+	real, intent(in) :: t			!actual time [day]
+        real, intent(in) :: dt                 !time step [day]
+        real, intent(in) :: vol                !volume [m**3]
+        real, intent(in) :: depth              !depth of box [m]
         real vel                !velocity [m/s]
 !        real stp                !temperature [C]
         real cds(nstate)        !source term
-        real cdia(nstate)          !output auxiliary variable  
+        real, intent(inout) :: cdia(nstate)          !output auxiliary variable
         real cdiaold(nstate)       !old auxiliary variable
         real ca(nstate)            !auxiliary state vector     
         real caold (nstate)       !old auxiliary state vector
@@ -121,7 +121,7 @@
         implicit none
         include 'weutro.h'
 
-        real gppread
+        real, intent(out) :: gppread
 
         gppread=GPP
 
@@ -135,7 +135,7 @@
         implicit none
         include 'weutro.h'
 
-        real DPPread
+        real, intent(out) :: DPPread
 
         DPPread=DPP
 
@@ -149,7 +149,7 @@
         implicit none
         include 'weutro.h'
 
-        real GRZread
+        real, intent(out) :: GRZread
 
         GRZread=GRZ
 
@@ -164,7 +164,7 @@
 
 	implicit none
 
-	character*(*) text
+	character*(*), intent(in) :: text
 
 	write(6,*) trim(text)
 	write(6,*) '  pelagic 1 2 3 4 7 8'

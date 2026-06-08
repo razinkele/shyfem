@@ -71,7 +71,7 @@
 	integer, parameter :: nshstate = 3
 	integer, parameter :: nareas = 1
 
-	real eseed(nlvdi,nkn,nshstate)
+	real, intent(out) :: eseed(nlvdi,nkn,nshstate)
 	real volume(nareas)
 	real, save :: areaseed(nshstate,nareas)
 	integer, save, allocatable :: aree(:)
@@ -160,10 +160,10 @@
 
         implicit none
 
-        integer iarea           !number of area
-        integer n               !total number of nodes
-        integer nodes(n)        !nodes that make up area
-        integer aree(nkn)       !areas of each node
+        integer, intent(in) :: iarea           !number of area
+        integer, intent(in) :: n               !total number of nodes
+        integer, intent(inout) :: nodes(n)        !nodes that make up area
+        integer, intent(inout) :: aree(nkn)       !areas of each node
 
         integer i,k
         logical berror
@@ -193,9 +193,9 @@
 
         implicit none
 
-        integer nareas
-        real volume(nareas)
-        integer aree(nkn)
+        integer, intent(in) :: nareas
+        real, intent(out) :: volume(nareas)
+        integer, intent(in) :: aree(nkn)
 
         integer mode,i,k,ia,lmax,l
 
@@ -245,7 +245,7 @@
 	integer, parameter :: nulstate = 2
 	integer, parameter :: nareas = 1
 
-	real ulseed(nlvdi,nkn,nulstate)
+	real, intent(out) :: ulseed(nlvdi,nkn,nulstate)
 	real volume(nareas)
 	real, save :: areaseed(nulstate,nareas)
 	integer, save, allocatable :: aree(:)

@@ -56,9 +56,9 @@
 	integer nlzstate
 	parameter(nlzstate=3)
 
-        integer knode           !node for accumulation - 0 if init or write
-        real vol                !volume [m**3]
-        real depth              !depth of box [m]
+        integer, intent(in) :: knode           !node for accumulation - 0 if init or write
+        real, intent(in) :: vol                !volume [m**3]
+        real, intent(in) :: depth              !depth of box [m]
 
         include 'donata.h'
 
@@ -181,7 +181,7 @@
 	integer nsstate
 	parameter( nsstate = 2 )
 
-	real es(nkn,nsstate)	!state vector
+	real, intent(inout) :: es(nkn,nsstate)	!state vector
 
 ! local
 	integer idtc,itmc,itsmed
@@ -297,7 +297,7 @@
 	integer nlzstate
 	parameter( nlzstate = 3 )
 
-	real elz(nkndi,nlzstate)	!state vector
+	real, intent(inout) :: elz(nkndi,nlzstate)	!state vector
 
 ! local
 	integer idtc,itmc,itsmed
@@ -400,9 +400,9 @@
 
         implicit none
 
-        integer nlvddi,nknddi,nstate
-        real eload(nlvddi,nknddi,nstate)
-        real elini(nstate)
+        integer, intent(in) :: nlvddi,nknddi,nstate
+        real, intent(out) :: eload(nlvddi,nknddi,nstate)
+        real, intent(in) :: elini(nstate)
 
         integer mode,i,k,l,lmax
         real d,vol,area
@@ -431,7 +431,7 @@
         integer nsstate
         parameter( nsstate = 2 )
 
-        real es(nkndi,nsstate)         !sediment state variables
+        real, intent(in) :: es(nkndi,nsstate)         !sediment state variables
 
         integer k,i
 

@@ -61,17 +61,17 @@
         integer nulstate         !total number of state parameters
         parameter( nulstate = 2 )
 
-        integer k               !nodi
-        real t                  !actual time [day]
-        real dt                 !time step [day]
-        real vol                !volume [m**3]
-        real depth              !depth of box [m]
-        real vel                !velocity [m/s]
-        real stp                !temperature [C]
-        real qrad               !radiazione
-        real c(nstate)          !state variable [mg/L] == [g/m**3]
+        integer, intent(in) :: k               !nodi
+        real, intent(in) :: t                  !actual time [day]
+        real, intent(in) :: dt                 !time step [day]
+        real, intent(in) :: vol                !volume [m**3]
+        real, intent(in) :: depth              !depth of box [m]
+        real, intent(in) :: vel                !velocity [m/s]
+        real, intent(in) :: stp                !temperature [C]
+        real, intent(in) :: qrad               !radiazione
+        real, intent(inout) :: c(nstate)          !state variable [mg/L] == [g/m**3]
         real cold(nstate)       !old state variable [mg/L] == [g/m**3]
-        real culva(nulstate)     !state variable (ulva) [mg/L] == [g/m**3]
+        real, intent(inout) :: culva(nulstate)     !state variable (ulva) [mg/L] == [g/m**3]
 
         include 'donata.h'
 

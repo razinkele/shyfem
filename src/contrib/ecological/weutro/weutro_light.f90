@@ -47,7 +47,7 @@
 	implicit none
 
 	real declin	!solar declination [degrees]
-	integer jd	!julian day [1-365]
+	integer, intent(in) :: jd	!julian day [1-365]
 
 	declin = 23.45 * cos( 2. * pi * (jd-172) / 365. )
 
@@ -64,8 +64,8 @@
 	implicit none
 
 	real dayl	!daylength [hours]
-	integer jd	!julian day [1-365]
-	real rlat	!latitude [degrees]
+	integer, intent(in) :: jd	!julian day [1-365]
+	real, intent(in) :: rlat	!latitude [degrees]
 
 	real rad
 	parameter(rad=pi/180.)
@@ -90,7 +90,7 @@
 	implicit none
 
 	real dayl_max	!maximum daylength [hours]
-	real rlat	!latitude [degrees]
+	real, intent(in) :: rlat	!latitude [degrees]
 
 	real rad
 	parameter(rad=pi/180.)
@@ -114,8 +114,8 @@
 	implicit none
 
 	real cd_solrad	!average clear day solar radiation [ly/day]
-	integer jd	!julian day [1-365]
-	real rlat	!latitude [degrees]
+	integer, intent(in) :: jd	!julian day [1-365]
+	real, intent(in) :: rlat	!latitude [degrees]
 
 	real rad,factw
 	parameter(rad=pi/180.,factw=0.4843)
@@ -154,11 +154,11 @@
 
 	implicit none
 
-	integer jd	!julian day [1-365]
-	real rlat	!latitude [degrees]
-	real fday	!fractional day length [0-1]
-	real itot	!average clear day solar radiation [ly/day]
-	real imax	!maximum solar radiation at noon [ly/day]
+	integer, intent(in) :: jd	!julian day [1-365]
+	real, intent(in) :: rlat	!latitude [degrees]
+	real, intent(inout) :: fday	!fractional day length [0-1]
+	real, intent(inout) :: itot	!average clear day solar radiation [ly/day]
+	real, intent(out) :: imax	!maximum solar radiation at noon [ly/day]
 
 	real dayl, cd_solrad
 
@@ -178,10 +178,10 @@
 
         implicit none
 
-        real t          !day [0-365]
-        real itot       !average incident light intensity over one whole day
-        real fday       !fraction of day length [0-1]
-        real iinst      !instantaneous light intensity at time t (return)
+        real, intent(in) :: t          !day [0-365]
+        real, intent(in) :: itot       !average incident light intensity over one whole day
+        real, intent(in) :: fday       !fraction of day length [0-1]
+        real, intent(out) :: iinst      !instantaneous light intensity at time t (return)
 
         real tday,aux
 
@@ -238,7 +238,7 @@
 
 	implicit none
 
-	character*(*) file
+	character*(*), intent(in) :: file
 
 	real luxv(365)
 	real fdayv(365)
@@ -277,9 +277,9 @@
 
 	implicit none
 
-	real t		!day [0-365]
-	real lux	!light intensity [ly/day]
-	real fday	!fractional day length [0-1]
+	real, intent(in) :: t		!day [0-365]
+	real, intent(out) :: lux	!light intensity [ly/day]
+	real, intent(out) :: fday	!fractional day length [0-1]
 
 	real luxv(365)
 	real fdayv(365)
@@ -313,7 +313,7 @@
 	implicit none
 
 	integer it2n
-	real t
+	real, intent(in) :: t
 
 	integer n
 
