@@ -361,18 +361,18 @@
         integer nstate          !total number of state parameters
         parameter( nstate = 9 )
 
-        integer id              !id of box
-        real t                  !actual time [day]
-        real dt                 !time step [day]
-        real vol                !volume [m**3]
-        real depth              !depth of box [m]
-        real vel                !velocity [m/s]
-        real uws                !wind velocity [m/s]
-        real stp                !temperature [C]
-        real sal                !salinity [psu] == [per mille]
-        real qss                !solar radiation [W/m**2]
-        real c(nstate)          !state variable [mg/L] == [g/m**3]
-        real loads(nstate)      !loading for c [g/(m**3 day)]
+        integer, intent(in) :: id              !id of box
+        real, intent(in) :: t                  !actual time [day]
+        real, intent(in) :: dt                 !time step [day]
+        real, intent(in) :: vol                !volume [m**3]
+        real, intent(in) :: depth              !depth of box [m]
+        real, intent(in) :: vel                !velocity [m/s]
+        real, intent(in) :: uws                !wind velocity [m/s]
+        real, intent(in) :: stp                !temperature [C]
+        real, intent(in) :: sal                !salinity [psu] == [per mille]
+        real, intent(in) :: qss                !solar radiation [W/m**2]
+        real, intent(inout) :: c(nstate)          !state variable [mg/L] == [g/m**3]
+        real, intent(in) :: loads(nstate)      !loading for c [g/(m**3 day)]
 
         real cold(nstate)       !old state variable (for diagnostic purpose)
         real cds(nstate)        !source term (right hand side) [g/day]
@@ -397,12 +397,12 @@
         integer nstate          !total number of state parameters
         parameter( nstate = 9 )
 
-      real cds(nstate)      !source term [g/day]
-      real loads(nstate)      !loading for c [g/(m**3 day)]
-      real vol            !volume of box [m**3]
+      real, intent(inout) :: cds(nstate)      !source term [g/day]
+      real, intent(in) :: loads(nstate)      !loading for c [g/(m**3 day)]
+      real, intent(in) :: vol            !volume of box [m**3]
 
       integer i
-        
+
       do i=1,nstate
         cds(i) = cds(i) + vol * loads(i)
       end do
@@ -418,12 +418,12 @@
 
       implicit none
 
-      integer nstate            !number of state variables
-      real dt                  !time step [day]
-      real vol            !volume [m**3]
-      real c(nstate)            !state variable [mg/L] == [g/m**3]
-      real cold(nstate)      !old state variable (return)
-      real cds(nstate)      !source term [g/day]
+      integer, intent(in) :: nstate            !number of state variables
+      real, intent(in) :: dt                  !time step [day]
+      real, intent(in) :: vol            !volume [m**3]
+      real, intent(inout) :: c(nstate)            !state variable [mg/L] == [g/m**3]
+      real, intent(out) :: cold(nstate)      !old state variable (return)
+      real, intent(in) :: cds(nstate)      !source term [g/day]
 
       integer i
       real volold,volnew      !volume [m**3]
@@ -454,20 +454,20 @@
 
         implicit none
 
-      integer id          !id of box
-      integer nstate      !number of state variables
-      real t              ![day]
-      real dt             !time step [day]
-      real vel            ![m/s]
-      real stp            ![Celsius]
-      real sal            ![g/L], e.g., 30.
-      real qss            !solar rad from shyfem
-      real vol            ![m**3]
-      real depth          ![m]
-      real c(nstate)      ![mg/L]
-      real cold(nstate)   !old state variable (return)
-      real cds(nstate)    !source term [g/day]
-      real loads(nstate)  !loading for c [g/(m**3 day)]
+      integer, intent(in) :: id          !id of box
+      integer, intent(in) :: nstate      !number of state variables
+      real, intent(in) :: t              ![day]
+      real, intent(in) :: dt             !time step [day]
+      real, intent(in) :: vel            ![m/s]
+      real, intent(in) :: stp            ![Celsius]
+      real, intent(in) :: sal            ![g/L], e.g., 30.
+      real, intent(in) :: qss            !solar rad from shyfem
+      real, intent(in) :: vol            ![m**3]
+      real, intent(in) :: depth          ![m]
+      real, intent(inout) :: c(nstate)      ![mg/L]
+      real, intent(in) :: cold(nstate)   !old state variable (return)
+      real, intent(in) :: cds(nstate)    !source term [g/day]
+      real, intent(in) :: loads(nstate)  !loading for c [g/(m**3 day)]
 
         integer i
         logical berror,bfatal
@@ -645,17 +645,17 @@
         integer nstate          !total number of state parameters
         parameter( nstate = 9 )
 
-      integer id            !id of box
-      real t                  ![day]
-      real vel0            ![m/s]
-      real uws0		   !wind velocity [m/s]
-      real stp0            ![Celsius]
-      real sal0            ![g/L], e.g., 30.
-      real qss0            !solar radiation from shyfem
-      real vol0            ![m**3]
-      real depth0            ![m]
-      real c(nstate)            ![mg/L]            !FIXME
-      real cds(nstate)      ![g/day]      !FIXME
+      integer, intent(in) :: id            !id of box
+      real, intent(in) :: t                  ![day]
+      real, intent(in) :: vel0            ![m/s]
+      real, intent(in) :: uws0		   !wind velocity [m/s]
+      real, intent(in) :: stp0            ![Celsius]
+      real, intent(in) :: sal0            ![g/L], e.g., 30.
+      real, intent(in) :: qss0            !solar radiation from shyfem
+      real, intent(in) :: vol0            ![m**3]
+      real, intent(in) :: depth0            ![m]
+      real, intent(in) :: c(nstate)            ![mg/L]            !FIXME
+      real, intent(out) :: cds(nstate)      ![g/day]      !FIXME
 
 ! if rlux is > 0, at return it will be replaced with the attenuation
 ! factor at the bottom of the box -> therefore it can be used
@@ -749,8 +749,8 @@
 
       include 'weutro.h'
 
-      real tempair
-      real windspeed
+      real, intent(in) :: tempair
+      real, intent(in) :: windspeed
 
       airtmp = tempair
       wind   = windspeed
@@ -767,7 +767,7 @@
 
       include 'weutro.h'
 
-      real turbid
+      real, intent(in) :: turbid
 
       !kefn(1) = 1
       !ke(1)   = 1.
@@ -808,8 +808,8 @@
 
       include 'weutro.h'
 
-      real fracday
-      real itotal
+      real, intent(in) :: fracday
+      real, intent(in) :: itotal
 
       fday = fracday
       itot = itotal
@@ -831,7 +831,7 @@
 
       include 'weutro.h'
 
-      real ice
+      real, intent(in) :: ice
 
       xicecvr = 1. - ice
 
@@ -850,7 +850,7 @@
 
       include 'weutro.h'
 
-      real zoopl
+      real, intent(in) :: zoopl
 
       zoo = zoopl
 
@@ -867,7 +867,7 @@
 
       include 'weutro.h'
 
-      real flnh4, flpo4
+      real, intent(in) :: flnh4, flpo4
 
       fnh4(1) = flnh4
       fpo4(1) = flpo4
@@ -886,7 +886,7 @@
 
         implicit none
         include 'weutro.h'
-        logical bstate
+        logical, intent(in) :: bstate
 
         topseg = bstate
 
@@ -900,7 +900,7 @@
 
         implicit none
         include 'weutro.h'
-        logical bstate
+        logical, intent(in) :: bstate
 
         botseg = bstate
 
@@ -914,7 +914,7 @@
 
         implicit none
         include 'weutro.h'
-        logical bstate
+        logical, intent(in) :: bstate
 
         sedseg = bstate
 
@@ -1861,10 +1861,10 @@
 
       implicit none
 
-      real t            !day [0-365]
-      real itot      !average incident light intensity over one whole day
-      real fday      !fraction of day length [0-1]
-        real iinst      !instantaneous light intensity at time t (return)
+      real, intent(in) :: t            !day [0-365]
+      real, intent(in) :: itot      !average incident light intensity over one whole day
+      real, intent(in) :: fday      !fraction of day length [0-1]
+        real, intent(out) :: iinst      !instantaneous light intensity at time t (return)
       
       real tday,aux
 
@@ -1956,12 +1956,12 @@
 !*  Declarations:
 !*
 
-        real WS         !wind speed, m/s
-        real TW         !water temperature C
-        real TA         !air temperature C
-        real depth      !defined depth(segmax) in geometrical
-        real WTYPE      !type of water body
-        real RK         !reareation term calculated in kawind
+        real, intent(inout) :: WS         !wind speed, m/s
+        real, intent(in) :: TW         !water temperature C
+        real, intent(in) :: TA         !air temperature C
+        real, intent(in) :: depth      !defined depth(segmax) in geometrical
+        real, intent(in) :: WTYPE      !type of water body
+        real, intent(out) :: RK         !reareation term calculated in kawind
 
       REAL XARG1,XARG2,XWDIFF
       Character*1 cont1
@@ -2130,7 +2130,7 @@
 
       implicit none
       INCLUDE 'weutro.h'
-      REAL K2HYDRA
+      REAL, intent(out) :: K2HYDRA
       real CFOREA,AVDEPE,AVVELE,REAK,EXPREV,EXPRED,TRANDP,DIF
 !
 !
@@ -2201,7 +2201,7 @@
         implicit none
 
         real oxysat
-        real temp,salt
+        real, intent(in) :: temp,salt
 
         oxysat = (14.6244-0.367134*temp+4.4972E-3*temp**2 &
      &     -0.0966*salt+0.00205*salt*temp+2.739E-4*salt**2)
@@ -2339,7 +2339,7 @@
 
         implicit none
 
-        logical debug
+        logical, intent(in) :: debug
 
         include 'weutro.h'
 
@@ -2403,20 +2403,20 @@
 
         implicit none
 
-        integer id              !id of box
-        integer nstate          !number of state variables
-        real t                  ![day]
-        real dt                 !time step [day]
-        real vol                ![m**3]
-        real depth              ![m]
-        real vel                ![m/s]
-        real stp                ![Celsius]
-        real sal                ![g/L], e.g., 30.
-        real qss                !solar rad from shyfem
-        real c(nstate)          ![mg/L]
-        real cold(nstate)       !old state variable (return)
-        real cds(nstate)        !source term [g/day]
-        real loads(nstate)      !loading for c [g/(m**3 day)]
+        integer, intent(out) :: id              !id of box
+        integer, intent(in) :: nstate          !number of state variables
+        real, intent(out) :: t                  ![day]
+        real, intent(out) :: dt                 !time step [day]
+        real, intent(out) :: vol                ![m**3]
+        real, intent(out) :: depth              ![m]
+        real, intent(out) :: vel                ![m/s]
+        real, intent(out) :: stp                ![Celsius]
+        real, intent(out) :: sal                ![g/L], e.g., 30.
+        real, intent(out) :: qss                !solar rad from shyfem
+        real, intent(out) :: c(nstate)          ![mg/L]
+        real, intent(out) :: cold(nstate)       !old state variable (return)
+        real, intent(out) :: cds(nstate)        !source term [g/day]
+        real, intent(out) :: loads(nstate)      !loading for c [g/(m**3 day)]
 
         real tair,wspeed,turbid,fracday,itotal
         real ice,flnh4,flpo4
@@ -2450,20 +2450,20 @@
 
         implicit none
 
-        integer id              !id of box
-        integer nstate          !number of state variables
-        real t                  ![day]
-        real dt                 !time step [day]
-        real vol                ![m**3]
-        real depth              ![m]
-        real vel                ![m/s]
-        real stp                ![Celsius]
-        real sal                ![g/L], e.g., 30.
-        real qss                !solar rad from shyfem
-        real c(nstate)          ![mg/L]
-        real cold(nstate)       !old state variable (return)
-        real cds(nstate)        !source term [g/day]
-        real loads(nstate)      !loading for c [g/(m**3 day)]
+        integer, intent(in) :: id              !id of box
+        integer, intent(in) :: nstate          !number of state variables
+        real, intent(in) :: t                  ![day]
+        real, intent(in) :: dt                 !time step [day]
+        real, intent(in) :: vol                ![m**3]
+        real, intent(in) :: depth              ![m]
+        real, intent(in) :: vel                ![m/s]
+        real, intent(in) :: stp                ![Celsius]
+        real, intent(in) :: sal                ![g/L], e.g., 30.
+        real, intent(in) :: qss                !solar rad from shyfem
+        real, intent(in) :: c(nstate)          ![mg/L]
+        real, intent(in) :: cold(nstate)       !old state variable (return)
+        real, intent(in) :: cds(nstate)        !source term [g/day]
+        real, intent(in) :: loads(nstate)      !loading for c [g/(m**3 day)]
 
         real tair,wspeed,turbid,fracday,itotal
         real ice,flnh4,flpo4
@@ -2499,9 +2499,9 @@
 
         include 'weutro.h'
 
-        real tair,wspeed,turbid,fracday,itotal
-        real ice,flnh4,flpo4
-        logical tops,bots,seds
+        real, intent(out) :: tair,wspeed,turbid,fracday,itotal
+        real, intent(out) :: ice,flnh4,flpo4
+        logical, intent(out) :: tops,bots,seds
 
         tair = airtmp
         wspeed = wind
@@ -2529,9 +2529,9 @@
 
         include 'weutro.h'
 
-        real tair,wspeed,turbid,fracday,itotal
-        real ice,flnh4,flpo4
-        logical tops,bots,seds
+        real, intent(in) :: tair,wspeed,turbid,fracday,itotal
+        real, intent(in) :: ice,flnh4,flpo4
+        logical, intent(in) :: tops,bots,seds
 
         airtmp = tair
         wind = wspeed
@@ -2638,7 +2638,7 @@
         use eutro
         use mod_restart
         implicit none
-        integer iunit
+        integer, intent(in) :: iunit
         integer i
         logical, parameter :: belem = .false.
 
@@ -2659,7 +2659,7 @@
         subroutine skip_restart_eco(iunit)
         use eutro, only : nstate,nsstate,nshstate,nulstate
         implicit none
-        integer iunit
+        integer, intent(in) :: iunit
         integer i
 
         do i=1,nstate+nsstate+nshstate+nulstate
@@ -2673,7 +2673,7 @@
         use levels, only : nlvdi
         use basin, only : nkndi
         implicit none
-        integer iunit
+        integer, intent(in) :: iunit
         integer i
         integer ierr
         logical, parameter :: belem = .false.
