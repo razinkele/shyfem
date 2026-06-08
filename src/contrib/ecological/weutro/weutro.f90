@@ -2066,7 +2066,7 @@
       WH = 1000.
 ! MAKE INITIAL GUESS FOR SQUARE ROOT OF THE DRAG COEFFICIENT
       SRCD = 0.04
- 1000 CONTINUE
+      do
       N = N + 1
 ! CALCULATE VALUE OF FUNCTION(F2) AND DERIVATIVE OF FUNCTION(FP)
       EF = EXP ( - SRCD*WS/UT)
@@ -2083,44 +2083,40 @@
       ERR = ABS (SRCD - SRCD2)
       IF (ERR .GT. 0.0005 .AND. N .LT. 8) THEN
          SRCD = SRCD2
-         GO TO 1000
+         CYCLE
       END IF
-      IF (ERR .GT. 0.005 .AND. N .GE. 8) GO TO 1010
+      EXIT
+      end do
+      IF (ERR .GT. 0.005 .AND. N .GE. 8) THEN
+! N-R DID NOT CONVERGE — RK KEEPS ITS INITIAL VALUE (1.)
+      WRITE (6, 6000)
+      ELSE
       CDDRAG = SRCD**2
       US = SRCD*WS
       Z0 = 1./((1./ZE) + LAM*US*EXP ( - US/UT)/VA)
       WS = WS/100.
-      IF (WS .LT. 6.0) GO TO 1020
-      IF (WS .GE. 6.0 .AND. WS .LE. 20.0) GO TO 1030
-      IF (WS .GT. 20.0) GO TO 1040
-! CALC 1050S VALUES FOR WINDSPEEDS LESS THAN 6.0 M/SEC
- 1020 CONTINUE
+      IF (WS .LT. 6.0) THEN
+! CALC VALUES FOR WINDSPEEDS LESS THAN 6.0 M/SEC
       RK1 = (DIFF/VW)**0.666667*SRCD*(PA/PW)**0.5
       RK = RK1*KA3*WS/GAM
       RK = RK*3600.*24.
-      GO TO 1050
-! CALC 1050S VALUES FOR WINDSPEED GREATER THAN 20 M/S
- 1040 CONTINUE
-!RBA--Date: Tuesday, 1 June 1993.  Time: 09:15:47.
-!      RK = (DIFF*PA*VA*US/(0.1*PW*VW))**0.5
-      RK = (DIFF*PA*VA*US/(KARMAN*ZE*PW*VW))**0.5
-      RK = RK*3600.*24./100.
-      GO TO 1050
-! CALC 1050S VALUES FOR WINDSPEED BETWEEN 6 AND 20 M/S
- 1030 CONTINUE
+      ELSE IF (WS .LE. 20.0) THEN
+! CALC VALUES FOR WINDSPEED BETWEEN 6 AND 20 M/S
       GAMU = GAM*US*EXP ( - US/UC + 1.)/UC
       RK1 = (DIFF/VW)**.6667*KA3*(PA/PW)**0.5*US/GAMU
       RK2 = (DIFF*US*PA*VA/(KARMAN*Z0*PW*VW))**0.5
       RK3 = (1./RK1) + (1./RK2)
       RK = 1./RK3
       RK = RK*3600.*24./100.
-      GO TO 1050
- 1050 continue
-      GO TO 1060
- 1010 CONTINUE
-      WRITE (6, 6000)
+      ELSE
+! CALC VALUES FOR WINDSPEED GREATER THAN 20 M/S
+!RBA--Date: Tuesday, 1 June 1993.  Time: 09:15:47.
+!      RK = (DIFF*PA*VA*US/(0.1*PW*VW))**0.5
+      RK = (DIFF*PA*VA*US/(KARMAN*ZE*PW*VW))**0.5
+      RK = RK*3600.*24./100.
+      END IF
+      END IF
  6000 FORMAT(5X,'SOLUTION DID NOT CONVERGE')
- 1060 CONTINUE
       rk = rk/depth
 !ddd
       RETURN
@@ -2150,56 +2146,49 @@
 !         average hydraulic depth and velocity; determine exponents
 !         to depth and velocity terms and assign value to REAK
 !
-      IF (AVDEPE .GT. 0.61) GO TO 1000
+      IF (AVDEPE .LE. 0.61) THEN
 !
 !          Use Owen's formulation for reaeration
 !
       REAK = 5.349
       EXPREV = 0.67
       EXPRED = - 1.85
-      GO TO 1010
-!
- 1000 CONTINUE
+      ELSE
 !
 !       Calculate transition depth; transition depth determines
 !       which method of calculation is used given the current
 !       velocity
 !
-      IF (AVVELE .GE. 0.518) GO TO 1020
-      TRANDP = 0.0
-      GO TO 1030
- 1020 CONTINUE
+      IF (AVVELE .GE. 0.518) THEN
       TRANDP = 4.411*(AVVELE**2.9135)
- 1030 CONTINUE
+      ELSE
+      TRANDP = 0.0
+      END IF
 !
       DIF = AVDEPE - TRANDP
-      IF (DIF .GT. 0.0) GO TO 1040
-!
-!                 Use Churchill's formulation for reaeration
-!
-      REAK = 5.049
-      EXPREV = .969
-      EXPRED = - 1.673
-      GO TO 1050
-!
- 1040 CONTINUE
+      IF (DIF .GT. 0.0) THEN
 !
 !                 Use O'Connor-Dobbins formulation for reaeration
 !
       REAK = 3.93
       EXPREV = 0.5
       EXPRED = - 1.5
+      ELSE
 !
- 1050 CONTINUE
+!                 Use Churchill's formulation for reaeration
 !
- 1010 CONTINUE
+      REAK = 5.049
+      EXPREV = .969
+      EXPRED = - 1.673
+      END IF
+!
+      END IF
 !
 !                               Calculate reaeration coefficient
 !
       K20 = REAK*(AVVELE**EXPREV)*(AVDEPE**EXPRED)
       IF (K20 .GT. 24.) K20 = 24.
       K2HYDRA = K20*1.028**STP20
- 1060 CONTINUE
       RETURN
       END
 
