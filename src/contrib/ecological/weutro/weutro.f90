@@ -148,6 +148,8 @@
 
       subroutine param_init
 
+      use mod_physical_constants, only : pi_sp
+
       implicit none
       INCLUDE 'weutro.h'
 
@@ -156,7 +158,7 @@
 !       BYPASS OPTIONS FOR SYSTEMS 1-9. 1=BYPASS 0=SIMULATE
       
 
-        PI = 3.14159
+        PI = pi_sp
 
 !--------------------------------------------------------------
 !       please do not change anything in this subroutine below this point
@@ -1851,6 +1853,8 @@
 
       subroutine rintens(t,itot,fday,iinst)
 
+      use mod_physical_constants, only : pi => pi_sp
+
 ! computes light intensity during a day given itot and fday
 !
 ! uses formula 5.7 in WASP user manual
@@ -1865,14 +1869,9 @@
       real fday      !fraction of day length [0-1]
         real iinst      !instantaneous light intensity at time t (return)
       
-      real pi
-      parameter( pi = 3.14159 )
-
       real tday,aux
 
-      real t_old,iinst_old
-      save t_old,iinst_old
-      data t_old,iinst_old /0.,0./      !hope we are not in Antarktic
+      real, save :: t_old = 0., iinst_old = 0.   !hope we are not in Antarktic
 
       if( t .eq. t_old ) then            !if for same daytime we are done
         iinst = iinst_old

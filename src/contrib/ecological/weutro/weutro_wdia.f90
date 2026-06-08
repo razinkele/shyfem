@@ -69,9 +69,7 @@
 	real volsed,resusp
         real var1, var2, var3
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
 	bdia = .false.
 	bdia = .true.

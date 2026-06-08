@@ -244,7 +244,8 @@
         real tstot(nstate)              !for mass test
         real tsstot(nsstate)
 
-	integer icall,iunit
+	integer, save :: icall = 0
+	integer iunit
 	integer ierr
 	integer j
 	integer it	!time in seconds
@@ -290,8 +291,6 @@
 	real rkpar,difmol
 	save rkpar,difmol
 
-        save icall
-
 !------------------------------------------------------------------
 !	initial and boundary conditions  [mg/l]			??
 !	initial loadings                 [g/m**2/sec]		??
@@ -323,8 +322,6 @@
 !        data ebound / 1.6E-3, 1.0E-4, 1.8E-3, 3.5E-3, 2.7E-3 /
 !        data elinit / 0.,     0.,     0.,     0.,     0.     /
 
-!------------------------------------------------------------------
-	data icall /0/
 !------------------------------------------------------------------
 
 	bresi  = .false.	!computes residence times with custom_restime
@@ -1017,9 +1014,7 @@
 	integer iu
 	save iu
 
-	integer icall
-	save icall
-	data icall / 0 /
+	integer, save :: icall = 0
 
 !---------------------------------------------------------------------
 ! parameters to be set
@@ -1217,9 +1212,7 @@
         integer i,k,n
         logical berror
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
         integer ndim
         parameter (ndim=5)

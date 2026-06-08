@@ -94,9 +94,7 @@
         real ca(nstate)         !auxiliary state vector [g/m**3]
         real caold(nstate)      !old auxiliary state vector [g/m**3]
 
-        integer icall
-        save icall
-        data icall / 0 /
+        integer, save :: icall = 0
 
         bulva = .false.
         bulva = .true.
