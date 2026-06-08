@@ -97,7 +97,8 @@
 
           icall = 1
 
-	  allocate(elz(nkn,nlzstate))
+	  allocate(elz(nkn,nlzstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('loicz1: allocation failed')
 	  elz = 0.
 
           call init_output_d('itmcon','idtcon',da_out)
@@ -185,6 +186,7 @@
 ! local
 	integer idtc,itmc,itsmed
 	integer id,nvar,idc,is,nstate
+	integer ierr
 	double precision :: dtime,rr
 ! function
         logical has_output_d,is_over_output_d,next_output_d
@@ -218,10 +220,14 @@
             da_out(4) = id
           end if
 
-	  allocate(sedacu(nkn,nsstate))
-	  allocate(sedmin(nkn,nsstate))
-	  allocate(sedmax(nkn,nsstate))
-	  allocate(raux(nkn))
+	  allocate(sedacu(nkn,nsstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('sed_av_shell: allocation failed')
+	  allocate(sedmin(nkn,nsstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('sed_av_shell: allocation failed')
+	  allocate(sedmax(nkn,nsstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('sed_av_shell: allocation failed')
+	  allocate(raux(nkn), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('sed_av_shell: allocation failed')
 
           do is=1,nstate
             call cmed_reset_2d(nr,sedacu(:,is) &
@@ -296,6 +302,7 @@
 ! local
 	integer idtc,itmc,itsmed
 	integer id,nvar,nstate,is,idc
+	integer ierr
 	double precision :: dtime,rr
 ! function
 	logical has_output_d,is_over_output_d,next_output_d
@@ -329,10 +336,14 @@
             da_out(4) = id
           end if
 
-	  allocate(lczacu(nkn,nstate))
-	  allocate(lczmin(nkn,nstate))
-	  allocate(lczmax(nkn,nstate))
-	  allocate(raux(nkn))
+	  allocate(lczacu(nkn,nstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('lcz_av_shell: allocation failed')
+	  allocate(lczmin(nkn,nstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('lcz_av_shell: allocation failed')
+	  allocate(lczmax(nkn,nstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('lcz_av_shell: allocation failed')
+	  allocate(raux(nkn), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('lcz_av_shell: allocation failed')
 
           do is=1,nstate
             call cmed_reset_2d(nr,lczacu(:,is) &

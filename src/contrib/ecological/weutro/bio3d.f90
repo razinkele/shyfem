@@ -245,6 +245,7 @@
         real tsstot(nsstate)
 
 	integer icall,iunit
+	integer ierr
 	integer j
 	integer it	!time in seconds
 	real dt		!time step in seconds
@@ -353,17 +354,24 @@
 !         --------------------------------------------------
 
 	  if( .not. allocated(e) ) then		!may be pre-allocated by restart (C4)
-	    allocate(e(nlvdi,nkndi,nstate))	!pelagic variables
-	    allocate(es(nkndi,nsstate))		!sediment variables
-            allocate(esh(nkndi,nshstate))	!shell fish variables
-            allocate(eul(nkndi,nulstate))	!ulva variables
+	    allocate(e(nlvdi,nkndi,nstate), stat=ierr)	!pelagic variables
+	    if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
+	    allocate(es(nkndi,nsstate), stat=ierr)		!sediment variables
+	    if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
+            allocate(esh(nkndi,nshstate), stat=ierr)	!shell fish variables
+            if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
+            allocate(eul(nkndi,nulstate), stat=ierr)	!ulva variables
+            if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
           end if
 
-	  allocate(eload(nlvdi,nkndi,nstate))	!pelagic loading (not restart-saved)
-          allocate(eseed(nlvdi,nkndi,nshstate))	!eseed is needed 2D but has been
+	  allocate(eload(nlvdi,nkndi,nstate), stat=ierr)	!pelagic loading (not restart-saved)
+	  if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
+          allocate(eseed(nlvdi,nkndi,nshstate), stat=ierr)	!eseed is needed 2D but has been
+          if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
                                                 !set 3D in weutro_seed
                                                 !seeding occurs only in l=1
-          allocate(ulseed(nlvdi,nkndi,nulstate))!ulva
+          allocate(ulseed(nlvdi,nkndi,nulstate), stat=ierr)!ulva
+          if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
 
 	  if( .not. brst_loaded ) then		!restart provides e/es/esh/eul (C4)
 	    do i=1,nstate
@@ -435,7 +443,8 @@
 !         --------------------------------------------------
 
           nbc = nbnds()
-          allocate(idbio(nbc))
+          allocate(idbio(nbc), stat=ierr)
+          if( ierr /= 0 ) call shympi_abort_internal('bio3d_eutro: allocation failed')
           idbio = 0
 
           nintp = 2
@@ -740,6 +749,7 @@
 ! local
 	integer idtc,itmc,itsmed
 	integer id,nvar,idc,is
+	integer ierr
 	double precision dtime,rr
 ! function
 	logical has_output_d,is_over_output_d,next_output_d
@@ -771,10 +781,14 @@
             da_out(4) = id
           end if
 
-	  allocate(bioacu(nlvdi,nkndi,nstate))
-	  allocate(biomin(nlvdi,nkndi,nstate))
-	  allocate(biomax(nlvdi,nkndi,nstate))
-	  allocate(raux(nlvdi,nkndi))
+	  allocate(bioacu(nlvdi,nkndi,nstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('bio_av_shell: allocation failed')
+	  allocate(biomin(nlvdi,nkndi,nstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('bio_av_shell: allocation failed')
+	  allocate(biomax(nlvdi,nkndi,nstate), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('bio_av_shell: allocation failed')
+	  allocate(raux(nlvdi,nkndi), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('bio_av_shell: allocation failed')
 
           do is=1,nstate
             call cmed_reset(nr,bioacu(:,:,is) &
