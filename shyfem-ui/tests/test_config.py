@@ -100,6 +100,12 @@ class TestConfigDefaults:
         config = _clean_config()
         assert config.trusted_proxies == []
 
+    def test_maintenance_defaults(self):
+        """Periodic-maintenance knobs have sensible defaults."""
+        config = _clean_config()
+        assert config.maintenance_interval_seconds == 3600
+        assert config.job_retention_days == 30
+
     def test_trusted_proxies_defaults_to_loopback_in_server_mode(self):
         """Server mode always sits behind the local nginx -> Shiny Server proxy
         (which forwards X-Forwarded-For), so default trusted_proxies to loopback

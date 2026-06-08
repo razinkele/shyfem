@@ -322,6 +322,27 @@ def create_app(config: Config | None = None) -> App:
     if not any(isinstance(f, RequestIdFilter) for f in root_logger.filters):
         root_logger.addFilter(RequestIdFilter())
 
+    # Periodic maintenance (server mode): prune old jobs + expired sessions/tokens.
+    # Launched on ASGI lifespan startup; without this the cleanups never run and
+    # the jobs/auth_sessions/ws_auth_tokens tables grow unbounded. Wrapped INSIDE
+    # the health-check layer (which forwards lifespan), so HealthCheck stays
+    # outermost for monitoring.
+    from shyfem_ui.middleware.maintenance import MaintenanceMiddleware
+    from shyfem_ui.services.maintenance import run_maintenance_loop
+
+    _maint_factory = None
+    if config.deployment_mode == "server" and config.maintenance_interval_seconds > 0:
+
+        def _maint_factory():
+            return run_maintenance_loop(
+                job_queue,
+                auth_service,
+                interval_s=config.maintenance_interval_seconds,
+                job_retention_days=config.job_retention_days,
+            )
+
+    app = MaintenanceMiddleware(app, _maint_factory)
+
     # Health check endpoint (outermost — bypasses auth and rate limiting)
     app = HealthCheckMiddleware(app, db_check=_check_db_health, job_queue=job_queue)
 

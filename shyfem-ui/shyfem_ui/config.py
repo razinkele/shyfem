@@ -58,6 +58,22 @@ class Config(BaseSettings):
         default=3600, description="Seconds before recycling idle connections (PostgreSQL only)"
     )
 
+    # Periodic maintenance (server mode): prune old jobs + expired sessions/tokens
+    maintenance_interval_seconds: int = Field(
+        default=3600,
+        ge=0,
+        description=(
+            "Interval (s) between maintenance passes that prune old jobs and "
+            "expired auth sessions/WS tokens. 0 disables the scheduler. Server "
+            "mode only."
+        ),
+    )
+    job_retention_days: int = Field(
+        default=30,
+        gt=0,
+        description="Age (days) beyond which completed jobs are pruned by maintenance.",
+    )
+
     # Job queue settings
     use_celery: bool = Field(
         default=False, description="Use Celery/Redis for job queue (server mode)"
