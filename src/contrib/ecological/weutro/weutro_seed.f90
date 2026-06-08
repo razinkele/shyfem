@@ -77,6 +77,7 @@
 	integer, save, allocatable :: aree(:)
 
 	integer k,l,lmax,i,ia
+	integer ierr
 	real litri,kgs
 	real fact,rlfact
 	real seed,vol
@@ -110,7 +111,8 @@
 
         if( icall .eq. 0 ) then
           icall = 1
-	  allocate(aree(nkn))
+	  allocate(aree(nkn), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('setseed_new: allocation failed')
 	  aree = 0.
           call seed_add_area(1,nnodes1,nodes1,aree)
         end if
@@ -249,6 +251,7 @@
 	integer, save, allocatable :: aree(:)
 
 	integer k,l,lmax,i,ia
+	integer ierr
 	real litri,kgs
 	real fact,rlfact
 	real seed,vol
@@ -270,7 +273,8 @@
 
         if( icall .eq. 0 ) then
           icall = 1
-	  allocate(aree(nkn))
+	  allocate(aree(nkn), stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal('setseed_ulva: allocation failed')
 	  aree = 0.
           call seed_add_area(1,nnodes1,nodes1,aree)
         end if

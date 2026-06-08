@@ -2690,13 +2690,18 @@
         implicit none
         integer iunit
         integer i
+        integer ierr
         logical, parameter :: belem = .false.
 
         if( .not. allocated(e) ) then   !runs before bio3d allocates (C4)
-          allocate(e(nlvdi,nkndi,nstate))
-          allocate(es(nkndi,nsstate))
-          allocate(esh(nkndi,nshstate))
-          allocate(eul(nkndi,nulstate))
+          allocate(e(nlvdi,nkndi,nstate), stat=ierr)
+          if( ierr /= 0 ) call shympi_abort_internal('read_restart_eco: allocation failed')
+          allocate(es(nkndi,nsstate), stat=ierr)
+          if( ierr /= 0 ) call shympi_abort_internal('read_restart_eco: allocation failed')
+          allocate(esh(nkndi,nshstate), stat=ierr)
+          if( ierr /= 0 ) call shympi_abort_internal('read_restart_eco: allocation failed')
+          allocate(eul(nkndi,nulstate), stat=ierr)
+          if( ierr /= 0 ) call shympi_abort_internal('read_restart_eco: allocation failed')
         end if
 
         do i=1,nstate
