@@ -40,15 +40,14 @@
 
 	function declin(jd)
 
+	use mod_physical_constants, only : pi => pi_sp
+
 ! computes solar declination
 
 	implicit none
 
 	real declin	!solar declination [degrees]
 	integer jd	!julian day [1-365]
-
-	real pi
-	parameter(pi=3.14159)
 
 	declin = 23.45 * cos( 2. * pi * (jd-172) / 365. )
 
@@ -58,6 +57,8 @@
 
 	function dayl(jd,rlat)
 
+	use mod_physical_constants, only : pi => pi_sp
+
 ! computes day length (in hours)
 
 	implicit none
@@ -66,8 +67,8 @@
 	integer jd	!julian day [1-365]
 	real rlat	!latitude [degrees]
 
-	real pi,rad
-	parameter(pi=3.14159,rad=pi/180.)
+	real rad
+	parameter(rad=pi/180.)
 
 	real dec,aux
 	real declin
@@ -82,6 +83,8 @@
 
 	function dayl_max(rlat)
 
+	use mod_physical_constants, only : pi => pi_sp
+
 ! computes maximum day length during year (in hours)
 
 	implicit none
@@ -89,8 +92,8 @@
 	real dayl_max	!maximum daylength [hours]
 	real rlat	!latitude [degrees]
 
-	real pi,rad
-	parameter(pi=3.14159,rad=pi/180.)
+	real rad
+	parameter(rad=pi/180.)
 
 	real dec,aux
 
@@ -104,6 +107,8 @@
 
 	function cd_solrad(jd,rlat)
 
+	use mod_physical_constants, only : pi => pi_sp
+
 ! computes average clear day solar radiation
 
 	implicit none
@@ -112,8 +117,8 @@
 	integer jd	!julian day [1-365]
 	real rlat	!latitude [degrees]
 
-	real pi,rad,factw
-	parameter(pi=3.14159,rad=pi/180.,factw=0.4843)
+	real rad,factw
+	parameter(rad=pi/180.,factw=0.4843)
 
 	real ld,sinday,cosphi,sinphi
 	real aux,a,b
@@ -141,6 +146,8 @@
 
 	subroutine get_radiation(jd,rlat,fday,itot,imax)
 
+	use mod_physical_constants, only : pi => pi_sp
+
 ! computes parameters for solar radiation
 !
 ! itot is average solar radiation over one whole day
@@ -152,9 +159,6 @@
 	real fday	!fractional day length [0-1]
 	real itot	!average clear day solar radiation [ly/day]
 	real imax	!maximum solar radiation at noon [ly/day]
-
-	real pi
-	parameter(pi=3.14159)
 
 	real dayl, cd_solrad
 
@@ -168,6 +172,8 @@
 
         subroutine linstant(t,itot,fday,iinst)
 
+        use mod_physical_constants, only : pi => pi_sp
+
 ! computes light intensity during a day given itot and fday
 
         implicit none
@@ -176,9 +182,6 @@
         real itot       !average incident light intensity over one whole day
         real fday       !fraction of day length [0-1]
         real iinst      !instantaneous light intensity at time t (return)
-
-        real pi
-        parameter( pi = 3.14159 )
 
         real tday,aux
 
