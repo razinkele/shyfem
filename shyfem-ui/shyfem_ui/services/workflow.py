@@ -286,13 +286,18 @@ class WorkflowEngine:
             return factory()
         return self._session_factory()
 
-    def list_templates(self) -> dict[str, dict]:
-        """List available workflow templates."""
+    @staticmethod
+    def list_templates() -> dict[str, dict]:
+        """List available workflow templates as a UI-renderable summary.
+
+        Static because the template select is built at UI-definition time,
+        before any engine (and its job_queue) exists.
+        """
         return {
             key: {
                 "name": tpl["name"],
                 "description": tpl["description"],
-                "steps": [s.name for s in tpl["steps"]],
+                "steps": [{"name": s.name, "tool_name": s.tool_name} for s in tpl["steps"]],
             }
             for key, tpl in WORKFLOW_TEMPLATES.items()
         }

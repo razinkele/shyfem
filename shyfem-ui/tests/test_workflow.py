@@ -157,8 +157,20 @@ class TestWorkflowEngine:
         templates = engine.list_templates()
         assert isinstance(templates, dict)
         assert "full_simulation" in templates
-        assert "name" in templates["full_simulation"]
-        assert "steps" in templates["full_simulation"]
+        tpl = templates["full_simulation"]
+        assert "name" in tpl
+        assert "description" in tpl
+        # Steps carry name + tool_name so UI pages render from the accessor
+        # instead of reaching into WORKFLOW_TEMPLATES (2026-06-08 audit P5).
+        assert all({"name", "tool_name"} <= set(s) for s in tpl["steps"])
+
+    def test_list_templates_is_callable_without_an_engine(self):
+        """The template select is built at UI-definition time, before any
+        engine exists — the accessor must work as a static method."""
+        from shyfem_ui.services.workflow import WorkflowEngine
+
+        templates = WorkflowEngine.list_templates()
+        assert "full_simulation" in templates
 
     @pytest.mark.asyncio
     async def test_create_workflow(self, engine, tmp_path):

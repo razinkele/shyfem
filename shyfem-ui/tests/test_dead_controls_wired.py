@@ -78,3 +78,13 @@ def test_run_shyplot_wrapper_removed():
 
     src = inspect.getsource(shyfem_wrapper)
     assert "def run_shyplot" not in src
+
+
+def test_run_page_uses_template_accessor():
+    """P5: pages must go through WorkflowEngine.list_templates, not read
+    the WORKFLOW_TEMPLATES module constant directly."""
+    from shyfem_ui.pages import run
+
+    src = inspect.getsource(run)
+    assert "WORKFLOW_TEMPLATES" not in src
+    assert "list_templates()" in src
