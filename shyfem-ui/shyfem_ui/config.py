@@ -134,7 +134,6 @@ class Config(BaseSettings):
     )
 
     # UI settings
-    theme: str = Field(default="flatly", description="Shinyswatch theme name")
     log_refresh_interval: int = Field(
         default=5, description="Log viewer refresh interval in seconds"
     )

@@ -372,7 +372,7 @@ def run_server(
                 mpi_np_control = ui.input_numeric(
                     "mpi_np",
                     "Number of Processes",
-                    value=4,
+                    value=config.mpi_default_np,
                     min=2,
                     max=128,
                 )

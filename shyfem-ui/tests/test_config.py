@@ -75,10 +75,10 @@ class TestConfigDefaults:
         )
         assert config.auth_enabled is False
 
-    def test_default_theme(self):
-        """Test default UI theme."""
-        config = _clean_config()
-        assert config.theme == "flatly"
+    def test_theme_field_removed(self):
+        """`theme` was a dead knob (theming is via data-bs-theme + plotly_theme.py);
+        removed in the 2026-06-08 unwired-config cleanup (P3)."""
+        assert not hasattr(_clean_config(), "theme")
 
     def test_default_celery_disabled(self):
         """Test Celery is disabled by default."""
