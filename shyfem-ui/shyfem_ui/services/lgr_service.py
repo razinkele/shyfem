@@ -96,8 +96,9 @@ def _parse_traj_file(path: Path) -> list[dict]:
     """Parse a lagrange_mean_traj.N text file into a list of row dicts.
 
     Fortran format: (a20, 2f14.5, 3f10.3, nc*f10.3)
-    The 20-char date field "YYYY-MM-DD HH:MM:SS" splits into two whitespace
-    tokens, so floats start at index 2.
+    The 20-char date field is "YYYY-MM-DD::HH:MM:SS" (dts_format_abs_time,
+    one whitespace token — normalized below) or "YYYY-MM-DD HH:MM:SS" (two
+    tokens); after normalization floats start at index 2.
 
     Returns:
         List of dicts with keys: date, lon, lat, depth, age
@@ -106,6 +107,10 @@ def _parse_traj_file(path: Path) -> list[dict]:
     with open(path) as f:
         for line in f:
             parts = line.split()
+            if parts and "::" in parts[0]:
+                # lgrelab writes "YYYY-MM-DD::HH:MM:SS" as one token;
+                # split so downstream consumers get the space-separated form.
+                parts[0:1] = parts[0].split("::", 1)
             if len(parts) < 6:
                 continue
             # Verify parts[1] looks like HH:MM:SS (colon at index 2)
