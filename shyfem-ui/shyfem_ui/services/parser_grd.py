@@ -156,25 +156,6 @@ class GrdFile:
         """Get all unique line types."""
         return {ln.line_type for ln in self.lines.values()}
 
-    def get_nodes_array(self) -> np.ndarray:
-        """Get node coordinates as numpy array (N x 2 or N x 3)."""
-        if not self.nodes:
-            return np.array([])
-        has_depth = any(n.depth is not None for n in self.nodes.values())
-        if has_depth:
-            return np.array([[n.x, n.y, n.depth or 0.0] for n in self.nodes.values()])
-        return np.array([[n.x, n.y] for n in self.nodes.values()])
-
-    def get_elements_array(self) -> np.ndarray:
-        """Get element connectivity as numpy array (padded with -1 for mixed meshes)."""
-        if not self.elements:
-            return np.array([])
-        max_nodes = max(len(e.nodes) for e in self.elements.values())
-        result = np.full((len(self.elements), max_nodes), -1, dtype=np.int32)
-        for i, elem in enumerate(self.elements.values()):
-            result[i, : len(elem.nodes)] = elem.nodes
-        return result
-
     def detect_coordinate_system(self) -> CoordinateSystem:
         """Detect whether coordinates are geographic (lat/lon) or Cartesian.
 
@@ -213,47 +194,6 @@ class GrdFile:
         cs = CoordinateSystem(CoordinateSystem.CARTESIAN)
         self.coordinate_system = cs
         return cs
-
-    def to_geographic(self, utm_zone: int | None = None, hemisphere: str = "N") -> bool:
-        """Convert UTM coordinates to geographic (lat/lon) in place.
-
-        Uses a simplified UTM-to-lat/lon conversion that avoids the pyproj
-        dependency. Accuracy is within ~1m for most applications.
-
-        Args:
-            utm_zone: UTM zone number (1-60). If None, attempts auto-detection.
-            hemisphere: "N" for northern, "S" for southern hemisphere.
-
-        Returns:
-            True if conversion was performed, False if already geographic
-            or no nodes present.
-        """
-        if not self.nodes:
-            return False
-
-        cs = self.coordinate_system or self.detect_coordinate_system()
-        if cs.is_geographic:
-            return False  # Already geographic
-
-        if utm_zone is None:
-            if cs.is_utm and cs.utm_zone:
-                utm_zone = cs.utm_zone
-            else:
-                # Cannot convert without zone information
-                self.parse_warnings.append(
-                    "Cannot auto-detect UTM zone. Provide utm_zone parameter."
-                )
-                return False
-
-        # UTM to lat/lon conversion (simplified, no pyproj dependency)
-        is_north = hemisphere.upper() == "N"
-        for node in self.nodes.values():
-            lat, lon = _utm_to_latlon(node.x, node.y, utm_zone, is_north)
-            node.x = lon
-            node.y = lat
-
-        self.coordinate_system = CoordinateSystem(CoordinateSystem.GEOGRAPHIC)
-        return True
 
 
 def _utm_to_latlon(
@@ -540,11 +480,6 @@ class GrdParser:
         cls._file_cache[cache_key] = result
         logger.debug("Grid cached: %s (%d nodes)", file_path, result.num_nodes)
         return result
-
-    @classmethod
-    def clear_cache(cls) -> None:
-        """Clear the parsed file cache."""
-        cls._file_cache.clear()
 
     @classmethod
     def generate(cls, grd_file: GrdFile) -> str:

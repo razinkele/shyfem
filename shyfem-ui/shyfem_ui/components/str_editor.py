@@ -817,24 +817,3 @@ $end"""
         return f"""${section_name}
         ! Add parameters here
 $end"""
-
-
-def get_parameter_help(section: str, param: str) -> str | None:
-    """Get help text for a parameter."""
-    section_params = COMMON_PARAMS.get(section, {})
-    param_info = section_params.get(param)
-
-    if param_info:
-        desc, ptype, default, units, options = param_info
-        parts = [desc]
-        if ptype:
-            parts.append(f"Type: {ptype}")
-        if default is not None:
-            parts.append(f"Default: {default}")
-        if units:
-            parts.append(f"Units: {units}")
-        if options:
-            parts.append(f"({options})")
-        return " | ".join(parts)
-
-    return None

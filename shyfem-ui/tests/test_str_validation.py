@@ -1,12 +1,11 @@
 """Tests for STR validation engine: validate_str_content, _check_range,
-generate_section_template, and get_parameter_help."""
+and generate_section_template."""
 
 import pytest
 
 from shyfem_ui.components.str_editor import (
     _check_range,
     generate_section_template,
-    get_parameter_help,
     validate_str_content,
 )
 
@@ -356,55 +355,3 @@ class TestGenerateSectionTemplate:
         assert "itanf" in template
         assert "itend" in template
         assert "idt" in template
-
-
-# ===========================================================================
-# TestGetParameterHelp
-# ===========================================================================
-
-
-class TestGetParameterHelp:
-    """Tests for get_parameter_help."""
-
-    def test_known_param_non_none(self):
-        """Known parameter returns non-None help string."""
-        result = get_parameter_help("para", "idt")
-        assert result is not None
-        assert len(result) > 0
-
-    def test_param_with_units(self):
-        """Parameter with units includes 'Units:' in result."""
-        # idt has units = "s"
-        result = get_parameter_help("para", "idt")
-        assert result is not None
-        assert "Units:" in result
-
-    def test_param_with_default(self):
-        """Parameter with a default value includes 'Default:' in result."""
-        # azpar has default 0.5
-        result = get_parameter_help("para", "azpar")
-        assert result is not None
-        assert "Default:" in result
-
-    def test_param_with_options(self):
-        """Parameter with options includes the options text."""
-        # azpar has options "[0,1]"
-        result = get_parameter_help("para", "azpar")
-        assert result is not None
-        assert "[0,1]" in result
-
-    def test_unknown_param_returns_none(self):
-        """Unknown parameter → None."""
-        result = get_parameter_help("para", "xyznoexist")
-        assert result is None
-
-    def test_unknown_section_returns_none(self):
-        """Unknown section → None."""
-        result = get_parameter_help("nonexistent_section", "idt")
-        assert result is None
-
-    def test_name_section_param(self):
-        """Name section parameter returns non-None help."""
-        result = get_parameter_help("name", "wind")
-        assert result is not None
-        assert len(result) > 0

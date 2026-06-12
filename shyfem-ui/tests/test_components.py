@@ -2,7 +2,6 @@
 
 from datetime import datetime
 
-import numpy as np
 import pytest
 from shiny import ui
 
@@ -12,7 +11,6 @@ from shyfem_ui.components.job_status import (
     get_status_badge,
     job_list_table,
 )
-from shyfem_ui.components.timeseries import compute_statistics
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 from shyfem_ui.services.parser_grd import Element, GrdFile, Node
 
@@ -149,58 +147,6 @@ class TestJobListTable:
         assert "Job A" in rendered
         assert "Job B" in rendered
         assert "table" in rendered
-
-
-# ---------------------------------------------------------------------------
-# compute_statistics
-# ---------------------------------------------------------------------------
-
-class TestComputeStatistics:
-    def test_basic_array(self):
-        stats = compute_statistics([1, 2, 3, 4, 5])
-        assert stats["count"] == 5
-        assert stats["min"] == 1.0
-        assert stats["max"] == 5.0
-        assert stats["mean"] == pytest.approx(3.0)
-        assert stats["range"] == 4.0
-        assert stats["p50"] == pytest.approx(3.0)
-
-    def test_single_value(self):
-        stats = compute_statistics([42.0])
-        assert stats["count"] == 1
-        assert stats["min"] == 42.0
-        assert stats["max"] == 42.0
-        assert stats["std"] == 0.0
-        assert stats["range"] == 0.0
-
-    def test_nan_handling(self):
-        stats = compute_statistics([1.0, float("nan"), 3.0])
-        assert stats["count"] == 2
-        assert stats["min"] == 1.0
-        assert stats["max"] == 3.0
-
-    def test_all_nan(self):
-        stats = compute_statistics([float("nan"), float("nan")])
-        assert stats["count"] == 0
-        assert stats["min"] is None
-        assert stats["max"] is None
-
-    def test_empty(self):
-        stats = compute_statistics([])
-        assert stats["count"] == 0
-        assert stats["min"] is None
-
-    def test_numpy_array(self):
-        arr = np.array([10.0, 20.0, 30.0])
-        stats = compute_statistics(arr)
-        assert stats["count"] == 3
-        assert stats["mean"] == pytest.approx(20.0)
-
-    def test_percentiles(self):
-        stats = compute_statistics(list(range(1, 101)))
-        assert stats["p25"] == pytest.approx(25.75)
-        assert stats["p50"] == pytest.approx(50.5)
-        assert stats["p75"] == pytest.approx(75.25)
 
 
 # ---------------------------------------------------------------------------

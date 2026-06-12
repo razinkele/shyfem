@@ -6,7 +6,6 @@ from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
     StrFile,
     StrParser,
-    get_param_info,
 )
 
 
@@ -407,7 +406,7 @@ $end
 
 
 class TestCommonParams:
-    """Tests for COMMON_PARAMS database and get_param_info."""
+    """Tests for COMMON_PARAMS database."""
 
     def test_common_params_has_para_section(self):
         """Test that COMMON_PARAMS contains $para section."""
@@ -426,35 +425,6 @@ class TestCommonParams:
         desc, ptype, default, units, options = info
         assert isinstance(desc, str)
         assert len(desc) > 0
-
-    def test_get_param_info_found(self):
-        """Test get_param_info for known parameter."""
-        info = get_param_info("idt")
-        assert info is not None
-        assert len(info) == 5
-
-    def test_get_param_info_with_section(self):
-        """Test get_param_info with explicit section."""
-        info = get_param_info("idt", section="para")
-        assert info is not None
-
-    def test_get_param_info_not_found(self):
-        """Test get_param_info for unknown parameter."""
-        info = get_param_info("nonexistent_param_xyz")
-        assert info is None
-
-    def test_get_param_info_wrong_section_falls_back(self):
-        """Test get_param_info with wrong section falls back to all sections."""
-        # When the given section doesn't exist, get_param_info searches all sections
-        info = get_param_info("idt", section="nonexistent_section")
-        # Falls back to global search, finds idt in "para"
-        assert info is not None
-
-    def test_get_param_info_section_scoped(self):
-        """Test get_param_info returns None when param not in specified section."""
-        # "idt" is in "para", not in "name"
-        info = get_param_info("idt", section="name")
-        assert info is None
 
     def test_common_params_has_restart_params(self):
         """Restart and offline params are defined in $para."""

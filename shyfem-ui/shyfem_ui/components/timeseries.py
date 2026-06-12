@@ -449,31 +449,3 @@ def _load_obs_file(path: Path) -> dict:
         "columns": result["columns"],
         "data": result["data"],
     }
-
-
-def compute_statistics(values) -> dict:
-    """Compute basic statistics for a numeric array.
-
-    Args:
-        values: Array-like of numeric values
-
-    Returns:
-        Dict with min, max, mean, std, range, count, p25, p50, p75
-    """
-    arr = np.asarray(values, dtype=float)
-    arr = arr[~np.isnan(arr)]
-
-    if len(arr) == 0:
-        return {"min": None, "max": None, "mean": None, "std": None, "range": None, "count": 0}
-
-    return {
-        "min": float(np.min(arr)),
-        "max": float(np.max(arr)),
-        "mean": float(np.mean(arr)),
-        "std": float(np.std(arr)),
-        "range": float(np.max(arr) - np.min(arr)),
-        "count": int(len(arr)),
-        "p25": float(np.percentile(arr, 25)),
-        "p50": float(np.percentile(arr, 50)),
-        "p75": float(np.percentile(arr, 75)),
-    }

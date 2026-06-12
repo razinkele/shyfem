@@ -143,16 +143,6 @@ class JobQueue(ABC):
         """Get job output (stdout or stderr), optionally limited to last N lines."""
         pass
 
-    @abstractmethod
-    def set_progress_callback(self, callback: Callable[[str, float, str], None]) -> None:
-        """Set callback for progress updates: callback(job_id, progress, message).
-
-        Deprecated: Use add_progress_callback/remove_progress_callback for
-        multi-session support.  This still works but overwrites all previous
-        callbacks registered via add_progress_callback.
-        """
-        pass
-
     def add_progress_callback(
         self,
         callback_id: str,

@@ -96,9 +96,6 @@ class _StubQueue(JobQueue):
     ) -> str:
         return ""
 
-    def set_progress_callback(self, callback) -> None:
-        self._single_callback = callback
-
     async def cleanup_old_jobs(self, days: int = 7) -> int:
         # MUST be async — ABC declares async; sync override would TypeError
         # when awaited at runtime (sync ints can't be awaited).

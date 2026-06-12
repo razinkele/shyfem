@@ -127,21 +127,6 @@ class AuthService:
         finally:
             session.close()
 
-    def get_user(self, user_id: int) -> dict | None:
-        """Get a user by ID.
-
-        Returns:
-            Dict with user fields, or None if not found.
-        """
-        session = self._session_factory()
-        try:
-            user = session.query(User).filter_by(id=user_id).first()
-            if user is None:
-                return None
-            return self._user_to_dict(user)
-        finally:
-            session.close()
-
     def list_users(self) -> list[dict]:
         """List all users.
 
@@ -179,27 +164,6 @@ class AuthService:
         except Exception:
             session.rollback()
             logger.exception("Database error in update_user")
-            raise
-        finally:
-            session.close()
-
-    def deactivate_user(self, user_id: int) -> bool:
-        """Deactivate a user account.
-
-        Returns:
-            True if the user was found and deactivated, False if not found.
-        """
-        session = self._session_factory()
-        try:
-            user = session.query(User).filter_by(id=user_id).first()
-            if user is None:
-                return False
-            user.is_active = False
-            session.commit()
-            return True
-        except Exception:
-            session.rollback()
-            logger.exception("Database error in deactivate_user")
             raise
         finally:
             session.close()

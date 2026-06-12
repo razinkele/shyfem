@@ -91,33 +91,6 @@ class TestBuildFileChoices:
         assert len(choices) == 0
 
 
-class TestFileTypeMapping:
-
-    def test_param_to_file_types_wind(self):
-        from shyfem_ui.components.file_picker import param_to_file_types
-        assert param_to_file_types("wind") == ["forcing"]
-
-    def test_param_to_file_types_boundn(self):
-        from shyfem_ui.components.file_picker import param_to_file_types
-        assert param_to_file_types("boundn") == ["boundary", "forcing"]
-
-    def test_param_to_file_types_restrt(self):
-        from shyfem_ui.components.file_picker import param_to_file_types
-        assert param_to_file_types("restrt") == ["restart"]
-
-    def test_param_to_file_types_gotmpa(self):
-        from shyfem_ui.components.file_picker import param_to_file_types
-        assert param_to_file_types("gotmpa") == ["config"]
-
-    def test_param_to_file_types_tempin(self):
-        from shyfem_ui.components.file_picker import param_to_file_types
-        assert param_to_file_types("tempin") == ["initial_condition", "forcing"]
-
-    def test_param_to_file_types_unknown(self):
-        from shyfem_ui.components.file_picker import param_to_file_types
-        assert param_to_file_types("unknown_param") is None
-
-
 class TestIsFileParam:
 
     def test_wind_is_file_param(self):

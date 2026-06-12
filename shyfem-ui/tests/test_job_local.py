@@ -312,7 +312,7 @@ class TestLocalJobQueue:
         def on_progress(job_id, progress, message):
             progress_data.append((job_id, progress, message))
 
-        queue.set_progress_callback(on_progress)
+        queue.add_progress_callback("test-session", on_progress)
 
         # Simulate wrapper calling progress_callback
         async def mock_run(tool, args, wd, progress_callback=None, output_callback=None):

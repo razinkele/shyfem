@@ -167,31 +167,6 @@ class TestGrdParser:
 
         assert node_types == {0, 1, 2}
 
-    def test_get_nodes_array(self):
-        """Test getting nodes as numpy array."""
-        content = """
-1 1 0 100.0 200.0
-1 2 0 150.0 250.0
-"""
-        result = GrdParser.parse(content)
-        arr = result.get_nodes_array()
-
-        assert arr.shape == (2, 2)
-        assert arr[0, 0] == pytest.approx(100.0)
-        assert arr[0, 1] == pytest.approx(200.0)
-
-    def test_get_nodes_array_with_depth(self):
-        """Test getting nodes as numpy array with depth."""
-        content = """
-1 1 0 100.0 200.0 5.0
-1 2 0 150.0 250.0 6.0
-"""
-        result = GrdParser.parse(content)
-        arr = result.get_nodes_array()
-
-        assert arr.shape == (2, 3)
-        assert arr[0, 2] == pytest.approx(5.0)
-
     def test_get_statistics(self):
         """Test getting grid statistics."""
         content = """
@@ -410,31 +385,6 @@ class TestCoordinateSystem:
         # Should be in reasonable range for Europe
         assert 40.0 < lat < 50.0
         assert 10.0 < lon < 20.0
-
-    def test_to_geographic_already_geographic(self):
-        """Test to_geographic on already-geographic grid returns False."""
-        content = """
-1 1 0 12.5 45.3
-1 2 0 12.7 45.5
-"""
-        grd = GrdParser.parse(content)
-        grd.detect_coordinate_system()
-        assert grd.to_geographic() is False
-
-    def test_to_geographic_converts_utm(self):
-        """Test to_geographic converts UTM nodes in place."""
-        content = """
-1 1 0 500000.0 5000000.0
-1 2 0 500100.0 5000100.0
-"""
-        grd = GrdParser.parse(content)
-        grd.detect_coordinate_system()
-        result = grd.to_geographic(utm_zone=33, hemisphere="N")
-        assert result is True
-        # After conversion, coordinates should be in geographic range
-        for node in grd.nodes.values():
-            assert -180 <= node.x <= 360
-            assert -90 <= node.y <= 90
 
 
 class TestNvertFormat:

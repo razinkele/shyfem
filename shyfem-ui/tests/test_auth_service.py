@@ -79,15 +79,6 @@ class TestUserCRUD:
         with pytest.raises(ValueError, match="Username already exists"):
             auth_service.create_user("alice", "pass2", email="alice2@example.com")
 
-    def test_get_user(self, auth_service):
-        created = auth_service.create_user("bob", "pass", email="bob@example.com")
-        fetched = auth_service.get_user(created["id"])
-        assert fetched is not None
-        assert fetched["username"] == "bob"
-
-    def test_get_user_not_found(self, auth_service):
-        assert auth_service.get_user(9999) is None
-
     def test_list_users(self, auth_service):
         auth_service.create_user("u1", "p1", email="u1@example.com")
         auth_service.create_user("u2", "p2", email="u2@example.com")
@@ -106,15 +97,6 @@ class TestUserCRUD:
 
     def test_update_user_not_found(self, auth_service):
         assert auth_service.update_user(9999, display_name="X") is None
-
-    def test_deactivate_user(self, auth_service):
-        created = auth_service.create_user("dave", "pass", email="dave@example.com")
-        assert auth_service.deactivate_user(created["id"]) is True
-        fetched = auth_service.get_user(created["id"])
-        assert fetched["is_active"] is False
-
-    def test_deactivate_not_found(self, auth_service):
-        assert auth_service.deactivate_user(9999) is False
 
     def test_reset_password(self, auth_service):
         created = auth_service.create_user("eve", "old-pass", email="eve@example.com")
@@ -154,7 +136,7 @@ class TestAuthenticate:
 
     def test_authenticate_inactive_user(self, auth_service):
         created = auth_service.create_user("alice", "s3cret", email="alice@example.com")
-        auth_service.deactivate_user(created["id"])
+        auth_service.update_user(created["id"], is_active=False)
         assert auth_service.authenticate("alice", "s3cret") is None
 
 
@@ -189,7 +171,7 @@ class TestSessionManagement:
     def test_validate_session_inactive_user(self, auth_service):
         user = auth_service.create_user("alice", "pass", email="alice@example.com")
         token = auth_service.create_session(user["id"], ttl_hours=24)
-        auth_service.deactivate_user(user["id"])
+        auth_service.update_user(user["id"], is_active=False)
         assert auth_service.validate_session(token) is None
 
     def test_delete_session(self, auth_service):
@@ -253,7 +235,7 @@ class TestWSToken:
         user = auth_service.create_user("alice", "pass", email="alice@example.com")
         sess = auth_service.create_session(user["id"])
         ws = auth_service.create_ws_token(user["id"], sess)
-        auth_service.deactivate_user(user["id"])
+        auth_service.update_user(user["id"], is_active=False)
         assert auth_service.validate_ws_token(ws) is None
 
     def test_logout_purges_ws_token_rows(self, auth_service):
