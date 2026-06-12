@@ -62,14 +62,26 @@ _TRACK_COLORS = [
 ]
 
 
+# One full animation loop in trips "time units". The JS animation drives
+# currentTime in 0..loopLength (wall-seconds x speed, modulo loopLength),
+# so track timestamps must be normalized into this range — raw epoch
+# seconds (~1.7e9) would never be <= currentTime and no trail would draw.
+_TRIPS_LOOP_LENGTH = 600.0
+
+
 def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
-    """Convert ParticleTrack list to format_trips output for trips_layer."""
+    """Convert ParticleTrack list to format_trips output for trips_layer.
+
+    Timestamps are rescaled from epoch seconds to 0.._TRIPS_LOOP_LENGTH
+    animation units, sharing one origin/scale across all tracks so their
+    relative timing is preserved.
+    """
     if not tracks or format_trips is None:
         return []
     from datetime import datetime as _dt
 
     paths: list[list[list[float]]] = []
-    timestamps: list[list[float]] = []
+    epoch_ts: list[list[float]] = []
     properties: list[dict] = []
     for t in tracks:
         if not t.path:
@@ -77,8 +89,16 @@ def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
         if not all(len(p) == 2 for p in t.path):
             raise ValueError(f"ParticleTrack paths must be 2-D [lon,lat], got {len(t.path[0])}-D")
         paths.append(t.path)
-        timestamps.append([_dt.fromisoformat(ts).timestamp() for ts in t.times])
+        epoch_ts.append([_dt.fromisoformat(ts).timestamp() for ts in t.times])
         properties.append({"color": _TRACK_COLORS[(t.type_id - 1) % len(_TRACK_COLORS)]})
+
+    all_ts = [v for track_ts in epoch_ts for v in track_ts]
+    if not all_ts:
+        return format_trips(paths, timestamps=epoch_ts, properties=properties)
+    t0 = min(all_ts)
+    span = max(all_ts) - t0
+    scale = _TRIPS_LOOP_LENGTH / span if span > 0 else 0.0
+    timestamps = [[(v - t0) * scale for v in track_ts] for track_ts in epoch_ts]
     return format_trips(paths, timestamps=timestamps, properties=properties)
 
 
@@ -450,6 +470,13 @@ def ibm_server(
                         trailLength=trail_len,
                         widthMinPixels=2,
                         pickable=True,
+                        # Opt-in marker for the JS animation loop: without it
+                        # startTripsAnimation() finds nothing to animate and
+                        # currentTime stays 0 (no trails, dead Play button).
+                        _tripsAnimation={
+                            "loopLength": _TRIPS_LOOP_LENGTH,
+                            "speed": anim.speed() if anim else 8,
+                        },
                     )
                 )
                 first_id = filtered[0].type_id
