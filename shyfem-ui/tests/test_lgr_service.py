@@ -136,6 +136,15 @@ def test_filter_empty_string_treated_as_no_bound():
     assert len(result[0].path) == 2  # same result as tmax=None
 
 
+def test_filter_tmax_trims_late_steps():
+    """tmax removes steps after the cutoff (inclusive bound)."""
+    track = _make_track()
+    result = filter_by_time([track], tmin=None, tmax="2020-01-01 01:00:00")
+    assert len(result) == 1
+    assert len(result[0].path) == 2
+    assert result[0].times[-1] == "2020-01-01 01:00:00"
+
+
 # ---------------------------------------------------------------------------
 # LgrService.load
 # ---------------------------------------------------------------------------

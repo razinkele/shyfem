@@ -42,7 +42,7 @@ from shyfem_ui.components.file_picker import (
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
-from shyfem_ui.services.lgr_service import LgrService, ParticleTrack
+from shyfem_ui.services.lgr_service import LgrService, ParticleTrack, filter_by_time
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
@@ -199,6 +199,21 @@ def ibm_ui() -> ui.Tag:
                 ui.input_checkbox("show_starts", "Start Points", value=True),
                 ui.input_checkbox("show_ends", "End Points", value=True),
                 ui.hr(),
+                ui.h6("Time Filter"),
+                ui.input_text(
+                    "time_min",
+                    "From (YYYY-MM-DD HH:MM:SS)",
+                    placeholder="no lower bound",
+                    update_on="blur",
+                ),
+                ui.input_text(
+                    "time_max",
+                    "To (YYYY-MM-DD HH:MM:SS)",
+                    placeholder="no upper bound",
+                    update_on="blur",
+                ),
+                ui.output_ui("time_range_hint"),
+                ui.hr(),
                 ui.div(
                     ui.tags.i(class_="bi bi-info-circle me-1"),
                     ui.span("Configure IBM parameters in "),
@@ -255,6 +270,28 @@ def ibm_server(
     # State
     tracks_data: reactive.Value[list[ParticleTrack]] = reactive.value([])
     load_error: reactive.Value[str | None] = reactive.value(None)
+
+    @reactive.calc
+    def filtered_tracks() -> list[ParticleTrack]:
+        # Tracks currently displayed: raw loads cut by the time-range inputs.
+        # filter_by_time treats ""/None as "no bound" and compares the
+        # "YYYY-MM-DD HH:MM:SS" strings lexicographically.
+        return filter_by_time(
+            tracks_data.get(),
+            input.time_min().strip() or None,
+            input.time_max().strip() or None,
+        )
+
+    @render.ui
+    def time_range_hint():
+        # Without this the filter is unaimable: the user would have to guess
+        # exact timestamps. Shows the span of the *loaded* (unfiltered) data.
+        tracks = tracks_data.get()
+        starts = [t.times[0] for t in tracks if t.times]
+        ends = [t.times[-1] for t in tracks if t.times]
+        if not starts:
+            return None
+        return ui.p(f"Loaded: {min(starts)} – {max(ends)}", class_="text-muted small mb-0")
 
     # Auto-fill from active project: prefer FileService-tracked .lgr
     # files surfaced via the picker, fall back to glob-search of
@@ -354,8 +391,7 @@ def ibm_server(
         show_trk = input.show_tracks()
         show_starts = input.show_starts()
         show_ends = input.show_ends()
-        tracks = tracks_data.get()
-        filtered = tracks  # trips_layer handles time via animation controls
+        filtered = filtered_tracks()
 
         layers: list[dict] = []
         legend_entries: list[dict] = []
@@ -507,7 +543,7 @@ def ibm_server(
 
     @render.ui
     def ibm_stats_panel():
-        tracks = tracks_data.get()
+        tracks = filtered_tracks()
         if not tracks:
             return ui.div()
         stats = compute_track_stats(tracks)
@@ -538,7 +574,11 @@ def ibm_server(
         return ui.div(
             ui.h6(
                 ui.tags.i(class_="bi bi-bar-chart me-1"),
-                "Particle Statistics",
+                (
+                    "Particle Statistics (time-filtered)"
+                    if (input.time_min().strip() or input.time_max().strip())
+                    else "Particle Statistics"
+                ),
                 class_="mt-3 mb-2",
             ),
             ui.tags.table(

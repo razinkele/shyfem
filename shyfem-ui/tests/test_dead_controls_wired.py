@@ -88,3 +88,15 @@ def test_run_page_uses_template_accessor():
     src = inspect.getsource(run)
     assert "WORKFLOW_TEMPLATES" not in src
     assert "list_templates()" in src
+
+
+def test_ibm_time_filter_is_wired():
+    """P5: lgr_service.filter_by_time had no UI caller. The IBM page must
+    read the time-range inputs and cut tracks through filter_by_time
+    (behavior of the filter itself is covered in test_lgr_service.py)."""
+    from shyfem_ui.pages import ibm
+
+    src = inspect.getsource(ibm)
+    assert "filter_by_time(" in src, "filter_by_time is not called"
+    assert "input.time_min()" in src, "time_min input is not read"
+    assert "input.time_max()" in src, "time_max input is not read"
