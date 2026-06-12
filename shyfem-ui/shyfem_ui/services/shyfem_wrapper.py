@@ -398,24 +398,3 @@ class ShyfemWrapper:
         return await self.run_command(
             "shyelab", args, working_dir, progress_callback, output_callback
         )
-
-    async def run_shyplot(
-        self,
-        input_file: Path | str,
-        working_dir: Path | str,
-        options: list[str] | None = None,
-        progress_callback: Callable[[float, str], None] | None = None,
-        output_callback: Callable[[str], None] | None = None,
-    ) -> CommandResult:
-        """Run shyplot to generate plots.
-
-        Args:
-            input_file: Path to input file (.shy, .bas, etc.)
-            working_dir: Working directory
-            options: Additional options like ["-colplot"]
-        """
-        args = list(options) if options else []   # copy: never mutate caller's list
-        args.append(str(input_file))
-        return await self.run_command(
-            "shyplot", args, working_dir, progress_callback, output_callback
-        )

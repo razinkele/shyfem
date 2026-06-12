@@ -68,3 +68,13 @@ def test_active_nav_dead_signal_removed():
 
     app_src = (Path(shyfem_ui.__file__).parent / "app.py").read_text()
     assert "_active_nav" not in app_src
+
+
+def test_run_shyplot_wrapper_removed():
+    """P5 decision (2026-06-12): shyplot stays available as a generic tool
+    (run page + job dispatch via run_command); the dedicated wrapper method
+    had no caller and was removed."""
+    from shyfem_ui.services import shyfem_wrapper
+
+    src = inspect.getsource(shyfem_wrapper)
+    assert "def run_shyplot" not in src
