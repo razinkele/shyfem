@@ -482,9 +482,7 @@ class LocalJobQueue(JobQueue):
             from shyfem_ui.models.project import Job
 
             with db_session() as db:
-                db.query(Job).filter(Job.job_uuid.in_(job_uuids)).delete(
-                    synchronize_session=False
-                )
+                db.query(Job).filter(Job.job_uuid.in_(job_uuids)).delete(synchronize_session=False)
         except Exception:
             logger.error("Could not delete %d job row(s) from DB", len(job_uuids), exc_info=True)
 
@@ -492,4 +490,3 @@ class LocalJobQueue(JobQueue):
     def active_job_count(self) -> int:
         """Get count of active jobs."""
         return sum(1 for j in self._jobs.values() if j.is_active)
-

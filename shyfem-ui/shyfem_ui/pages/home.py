@@ -78,9 +78,7 @@ def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
     return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
 
 
-def recent_jobs_session_id(
-    is_server_mode: bool, show_all: bool, user: dict | None, session_id
-):
+def recent_jobs_session_id(is_server_mode: bool, show_all: bool, user: dict | None, session_id):
     """Decide which session_id to filter the Dashboard's recent-jobs list by.
 
     Returns None to list every session's jobs, or ``session_id`` to scope to the
@@ -319,7 +317,7 @@ def home_server(
     # Dedup set prevents effect accumulation (Shiny for Python does not
     # auto-destroy child effects when a parent @reactive.effect re-runs).
     # Per-session (declared inside home_server); keys are prefix-namespaced
-    # (open_proj_, project_, export_, clone_, share_, confirm_share_, unshare_)
+    # (open_proj_, project_, details_, export_, clone_, share_, confirm_share_, unshare_)
     # so all per-project handler factories share this one set without collision.
     _registered_handlers: set = set()
 
@@ -460,6 +458,11 @@ def home_server(
                         p["updated_at"].strftime("%Y-%m-%d %H:%M") if p["updated_at"] else "-"
                     ),
                     ui.tags.td(
+                        ui.input_action_link(
+                            f"details_{p['id']}",
+                            "Details",
+                            class_="btn btn-sm btn-outline-secondary me-1",
+                        ),
                         share_btn,
                         ui.input_action_link(
                             f"export_{p['id']}",
@@ -801,6 +804,98 @@ def home_server(
         def _open():
             ui.modal_remove()
             _activate_project(pid)
+
+    @reactive.effect
+    def _register_details_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_details_handler(p["id"])
+
+    def _make_details_handler(pid: int):
+        key = f"details_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
+        @reactive.effect
+        @reactive.event(input[key])
+        def _show_details():
+            from shyfem_ui.services.project_context import load_project_context
+
+            # The viewer-level read gate is THIS call (fail-closed in server
+            # mode). Handler registration filtering via projects.get() is NOT
+            # a security boundary: _registered_handlers never shrinks, so a
+            # handler registered while a project was shared outlives the
+            # share's revocation for the rest of the session.
+            ctx = load_project_context(pid, user=(_user()))
+            if ctx is None:
+                ui.notification_show("Project not found or access denied", type="error", duration=6)
+                return
+
+            def _fmt(value, suffix=""):
+                return f"{value}{suffix}" if value is not None else "—"
+
+            grid_rows = [
+                ui.tags.tr(
+                    ui.tags.td(g["name"]),
+                    ui.tags.td(_fmt(g["num_layers"])),
+                    ui.tags.td(_fmt(g["min_depth"], " m")),
+                    ui.tags.td(_fmt(g["max_depth"], " m")),
+                )
+                for g in ctx["grids"]
+            ]
+            sim_rows = [
+                ui.tags.tr(
+                    ui.tags.td(s["name"]),
+                    ui.tags.td(s["start_time"] or "—"),
+                    ui.tags.td(s["end_time"] or "—"),
+                    ui.tags.td(_fmt(s["time_step"], " s")),
+                )
+                for s in ctx["simulations"]
+            ]
+            grids_block = (
+                ui.tags.table(
+                    ui.tags.thead(
+                        ui.tags.tr(
+                            ui.tags.th("Name"),
+                            ui.tags.th("Layers"),
+                            ui.tags.th("Min depth"),
+                            ui.tags.th("Max depth"),
+                        )
+                    ),
+                    ui.tags.tbody(*grid_rows),
+                    class_="table table-sm",
+                )
+                if grid_rows
+                else ui.p("No grids imported.", class_="text-muted")
+            )
+            sims_block = (
+                ui.tags.table(
+                    ui.tags.thead(
+                        ui.tags.tr(
+                            ui.tags.th("Name"),
+                            ui.tags.th("Start"),
+                            ui.tags.th("End"),
+                            ui.tags.th("Time step"),
+                        )
+                    ),
+                    ui.tags.tbody(*sim_rows),
+                    class_="table table-sm",
+                )
+                if sim_rows
+                else ui.p("No simulations.", class_="text-muted")
+            )
+            m = ui.modal(
+                ui.h6("Grids"),
+                grids_block,
+                ui.h6("Simulations"),
+                sims_block,
+                title=f"Project: {ctx['name']}",
+                easy_close=True,
+                footer=ui.modal_button("Close"),
+                size="l",
+            )
+            ui.modal_show(m)
 
     @reactive.effect
     def _register_project_link_handlers():

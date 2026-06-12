@@ -755,9 +755,7 @@ def _build_server(
     _user_id = _current_user["id"] if _current_user else None
 
     async def _on_session_ended():
-        await cancel_active_jobs_for_session(
-            job_queue, _cleanup_session_id, _is_server, logger
-        )
+        await cancel_active_jobs_for_session(job_queue, _cleanup_session_id, _is_server, logger)
 
     session.on_ended(_on_session_ended)
 

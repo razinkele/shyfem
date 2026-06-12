@@ -78,3 +78,18 @@ Each needs a product call (surface vs remove); implement the chosen direction TD
 
 ## Suggested execution order
 P1 (now, highest value) → P2 → P3 → P4 (pure deletions; hold celery_task_id sub-task on decision #2) → P6 trivial part → then P5 + remaining decisions once the owner answers the checklist. Each phase: branch → TDD → suite/ruff green → present for merge/deploy.
+
+---
+## Closure (2026-06-12)
+All phases complete. P1-P4 merged via f888d38 / 3467d45 / 40d21cf /
+4810808; P5 cancel_workflow + P6 _active_nav merged via 824501f; the
+P5/P6 remainder finished via
+`docs/plans/2026-06-12-unwired-audit-closure-plan.md`: run_shyplot
+removed, list_templates routed (+ dead services/__init__ re-export
+dropped), IBM time filter surfaced, Grid/Simulation metadata surfaced
+in the dashboard Details modal.
+Decision checklist: (1) theme → delete; (2) celery_task_id → wire;
+(3) run_shyplot remove / cancel_workflow surface / lgr time-filter
+surface / list_templates route; (4) write-only columns → surface.
+(Note: these "P" numbers are this plan's PHASE numbers; the audit
+report's own section numbering differs — map via item names.)

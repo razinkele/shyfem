@@ -589,4 +589,3 @@ class CeleryJobQueue(JobQueue):
                 )
 
         return count
-

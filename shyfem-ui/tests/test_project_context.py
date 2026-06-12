@@ -81,6 +81,52 @@ class TestLoadProjectContext:
         assert ctx["grids"] == []
         assert ctx["simulations"] == []
 
+    def test_context_includes_grid_and_sim_metadata(self, tmp_path):
+        """2026-06-08 audit P6: the import-populated metadata columns must be
+        readable from the context so the dashboard Details modal can show them."""
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import Grid, Project, Simulation
+        from shyfem_ui.services.project_context import load_project_context
+
+        with db_session() as db:
+            p = Project(name="meta_proj", work_dir=str(tmp_path / "proj"))
+            db.add(p)
+            db.flush()
+            g = Grid(
+                project_id=p.id,
+                name="grid1",
+                grd_file="GRID/g.grd",
+                bas_file="GRID/g.bas",
+                num_layers=12,
+                min_depth=0.5,
+                max_depth=44.0,
+            )
+            db.add(g)
+            db.flush()
+            s = Simulation(
+                project_id=p.id,
+                grid_id=g.id,
+                name="sim1",
+                str_file="sim1.str",
+                start_time="2024-01-01 00:00:00",
+                end_time="2024-01-31 00:00:00",
+                time_step=300.0,
+            )
+            db.add(s)
+            db.flush()
+            pid = p.id
+
+        ctx = load_project_context(pid, user=None, is_server_mode=False)
+        assert ctx is not None
+        grid = ctx["grids"][0]
+        assert grid["num_layers"] == 12
+        assert grid["min_depth"] == 0.5
+        assert grid["max_depth"] == 44.0
+        sim = ctx["simulations"][0]
+        assert sim["start_time"] == "2024-01-01 00:00:00"
+        assert sim["end_time"] == "2024-01-31 00:00:00"
+        assert sim["time_step"] == 300.0
+
     def test_context_includes_files(self, tmp_path):
         from shyfem_ui.db.base import db_session
         from shyfem_ui.models.project import Project, ProjectFile
@@ -285,10 +331,16 @@ class TestProjectContextShape:
             "name",
             "grd_file",
             "bas_file",
+            "num_layers",
+            "min_depth",
+            "max_depth",
         }
         assert set(SimulationEntry.__annotations__.keys()) == {
             "name",
             "str_file",
+            "start_time",
+            "end_time",
+            "time_step",
         }
         assert set(FileEntry.__annotations__.keys()) == {
             "id",

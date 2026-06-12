@@ -68,3 +68,54 @@ def test_active_nav_dead_signal_removed():
 
     app_src = (Path(shyfem_ui.__file__).parent / "app.py").read_text()
     assert "_active_nav" not in app_src
+
+
+def test_run_shyplot_wrapper_removed():
+    """P5 decision (2026-06-12): shyplot stays available as a generic tool
+    (run page + job dispatch via run_command); the dedicated wrapper method
+    had no caller and was removed."""
+    from shyfem_ui.services import shyfem_wrapper
+
+    src = inspect.getsource(shyfem_wrapper)
+    assert "def run_shyplot" not in src
+
+
+def test_run_page_uses_template_accessor():
+    """P5: pages must go through WorkflowEngine.list_templates, not read
+    the WORKFLOW_TEMPLATES module constant directly."""
+    from shyfem_ui.pages import run
+
+    src = inspect.getsource(run)
+    assert "WORKFLOW_TEMPLATES" not in src
+    assert "list_templates()" in src
+
+
+def test_ibm_time_filter_is_wired():
+    """P5: lgr_service.filter_by_time had no UI caller. The IBM page must
+    read the time-range inputs and cut tracks through filter_by_time
+    (behavior of the filter itself is covered in test_lgr_service.py)."""
+    from shyfem_ui.pages import ibm
+
+    src = inspect.getsource(ibm)
+    assert "filter_by_time(" in src, "filter_by_time is not called"
+    assert "input.time_min()" in src, "time_min input is not read"
+    assert "input.time_max()" in src, "time_max input is not read"
+
+
+def test_project_details_modal_is_wired():
+    """P6: Grid/Simulation metadata columns were write-only. The dashboard
+    must surface them via a per-project Details modal, and the modal's read
+    must go through the gated context loader (fail-closed in server mode).
+
+    NOTE: locks are on the bracket-access render expressions, NOT bare
+    "num_layers"/"time_step" — those substrings already exist in home.py's
+    import handler and would make the lock vacuous."""
+    from shyfem_ui.pages import home
+
+    src = inspect.getsource(home)
+    assert "_make_details_handler(" in src, "no details handler factory"
+    assert 'g["num_layers"]' in src, "grid metadata not rendered in the modal"
+    assert 's["time_step"]' in src, "simulation metadata not rendered in the modal"
+    assert "load_project_context(pid, user=" in src, (
+        "details modal must read through the gated context loader"
+    )

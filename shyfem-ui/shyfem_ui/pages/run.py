@@ -45,7 +45,7 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.str_validator import validate_str
-from shyfem_ui.services.workflow import WORKFLOW_TEMPLATES, WorkflowEngine, WorkflowStatus
+from shyfem_ui.services.workflow import WorkflowEngine, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,8 @@ def run_ui() -> ui.Tag:
                                         "wf_template",
                                         "Template",
                                         choices={
-                                            k: v["name"] for k, v in WORKFLOW_TEMPLATES.items()
+                                            k: v["name"]
+                                            for k, v in WorkflowEngine.list_templates().items()
                                         },
                                     ),
                                     class_="col-6",
@@ -1210,14 +1211,14 @@ def run_server(
             logger.debug("Workflow template selection unavailable")
             return None
 
-        tpl = WORKFLOW_TEMPLATES.get(key)
+        tpl = workflow_engine.list_templates().get(key)
         if not tpl:
             return None
 
         steps_list = [
             ui.tags.li(
-                ui.code(step.tool_name),
-                ui.span(f" - {step.name}", class_="text-muted"),
+                ui.code(step["tool_name"]),
+                ui.span(f" - {step['name']}", class_="text-muted"),
             )
             for step in tpl["steps"]
         ]
@@ -1405,9 +1406,7 @@ def run_server(
             if ok:
                 ui.notification_show("Workflow cancelled", type="warning", duration=4)
             else:
-                ui.notification_show(
-                    "Workflow is no longer active", type="message", duration=4
-                )
+                ui.notification_show("Workflow is no longer active", type="message", duration=4)
             # Nudge the panel to re-render with the final state
             active_workflow_id.set(wf_id)
         except Exception as e:

@@ -480,7 +480,7 @@ class TestOptionsNotMutated:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("method,posarg", [
         ("run_shypre", "g.grd"), ("run_shybas", "b.bas"),
-        ("run_shyparts", "b.bas"), ("run_shyplot", "i.shy"),
+        ("run_shyparts", "b.bas"),
     ])
     async def test_other_wrappers_do_not_mutate_options(self, wrapper, tmp_path, monkeypatch, method, posarg):
         async def fake_run(name, args, *a, **k):

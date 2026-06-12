@@ -47,6 +47,7 @@ _BOUND_FILE_PARAMS = frozenset(
     }
 )
 
+
 def is_file_param(param_name: str) -> bool:
     """Check if an STR parameter name references a file."""
     return param_name in _NAME_FILE_PARAMS or param_name in _BOUND_FILE_PARAMS
