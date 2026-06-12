@@ -78,9 +78,7 @@ def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
     return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
 
 
-def recent_jobs_session_id(
-    is_server_mode: bool, show_all: bool, user: dict | None, session_id
-):
+def recent_jobs_session_id(is_server_mode: bool, show_all: bool, user: dict | None, session_id):
     """Decide which session_id to filter the Dashboard's recent-jobs list by.
 
     Returns None to list every session's jobs, or ``session_id`` to scope to the

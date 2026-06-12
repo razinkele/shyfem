@@ -1406,9 +1406,7 @@ def run_server(
             if ok:
                 ui.notification_show("Workflow cancelled", type="warning", duration=4)
             else:
-                ui.notification_show(
-                    "Workflow is no longer active", type="message", duration=4
-                )
+                ui.notification_show("Workflow is no longer active", type="message", duration=4)
             # Nudge the panel to re-render with the final state
             active_workflow_id.set(wf_id)
         except Exception as e:

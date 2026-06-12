@@ -287,7 +287,7 @@ class ShyfemWrapper:
             working_dir: Working directory
             options: Additional options like ["-opti", "-renumber"]
         """
-        args = list(options) if options else []   # copy: never mutate caller's list
+        args = list(options) if options else []  # copy: never mutate caller's list
         args.append(str(grd_file))
         return await self.run_command(
             "shypre", args, working_dir, progress_callback, output_callback
@@ -308,7 +308,7 @@ class ShyfemWrapper:
             working_dir: Working directory
             options: Additional options like ["-quality", "-grd", "-xyz"]
         """
-        args = list(options) if options else []   # copy: never mutate caller's list
+        args = list(options) if options else []  # copy: never mutate caller's list
         args.append(str(bas_file))
         return await self.run_command(
             "shybas", args, working_dir, progress_callback, output_callback
@@ -331,7 +331,7 @@ class ShyfemWrapper:
             np: Number of partitions
             options: Additional options
         """
-        args = list(options) if options else []   # copy: never mutate caller's list
+        args = list(options) if options else []  # copy: never mutate caller's list
         args.extend(["-np", str(np)])
         args.append(str(bas_file))
         return await self.run_command(
@@ -393,7 +393,7 @@ class ShyfemWrapper:
             working_dir: Working directory
             options: Additional options like ["-split", "-tmin", "0", "-tmax", "100"]
         """
-        args = list(options) if options else []   # copy: never mutate caller's list
+        args = list(options) if options else []  # copy: never mutate caller's list
         args.append(str(shy_file))
         return await self.run_command(
             "shyelab", args, working_dir, progress_callback, output_callback
