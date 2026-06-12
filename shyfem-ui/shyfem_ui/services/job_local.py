@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from collections import OrderedDict
-from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -70,9 +69,6 @@ class LocalJobQueue(JobQueue):
         # Concurrency control (semaphore created lazily)
         self._semaphore: asyncio.Semaphore | None = None
         self._running_count = 0
-
-        # Callbacks (legacy single + multi-session)
-        self._progress_callback: Callable[[str, float, str], None] | None = None
 
         # Load completed jobs from DB into memory cache
         self._load_history_from_db()
@@ -294,10 +290,6 @@ class LocalJobQueue(JobQueue):
             def progress_callback(progress: float, message: str):
                 job.progress = progress
                 job.progress_message = message
-                # Legacy single callback
-                if self._progress_callback:
-                    self._progress_callback(job_id, progress, message)
-                # Multi-session callbacks
                 self._notify_progress(job_id, progress, message)
 
             def output_callback(line: str):
@@ -446,10 +438,6 @@ class LocalJobQueue(JobQueue):
 
         return tail_file(file_path, tail=tail)
 
-    def set_progress_callback(self, callback: Callable[[str, float, str], None]) -> None:
-        """Set callback for progress updates."""
-        self._progress_callback = callback
-
     async def cleanup_old_jobs(self, days: int = 7) -> int:
         """Remove jobs older than N days."""
         cutoff = datetime.now() - timedelta(days=days)
@@ -505,7 +493,3 @@ class LocalJobQueue(JobQueue):
         """Get count of active jobs."""
         return sum(1 for j in self._jobs.values() if j.is_active)
 
-    @property
-    def running_job_count(self) -> int:
-        """Get count of currently running jobs."""
-        return self._running_count

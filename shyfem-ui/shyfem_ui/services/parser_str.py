@@ -628,14 +628,3 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "ivwadv": _p("Vertical advection of vertical momentum", "int", 0, "", "0=off, 1=on"),
     },
 }
-
-
-# Flat lookup: get param info regardless of section
-def get_param_info(param_name: str, section: str = "") -> ParamInfo | None:
-    """Look up parameter metadata, optionally restricting to a section."""
-    if section and section in COMMON_PARAMS:
-        return COMMON_PARAMS[section].get(param_name)
-    for sec_params in COMMON_PARAMS.values():
-        if param_name in sec_params:
-            return sec_params[param_name]
-    return None

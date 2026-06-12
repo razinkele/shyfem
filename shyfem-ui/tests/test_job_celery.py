@@ -196,6 +196,17 @@ class TestCelerySubmit:
         assert stored_json["metadata"]["mpi_enabled"] is True
         assert stored_json["metadata"]["mpi_np"] == 4
 
+    async def test_submit_records_dispatched_celery_task_id(self, queue, job_spec, mock_redis):
+        """The task id returned by apply_async is recorded in metadata (it
+        round-trips through Redis to the worker, which persists it). Recorded
+        from the AsyncResult — NOT assumed equal to the job id — so it stays
+        correct if the task-id scheme ever diverges."""
+        await queue.submit(job_spec)
+        last_hset_call = mock_redis.hset.call_args_list[-1]
+        stored_json = json.loads(last_hset_call[0][2])
+        # the mock_task fixture's apply_async returns MagicMock(id="celery-task-1")
+        assert stored_json["metadata"]["celery_task_id"] == "celery-task-1"
+
 
 # ---------------------------------------------------------------------------
 # TestCeleryCancel
@@ -361,58 +372,6 @@ class TestCeleryGetOutput:
         result = await queue.get_output("job-1", stream="stdout", tail=50)
         assert result == "line 1\nline 2\n"
         mock_tail.assert_called_once_with("/tmp/work/job-1.stdout", tail=50)
-
-
-# ---------------------------------------------------------------------------
-# TestCeleryHealthCheck
-# ---------------------------------------------------------------------------
-
-
-class TestCeleryHealthCheck:
-    """Tests for CeleryJobQueue.health_check()."""
-
-    async def test_health_check_all_ok(self, queue, mock_redis, mock_celery_app):
-        """health_check() with healthy Redis and workers should return populated result."""
-        inspect_mock = MagicMock()
-        inspect_mock.ping.return_value = {
-            "worker-1@host": {"ok": "pong"},
-            "worker-2@host": {"ok": "pong"},
-        }
-        inspect_mock.active.return_value = {
-            "worker-1@host": [{"id": "t1"}, {"id": "t2"}],
-            "worker-2@host": [{"id": "t3"}],
-        }
-        inspect_mock.scheduled.return_value = {"worker-1@host": []}
-        inspect_mock.reserved.return_value = {"worker-1@host": [{"id": "r1"}]}
-        mock_celery_app.control.inspect.return_value = inspect_mock
-
-        result = await queue.health_check()
-        assert result["redis_connected"] is True
-        assert len(result["workers"]) == 2
-        assert result["active_tasks"] == 3
-        assert result["reserved_tasks"] == 1
-
-    async def test_health_check_redis_down(self, queue, mock_redis):
-        """health_check() when Redis is down should return redis_connected=False."""
-        mock_redis.ping.side_effect = ConnectionError("Connection refused")
-
-        result = await queue.health_check()
-        assert result["redis_connected"] is False
-        assert result["workers"] == []
-
-    async def test_health_check_active_task_counting(self, queue, mock_redis, mock_celery_app):
-        """health_check() should correctly sum active tasks across workers."""
-        inspect_mock = MagicMock()
-        inspect_mock.ping.return_value = {"w1": {"ok": "pong"}}
-        inspect_mock.active.return_value = {"w1": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
-        inspect_mock.scheduled.return_value = None
-        inspect_mock.reserved.return_value = None
-        mock_celery_app.control.inspect.return_value = inspect_mock
-
-        result = await queue.health_check()
-        assert result["active_tasks"] == 3
-        assert result["scheduled_tasks"] == 0
-        assert result["reserved_tasks"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -777,3 +736,34 @@ class TestCeleryCompletionNotificationUserLookup:
         notif.notify_job_success.assert_called_once()
         user_dict = notif.notify_job_success.call_args[0][0]
         assert user_dict.get("email") == "carol@example.com"
+
+
+class TestCeleryTaskIdPersisted:
+    """Job.celery_task_id (previously a dead column — never written or read) is
+    now populated from the dispatched task id carried in job metadata."""
+
+    async def test_persist_writes_celery_task_id_column(self, tmp_path, monkeypatch):
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'ct.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+        from shyfem_ui.services.job_celery import _persist_job_to_db
+
+        info = _make_job_info(job_id="ct-job-1", status=JobStatus.QUEUED)
+        info.metadata["celery_task_id"] = "celery-task-xyz"
+        _persist_job_to_db(info, session_factory=dbb.db_session)
+
+        with dbb.db_session() as db:
+            row = db.query(Job).filter(Job.job_uuid == "ct-job-1").first()
+            assert row is not None
+            assert row.celery_task_id == "celery-task-xyz"
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None

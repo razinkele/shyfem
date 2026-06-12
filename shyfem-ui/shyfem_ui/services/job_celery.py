@@ -297,6 +297,7 @@ def _persist_job_to_db(
                 db.add(row)
 
             row.status = job_info.status
+            row.celery_task_id = job_info.metadata.get("celery_task_id")
             row.progress = job_info.progress
             row.progress_message = job_info.progress_message
             row.queued_at = job_info.queued_at
@@ -391,7 +392,6 @@ class CeleryJobQueue(JobQueue):
         self.redis_url = redis_url or "redis://localhost:6379/0"
         self.session_factory = session_factory
         self.notification_service = notification_service
-        self._progress_callback: Callable[[str, float, str], None] | None = None
         self._celery_app = None
         self._redis_client = None
         self._task = None
@@ -458,10 +458,15 @@ class CeleryJobQueue(JobQueue):
 
         # Dispatch to Celery worker
         self._get_celery_app()
-        self._task.apply_async(
+        result = self._task.apply_async(
             args=[job_id, self.redis_url, str(self.shyfem_dir)],
             task_id=job_id,
         )
+        # Record the ACTUAL dispatched task id (today task_id=job_id, but read
+        # it from the AsyncResult so the persisted column stays correct if the
+        # task-id scheme ever diverges). Carried via metadata: it round-trips
+        # through Redis to the worker, whose _persist_job_to_db writes the row.
+        job_info.metadata["celery_task_id"] = result.id
 
         job_info.status = JobStatus.QUEUED
         job_info.queued_at = datetime.now()
@@ -538,10 +543,6 @@ class CeleryJobQueue(JobQueue):
 
         return tail_file(file_path, tail=tail)
 
-    def set_progress_callback(self, callback: Callable[[str, float, str], None]) -> None:
-        """Set callback for progress updates."""
-        self._progress_callback = callback
-
     async def cleanup_old_jobs(self, days: int = 7) -> int:
         """Remove jobs older than N days."""
         rc = self._get_redis_client()
@@ -589,96 +590,3 @@ class CeleryJobQueue(JobQueue):
 
         return count
 
-    async def health_check(self) -> dict[str, bool | list[str] | int]:
-        """Check Redis connectivity and Celery worker health.
-
-        Returns:
-            Dict with health info:
-            - redis_connected: bool
-            - workers: list of active worker names
-            - active_tasks: total active tasks across workers
-            - scheduled_tasks: total scheduled tasks
-            - reserved_tasks: total reserved (prefetched) tasks
-        """
-        result = {
-            "redis_connected": False,
-            "workers": [],
-            "active_tasks": 0,
-            "scheduled_tasks": 0,
-            "reserved_tasks": 0,
-        }
-
-        # Check Redis
-        try:
-            rc = self._get_redis_client()
-            rc.ping()
-            result["redis_connected"] = True
-        except Exception:
-            logger.warning("Redis health check failed", exc_info=True)
-            return result
-
-        # Check Celery workers
-        try:
-            app = self._get_celery_app()
-            inspect = app.control.inspect(timeout=3)
-
-            ping = inspect.ping()
-            if ping:
-                result["workers"] = list(ping.keys())
-
-            active = inspect.active()
-            if active:
-                result["active_tasks"] = sum(len(t) for t in active.values())
-
-            scheduled = inspect.scheduled()
-            if scheduled:
-                result["scheduled_tasks"] = sum(len(t) for t in scheduled.values())
-
-            reserved = inspect.reserved()
-            if reserved:
-                result["reserved_tasks"] = sum(len(t) for t in reserved.values())
-
-        except Exception:
-            logger.debug("Failed to inspect Celery workers", exc_info=True)
-
-        return result
-
-    async def worker_info(self) -> list[dict]:
-        """Get detailed info about active Celery workers.
-
-        Returns:
-            List of dicts, one per worker:
-            - name: worker name
-            - active_tasks: number of active tasks
-            - processed: total tasks processed
-            - concurrency: worker concurrency setting
-            - pool: pool type (prefork, eventlet, etc.)
-        """
-        workers = []
-        try:
-            app = self._get_celery_app()
-            inspect = app.control.inspect(timeout=3)
-
-            stats = inspect.stats()
-            if not stats:
-                return workers
-
-            active = inspect.active() or {}
-
-            for name, stat in stats.items():
-                pool = stat.get("pool", {})
-                workers.append(
-                    {
-                        "name": name,
-                        "active_tasks": len(active.get(name, [])),
-                        "processed": stat.get("total", {}).get("shyfem_ui.execute_job", 0),
-                        "concurrency": pool.get("max-concurrency", "?"),
-                        "pool": pool.get("implementation", "unknown"),
-                        "pid": stat.get("pid", "?"),
-                    }
-                )
-
-        except Exception:
-            logger.debug("Failed to fetch worker stats", exc_info=True)
-
-        return workers

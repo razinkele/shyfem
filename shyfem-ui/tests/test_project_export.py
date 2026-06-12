@@ -3,7 +3,6 @@
 import json
 import zipfile
 from io import BytesIO
-from pathlib import Path
 
 import pytest
 
@@ -246,38 +245,3 @@ class TestCloneProject:
         wd = result["work_dir"]
         assert not list(wd.glob("*.stdout"))
         assert not list(wd.glob("*.stderr"))
-
-
-class TestZipSlipDefenses:
-
-    def _make_malicious_zip(self, tmp_path: Path, member_name: str) -> Path:
-        import zipfile
-        zip_path = tmp_path / "malicious.zip"
-        with zipfile.ZipFile(zip_path, "w") as zf:
-            zf.writestr(member_name, b"pwned")
-        return zip_path
-
-    def test_rejects_absolute_path_member(self, tmp_path):
-        from shyfem_ui.services.project_export import import_project_zip
-        zp = self._make_malicious_zip(tmp_path, "/etc/passwd")
-        with pytest.raises(ValueError, match="path traversal"):
-            import_project_zip(zp, tmp_path / "dest")
-
-    def test_rejects_dotdot_member(self, tmp_path):
-        from shyfem_ui.services.project_export import import_project_zip
-        zp = self._make_malicious_zip(tmp_path, "../escape.txt")
-        with pytest.raises(ValueError, match="path traversal"):
-            import_project_zip(zp, tmp_path / "dest")
-
-    def test_rejects_nested_dotdot_member(self, tmp_path):
-        from shyfem_ui.services.project_export import import_project_zip
-        zp = self._make_malicious_zip(tmp_path, "subdir/../../escape.txt")
-        with pytest.raises(ValueError, match="path traversal"):
-            import_project_zip(zp, tmp_path / "dest")
-
-    def test_accepts_clean_relative_member(self, tmp_path):
-        from shyfem_ui.services.project_export import import_project_zip
-        zp = self._make_malicious_zip(tmp_path, "data/file.txt")
-        # Clean member must not raise.
-        import_project_zip(zp, tmp_path / "dest")
-        assert (tmp_path / "dest" / "data" / "file.txt").exists()

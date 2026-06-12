@@ -47,53 +47,9 @@ _BOUND_FILE_PARAMS = frozenset(
     }
 )
 
-# Parameter -> file_types filter mapping
-_PARAM_TYPE_MAP = {
-    # Forcing files
-    "wind": ["forcing"],
-    "rain": ["forcing"],
-    "qflux": ["forcing"],
-    "ice": ["forcing"],
-    "surfvel": ["forcing"],
-    # Boundary + forcing
-    "boundn": ["boundary", "forcing"],
-    "tempn": ["boundary", "forcing"],
-    "saltn": ["boundary", "forcing"],
-    "conzn": ["boundary", "forcing"],
-    "vel3dn": ["boundary", "forcing"],
-    "bio2dn": ["boundary", "forcing"],
-    "sed2dn": ["boundary", "forcing"],
-    # Initial conditions
-    "zinit": ["initial_condition", "forcing"],
-    "tempin": ["initial_condition", "forcing"],
-    "saltin": ["initial_condition", "forcing"],
-    "conzin": ["initial_condition", "forcing"],
-    # Restart
-    "restrt": ["restart"],
-    # Config
-    "gotmpa": ["config"],
-    # Observations
-    "tempobs": ["forcing"],
-    "saltobs": ["forcing"],
-    "temptau": ["forcing"],
-    "salttau": ["forcing"],
-    # Other
-    "basnam": ["basin"],
-    "offlin": ["forcing"],
-}
-
-
 def is_file_param(param_name: str) -> bool:
     """Check if an STR parameter name references a file."""
     return param_name in _NAME_FILE_PARAMS or param_name in _BOUND_FILE_PARAMS
-
-
-def param_to_file_types(param_name: str) -> list[str] | None:
-    """Map an STR parameter name to file_types filter for the picker.
-
-    Returns None if the parameter is not a file parameter.
-    """
-    return _PARAM_TYPE_MAP.get(param_name)
 
 
 def build_file_choices(

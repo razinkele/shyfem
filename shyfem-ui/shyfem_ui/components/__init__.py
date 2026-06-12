@@ -8,7 +8,6 @@ Widgets:
     file_browser_ui / file_browser_server: File upload and path selection widget.
     file_picker_ui / file_picker_server: File picker dropdown with browse modal.
     grid_map_ui / grid_map_server: Interactive deck.gl mesh map with zoom, pan, hover.
-    job_status_ui / job_status_server: Job progress badges, duration, status formatting.
     log_viewer_ui / log_viewer_server: Real-time log output viewer with auto-scroll.
     str_editor_ui / str_editor_server: Rich STR parameter editor (split/form views).
     plot_widget_ui / plot_widget_server: General-purpose Plotly figure container.
@@ -27,8 +26,6 @@ __all__ = [
     "file_picker_server",
     "grid_map_ui",
     "grid_map_server",
-    "job_status_ui",
-    "job_status_server",
     "log_viewer_ui",
     "log_viewer_server",
     "str_editor_ui",
@@ -50,8 +47,6 @@ _MAPPING = {
     "file_picker_server": "file_picker",
     "grid_map_ui": "grid_map",
     "grid_map_server": "grid_map",
-    "job_status_ui": "job_status",
-    "job_status_server": "job_status",
     "log_viewer_ui": "log_viewer",
     "log_viewer_server": "log_viewer",
     "str_editor_ui": "str_editor",

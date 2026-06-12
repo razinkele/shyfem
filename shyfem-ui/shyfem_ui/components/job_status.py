@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from shiny import module, reactive, render, ui
+from shiny import ui
 
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
 
@@ -44,117 +44,6 @@ def format_datetime(dt: datetime | None) -> str:
     if dt is None:
         return "-"
     return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-
-@module.ui
-def job_status_ui():
-    """Job status component UI."""
-    return ui.div(
-        ui.output_ui("job_card"),
-        class_="job-status-component",
-    )
-
-
-@module.server
-def job_status_server(
-    input,
-    output,
-    session,
-    job_info: reactive.Value[JobInfo | None],
-):
-    """Job status component server logic.
-
-    Args:
-        job_info: Reactive value containing current job info
-    """
-
-    @render.ui
-    def job_card():
-        job = job_info.get()
-        if job is None:
-            return ui.div(
-                ui.p("No job selected", class_="text-muted text-center"),
-                class_="card-body",
-            )
-
-        # Progress bar
-        progress_pct = int(job.progress * 100)
-        progress_bar = ui.div(
-            ui.div(
-                class_="progress-bar",
-                style=f"width: {progress_pct}%",
-                role="progressbar",
-                **{
-                    "aria-valuenow": str(progress_pct),
-                    "aria-valuemin": "0",
-                    "aria-valuemax": "100",
-                },
-            ),
-            class_="progress mb-2",
-        )
-
-        # Status details
-        details = [
-            ("Status", get_status_badge(job.status)),
-            ("Tool", ui.code(job.tool_name)),
-            ("Progress", f"{progress_pct}%"),
-            ("Created", format_datetime(job.created_at)),
-        ]
-
-        if job.started_at:
-            details.append(("Started", format_datetime(job.started_at)))
-
-        if job.completed_at:
-            details.append(("Completed", format_datetime(job.completed_at)))
-            details.append(("Duration", format_duration(job.duration)))
-
-        if job.return_code is not None:
-            details.append(("Return Code", str(job.return_code)))
-
-        detail_rows = [
-            ui.div(
-                ui.span(label + ":", class_="fw-bold me-2"),
-                value if isinstance(value, ui.Tag) else ui.span(str(value)),
-                class_="d-flex justify-content-between mb-1",
-            )
-            for label, value in details
-        ]
-
-        # Error message if failed
-        error_section = None
-        if job.status == JobStatus.FAILED and job.error_message:
-            error_section = ui.div(
-                ui.strong("Error:"),
-                ui.pre(job.error_message, class_="text-danger small mt-1"),
-                class_="mt-2",
-            )
-
-        # Output files
-        files_section = None
-        if job.output_files:
-            file_items = [ui.tags.li(ui.code(f), class_="small") for f in job.output_files]
-            files_section = ui.div(
-                ui.strong("Output Files:"),
-                ui.tags.ul(*file_items, class_="mb-0"),
-                class_="mt-2",
-            )
-
-        return ui.div(
-            ui.div(
-                ui.h6(job.name, class_="card-title"),
-                progress_bar if job.is_active else None,
-                (
-                    ui.div(job.progress_message, class_="small text-muted mb-2")
-                    if job.progress_message
-                    else None
-                ),
-                *detail_rows,
-                error_section,
-                files_section,
-                class_="card-body",
-            ),
-            class_="card",
-        )
 
 
 def job_list_table(jobs: list[JobInfo]) -> ui.Tag:

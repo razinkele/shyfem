@@ -125,47 +125,6 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
     }
 
 
-def import_project_zip(zip_path: Path, project_dir: Path) -> None:
-    """Extract a ZIP archive into *project_dir* with zip-slip protection.
-
-    Unlike :func:`import_project` this function does not parse a manifest; it
-    simply extracts every member that passes the resolved-path containment
-    check into *project_dir*.
-
-    Args:
-        zip_path: Path to the ZIP file on disk.
-        project_dir: Destination directory (will be created if absent).
-
-    Raises:
-        ValueError: If any archive member would escape *project_dir*.
-    """
-    zip_path = Path(zip_path)
-    project_dir = Path(project_dir)
-    project_dir_resolved = project_dir.resolve()
-
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        for member in zf.namelist():
-            if Path(member).is_absolute():
-                raise ValueError(f"path traversal in archive (absolute): {member!r}")
-            target = (project_dir / member).resolve()
-            try:
-                target.relative_to(project_dir_resolved)
-            except ValueError as e:
-                raise ValueError(
-                    f"path traversal in archive: {member!r} resolves outside"
-                    f" {project_dir_resolved}"
-                ) from e
-
-        # All members are safe — extract
-        project_dir.mkdir(parents=True, exist_ok=True)
-        for member in zf.namelist():
-            target = project_dir / member
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if not member.endswith("/"):
-                with zf.open(member) as src, open(target, "wb") as dst:
-                    dst.write(src.read())
-
-
 def _sanitize_dirname(name: str) -> str:
     """Convert a project name to a safe directory name."""
     safe = "".join(c if c.isalnum() or c in "-_ " else "_" for c in name)
