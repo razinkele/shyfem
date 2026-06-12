@@ -91,6 +91,35 @@ def test_parse_skips_malformed_lines(tmp_path):
     assert len(rows) == 1  # only the valid line
 
 
+def test_parse_real_lgrelab_double_colon_dates(tmp_path):
+    """lgrelab (dts_format_abs_time) writes the 20-char date field as
+    "YYYY-MM-DD::HH:MM:SS" — a SINGLE whitespace token, not the two-token
+    "date time" form this parser originally assumed. The parser must accept
+    it and normalize to "YYYY-MM-DD HH:MM:SS" (what filter_by_time compares
+    and datetime.fromisoformat in the trips layer consumes).
+
+    Lines are verbatim from a real `lgrelab -lgmean` run (SHYFEM 8.1.1,
+    mar_menor lagrangian test case)."""
+    content = (
+        "2009-01-01::01:00:00      -0.77950      37.68294"
+        "     2.751     0.045     0.000     0.000\n"
+        "2009-01-01::02:00:00      -0.77848      37.68182"
+        "     2.773     0.087     0.000     0.000\n"
+    )
+    f = tmp_path / "lagrange_mean_traj.1"
+    f.write_text(content)
+
+    rows = _parse_traj_file(f)
+
+    assert len(rows) == 2
+    assert rows[0]["date"] == "2009-01-01 01:00:00"
+    assert rows[0]["lon"] == pytest.approx(-0.77950, abs=1e-5)
+    assert rows[0]["lat"] == pytest.approx(37.68294, abs=1e-5)
+    assert rows[1]["date"] == "2009-01-01 02:00:00"
+    assert rows[1]["depth"] == pytest.approx(2.773, abs=1e-3)
+    assert rows[1]["age"] == pytest.approx(0.087, abs=1e-3)
+
+
 # ---------------------------------------------------------------------------
 # filter_by_time
 # ---------------------------------------------------------------------------

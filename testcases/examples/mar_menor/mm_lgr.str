@@ -1,0 +1,50 @@
+# Mar Menor wind-driven 2D run on the GEOGRAPHIC basin + Lagrangian particles.
+#
+# Produces mm_lgr.lgr.shy with lon/lat particle positions for the SHYFEM UI
+# IBM page (LgrService runs `lgrelab -lgmean` on it -> 3 mean trajectories,
+# 96 hourly steps each over 4 days).
+#
+# 3 release polygons (release_areas.txt: south/center/north of the lagoon)
+# -> 3 particle types; lgrelab -lgmean only emits trajectories for typed
+# particles (whole-domain releases get type 0 and produce NO output).
+#
+# The geographic basin GRID/MM_geo was made from the UTM grid with:
+#   shyproj -proj UTM -param "30,-500000,0" GRID/MM_coarse.grd
+#   shypre -noopti GRID/MM_geo.grd
+# (note the NEGATIVE false easting: shyproj's shift is added as-is when
+# converting cartesian -> geographic, so UTM's 500 km easting must be
+# passed as -500000)
+#
+# Run:  PATH=/home/razinka/shyfem/bin:$PATH shyfem mm_lgr.str
+
+$title
+        Mar Menor lagrangian test (geographic)
+        mm_lgr
+        GRID/MM_geo
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-05'
+        idt = '300s'
+        idtout = '3h'
+
+        date = 20090101
+
+        ilin = 1
+        iwtype = 3     dragco = 2.5e-3
+        ireib = 5      czdef = 2.5e-3
+$end
+
+$lagrg
+        ilagr = 1
+        nbdymax = 5000
+        nbdy = 150
+        idtl = 0
+        idtlgr = '1h'
+        rwhpar = 0.5
+        lgrlin = 'release_areas.txt'
+$end
+
+$name
+        wind = 'INPUT/wind_scir.txt'
+$end
