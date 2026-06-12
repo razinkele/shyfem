@@ -11,11 +11,17 @@ class GridEntry(TypedDict):
     name: str
     grd_file: str | None
     bas_file: str | None
+    num_layers: int | None
+    min_depth: float | None
+    max_depth: float | None
 
 
 class SimulationEntry(TypedDict):
     name: str
     str_file: str | None
+    start_time: str | None
+    end_time: str | None
+    time_step: float | None
 
 
 class FileEntry(TypedDict):
@@ -102,8 +108,27 @@ def _load(db, project_id: int) -> ProjectContext | None:
         "name": project.name,
         "work_dir": project.work_dir,
         "description": project.description,
-        "grids": [{"name": g.name, "grd_file": g.grd_file, "bas_file": g.bas_file} for g in grids],
-        "simulations": [{"name": s.name, "str_file": s.str_file} for s in sims],
+        "grids": [
+            {
+                "name": g.name,
+                "grd_file": g.grd_file,
+                "bas_file": g.bas_file,
+                "num_layers": g.num_layers,
+                "min_depth": g.min_depth,
+                "max_depth": g.max_depth,
+            }
+            for g in grids
+        ],
+        "simulations": [
+            {
+                "name": s.name,
+                "str_file": s.str_file,
+                "start_time": s.start_time,
+                "end_time": s.end_time,
+                "time_step": s.time_step,
+            }
+            for s in sims
+        ],
         "files": [
             {
                 "id": f.id,

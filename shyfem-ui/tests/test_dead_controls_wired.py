@@ -100,3 +100,22 @@ def test_ibm_time_filter_is_wired():
     assert "filter_by_time(" in src, "filter_by_time is not called"
     assert "input.time_min()" in src, "time_min input is not read"
     assert "input.time_max()" in src, "time_max input is not read"
+
+
+def test_project_details_modal_is_wired():
+    """P6: Grid/Simulation metadata columns were write-only. The dashboard
+    must surface them via a per-project Details modal, and the modal's read
+    must go through the gated context loader (fail-closed in server mode).
+
+    NOTE: locks are on the bracket-access render expressions, NOT bare
+    "num_layers"/"time_step" — those substrings already exist in home.py's
+    import handler and would make the lock vacuous."""
+    from shyfem_ui.pages import home
+
+    src = inspect.getsource(home)
+    assert "_make_details_handler(" in src, "no details handler factory"
+    assert 'g["num_layers"]' in src, "grid metadata not rendered in the modal"
+    assert 's["time_step"]' in src, "simulation metadata not rendered in the modal"
+    assert "load_project_context(pid, user=" in src, (
+        "details modal must read through the gated context loader"
+    )
