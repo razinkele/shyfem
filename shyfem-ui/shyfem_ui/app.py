@@ -547,8 +547,6 @@ function shyfemNavTo(name) {
 
   // Notify Shiny
   if (window.Shiny && Shiny.setInputValue) {
-    Shiny.setInputValue('_active_nav', name, {priority: 'event'});
-
     // Tell Shiny that outputs in the newly visible page are no longer hidden.
     // Shiny's IntersectionObserver does not reliably re-fire after a parent
     // transitions from display:none to display:block via class toggle.

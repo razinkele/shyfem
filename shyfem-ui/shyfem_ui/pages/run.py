@@ -1343,6 +1343,17 @@ def run_server(
                 class_="mt-2",
             )
 
+        cancel_section = None
+        if wf.is_active:
+            cancel_section = ui.div(
+                ui.input_action_button(
+                    "wf_cancel_btn",
+                    "Cancel Workflow",
+                    class_="btn-outline-danger btn-sm",
+                ),
+                class_="mt-2",
+            )
+
         return ui.div(
             ui.h6("Active Workflow"),
             ui.div(
@@ -1366,7 +1377,41 @@ def run_server(
             ),
             *step_items,
             error_section,
+            cancel_section,
         )
+
+    @reactive.effect
+    @reactive.event(input.wf_cancel_btn)
+    async def _cancel_workflow():
+        # Same editor gate as launch: cancelling a workflow kills its running
+        # job, so it is as privileged as submitting one (fail-closed in server
+        # mode).
+        from shyfem_ui.services.access_control import editor_denied_reason
+
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+
+        wf_id = active_workflow_id.get()
+        if not wf_id:
+            return
+        try:
+            ok = await workflow_engine.cancel_workflow(wf_id)
+            if ok:
+                ui.notification_show("Workflow cancelled", type="warning", duration=4)
+            else:
+                ui.notification_show(
+                    "Workflow is no longer active", type="message", duration=4
+                )
+            # Nudge the panel to re-render with the final state
+            active_workflow_id.set(wf_id)
+        except Exception as e:
+            ui.notification_show(f"Cancel failed: {e}", type="error", duration=6)
 
     @render.ui
     def wf_history():

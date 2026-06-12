@@ -44,3 +44,27 @@ def test_physics_preview_button_is_wired():
     src = inspect.getsource(physics)
     assert "@reactive.event(input.preview_btn)" in src, "preview_btn has no handler"
     assert "StrParser.generate(" in src, "preview does not render generated STR"
+
+
+def test_workflow_cancel_is_surfaced():
+    """P5: WorkflowEngine.cancel_workflow existed with no UI path. The run page
+    must render a cancel control for an active workflow and wire it (with the
+    same editor gate as launch — cancelling is as privileged as submitting)."""
+    from shyfem_ui.pages import run
+
+    src = inspect.getsource(run)
+    assert "@reactive.event(input.wf_cancel_btn)" in src, "no cancel handler"
+    assert "cancel_workflow(" in src, "handler does not call the engine"
+    assert 'input_action_button(\n                "wf_cancel_btn"' in src or (
+        '"wf_cancel_btn"' in src
+    ), "no cancel button rendered"
+
+
+def test_active_nav_dead_signal_removed():
+    """P6: the _active_nav JS setter had no server reader — removed."""
+    from pathlib import Path
+
+    import shyfem_ui
+
+    app_src = (Path(shyfem_ui.__file__).parent / "app.py").read_text()
+    assert "_active_nav" not in app_src
