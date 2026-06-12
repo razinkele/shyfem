@@ -21,6 +21,14 @@ from shiny import App, module, reactive, render, ui
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shyfem_ui.app import _HEAD_EXTRAS, _build_sidebar_nav
+
+# deck.gl/MapLibre CDN bundle — without this the MapWidget div stays empty
+# (the real app injects it at app.py's page root; mirror that here so
+# browser tests can exercise the map canvas).
+try:
+    from shiny_deckgl import head_includes as deckgl_head_includes
+except ImportError:  # pragma: no cover
+    deckgl_head_includes = None
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
@@ -229,6 +237,9 @@ window.__test_set_active_project = function(projectDict) {
 
     app_ui = ui.page_fillable(
         ui.head_content(_HEAD_EXTRAS, _test_active_project_script),
+        # NOT inside head_content — HTMLDependency handles <head> injection
+        # itself and wrapping it would silently drop the scripts.
+        *([] if deckgl_head_includes is None else [deckgl_head_includes()]),
         topbar,
         ui.div(
             sidebar,
