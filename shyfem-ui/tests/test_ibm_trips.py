@@ -22,6 +22,7 @@ def _make_track(type_id=1, n=5):
 def test_ibm_ui_no_time_range_output():
     """IBM UI must not contain time_range_controls output."""
     from shyfem_ui.pages.ibm import ibm_ui
+
     html = str(ibm_ui("test_ibm"))
     assert "time_range_controls" not in html, "time_range_controls output should be removed"
 
@@ -29,6 +30,7 @@ def test_ibm_ui_no_time_range_output():
 def test_ibm_ui_contains_trips_animation():
     """IBM UI should contain trips animation controls."""
     from shyfem_ui.pages.ibm import ibm_ui
+
     html = str(ibm_ui("test_ibm2"))
     # trips_animation_ui generates a module with the given id
     assert "ibm_trips" in html, "trips_animation_ui module ID should be in the UI"
@@ -37,6 +39,7 @@ def test_ibm_ui_contains_trips_animation():
 def test_tracks_to_trips_basic():
     """_tracks_to_trips converts ParticleTrack list to format_trips output."""
     from shyfem_ui.pages.ibm import _tracks_to_trips
+
     tracks = [_make_track(type_id=1, n=3)]
     result = _tracks_to_trips(tracks)
     assert isinstance(result, list)
@@ -48,6 +51,7 @@ def test_tracks_to_trips_basic():
 def test_tracks_to_trips_empty():
     """Empty input produces empty output."""
     from shyfem_ui.pages.ibm import _tracks_to_trips
+
     result = _tracks_to_trips([])
     assert result == []
 
@@ -55,6 +59,7 @@ def test_tracks_to_trips_empty():
 def test_tracks_to_trips_preserves_colors():
     """Per-type colors from _TRACK_COLORS are passed through."""
     from shyfem_ui.pages.ibm import _TRACK_COLORS, _tracks_to_trips
+
     tracks = [_make_track(type_id=1, n=3), _make_track(type_id=2, n=3)]
     result = _tracks_to_trips(tracks)
     assert result[0].get("color") == _TRACK_COLORS[0]
@@ -70,6 +75,7 @@ def test_tracks_to_trips_timestamps_normalized_to_loop():
     which is exactly the bug this replaces (the old test pinned epoch
     floats as the contract)."""
     from shyfem_ui.pages.ibm import _TRIPS_LOOP_LENGTH, _tracks_to_trips
+
     tracks = [_make_track(type_id=1, n=3)]
     result = _tracks_to_trips(tracks)
     ts = result[0]["timestamps"]
@@ -102,6 +108,7 @@ def test_tracks_to_trips_normalization_is_global_across_tracks():
 def test_tracks_to_trips_zero_span_does_not_crash():
     """A single timestep (zero time span) yields all-zero timestamps."""
     from shyfem_ui.pages.ibm import _tracks_to_trips
+
     track = _make_track(type_id=1, n=1)
     result = _tracks_to_trips([track])
     assert result[0]["timestamps"] == [0.0]
@@ -123,6 +130,7 @@ def test_trips_layer_carries_animation_config():
 def test_tracks_to_trips_timestamps_monotonic():
     """Output timestamps are monotonically increasing per track."""
     from shyfem_ui.pages.ibm import _tracks_to_trips
+
     tracks = [_make_track(type_id=1, n=5)]
     result = _tracks_to_trips(tracks)
     ts = result[0]["timestamps"]
