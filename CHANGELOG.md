@@ -10,7 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **shyfem-ui versioned independently of SHYFEM** — Restored `shyfem-ui/pyproject.toml` to its own version line (`0.1.0`) and stopped `bin/bump-version.sh` from rewriting it, so a SHYFEM core release (e.g. 8.2.0) no longer bumps the Python UI package (`shyfem-ui/pyproject.toml`, `bin/bump-version.sh`)
+- **shyfem-ui versioned independently of SHYFEM** — Restored `shyfem-ui/pyproject.toml` to its own version line and stopped `bin/bump-version.sh` from rewriting it, so a SHYFEM core release (e.g. 8.2.0) no longer bumps the Python UI package (`shyfem-ui/pyproject.toml`, `bin/bump-version.sh`)
+- **shyfem-ui bumped to 0.2.0** — First independent minor of the Python UI package (`shyfem-ui/pyproject.toml`)
 
 ---
 

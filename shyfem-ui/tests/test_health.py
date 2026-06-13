@@ -72,7 +72,7 @@ class TestHealthCheckMiddleware:
         assert headers[b"content-type"] == b"application/json"
         body = json.loads(sent[1]["body"])
         assert body["status"] == "ok"
-        assert body["version"] == "0.1.0"
+        assert body["version"] == "0.2.0"
         assert body["database"] == "ok"
         assert body["active_jobs"] == 3
         assert body["db_response_time_ms"] == 1.5
