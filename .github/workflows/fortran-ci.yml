@@ -10,6 +10,9 @@ on:
       - 'testcases/**'
       - 'bin/**'
       - '.github/workflows/fortran-ci.yml'
+      # docs-only changes (markdown anywhere) don't affect the build — skip CI.
+      # Order matters: this exclusion must come after the includes (last match wins).
+      - '!**/*.md'
   pull_request:
     paths:
       - 'src/**'
@@ -18,6 +21,7 @@ on:
       - 'testcases/**'
       - 'bin/**'
       - '.github/workflows/fortran-ci.yml'
+      - '!**/*.md'
 
 jobs:
   # SHYFEM is fundamentally an MPI-NODE codebase (no maintained serial path:

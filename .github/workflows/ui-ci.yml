@@ -6,10 +6,14 @@ on:
     paths:
       - "shyfem-ui/**"
       - ".github/workflows/ui-ci.yml"
+      # docs-only changes (markdown anywhere) don't affect the build — skip CI.
+      # Order matters: this exclusion must come after the includes (last match wins).
+      - "!**/*.md"
   pull_request:
     paths:
       - "shyfem-ui/**"
       - ".github/workflows/ui-ci.yml"
+      - "!**/*.md"
 
 defaults:
   run:
