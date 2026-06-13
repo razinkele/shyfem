@@ -91,6 +91,16 @@ Operate autonomously without asking for confirmation. Specifically:
 - After fixing bugs, run the mar_menor test case to verify no regressions
 - Use `CONDA_PREFIX=""` when running pytest in the shiny environment
 
+### Reproducing CI-only UI test failures locally
+- The shyfem-ui Python tests can pass locally but fail in CI because a
+  checked-out `shyfem-ui/.env` overrides config defaults (e.g.
+  `SHYFEM_UI_USER_DATA_ROOT`, `WORK_DIR`). A fresh CI checkout has **no** `.env`.
+- To reproduce CI faithfully, run with the `.env` moved aside:
+  `mv shyfem-ui/.env /tmp/ && <pytest …>; mv /tmp/.env shyfem-ui/`
+  (this is how the issue #11 `/data` `PermissionError` was finally reproduced).
+- E2E tests only run on `pull_request` (`if: github.event_name == 'pull_request'`
+  in ui-ci.yml), so they never run on pushes to `main` — open a PR to exercise them.
+
 ### Git workflow
 - Create descriptive commits without asking (use conventional commit style)
 - Create feature branches for multi-file changes
