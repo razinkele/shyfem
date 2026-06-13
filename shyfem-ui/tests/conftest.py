@@ -348,6 +348,12 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
             "SHYFEM_UI_PORT": str(auth_app_port),
             "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
             "SHYFEM_UI_WORK_DIR": str(work_dir),
+            # MUST set explicitly: create_user does mkdir({user_data_root}/{user})
+            # and the default is /data/shyfem (not writable on CI). The local pass
+            # only worked via a checked-out .env; a fresh CI checkout has none, so
+            # create_user raised PermissionError('/data') — the real cause of the
+            # server-mode auth E2E failures (issue #11).
+            "SHYFEM_UI_USER_DATA_ROOT": str(work_dir / "user_data"),
             "SHYFEM_UI_DEPLOYMENT_MODE": "server",
             "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
             "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
@@ -409,26 +415,25 @@ def _login(page, base_url: str, username: str, password: str):
 
 
 def _wait_auth_identity_resolved(page):
-    """Block until server-mode WS identity (api/whoami -> _wsauth) has resolved.
+    """Block until server-mode WS identity has resolved **server-side**.
 
     In server mode, write handlers are fail-closed on ``current_user() is None``
-    (the Phase 3B WS-auth guards). After login the page still renders before the
-    async identity round-trip completes: the client fetches ``api/whoami``, and
-    in ONE promise both populates the topbar username (#sf-current-username) and
-    pushes the ``_wsauth`` token that the server resolves into the real user. So
-    the username becoming non-empty proves whoami returned and the token was
-    pushed; a short settle lets the server process it. Without this wait, a test
-    that creates a project/user before identity resolves has its write silently
-    denied — the root cause of the auth E2E failures on slow CI runners (they
-    pass locally only because identity resolves within the login wait). The
-    ws_identity suite already waits this way and is green in CI.
+    (the Phase 3B WS-auth guards). After login the page renders before the async
+    identity round-trip finishes: the client fetches ``api/whoami`` and pushes a
+    ``_wsauth`` token, which the server's ``_resolve_ws_identity`` effect turns
+    into the real user (a DB lookup) — only THEN is ``current_user()`` non-None
+    and writes allowed.
+
+    We wait on ``#sf_ws_identity_ready`` — a hidden output the app renders to
+    ``"ready"`` from ``current_user()`` itself — NOT the client-side
+    ``#sf-current-username`` (set the moment whoami returns, before the server
+    resolves the token). Waiting on the client signal was insufficient: writes
+    still fired before resolution on slow CI runners and were silently denied.
     """
     page.wait_for_function(
-        "() => { const el = document.getElementById('sf-current-username');"
-        " return el && el.textContent.trim().length > 0; }",
+        "() => !!document.getElementById('sf-ws-ready-marker')",
         timeout=30000,
     )
-    page.wait_for_timeout(1000)
 
 
 @pytest.fixture(scope="session")
@@ -480,6 +485,9 @@ def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
             "SHYFEM_UI_PORT": str(ws_identity_app_port),
             "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
             "SHYFEM_UI_WORK_DIR": str(work_dir),
+            # see _auth_app_server: default user_data_root=/data/shyfem isn't
+            # writable on CI; this server seeds viewer1 so it needs a writable one.
+            "SHYFEM_UI_USER_DATA_ROOT": str(work_dir / "user_data"),
             "SHYFEM_UI_DEPLOYMENT_MODE": "server",
             "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
             "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",

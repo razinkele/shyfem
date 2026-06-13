@@ -808,6 +808,27 @@ def _build_server(
         """Return the real, server-validated user in the WS scope (fallback path)."""
         return _ws_user.get()
 
+    _ws_ready_marked = {"done": False}
+
+    @reactive.effect
+    def _signal_ws_identity_ready():
+        """Insert a hidden DOM marker once server-side WS identity has resolved.
+
+        Re-runs when ``_ws_user`` changes; on resolution it injects
+        ``#sf-ws-ready-marker`` into the page via ``insert_ui`` (the same
+        session channel as notifications, which flush reliably here — unlike
+        top-level Shiny outputs, which do not). E2E waits on that marker before
+        issuing a write, so it never fires while the fail-closed guards would
+        still deny it (current_user() is None). Guarded to insert at most once.
+        """
+        if current_user() and not _ws_ready_marked["done"]:
+            _ws_ready_marked["done"] = True
+            ui.insert_ui(
+                ui.tags.div(id="sf-ws-ready-marker", style="display:none;"),
+                selector="body",
+                where="beforeend",
+            )
+
     # Initialize page servers
     home.home_server(
         "home",

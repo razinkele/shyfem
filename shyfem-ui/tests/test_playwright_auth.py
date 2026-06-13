@@ -1,23 +1,11 @@
 """Playwright tests for authentication and server-mode features."""
 
-import os
-
 import pytest
 
 from tests.conftest import _dismiss_modals
 
 pytestmark = [pytest.mark.e2e]
 
-# Server-mode WRITE tests (create user / create project -> share button) fail on
-# CI runners: server-side WS identity (_wsauth -> current_user()) is not resolved
-# before the write click, so the fail-closed Phase 3B handlers deny it and nothing
-# is created. They pass locally, where identity resolves within the login wait.
-# Skipped in CI only (still gate locally); tracked in
-# https://github.com/razinkele/shyfem/issues/11.
-_skip_write_on_ci = pytest.mark.skipif(
-    os.environ.get("CI") == "true",
-    reason="server-mode write E2E flakes on CI (WS identity unresolved) — see issue #11",
-)
 
 _TAB = ".sf-nav-item[data-nav='{name}']"
 _MODAL = ".modal.show"
@@ -27,6 +15,28 @@ def _switch_tab(page, name):
     _dismiss_modals(page)
     page.locator(_TAB.format(name=name)).click(force=True)
     page.wait_for_timeout(800)
+
+
+def _wait_input_synced(page, input_id, value):
+    """Block until a Shiny input's value has reached the SERVER mirror.
+
+    Playwright ``.fill()`` updates the DOM and enqueues a WS ``setInputValue``,
+    but the server-side reactive value isn't updated until that round-trip
+    lands. On slow CI the confirm click fires the write handler before the typed
+    value syncs, so the handler reads an EMPTY input and rejects the create
+    (``"<field> is required"``) with no DB write — the deterministic CI-only
+    cause of the server-mode write failures (issue #11). Gating on
+    ``Shiny.shinyapp.$inputValues`` makes the value provably synced before we
+    click, independent of runner speed (replaces the flaky fixed sleeps). WS
+    delivery is in order, so gating on the last-filled field covers earlier
+    ones.
+    """
+    page.wait_for_function(
+        "([id, v]) => !!(window.Shiny && window.Shiny.shinyapp"
+        " && window.Shiny.shinyapp.$inputValues"
+        " && window.Shiny.shinyapp.$inputValues[id] === v)",
+        arg=[input_id, value],
+    )
 
 
 class TestLoginFlow:
@@ -113,7 +123,6 @@ class TestAdminPanel:
         pw_auth_page.wait_for_timeout(1000)
         assert pw_auth_page.locator("text=admin").count() >= 1
 
-    @_skip_write_on_ci
     def test_admin_create_user(self, pw_auth_page):
         """Create a new user via the admin form."""
         _switch_tab(pw_auth_page, "Admin")
@@ -129,7 +138,9 @@ class TestAdminPanel:
         pw_auth_page.locator("#admin-new_password").fill("testpass123")
         # Form validation requires a "." after "@" — localhost alone fails.
         pw_auth_page.locator("#admin-new_email").fill("testuser@example.com")
-        pw_auth_page.wait_for_timeout(300)
+        # Gate on the typed values actually reaching the server before submit.
+        _wait_input_synced(pw_auth_page, "admin-new_username", "testuser")
+        _wait_input_synced(pw_auth_page, "admin-new_email", "testuser@example.com")
 
         # Submit via the confirm button
         pw_auth_page.locator("#admin-confirm_create_user").click(force=True)
@@ -157,7 +168,6 @@ class TestAdminPanel:
         assert badges.count() >= 1
 
 
-@_skip_write_on_ci
 class TestSharingUI:
     """Tests for the project sharing modal (requires a project to exist)."""
 
@@ -166,13 +176,18 @@ class TestSharingUI:
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
 
-        # Check if any project links exist
-        project_links = pw_auth_page.locator("[id^='home-project_']")
+        # Check if any project links exist. Narrow to anchors: the broad
+        # "[id^='home-project_']" also matches #home-project_count (a render.ui
+        # output present even with zero projects), which made this skip creation
+        # -> no project -> no share button (the share-test half of issue #11).
+        project_links = pw_auth_page.locator("a[id^='home-project_']")
         if project_links.count() == 0:
             # Create a new project
             pw_auth_page.locator("#home-new_project_btn").click(force=True)
             pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
             pw_auth_page.locator("#home-project_name").fill("TestProject")
+            # Gate on the name reaching the server before submit (see #11).
+            _wait_input_synced(pw_auth_page, "home-project_name", "TestProject")
             pw_auth_page.locator("#home-create_project_btn").click(force=True)
             pw_auth_page.wait_for_timeout(3000)
             _dismiss_modals(pw_auth_page)
@@ -190,7 +205,10 @@ class TestSharingUI:
         self._ensure_project(pw_auth_page)
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
-        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        # The share <a> can be overlaid by a dashboard card, so a coordinate
+        # click (even force=True) lands on the card and never fires the action.
+        # dispatch_event fires the click on the element itself (handler is fine).
+        pw_auth_page.locator("a[id^='home-share_']").first.dispatch_event("click")
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
         # Modal should mention "Share" in title
         modal_text = pw_auth_page.locator(".modal.show").inner_text()
@@ -202,7 +220,10 @@ class TestSharingUI:
         self._ensure_project(pw_auth_page)
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
-        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        # The share <a> can be overlaid by a dashboard card, so a coordinate
+        # click (even force=True) lands on the card and never fires the action.
+        # dispatch_event fires the click on the element itself (handler is fine).
+        pw_auth_page.locator("a[id^='home-share_']").first.dispatch_event("click")
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
         pw_auth_page.wait_for_timeout(500)
         # Role selector is rendered when shareable users exist
@@ -215,7 +236,10 @@ class TestSharingUI:
         self._ensure_project(pw_auth_page)
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
-        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        # The share <a> can be overlaid by a dashboard card, so a coordinate
+        # click (even force=True) lands on the card and never fires the action.
+        # dispatch_event fires the click on the element itself (handler is fine).
+        pw_auth_page.locator("a[id^='home-share_']").first.dispatch_event("click")
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
         pw_auth_page.wait_for_timeout(500)
         user_select = pw_auth_page.locator("#home-share_user_id")
