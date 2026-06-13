@@ -176,8 +176,11 @@ class TestSharingUI:
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
 
-        # Check if any project links exist
-        project_links = pw_auth_page.locator("[id^='home-project_']")
+        # Check if any project links exist. Narrow to anchors: the broad
+        # "[id^='home-project_']" also matches #home-project_count (a render.ui
+        # output present even with zero projects), which made this skip creation
+        # -> no project -> no share button (the share-test half of issue #11).
+        project_links = pw_auth_page.locator("a[id^='home-project_']")
         if project_links.count() == 0:
             # Create a new project
             pw_auth_page.locator("#home-new_project_btn").click(force=True)
@@ -202,7 +205,10 @@ class TestSharingUI:
         self._ensure_project(pw_auth_page)
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
-        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        # The share <a> can be overlaid by a dashboard card, so a coordinate
+        # click (even force=True) lands on the card and never fires the action.
+        # dispatch_event fires the click on the element itself (handler is fine).
+        pw_auth_page.locator("a[id^='home-share_']").first.dispatch_event("click")
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
         # Modal should mention "Share" in title
         modal_text = pw_auth_page.locator(".modal.show").inner_text()
@@ -214,7 +220,10 @@ class TestSharingUI:
         self._ensure_project(pw_auth_page)
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
-        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        # The share <a> can be overlaid by a dashboard card, so a coordinate
+        # click (even force=True) lands on the card and never fires the action.
+        # dispatch_event fires the click on the element itself (handler is fine).
+        pw_auth_page.locator("a[id^='home-share_']").first.dispatch_event("click")
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
         pw_auth_page.wait_for_timeout(500)
         # Role selector is rendered when shareable users exist
@@ -227,7 +236,10 @@ class TestSharingUI:
         self._ensure_project(pw_auth_page)
         _switch_tab(pw_auth_page, "Dashboard")
         pw_auth_page.wait_for_timeout(1000)
-        pw_auth_page.locator("[id^='home-share_']").first.click(force=True)
+        # The share <a> can be overlaid by a dashboard card, so a coordinate
+        # click (even force=True) lands on the card and never fires the action.
+        # dispatch_event fires the click on the element itself (handler is fine).
+        pw_auth_page.locator("a[id^='home-share_']").first.dispatch_event("click")
         pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
         pw_auth_page.wait_for_timeout(500)
         user_select = pw_auth_page.locator("#home-share_user_id")

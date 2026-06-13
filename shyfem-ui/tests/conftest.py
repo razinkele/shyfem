@@ -348,6 +348,12 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
             "SHYFEM_UI_PORT": str(auth_app_port),
             "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
             "SHYFEM_UI_WORK_DIR": str(work_dir),
+            # MUST set explicitly: create_user does mkdir({user_data_root}/{user})
+            # and the default is /data/shyfem (not writable on CI). The local pass
+            # only worked via a checked-out .env; a fresh CI checkout has none, so
+            # create_user raised PermissionError('/data') — the real cause of the
+            # server-mode auth E2E failures (issue #11).
+            "SHYFEM_UI_USER_DATA_ROOT": str(work_dir / "user_data"),
             "SHYFEM_UI_DEPLOYMENT_MODE": "server",
             "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
             "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
@@ -358,13 +364,6 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
 
     python = sys.executable
     test_app = str(Path(__file__).resolve().parent / "_test_auth_app.py")
-    # DIAGNOSTIC (issue #11): server output -> a FILE (not an undrained PIPE that
-    # could fill+block), so we can grep it for 'WS identity resolution failed'
-    # warnings / create exceptions after the run. Set SHYFEM_UI_DEBUG=true so the
-    # auth/identity warnings are emitted.
-    env["SHYFEM_UI_DEBUG"] = "true"
-    log_path = tmp_dir / "auth_app.log"
-    log_fh = open(log_path, "wb")
     proc = subprocess.Popen(
         [
             python,
@@ -379,18 +378,15 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
             str(work_dir),
         ],
         env=env,
-        stdout=log_fh,
+        stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
 
     if not _wait_for_server("127.0.0.1", auth_app_port, timeout=30):
         proc.kill()
-        log_fh.flush()
-        pytest.fail(
-            f"Auth app did not start within 30 s.\nOutput:\n"
-            f"{log_path.read_text(errors='replace')}"
-        )
+        stdout = proc.stdout.read().decode() if proc.stdout else ""
+        pytest.fail(f"Auth app did not start within 30 s.\nOutput:\n{stdout}")
 
     yield proc
 
@@ -400,34 +396,6 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
-    log_fh.close()
-    # DIAGNOSTIC: surface identity/create-relevant server log lines in CI output.
-    try:
-        _lines = log_path.read_text(errors="replace").splitlines()
-        _hits = [
-            ln
-            for ln in _lines
-            if any(
-                k in ln
-                for k in (
-                    "WS identity resolution failed",
-                    "Failed to create",
-                    "Error creating",
-                    "rolling back",
-                    "Administrator access",
-                    "required",
-                    "Traceback",
-                    "ERROR",
-                    "WARNING",
-                )
-            )
-        ]
-        print(
-            "\n[DIAG #11] AUTH SERVER LOG (filtered) "
-            f"{len(_hits)} hits:\n" + "\n".join(_hits[-60:])
-        )
-    except Exception as exc:  # pragma: no cover - diagnostic only
-        print(f"\n[DIAG #11] auth log read failed: {exc}")
 
 
 @pytest.fixture(scope="session")
@@ -468,32 +436,6 @@ def _wait_auth_identity_resolved(page):
     )
 
 
-def _install_notification_recorder(page):
-    """Record every Shiny notification's text into window.__sf_notifications.
-
-    DIAGNOSTIC (issue #11): the server-mode write handlers show a notification
-    on EVERY failure path (authz denied / 'Username is required' validation /
-    'Error creating ...' exception) but the tests ignore it. Recording them
-    lets the failure hook name the exact cause from CI in one run.
-    """
-    page.evaluate("""() => {
-        window.__sf_notifications = [];
-        new MutationObserver((muts) => {
-          for (const m of muts) for (const n of m.addedNodes) {
-            if (n.nodeType === 1 && n.classList && n.classList.contains('shiny-notification')) {
-              // .shiny-notification-content text is populated one tick AFTER
-              // insertion — defer the read or we capture ''.
-              requestAnimationFrame(() => {
-                const c = n.querySelector('.shiny-notification-content') || n;
-                const text = (c.textContent || '').replace(/\\s*×\\s*$/, '').trim();
-                window.__sf_notifications.push({text: text, cls: n.className || ''});
-              });
-            }
-          }
-        }).observe(document.body, {childList: true, subtree: true});
-        }""")
-
-
 @pytest.fixture(scope="session")
 def pw_auth_page(pw_browser, auth_live_server):
     """A Playwright page logged into the server-mode app as admin."""
@@ -502,40 +444,10 @@ def pw_auth_page(pw_browser, auth_live_server):
     page.set_default_timeout(_PW_DEFAULT_TIMEOUT_MS)
     _login(page, auth_live_server, "admin", "testpass")
     _wait_auth_identity_resolved(page)
-    _install_notification_recorder(page)
     _dismiss_modals(page)
     yield page
     page.close()
     ctx.close()
-
-
-@pytest.hookimpl(hookwrapper=True)
-def pytest_runtest_makereport(item, call):
-    """DIAGNOSTIC (issue #11): on a failed server-mode test, dump the captured
-    Shiny notifications + marker/url so CI surfaces WHY the write produced
-    nothing (validation vs authz vs exception vs stale-read)."""
-    outcome = yield
-    report = outcome.get_result()
-    if report.when != "call" or not report.failed:
-        return
-    for fname in ("pw_auth_page", "pw_viewer_page", "pw_page"):
-        page = item.funcargs.get(fname)
-        if page is None:
-            continue
-        try:
-            notes = page.evaluate("() => window.__sf_notifications || []")
-            marker = page.evaluate("() => !!document.getElementById('sf-ws-ready-marker')")
-            role = page.evaluate(
-                "() => (window.Shiny && Shiny.shinyapp && Shiny.shinyapp.$inputValues)"
-                " ? Shiny.shinyapp.$inputValues['current_user_role'] : 'n/a'"
-            )
-            print(
-                f"\n[DIAG #11] {item.nodeid}\n"
-                f"  notifications={notes}\n  marker_present={marker} role={role} url={page.url}"
-            )
-        except Exception as exc:  # pragma: no cover - diagnostic only
-            print(f"\n[DIAG #11] {item.nodeid}: capture failed: {exc}")
-        break
 
 
 # ---------------------------------------------------------------------------
@@ -573,6 +485,9 @@ def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
             "SHYFEM_UI_PORT": str(ws_identity_app_port),
             "SHYFEM_UI_DATABASE_URL": f"sqlite:///{db_path}",
             "SHYFEM_UI_WORK_DIR": str(work_dir),
+            # see _auth_app_server: default user_data_root=/data/shyfem isn't
+            # writable on CI; this server seeds viewer1 so it needs a writable one.
+            "SHYFEM_UI_USER_DATA_ROOT": str(work_dir / "user_data"),
             "SHYFEM_UI_DEPLOYMENT_MODE": "server",
             "SHYFEM_UI_DEFAULT_ADMIN_USERNAME": "admin",
             "SHYFEM_UI_DEFAULT_ADMIN_PASSWORD": "testpass",
