@@ -33,7 +33,12 @@ dependencies:
 
   # Install remaining packages via pip (pure-Python or PyPI-only)
   - pip:
-      - shiny>=1.2.0
+      # Pin to <1.6: shiny 1.6.x changed reactive/setInputValue timing such that
+      # the E2E active-project propagation tests fail (reproduced locally — the
+      # full suite passes 190/190 on 1.5.1 but 4 workflow tests fail on 1.6.3).
+      # Unpinned (>=1.2.0) silently floated CI to 1.6.3 -> red E2E. Revisit as a
+      # deliberate shiny upgrade with accompanying test fixes.
+      - shiny>=1.5,<1.6
       - shinyswatch>=0.7.0
       - shinywidgets>=0.3
       - shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git
