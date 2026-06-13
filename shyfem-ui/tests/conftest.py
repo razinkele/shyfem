@@ -481,8 +481,13 @@ def _install_notification_recorder(page):
         new MutationObserver((muts) => {
           for (const m of muts) for (const n of m.addedNodes) {
             if (n.nodeType === 1 && n.classList && n.classList.contains('shiny-notification')) {
-              const c = n.querySelector('.shiny-notification-content') || n;
-              window.__sf_notifications.push((c.textContent || '').replace(/\\s*×\\s*$/, '').trim());
+              // .shiny-notification-content text is populated one tick AFTER
+              // insertion — defer the read or we capture ''.
+              requestAnimationFrame(() => {
+                const c = n.querySelector('.shiny-notification-content') || n;
+                const text = (c.textContent || '').replace(/\\s*×\\s*$/, '').trim();
+                window.__sf_notifications.push({text: text, cls: n.className || ''});
+              });
             }
           }
         }).observe(document.body, {childList: true, subtree: true});

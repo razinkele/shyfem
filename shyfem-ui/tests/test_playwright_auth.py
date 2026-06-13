@@ -17,6 +17,28 @@ def _switch_tab(page, name):
     page.wait_for_timeout(800)
 
 
+def _wait_input_synced(page, input_id, value):
+    """Block until a Shiny input's value has reached the SERVER mirror.
+
+    Playwright ``.fill()`` updates the DOM and enqueues a WS ``setInputValue``,
+    but the server-side reactive value isn't updated until that round-trip
+    lands. On slow CI the confirm click fires the write handler before the typed
+    value syncs, so the handler reads an EMPTY input and rejects the create
+    (``"<field> is required"``) with no DB write — the deterministic CI-only
+    cause of the server-mode write failures (issue #11). Gating on
+    ``Shiny.shinyapp.$inputValues`` makes the value provably synced before we
+    click, independent of runner speed (replaces the flaky fixed sleeps). WS
+    delivery is in order, so gating on the last-filled field covers earlier
+    ones.
+    """
+    page.wait_for_function(
+        "([id, v]) => !!(window.Shiny && window.Shiny.shinyapp"
+        " && window.Shiny.shinyapp.$inputValues"
+        " && window.Shiny.shinyapp.$inputValues[id] === v)",
+        arg=[input_id, value],
+    )
+
+
 class TestLoginFlow:
     """Tests for the login page and authentication."""
 
@@ -116,7 +138,9 @@ class TestAdminPanel:
         pw_auth_page.locator("#admin-new_password").fill("testpass123")
         # Form validation requires a "." after "@" — localhost alone fails.
         pw_auth_page.locator("#admin-new_email").fill("testuser@example.com")
-        pw_auth_page.wait_for_timeout(300)
+        # Gate on the typed values actually reaching the server before submit.
+        _wait_input_synced(pw_auth_page, "admin-new_username", "testuser")
+        _wait_input_synced(pw_auth_page, "admin-new_email", "testuser@example.com")
 
         # Submit via the confirm button
         pw_auth_page.locator("#admin-confirm_create_user").click(force=True)
@@ -159,6 +183,8 @@ class TestSharingUI:
             pw_auth_page.locator("#home-new_project_btn").click(force=True)
             pw_auth_page.locator(_MODAL).wait_for(state="visible", timeout=10000)
             pw_auth_page.locator("#home-project_name").fill("TestProject")
+            # Gate on the name reaching the server before submit (see #11).
+            _wait_input_synced(pw_auth_page, "home-project_name", "TestProject")
             pw_auth_page.locator("#home-create_project_btn").click(force=True)
             pw_auth_page.wait_for_timeout(3000)
             _dismiss_modals(pw_auth_page)
