@@ -244,6 +244,9 @@ testcases/examples/mar_menor/GRID/MM_geo.bas
 testcases/examples/mar_menor/mm_lgr.hydro.shy
 testcases/examples/mar_menor/mm_lgr.inf
 testcases/examples/mar_menor/mm_lgr.lgr.shy
+# MPI domain-decomposition outputs — METIS regenerates
+# partition.<N>.{txt,node.grd,elem.grd} on every `mpirun -np N shyfem` run
+testcases/examples/mar_menor/partition.*
 
 #-----------------------------------------------
 # shyplot/util auxiliary build executables (EXESAUX in its Makefile)
