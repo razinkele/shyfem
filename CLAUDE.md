@@ -60,6 +60,17 @@ PATH=/home/razinka/shyfem/bin:/usr/bin:$PATH mpirun --oversubscribe -np 4 shyfem
 - Intel MPI's `mpi.mod` is incompatible with gfortran; prefix commands with `PATH=/usr/bin:$PATH` to use OpenMPI
 - MPI requires: `libmetis-dev`, `PARTS=METIS`, `METISDIR=/usr`
 - `-fopenmp` must be in LFLAGS unconditionally (non-conditional `omp_*` calls exist)
+- **A bare `make fem` (no `PATH=/usr/bin:$PATH`) silently links Intel MPI** because Intel's
+  `mpif90` is first in `PATH` on the dev box. Such a binary compiles and links cleanly but
+  **crashes at startup inside `MPI_Init`** — SIGFPE (signal 8) in Intel's UCX provider
+  (`ucp_proto_perf_envelope_make`), which the `-ffpe-trap=invalid` build catches; forcing
+  `I_MPI_FABRICS=shm` gets past that only to hit `PMPI_Barrier: Invalid communicator
+  (comm=0x0)` (the gfortran-vs-Intel-`mpi.mod` handle mismatch). **"Build compiles" ≠ "build
+  runs."** Always build *and* run with OpenMPI:
+  `PATH=/usr/bin:$PATH make clean && PATH=/usr/bin:$PATH make fem`. Verify the link with
+  `ldd src/shyfem/shyfem | grep mpi` → must show `libmpi.so.40` (OpenMPI), not `libmpi.so.12`
+  (Intel). OpenMPI's distinct SONAME means it resolves correctly even with Intel still in
+  `LD_LIBRARY_PATH`.
 
 ## Autonomy Rules
 
