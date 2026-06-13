@@ -213,7 +213,6 @@ MPI_EXTRA_OBJ = \
       mpi_assert.o lnkmpi.o
 
 OBJ = \
-      mod_physical_constants.o \
       openmp_admin.o \
       turbulence_util.o \
       restart.o gotm_aux.o \
@@ -381,7 +380,6 @@ cleanlinks:
 
 ../../lib/mod/arrays.mod: arrays.o
 ../../lib/mod/befor_after.mod: befor_after.o
-../../lib/mod/mod_physical_constants.mod: mod_physical_constants.o
 ../../lib/mod/box.mod: boxes.o
 ../../lib/mod/box_arrays.mod: boxes.o
 ../../lib/mod/check_unit.mod: check.o
