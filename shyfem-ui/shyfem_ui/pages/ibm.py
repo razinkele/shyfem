@@ -69,12 +69,37 @@ _TRACK_COLORS = [
 _TRIPS_LOOP_LENGTH = 600.0
 
 
-def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
+def _tracks_time_extent(tracks: list[ParticleTrack]) -> tuple[float, float] | None:
+    """Global ``(t0, span)`` in epoch seconds across every track's timestamps.
+
+    Returns ``None`` when no track carries timestamps. Used as a fixed anchor so
+    that a time-filtered *subset* of tracks animates in its true fraction of the
+    loop instead of being re-stretched to fill it — see ``_tracks_to_trips``.
+    """
+    from datetime import datetime as _dt
+
+    all_ts = [_dt.fromisoformat(ts).timestamp() for t in tracks for ts in t.times]
+    if not all_ts:
+        return None
+    t0 = min(all_ts)
+    return t0, max(all_ts) - t0
+
+
+def _tracks_to_trips(
+    tracks: list[ParticleTrack], *, extent: tuple[float, float] | None = None
+) -> list[dict]:
     """Convert ParticleTrack list to format_trips output for trips_layer.
 
     Timestamps are rescaled from epoch seconds to 0.._TRIPS_LOOP_LENGTH
     animation units, sharing one origin/scale across all tracks so their
     relative timing is preserved.
+
+    ``extent`` is an optional ``(t0, span)`` anchor in epoch seconds — typically
+    the extent of the *unfiltered* dataset (from ``_tracks_time_extent``). When
+    given, ``tracks`` is positioned against that global timeline, so a
+    time-filtered window maps to its true sub-arc of the loop instead of
+    re-stretching to fill it. When omitted, the origin/scale are derived from
+    ``tracks`` alone (legacy self-normalizing behavior).
     """
     if not tracks or format_trips is None:
         return []
@@ -92,11 +117,14 @@ def _tracks_to_trips(tracks: list[ParticleTrack]) -> list[dict]:
         epoch_ts.append([_dt.fromisoformat(ts).timestamp() for ts in t.times])
         properties.append({"color": _TRACK_COLORS[(t.type_id - 1) % len(_TRACK_COLORS)]})
 
-    all_ts = [v for track_ts in epoch_ts for v in track_ts]
-    if not all_ts:
-        return format_trips(paths, timestamps=epoch_ts, properties=properties)
-    t0 = min(all_ts)
-    span = max(all_ts) - t0
+    if extent is not None:
+        t0, span = extent
+    else:
+        all_ts = [v for track_ts in epoch_ts for v in track_ts]
+        if not all_ts:
+            return format_trips(paths, timestamps=epoch_ts, properties=properties)
+        t0 = min(all_ts)
+        span = max(all_ts) - t0
     scale = _TRIPS_LOOP_LENGTH / span if span > 0 else 0.0
     timestamps = [[(v - t0) * scale for v in track_ts] for track_ts in epoch_ts]
     return format_trips(paths, timestamps=timestamps, properties=properties)
@@ -302,6 +330,14 @@ def ibm_server(
             input.time_max().strip() or None,
         )
 
+    @reactive.calc
+    def global_time_extent() -> tuple[float, float] | None:
+        # Fixed (t0, span) over the UNFILTERED loads: the anchor that lets a
+        # time-filtered subset animate in its true sub-arc of the trips loop
+        # instead of re-stretching to fill it. Depends only on tracks_data, so
+        # it recomputes on a new load, not on every time-filter change.
+        return _tracks_time_extent(tracks_data.get())
+
     @render.ui
     def time_range_hint():
         # Without this the filter is unaimable: the user would have to guess
@@ -459,7 +495,10 @@ def ibm_server(
             )
 
         if show_trk and filtered:
-            trips_data = _tracks_to_trips(filtered)
+            # Anchor the filtered subset to the full run's timeline so the trail
+            # animation reflects *when* these particles move, not just which
+            # ones survived the filter (else every window re-stretches to 0..loop).
+            trips_data = _tracks_to_trips(filtered, extent=global_time_extent())
             if trips_data:
                 trail_len = anim.trail() if anim else 180
                 layers.append(

@@ -138,6 +138,86 @@ def test_tracks_to_trips_timestamps_monotonic():
         assert ts[i] > ts[i - 1], f"Timestamps not monotonic at index {i}"
 
 
+def test_tracks_time_extent_spans_all_tracks():
+    """_tracks_time_extent returns (t0, span) in epoch seconds over every track."""
+    from shyfem_ui.pages.ibm import _tracks_time_extent
+
+    base = datetime(2026, 1, 1, 0, 0, 0)
+    early = _make_track(type_id=1, n=3)  # hours 0,1,2
+    late = _make_track(type_id=2, n=3)
+    late.times = [base.replace(hour=h).isoformat(sep=" ") for h in (2, 3, 4)]
+
+    extent = _tracks_time_extent([early, late])
+    assert extent is not None
+    t0, span = extent
+    assert t0 == pytest.approx(base.timestamp())
+    assert span == pytest.approx(4 * 3600.0)  # full span = hours 0..4
+
+
+def test_tracks_time_extent_none_without_timestamps():
+    """No timestamps anywhere -> None (no anchor available)."""
+    from shyfem_ui.pages.ibm import _tracks_time_extent
+
+    empty = ParticleTrack(type_id=1, path=[], times=[], depths=[], ages=[])
+    assert _tracks_time_extent([]) is None
+    assert _tracks_time_extent([empty]) is None
+
+
+def test_tracks_to_trips_extent_anchors_subset_to_sub_arc():
+    """With a global extent, a time-filtered subset animates in its true
+    sub-arc of the loop rather than re-stretching to fill 0..loop.
+
+    This is the time-filter response: filtering to the second half of the run
+    must make those trails play during the second half of the loop."""
+    from shyfem_ui.pages.ibm import (
+        _TRIPS_LOOP_LENGTH,
+        _tracks_time_extent,
+        _tracks_to_trips,
+    )
+
+    base = datetime(2026, 1, 1, 0, 0, 0)
+    early = _make_track(type_id=1, n=3)  # hours 0,1,2
+    late = _make_track(type_id=2, n=3)
+    late.times = [base.replace(hour=h).isoformat(sep=" ") for h in (2, 3, 4)]
+
+    extent = _tracks_time_extent([early, late])  # global span = hours 0..4
+
+    # Filter to ONLY the late track (the run's second half).
+    result = _tracks_to_trips([late], extent=extent)
+    ts = result[0]["timestamps"]
+    # Anchored: hours 2..4 map to the [50%, 100%] arc, not 0..loop.
+    assert ts[0] == pytest.approx(_TRIPS_LOOP_LENGTH / 2)
+    assert ts[-1] == pytest.approx(_TRIPS_LOOP_LENGTH)
+    assert all(0.0 <= t <= _TRIPS_LOOP_LENGTH for t in ts)
+
+
+def test_tracks_to_trips_without_extent_restretches_subset():
+    """Regression guard: the same late-only subset WITHOUT an extent still
+    self-normalizes to fill 0..loop — legacy behavior preserved for callers
+    that pass no anchor (so existing locks stay valid)."""
+    from shyfem_ui.pages.ibm import _TRIPS_LOOP_LENGTH, _tracks_to_trips
+
+    base = datetime(2026, 1, 1, 0, 0, 0)
+    late = _make_track(type_id=2, n=3)
+    late.times = [base.replace(hour=h).isoformat(sep=" ") for h in (2, 3, 4)]
+
+    result = _tracks_to_trips([late])  # no extent
+    ts = result[0]["timestamps"]
+    assert ts[0] == pytest.approx(0.0)
+    assert ts[-1] == pytest.approx(_TRIPS_LOOP_LENGTH)
+
+
+def test_tracks_to_trips_extent_zero_span_does_not_crash():
+    """Zero global span via the extent path (all loads at one instant) collapses
+    to all-zero timestamps, mirroring the self-normalizing zero-span guard."""
+    from shyfem_ui.pages.ibm import _tracks_to_trips
+
+    track = _make_track(type_id=1, n=1)  # single timestep
+    base = datetime(2026, 1, 1, 0, 0, 0)
+    result = _tracks_to_trips([track], extent=(base.timestamp(), 0.0))
+    assert result[0]["timestamps"] == [0.0]
+
+
 def test_path_layer_not_imported():
     """ibm.py must not expose path_layer in its module namespace.
 
