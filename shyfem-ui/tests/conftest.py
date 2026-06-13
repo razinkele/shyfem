@@ -358,6 +358,13 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
 
     python = sys.executable
     test_app = str(Path(__file__).resolve().parent / "_test_auth_app.py")
+    # Redirect server output to a FILE, not a PIPE. A PIPE that is never
+    # drained fills the 64 KB OS buffer over a long session and BLOCKS the
+    # server process mid-write — which would silently hang every subsequent
+    # request (create user/project). A file never blocks. It also lets us dump
+    # the full server log for diagnosis on teardown.
+    log_path = tmp_dir / "auth_app.log"
+    log_fh = open(log_path, "wb")
     proc = subprocess.Popen(
         [
             python,
@@ -372,15 +379,18 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
             str(work_dir),
         ],
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=log_fh,
         stderr=subprocess.STDOUT,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
 
     if not _wait_for_server("127.0.0.1", auth_app_port, timeout=30):
         proc.kill()
-        stdout = proc.stdout.read().decode() if proc.stdout else ""
-        pytest.fail(f"Auth app did not start within 30 s.\nOutput:\n{stdout}")
+        log_fh.flush()
+        pytest.fail(
+            f"Auth app did not start within 30 s.\nOutput:\n"
+            f"{log_path.read_text(errors='replace')}"
+        )
 
     yield proc
 
@@ -390,6 +400,15 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+    log_fh.close()
+    # TEMP diagnostic: surface the auth server log in CI so we can see why
+    # server-mode writes fail there (denial vs exception vs hang).
+    _tail = log_path.read_text(errors="replace")[-12000:]
+    print(
+        f"\n===== AUTH APP SERVER LOG (tail) =====\n{_tail}\n"
+        f"===== END AUTH APP SERVER LOG =====",
+        file=sys.stderr,
+    )
 
 
 @pytest.fixture(scope="session")
