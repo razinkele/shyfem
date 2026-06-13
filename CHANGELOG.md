@@ -6,7 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased] — 2026-04-09
+## [Unreleased]
+
+---
+
+## [8.2.0] — 2026-06-13
 
 ### Added
 
@@ -23,6 +27,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **MPI Lagrangian tracking** — Particle transport works with domain decomposition (`lagrange_mpi.f90`)
 - **Automatic versioning** — `make bump-patch/minor/major` targets with `bin/bump-version.sh` script to update all version files and create git tags
 - **README.md** — Modern project README with badges, build matrix, feature list, and quick start guide
+- **WS trusted-identity authentication** — Per-session WS-auth token (`WSAuthToken` model + migration) minted by `/api/whoami`, pushed to the client via `setInputValue`, and resolved server-side so WebSocket-scope mutations authorize against a server-validated identity (`auth_service.py`, `app.py`, `services/ws_identity.py`)
+- **File picker across pages** — Project-aware file browser/picker wired for grid, bas, str, shy, and lgr inputs on Grid Prep, Partitioning, Physics, Simulation, Run, IBM, and Post-Process (`components/file_picker.py`, `services/file_service.py`)
+- **IBM time-range filter** — Restrict the particle view to a time window via `filter_by_time` (`ibm.py`, `services/lgr_service.py`)
+- **Project Details modal** — Surface grid/simulation metadata for a project from the dashboard (`home.py`)
+- **Job authorization & cancel** — Jobs carry `project_id`/owner; cancel is authorized for owner/admin/editor, including per-job ensemble cancel (`run.py`, `ensemble.py`)
+- **Periodic maintenance** — Scheduled pruning of old jobs and expired sessions (`app.py`)
+- **Mesh-builder input validation** — Warnings for degenerate bathymetry, bathymetry/mesh extent mismatch, and inert or contradictory triangulation constraints (`mesh_builder.py`)
+- **Selectable weutro calibration set** — Calibration parameters are configurable (was hardcoded Venice); the active set is logged and unknown sets guarded (`weutro.f90`)
+- **weutro phytoplankton settling** — Settling flux wired (TR-05); `NUTLIM` defaults to the Liebig minimum (`weutro.f90`)
 
 ### Security
 
@@ -33,6 +46,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Tool name allowlist in ShyfemWrapper** — Only known SHYFEM tools can be invoked through the UI (`shyfem_wrapper.py`)
 - **WebSocket auth bypass restricted to localhost** — Shiny Server proxy bypass only accepted from `127.0.0.1` / `::1` (`session_auth.py`)
 - **Path traversal prevention** — Username `..` rejected; `User.home_dir()` validates containment; STR file paths checked with `config.validate_path()` (`admin.py`, `user.py`, `file_service.py`)
+- **WebSocket auth-bypasses closed** — Write-path pages (home, files, run, physics, simulation, ensemble, grid_prep, partitioning, post-process, mesh_builder) now authorize against the **server-validated** WS identity instead of the unforwarded HTTP-scope user, closing fail-open guards (`app.py`, `pages/*.py`)
+- **Fail-closed on unresolved identity** — Project create/import and other mutations deny when the WS identity is unresolved in server mode (`services/access_control.py`, `home.py`)
+- **Tutorial read-only enforced centrally** — Tutorial accounts are blocked from every mutation gate via the server-validated role (`services/access_control.py`)
+- **Job ownership from WS identity** — Job owner is stamped from the WS identity, not the HTTP-scope user (OWN-1); job-access IDOR closed; share-role escalation prevented (`run.py`, `sharing_service.py`)
+- **More path-traversal guards** — `mesh_builder` save and `physics.save_file` validate the target against the project root (`mesh_builder.py`, `physics.py`)
+- **Rate-limiter & cookie hardening** — `trusted_proxies` defaults to loopback in server mode (no per-client bucket collapse); secure-cookie flag honored (`middleware/rate_limit.py`, `config.py`)
+- **Argon2 rehash on login** — Passwords are re-hashed when argon2 parameters change (`auth_service.py`)
 
 ### Fixed
 
@@ -45,6 +65,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Swallowed errors in job queue** — Job persistence failure upgraded from `debug` to `error`; DB load upgraded to `warning`; bare `pass` in progress callbacks and restart file handling replaced with `warning` logging (`job_local.py`, `job_queue.py`, `run.py`)
 - **13 pre-existing test failures resolved** — Fixed broken tests across the UI test suite
 - **shiny_deckgl API imports** — Updated for v1.9.1 API changes
+- **Fortran CI now passes** — It had never been green: moved `mod_physical_constants` to the layer compiled before `src/utils` (clean-build module ordering), built the real MPI-NODE binary in the "serial" job, and stopped a `tee` pipe from masking build failures; mar_menor exit-code expectation corrected to 0 (`src/utils/generic/`, `.github/workflows/fortran-ci.yml`, `util.sh`)
+- **IBM particle trails actually animate** — Drive the trips-layer `currentTime` and supply `_tripsAnimation`; normalize epoch timestamps to the animation scale (`ibm.py`)
+- **shiny 1.6 compatibility** — E2E tests (re)establish active-project state that 1.6's reliable `priority:'event'` reset clears; lifted the temporary `shiny<1.6` pin (`environment.yml`, `tests/test_playwright_workflows.py`)
+- **Server-mode E2E reliability** — Auth/sharing E2E fixed: writable `user_data_root` in fixtures, anchor-only project selector, `dispatch_event` for the card-overlaid share button; 30s timeout + reruns for slow CI (`tests/conftest.py`, `tests/test_playwright_auth.py`)
+- **weutro 3D correctness** — Per-layer segment flags + vertical light; removed racy OMP parallelization of bio advection; `stat=` guards on all allocations; bare `stop` → `shympi_abort_internal`; fixed-form `OPEN` continuations so EUTRO compiles (`weutro.f90`, `bio3d.f90`)
+- **mercury restart** — Stop restart-stream desync; real bit-for-bit restart (`mercury.f90`)
+- **UI data integrity & reliability** — SQLite foreign keys enforced; `mesh_builder` NaN-raster / OOM-cap / temp-dir-leak fixes; SMTP send can't block the event loop; `cleanup_old_jobs` deletes rows; `delete_user` orphans removed; `/health` returns 503 when degraded; reactive handlers dedup-guarded (`pages/*.py`, `services/*.py`)
+- **Unwired controls connected** — Preview STR + Equal Aspect wired; `mpi_default_np`/`mpirun_path` honored; `Job.celery_task_id` populated; dead code removed (unwired-UI audit P1–P6) (`pages/*.py`)
+- **lgrelab date parsing** — Parse lgrelab's actual `YYYY-MM-DD::HH:MM:SS` timestamp so real `.lgr` files load (`services/lgr_service.py`)
 
 ### Changed
 
@@ -56,6 +85,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Build: Intel `FINTEL_NOOPT` unconditional clear removed** — Preserves `-g -traceback` default (`Rules.make`)
 - **Build: Intel HIGH optimization `-O1` → `-O3`** — Matches intent of HIGH profile (`Rules.make`)
 - **Build: `lagrange_mpi.o` module dependencies added** — Missing `basin`, `connectivity`, `mod_lagrange`, `shympi` (`src/shyfem/Makefile`)
+- **shiny pinned to `>=1.6,<1.7`** — A tested range; an open float silently broke CI on 1.6.3 (`environment.yml`)
+- **`actions/checkout` v4 → v5** — Node 20 runtime is being removed from CI runners (`.github/workflows/`)
+- **Template reads routed through `WorkflowEngine.list_templates`** — Removed the uncalled `run_shyplot` wrapper (`services/workflow_engine.py`)
+- **eco coding-convention sweep** — `intent()` added across weutro/bio3d args (FC-01); GOTOs removed from the reaction kernel and reaeration (FC-03); `pi` from `mod_physical_constants` (FC-05) (`weutro.f90`, `bio3d.f90`)
+- **CLAUDE.md** — Documented the `.env`-aside trick to reproduce CI-only UI test failures locally
 
 ---
 

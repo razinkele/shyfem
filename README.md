@@ -3,7 +3,7 @@
 **System of HydrodYnamic Finite Element Modules**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-![Version](https://img.shields.io/badge/version-8.1.1-green)
+![Version](https://img.shields.io/badge/version-8.2.0-green)
 ![Fortran](https://img.shields.io/badge/Fortran-90%2F95%2B-purple)
 
 A finite element model for hydrodynamic simulation of lagoons, coastal seas, estuaries, and lakes. SHYFEM solves the oceanographic primitive equations in both 2D and 3D using an unstructured triangular mesh with a semi-implicit time-stepping algorithm.

@@ -410,9 +410,9 @@
 
 ! DOCS	START	P_version
 !
-! \newcommand{\VERSION}{8.1.1}
-! \newcommand{\version}{8\_1\_1}
-! \newcommand{\COMMIT}{2025-06-15}
+! \newcommand{\VERSION}{8.2.0}
+! \newcommand{\version}{8_2_0}
+! \newcommand{\COMMIT}{2026-06-13}
 !
 ! DOCS	END
 
@@ -420,9 +420,9 @@
 
 	logical, save		:: bshort = .false.
 
-        character*10, parameter :: version = '8.1.1'
-        character*10, parameter :: commit  = '2025-06-15'
-        character*50, parameter :: lcommit = '2025-06-15'
+        character*10, parameter :: version = '8.2.0'
+        character*10, parameter :: commit  = '2026-06-13'
+        character*50, parameter :: lcommit = '2026-06-13'
         character*17, parameter :: text    = 'SHYFEM VERSION = '
 
         character*40, parameter :: string = text//version//'  '//commit
@@ -430,7 +430,7 @@
 	character*50, parameter :: acronym =                        &
       &	    	'System of HydrodYnamic Finite Element Modules'
 	character*50, parameter :: copyright =                      &
-      &		'Copyright (C) The Shyfem Team 1985-2025'
+      &		'Copyright (C) The Shyfem Team 1985-2026'
 
 !=================================================================
 	end module shyfem_version
