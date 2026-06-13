@@ -238,6 +238,12 @@ testcases/examples/mar_menor/mm_hyd_00.inf
 testcases/examples/mar_menor/mm_hyd_long.ext
 testcases/examples/mar_menor/mm_hyd_long.hydro.shy
 testcases/examples/mar_menor/mm_hyd_long.inf
+# lagrangian (IBM) run outputs — regenerated from the committed recipe
+# (mm_lgr.str + GRID/MM_geo.grd); the .bas is compiled from the .grd
+testcases/examples/mar_menor/GRID/MM_geo.bas
+testcases/examples/mar_menor/mm_lgr.hydro.shy
+testcases/examples/mar_menor/mm_lgr.inf
+testcases/examples/mar_menor/mm_lgr.lgr.shy
 
 #-----------------------------------------------
 # shyplot/util auxiliary build executables (EXESAUX in its Makefile)
