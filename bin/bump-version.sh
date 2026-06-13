@@ -7,8 +7,10 @@
 # Updates version in:
 #   - VERSION (first line)
 #   - src/utils/shyutil/version.f90 (module parameters)
-#   - shyfem-ui/pyproject.toml (Python package)
 #   - CHANGELOG.md (moves Unreleased to dated release)
+#
+# The shyfem-ui Python package is versioned INDEPENDENTLY (shyfem-ui/pyproject.toml)
+# and is intentionally NOT touched here.
 #
 # Creates a git tag (v$NEW_VERSION) and commit unless --no-tag/--no-commit.
 
@@ -93,7 +95,6 @@ if $DRY_RUN; then
     echo "[DRY RUN] Files that would be updated:"
     echo "  - $FEMDIR/VERSION"
     echo "  - $VERSION_F90"
-    echo "  - $FEMDIR/shyfem-ui/pyproject.toml"
     echo "  - $FEMDIR/CHANGELOG.md"
     if ! $NO_TAG; then
         echo "  - Git tag: v$NEW_VERSION"
@@ -145,13 +146,7 @@ sed -i "s|\\\\newcommand{\\\\COMMIT}{[^}]*}|\\\\newcommand{\\\\COMMIT}{${TODAY_I
 
 echo "  Updated: version.f90"
 
-# --- Update pyproject.toml ---
-
-PYPROJECT="$FEMDIR/shyfem-ui/pyproject.toml"
-if [ -f "$PYPROJECT" ]; then
-    sed -i "s/^version = \"[^\"]*\"/version = \"${NEW_VERSION}\"/" "$PYPROJECT"
-    echo "  Updated: pyproject.toml"
-fi
+# NOTE: shyfem-ui/pyproject.toml is versioned independently and is NOT updated here.
 
 # --- Update CHANGELOG.md ---
 
@@ -175,10 +170,9 @@ fi
 if ! $NO_COMMIT; then
     cd "$FEMDIR"
     git add VERSION src/utils/shyutil/version.f90 CHANGELOG.md README.md
-    [ -f "$PYPROJECT" ] && git add shyfem-ui/pyproject.toml
     git commit -m "release: bump version to ${NEW_VERSION}
 
-Update VERSION, version.f90, pyproject.toml, and CHANGELOG.md."
+Update VERSION, version.f90, and CHANGELOG.md."
     echo "  Created commit"
 fi
 
