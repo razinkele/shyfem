@@ -409,26 +409,25 @@ def _login(page, base_url: str, username: str, password: str):
 
 
 def _wait_auth_identity_resolved(page):
-    """Block until server-mode WS identity (api/whoami -> _wsauth) has resolved.
+    """Block until server-mode WS identity has resolved **server-side**.
 
     In server mode, write handlers are fail-closed on ``current_user() is None``
-    (the Phase 3B WS-auth guards). After login the page still renders before the
-    async identity round-trip completes: the client fetches ``api/whoami``, and
-    in ONE promise both populates the topbar username (#sf-current-username) and
-    pushes the ``_wsauth`` token that the server resolves into the real user. So
-    the username becoming non-empty proves whoami returned and the token was
-    pushed; a short settle lets the server process it. Without this wait, a test
-    that creates a project/user before identity resolves has its write silently
-    denied — the root cause of the auth E2E failures on slow CI runners (they
-    pass locally only because identity resolves within the login wait). The
-    ws_identity suite already waits this way and is green in CI.
+    (the Phase 3B WS-auth guards). After login the page renders before the async
+    identity round-trip finishes: the client fetches ``api/whoami`` and pushes a
+    ``_wsauth`` token, which the server's ``_resolve_ws_identity`` effect turns
+    into the real user (a DB lookup) — only THEN is ``current_user()`` non-None
+    and writes allowed.
+
+    We wait on ``#sf_ws_identity_ready`` — a hidden output the app renders to
+    ``"ready"`` from ``current_user()`` itself — NOT the client-side
+    ``#sf-current-username`` (set the moment whoami returns, before the server
+    resolves the token). Waiting on the client signal was insufficient: writes
+    still fired before resolution on slow CI runners and were silently denied.
     """
     page.wait_for_function(
-        "() => { const el = document.getElementById('sf-current-username');"
-        " return el && el.textContent.trim().length > 0; }",
+        "() => !!document.getElementById('sf-ws-ready-marker')",
         timeout=30000,
     )
-    page.wait_for_timeout(1000)
 
 
 @pytest.fixture(scope="session")
