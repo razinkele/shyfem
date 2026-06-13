@@ -23,6 +23,23 @@ def _switch_tab(pw_page, name):
     pw_page.wait_for_timeout(800)
 
 
+def _activate_first_project(pw_page):
+    """(Re)activate the first project so ``active_project`` is set for this test.
+
+    The autouse ``_reset_active_project_state`` (conftest) nulls
+    ``active_project`` before EVERY test. shiny >=1.6 fires that
+    ``priority:'event'`` reset reliably (1.5 deduped the unchanged ``""`` value
+    away, so a prior test's activation happened to survive) — so a test that
+    needs an active project must re-activate it here rather than rely on a prior
+    test's activation persisting. Robust on both 1.5 and 1.6.
+    """
+    _switch_tab(pw_page, "Dashboard")
+    pw_page.wait_for_timeout(1000)
+    pw_page.locator("a[id^='home-project_']").first.click(force=True)
+    pw_page.wait_for_timeout(3000)
+    _dismiss_modals(pw_page)
+
+
 # ---------------------------------------------------------------------------
 # Group 1: Project Creation & Activation (must run first)
 # ---------------------------------------------------------------------------
@@ -70,6 +87,7 @@ class TestProjectWorkflow:
 
     def test_active_project_propagates_to_files(self, pw_page):
         """Files tab shows content (not 'No project selected') after activation."""
+        _activate_first_project(pw_page)
         _switch_tab(pw_page, "Files")
         pw_page.wait_for_timeout(2000)
         content = pw_page.locator("#files-files_content")
@@ -142,8 +160,7 @@ class TestSimulationWorkflow:
             # Scope to the navset inside the simulation page to avoid matching
             # nav-links in other pages (e.g. the main navbar).
             tab = pw_page.locator(
-                f".tab-content ~ .nothing_matches, "
-                f".nav-link:has-text('{tab_name}')"
+                f".tab-content ~ .nothing_matches, " f".nav-link:has-text('{tab_name}')"
             )
             # Use a more targeted selector: look for the tab panel nav links
             tab = pw_page.locator(f"a.nav-link:has-text('{tab_name}')").first
@@ -170,6 +187,14 @@ class TestSimulationWorkflow:
 
 class TestFilesWorkflow:
     """Test Files page with active project -- requires Group 1."""
+
+    @pytest.fixture(autouse=True)
+    def _ensure_active_project(self, pw_page):
+        # Runs after the conftest autouse reset (conftest fixtures set up first),
+        # so it re-establishes active_project that the reset nulled. Every Files
+        # test below needs an active project.
+        _activate_first_project(pw_page)
+        yield
 
     def test_files_shows_content_with_project(self, pw_page):
         """Files page shows file management UI (not empty message)."""
