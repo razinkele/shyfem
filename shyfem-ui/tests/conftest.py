@@ -92,6 +92,14 @@ def _isolate_env(tmp_path_factory):
 # ---------------------------------------------------------------------------
 
 
+# Playwright default timeout for the shared browser pages. 30s (not 15s):
+# CI runners are slow/contended — 3 session-scoped Shiny server subprocesses
+# + Chromium share ~2 cores — so element actionability and reactive re-renders
+# that take <1s locally can exceed a 15s default under load. The full suite
+# passes 190/190 locally; this margin is purely for the slower CI environment.
+_PW_DEFAULT_TIMEOUT_MS = 30000
+
+
 def _find_free_port() -> int:
     """Return a free TCP port on localhost."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -273,7 +281,7 @@ def pw_page(pw_browser, live_server):
     """
     ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
     page = ctx.new_page()
-    page.set_default_timeout(15000)
+    page.set_default_timeout(_PW_DEFAULT_TIMEOUT_MS)
     page.goto(live_server, wait_until="networkidle", timeout=30000)
     # Wait for Shiny to fully connect AND reactive outputs to render.
     # We probe `home-system_health_count` (the dashboard "Tools Ready" badge)
@@ -405,7 +413,7 @@ def pw_auth_page(pw_browser, auth_live_server):
     """A Playwright page logged into the server-mode app as admin."""
     ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
     page = ctx.new_page()
-    page.set_default_timeout(15000)
+    page.set_default_timeout(_PW_DEFAULT_TIMEOUT_MS)
     _login(page, auth_live_server, "admin", "testpass")
     _dismiss_modals(page)
     yield page
@@ -518,7 +526,7 @@ def pw_viewer_page(pw_browser, ws_identity_live_server):
     """
     ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
     page = ctx.new_page()
-    page.set_default_timeout(15000)
+    page.set_default_timeout(_PW_DEFAULT_TIMEOUT_MS)
     _login(page, ws_identity_live_server, VIEWER_USERNAME, VIEWER_PASSWORD)
     _wait_hydrated(page)
     _dismiss_modals(page)
