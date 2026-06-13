@@ -21,6 +21,14 @@ from shiny import App, module, reactive, render, ui
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from shyfem_ui.app import _HEAD_EXTRAS, _build_sidebar_nav
+
+# deck.gl/MapLibre CDN bundle — without this the MapWidget div stays empty
+# (the real app injects it at app.py's page root; mirror that here so
+# browser tests can exercise the map canvas).
+try:
+    from shiny_deckgl import head_includes as deckgl_head_includes
+except ImportError:  # pragma: no cover
+    deckgl_head_includes = None
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
@@ -46,7 +54,11 @@ from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 
 @module.server
 def _stub_run_server(
-    input, output, session, config: Config, job_queue: JobQueue = None,
+    input,
+    output,
+    session,
+    config: Config,
+    job_queue: JobQueue = None,
     active_project=None,
 ):
     """Minimal run_server that doesn't block the event loop.
@@ -138,7 +150,11 @@ def _stub_run_server(
         if not enabled:
             return ui.span()
         return ui.input_numeric(
-            "mpi_np", "Number of Processes", value=4, min=2, max=128,
+            "mpi_np",
+            "Number of Processes",
+            value=4,
+            min=2,
+            max=128,
         )
 
     @render.ui
@@ -189,12 +205,8 @@ def create_test_app(config=None):
             id="sf-page-Partitioning",
             class_="sf-page",
         ),
-        ui.div(
-            physics.physics_ui("physics"), id="sf-page-Physics", class_="sf-page"
-        ),
-        ui.div(
-            simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"
-        ),
+        ui.div(physics.physics_ui("physics"), id="sf-page-Physics", class_="sf-page"),
+        ui.div(simulation.simulation_ui("simulation"), id="sf-page-Simulation", class_="sf-page"),
         ui.div(run.run_ui("run"), id="sf-page-Run", class_="sf-page"),
         ui.div(ibm.ibm_ui("ibm"), id="sf-page-IBM", class_="sf-page"),
         ui.div(
@@ -202,9 +214,7 @@ def create_test_app(config=None):
             id="sf-page-Post-Process",
             class_="sf-page",
         ),
-        ui.div(
-            visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"
-        ),
+        ui.div(visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"),
         ui.div(compare.compare_ui("compare"), id="sf-page-Compare", class_="sf-page"),
         ui.div(ensemble.ensemble_ui("ensemble"), id="sf-page-Ensemble", class_="sf-page"),
         ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
@@ -229,6 +239,9 @@ window.__test_set_active_project = function(projectDict) {
 
     app_ui = ui.page_fillable(
         ui.head_content(_HEAD_EXTRAS, _test_active_project_script),
+        # NOT inside head_content — HTMLDependency handles <head> injection
+        # itself and wrapping it would silently drop the scripts.
+        *([] if deckgl_head_includes is None else [deckgl_head_includes()]),
         topbar,
         ui.div(
             sidebar,
@@ -252,37 +265,38 @@ window.__test_set_active_project = function(projectDict) {
             value = input._test_set_active_project()
             active_project.set(value if value else None)
 
-        home.home_server("home", config, job_queue,
-                         active_project=active_project, nav_callback=None)
-        tutorial.tutorial_server("tutorial", config,
-                                 active_project=active_project,
-                                 nav_callback=None,
-                                 tutorial_context=tutorial_context)
-        mesh_builder.mesh_builder_server("mesh_builder", config,
-                                         active_project=active_project,
-                                         tutorial_context=tutorial_context)
-        grid_prep.grid_prep_server("grid_prep", config,
-                                   active_project=active_project,
-                                   tutorial_context=tutorial_context)
-        partitioning.partitioning_server("partitioning", config,
-                                         active_project=active_project)
+        home.home_server(
+            "home", config, job_queue, active_project=active_project, nav_callback=None
+        )
+        tutorial.tutorial_server(
+            "tutorial",
+            config,
+            active_project=active_project,
+            nav_callback=None,
+            tutorial_context=tutorial_context,
+        )
+        mesh_builder.mesh_builder_server(
+            "mesh_builder", config, active_project=active_project, tutorial_context=tutorial_context
+        )
+        grid_prep.grid_prep_server(
+            "grid_prep", config, active_project=active_project, tutorial_context=tutorial_context
+        )
+        partitioning.partitioning_server("partitioning", config, active_project=active_project)
         physics.physics_server("physics", config, active_project=active_project)
-        simulation.simulation_server("simulation", config,
-                                     active_project=active_project,
-                                     tutorial_context=tutorial_context)
+        simulation.simulation_server(
+            "simulation", config, active_project=active_project, tutorial_context=tutorial_context
+        )
         ibm.ibm_server("ibm", config, active_project=active_project)
         # Use stub run_server to avoid event loop deadlock
         _stub_run_server("run", config, job_queue, active_project=active_project)
-        postprocess.postprocess_server("postprocess", config,
-                                       active_project=active_project,
-                                       tutorial_context=tutorial_context)
-        visualize.visualize_server("visualize", config,
-                                   active_project=active_project,
-                                   tutorial_context=tutorial_context)
-        compare.compare_server("compare", config, job_queue,
-                               active_project=active_project)
-        ensemble.ensemble_server("ensemble", config, job_queue,
-                                 active_project=active_project)
+        postprocess.postprocess_server(
+            "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
+        )
+        visualize.visualize_server(
+            "visualize", config, active_project=active_project, tutorial_context=tutorial_context
+        )
+        compare.compare_server("compare", config, job_queue, active_project=active_project)
+        ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
         files.files_server("files", config, active_project=active_project)
         auth_service = AuthService()
         admin.admin_server("admin", config, auth_service)
@@ -299,4 +313,5 @@ if __name__ == "__main__":
     app = create_test_app()
 
     from shiny import run_app
+
     run_app(app, host=args.host, port=args.port)
