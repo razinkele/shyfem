@@ -408,6 +408,29 @@ def _login(page, base_url: str, username: str, password: str):
     page.wait_for_timeout(2000)
 
 
+def _wait_auth_identity_resolved(page):
+    """Block until server-mode WS identity (api/whoami -> _wsauth) has resolved.
+
+    In server mode, write handlers are fail-closed on ``current_user() is None``
+    (the Phase 3B WS-auth guards). After login the page still renders before the
+    async identity round-trip completes: the client fetches ``api/whoami``, and
+    in ONE promise both populates the topbar username (#sf-current-username) and
+    pushes the ``_wsauth`` token that the server resolves into the real user. So
+    the username becoming non-empty proves whoami returned and the token was
+    pushed; a short settle lets the server process it. Without this wait, a test
+    that creates a project/user before identity resolves has its write silently
+    denied — the root cause of the auth E2E failures on slow CI runners (they
+    pass locally only because identity resolves within the login wait). The
+    ws_identity suite already waits this way and is green in CI.
+    """
+    page.wait_for_function(
+        "() => { const el = document.getElementById('sf-current-username');"
+        " return el && el.textContent.trim().length > 0; }",
+        timeout=30000,
+    )
+    page.wait_for_timeout(1000)
+
+
 @pytest.fixture(scope="session")
 def pw_auth_page(pw_browser, auth_live_server):
     """A Playwright page logged into the server-mode app as admin."""
@@ -415,6 +438,7 @@ def pw_auth_page(pw_browser, auth_live_server):
     page = ctx.new_page()
     page.set_default_timeout(_PW_DEFAULT_TIMEOUT_MS)
     _login(page, auth_live_server, "admin", "testpass")
+    _wait_auth_identity_resolved(page)
     _dismiss_modals(page)
     yield page
     page.close()
