@@ -27,7 +27,7 @@ jobs:
   serial-build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -56,7 +56,7 @@ jobs:
   fortran-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Pure static analysis (no build needed) — fast gate against
       # implicit-none regressions. Warnings are captured in the build job.
@@ -72,7 +72,7 @@ jobs:
   mpi-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
