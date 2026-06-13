@@ -32,6 +32,7 @@ INCLUDE = -I$(INCDIR)
 #--------------------------------------------- macros
 
 MOD  = \
+	mod_physical_constants.o \
 	para.o \
 
 OBJ  = \
@@ -197,6 +198,7 @@ zip:	cleanall
 ../../../lib/mod/iso8601.mod: iso8601.o
 ../../../lib/mod/list.mod: list.o
 ../../../lib/mod/mod_color.mod: color.o
+../../../lib/mod/mod_physical_constants.mod: mod_physical_constants.o
 ../../../lib/mod/mod_compatibility.mod: compatibility.o
 ../../../lib/mod/mod_connect.mod: connections.o
 ../../../lib/mod/mod_debug.mod: chk_NaN.o
@@ -213,10 +215,13 @@ zip:	cleanall
 ../../../lib/mod/scan_string.mod: convert.o
 ../../../lib/mod/shyelab_unit.mod: unitutils.o
 ../../../lib/mod/stack.mod: stack.o
+color_utils.o: ../../../lib/mod/mod_physical_constants.mod
 dates.o: ../../../lib/mod/iso8601.mod
+geometrical.o: ../../../lib/mod/mod_physical_constants.mod
 flood.o: ../../../lib/mod/mod_connect.mod \
 		../../../lib/mod/queue.mod 
 nls.o: ../../../lib/mod/para.mod
 time_util.o: ../../../lib/mod/iso8601.mod
+util.o: ../../../lib/mod/mod_physical_constants.mod
 tsfile.o: ../../../lib/mod/iso8601.mod
 

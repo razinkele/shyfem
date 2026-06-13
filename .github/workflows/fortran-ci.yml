@@ -20,19 +20,31 @@ on:
       - '.github/workflows/fortran-ci.yml'
 
 jobs:
+  # SHYFEM is fundamentally an MPI-NODE codebase (no maintained serial path:
+  # lagrange_mpi.f90 calls MPI collectives directly). This job builds the real
+  # NODE binary and runs mar_menor single-process, which is what "serial" means
+  # in practice.
   serial-build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gfortran libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
+            gfortran openmpi-bin libopenmpi-dev libmetis-dev \
+            libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
 
-      - name: Serial build
-        run: make fem
+      - name: Build (NODE) and capture warnings
+        run: |
+          set -o pipefail
+          make fem PARTS=METIS METISDIR=/usr 2>&1 | tee build.log
+          echo "=== Compiler warnings summary ==="
+          grep -c 'Warning:' build.log || echo "0 warnings"
+          echo ""
+          echo "=== Warnings in src/shyfem/ and src/utils/ ==="
+          grep 'Warning:' build.log | grep -E 'src/(shyfem|utils)/' | head -50 || echo "No warnings in core"
 
       - name: Run Mar Menor test
         run: |
@@ -44,23 +56,10 @@ jobs:
   fortran-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            gfortran libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
-
-      - name: Build and capture warnings
-        run: |
-          make fem 2>&1 | tee build.log
-          echo "=== Compiler warnings summary ==="
-          grep -c 'Warning:' build.log || echo "0 warnings"
-          echo ""
-          echo "=== Warnings in src/shyfem/ and src/utils/ ==="
-          grep 'Warning:' build.log | grep -E 'src/(shyfem|utils)/' | head -50 || echo "No warnings in core"
-
+      # Pure static analysis (no build needed) — fast gate against
+      # implicit-none regressions. Warnings are captured in the build job.
       - name: Check for implicit none gaps (subroutine-scoped)
         run: |
           # src/shyfem and src/tools are clean — block any regression.
@@ -73,7 +72,7 @@ jobs:
   mpi-build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
