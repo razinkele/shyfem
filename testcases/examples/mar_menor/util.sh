@@ -20,8 +20,8 @@ Run()
 
   status=$?
 
-  if [ $status -ne 99 ]; then	#simulation should finish with status 99
-    echo "*** error in run... status:$status  expecting:99 ...aborting"
+  if [ $status -ne 0 ]; then	#simulation should finish with status 0 (clean exit)
+    echo "*** error in run... status:$status  expecting:0 ...aborting"
     exit 77
   fi
 }
