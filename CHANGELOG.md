@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **CI skips docs-only builds** — The Fortran and UI build workflows ignore markdown-only changes via a trailing `!**/*.md` path-filter negation, so a docs/changelog PR runs only the review check (`.github/workflows/fortran-ci.yml`, `.github/workflows/ui-ci.yml`)
+
+### Documentation
+
+- **OpenMPI build/run requirement** — Documented that a bare `make fem` silently links Intel MPI (first in `PATH` on the dev box) and crashes inside `MPI_Init`; build and run with OpenMPI (`PATH=/usr/bin:$PATH`) and verify with `ldd … | grep mpi` → `libmpi.so.40` (`CLAUDE.md`)
+
+---
+
+## [shyfem-ui 0.2.0] — 2026-06-14
+
+First independently-versioned release of the Python UI package, decoupled from the SHYFEM Fortran core (which stays at 8.2.0). Tagged `shyfem-ui-v0.2.0`.
+
 ### Added
 
 - **IBM trips-layer trails respond to the time filter** — Particle trails now animate against the full run's clock, so a time-filtered window plays in its true sub-arc of the loop instead of re-stretching to fill it; closes the last deferred item of the 2026-06-08 unwired-UI audit. Verified against real lagrangian data (`pages/ibm.py` — `_tracks_to_trips` gains a global `extent` anchor via `_tracks_time_extent`/`global_time_extent`)
@@ -17,11 +31,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **shyfem-ui versioned independently of SHYFEM** — Restored `shyfem-ui/pyproject.toml` to its own version line and stopped `bin/bump-version.sh` from rewriting it, so a SHYFEM core release (e.g. 8.2.0) no longer bumps the Python UI package (`shyfem-ui/pyproject.toml`, `bin/bump-version.sh`)
 - **shyfem-ui bumped to 0.2.0** — First independent minor of the Python UI package (`shyfem-ui/pyproject.toml`)
 - **shyfem-ui `__version__` from package metadata** — `__version__` now derives from `importlib.metadata.version("shyfem-ui")`, making `pyproject.toml` the single source of truth; the `/health` test asserts against it rather than a literal (`shyfem_ui/__init__.py`, `tests/test_health.py`)
-- **CI skips docs-only builds** — The Fortran and UI build workflows ignore markdown-only changes via a trailing `!**/*.md` path-filter negation, so a docs/changelog PR runs only the review check (`.github/workflows/fortran-ci.yml`, `.github/workflows/ui-ci.yml`)
-
-### Documentation
-
-- **OpenMPI build/run requirement** — Documented that a bare `make fem` silently links Intel MPI (first in `PATH` on the dev box) and crashes inside `MPI_Init`; build and run with OpenMPI (`PATH=/usr/bin:$PATH`) and verify with `ldd … | grep mpi` → `libmpi.so.40` (`CLAUDE.md`)
 
 ---
 
