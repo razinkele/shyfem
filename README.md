@@ -3,7 +3,8 @@
 **System of HydrodYnamic Finite Element Modules**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-![Version](https://img.shields.io/badge/version-8.2.0-green)
+[![SHYFEM core](https://img.shields.io/badge/SHYFEM%20core-8.2.0-green)](https://github.com/razinkele/shyfem/releases/tag/v8.2.0)
+[![shyfem-ui](https://img.shields.io/badge/shyfem--ui-0.2.0-blue)](https://github.com/razinkele/shyfem/releases/tag/shyfem-ui-v0.2.0)
 ![Fortran](https://img.shields.io/badge/Fortran-90%2F95%2B-purple)
 
 A finite element model for hydrodynamic simulation of lagoons, coastal seas, estuaries, and lakes. SHYFEM solves the oceanographic primitive equations in both 2D and 3D using an unstructured triangular mesh with a semi-implicit time-stepping algorithm.
@@ -120,24 +121,25 @@ bin/            Executables and helper scripts
 
 ## Versioning
 
-SHYFEM uses [Semantic Versioning](https://semver.org/). The current version is defined in:
+SHYFEM uses [Semantic Versioning](https://semver.org/). The Fortran **core** and the Python **UI** are versioned **independently**.
+
+**Core** --- currently `8.2.0`, tag `v8.2.0`:
 
 - `VERSION` --- primary version record
 - `src/utils/shyutil/version.f90` --- compiled into the binary
-- `shyfem-ui/pyproject.toml` --- Python package version
-
-To bump the version:
 
 ```bash
-# Patch (8.1.1 -> 8.1.2)
-make bump-patch
-
-# Minor (8.1.1 -> 8.2.0)
-make bump-minor
-
-# Major (8.1.1 -> 9.0.0)
-make bump-major
+# Bumps VERSION + version.f90, commits, and tags vX.Y.Z (UI untouched):
+make bump-patch   # 8.2.0 -> 8.2.1
+make bump-minor   # 8.2.0 -> 8.3.0
+make bump-major   # 8.2.0 -> 9.0.0
 ```
+
+**UI** --- currently `0.2.0`, tag `shyfem-ui-v0.2.0`:
+
+- `shyfem-ui/pyproject.toml` --- single source of truth; `shyfem_ui.__version__` derives from it via package metadata
+
+The UI releases on its own cadence (not touched by `make bump-*`): edit `pyproject.toml`, run `pip install -e shyfem-ui` to refresh the metadata, then tag `shyfem-ui-vX.Y.Z`.
 
 ## Performance
 
