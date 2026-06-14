@@ -103,6 +103,12 @@ class Config(BaseSettings):
         default=50000, description="Node count threshold for recommending PETSc over SPARSKIT"
     )
 
+    # UI behavior
+    whats_new_enabled: bool = Field(
+        default=True,
+        description="Show the 'what's new' changelog modal on first visit (per browser)",
+    )
+
     # Authentication (server mode only)
     auth_enabled: bool | None = Field(
         default=None,

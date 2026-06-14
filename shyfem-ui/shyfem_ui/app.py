@@ -609,13 +609,21 @@ $(document).on('shiny:connected', function() {
     document.body.removeChild(a);
   });
 
-  // What's-new modal: report the last-seen changelog version (per browser) to
-  // the server, which decides whether to show the modal. Persist on dismiss.
-  Shiny.setInputValue('_whatsnew_seen',
-    localStorage.getItem('shyfem-whatsnew-version') || '', {priority: 'event'});
+  // What's-new modal: persist dismissals, and report the last-seen changelog
+  // version (per browser) so the server can decide whether to show the modal.
   Shiny.addCustomMessageHandler('shyfem_whatsnew_seen', function(v) {
     try { localStorage.setItem('shyfem-whatsnew-version', v); } catch (e) {}
   });
+  // Deferred: sending an input synchronously inside shiny:connected trips
+  // Shiny's session-state guard (ProtocolError "Invalid method for the current
+  // session state"), which kills the session before any output renders. Report
+  // once the session has settled (mirrors the deferred sends below).
+  setTimeout(function() {
+    if (window.Shiny && Shiny.setInputValue) {
+      Shiny.setInputValue('_whatsnew_seen',
+        localStorage.getItem('shyfem-whatsnew-version') || '', {priority: 'event'});
+    }
+  }, 500);
 
   // On connect, mark outputs in the currently active page as visible.
   // Shiny's IntersectionObserver may not detect display:block pages reliably.
@@ -787,6 +795,8 @@ def _build_server(
     @reactive.effect
     @reactive.event(input._whatsnew_seen)
     def _maybe_show_whats_new():
+        if not config.whats_new_enabled:
+            return  # disabled (e.g. in E2E, where an undismissed modal blocks tests)
         from shyfem_ui.changelog import parse_latest_release, read_repo_markdown
 
         parsed = parse_latest_release(read_repo_markdown("CHANGELOG.md"))
