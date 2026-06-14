@@ -452,7 +452,12 @@ def mesh_builder_server(
     @reactive.effect
     @reactive.event(input.wizard_step)
     def _sync_wizard_panels():
-        ui.update_navset("wizard_panels", selected=input.wizard_step())
+        # `update_navset` is the shiny>=1.6 name; older shiny (e.g. 1.4 on some
+        # deploys) only has `update_navs`. Use whichever exists so an unhandled
+        # AttributeError here can't crash the whole session (it ran in a reactive
+        # effect, which on error tears down the WebSocket → "application exited").
+        _update = getattr(ui, "update_navset", None) or ui.update_navs
+        _update("wizard_panels", selected=input.wizard_step())
 
     @render.ui
     def operation_progress():
