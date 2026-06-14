@@ -14,6 +14,7 @@ Models:
 """
 
 from shyfem_ui.models.audit_log import AuditLog
+from shyfem_ui.models.feedback import Feedback
 from shyfem_ui.models.project import Grid, Job, Project, ProjectFile, Simulation
 from shyfem_ui.models.user import AuthSession, ProjectPermission, User
 from shyfem_ui.models.workflow import Workflow, WorkflowStatus
@@ -30,4 +31,5 @@ __all__ = [
     "Workflow",
     "WorkflowStatus",
     "AuditLog",
+    "Feedback",
 ]

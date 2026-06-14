@@ -15,6 +15,7 @@ from shyfem_ui.middleware.health_check import HealthCheckMiddleware
 from shyfem_ui.middleware.rate_limit import RateLimitMiddleware
 from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current_user
 from shyfem_ui.pages import (
+    about,
     admin,
     compare,
     ensemble,
@@ -55,6 +56,7 @@ SIDEBAR_GROUPS = [
         "items": [
             {"label": "Dashboard", "icon": "bi-house", "value": "Dashboard"},
             {"label": "Tutorial", "icon": "bi-mortarboard", "value": "Tutorial"},
+            {"label": "About", "icon": "bi-info-circle", "value": "About"},
         ],
     },
     {
@@ -607,6 +609,14 @@ $(document).on('shiny:connected', function() {
     document.body.removeChild(a);
   });
 
+  // What's-new modal: report the last-seen changelog version (per browser) to
+  // the server, which decides whether to show the modal. Persist on dismiss.
+  Shiny.setInputValue('_whatsnew_seen',
+    localStorage.getItem('shyfem-whatsnew-version') || '', {priority: 'event'});
+  Shiny.addCustomMessageHandler('shyfem_whatsnew_seen', function(v) {
+    try { localStorage.setItem('shyfem-whatsnew-version', v); } catch (e) {}
+  });
+
   // On connect, mark outputs in the currently active page as visible.
   // Shiny's IntersectionObserver may not detect display:block pages reliably.
   setTimeout(function() {
@@ -686,6 +696,7 @@ def _build_ui(config: Config) -> ui.Tag:
     content_panels = ui.div(
         ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
         ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
+        ui.div(about.about_ui("about"), id="sf-page-About", class_="sf-page"),
         ui.div(
             mesh_builder.mesh_builder_ui("mesh_builder"),
             id="sf-page-Mesh-Builder",
@@ -767,6 +778,42 @@ def _build_server(
         is_dark = input._dark_mode()
         register_shyfem_template(dark=bool(is_dark))
 
+    # "What's new" modal: shown once per browser per release. The browser
+    # reports its last-seen version via input._whatsnew_seen (top-level, JS-set);
+    # the server compares against the latest CHANGELOG release and shows the
+    # modal if they differ. Dismissal persists the latest label to localStorage.
+    _whatsnew_label: reactive.Value[str | None] = reactive.value(None)
+
+    @reactive.effect
+    @reactive.event(input._whatsnew_seen)
+    def _maybe_show_whats_new():
+        from shyfem_ui.changelog import parse_latest_release, read_repo_markdown
+
+        parsed = parse_latest_release(read_repo_markdown("CHANGELOG.md"))
+        if not parsed:
+            return
+        label, section = parsed
+        if input._whatsnew_seen() == label:
+            return  # this browser has already seen the current release
+        _whatsnew_label.set(label)
+        ui.modal_show(
+            ui.modal(
+                ui.markdown(section),
+                title=f"What's new — {label}",
+                easy_close=True,
+                size="l",
+                footer=ui.input_action_button("_whatsnew_ok", "Got it", class_="btn-primary"),
+            )
+        )
+
+    @reactive.effect
+    @reactive.event(input._whatsnew_ok)
+    def _dismiss_whats_new():
+        label = _whatsnew_label.get()
+        if label:
+            session.send_custom_message("shyfem_whatsnew_seen", label)
+        ui.modal_remove()
+
     # Reactive calc for the current user's role.
     # Must live in the top-level server (no Shiny module namespace) so that
     # input.current_user_role — set by JS via Shiny.setInputValue — is reachable.
@@ -845,6 +892,7 @@ def _build_server(
         nav_callback=nav_to,
         tutorial_context=tutorial_context,
     )
+    about.about_server("about", config, current_user=current_user)
     mesh_builder.mesh_builder_server(
         "mesh_builder",
         config,
