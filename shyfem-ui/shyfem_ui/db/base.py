@@ -84,7 +84,7 @@ def init_db() -> None:
     # Import models to register them with Base (every table, so the create_all
     # fallback is complete — audit_log was previously omitted, leaving
     # audit_logs absent on fresh/packaged installs without Alembic).
-    from shyfem_ui.models import audit_log, project, user, workflow  # noqa: F401
+    from shyfem_ui.models import audit_log, feedback, project, user, workflow  # noqa: F401
 
     engine = get_engine()
 

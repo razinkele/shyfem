@@ -70,6 +70,11 @@ def _isolate_env(tmp_path_factory):
     os.environ["SHYFEM_UI_DEPLOYMENT_MODE"] = "local"
     _db = tmp_path_factory.mktemp("global_db") / "session.db"
     os.environ["SHYFEM_UI_DATABASE_URL"] = f"sqlite:///{_db}"
+    # Disable the "what's new" modal in tests: a fresh Playwright browser has
+    # empty localStorage, so the modal would appear and its backdrop blocks the
+    # shared E2E session page (mass timeouts). Subprocess app fixtures inherit
+    # os.environ, so this covers the local/auth/ws-identity E2E apps too.
+    os.environ["SHYFEM_UI_WHATS_NEW_ENABLED"] = "false"
 
     # Drop any cached engine/config so the temp URL takes effect from first use.
     import shyfem_ui.config as _cfg
@@ -81,6 +86,7 @@ def _isolate_env(tmp_path_factory):
     yield
     os.environ.pop("SHYFEM_UI_DEPLOYMENT_MODE", None)
     os.environ.pop("SHYFEM_UI_DATABASE_URL", None)
+    os.environ.pop("SHYFEM_UI_WHATS_NEW_ENABLED", None)
     os.environ.update(saved)
     _cfg._config = None
     _db_base._engine = None

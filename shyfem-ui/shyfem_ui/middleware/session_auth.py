@@ -519,6 +519,7 @@ class SessionAuthMiddleware:
         root_path="",
         use_secure_cookies=False,
         audit_service=None,
+        feedback_service=None,
     ):
         self.app = app
         self.auth_service = auth_service
@@ -527,6 +528,7 @@ class SessionAuthMiddleware:
         self.root_path = root_path.rstrip("/")
         self.use_secure_cookies = use_secure_cookies
         self.audit_service = audit_service
+        self.feedback_service = feedback_service
 
     async def __call__(self, scope, receive, send):
         # ----------------------------------------------------------
@@ -581,6 +583,18 @@ class SessionAuthMiddleware:
             if path == "/api/whoami" and method == "GET":
                 await self._handle_whoami(session_token, send)
                 return
+
+            # /api/feedback -- anonymous POST (submit), admin-only GET (list).
+            # MUST stay above the auth gate below so anonymous POST is not
+            # redirected to /login. Per-IP rate limiting is supplied by the
+            # outer RateLimitMiddleware.
+            if path == "/api/feedback":
+                if method == "POST":
+                    await self._handle_feedback_post(scope, receive, send)
+                    return
+                if method == "GET":
+                    await self._handle_feedback_get(scope, session_token, send)
+                    return
 
             # All other paths: require valid session
             user = None
@@ -841,6 +855,113 @@ class SessionAuthMiddleware:
             }
         )
         await send({"type": "http.response.body", "body": body})
+
+    @staticmethod
+    async def _send_json(send, status: int, obj: dict):
+        """Send a JSON response with the given status code."""
+        import json
+
+        body = json.dumps(obj).encode()
+        await send(
+            {
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(body)).encode()),
+                ],
+            }
+        )
+        await send({"type": "http.response.body", "body": body})
+
+    def _get_feedback_service(self):
+        """Return the injected FeedbackService, or build a default one."""
+        if self.feedback_service is not None:
+            return self.feedback_service
+        from shyfem_ui.services.feedback_service import FeedbackService
+
+        return FeedbackService()
+
+    async def _handle_feedback_get(self, scope, session_token, send):
+        """Admin-only: return feedback rows as JSON ({"data": [...], "total": N})."""
+        from urllib.parse import parse_qs
+
+        user = self.auth_service.validate_session(session_token) if session_token else None
+        if user is None or user.get("role") != "admin":
+            await self._send_json(send, 403, {"error": "admin access required"})
+            return
+
+        qs = parse_qs(scope.get("query_string", b"").decode("utf-8", errors="replace"))
+        status = (qs.get("status", [None])[0]) or None
+        ftype = (qs.get("type", [None])[0]) or None
+        try:
+            limit = int(qs.get("limit", ["100"])[0])
+            offset = int(qs.get("offset", ["0"])[0])
+        except (ValueError, TypeError):
+            limit, offset = 100, 0
+
+        svc = self._get_feedback_service()
+        data = svc.list(status=status, feedback_type=ftype, limit=limit, offset=offset)
+        total = svc.count(status=status, feedback_type=ftype)
+        await self._send_json(send, 200, {"data": data, "total": total})
+
+    # Cap the accumulated request body for the anonymous feedback endpoint.
+    # Comfortably above the largest valid payload (8000-char description + the
+    # other fields) but bounds memory for a deliberately oversized chunked POST,
+    # which the field-length caps in FeedbackService cannot prevent (they run
+    # only after the whole body is in memory). The endpoint is anonymous and, in
+    # local mode, not request-count rate-limited, so the cap is the only guard.
+    _MAX_FEEDBACK_BODY = 64 * 1024
+
+    async def _handle_feedback_post(self, scope, receive, send):
+        """Anonymous: store a submitted bug report / suggestion."""
+        import json
+
+        body_bytes = b""
+        while True:
+            message = await receive()
+            body_bytes += message.get("body", b"")
+            if len(body_bytes) > self._MAX_FEEDBACK_BODY:
+                await self._send_json(send, 413, {"error": "payload too large"})
+                return
+            if not message.get("more_body", False):
+                break
+
+        try:
+            payload = json.loads(body_bytes.decode("utf-8")) if body_bytes else {}
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            await self._send_json(send, 400, {"error": "invalid JSON"})
+            return
+        if not isinstance(payload, dict):
+            await self._send_json(send, 400, {"error": "invalid JSON"})
+            return
+
+        svc = self._get_feedback_service()
+        try:
+            rec = svc.create(
+                feedback_type=payload.get("type"),
+                title=payload.get("title"),
+                description=payload.get("description"),
+                severity=payload.get("severity"),
+                contact_email=payload.get("contact_email"),
+                page=payload.get("page"),
+                app_version=payload.get("app_version"),
+            )
+        except ValueError as e:
+            await self._send_json(send, 400, {"error": str(e)})
+            return
+        except Exception:
+            logger.exception("Failed to store feedback")
+            await self._send_json(send, 500, {"error": "internal error"})
+            return
+
+        self._audit(
+            "anonymous",
+            "feedback_submit",
+            detail=f"{rec['feedback_type']}: {rec['title']}",
+            ip_address=self._client_ip(scope),
+        )
+        await self._send_json(send, 201, {"id": rec["id"], "status": rec["status"]})
 
     @staticmethod
     async def _redirect(send, location: str, status: int = 302):

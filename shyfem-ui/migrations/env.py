@@ -23,6 +23,7 @@ if config.config_file_name is not None:
 # propose dropping its tables (see audit_logs incident, 2026-05-28).
 from shyfem_ui.db.base import Base
 from shyfem_ui.models import audit_log  # noqa: F401
+from shyfem_ui.models import feedback  # noqa: F401
 from shyfem_ui.models import project  # noqa: F401
 from shyfem_ui.models import user  # noqa: F401
 from shyfem_ui.models import workflow  # noqa: F401
