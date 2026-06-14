@@ -18,6 +18,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [shyfem-ui 0.3.0] — 2026-06-14
+
+In-app documentation and a feedback channel. Tagged `shyfem-ui-v0.3.0`.
+
+### Added
+
+- **In-app documentation** — New "About" page (nav item) with tabs rendering `README.md` and `CHANGELOG.md` via `ui.markdown`, plus a dismissable "what's new" modal that shows the latest release notes once per browser (`pages/about.py`, `changelog.py`, `app.py`)
+- **Feedback system** — Submit bug reports / suggestions (type, title, description, optional severity and contact email, auto-captured page + app version) from the About page. Stored in a new `feedbacks` table; an anonymous, rate-limited `POST /api/feedback` plus an admin-only `GET /api/feedback` for triage (`models/feedback.py`, `services/feedback_service.py`, `middleware/session_auth.py`, Alembic migration `ccde037a5855`)
+
+### Fixed
+
+- **Connect-time input send no longer breaks the session** — Deferred the what's-new version report so `Shiny.setInputValue` is not called synchronously in `shiny:connected`, which tripped a Shiny `ProtocolError` that tore down the WebSocket session before any output rendered (`app.py`)
+
+---
+
 ## [shyfem-ui 0.2.0] — 2026-06-14
 
 First independently-versioned release of the Python UI package, decoupled from the SHYFEM Fortran core (which stays at 8.2.0). Tagged `shyfem-ui-v0.2.0`.
