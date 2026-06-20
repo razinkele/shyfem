@@ -345,8 +345,13 @@
         dy2=y3-y2
  
         norm = sqrt( (dx1*dx1+dy1*dy1) * (dx2*dx2+dy2*dy2) )
+        if( norm .le. null ) then       ! coincident points -> angle undefined
+          angle = 0.
+          return
+        end if
         aux = ( dx1*dx2 + dy1*dy2 ) / norm
- 
+        aux = max(-1.d0,min(1.d0,aux))  ! clamp rounding error before acos (NaN guard)
+
         ang = acos( aux ) * rad
         if( dx1*dy2 - dy1*dx2 .lt. null ) ang = full - ang
 
