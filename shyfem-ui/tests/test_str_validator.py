@@ -1,6 +1,5 @@
 """Tests for STR cross-parameter validation."""
 
-
 from shyfem_ui.services.str_validator import validate_str
 
 
@@ -42,12 +41,25 @@ class TestDependencyValidation:
         assert any("gotm" in m.message.lower() for m in warnings)
 
     def test_ibarcl_prognostic_needs_ts(self):
-        msgs = validate_str({"para": {"itanf": "0", "itend": "86400", "idt": "300", "ibarcl": 1, "itemp": 0, "isalt": 0}})
+        msgs = validate_str(
+            {
+                "para": {
+                    "itanf": "0",
+                    "itend": "86400",
+                    "idt": "300",
+                    "ibarcl": 1,
+                    "itemp": 0,
+                    "isalt": 0,
+                }
+            }
+        )
         warnings = [m for m in msgs if m.level == "warning"]
         assert any("temp" in m.message.lower() or "salt" in m.message.lower() for m in warnings)
 
     def test_iheat_nonzero_needs_ibarcl(self):
-        msgs = validate_str({"para": {"itanf": "0", "itend": "86400", "idt": "300", "iheat": 3, "ibarcl": 0}})
+        msgs = validate_str(
+            {"para": {"itanf": "0", "itend": "86400", "idt": "300", "iheat": 3, "ibarcl": 0}}
+        )
         warnings = [m for m in msgs if m.level == "warning"]
         assert any("ibarcl" in m.message.lower() or "barcl" in m.message.lower() for m in warnings)
 
@@ -62,18 +74,22 @@ class TestDependencyValidation:
         assert any("lagrg" in m.message.lower() for m in warnings)
 
     def test_no_false_positive_with_valid_gotm(self):
-        msgs = validate_str({
-            "para": {"itanf": "0", "itend": "86400", "idt": "300", "iturb": 1},
-            "name": {"gotmpa": "gotmturb.nml"},
-        })
+        msgs = validate_str(
+            {
+                "para": {"itanf": "0", "itend": "86400", "idt": "300", "iturb": 1},
+                "name": {"gotmpa": "gotmturb.nml"},
+            }
+        )
         warnings = [m for m in msgs if m.level == "warning"]
         assert not any("gotm" in m.message.lower() for m in warnings)
 
     def test_no_false_positive_with_valid_sedtr(self):
-        msgs = validate_str({
-            "para": {"itanf": "0", "itend": "86400", "idt": "300", "issedi": 1},
-            "sedtr": {"isedi": 1},
-        })
+        msgs = validate_str(
+            {
+                "para": {"itanf": "0", "itend": "86400", "idt": "300", "issedi": 1},
+                "sedtr": {"isedi": 1},
+            }
+        )
         warnings = [m for m in msgs if m.level == "warning"]
         assert not any("sedtr" in m.message.lower() for m in warnings)
 
@@ -91,7 +107,11 @@ class TestRangeValidation:
     def test_iturb_valid_values(self):
         for val in (0, 1, 2, 3):
             msgs = validate_str({"para": {**self._VALID, "iturb": val}})
-            errors = [m for m in msgs if m.level == "error" and "iturb" in m.message and "invalid" in m.message]
+            errors = [
+                m
+                for m in msgs
+                if m.level == "error" and "iturb" in m.message and "invalid" in m.message
+            ]
             assert len(errors) == 0, f"iturb={val} should be valid"
 
     def test_ibarcl_invalid_value(self):
@@ -121,40 +141,50 @@ class TestLevelSystemValidation:
     _VALID = {"itanf": "0", "itend": "86400", "idt": "300"}
 
     def test_dzreg_with_explicit_levels_is_error(self):
-        msgs = validate_str({
-            "para": {**self._VALID, "dzreg": 5.0},
-            "levels": {"_standalone": [1, 2, 5, 10]},
-        })
+        msgs = validate_str(
+            {
+                "para": {**self._VALID, "dzreg": 5.0},
+                "levels": {"_standalone": [1, 2, 5, 10]},
+            }
+        )
         errors = [m for m in msgs if m.level == "error"]
         assert any("dzreg" in m.message for m in errors)
 
     def test_nsigma_with_levels_needs_hsigma(self):
-        msgs = validate_str({
-            "para": {**self._VALID, "nsigma": 5},
-            "levels": {"_standalone": [10, 20, 50]},
-        })
+        msgs = validate_str(
+            {
+                "para": {**self._VALID, "nsigma": 5},
+                "levels": {"_standalone": [10, 20, 50]},
+            }
+        )
         errors = [m for m in msgs if m.level == "error"]
         assert any("hsigma" in m.message for m in errors)
 
     def test_nsigma_with_levels_and_hsigma_ok(self):
-        msgs = validate_str({
-            "para": {**self._VALID, "nsigma": 5, "hsigma": 10.0},
-            "levels": {"_standalone": [10, 20, 50]},
-        })
+        msgs = validate_str(
+            {
+                "para": {**self._VALID, "nsigma": 5, "hsigma": 10.0},
+                "levels": {"_standalone": [10, 20, 50]},
+            }
+        )
         errors = [m for m in msgs if m.level == "error" and "hsigma" in m.message]
         assert len(errors) == 0
 
     def test_hybrid_nsigma_dzreg_without_hsigma(self):
-        msgs = validate_str({
-            "para": {**self._VALID, "nsigma": 5, "dzreg": 2.0},
-        })
+        msgs = validate_str(
+            {
+                "para": {**self._VALID, "nsigma": 5, "dzreg": 2.0},
+            }
+        )
         errors = [m for m in msgs if m.level == "error"]
         assert any("hsigma" in m.message for m in errors)
 
     def test_hybrid_nsigma_dzreg_with_hsigma_ok(self):
-        msgs = validate_str({
-            "para": {**self._VALID, "nsigma": 5, "dzreg": 2.0, "hsigma": 10.0},
-        })
+        msgs = validate_str(
+            {
+                "para": {**self._VALID, "nsigma": 5, "dzreg": 2.0, "hsigma": 10.0},
+            }
+        )
         errors = [m for m in msgs if m.level == "error" and "hsigma" in m.message]
         assert len(errors) == 0
 
@@ -175,10 +205,12 @@ class TestGotmTurbulenceWarning:
         assert any("gotm" in m.message.lower() or "gradient" in m.message.lower() for m in warnings)
 
     def test_gotm_with_temp_no_warning(self):
-        msgs = validate_str({
-            "para": {**self._VALID, "iturb": 1, "itemp": 1, "isalt": 0},
-            "name": {"gotmpa": "gotmturb.nml"},
-        })
+        msgs = validate_str(
+            {
+                "para": {**self._VALID, "iturb": 1, "itemp": 1, "isalt": 0},
+                "name": {"gotmpa": "gotmturb.nml"},
+            }
+        )
         warnings = [m for m in msgs if m.level == "warning" and "gradient" in m.message.lower()]
         assert len(warnings) == 0
 
@@ -228,3 +260,25 @@ class TestOutputConsistency:
         msgs = validate_str({"para": {**self._VALID, "idtcon": 3600, "ibarcl": 1}})
         infos = [m for m in msgs if m.level == "info" and "idtcon" in m.message]
         assert len(infos) == 0
+
+
+class TestQuotedTimingValues:
+    """apply_quick_settings writes timing params QUOTED (e.g. "'0'"); the
+    numeric sanity checks must still apply after stripping the quotes (M7)."""
+
+    def test_quoted_zero_idt_is_caught(self):
+        msgs = validate_str({"para": {"itend": "'100'", "idt": "'0'"}})
+        assert any(m.param == "idt" and "> 0" in m.message for m in msgs)
+
+    def test_quoted_negative_idt_is_caught(self):
+        msgs = validate_str({"para": {"itend": "'100'", "idt": "'-5'"}})
+        assert any(m.param == "idt" and "> 0" in m.message for m in msgs)
+
+    def test_quoted_itend_le_itanf_is_caught(self):
+        msgs = validate_str({"para": {"itanf": "'20'", "itend": "'10'", "idt": "'1'"}})
+        assert any(m.param == "itend" and "itanf" in m.message for m in msgs)
+
+    def test_quoted_valid_timing_has_no_timing_error(self):
+        msgs = validate_str({"para": {"itanf": "'0'", "itend": "'100'", "idt": "'300'"}})
+        timing_errs = [m for m in msgs if m.param in ("idt", "itend") and m.level == "error"]
+        assert timing_errs == []

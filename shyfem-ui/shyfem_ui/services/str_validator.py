@@ -22,11 +22,16 @@ def _get(sections: dict, section: str, param: str, default: Any = None) -> Any:
     if val is None:
         return default
     if isinstance(val, str):
+        # STR values are often quoted (apply_quick_settings writes e.g. "'0'");
+        # strip surrounding matching quotes so numeric sanity checks still apply.
+        s = val.strip()
+        if len(s) >= 2 and s[0] in "'\"" and s[-1] == s[0]:
+            s = s[1:-1]
         try:
-            return int(val)
+            return int(s)
         except ValueError:
             try:
-                return float(val)
+                return float(s)
             except ValueError:
                 return val
     return val

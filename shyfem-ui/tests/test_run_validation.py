@@ -1,6 +1,5 @@
 """Tests for pre-flight file validation on the Run page."""
 
-
 import pytest
 
 
@@ -12,12 +11,15 @@ def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv("SHYFEM_UI_WORK_DIR", str(tmp_path / "projects"))
 
     import shyfem_ui.config as cfg_mod
+
     cfg_mod._config = None
     import shyfem_ui.db.base as db_mod
+
     db_mod._engine = None
     db_mod._SessionLocal = None
 
     from shyfem_ui.db.base import init_db
+
     init_db()
     yield
     db_mod._engine = None
@@ -64,8 +66,7 @@ class TestPreflightValidation:
         work = tmp_path / "projects" / "bad_proj"
         work.mkdir(parents=True)
         (work / "bad.str").write_text(
-            "$title\nTest\nbad\nGRID/mesh\n$end\n"
-            "$name\nwind = 'INPUT/wind.fem'\n$end\n"
+            "$title\nTest\nbad\nGRID/mesh\n$end\n" "$name\nwind = 'INPUT/wind.fem'\n$end\n"
         )
 
         with db_session() as db:
@@ -83,10 +84,34 @@ class TestPreflightValidation:
 
     def test_returns_empty_for_invalid_sim(self):
         from shyfem_ui.pages.run import _preflight_validate
+
         warnings = _preflight_validate(None)
         assert warnings == []
 
     def test_returns_empty_for_nonexistent_sim(self):
         from shyfem_ui.pages.run import _preflight_validate
+
         warnings = _preflight_validate(99999)
         assert warnings == []
+
+
+class TestPreflightDoesNotHideErrors:
+    """A validator FAILURE must not be reported identically to 'all clean' (M9)."""
+
+    def test_validator_exception_returns_warning_not_empty(self, monkeypatch):
+        from shyfem_ui.pages.run import _preflight_validate
+        from shyfem_ui.services.file_service import FileService
+
+        def _boom(_sid):
+            raise RuntimeError("db exploded")
+
+        monkeypatch.setattr(FileService, "validate_simulation_files", staticmethod(_boom))
+        warnings = _preflight_validate(123)
+        assert warnings, "a failed pre-flight must surface a warning, not silently report clean"
+        assert any("valid" in w.lower() for w in warnings)
+
+    def test_nonexistent_sim_still_returns_empty(self):
+        # ValueError ('not found') stays non-blocking -> [] (existing behavior).
+        from shyfem_ui.pages.run import _preflight_validate
+
+        assert _preflight_validate(99999) == []

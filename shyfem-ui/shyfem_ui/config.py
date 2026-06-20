@@ -73,6 +73,15 @@ class Config(BaseSettings):
         gt=0,
         description="Age (days) beyond which completed jobs are pruned by maintenance.",
     )
+    audit_retention_days: int = Field(
+        default=365,
+        gt=0,
+        description=(
+            "Age (days) beyond which audit_log entries are pruned by maintenance. "
+            "Kept longer than jobs (audit trail), but bounded so the table can't "
+            "grow without limit."
+        ),
+    )
 
     # Job queue settings
     use_celery: bool = Field(

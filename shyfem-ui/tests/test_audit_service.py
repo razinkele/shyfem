@@ -102,3 +102,29 @@ class TestAuditDistinctActions:
         svc.log(username="b", action="logout")
         svc.log(username="c", action="login")
         assert svc.distinct_actions() == ["login", "logout"]
+
+
+class TestCleanupOldLogs:
+    """audit_logs must be prunable, else the table grows unbounded
+    (deep-review medium: maintenance pruned jobs/sessions but not audit_logs)."""
+
+    def test_deletes_logs_older_than_retention(self, svc, session_factory):
+        from datetime import datetime, timedelta
+
+        from shyfem_ui.models.audit_log import AuditLog
+
+        now = datetime.now()
+        with session_factory() as s:
+            s.add(AuditLog(username="a", action="old", timestamp=now - timedelta(days=100)))
+            s.add(AuditLog(username="b", action="recent", timestamp=now - timedelta(days=10)))
+            s.commit()
+
+        removed = svc.cleanup_old_logs(days=90)
+
+        assert removed == 1
+        assert {r["action"] for r in svc.query()} == {"recent"}
+
+    def test_keeps_all_when_none_old(self, svc):
+        svc.log(username="a", action="x")
+        assert svc.cleanup_old_logs(days=90) == 0
+        assert len(svc.query()) == 1
