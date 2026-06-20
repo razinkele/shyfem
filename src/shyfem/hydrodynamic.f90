@@ -602,6 +602,11 @@
 	nthreads = 1
 !$	nthreads = omp_get_max_threads()
 
+! PETSc assembles via the serial fallback loop below. Skip the OMP/subset
+! assembly here for PETSc, otherwise every element is assembled twice
+! (ADD_VALUES accumulates), giving 2A*z = 2*b_elem + b_flux and a wrong zeta
+! whenever flux BCs are non-zero.
+        if(buse_omp) then
 !$OMP PARALLEL IF(buse_omp) DEFAULT(NONE) &
 !$OMP& PRIVATE(isubset,jel,j,ie,i,kk,zm,ilevel,jlevel,aj,afix, &
 !$OMP&         delta,l,jv,ju,dbb,dbc,dcb,dcc,uold,vold,uhat,vhat, &
@@ -772,6 +777,7 @@
 
 !$OMP END SINGLE
 !$OMP END PARALLEL
+        end if  ! buse_omp -- PETSc uses the serial fallback loop below instead
 
 !-------------------------------------------------------------
 ! Fallback for PETSc solver (serial loop)
