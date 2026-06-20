@@ -453,13 +453,38 @@ class TestResolveArgs:
         assert result == ["-info", "literal_arg"]
 
     def test_unresolved_placeholders(self):
-        """Test that unresolved placeholders remain as-is."""
+        """Test that unresolved bare {param} placeholders remain as-is."""
         result = WorkflowEngine._resolve_args(
             ["{missing_param}"],
             {},
             {},
         )
         assert result == ["{missing_param}"]
+
+    def test_unresolved_step_output_ref_raises(self):
+        """An unresolved {step.output_files[N]} ref must fail clearly, not be
+        passed verbatim to the next tool as a filename (M8)."""
+        import pytest
+
+        with pytest.raises(ValueError, match="[Uu]nresolved"):
+            WorkflowEngine._resolve_args(["{grid_prep.output_files[0]}"], {}, {})
+
+    def test_unresolved_step_output_dir_raises(self):
+        import pytest
+
+        with pytest.raises(ValueError, match="[Uu]nresolved"):
+            WorkflowEngine._resolve_args(["-d", "{grid_prep.output_dir}"], {}, {})
+
+    def test_step_with_no_output_files_raises_on_indexed_ref(self):
+        """Prior step ran but produced no output -> indexed ref is unresolved."""
+        import pytest
+
+        with pytest.raises(ValueError, match="[Uu]nresolved"):
+            WorkflowEngine._resolve_args(
+                ["{grid_prep.output_files[0]}"],
+                {},
+                {"grid_prep": {"output_files": [], "output_dir": "/tmp"}},
+            )
 
 
 class TestWorkflowPersistence:
@@ -521,7 +546,9 @@ class TestWorkflowPersistence:
                 working_dir=str(spec.working_dir),
                 status=JobStatus.COMPLETED,
                 return_code=0,
-                output_files=[],
+                # Produce an output file so a downstream step's
+                # {grid_prep.output_files[0]} ref resolves (M8).
+                output_files=[f"{spec.working_dir}/mock_output.bas"],
                 created_at=datetime.now(),
                 completed_at=datetime.now(),
             )
