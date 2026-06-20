@@ -696,3 +696,63 @@ class TestCleanupDeletesDbRows:
         dbb._engine = None
         dbb._SessionLocal = None
         cfg._config = None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_deletes_evicted_db_rows(self, tmp_path, monkeypatch):
+        """An old job row that was evicted from the in-memory window (so it is
+        NOT in self._jobs) must still be deleted from the DB. This is the
+        unbounded-growth bug: cleanup only iterated self._jobs, so once the
+        in-memory cap was exceeded the older rows were never purged."""
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q._jobs.clear()  # the old job is NOT in the in-memory window
+
+        old = datetime.now() - timedelta(days=30)
+        with dbb.db_session() as db:
+            db.add(
+                Job(
+                    job_uuid="evicted-old-1",
+                    name="old job",
+                    job_type="shyfem",
+                    working_dir="/tmp/x",
+                    status=JobStatus.COMPLETED,
+                    created_at=old,
+                    completed_at=old,
+                )
+            )
+            # A recent row that must survive.
+            recent = datetime.now() - timedelta(hours=1)
+            db.add(
+                Job(
+                    job_uuid="recent-db-1",
+                    name="recent job",
+                    job_type="shyfem",
+                    working_dir="/tmp/x",
+                    status=JobStatus.COMPLETED,
+                    created_at=recent,
+                    completed_at=recent,
+                )
+            )
+            db.commit()
+
+        assert "evicted-old-1" not in q._jobs
+        removed = await q.cleanup_old_jobs(days=7)
+        assert removed >= 1
+
+        with dbb.db_session() as db:
+            assert db.query(Job).filter(Job.job_uuid == "evicted-old-1").count() == 0
+            assert db.query(Job).filter(Job.job_uuid == "recent-db-1").count() == 1
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
