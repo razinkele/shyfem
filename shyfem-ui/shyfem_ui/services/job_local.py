@@ -277,13 +277,13 @@ class LocalJobQueue(JobQueue):
         # Wait for available slot
         job.status = JobStatus.QUEUED
         job.queued_at = datetime.now()
-        self._persist_job(job)
+        await asyncio.to_thread(self._persist_job, job)
 
         async with self._get_semaphore():
             self._running_count += 1
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now()
-            self._persist_job(job)
+            await asyncio.to_thread(self._persist_job, job)
 
             stdout_fh = None
 
@@ -364,7 +364,7 @@ class LocalJobQueue(JobQueue):
                 # Clean up task reference
                 self._tasks.pop(job_id, None)
                 # Persist final state to DB
-                self._persist_job(job)
+                await asyncio.to_thread(self._persist_job, job)
                 # Send completion notification (best-effort, never raises).
                 # Offload to a worker thread: it does blocking SMTP I/O (now
                 # bounded by smtp_timeout_seconds) which must not block the
@@ -390,7 +390,7 @@ class LocalJobQueue(JobQueue):
 
         job.status = JobStatus.CANCELLED
         job.completed_at = datetime.now()
-        self._persist_job(job)
+        await asyncio.to_thread(self._persist_job, job)
         return True
 
     async def get_status(self, job_id: str) -> JobInfo | None:

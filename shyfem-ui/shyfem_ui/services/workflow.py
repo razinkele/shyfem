@@ -8,6 +8,7 @@ Steps can reference outputs from previous steps.
 """
 
 import asyncio
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -565,4 +566,16 @@ class WorkflowEngine:
                     val = val.replace(f"{{{step_name}.output_files}}", output_files[0])
 
             resolved.append(val)
+
+        # Any leftover {step.output_dir} / {step.output_files[N]} reference means
+        # a prior step it depends on produced no (such) output. Fail clearly here
+        # instead of handing the literal token to the next tool as a filename.
+        _STEP_REF = re.compile(r"\{[A-Za-z_]\w*\.output_(?:dir|files(?:\[\d+\])?)\}")
+        unresolved = sorted({m for v in resolved for m in _STEP_REF.findall(v)})
+        if unresolved:
+            raise ValueError(
+                "Unresolved workflow step reference(s): "
+                + ", ".join(unresolved)
+                + " — a previous step produced no matching output."
+            )
         return resolved

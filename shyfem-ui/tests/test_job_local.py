@@ -47,6 +47,10 @@ def queue(tmp_path, mock_wrapper):
     """Create a LocalJobQueue with mock wrapper."""
     q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2)
     q.wrapper = mock_wrapper
+    # Start each test with a clean in-memory job set. The constructor loads any
+    # rows from the shared test DB; prior tests can leave RUNNING rows (now that
+    # persistence is async via to_thread), which would skew active_job_count.
+    q._jobs.clear()
     return q
 
 
