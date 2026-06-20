@@ -256,9 +256,15 @@ def simulation_server(
         selected = input.sample_str_select()
         if not selected:
             selected = "mm_hyd_03.str"
-        str_path = config.testcases_dir / "mar_menor" / selected
-        if not str_path.exists():
-            ui.notification_show(f"Sample STR not found: {str_path}", type="error", duration=6)
+        # `selected` is a client-settable input — confine the resulting path so a
+        # spoofed '../' value cannot read .str files outside the sample assets.
+        _usr = current_user() if current_user is not None else None
+        try:
+            str_path = config.confine_path(
+                config.testcases_dir / "mar_menor" / selected, _usr, must_exist=True
+            )
+        except (ValueError, FileNotFoundError):
+            ui.notification_show(f"Sample STR not found: {selected}", type="error", duration=6)
             return
         ui.update_text("str_path", value=str(str_path))
         try:

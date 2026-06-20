@@ -406,12 +406,20 @@ def run_server(
             config.shyfem_dir
         ).check_solver_available("petsc")
 
-        # Detect mesh size from input file
+        # Detect mesh size from input file. Confine both paths to the user's
+        # sandbox (cross-user .str/.grd read IDOR — review H1); a path outside
+        # it simply yields no hint rather than reading another user's files.
         input_file = input.input_file()
         working_dir = input.working_dir()
         num_nodes = None
         if input_file and working_dir:
-            num_nodes = detect_mesh_node_count(input_file, working_dir)
+            _usr = current_user() if current_user is not None else None
+            try:
+                safe_input = config.confine_path(input_file, _usr, must_exist=True)
+                safe_workdir = config.confine_path(working_dir, _usr, must_exist=True)
+                num_nodes = detect_mesh_node_count(str(safe_input), str(safe_workdir))
+            except (ValueError, FileNotFoundError):
+                num_nodes = None
 
         rec = get_solver_recommendation(num_nodes, config.solver_node_threshold)
         parts = []
