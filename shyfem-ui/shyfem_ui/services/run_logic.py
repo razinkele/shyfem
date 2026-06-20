@@ -115,9 +115,14 @@ def detect_mesh_node_count(str_file: Path | str, working_dir: Path | str) -> int
         return None
     basnam = lines[2]
 
-    # Try .grd then .bas extension
+    # Try .grd then .bas extension. basnam is attacker-influenced STR content,
+    # so reject a joined path that escapes working_dir (defense-in-depth; the
+    # caller also confines working_dir to the user's sandbox).
+    work_root = work_path.resolve()
     for ext in (".grd", ".bas"):
-        grid_path = work_path / f"{basnam}{ext}"
+        grid_path = (work_root / f"{basnam}{ext}").resolve()
+        if grid_path != work_root and not str(grid_path).startswith(str(work_root) + "/"):
+            continue
         if grid_path.exists():
             try:
                 grd = GrdParser.parse_file(grid_path)

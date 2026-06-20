@@ -321,7 +321,7 @@ def postprocess_server(
     log_viewer_server("command_log", log_content)
 
     # Initialize timeseries preview component
-    timeseries_server("ts_preview", ts_preview_data, config=config)
+    timeseries_server("ts_preview", ts_preview_data, config=config, current_user=current_user)
 
     @render.ui
     def next_step_html_out():
@@ -395,13 +395,14 @@ def postprocess_server(
     @reactive.effect
     @reactive.event(input.scan_btn)
     async def _scan_file():
+        _usr = current_user() if current_user is not None else None
         shy_path = input.shy_path()
         if not shy_path:
             ui.notification_show("No file specified", type="warning")
             return
 
         try:
-            path = config.validate_path(shy_path, must_exist=True)
+            path = config.confine_path(shy_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -495,14 +496,14 @@ def postprocess_server(
             return
 
         try:
-            path = config.validate_path(shy_path, must_exist=True)
+            path = config.confine_path(shy_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
 
         output_dir = input.output_dir() or str(path.parent)
         try:
-            output_path = config.validate_path(output_dir)
+            output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -611,7 +612,7 @@ def postprocess_server(
 
         for i, path_str in enumerate(paths):
             try:
-                path = config.validate_path(path_str, must_exist=True)
+                path = config.confine_path(path_str, _usr, must_exist=True)
             except (ValueError, FileNotFoundError) as e:
                 results.append(
                     {
@@ -625,7 +626,7 @@ def postprocess_server(
 
             output_dir = input.output_dir() or str(path.parent)
             try:
-                output_path = config.validate_path(output_dir)
+                output_path = config.confine_path(output_dir, _usr, for_write=True)
             except ValueError as e:
                 results.append(
                     {
@@ -717,11 +718,16 @@ def postprocess_server(
         if work_dir is None:
             shy_path = input.shy_path()
             if shy_path:
-                p = Path(shy_path)
-                if p.is_dir():
-                    work_dir = str(p)
-                elif p.parent.is_dir():
-                    work_dir = str(p.parent)
+                # Confine the fallback path so the listing cannot enumerate
+                # another user's directory (IDOR). Re-confine the resolved base
+                # dir in case the path's parent would escape the sandbox.
+                _usr = current_user() if current_user is not None else None
+                try:
+                    p = config.confine_path(shy_path, _usr)
+                    base = p if p.is_dir() else p.parent
+                    work_dir = str(config.confine_path(base, _usr))
+                except (ValueError, FileNotFoundError):
+                    work_dir = None
         if work_dir is None:
             return ui.p(
                 "No .shy files found. Enter a path or select a project.",
@@ -767,7 +773,7 @@ def postprocess_server(
 
         for i, file_path in enumerate(selected):
             try:
-                path = config.validate_path(file_path, must_exist=True)
+                path = config.confine_path(file_path, _usr, must_exist=True)
             except (ValueError, FileNotFoundError) as e:
                 results.append(
                     {
@@ -781,7 +787,7 @@ def postprocess_server(
 
             output_dir = input.output_dir() or str(path.parent)
             try:
-                output_path = config.validate_path(output_dir)
+                output_path = config.confine_path(output_dir, _usr, for_write=True)
             except ValueError as e:
                 results.append(
                     {
@@ -1125,14 +1131,14 @@ def _register_preset(
             return
 
         try:
-            path = config.validate_path(shy_path, must_exist=True)
+            path = config.confine_path(shy_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
 
         output_dir = input.output_dir() or str(path.parent)
         try:
-            output_path = config.validate_path(output_dir)
+            output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

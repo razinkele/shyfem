@@ -413,7 +413,7 @@ def ibm_server(
             return
 
         try:
-            path = config.validate_path(path_str, must_exist=True)
+            path = config.confine_path(path_str, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error")
             load_error.set(str(e))

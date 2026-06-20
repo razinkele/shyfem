@@ -367,8 +367,15 @@ def physics_server(
     @reactive.effect
     @reactive.event(input.load_btn)
     def load_file():
-        path = Path(input.str_path())
-        if path.exists() and path.suffix == ".str":
+        # Confine the user-supplied path to the requesting user's sandbox
+        # (cross-user .str read IDOR — review H1).
+        _usr = current_user() if current_user is not None else None
+        try:
+            path = config.confine_path(input.str_path(), _usr, must_exist=True)
+        except (ValueError, FileNotFoundError) as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
+        if path.suffix == ".str":
             try:
                 parsed = StrParser.parse_file(path)
                 str_data.set(parsed)
@@ -457,7 +464,7 @@ def physics_server(
         # Reject path traversal: an editor must not write outside the work dir
         # (mirrors simulation._confirm_save). Resolves symlinks + null bytes.
         try:
-            path = config.validate_save_path(path_str)
+            path = config.confine_path(path_str, _usr, for_write=True)
         except ValueError as e:
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)

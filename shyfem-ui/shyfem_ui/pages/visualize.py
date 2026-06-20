@@ -331,7 +331,7 @@ def visualize_server(
     ts_data_val = reactive.value(None)
 
     # Wire up the timeseries component
-    timeseries_server("ts_viewer", ts_data_val, config=config)
+    timeseries_server("ts_viewer", ts_data_val, config=config, current_user=current_user)
 
     @render.ui
     def plot_type_select():
@@ -498,7 +498,7 @@ def visualize_server(
             return
 
         try:
-            path = config.validate_path(path_str, must_exist=True)
+            path = config.confine_path(path_str, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error")
             return
@@ -523,7 +523,7 @@ def visualize_server(
             ui.notification_show("Enter a comparison file path", type="warning")
             return
         try:
-            path = config.validate_path(path_str, must_exist=True)
+            path = config.confine_path(path_str, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error")
             return

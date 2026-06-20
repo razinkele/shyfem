@@ -108,6 +108,7 @@ def timeseries_server(
     session,
     ts_data: reactive.Value,
     config=None,
+    current_user=None,
 ):
     """Time series component server logic.
 
@@ -363,8 +364,9 @@ def timeseries_server(
 
         path = Path(obs_path)
         if config:
+            _usr = current_user() if current_user is not None else None
             try:
-                path = config.validate_path(obs_path, must_exist=True)
+                path = config.confine_path(obs_path, _usr, must_exist=True)
             except (ValueError, FileNotFoundError) as e:
                 ui.notification_show(str(e), type="error")
                 return

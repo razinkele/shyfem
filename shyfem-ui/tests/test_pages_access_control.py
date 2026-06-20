@@ -378,9 +378,11 @@ def _call_index(stmts: "list[ast.stmt]", callee_attr: str) -> "int | None":
 
 
 # Handlers that persist a user-supplied path/filename to disk. Each must route
-# the target through config.validate_save_path (rejects traversal outside
-# work_dir + null bytes) BEFORE the write call — otherwise an editor can write
-# outside the project tree via an absolute path or '..' segments.
+# the target through config.confine_path (per-user sandbox; rejects traversal
+# outside the requesting user's home + null bytes) — or, for local-only paths,
+# config.validate_save_path — BEFORE the write call. Otherwise an editor can
+# write outside their sandbox via an absolute path or '..' segments, or into
+# another user's data (cross-user write IDOR; review H1/H2).
 # (page, handler, write_call_name)
 PATH_SAVE_HANDLERS = [
     ("simulation", "_confirm_save", "save"),
@@ -394,16 +396,27 @@ def test_save_validates_path_before_write(page, handler, write_call):
     path = _PAGES_DIR / f"{page}.py"
     fn = _find_function_def(ast.parse(path.read_text()), handler)
     assert fn is not None, f"{handler!r} not found in {path}"
-    vidx = _call_index(fn.body, "validate_save_path")
+    # The save target must be validated via confine_path (preferred, per-user)
+    # or validate_save_path (local-mode fallback) before the write sink.
+    _gates = [
+        i
+        for i in (
+            _call_index(fn.body, "confine_path"),
+            _call_index(fn.body, "validate_save_path"),
+        )
+        if i is not None
+    ]
+    vidx = min(_gates) if _gates else None
     sidx = _call_index(fn.body, write_call)
     assert vidx is not None, (
         f"{path}::{handler} (line {fn.lineno}) writes a user-supplied path "
-        f"without config.validate_save_path — a traversal path (e.g. "
-        f"'../../other/x' or '/etc/x') escapes the work dir. Validate first."
+        f"without config.confine_path / validate_save_path — a traversal path "
+        f"(e.g. '../../other/x' or '/etc/x') escapes the user's sandbox. "
+        f"Validate first."
     )
     assert (
         sidx is not None and vidx < sidx
-    ), f"{path}::{handler}: validate_save_path must precede {write_call}()"
+    ), f"{path}::{handler}: confine_path/validate_save_path must precede {write_call}()"
 
 
 # Job-cancel handlers must authorize (job_cancel_denied_reason for per-job
@@ -509,12 +522,12 @@ def test_selected_job_details_authorizes_read():
     path = _PAGES_DIR / "run.py"
     fn = _find_function_def(ast.parse(path.read_text()), "selected_job_details")
     assert fn is not None, "selected_job_details not found in run.py"
-    assert _call_index(fn.body, "job_read_denied_reason") is not None, (
-        "selected_job_details renders job metadata without job_read_denied_reason (IDOR)."
-    )
-    assert _guard_enforced_by_name(fn, "job_read_denied_reason"), (
-        "selected_job_details must enforce the read gate (if _denied: return ...)."
-    )
+    assert (
+        _call_index(fn.body, "job_read_denied_reason") is not None
+    ), "selected_job_details renders job metadata without job_read_denied_reason (IDOR)."
+    assert _guard_enforced_by_name(
+        fn, "job_read_denied_reason"
+    ), "selected_job_details must enforce the read gate (if _denied: return ...)."
 
 
 # Project create/clone/import handlers must fail closed via identity_denied_reason
