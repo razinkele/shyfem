@@ -33,8 +33,15 @@ def _preflight_validate(simulation_id: int | None) -> list[str]:
         from shyfem_ui.services.file_service import FileService
 
         return FileService.validate_simulation_files(simulation_id)
-    except (ValueError, Exception):
+    except ValueError:
+        # Simulation not found / invalid id — nothing to validate (non-blocking).
         return []
+    except Exception:
+        # A real validator failure must NOT look identical to "all clean".
+        logger.warning(
+            "Pre-flight validation failed for simulation %s", simulation_id, exc_info=True
+        )
+        return ["Pre-flight validation could not be completed — see logs."]
 
 
 def _get_job_metadata(
