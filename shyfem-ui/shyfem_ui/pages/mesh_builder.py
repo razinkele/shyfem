@@ -1486,7 +1486,7 @@ def mesh_builder_server(
         # or '..' segments would escape the work tree. Confine the target to
         # work_dir before writing (mirrors physics/simulation save handlers).
         try:
-            output_path = config.confine_path(output_dir / filename, _usr)
+            output_path = config.confine_path(output_dir / filename, _usr, for_write=True)
         except ValueError as e:
             _log(f"Invalid export path: {e}")
             ui.notification_show(str(e), type="error", duration=6)

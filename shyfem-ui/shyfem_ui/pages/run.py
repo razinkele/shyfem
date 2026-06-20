@@ -638,7 +638,7 @@ def run_server(
             working_dir = str(validated_input.parent)
 
         try:
-            validated_workdir = config.confine_path(working_dir, _usr)
+            validated_workdir = config.confine_path(working_dir, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -1259,7 +1259,7 @@ def run_server(
             return
 
         try:
-            validated_workdir = config.confine_path(working_dir, _usr)
+            validated_workdir = config.confine_path(working_dir, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

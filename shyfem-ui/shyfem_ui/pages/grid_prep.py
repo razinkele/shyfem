@@ -298,7 +298,7 @@ def grid_prep_server(
         # Determine output directory
         output_dir = input.output_dir() or str(grd_path.parent)
         try:
-            output_path = config.confine_path(output_dir, _usr)
+            output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
             logger.exception("Invalid shypre output directory %r", output_dir)
             log_content.set(f"Error: {e}")

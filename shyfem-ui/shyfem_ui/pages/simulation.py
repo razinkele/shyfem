@@ -361,7 +361,7 @@ def simulation_server(
             return
 
         try:
-            path = config.confine_path(path_str, _usr)
+            path = config.confine_path(path_str, _usr, for_write=True)
         except ValueError as e:
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)

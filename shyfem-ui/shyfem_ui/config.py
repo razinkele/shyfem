@@ -344,6 +344,7 @@ class Config(BaseSettings):
         user: dict | None,
         *,
         must_exist: bool = False,
+        for_write: bool = False,
     ) -> Path:
         """Resolve ``path`` and confine it to the requesting user's sandbox.
 
@@ -355,12 +356,18 @@ class Config(BaseSettings):
             path: User-supplied path.
             user: Server-validated user dict (from ``current_user()``), or None.
             must_exist: If True, also require the resolved path to exist.
+            for_write: If True, the read-only bundled asset roots
+                (testcases/examples, bin) are NOT allowed — a write must land in
+                the user's own home, never in shared tutorial assets.
 
         Raises:
             ValueError: If the path escapes the user's home directory (or, in
-                server mode, if the identity is unresolved).
+                server mode, if the identity is unresolved / contains null bytes).
             FileNotFoundError: If ``must_exist`` and the path does not exist.
         """
+        if "\x00" in str(path):
+            raise ValueError("Path contains null bytes")
+
         # Local mode is single-user desktop with no auth; keep the shared-root
         # behavior so existing local workflows are unaffected.
         if self.deployment_mode != "server":
@@ -374,17 +381,26 @@ class Config(BaseSettings):
                 "Please reload the page and sign in again."
             )
 
-        home = (self.user_data_root / user["username"]).resolve()
-        # Read-only bundled assets stay reachable so tutorials/examples work.
-        allowed_roots = [home, self.testcases_dir.resolve(), self.bin_dir.resolve()]
+        # Resolve the home with an explicit escape guard so a malicious username
+        # (defense-in-depth; usernames are regex-validated at creation) cannot
+        # widen confinement above user_data_root.
+        root = self.user_data_root.resolve()
+        home = (root / user["username"]).resolve()
+        if home != root and not str(home).startswith(str(root) + "/"):
+            raise ValueError("User home escapes the data root")
+
+        allowed_roots = [home]
+        if not for_write:
+            # Read-only bundled assets stay reachable for reads (tutorials/examples).
+            allowed_roots += [self.testcases_dir.resolve(), self.bin_dir.resolve()]
 
         resolved = Path(path).expanduser().resolve()
         if resolved.exists():
             resolved = resolved.resolve(strict=True)
 
         if not any(
-            resolved == root or str(resolved).startswith(str(root) + "/")
-            for root in allowed_roots
+            resolved == root_ or str(resolved).startswith(str(root_) + "/")
+            for root_ in allowed_roots
         ):
             raise ValueError(f"Path '{resolved}' is outside your home directory: {home}")
 

@@ -535,7 +535,7 @@ def ensemble_server(
             working_dir_path = str(base_file.parent / name)
 
         try:
-            work_dir = config.confine_path(working_dir_path, _usr)
+            work_dir = config.confine_path(working_dir_path, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

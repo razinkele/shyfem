@@ -556,7 +556,7 @@ def home_server(
         try:
             if config.deployment_mode == "server" and user is not None:
                 candidate = config.user_data_root / user["username"] / Path(work_dir).name
-                project_path = config.confine_path(candidate, user)
+                project_path = config.confine_path(candidate, user, for_write=True)
             else:
                 project_path = config.validate_save_path(work_dir)
         except ValueError as e:
@@ -1244,10 +1244,19 @@ def home_server(
 
         from shyfem_ui.services.project_export import import_project
 
+        # In server mode, extract under the owner's home sandbox so the imported
+        # project is reachable once confine_path is enforced; local mode keeps
+        # the shared work_dir.
+        if config.deployment_mode == "server" and user is not None:
+            import_root = config.user_data_root / user["username"]
+            import_root.mkdir(parents=True, exist_ok=True)
+        else:
+            import_root = config.work_dir
+
         try:
             with open(file_path, "rb") as f:
                 zip_data = BytesIO(f.read())
-            result = import_project(zip_data, config.work_dir)
+            result = import_project(zip_data, import_root)
         except ValueError as e:
             logger.exception("Project ZIP import rejected: %s", file_path)
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)

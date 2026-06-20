@@ -260,7 +260,7 @@ def partitioning_server(
         # Determine output directory
         output_dir = input.output_dir() or str(bas_file.parent)
         try:
-            output_path = config.confine_path(output_dir, _usr)
+            output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
             logger.exception("Invalid shyparts output directory %r", output_dir)
             log_content.set(f"Error: {e}")

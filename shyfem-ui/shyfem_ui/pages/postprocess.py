@@ -503,7 +503,7 @@ def postprocess_server(
 
         output_dir = input.output_dir() or str(path.parent)
         try:
-            output_path = config.confine_path(output_dir, _usr)
+            output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -626,7 +626,7 @@ def postprocess_server(
 
             output_dir = input.output_dir() or str(path.parent)
             try:
-                output_path = config.confine_path(output_dir, _usr)
+                output_path = config.confine_path(output_dir, _usr, for_write=True)
             except ValueError as e:
                 results.append(
                     {
@@ -782,7 +782,7 @@ def postprocess_server(
 
             output_dir = input.output_dir() or str(path.parent)
             try:
-                output_path = config.confine_path(output_dir, _usr)
+                output_path = config.confine_path(output_dir, _usr, for_write=True)
             except ValueError as e:
                 results.append(
                     {
@@ -1133,7 +1133,7 @@ def _register_preset(
 
         output_dir = input.output_dir() or str(path.parent)
         try:
-            output_path = config.confine_path(output_dir, _usr)
+            output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

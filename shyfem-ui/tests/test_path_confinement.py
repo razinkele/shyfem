@@ -89,6 +89,33 @@ class TestConfinePathServerMode:
         result = cfg.confine_path(asset, _user("alice"), must_exist=True)
         assert result == asset.resolve()
 
+    def test_for_write_rejects_readonly_asset_root(self, tmp_path):
+        """Writes must not target the read-only bundled asset roots."""
+        cfg = _server_config(tmp_path)
+        examples = cfg.shyfem_dir / "testcases" / "examples"
+        examples.mkdir(parents=True, exist_ok=True)
+        with pytest.raises(ValueError):
+            cfg.confine_path(examples / "evil.str", _user("alice"), for_write=True)
+
+    def test_for_write_allows_own_home(self, tmp_path):
+        """Writes into the user's own home are still permitted."""
+        cfg = _server_config(tmp_path)
+        (cfg.user_data_root / "alice").mkdir(parents=True, exist_ok=True)
+        out = cfg.user_data_root / "alice" / "out.grd"
+        result = cfg.confine_path(out, _user("alice"), for_write=True)
+        assert result == out.resolve()
+
+    def test_rejects_null_bytes(self, tmp_path):
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError):
+            cfg.confine_path("/x\x00y", _user("alice"))
+
+    def test_malicious_username_cannot_escape_data_root(self, tmp_path):
+        """A username with traversal segments must not widen confinement."""
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError):
+            cfg.confine_path(tmp_path / "etc" / "passwd", {"id": 9, "username": "../../etc"})
+
 
 class TestConfinePathLocalMode:
     def test_local_mode_falls_back_to_validate_path(self, tmp_path):
