@@ -413,11 +413,13 @@ def ensemble_server(
 
         preview_runs.set(combos)
 
+        _usr = current_user() if current_user is not None else None
+
         # Validate base STR if available
         base_str_path = input.base_str_file()
         if base_str_path:
             try:
-                base_file = config.validate_path(base_str_path, must_exist=True)
+                base_file = config.confine_path(base_str_path, _usr, must_exist=True)
                 base_str = StrParser.parse_file(base_file)
                 msgs = validate_str(base_str.sections)
                 warnings = [m for m in msgs if m.level == "warning"]
@@ -524,7 +526,7 @@ def ensemble_server(
             return
 
         try:
-            base_file = config.validate_path(base_str_path, must_exist=True)
+            base_file = config.confine_path(base_str_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -533,7 +535,7 @@ def ensemble_server(
             working_dir_path = str(base_file.parent / name)
 
         try:
-            work_dir = config.validate_path(working_dir_path)
+            work_dir = config.confine_path(working_dir_path, _usr)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

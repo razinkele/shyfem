@@ -252,8 +252,9 @@ def grid_prep_server(
         if not path_str:
             return
 
+        _usr = current_user() if current_user is not None else None
         try:
-            path = config.validate_path(path_str, must_exist=True)
+            path = config.confine_path(path_str, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             logger.exception("Invalid GRD file path %r", path_str)
             log_content.set(f"Error: {e}")
@@ -297,7 +298,7 @@ def grid_prep_server(
         # Determine output directory
         output_dir = input.output_dir() or str(grd_path.parent)
         try:
-            output_path = config.validate_path(output_dir)
+            output_path = config.confine_path(output_dir, _usr)
         except ValueError as e:
             logger.exception("Invalid shypre output directory %r", output_dir)
             log_content.set(f"Error: {e}")

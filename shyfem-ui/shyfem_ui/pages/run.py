@@ -613,7 +613,7 @@ def run_server(
             return
 
         try:
-            validated_input = config.validate_path(input_file, must_exist=True)
+            validated_input = config.confine_path(input_file, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -638,7 +638,7 @@ def run_server(
             working_dir = str(validated_input.parent)
 
         try:
-            validated_workdir = config.validate_path(working_dir)
+            validated_workdir = config.confine_path(working_dir, _usr)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -1259,7 +1259,7 @@ def run_server(
             return
 
         try:
-            validated_workdir = config.validate_path(working_dir)
+            validated_workdir = config.confine_path(working_dir, _usr)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

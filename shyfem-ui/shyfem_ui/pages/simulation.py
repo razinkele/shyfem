@@ -282,8 +282,9 @@ def simulation_server(
             ui.notification_show("Please enter a file path", type="warning")
             return
 
+        _usr = current_user() if current_user is not None else None
         try:
-            path = config.validate_path(path_str, must_exist=True)
+            path = config.confine_path(path_str, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             logger.exception("Invalid STR file path %r", path_str)
             ui.notification_show(str(e), type="error", duration=6)
@@ -360,7 +361,7 @@ def simulation_server(
             return
 
         try:
-            path = config.validate_save_path(path_str)
+            path = config.confine_path(path_str, _usr)
         except ValueError as e:
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)

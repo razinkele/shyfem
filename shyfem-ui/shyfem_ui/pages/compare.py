@@ -256,9 +256,10 @@ def compare_server(
             ui.notification_show("Both STR file paths are required", type="warning")
             return
 
+        _usr = current_user() if current_user is not None else None
         try:
-            file_a = config.validate_path(path_a, must_exist=True)
-            file_b = config.validate_path(path_b, must_exist=True)
+            file_a = config.confine_path(path_a, _usr, must_exist=True)
+            file_b = config.confine_path(path_b, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
@@ -277,9 +278,10 @@ def compare_server(
         if not path_a or not path_b:
             ui.notification_show("Both time series paths are required", type="warning")
             return
+        _usr = current_user() if current_user is not None else None
         try:
-            file_a = config.validate_path(path_a, must_exist=True)
-            file_b = config.validate_path(path_b, must_exist=True)
+            file_a = config.confine_path(path_a, _usr, must_exist=True)
+            file_b = config.confine_path(path_b, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             ui.notification_show(str(e), type="error", duration=6)
             return

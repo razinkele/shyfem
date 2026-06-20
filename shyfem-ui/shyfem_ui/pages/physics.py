@@ -457,7 +457,7 @@ def physics_server(
         # Reject path traversal: an editor must not write outside the work dir
         # (mirrors simulation._confirm_save). Resolves symlinks + null bytes.
         try:
-            path = config.validate_save_path(path_str)
+            path = config.confine_path(path_str, _usr)
         except ValueError as e:
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)

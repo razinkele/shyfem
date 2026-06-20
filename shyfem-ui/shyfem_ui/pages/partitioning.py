@@ -210,8 +210,9 @@ def partitioning_server(
         if not grd_path:
             log_content.set("Error: No grid file path specified")
             return
+        _usr = current_user() if current_user is not None else None
         try:
-            path = config.validate_path(grd_path, must_exist=True)
+            path = config.confine_path(grd_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             logger.exception("Invalid GRD path for partitioning: %r", grd_path)
             log_content.set(f"Error: {e}")
@@ -250,7 +251,7 @@ def partitioning_server(
             return
 
         try:
-            bas_file = config.validate_path(bas_path, must_exist=True)
+            bas_file = config.confine_path(bas_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
             logger.exception("Invalid basin file path for shyparts: %r", bas_path)
             log_content.set(f"Error: {e}")
@@ -259,7 +260,7 @@ def partitioning_server(
         # Determine output directory
         output_dir = input.output_dir() or str(bas_file.parent)
         try:
-            output_path = config.validate_path(output_dir)
+            output_path = config.confine_path(output_dir, _usr)
         except ValueError as e:
             logger.exception("Invalid shyparts output directory %r", output_dir)
             log_content.set(f"Error: {e}")
