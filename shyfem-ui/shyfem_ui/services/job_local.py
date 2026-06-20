@@ -470,7 +470,57 @@ class LocalJobQueue(JobQueue):
         # (eviction from the in-memory dict alone left thousands of stale rows).
         self._delete_job_rows(to_remove)
 
-        return len(to_remove)
+        # Purge OLD rows that are no longer in the in-memory window. The loop
+        # above only sees self._jobs (capped at MAX_STORED_JOBS), so once that
+        # cap is exceeded the evicted rows were never deleted and the jobs table
+        # grew without bound. Delete them directly by timestamp.
+        db_purged = self._delete_old_db_rows(cutoff, exclude=to_remove)
+
+        return len(to_remove) + db_purged
+
+    def _delete_old_db_rows(self, cutoff: datetime, exclude: list[str]) -> int:
+        """Delete persisted Job rows older than ``cutoff`` regardless of whether
+        they are still tracked in memory, returning the number removed. Mirrors
+        the in-memory cutoff (a completed job past the cutoff, or a non-active
+        job created before it). Output files are unlinked best-effort. Rows in
+        ``exclude`` are skipped (already handled by the in-memory pass).
+        Best-effort: a DB failure must not abort cleanup."""
+        try:
+            from sqlalchemy import and_, or_
+
+            from shyfem_ui.db.base import db_session
+            from shyfem_ui.models.project import Job
+
+            active = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
+            old_filter = or_(
+                and_(Job.completed_at.isnot(None), Job.completed_at < cutoff),
+                and_(Job.created_at < cutoff, Job.status.notin_(active)),
+            )
+            with db_session() as db:
+                query = db.query(Job).filter(old_filter)
+                if exclude:
+                    query = query.filter(Job.job_uuid.notin_(exclude))
+                rows = query.all()
+                for row in rows:
+                    for file_path in (row.stdout_file, row.stderr_file):
+                        if file_path:
+                            path = Path(file_path)
+                            if path.exists():
+                                try:
+                                    path.unlink()
+                                except Exception:
+                                    logger.debug(
+                                        "Could not remove job output file %s",
+                                        path,
+                                        exc_info=True,
+                                    )
+                count = len(rows)
+                if count:
+                    query.delete(synchronize_session=False)
+                return count
+        except Exception:
+            logger.error("DB cleanup of old job rows failed", exc_info=True)
+            return 0
 
     def _delete_job_rows(self, job_uuids: list[str]) -> None:
         """Delete persisted Job rows by uuid. Best-effort — a DB failure must
