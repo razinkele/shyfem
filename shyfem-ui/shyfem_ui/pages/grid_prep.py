@@ -405,12 +405,18 @@ def grid_prep_server(
         bas_files = [f for f in out_files if f.endswith(".bas")]
 
         if not bas_files:
-            # Try to find in output directory
+            # Try to find in output directory — confine to the user's sandbox so
+            # the fallback cannot list/use another user's directory (IDOR).
             output_dir = input.output_dir()
             if output_dir:
-                bas_files = list(Path(output_dir).glob("*.bas"))
-                if bas_files:
-                    bas_files = [str(bas_files[0])]
+                try:
+                    safe_dir = config.confine_path(output_dir, _usr, for_write=True)
+                except (ValueError, FileNotFoundError):
+                    safe_dir = None
+                if safe_dir is not None and safe_dir.exists():
+                    found = list(safe_dir.glob("*.bas"))
+                    if found:
+                        bas_files = [str(found[0])]
 
         if not bas_files:
             log_content.set("Error: No .bas file found. Run shypre first.")
@@ -421,7 +427,12 @@ def grid_prep_server(
             )
             return
 
-        bas_path = Path(bas_files[0])
+        # Confine the resolved .bas before reading it / running the subprocess.
+        try:
+            bas_path = config.confine_path(bas_files[0], _usr, must_exist=True)
+        except (ValueError, FileNotFoundError) as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
         shybas_running.set(True)
         log_content.set(f"Running shybas on {bas_path.name}...\n")
         ui.notification_show(
