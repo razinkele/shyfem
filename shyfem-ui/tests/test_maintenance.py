@@ -46,6 +46,39 @@ class TestRunMaintenanceOnce:
         await run_maintenance_once(jq, auth, job_retention_days=7)  # must NOT raise
         jq.cleanup_old_jobs.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_prunes_audit_logs_when_audit_service_given(self):
+        from shyfem_ui.services.maintenance import run_maintenance_once
+
+        jq, auth = _mocks()
+        audit = MagicMock()
+        audit.cleanup_old_logs = MagicMock(return_value=5)
+        await run_maintenance_once(
+            jq, auth, job_retention_days=30, audit_service=audit, audit_retention_days=365
+        )
+        audit.cleanup_old_logs.assert_called_once_with(365)
+
+    @pytest.mark.asyncio
+    async def test_audit_failure_does_not_block_or_raise(self):
+        from shyfem_ui.services.maintenance import run_maintenance_once
+
+        jq, auth = _mocks()
+        audit = MagicMock()
+        audit.cleanup_old_logs = MagicMock(side_effect=RuntimeError("db"))
+        # must NOT raise; jobs + sessions still run
+        await run_maintenance_once(jq, auth, job_retention_days=7, audit_service=audit)
+        jq.cleanup_old_jobs.assert_awaited_once()
+        auth.cleanup_expired_sessions.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_audit_service_skips_audit_cleanup(self):
+        from shyfem_ui.services.maintenance import run_maintenance_once
+
+        jq, auth = _mocks()
+        # audit_service omitted -> no audit pruning, no error (backward compatible)
+        await run_maintenance_once(jq, auth, job_retention_days=7)
+        jq.cleanup_old_jobs.assert_awaited_once()
+
 
 class TestCreateAppWiring:
     """create_app wires MaintenanceMiddleware with a live factory in server mode

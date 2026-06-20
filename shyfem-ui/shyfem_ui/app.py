@@ -341,6 +341,8 @@ def create_app(config: Config | None = None) -> App:
                 auth_service,
                 interval_s=config.maintenance_interval_seconds,
                 job_retention_days=config.job_retention_days,
+                audit_service=audit_service,
+                audit_retention_days=config.audit_retention_days,
             )
 
     app = MaintenanceMiddleware(app, _maint_factory)

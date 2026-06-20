@@ -1,7 +1,7 @@
 """Audit logging service -- records user actions to the database."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from shyfem_ui.models.audit_log import AuditLog
 
@@ -113,5 +113,26 @@ class AuditService:
         try:
             rows = session.query(AuditLog.action).distinct().order_by(AuditLog.action).all()
             return [r[0] for r in rows]
+        finally:
+            session.close()
+
+    def cleanup_old_logs(self, days: int) -> int:
+        """Delete audit log entries older than ``days``, returning the count
+        removed. Without this the audit_logs table grows unbounded (every action
+        is logged). Best-effort: a DB failure is logged and returns 0."""
+        cutoff = datetime.now() - timedelta(days=days)
+        session = self._session_factory()
+        try:
+            count = (
+                session.query(AuditLog)
+                .filter(AuditLog.timestamp < cutoff)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            return count
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to prune old audit logs")
+            return 0
         finally:
             session.close()
