@@ -66,6 +66,20 @@ def confine_path(self, path, user, *, must_exist=False, allow_write=False):
 - **D1 — Existing project data → MIGRATE.** Alembic data migration + filesystem move of each project into its owner's home, updating `Project.work_dir`. Requires a laguna deploy with DB backup (via the `deploy-ui` skill). Projects with `owner_id=None` (legacy orphans) stay under `work_dir` and are flagged.
 - **D2 — Branch scope → FULL fix in one branch** (confinement + call-site migration + new-project relocation + ownership binding + existing-data migration + tests).
 
+## Status — COMPLETE (2026-06-20)
+
+All work-breakdown items done on `fix/ui-path-confinement-idor`. Implemented test-first; full suite **2103 passed**, ruff+black clean throughout.
+
+- `Config.confine_path` (per-user sandbox, `for_write`, null-byte + username-escape guards) — 11 tests.
+- ~38 user-supplied path call sites migrated across 12 page modules + the timeseries component; writes use `for_write=True`, new projects + imports rooted under the owner's home.
+- Existing-data relocation: `project_relocation.py` (plan/apply, 7 tests) + idempotent dry-run CLI `scripts/migrations/relocate_projects_to_user_homes.py`.
+- H5 picker-hook sentinel added.
+- **Three rounds of `ui-security-reviewer` (the new agent) caught what grep missed** — `physics.load_file`, `run.solver_hint`, `simulation._load_sample_data`, then the fallback paths in `grid_prep._run_shybas` / `postprocess.shy_file_list` / `run_logic` basnam join. Final gate: *no remaining request-reachable unconfined path sinks.*
+
+**Residual (non-exploitable, documented):** `components/timeseries.py` `_load_obs` has a dead `config=None` raw-path fallback — unreachable in prod (both callers pass `config`); harden later by making `config` required. `file_service.py:299/313` validate DB-derived paths (not free-form request input).
+
+**Deploy note:** this changes the path model for server mode. On deploy (via the `deploy-ui` skill): back up the DB, then run `python -m scripts.migrations.relocate_projects_to_user_homes` (dry-run first, then `--apply`) so existing projects move under owner homes BEFORE/with the worker reload — otherwise existing projects are briefly unreachable in server mode. Orphan (`owner_id` NULL) projects are flagged and left in place.
+
 ## Verification
 
 - `CONDA_PREFIX="" /opt/micromamba/envs/shiny/bin/python -m pytest` (unit + new confinement tests).
