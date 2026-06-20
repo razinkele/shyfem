@@ -203,6 +203,12 @@
 	      else
 	        ri = 0.
 	      end if
+!	      The Munk-Anderson stable functions are defined only for Ri >= 0.
+!	      Under unstable stratification N^2 = buoyf2 < 0, so Ri < 0 and the
+!	      bases (1.+a*ri)/(1.+b*ri) go negative; a negative base to a
+!	      fractional power is NaN (and SIGFPEs under -ffpe-trap=invalid).
+!	      Clamp to neutral mixing for Ri < 0.
+	      ri = max(ri,0.)
 	      vis = vistur_c*(1.+a*ri)**alpha
 	      dif = diftur_c*(1.+b*ri)**beta
 
