@@ -453,7 +453,9 @@ def home_server(
                         )
                     ),
                     ui.tags.td(p["description"] or "-"),
-                    ui.tags.td(ui.code(p["work_dir"], class_="small")),
+                    ui.tags.td(
+                        ui.code(config.display_path(p["work_dir"], _user()), class_="small")
+                    ),
                     ui.tags.td(
                         p["updated_at"].strftime("%Y-%m-%d %H:%M") if p["updated_at"] else "-"
                     ),
@@ -782,7 +784,7 @@ def home_server(
                         class_="text-muted small",
                     ),
                     ui.br(),
-                    ui.code(p["work_dir"], class_="small text-muted"),
+                    ui.code(config.display_path(p["work_dir"], _user()), class_="small text-muted"),
                     class_="mb-2 p-2 border rounded",
                 )
             )
