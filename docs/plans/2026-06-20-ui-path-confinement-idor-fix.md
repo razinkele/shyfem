@@ -61,12 +61,10 @@ def confine_path(self, path, user, *, must_exist=False, allow_write=False):
 5. **Secondary ownership binding** in postprocess/visualize read handlers.
 6. **Regression:** full UI suite; the 7 picker path-traversal E2E tests (and add the missing sentinel from finding **H5** so they can't silently skip).
 
-## Open decisions (need owner input before step 4+)
+## Decisions (resolved 2026-06-20 by owner)
 
-- **D1 — Existing project data.** Projects currently live under the shared `work_dir`. Options:
-  - (a) **Data migration**: move each project dir into its owner's home and update `Project.work_dir` (Alembic data migration + filesystem move; needs the laguna deploy + DB backup via the new `deploy-ui` skill).
-  - (b) **Grandfather**: leave existing dirs in place; allow a user to resolve a path inside a project they have access to (ownership binding), and only *new* projects land under home. Less disruptive, weaker structural guarantee.
-- **D2 — Branch scope.** Ship (a) primary confinement + new-project relocation now and defer existing-data migration, or (b) the whole thing including migration, in one branch.
+- **D1 — Existing project data → MIGRATE.** Alembic data migration + filesystem move of each project into its owner's home, updating `Project.work_dir`. Requires a laguna deploy with DB backup (via the `deploy-ui` skill). Projects with `owner_id=None` (legacy orphans) stay under `work_dir` and are flagged.
+- **D2 — Branch scope → FULL fix in one branch** (confinement + call-site migration + new-project relocation + ownership binding + existing-data migration + tests).
 
 ## Verification
 
