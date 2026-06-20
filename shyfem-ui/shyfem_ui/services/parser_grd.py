@@ -270,6 +270,33 @@ def _utm_to_latlon(
     return (np.degrees(lat), np.degrees(lon))
 
 
+def _finalize_pending(result, pending) -> None:
+    """Commit a multi-line continuation record (line OR element) to ``result``.
+
+    ``pending`` is ``(kind, rid, rtype, nvert, nodes, start_line)``. A record
+    completed across continuation lines is truncated to ``nvert`` nodes; a
+    partial record (terminated by a new header or EOF) keeps what it has if it
+    meets the minimum (2 for lines, 3 for elements), else warns.
+    """
+    kind, rid, rtype, nvert, nodes, start = pending
+    take = nodes[:nvert] if len(nodes) >= nvert else nodes
+    if kind == "line":
+        if len(take) >= 2:
+            result.lines[rid] = Line(id=rid, line_type=rtype, nodes=take)
+        else:
+            result.parse_warnings.append(
+                f"Line {start}: line {rid} expected {nvert} nodes, got {len(take)}"
+            )
+    else:  # "elem"
+        if len(take) >= 3:
+            # depth is not recovered for continued elements (rare); see parse()
+            result.elements[rid] = Element(id=rid, elem_type=rtype, nodes=take, depth=None)
+        else:
+            result.parse_warnings.append(
+                f"Line {start}: element {rid} expected {nvert} nodes, got {len(take)}"
+            )
+
+
 class GrdParser:
     """Parser for SHYFEM .grd grid files."""
 
@@ -282,8 +309,9 @@ class GrdParser:
         """
         result = GrdFile()
 
-        # State for multi-line continuation (line records with many nodes)
-        pending_line: tuple | None = None  # (line_id, line_type, nvert, nodes, start_line)
+        # State for multi-line continuation (line OR element records whose nodes
+        # span several lines). Tuple: (kind, rid, rtype, nvert, nodes, start_line)
+        pending: tuple | None = None
 
         for line_num, line in enumerate(content.splitlines(), 1):
             stripped = line.strip()
@@ -302,36 +330,25 @@ class GrdParser:
                 )
                 continue
 
-            # Handle continuation lines for line records (record_type > 3
-            # means this isn't a record header — it's continuation data)
-            if pending_line is not None:
+            # Handle continuation lines for line/element records (record_type > 3
+            # means this isn't a record header — it's continuation node data)
+            if pending is not None:
+                _, _, _, p_nvert, p_nodes, _ = pending
                 if record_type > 3:
                     # Continuation: all fields are node IDs
-                    pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
                     for p in parts:
                         try:
-                            pl_nodes.append(int(float(p)))
+                            p_nodes.append(int(float(p)))
                         except ValueError:
                             pass
-                    if len(pl_nodes) >= pl_nvert:
-                        result.lines[pl_id] = Line(
-                            id=pl_id, line_type=pl_type, nodes=pl_nodes[:pl_nvert]
-                        )
-                        pending_line = None
-                    else:
-                        pending_line = (pl_id, pl_type, pl_nvert, pl_nodes, pl_start)
+                    if len(p_nodes) >= p_nvert:
+                        _finalize_pending(result, pending)
+                        pending = None
                     continue
                 else:
-                    # New record header encountered — finalize pending line
-                    pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
-                    if len(pl_nodes) >= 2:
-                        result.lines[pl_id] = Line(id=pl_id, line_type=pl_type, nodes=pl_nodes)
-                    else:
-                        result.parse_warnings.append(
-                            f"Line {pl_start}: line {pl_id} expected {pl_nvert} nodes, "
-                            f"got {len(pl_nodes)}"
-                        )
-                    pending_line = None
+                    # New record header encountered — finalize the pending record
+                    _finalize_pending(result, pending)
+                    pending = None
 
             try:
                 if record_type == 0:
@@ -363,17 +380,29 @@ class GrdParser:
 
                 elif record_type == 2:
                     # Element: 2 id type nvert node1 node2 ... [depth]
-                    # nvert = vertex count (3 for triangles, 4 for quads)
-                    if len(parts) < 7:
+                    # nvert = vertex count (3 for triangles, 4 for quads); nodes
+                    # may continue on subsequent lines (like line records).
+                    if len(parts) < 4:
                         result.parse_warnings.append(
-                            f"Line {line_num}: element record has {len(parts)} fields (need >= 7)"
+                            f"Line {line_num}: element record has {len(parts)} fields (need >= 4)"
                         )
                         continue
                     elem_id = int(parts[1])
                     elem_type = int(parts[2])
                     nvert = int(parts[3])
+                    if len(parts) - 4 < nvert:
+                        # Not all nodes on this line — collect what's here and
+                        # gather the rest from continuation lines.
+                        node_ids = []
+                        for p in parts[4:]:
+                            try:
+                                node_ids.append(int(float(p)))
+                            except ValueError:
+                                break
+                        pending = ("elem", elem_id, elem_type, nvert, node_ids, line_num)
+                        continue
+                    # All nodes present: read exactly nvert nodes, the rest is depth.
                     node_ids = [int(parts[4 + i]) for i in range(nvert)]
-                    # Optional depth after the last node
                     depth = None
                     depth_idx = 4 + nvert
                     if depth_idx < len(parts):
@@ -411,7 +440,7 @@ class GrdParser:
                     if len(node_ids) < nvert:
                         # Remaining nodes will come on continuation lines;
                         # store partial state and collect in subsequent iterations
-                        pending_line = (line_id, line_type, nvert, node_ids, line_num)
+                        pending = ("line", line_id, line_type, nvert, node_ids, line_num)
                         continue
                     if len(node_ids) < 2:
                         result.parse_warnings.append(
@@ -426,16 +455,9 @@ class GrdParser:
                 result.parse_warnings.append(f"Line {line_num}: skipped ({e})")
                 continue
 
-        # Finalize any pending line record at end of file
-        if pending_line is not None:
-            pl_id, pl_type, pl_nvert, pl_nodes, pl_start = pending_line
-            if len(pl_nodes) >= 2:
-                result.lines[pl_id] = Line(id=pl_id, line_type=pl_type, nodes=pl_nodes)
-            else:
-                result.parse_warnings.append(
-                    f"Line {pl_start}: line {pl_id} expected {pl_nvert} nodes, "
-                    f"got {len(pl_nodes)}"
-                )
+        # Finalize any pending line/element record at end of file
+        if pending is not None:
+            _finalize_pending(result, pending)
 
         return result
 

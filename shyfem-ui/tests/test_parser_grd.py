@@ -572,3 +572,34 @@ class TestNvertFormat:
         assert elem.nodes == [334, 828, 335]
         assert elem.depth == pytest.approx(7.442161)
         assert elem.elem_type == 1
+
+
+class TestElementContinuation:
+    """Element records whose nodes span continuation lines must be parsed,
+    not dropped (deep-review medium). Continuation uses the same convention as
+    line records: a following line whose first token is > 3 is node data."""
+
+    def test_quad_element_spanning_two_lines(self):
+        # quad (nvert=4): two nodes on the header, two on the continuation line
+        content = "\n".join(["2 1 0 4 10 11", "12 13", ""])
+        result = GrdParser.parse(content)
+        assert 1 in result.elements
+        assert result.elements[1].nodes == [10, 11, 12, 13]
+
+    def test_single_line_triangle_unchanged(self):
+        result = GrdParser.parse("2 7 0 3 10 11 12\n")
+        assert result.elements[7].nodes == [10, 11, 12]
+        assert result.elements[7].depth is None
+
+    def test_single_line_triangle_depth_not_swallowed(self):
+        # CRITICAL regression: the trailing depth must stay depth, not become a node
+        result = GrdParser.parse("2 8 0 3 10 11 12 5.5\n")
+        assert result.elements[8].nodes == [10, 11, 12]
+        assert result.elements[8].depth == 5.5
+
+    def test_line_record_continuation_still_works(self):
+        # regression: existing line (type 3) continuation must be unaffected
+        content = "\n".join(["3 1 0 5 10 11 12", "13 14", ""])
+        result = GrdParser.parse(content)
+        assert 1 in result.lines
+        assert result.lines[1].nodes == [10, 11, 12, 13, 14]
