@@ -338,6 +338,30 @@ class Config(BaseSettings):
 
         return resolved
 
+    def display_path(self, path: Path | str, user: dict | None) -> str:
+        """Return a user-facing display string for a project path that does not
+        leak the absolute host layout in server mode.
+
+        Server mode: a path inside the user's home is shown relative as
+        ``~/<rel>``; any other (legacy/foreign) absolute path is reduced to its
+        basename so the host filesystem layout is not exposed. Local mode
+        (single-user desktop) shows the absolute path unchanged.
+        """
+        if self.deployment_mode != "server":
+            return str(path)
+
+        resolved = Path(path)
+        if user is not None:
+            home = self.user_data_root / user["username"]
+            try:
+                rel = resolved.relative_to(home)
+            except ValueError:
+                rel = None
+            if rel is not None:
+                return "~" if str(rel) == "." else f"~/{rel}"
+        # No identity, or path outside the user's home: show only the basename.
+        return resolved.name
+
     def confine_path(
         self,
         path: Path | str,

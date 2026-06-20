@@ -117,6 +117,45 @@ class TestConfinePathServerMode:
             cfg.confine_path(tmp_path / "etc" / "passwd", {"id": 9, "username": "../../etc"})
 
 
+class TestDisplayPath:
+    def test_server_path_under_home_shown_relative(self, tmp_path):
+        cfg = _server_config(tmp_path)
+        wd = cfg.user_data_root / "alice" / "lagoon_run"
+        assert cfg.display_path(wd, _user("alice")) == "~/lagoon_run"
+
+    def test_server_nested_path_relative(self, tmp_path):
+        cfg = _server_config(tmp_path)
+        wd = cfg.user_data_root / "alice" / "a" / "b"
+        assert cfg.display_path(wd, _user("alice")) == "~/a/b"
+
+    def test_server_path_outside_home_shows_basename_only(self, tmp_path):
+        """A legacy/foreign absolute path must not leak the host layout."""
+        cfg = _server_config(tmp_path)
+        out = cfg.display_path("/home/razinka/.shyfem-ui/projects/secret_proj", _user("alice"))
+        assert out == "secret_proj"
+        assert "/" not in out
+
+    def test_server_none_user_shows_basename(self, tmp_path):
+        cfg = _server_config(tmp_path)
+        assert cfg.display_path("/var/lib/x/proj", None) == "proj"
+
+    def test_local_mode_shows_absolute_unchanged(self, tmp_path):
+        users = tmp_path / "users"
+        work = tmp_path / "work"
+        shyfem = tmp_path / "shyfem"
+        for d in (users, work, shyfem):
+            d.mkdir(parents=True, exist_ok=True)
+        cfg = Config(
+            _env_file=None,
+            deployment_mode="local",
+            user_data_root=users,
+            work_dir=work,
+            shyfem_dir=shyfem,
+        )
+        wd = str(work / "project_x")
+        assert cfg.display_path(wd, None) == wd
+
+
 class TestConfinePathLocalMode:
     def test_local_mode_falls_back_to_validate_path(self, tmp_path):
         """Single-user desktop (local mode) has no per-user home; the shared
