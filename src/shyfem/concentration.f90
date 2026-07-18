@@ -1700,15 +1700,16 @@
 	double precision voltot
 
 !------------------------------------------------------------
-! big arrays (cached with save to avoid per-timestep allocation)
+! big work arrays (per-call: conzstab runs concurrently from OMP tasks,
+! so these must NOT be save/shared - see 2026-07-18 review N10)
 !------------------------------------------------------------
-	double precision, allocatable, save :: cn(:,:)
-	double precision, allocatable, save :: co(:,:)
-	double precision, allocatable, save :: cdiag(:,:)
-	double precision, allocatable, save :: clow(:,:)
-	double precision, allocatable, save :: chigh(:,:)
-        real, allocatable, save :: cwrite(:,:)
-        real, allocatable, save :: c2write(:)
+	double precision, allocatable :: cn(:,:)
+	double precision, allocatable :: co(:,:)
+	double precision, allocatable :: cdiag(:,:)
+	double precision, allocatable :: clow(:,:)
+	double precision, allocatable :: chigh(:,:)
+        real, allocatable :: cwrite(:,:)
+        real, allocatable :: c2write(:)
 !------------------------------------------------------------
 ! end of big arrays
 !------------------------------------------------------------
@@ -1741,18 +1742,17 @@
 
         if(nlv.ne.nlev) stop 'error stop conzstab: nlv/=nlev'
 
-!-----------------------------------------------------------------
-! allocation (cached - allocate once, reuse across calls)
-!-----------------------------------------------------------------
+!------------------------------------------------------------
+! big work arrays (per-call: conzstab runs concurrently from OMP tasks,
+! so these must NOT be save/shared - see 2026-07-18 review N10)
+!------------------------------------------------------------
 
-	if( .not. allocated(cn) ) then
-	  allocate(cn(nlvddi,nkn),co(nlvddi,nkn),cdiag(nlvddi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
-	  allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
-	  allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
-	end if
+	allocate(cn(nlvddi,nkn),co(nlvddi,nkn),cdiag(nlvddi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
 
 	saux = 0.
 
