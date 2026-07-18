@@ -47,5 +47,5 @@ WORKDIR /root/shyfem-src
 
 ENV PATH="/root/shyfem-src/bin:${PATH}"
 
-CMD ["/bin/bash", "-lc", "cd testcases/examples/mar_menor && make init && shyfem mm_hyd_00.str"]
+CMD ["/bin/bash", "-c", "cd testcases/examples/mar_menor && make init && shyfem mm_hyd_00.str"]
 

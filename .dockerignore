@@ -7,3 +7,4 @@ tmp/
 examples/*/out.*
 examples/*/*.ts
 examples/*/*.shy
+bin/shyfem-petsc
