@@ -3,6 +3,8 @@
 > **For agentic workers:** This is the master index, not an executable plan. Each batch gets its own detailed TDD implementation plan (per superpowers:writing-plans) authored just-in-time before execution — Batch 1’s is already written: `docs/plans/2026-07-18-batch1-fortran-core-critical.md`. Execute batches in order; each is independently shippable as one PR.
 
 **Source:** `docs/reviews/2026-07-18-full-codebase-deep-review.md` (N## = that report’s §2 table; F## = the 2026-06-20 review’s findings re-checked in §3).
+**Plan-review:** both documents were adversarially reviewed by workflow `wf_8fb8c9c0-a50` (36 agents; 28 confirmed findings applied — Batch 1 plan is at rev 2, the prescription cells below carry the corrected N02/N06/N12/N14/N19/N23/N44/F28 text). Severity column shows original report severities; verifier-adjusted values are in report §2.
+
 **Scope:** all 54 confirmed new findings + all 34 open / 4 partial prior findings = **92 items**, batched into 7 independently shippable batches, ordered by severity and blast radius.
 
 ## Global constraints (apply to every batch)
@@ -28,7 +30,7 @@
 | N05 | high | femtime `it` frozen at itanf (and `itend` never set) silently breaks lagrangian decay, mortality and connectivity | `src/shyfem/time_admin.f90:703` | Uncomment `itend=nint(dtend)` (time_admin.f90:359) and update `it=nint(t_act)` each step with 2^31 overflow guard (Batch 1 Task 6) |
 | N09 | high | scal_adv save-cached boundary-condition arrays are shared across concurrent tracer tasks | `src/shyfem/concentration.f90:298` | Revert r3v/load/cobs/rtauv/wsinkv to per-call allocatables in scal_adv, scal_adv_nudge, scal_adv_fact (Batch 1 Task 2) |
 | N10 | high | conzstab save-cached accumulation arrays race between concurrent stability checks, corrupting istot | `src/shyfem/concentration.f90:1722` | Revert cn/co/cdiag/clow/chigh/cwrite/c2write to per-call allocatables (Batch 1 Task 3) |
-| N11 | high | MPI exchanges and reductions issued from concurrent OMP tasks violate MPI_THREAD_FUNNELED and de-synchronize collective order | `src/shyfem/concentration.f90:778` | Undefer scalar tasks under MPI: `IF( .not. shympi_is_parallel() )` on the TASK directives in run_scalar + tracer_compute_multi (Batch 1 Task 4) |
+| N11 | high | MPI exchanges and reductions issued from concurrent OMP tasks violate MPI_THREAD_FUNNELED and de-synchronize collective order | `src/shyfem/concentration.f90:778` | Undefer scalar tasks under MPI (`IF(btask)`), generate them from `!$OMP MASTER` (not SINGLE) so MPI calls run on the MPI main thread, and gate the sediment scn_compute task region too — see Batch 1 plan Task 4 (rev 2) |
 | N15 | high | proj_geo2cart uses half-range instead of midpoint for projection reference point | `src/utils/shyutilmpi/coordinates.f90:191` | Use midpoints: c_phi/c_lat0 = 0.5*(ymax+ymin), c_lon0 = 0.5*(xmax+xmin) (Batch 1 Task 9) |
 | N20 | medium | hersbach_cd (itdrag=5) unguarded for calm wind: log(0) and negative-base power | `src/shyfem/meteo_forcing.f90:1653` | Floor wind speed: wxy_eff = max(wxy, 0.1 m/s) before computing R and A (Batch 1 Task 8) |
 | N29 | medium | newunit= makes my_unit negative, silently disabling all my_unit>0 MPI debug guards | `src/utils/shympi/mpi_node.f90:693` | Change the four `my_unit > 0` guards to `my_unit /= 0` (mpi_ghost.f90:138,501; mpi_basin.f90:163,180) (Batch 1 Task 10) |
@@ -43,11 +45,11 @@
 
 | ID | Sev | Finding | Location | Fix |
 |---|---|---|---|---|
-| N02 | high | make petsc delivers a shyfem-petsc that is actually the SPARSKIT binary | `Makefile:149` | Rebuild target: force `clean_solver` + rebuild with SOLVER=PETSC and install under a distinct binary name; never symlink a stale build |
+| N02 | high | make petsc delivers a shyfem-petsc that is actually the SPARSKIT binary | `Makefile:149` | After building with SOLVER=PETSC (+PETSC_DIR), copy the DEREFERENCED binary (`cp -L src/shyfem/shyfem bin/shyfem-petsc`) BEFORE any clean/default rebuild — never `mv` the bin/shyfem symlink (both names dereference to the same, freshly-rebuilt SPARSKIT target). Verify with ldd/strings that bin/shyfem-petsc links PETSc. (Vendor-check/SOLVER validation routing is N17.) |
 | N16 | medium | Dockerfile cannot build against MPI-default Rules.make, and CMD references a nonexistent script | `Dockerfile:29` | Install OpenMPI+METIS in the image (or pin serial Rules.make overrides) and fix CMD to an existing entrypoint; add CI docker-build of the runtime stage |
 | N17 | medium | petsc target bypasses both check_mpi_vendor and the SOLVER=PETSC parameter validation (gap in the F13 fix) | `Makefile:146` | Route `petsc` target through check_mpi_vendor and SOLVER=PETSC validation like `fem` |
 | N18 | medium | make regress silently succeeds without running any tests; other advertised targets reference deleted legacy directories | `Makefile:454` | Fail loudly when the test directory is absent; delete or fix dead advertised targets |
-| N19 | medium | Documented build flags MPI=true/OMP=false are inert; no Makefile consumes them | `Rules.make:114` | Map MPI=/OMP= onto PARALLEL_MPI/PARALLEL_OMP in Rules.make (with value validation), or error out when they are passed |
+| N19 | medium | Documented build flags MPI=true/OMP=false are inert; no Makefile consumes them | `Rules.make:114` | Map MPI=true → PARALLEL_MPI=NODE and OMP=true/false → PARALLEL_OMP in Rules.make with value validation; hard-error on MPI=false with a message that no MPI-free build exists (PARALLEL_MPI=NONE is not viable — lagrange_mpi.f90 calls MPI unconditionally). Do NOT add a blanket error-out for these flags: fortran-ci.yml:89 and the CLAUDE.md build commands pass them today (CI edit lands in Batch 4/N49; coordinate) |
 
 **Prior findings folded in:**
 
@@ -65,9 +67,9 @@
 
 | ID | Sev | Finding | Location | Fix |
 |---|---|---|---|---|
-| N12 | high | init_db's Alembic branch is dead code: alembic.ini looked up at the wrong path, so migrations/stamping never run | `shyfem-ui/shyfem_ui/db/base.py:97` | Resolve alembic.ini via Path(__file__).parents relative to the package, not CWD; test that a fresh DB gets stamped and a legacy DB migrated |
+| N12 | high | init_db's Alembic branch is dead code: alembic.ini looked up at the wrong path, so migrations/stamping never run | `shyfem-ui/shyfem_ui/db/base.py:97` | Change parents[1] → parents[2] in base.py:97 (alembic.ini lives at shyfem-ui/, one level ABOVE the shyfem_ui package — the path is already __file__-relative, just one level short); test that a fresh DB gets MIGRATED to head (all tables + alembic_version) and a legacy create_all DB gets STAMPED at head; handle the caveat that stamping an old-release create_all DB can skip needed migrations |
 | N13 | high | Any WebSocket disconnect auto-cancels running jobs; local mode cancels ALL active jobs | `shyfem-ui/shyfem_ui/services/job_queue.py:102` | Remove disconnect→cancel coupling; jobs belong to users, not WS sessions; add explicit cancel UI only |
-| N14 | high | Job cancellation never terminates the spawned subprocess | `shyfem-ui/shyfem_ui/services/shyfem_wrapper.py:204` | Store the Popen/pid (process group) in the job record; cancel → SIGTERM group, SIGKILL after grace; assert child gone in test |
+| N14 | high | Job cancellation never terminates the spawned subprocess | `shyfem-ui/shyfem_ui/services/shyfem_wrapper.py:204` | Spawn with start_new_session=True in run_command (jobs use asyncio.create_subprocess_exec and currently share the server process group — a bare killpg would take down the whole Shiny app); keep the live Process handle (persist pid only for orphan reconciliation, N46); add a finally/except-CancelledError block in run_command that SIGTERMs the child group, SIGKILLs after grace, and awaits proc.wait(); assert the child is gone in a live test |
 | N40 | medium | jobs.output_files is never persisted or restored — the column added by migration 7e41388e2c8d is permanently empty and restarts lose output-file lists | `shyfem-ui/shyfem_ui/services/job_local.py:144` | Serialize output_files as JSON in _persist_job and restore it in _load_history_from_db (column exists via migration 7e41388e2c8d) |
 | N41 | medium | Boundary editor Add/CSV-import mutate the list in place then set() the same object ref, so the UI never refreshes | `shyfem-ui/shyfem_ui/components/boundary_editor.py:198` | set() a NEW list object (copy-on-write) so Shiny reactivity sees the change |
 | N42 | medium | Run page 'Continue from job' restart selection is recorded only in metadata and never applied, so restarts silently start fresh | `shyfem-ui/shyfem_ui/pages/run.py:678` | Actually wire the selected restart file into the generated STR ($name restrt) instead of only recording metadata |
@@ -99,7 +101,7 @@
 | ID | Sev | Finding | Location | Fix |
 |---|---|---|---|---|
 | N43 | medium | Username '.' collapses per-user sandbox to the entire data root (cross-user read/write) | `shyfem-ui/shyfem_ui/config.py:422` | Validate username slug (^[A-Za-z0-9_][A-Za-z0-9_.-]*$, reject "." and "..") at creation AND in confine_path |
-| N44 | medium | PR#29 confine_path makes the bootstrapped tutorial project (and pre-#29 projects under work_dir) unreachable in server mode | `shyfem-ui/shyfem_ui/config.py:426` | Run the project-relocation migration at startup (it is currently dead code) or add a read-only allowlist for the legacy shared work_dir (finishes prior F15) |
+| N44 | medium | PR#29 confine_path makes the bootstrapped tutorial project (and pre-#29 projects under work_dir) unreachable in server mode | `shyfem-ui/shyfem_ui/config.py:426` | Make confinement shared-project-aware: allow paths under the work_dir of any project the acting user holds an accepted ProjectPermission on (read-only for tutorial/viewer roles), OR bootstrap a per-user tutorial copy under the user's own home. The relocation migration alone cannot fix this — it moves projects to their OWNER's home (admin), which stays outside the tutorial user's allowlist; run it only as the companion fix for legacy owner access (F15) |
 | N45 | medium | Login timing oracle enables username and active-status enumeration | `shyfem-ui/shyfem_ui/services/auth_service.py:251` | Always verify against a dummy bcrypt hash when the user is missing/inactive so timing is constant |
 | N49 | medium | mpi-build job compiles the MPI binary but never executes it — "build compiles" is certified, "build runs" is not | `.github/workflows/fortran-ci.yml:89` | Add an mpirun -np 2 mar_menor smoke step with the OpenMPI PATH pin ("build compiles" ≠ "build runs") |
 | N50 | medium | Global Engine-class FK PRAGMA listener defeats test_db_fk.py's pin on production FK enforcement | `shyfem-ui/tests/conftest.py:31` | Scope the PRAGMA listener to test engines only; add a test asserting the production engine registers no such listener |
@@ -133,7 +135,7 @@
 |---|---|---|---|---|
 | N21 | medium | has_waves() returns false for WW3 coupling (iwave=11/12), so turbulence ignores wave roughness | `src/shyfem/waves_admin.f90:1829` | Include iwave=11/12 in has_waves() so turbulence sees WW3 wave roughness |
 | N22 | medium | set_advective ihwadv=1 reads ulov(0,ie)/vlov(0,ie) out of bounds at the surface layer | `src/shyfem/explicit.f90:841` | Guard the surface layer: use max(l-1,1) / skip the l=0 access in the vertical advection stencil |
-| N23 | medium | Explicit zeta scheme aborts on any wetting/drying event; bare stop in MPI collective context deadlocks | `src/shyfem/simsys_spkaux.f90:643` | Replace bare stop with collective-safe error_stop; document that the explicit scheme cannot dry (or implement drying) |
+| N23 | medium | Explicit zeta scheme aborts on any wetting/drying event; bare stop in MPI collective context deadlocks | `src/shyfem/simsys_spkaux.f90:643` | Replace the bare stops with collective-safe abort; fix the bsysexpl latch (system_set_explicit is set once and never unset, so iostr setimp/changeimp mid-run overrides fire the "non diag elems" stop with no drying involved); guard the rvec2d/raux2d division at simsys_spkaux.f90:489; document that the explicit scheme cannot dry (or implement drying). Add an explicit-weights (azpar=0, ampar=1) mini-case — mar_menor never exercises this path |
 | N24 | medium | Restart read has no iostat past the first header record — a truncated final record aborts the run instead of falling back to the previous record | `src/shyfem/restart.f90:937` | Add iostat= to every record read; on truncation report the record name and abort cleanly instead of crashing |
 | N25 | medium | Restart round-trip silently drops model state: simple-sediment bed mass (hooks exist but unwired) and k-eps turbulence | `src/shyfem/restart.f90:616` | Wire the existing simple-sediment bed-mass hooks into write/read; document remaining unsaved state explicitly |
 | N26 | medium | Vertical layer structure in restart file (hlv/ilhv/ilhkv) is read but never validated against the run; rst_get_vertical is dead code | `src/shyfem/restart.f90:948` | Validate hlv/ilhv/ilhkv against the running basin after read; abort on mismatch |
@@ -155,7 +157,7 @@
 | F10 | open | Positivity floor for ALL state variables in merc_euler (MIN_CONCENTRATION per AQUABC), not just C(1) |
 | F11 | open | Replace the 25 bare allocation-failure stops in mpi_node_internal.f90 with shympi_abort |
 | F27 | open | Replace the 9 bare stops in sparskit_admin.f90 with collective-safe abort |
-| F28 | open | Mass-conserving clamp: only zero true negatives (cnv < 0), count+log occurrences, keep the 1e-15 threshold out of it |
+| F28 | open | Match the original M17 remediation exactly: log count/minval of negatives BEFORE any clamp; keep the tiny-positive flush as `where(cnv > 0. .and. cnv < 1.e-15) cnv = 0.`; zero negatives only with the removed mass accounted (accumulate + report the correction) — do NOT relabel unaccounted negative-zeroing as "mass-conserving" |
 | F29 | open | conz3d_element: abort on allocation failure instead of silent return (concentration_omp.f90:447) |
 | F30 | partial | PARTIAL → finish: wire per-layer ISEG/ITO through the 3D coupling so the inter-layer light chain is live (AQUABC parity) |
 | F31 | open | Add intent attributes to all ~27 mercury_react arguments (merc_water.f90:37) |
@@ -175,7 +177,7 @@
 
 | ID | Sev | Finding | Location | Fix |
 |---|---|---|---|---|
-| N06 | high | InterpolateDepth dereferences NULL element on out-of-coverage centroid (supported workflow) | `src/tools/mesh/intgrd.c:289` | Check element-lookup result for NULL; warn + skip out-of-coverage centroids instead of dereferencing |
+| N06 | high | InterpolateDepth dereferences NULL element on out-of-coverage centroid (supported workflow) | `src/tools/mesh/intgrd.c:289` | PREREQUISITE: intgrd.c/maskgrd.c do not compile at HEAD (ReadStandard/WriteStandard calls do not match the 3-arg grdio.h prototypes — see report §5) — restore compilation first, then check the FindElement result for NULL and warn+skip out-of-coverage centroids. Note: verdict is PLAUSIBLE (adj. low), the only non-CONFIRMED item in this roadmap — consider demoting to Batch 7 verify-then-fix |
 | N07 | high | femelab -write/-condense use per-variable lmax as array leading dimension, mis-striding mixed 2D/3D FEM files | `src/tools/shyelab/femelab1.f90:937` | Use the file-global vertical dimension (not per-variable lmax) as the array leading dimension; add a mixed-2D/3D FEM regression file |
 | N08 | high | shyelab -vorticity writes nodal data as an element record (stale belem) and silently writes nothing for fem/gis/nc | `src/tools/shyelab/shyelab1.f90:554` | Set belem=.false. for the nodal vorticity record; hard-error for unsupported fem/gis/nc outputs instead of writing nothing |
 | N30 | medium | sprintf("%f", coord/depth) into char s[20] overflows on large grd values | `src/tools/grid/gridma2.c:272` | snprintf with sizeof(s) for coordinate/depth formatting |
