@@ -921,8 +921,13 @@
             txy = sqrt( tx(k)**2 + ty(k)**2 )
             wspeed = sqrt(txy/(cd*wfact*roluft))
             wxymax = max(wxymax,wspeed)
-            wx(k) = tx(k) / (cd*wspeed)
-            wy(k) = ty(k) / (cd*wspeed)
+            if( wspeed > 1.e-8 ) then
+              wx(k) = tx(k) / (cd*wspeed)
+              wy(k) = ty(k) / (cd*wspeed)
+            else				!calm point: no stress, no wind
+              wx(k) = 0.
+              wy(k) = 0.
+            end if
 	    ws(k) = wspeed
           end do
         else 
