@@ -101,3 +101,22 @@
            stop "ERROR CAmgX_dummy, AmgX wasn't enabled at compilation"
       end subroutine CAmgX_Finalize
 !*******************************************************************
+      subroutine CAmgX_GetIters(AmgX_Solver,iters,perr)
+       use iso_c_binding
+        implicit none
+           type(c_ptr) :: AmgX_Solver
+           integer(kind=c_int) :: iters
+           integer :: perr
+           stop "ERROR CAmgX_dummy, AmgX wasn't enabled at compilation"
+      end subroutine CAmgX_GetIters
+!*******************************************************************
+      subroutine CAmgX_GetResidual(AmgX_Solver,iter,residual,perr)
+       use iso_c_binding
+        implicit none
+           type(c_ptr) :: AmgX_Solver
+           integer(kind=c_int) :: iter
+           real(kind=c_double) :: residual
+           integer :: perr
+           stop "ERROR CAmgX_dummy, AmgX wasn't enabled at compilation"
+      end subroutine CAmgX_GetResidual
+!*******************************************************************
