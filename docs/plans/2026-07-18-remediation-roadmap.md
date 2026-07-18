@@ -213,7 +213,7 @@ No fixed item list — input is the 46 leads in report §4. Recommended: a verif
 
 ## Progress checklist
 
-- [ ] **Batch 1 — Fortran core — critical/high correctness** (10 items: N01, N03, N04, N05, N09, N10, N11, N15, N20, N29)
+- [x] **Batch 1 — Fortran core — critical/high correctness** (10 items: N01, N03, N04, N05, N09, N10, N11, N15, N20, N29) — DONE (commits 868569c..ccd1e33)
 - [ ] **Batch 2 — Build system truthfulness** (6 items: N02, N16, N17, N18, N19, F42)
 - [ ] **Batch 3 — UI job lifecycle & data integrity** (17 items: N12, N13, N14, N40, N41, N42, N46, N47, N48, F17, F22, F24, F25, F48, F49, F50, F51)
 - [ ] **Batch 4 — UI security hardening & CI honesty** (17 items: N43, N44, N45, N49, N50, N51, N52, F14, F15, F16, F26, F44, F45, F46, F47, F52, F53)
