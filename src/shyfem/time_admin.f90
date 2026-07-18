@@ -356,7 +356,7 @@
 	idt = nint(didt)
 	idtorig = idt
 	itanf = nint(dtanf)
-	!itend = nint(dtend)
+	itend = nint(dtend)
 	it = itanf
 
 	itunit = nint(dgetpar('itunit'))
@@ -700,7 +700,7 @@
 	dt_act = dt
 	t_act = dtime
 	idt = dt
-	!it = t_act
+	if( abs(t_act) < 2.1d9 ) it = nint(t_act)	!legacy femtime clock
 
 	call check_time('in set_timestep end')
 	
