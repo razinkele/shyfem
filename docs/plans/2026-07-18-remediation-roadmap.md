@@ -169,6 +169,8 @@
 
 **Exit criteria:** All builds green; mar_menor + restart round-trip test; weutro_box 6-gate suite green; MPI 4-rank run with deliberate failure aborts cleanly (no deadlock).
 
+**Carried over from the Batch 1 final review (2026-07-19):** conzstab's icall-guarded save locals (rstol_c/iuinfo/da_out — mirror the limit_scalar_init named-CRITICAL pattern); route mod_petsc_system's `assert` through shympi_abort_internal when doing the bare-stop sweep; mirror the 2^31 guard onto `itend = nint(dtend)` (time_admin.f90:359); tighten the AmgX introspection check + delete the superseded commented block (mod_petsc_system.f90) and retype the dummy stubs' perr; add a small lat/lon (isphe=1) regression case so N15's projection fix is numerically exercised.
+
 ---
 
 ## Batch 6: Tools — Fortran & C utilities
