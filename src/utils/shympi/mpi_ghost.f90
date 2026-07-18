@@ -135,7 +135,7 @@
 	  if( ncs(n) > 0 ) n_ghost_areas = n_ghost_areas + 1
 	end do
 
-	bdebug = ( my_unit > 0 )
+	bdebug = ( my_unit /= 0 )
 
 	if( bdebug ) then
 	  write(my_unit,*) 'this debug file is written by ghost_make'
@@ -498,7 +498,7 @@
 	logical bdebug
 	integer ia,ic,nc,i,k,ie
 
-	bdebug = ( my_unit > 0 )
+	bdebug = ( my_unit /= 0 )
 
 	if( .not. bdebug ) return
 

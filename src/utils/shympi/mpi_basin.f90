@@ -160,7 +160,7 @@
 !	debug output
 !	-----------------------------------------------------
 
-	if( my_unit > 0 ) then
+	if( my_unit /= 0 ) then
 	  write(my_unit,*) 'nodes in domain: ',nkn_local
 	  write(my_unit,'(10i7)') (nindex(i),i=1,nkn_local)
 	  write(my_unit,*) 'elems in domain: ',nel_local
@@ -177,7 +177,7 @@
 !	debug output
 !	-----------------------------------------------------
 
-	if( my_unit > 0 ) then
+	if( my_unit /= 0 ) then
 	  write(my_unit,*) 'my_id: ',my_id
 	  write(my_unit,*) 'nkn,nel :',nkn,nel
 	  write(my_unit,*) 'nkn_inner,nel_inner :',nkn_inner,nel_inner
