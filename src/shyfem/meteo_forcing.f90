@@ -1648,6 +1648,7 @@
 	double precision, parameter :: p = -12 !coefficient best representing the regime transition
 	double precision :: bfit,bnu,bch
 	double precision :: R,A
+	double precision :: wxy_eff
 
 	if ( ach < 0.0001 .or. ach > 0.5 ) then
 	  write(6,*) 'Strange value of the Charnock parameter = ',ach
@@ -1655,8 +1656,9 @@
           stop 'error stop hersbach_cd: dragco'
 	end if
 
-	R = (z / (am * nu)) * (k * wxy)
-	A = (ach / (g_hersbach * z)) * (k * wxy)**2
+	wxy_eff = max(dble(wxy),0.1d0)	!floor: log(R),log(A) diverge as wxy->0
+	R = (z / (am * nu)) * (k * wxy_eff)
+	A = (ach / (g_hersbach * z)) * (k * wxy_eff)**2
 	bnu = -1.47 + 0.93 * log(R)
 	bch = 2.65 - 1.44 * log(A) - 0.015 * (log(A))**2
 
