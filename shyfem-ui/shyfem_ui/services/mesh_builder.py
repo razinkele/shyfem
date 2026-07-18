@@ -56,6 +56,24 @@ from shyfem_ui.services.parser_grd import (
 logger = logging.getLogger(__name__)
 
 
+def _wgs84_transformer(source_crs, *, context: str):
+    """Return a transformer for projected CRS, or None for geographic/no CRS."""
+    if not source_crs:
+        return None
+    if pyproj is None:
+        raise ValueError(f"Cannot reproject {context}: pyproj is not installed")
+    try:
+        src_crs = pyproj.CRS.from_user_input(source_crs)
+        if src_crs.is_projected:
+            logger.info("Reprojecting %s from %s to WGS84", context, src_crs.name)
+            return pyproj.Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
+        return None
+    except Exception as exc:
+        raise ValueError(
+            f"Could not determine CRS for {context}; refusing to use raw coordinates"
+        ) from exc
+
+
 # ---------------------------------------------------------------------------
 # 1. Import boundaries
 # ---------------------------------------------------------------------------
@@ -144,17 +162,8 @@ def import_boundaries(file_path: Path) -> GrdFile:
 
     with fiona.open(str(file_path)) as src:
         # Reproject to WGS84 if source CRS is projected (e.g. UTM, LKS94)
-        transformer = None
-        if src.crs:
-            try:
-                src_crs = pyproj.CRS.from_user_input(src.crs)
-                if src_crs.is_projected:
-                    transformer = pyproj.Transformer.from_crs(
-                        src_crs, "EPSG:4326", always_xy=True
-                    ).transform
-                    logger.info("Reprojecting from %s to WGS84", src_crs.name)
-            except Exception as exc:
-                logger.warning("Could not determine CRS, using raw coordinates: %s", exc)
+        transformer_obj = _wgs84_transformer(src.crs, context=f"boundary {file_path}")
+        transformer = transformer_obj.transform if transformer_obj is not None else None
 
         for feature in src:
             geom = shapely.geometry.shape(feature["geometry"])
@@ -817,23 +826,8 @@ def load_bathymetry_contours(
 
     with fiona.open(str(path)) as src:
         # Reproject to WGS84 if source CRS is projected
-        transformer = None
-        if src.crs:
-            try:
-                src_crs = pyproj.CRS.from_user_input(src.crs)
-                if src_crs.is_projected:
-                    transformer = pyproj.Transformer.from_crs(
-                        src_crs, "EPSG:4326", always_xy=True
-                    ).transform
-                    logger.info(
-                        "Reprojecting bathymetry contours from %s to WGS84",
-                        src_crs.name,
-                    )
-            except Exception as exc:
-                logger.warning(
-                    "Could not determine CRS for contours, using raw coordinates: %s",
-                    exc,
-                )
+        transformer_obj = _wgs84_transformer(src.crs, context=f"bathymetry contours {path}")
+        transformer = transformer_obj.transform if transformer_obj is not None else None
 
         for feat in src:
             props = feat["properties"]
@@ -904,19 +898,8 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
         band = src.read(1)
         nodata = src.nodata
 
-        # Build reprojection transformer if raster is projected
-        transformer = None
-        if src.crs:
-            try:
-                src_crs = pyproj.CRS.from_user_input(src.crs)
-                if src_crs.is_projected:
-                    transformer = pyproj.Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
-                    logger.info(
-                        "Reprojecting raster bathymetry from %s to WGS84",
-                        src_crs.name,
-                    )
-            except Exception as exc:
-                logger.warning("Could not determine raster CRS, using raw coordinates: %s", exc)
+        # Build reprojection transformer if raster is projected.
+        transformer = _wgs84_transformer(src.crs, context=f"raster bathymetry {path}")
 
         # Valid-pixel mask. Start from the nodata skip, then drop any
         # non-finite pixels: a NaN sentinel makes `band != nodata` True

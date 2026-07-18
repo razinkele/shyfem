@@ -562,8 +562,10 @@
 	use basin
 	use levels
 
-	logical b_want_mpi
-	logical, optional :: b_want_mpi_init
+	implicit none
+
+	logical, intent(in) :: b_want_mpi
+	logical, intent(in), optional :: b_want_mpi_init
 
 	logical bstop,binit
 	integer ierr,size,ios
@@ -688,9 +690,7 @@
 	    write(cunit,'(i10)') my_id
 	    cunit = adjustl(cunit)
 	    file = 'mpi_debug_' // trim(cunit) // '.txt'
-	    !call shympi_get_new_unit(my_unit)
-	    my_unit = my_unit_base + my_id
-	    open(unit=my_unit,file=file,status='unknown',iostat=ios)
+	    open(newunit=my_unit,file=file,status='unknown',iostat=ios)
 	    if( ios /= 0 ) then
 	      write(6,*) 'error opening file: ',trim(file)
 	      call shympi_abort_internal( &
@@ -733,7 +733,9 @@
 
 	subroutine shympi_alloc_id(nk,ne)
 
-	integer nk,ne	!local domain
+	implicit none
+
+	integer, intent(in) :: nk,ne	!local domain
 	integer ierr
 
 	!write(6,*) 'shympi_alloc_id: ',nk,ne
@@ -754,7 +756,9 @@
 
 	subroutine shympi_alloc_sort(nk,ne)
 
-	integer nk,ne
+	implicit none
+
+	integer, intent(in) :: nk,ne
 	integer ierr
 
         if( allocated(ip_sort_node) ) deallocate(ip_sort_node)
@@ -776,10 +780,12 @@
 
 ! these are global arrays
 
-	integer nk,ne		!global nkn, nel
-	integer nen3v(3,ne)
-	integer ipv(nk)
-	integer ipev(ne)
+	implicit none
+
+	integer, intent(in) :: nk,ne		!global nkn, nel
+	integer, intent(in) :: nen3v(3,ne)
+	integer, intent(in) :: ipv(nk)
+	integer, intent(in) :: ipev(ne)
 
 	integer i
 	integer ierr
@@ -821,7 +827,9 @@
 
 	use basin
 
-	integer n
+	implicit none
+
+	integer, intent(in) :: n
 	integer ierr
 
 	if( allocated(ghost_areas) ) then
@@ -4474,4 +4482,3 @@
 !==================================================================
         end module shympi
 !==================================================================
-

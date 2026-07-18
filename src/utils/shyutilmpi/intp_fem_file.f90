@@ -679,11 +679,16 @@
 	! check input parameters
 	!---------------------------------------------------------
 
-	if( nvar < 1 ) goto 97
-	if( nexp < 1 ) goto 97
-	!if( nexp > nkn_fem ) goto 97
-	if( lexp < 0 ) goto 97
-	if( nintp < 1 ) goto 97
+	if( nvar < 1 .or. nexp < 1 .or. lexp < 0 .or. nintp < 1 ) then
+	  write(6,*) '*** error in input parameters of routine: '
+	  write(6,*) 'file: ',trim(file)
+	  write(6,*) 'nvar: ',nvar
+	  write(6,*) 'nexp,lexp: ',nexp,lexp
+	  write(6,*) 'nintp: ',nintp
+	  write(6,*) 'nkn_fem: ',nkn_fem
+	  call iff_print_file_info(id)
+	  stop 'error stop iff_init'
+	end if
 
 	!---------------------------------------------------------
 	! get info on file
@@ -720,15 +725,50 @@
         call fem_file_make_type(ntype,2,itype)
         breg = itype(2) > 0
 
-	if( file /= ' ' .and. bnofile ) goto 99
-	if( bnosuchfile ) goto 99
-	if( bfile .and. berror ) goto 93
-	if( bfile .and. boperr ) goto 91
-	if( bfile .and. np < 1 ) goto 96
-	if( .not. breg .and. np > 1 .and. np /= nexp ) goto 96
+	if( ( file /= ' ' .and. bnofile ) .or. bnosuchfile ) then
+	  write(6,*) '*** no such file: ',trim(file)
+	  write(6,*) 'iformat = ',iformat
+	  stop 'error stop iff_init'
+	end if
+	if( bfile .and. berror ) then
+	  write(6,*) '*** error in file: ',trim(file)
+	  write(6,*) 'iformat = ',iformat
+	  stop 'error stop iff_init'
+	end if
+	if( bfile .and. boperr ) then
+	  write(6,*) '*** error opening file: ',trim(file)
+	  id0 = iff_find_id_to_file(file)
+	  if( id0 > 0 ) then
+	    ibc = pinfo(id0)%ibc
+	    write(6,*) 'the file is already open on boundary ',ibc
+	  else
+	    write(6,*) 'iformat = ',iformat
+	  end if
+	  stop 'error stop iff_init'
+	end if
+	if( bfile .and. np < 1 ) then
+	  write(6,*) '*** file does not contain expected data size'
+	  write(6,*) 'expected number of points in shyfem: ',nexp
+	  write(6,*) 'provided number of points in file  : ',np
+	  call iff_print_file_info(id)
+	  stop 'error stop iff_init'
+	end if
+	if( .not. breg .and. np > 1 .and. np /= nexp ) then
+	  write(6,*) '*** file does not contain expected data size'
+	  write(6,*) 'expected number of points in shyfem: ',nexp
+	  write(6,*) 'provided number of points in file  : ',np
+	  call iff_print_file_info(id)
+	  stop 'error stop iff_init'
+	end if
 
 	if( bfile ) then
-	  if( nvar_orig /= nvar_read ) goto 92
+	  if( nvar_orig /= nvar_read ) then
+	    write(6,*) '*** error in file: ',trim(file)
+	    write(6,*) 'file does not contain correct number of variables'
+	    write(6,*) 'nvar file = ',nvar_read
+	    write(6,*) 'nvar expected = ',nvar_orig
+	    stop 'error stop iff_init'
+	  end if
 	end if
 	nvar = nvar_orig
 
@@ -784,7 +824,11 @@
 	  pinfo(id)%bonepoint = pinfo(id0)%bonepoint
 	else if( bfem ) then
           call fem_file_get_data_description(file,pinfo(id)%strings_file,ierr)
-	  if( ierr /= 0 ) goto 98
+	  if( ierr /= 0 ) then
+	    write(6,*) '*** error reading data description of file: ',trim(file)
+	    call iff_print_file_info(id)
+	    stop 'error stop iff_init'
+	  end if
 	else if( bts ) then
 	  pinfo(id)%bonepoint = .true.
 	  pinfo(id)%strings_file = ' '
@@ -824,8 +868,16 @@
 	  call iff_write_dtime('time',dtime)
 	end if
 
-	if( iunit < 0 ) goto 99
-	if( iunit == 0 ) goto 90
+	if( iunit < 0 ) then
+	  write(6,*) '*** no such file: ',trim(file)
+	  write(6,*) 'iformat = ',iformat
+	  stop 'error stop iff_init'
+	end if
+	if( iunit == 0 ) then
+	  write(6,*) '*** error in opening file: ',trim(file)
+	  write(6,*) 'iformat = ',iformat
+	  stop 'error stop iff_init'
+	end if
 	pinfo(id)%iunit = iunit
 
 	write(6,*) 'file opened: ',id,trim(file)
@@ -843,54 +895,6 @@
 	! end of routine
 	!---------------------------------------------------------
 
-	return
-   90	continue
-	write(6,*) '*** error in opening file: ',trim(file)
-	write(6,*) 'iformat = ',iformat
-	stop 'error stop iff_init'
-   91	continue
-	write(6,*) '*** error opening file: ',trim(file)
-	id0 = iff_find_id_to_file(file)
-	if( id0 > 0 ) then
-	  ibc = pinfo(id0)%ibc
-	  write(6,*) 'the file is already open on boundary ',ibc
-	else 
-	  write(6,*) 'iformat = ',iformat
-	end if
-	stop 'error stop iff_init'
-   92	continue
-	write(6,*) '*** error in file: ',trim(file)
-	write(6,*) 'file does not contain correct number of variables'
-	write(6,*) 'nvar file = ',nvar_read
-	write(6,*) 'nvar expected = ',nvar_orig
-	stop 'error stop iff_init'
-   93	continue
-	write(6,*) '*** error in file: ',trim(file)
-	write(6,*) 'iformat = ',iformat
-	stop 'error stop iff_init'
-   96	continue
-	write(6,*) '*** file does not contain expected data size'
-	write(6,*) 'expected number of points in shyfem: ',nexp
-	write(6,*) 'provided number of points in file  : ',np
-	call iff_print_file_info(id)
-	stop 'error stop iff_init'
-   97	continue
-	write(6,*) '*** error in input parameters of routine: '
-	write(6,*) 'file: ',trim(file)
-	write(6,*) 'nvar: ',nvar
-	write(6,*) 'nexp,lexp: ',nexp,lexp
-	write(6,*) 'nintp: ',nintp
-	write(6,*) 'nkn_fem: ',nkn_fem
-	call iff_print_file_info(id)
-	stop 'error stop iff_init'
-   98	continue
-	write(6,*) '*** error reading data description of file: ',trim(file)
-	call iff_print_file_info(id)
-	stop 'error stop iff_init'
-   99	continue
-	write(6,*) '*** no such file: ',trim(file)
-	write(6,*) 'iformat = ',iformat
-	stop 'error stop iff_init'
 	end subroutine iff_init
 
 !****************************************************************
@@ -3282,4 +3286,3 @@
 	end
 
 !****************************************************************
-

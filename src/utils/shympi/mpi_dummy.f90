@@ -499,8 +499,10 @@
 
 	use basin
 
-	logical b_want_mpi
-        logical, optional :: b_want_mpi_init
+	implicit none
+
+	logical, intent(in) :: b_want_mpi
+        logical, intent(in), optional :: b_want_mpi_init
 
 	logical bstop
 	integer ierr,size,ios
@@ -636,7 +638,9 @@
 
 	subroutine shympi_alloc_id(nk,ne)
 
-	integer nk,ne
+	implicit none
+
+	integer, intent(in) :: nk,ne
 	integer ierr
 
 	allocate(id_node(nk),stat=ierr)
@@ -655,7 +659,9 @@
 
         subroutine shympi_alloc_sort(nk,ne)
 
-        integer nk,ne
+        implicit none
+
+        integer, intent(in) :: nk,ne
         integer ierr
 
 	if( allocated(ip_sort_node) ) deallocate(ip_sort_node)
@@ -677,10 +683,12 @@
 
 ! these are global arrays
 
-        integer nk,ne
-        integer nen3v(3,ne)
-	integer ipv(nk)
-	integer ipev(ne)
+        implicit none
+
+        integer, intent(in) :: nk,ne
+        integer, intent(in) :: nen3v(3,ne)
+	integer, intent(in) :: ipv(nk)
+	integer, intent(in) :: ipev(ne)
 
         integer i
         integer ierr
@@ -722,7 +730,9 @@
 
 	use basin
 
-	integer n
+	implicit none
+
+	integer, intent(in) :: n
 	integer ierr
 
         if( allocated(ghost_areas) ) then
@@ -2680,4 +2690,3 @@
 !******************************************************************
 !******************************************************************
 !******************************************************************
-

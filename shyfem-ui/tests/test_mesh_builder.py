@@ -258,6 +258,48 @@ class TestImportBoundaries:
         assert all(-90 <= y <= 90 for y in ys), f"Y out of WGS84 range: {ys}"
         assert grd.epsg == 4326
 
+    def test_boundary_crs_parse_failure_is_error(self, tmp_path, monkeypatch):
+        """CRS failures must not silently treat projected coordinates as WGS84."""
+        import fiona
+        from fiona.crs import CRS
+
+        schema = {"geometry": "Polygon", "properties": {}}
+        path = tmp_path / "bad_crs.shp"
+        with fiona.open(
+            str(path),
+            "w",
+            driver="ESRI Shapefile",
+            schema=schema,
+            crs=CRS.from_epsg(32635),
+        ) as dst:
+            dst.write(
+                {
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [
+                            [
+                                [300000, 6100000],
+                                [350000, 6100000],
+                                [350000, 6150000],
+                                [300000, 6150000],
+                                [300000, 6100000],
+                            ]
+                        ],
+                    },
+                    "properties": {},
+                }
+            )
+
+        from shyfem_ui.services import mesh_builder
+
+        def fail_crs(_value):
+            raise RuntimeError("bad CRS")
+
+        monkeypatch.setattr(mesh_builder.pyproj.CRS, "from_user_input", fail_crs)
+
+        with pytest.raises(ValueError, match="refusing to use raw coordinates"):
+            import_boundaries(path)
+
     def test_wgs84_not_reprojected(self, tmp_path):
         """Shapefile already in WGS84 keeps original coordinates."""
         import fiona
@@ -1494,6 +1536,39 @@ class TestCuronianIntegration:
         assert data[:, 1].min() > 54.0, "Y should be WGS84 latitude (not projected)"
         assert data[:, 1].max() < 57.0, "Y should be WGS84 latitude (not projected)"
 
+    def test_contour_crs_parse_failure_is_error(self, tmp_path, monkeypatch):
+        import fiona
+        from fiona.crs import CRS
+
+        schema = {"geometry": "LineString", "properties": {"depth": "float"}}
+        path = tmp_path / "contours.shp"
+        with fiona.open(
+            str(path),
+            "w",
+            driver="ESRI Shapefile",
+            schema=schema,
+            crs=CRS.from_epsg(32635),
+        ) as dst:
+            dst.write(
+                {
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[300000, 6100000], [350000, 6100000]],
+                    },
+                    "properties": {"depth": 5.0},
+                }
+            )
+
+        from shyfem_ui.services import mesh_builder
+
+        def fail_crs(_value):
+            raise RuntimeError("bad CRS")
+
+        monkeypatch.setattr(mesh_builder.pyproj.CRS, "from_user_input", fail_crs)
+
+        with pytest.raises(ValueError, match="refusing to use raw coordinates"):
+            load_bathymetry_contours(path)
+
     def test_interpolate_isobaths_all_methods(self):
         """All scipy methods produce valid depths from Curonian isobaths."""
         grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
@@ -1996,6 +2071,25 @@ class TestBathymetryRasterVectorizationBranches:
         expected = self._reference_loop_full(path)
         got = _load_bathymetry_raster(path)
         np.testing.assert_allclose(got, expected, rtol=0, atol=1e-9)
+
+    def test_raster_crs_parse_failure_is_error(self, tmp_path, monkeypatch):
+        import numpy as np
+        from rasterio.transform import from_origin
+
+        from shyfem_ui.services import mesh_builder
+
+        band = np.array([[1.0]], dtype="float32")
+        transform = from_origin(500000.0, 4500000.0, 100.0, 100.0)
+        path = tmp_path / "bad_crs.tif"
+        self._write_raster(path, band, None, transform, crs="EPSG:32635")
+
+        def fail_crs(_value):
+            raise RuntimeError("bad CRS")
+
+        monkeypatch.setattr(mesh_builder.pyproj.CRS, "from_user_input", fail_crs)
+
+        with pytest.raises(ValueError, match="refusing to use raw coordinates"):
+            mesh_builder._load_bathymetry_raster(path)
 
     def test_integer_band(self, tmp_path):
         import numpy as np

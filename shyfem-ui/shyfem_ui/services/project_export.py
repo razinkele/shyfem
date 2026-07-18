@@ -1,6 +1,7 @@
 """Project export, import, and clone operations."""
 
 import json
+import shutil
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
@@ -10,6 +11,9 @@ MANIFEST_VERSION = "1.0"
 
 # File extensions to exclude from export (job logs)
 _EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr"})
+MAX_IMPORT_FILES = 10000
+MAX_IMPORT_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
+MAX_IMPORT_COMPRESSION_RATIO = 100
 
 
 def export_project(work_dir: Path, project_meta: dict) -> BytesIO:
@@ -23,12 +27,19 @@ def export_project(work_dir: Path, project_meta: dict) -> BytesIO:
         BytesIO containing the ZIP archive.
     """
     buf = BytesIO()
-    work_dir = Path(work_dir)
+    work_dir = Path(work_dir).resolve()
 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # Write project files
         for file_path in sorted(work_dir.rglob("*")):
+            if file_path.is_symlink():
+                continue
             if not file_path.is_file():
+                continue
+            resolved = file_path.resolve()
+            try:
+                resolved.relative_to(work_dir)
+            except ValueError:
                 continue
             if file_path.suffix in _EXCLUDE_EXTENSIONS:
                 continue
@@ -69,8 +80,11 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
     base_dir = Path(base_dir)
 
     with zipfile.ZipFile(zip_data, "r") as zf:
-        if "manifest.json" not in zf.namelist():
+        infos = zf.infolist()
+        names = [info.filename for info in infos]
+        if "manifest.json" not in names:
             raise ValueError("Invalid archive: missing manifest.json")
+        _validate_archive_limits(infos)
 
         try:
             manifest = json.loads(zf.read("manifest.json"))
@@ -83,21 +97,6 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
         project_info = manifest.get("project", {})
         name = project_info.get("name", "imported_project")
 
-        # Check for path traversal using resolved-path containment
-        base_dir_resolved = base_dir.resolve()
-        for member in zf.namelist():
-            if member == "manifest.json":
-                continue
-            if Path(member).is_absolute():
-                raise ValueError(f"path traversal in archive (absolute): {member!r}")
-            target = (base_dir / member).resolve()
-            try:
-                target.relative_to(base_dir_resolved)
-            except ValueError as e:
-                raise ValueError(
-                    f"path traversal in archive: {member!r} resolves outside {base_dir_resolved}"
-                ) from e
-
         # Determine unique directory name
         project_dir = base_dir / _sanitize_dirname(name)
         if project_dir.exists():
@@ -105,16 +104,33 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
             name = f"{name}_{suffix}"
             project_dir = base_dir / _sanitize_dirname(name)
 
+        # Check traversal against the actual extraction root, not just base_dir.
+        project_dir_resolved = project_dir.resolve()
+        for member in names:
+            if member == "manifest.json":
+                continue
+            if Path(member).is_absolute():
+                raise ValueError(f"path traversal in archive (absolute): {member!r}")
+            target = (project_dir / member).resolve()
+            try:
+                target.relative_to(project_dir_resolved)
+            except ValueError as e:
+                raise ValueError(
+                    f"path traversal in archive: {member!r} resolves outside {project_dir_resolved}"
+                ) from e
+
         project_dir.mkdir(parents=True)
 
         # Extract files (skip manifest)
-        for member in zf.namelist():
+        for member in names:
             if member == "manifest.json":
+                continue
+            if member.endswith("/"):
                 continue
             target = project_dir / member
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, open(target, "wb") as dst:
-                dst.write(src.read())
+                shutil.copyfileobj(src, dst, length=1024 * 1024)
 
     return {
         "name": name,
@@ -123,6 +139,28 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
         "grids": manifest.get("grids", []),
         "simulations": manifest.get("simulations", []),
     }
+
+
+def _validate_archive_limits(infos: list[zipfile.ZipInfo]) -> None:
+    """Reject archives that are too large or suspiciously compressed."""
+    file_infos = [info for info in infos if not info.filename.endswith("/")]
+    if len(file_infos) > MAX_IMPORT_FILES:
+        raise ValueError(f"archive contains too many files (max {MAX_IMPORT_FILES})")
+
+    total_uncompressed = sum(info.file_size for info in file_infos)
+    if total_uncompressed > MAX_IMPORT_UNCOMPRESSED_BYTES:
+        max_mb = MAX_IMPORT_UNCOMPRESSED_BYTES // (1024 * 1024)
+        raise ValueError(f"archive uncompressed size exceeds {max_mb} MB")
+
+    for info in file_infos:
+        if info.file_size <= 0:
+            continue
+        compressed_size = max(info.compress_size, 1)
+        ratio = info.file_size / compressed_size
+        if ratio > MAX_IMPORT_COMPRESSION_RATIO:
+            raise ValueError(
+                f"archive member {info.filename!r} has suspicious compression ratio"
+            )
 
 
 def _sanitize_dirname(name: str) -> str:

@@ -77,10 +77,9 @@
 
       MODULE mod_sedtrans05
 
-      IMPLICIT NONE
+      USE mod_physical_constants, ONLY : G => grav_dp, PII => pi_dp
 
-      DOUBLE PRECISION, PARAMETER       :: G = 9.81             !GRAVITY
-      DOUBLE PRECISION, PARAMETER       :: PII = 2.*ASIN(1d0)
+      IMPLICIT NONE
 
 ! Constants for solid transmitted stress by Ulva
       DOUBLE PRECISION, SAVE    :: CSULVA   = 159.4d0   ! coefficient for the solid transmitted stress by Ulva
@@ -4356,7 +4355,7 @@
             READ(*,*) CH
             IF (CH.NE.'Y' .AND. CH.NE.'y') THEN
                WRITE(*,101) NAME(1:LASTCH(NAME))
-               STOP
+               STOP 'error stop SETCCONST: file exists'
             ENDIF
          ENDIF
          OPEN(UN,FILE=NAME,IOSTAT=IERR)
@@ -4669,7 +4668,7 @@
       WSTART=1d-5
       IF(NBCONC.GT.33 .OR. NBCONC.LT.5)THEN
          WRITE(*,*)'Incorrect value of NBCONC',NBCONC
-         STOP
+         STOP 'error stop: incorrect NBCONC'
       ELSEIF(NBCONC.GE.25) THEN
          DWSLOG=0.125d0
       ELSEIF(NBCONC.GE.22) THEN
@@ -4727,4 +4726,3 @@
 !************************************************************
 
       END MODULE mod_sedtrans05
-

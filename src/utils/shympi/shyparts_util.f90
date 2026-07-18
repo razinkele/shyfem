@@ -353,17 +353,17 @@
 
 	implicit none
 
-	character*(*) name
-	integer n
-	integer ks(n)
-	integer itype
+	character*(*), intent(in) :: name
+	integer, intent(in) :: n
+	integer, intent(in) :: ks(n)
+	integer, intent(in) :: itype
 
-	integer, save :: iu = 100
+	integer iu
 	integer i,k,ios
 
 	write(6,*) 'writing single nodes grd files...'
 
-        open(iu,file=name,status='unknown',form='formatted',iostat=ios)
+        open(newunit=iu,file=name,status='unknown',form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(name)
 	  call shympi_abort_internal('error opening file')
@@ -379,4 +379,3 @@
 	end
 
 !*******************************************************************
-

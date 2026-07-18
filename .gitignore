@@ -212,7 +212,13 @@ __pycache__/
 venv/
 .env
 shyfem_ui.db
+shyfem-ui/*.db.bak.*
 shyfem-ui/restart.txt
+
+# Local browser/MCP state and generated screenshots
+.playwright-mcp/
+dashboard-path-fixed.png
+tutorial-dashboard-admin.png
 
 #-----------------------------------------------
 # Git worktrees
@@ -256,4 +262,3 @@ src/tools/shyplot/util/plotbug
 src/tools/shyplot/util/plotcolb
 src/tools/shyplot/util/testdash
 src/tools/shyplot/util/windrose
-
