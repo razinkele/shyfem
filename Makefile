@@ -459,8 +459,12 @@ check_var:
 	@$(FEMCHECK)/check_var.sh
 
 regress:
-	if [ -d $(REGRESSDIR) ]; then SHYFEMDIR=$(PWD); \
-		cd $(REGRESSDIR); make regress np=$(np); fi
+	@if [ ! -d $(REGRESSDIR) ]; then \
+	  echo "ERROR: regression suite directory '$(REGRESSDIR)' does not exist"; \
+	  echo "  (femregress is not distributed with this repository)"; \
+	  exit 1; \
+	fi
+	SHYFEMDIR=$(PWD); cd $(REGRESSDIR); make regress np=$(np)
 
 revision:
 	 $(FEMBIN)/revision_last.sh
