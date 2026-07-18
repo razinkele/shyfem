@@ -115,6 +115,31 @@ PARALLEL_MPI = NODE
 #PARALLEL_MPI = ELEM
 
 ##############################################
+# Compatibility mapping for the documented
+# MPI=/OMP= command-line flags (they were inert)
+##############################################
+
+ifdef OMP
+  ifeq ($(OMP),true)
+    PARALLEL_OMP = true
+  else ifeq ($(OMP),false)
+    PARALLEL_OMP = false
+  else
+    $(error OMP must be true or false (got OMP=$(OMP)))
+  endif
+endif
+
+ifdef MPI
+  ifeq ($(MPI),true)
+    PARALLEL_MPI = NODE
+  else ifeq ($(MPI),false)
+    $(error no MPI-free SHYFEM build exists (lagrange_mpi calls MPI unconditionally); the default NODE binary runs on 1 rank - just omit MPI=)
+  else
+    $(error MPI must be true (got MPI=$(MPI)))
+  endif
+endif
+
+##############################################
 # Partition library for domain decomposition
 ##############################################
 #
