@@ -982,55 +982,55 @@
 	subroutine run_scalar()
 	
 !$	use omp_lib	!ERIC
-	
+
 	use mod_bfm
 
 	use para
+	use shympi, only : shympi_is_parallel
 	implicit none
-	
-	
+
+
 	integer :: nscal,itemp,isalt,iconz,itvd
-	
+	logical :: btask
+
 	nscal = 0
-	
+
 	itemp = nint(getpar("itemp"))
 	isalt = nint(getpar("isalt"))
 	iconz = nint(getpar("iconz"))
 	itvd = nint(getpar("itvd"))
-	
+
 	call tvd_init
-	
+
 	if(itemp .gt. 0) nscal = nscal +1
 	if(isalt .gt. 0) nscal = nscal +1
 	if(iconz .gt. 0) nscal = nscal + iconz
 
+	btask = .not. shympi_is_parallel()	!MPI: undefer tasks -> master thread, program order
+
 !$      !!!call omp_set_nested(.TRUE.)
-	
+
 !$OMP PARALLEL
 
-!$OMP SINGLE 
+!$OMP MASTER
 
-!$OMP TASKWAIT
-!!!$OMP TASKGROUP
-
-!$OMP TASK 
+!$OMP TASK IF ( btask )
 	call barocl(1)
 !$OMP END TASK
 
-!$OMP TASK IF ( iconz > 0 )
+!$OMP TASK IF ( iconz > 0 .and. btask )
 	call tracer_compute
 !$OMP END TASK
 
-!$OMP TASK IF ( ibfm > 0 )
+!$OMP TASK IF ( ibfm > 0 .and. btask )
 	call bfm_run
 !$OMP END TASK
 
-!!!$OMP END TASKGROUP	
-!$OMP TASKWAIT	
+!$OMP TASKWAIT
 
-!$OMP END SINGLE 
+!$OMP END MASTER
 
-!$OMP END PARALLEL 	
+!$OMP END PARALLEL
 
 	end subroutine
 

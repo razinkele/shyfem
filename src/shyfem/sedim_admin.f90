@@ -4303,6 +4303,7 @@
 	use mod_sediment
         use mod_sediment_para
 	use mkonst
+	use shympi, only : shympi_is_parallel
 
         implicit none
 
@@ -4324,10 +4325,11 @@
         double precision 		:: dtime
         real            		:: sedkpar	!diffusion parameter
 	integer				:: is
+	logical				:: btask
 
 !$OMP PARALLEL
-!$OMP SINGLE 
-!$OMP TASKWAIT
+
+!$OMP MASTER
 
 !!!$OMP TASKGROUP
 
@@ -4337,6 +4339,8 @@
         sedkpar = sedpa(3)		!diffusion parameter
 
         call bnds_read_new(what,idsedi,dtime)
+
+	btask = .not. shympi_is_parallel()	!MPI: undefer tasks -> master thread, program order
 
         do is = 1,nscls
 
@@ -4378,7 +4382,7 @@
 ! !$OMP TASK FIRSTPRIVATE(what,is,sedkpar,difmol)
 ! !$OMP& SHARED(scn,wsink,sload,eps,idsedi) DEFAULT(NONE)
 
-!$OMP TASK DEFAULT(FIRSTPRIVATE) SHARED(idsedi,scn,wsink,sload,eps)
+!$OMP TASK IF(btask) DEFAULT(FIRSTPRIVATE) SHARED(idsedi,scn,wsink,sload,eps)
           call scn_compute_intern(what &
      &			,is,idsedi,sedkpar,difmol &
      &			,scn(:,:,is),wsink(:,:,is) &
@@ -4387,11 +4391,13 @@
 
         end do
 
-!!!$OMP END TASKGROUP     
+!!!$OMP END TASKGROUP
 
 !$OMP TASKWAIT
-!$OMP END SINGLE 
-!$OMP END PARALLEL  
+
+!$OMP END MASTER
+
+!$OMP END PARALLEL
 
 ! -------------------------------------------------------------
 ! end of routine
