@@ -94,7 +94,7 @@ def init_db() -> None:
         from alembic import command
         from alembic.config import Config as AlembicConfig
 
-        ini_path = Path(__file__).resolve().parents[1] / "alembic.ini"
+        ini_path = Path(__file__).resolve().parents[2] / "alembic.ini"
         if not ini_path.exists():
             # Running from installed package — fall back to create_all
             logger.debug("alembic.ini not found, using create_all()")
@@ -103,6 +103,20 @@ def init_db() -> None:
 
         alembic_cfg = AlembicConfig(str(ini_path))
         alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
+        # set_main_option() above already forced alembic_cfg to read (and
+        # memoize) the ini file with `here` resolved from ini_path, so every
+        # later get_main_option() call (script_location, etc.) still works
+        # correctly even though we clear config_file_name next. We clear it
+        # so migrations/env.py's `if config.config_file_name is not None:
+        # fileConfig(config.config_file_name)` boilerplate is skipped:
+        # logging.config.fileConfig() defaults to disable_existing_loggers=
+        # True, which permanently disables every logger already registered
+        # at import time (e.g. every module-level logging.getLogger(__name__)
+        # in this app) — silently breaking application logging the first
+        # time a migration/stamp actually runs. Do NOT reorder these two
+        # lines: nulling config_file_name before set_main_option would make
+        # `here` resolve to the cwd instead of the ini's directory.
+        alembic_cfg.config_file_name = None
 
         # Check if the DB already has tables but no alembic_version
         inspector = inspect(engine)
