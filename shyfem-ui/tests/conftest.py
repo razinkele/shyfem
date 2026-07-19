@@ -7,6 +7,7 @@ Provides:
 - Playwright browser/page fixtures
 """
 
+import contextlib
 import os
 import socket
 import subprocess
@@ -26,6 +27,21 @@ from sqlalchemy.engine import Engine
 # would bypass it — so the suite couldn't prove the delete paths are FK-clean.
 # Register the PRAGMA on the Engine class so EVERY SQLite connection opened
 # during tests enforces foreign keys, matching production exactly.
+#
+# CAUTION (N50): because this listener is registered on the Engine CLASS, it
+# also fires on engines built via shyfem_ui.db.base.get_engine() — the
+# PRODUCTION engine factory, which registers its own equivalent listener
+# (db/base.py:44-53). That means a test which merely observes "PRAGMA
+# foreign_keys is ON" on a base.get_engine() connection proves nothing about
+# production: it would stay green even if base.py's own listener were deleted,
+# because this convenience listener papers over the gap. De-globalizing this
+# fully (registering per-instance on every ad-hoc create_engine(...) call
+# across ~20 test files) was judged too invasive for what N50 needs — those
+# files legitimately rely on this listener for their own FK/cascade
+# assertions. Instead, `fk_listener_detached()` below lets a specific test
+# temporarily remove *this* listener so it can verify production's own
+# listener is what's actually enforcing FKs — see
+# tests/test_db_fk_production_listener.py.
 
 
 @event.listens_for(Engine, "connect")
@@ -33,6 +49,24 @@ def _tests_enforce_sqlite_foreign_keys(dbapi_conn, _record):
     cur = dbapi_conn.cursor()
     cur.execute("PRAGMA foreign_keys=ON")
     cur.close()
+
+
+@contextlib.contextmanager
+def fk_listener_detached():
+    """Temporarily remove the session-wide FK PRAGMA listener.
+
+    Lets a test build an engine (typically via ``shyfem_ui.db.base.get_engine()``)
+    and observe FK enforcement that can ONLY have come from production code —
+    not from this conftest's blanket convenience listener — closing the N50
+    gap where the harness could mask a regression in ``db/base.py``'s own
+    connect-listener. Restores the listener on exit (including on error) so
+    every other test in the session keeps its FK guarantee.
+    """
+    event.remove(Engine, "connect", _tests_enforce_sqlite_foreign_keys)
+    try:
+        yield
+    finally:
+        event.listen(Engine, "connect", _tests_enforce_sqlite_foreign_keys)
 
 
 # ---------------------------------------------------------------------------
