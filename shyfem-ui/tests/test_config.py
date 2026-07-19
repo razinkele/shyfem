@@ -134,6 +134,70 @@ class TestConfigDefaults:
         assert config.trusted_proxies == []
 
 
+class TestDatabaseUrlDefault:
+    """F25: default database_url must not depend on the process CWD.
+
+    ``sqlite:///./shyfem_ui.db`` resolves relative to whatever directory the
+    process happened to start in -- a worker launched from ``$HOME`` would
+    silently create/read a DB there instead of the real
+    ``shyfem-ui/shyfem_ui.db``. The default must be an absolute path derived
+    from this package's own location, so it is identical regardless of CWD.
+    """
+
+    _EXPECTED_DB_PATH = Path(__file__).resolve().parent.parent / "shyfem_ui.db"
+
+    @staticmethod
+    def _resolved_sqlite_path(database_url: str, cwd: Path) -> Path:
+        """Mimic how sqlite3/SQLAlchemy resolve a ``sqlite:///<path>`` URL: a
+        relative path is resolved against the process CWD at connect time."""
+        raw = database_url.removeprefix("sqlite:///")
+        path = Path(raw)
+        if not path.is_absolute():
+            path = cwd / path
+        return path.resolve()
+
+    def test_default_database_url_independent_of_cwd(self, tmp_path, monkeypatch):
+        """Instantiating Config from two different CWDs must resolve (per
+        sqlite's own relative-path rules) to the same physical database file.
+        A bare string comparison of database_url is not enough: a relative
+        default (e.g. ``sqlite:///./shyfem_ui.db``) is textually identical
+        from both CWDs yet resolves to two different files, which is exactly
+        the CWD-dependence bug this guards against (conftest pins
+        SHYFEM_UI_DATABASE_URL for the whole session, so it must be cleared
+        here to observe the real default)."""
+        monkeypatch.delenv("SHYFEM_UI_DATABASE_URL", raising=False)
+
+        cwd_a = tmp_path / "cwd_a"
+        cwd_b = tmp_path / "cwd_b"
+        cwd_a.mkdir()
+        cwd_b.mkdir()
+
+        monkeypatch.chdir(cwd_a)
+        resolved_a = self._resolved_sqlite_path(Config(_env_file=None).database_url, cwd_a)
+
+        monkeypatch.chdir(cwd_b)
+        resolved_b = self._resolved_sqlite_path(Config(_env_file=None).database_url, cwd_b)
+
+        assert resolved_a == resolved_b
+
+    def test_default_database_url_points_at_shyfem_ui_db(self, monkeypatch):
+        """The resolved default must be the same physical file laguna prod
+        already uses (shyfem-ui/shyfem_ui.db), not some other absolute path."""
+        monkeypatch.delenv("SHYFEM_UI_DATABASE_URL", raising=False)
+
+        config = Config(_env_file=None)
+
+        assert config.database_url == f"sqlite:///{self._EXPECTED_DB_PATH}"
+
+    def test_database_url_env_var_still_overrides(self, monkeypatch):
+        """SHYFEM_UI_DATABASE_URL must still win over the anchored default."""
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", "sqlite:////tmp/override.db")
+
+        config = Config(_env_file=None)
+
+        assert config.database_url == "sqlite:////tmp/override.db"
+
+
 class TestConfigProperties:
     """Tests for Config properties."""
 
