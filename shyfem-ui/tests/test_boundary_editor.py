@@ -5,6 +5,7 @@ shyfem_ui.components.boundary_editor.
 """
 
 import pytest
+from shiny import reactive
 
 from shyfem_ui.components.boundary_editor import (
     generate_bound_text,
@@ -12,18 +13,175 @@ from shyfem_ui.components.boundary_editor import (
 )
 
 # ---------------------------------------------------------------------------
+# Reactivity harness for _add_boundary / _import_csv (N41)
+# ---------------------------------------------------------------------------
+#
+# boundary_editor_server's reactive.effects can't be driven through a real
+# Shiny session in this test suite -- run_server() (job-queue polling)
+# deadlocks the event loop when actually started (see MEMORY.md / the stub
+# in tests/_test_app.py), so this codebase's established seam for exercising
+# @module.server internals is either source inspection (get_server_source /
+# test_handler_dedup.py) or, where real reactive behavior must be observed
+# (as here — Shiny's reactive.Value identity semantics are exactly the bug),
+# unwrapping the @module.server closure to call the plain inner function
+# with minimal stand-ins for input/output/session. boundary_editor_server
+# uses none of session's API directly, and output is only touched via
+# @render.ui (which is never invoked here since nothing subscribes to the
+# outputs), so `None` is a safe stand-in for both.
+
+
+class _FakeInputs:
+    """Minimal stand-in for Shiny's `input` proxy: attribute/item access
+    returns a callable reading a per-key reactive.Value (matching how
+    `input.foo` / `input["foo"]` behave), and `.set()` drives a value change
+    exactly like a real client interaction would."""
+
+    def __init__(self):
+        self._values: dict[str, reactive.Value] = {}
+
+    def _cell(self, key: str) -> reactive.Value:
+        if key not in self._values:
+            self._values[key] = reactive.Value(None)
+        return self._values[key]
+
+    def __getattr__(self, key: str):
+        return self._cell(key).get
+
+    def __getitem__(self, key: str):
+        return self.__getattr__(key)
+
+    def set(self, key: str, value) -> None:
+        self._cell(key).set(value)
+
+
+def _mount_boundary_editor(monkeypatch):
+    """Mount a fresh, un-namespaced boundary_editor_server instance and
+    return (fake_input, result_dict). Silences ui.notification_show (it
+    requires a live Shiny session, which this harness deliberately doesn't
+    provide) so it doesn't raise mid-effect and mask the assertions below."""
+    from shyfem_ui.components import boundary_editor as be
+
+    monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+    inner = be.boundary_editor_server.__closure__[0].cell_contents
+    fake_input = _FakeInputs()
+    result = inner(fake_input, None, None)
+    return fake_input, result
+
+
+class TestBoundaryListReactivity:
+    """N41: Add/CSV-import mutated the reactive list in place and then
+    set() the SAME object reference. Shiny's reactive.Value._set()
+    short-circuits with `self._value is value` and returns False without
+    invalidating dependents when that happens -- so boundary_list and the
+    remove-handler registration effect never re-ran. The fix is
+    copy-on-write: build a NEW list before calling boundaries.set()."""
+
+    async def test_add_boundary_changes_list_object_identity(self, monkeypatch):
+        fake_input, result = _mount_boundary_editor(monkeypatch)
+        boundaries = result["boundaries"]
+
+        with reactive.isolate():
+            before = boundaries.get()
+
+        fake_input.set("add_boundary_btn", 1)
+        await reactive.flush()
+
+        with reactive.isolate():
+            after = boundaries.get()
+
+        assert id(before) != id(after), (
+            "_add_boundary set() the same list object Shiny already held -- "
+            "reactive.Value short-circuits identical-identity sets and never "
+            "invalidates dependents (N41)"
+        )
+        assert len(after) == 1
+        assert after[0]["label"] == "bound1"
+
+    async def test_add_boundary_twice_yields_two_rows_and_two_identity_changes(self, monkeypatch):
+        fake_input, result = _mount_boundary_editor(monkeypatch)
+        boundaries = result["boundaries"]
+
+        with reactive.isolate():
+            gen0 = boundaries.get()
+
+        fake_input.set("add_boundary_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            gen1 = boundaries.get()
+
+        fake_input.set("add_boundary_btn", 2)
+        await reactive.flush()
+        with reactive.isolate():
+            gen2 = boundaries.get()
+
+        assert id(gen0) != id(gen1) != id(gen2)
+        assert id(gen0) != id(gen2)
+        assert len(gen2) == 2
+        assert [b["label"] for b in gen2] == ["bound1", "bound2"]
+
+    async def test_import_csv_changes_list_object_identity(self, monkeypatch):
+        fake_input, result = _mount_boundary_editor(monkeypatch)
+        boundaries = result["boundaries"]
+
+        with reactive.isolate():
+            before = boundaries.get()
+
+        fake_input.set("csv_input", "1 2 3, 1\n4 5 6, 2")
+        fake_input.set("do_csv_import_btn", 1)
+        await reactive.flush()
+
+        with reactive.isolate():
+            after = boundaries.get()
+
+        assert id(before) != id(
+            after
+        ), "_import_csv set() the same list object Shiny already held (N41)"
+        assert len(after) == 2
+        assert after[0]["nodes"] == "1 2 3"
+        assert after[1]["nodes"] == "4 5 6"
+
+    async def test_import_csv_appends_to_existing_boundaries(self, monkeypatch):
+        """Import must extend, not replace, boundaries already added."""
+        fake_input, result = _mount_boundary_editor(monkeypatch)
+        boundaries = result["boundaries"]
+
+        fake_input.set("add_boundary_btn", 1)
+        await reactive.flush()
+
+        fake_input.set("csv_input", "7 8 9, 2")
+        fake_input.set("do_csv_import_btn", 1)
+        await reactive.flush()
+
+        with reactive.isolate():
+            after = boundaries.get()
+
+        assert len(after) == 2
+        assert after[0]["label"] == "bound1"
+        assert after[1]["nodes"] == "7 8 9"
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=1.0, intpol=1, bid=1):
     """Create a boundary dict with sensible defaults."""
-    return {"id": bid, "label": label, "nodes": nodes, "ibtyp": ibtyp,
-            "boundn": boundn, "zfact": zfact, "intpol": intpol}
+    return {
+        "id": bid,
+        "label": label,
+        "nodes": nodes,
+        "ibtyp": ibtyp,
+        "boundn": boundn,
+        "zfact": zfact,
+        "intpol": intpol,
+    }
 
 
 # ---------------------------------------------------------------------------
 # generate_bound_text
 # ---------------------------------------------------------------------------
+
 
 class TestGenerateBoundText:
     """Tests for generate_bound_text()."""
@@ -112,6 +270,7 @@ class TestGenerateBoundText:
 # parse_boundary_csv
 # ---------------------------------------------------------------------------
 
+
 class TestParseBoundaryCSV:
     """Tests for parse_boundary_csv()."""
 
@@ -197,6 +356,7 @@ class TestParseBoundaryCSV:
 # Boundary type completeness
 # ---------------------------------------------------------------------------
 
+
 class TestBoundaryTypesComplete:
     """Boundary type choices cover all Fortran ibtyp values."""
 
@@ -226,6 +386,7 @@ class TestBoundaryTypesComplete:
 # ---------------------------------------------------------------------------
 # Scalar boundary files
 # ---------------------------------------------------------------------------
+
 
 class TestScalarBoundaryFiles:
     """Scalar file fields (saltn, tempn, conzn) in boundary text."""

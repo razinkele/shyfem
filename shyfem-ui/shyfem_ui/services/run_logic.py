@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
+from uuid import uuid4
 
 from shiny import ui
 
@@ -209,7 +210,11 @@ def build_job_spec(
         user_id: User ID for ownership tracking (None in local mode).
         project_id: Active project ID, basis for cancel authorization (None when
             no project is active).
-        restart_from: Optional restart file path (recorded in metadata).
+        restart_from: Optional restart file path, recorded in metadata for
+            display/audit. This does NOT itself make the run continue from
+            it -- the caller must apply it to the STR beforehand (see
+            write_restart_str) and pass the derived file as validated_input;
+            otherwise the run silently starts fresh (N42).
         depends_on: Optional parent job ID (recorded in metadata).
 
     Returns:
@@ -230,4 +235,129 @@ def build_job_spec(
         mpi_enabled=mpi_enabled and tool_name == "shyfem",
         mpi_np=mpi_np if (mpi_enabled and tool_name == "shyfem") else 1,
         metadata=metadata,
+    )
+
+
+def write_restart_str(str_path: Path, restart_file: str, dest_dir: Path) -> Path:
+    """Apply a 'Continue from job' restart selection to a STR file (N42).
+
+    Previously restart_from was recorded only in build_job_spec's metadata;
+    nothing ever wrote it into the STR SHYFEM actually reads, so a selected
+    restart was silently ignored and every run started cold. SHYFEM reads
+    the restart file via the ``$name`` section's ``restrt`` parameter (see
+    services/parser_str.py PARAM_DOCS['name']['restrt']), so this parses
+    str_path, sets that parameter, and writes the result to a NEW file under
+    dest_dir via StrParser.save() -- the user's original STR is only ever
+    read, never mutated.
+
+    Args:
+        str_path: The source (already validated) STR file to continue from.
+        restart_file: Path to the .rst restart file. Must already exist --
+            a stale selection (e.g. the source job's .rst was deleted) must
+            abort loudly rather than silently emit an STR referencing a
+            missing file, which would otherwise fail deep in SHYFEM's
+            Fortran I/O with an opaque error instead of a clear UI message.
+        dest_dir: Directory to write the derived STR into. The caller is
+            responsible for validating this directory is safe to write to
+            (e.g. via Config.confine_path) BEFORE calling this function --
+            it performs the actual disk write.
+
+    Returns:
+        Path to the newly written STR file. Pass this (not the original
+        str_path) as validated_input to build_job_spec so the submitted job
+        actually continues from restart_file.
+
+    Raises:
+        FileNotFoundError: restart_file does not exist.
+    """
+    if not Path(restart_file).exists():
+        raise FileNotFoundError(f"Restart file not found: {restart_file}")
+
+    # A fresh parse of str_path -- unlike ensemble.py's _apply_param_combo
+    # (which regenerates+reparses to protect a base_str shared across many
+    # combos from mutation), nothing else holds a reference to this object,
+    # so set_param can act on it directly; no extra generate()->parse()
+    # round-trip needed.
+    base_str = StrParser.parse_file(str_path)
+    # _format_value only auto-quotes strings containing a space or '-'; an
+    # absolute restart path with neither (e.g. no hyphens in the project/user
+    # names) would otherwise be emitted UNQUOTED (`restrt = /a/b/out.rst`).
+    # Pre-quoting is the idiom _format_value itself documents for this case
+    # ("Already single-quoted ... emit as-is") -- it skips re-wrapping, and
+    # StrParser.parse() strips the quotes back off on read.
+    base_str.set_param("name", "restrt", f"'{restart_file}'")
+
+    dest_dir = Path(dest_dir)
+    # A uuid suffix avoids two restart-enabled submissions against the same
+    # STR/working directory colliding and clobbering each other's derived
+    # file mid-run (the same working dir can host concurrent jobs).
+    derived_name = f"{str_path.stem}_restart_{uuid4().hex[:8]}{str_path.suffix}"
+    derived_path = dest_dir / derived_name
+    StrParser.save(base_str, derived_path)
+    return derived_path
+
+
+def compute_restart_choices(jobs: list[JobInfo]) -> dict[str, str]:
+    """Compute the restart-file choice set {absolute .rst path: label} from
+    a list of jobs.
+
+    This is the SINGLE source of truth for "which restart files may a
+    submission legitimately reference": pages/run.py's restart_section
+    calls it to render the "Continue from job" dropdown, and
+    restart_selection_denied_reason calls it again server-side at submit
+    time to build the allowlist a submitted restart_from is checked
+    against. Sharing one function guarantees the dropdown and the
+    allowlist can never silently drift apart.
+
+    The caller is responsible for scoping `jobs` to what the current
+    identity may see (see pages/run.py's _list_scoped_jobs: own jobs only
+    for a non-admin, unscoped for admin + "show all" or local mode) --
+    this function does no access-control itself, it only picks the latest
+    .rst per completed shyfem job out of whatever list it's given.
+    """
+    choices: dict[str, str] = {}
+    for job in jobs:
+        if job.tool_name != "shyfem" or job.status != JobStatus.COMPLETED:
+            continue
+        work_dir = Path(job.working_dir)
+        rst_files = sorted(work_dir.glob("*.rst"))
+        if rst_files:
+            choices[str(rst_files[-1])] = f"{job.name} ({rst_files[-1].name})"
+    return choices
+
+
+def restart_selection_denied_reason(restart_from: str | None, jobs: list[JobInfo]) -> str | None:
+    """Server-side allowlist check for a submitted restart_from (N42 IDOR
+    follow-up).
+
+    restart_from is a client-controlled `input.restart_from()` value.
+    Before this task it was inert (recorded in job metadata only); now
+    write_restart_str actually opens the file it names and folds it into
+    the STR the SHYFEM worker executes -- which makes a spoofed WS message
+    (bypassing the "Continue from job" dropdown entirely, e.g. via the
+    browser devtools or a crafted websocket frame) a real path-disclosure
+    risk: an attacker could point restart_from at another user's .rst file.
+
+    A bare confine_path check is NOT the right guard here: the admin
+    "show all jobs" toggle legitimately lets an admin select a restart file
+    outside their own sandbox, which confine_path would incorrectly reject.
+    The correct guard is an allowlist -- restart_from must be exactly one
+    of the paths compute_restart_choices() derives from the SAME
+    already-scoped jobs list the dropdown itself was built from (own jobs
+    only for non-admin; unscoped for admin+show-all or local mode, per
+    pages/run.py's _list_scoped_jobs).
+
+    Returns:
+        None if restart_from is falsy (no restart requested -- nothing to
+        check) or matches a computed choice. Otherwise a user-facing error
+        string; the caller must show it and abort BEFORE write_restart_str
+        or job submission run.
+    """
+    if not restart_from:
+        return None
+    if restart_from in compute_restart_choices(jobs):
+        return None
+    return (
+        "Restart file is not a valid selection for your account -- "
+        "choose one from the Continue from job dropdown."
     )
