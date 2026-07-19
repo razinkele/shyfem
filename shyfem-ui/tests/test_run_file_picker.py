@@ -193,3 +193,54 @@ class TestRestartAllowlistWiring:
 
         src = get_server_source(page_mod, "run_server")
         assert src.count("await _list_scoped_jobs()") >= 2
+
+
+class TestRestartInfoAllowlistWiring:
+    """Final security review, Finding 2: restart_info previously did a raw
+    Path(input.restart_from()).exists()/.stat() with no allowlist -- a
+    filesystem-wide existence/size oracle over anything the shiny process
+    can stat. It must gate on restart_info_text (which itself gates on
+    restart_selection_denied_reason) before touching the filesystem, using
+    the SAME server-recomputed scoped jobs list as the submit-path guard."""
+
+    def test_restart_info_is_async(self):
+        """restart_info must await _list_scoped_jobs() for a fresh,
+        server-side scoped jobs list -- it cannot be a sync render."""
+        import shyfem_ui.pages.run as page_mod
+        from tests._test_helpers import get_server_source
+
+        src = get_server_source(page_mod, "run_server")
+        assert "async def restart_info(" in src
+
+    def test_restart_info_calls_restart_info_text(self):
+        import shyfem_ui.pages.run as page_mod
+        from shyfem_ui.services import run_logic
+        from tests._test_helpers import get_server_source
+
+        assert page_mod.restart_info_text is run_logic.restart_info_text
+
+        src = get_server_source(page_mod, "run_server")
+        # Isolate restart_info's own body (up to the next top-level def) so
+        # this doesn't just match write_restart_str's unrelated usage
+        # elsewhere in the module.
+        start = src.index("async def restart_info(")
+        end = src.index("\n    @", start)
+        body = src[start:end]
+
+        assert "restart_info_text(" in body
+        assert "await _list_scoped_jobs()" in body
+
+    def test_restart_info_does_not_call_path_exists_directly(self):
+        """The raw Path(...).exists()/.stat() calls must be gone from
+        restart_info's own body -- that logic now lives behind the
+        allowlist gate inside restart_info_text."""
+        import shyfem_ui.pages.run as page_mod
+        from tests._test_helpers import get_server_source
+
+        src = get_server_source(page_mod, "run_server")
+        start = src.index("async def restart_info(")
+        end = src.index("\n    @", start)
+        body = src[start:end]
+
+        assert ".exists()" not in body
+        assert ".stat()" not in body

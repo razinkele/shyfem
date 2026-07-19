@@ -43,6 +43,7 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
     compute_restart_choices,
     detect_mesh_node_count,
     get_solver_recommendation,
+    restart_info_text,
     restart_selection_denied_reason,
     write_restart_str,
 )
@@ -468,25 +469,32 @@ def run_server(
         )
 
     @render.ui
-    def restart_info():
-        """Show selected restart file path."""
+    async def restart_info():
+        """Show selected restart file path.
+
+        Final security review, Finding 2: this used to stat() whatever
+        path input.restart_from() held with NO allowlist -- a filesystem-
+        wide existence/size oracle over anything the shiny worker process
+        can stat (restart_from is client-controlled; a spoofed WS value
+        could probe arbitrary paths). Gate on restart_info_text, which
+        checks the SAME server-recomputed allowlist _submit_job uses
+        (restart_selection_denied_reason + _list_scoped_jobs) before ever
+        touching the filesystem, and render nothing for a denied value.
+        Fail-closed: an unresolved identity makes _list_scoped_jobs return
+        an empty list, so everything is denied.
+        """
         try:
             rst = input.restart_from()
         except Exception:
             return ui.span()
-        if not rst:
+
+        allowed_jobs = await _list_scoped_jobs()
+        text = restart_info_text(rst, allowed_jobs)
+        if text is None:
             return ui.span()
-        rst_path = Path(rst)
-        if rst_path.exists():
-            size_kb = rst_path.stat().st_size / 1024
-            return ui.p(
-                f"Restart file: {rst_path.name} ({size_kb:.0f} KB)",
-                class_="text-muted small mb-0",
-            )
-        return ui.p(
-            f"Warning: restart file not found: {rst}",
-            class_="text-warning small mb-0",
-        )
+
+        css_class = "text-warning" if text.startswith("Warning") else "text-muted"
+        return ui.p(text, class_=f"{css_class} small mb-0")
 
     # State
     active_jobs_data = reactive.value([])

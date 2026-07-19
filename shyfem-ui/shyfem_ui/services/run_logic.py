@@ -250,6 +250,23 @@ def write_restart_str(str_path: Path, restart_file: str, dest_dir: Path) -> Path
     dest_dir via StrParser.save() -- the user's original STR is only ever
     read, never mutated.
 
+    restrt alone is NOT sufficient for SHYFEM to actually continue: the
+    ``$para`` section's ``itrst`` parameter (default 0, per
+    src/shyfem/def_para.f90's ``addpar('itrst',0.)``) selects WHICH time
+    record in the restart file to use. With the default itrst=0/ityrst=0,
+    src/shyfem/restart.f90's rst_perform_restart looks for a record whose
+    time exactly equals 0 and, failing to find one (the normal case --
+    restart records are at real simulation times), hard-aborts with
+    ``stop 'error stop rst_perform_restart: Cannot find time record'``
+    before the simulation ever starts. Setting itrst=-1 sets
+    ``blast=.true.``/``atrst=-1.``, which reads the LAST record in the file
+    unconditionally, regardless of ityrst -- this is the "normal case"
+    continuation and is exactly what both shipped, working restart
+    testcases do: testcases/examples/weutro_box/eco_rst_part2.str:14 and
+    merc_rst_part2.str:13 both set ``itrst = -1`` in ``$para`` (NOT
+    ``$name`` -- confirmed against those two files; itanf/itend are left
+    untouched here deliberately, that's a separate, deferred enhancement).
+
     Args:
         str_path: The source (already validated) STR file to continue from.
         restart_file: Path to the .rst restart file. Must already exist --
@@ -286,6 +303,10 @@ def write_restart_str(str_path: Path, restart_file: str, dest_dir: Path) -> Path
     # ("Already single-quoted ... emit as-is") -- it skips re-wrapping, and
     # StrParser.parse() strips the quotes back off on read.
     base_str.set_param("name", "restrt", f"'{restart_file}'")
+    # itrst is a real/numeric parameter (addpar('itrst',0.)) -- pass a bare
+    # int so _format_value emits `itrst = -1` unquoted, matching both
+    # testcases exactly (neither quotes it).
+    base_str.set_param("para", "itrst", -1)
 
     dest_dir = Path(dest_dir)
     # A uuid suffix avoids two restart-enabled submissions against the same
@@ -361,3 +382,38 @@ def restart_selection_denied_reason(restart_from: str | None, jobs: list[JobInfo
         "Restart file is not a valid selection for your account -- "
         "choose one from the Continue from job dropdown."
     )
+
+
+def restart_info_text(restart_from: str | None, jobs: list[JobInfo]) -> str | None:
+    """Gated display text for the restart_info render (Finding 2, final
+    security review).
+
+    pages/run.py's restart_info render used to stat() whatever path
+    input.restart_from() held with NO allowlist -- since restart_from is a
+    client-controlled input, that was a filesystem-wide existence/size
+    oracle over anything the shiny worker process can stat (a spoofed WS
+    value, unconstrained by the dropdown, could probe arbitrary paths).
+
+    This gates on restart_selection_denied_reason FIRST -- the SAME
+    allowlist _submit_job checks -- and only touches the filesystem for a
+    restart_from that is a member of the caller-scoped `jobs`' choice set.
+    Once past that gate, a "file not found" warning is still safe to show:
+    it's the user's OWN legitimate selection (already visible to them),
+    and covers only the narrow TOCTOU race where the .rst was deleted
+    between being listed and this render -- not a probe of an arbitrary
+    path.
+
+    Returns:
+        None if restart_from is falsy or denied by the allowlist (render
+        nothing). Otherwise a display string: "<name> (<KB> KB)" if the
+        file exists, or a "not found" warning if it doesn't.
+    """
+    if not restart_from:
+        return None
+    if restart_selection_denied_reason(restart_from, jobs):
+        return None
+    rst_path = Path(restart_from)
+    if rst_path.exists():
+        size_kb = rst_path.stat().st_size / 1024
+        return f"Restart file: {rst_path.name} ({size_kb:.0f} KB)"
+    return f"Warning: restart file not found: {restart_from}"

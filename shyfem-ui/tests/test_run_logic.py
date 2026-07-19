@@ -13,6 +13,7 @@ from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.run_logic import (
     build_job_spec,
     compute_restart_choices,
+    restart_info_text,
     restart_selection_denied_reason,
     write_restart_str,
 )
@@ -175,6 +176,47 @@ class TestWriteRestartStr:
 
         parsed = StrParser.parse_file(result_path)
         assert parsed.get_param("name", "restrt") == str(restart_file)
+
+    def test_itrst_is_set_to_minus_one(self, tmp_path):
+        """Final security review, Finding 1 (correctness): restrt alone
+        does not make SHYFEM continue. Per src/shyfem/def_para.f90 (itrst
+        default 0, docs: '-1 ... last record ... is used for the restart')
+        and src/shyfem/restart.f90 (rst_perform_restart: with the default
+        itrst=0/ityrst=0, a non-matching time record is a hard
+        `stop 'error stop rst_perform_restart: Cannot find time record'`;
+        itrst=-1 sets blast=.true. / atrst=-1., which reads the LAST
+        record unconditionally), a submission must also set itrst=-1 or
+        SHYFEM crashes at startup instead of continuing. Both shipped
+        working restart testcases confirm this exact value:
+        testcases/examples/weutro_box/eco_rst_part2.str:14 and
+        merc_rst_part2.str:13 both set `itrst = -1`."""
+        str_path = self._write_str(tmp_path)
+        dest_dir = tmp_path / "work"
+        dest_dir.mkdir()
+        restart_file = tmp_path / "prior_run.rst"
+        restart_file.write_text("")
+
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+
+        parsed = StrParser.parse_file(result_path)
+        assert parsed.get_param("para", "itrst") == -1
+
+    def test_itrst_emitted_as_bare_number_not_quoted(self, tmp_path):
+        """Both testcases write `itrst = -1` with no quotes (it's a
+        numeric/real parameter per def_para.f90's `addpar('itrst',0.)`,
+        unlike restrt which is a string/filename) -- assert the literal
+        generated text matches, not just the round-tripped parsed value."""
+        str_path = self._write_str(tmp_path)
+        dest_dir = tmp_path / "work"
+        dest_dir.mkdir()
+        restart_file = tmp_path / "prior_run.rst"
+        restart_file.write_text("")
+
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+
+        text = result_path.read_text()
+        assert "itrst = -1" in text
+        assert "itrst = '-1'" not in text
 
     def test_original_str_file_is_not_mutated(self, tmp_path):
         str_path = self._write_str(tmp_path)
@@ -409,3 +451,75 @@ class TestRestartSelectionDeniedReason:
         assert reason is not None
         assert "Traceback" not in reason
         assert len(reason) < 200
+
+
+class TestRestartInfoText:
+    """Final security review, Finding 2: pages/run.py's restart_info render
+    path used to stat() whatever path input.restart_from() held with NO
+    allowlist -- a filesystem-wide existence/size oracle over anything the
+    shiny process can stat (a spoofed WS value could probe arbitrary paths
+    for existence and size). restart_info_text is the fix: it gates on
+    restart_selection_denied_reason FIRST (the same allowlist _submit_job
+    uses) and only touches the filesystem for a value that is a member of
+    the caller-scoped jobs' choice set."""
+
+    def test_none_for_falsy_restart_from(self):
+        assert restart_info_text(None, []) is None
+        assert restart_info_text("", []) is None
+
+    def test_none_for_value_outside_scoped_allowlist_even_if_file_exists(self, tmp_path):
+        """The core regression: a real, existing, stat-able file whose
+        owning job is simply not in the caller-scoped jobs list (e.g. a
+        spoofed WS value pointing at another user's .rst when the caller
+        correctly scoped to the current user's own jobs only) must not
+        have its existence or size exposed."""
+        other_user_dir = tmp_path / "other_user"
+        other_user_dir.mkdir()
+        real_file = other_user_dir / "secret.rst"
+        real_file.write_text("x" * 4096)
+
+        result = restart_info_text(str(real_file), [])
+
+        assert result is None
+
+    def test_none_for_a_spoofed_arbitrary_path_outside_any_job_dir(self, tmp_path):
+        spoofed = str(tmp_path / "not_a_job_working_dir" / "whatever.rst")
+
+        assert restart_info_text(spoofed, []) is None
+
+    def test_size_and_name_shown_for_an_allowed_choice(self, tmp_path):
+        rst = tmp_path / "out.rst"
+        rst.write_text("x" * 2048)
+        job = _completed_shyfem_job(tmp_path)
+
+        result = restart_info_text(str(rst), [job])
+
+        assert result is not None
+        assert "out.rst" in result
+        assert "2 KB" in result
+
+    def test_not_found_warning_shown_when_exists_check_disagrees_with_the_allowlist(
+        self, tmp_path, monkeypatch
+    ):
+        """The allowlist (compute_restart_choices) and the direct exists()
+        check both look at the filesystem independently, a microsecond
+        apart -- there is a narrow window where a file present for the
+        allowlist's glob() has vanished by the time exists() runs. That is
+        the user's OWN legitimate selection (already visible to them), not
+        an information leak about an arbitrary path, so it's safe to still
+        surface a "not found" warning once the allowlist gate has already
+        passed. Simulate that narrow race directly rather than relying on
+        real disk timing."""
+        rst = tmp_path / "out.rst"
+        rst.write_text("")
+        job = _completed_shyfem_job(tmp_path)
+
+        real_exists = Path.exists
+        monkeypatch.setattr(
+            Path, "exists", lambda self: False if self == rst else real_exists(self)
+        )
+
+        result = restart_info_text(str(rst), [job])
+
+        assert result is not None
+        assert "not found" in result.lower()
