@@ -105,3 +105,96 @@ class TestApplyRelocations:
         assert src.exists()  # not clobbered
         assert summary["moved"] == 0
         assert summary["skipped"] == 1
+
+
+class TestRelocateLegacyProjects:
+    """F15 companion: DB-backed driver that fetches every owned project, plans
+    relocations into each owner's home, and applies them. This is for LEGACY
+    OWNER access only -- it does NOT fix the tutorial-share case (a project
+    owned by admin but shared to the tutorial user moves under the admin's
+    home, still outside the tutorial user's allowlist; that is handled by the
+    N44 shared-read confinement widening). Defaults to dry_run and is
+    operator-invoked, never auto-run at startup."""
+
+    def _db_factory(self):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from shyfem_ui.db.base import Base
+        from shyfem_ui.models.project import Project
+        from shyfem_ui.models.user import User
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=engine)
+        return sessionmaker(bind=engine), Project, User
+
+    def test_dry_run_is_default_and_moves_nothing(self, tmp_path):
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory, Project, User = self._db_factory()
+        shared = tmp_path / "work"
+        src = shared / "lagoon_run"
+        src.mkdir(parents=True)
+        (src / "mm_hyd.str").write_text("control")
+        db = factory()
+        alice = User(username="alice", password_hash="x", role="user")
+        db.add(alice)
+        db.flush()
+        db.add(Project(name="P1", work_dir=str(src), owner_id=alice.id))
+        db.commit()
+        db.close()
+
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory
+        )
+        assert src.exists()  # untouched by default
+        assert summary["moved"] == 0
+
+    def test_apply_relocates_owned_project_and_updates_db(self, tmp_path):
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory, Project, User = self._db_factory()
+        users = tmp_path / "users"
+        shared = tmp_path / "work"
+        src = shared / "lagoon_run"
+        src.mkdir(parents=True)
+        (src / "mm_hyd.str").write_text("control")
+        db = factory()
+        alice = User(username="alice", password_hash="x", role="user")
+        db.add(alice)
+        db.flush()
+        proj = Project(name="P1", work_dir=str(src), owner_id=alice.id)
+        db.add(proj)
+        db.commit()
+        pid = proj.id
+        db.close()
+
+        summary = relocate_legacy_projects(
+            user_data_root=users, session_factory=factory, dry_run=False
+        )
+        dst = users / "alice" / "lagoon_run"
+        assert not src.exists()
+        assert (dst / "mm_hyd.str").read_text() == "control"
+        assert summary["moved"] == 1
+        db = factory()
+        assert Path(db.query(Project).filter_by(id=pid).one().work_dir) == dst.resolve()
+        db.close()
+
+    def test_orphan_project_without_owner_is_skipped(self, tmp_path):
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory, Project, User = self._db_factory()
+        shared = tmp_path / "work"
+        src = shared / "ownerless"
+        src.mkdir(parents=True)
+        db = factory()
+        db.add(Project(name="P1", work_dir=str(src), owner_id=None))
+        db.commit()
+        db.close()
+
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory, dry_run=False
+        )
+        assert src.exists()
+        assert summary["moved"] == 0
+        assert summary["skipped"] == 1

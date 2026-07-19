@@ -119,3 +119,79 @@ def apply_relocations(
             summary["failed"] += 1
 
     return summary
+
+
+def relocate_legacy_projects(
+    *,
+    user_data_root=None,
+    session_factory=None,
+    dry_run: bool = True,
+) -> dict:
+    """F15 driver: relocate every owned project whose ``work_dir`` still lives
+    outside its owner's home into ``user_data_root/{owner}/{basename}``.
+
+    This is the DB glue that :func:`plan_relocations` / :func:`apply_relocations`
+    lacked (they had no caller). It fixes LEGACY OWNER access after PR#29's
+    ``confine_path`` enforcement, where a pre-#29 project stored under the shared
+    ``work_dir`` became unreachable by its owner.
+
+    It does NOT fix the tutorial-share case. The bootstrapped "Mar Menor
+    Tutorial" is owned by ``admin``, so this relocates it under the ADMIN's home
+    — still outside the tutorial user's allowlist. That case is handled by
+    ``confine_path``'s shared-read widening
+    (:func:`shyfem_ui.services.access_control.accessible_shared_work_dirs`),
+    not here.
+
+    Operator-invoked; **never auto-run at startup** — a bad stored path or a
+    permission error must not trigger ``shutil.move`` on the laguna deployment's
+    next boot. Defaults to ``dry_run=True``: run once to preview the plan, then
+    again with ``dry_run=False`` to apply. Idempotent (re-running skips projects
+    already under their owner's home).
+
+    Args:
+        user_data_root: per-user data root; defaults to ``config.user_data_root``.
+        session_factory: SQLAlchemy session factory; defaults to the global one.
+        dry_run: when True (default), only log intended moves.
+
+    Returns:
+        The ``{moved, skipped, failed}`` summary from :func:`apply_relocations`.
+    """
+    from shyfem_ui.models.project import Project
+    from shyfem_ui.models.user import User
+
+    if session_factory is None:
+        from shyfem_ui.db.base import get_session_factory
+
+        session_factory = get_session_factory()
+    if user_data_root is None:
+        from shyfem_ui.config import get_config
+
+        user_data_root = get_config().user_data_root
+
+    db = session_factory()
+    try:
+        rows = (
+            db.query(Project.id, Project.work_dir, User.username)
+            .outerjoin(User, Project.owner_id == User.id)
+            .all()
+        )
+        projects = [
+            {"id": pid, "work_dir": work_dir, "owner_username": owner}
+            for (pid, work_dir, owner) in rows
+        ]
+    finally:
+        db.close()
+
+    plans = plan_relocations(projects, user_data_root=user_data_root)
+
+    def _update_work_dir(project_id: int, new_work_dir: str) -> None:
+        session = session_factory()
+        try:
+            proj = session.query(Project).filter_by(id=project_id).first()
+            if proj is not None:
+                proj.work_dir = new_work_dir
+                session.commit()
+        finally:
+            session.close()
+
+    return apply_relocations(plans, update_work_dir=_update_work_dir, dry_run=dry_run)

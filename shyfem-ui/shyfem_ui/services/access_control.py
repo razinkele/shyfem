@@ -42,6 +42,60 @@ def check_project_access(
     return None
 
 
+def accessible_shared_work_dirs(user: dict | None, *, session_factory=None) -> list:
+    """Return the resolved ``work_dir`` Paths of every project the acting user
+    holds a :class:`ProjectPermission` grant on (N44 shared-project READ
+    confinement).
+
+    The permission set is derived SERVER-SIDE from the database, keyed on the
+    user's id from the server-validated identity dict -- never a client-pushed
+    signal. Presence of a ``ProjectPermission`` row IS the grant (the model has
+    no separate ``accepted`` flag).
+
+    OWNED projects are intentionally excluded: an owner's reach comes from their
+    own home sandbox (plus the F15 relocation for legacy pre-#29 dirs), not from
+    this shared-read widening. Consequently the bootstrapped "Mar Menor
+    Tutorial" -- owned by admin, shared (editor) to the tutorial user -- is
+    reachable by the tutorial user via their permission row here, which is
+    exactly the case N44 fixes.
+
+    Returns ``[]`` for an unresolved / id-less user. Read-only: never mutates.
+
+    Args:
+        user: Server-validated user dict (or None).
+        session_factory: Optional SQLAlchemy session factory for testing;
+            defaults to the global factory.
+    """
+    if not isinstance(user, dict):
+        return []
+    user_id = user.get("id")
+    if user_id is None:
+        return []
+
+    from pathlib import Path
+
+    from shyfem_ui.models.project import Project
+    from shyfem_ui.models.user import ProjectPermission
+
+    if session_factory is None:
+        from shyfem_ui.db.base import get_session_factory
+
+        session_factory = get_session_factory()
+
+    db = session_factory()
+    try:
+        rows = (
+            db.query(Project.work_dir)
+            .join(ProjectPermission, ProjectPermission.project_id == Project.id)
+            .filter(ProjectPermission.user_id == user_id)
+            .all()
+        )
+    finally:
+        db.close()
+
+    return [Path(work_dir).resolve() for (work_dir,) in rows]
+
+
 def identity_denied_reason(
     user: dict | None,
     *,
