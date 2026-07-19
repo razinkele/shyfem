@@ -760,3 +760,155 @@ class TestCleanupDeletesDbRows:
         dbb._engine = None
         dbb._SessionLocal = None
         cfg._config = None
+
+
+class TestDbRowToJobInfoOutputFiles:
+    """_db_row_to_job_info must restore output_files from the ``jobs.output_files``
+    column (migration 7e41388e2c8d), tolerating NULL or non-list values as []
+    (N40 -- the column was added but never read back)."""
+
+    def _row(self, **over):
+        from types import SimpleNamespace
+
+        base = dict(
+            job_uuid="u1",
+            name="n",
+            job_type="shyfem",
+            working_dir="/tmp",
+            status=JobStatus.RUNNING,
+            progress=0.0,
+            progress_message="",
+            created_at=datetime.now(),
+            queued_at=None,
+            started_at=None,
+            completed_at=None,
+            return_code=None,
+            error_message=None,
+            stdout_file=None,
+            stderr_file=None,
+            simulation_id=None,
+            session_id=None,
+            user_id=None,
+            project_id=None,
+            output_files=None,
+        )
+        base.update(over)
+        return SimpleNamespace(**base)
+
+    def test_null_output_files_becomes_empty_list(self):
+        info = LocalJobQueue._db_row_to_job_info(self._row(output_files=None))
+        assert info.output_files == []
+
+    def test_invalid_output_files_becomes_empty_list(self):
+        info = LocalJobQueue._db_row_to_job_info(self._row(output_files="not-a-list"))
+        assert info.output_files == []
+
+    def test_valid_output_files_round_trip(self):
+        info = LocalJobQueue._db_row_to_job_info(
+            self._row(output_files=["/tmp/a.shy", "/tmp/b.ext"])
+        )
+        assert info.output_files == ["/tmp/a.shy", "/tmp/b.ext"]
+
+
+class TestOutputFilesPersistence:
+    """jobs.output_files (migration 7e41388e2c8d) must round-trip through
+    _persist_job and survive a fresh LocalJobQueue reload (simulated server
+    restart) -- previously the column existed but was never written (N40),
+    so restarts silently lost every job's output-file list."""
+
+    @pytest.mark.asyncio
+    async def test_output_files_persist_and_reload(self, tmp_path, monkeypatch, mock_wrapper):
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        expected_files = [str(tmp_path / "out.shy"), str(tmp_path / "out.ext")]
+        mock_wrapper.run_command.return_value = CommandResult(
+            success=True,
+            return_code=0,
+            stdout="",
+            stderr="",
+            command="test",
+            working_dir=str(tmp_path),
+            duration=1.0,
+            output_files=expected_files,
+        )
+
+        q1 = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q1.wrapper = mock_wrapper
+        q1._jobs.clear()
+
+        spec = JobSpec(name="out", tool_name="shypre", args=[], working_dir=tmp_path / "w")
+        job_id = await q1.submit(spec)
+        for _ in range(50):
+            status = await q1.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.05)
+
+        status = await q1.get_status(job_id)
+        assert status.status == JobStatus.COMPLETED
+        assert sorted(status.output_files) == sorted(expected_files)
+
+        # The persisted DB row itself must carry output_files (not just the
+        # in-memory JobInfo) -- assert directly against the ORM column.
+        from shyfem_ui.models.project import Job
+
+        with dbb.db_session() as db:
+            row = db.query(Job).filter(Job.job_uuid == job_id).first()
+            assert row is not None
+            assert sorted(row.output_files) == sorted(expected_files)
+
+        # Simulate a server restart: a brand-new LocalJobQueue reloading from
+        # the same DB must restore output_files, not silently drop them.
+        q2 = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        reloaded = q2._jobs.get(job_id)
+        assert reloaded is not None
+        assert sorted(reloaded.output_files) == sorted(expected_files)
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
+    @pytest.mark.asyncio
+    async def test_no_output_files_persists_as_empty_list(
+        self, tmp_path, monkeypatch, mock_wrapper
+    ):
+        """A job that produced no output files persists (and reloads) as []
+        rather than NULL, keeping downstream consumers (workflow chaining,
+        run.py's output-file list) list-shaped."""
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs2.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q.wrapper = mock_wrapper
+        q._jobs.clear()
+
+        spec = JobSpec(name="empty", tool_name="shypre", args=[], working_dir=tmp_path / "w")
+        job_id = await q.submit(spec)
+        for _ in range(50):
+            status = await q.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.05)
+
+        from shyfem_ui.models.project import Job
+
+        with dbb.db_session() as db:
+            row = db.query(Job).filter(Job.job_uuid == job_id).first()
+            assert row.output_files == []
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None

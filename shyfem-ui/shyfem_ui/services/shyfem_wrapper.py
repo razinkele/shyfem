@@ -144,6 +144,13 @@ class ShyfemWrapper:
         working_dir = Path(working_dir)
         working_dir.mkdir(parents=True, exist_ok=True)
 
+        # Snapshot pre-existing candidate output files (path -> mtime_ns)
+        # BEFORE launching the subprocess, so completion only reports files
+        # this run actually produced (new) or touched (modified) -- not
+        # unrelated pre-existing files left by earlier jobs sharing the same
+        # working directory (N48).
+        before_snapshot = self._snapshot_output_files(tool_name, working_dir)
+
         # Build environment
         run_env = os.environ.copy()
         run_env["SHYFEMDIR"] = str(self.shyfem_dir)
@@ -247,8 +254,8 @@ class ShyfemWrapper:
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
 
-        # Find output files
-        output_files = self._find_output_files(tool_name, working_dir)
+        # Find output files: only ones new or modified since before_snapshot.
+        output_files = self._find_output_files(tool_name, working_dir, before_snapshot)
 
         return CommandResult(
             success=return_code == 0,
@@ -320,13 +327,54 @@ class ShyfemWrapper:
                 pass
         return None
 
-    def _find_output_files(self, tool_name: str, working_dir: Path) -> list[str]:
-        """Find output files created by a tool."""
+    def _snapshot_output_files(self, tool_name: str, working_dir: Path) -> dict[str, int]:
+        """Snapshot {path: mtime_ns} for every file matching the tool's
+        candidate output extensions, currently present in ``working_dir``.
+
+        Taken immediately before launching the subprocess so
+        ``_find_output_files`` can later tell apart files this run actually
+        produced or modified from unrelated pre-existing files (N48).
+        """
         extensions = self.OUTPUT_EXTENSIONS.get(tool_name, [])
+        snapshot: dict[str, int] = {}
+        for ext in extensions:
+            for f in working_dir.glob(f"*{ext}"):
+                try:
+                    snapshot[str(f)] = f.stat().st_mtime_ns
+                except OSError:
+                    # File vanished between glob() and stat() -- ignore, it
+                    # can't be a "before" state worth tracking.
+                    continue
+        return snapshot
+
+    def _find_output_files(
+        self,
+        tool_name: str,
+        working_dir: Path,
+        before: dict[str, int] | None = None,
+    ) -> list[str]:
+        """Find output files this run actually produced.
+
+        ``before`` is the {path: mtime_ns} snapshot taken by
+        ``_snapshot_output_files`` right before the subprocess launched. A
+        matching-extension file is reported only if it is new (absent from
+        ``before``) or was modified during the run (mtime increased) -- so
+        pre-existing, untouched files (e.g. left over from an earlier job in
+        the same working directory) are never reported as this job's output
+        (N48).
+        """
+        extensions = self.OUTPUT_EXTENSIONS.get(tool_name, [])
+        before = before or {}
         output_files = []
         for ext in extensions:
             for f in working_dir.glob(f"*{ext}"):
-                output_files.append(str(f))
+                try:
+                    mtime_ns = f.stat().st_mtime_ns
+                except OSError:
+                    continue
+                prior = before.get(str(f))
+                if prior is None or mtime_ns > prior:
+                    output_files.append(str(f))
         return output_files
 
     # Convenience methods for specific tools

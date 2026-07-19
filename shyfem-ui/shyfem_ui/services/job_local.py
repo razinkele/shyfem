@@ -121,6 +121,12 @@ class LocalJobQueue(JobQueue):
     @staticmethod
     def _db_row_to_job_info(row) -> JobInfo:
         """Convert a Job ORM row to a JobInfo dataclass."""
+        output_files = getattr(row, "output_files", None)
+        if not isinstance(output_files, list):
+            # NULL (column added by migration 7e41388e2c8d, never written on
+            # older rows) or any non-list value -- never surface it as-is,
+            # tolerate as an empty list (N40).
+            output_files = []
         return JobInfo(
             id=row.job_uuid,
             name=row.name,
@@ -138,6 +144,7 @@ class LocalJobQueue(JobQueue):
             error_message=row.error_message,
             stdout_file=row.stdout_file,
             stderr_file=row.stderr_file,
+            output_files=output_files,
             simulation_id=row.simulation_id,
             metadata=job_identity_metadata(row),
         )
@@ -174,6 +181,7 @@ class LocalJobQueue(JobQueue):
                 row.error_message = job.error_message
                 row.stdout_file = job.stdout_file
                 row.stderr_file = job.stderr_file
+                row.output_files = list(job.output_files) if job.output_files else []
         except Exception:
             logger.error("Could not persist job %s to DB", job.id, exc_info=True)
 
