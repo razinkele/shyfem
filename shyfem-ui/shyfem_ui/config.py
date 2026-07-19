@@ -235,6 +235,10 @@ class Config(BaseSettings):
     max_project_storage_mb: int = Field(
         default=5000, description="Maximum total storage per project in MB"
     )
+    max_export_bytes: int = Field(
+        default=2 * 1024 * 1024 * 1024,
+        description="Maximum total uncompressed project size (bytes) allowed for ZIP export",
+    )
 
     # Proxy settings (server mode)
     root_path: str = Field(

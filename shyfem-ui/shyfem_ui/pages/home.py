@@ -1081,7 +1081,7 @@ def home_server(
         }
 
         try:
-            zip_buf = export_project(work_dir, meta)
+            zip_buf = await export_project(work_dir, meta)
             b64 = base64.b64encode(zip_buf.read()).decode("ascii")
             filename = f"{_safe_filename(project_name)}.zip"
             await session.send_custom_message(
@@ -1225,7 +1225,7 @@ def home_server(
 
     @reactive.effect
     @reactive.event(input.confirm_import_project_btn)
-    def _do_import_project():
+    async def _do_import_project():
         file_info = input.import_zip_file()
         logger.info("User importing project from ZIP")
         if not file_info:
@@ -1275,7 +1275,7 @@ def home_server(
         try:
             with open(file_path, "rb") as f:
                 zip_data = BytesIO(f.read())
-            result = import_project(zip_data, import_root)
+            result = await import_project(zip_data, import_root)
         except ValueError as e:
             logger.exception("Project ZIP import rejected: %s", file_path)
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)
