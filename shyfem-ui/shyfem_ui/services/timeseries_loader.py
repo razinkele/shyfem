@@ -74,6 +74,7 @@ def _load_whitespace(path: Path) -> dict:
     """Parse a whitespace-delimited file with optional header row."""
     data: list[list[float]] = []
     columns: list[str] = []
+    header_checked = False
 
     try:
         with open(path) as fh:
@@ -81,10 +82,14 @@ def _load_whitespace(path: Path) -> dict:
                 parts = line.strip().split()
                 if not parts:
                     continue
-                # First row: treat as header if the first token is not numeric
-                if i == 0 and not _looks_numeric(parts[0]):
-                    columns = parts
-                    continue
+                # First non-blank row: treat as header if the first token is
+                # not numeric. Detection is index-independent so leading
+                # blank lines don't shift the header past this check.
+                if not header_checked:
+                    header_checked = True
+                    if not _looks_numeric(parts[0]):
+                        columns = parts
+                        continue
                 try:
                     data.append([float(p) for p in parts])
                 except ValueError:

@@ -333,14 +333,17 @@ class GrdParser:
             # Handle continuation lines for line/element records (record_type > 3
             # means this isn't a record header — it's continuation node data)
             if pending is not None:
-                _, _, _, p_nvert, p_nodes, _ = pending
+                p_kind, p_rid, _, p_nvert, p_nodes, _ = pending
                 if record_type > 3:
                     # Continuation: all fields are node IDs
                     for p in parts:
                         try:
                             p_nodes.append(int(float(p)))
                         except ValueError:
-                            pass
+                            result.parse_warnings.append(
+                                f"Line {line_num}: {p_kind} {p_rid}: "
+                                f"invalid node ID token {p!r}, skipped"
+                            )
                     if len(p_nodes) >= p_nvert:
                         _finalize_pending(result, pending)
                         pending = None
@@ -398,6 +401,10 @@ class GrdParser:
                             try:
                                 node_ids.append(int(float(p)))
                             except ValueError:
+                                result.parse_warnings.append(
+                                    f"Line {line_num}: element {elem_id} invalid node ID "
+                                    f"token {p!r}, skipping remaining fields on this line"
+                                )
                                 break
                         pending = ("elem", elem_id, elem_type, nvert, node_ids, line_num)
                         continue
@@ -409,7 +416,10 @@ class GrdParser:
                         try:
                             depth = float(parts[depth_idx])
                         except ValueError:
-                            pass
+                            result.parse_warnings.append(
+                                f"Line {line_num}: element {elem_id} invalid depth "
+                                f"value {parts[depth_idx]!r}, ignoring"
+                            )
                     if len(node_ids) < 3:
                         result.parse_warnings.append(
                             f"Line {line_num}: element {elem_id} has {len(node_ids)} valid nodes (need >= 3)"
@@ -436,6 +446,10 @@ class GrdParser:
                         try:
                             node_ids.append(int(float(p)))
                         except ValueError:
+                            result.parse_warnings.append(
+                                f"Line {line_num}: line {line_id} invalid node ID "
+                                f"token {p!r}, skipping remaining fields on this line"
+                            )
                             break
                     if len(node_ids) < nvert:
                         # Remaining nodes will come on continuation lines;
