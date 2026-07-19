@@ -14,6 +14,7 @@ from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.models.user import ROLE_ADMIN, ProjectPermission
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
+from shyfem_ui.services.run_logic import list_scoped_jobs
 from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
 
 logger = logging.getLogger(__name__)
@@ -76,22 +77,6 @@ def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
     if user and user.get("role") != ROLE_ADMIN:
         return get_visible_projects(db, user["id"], user["role"])
     return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
-
-
-def recent_jobs_session_id(is_server_mode: bool, show_all: bool, user: dict | None, session_id):
-    """Decide which session_id to filter the Dashboard's recent-jobs list by.
-
-    Returns None to list every session's jobs, or ``session_id`` to scope to the
-    current session. Local (single-user) mode always lists all. In server mode
-    only admins may list every user's jobs — a non-admin (or unresolved WS
-    identity) asking to "show all" is downgraded to their own session (IDOR
-    guard).
-    """
-    if not is_server_mode:
-        return None
-    if show_all and not (user and user.get("role") == ROLE_ADMIN):
-        show_all = False
-    return None if show_all else session_id
 
 
 def _should_show_share_button(project: dict, user: dict | None) -> bool:
@@ -311,7 +296,6 @@ def home_server(
     """Dashboard page server logic."""
     projects = reactive.value([])
     recent_jobs_list = reactive.value([])
-    _session_id = str(id(session))
     _is_server_mode = config.deployment_mode == "server"
 
     # Dedup set prevents effect accumulation (Shiny for Python does not
@@ -359,16 +343,25 @@ def home_server(
                 ]
             )
 
+    def _requested_show_all() -> bool:
+        try:
+            return bool(input.show_all_jobs())
+        except Exception:
+            logger.debug("show_all_jobs input not yet rendered, defaulting to False")
+            return False  # input not yet rendered on startup
+
     async def _refresh_jobs():
         if job_queue:
-            try:
-                show_all = input.show_all_jobs() if _is_server_mode else True
-            except Exception:
-                logger.debug("show_all_jobs input not yet rendered, defaulting to False")
-                show_all = False  # input not yet rendered on startup
-            # IDOR guard (admin-only "show all") lives in recent_jobs_session_id.
-            sid = recent_jobs_session_id(_is_server_mode, show_all, _user(), _session_id)
-            jobs = await job_queue.list_jobs(limit=5, session_id=sid)
+            # Scoped by the server-validated user identity (F17 completion),
+            # never session_id -- shared with pages/run.py, pages/compare.py
+            # and app.py's notification poll so they never drift apart.
+            jobs = await list_scoped_jobs(
+                job_queue,
+                _is_server_mode,
+                _user,
+                show_all_fn=_requested_show_all,
+                limit=5,
+            )
             recent_jobs_list.set(jobs)
 
     @render.ui

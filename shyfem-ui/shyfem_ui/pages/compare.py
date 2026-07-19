@@ -20,6 +20,7 @@ from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrParser
 from shyfem_ui.services.report import generate_comparison_report
+from shyfem_ui.services.run_logic import list_scoped_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -124,16 +125,21 @@ def compare_server(
     @reactive.effect
     async def _load_jobs():
         try:
-            # IDOR fix: in server mode non-admins only see their own jobs in the
-            # comparison selector; admins (and local mode) see all.
-            sid = None
-            if config.deployment_mode == "server":
-                from shyfem_ui.models.user import ROLE_ADMIN
-
-                _usr = current_user() if current_user is not None else None
-                if not (_usr and _usr.get("role") == ROLE_ADMIN):
-                    sid = str(id(session))
-            jobs = await job_queue.list_jobs(limit=100, session_id=sid)
+            # Scoped by the server-validated user identity (F17 completion),
+            # never session_id (ephemeral per-WS-connection -- doesn't
+            # survive a reconnect, and CPython id() reuse could surface a
+            # prior user's jobs). Shared with pages/run.py, pages/home.py
+            # and app.py's notification poll. Compare has no separate "show
+            # all" toggle: show_all_fn always requests it, and
+            # list_scoped_jobs downgrades non-admins to their own jobs
+            # (IDOR guard) -- admins (and local mode) see all.
+            jobs = await list_scoped_jobs(
+                job_queue,
+                config.deployment_mode == "server",
+                current_user,
+                show_all_fn=lambda: True,
+                limit=100,
+            )
             all_jobs.set(jobs)
         except Exception as e:
             ui.notification_show(f"Failed to load jobs: {e}", type="error", duration=6)

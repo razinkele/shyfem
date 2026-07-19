@@ -9,13 +9,14 @@ test_pages_helpers) continue to work without modification.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
 from shiny import ui
 
-from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
+from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.parser_str import StrParser
 
@@ -60,6 +61,61 @@ def _get_job_metadata(
     if project_id is not None:
         meta["project_id"] = project_id
     return meta
+
+
+async def list_scoped_jobs(
+    job_queue: JobQueue,
+    is_server_mode: bool,
+    current_user_fn: Callable[[], dict | None] | None,
+    show_all_fn: Callable[[], bool] | None = None,
+    limit: int = 100,
+) -> list[JobInfo]:
+    """Server-validated, per-user job listing (F17 completion).
+
+    Extracted from pages/run.py's ``_list_scoped_jobs`` (Batch 3) so every
+    listing site -- Run, Dashboard, Compare, and the cross-page notification
+    poll -- scopes the SAME way instead of maintaining independent copies
+    that can silently drift apart. Scopes by the server-validated user
+    identity's id, NEVER ``session_id`` (ephemeral per-WS-connection; does
+    not track ownership across reconnects/tabs, so a user's own jobs would
+    drop off after reconnect and CPython id() reuse could surface a prior
+    user's job metadata) nor any client-pushed signal (e.g.
+    ``input.current_user_role()``).
+
+    Fail-closed: an unresolved identity in server mode (``current_user_fn``
+    is None, or calling it returns None) returns no jobs rather than
+    falling through to session_id scoping or an unfiltered list. Local
+    (single-user) mode is always unfiltered.
+
+    Args:
+        job_queue: The queue to list from.
+        is_server_mode: config.deployment_mode == "server".
+        current_user_fn: Zero-arg callable returning the server-validated
+            user dict (or None) -- e.g. the ``current_user`` closure every
+            page server already receives, never a client-pushed value.
+        show_all_fn: Optional zero-arg callable for the caller's
+            *requested* scope (e.g. a "show all jobs" toggle), called only
+            once identity is confirmed (mirrors the original call order so
+            it is never evaluated before an unresolved-input input.*() call
+            would be safe). Downgraded to the caller's own jobs unless the
+            resolved identity is an admin (IDOR guard). Callers with no
+            separate toggle (e.g. Compare) can pass a callable that always
+            returns True to mean "all jobs when admin, own jobs otherwise".
+        limit: Max jobs to return.
+    """
+    if not is_server_mode:
+        return await job_queue.list_jobs(limit=limit)
+
+    from shyfem_ui.models.user import ROLE_ADMIN
+
+    usr = current_user_fn() if current_user_fn is not None else None
+    if usr is None:
+        return []
+
+    requested_show_all = bool(show_all_fn()) if show_all_fn is not None else False
+    show_all = requested_show_all and usr.get("role") == ROLE_ADMIN
+    uid = None if show_all else usr["id"]
+    return await job_queue.list_jobs(limit=limit, user_id=uid)
 
 
 def get_solver_recommendation(num_nodes: int | None, threshold: int) -> dict[str, str | None]:
