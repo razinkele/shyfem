@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import shutil
+import signal
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -58,6 +59,10 @@ class ShyfemWrapper:
         "shyelab": [".nc", ".txt", ".dat"],
         "shyplot": [".png", ".pdf", ".eps"],
     }
+
+    # Grace period between SIGTERM and SIGKILL when tearing down a process
+    # group (cancellation or timeout).
+    PROCESS_GROUP_KILL_GRACE_SECONDS = 1.5
 
     # Progress patterns for different tools
     PROGRESS_PATTERNS = {
@@ -162,12 +167,18 @@ class ShyfemWrapper:
         timeout = get_config().command_timeout_seconds
 
         try:
+            # start_new_session=True makes the child the leader of its own
+            # process group, distinct from the server's. That is required
+            # before any group kill: without it, a killpg() on cancellation
+            # or timeout would take down the whole server process tree
+            # instead of just the spawned shyfem/mpirun job.
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=working_dir,
                 env=run_env,
+                start_new_session=True,
             )
 
             # Read output streams concurrently
@@ -195,28 +206,34 @@ class ShyfemWrapper:
                 )
                 await proc.wait()
 
-            if timeout:
-                await asyncio.wait_for(_drain_and_wait(), timeout=timeout)
-            else:
-                await _drain_and_wait()
-            return_code = proc.returncode
-
-        except asyncio.TimeoutError:
-            # A hung tool would otherwise wedge the job (and queue) forever.
-            logger.warning("Command %r exceeded %ss timeout; terminating", cmd_str, timeout)
-            proc.kill()
             try:
-                await proc.wait()
-            except Exception:
-                logger.debug("Error awaiting killed process", exc_info=True)
-            return CommandResult(
-                success=False,
-                return_code=-1,
-                stdout="\n".join(stdout_lines),
-                stderr=f"Command timed out after {timeout}s and was terminated",
-                command=cmd_str,
-                working_dir=str(working_dir),
-            )
+                if timeout:
+                    await asyncio.wait_for(_drain_and_wait(), timeout=timeout)
+                else:
+                    await _drain_and_wait()
+                return_code = proc.returncode
+
+            except asyncio.TimeoutError:
+                # A hung tool would otherwise wedge the job (and queue) forever.
+                logger.warning("Command %r exceeded %ss timeout; terminating", cmd_str, timeout)
+                await self._terminate_process_group(proc, cmd_str)
+                return CommandResult(
+                    success=False,
+                    return_code=-1,
+                    stdout="\n".join(stdout_lines),
+                    stderr=f"Command timed out after {timeout}s and was terminated",
+                    command=cmd_str,
+                    working_dir=str(working_dir),
+                )
+            except asyncio.CancelledError:
+                # Job cancellation (LocalJobQueue.cancel -> task.cancel())
+                # raises CancelledError here. It must not leak the child:
+                # terminate its whole process group, then re-raise so the
+                # caller (job_local.py) still observes the cancellation.
+                logger.warning("Command %r cancelled; terminating process group", cmd_str)
+                await self._terminate_process_group(proc, cmd_str)
+                raise
+
         except Exception as e:
             return CommandResult(
                 success=False,
@@ -243,6 +260,48 @@ class ShyfemWrapper:
             duration=duration,
             output_files=output_files,
         )
+
+    async def _terminate_process_group(
+        self, proc: asyncio.subprocess.Process, cmd_str: str
+    ) -> None:
+        """Terminate the process group led by proc: SIGTERM, a short grace
+        period, then SIGKILL. Shared by both the cancellation and timeout
+        cleanup paths so a hung/cancelled job never leaves an orphaned
+        shyfem/mpirun tree running unsupervised.
+
+        Requires the process to have been spawned with start_new_session=True
+        (so proc.pid is itself the process group id) -- otherwise this would
+        signal the server's own process group.
+        """
+        try:
+            pgid = os.getpgid(proc.pid)
+        except ProcessLookupError:
+            return  # already gone
+
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            return  # exited between getpgid() and killpg()
+
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=self.PROCESS_GROUP_KILL_GRACE_SECONDS)
+            return
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Command %r did not exit %ss after SIGTERM; sending SIGKILL",
+                cmd_str,
+                self.PROCESS_GROUP_KILL_GRACE_SECONDS,
+            )
+
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+        try:
+            await proc.wait()
+        except Exception:
+            logger.debug("Error awaiting killed process group", exc_info=True)
 
     def _parse_progress(self, tool_name: str, line: str) -> float | None:
         """Parse progress from output line."""
@@ -362,7 +421,7 @@ class ShyfemWrapper:
             solver: Solver variant ('sparskit' or 'petsc')
         """
         tool_name = self.SOLVER_EXECUTABLES.get(solver, "shyfem")
-        args_list = options or []
+        args_list = list(options) if options else []  # copy: never mutate caller's list
         args_list.append(str(str_file))
 
         prefix = None
