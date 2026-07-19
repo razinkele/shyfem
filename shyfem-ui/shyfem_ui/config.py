@@ -95,6 +95,15 @@ class Config(BaseSettings):
             "grow without limit."
         ),
     )
+    feedback_retention_days: int = Field(
+        default=180,
+        gt=0,
+        description=(
+            "Age (days) beyond which feedbacks entries are pruned by maintenance "
+            "(F52). Longer than job retention since triage can lag, shorter than "
+            "the audit trail since feedback isn't a compliance record."
+        ),
+    )
 
     # Job queue settings
     use_celery: bool = Field(

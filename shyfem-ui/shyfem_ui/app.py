@@ -40,6 +40,7 @@ except ImportError:
 
 from shyfem_ui.services.audit_service import AuditService
 from shyfem_ui.services.auth_service import AuthService
+from shyfem_ui.services.feedback_service import FeedbackService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import JobTransitionDetector
 from shyfem_ui.services.notification_service import NotificationService as EmailNotificationService
@@ -244,9 +245,10 @@ def create_app(config: Config | None = None) -> App:
 
     register_shyfem_template(dark=False)
 
-    # Initialize auth + audit services
+    # Initialize auth + audit + feedback services
     auth_service = AuthService()
     audit_service = AuditService()
+    feedback_service = FeedbackService()
     if config.deployment_mode == "server":
         if config.default_admin_password:
             admin = auth_service.ensure_admin(
@@ -340,6 +342,8 @@ def create_app(config: Config | None = None) -> App:
                 job_retention_days=config.job_retention_days,
                 audit_service=audit_service,
                 audit_retention_days=config.audit_retention_days,
+                feedback_service=feedback_service,
+                feedback_retention_days=config.feedback_retention_days,
             )
 
     app = MaintenanceMiddleware(app, _maint_factory)

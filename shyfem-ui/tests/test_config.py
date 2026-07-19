@@ -105,6 +105,7 @@ class TestConfigDefaults:
         config = _clean_config()
         assert config.maintenance_interval_seconds == 3600
         assert config.job_retention_days == 30
+        assert config.feedback_retention_days == 180
 
     def test_trusted_proxies_defaults_to_loopback_in_server_mode(self):
         """Server mode always sits behind the local nginx -> Shiny Server proxy
