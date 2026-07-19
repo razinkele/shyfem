@@ -41,6 +41,7 @@ class LocalJobQueue(JobQueue):
 
     MAX_STORED_JOBS = 500
     TEMP_FILE_RETENTION_SECS = 3600  # Clean temp files 1 hour after job completion
+    ORPHANED_ERROR = "orphaned at server restart"
 
     def __init__(
         self,
@@ -78,19 +79,41 @@ class LocalJobQueue(JobQueue):
     # ------------------------------------------------------------------
 
     def _load_history_from_db(self) -> None:
-        """Load recent completed jobs from the database into the in-memory cache."""
+        """Load recent jobs from the database into the in-memory cache.
+
+        A freshly constructed queue has no live asyncio task for ANY job by
+        definition — so rows persisted in an active status (PENDING/QUEUED/
+        RUNNING) are phantoms left behind by a previous process (crash,
+        deploy, restart). They are reconciled to FAILED with error
+        ``ORPHANED_ERROR`` and the correction is persisted back, so they stop
+        being reported "active" forever (which previously inflated /health's
+        active_job_count and made them immune to cleanup_old_jobs).
+        """
         try:
             from shyfem_ui.db.base import db_session
             from shyfem_ui.models.project import Job
 
+            active_statuses = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
+            reconciled = 0
             with db_session() as db:
                 rows = (
                     db.query(Job).order_by(Job.created_at.desc()).limit(self.MAX_STORED_JOBS).all()
                 )
+                for row in rows:
+                    if row.status in active_statuses:
+                        row.status = JobStatus.FAILED
+                        row.error_message = self.ORPHANED_ERROR
+                        if row.completed_at is None:
+                            row.completed_at = datetime.now()
+                        reconciled += 1
                 for row in reversed(rows):  # oldest first so OrderedDict order is correct
                     if row.job_uuid in self._jobs:
                         continue
                     self._jobs[row.job_uuid] = self._db_row_to_job_info(row)
+            if reconciled:
+                logger.warning(
+                    "Reconciled %d phantom active job row(s) to FAILED at startup", reconciled
+                )
         except Exception:
             # DB may not be initialised yet at import time — that's fine
             logger.warning("Could not load job history from DB", exc_info=True)
@@ -403,6 +426,7 @@ class LocalJobQueue(JobQueue):
         simulation_id: int | None = None,
         limit: int = 100,
         session_id: str | None = None,
+        user_id: int | None = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
         jobs = list(self._jobs.values())
@@ -415,9 +439,13 @@ class LocalJobQueue(JobQueue):
         if simulation_id is not None:
             jobs = [j for j in jobs if j.simulation_id == simulation_id]
 
-        # Filter by session (for multi-user isolation)
+        # Filter by session (legacy / non-ownership scoping, e.g. progress polling)
         if session_id is not None:
             jobs = [j for j in jobs if j.metadata.get("session_id") == session_id]
+
+        # Filter by owning user (server-mode per-user isolation, F17)
+        if user_id is not None:
+            jobs = [j for j in jobs if j.metadata.get("user_id") == user_id]
 
         # Sort by creation time (newest first)
         jobs.sort(key=lambda j: j.created_at, reverse=True)

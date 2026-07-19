@@ -559,17 +559,30 @@ def run_server(
             ui.notification_show(f"Refresh failed: {e}", type="error", duration=6)
 
     async def _refresh_jobs():
-        """Refresh job lists."""
-        show_all = input.show_all_run_jobs() if _is_server_mode else True
-        if _is_server_mode and show_all:
-            # IDOR fix: only admins may list every user's jobs; others get own.
-            from shyfem_ui.models.user import ROLE_ADMIN
+        """Refresh job lists.
 
-            _usr = current_user() if current_user is not None else None
-            if not (_usr and _usr.get("role") == ROLE_ADMIN):
-                show_all = False
-        sid = None if show_all else _session_id
-        jobs = await job_queue.list_jobs(limit=50, session_id=sid)
+        F17: server-mode listing is scoped by the server-validated user
+        identity (never session_id, which is ephemeral per-WS-connection and
+        does not track ownership across reconnects/tabs). Fail-closed: an
+        unresolved identity in server mode sees no jobs rather than falling
+        through to an unfiltered list.
+        """
+        if not _is_server_mode:
+            jobs = await job_queue.list_jobs(limit=50)
+            _update_job_lists(jobs)
+            return
+
+        from shyfem_ui.models.user import ROLE_ADMIN
+
+        _usr = current_user() if current_user is not None else None
+        if _usr is None:
+            _update_job_lists([])
+            return
+
+        # IDOR fix: only admins may list every user's jobs; others get own.
+        show_all = bool(input.show_all_run_jobs()) and _usr.get("role") == ROLE_ADMIN
+        uid = None if show_all else _usr["id"]
+        jobs = await job_queue.list_jobs(limit=50, user_id=uid)
         _update_job_lists(jobs)
 
     def _update_job_lists(jobs: list[JobInfo]):
