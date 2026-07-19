@@ -112,7 +112,7 @@
 
 | ID | Status now | Fix |
 |---|---|---|
-| F14 | open | Require a valid session even for loopback WS connections when root_path is set (close the proxied-server fail-open) |
+| F14 | **not code-fixable (2026-07-19 investigation)** | The middleware WS branch gates the ASGI handshake, but Shiny Server's internal loopback WS presents NO credential there (`_wsauth` is a Shiny input pushed AFTER the socket opens; the proxy strips the query string) — closing it would 4001-reject every prod session. Downstream app-layer identity gates are already fail-closed on `user=None` in server mode, so the fail-open is not exploitable for authz. **Real fix is OPERATIONAL: network-confine the app (bind to loopback / firewall the port so only Shiny Server reaches it).** Optional defense-in-depth: an app-layer idle-unauthenticated-WS timeout (deferred). |
 | F15 | partial | PARTIAL → finish: relocate remaining legacy shared-work_dir projects (pairs with N44) |
 | F16 | open | validate_path/validate_save_path: resolve the nearest existing ancestor strictly; never skip symlink resolution for nonexistent targets |
 | F26 | open | Remove --reruns 2 from E2E, or record rerun statistics and fail when a test only passes on retry |
