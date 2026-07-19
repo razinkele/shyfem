@@ -71,15 +71,34 @@ class LocalJobQueue(JobQueue):
         self._semaphore: asyncio.Semaphore | None = None
         self._running_count = 0
 
-        # Load completed jobs from DB into memory cache
-        self._load_history_from_db()
+        # Job history is loaded lazily, NOT here (F51). __init__ may run
+        # before any event loop exists (app startup builds the App object
+        # before uvicorn/ASGI takes over) or while one is already running
+        # (an async test/session constructing a queue directly) -- either
+        # way it cannot itself await, so calling the synchronous DB query
+        # inline would either be impossible or would block the loop for
+        # everyone else. A freshly constructed queue has no live task for
+        # any job anyway, so nothing is lost by deferring the read: the
+        # first public method that needs self._jobs triggers the load via
+        # _ensure_history_loaded(), off the loop via asyncio.to_thread.
+        self._history_loaded = False
+        self._history_load_lock: asyncio.Lock | None = None
 
     # ------------------------------------------------------------------
     # Database persistence helpers
     # ------------------------------------------------------------------
 
-    def _load_history_from_db(self) -> None:
-        """Load recent jobs from the database into the in-memory cache.
+    def _load_history_from_db(self) -> list[JobInfo]:
+        """Load recent jobs from the database, oldest first.
+
+        Runs off the event loop (via _ensure_history_loaded's
+        asyncio.to_thread), on a worker thread. It therefore returns the
+        loaded rows rather than writing self._jobs directly: self._jobs
+        must only ever be mutated on the event-loop thread (the merge
+        happens back in _ensure_history_loaded) -- writing it here too
+        would race an unlocked sync reader such as active_job_count
+        against this worker thread (RuntimeError: dictionary changed size
+        during iteration).
 
         A freshly constructed queue has no live asyncio task for ANY job by
         definition — so rows persisted in an active status (PENDING/QUEUED/
@@ -89,6 +108,7 @@ class LocalJobQueue(JobQueue):
         being reported "active" forever (which previously inflated /health's
         active_job_count and made them immune to cleanup_old_jobs).
         """
+        loaded: list[JobInfo] = []
         try:
             from shyfem_ui.db.base import db_session
             from shyfem_ui.models.project import Job
@@ -107,9 +127,7 @@ class LocalJobQueue(JobQueue):
                             row.completed_at = datetime.now()
                         reconciled += 1
                 for row in reversed(rows):  # oldest first so OrderedDict order is correct
-                    if row.job_uuid in self._jobs:
-                        continue
-                    self._jobs[row.job_uuid] = self._db_row_to_job_info(row)
+                    loaded.append(self._db_row_to_job_info(row))
             if reconciled:
                 logger.warning(
                     "Reconciled %d phantom active job row(s) to FAILED at startup", reconciled
@@ -117,6 +135,41 @@ class LocalJobQueue(JobQueue):
         except Exception:
             # DB may not be initialised yet at import time — that's fine
             logger.warning("Could not load job history from DB", exc_info=True)
+        return loaded
+
+    async def _ensure_history_loaded(self) -> None:
+        """Load job history from the DB on first use (F51).
+
+        Every public method that reads/writes self._jobs calls this first.
+        The (synchronous) query runs in a worker thread via
+        asyncio.to_thread so it never blocks the event loop. Concurrent
+        callers serialize on a lock: only one of them actually performs the
+        load (a racing caller waits on the lock, then sees the flag already
+        set and returns immediately).
+
+        _load_history_from_db only READS the DB and RETURNS the rows -- it
+        never touches self._jobs itself, because it runs on a worker
+        thread. The merge below runs back on the event-loop thread (after
+        the await returns), which is the only thread ever allowed to
+        mutate self._jobs: an unlocked sync reader like active_job_count
+        iterates self._jobs.values() with no lock, and self._jobs is a
+        plain OrderedDict, so a worker thread mutating it concurrently
+        could raise "dictionary changed size during iteration".
+        self._jobs is guaranteed empty of these rows until this point
+        (every writer awaits this method first), so setdefault is just a
+        defensive no-clobber, not a real merge.
+        """
+        if self._history_loaded:
+            return
+        if self._history_load_lock is None:
+            self._history_load_lock = asyncio.Lock()
+        async with self._history_load_lock:
+            if self._history_loaded:
+                return
+            loaded = await asyncio.to_thread(self._load_history_from_db)
+            for info in loaded:
+                self._jobs.setdefault(info.id, info)
+            self._history_loaded = True
 
     @staticmethod
     def _db_row_to_job_info(row) -> JobInfo:
@@ -260,6 +313,7 @@ class LocalJobQueue(JobQueue):
 
     async def submit(self, spec: JobSpec) -> str:
         """Submit a job for execution."""
+        await self._ensure_history_loaded()
         self._evict_old_jobs()
         job_id = self.generate_job_id()
 
@@ -289,9 +343,10 @@ class LocalJobQueue(JobQueue):
         job_info.stdout_file = str(output_dir / f"{job_id}.stdout")
         job_info.stderr_file = str(output_dir / f"{job_id}.stderr")
 
-        # Store job in memory and persist to DB
+        # Store job in memory and persist to DB (offloaded: this is a
+        # synchronous DB write and must not block the event loop, F22).
         self._jobs[job_id] = job_info
-        self._persist_job(job_info)
+        await asyncio.to_thread(self._persist_job, job_info)
 
         # Start execution task
         task = asyncio.create_task(self._execute_job(job_id, spec))
@@ -404,6 +459,7 @@ class LocalJobQueue(JobQueue):
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a running job."""
+        await self._ensure_history_loaded()
         job = self._jobs.get(job_id)
         if not job:
             return False
@@ -426,6 +482,7 @@ class LocalJobQueue(JobQueue):
 
     async def get_status(self, job_id: str) -> JobInfo | None:
         """Get current status of a job."""
+        await self._ensure_history_loaded()
         return self._jobs.get(job_id)
 
     async def list_jobs(
@@ -437,6 +494,7 @@ class LocalJobQueue(JobQueue):
         user_id: int | None = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
+        await self._ensure_history_loaded()
         jobs = list(self._jobs.values())
 
         # Filter by status
@@ -462,6 +520,7 @@ class LocalJobQueue(JobQueue):
 
     async def get_output(self, job_id: str, stream: str = "stdout", tail: int = 100) -> str:
         """Get job output."""
+        await self._ensure_history_loaded()
         job = self._jobs.get(job_id)
         if not job:
             return ""
@@ -476,6 +535,7 @@ class LocalJobQueue(JobQueue):
 
     async def cleanup_old_jobs(self, days: int = 7) -> int:
         """Remove jobs older than N days."""
+        await self._ensure_history_loaded()
         cutoff = datetime.now() - timedelta(days=days)
         to_remove = []
 

@@ -112,7 +112,8 @@ class TestOrphanReconciliation:
         db.commit()
         db.close()
 
-    def test_active_rows_reconciled_to_failed_on_load(self, tmp_path, db_factory):
+    @pytest.mark.asyncio
+    async def test_active_rows_reconciled_to_failed_on_load(self, tmp_path, db_factory):
         from shyfem_ui.services.job_local import LocalJobQueue
         from shyfem_ui.services.job_queue import JobStatus
 
@@ -128,27 +129,33 @@ class TestOrphanReconciliation:
 
         queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
 
+        # History now loads lazily (F51) -- list_jobs is the guaranteed
+        # trigger, and it must actually surface the (reconciled) history.
+        jobs = {j.id: j for j in await queue.list_jobs()}
+
         for uuid in ("running-1", "queued-1", "pending-1"):
-            job = queue._jobs.get(uuid)
+            job = jobs.get(uuid)
             assert job is not None, f"{uuid} was not loaded"
             assert job.status == JobStatus.FAILED, f"{uuid} was not reconciled"
             assert job.error_message == "orphaned at server restart"
             assert not job.is_active
 
         # A genuinely-completed row must be left untouched.
-        completed = queue._jobs.get("completed-1")
+        completed = jobs.get("completed-1")
         assert completed is not None
         assert completed.status == JobStatus.COMPLETED
         assert completed.error_message is None
 
-    def test_reconciliation_is_persisted_back_to_db(self, tmp_path, db_factory):
+    @pytest.mark.asyncio
+    async def test_reconciliation_is_persisted_back_to_db(self, tmp_path, db_factory):
         from shyfem_ui.models.project import Job
         from shyfem_ui.services.job_local import LocalJobQueue
         from shyfem_ui.services.job_queue import JobStatus
 
         self._make_row(db_factory, job_uuid="orphan-1", status=JobStatus.RUNNING)
 
-        LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        await queue.list_jobs()  # triggers the (now-lazy) history load
 
         db = db_factory()
         row = db.query(Job).filter_by(job_uuid="orphan-1").first()
@@ -169,7 +176,11 @@ class TestPerUserJobListing:
         from shyfem_ui.services.job_queue import JobSpec
 
         queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2)
+        # Isolate from the shared test DB (F51: history loads lazily, so
+        # the clear alone would just be undone by submit()'s first-use
+        # load) -- mark it already "loaded" so that never fires.
         queue._jobs.clear()
+        queue._history_loaded = True
 
         from unittest.mock import AsyncMock
 
