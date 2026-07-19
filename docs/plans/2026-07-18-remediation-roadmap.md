@@ -114,7 +114,7 @@
 |---|---|---|
 | F14 | **not code-fixable (2026-07-19 investigation)** | The middleware WS branch gates the ASGI handshake, but Shiny Server's internal loopback WS presents NO credential there (`_wsauth` is a Shiny input pushed AFTER the socket opens; the proxy strips the query string) — closing it would 4001-reject every prod session. Downstream app-layer identity gates are already fail-closed on `user=None` in server mode, so the fail-open is not exploitable for authz. **Real fix is OPERATIONAL: network-confine the app (bind to loopback / firewall the port so only Shiny Server reaches it).** Optional defense-in-depth: an app-layer idle-unauthenticated-WS timeout (deferred). |
 | F15 | partial | PARTIAL → finish: relocate remaining legacy shared-work_dir projects (pairs with N44) |
-| F16 | open | validate_path/validate_save_path: resolve the nearest existing ancestor strictly; never skip symlink resolution for nonexistent targets |
+| F16 | **false positive (2026-07-19, empirically verified)** | Not a live vuln: `validate_path`/`validate_save_path` call `Path.resolve()` (strict=False) which on Python 3.10+ follows symlinks through existing path segments even when the leaf is absent, so a symlink-escape-to-nonexistent-leaf resolves to the escaped path and fails the containment check. Reproduced with real `os.symlink` (escapes rejected, legit new files accepted). The `if resolved.exists(): resolve(strict=True)` block is redundant defensive code, kept as-is. |
 | F26 | open | Remove --reruns 2 from E2E, or record rerun statistics and fail when a test only passes on retry |
 | F44 | open | home_dir containment via Path.is_relative_to instead of startswith (user.py:65) |
 | F45 | open | Make logout a CSRF-protected POST (GET shows a confirm page) |
