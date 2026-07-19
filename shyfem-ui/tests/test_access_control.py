@@ -668,3 +668,45 @@ class TestAccessibleSharedWorkDirs:
             )
             == []
         )
+
+    def test_sqlalchemy_error_fails_closed_returns_empty(self, setup):
+        """Final review hardening: a transient SQLAlchemyError from the
+        permission query must fail CLOSED (return []), not propagate past
+        confine_path's callers as an exception type that isn't one of the
+        (ValueError, FileNotFoundError) confine_path contract normally
+        raises. An empty shared-roots set denies the shared read -- the safe
+        direction -- rather than the caller substituting an unconfined
+        path."""
+        from sqlalchemy.exc import SQLAlchemyError
+
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        class _BoomSession:
+            def query(self, *args, **kwargs):
+                raise SQLAlchemyError("connection lost")
+
+            def close(self):
+                pass
+
+        result = accessible_shared_work_dirs(
+            _user(setup["charlie_id"]), session_factory=_BoomSession
+        )
+        assert result == []
+
+    def test_unexpected_error_fails_closed_returns_empty(self, setup):
+        """Last-resort broad-Exception guard: any other unexpected error from
+        the query (not a SQLAlchemyError) must also fail CLOSED, never
+        propagate."""
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        class _BoomSession:
+            def query(self, *args, **kwargs):
+                raise RuntimeError("something unexpected")
+
+            def close(self):
+                pass
+
+        result = accessible_shared_work_dirs(
+            _user(setup["charlie_id"]), session_factory=_BoomSession
+        )
+        assert result == []

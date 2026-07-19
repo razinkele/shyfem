@@ -36,6 +36,36 @@ def test_audit_service_is_instantiated_in_app():
     ), "AuditService must have a .log() method for recording audit events"
 
 
+def test_session_auth_middleware_is_wired_with_trusted_proxies():
+    """Final review hardening (F46 regression lock): create_app() must
+    construct SessionAuthMiddleware with ``trusted_proxies=config.trusted_proxies``.
+
+    Silently dropping that kwarg collapses every request's client-IP
+    resolution to the immediate peer (127.0.0.1 behind the nginx/Shiny
+    Server proxy chain), which collapses every audit-log IP to 127.0.0.1 --
+    the F46 regression. A source-inspection lock is used here (rather than
+    instantiating create_app(), which requires a live DB/config) -- the
+    assertion is scoped to the SessionAuthMiddleware(...) call slice
+    specifically (not the whole function), because
+    ``trusted_proxies=config.trusted_proxies`` also appears in the
+    RateLimitMiddleware(...) call a few lines below it, and a
+    function-wide substring check would stay green even if the
+    SessionAuthMiddleware kwarg were removed.
+    """
+    import shyfem_ui.app as app_mod
+
+    src = inspect.getsource(app_mod.create_app)
+    start = src.index("SessionAuthMiddleware(")
+    end = src.index(")", start)
+    call_slice = src[start:end]
+
+    assert "trusted_proxies=config.trusted_proxies" in call_slice, (
+        "create_app() must construct SessionAuthMiddleware with "
+        "trusted_proxies=config.trusted_proxies -- dropping it silently "
+        "collapses all audit-log client IPs to the proxy's own address"
+    )
+
+
 def test_notification_poll_scopes_by_user_id_not_session_id():
     """F17 completion: the cross-page notification poll (_build_server's
     _poll_job_notifications) must scope its job listing through the SAME

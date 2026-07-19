@@ -1,7 +1,13 @@
 """Access control helper for project-level permission checks."""
 
+import logging
+
+from sqlalchemy.exc import SQLAlchemyError
+
 from shyfem_ui.models.user import ROLE_ADMIN, ROLE_TUTORIAL
 from shyfem_ui.services.sharing_service import SharingService
+
+logger = logging.getLogger(__name__)
 
 ROLE_HIERARCHY = {"owner": 3, "editor": 2, "viewer": 1}
 
@@ -90,6 +96,18 @@ def accessible_shared_work_dirs(user: dict | None, *, session_factory=None) -> l
             .filter(ProjectPermission.user_id == user_id)
             .all()
         )
+    except SQLAlchemyError:
+        # Fail CLOSED: a transient DB error must not propagate past
+        # confine_path's callers as an exception type outside its
+        # (ValueError, FileNotFoundError) contract. An empty shared-roots set
+        # denies the shared read -- the safe direction -- never substitutes
+        # an unconfined path.
+        logger.exception("Database error in accessible_shared_work_dirs")
+        return []
+    except Exception:
+        # Last-resort guard: any other unexpected failure also fails closed.
+        logger.exception("Unexpected error in accessible_shared_work_dirs")
+        return []
     finally:
         db.close()
 

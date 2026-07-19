@@ -511,13 +511,20 @@ class Config(BaseSettings):
                 # ('/', '', '.', '/etc', ...) rather than resolving it as an
                 # allowlisted read root. Fail-closed: a work_dir outside both
                 # roots is silently skipped (never becomes readable).
+                #
+                # Strictly BELOW a trusted base, never equal to one -- mirrors
+                # the ``home != root`` equality guard above. A project whose
+                # stored work_dir IS a trusted base itself (config.work_dir or
+                # config.user_data_root exactly) must not become a read root:
+                # ``_within`` would then treat every path under that base as
+                # "inside", granting read of the ENTIRE shared tree (every
+                # other project / every other user's home), far beyond the
+                # single project this grant is for.
                 trusted_bases = [self.work_dir.resolve(), self.user_data_root.resolve()]
                 shared_roots = [
                     wd
                     for wd in accessible_shared_work_dirs(user, session_factory=session_factory)
-                    if any(
-                        wd == base or str(wd).startswith(str(base) + "/") for base in trusted_bases
-                    )
+                    if any(str(wd).startswith(str(base) + "/") for base in trusted_bases)
                 ]
                 shared_ok = _within(shared_roots)
             if not shared_ok:

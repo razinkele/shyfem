@@ -181,6 +181,72 @@ class TestSharedProjectRead:
             fx.cfg.confine_path(rogue_file, fx.student, must_exist=True, session_factory=fx.factory)
 
 
+class TestSharedWorkDirBoundIsStrict:
+    """Final review hardening: the trusted-base filter on a shared
+    ``work_dir`` must reject a project whose stored ``work_dir`` IS one of
+    the trusted bases itself (``config.work_dir`` / ``config.user_data_root``)
+    -- not just a pathological path outside both. The old filter accepted
+    ``wd == base`` as a trusted read root; since ``_within`` then treats any
+    path under that root as "inside", a single project stored with
+    work_dir == base would grant read of the ENTIRE shared tree (every other
+    project, every other user's home under user_data_root), unrelated to any
+    actual grant. This mirrors the ``home != root`` equality guard already
+    enforced for the per-user home directory (N43)."""
+
+    def test_work_dir_equal_to_work_dir_base_does_not_grant_whole_tree(self, tmp_path):
+        fx = _Fixture(tmp_path)
+        # A sibling project living directly under the trusted base, unrelated
+        # to the student's actual (proj_dir) grant.
+        sibling_dir = fx.cfg.work_dir / "Unrelated Project"
+        sibling_dir.mkdir(parents=True, exist_ok=True)
+        sibling_file = sibling_dir / "secret.str"
+        sibling_file.write_text("not shared to student")
+
+        db = fx.factory()
+        from shyfem_ui.models.project import Project as _Project
+        from shyfem_ui.models.user import ProjectPermission as _PP
+
+        owner_id = db.query(_Project).filter_by(name="Mar Menor Tutorial").one().owner_id
+        # A rogue project whose stored work_dir is EXACTLY the trusted base
+        # (config.work_dir), not a subdirectory of it.
+        rogue = _Project(name="Rogue Base", work_dir=str(fx.cfg.work_dir), owner_id=owner_id)
+        db.add(rogue)
+        db.flush()
+        db.add(_PP(project_id=rogue.id, user_id=fx.student["id"], role="editor"))
+        db.commit()
+        db.close()
+
+        with pytest.raises(ValueError):
+            fx.cfg.confine_path(
+                sibling_file, fx.student, must_exist=True, session_factory=fx.factory
+            )
+
+    def test_work_dir_equal_to_user_data_root_does_not_grant_whole_tree(self, tmp_path):
+        fx = _Fixture(tmp_path)
+        # Another user's home, unrelated to the student's grant.
+        other_home = fx.cfg.user_data_root / "mallory"
+        other_home.mkdir(parents=True, exist_ok=True)
+        other_file = other_home / "secret.str"
+        other_file.write_text("mallory's private file")
+
+        db = fx.factory()
+        from shyfem_ui.models.project import Project as _Project
+        from shyfem_ui.models.user import ProjectPermission as _PP
+
+        owner_id = db.query(_Project).filter_by(name="Mar Menor Tutorial").one().owner_id
+        # A rogue project whose stored work_dir is EXACTLY the trusted base
+        # (config.user_data_root), not a subdirectory of it.
+        rogue = _Project(name="Rogue Root", work_dir=str(fx.cfg.user_data_root), owner_id=owner_id)
+        db.add(rogue)
+        db.flush()
+        db.add(_PP(project_id=rogue.id, user_id=fx.student["id"], role="editor"))
+        db.commit()
+        db.close()
+
+        with pytest.raises(ValueError):
+            fx.cfg.confine_path(other_file, fx.student, must_exist=True, session_factory=fx.factory)
+
+
 class TestSharedProjectWriteStaysHomeOnly:
     def test_grant_holder_cannot_write_into_shared_project(self, tmp_path):
         """WRITE roots stay [home] only: a read-only tutorial/viewer with a
