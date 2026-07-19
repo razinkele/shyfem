@@ -431,11 +431,31 @@ class Config(BaseSettings):
                 "Please reload the page and sign in again."
             )
 
+        # Defense-in-depth: usernames are regex-validated at creation
+        # (AuthService.create_user), but re-check here too (single source of
+        # truth: shyfem_ui.models.user.validate_username) so a bad value
+        # (however it got into the session/DB) cannot widen confinement.
+        # This also closes N43: a username of '.' resolves
+        # (user_data_root / '.') == user_data_root, which the old
+        # 'home != root' escape guard below treated as "no escape" -- i.e.
+        # it silently collapsed confinement to the entire data root.
+        #
+        # Imported locally, not at module scope: shyfem_ui.db.base (imported
+        # transitively by shyfem_ui.models.user) imports shyfem_ui.config at
+        # module load time, so a top-level import here would be circular.
+        # By the time confine_path() actually runs, this module is fully
+        # loaded, so the import below is safe.
+        from shyfem_ui.models.user import validate_username
+
+        username = user.get("username") if isinstance(user, dict) else None
+        if not isinstance(username, str):
+            raise ValueError("Invalid user session: unsafe username")
+        validate_username(username)
+
         # Resolve the home with an explicit escape guard so a malicious username
-        # (defense-in-depth; usernames are regex-validated at creation) cannot
-        # widen confinement above user_data_root.
+        # cannot widen confinement above user_data_root.
         root = self.user_data_root.resolve()
-        home = (root / user["username"]).resolve()
+        home = (root / username).resolve()
         if home != root and not str(home).startswith(str(root) + "/"):
             raise ValueError("User home escapes the data root")
 

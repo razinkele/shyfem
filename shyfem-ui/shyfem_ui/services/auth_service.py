@@ -14,7 +14,7 @@ try:
 except ImportError:
     from argon2.exceptions import InvalidHash as InvalidHashError  # argon2 <23
 
-from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User, WSAuthToken
+from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User, WSAuthToken, validate_username
 
 logger = logging.getLogger(__name__)
 _ph = PasswordHasher()
@@ -78,10 +78,18 @@ class AuthService:
             Dict with user fields.
 
         Raises:
-            ValueError: If username or email already exists, or email missing for non-tutorial.
+            ValueError: If the username is unsafe (see ``validate_username``),
+                username or email already exists, or email missing for
+                non-tutorial.
             PermissionError: If directory creation fails.
         """
         from shyfem_ui.models.user import ROLE_TUTORIAL
+
+        # Validate the username *before* any DB work: it becomes a
+        # filesystem path segment (home_dir/confine_path), so an unsafe
+        # value (e.g. '.', '..', containing '/' or '\x00') must never reach
+        # the database (N43/F44).
+        validate_username(username)
 
         # Validate email requirement
         if role != ROLE_TUTORIAL and not email:

@@ -116,6 +116,41 @@ class TestConfinePathServerMode:
         with pytest.raises(ValueError):
             cfg.confine_path(tmp_path / "etc" / "passwd", {"id": 9, "username": "../../etc"})
 
+    def test_dot_username_does_not_widen_confinement_to_data_root(self, tmp_path):
+        """N43: username='.' resolves (user_data_root / '.') == user_data_root,
+        so the old 'home != root' escape guard was a no-op and confinement
+        silently widened to the entire data root (every user's home)."""
+        cfg = _server_config(tmp_path)
+        bob_home = cfg.user_data_root / "bob"
+        bob_home.mkdir(parents=True, exist_ok=True)
+        secret = bob_home / "secret.shy"
+        secret.write_text("bob's private data")
+
+        with pytest.raises(ValueError):
+            cfg.confine_path(secret, _user("."), must_exist=True)
+
+    def test_dotdot_username_rejected_defensively(self, tmp_path):
+        """confine_path must itself reject a bad username rather than relying
+        solely on create_user-time validation (defense in depth)."""
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError):
+            cfg.confine_path(tmp_path / "x", _user(".."))
+
+    @pytest.mark.parametrize("username", [".", "..", "a/b", "a\x00b", "", "foo bar"])
+    def test_confine_path_and_validate_username_agree(self, tmp_path, username):
+        """Single source of truth: confine_path delegates to
+        models.user.validate_username, so both must reject the exact same
+        set of unsafe usernames -- this pins that they can't silently drift
+        apart (config.py used to carry its own duplicated copy of this
+        check; now it imports the one in models/user.py)."""
+        from shyfem_ui.models.user import validate_username
+
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError):
+            validate_username(username)
+        with pytest.raises(ValueError):
+            cfg.confine_path(tmp_path / "x", _user(username))
+
 
 class TestDisplayPath:
     def test_server_path_under_home_shown_relative(self, tmp_path):

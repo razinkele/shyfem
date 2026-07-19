@@ -2,6 +2,8 @@
 
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from shyfem_ui.models.user import AuthSession, ProjectPermission, User
 
 
@@ -106,3 +108,20 @@ def test_is_tutorial_property():
     r = User(username="u", password_hash="x", role="user")
     assert t.is_tutorial is True
     assert r.is_tutorial is False
+
+
+def test_home_dir_rejects_startswith_sibling_not_contained():
+    """F44: 'startswith' is not path containment. A username of
+    '../shyfem-evil' resolves (user_data_root / username) to a *sibling*
+    directory whose string form merely shares user_data_root's prefix
+    ('/data/shyfem-evil'.startswith('/data/shyfem') is True) but is not
+    actually inside it (Path.is_relative_to is False). home_dir must use
+    real containment (is_relative_to), not startswith.
+    """
+    from pathlib import Path
+
+    from shyfem_ui.models.user import User
+
+    u = User(username="../shyfem-evil", password_hash="x", role="user")
+    with pytest.raises(ValueError):
+        u.home_dir(Path("/data/shyfem"))

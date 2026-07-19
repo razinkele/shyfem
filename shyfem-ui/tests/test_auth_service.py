@@ -350,6 +350,38 @@ class TestCreateUserEmailAndDirectory:
 
 
 # ------------------------------------------------------------------
+# Username slug validation (N43/F44: a username becomes a filesystem path
+# segment via home_dir/confine_path, so it must be validated *before* any
+# DB work in create_user -- not just filtered by the admin form regex).
+# ------------------------------------------------------------------
+
+
+class TestCreateUserUsernameValidation:
+
+    @pytest.mark.parametrize(
+        "username",
+        [
+            ".",
+            "..",
+            "a/b",
+            "a\x00b",
+            "",
+            "foo bar",
+        ],
+    )
+    def test_rejects_unsafe_username(self, auth_service, username):
+        with pytest.raises(ValueError):
+            auth_service.create_user(username, "pass1234", email="unsafe@example.com")
+        # And nothing was persisted.
+        users = auth_service.list_users()
+        assert not any(u["username"] == username for u in users)
+
+    def test_accepts_valid_dotted_username(self, auth_service):
+        user = auth_service.create_user("user_1.x-y", "pass1234", email="valid@example.com")
+        assert user["username"] == "user_1.x-y"
+
+
+# ------------------------------------------------------------------
 # Password rehashing on login
 # ------------------------------------------------------------------
 
