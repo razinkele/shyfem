@@ -299,6 +299,7 @@ def create_app(config: Config | None = None) -> App:
         root_path=config.root_path,
         use_secure_cookies=config.use_secure_cookies,
         audit_service=audit_service,
+        trusted_proxies=config.trusted_proxies,
     )
     if not is_local and not config.default_admin_password and not config.auth_password:
         logger.warning(

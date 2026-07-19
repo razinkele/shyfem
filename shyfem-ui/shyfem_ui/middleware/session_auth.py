@@ -14,6 +14,8 @@ import logging
 import secrets
 import urllib.parse
 
+from shyfem_ui.middleware.rate_limit import get_client_ip
+
 logger = logging.getLogger(__name__)
 
 # ContextVar holding the authenticated user dict for the current request.
@@ -490,6 +492,37 @@ _LOGIN_HTML = """\
 
 
 # ------------------------------------------------------------------
+# Logout confirmation page HTML
+# ------------------------------------------------------------------
+#
+# GET /logout is CSRF-unsafe to treat as a mutation: a cross-site GET (an
+# <img> tag, an auto-following top-level navigation, a <meta refresh>, ...)
+# can be triggered without any user interaction, and the session cookie
+# would still be attached under SameSite=Lax. So GET only ever renders this
+# confirm page; the actual logout is a POST, which SameSite=Lax cookies are
+# NOT attached to on a cross-site request -- a forged cross-site POST here
+# arrives without the session cookie and is a no-op.
+
+_LOGOUT_CONFIRM_HTML = """\
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log out - SHYFEM Workbench</title>
+</head>
+<body>
+  <p>Log out of SHYFEM Workbench?</p>
+  <form method="post" action="{logout_action}">
+    <button type="submit">Log out</button>
+  </form>
+  <p><a href="{home}">Cancel</a></p>
+</body>
+</html>
+"""
+
+
+# ------------------------------------------------------------------
 # ASGI Middleware
 # ------------------------------------------------------------------
 
@@ -508,6 +541,11 @@ class SessionAuthMiddleware:
         admin user into every request.
     session_ttl_hours:
         Default session time-to-live passed to ``create_session``.
+    trusted_proxies:
+        CIDR ranges (e.g. ``["127.0.0.0/8"]``) whose X-Forwarded-For header
+        is trusted for client-IP resolution (audit logging). An untrusted
+        peer's X-Forwarded-For is attacker-controlled and is ignored;
+        ``scope["client"][0]`` is used instead. Defaults to none trusted.
     """
 
     def __init__(
@@ -520,6 +558,7 @@ class SessionAuthMiddleware:
         use_secure_cookies=False,
         audit_service=None,
         feedback_service=None,
+        trusted_proxies=None,
     ):
         self.app = app
         self.auth_service = auth_service
@@ -529,6 +568,7 @@ class SessionAuthMiddleware:
         self.use_secure_cookies = use_secure_cookies
         self.audit_service = audit_service
         self.feedback_service = feedback_service
+        self.trusted_proxies = trusted_proxies or []
 
     async def __call__(self, scope, receive, send):
         # ----------------------------------------------------------
@@ -565,8 +605,16 @@ class SessionAuthMiddleware:
                 await self._handle_login_post(scope, receive, send, root_path=root_path)
                 return
 
-            # GET /logout -- destroy session
+            # GET /logout -- CSRF-safe confirm page only; does not mutate
+            # state (see the _LOGOUT_CONFIRM_HTML comment above for why).
             if path == "/logout" and method == "GET":
+                await self._serve_logout_confirm(send, root_path=root_path)
+                return
+
+            # POST /logout -- destroy session. A forged cross-site POST
+            # arrives without the SameSite=Lax session cookie, so it is a
+            # no-op (session_token is None, delete_session is skipped).
+            if path == "/logout" and method == "POST":
                 user = None
                 if session_token:
                     user = self.auth_service.validate_session(session_token)
@@ -656,21 +704,17 @@ class SessionAuthMiddleware:
                 return cookies.get("shyfem_session")
         return None
 
-    @staticmethod
-    def _client_ip(scope) -> str | None:
-        """Return the client IP, preferring X-Forwarded-For when present.
+    def _client_ip(self, scope) -> str | None:
+        """Return the client IP for audit logging.
 
-        Behind nginx, the real client IP is in the X-Forwarded-For header;
-        scope["client"][0] is just the upstream proxy.
+        Honors X-Forwarded-For only when the direct socket peer
+        (``scope["client"][0]``) is a configured trusted proxy (see
+        ``trusted_proxies``); otherwise X-Forwarded-For is attacker
+        controlled (any client can set it) and is ignored in favor of the
+        real peer. Delegates to the same rightmost-untrusted algorithm the
+        rate limiter uses (``middleware.rate_limit.get_client_ip``).
         """
-        for header_name, header_value in scope.get("headers", []):
-            if header_name == b"x-forwarded-for":
-                first = header_value.decode("utf-8", errors="replace").split(",", 1)[0]
-                return first.strip() or None
-        client = scope.get("client")
-        if isinstance(client, (tuple, list)) and len(client) >= 1:
-            return client[0]
-        return None
+        return get_client_ip(scope, self.trusted_proxies)
 
     def _audit(self, username, action, detail=None, ip_address=None):
         """Best-effort audit log. Never propagates exceptions."""
@@ -707,6 +751,35 @@ class SessionAuthMiddleware:
                     (b"content-type", b"text/html; charset=utf-8"),
                     (b"content-length", str(len(body)).encode()),
                     (b"set-cookie", csrf_cookie.encode("utf-8")),
+                ],
+            }
+        )
+        await send(
+            {
+                "type": "http.response.body",
+                "body": body,
+            }
+        )
+
+    async def _serve_logout_confirm(self, send, root_path: str = ""):
+        """Send the CSRF-safe logout confirm page as a 200 response.
+
+        GET here never destroys the session -- it only renders a form that
+        POSTs to ``{root_path}/logout``, which is where the actual logout
+        happens (see ``_handle_logout``, invoked from the POST branch).
+        """
+        html = _LOGOUT_CONFIRM_HTML.format(
+            logout_action=f"{root_path}/logout",
+            home=f"{root_path}/" if root_path else "/",
+        )
+        body = html.encode("utf-8")
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [
+                    (b"content-type", b"text/html; charset=utf-8"),
+                    (b"content-length", str(len(body)).encode()),
                 ],
             }
         )
