@@ -18,6 +18,11 @@ from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User, WSAuthToken, va
 
 logger = logging.getLogger(__name__)
 _ph = PasswordHasher()
+# Computed once at import so the missing-user/inactive-user branches of
+# authenticate() can still pay the argon2 verification cost (N45): without
+# this, those branches return early and response timing leaks which
+# usernames exist / are active to an unauthenticated attacker.
+_DUMMY_HASH = _ph.hash("x")
 
 
 class AuthService:
@@ -257,8 +262,14 @@ class AuthService:
         try:
             user = session.query(User).filter_by(username=username).first()
             if user is None:
+                # Verify against a dummy hash so the response takes roughly
+                # the same time as a real failed login -- otherwise an
+                # attacker can distinguish "no such user" from "wrong
+                # password" by latency alone (N45).
+                self.verify_password(password, _DUMMY_HASH)
                 return None
             if not user.is_active:
+                self.verify_password(password, _DUMMY_HASH)
                 return None
             if not self.verify_password(password, user.password_hash):
                 return None

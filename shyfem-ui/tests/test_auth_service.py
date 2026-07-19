@@ -1,5 +1,7 @@
 """Tests for AuthService -- password hashing, user CRUD, sessions, bootstrap."""
 
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -138,6 +140,34 @@ class TestAuthenticate:
         created = auth_service.create_user("alice", "s3cret", email="alice@example.com")
         auth_service.update_user(created["id"], is_active=False)
         assert auth_service.authenticate("alice", "s3cret") is None
+
+
+class TestAuthenticateConstantTime:
+    """N45: authenticate() must perform a password verification on every
+    branch (missing user, inactive user, wrong password), not just the
+    happy path, so response timing does not reveal which usernames exist
+    or are active (timing side-channel / username-enumeration oracle)."""
+
+    def test_verifier_called_for_missing_user(self, auth_service):
+        with patch.object(AuthService, "verify_password", wraps=AuthService.verify_password) as spy:
+            result = auth_service.authenticate("ghost", "whatever")
+        assert result is None
+        spy.assert_called_once()
+
+    def test_verifier_called_for_inactive_user(self, auth_service):
+        created = auth_service.create_user("alice", "s3cret", email="alice@example.com")
+        auth_service.update_user(created["id"], is_active=False)
+        with patch.object(AuthService, "verify_password", wraps=AuthService.verify_password) as spy:
+            result = auth_service.authenticate("alice", "s3cret")
+        assert result is None
+        spy.assert_called_once()
+
+    def test_verifier_called_for_wrong_password(self, auth_service):
+        auth_service.create_user("alice", "s3cret", email="alice@example.com")
+        with patch.object(AuthService, "verify_password", wraps=AuthService.verify_password) as spy:
+            result = auth_service.authenticate("alice", "wrong")
+        assert result is None
+        spy.assert_called_once()
 
 
 # ------------------------------------------------------------------
