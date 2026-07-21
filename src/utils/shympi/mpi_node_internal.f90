@@ -285,6 +285,7 @@
         integer ierr
 
         write(6,*) trim(message)
+	flush(6)
 	!call MPI_BARRIER( MPI_COMM_WORLD, ierr)
 	!call MPI_FINALIZE(ierr_code)		!this will hang for ever
 	call MPI_ABORT(MPI_COMM_WORLD,33,ierr)

@@ -1334,11 +1334,20 @@
 
 	if( .not. allocated(hlvrst) ) then
 	  allocate(hlvrst(nlv_global),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) then
+	    write(6,*) 'rst_read_vertical: allocation failed (hlvrst)'
+	    call shympi_abort_internal('rst_read_vertical: allocation failed')
+	  end if
 	  allocate(ilhrst(nel),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) then
+	    write(6,*) 'rst_read_vertical: allocation failed (ilhrst)'
+	    call shympi_abort_internal('rst_read_vertical: allocation failed')
+	  end if
 	  allocate(ilhkrst(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) then
+	    write(6,*) 'rst_read_vertical: allocation failed (ilhkrst)'
+	    call shympi_abort_internal('rst_read_vertical: allocation failed')
+	  end if
 	  hlvrst = 0.
 	  ilhrst = 0
 	  ilhkrst = 0
