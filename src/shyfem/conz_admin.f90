@@ -414,10 +414,12 @@
 	use levels, only : nlvdi,nlv
 	use basin, only : nkn,nel,ngr,mbw
 	use mkonst
+	use shympi, only : shympi_is_parallel
 
 	implicit none
 
 	logical blinfo,bfirst
+	logical :: btask
 	integer nvar,i
 	real wsink
 	real dt
@@ -443,13 +445,15 @@
 
 	call bnds_read_new(what,idconz,dtime)
 
+	btask = .not. shympi_is_parallel()
+
 	do i=1,nvar
 
 	  wsink = wsettlv(i)
 	  !write(6,*) 'multi conz - ivar,wsink = ',i,wsink
 
-!$OMP  TASK FIRSTPRIVATE(i,rkpar,wsink,difhv,difv,difmol,idconz,what,   &
-!$OMP& dt,nlvdi,idecay,blinfo,bage)                                     &
+!$OMP  TASK IF(btask) FIRSTPRIVATE(i,rkpar,wsink,difhv,difv,difmol,     &
+!$OMP& idconz,what,dt,nlvdi,idecay,blinfo,bage,btask)                   &
 !$OMP&  SHARED(conzv,tauv,massv) DEFAULT(NONE)
  
           call scal_adv(what,i &

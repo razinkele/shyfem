@@ -583,6 +583,7 @@
         implicit none
 
           class(petsc_system),target :: self
+          KSPConvergedReason :: reason
           if(self%solver_is_initialized)then
              continue
           else
@@ -601,6 +602,15 @@
               ! solve
               call KSPSolve(self%ksp,self%B,self%X,perr)
               call assert(perr.eq.0,'KSPSolve perr ',perr)
+
+              call KSPGetConvergedReason(self%ksp,reason,perr)
+              call assert(perr.eq.0,'KSPGetConvergedReason perr ',perr)
+              if( reason < 0 ) then
+                 if(my_id==0) write(6,*) 'PETSc KSP solve DIVERGED,'// &
+     &                ' KSPConvergedReason = ',reason
+                 call assert(.false., &
+     &                'KSPSolve did not converge, reason ',reason)
+              end if
 
 #ifdef Verbose
               call VecView(self%X,PETSC_VIEWER_STDOUT_WORLD,perr)
@@ -625,12 +635,22 @@
         real(kind=c_double) :: residual
         external :: CAmgX_SetA
         external :: CAmgX_Solve
+        external :: CAmgX_GetIters
+        external :: CAmgX_GetResidual
 #ifdef Verbose
         if(my_id==0) write(*,*)'solve system'
 #endif
         call CAmgX_SetA(self%AmgX_Solver,self%A,perr) ! AmgX Wrapper
         call CAmgX_Solve(self%AmgX_Solver,self%X, &
      &                   self%B,perr)  ! AmgX Wrapper
+        call CAmgX_getiters(self%AmgX_Solver,iters,perr)
+        if( perr == 0 .and. iters > 0 ) then
+          call CAmgX_getresidual(self%AmgX_Solver,iters-1,residual,perr)
+          if( perr /= 0 .or. residual /= residual ) then	!NaN check
+            write(6,*) 'AmgX solve failed: iters,residual = ',iters,residual
+            stop 'error stop solve_AmgX: solver did not converge'
+          end if
+        end if
 !       call CAmgX_getiters(self%AmgX_Solver,iters,perr)
 !       do iter=0,iters-1
 !         call CAmgX_getresidual(self%AmgX_Solver,

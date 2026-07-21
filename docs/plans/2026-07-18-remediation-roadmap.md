@@ -169,6 +169,8 @@
 
 **Exit criteria:** All builds green; mar_menor + restart round-trip test; weutro_box 6-gate suite green; MPI 4-rank run with deliberate failure aborts cleanly (no deadlock).
 
+**Carried over from the Batch 1 final review (2026-07-19):** conzstab's icall-guarded save locals (rstol_c/iuinfo/da_out — mirror the limit_scalar_init named-CRITICAL pattern); route mod_petsc_system's `assert` through shympi_abort_internal when doing the bare-stop sweep; mirror the 2^31 guard onto `itend = nint(dtend)` (time_admin.f90:359); tighten the AmgX introspection check + delete the superseded commented block (mod_petsc_system.f90) and retype the dummy stubs' perr; add a small lat/lon (isphe=1) regression case so N15's projection fix is numerically exercised.
+
 ---
 
 ## Batch 6: Tools — Fortran & C utilities
@@ -213,7 +215,7 @@ No fixed item list — input is the 46 leads in report §4. Recommended: a verif
 
 ## Progress checklist
 
-- [ ] **Batch 1 — Fortran core — critical/high correctness** (10 items: N01, N03, N04, N05, N09, N10, N11, N15, N20, N29)
+- [x] **Batch 1 — Fortran core — critical/high correctness** (10 items: N01, N03, N04, N05, N09, N10, N11, N15, N20, N29) — DONE (commits 868569c..ccd1e33)
 - [ ] **Batch 2 — Build system truthfulness** (6 items: N02, N16, N17, N18, N19, F42)
 - [ ] **Batch 3 — UI job lifecycle & data integrity** (17 items: N12, N13, N14, N40, N41, N42, N46, N47, N48, F17, F22, F24, F25, F48, F49, F50, F51)
 - [ ] **Batch 4 — UI security hardening & CI honesty** (17 items: N43, N44, N45, N49, N50, N51, N52, F14, F15, F16, F26, F44, F45, F46, F47, F52, F53)

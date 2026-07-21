@@ -295,11 +295,11 @@
 	real, intent(in) :: difv(0:nlvdi,nkn)
         real, intent(in) :: difmol
 
-        real, allocatable, save :: r3v(:,:)
-        real, allocatable, save :: load(:,:)
-        real, allocatable, save :: cobs(:,:)
-        real, allocatable, save :: rtauv(:,:)
-        real, allocatable, save :: wsinkv(:,:)
+        real, allocatable :: r3v(:,:)
+        real, allocatable :: load(:,:)
+        real, allocatable :: cobs(:,:)
+        real, allocatable :: rtauv(:,:)
+        real, allocatable :: wsinkv(:,:)
 
 	double precision dtime
 	real robs,rload
@@ -307,18 +307,9 @@
 	character*10 whatvar,whataux
 	integer ierr
 
-	if( .not. allocated(r3v) ) then
-	  allocate(r3v(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
-	  allocate(load(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
-	  allocate(cobs(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
-	  allocate(rtauv(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
-	  allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
-	end if
+	allocate(r3v(nlvdi,nkn),load(nlvdi,nkn),cobs(nlvdi,nkn), &
+     &		rtauv(nlvdi,nkn),wsinkv(0:nlvdi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop scal_adv: allocation failed'
 
 	robs = 0.
 	rload = 0.
@@ -394,9 +385,9 @@
 	real, intent(in) :: robs
 	real, intent(in) :: rtauv(nlvdi,nkn)		!varible relaxation coefficient
 
-        real, allocatable, save :: r3v(:,:)
-        real, allocatable, save :: wsinkv(:,:)
-	real, allocatable, save :: load(:,:)
+        real, allocatable :: r3v(:,:)
+        real, allocatable :: wsinkv(:,:)
+	real, allocatable :: load(:,:)
 
 	integer ierr,l,k,lmax
 	real eps
@@ -405,12 +396,10 @@
         integer iwhat,ichanm
 	character*10 whatvar,whataux
 
-	if( .not. allocated(r3v) ) then
-	  allocate(r3v(nlvdi,nkn),load(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv_nudge: allocation failed'
-	  allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv_nudge: allocation failed'
-	end if
+	allocate(r3v(nlvdi,nkn),load(nlvdi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop scal_adv_nudge: allocation failed'
+	allocate(wsinkv(0:nlvdi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop scal_adv_nudge: allocation failed'
 
 	rload = 0.
 	r3v = 0.
@@ -483,23 +472,17 @@
 	real, intent(in) :: difv(0:nlvdi,nkn)
         real, intent(in) :: difmol
 
-        real, allocatable, save :: r3v(:,:)
-        real, allocatable, save :: cobs(:,:)
-        real, allocatable, save :: rtauv(:,:)
+        real, allocatable :: r3v(:,:)
+        real, allocatable :: cobs(:,:)
+        real, allocatable :: rtauv(:,:)
 
 	double precision dtime
 	real robs
         integer iwhat,ichanm,ierr
 	character*20 whatvar,whataux
 
-	if( .not. allocated(r3v) ) then
-	  allocate(r3v(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
-	  allocate(cobs(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
-	  allocate(rtauv(nlvdi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
-	end if
+	allocate(r3v(nlvdi,nkn),cobs(nlvdi,nkn),rtauv(nlvdi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop scal_adv_fact: allocation failed'
 
 	robs = 0.
 	r3v = 0.
@@ -1717,15 +1700,16 @@
 	double precision voltot
 
 !------------------------------------------------------------
-! big arrays (cached with save to avoid per-timestep allocation)
+! big work arrays (per-call: conzstab runs concurrently from OMP tasks,
+! so these must NOT be save/shared - see 2026-07-18 review N10)
 !------------------------------------------------------------
-	double precision, allocatable, save :: cn(:,:)
-	double precision, allocatable, save :: co(:,:)
-	double precision, allocatable, save :: cdiag(:,:)
-	double precision, allocatable, save :: clow(:,:)
-	double precision, allocatable, save :: chigh(:,:)
-        real, allocatable, save :: cwrite(:,:)
-        real, allocatable, save :: c2write(:)
+	double precision, allocatable :: cn(:,:)
+	double precision, allocatable :: co(:,:)
+	double precision, allocatable :: cdiag(:,:)
+	double precision, allocatable :: clow(:,:)
+	double precision, allocatable :: chigh(:,:)
+        real, allocatable :: cwrite(:,:)
+        real, allocatable :: c2write(:)
 !------------------------------------------------------------
 ! end of big arrays
 !------------------------------------------------------------
@@ -1758,18 +1742,17 @@
 
         if(nlv.ne.nlev) stop 'error stop conzstab: nlv/=nlev'
 
-!-----------------------------------------------------------------
-! allocation (cached - allocate once, reuse across calls)
-!-----------------------------------------------------------------
+!------------------------------------------------------------
+! big work arrays (per-call: conzstab runs concurrently from OMP tasks,
+! so these must NOT be save/shared - see 2026-07-18 review N10)
+!------------------------------------------------------------
 
-	if( .not. allocated(cn) ) then
-	  allocate(cn(nlvddi,nkn),co(nlvddi,nkn),cdiag(nlvddi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
-	  allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
-	  allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
-	end if
+	allocate(cn(nlvddi,nkn),co(nlvddi,nkn),cdiag(nlvddi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	allocate(clow(nlvddi,nkn),chigh(nlvddi,nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
+	allocate(cwrite(nlvddi,nkn),c2write(nkn),stat=ierr)
+	if( ierr /= 0 ) stop 'error stop conzstab: allocation failed'
 
 	saux = 0.
 
@@ -2464,8 +2447,8 @@
 	integer ic,ierr
 	real thresh
 
+!$OMP CRITICAL (limit_scalar_init)
 	if( icall == 0 ) then
-	  icall = 1
 
 	  bwrite = ( iu > 0 )
 
@@ -2514,7 +2497,10 @@
 	  if( bslimit1 ) write(6,*) 'limiting max salt: ',slimit1
 	  if( bclimit0 ) write(6,*) 'limiting min conz: ',climit0
 	  if( bclimit1 ) write(6,*) 'limiting max conz: ',climit1
+
+	  icall = 1
 	end if
+!$OMP END CRITICAL (limit_scalar_init)
 
 	if( what == 'temp' ) then
 	  !write(6,*) 'limiting temp: ',tlimit0,tlimit1

@@ -188,9 +188,9 @@
 
 	write(6,*) 'min/max: ',xmin,ymin,xmax,ymax
 
-        c_phi  = 0.5*(ymax-ymin)
-        c_lat0 = 0.5*(ymax-ymin)
-        c_lon0 = 0.5*(xmax-xmin)
+        c_phi  = 0.5*(ymax+ymin)
+        c_lat0 = 0.5*(ymax+ymin)
+        c_lon0 = 0.5*(xmax+xmin)
 
         c_param(1) = c_phi
         c_param(2) = c_lon0
