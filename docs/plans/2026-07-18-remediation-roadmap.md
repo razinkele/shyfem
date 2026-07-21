@@ -152,14 +152,14 @@
 | ID | Status now | Fix |
 |---|---|---|
 | F07 | open | Replace bare stops in conz3d_nodes (concentration_omp.f90:858,897) with collective-safe abort (error_stop → shympi_abort) |
-| F08 | open | Restore the layer-thickness factor in the STEELE light formula (weutro.f90:1831 — the `!$WRONG_FORMULA` self-annotation); validate against the AQUABC oracle |
+| F08 | **open — owner decision (2026-07-21)** | Verified NOT redundant with bio3d (unlike F30): bio3d attenuates surface→top-of-layer, F08's `*h` would add top-of-layer→bottom layer-averaging (complementary, more accurate). But bio3d↔weutro carry only background extinction (`ke_bg`, no algal self-shading) and use top-of-layer light. A clean fix needs a coupled bio3d↔weutro redesign (no 2D/3D mode flag exists in weutro to gate on) — escalated for a conscious eco-model-owner decision rather than a guess. |
 | F09 | open | Replace the 7 bare stops in active mercury sediment paths (merc_sed4sed.f90) with collective-safe abort |
 | F10 | open | Positivity floor for ALL state variables in merc_euler (MIN_CONCENTRATION per AQUABC), not just C(1) |
 | F11 | open | Replace the 25 bare allocation-failure stops in mpi_node_internal.f90 with shympi_abort |
 | F27 | open | Replace the 9 bare stops in sparskit_admin.f90 with collective-safe abort |
 | F28 | open | Match the original M17 remediation exactly: log count/minval of negatives BEFORE any clamp; keep the tiny-positive flush as `where(cnv > 0. .and. cnv < 1.e-15) cnv = 0.`; zero negatives only with the removed mass accounted (accumulate + report the correction) — do NOT relabel unaccounted negative-zeroing as "mass-conserving" |
 | F29 | open | conz3d_element: abort on allocation failure instead of silent return (concentration_omp.f90:447) |
-| F30 | partial | PARTIAL → finish: wire per-layer ISEG/ITO through the 3D coupling so the inter-layer light chain is live (AQUABC parity) |
+| F30 | **superseded (2026-07-21, oracle-verified)** | The 3D vertical light structure is already supplied EXTERNALLY by `bio3d.f90:562` (per-layer Beer-Lambert `qrad*exp(-ke_bg*depth_top)`, matches AQUABC). weutro's RLGHTS cascade (`iseg=1/ito=0` hardcoded) is dead in 3D; restoring it would DOUBLE-COUNT bio3d's attenuation. No fix — the finding is superseded by the bio3d path. |
 | F31 | open | Add intent attributes to all ~27 mercury_react arguments (merc_water.f90:37) |
 | F32 | open | Check ierr on all ghost-exchange MPI calls via a checking wrapper |
 | F33 | open | Unify the buffer-size strategy between integer/real/double exchange paths |
