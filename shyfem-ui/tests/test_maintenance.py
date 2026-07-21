@@ -79,6 +79,43 @@ class TestRunMaintenanceOnce:
         await run_maintenance_once(jq, auth, job_retention_days=7)
         jq.cleanup_old_jobs.assert_awaited_once()
 
+    @pytest.mark.asyncio
+    async def test_prunes_feedback_when_feedback_service_given(self):
+        from shyfem_ui.services.maintenance import run_maintenance_once
+
+        jq, auth = _mocks()
+        feedback = MagicMock()
+        feedback.cleanup_old = MagicMock(return_value=4)
+        await run_maintenance_once(
+            jq,
+            auth,
+            job_retention_days=30,
+            feedback_service=feedback,
+            feedback_retention_days=180,
+        )
+        feedback.cleanup_old.assert_called_once_with(180)
+
+    @pytest.mark.asyncio
+    async def test_feedback_failure_does_not_block_or_raise(self):
+        from shyfem_ui.services.maintenance import run_maintenance_once
+
+        jq, auth = _mocks()
+        feedback = MagicMock()
+        feedback.cleanup_old = MagicMock(side_effect=RuntimeError("db"))
+        # must NOT raise; jobs + sessions still run
+        await run_maintenance_once(jq, auth, job_retention_days=7, feedback_service=feedback)
+        jq.cleanup_old_jobs.assert_awaited_once()
+        auth.cleanup_expired_sessions.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_feedback_service_skips_feedback_cleanup(self):
+        from shyfem_ui.services.maintenance import run_maintenance_once
+
+        jq, auth = _mocks()
+        # feedback_service omitted -> no feedback pruning, no error (backward compatible)
+        await run_maintenance_once(jq, auth, job_retention_days=7)
+        jq.cleanup_old_jobs.assert_awaited_once()
+
 
 class TestCreateAppWiring:
     """create_app wires MaintenanceMiddleware with a live factory in server mode
@@ -122,6 +159,33 @@ class TestCreateAppWiring:
         inner = app.app
         assert isinstance(inner, MaintenanceMiddleware)
         assert inner._task_factory is None
+
+    def test_server_mode_wires_feedback_service_and_retention(self, monkeypatch):
+        """F52: the live scheduler must actually receive a FeedbackService and
+        the configured retention, or cleanup_old() is implemented-but-unwired
+        exactly like the pre-fix jobs/sessions/audit cleanups."""
+        monkeypatch.setenv("SHYFEM_UI_DEPLOYMENT_MODE", "server")
+        monkeypatch.setenv("SHYFEM_UI_DEFAULT_ADMIN_PASSWORD", "pw-strong-123")
+        import shyfem_ui.config as cfg
+
+        monkeypatch.setattr(cfg, "_config", None)
+
+        import shyfem_ui.services.maintenance as maint_mod
+
+        fake_loop = MagicMock()
+        monkeypatch.setattr(maint_mod, "run_maintenance_loop", fake_loop)
+
+        from shyfem_ui.app import create_app
+        from shyfem_ui.services.feedback_service import FeedbackService
+
+        app = create_app(cfg.Config())
+        inner = app.app  # MaintenanceMiddleware
+        inner._task_factory()  # invokes the (mocked) run_maintenance_loop
+
+        fake_loop.assert_called_once()
+        kwargs = fake_loop.call_args.kwargs
+        assert isinstance(kwargs["feedback_service"], FeedbackService)
+        assert kwargs["feedback_retention_days"] == 180
 
 
 class TestRunMaintenanceLoop:

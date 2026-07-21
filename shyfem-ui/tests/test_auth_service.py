@@ -1,5 +1,7 @@
 """Tests for AuthService -- password hashing, user CRUD, sessions, bootstrap."""
 
+from unittest.mock import patch
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -138,6 +140,34 @@ class TestAuthenticate:
         created = auth_service.create_user("alice", "s3cret", email="alice@example.com")
         auth_service.update_user(created["id"], is_active=False)
         assert auth_service.authenticate("alice", "s3cret") is None
+
+
+class TestAuthenticateConstantTime:
+    """N45: authenticate() must perform a password verification on every
+    branch (missing user, inactive user, wrong password), not just the
+    happy path, so response timing does not reveal which usernames exist
+    or are active (timing side-channel / username-enumeration oracle)."""
+
+    def test_verifier_called_for_missing_user(self, auth_service):
+        with patch.object(AuthService, "verify_password", wraps=AuthService.verify_password) as spy:
+            result = auth_service.authenticate("ghost", "whatever")
+        assert result is None
+        spy.assert_called_once()
+
+    def test_verifier_called_for_inactive_user(self, auth_service):
+        created = auth_service.create_user("alice", "s3cret", email="alice@example.com")
+        auth_service.update_user(created["id"], is_active=False)
+        with patch.object(AuthService, "verify_password", wraps=AuthService.verify_password) as spy:
+            result = auth_service.authenticate("alice", "s3cret")
+        assert result is None
+        spy.assert_called_once()
+
+    def test_verifier_called_for_wrong_password(self, auth_service):
+        auth_service.create_user("alice", "s3cret", email="alice@example.com")
+        with patch.object(AuthService, "verify_password", wraps=AuthService.verify_password) as spy:
+            result = auth_service.authenticate("alice", "wrong")
+        assert result is None
+        spy.assert_called_once()
 
 
 # ------------------------------------------------------------------
@@ -347,6 +377,38 @@ class TestCreateUserEmailAndDirectory:
             assert not any(u["username"] == "dave" for u in users)
         finally:
             os.chmod(tmp_path, 0o755)
+
+
+# ------------------------------------------------------------------
+# Username slug validation (N43/F44: a username becomes a filesystem path
+# segment via home_dir/confine_path, so it must be validated *before* any
+# DB work in create_user -- not just filtered by the admin form regex).
+# ------------------------------------------------------------------
+
+
+class TestCreateUserUsernameValidation:
+
+    @pytest.mark.parametrize(
+        "username",
+        [
+            ".",
+            "..",
+            "a/b",
+            "a\x00b",
+            "",
+            "foo bar",
+        ],
+    )
+    def test_rejects_unsafe_username(self, auth_service, username):
+        with pytest.raises(ValueError):
+            auth_service.create_user(username, "pass1234", email="unsafe@example.com")
+        # And nothing was persisted.
+        users = auth_service.list_users()
+        assert not any(u["username"] == username for u in users)
+
+    def test_accepts_valid_dotted_username(self, auth_service):
+        user = auth_service.create_user("user_1.x-y", "pass1234", email="valid@example.com")
+        assert user["username"] == "user_1.x-y"
 
 
 # ------------------------------------------------------------------

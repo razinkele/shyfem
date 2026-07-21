@@ -1,5 +1,6 @@
 """Database models for user management, sessions, and project permissions."""
 
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,6 +13,34 @@ from shyfem_ui.db.base import Base
 ROLE_ADMIN = "admin"
 ROLE_USER = "user"
 ROLE_TUTORIAL = "tutorial"
+
+# A username becomes a single filesystem path segment (see User.home_dir and
+# Config.confine_path), so it must never contain '/', '\x00', whitespace, or
+# a leading '.'/'-' that could be misread as a flag or a hidden/relative
+# path. This is intentionally strict: letters/digits/underscore first, then
+# letters/digits/underscore/dot/hyphen (N43/F44).
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+_MAX_USERNAME_LEN = 64
+
+
+def validate_username(username: str) -> None:
+    """Raise ValueError if ``username`` is unsafe to use as a path segment.
+
+    Called both at account-creation time (``AuthService.create_user``) and
+    defensively wherever a username is turned into a filesystem path
+    (``Config.confine_path``) -- see docs/reviews N43/F44.
+    """
+    if (
+        not username
+        or len(username) > _MAX_USERNAME_LEN
+        or username in (".", "..")
+        or not USERNAME_RE.match(username)
+    ):
+        raise ValueError(
+            "Username must be 1-64 characters, start with a letter, digit, "
+            "or underscore, contain only letters, digits, dots, hyphens, "
+            "and underscores, and must not be '.' or '..'."
+        )
 
 
 class User(Base):
@@ -59,10 +88,21 @@ class User(Base):
 
         Raises:
             ValueError: If the resolved path escapes user_data_root.
+
+        Note:
+            This only checks *containment* (F44) -- it does NOT reject
+            username=="." (which resolves to user_data_root itself and is,
+            trivially, "contained" in it). Guarding against that collapse is
+            Config.confine_path's job (N43; it calls validate_username()
+            first). Callers that skip confine_path must not assume home_dir()
+            alone confines a "." or ".." username to a private subdirectory.
         """
         result = (Path(user_data_root) / self.username).resolve()
         root = Path(user_data_root).resolve()
-        if not str(result).startswith(str(root)):
+        # Containment, not string-prefix matching: startswith would wrongly
+        # accept a sibling directory that merely shares root's string prefix
+        # (e.g. root=/data/shyfem, result=/data/shyfem-evil) (F44).
+        if not result.is_relative_to(root):
             raise ValueError(f"Username {self.username!r} escapes data root")
         return result
 

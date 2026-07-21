@@ -95,6 +95,15 @@ class Config(BaseSettings):
             "grow without limit."
         ),
     )
+    feedback_retention_days: int = Field(
+        default=180,
+        gt=0,
+        description=(
+            "Age (days) beyond which feedbacks entries are pruned by maintenance "
+            "(F52). Longer than job retention since triage can lag, shorter than "
+            "the audit trail since feedback isn't a compliance record."
+        ),
+    )
 
     # Job queue settings
     use_celery: bool = Field(
@@ -395,6 +404,7 @@ class Config(BaseSettings):
         *,
         must_exist: bool = False,
         for_write: bool = False,
+        session_factory=None,
     ) -> Path:
         """Resolve ``path`` and confine it to the requesting user's sandbox.
 
@@ -408,7 +418,12 @@ class Config(BaseSettings):
             must_exist: If True, also require the resolved path to exist.
             for_write: If True, the read-only bundled asset roots
                 (testcases/examples, bin) are NOT allowed — a write must land in
-                the user's own home, never in shared tutorial assets.
+                the user's own home, never in shared tutorial assets. Writes are
+                confined to the user's own home for everyone; the N44
+                shared-project widening below applies to READS only.
+            session_factory: Optional SQLAlchemy session factory (testing);
+                forwarded to the shared-project permission query. Defaults to
+                the global factory.
 
         Raises:
             ValueError: If the path escapes the user's home directory (or, in
@@ -431,11 +446,31 @@ class Config(BaseSettings):
                 "Please reload the page and sign in again."
             )
 
+        # Defense-in-depth: usernames are regex-validated at creation
+        # (AuthService.create_user), but re-check here too (single source of
+        # truth: shyfem_ui.models.user.validate_username) so a bad value
+        # (however it got into the session/DB) cannot widen confinement.
+        # This also closes N43: a username of '.' resolves
+        # (user_data_root / '.') == user_data_root, which the old
+        # 'home != root' escape guard below treated as "no escape" -- i.e.
+        # it silently collapsed confinement to the entire data root.
+        #
+        # Imported locally, not at module scope: shyfem_ui.db.base (imported
+        # transitively by shyfem_ui.models.user) imports shyfem_ui.config at
+        # module load time, so a top-level import here would be circular.
+        # By the time confine_path() actually runs, this module is fully
+        # loaded, so the import below is safe.
+        from shyfem_ui.models.user import validate_username
+
+        username = user.get("username") if isinstance(user, dict) else None
+        if not isinstance(username, str):
+            raise ValueError("Invalid user session: unsafe username")
+        validate_username(username)
+
         # Resolve the home with an explicit escape guard so a malicious username
-        # (defense-in-depth; usernames are regex-validated at creation) cannot
-        # widen confinement above user_data_root.
+        # cannot widen confinement above user_data_root.
         root = self.user_data_root.resolve()
-        home = (root / user["username"]).resolve()
+        home = (root / username).resolve()
         if home != root and not str(home).startswith(str(root) + "/"):
             raise ValueError("User home escapes the data root")
 
@@ -448,11 +483,52 @@ class Config(BaseSettings):
         if resolved.exists():
             resolved = resolved.resolve(strict=True)
 
-        if not any(
-            resolved == root_ or str(resolved).startswith(str(root_) + "/")
-            for root_ in allowed_roots
-        ):
-            raise ValueError(f"Path '{resolved}' is outside your home directory: {home}")
+        def _within(roots) -> bool:
+            return any(
+                resolved == root_ or str(resolved).startswith(str(root_) + "/") for root_ in roots
+            )
+
+        if not _within(allowed_roots):
+            # N44: for READS, also allow the work_dir of any project the acting
+            # user holds an accepted ProjectPermission grant on (e.g. the
+            # admin-owned "Mar Menor Tutorial" shared to the tutorial user).
+            # WRITES stay home-only. The permission set is derived server-side
+            # from the DB keyed on the validated identity (never a client
+            # signal). The DB is queried only when the path is NOT already
+            # within the user's own home / bundled assets, so the common
+            # in-home file op never touches the database (each out-of-home
+            # tutorial read still costs one query — caching is a follow-up).
+            shared_ok = False
+            if not for_write:
+                from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+                # Defense-in-depth: a project's stored work_dir is only honored
+                # as a read root if it is itself contained within a trusted
+                # project-storage root -- config.work_dir (bootstrap / clone /
+                # legacy projects) or config.user_data_root (new / imported /
+                # F15-relocated projects). This mirrors the explicit escape
+                # guard on ``home`` and drops a pathological stored path
+                # ('/', '', '.', '/etc', ...) rather than resolving it as an
+                # allowlisted read root. Fail-closed: a work_dir outside both
+                # roots is silently skipped (never becomes readable).
+                #
+                # Strictly BELOW a trusted base, never equal to one -- mirrors
+                # the ``home != root`` equality guard above. A project whose
+                # stored work_dir IS a trusted base itself (config.work_dir or
+                # config.user_data_root exactly) must not become a read root:
+                # ``_within`` would then treat every path under that base as
+                # "inside", granting read of the ENTIRE shared tree (every
+                # other project / every other user's home), far beyond the
+                # single project this grant is for.
+                trusted_bases = [self.work_dir.resolve(), self.user_data_root.resolve()]
+                shared_roots = [
+                    wd
+                    for wd in accessible_shared_work_dirs(user, session_factory=session_factory)
+                    if any(str(wd).startswith(str(base) + "/") for base in trusted_bases)
+                ]
+                shared_ok = _within(shared_roots)
+            if not shared_ok:
+                raise ValueError(f"Path '{resolved}' is outside your home directory: {home}")
 
         if must_exist and not resolved.exists():
             raise FileNotFoundError(f"Path not found: {resolved}")

@@ -226,10 +226,12 @@ class TestMiddlewareHTTP:
 
         csrf = "test-csrf-token"
         body = f"username=bob&password=s3cret&csrf_token={csrf}".encode()
-        receive = AsyncMock(return_value={
-            "type": "http.request",
-            "body": body,
-        })
+        receive = AsyncMock(
+            return_value={
+                "type": "http.request",
+                "body": body,
+            }
+        )
         scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}")
         send = AsyncMock()
         await mw(scope, receive, send)
@@ -256,10 +258,12 @@ class TestMiddlewareHTTP:
 
         csrf = "test-csrf-token"
         body = f"username=bob&password=wrong&csrf_token={csrf}".encode()
-        receive = AsyncMock(return_value={
-            "type": "http.request",
-            "body": body,
-        })
+        receive = AsyncMock(
+            return_value={
+                "type": "http.request",
+                "body": body,
+            }
+        )
         scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}")
         send = AsyncMock()
         await mw(scope, receive, send)
@@ -277,10 +281,12 @@ class TestMiddlewareHTTP:
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
         body = b"username=bob&password=s3cret&csrf_token=form-token"
-        receive = AsyncMock(return_value={
-            "type": "http.request",
-            "body": body,
-        })
+        receive = AsyncMock(
+            return_value={
+                "type": "http.request",
+                "body": body,
+            }
+        )
         scope = _make_scope(method="POST", path="/login", cookies="csrf_token=different-token")
         send = AsyncMock()
         await mw(scope, receive, send)
@@ -299,10 +305,12 @@ class TestMiddlewareHTTP:
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
         body = b"username=bob&password=s3cret"
-        receive = AsyncMock(return_value={
-            "type": "http.request",
-            "body": body,
-        })
+        receive = AsyncMock(
+            return_value={
+                "type": "http.request",
+                "body": body,
+            }
+        )
         scope = _make_scope(method="POST", path="/login")
         send = AsyncMock()
         await mw(scope, receive, send)
@@ -314,14 +322,15 @@ class TestMiddlewareHTTP:
         assert b"Invalid request" in body_msg["body"]
 
     @pytest.mark.asyncio
-    async def test_get_logout_clears_cookie_and_redirects(self):
+    async def test_post_logout_clears_cookie_and_redirects(self):
+        """F45: the actual logout mutation only happens on POST /logout."""
         auth_service = MagicMock()
         auth_service.delete_session.return_value = True
 
         inner_app = AsyncMock()
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
-        scope = _make_scope(method="GET", path="/logout", cookies="shyfem_session=tok123")
+        scope = _make_scope(method="POST", path="/logout", cookies="shyfem_session=tok123")
         send = AsyncMock()
         await mw(scope, AsyncMock(), send)
 
@@ -333,6 +342,45 @@ class TestMiddlewareHTTP:
         assert headers[b"location"] == b"/login"
         cookie_header = headers[b"set-cookie"].decode()
         assert "Max-Age=0" in cookie_header
+
+    @pytest.mark.asyncio
+    async def test_get_logout_does_not_destroy_session(self):
+        """F45: GET /logout must be CSRF-safe -- it must not mutate state.
+
+        Before the fix, a cross-site GET (an <img> tag, an auto-following
+        top-level navigation, etc.) could force a logout because GET
+        /logout destroyed the session directly.
+        """
+        auth_service = MagicMock()
+        auth_service.validate_session.return_value = {"id": 1, "username": "alice"}
+
+        inner_app = AsyncMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(method="GET", path="/logout", cookies="shyfem_session=tok123")
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        auth_service.delete_session.assert_not_called()
+        start_msg = send.call_args_list[0][0][0]
+        assert start_msg["status"] == 200
+        headers = dict(start_msg["headers"])
+        assert b"text/html" in headers[b"content-type"]
+
+    @pytest.mark.asyncio
+    async def test_get_logout_confirm_page_form_posts_to_logout(self):
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(method="GET", path="/logout")
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        body_msg = send.call_args_list[1][0][0]
+        html = body_msg["body"].decode("utf-8")
+        assert 'method="post"' in html.lower()
+        assert 'action="/logout"' in html
 
     @pytest.mark.asyncio
     async def test_invalid_session_redirects_to_login(self):
@@ -358,18 +406,21 @@ class TestMiddlewareHTTP:
         auth_service.authenticate.return_value = None
         mw = SessionAuthMiddleware(AsyncMock(), auth_service)
         sent = []
+
         async def send(msg):
             sent.append(msg)
+
         await mw._serve_login_page(send, error="", root_path="")
         set_cookie_headers = [
-            v.decode() for msg in sent if msg.get("type") == "http.response.start"
-            for k, v in msg["headers"] if k == b"set-cookie"
+            v.decode()
+            for msg in sent
+            if msg.get("type") == "http.response.start"
+            for k, v in msg["headers"]
+            if k == b"set-cookie"
         ]
         csrf_cookies = [h for h in set_cookie_headers if h.startswith("csrf_token=")]
         assert csrf_cookies, "Expected csrf_token Set-Cookie header"
-        assert "HttpOnly" in csrf_cookies[0], (
-            f"CSRF cookie missing HttpOnly: {csrf_cookies[0]!r}"
-        )
+        assert "HttpOnly" in csrf_cookies[0], f"CSRF cookie missing HttpOnly: {csrf_cookies[0]!r}"
 
     @pytest.mark.asyncio
     async def test_csrf_cookie_secure_when_use_secure_cookies(self):
@@ -377,18 +428,23 @@ class TestMiddlewareHTTP:
         auth_service.authenticate.return_value = None
         mw = SessionAuthMiddleware(AsyncMock(), auth_service, use_secure_cookies=True)
         sent = []
+
         async def send(msg):
             sent.append(msg)
+
         await mw._serve_login_page(send, error="", root_path="")
         set_cookie_headers = [
-            v.decode() for msg in sent if msg.get("type") == "http.response.start"
-            for k, v in msg["headers"] if k == b"set-cookie"
+            v.decode()
+            for msg in sent
+            if msg.get("type") == "http.response.start"
+            for k, v in msg["headers"]
+            if k == b"set-cookie"
         ]
         csrf_cookies = [h for h in set_cookie_headers if h.startswith("csrf_token=")]
         assert csrf_cookies
-        assert "Secure" in csrf_cookies[0], (
-            f"CSRF cookie missing Secure when use_secure_cookies=True: {csrf_cookies[0]!r}"
-        )
+        assert (
+            "Secure" in csrf_cookies[0]
+        ), f"CSRF cookie missing Secure when use_secure_cookies=True: {csrf_cookies[0]!r}"
 
 
 # ------------------------------------------------------------------
@@ -429,6 +485,7 @@ class TestWhoami:
     @staticmethod
     def _decode(sent):
         import json
+
         start = next(m for m in sent if m["type"] == "http.response.start")
         body = b"".join(m["body"] for m in sent if m["type"] == "http.response.body")
         return start["status"], json.loads(body)
@@ -577,8 +634,12 @@ class TestMiddlewareRootPath:
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
         csrf = "test-csrf-token"
-        receive = AsyncMock(return_value={"body": f"username=u&password=p&csrf_token={csrf}".encode()})
-        scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}", root_path=self.ROOT)
+        receive = AsyncMock(
+            return_value={"body": f"username=u&password=p&csrf_token={csrf}".encode()}
+        )
+        scope = _make_scope(
+            method="POST", path="/login", cookies=f"csrf_token={csrf}", root_path=self.ROOT
+        )
         send = AsyncMock()
         await mw(scope, receive, send)
 
@@ -589,7 +650,7 @@ class TestMiddlewareRootPath:
         assert "Path=/shyfem-ui" in cookie
 
     @pytest.mark.asyncio
-    async def test_logout_redirects_with_root_path(self):
+    async def test_post_logout_redirects_with_root_path(self):
         auth_service = MagicMock()
         auth_service.delete_session.return_value = True
 
@@ -597,8 +658,10 @@ class TestMiddlewareRootPath:
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
         scope = _make_scope(
-            method="GET", path="/logout",
-            cookies="shyfem_session=tok", root_path=self.ROOT,
+            method="POST",
+            path="/logout",
+            cookies="shyfem_session=tok",
+            root_path=self.ROOT,
         )
         send = AsyncMock()
         await mw(scope, AsyncMock(), send)
@@ -610,6 +673,24 @@ class TestMiddlewareRootPath:
         assert "Path=/shyfem-ui" in cookie
 
     @pytest.mark.asyncio
+    async def test_get_logout_confirm_form_action_includes_root_path(self):
+        """F45: the confirm page's POST form must target the root_path-prefixed
+        /logout so the logout mutation still works behind the reverse proxy."""
+        inner_app = AsyncMock()
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(inner_app, auth_service)
+
+        scope = _make_scope(method="GET", path="/logout", root_path=self.ROOT)
+        send = AsyncMock()
+        await mw(scope, AsyncMock(), send)
+
+        start_msg = send.call_args_list[0][0][0]
+        assert start_msg["status"] == 200
+        body_msg = send.call_args_list[1][0][0]
+        html = body_msg["body"].decode("utf-8")
+        assert 'action="/shyfem-ui/logout"' in html
+
+    @pytest.mark.asyncio
     async def test_invalid_session_redirect_includes_root_path(self):
         auth_service = MagicMock()
         auth_service.validate_session.return_value = None
@@ -618,7 +699,8 @@ class TestMiddlewareRootPath:
         mw = SessionAuthMiddleware(inner_app, auth_service)
 
         scope = _make_scope(
-            cookies="shyfem_session=bad", root_path=self.ROOT,
+            cookies="shyfem_session=bad",
+            root_path=self.ROOT,
         )
         send = AsyncMock()
         await mw(scope, AsyncMock(), send)
@@ -674,6 +756,7 @@ class TestMiddlewareRootPath:
     async def test_websocket_rejected_without_auth_behind_proxy_non_local(self):
         """WS from non-localhost behind proxy must still require auth."""
         app_called = False
+
         async def dummy_app(scope, receive, send):
             nonlocal app_called
             app_called = True
@@ -691,18 +774,24 @@ class TestMiddlewareRootPath:
             "client": ("1.2.3.4", 12345),
         }
         sent = []
-        async def receive(): return {"type": "websocket.connect"}
-        async def send(msg): sent.append(msg)
+
+        async def receive():
+            return {"type": "websocket.connect"}
+
+        async def send(msg):
+            sent.append(msg)
 
         await middleware(scope, receive, send)
-        assert any(m.get("code") == 4001 for m in sent), \
-            "Non-localhost unauthenticated WS should be rejected behind proxy"
+        assert any(
+            m.get("code") == 4001 for m in sent
+        ), "Non-localhost unauthenticated WS should be rejected behind proxy"
         assert not app_called
 
     @pytest.mark.asyncio
     async def test_websocket_allowed_from_localhost_behind_proxy(self):
         """WS from localhost behind proxy is allowed (Shiny Server internal)."""
         app_called = False
+
         async def dummy_app(scope, receive, send):
             nonlocal app_called
             app_called = True
@@ -720,8 +809,12 @@ class TestMiddlewareRootPath:
             "client": ("127.0.0.1", 12345),
         }
         sent = []
-        async def receive(): return {"type": "websocket.connect"}
-        async def send(msg): sent.append(msg)
+
+        async def receive():
+            return {"type": "websocket.connect"}
+
+        async def send(msg):
+            sent.append(msg)
 
         await middleware(scope, receive, send)
         assert app_called, "Localhost WS behind proxy should be allowed through"
@@ -755,9 +848,7 @@ class TestMiddlewareAuditLogging:
         auth_service.create_session.return_value = "tok"
         audit_service = MagicMock()
 
-        mw = SessionAuthMiddleware(
-            AsyncMock(), auth_service, audit_service=audit_service
-        )
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, audit_service=audit_service)
 
         body = b"username=alice&password=pw&csrf_token=xyz"
         scope = self._make_http_scope("POST", "/login", cookies="csrf_token=xyz")
@@ -778,9 +869,7 @@ class TestMiddlewareAuditLogging:
         auth_service.authenticate.return_value = None
         audit_service = MagicMock()
 
-        mw = SessionAuthMiddleware(
-            AsyncMock(), auth_service, audit_service=audit_service
-        )
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, audit_service=audit_service)
 
         body = b"username=alice&password=wrong&csrf_token=xyz"
         scope = self._make_http_scope("POST", "/login", cookies="csrf_token=xyz")
@@ -801,14 +890,15 @@ class TestMiddlewareAuditLogging:
         auth_service.validate_session.return_value = {"id": 1, "username": "alice"}
         audit_service = MagicMock()
 
-        mw = SessionAuthMiddleware(
-            AsyncMock(), auth_service, audit_service=audit_service
-        )
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, audit_service=audit_service)
 
         send = AsyncMock()
         await mw._handle_logout(
-            session_token="tok", send=send, root_path="",
-            username="alice", client_ip="127.0.0.1",
+            session_token="tok",
+            send=send,
+            root_path="",
+            username="alice",
+            client_ip="127.0.0.1",
         )
 
         audit_service.log.assert_called_once()
@@ -819,19 +909,26 @@ class TestMiddlewareAuditLogging:
 
     @pytest.mark.asyncio
     async def test_x_forwarded_for_takes_precedence(self):
-        """Behind nginx, client IP must come from X-Forwarded-For."""
+        """Behind nginx (a configured trusted proxy), client IP must come
+        from X-Forwarded-For."""
         auth_service = MagicMock()
         auth_service.authenticate.return_value = None
         audit_service = MagicMock()
 
         mw = SessionAuthMiddleware(
-            AsyncMock(), auth_service, audit_service=audit_service
+            AsyncMock(),
+            auth_service,
+            audit_service=audit_service,
+            trusted_proxies=["127.0.0.0/8"],
         )
 
         body = b"username=alice&password=wrong&csrf_token=xyz"
         scope = self._make_http_scope(
-            "POST", "/login", cookies="csrf_token=xyz",
-            xff="203.0.113.42, 10.0.0.1", client_ip="127.0.0.1",
+            "POST",
+            "/login",
+            cookies="csrf_token=xyz",
+            xff="203.0.113.42",
+            client_ip="127.0.0.1",
         )
         receive = AsyncMock(return_value={"type": "http.request", "body": body})
         send = AsyncMock()
@@ -857,3 +954,51 @@ class TestMiddlewareAuditLogging:
 
         # Must not raise
         await mw._handle_login_post(scope, receive, send)
+
+
+# ------------------------------------------------------------------
+# F46: X-Forwarded-For must only be trusted from a configured proxy
+# ------------------------------------------------------------------
+
+
+class TestClientIpTrustedProxies:
+    """_client_ip must not let an arbitrary client spoof the audit-log IP
+    via X-Forwarded-For; only a peer listed in trusted_proxies may set it."""
+
+    @staticmethod
+    def _scope(client_ip, xff=None):
+        headers = []
+        if xff is not None:
+            headers.append((b"x-forwarded-for", xff.encode("utf-8")))
+        return {"headers": headers, "client": (client_ip, 12345)}
+
+    def test_untrusted_peer_xff_ignored(self):
+        """An arbitrary internet client is NOT a trusted proxy (default
+        trusted_proxies=[]) -- its X-Forwarded-For header is attacker
+        controlled and must be ignored in favor of the real socket peer."""
+        mw = SessionAuthMiddleware(AsyncMock(), MagicMock())
+        scope = self._scope("203.0.113.99", xff="9.9.9.9")
+        assert mw._client_ip(scope) == "203.0.113.99"
+
+    def test_untrusted_peer_not_in_configured_list_xff_ignored(self):
+        mw = SessionAuthMiddleware(AsyncMock(), MagicMock(), trusted_proxies=["127.0.0.0/8"])
+        scope = self._scope("203.0.113.99", xff="9.9.9.9")
+        assert mw._client_ip(scope) == "203.0.113.99"
+
+    def test_trusted_peer_xff_honored(self):
+        """The configured reverse proxy (e.g. nginx on loopback) IS trusted,
+        so its X-Forwarded-For is used to recover the real client IP."""
+        mw = SessionAuthMiddleware(AsyncMock(), MagicMock(), trusted_proxies=["127.0.0.0/8"])
+        scope = self._scope("127.0.0.1", xff="203.0.113.50")
+        assert mw._client_ip(scope) == "203.0.113.50"
+
+    def test_untrusted_peer_no_xff_returns_peer(self):
+        mw = SessionAuthMiddleware(AsyncMock(), MagicMock())
+        scope = self._scope("203.0.113.99")
+        assert mw._client_ip(scope) == "203.0.113.99"
+
+    def test_default_trusted_proxies_is_empty(self):
+        """No trusted_proxies configured => the constructor default must
+        not accidentally trust anything (fail closed)."""
+        mw = SessionAuthMiddleware(AsyncMock(), MagicMock())
+        assert mw.trusted_proxies == []

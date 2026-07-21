@@ -87,3 +87,15 @@ jobs:
 
       - name: MPI build
         run: make clean && make fem OMP=false MPI=true PARTS=METIS METISDIR=/usr
+
+      - name: MPI run smoke
+        # "Build compiles" != "build runs" (see CLAUDE.md's Intel-MPI trap):
+        # an MPI binary can link cleanly and still crash inside MPI_Init or
+        # deadlock on its first exchange. Actually run mar_menor at np=2
+        # (partition.2.txt ships with the testcase) so a broken
+        # src/utils/shympi change fails this job, not a user's laptop.
+        run: |
+          export PATH="/usr/bin:$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/mar_menor
+          make init
+          mpirun --oversubscribe -np 2 shyfem mm_hyd_00.str

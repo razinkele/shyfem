@@ -14,10 +14,15 @@ try:
 except ImportError:
     from argon2.exceptions import InvalidHash as InvalidHashError  # argon2 <23
 
-from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User, WSAuthToken
+from shyfem_ui.models.user import ROLE_ADMIN, AuthSession, User, WSAuthToken, validate_username
 
 logger = logging.getLogger(__name__)
 _ph = PasswordHasher()
+# Computed once at import so the missing-user/inactive-user branches of
+# authenticate() can still pay the argon2 verification cost (N45): without
+# this, those branches return early and response timing leaks which
+# usernames exist / are active to an unauthenticated attacker.
+_DUMMY_HASH = _ph.hash("x")
 
 
 class AuthService:
@@ -78,10 +83,18 @@ class AuthService:
             Dict with user fields.
 
         Raises:
-            ValueError: If username or email already exists, or email missing for non-tutorial.
+            ValueError: If the username is unsafe (see ``validate_username``),
+                username or email already exists, or email missing for
+                non-tutorial.
             PermissionError: If directory creation fails.
         """
         from shyfem_ui.models.user import ROLE_TUTORIAL
+
+        # Validate the username *before* any DB work: it becomes a
+        # filesystem path segment (home_dir/confine_path), so an unsafe
+        # value (e.g. '.', '..', containing '/' or '\x00') must never reach
+        # the database (N43/F44).
+        validate_username(username)
 
         # Validate email requirement
         if role != ROLE_TUTORIAL and not email:
@@ -249,8 +262,14 @@ class AuthService:
         try:
             user = session.query(User).filter_by(username=username).first()
             if user is None:
+                # Verify against a dummy hash so the response takes roughly
+                # the same time as a real failed login -- otherwise an
+                # attacker can distinguish "no such user" from "wrong
+                # password" by latency alone (N45).
+                self.verify_password(password, _DUMMY_HASH)
                 return None
             if not user.is_active:
+                self.verify_password(password, _DUMMY_HASH)
                 return None
             if not self.verify_password(password, user.password_hash):
                 return None

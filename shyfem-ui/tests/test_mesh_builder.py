@@ -333,10 +333,11 @@ class TestImportBoundaries:
 
     def test_gpkg_projected_crs(self):
         """Real GeoPackage in LKS94 (EPSG:3346) reprojects to WGS84."""
-        path = (
-            Path(__file__).resolve().parent.parent.parent
-            / "testcases/examples/curoninan/curonian_boundary.gpkg"
-        )
+        # Shares _CURONIAN_DIR (defined below, near TestCuronianIntegration)
+        # rather than hardcoding its own copy of the path -- N52 found an
+        # independent typo'd duplicate of this same path at this exact call
+        # site, so a single source of truth prevents future drift.
+        path = _CURONIAN_DIR / "curonian_boundary.gpkg"
         if not path.exists():
             pytest.skip("curonian_boundary.gpkg not available")
         grd = import_boundaries(path)
@@ -893,6 +894,47 @@ class TestLoadBathymetryContours:
         with pytest.raises(ValueError, match="No numeric depth attribute"):
             load_bathymetry_contours(path)
 
+    def test_contour_crs_parse_failure_is_error(self, tmp_path, monkeypatch):
+        """N51: CRS parse failures must fail visibly, not silently pass through
+        raw (possibly projected) coordinates as if they were WGS84 degrees.
+
+        This regression test (added alongside the 73e03b2 CRS fix) needs no
+        Curonian sample data -- it writes its own tiny shapefile into
+        tmp_path -- so it belongs here, in the always-run class, rather than
+        inside TestCuronianIntegration (which is skipped whenever the real
+        Curonian data isn't present, i.e. on every machine so far)."""
+        import fiona
+        from fiona.crs import CRS
+
+        schema = {"geometry": "LineString", "properties": {"depth": "float"}}
+        path = tmp_path / "contours.shp"
+        with fiona.open(
+            str(path),
+            "w",
+            driver="ESRI Shapefile",
+            schema=schema,
+            crs=CRS.from_epsg(32635),
+        ) as dst:
+            dst.write(
+                {
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [[300000, 6100000], [350000, 6100000]],
+                    },
+                    "properties": {"depth": 5.0},
+                }
+            )
+
+        from shyfem_ui.services import mesh_builder
+
+        def fail_crs(_value):
+            raise RuntimeError("bad CRS")
+
+        monkeypatch.setattr(mesh_builder.pyproj.CRS, "from_user_input", fail_crs)
+
+        with pytest.raises(ValueError, match="refusing to use raw coordinates"):
+            load_bathymetry_contours(path)
+
 
 # ---------------------------------------------------------------------------
 # TestValidateBoundary
@@ -1431,12 +1473,38 @@ class TestSetResolution:
 # ---------------------------------------------------------------------------
 
 _CURONIAN_DIR = (
-    Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "curoninan"
+    Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "curonian"
 )
 
 _HAS_CURONIAN = (_CURONIAN_DIR / "curonian_boundary.gpkg").exists() and (
     _CURONIAN_DIR / "depth_isobates.gpkg"
 ).exists()
+
+
+def test_curonian_data_dir_path_is_spelled_correctly():
+    """N52: guard against re-introducing the 'curoninan' typo.
+
+    _CURONIAN_DIR used to point at "testcases/examples/curoninan" -- a
+    directory that exists neither on disk nor in git -- so _HAS_CURONIAN was
+    always False and the entire TestCuronianIntegration block (10 tests)
+    stayed silently skipped on every machine, forever, regardless of whether
+    the real Curonian sample data was ever dropped in under the *correctly*
+    spelled "curonian" directory.
+
+    This test needs no Curonian data and always runs: it only pins the path
+    *string* itself, so a future re-introduction of the typo (or any other
+    drift) is caught immediately as a normal test failure instead of
+    manifesting as an invisible permanent skip that nothing gates on.
+    """
+    assert _CURONIAN_DIR.name == "curonian", (
+        f"_CURONIAN_DIR must point at the correctly spelled 'curonian' "
+        f"directory, not {_CURONIAN_DIR.name!r} -- a typo here silently "
+        f"skips the entire TestCuronianIntegration block forever, even "
+        f"after real data is committed under the right name."
+    )
+    assert _CURONIAN_DIR == (
+        Path(__file__).resolve().parent.parent.parent / "testcases" / "examples" / "curonian"
+    )
 
 
 @pytest.mark.skipif(not _HAS_CURONIAN, reason="Curonian lagoon sample data not found")
@@ -1535,39 +1603,6 @@ class TestCuronianIntegration:
         assert data[:, 0].max() < 22.0, "X should be WGS84 longitude (not projected)"
         assert data[:, 1].min() > 54.0, "Y should be WGS84 latitude (not projected)"
         assert data[:, 1].max() < 57.0, "Y should be WGS84 latitude (not projected)"
-
-    def test_contour_crs_parse_failure_is_error(self, tmp_path, monkeypatch):
-        import fiona
-        from fiona.crs import CRS
-
-        schema = {"geometry": "LineString", "properties": {"depth": "float"}}
-        path = tmp_path / "contours.shp"
-        with fiona.open(
-            str(path),
-            "w",
-            driver="ESRI Shapefile",
-            schema=schema,
-            crs=CRS.from_epsg(32635),
-        ) as dst:
-            dst.write(
-                {
-                    "geometry": {
-                        "type": "LineString",
-                        "coordinates": [[300000, 6100000], [350000, 6100000]],
-                    },
-                    "properties": {"depth": 5.0},
-                }
-            )
-
-        from shyfem_ui.services import mesh_builder
-
-        def fail_crs(_value):
-            raise RuntimeError("bad CRS")
-
-        monkeypatch.setattr(mesh_builder.pyproj.CRS, "from_user_input", fail_crs)
-
-        with pytest.raises(ValueError, match="refusing to use raw coordinates"):
-            load_bathymetry_contours(path)
 
     def test_interpolate_isobaths_all_methods(self):
         """All scipy methods produce valid depths from Curonian isobaths."""

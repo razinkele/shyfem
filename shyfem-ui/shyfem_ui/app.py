@@ -40,9 +40,11 @@ except ImportError:
 
 from shyfem_ui.services.audit_service import AuditService
 from shyfem_ui.services.auth_service import AuthService
+from shyfem_ui.services.feedback_service import FeedbackService
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import JobTransitionDetector
 from shyfem_ui.services.notification_service import NotificationService as EmailNotificationService
+from shyfem_ui.services.run_logic import list_scoped_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -244,9 +246,10 @@ def create_app(config: Config | None = None) -> App:
 
     register_shyfem_template(dark=False)
 
-    # Initialize auth + audit services
+    # Initialize auth + audit + feedback services
     auth_service = AuthService()
     audit_service = AuditService()
+    feedback_service = FeedbackService()
     if config.deployment_mode == "server":
         if config.default_admin_password:
             admin = auth_service.ensure_admin(
@@ -299,6 +302,7 @@ def create_app(config: Config | None = None) -> App:
         root_path=config.root_path,
         use_secure_cookies=config.use_secure_cookies,
         audit_service=audit_service,
+        trusted_proxies=config.trusted_proxies,
     )
     if not is_local and not config.default_admin_password and not config.auth_password:
         logger.warning(
@@ -339,6 +343,8 @@ def create_app(config: Config | None = None) -> App:
                 job_retention_days=config.job_retention_days,
                 audit_service=audit_service,
                 audit_retention_days=config.audit_retention_days,
+                feedback_service=feedback_service,
+                feedback_retention_days=config.feedback_retention_days,
             )
 
     app = MaintenanceMiddleware(app, _maint_factory)
@@ -771,9 +777,10 @@ def _build_server(
     # legitimate long-running simulations on every disconnect. Jobs now end
     # only by completing, explicit cancel, or startup reconciliation of
     # phantom rows left by a previous process (see LocalJobQueue.
-    # _load_history_from_db). _cleanup_session_id/_is_server are still used
-    # below for session-scoped progress polling (unrelated to cancellation).
-    _cleanup_session_id = str(id(session))
+    # _load_history_from_db). _is_server is still used below (notification
+    # poll scoping, F17 completion -- by user_id via list_scoped_jobs, never
+    # the ephemeral per-connection session identifier, which doesn't survive
+    # a WS reconnect).
     _is_server = config.deployment_mode == "server"
     _current_user = get_current_user()
     _user_id = _current_user["id"] if _current_user else None
@@ -1007,9 +1014,22 @@ def _build_server(
 
         import asyncio
 
+        # Snapshot the server-validated identity HERE, in the synchronous
+        # reactive flush. current_user() is a reactive read (_ws_user.get());
+        # _check() below runs DETACHED via loop.create_task()/asyncio.run(),
+        # outside the reactive context, where calling current_user() would
+        # raise -- and the bare `except Exception` a few lines down would
+        # silently swallow that, quietly killing notifications with no
+        # error. F17 completion: scope by this user_id, never the ephemeral
+        # per-connection session identifier (doesn't survive a WS reconnect,
+        # dropping the user's own notifications; CPython id() reuse could
+        # also surface a prior user's job metadata).
+        _usr = current_user() if current_user is not None else None
+
         async def _check():
-            sid = _cleanup_session_id if _is_server else None
-            jobs = await job_queue.list_jobs(limit=100, session_id=sid)
+            jobs = await list_scoped_jobs(
+                job_queue, _is_server, lambda: _usr, show_all_fn=lambda: False, limit=100
+            )
             job_dicts = [{"id": j.id, "name": j.name, "status": j.status.value} for j in jobs]
             events = _notification_svc.check_transitions(job_dicts)
             for event in events:

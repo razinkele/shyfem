@@ -551,31 +551,162 @@ class TestJobReadDeniedReason:
         return job_read_denied_reason(**kw)
 
     def test_local_mode_allows_none(self, db_factory, setup):
-        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
-                          user=None, is_server_mode=False, session_factory=db_factory) is None
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=None,
+                is_server_mode=False,
+                session_factory=db_factory,
+            )
+            is None
+        )
 
     def test_server_denies_none(self, db_factory, setup):
-        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
-                          user=None, is_server_mode=True, session_factory=db_factory) is not None
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user=None,
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is not None
+        )
 
     def test_owner_allowed(self, db_factory, setup):
-        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
-                          user={"id": setup["alice_id"], "role": "user"},
-                          is_server_mode=True, session_factory=db_factory) is None
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user={"id": setup["alice_id"], "role": "user"},
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is None
+        )
 
     def test_admin_allowed(self, db_factory, setup):
-        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
-                          user={"id": setup["admin_id"], "role": "admin"},
-                          is_server_mode=True, session_factory=db_factory) is None
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user={"id": setup["admin_id"], "role": "admin"},
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is None
+        )
 
     def test_viewer_allowed_to_read(self, db_factory, setup):
         # charlie is a project viewer -> may READ (would be DENIED to cancel)
-        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
-                          user={"id": setup["charlie_id"], "role": "user"},
-                          is_server_mode=True, session_factory=db_factory) is None
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user={"id": setup["charlie_id"], "role": "user"},
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is None
+        )
 
     def test_non_member_denied(self, db_factory, setup):
         # bob owns nothing and has no project role -> the IDOR victim path
-        assert self._call(job_user_id=setup["alice_id"], job_project_id=setup["project_id"],
-                          user={"id": setup["bob_id"], "role": "user"},
-                          is_server_mode=True, session_factory=db_factory) is not None
+        assert (
+            self._call(
+                job_user_id=setup["alice_id"],
+                job_project_id=setup["project_id"],
+                user={"id": setup["bob_id"], "role": "user"},
+                is_server_mode=True,
+                session_factory=db_factory,
+            )
+            is not None
+        )
+
+
+class TestAccessibleSharedWorkDirs:
+    """N44: server-side derivation of the 'projects shared with me' work_dir set
+    used to widen READ confinement. Presence of a ProjectPermission row IS the
+    grant (the model has no separate 'accepted' flag)."""
+
+    def test_grant_holder_gets_shared_work_dir(self, db_factory, setup):
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        # charlie holds a viewer ProjectPermission on P1 (work_dir=/tmp/p1).
+        dirs = accessible_shared_work_dirs(_user(setup["charlie_id"]), session_factory=db_factory)
+        from pathlib import Path
+
+        assert Path("/tmp/p1").resolve() in dirs
+
+    def test_non_member_gets_nothing(self, db_factory, setup):
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        # bob has no permission row on any project.
+        assert accessible_shared_work_dirs(_user(setup["bob_id"]), session_factory=db_factory) == []
+
+    def test_owner_without_permission_row_gets_nothing(self, db_factory, setup):
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        # alice OWNS P1 but holds no ProjectPermission row -- owner reach is
+        # handled by home + F15 relocation, not by this shared-read helper.
+        assert (
+            accessible_shared_work_dirs(_user(setup["alice_id"]), session_factory=db_factory) == []
+        )
+
+    def test_none_user_gets_nothing(self, db_factory, setup):
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        assert accessible_shared_work_dirs(None, session_factory=db_factory) == []
+
+    def test_user_without_id_gets_nothing(self, db_factory, setup):
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        assert (
+            accessible_shared_work_dirs(
+                {"username": "x", "role": "user"}, session_factory=db_factory
+            )
+            == []
+        )
+
+    def test_sqlalchemy_error_fails_closed_returns_empty(self, setup):
+        """Final review hardening: a transient SQLAlchemyError from the
+        permission query must fail CLOSED (return []), not propagate past
+        confine_path's callers as an exception type that isn't one of the
+        (ValueError, FileNotFoundError) confine_path contract normally
+        raises. An empty shared-roots set denies the shared read -- the safe
+        direction -- rather than the caller substituting an unconfined
+        path."""
+        from sqlalchemy.exc import SQLAlchemyError
+
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        class _BoomSession:
+            def query(self, *args, **kwargs):
+                raise SQLAlchemyError("connection lost")
+
+            def close(self):
+                pass
+
+        result = accessible_shared_work_dirs(
+            _user(setup["charlie_id"]), session_factory=_BoomSession
+        )
+        assert result == []
+
+    def test_unexpected_error_fails_closed_returns_empty(self, setup):
+        """Last-resort broad-Exception guard: any other unexpected error from
+        the query (not a SQLAlchemyError) must also fail CLOSED, never
+        propagate."""
+        from shyfem_ui.services.access_control import accessible_shared_work_dirs
+
+        class _BoomSession:
+            def query(self, *args, **kwargs):
+                raise RuntimeError("something unexpected")
+
+            def close(self):
+                pass
+
+        result = accessible_shared_work_dirs(
+            _user(setup["charlie_id"]), session_factory=_BoomSession
+        )
+        assert result == []

@@ -19,9 +19,11 @@ async def run_maintenance_once(
     *,
     audit_service=None,
     audit_retention_days: int = 365,
+    feedback_service=None,
+    feedback_retention_days: int = 180,
 ) -> None:
-    """Run one maintenance pass: prune old jobs, expired sessions/tokens, and
-    old audit logs.
+    """Run one maintenance pass: prune old jobs, expired sessions/tokens, old
+    audit logs, and old feedback submissions.
 
     Each cleanup is independent — a failure in one is logged and must not block
     the others or propagate (the scheduling loop must never die).
@@ -54,6 +56,19 @@ async def run_maintenance_once(
         except Exception:
             logger.exception("maintenance: cleanup_old_logs failed")
 
+    if feedback_service is not None:
+        try:
+            # Synchronous DB delete — keep it off the event loop.
+            removed = await asyncio.to_thread(feedback_service.cleanup_old, feedback_retention_days)
+            if removed:
+                logger.info(
+                    "maintenance: pruned %d feedback row(s) older than %dd",
+                    removed,
+                    feedback_retention_days,
+                )
+        except Exception:
+            logger.exception("maintenance: cleanup_old (feedback) failed")
+
 
 async def run_maintenance_loop(
     job_queue,
@@ -63,6 +78,8 @@ async def run_maintenance_loop(
     job_retention_days: int,
     audit_service=None,
     audit_retention_days: int = 365,
+    feedback_service=None,
+    feedback_retention_days: int = 180,
 ) -> None:
     """Run :func:`run_maintenance_once` every ``interval_s`` seconds, forever.
 
@@ -71,10 +88,12 @@ async def run_maintenance_loop(
     the loop survives transient failures.
     """
     logger.info(
-        "maintenance loop started (interval=%ds, job retention=%dd, audit retention=%dd)",
+        "maintenance loop started (interval=%ds, job retention=%dd, audit retention=%dd, "
+        "feedback retention=%dd)",
         interval_s,
         job_retention_days,
         audit_retention_days,
+        feedback_retention_days,
     )
     while True:
         await asyncio.sleep(interval_s)
@@ -84,4 +103,6 @@ async def run_maintenance_loop(
             job_retention_days,
             audit_service=audit_service,
             audit_retention_days=audit_retention_days,
+            feedback_service=feedback_service,
+            feedback_retention_days=feedback_retention_days,
         )

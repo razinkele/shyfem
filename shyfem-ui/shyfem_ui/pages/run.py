@@ -43,6 +43,7 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
     compute_restart_choices,
     detect_mesh_node_count,
     get_solver_recommendation,
+    list_scoped_jobs,
     restart_info_text,
     restart_selection_denied_reason,
     write_restart_str,
@@ -568,11 +569,14 @@ def run_server(
     async def _list_scoped_jobs() -> list[JobInfo]:
         """Jobs visible to the current identity, server-side (F17).
 
-        Server-mode listing is scoped by the server-validated user identity
-        (never session_id, which is ephemeral per-WS-connection and does
-        not track ownership across reconnects/tabs). Fail-closed: an
-        unresolved identity in server mode sees no jobs rather than falling
-        through to an unfiltered list.
+        Thin wrapper around the shared run_logic.list_scoped_jobs (F17
+        completion) -- also used by pages/home.py, pages/compare.py and
+        app.py's cross-page notification poll, so every listing site scopes
+        the SAME way: by the server-validated user identity (never
+        session_id, which is ephemeral per-WS-connection and does not track
+        ownership across reconnects/tabs). Fail-closed: an unresolved
+        identity in server mode sees no jobs rather than falling through to
+        an unfiltered list.
 
         Shared by _refresh_jobs (job lists/dashboard rendering) and
         _submit_job's restart_from allowlist check (N42 IDOR follow-up) so
@@ -582,19 +586,10 @@ def run_server(
         value) is deliberate: the allowlist must reflect a fresh
         server-side query, not client-cached state.
         """
-        if not _is_server_mode:
-            return await job_queue.list_jobs(limit=50)
-
-        from shyfem_ui.models.user import ROLE_ADMIN
-
-        _usr = current_user() if current_user is not None else None
-        if _usr is None:
-            return []
-
-        # IDOR fix: only admins may list every user's jobs; others get own.
-        show_all = bool(input.show_all_run_jobs()) and _usr.get("role") == ROLE_ADMIN
-        uid = None if show_all else _usr["id"]
-        return await job_queue.list_jobs(limit=50, user_id=uid)
+        show_all_fn = (lambda: bool(input.show_all_run_jobs())) if _is_server_mode else None
+        return await list_scoped_jobs(
+            job_queue, _is_server_mode, current_user, show_all_fn=show_all_fn, limit=50
+        )
 
     async def _refresh_jobs():
         """Refresh the reactive job-list state used by dashboard/history/

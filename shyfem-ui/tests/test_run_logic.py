@@ -8,11 +8,13 @@ from pathlib import Path
 
 import pytest
 
+from shyfem_ui.models.user import ROLE_ADMIN
 from shyfem_ui.services.job_queue import JobInfo, JobSpec, JobStatus
 from shyfem_ui.services.parser_str import StrParser
 from shyfem_ui.services.run_logic import (
     build_job_spec,
     compute_restart_choices,
+    list_scoped_jobs,
     restart_info_text,
     restart_selection_denied_reason,
     write_restart_str,
@@ -523,3 +525,132 @@ class TestRestartInfoText:
 
         assert result is not None
         assert "not found" in result.lower()
+
+
+class _FakeJobQueue:
+    """Minimal job queue stub that filters by user_id the same way the real
+    LocalJobQueue/CeleryJobQueue implementations do (filter on
+    job.metadata["user_id"], then slice to `limit`), so these tests
+    exercise the same contract list_scoped_jobs relies on without pulling
+    in DB/Celery machinery."""
+
+    def __init__(self, jobs: list[JobInfo]):
+        self._jobs = jobs
+        self.calls: list[dict] = []
+
+    async def list_jobs(self, limit=100, user_id=None, **kwargs):
+        self.calls.append({"limit": limit, "user_id": user_id, **kwargs})
+        jobs = self._jobs
+        if user_id is not None:
+            jobs = [j for j in jobs if j.metadata.get("user_id") == user_id]
+        return jobs[:limit]
+
+
+def _job(job_id: str, user_id: int | None = None) -> JobInfo:
+    return JobInfo(
+        id=job_id,
+        name=job_id,
+        tool_name="shyfem",
+        args=[],
+        working_dir="/tmp",
+        status=JobStatus.COMPLETED,
+        metadata={"user_id": user_id} if user_id is not None else {},
+    )
+
+
+VIEWER = {"id": 2, "role": "viewer"}
+OTHER_VIEWER = {"id": 3, "role": "viewer"}
+ADMIN = {"id": 1, "role": ROLE_ADMIN}
+
+
+class TestListScopedJobs:
+    """F17 completion: the single scoping function shared by Run, Dashboard,
+    Compare, and the cross-page notification poll. Extracted from
+    pages/run.py's _list_scoped_jobs (Batch 3) so every listing site scopes
+    the same way -- by the server-validated user identity's id, never
+    session_id (ephemeral per-WS-connection; a user's own jobs would drop
+    off after reconnect, and CPython id() reuse could surface a prior
+    user's job metadata under a new session)."""
+
+    async def test_local_mode_is_unfiltered_and_ignores_identity(self):
+        jobs = [_job("j1", user_id=1), _job("j2", user_id=2)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, is_server_mode=False, current_user_fn=None)
+
+        assert {j.id for j in result} == {"j1", "j2"}
+        assert q.calls[-1]["user_id"] is None
+
+    async def test_server_mode_scopes_to_own_user_id(self):
+        jobs = [_job("mine", user_id=2), _job("theirs", user_id=3)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, is_server_mode=True, current_user_fn=lambda: VIEWER)
+
+        assert [j.id for j in result] == ["mine"]
+        assert q.calls[-1]["user_id"] == 2
+
+    async def test_second_users_jobs_never_appear(self):
+        """The core regression: user A's own job list must never contain a
+        job owned by user B, regardless of what ephemeral session id either
+        of them currently holds."""
+        jobs = [_job("mine", user_id=2), _job("theirs", user_id=99)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, True, lambda: VIEWER)
+
+        assert "theirs" not in {j.id for j in result}
+        result_other = await list_scoped_jobs(q, True, lambda: OTHER_VIEWER)
+        assert "mine" not in {j.id for j in result_other}
+
+    async def test_unresolved_identity_fails_closed_to_empty(self):
+        """An unresolved WS identity must see NOTHING, not fall through to
+        an unfiltered or session-scoped list -- and must not even issue the
+        query (fail CLOSED, not an empty-matching filter)."""
+        jobs = [_job("mine", user_id=2)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, True, lambda: None)
+
+        assert result == []
+        assert q.calls == []
+
+    async def test_no_current_user_fn_fails_closed(self):
+        q = _FakeJobQueue([_job("j1", user_id=2)])
+
+        result = await list_scoped_jobs(q, True, None)
+
+        assert result == []
+        assert q.calls == []
+
+    async def test_admin_show_all_is_unfiltered(self):
+        jobs = [_job("mine", user_id=1), _job("theirs", user_id=2)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, True, lambda: ADMIN, show_all_fn=lambda: True)
+
+        assert {j.id for j in result} == {"mine", "theirs"}
+        assert q.calls[-1]["user_id"] is None
+
+    async def test_non_admin_show_all_request_is_downgraded_idor_guard(self):
+        jobs = [_job("mine", user_id=2), _job("theirs", user_id=3)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, True, lambda: VIEWER, show_all_fn=lambda: True)
+
+        assert [j.id for j in result] == ["mine"]
+
+    async def test_admin_without_show_all_sees_only_own(self):
+        jobs = [_job("mine", user_id=1), _job("theirs", user_id=2)]
+        q = _FakeJobQueue(jobs)
+
+        result = await list_scoped_jobs(q, True, lambda: ADMIN, show_all_fn=lambda: False)
+
+        assert [j.id for j in result] == ["mine"]
+
+    async def test_limit_is_passed_through(self):
+        q = _FakeJobQueue([_job("j1", user_id=2)])
+
+        await list_scoped_jobs(q, True, lambda: VIEWER, limit=5)
+
+        assert q.calls[-1]["limit"] == 5
