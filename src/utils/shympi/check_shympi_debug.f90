@@ -1412,6 +1412,7 @@
 	character*(*), intent(in) :: message
 
 	write(6,*) 'ERROR: ',trim(message)
+	flush(6)
 	stop 'error stop'
 
 	end subroutine shympi_abort_internal

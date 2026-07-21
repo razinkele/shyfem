@@ -197,6 +197,30 @@
 
 !******************************************************************
 
+	subroutine check_mpi(ierr,what)
+
+! F32: checks the return code of a point-to-point MPI call.
+! The ghost-exchange and collect routines below issue MPI_Isend/
+! MPI_Irecv/MPI_WaitAll but historically ignored ierr, so a failed
+! communication would corrupt ghost data silently. This helper
+! aborts (via MPI_ABORT) if the call did not return MPI_SUCCESS.
+
+	use shympi_internal
+
+	implicit none
+
+	integer, intent(in) :: ierr
+	character*(*), intent(in) :: what
+
+	if( ierr /= MPI_SUCCESS ) then
+	  write(6,*) 'MPI error: ierr = ',ierr,' while doing ',trim(what)
+	  call shympi_abort_internal('error stop check_mpi: '//trim(what))
+	end if
+
+	end subroutine check_mpi
+
+!******************************************************************
+
 	subroutine shympi_init_internal(my_id,n_threads,binit)
 
 	use shympi_internal
@@ -261,6 +285,7 @@
         integer ierr
 
         write(6,*) trim(message)
+	flush(6)
 	!call MPI_BARRIER( MPI_COMM_WORLD, ierr)
 	!call MPI_FINALIZE(ierr_code)		!this will hang for ever
 	call MPI_ABORT(MPI_COMM_WORLD,33,ierr)
@@ -349,7 +374,11 @@
         call MPI_COMM_SIZE( MPI_COMM_WORLD, nt, ierr )
 
 	allocate(buf(nt),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_syncronize_initial: allocation failed (buf)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 
 	root = my_id
 	count = 1
@@ -514,7 +543,7 @@
 
 	integer tag,ir,ia,id
 	integer i,k,nc,ierr
-	integer nb
+	integer nb,nvert
 	integer iout,iin
 	integer nbs(2,n_ghost_areas)
 	integer status(status_p_size,2*n_p_threads)
@@ -532,19 +561,46 @@
 	  iin = 5
 	end if
 
-	nb = (nlvddi-n0+1) * n_ghost_max
+!	F33: match the real/sum exchange paths, which post a UNIFORM
+!	global-max buffer instead of the LOCAL per-area count_buffer()
+!	sizes this routine used. The effect is asymmetric, and that is
+!	what makes it safe: only the RECEIVE posting grows to the
+!	uniform size (nbs(1,ia)). The SEND still transmits the ACTUAL
+!	packed count, because to_buffer_i() overwrites nb (inout) with
+!	the true nc/il-driven element count before MPI_Isend reads it -
+!	so the send bytes are identical to the pre-change code. MPI
+!	point-to-point requires only recv_count >= send_count (the recv
+!	count is a maximum, not a required match), and uniform is always
+!	>= the actual packed count, so enlarging the recv posting can
+!	never truncate. This does NOT make the send uniform.
+	nvert = nlv_global
+	if( nvert == 0 ) then
+	  nvert = 1000
+	  if( nlvddi > nvert ) then
+	    write(6,*) nlvddi,nvert,nlv_global
+	    call shympi_abort_internal('error stop shympi_exchange_internal_i: nlvddi>nvert')
+	  end if
+	end if
+
+	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_i: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_i: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
+	buffer_in = 0
+	buffer_out = 0
 
 	do ia=1,n_ghost_areas
-	  nc = ghost_areas(iout,ia)
-	  call count_buffer(n0,nlvddi,n,nc,il,g_out(:,ia),nb)
 	  nbs(1,ia) = nb
-	  nc = ghost_areas(iin,ia)
-	  call count_buffer(n0,nlvddi,n,nc,il,g_in(:,ia),nb)
 	  nbs(2,ia) = nb
 	end do
 
@@ -557,6 +613,7 @@
 	  nb = nbs(1,ia)
           call MPI_Irecv(buffer_out(:,ia),nb,MPI_INTEGER,id &
      &	          ,tag,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_internal_i: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -568,9 +625,11 @@
      &		,g_in(:,ia),val,nb,buffer_in(:,ia))
           call MPI_Isend(buffer_in(:,ia),nb,MPI_INTEGER,id &
      &	          ,tag,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_internal_i: MPI_Isend')
 	end do
 
         call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_internal_i: MPI_WaitAll')
 
 !$OMP END CRITICAL
 
@@ -640,9 +699,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 11111.
 	buffer_out = 11111.
 
@@ -668,6 +735,7 @@
 	if(bw) write(6,*) 'irec ',belem,ia,nc,nb,id,my_id
           call MPI_Irecv(buffer_out(:,ia),nb,MPI_REAL,id &
      &	          ,tag,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_internal_r: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -681,9 +749,11 @@
 	if(bw) write(6,*) 'buffer before: ',nc,buffer_in(nc,ia),my_id
           call MPI_Isend(buffer_in(:,ia),nb,MPI_REAL,id &
      &	          ,tag,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_internal_r: MPI_Isend')
 	end do
 
         call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_internal_r: MPI_WaitAll')
 
 !$OMP END CRITICAL
 
@@ -720,7 +790,7 @@
 
         integer :: tag,ir,ia,id
         integer :: i,k,nc,ierr
-        integer :: nb
+        integer :: nb,nvert
         integer :: iout,iin
         integer :: nbs(2,n_ghost_areas)
         integer :: status(status_size,2*n_threads)
@@ -738,19 +808,42 @@
           iin = 5
         end if
 
-        nb = (nlvddi-n0+1) * n_ghost_max
+!	F33: match the real/sum exchange paths' UNIFORM global-max
+!	buffer (see shympi_exchange_internal_i for the full rationale).
+!	Asymmetric on purpose: only the RECEIVE posting grows to the
+!	uniform size. to_buffer_d() overwrites nb (inout) with the true
+!	nc/il-driven count before MPI_Isend reads it, so the SEND still
+!	transmits the actual packed count (bytes identical to the
+!	pre-change code). MPI requires only recv_count >= send_count,
+!	and uniform >= actual always, so the recv can never truncate.
+        nvert = nlv_global
+        if( nvert == 0 ) then
+          nvert = 1000
+          if( nlvddi > nvert ) then
+            write(6,*) nlvddi,nvert,nlv_global
+            call shympi_abort_internal('error stop shympi_exchange_internal_d: nlvddi>nvert')
+          end if
+        end if
+
+        nb = (nvert-n0+1) * n_ghost_max_global
         call shympi_alloc_buffer(nb)
         allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_exchange_internal_d: allocation failed (buffer_in)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
         allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_exchange_internal_d: allocation failed (buffer_out)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
+        buffer_in = 0.d0
+        buffer_out = 0.d0
 
         do ia=1,n_ghost_areas
-          nc = ghost_areas(iout,ia)
-          call count_buffer(n0,nlvddi,n,nc,il,g_out(:,ia),nb)
           nbs(1,ia) = nb
-          nc = ghost_areas(iin,ia)
-          call count_buffer(n0,nlvddi,n,nc,il,g_in(:,ia),nb)
           nbs(2,ia) = nb
         end do
 
@@ -763,6 +856,7 @@
           nb = nbs(1,ia)
           call MPI_Irecv(buffer_out(:,ia),nb,MPI_DOUBLE,id &
      &            ,tag,MPI_COMM_WORLD,request(ir),ierr)
+          call check_mpi(ierr,'shympi_exchange_internal_d: MPI_Irecv')
         end do
 
         do ia=1,n_ghost_areas
@@ -774,9 +868,11 @@
      &          ,g_in(:,ia),val,nb,buffer_in(:,ia))
           call MPI_Isend(buffer_in(:,ia),nb,MPI_DOUBLE,id &
      &            ,tag,MPI_COMM_WORLD,request(ir),ierr)
+          call check_mpi(ierr,'shympi_exchange_internal_d: MPI_Isend')
         end do
 
         call MPI_WaitAll(ir,request,status,ierr)
+        call check_mpi(ierr,'shympi_exchange_internal_d: MPI_WaitAll')
 
 !$OMP END CRITICAL
 
@@ -853,9 +949,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.
 	buffer_out = 0.
 
@@ -877,6 +981,7 @@
 	  nb = nbs(1,ia)
 	  call MPI_Irecv(buffer_out(:,ia),nb,MPI_REAL,id &
      &	          ,131,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_sum_internal_r: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -888,9 +993,11 @@
 	  nb = nbs(2,ia)
 	  call MPI_Isend(buffer_in(:,ia),nb,MPI_REAL,id &
      &	          ,131,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_sum_internal_r: MPI_Isend')
 	end do
 
 	call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_and_sum_internal_r: MPI_WaitAll')
 
 ! add received ghost contributions to inner nodes
 
@@ -958,9 +1065,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_d: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_d: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.d0
 	buffer_out = 0.d0
 
@@ -982,6 +1097,7 @@
 	  nb = nbs(1,ia)
 	  call MPI_Irecv(buffer_out(:,ia),nb,MPI_DOUBLE,id &
      &	          ,132,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_sum_internal_d: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -993,9 +1109,11 @@
 	  nb = nbs(2,ia)
 	  call MPI_Isend(buffer_in(:,ia),nb,MPI_DOUBLE,id &
      &	          ,132,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_sum_internal_d: MPI_Isend')
 	end do
 
 	call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_and_sum_internal_d: MPI_WaitAll')
 
 ! add received ghost contributions to inner nodes
 
@@ -1067,9 +1185,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_i: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_i: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0
 	buffer_out = 0
 
@@ -1091,6 +1217,7 @@
 	  nb = nbs(1,ia)
 	  call MPI_Irecv(buffer_out(:,ia),nb,MPI_INTEGER,id &
      &	          ,141,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_min_internal_i: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -1102,9 +1229,11 @@
 	  nb = nbs(2,ia)
 	  call MPI_Isend(buffer_in(:,ia),nb,MPI_INTEGER,id &
      &	          ,141,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_min_internal_i: MPI_Isend')
 	end do
 
 	call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_and_min_internal_i: MPI_WaitAll')
 
 ! take min of received ghost contributions with inner nodes
 
@@ -1176,9 +1305,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_i: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_i: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0
 	buffer_out = 0
 
@@ -1200,6 +1337,7 @@
 	  nb = nbs(1,ia)
 	  call MPI_Irecv(buffer_out(:,ia),nb,MPI_INTEGER,id &
      &	          ,142,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_max_internal_i: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -1211,9 +1349,11 @@
 	  nb = nbs(2,ia)
 	  call MPI_Isend(buffer_in(:,ia),nb,MPI_INTEGER,id &
      &	          ,142,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_max_internal_i: MPI_Isend')
 	end do
 
 	call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_and_max_internal_i: MPI_WaitAll')
 
 ! take max of received ghost contributions with inner nodes
 
@@ -1285,9 +1425,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.
 	buffer_out = 0.
 
@@ -1309,6 +1457,7 @@
 	  nb = nbs(1,ia)
 	  call MPI_Irecv(buffer_out(:,ia),nb,MPI_REAL,id &
      &	          ,143,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_min_internal_r: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -1320,9 +1469,11 @@
 	  nb = nbs(2,ia)
 	  call MPI_Isend(buffer_in(:,ia),nb,MPI_REAL,id &
      &	          ,143,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_min_internal_r: MPI_Isend')
 	end do
 
 	call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_and_min_internal_r: MPI_WaitAll')
 
 ! take min of received ghost contributions with inner nodes
 
@@ -1394,9 +1545,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.
 	buffer_out = 0.
 
@@ -1418,6 +1577,7 @@
 	  nb = nbs(1,ia)
 	  call MPI_Irecv(buffer_out(:,ia),nb,MPI_REAL,id &
      &	          ,144,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_max_internal_r: MPI_Irecv')
 	end do
 
 	do ia=1,n_ghost_areas
@@ -1429,9 +1589,11 @@
 	  nb = nbs(2,ia)
 	  call MPI_Isend(buffer_in(:,ia),nb,MPI_REAL,id &
      &	          ,144,MPI_COMM_WORLD,request(ir),ierr)
+	  call check_mpi(ierr,'shympi_exchange_and_max_internal_r: MPI_Isend')
 	end do
 
 	call MPI_WaitAll(ir,request,status,ierr)
+	call check_mpi(ierr,'shympi_exchange_and_max_internal_r: MPI_WaitAll')
 
 ! take max of received ghost contributions with inner nodes
 
@@ -1476,7 +1638,11 @@
 	end if
 
 	allocate(aux(no),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_allgather_internal_i: allocation failed (aux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	aux = 0.
 	aux(1:ni) = val(1:ni)
 	nn = no
@@ -1517,7 +1683,11 @@
 	end if
 
 	allocate(aux(no),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_allgather_internal_r: allocation failed (aux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	aux = 0.
 	aux(1:ni) = val(1:ni)
 	nn = no
@@ -1558,7 +1728,11 @@
 	end if
 
 	allocate(aux(no),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_allgather_internal_d: allocation failed (aux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	aux = 0.
 	aux(1:ni) = val(1:ni)
 	nn = no
@@ -1774,6 +1948,11 @@
 	if( bpmpi ) then
 	  valin(1) = val
 	  call shympi_internal_reduce_what(what,mpi_what)
+!	  F34: for what=='sum' this floating-point MPI_SUM is NOT
+!	  bit-reproducible - the summation order depends on the number
+!	  of ranks and the MPI implementation, so the result can differ
+!	  in the last bits when the rank count changes. ('min'/'max'
+!	  are order-independent and remain exactly deterministic.)
 	  call MPI_ALLREDUCE(valin,valout,1,MPI_DOUBLE,mpi_what &
      &				,MPI_COMM_WORLD,ierr)
 	  val = valout(1)
@@ -1804,6 +1983,11 @@
 	if( bpmpi ) then
 	  valin(1) = val
 	  call shympi_internal_reduce_what(what,mpi_what)
+!	  F34: for what=='sum' this floating-point MPI_SUM is NOT
+!	  bit-reproducible - the summation order depends on the number
+!	  of ranks and the MPI implementation, so the result can differ
+!	  in the last bits when the rank count changes. ('min'/'max'
+!	  are order-independent and remain exactly deterministic.)
 	  call MPI_ALLREDUCE(valin,valout,1,MPI_REAL,mpi_what &
      &				,MPI_COMM_WORLD,ierr)
 	  val = valout(1)
@@ -1899,6 +2083,10 @@
 	ierr = 0
 	if( bpmpi ) then
           call shympi_internal_reduce_what(what,mpi_what)
+!	  F34: for what=='sum' this floating-point reduction (MPI_SUM,
+!	  via either MPI_ALLREDUCE or MPI_REDUCE) is NOT bit-reproducible
+!	  - the summation order depends on the rank count and the MPI
+!	  implementation. ('min'/'max' remain exactly deterministic.)
 	  if( bpoperall ) then
             call MPI_ALLREDUCE(vals,valout,n,MPI_REAL,mpi_what &
      &                          ,MPI_COMM_WORLD,ierr)
@@ -1933,6 +2121,10 @@
 	ierr = 0
 	if( bpmpi ) then
           call shympi_internal_reduce_what(what,mpi_what)
+!	  F34: for what=='sum' this floating-point reduction (MPI_SUM,
+!	  via either MPI_ALLREDUCE or MPI_REDUCE) is NOT bit-reproducible
+!	  - the summation order depends on the rank count and the MPI
+!	  implementation. ('min'/'max' remain exactly deterministic.)
 	  if( bpoperall ) then
             call MPI_ALLREDUCE(vals,valout,n,MPI_DOUBLE,mpi_what &
      &                          ,MPI_COMM_WORLD,ierr)
@@ -2066,6 +2258,7 @@
 	    nb = nlvddi*(ip(i) - ip(i-1))
             call MPI_Irecv(val_out(1,ns),nb,MPI_REAL,id &
      &	          ,tag,MPI_COMM_WORLD,req(ir),ierr)
+            call check_mpi(ierr,'shympi_get_array_internal_r: MPI_Irecv')
 	  end do
 	  nb = ip(1)
 	  val_out(:,1:nb) = val_in(:,1:nb)
@@ -2075,9 +2268,11 @@
 	    nb = nlvddi*(ip(i) - ip(i-1))
             call MPI_Isend(val_in,nb,MPI_REAL,0 &
      &	          ,tag,MPI_COMM_WORLD,req(ir),ierr)
+            call check_mpi(ierr,'shympi_get_array_internal_r: MPI_Isend')
 	end if
 
         call MPI_WaitAll(ir,req,status,ierr)
+        call check_mpi(ierr,'shympi_get_array_internal_r: MPI_WaitAll')
 
 !$OMP END CRITICAL
 
@@ -2132,6 +2327,7 @@
 	    nb = nlvddi*(ip(i) - ip(i-1))
             call MPI_Irecv(val_out(1,ns),nb,MPI_INTEGER,id &
      &	          ,tag,MPI_COMM_WORLD,req(ir),ierr)
+            call check_mpi(ierr,'shympi_get_array_internal_i: MPI_Irecv')
 	  end do
 	  nb = ip(1)
 	  val_out(:,1:nb) = val_in(:,1:nb)
@@ -2141,9 +2337,11 @@
 	    nb = nlvddi*(ip(i) - ip(i-1))
             call MPI_Isend(val_in,nb,MPI_INTEGER,0 &
      &	          ,tag,MPI_COMM_WORLD,req(ir),ierr)
+            call check_mpi(ierr,'shympi_get_array_internal_i: MPI_Isend')
 	end if
 
         call MPI_WaitAll(ir,req,status,ierr)
+        call check_mpi(ierr,'shympi_get_array_internal_i: MPI_WaitAll')
 
 !$OMP END CRITICAL
 
@@ -2174,7 +2372,11 @@
         real, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_rectify_internal_r0: allocation failed (vaux)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
 
 	nextra = 0
         if( nv == nlv_global+1 ) nextra = 1
@@ -2211,7 +2413,11 @@
         integer, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_rectify_internal_i0: allocation failed (vaux)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
 
 	nextra = 0
         if( nv == nlv_global+1 ) nextra = 1
@@ -2248,7 +2454,11 @@
         double precision, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_rectify_internal_d0: allocation failed (vaux)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
 
 	nextra = 0
         if( nv == nlv_global+1 ) nextra = 1

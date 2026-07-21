@@ -643,22 +643,20 @@
         call CAmgX_SetA(self%AmgX_Solver,self%A,perr) ! AmgX Wrapper
         call CAmgX_Solve(self%AmgX_Solver,self%X, &
      &                   self%B,perr)  ! AmgX Wrapper
+        if( perr /= 0 ) then	!check solve error before perr is clobbered
+          write(6,*) 'AmgX solve failed: perr = ',perr
+          call shympi_abort_internal( &
+     &        'error stop solve_AmgX: solver returned error')
+        end if
         call CAmgX_getiters(self%AmgX_Solver,iters,perr)
-        if( perr == 0 .and. iters > 0 ) then
+        if( perr == 0 .and. iters > 0 ) then	!iters==0 -> already converged
           call CAmgX_getresidual(self%AmgX_Solver,iters-1,residual,perr)
           if( perr /= 0 .or. residual /= residual ) then	!NaN check
             write(6,*) 'AmgX solve failed: iters,residual = ',iters,residual
-            stop 'error stop solve_AmgX: solver did not converge'
+            call shympi_abort_internal( &
+     &        'error stop solve_AmgX: solver did not converge')
           end if
         end if
-!       call CAmgX_getiters(self%AmgX_Solver,iters,perr)
-!       do iter=0,iters-1
-!         call CAmgX_getresidual(self%AmgX_Solver,
-!    +                           iter,residual,perr)
-!         if(my_id==0)write(6,*)'iter',iter,' residual :',
-!    +                            residual
-!       enddo
-
 
        end subroutine solve_AmgX
 
@@ -782,7 +780,8 @@
 
          if (.not.lcond) then
             write(*,*) 'ERROR MSG: ',msg, icase
-            stop 'error in PETSc routines called by mod_petsc_system'
+            call shympi_abort_internal( &
+     &        'error in PETSc routines called by mod_petsc_system')
          endif
          return
        end subroutine assert

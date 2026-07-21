@@ -45,29 +45,29 @@
         integer nstate
         parameter (nstate=3)
 
-        real C(nstate)  !mercury variables C(1):Hg0, C(2):Hg2,C(3):MeHg
+        real, intent(inout) :: C(nstate) !mercury variables C(1):Hg0, C(2):Hg2,C(3):MeHg
         real CD(nstate) !derivatives CD(1):difHg0,CD(2):difHg2,CD(3):difMeHg
         integer m       !time indicator to write outputs, debug
-        integer k       !node
-        integer id      !id of node and level
-        logical bsurf   !is on surface?
+        integer, intent(in) :: k       !node
+        integer, intent(in) :: id      !id of node and level
+        logical, intent(in) :: bsurf   !is on surface?
         logical volatnew!enable volatilisation formula (Sorensen et al.,2010)
-        logical bbottom !is on bottom?
-        logical boxtype !is water box?
+        logical, intent(in) :: bbottom !is on bottom?
+        logical, intent(in) :: boxtype !is water box?
 
         real cold(nstate) !old state variables
-        real dtday                 !time step                     [day]
-        real qrad                  !irradiance                   [W/m2]
-        real depth, area, vol      !dept, area, volume    [m],[m2],[m3]
-        real temp,sal                    !temperature, salinity [C],[-]
+        real, intent(in) :: dtday        !time step                     [day]
+        real, intent(in) :: qrad         !irradiance                   [W/m2]
+        real, intent(in) :: depth, area, vol !dept, area, volume    [m],[m2],[m3]
+        real, intent(in) :: temp,sal     !temperature, salinity [C],[-]
         real tkel                            !temperature - T       [K]
         real tkref                           !ref temperature, 293  [K]
-        real uwind10  !wind velocity from hydrodynamic module     [m/s]
-        real vds,vdp  !velocity of solids deposition to sediment  [m/s]
-        real conz1,conz2 !silt and pom in water from sed4merc    [mg/l]
+        real, intent(in) :: uwind10  !wind velocity from hydrodynamic module [m/s]
+        real, intent(in) :: vds,vdp  !velocity of solids deposition to sediment [m/s]
+        real, intent(in) :: conz1,conz2 !silt and pom in water from sed4merc [mg/l]
         real flux        !Hg0 air-sea exchange flux           [ng/m2 h]
 !
-        real loads(nstate)      !atmospheric loadings
+        real, intent(inout) :: loads(nstate) !atmospheric loadings
 
 !	variables
         real Hg0d, Hg0a     !Hg0 in water and atmosphere [ng/l], [ug/m3]
@@ -83,8 +83,8 @@
       real K1silt, K1sand, K1doc, K1org  !Partition coefficients for HgII [l/kg]
       real K2silt, K2sand, K2doc, K2org  !Partition coefficients for MeHg [l/kg]
       real partden1, partden2   !auxiliar variables in computation
-      real faq1,fdoc1 !ionic and DOC-complexed fraction of Hg2  [-]
-      real faq2,fdoc2 !ionic and DOC-complexed fraction of MeHg [-]
+      real, intent(out) :: faq1,fdoc1 !ionic and DOC-complexed fraction of Hg2 [-]
+      real, intent(out) :: faq2,fdoc2 !ionic and DOC-complexed fraction of MeHg [-]
       real fsilt1, fsand1, forg1 !fraction of Hg2 in silt, sand ond POM [-]
       real fsilt2, fsand2, forg2 !fraction of MeHg in silt, sand ond POM [- ]
       real ftot1, ftot2 !sum of all the fraction for Hg2 and MeHg
@@ -128,7 +128,7 @@
 
 !      deposition fluxes and rates
        real Dhgsil, Dhgpom, Dmhgsil, Dmhgpom ! Deposition of HgP and MeHgp
-       real Shgsil, Shgpom, Smhgsil, Smhgpom ! Deposition rates   
+       real, intent(out) :: Shgsil, Shgpom, Smhgsil, Smhgpom ! Deposition rates
 
        integer ipext,ipint,kext     !nodes external and internal numbers
        integer fortfilenum, iter

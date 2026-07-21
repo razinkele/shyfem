@@ -159,6 +159,16 @@
 
 	subroutine system_set_explicit
 
+! Latches the explicit (direct) zeta solve.
+!
+! WARNING: the explicit scheme cannot dry. bsysexpl selects a
+! diagonal-only assembly (raux2d) and a direct rvec2d/raux2d solve;
+! it has no storage for off-diagonal terms. hydro_zeta substitutes a
+! Laplacian with nonzero off-diagonals for dry elements (iwegv/=0), so
+! any wetting/drying event under an explicit run (azpar=0,ampar=1 or
+! 1,0) is fatal - system_assemble[_omp] aborts collectively. Runs with
+! intertidal flats must use the semi-implicit scheme.
+
 	use mod_system
 
 	implicit none
@@ -474,7 +484,7 @@
 	integer, intent(in) :: n
 	real, intent(in)    :: z(n)
 
-	integer n2max,nu
+	integer n2max,nu,i
 	double precision t_start,t_end,t_passed
 	type(smatrix), pointer :: mm
 
@@ -486,7 +496,18 @@
 	if( bsysexpl ) then			!explicit - solved direct
           call shympi_exchange_and_sum_2d_nodes(mm%rvec2d)
           call shympi_exchange_and_sum_2d_nodes(mm%raux2d)
-	  mm%rvec2d(1:nu) = mm%rvec2d(1:nu) / mm%raux2d(1:nu)	!GGUEXPL
+!	  guard against div-by-zero: a node with no assembled diagonal
+!	  mass (raux2d==0) would otherwise produce NaN/Inf; leave its
+!	  zeta correction at zero instead. Use an explicit if-guarded loop
+!	  (not WHERE): under -ffpe-trap=zero a WHERE may evaluate the
+!	  division on masked-out lanes and SIGFPE.
+	  do i=1,nu
+	    if( mm%raux2d(i) /= 0.d0 ) then
+	      mm%rvec2d(i) = mm%rvec2d(i) / mm%raux2d(i)	!GGUEXPL
+	    else
+	      mm%rvec2d(i) = 0.d0
+	    end if
+	  end do
 	else if( bmpi ) then			!mpi - solve globally
 	  call system_solve_global(n,z)
 	else					!solve directly locally
@@ -583,7 +604,14 @@
 	        do ii=1,3
 	          write(6,*) ii,mass(ii,1),mass(ii,2),mass(ii,3)
 	        end do
-	        stop 'error stop system_assemble: non diag elems /= 0'
+!	        NOTE: the explicit (bsysexpl) direct solve cannot represent
+!	        off-diagonal terms, so it cannot dry: hydro_zeta substitutes
+!	        a Laplacian (nonzero off-diagonals) for dry elements
+!	        (iwegv/=0), which lands here. Use a collective-safe abort so
+!	        an MPI run terminates all ranks instead of deadlocking with
+!	        the other ranks blocked in shympi_exchange_and_sum_2d_nodes.
+	        call shympi_abort_internal &
+     &			('error stop system_assemble: non diag elems /= 0')
 	      end if
 	    end do
 	  end do
@@ -640,7 +668,10 @@
 	        write(6,*) 'ie: ',ie,ieext(ie)
 	        write(6,*) 'k : ',kn(i),ipext(kn(i))
 	        write(6,*) 'i,j: ',i,j
-	        stop 'error stop system_assemble_omp: non diag elems /= 0'
+!	        the explicit direct solve cannot dry (see system_assemble):
+!	        collective-safe abort avoids an MPI deadlock here
+	        call shympi_abort_internal &
+     &		('error stop system_assemble_omp: non diag elems /= 0')
 	      end if
 	    end do
 	  end do

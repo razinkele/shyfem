@@ -60,6 +60,7 @@
 
 	use mod_system
 	use mod_system_interface
+	use shympi
 
 	implicit none
 
@@ -76,10 +77,16 @@
 	  n3zero = matrix%n3zero
 
 	  if( n2zero > n2max ) then
-	    stop 'error stop spk_initialize_system: non zero 2d max'
+	    write(6,*) 'spk_initialize_system: n2zero,n2max: ',n2zero,n2max
+	    flush(6)
+	    call shympi_abort_internal( &
+     &        'error stop spk_initialize_system: non zero 2d max')
 	  end if
 	  if( n3zero > n3max ) then
-	    stop 'error stop spk_initialize_system: non zero 3d max'
+	    write(6,*) 'spk_initialize_system: n3zero,n3max: ',n3zero,n3max
+	    flush(6)
+	    call shympi_abort_internal( &
+     &        'error stop spk_initialize_system: non zero 3d max')
 	  end if
 
 	  write(6,*) 'SOLVER: Sparskit'
@@ -117,6 +124,7 @@
 ! Solver routine with Sparskit iterative methods.
 
 	use mod_system
+	use shympi
 
       implicit none
 
@@ -182,13 +190,29 @@
         mm => matrix
 
 	allocate(csr(nndim),icsr(n+1),jcsr(nndim),iwork(2*nndim),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'spk_solve_system: allocation failed (csr,icsr,jcsr,iwork)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(rvec(n),raux(n),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'spk_solve_system: allocation failed (rvec,raux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(IWKSP(3*n),WKSPIT(6*n+4*itermax),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'spk_solve_system: allocation failed (IWKSP,WKSPIT)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(wksp(8*n),alu(nndim*2),jlu(2*nndim),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'spk_solve_system: allocation failed (wksp,alu,jlu)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 
 	ngl = n
 
@@ -222,7 +246,8 @@
       
       if( nnzero .gt. nndim .or. ngl+1 .gt. 2*nndim ) then
 	write(6,*) nnzero,ngl+1,nndim
-	stop 'error stop spk_solve_system: dimension iwork'
+	flush(6)
+	call shympi_abort_internal('error stop spk_solve_system: dimension iwork')
       end if
 
       !call csort (ngl,csr,jcsr,icsr,iwork,.true.)
@@ -246,7 +271,11 @@
       zero = 0.
       one = 1.
 
-      if( itsol .gt. 9 ) stop 'error stop spk_solve_system: itsol'	!ggu
+      if( itsol .gt. 9 ) then
+	write(6,*) 'spk_solve_system: itsol: ',itsol
+	flush(6)
+	call shympi_abort_internal('error stop spk_solve_system: itsol')	!ggu
+      end if
 
 !--------------------------------------------------
 ! PRECONDITIONERS
@@ -328,7 +357,9 @@
        
 	if( ipar(1) < 0 ) then
 	  write(6,*) 'error solving matrix: ',ipar(1)
-	  stop 'error stop spk_solve_system: error solving matrix'
+	  flush(6)
+	  call shympi_abort_internal( &
+     &      'error stop spk_solve_system: error solving matrix')
 	end if
 
 !-----------------------------------------------------------------

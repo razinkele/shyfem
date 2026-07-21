@@ -2534,6 +2534,7 @@
 	implicit none
 	character*(*) message
 	write(6,*) trim(message)
+	flush(6)
 	call exit(33)
 	end subroutine shympi_abort_internal
 

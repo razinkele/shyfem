@@ -152,14 +152,14 @@
 | ID | Status now | Fix |
 |---|---|---|
 | F07 | open | Replace bare stops in conz3d_nodes (concentration_omp.f90:858,897) with collective-safe abort (error_stop → shympi_abort) |
-| F08 | open | Restore the layer-thickness factor in the STEELE light formula (weutro.f90:1831 — the `!$WRONG_FORMULA` self-annotation); validate against the AQUABC oracle |
+| F08 | **open — owner decision (2026-07-21)** | Verified NOT redundant with bio3d (unlike F30): bio3d attenuates surface→top-of-layer, F08's `*h` would add top-of-layer→bottom layer-averaging (complementary, more accurate). But bio3d↔weutro carry only background extinction (`ke_bg`, no algal self-shading) and use top-of-layer light. A clean fix needs a coupled bio3d↔weutro redesign (no 2D/3D mode flag exists in weutro to gate on) — escalated for a conscious eco-model-owner decision rather than a guess. |
 | F09 | open | Replace the 7 bare stops in active mercury sediment paths (merc_sed4sed.f90) with collective-safe abort |
 | F10 | open | Positivity floor for ALL state variables in merc_euler (MIN_CONCENTRATION per AQUABC), not just C(1) |
 | F11 | open | Replace the 25 bare allocation-failure stops in mpi_node_internal.f90 with shympi_abort |
 | F27 | open | Replace the 9 bare stops in sparskit_admin.f90 with collective-safe abort |
 | F28 | open | Match the original M17 remediation exactly: log count/minval of negatives BEFORE any clamp; keep the tiny-positive flush as `where(cnv > 0. .and. cnv < 1.e-15) cnv = 0.`; zero negatives only with the removed mass accounted (accumulate + report the correction) — do NOT relabel unaccounted negative-zeroing as "mass-conserving" |
 | F29 | open | conz3d_element: abort on allocation failure instead of silent return (concentration_omp.f90:447) |
-| F30 | partial | PARTIAL → finish: wire per-layer ISEG/ITO through the 3D coupling so the inter-layer light chain is live (AQUABC parity) |
+| F30 | **superseded (2026-07-21, oracle-verified)** | The 3D vertical light structure is already supplied EXTERNALLY by `bio3d.f90:562` (per-layer Beer-Lambert `qrad*exp(-ke_bg*depth_top)`, matches AQUABC). weutro's RLGHTS cascade (`iseg=1/ito=0` hardcoded) is dead in 3D; restoring it would DOUBLE-COUNT bio3d's attenuation. No fix — the finding is superseded by the bio3d path. |
 | F31 | open | Add intent attributes to all ~27 mercury_react arguments (merc_water.f90:37) |
 | F32 | open | Check ierr on all ghost-exchange MPI calls via a checking wrapper |
 | F33 | open | Unify the buffer-size strategy between integer/real/double exchange paths |
@@ -220,7 +220,7 @@ No fixed item list — input is the 46 leads in report §4. Recommended: a verif
 - [x] **Batch 3 — UI job lifecycle & data integrity** (17 items: N12, N13, N14, N40, N41, N42, N46, N47, N48, F17, F22, F24, F25, F48, F49, F50, F51) — DONE (commits 8ef7321..b9c6395)
   - **Known limitations carried into Batch 4** (final-review): (1) **F17 (COMPLETED in Batch 4, PR forthcoming)** — job-list scoping fixed in run.py but home.py:371 / compare.py:136 / app.py:1012 still filter by `str(id(session))`; post-N13 (jobs survive disconnect) a user's own jobs drop off Dashboard/Compare/notifications after reconnect, and CPython `id()` reuse can surface a prior user's job *metadata* (name/status only — cancel/log reads are separately authz-gated) → migrate these three read paths to `user_id` scoping in Batch 4. (2) **N42 restart is not end-to-end warm-restart** — `restrt` is written, but `itanf`/`ityrst` alignment is unimplemented, so "Continue from job" can silently cold-start; treat as experimental until Batch 4 wires the time-window. (3) optional robustness: move the N12 logging guard into `migrations/env.py` as `fileConfig(..., disable_existing_loggers=False)`.
 - [x] **Batch 4 — UI security hardening & CI honesty** (17 items: N43, N44, N45, N49, N50, N51, N52, F14, F15, F16, F26, F44, F45, F46, F47, F52, F53) — DONE (commits 03ccf86..28c75a8; F14 not-code-fixable, F16 false-positive — see notes)
-- [ ] **Batch 5 — Fortran model tail — restart, transport, MPI hygiene, eco** (28 items: N21, N22, N23, N24, N25, N26, N27, N28, N37, N38, N39, N53, N54, F07, F08, F09, F10, F11, F27, F28, F29, F30, F31, F32, F33, F34, F37, F38)
+- [x] **Batch 5 — Fortran model tail — restart, transport, MPI hygiene, eco** (28 items: N21, N22, N23, N24, N25, N26, N27, N28, N37, N38, N39, N53, N54, F07, F08, F09, F10, F11, F27, F28, F29, F30, F31, F32, F33, F34, F37, F38) — DONE (commits 4b279b6..da93d18; F30 superseded, F08+N23-latch escalated as owner decisions — see notes)
 - [ ] **Batch 6 — Tools — Fortran & C utilities** (14 items: N06, N07, N08, N30, N31, N32, N33, N34, N35, N36, F12, F39, F40, F43)
 - [ ] **Batch 7 — Low-tier triage sweep** (46 unverified leads from report §4)
 

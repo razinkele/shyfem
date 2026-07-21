@@ -571,38 +571,44 @@
 !*****************************************************************
 
         subroutine write_restart_ssedi(iunit)
-	use basin
+
+! writes bottom-sediment bed mass to restart file (N25)
+!
+! uses restart_write_value (not a raw write) so in mpi runs the array
+! is gathered to global and written once by the master rank, exactly
+! like write_restart_conz/gotm/eco/mercury/bfm in restart.f90
+
+	use mod_restart
 	use simple_sediments
         implicit none
         integer iunit
-	integer, save :: nstate = 1
-	write(iunit) nstate,nkn
-	write(iunit) conza
+	logical, parameter :: bn = .false.
+	call restart_write_value(iunit,bn,conza)
         end
 
         subroutine skip_restart_ssedi(iunit)
-	use basin
-	use simple_sediments
         implicit none
         integer iunit
-	read(iunit)
 	read(iunit)
         end
 
         subroutine read_restart_ssedi(iunit)
+
+! reads bottom-sediment bed mass from restart file (N25)
+!
+! simple_sediments_init() is called explicitly because rst_perform_restart
+! runs before simple_sedi's own first-call initialization, so conza
+! would otherwise still be unallocated at this point (mirrors how
+! read_restart_conz calls mod_conz_init before reading)
+
 	use basin
+	use mod_restart
 	use simple_sediments
         implicit none
         integer iunit
-	integer, save :: nstate = 1
-	integer nstate_aux,nkn_aux
-	read(iunit) nstate_aux,nkn_aux
-	if( nstate /= nstate_aux .or. nkn /= nkn_aux ) then
-	  write(6,*) 'nstate: ',nstate,nstate_aux
-	  write(6,*) 'nkn   : ',nkn,nkn_aux
-	  stop 'error stop read_restart_ssedi: incompatible params'
-	end if
-	read(iunit) conza
+	logical, parameter :: bn = .false.
+	call simple_sediments_init(nkn)
+	call restart_read_value(iunit,bn,conza)
         end
 
 !*****************************************************************

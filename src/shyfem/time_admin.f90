@@ -355,8 +355,8 @@
 
 	idt = nint(didt)
 	idtorig = idt
-	itanf = nint(dtanf)
-	itend = nint(dtend)
+	if( abs(dtanf) < 2.1d9 ) itanf = nint(dtanf)	!legacy femtime clock
+	if( abs(dtend) < 2.1d9 ) itend = nint(dtend)	!legacy femtime clock
 	it = itanf
 
 	itunit = nint(dgetpar('itunit'))

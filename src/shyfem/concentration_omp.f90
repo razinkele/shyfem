@@ -424,7 +424,8 @@
      &  cle(nlvddi,3),stat=ierr_conz)
       if( ierr_conz /= 0 ) then
         write(6,*) 'error: allocation failed in conz3d_element ie=',ie
-        return
+        flush(6)
+        call shympi_abort_internal('conz3d_element: allocation failed')
       end if
 
 ! ----------------------------------------------------------------
@@ -833,7 +834,9 @@
               if( cload > cn(l,k) ) then
                 write(6,*) 'error computing loading: ',l,k
                 write(6,*) 'loading,cload,cn(l,k): ',loading,cload,cn(l,k)
-                stop 'error stop conz3d_nodes: internal error (1)'
+                flush(6)
+                call shympi_abort_internal( &
+     &            'error stop conz3d_nodes: internal error (1)')
               end if
               loading = -cload / dt
               if( rload > 0. ) load(l,k) = loading / rload
@@ -872,7 +875,9 @@
 	      write(6,*) k,l,ilevel
 	      write(6,*) nkn_inner,nkn_local,nkn
 	      write(6,*) cdiag(l),clow(l),chigh(l-1)
-	      stop 'error stop conz3d_nodes (omp): diag == 0'
+	      flush(6)
+	      call shympi_abort_internal( &
+     &          'error stop conz3d_nodes (omp): diag == 0')
 	    end if
 	    aux=1./(cdiag(l)-clow(l)*chigh(l-1))
 	    chigh(l)=chigh(l)*aux

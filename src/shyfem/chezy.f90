@@ -129,12 +129,18 @@
 
 	subroutine chezy_init(n)
 
+	use shympi
+
 	integer, intent(in) :: n
 	integer ierr
 
 	nczdum = n
 	allocate(czdum(0:ncztot,0:n),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'chezy_init: allocation failed, n=',n
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 
 	czdum = -1.
 
@@ -255,6 +261,7 @@
 	use levels
 	use basin
 	use pkonst
+	use shympi
 
 	use para
 	implicit none
@@ -386,7 +393,8 @@
                 end if
 	  else
 		write(6,*) 'unknown friction : ',ireib
-		stop 'error stop bottom_friction'
+		flush(6)
+		call shympi_abort_internal('error stop bottom_friction')
 	  end if
 
 	  rfricv(ie) = rr
@@ -512,6 +520,7 @@
 	subroutine get_chezy_values(iar,valin,valout)
 
 	use chezy
+	use shympi
 
 	implicit none
 
@@ -520,7 +529,8 @@
 
 	if( iar .gt. nczdum ) then
 	  write(6,*) 'iar,nczdum: ',iar,nczdum
-	  stop 'error stop get_chezy_values'
+	  flush(6)
+	  call shympi_abort_internal('error stop get_chezy_values')
 	end if
 
 	valin = czdum(1,iar)
@@ -533,6 +543,7 @@
 	subroutine set_chezy_values(iar,valin,valout)
 
 	use chezy
+	use shympi
 
 	implicit none
 
@@ -541,7 +552,8 @@
 
 	if( iar .gt. nczdum ) then
 	  write(6,*) 'iar,nczdum: ',iar,nczdum
-	  stop 'error stop set_chezy_values'
+	  flush(6)
+	  call shympi_abort_internal('error stop set_chezy_values')
 	end if
 
 	czdum(1,iar) = valin
@@ -663,9 +675,17 @@
 
 	bstop = .false.
 	allocate(czaux(0:nczdum),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'adjust_chezy: allocation failed (czaux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(czaux_all(0:nczdum,n_threads),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'adjust_chezy: allocation failed (czaux_all)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	czaux = czdum(iczact,:)
 	call shympi_gather(czaux,czaux_all)
 	do i=0,nczdum
@@ -709,7 +729,8 @@
 	    flush(6)
 	  end if
 	  call shympi_barrier
-	  stop 'error stop adjust_chezy: errors in chezy values'
+	  call shympi_abort_internal( &
+     &      'error stop adjust_chezy: errors in chezy values')
 	end if
 
 	if( bdebug ) call print_chezy
@@ -752,6 +773,7 @@
 
 	use basin
 	use chezy
+	use shympi
 
 	implicit none
 
@@ -764,33 +786,38 @@
 	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
 	    write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
 	    write(6,*) (czdum(j,i),j=0,ncztot)
-	    stop 'error stop check_chezy: error in values (2)'
+	    flush(6)
+	    call shympi_abort_internal('error stop check_chezy: error in values (2)')
 	  end if
 	  cz = czdum(2,i)
 	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
 	    write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
 	    write(6,*) (czdum(j,i),j=0,ncztot)
-	    stop 'error stop check_chezy: error in values (2)'
+	    flush(6)
+	    call shympi_abort_internal('error stop check_chezy: error in values (2)')
 	  end if
 	  if( cz .gt. 0. ) then
 	    k = nint(czdum(3,i))
 	    if( k .lt. 0. .or. k .gt. nkn ) then
 	      write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
 	      write(6,*) (czdum(j,i),j=0,ncztot)
-	      stop 'error stop check_chezy: error in values (2)'
+	      flush(6)
+	      call shympi_abort_internal('error stop check_chezy: error in values (2)')
 	    end if
 	    k = nint(czdum(4,i))
 	    if( k .lt. 0. .or. k .gt. nkn ) then
 	      write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
 	      write(6,*) (czdum(j,i),j=0,ncztot)
-	      stop 'error stop check_chezy: error in values (2)'
+	      flush(6)
+	      call shympi_abort_internal('error stop check_chezy: error in values (2)')
 	    end if
 	  end if
 	  cz = czdum(iczact,i)
 	  if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
 	    write(6,*) 'i,iar,nczdum: ',i,i-1,nczdum
 	    write(6,*) (czdum(j,i),j=0,ncztot)
-	    stop 'error stop check_chezy: error in values (2)'
+	    flush(6)
+	    call shympi_abort_internal('error stop check_chezy: error in values (2)')
 	  end if
 	end do
 
@@ -799,13 +826,15 @@
 	    if( iar .gt. nczdum ) then
 	      write(6,*) 'ie,iar,nczdum,cz: ',ie,iar,nczdum,cz
 	      write(6,*) (czdum(j,iar),j=0,ncztot)
-	      stop 'error stop check_chezy: error in values (1)'
+	      flush(6)
+	      call shympi_abort_internal('error stop check_chezy: error in values (1)')
 	    end if
 	    cz=czdum(iczact,iar)
 	    if( cz .lt. 0. .or. cz .gt. 1.e+10 ) then
 	      write(6,*) 'ie,iar,nczdum,cz: ',ie,iar,nczdum,cz
 	      write(6,*) (czdum(j,iar),j=0,ncztot)
-	      stop 'error stop check_chezy: error in values (1)'
+	      flush(6)
+	      call shympi_abort_internal('error stop check_chezy: error in values (1)')
 	    end if
 	end do
 
@@ -823,6 +852,7 @@
 
 	use nls
 	use chezy
+	use shympi
 
 	implicit none
 
@@ -833,7 +863,11 @@
 	if( n > 0 ) then
 	  nz_lines = n
 	  allocate(cz_lines(n),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) then
+	    write(6,*) 'rdarea: allocation failed, n=',n
+	    flush(6)
+	    call shympi_abort_internal('error stop: allocation failed')
+	  end if
 	  call nls_copy_char_vect(n,cz_lines)
 	end if
 
@@ -848,6 +882,7 @@
 ! parses area section (chezy) from STR file
 
 	use chezy
+	use shympi
 
 	implicit none
 
@@ -866,12 +901,14 @@
             if(iar.lt.0) then
               write(6,*) 'Negative area code = ',iar,' not allowed'
               write(6,*) line
-              stop 'error stop : rdarea'
+              flush(6)
+              call shympi_abort_internal('error stop : rdarea')
             end if
 	    if( ianz .gt. 7 ) then
               write(6,*) 'Too much data on line'
               write(6,*) line
-              stop 'error stop : rdarea'
+              flush(6)
+              call shympi_abort_internal('error stop : rdarea')
             end if
             if(iar.gt.nczdum) then
 	      write(6,*) 'warning: no such area code... ignoring ',iar
@@ -883,7 +920,8 @@
 	  else if( ianz .lt. 0 ) then
             write(6,*) 'Read error in line :'
             write(6,*) line
-            stop 'error stop : rdarea'
+            flush(6)
+            call shympi_abort_internal('error stop : rdarea')
 	  end if
 	end do
 
@@ -1037,7 +1075,10 @@
 
 	call shympi_syncronize
 
-	if( bstop ) stop 'error stop ckarea'
+	if( bstop ) then
+	  flush(6)
+	  call shympi_abort_internal('error stop ckarea')
+	end if
 
 	end
 

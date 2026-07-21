@@ -331,7 +331,7 @@
 
 ! local
 	integer idtc,itmc,itsmed
-	integer id,nvar,idc,nr
+	integer id,nvar,idc
 	integer ierr
 	double precision dtime
 	double precision rr
@@ -347,6 +347,7 @@
 	real, save, allocatable :: raux(:,:)
 
 	integer, save :: icall = 0
+	integer, save :: nr = 0			!N39: accumulation counter must persist
 	double precision, save :: da_out(4) = 0.
 
 	if( icall .lt. 0 ) return
