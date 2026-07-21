@@ -373,7 +373,11 @@
         call MPI_COMM_SIZE( MPI_COMM_WORLD, nt, ierr )
 
 	allocate(buf(nt),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_syncronize_initial: allocation failed (buf)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 
 	root = my_id
 	count = 1
@@ -580,9 +584,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_i: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_i: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0
 	buffer_out = 0
 
@@ -686,9 +698,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 11111.
 	buffer_out = 11111.
 
@@ -807,9 +827,17 @@
         nb = (nvert-n0+1) * n_ghost_max_global
         call shympi_alloc_buffer(nb)
         allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_exchange_internal_d: allocation failed (buffer_in)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
         allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_exchange_internal_d: allocation failed (buffer_out)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
         buffer_in = 0.d0
         buffer_out = 0.d0
 
@@ -920,9 +948,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.
 	buffer_out = 0.
 
@@ -1028,9 +1064,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_d: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_sum_internal_d: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.d0
 	buffer_out = 0.d0
 
@@ -1140,9 +1184,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_i: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_i: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0
 	buffer_out = 0
 
@@ -1252,9 +1304,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_i: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_i: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0
 	buffer_out = 0
 
@@ -1364,9 +1424,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_min_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.
 	buffer_out = 0.
 
@@ -1476,9 +1544,17 @@
 	nb = (nvert-n0+1) * n_ghost_max_global
 	call shympi_alloc_buffer(nb)
 	allocate(buffer_in(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_r: allocation failed (buffer_in)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	allocate(buffer_out(nb,n_ghost_areas),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_exchange_and_max_internal_r: allocation failed (buffer_out)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	buffer_in = 0.
 	buffer_out = 0.
 
@@ -1561,7 +1637,11 @@
 	end if
 
 	allocate(aux(no),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_allgather_internal_i: allocation failed (aux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	aux = 0.
 	aux(1:ni) = val(1:ni)
 	nn = no
@@ -1602,7 +1682,11 @@
 	end if
 
 	allocate(aux(no),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_allgather_internal_r: allocation failed (aux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	aux = 0.
 	aux(1:ni) = val(1:ni)
 	nn = no
@@ -1643,7 +1727,11 @@
 	end if
 
 	allocate(aux(no),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  write(6,*) 'shympi_allgather_internal_d: allocation failed (aux)'
+	  flush(6)
+	  call shympi_abort_internal('error stop: allocation failed')
+	end if
 	aux = 0.
 	aux(1:ni) = val(1:ni)
 	nn = no
@@ -2283,7 +2371,11 @@
         real, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_rectify_internal_r0: allocation failed (vaux)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
 
 	nextra = 0
         if( nv == nlv_global+1 ) nextra = 1
@@ -2320,7 +2412,11 @@
         integer, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_rectify_internal_i0: allocation failed (vaux)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
 
 	nextra = 0
         if( nv == nlv_global+1 ) nextra = 1
@@ -2357,7 +2453,11 @@
         double precision, allocatable :: vaux(:)
 
         allocate(vaux(nh*nv),stat=ierr)
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) then
+          write(6,*) 'shympi_rectify_internal_d0: allocation failed (vaux)'
+          flush(6)
+          call shympi_abort_internal('error stop: allocation failed')
+        end if
 
 	nextra = 0
         if( nv == nlv_global+1 ) nextra = 1

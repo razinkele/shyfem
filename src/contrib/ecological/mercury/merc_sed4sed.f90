@@ -316,23 +316,27 @@
 
        if (cs(1) .LE. 0.0) then
        write(*,*) 'SiltSed<0',cs(1),'s4m_sedaft kext=',ipext(k)
-       stop
+       flush(6)
+       call shympi_abort_internal('error stop sed4merc_sed: SiltSed<0')
        else if (cs(2) .LE. 0.0) then
-       write(*,*) 'POMwSed<0',cs(2),'s4m_sedaft kext=',ipext(k) 
-       stop
+       write(*,*) 'POMwSed<0',cs(2),'s4m_sedaft kext=',ipext(k)
+       flush(6)
+       call shympi_abort_internal('error stop sed4merc_sed: POMwSed<0')
        end if
 
 	if( c(1) < 0 ) write(6,*) '***** 4 ggu ',c
 	if( c(1) < 0 ) call mdebug('ggu 4',k,2,c)
-        call merc_euler_sed(2,dt,sed_vol_old,sed_vol_new,cs,cold,cds) 
-        !claurent-OGS: vol old and new are different for sea bed sediment 
+        call merc_euler_sed(2,dt,sed_vol_old,sed_vol_new,cs,cold,cds)
+        !claurent-OGS: vol old and new are different for sea bed sediment
 
        if (cs(1) .LE. 0.0) then
        write(*,*) 'SiltSed<0',cs(1),'s4m_sedaft kext=',ipext(k)
-       stop
+       flush(6)
+       call shympi_abort_internal('error stop sed4merc_sed: SiltSed<0')
        else if (cs(2) .LE. 0.0) then
-       write(*,*) 'POMSed<0',cs(2),'s4m_sedaft kext=',ipext(k) 
-       stop
+       write(*,*) 'POMSed<0',cs(2),'s4m_sedaft kext=',ipext(k)
+       flush(6)
+       call shympi_abort_internal('error stop sed4merc_sed: POMSed<0')
        end if
 
        if (ipext(k) .EQ. 1372) then
@@ -360,7 +364,8 @@
        else if (c(2) .LE. 0.0) then
 !       write(447,*) 'POMw<0',c(2), 's4m_sedbef kext=',ipext(k) 
        write(*,*) 'POMw<0',c(2),wdep, 's4m_sedaft kext=',ipext(k)
-	stop 'error stop... conz<0 (ggu)'
+	flush(6)
+	call shympi_abort_internal('error stop... conz<0 (ggu)')
        end if
 
 !      call merc_euler (2,dt,
@@ -403,15 +408,19 @@
         sw = C(1)
         POMw=C(2)
 
-       if (POMw .LE. 0.0) then 
+       if (POMw .LE. 0.0) then
        write(*,*) 'instability - negative POM_w in sed4merc_sed kext=', &
      &   ipext(k)
-       stop
-       else if (sw .LE. 0.0) then  
+       flush(6)
+       call shympi_abort_internal( &
+     &   'error stop sed4merc_sed: negative POM_w')
+       else if (sw .LE. 0.0) then
        write(*,*) 'instability - negative slt_w in sed4merc_sed kext=', &
      &   ipext(k)
-       stop 
-       end if 
+       flush(6)
+       call shympi_abort_internal( &
+     &   'error stop sed4merc_sed: negative slt_w')
+       end if
        end
 
 !*****************************************************************
