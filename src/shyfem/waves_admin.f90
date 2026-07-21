@@ -1828,6 +1828,12 @@
           has_waves = .false.
 	else if( iwave .gt. 0 .and. iwave .le. 5 ) then
           has_waves = .true.
+	else if( iwave .eq. 11 ) then
+          has_waves = .true.		!WW3 coupling (radiation stress)
+					!iwave==11 = WW3 (produces waves);
+					!add iwave==12 (vortex-force) here
+					!when ww3.f90 actually implements it
+					!(currently bww3=(iwave==11) excludes 12)
 	else
           has_waves = .false.
 	end if

@@ -798,8 +798,9 @@
 	dqer = wetc*dter 
 	ut = sqrt(du*du+ug*ug) 
 	u10 = ut*log(10/1e-4)/log(zu/1e-4) 
-	usr = .035*u10 
-	zo10 = 0.011*usr*usr/grav+0.11*visa/usr 
+	usr = .035*u10
+	usr = max(usr,1.e-4)		!floor to avoid div by zero (calm wind)
+	zo10 = 0.011*usr*usr/grav+0.11*visa/usr
 	Cd10 = (von/log(10/zo10))**2 
 	Ch10 = 0.00115 
 	Ct10 = Ch10/sqrt(Cd10) 
@@ -835,7 +836,8 @@
 	  nits=1 
 	endif 
 	usr=ut*von/(log(zu/zo10)-psi(1,zu/L10))
-	tsr=-(dt-dter*jcool)*von*fdg/(log(zt/zot10)-psi(2,zt/L10)) 
+	usr = max(usr,1.e-4)		!floor to avoid div by zero (calm wind)
+	tsr=-(dt-dter*jcool)*von*fdg/(log(zt/zot10)-psi(2,zt/L10))
 	qsr=-(dq-wetc*dter*jcool)*von*fdg/(log(zq/zot10)-psi(2,zq/L10)) 
 	tkt=.001
 	charn=0.011 
@@ -879,8 +881,9 @@
 	  L=zu/zet
 	  zoq=min(1.15e-4,5.5e-5/rr**.6) 
 	  zot=zoq 
-	  usr=ut*von/(log(zu/zo)-psi(1,zu/L)) 
-	  tsr=-(dt-dter*jcool)*von*fdg/(log(zt/zot)-psi(2,zt/L)) 
+	  usr=ut*von/(log(zu/zo)-psi(1,zu/L))
+	  usr = max(usr,1.e-4)		!floor to avoid div by zero (calm wind)
+	  tsr=-(dt-dter*jcool)*von*fdg/(log(zt/zot)-psi(2,zt/L))
 	  qsr=-(dq-wetc*dter*jcool)*von*fdg/(log(zq/zoq)-psi(2,zq/L)) 
 	  Bf=-grav/ta*usr*(tsr+.61*ta*qsr) 
 	  if (Bf .GT. 0) then
