@@ -1254,8 +1254,7 @@ def home_server(
         if size > max_size_bytes:
             size_mb = size / (1024 * 1024)
             ui.notification_show(
-                f"Import failed: ZIP is {size_mb:.1f} MB "
-                f"(max {config.max_upload_size_mb} MB)",
+                f"Import failed: ZIP is {size_mb:.1f} MB " f"(max {config.max_upload_size_mb} MB)",
                 type="error",
                 duration=6,
             )

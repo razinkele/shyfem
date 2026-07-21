@@ -158,9 +158,7 @@ def _validate_archive_limits(infos: list[zipfile.ZipInfo]) -> None:
         compressed_size = max(info.compress_size, 1)
         ratio = info.file_size / compressed_size
         if ratio > MAX_IMPORT_COMPRESSION_RATIO:
-            raise ValueError(
-                f"archive member {info.filename!r} has suspicious compression ratio"
-            )
+            raise ValueError(f"archive member {info.filename!r} has suspicious compression ratio")
 
 
 def _sanitize_dirname(name: str) -> str:
