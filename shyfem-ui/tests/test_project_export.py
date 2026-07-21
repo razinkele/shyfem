@@ -8,6 +8,9 @@ import pytest
 
 from shyfem_ui.services.project_export import (
     MANIFEST_VERSION,
+    MAX_IMPORT_COMPRESSION_RATIO,
+    MAX_IMPORT_FILES,
+    MAX_IMPORT_UNCOMPRESSED_BYTES,
     clone_project,
     export_project,
     import_project,
@@ -134,6 +137,18 @@ class TestExportProject:
         with zipfile.ZipFile(result) as zf:
             assert "manifest.json" in zf.namelist()
 
+    def test_export_skips_symlink_escape(self, tmp_path, project_meta):
+        project = tmp_path / "project"
+        project.mkdir()
+        outside = tmp_path / "secret.txt"
+        outside.write_text("secret")
+        (project / "link.txt").symlink_to(outside)
+
+        result = export_project(project, project_meta)
+
+        with zipfile.ZipFile(result) as zf:
+            assert "link.txt" not in zf.namelist()
+
 
 @pytest.fixture
 def exported_zip(project_dir, project_meta):
@@ -198,6 +213,25 @@ class TestImportProject:
         with pytest.raises(ValueError, match="path traversal"):
             import_project(buf, tmp_path)
 
+    def test_import_rejects_path_traversal_outside_project_dir(self, tmp_path):
+        buf = BytesIO()
+        base_name = tmp_path.name
+        with zipfile.ZipFile(buf, "w") as zf:
+            manifest = {
+                "version": "1.0",
+                "exported_at": "2026-01-01T00:00:00Z",
+                "project": {"name": "project", "description": None},
+                "grids": [],
+                "simulations": [],
+            }
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr(f"../{base_name}/escaped.txt", "pwned")
+        buf.seek(0)
+
+        with pytest.raises(ValueError, match="path traversal"):
+            import_project(buf, tmp_path)
+        assert not (tmp_path / base_name / "escaped.txt").exists()
+
     def test_import_rejects_missing_version(self, tmp_path):
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
@@ -210,6 +244,110 @@ class TestImportProject:
         buf.seek(0)
         with pytest.raises(ValueError, match="version"):
             import_project(buf, tmp_path)
+
+    def test_import_rejects_too_many_files(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "shyfem_ui.services.project_export.MAX_IMPORT_FILES",
+            1,
+        )
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "version": "1.0",
+                        "project": {"name": "many", "description": None},
+                        "grids": [],
+                        "simulations": [],
+                    }
+                ),
+            )
+            zf.writestr("a.txt", "a")
+            zf.writestr("b.txt", "b")
+        buf.seek(0)
+
+        with pytest.raises(ValueError, match="too many files"):
+            import_project(buf, tmp_path)
+
+    def test_import_rejects_uncompressed_size_limit(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "shyfem_ui.services.project_export.MAX_IMPORT_UNCOMPRESSED_BYTES",
+            5,
+        )
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "version": "1.0",
+                        "project": {"name": "large", "description": None},
+                        "grids": [],
+                        "simulations": [],
+                    }
+                ),
+            )
+            zf.writestr("large.txt", "123456")
+        buf.seek(0)
+
+        with pytest.raises(ValueError, match="uncompressed size"):
+            import_project(buf, tmp_path)
+
+    def test_import_rejects_oversized_manifest_before_json_parse(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "shyfem_ui.services.project_export.MAX_IMPORT_UNCOMPRESSED_BYTES",
+            10,
+        )
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("manifest.json", "{" + " " * 1000)
+        buf.seek(0)
+
+        with pytest.raises(ValueError, match="uncompressed size"):
+            import_project(buf, tmp_path)
+
+    def test_import_rejects_suspicious_compression_ratio(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "shyfem_ui.services.project_export.MAX_IMPORT_COMPRESSION_RATIO",
+            2,
+        )
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "version": "1.0",
+                        "project": {"name": "bomb", "description": None},
+                        "grids": [],
+                        "simulations": [],
+                    }
+                ),
+            )
+            zf.writestr("zeros.txt", "0" * 1000)
+        buf.seek(0)
+
+        with pytest.raises(ValueError, match="compression ratio"):
+            import_project(buf, tmp_path)
+
+    def test_import_streams_extracted_members(self, exported_zip, tmp_path, monkeypatch):
+        original_read = zipfile.ZipExtFile.read
+
+        def guarded_read(self, size=-1):
+            if self.name != "manifest.json":
+                assert size not in (-1, None)
+            return original_read(self, size)
+
+        monkeypatch.setattr(zipfile.ZipExtFile, "read", guarded_read)
+
+        result = import_project(exported_zip, tmp_path)
+        assert (result["work_dir"] / "GRID" / "mesh.grd").exists()
+
+    def test_import_limit_defaults_are_reasonable(self):
+        assert MAX_IMPORT_FILES > 100
+        assert MAX_IMPORT_UNCOMPRESSED_BYTES > 100 * 1024 * 1024
+        assert MAX_IMPORT_COMPRESSION_RATIO > 10
 
 
 class TestCloneProject:

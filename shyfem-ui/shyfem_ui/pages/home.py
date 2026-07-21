@@ -1243,6 +1243,22 @@ def home_server(
             return
 
         file_path = file_info[0]["datapath"]
+        size = file_info[0].get("size")
+        max_size_bytes = config.max_upload_size_mb * 1024 * 1024
+        if size is None:
+            try:
+                size = Path(file_path).stat().st_size
+            except OSError as e:
+                ui.notification_show(f"Import failed: {e}", type="error", duration=6)
+                return
+        if size > max_size_bytes:
+            size_mb = size / (1024 * 1024)
+            ui.notification_show(
+                f"Import failed: ZIP is {size_mb:.1f} MB " f"(max {config.max_upload_size_mb} MB)",
+                type="error",
+                duration=6,
+            )
+            return
 
         from shyfem_ui.services.project_export import import_project
 

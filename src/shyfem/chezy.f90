@@ -409,14 +409,14 @@
 
 ! computes cd from h and z0
 
+	use mod_physical_constants, only : kappa => vonkarman_sp
+
         implicit none
 
         real cdf
         real h,z0
 
-        real kappa,cds
-
-        kappa = 0.4
+        real cds
 
         cds = kappa / log( (z0+0.5*h) / z0 )
 
@@ -1122,4 +1122,3 @@
 	end
 
 !***********************************************************
-

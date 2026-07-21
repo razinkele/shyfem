@@ -1629,14 +1629,15 @@
 ! Functions of Neutral Wind Speed. J. Phys. Oceanogr., 41, 247–251, 
 ! https://doi.org/10.1175/2010JPO4567.1
 
+	use mod_physical_constants, only : k => vonkarman_dp
+
 	implicit none
 
 	real, intent(in) :: ach,wxy
 	real, intent(out) :: dragco
 
 	double precision, parameter :: z = 10 !Height of the wind[m]
-	double precision, parameter :: k = 0.4 !Von Karman constant
-	double precision, parameter :: g = 9.8182 !gravity[m s**-2]
+	double precision, parameter :: g_hersbach = 9.8182d0 !Hersbach formulation value
 	double precision, parameter :: am = 0.11 !kinematic parameter
 	double precision, parameter :: nu = 1.5*10.**(-5) !molecular viscosity[m**2 s**-1]
 	double precision, parameter :: p = -12 !coefficient best representing the regime transition
@@ -1650,7 +1651,7 @@
 	end if
 
 	R = (z / (am * nu)) * (k * wxy)
-	A = (ach / (g * z)) * (k * wxy)**2
+	A = (ach / (g_hersbach * z)) * (k * wxy)**2
 	bnu = -1.47 + 0.93 * log(R)
 	bch = 2.65 - 1.44 * log(A) - 0.015 * (log(A))**2
 

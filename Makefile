@@ -121,6 +121,7 @@ FEMNOGRAPH   = $(FEMLIBS) $(FEMEXTRA) $(FEMMESH) $(FEMPROG) $(FEMUTIL)
 	rules_ggu_save rules_ggu_restore rules_nemunas rules_lagoon \
 	rules_carbonium nemon nemoff git_nemunas check_server show_server \
 	nompi check_compiler test_executable make_executable checkv \
+	check_mpi_vendor \
 	RULES_MAKE_OK RULES_MAKE_NOT_COMPATIBLE RULES_MAKE_PARAMETER_ERROR \
 	save stable
 
@@ -139,7 +140,7 @@ nuopc: fem
 
 compile: shyfem
 fem: shyfem
-shyfem: checkv libmod
+shyfem: checkv check_mpi_vendor libmod
 	cd src; make
 
 petsc: checkv libmod
@@ -324,6 +325,27 @@ info: version
 check: check_software
 check_software:
 	@cd $(FEMCHECK); ./check_software.sh
+
+check_mpi_vendor:
+	@if [ "$(PARALLEL_MPI)" != "NONE" ] && [ "$(FORTRAN_COMPILER)" = "GNU_GFORTRAN" ]; then \
+	  wrapper=$$(command -v mpif90 2>/dev/null || true); \
+	  if [ -z "$$wrapper" ]; then \
+	    echo "ERROR: MPI build requested but mpif90 was not found"; \
+	    exit 1; \
+	  fi; \
+	  show=$$(mpif90 --showme:link 2>/dev/null || mpif90 --showme 2>/dev/null || mpif90 -show 2>/dev/null || true); \
+	  version=$$(mpif90 --version 2>/dev/null | head -1 || true); \
+	  echo "MPI Fortran wrapper: $$wrapper"; \
+	  echo "MPI wrapper info: $$show"; \
+	  case "$$wrapper $$show $$version" in \
+	    *intel*|*Intel*|*I_MPI*|*libmpi.so.12*) \
+	      echo "ERROR: mpif90 appears to be Intel MPI; use PATH=/usr/bin:\$$PATH for OpenMPI"; \
+	      exit 1 ;; \
+	  esac; \
+	  if ! echo "$$wrapper $$show" | grep -Eqi 'openmpi|libmpi|mpi_usempif'; then \
+	    echo "WARNING: unable to confirm OpenMPI from mpif90 wrapper output"; \
+	  fi; \
+	fi
 
 configure:
 	@cd $(FEMCHECK); ./configure.sh
@@ -583,4 +605,3 @@ RULES_MAKE_PARAMETER_ERROR:
 #---------------------------------------------------------------
 # end of Makefile
 #---------------------------------------------------------------
-

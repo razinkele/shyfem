@@ -169,7 +169,7 @@ fi
 
 if ! $NO_COMMIT; then
     cd "$FEMDIR"
-    git add VERSION src/utils/shyutil/version.f90 CHANGELOG.md README.md
+    git add VERSION src/utils/shyutil/version.f90 CHANGELOG.md
     git commit -m "release: bump version to ${NEW_VERSION}
 
 Update VERSION, version.f90, and CHANGELOG.md."

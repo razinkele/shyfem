@@ -1122,12 +1122,7 @@
 	    call assure_initial_output_d(da_out)
             if( has_output_d(da_out) ) then
 	      call shy_make_output_name('.dbg',file)
-	      iunit = 200
-              call find_unit(iunit)
-              if( iunit == 0 ) then
-                stop 'error stop handle_debug_output: cannot get unit'
-              end if
-              open(iunit,file=file,status='unknown',form='unformatted'  &
+              open(newunit=iunit,file=file,status='unknown',form='unformatted'  &
      &                          ,iostat=ios)
               if( ios /= 0 ) then
                 stop 'error stop handle_debug_output: cannot open file'
@@ -1153,7 +1148,7 @@
 
 	call is_time_last(blast)
 	if( blast .and. shympi_is_master() ) then
-	  if( iunit > 0 ) then
+	  if( iunit /= 0 ) then
 	    flush(iunit)
 	    close(iunit)
 	    iunit = 0
@@ -2081,4 +2076,3 @@
 
 
 !*****************************************************************
-
