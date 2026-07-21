@@ -68,6 +68,11 @@ jobs:
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest
+    # E2E is a browser suite whose setup phase is prone to app-startup flakes
+    # (wait_for_function timeouts) that don't reflect the code. Run it on PRs,
+    # where it gates review, but not on push-to-main — a flake there just paints
+    # the main badge red for something a rerun would clear. (Nothing gates main.)
+    if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v5
       - uses: mamba-org/setup-micromamba@v2
