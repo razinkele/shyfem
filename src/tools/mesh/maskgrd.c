@@ -118,7 +118,7 @@ void ReadFiles( int argc , char *argv[] , Grid_type *G )
 		if( n < 0 || (size_t)n >= sizeof(sfile) )
 			Error2("ReadFiles: file name too long ",name);
 		s = sfile;
-		ReadStandard(s,G);
+		ReadStandard(s,G,".grd");
 	}
 }
 

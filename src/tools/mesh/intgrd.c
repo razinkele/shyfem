@@ -107,7 +107,7 @@ void ReadFiles( char *argv , Grid_type *G )
 	if( n < 0 || (size_t)n >= sizeof(sfile) )
 		Error2("ReadFiles: file name too long ",argv);
 	s = sfile;
-	ReadStandard(s,G);
+	ReadStandard(s,G,".grd");
 }
 
 void WriteFile( Grid_type *G )
@@ -133,6 +133,14 @@ void ManipulateGrd( Grid_type *GD , Grid_type *GN )
 		MakeCM(GN,pe,&xm,&ym);
 		ped = FindElement(GD,xm,ym);
 		pe->depth = DepthFromElement(ped);
+		if( !ped ) {
+			fprintf(stderr,
+				"ManipulateGrd: element %d at (%f,%f) "
+				"has no covering element in background grid "
+				"- depth not interpolated\n",
+				pe->number,xm,ym);
+			continue;
+		}
 		pe->depth = InterpolateDepth(GD,ped,xm,ym);
 	}
 }
