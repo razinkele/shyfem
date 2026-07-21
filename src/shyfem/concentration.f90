@@ -1772,8 +1772,14 @@
 ! global initialization
 !-----------------------------------------------------------------
 
+! conzstab runs concurrently from OMP tasks: serialize the racy first-call
+! reads of the save locals rstol_c/iuinfo (getpar/getinfo are not thread-safe).
+! da_out and its output setup stay master-thread-confined; icall is flipped
+! only after the master runs, so the 'stb' output init is never skipped.
+!$OMP CRITICAL (conzstab_init)
 	if( icall == 0 ) then
 	 rstol_c = getpar('rstol')
+	 call getinfo(iuinfo)  !unit number of info file
 	 if( openmp_is_master() ) then
           call init_output_d('itmstb','idtstb',da_out)
 	  id = 0
@@ -1781,11 +1787,11 @@
             call shyfem_init_scalar_file('stb',1,.true.,id)	!1 var, 2d
             da_out(4) = id
           end if
-	  icall = 1
 	  if( id > 0 ) call info_output_d('conz_stab',da_out)
+	  icall = 1
 	 end if
-	 call getinfo(iuinfo)  !unit number of info file
 	end if
+!$OMP END CRITICAL (conzstab_init)
 
 !-----------------------------------------------------------------
 ! initialization

@@ -116,10 +116,12 @@ PARALLEL_MPI = NODE
 
 ##############################################
 # Compatibility mapping for the documented
-# MPI=/OMP= command-line flags (they were inert)
+# MPI=/OMP= command-line flags (they were inert).
+# Restricted to command-line origin so an exported
+# MPI/OMP environment variable cannot silently trigger it.
 ##############################################
 
-ifdef OMP
+ifeq ($(origin OMP),command line)
   ifeq ($(OMP),true)
     PARALLEL_OMP = true
   else ifeq ($(OMP),false)
@@ -129,7 +131,7 @@ ifdef OMP
   endif
 endif
 
-ifdef MPI
+ifeq ($(origin MPI),command line)
   ifeq ($(MPI),true)
     PARALLEL_MPI = NODE
   else ifeq ($(MPI),false)
