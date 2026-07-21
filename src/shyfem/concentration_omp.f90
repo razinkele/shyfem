@@ -424,7 +424,8 @@
      &  cle(nlvddi,3),stat=ierr_conz)
       if( ierr_conz /= 0 ) then
         write(6,*) 'error: allocation failed in conz3d_element ie=',ie
-        return
+        flush(6)
+        call shympi_abort_internal('conz3d_element: allocation failed')
       end if
 
 ! ----------------------------------------------------------------

@@ -467,7 +467,7 @@
 	real, intent(in) :: wsink
 	real, intent(in) :: wsinkv(0:nlvdi,nkn)
 	real, intent(in) :: rload			!load factor (1 for load given)
-	real, intent(in) :: load(nlvdi,nkn)		!load [kg/s]
+	real, intent(inout) :: load(nlvdi,nkn)		!load [kg/s] (N37: clipped deposition returned)
         real, intent(in) :: difhv(nlvdi,nel)
 	real, intent(in) :: difv(0:nlvdi,nkn)
         real, intent(in) :: difmol
@@ -583,7 +583,7 @@
 	real, intent(in) :: wsink
 	real, intent(in) :: wsinkv(0:nlvddi,nkn)
 	real, intent(in) :: rload
-	real, intent(in) :: load(nlvddi,nkn)		!load [kg/s]
+	real, intent(inout) :: load(nlvddi,nkn)		!load [kg/s] (N37: clipped deposition returned)
         real, intent(in) :: difhv(nlvddi,nel)
 	real, intent(in) :: difv(0:nlvddi,nkn)
         real, intent(in) :: difmol
@@ -613,6 +613,7 @@
 	real eps
         real sindex
 	real mass,massold,massdiff
+	real cnegsum				!accumulated negative conc removed by clamp
 	real azpar,adpar,aapar
 	real ssurface
 	real wsinkl				!local sinking
@@ -728,10 +729,21 @@
 	  !call check_scal_flux(what,cnv,sbconz)
 
 	  if( what /= 'temp' ) then
-	    where( cnv < 1.e-15 ) cnv = 0.
+	    ! M17: log positivity undershoots BEFORE any clamp; otherwise the old
+	    ! floor zeroed every negative first, leaving this diagnostic dead code
 	    if( any(cnv < 0.) ) then
 	      write(6,*) 'negative scalar: ',what,isact &
      &		,count(cnv<0.),minval(cnv)
+	    end if
+	    ! flush tiny positive noise only - negatives are handled below
+	    where( cnv > 0. .and. cnv < 1.e-15 ) cnv = 0.
+	    ! clamp negatives to zero, accounting for the removed (non-conserved)
+	    ! amount - this is NOT mass-conserving, so report the correction
+	    if( any(cnv < 0.) ) then
+	      cnegsum = sum( cnv, mask = cnv < 0. )	!<0: conc removed by the clamp
+	      where( cnv < 0. ) cnv = 0.
+	      write(6,*) 'negative scalar clamped: ',what,isact &
+     &		,' removed conc sum =',-cnegsum
 	    end if
 	  end if
 

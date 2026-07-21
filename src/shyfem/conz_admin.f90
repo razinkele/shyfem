@@ -738,12 +738,18 @@
             srly = srly * aux                   !solar radiation at bottom
             kbi = alpha * iaver
             kbs = fp * ws / h
-            kb = kb1 + kbi + kbs
-            !kb = kb1 + kbi
+            ! N38: settling (kbs) is NOT a death term - it is a transfer to the
+            ! layer below (eflux). Applying kbs in the decay exponent AND in the
+            ! eflux subtraction double-counted it (net exp(-2*dtt*kbs)). Decay the
+            ! layer by death losses only; move the settled fraction via eflux.
+            kb = kb1 + kbi
             e(l,k) = e(l,k) * exp(-dtt*kb)
-	    eflux_bottom = e(l,k) * ( 1. - exp(-dtt*kbs) )
-            e(l,k) = e(l,k) - eflux_bottom + eflux_top
-	    eflux_top = eflux_bottom
+	    eflux_bottom = e(l,k) * ( 1. - exp(-dtt*kbs) )	!conc settling out of layer l
+            ! N38: eflux_top carries settled mass per unit area (conc*thickness)
+            ! from the layer above; dividing by this layer's thickness converts it
+            ! back to a concentration so the inter-layer transfer conserves mass.
+            e(l,k) = e(l,k) - eflux_bottom + eflux_top / h
+	    eflux_top = eflux_bottom * h			!carry mass/area to layer below
           end do
         end do
 
