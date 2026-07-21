@@ -791,9 +791,9 @@
 
 	if( itype(1) > 0 ) then
 	  if( iformat == 1 ) then
-	    read(iunit,*,err=3) (datetime(i),i=1,2)
+	    read(iunit,*,err=3,end=3) (datetime(i),i=1,2)
 	  else
-	    read(iunit,err=3) (datetime(i),i=1,2)
+	    read(iunit,err=3,end=3) (datetime(i),i=1,2)
 	  end if
 	  !if( itype(1) == 1 ) then
 	  !  read(string,'(2i10)') datetime
@@ -939,9 +939,9 @@
 	ierr = 3
 	if( lmax .gt. 1 ) then
 	  if( iformat == 1 ) then
-	    read(iunit,*,err=1) (hlv(l),l=1,lmax)
+	    read(iunit,*,err=1,end=1) (hlv(l),l=1,lmax)
 	  else
-	    read(iunit,err=1) (hlv(l),l=1,lmax)
+	    read(iunit,err=1,end=1) (hlv(l),l=1,lmax)
 	  end if
 	else
 	  hlv(1) = 10000.
@@ -950,9 +950,9 @@
 	ierr = 7
 	if( itype(2) .gt. 0 ) then
 	  if( iformat == 1 ) then
-	    read(iunit,*,err=1) (regpar(i),i=1,7)
+	    read(iunit,*,err=1,end=1) (regpar(i),i=1,7)
 	  else
-	    read(iunit,err=1) (regpar(i),i=1,7)
+	    read(iunit,err=1,end=1) (regpar(i),i=1,7)
 	  end if
 	  femflag = regpar(7)
 	else
@@ -988,18 +988,18 @@
 	ierr = 3
 	if( lmax .gt. 1 ) then			!read hlv
 	  if( iformat  == 1 ) then
-	    read(iunit,*,err=1) (aux,l=1,lmax)
+	    read(iunit,*,err=1,end=1) (aux,l=1,lmax)
 	  else
-	    read(iunit,err=1) (aux,l=1,lmax)
+	    read(iunit,err=1,end=1) (aux,l=1,lmax)
 	  end if
 	end if
 
 	ierr = 7
 	if( itype(2) .gt. 0 ) then		!read regpar
 	  if( iformat == 1 ) then
-	    read(iunit,*,err=1) (regpar(i),i=1,7)
+	    read(iunit,*,err=1,end=1) (regpar(i),i=1,7)
 	  else
-	    read(iunit,err=1) (regpar(i),i=1,7)
+	    read(iunit,err=1,end=1) (regpar(i),i=1,7)
 	  end if
 	else
 	  regpar = 0.
@@ -1047,31 +1047,31 @@
 	data = femflag
 
 	if( iformat == 1 ) then
-	  read(iunit,'(a)',err=13) text
-	  if( nvers >= 3 ) read(iunit,*,err=11) npp,lmax
+	  read(iunit,'(a)',err=13,end=13) text
+	  if( nvers >= 3 ) read(iunit,*,err=11,end=11) npp,lmax
 	  if( lmax > nlvddi ) goto 97
 	  if( np /= npp ) goto 96
 	  b2d = lmax .le. 1
 	  if( b2d ) then
-	    read(iunit,*,err=15) (data(1,k),k=1,np)
+	    read(iunit,*,err=15,end=15) (data(1,k),k=1,np)
 	  else
 	    do k=1,np
-	      read(iunit,*,err=15) lm,hd(k),(data(l,k),l=1,min(lm,lmax))
+	      read(iunit,*,err=15,end=15) lm,hd(k),(data(l,k),l=1,min(lm,lmax))
 	      if( lm .gt. lmax ) goto 99
 	      ilhkv(k) = lm
 	    end do
 	  end if
 	else
-	  read(iunit,err=13) text
-	  if( nvers >= 3 ) read(iunit,err=11) npp,lmax
+	  read(iunit,err=13,end=13) text
+	  if( nvers >= 3 ) read(iunit,err=11,end=11) npp,lmax
 	  if( lmax > nlvddi ) goto 97
 	  if( np /= npp ) goto 96
 	  b2d = lmax .le. 1
 	  if( b2d ) then
-	    read(iunit,err=15) (data(1,k),k=1,np)
+	    read(iunit,err=15,end=15) (data(1,k),k=1,np)
 	  else
 	    do k=1,np
-	      read(iunit,err=15) lm,hd(k),(data(l,k),l=1,min(lm,lmax))
+	      read(iunit,err=15,end=15) lm,hd(k),(data(l,k),l=1,min(lm,lmax))
 	      if( lm .gt. lmax ) goto 99
 	      ilhkv(k) = lm
 	    end do
@@ -1142,28 +1142,28 @@
 	npp = np
 
 	if( iformat  == 1 ) then
-	  read(iunit,'(a)',err=13) text
-	  if( nvers >= 3 ) read(iunit,*,err=11) npp,lmax
+	  read(iunit,'(a)',err=13,end=13) text
+	  if( nvers >= 3 ) read(iunit,*,err=11,end=11) npp,lmax
 	  if( np /= npp ) goto 96
 	  b2d = lmax .le. 1
 	  if( b2d ) then
-	    read(iunit,*,err=15) (aux,k=1,np)
+	    read(iunit,*,err=15,end=15) (aux,k=1,np)
 	  else
 	    do k=1,np
-	      read(iunit,*,err=15) lm,aux,(aux,l=1,lm)
+	      read(iunit,*,err=15,end=15) lm,aux,(aux,l=1,lm)
 	      if( lm .gt. lmax ) goto 99
 	    end do
 	  end if
 	else
-	  read(iunit,err=13) text
-	  if( nvers >= 3 ) read(iunit,err=11) npp,lmax
+	  read(iunit,err=13,end=13) text
+	  if( nvers >= 3 ) read(iunit,err=11,end=11) npp,lmax
 	  if( np /= npp ) goto 96
 	  b2d = lmax .le. 1
 	  if( b2d ) then
-	    read(iunit,err=15) (aux,k=1,np)
+	    read(iunit,err=15,end=15) (aux,k=1,np)
 	  else
 	    do k=1,np
-	      read(iunit,err=15) lm,aux,(aux,l=1,lm)
+	      read(iunit,err=15,end=15) lm,aux,(aux,l=1,lm)
 	      if( lm .gt. lmax ) goto 99
 	    end do
 	  end if

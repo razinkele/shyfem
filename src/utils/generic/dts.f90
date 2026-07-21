@@ -434,7 +434,8 @@
 	integer, save :: facts(7) = (/1,60,3600,86400,week,month,year/)
 
 	integer n,i,m,s,j
-	integer num,fact,sign
+	integer(8) num,fact,idt8
+	integer sign
 	character*1 c
 	logical bfirst
 
@@ -447,6 +448,7 @@
 	bfirst = .true.
 	sign = 1
 	num = 0
+	idt8 = 0
 	idt = 0
 
 	do i=1,n
@@ -463,7 +465,8 @@
 	  else if( s > 0 ) then
 	    if( s > 7 ) goto 99
 	    fact = facts(s)
-	    idt = idt + num*fact
+	    idt8 = idt8 + num*fact
+	    if( idt8 > huge(idt) ) goto 98
 	    num = 0
 	  else
 	    goto 99
@@ -472,9 +475,16 @@
 	end do
 
 	if( num > 0 ) goto 99	! no unit at end
-	idt = sign * idt
+	idt8 = sign * idt8
+	if( abs(idt8) > huge(idt) ) goto 98
+	idt = int(idt8,kind(idt))
 	ierr = 0
 
+	return
+   98	continue
+	idt = 0
+	ierr = -2
+	write(6,*) 'timespan overflows integer range: ',line(1:n)
 	return
    99	continue
 	idt = 0

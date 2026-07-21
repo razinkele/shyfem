@@ -315,7 +315,10 @@ c nunit is 0 if no other file exists
 	  end if
 	  if( nexp > nndim ) goto 74
 	  if( lmax > nlvddi ) goto 74
-	  if( bfirst ) dtvar = dtime
+	  if( bfirst ) then
+	    dtvar = dtime
+	    bfirst = .false.
+	  end if
 	  if( dtvar /= dtime ) goto 85
 	  if( .not. bzeta ) ivars(4,iv) = ivar
 	  cv3all(:,:,iv) = cv3(:,:) * fact
