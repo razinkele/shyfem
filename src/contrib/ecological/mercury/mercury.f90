@@ -793,6 +793,7 @@
       integer i
       real mass            !mass [g]
       real mder            !derivative [g/day]
+      real, parameter :: min_conc = 1.0e-10 !positivity floor (AQUABC MIN_CONCENTRATION)
 
       volold = vol
       volnew = vol
@@ -802,11 +803,7 @@
         mass = c(i) * volold
         mder = cds(i)
         c(i) = ( mass + dt * mder ) / volnew
-      !  write(88,*)dt,'dt-day'
-        !write(88,*) mder,'mder'
-        !write(88,*) cds(i),'cds'
-        !write(88,*) i, c(i),nstate,'c(i)'
-        !if(c(i).lt.0.00001) c(i)=0.00001
+        if( c(i) .lt. min_conc ) c(i) = min_conc !floor ALL states (F10)
       end do
       end
      
@@ -833,6 +830,7 @@
       integer i
       real mass            !mass [g]
       real mder            !derivative [g/day]
+      real, parameter :: min_conc = 1.0e-10 !positivity floor (AQUABC MIN_CONCENTRATION)
 
 !      volold = vol
 !      volnew = vol
@@ -842,12 +840,7 @@
         mass = c(i) * volold
         mder = cds(i)
         c(i) = ( mass + dt * mder ) / volnew
-        !write(88,*)dt,'dt-day' 
-        !write(88,*) 'old', volold, 'new', volnew, nstate
-        !write(88,*) mder,'mder'
-        !write(88,*) cds(i),'cds'
-        !write(88,*) i, c(i),nstate,'c(i)'
-        !if(c(i).lt.0.00001) c(i)=0.00001
+        if( c(i) .lt. min_conc ) c(i) = min_conc !floor ALL states (F10)
       end do
       end
  
