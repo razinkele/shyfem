@@ -80,13 +80,13 @@
 	    write(6,*) 'spk_initialize_system: n2zero,n2max: ',n2zero,n2max
 	    flush(6)
 	    call shympi_abort_internal( &
-     &        'spk_initialize_system: non zero 2d max')
+     &        'error stop spk_initialize_system: non zero 2d max')
 	  end if
 	  if( n3zero > n3max ) then
 	    write(6,*) 'spk_initialize_system: n3zero,n3max: ',n3zero,n3max
 	    flush(6)
 	    call shympi_abort_internal( &
-     &        'spk_initialize_system: non zero 3d max')
+     &        'error stop spk_initialize_system: non zero 3d max')
 	  end if
 
 	  write(6,*) 'SOLVER: Sparskit'
@@ -193,25 +193,25 @@
 	if( ierr /= 0 ) then
 	  write(6,*) 'spk_solve_system: allocation failed (csr,icsr,jcsr,iwork)'
 	  flush(6)
-	  call shympi_abort_internal('spk_solve_system: allocation failed')
+	  call shympi_abort_internal('error stop: allocation failed')
 	end if
 	allocate(rvec(n),raux(n),stat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'spk_solve_system: allocation failed (rvec,raux)'
 	  flush(6)
-	  call shympi_abort_internal('spk_solve_system: allocation failed')
+	  call shympi_abort_internal('error stop: allocation failed')
 	end if
 	allocate(IWKSP(3*n),WKSPIT(6*n+4*itermax),stat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'spk_solve_system: allocation failed (IWKSP,WKSPIT)'
 	  flush(6)
-	  call shympi_abort_internal('spk_solve_system: allocation failed')
+	  call shympi_abort_internal('error stop: allocation failed')
 	end if
 	allocate(wksp(8*n),alu(nndim*2),jlu(2*nndim),stat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'spk_solve_system: allocation failed (wksp,alu,jlu)'
 	  flush(6)
-	  call shympi_abort_internal('spk_solve_system: allocation failed')
+	  call shympi_abort_internal('error stop: allocation failed')
 	end if
 
 	ngl = n
@@ -247,7 +247,7 @@
       if( nnzero .gt. nndim .or. ngl+1 .gt. 2*nndim ) then
 	write(6,*) nnzero,ngl+1,nndim
 	flush(6)
-	call shympi_abort_internal('spk_solve_system: dimension iwork')
+	call shympi_abort_internal('error stop spk_solve_system: dimension iwork')
       end if
 
       !call csort (ngl,csr,jcsr,icsr,iwork,.true.)
@@ -274,7 +274,7 @@
       if( itsol .gt. 9 ) then
 	write(6,*) 'spk_solve_system: itsol: ',itsol
 	flush(6)
-	call shympi_abort_internal('spk_solve_system: itsol')	!ggu
+	call shympi_abort_internal('error stop spk_solve_system: itsol')	!ggu
       end if
 
 !--------------------------------------------------
@@ -359,7 +359,7 @@
 	  write(6,*) 'error solving matrix: ',ipar(1)
 	  flush(6)
 	  call shympi_abort_internal( &
-     &      'spk_solve_system: error solving matrix')
+     &      'error stop spk_solve_system: error solving matrix')
 	end if
 
 !-----------------------------------------------------------------

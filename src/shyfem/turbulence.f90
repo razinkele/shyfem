@@ -112,7 +112,7 @@
 	else
 	  write(6,*) 'Value iturb not possible: ',iturb
 	  flush(6)
-	  call shympi_abort_internal('turb_closure: iturb')
+	  call shympi_abort_internal('error stop turb_closure: iturb')
 	end if
 
 	end
@@ -346,7 +346,7 @@
 	    write(6,*) 'please eneable GOTM=true in the Rules.make file'
 	    write(6,*) 'or set iturb to another value'
 	    flush(6)
-	    call shympi_abort_internal('gotm_shell: no GOTM support')
+	    call shympi_abort_internal('error stop gotm_shell: no GOTM support')
 	  end if
 
 	  czdef = getpar('czdef')
@@ -438,14 +438,14 @@
 	      write(6,*) k,nlev
 	      write(6,*) h(flev:nlev)
 	      flush(6)
-	      call shympi_abort_internal('gotm_shell: no layer')
+	      call shympi_abort_internal('error stop gotm_shell: no layer')
 	    end if
             if( nlev .eq. flev ) cycle
 
 	    if( numOfLev < 1 .or. numOfLev > 10000 ) then
 	      write(6,*) 'wrong number of layers: ',numOfLev
 	      flush(6)
-	      call shympi_abort_internal('gotm_shell: wrong nlev')
+	      call shympi_abort_internal('error stop gotm_shell: wrong nlev')
 	    end if
 
 !           ------------------------------------------------------
@@ -1161,7 +1161,7 @@
 	  if( areakv(lmin,k) <= 0. ) then
 	    write(6,*) 'bnstress: areakv <= 0: ',k,lmin,areakv(lmin,k)
 	    flush(6)
-	    call shympi_abort_internal('bnstress: (2)')
+	    call shympi_abort_internal('error stop bnstress: (2)')
 	  end if
 	  taub(k) = taub(k) / areakv(lmin,k)
 	end do
@@ -1536,7 +1536,7 @@
 	if( nlev > ndim ) then
 	  write(6,*) ndim,nlev
 	  flush(6)
-	  call shympi_abort_internal('gotm_run_debug: dimensions')
+	  call shympi_abort_internal('error stop gotm_run_debug: dimensions')
 	end if
 	read(iu) dt,depth
 	read(iu) u_taus,u_taub
