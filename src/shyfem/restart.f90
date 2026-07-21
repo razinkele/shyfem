@@ -131,6 +131,7 @@
 ! 15	write gotm arrays
 ! 16	adapted for mpi
 ! 17	write bfm restart
+! 18	write simple-sediment bed mass (conza) (N25)
 !
 !	integer, save :: id_hydro_rst = 1	!1		hydro
 !	integer, save :: id_depth_rst = 2	!10		depth
@@ -141,6 +142,14 @@
 !	integer, save :: id_merc_rst  = 7	!1000000	mercury
 !	integer, save :: id_gotm_rst  = 8	!10000000	gotm
 !	integer, save :: id_bfm_rst   = 9	!100000000	bfm
+!	integer, save :: id_ssedi_rst = 10	!1000000000	sediment bed mass
+!
+! known restart gaps (N25, not covered by any version above):
+!   - k-eps turbulence closure (iturb==2): tken/eps/rls (mod_keps) and
+!     visv/difv/z0bk have no write/read hooks (unlike iturb==1/GOTM,
+!     saved via write_restart_gotm/read_restart_gotm above). A restart
+!     with k-eps active re-develops mixing from cold-start values; see
+!     the runtime warning in rst_write_record.
 !
 !*********************************************************************
 
@@ -641,7 +650,7 @@
 	logical b3d
         integer it
         integer ii,l,ie,k,i
-	integer ibarcl,iconz,ibio,ibfm,ieco,imerc,iturb
+	integer ibarcl,iconz,ibio,ibfm,ieco,imerc,iturb,issedi
         integer nvers
 	integer date,time
 	integer ios
@@ -660,6 +669,7 @@
 	ibfm = nint(getpar('ibfm'))
 	imerc = nint(getpar('imerc'))
 	iturb = nint(getpar('iturb'))
+	issedi = nint(getpar('issedi'))
         date = nint(dgetpar('date'))
         time = nint(dgetpar('time'))
 
@@ -704,8 +714,18 @@
 	call restart_write_value(iunit,iturb)
 	if( iturb .eq. 1 ) then
 	  call write_restart_gotm(iunit)
+	else if( iturb .eq. 2 .and. bmaster ) then
+	  !N25: k-eps closure state (tken/eps/rls in mod_keps, plus
+	  !visv/difv/z0bk) has no restart hooks -- see the "known restart
+	  !gaps" note near the top of this file. Warn instead of silently
+	  !dropping it, so the user knows mixing restarts cold after this
+	  !restart file is read back in.
+	  write(6,*) '*** warning: restart does not save k-eps '// &
+     &			'turbulence state (tken,eps,rls,visv,difv,z0bk)'
+	  write(6,*) '*** turbulent mixing will restart from cold '// &
+     &			'values when this restart file is read (N25)'
 	end if
-	
+
 	call restart_write_value(iunit,iconz)
 	if( iconz .gt. 0 ) then
 	  call write_restart_conz(iunit,iconz)
@@ -730,6 +750,11 @@
 	if( ibfm .gt. 0 ) then
 	  call write_restart_bfm(iunit)
         end if
+
+	call restart_write_value(iunit,issedi)
+	if( issedi .gt. 0 ) then
+	  call write_restart_ssedi(iunit)	!N25: bed mass (conza)
+	end if
 
 	if( bmaster ) flush(iunit)
 	call shympi_barrier
@@ -778,7 +803,7 @@
 	integer iuout
 	integer iunit,nvers,nrec,nkn,nel,nlv,iflag,ierr
 	double precision atime
-	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm
+	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm,issedi
 	integer idfile
 	integer date,time,it,id,ios
 
@@ -968,6 +993,15 @@
           end if
         end if
 
+	if( nvers .ge. 18 ) then
+	  id = id_ssedi_rst
+          read(iunit) issedi
+          if( issedi .gt. 0 ) then
+	    call rst_add_flag(id,iflag)
+	    call skip_restart_ssedi(iunit)
+          end if
+        end if
+
 	ierr = 0
 	return
 	end
@@ -1001,7 +1035,7 @@
         integer ii,l,ie,k,i
         integer nvers,nversaux,nrec
         integer nknaux,nelaux,nlvaux
-	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm
+	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm,issedi
 	integer date,time
 	real, allocatable :: hlvaux(:)
 
@@ -1222,6 +1256,20 @@
 	        call read_restart_bfm(iunit)
 	      else
 	        call skip_restart_bfm(iunit)
+	      end if
+	    end if
+          end if
+
+	  if( nvers .ge. 18 ) then
+	    id = id_ssedi_rst
+	    read(iunit,iostat=ios) issedi
+	    call rst_check_read(ios,'issedi')
+            if( issedi .gt. 0 ) then
+	      call rst_add_flag(id,iflag)
+	      if( rst_want_restart(id) ) then
+	        call read_restart_ssedi(iunit)	!N25: bed mass (conza)
+	      else
+	        call skip_restart_ssedi(iunit)
 	      end if
 	    end if
           end if

@@ -61,6 +61,7 @@
 ! 15	write gotm arrays
 ! 16	adapted for mpi
 ! 17	write bfm restart
+! 18	write simple-sediment bed mass (conza) (N25)
 !
 !*********************************************************************
 
@@ -77,8 +78,8 @@
 
 	integer, save :: idfrst = 749652	!id for restart file
 
-	integer, save :: nvmax = 17		!last version of file
-	integer, parameter :: nidmax = 9
+	integer, save :: nvmax = 18		!last version of file
+	integer, parameter :: nidmax = 10
 
 	integer, save :: id_hydro_rst = 1	!1		hydro
 	integer, save :: id_depth_rst = 2	!10		depth
@@ -89,6 +90,7 @@
 	integer, save :: id_merc_rst  = 7	!1000000	mercury
 	integer, save :: id_gotm_rst  = 8	!10000000	gotm
 	integer, save :: id_bfm_rst   = 9	!100000000	bfm
+	integer, save :: id_ssedi_rst = 10	!1000000000	sediment bed mass
 
 	integer, save :: ibarcl_rst = 0
 	integer, save :: iconz_rst  = 0
@@ -107,6 +109,7 @@
      &		,'mercury model       '    &
      &		,'gotm turb model     '    &
      &		,'bfm model           '    &
+     &		,'sediment bed mass   '    &
      &						/)
 
 	real, save, allocatable :: hlvrst(:)
