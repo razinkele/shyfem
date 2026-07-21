@@ -1516,14 +1516,23 @@
 
 	logical, parameter :: belem = .false.
 	integer nt
-	real aux(nlvdi,nkn)
+	integer ierr
+	real, allocatable :: aux(:,:)
 
 	if( bmpi_skip ) return
+
+	allocate(aux(nlvdi,nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal( &
+     &		'error stop shympi_check_3d_node_r: allocate aux')
+	end if
 
 	nt = nlvdi*nkn
 	aux = val
 	call shympi_exchange_3d_node_r(aux)
 	call shympi_check_array_r(belem,nlvdi,nkn,nt,val,aux,text)
+
+	deallocate(aux)
 
 	end subroutine shympi_check_3d_node_r
 
@@ -1539,14 +1548,23 @@
 
 	logical, parameter :: belem = .false.
 	integer nt
-	real aux(0:nlvdi,nkn)
+	integer ierr
+	real, allocatable :: aux(:,:)
 
 	if( bmpi_skip ) return
+
+	allocate(aux(0:nlvdi,nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal( &
+     &		'error stop shympi_check_3d0_node_r: allocate aux')
+	end if
 
 	nt = (nlvdi+1)*nkn
 	aux = val
 	call shympi_exchange_3d0_node_r(aux)
 	call shympi_check_array_r(belem,nlvdi+1,nkn,nt,val,aux,text)
+
+	deallocate(aux)
 
 	end subroutine shympi_check_3d0_node_r
 
