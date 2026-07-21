@@ -1026,6 +1026,21 @@
 	  end if
 	end if
 
+!	If the unit could not be inferred (e.g. a zero-valued pressure
+!	node forces pmin==0, so the block above is skipped), pfact stays
+!	0. Multiplying by 0 would silently zero the whole pressure field
+!	and the range check below would recompute on the zeroed array and
+!	not fire. Fail loudly instead.
+	if( pfact == 0. ) then
+	  write(6,*) 'pmin,pmax: ',minval(pp),maxval(pp)
+	  write(6,*) 'cannot determine pressure unit: a zero-valued'
+	  write(6,*) 'pressure node prevents unit inference (pfact=0).'
+	  write(6,*) 'check the pressure forcing field for missing/zero data.'
+	  flush(6)
+	  call shympi_abort_internal( &
+      &	    'error stop meteo_convert_wind_data: pressure unit undetermined')
+	end if
+
 	if( pfact /= 1. ) pp = pfact * pp
 
 	pmin = minval(pp)
