@@ -738,6 +738,12 @@
 
 	nlv = max(nlve,nlvk)
 
+! rewind the ile/ilk records just peeked at - off_read_record reads them
+! (exactly once) right after the header, same as for nvers >= 4
+
+	backspace(iu)
+	backspace(iu)
+
 	return
    96	continue
 	write(6,*) 'nvers: ',nvers

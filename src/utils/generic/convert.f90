@@ -201,7 +201,8 @@
         if( c == blank .or. c == tab .or. c == comma ) exit
 
 	if( c.eq.plus ) then
-		if( .not.bexp .and. .not.bsign ) then
+		if( .not.bexp .and. .not.bsign &
+     &			.and. .not.bnumb .and. .not.bdot ) then
 			bsign=.true.
 		else if( bexp .and. .not.besign ) then
 			besign=.true.
@@ -209,7 +210,8 @@
 			berr=.true.
 		end if
 	else if( c.eq.minus ) then
-		if( .not.bexp .and. .not.bsign ) then
+		if( .not.bexp .and. .not.bsign &
+     &			.and. .not.bnumb .and. .not.bdot ) then
 			bsign=.true.
 			sign=-1.
 		else if( bexp .and. .not.besign ) then
