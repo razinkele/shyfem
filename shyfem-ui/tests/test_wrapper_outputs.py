@@ -184,3 +184,49 @@ class TestRunCommandOutputDiscovery:
 
         assert "second.shy" in names2
         assert "first.shy" not in names2
+
+
+class TestCaptureStdout:
+    """L36: run_command must be able to drop the retained stdout buffer for long
+    simulations (which stream to a file via output_callback) while still firing
+    the callback per line and always retaining stderr."""
+
+    @pytest.mark.asyncio
+    async def test_capture_stdout_false_empties_buffer_keeps_callback_and_stderr(
+        self, wrapper, tmp_path
+    ):
+        work_dir = tmp_path / "work"
+        work_dir.mkdir()
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text("#!/bin/bash\necho line-one\necho line-two\necho err-line >&2\n")
+        exe.chmod(0o755)
+
+        seen: list[str] = []
+        result = await wrapper.run_command(
+            "shyfem",
+            [],
+            work_dir,
+            output_callback=seen.append,
+            capture_stdout=False,
+        )
+
+        # Retained stdout buffer is dropped ...
+        assert result.stdout == ""
+        # ... but the per-line callback still received every stdout line ...
+        assert "line-one" in seen and "line-two" in seen
+        # ... and stderr is always retained (error messages must survive).
+        assert "err-line" in result.stderr
+
+    @pytest.mark.asyncio
+    async def test_capture_stdout_true_retains_full_stdout(self, wrapper, tmp_path):
+        """A stdout-parsing caller (default capture_stdout=True) still gets the
+        full stdout — postprocess/shyelab depend on this."""
+        work_dir = tmp_path / "work2"
+        work_dir.mkdir()
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text("#!/bin/bash\necho parseable-output\n")
+        exe.chmod(0o755)
+
+        result = await wrapper.run_command("shyfem", [], work_dir)
+
+        assert "parseable-output" in result.stdout

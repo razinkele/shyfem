@@ -17,6 +17,12 @@ _EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr"})
 MAX_IMPORT_FILES = 10000
 MAX_IMPORT_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_IMPORT_COMPRESSION_RATIO = 100
+# Only apply the per-member ratio (zip-bomb) check to members whose UNCOMPRESSED
+# size exceeds this floor. Legitimately tiny but highly compressible files (a
+# weutro_box CSV deflates ~164:1; a small zero-filled grid) otherwise fail the
+# app's OWN export->import round-trip with a false "suspicious ratio". The
+# 2 GiB total + file-count caps still bound resource use for small members.
+MIN_RATIO_CHECK_BYTES = 4 * 1024 * 1024
 
 
 async def export_project(
@@ -200,7 +206,9 @@ def _validate_archive_limits(infos: list[zipfile.ZipInfo]) -> None:
         raise ValueError(f"archive uncompressed size exceeds {max_mb} MB")
 
     for info in file_infos:
-        if info.file_size <= 0:
+        # Skip the ratio check below the floor: a small file's high ratio is
+        # harmless (bounded absolute size) and legit round-trip data trips it.
+        if info.file_size < MIN_RATIO_CHECK_BYTES:
             continue
         compressed_size = max(info.compress_size, 1)
         ratio = info.file_size / compressed_size

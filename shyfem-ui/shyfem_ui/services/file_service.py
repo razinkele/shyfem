@@ -281,10 +281,14 @@ class FileService:
 
             project = db.query(Project).filter_by(id=sim.project_id).first()
             work_dir = Path(project.work_dir)
-            str_path = work_dir / sim.str_file
+            # Capture scalar fields INSIDE the session: after the block the
+            # instance is expired (expire_on_commit) and attribute access
+            # raises DetachedInstanceError. str_file is referenced below.
+            str_file = sim.str_file
+            str_path = work_dir / str_file
 
         if not str_path.exists():
-            return [f"STR file not found: {sim.str_file}"]
+            return [f"STR file not found: {str_file}"]
 
         parsed = StrParser.parse_file(str_path)
         warnings: list[str] = []

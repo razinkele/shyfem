@@ -127,4 +127,46 @@ class TestCleanupOldLogs:
     def test_keeps_all_when_none_old(self, svc):
         svc.log(username="a", action="x")
         assert svc.cleanup_old_logs(days=90) == 0
+
+    def test_cutoff_computed_in_utc_not_local(self, svc, session_factory, monkeypatch):
+        """L39: AuditLog.timestamp is server_default=func.now() (SQLite
+        CURRENT_TIMESTAMP = UTC). The retention cutoff must be UTC too. Simulate
+        a server whose local clock is far ahead of UTC: a row 20 days old in UTC
+        must be KEPT under a 30-day retention. A naive-local cutoff would place
+        the cutoff ahead and wrongly prune it."""
+        from datetime import datetime, timedelta
+
+        import shyfem_ui.services.audit_service as audit_mod
+        from shyfem_ui.models.audit_log import AuditLog
+
+        real_utc = datetime.utcnow()
+
+        class _SkewedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                # Local clock 15 days ahead of UTC (an extreme offset that makes
+                # the naive-local-vs-UTC bug observable within the 30d window).
+                return real_utc + timedelta(days=15)
+
+            @classmethod
+            def utcnow(cls):
+                return real_utc
+
+        monkeypatch.setattr(audit_mod, "datetime", _SkewedDateTime)
+
+        # Row is 20 days old in UTC -> inside a 30-day retention window.
+        with session_factory() as s:
+            s.add(
+                AuditLog(
+                    username="u",
+                    action="keep_me",
+                    timestamp=real_utc - timedelta(days=20),
+                )
+            )
+            s.commit()
+
+        removed = svc.cleanup_old_logs(days=30)
+
+        assert removed == 0
+        assert {r["action"] for r in svc.query()} == {"keep_me"}
         assert len(svc.query()) == 1

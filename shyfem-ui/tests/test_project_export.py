@@ -389,6 +389,12 @@ class TestImportProject:
             "shyfem_ui.services.project_export.MAX_IMPORT_COMPRESSION_RATIO",
             2,
         )
+        # Drop the size floor so the small (but highly compressible) test member
+        # is still subject to the ratio check.
+        monkeypatch.setattr(
+            "shyfem_ui.services.project_export.MIN_RATIO_CHECK_BYTES",
+            0,
+        )
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             zf.writestr(
@@ -407,6 +413,30 @@ class TestImportProject:
 
         with pytest.raises(ValueError, match="compression ratio"):
             await import_project(buf, tmp_path)
+
+    def test_small_highly_compressible_member_below_floor_passes(self):
+        """L46: a legit small, highly compressible file (below the absolute size
+        floor) must not trip the ratio check — the app's own weutro_box CSV
+        deflates ~164:1 and previously broke its export->import round-trip."""
+        from shyfem_ui.services.project_export import _validate_archive_limits
+
+        info = zipfile.ZipInfo(filename="weutro_box.csv")
+        info.file_size = 1024  # 1 KiB, well below MIN_RATIO_CHECK_BYTES
+        info.compress_size = 6  # ratio ~170 -> would trip the old check
+        # Must not raise.
+        _validate_archive_limits([info])
+
+    def test_large_member_over_floor_with_high_ratio_still_rejected(self, monkeypatch):
+        """L46: the zip-bomb guard must remain for members that exceed the floor
+        — a genuinely large member with an implausible ratio still rejects."""
+        from shyfem_ui.services import project_export as pe
+
+        monkeypatch.setattr(pe, "MIN_RATIO_CHECK_BYTES", 1000)
+        info = zipfile.ZipInfo(filename="bomb.bin")
+        info.file_size = 2000  # above the (patched) floor
+        info.compress_size = 1  # ratio 2000 >> MAX_IMPORT_COMPRESSION_RATIO (100)
+        with pytest.raises(ValueError, match="compression ratio"):
+            pe._validate_archive_limits([info])
 
     async def test_import_streams_extracted_members(self, exported_zip, tmp_path, monkeypatch):
         original_read = zipfile.ZipExtFile.read

@@ -347,6 +347,10 @@ def _send_completion_notification(job_info: JobInfo) -> None:
             "working_dir": job_info.working_dir,
             "stderr": job_info.error_message or "",
         }
+        if job_info.status == JobStatus.CANCELLED:
+            # A user-cancelled job is not a failure — sending a
+            # "simulation failed" email on a deliberate cancel is wrong.
+            return
         if job_info.status == JobStatus.COMPLETED:
             notification_service.notify_job_success(user_dict, job_dict)
         else:

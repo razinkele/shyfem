@@ -120,7 +120,11 @@ class AuditService:
         """Delete audit log entries older than ``days``, returning the count
         removed. Without this the audit_logs table grows unbounded (every action
         is logged). Best-effort: a DB failure is logged and returns 0."""
-        cutoff = datetime.now() - timedelta(days=days)
+        # AuditLog.timestamp is populated by server_default=func.now(), which is
+        # SQLite CURRENT_TIMESTAMP (UTC). The retention cutoff must be computed
+        # in UTC too, or on a non-UTC server the prune window is off by the
+        # local offset (naive-local vs naive-UTC mismatch).
+        cutoff = datetime.utcnow() - timedelta(days=days)
         session = self._session_factory()
         try:
             count = (

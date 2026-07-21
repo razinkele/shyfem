@@ -324,7 +324,9 @@ class TestLocalJobQueue:
         queue.add_progress_callback("test-session", on_progress)
 
         # Simulate wrapper calling progress_callback
-        async def mock_run(tool, args, wd, progress_callback=None, output_callback=None):
+        async def mock_run(
+            tool, args, wd, progress_callback=None, output_callback=None, capture_stdout=True
+        ):
             if progress_callback:
                 progress_callback(0.5, "halfway")
             return CommandResult(
@@ -494,6 +496,28 @@ class TestJobUserIdAndNotifications:
         await queue.submit(job_spec)
         await asyncio.sleep(0.3)
         mock_notif.notify_job_failed.assert_called_once()
+
+    def test_cancelled_job_sends_no_notification(self, queue):
+        """L35: a user-cancelled job must NOT route to notify_job_failed — the
+        user gets a false 'simulation failed' email otherwise. Neither the
+        success nor the failure notifier should fire on cancellation."""
+        from unittest.mock import MagicMock
+
+        notif = MagicMock()
+        queue.notification_service = notif
+        job = JobInfo(
+            id="cancel-1",
+            name="cancelled job",
+            tool_name="shyfem",
+            args=[],
+            working_dir="/tmp",
+            status=JobStatus.CANCELLED,
+        )
+
+        queue._send_completion_notification(job)
+
+        notif.notify_job_failed.assert_not_called()
+        notif.notify_job_success.assert_not_called()
 
 
 class TestLocalJobQueueEviction:
@@ -766,6 +790,69 @@ class TestCleanupDeletesDbRows:
         dbb._SessionLocal = None
         cfg._config = None
 
+    @pytest.mark.asyncio
+    async def test_created_at_purge_uses_utc_cutoff(self, tmp_path, monkeypatch):
+        """L39: Job.created_at is server_default=func.now() (UTC). The DB purge
+        must compare it against a UTC cutoff. Simulate a non-UTC server (local
+        clock 15 days ahead of UTC): a row created 3 days ago in UTC, with
+        completed_at=NULL so only the created_at branch applies, is WITHIN a
+        7-day retention window and must survive. A naive-local cutoff would sit
+        ahead of the row and wrongly purge it."""
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+        import shyfem_ui.services.job_local as job_local_mod
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+
+        real_utc = datetime.utcnow()
+
+        class _SkewedDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return real_utc + timedelta(days=15)
+
+            @classmethod
+            def utcnow(cls):
+                return real_utc
+
+        monkeypatch.setattr(job_local_mod, "datetime", _SkewedDateTime)
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q._jobs.clear()  # row is outside the in-memory window
+        # Skip history reload so the row stays DB-only and is exercised by the
+        # _delete_old_db_rows path (the unbounded-growth purge for rows beyond
+        # the in-memory cap), not the in-memory pass.
+        q._history_loaded = True
+
+        with dbb.db_session() as db:
+            db.add(
+                Job(
+                    job_uuid="created-3d-ago",
+                    name="within retention",
+                    job_type="shyfem",
+                    working_dir="/tmp/x",
+                    status=JobStatus.COMPLETED,
+                    created_at=real_utc - timedelta(days=3),
+                    completed_at=None,
+                )
+            )
+            db.commit()
+
+        await q.cleanup_old_jobs(days=7)
+
+        with dbb.db_session() as db:
+            assert db.query(Job).filter(Job.job_uuid == "created-3d-ago").count() == 1
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
 
 class TestDbRowToJobInfoOutputFiles:
     """_db_row_to_job_info must restore output_files from the ``jobs.output_files``
@@ -992,6 +1079,57 @@ class TestAsyncHygieneF22F51:
         assert not violations, (
             "bare self._persist_job(...) call(s) inside async def, not "
             f"offloaded via asyncio.to_thread: {violations}"
+        )
+
+    def test_no_bare_db_purge_call_on_async_paths(self):
+        """L38: cleanup_old_jobs is awaited directly by maintenance.py (unlike
+        the sibling cleanups, which use to_thread). Its synchronous DB-purge
+        helpers (_delete_old_db_rows / _delete_job_rows) do an unbounded scan +
+        per-row delete and must run off the event loop. The offloaded form
+        ``await asyncio.to_thread(self._delete_old_db_rows, ...)`` passes the
+        method as a bare attribute (an argument, not a Call), so only a
+        straggler direct call produces a Call node here."""
+        import ast
+        import inspect
+
+        import shyfem_ui.services.job_local as job_local_mod
+
+        source = inspect.getsource(job_local_mod)
+        tree = ast.parse(source)
+        targets = {"_delete_old_db_rows", "_delete_job_rows"}
+        violations = []
+
+        class _Visitor(ast.NodeVisitor):
+            def __init__(self):
+                self.stack: list[ast.AST] = []
+
+            def _enter(self, node):
+                self.stack.append(node)
+                self.generic_visit(node)
+                self.stack.pop()
+
+            def visit_AsyncFunctionDef(self, node):
+                self._enter(node)
+
+            def visit_FunctionDef(self, node):
+                self._enter(node)
+
+            def visit_Call(self, node):
+                func = node.func
+                is_target = (
+                    isinstance(func, ast.Attribute)
+                    and func.attr in targets
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "self"
+                )
+                if is_target and self.stack and isinstance(self.stack[-1], ast.AsyncFunctionDef):
+                    violations.append((self.stack[-1].name, func.attr, node.lineno))
+                self.generic_visit(node)
+
+        _Visitor().visit(tree)
+        assert not violations, (
+            "bare synchronous DB-purge call(s) inside async def, not offloaded "
+            f"via asyncio.to_thread: {violations}"
         )
 
     @pytest.mark.asyncio
