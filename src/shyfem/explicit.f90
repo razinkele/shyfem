@@ -838,8 +838,11 @@
     	          zxadv = wtop * ulov(l,ie)
 	          zyadv = wtop * vlov(l,ie)
                 else
-	          zxadv = wtop * ulov(l-1,ie)
-	          zyadv = wtop * vlov(l-1,ie)
+!	          surface (l==lmin) has no layer above: wtop==0 there,
+!	          so clamp the index to lmin to avoid an out-of-bounds
+!	          read of ulov(0,ie)/vlov(0,ie) (the term is 0 anyway)
+	          zxadv = wtop * ulov(max(l-1,lmin),ie)
+	          zyadv = wtop * vlov(max(l-1,lmin),ie)
                 end if
 
 	        if(wbot.gt.0.) then
