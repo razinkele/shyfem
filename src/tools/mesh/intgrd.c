@@ -297,6 +297,13 @@ float InterpolateDepth( Grid_type *G , Elem_type *pe , float x , float y )
 	Node_type *pn;
 	float d[3];
 
+	if( pe->vertex > 3 ) {
+		fprintf(stderr,
+			"InterpolateDepth: element with >3 vertices "
+			"unsupported, skipping\n");
+		return NULLDEPTH;
+	}
+
 	n = pe->vertex;
 	ind = pe->index;
 	pb = (Backg_type *) pe->extra;

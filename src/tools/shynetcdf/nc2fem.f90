@@ -832,7 +832,7 @@
 	integer nx,ny,nz		!size of data in nc file
 	real x(nx,ny),y(nx,ny)
 	integer nz1
-	real hlv(nz1)
+	real hlv(nz)			!backing array is nlvdim=nz in caller
 	integer nxnew,nynew		!size of regular grid
 	real regpar(9)			!regular grid to which to interpolate
 	integer nrec			!how many records written (return)
@@ -931,7 +931,12 @@
 	  end if
 	end do
 
-	lmax = nz1
+	! header lmax must match the record level count (nzz = nz for 3d),
+	! not nz1: setup_zcoord reduces nz1 below nz for surface-at-0 /
+	! negative-down z conventions, but the data records still carry
+	! nz levels. Declaring nz1 here would abort valid nz1<nz input in
+	! the guard below and leave header/records inconsistent.
+	lmax = nz
 	if( ndd == 2 ) lmax = 1
 
 	!write(6,*) 'ggu: ',ndd,nz,lmax,level
@@ -963,6 +968,9 @@
 	  do i=1,nvar
 	    nzz = nz
 	    if( dims(i) == 2 ) nzz = 1
+	    ! defensive assertion: unreachable for valid input now that
+	    ! the header lmax matches the record level count (nzz in {nz,1},
+	    ! lmax in {nz,1}, and mixing 2d/3d is rejected above).
 	    if( nzz > lmax ) then
 	      write(6,*) 'nc2fem: record lmax exceeds header lmax'
 	      write(6,*) 'header lmax = ',lmax
