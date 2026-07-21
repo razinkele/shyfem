@@ -2,7 +2,7 @@
 #
 # bump-version.sh - Automatic version bumping for SHYFEM
 #
-# Usage: bump-version.sh [major|minor|patch] [--dry-run] [--no-tag] [--no-commit]
+# Usage: bump-version.sh [major|minor|patch] [--dry-run] [--no-tag] [--no-commit] [--tag-anyway]
 #
 # Updates version in:
 #   - VERSION (first line)
@@ -25,6 +25,7 @@ BUMP_TYPE=""
 DRY_RUN=false
 NO_TAG=false
 NO_COMMIT=false
+TAG_ANYWAY=false
 
 for arg in "$@"; do
     case "$arg" in
@@ -32,20 +33,22 @@ for arg in "$@"; do
         --dry-run)         DRY_RUN=true ;;
         --no-tag)          NO_TAG=true ;;
         --no-commit)       NO_COMMIT=true ;;
+        --tag-anyway)      TAG_ANYWAY=true ;;
         -h|--help)
-            echo "Usage: $0 [major|minor|patch] [--dry-run] [--no-tag] [--no-commit]"
+            echo "Usage: $0 [major|minor|patch] [--dry-run] [--no-tag] [--no-commit] [--tag-anyway]"
             echo ""
-            echo "  major       Bump major version (X.0.0)"
-            echo "  minor       Bump minor version (x.Y.0)"
-            echo "  patch       Bump patch version (x.y.Z)"
-            echo "  --dry-run   Show what would change without modifying files"
-            echo "  --no-tag    Skip creating a git tag"
-            echo "  --no-commit Skip creating a git commit"
+            echo "  major         Bump major version (X.0.0)"
+            echo "  minor         Bump minor version (x.Y.0)"
+            echo "  patch         Bump patch version (x.y.Z)"
+            echo "  --dry-run     Show what would change without modifying files"
+            echo "  --no-tag      Skip creating a git tag"
+            echo "  --no-commit   Skip creating a git commit"
+            echo "  --tag-anyway  Tag even if --no-commit was given"
             exit 0
             ;;
         *)
             echo "Error: unknown argument '$arg'" >&2
-            echo "Usage: $0 [major|minor|patch] [--dry-run] [--no-tag] [--no-commit]" >&2
+            echo "Usage: $0 [major|minor|patch] [--dry-run] [--no-tag] [--no-commit] [--tag-anyway]" >&2
             exit 1
             ;;
     esac
@@ -177,9 +180,14 @@ Update VERSION, version.f90, and CHANGELOG.md."
 fi
 
 if ! $NO_TAG; then
-    cd "$FEMDIR"
-    git tag -a "v${NEW_VERSION}" -m "SHYFEM ${NEW_VERSION}"
-    echo "  Created tag: v${NEW_VERSION}"
+    if $NO_COMMIT && ! $TAG_ANYWAY; then
+        echo "  Skipping tag: --no-commit was given, so v${NEW_VERSION} would point at the wrong commit"
+        echo "  (pass --tag-anyway to override, or commit manually and tag afterwards)"
+    else
+        cd "$FEMDIR"
+        git tag -a "v${NEW_VERSION}" -m "SHYFEM ${NEW_VERSION}"
+        echo "  Created tag: v${NEW_VERSION}"
+    fi
 fi
 
 echo ""

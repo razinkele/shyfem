@@ -55,6 +55,7 @@ errout.dat
 
 src/shyfem/shyfem
 bin/shyfem
+bin/shyfem-petsc
 
 src/tools/shypre/shypre
 bin/shypre

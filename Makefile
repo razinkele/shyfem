@@ -143,12 +143,20 @@ fem: shyfem
 shyfem: checkv check_mpi_vendor libmod
 	cd src; make
 
-petsc: checkv libmod
+petsc: checkv check_mpi_vendor libmod
+	@if [ -z "$(PETSC_DIR)" ] || [ ! -d "$(PETSC_DIR)" ]; then \
+	  echo "ERROR: PETSC_DIR is empty or not a directory (PETSC_DIR='$(PETSC_DIR)')"; \
+	  echo "  e.g. make petsc PETSC_DIR=/usr/lib/petscdir/petsc3.19/x86_64-linux-gnu-real"; \
+	  exit 1; \
+	fi
 	cd src; make SOLVER=PETSC PETSC_DIR=$(PETSC_DIR)
-	@if [ -f bin/shyfem ]; then \
-	  mv bin/shyfem bin/shyfem-petsc; \
+	@if [ -f src/shyfem/shyfem ]; then \
+	  cp -L src/shyfem/shyfem bin/shyfem-petsc; \
 	  echo "PETSc solver built as bin/shyfem-petsc"; \
 	  echo "Rebuilding default SPARSKIT solver..."; \
+	else \
+	  echo "ERROR: PETSc build did not produce src/shyfem/shyfem"; \
+	  exit 1; \
 	fi
 	cd src/shyfem; make clean
 	cd src; make
@@ -451,8 +459,12 @@ check_var:
 	@$(FEMCHECK)/check_var.sh
 
 regress:
-	if [ -d $(REGRESSDIR) ]; then SHYFEMDIR=$(PWD); \
-		cd $(REGRESSDIR); make regress np=$(np); fi
+	@if [ ! -d $(REGRESSDIR) ]; then \
+	  echo "ERROR: regression suite directory '$(REGRESSDIR)' does not exist"; \
+	  echo "  (femregress is not distributed with this repository)"; \
+	  exit 1; \
+	fi
+	SHYFEMDIR=$(PWD); cd $(REGRESSDIR); make regress np=$(np)
 
 revision:
 	 $(FEMBIN)/revision_last.sh
