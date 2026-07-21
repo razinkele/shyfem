@@ -834,7 +834,9 @@
               if( cload > cn(l,k) ) then
                 write(6,*) 'error computing loading: ',l,k
                 write(6,*) 'loading,cload,cn(l,k): ',loading,cload,cn(l,k)
-                stop 'error stop conz3d_nodes: internal error (1)'
+                flush(6)
+                call shympi_abort_internal( &
+     &            'conz3d_nodes: internal error (1)')
               end if
               loading = -cload / dt
               if( rload > 0. ) load(l,k) = loading / rload
@@ -873,7 +875,9 @@
 	      write(6,*) k,l,ilevel
 	      write(6,*) nkn_inner,nkn_local,nkn
 	      write(6,*) cdiag(l),clow(l),chigh(l-1)
-	      stop 'error stop conz3d_nodes (omp): diag == 0'
+	      flush(6)
+	      call shympi_abort_internal( &
+     &          'conz3d_nodes (omp): diag == 0')
 	    end if
 	    aux=1./(cdiag(l)-clow(l)*chigh(l-1))
 	    chigh(l)=chigh(l)*aux

@@ -84,6 +84,7 @@
 ! administers turbulence closure
 
 	use para
+	use shympi
 	implicit none
 
 	logical boff
@@ -110,7 +111,8 @@
 	  call munk_anderson_shell
 	else
 	  write(6,*) 'Value iturb not possible: ',iturb
-	  stop 'error stop turb_closure: iturb'
+	  flush(6)
+	  call shympi_abort_internal('turb_closure: iturb')
 	end if
 
 	end
@@ -343,7 +345,8 @@
 	    write(6,*) 'the model has been compiled without GOTM support'
 	    write(6,*) 'please eneable GOTM=true in the Rules.make file'
 	    write(6,*) 'or set iturb to another value'
-	    stop 'error stop gotm_shell: no GOTM support'
+	    flush(6)
+	    call shympi_abort_internal('gotm_shell: no GOTM support')
 	  end if
 
 	  czdef = getpar('czdef')
@@ -434,13 +437,15 @@
 	      write(6,*) 'layers without depth...'
 	      write(6,*) k,nlev
 	      write(6,*) h(flev:nlev)
-	      stop 'error stop gotm_shell: no layer'
+	      flush(6)
+	      call shympi_abort_internal('gotm_shell: no layer')
 	    end if
             if( nlev .eq. flev ) cycle
 
 	    if( numOfLev < 1 .or. numOfLev > 10000 ) then
 	      write(6,*) 'wrong number of layers: ',numOfLev
-	      stop 'error stop gotm_shell: wrong nlev'
+	      flush(6)
+	      call shympi_abort_internal('gotm_shell: wrong nlev')
 	    end if
 
 !           ------------------------------------------------------
@@ -1153,7 +1158,11 @@
 
 	do k=1,nkn
 	  lmin = jlhkv(k)
-	  if( areakv(lmin,k) <= 0. ) stop 'error stop bnstress: (2)'
+	  if( areakv(lmin,k) <= 0. ) then
+	    write(6,*) 'bnstress: areakv <= 0: ',k,lmin,areakv(lmin,k)
+	    flush(6)
+	    call shympi_abort_internal('bnstress: (2)')
+	  end if
 	  taub(k) = taub(k) / areakv(lmin,k)
 	end do
 
@@ -1497,6 +1506,8 @@
      &                  ,u_taus,u_taub,z0s,z0b &
      &                  ,hh,nn,ss,num,nuh,ken,dis,len,ierr)
 
+        use shympi
+
         implicit none
 
         integer iu,iwhat,k,nlev,ierr
@@ -1524,7 +1535,8 @@
 	end if
 	if( nlev > ndim ) then
 	  write(6,*) ndim,nlev
-	  stop 'error stop gotm_run_debug: dimensions'
+	  flush(6)
+	  call shympi_abort_internal('gotm_run_debug: dimensions')
 	end if
 	read(iu) dt,depth
 	read(iu) u_taus,u_taub
