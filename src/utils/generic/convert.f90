@@ -269,7 +269,7 @@
 	else
 		istod=1
 		ioff=i
-		d = ff * sign * ( 10.**(kexp*iesign) )
+		d = ff * sign * ( 10.d0**(kexp*iesign) )
 	end if
 
 	end

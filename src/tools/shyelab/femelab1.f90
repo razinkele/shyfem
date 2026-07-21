@@ -581,7 +581,7 @@
 	      end if
 	      if( bcondense ) then
 		lmax_prof = llmax(iv)
-		call fem_condense(np,lmax_prof,data(1,1,iv),flag, &
+		call fem_condense(np,nlvdi,lmax_prof,data(1,1,iv),flag, &
      &				data_profile)
                 call fem_file_write_data(iformout,iout &
      &                          ,0,np_out,lmax_prof &
@@ -934,7 +934,7 @@
 	  iu = ius(iv)
 	  write(6,*) nrec,iv,ivars(iv),trim(strings(iv))
 	  do l=1,llmax(iv)
-            call minmax_data(l,llmax(iv),np,flag,ilhkv,data(1,1,iv) &
+            call minmax_data(l,lmax,np,flag,ilhkv,data(1,1,iv) &
      &					,dmin,dmax,dmed)
 	    write(6,1001) 'ivar,l,min,aver,max : ' &
      &				,ivar,l,dmin,dmed,dmax
@@ -1372,14 +1372,21 @@
 
 !*****************************************************************
 
-	subroutine fem_condense(np,lmax,data,flag,data_profile)
+	subroutine fem_condense(np,nlvddi,lmax,data,flag,data_profile)
+
+! condenses (horizontally averages) data per layer
+!
+! nlvddi is the file-global vertical dimension (leading dimension of data),
+! lmax is the number of valid layers for this variable (may be < nlvddi
+! for a 2D variable in a mixed 2D/3D fem file); on return lmax holds the
+! deepest layer that contained valid data
 
 	implicit none
 
-	integer np,lmax
-	real data(lmax,np)
+	integer np,nlvddi,lmax
+	real data(nlvddi,np)
 	real flag
-	real data_profile(lmax)
+	real data_profile(nlvddi)
 
 	integer l,i,nacu,lmax_prof
 	double precision val,acu

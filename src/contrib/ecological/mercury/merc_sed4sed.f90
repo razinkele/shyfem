@@ -477,7 +477,7 @@
 	write(6,*) dtime,'  ',aline
 	write(6,*) c,cmin,cmax
 
-	stop 'error stop massert: assertion violated'
+	call shympi_abort_internal('error stop massert: assertion violated')
 
 	end
 

@@ -45,6 +45,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "general.h"
 #include "fund.h"
 #include "gustd.h"
 
@@ -97,12 +98,17 @@ void ReadFiles( int argc , char *argv[] )
 
 {
 	char sfile[80];
-	char *s;
+	char *ext = ".grd";
+	char *name;
+	int n;
 
 	while( OpArgc < argc ) {
-		s=strcpy(sfile,argv[OpArgc++]);
+		name = argv[OpArgc++];
+		n = snprintf(sfile,sizeof(sfile),"%s",name);
+		if( n < 0 || (size_t)n + strlen(ext) >= sizeof(sfile) )
+			Error2("ReadFiles: file name too long ",name);
 		/* s=strcat(s,".grd"); */
-		ReadStandard(s,HNN,HEL,HLI,CM); 
+		ReadStandard(sfile,HNN,HEL,HLI,CM);
 	}
 }
 

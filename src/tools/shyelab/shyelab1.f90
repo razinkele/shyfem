@@ -368,6 +368,12 @@
 	  call shyelab_init_output(id,idout,ftype,1,(/75/))
 	else if( bvorticity ) then
 	  if( ftype /= 1 ) goto 70
+	  if( outformat /= 'shy' .and. outformat /= 'native' ) then
+	    write(6,*) 'vorticity output not supported for format: ' &
+     &				,trim(outformat)
+	    write(6,*) 'use -outformat shy (or native) for vorticity'
+	    stop 'error stop shyelab1: vorticity output format'
+	  end if
 	  ftype_out = 2
 	  call shyelab_init_output(id,idout,ftype_out,1,(/19/))
 	else
@@ -550,6 +556,7 @@
 	 if( bvorticity ) then
            ivar = 19
 	   iv = 1
+	   belem = .false.		!vorticity is a nodal quantity
            call compute_vorticity(nndim,cv3all,cv3)
 	   call shyelab_record_output(id,idout,dtime,ivar,iv &
      &						,belem,nkn,1 &

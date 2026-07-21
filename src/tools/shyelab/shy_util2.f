@@ -308,14 +308,16 @@ c nunit is 0 if no other file exists
 	  nexp = n * m
 	  bzeta = ivar == -1
 	  if( bzeta ) iv = iv - 1
-	  ivars(1,iv) = n
-	  ivars(2,iv) = m
-	  ivars(3,iv) = lmax
+	  if( .not. bzeta ) then	!zeta has no slot in ivars(4,nvar)
+	    ivars(1,iv) = n
+	    ivars(2,iv) = m
+	    ivars(3,iv) = lmax
+	  end if
 	  if( nexp > nndim ) goto 74
 	  if( lmax > nlvddi ) goto 74
 	  if( bfirst ) dtvar = dtime
 	  if( dtvar /= dtime ) goto 85
-	  ivars(4,iv) = ivar
+	  if( .not. bzeta ) ivars(4,iv) = ivar
 	  cv3all(:,:,iv) = cv3(:,:) * fact
 	  if( abs(ivar) == 1 ) then		! water level
 	  !write(6,*) 'water level: ',iv,n,m

@@ -365,7 +365,7 @@ c interpolates depth values - exponential interpolation
 	real fact,dx,dy
 	real area,x0,y0,sig2
 
-	logical ok(nel)
+	logical ok(max(nel,nkn))
 
 	real dist2
 	logical inconvex,inquad
@@ -640,7 +640,7 @@ c interpolates depth values with auto-correlation
 	real pi
 	real ufact,umfact,a
 
-	logical ok(nel)
+	logical ok(max(nel,nkn))
 
 	real dist2
 	logical inconvex,inquad
@@ -687,7 +687,6 @@ c-----------------------------------------------------------------
 	      a = ap(n)
 	      r2 = dist2(x0,y0,x,y)
 	      !if (a == 0) a = 0.0001  	!mbj
-	      cycle			!do not use this point
 	      w = exp(-r2/(2.*a))
 	      depth = depth + d * w
 	      weight = weight + w

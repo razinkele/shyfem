@@ -208,6 +208,16 @@
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	allocate(dir(knausm),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
+
+	! initialize the hydro stats buffers so a stale/uninitialized value
+	! can never be printed if a record is read before it is filled
+	val0 = 0.
+	zeta = 0.
+	uu = 0.
+	vv = 0.
+	speed = 0.
+	dir = 0.
+
 	allocate(ivars(nvar),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	femver = ' '
@@ -384,7 +394,7 @@
 	  end if
 
 	  if( bwrite ) then
-	    if( ivar == 0 ) then
+	    if( ivar == 1 ) then
 	      call minmaxmed(zeta,knausm,vmin,vmax,vmed)
 	      write(6,*) 'zeta  min,max,aver : ',vmin,vmax,vmed
 	      call minmaxmed(uu,knausm,vmin,vmax,vmed)
