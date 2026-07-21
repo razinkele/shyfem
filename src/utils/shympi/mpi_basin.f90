@@ -86,14 +86,29 @@
 	integer n_lk,n_le
 	integer nkn_tot,nel_tot
 	integer err_id
-	integer nodes(nkn)
-	integer elems(nel)
-	integer nindex(nkn)
-	integer eindex(nel)
-	integer area_node(nkn)
+	integer ierr
+	integer, allocatable :: nodes(:)
+	integer, allocatable :: elems(:)
+	integer, allocatable :: nindex(:)
+	integer, allocatable :: eindex(:)
+	integer, allocatable :: area_node(:)
 	integer ivals(n_threads)
 
 	if( .not. bmpi ) return
+
+!	-----------------------------------------------------
+!	N28: allocate global-mesh-sized work arrays on the heap
+!	(were automatic stack arrays sized by the still-global
+!	nkn/nel, which overflow the stack on large basins). nkn
+!	and nel are still global here (see checks below), so the
+!	allocated bounds match the former automatic bounds.
+!	-----------------------------------------------------
+
+	allocate(nodes(nkn),elems(nel),nindex(nkn),eindex(nel) &
+     &			,area_node(nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('error stop shympi_setup: allocation failed')
+	end if
 
 	if( shympi_partition_on_elements() ) then
 	  call shympi_abort_internal('error stop shympi_setup: cannot yet partition on elems')
@@ -267,6 +282,8 @@
 !	-----------------------------------------------------
 !	end of routine
 !	-----------------------------------------------------
+
+	deallocate(nodes,elems,nindex,eindex,area_node)
 
 	!call shympi_stop('forced stop in shympi_setup')
 
@@ -461,10 +478,21 @@
 	integer is1,is2,k1,k2,kmin
 	integer iu,id
 	integer n1,n2
+	integer ierr
 	integer iunique(n_le)
 	integer idiff(n_le)
-	integer id_aux(0:3,nel)		!total elements
+	integer, allocatable :: id_aux(:,:)	!total elements
 	logical bthis,bexchange,bwrite
+
+!	-----------------------------------------------------
+!	N28: id_aux is sized by the still-global nel and would be
+!	an automatic stack array (~global). Put it on the heap.
+!	-----------------------------------------------------
+
+	allocate(id_aux(0:3,nel),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('error stop adjust_indices: allocation failed')
+	end if
 
 	bexchange = .false.
 	bexchange = .true.
@@ -683,6 +711,8 @@
 !	end of routine
 !	-----------------------------------------------------
 
+	deallocate(id_aux)
+
 	return
    98	continue
 	call shympi_abort_internal('error 400')
@@ -762,7 +792,7 @@
 
 	integer ie,k,i,ii,kk
 	integer ierr
-	integer inverse(nkn)		!aux array for check
+	integer, allocatable :: inverse(:)	!aux array for check (N28)
 
         integer, allocatable :: nen3v_aux(:,:)
         integer, allocatable :: ipev_aux(:)
@@ -799,6 +829,14 @@
 !	----------------------------------
 !	set up inverse information
 !	----------------------------------
+!	N28: inverse is sized by the still-global nkn (basin_init
+!	below switches nkn/nel to local values), so it must be
+!	allocated here, before basin_init, and freed before it.
+
+	allocate(inverse(nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('error stop transfer_domain: allocation failed')
+	end if
 
 	inverse = 0
 	do i=1,n_lk
@@ -837,6 +875,8 @@
 !	----------------------------------
 !	create new basin and copy
 !	----------------------------------
+
+	deallocate(inverse)		!global-sized, free before basin_init
 
 	call basin_init(n_lk,n_le)  !here we re-allocate basin data structures
 
@@ -1127,7 +1167,8 @@
 	integer nparts
 	integer nnp,nep
 	integer nmin,nmax
-	integer area_elem(nel)
+	integer ierr
+	integer, allocatable :: area_elem(:)	!N28: was automatic (nel)
 	integer ierr1,ierr2
 
 	logical, save :: bwritegrd = .true.
@@ -1137,6 +1178,11 @@
 
 	ierr1 = 0
 	ierr2 = 0
+
+	allocate(area_elem(nel),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('error stop handle_partition: allocation failed')
+	end if
 
 	call basin_get_partition(nkn,nel,nnp,nep,area_node,area_elem)
 
@@ -1186,6 +1232,8 @@
 	!  write(6,*) 'error in partitioning: ',ierr1,ierr2
 	!  stop 'error stop handle_partition: partitioning error'
 	!end if
+
+	deallocate(area_elem)
 
 	end
 
