@@ -20,6 +20,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>
 #include "unformatted.h"
 
 /*****************************************************/
@@ -209,6 +210,62 @@ float *get_float( void *buf )
 }
 
 /*****************************************************/
+/*     bound a file-supplied record length against    */
+/*     the actual remaining bytes in the input file   */
+/*****************************************************/
+
+static long get_remaining_bytes( FILE *fp )
+{
+  long here,end;
+
+  if( !fp ) return -1L;
+
+  here = ftell(fp);
+  if( here < 0L ) return -1L;		/* not seekable (e.g. pipe) */
+
+  if( fseek(fp,0L,SEEK_END) != 0 ) return -1L;
+  end = ftell(fp);
+  if( fseek(fp,here,SEEK_SET) != 0 ) {
+    fprintf(stderr,"error restoring file position after size check\n");
+    exit(1);
+  }
+
+  if( end < 0L ) return -1L;
+  return end - here;
+}
+
+static void check_record_length( LONGLONG nrec )
+{
+  long remain;
+
+  if( nrec < 0 ) {
+    fprintf(stderr,"invalid negative record length in unformatted file: "
+			"%lld\n",(long long) nrec);
+    exit(1);
+  }
+
+  /* read_data()/alloc_buffer() take an int nbytes, so a record length
+     that is well-formed (fits inside a genuinely large file) but exceeds
+     INT_MAX would silently narrow to a negative/garbage int downstream
+     (alloc_buffer's "nbytes <= ibuffer" guard then skips allocation and
+     fread writes through a NULL/undersized buffer). Reject cleanly here
+     instead of narrowing into that trap. */
+  if( nrec > (LONGLONG) INT_MAX ) {
+    fprintf(stderr,"record length %lld exceeds the maximum this tool can "
+			"buffer (INT_MAX=%d)\n",(long long) nrec,INT_MAX);
+    exit(1);
+  }
+
+  remain = get_remaining_bytes(filein);
+  if( remain >= 0L && nrec > (LONGLONG) remain ) {
+    fprintf(stderr,"record length %lld exceeds remaining file size %ld "
+			"-- corrupt or truncated file\n"
+			,(long long) nrec,remain);
+    exit(1);
+  }
+}
+
+/*****************************************************/
 
 int read_record( void )
 {
@@ -228,6 +285,8 @@ int read_record( void )
   if( iswap ) swap_byte_order(ihead,(void *) &nrec1);
 
   // fprintf(stderr,"first: %d %d\n",n,nrec1);
+
+  check_record_length((LONGLONG) nrec1);
 
   n = nrec1;			/* cast if necessary */
   read_data(n);			/* reads n bytes */
@@ -268,6 +327,8 @@ int read_record_32( void )
 
   /* fprintf(stderr,"first: %d %d\n",n,nrec1); */
 
+  check_record_length((LONGLONG) nrec1);
+
   n = nrec1;			/* cast if necessary */
   read_data(n);			/* reads n bytes */
 
@@ -304,6 +365,8 @@ int read_record_64( void )
   if( iswap ) swap_byte_order(ihead64,(void *) &nrec1);
 
   /* fprintf(stderr,"first: %d %d\n",n,nrec1); */
+
+  check_record_length(nrec1);
 
   n = nrec1;			/* cast if necessary */
   read_data(n);			/* reads n bytes */
@@ -485,8 +548,7 @@ void alloc_file_desc( void )
 
 void Error( int ier, char *string )
 {
-  int dummy;
-  fprintf(stderr,string,dummy);
+  fprintf(stderr,"%s",string);
   exit(ier);
 }
 

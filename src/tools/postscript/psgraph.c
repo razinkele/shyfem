@@ -651,12 +651,30 @@ void PsInitColorTable( int size )
 
 {
 	int i;
+	float *tmp;
 
 	Csize = size;
 
-	CT1 = (float *) realloc((void *)CT1,size*sizeof(float));
-	CT2 = (float *) realloc((void *)CT2,size*sizeof(float));
-	CT3 = (float *) realloc((void *)CT3,size*sizeof(float));
+	tmp = (float *) realloc((void *)CT1,size*sizeof(float));
+	if( !tmp ) {
+	  fprintf(stderr,"PsInitColorTable: cannot allocate CT1 (size=%d)\n",size);
+	  exit(1);
+	}
+	CT1 = tmp;
+
+	tmp = (float *) realloc((void *)CT2,size*sizeof(float));
+	if( !tmp ) {
+	  fprintf(stderr,"PsInitColorTable: cannot allocate CT2 (size=%d)\n",size);
+	  exit(1);
+	}
+	CT2 = tmp;
+
+	tmp = (float *) realloc((void *)CT3,size*sizeof(float));
+	if( !tmp ) {
+	  fprintf(stderr,"PsInitColorTable: cannot allocate CT3 (size=%d)\n",size);
+	  exit(1);
+	}
+	CT3 = tmp;
 
 	for(i=0;i<size;i++) {
 	  CT1[i] = 0.;
