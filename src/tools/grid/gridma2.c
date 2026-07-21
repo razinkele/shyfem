@@ -207,23 +207,23 @@ void WriteToMesWindow( void )
 
 		xx = GbMes.low.x + 0.05 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pe->number);
+		snprintf(s,sizeof(s),"%d",pe->number);
             	QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.25 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pe->type);
+		snprintf(s,sizeof(s),"%d",pe->type);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.45 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pe->vertex);
+		snprintf(s,sizeof(s),"%d",pe->vertex);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.65 * width;
 		yy = GbMes.low.y + 0.2 * height;
 		if( pe->depth != NULLDEPTH ) {
-		    sprintf(s,"%f",pe->depth);
+		    snprintf(s,sizeof(s),"%f",pe->depth);
 		    QText(xx,yy,s);
 		}
 
@@ -233,23 +233,23 @@ void WriteToMesWindow( void )
 
 		xx = GbMes.low.x + 0.05 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pl->number);
+		snprintf(s,sizeof(s),"%d",pl->number);
             	QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.25 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pl->type);
+		snprintf(s,sizeof(s),"%d",pl->type);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.45 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pl->vertex);
+		snprintf(s,sizeof(s),"%d",pl->vertex);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.65 * width;
 		yy = GbMes.low.y + 0.2 * height;
 		if( pl->depth != NULLDEPTH ) {
-		    sprintf(s,"%f",pl->depth);
+		    snprintf(s,sizeof(s),"%f",pl->depth);
 		    QText(xx,yy,s);
 		}
 
@@ -259,28 +259,28 @@ void WriteToMesWindow( void )
 
 		xx = GbMes.low.x + 0.05 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pn->number);
+		snprintf(s,sizeof(s),"%d",pn->number);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.25 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pn->type);
+		snprintf(s,sizeof(s),"%d",pn->type);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.4 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%f",pn->coord.x);
+		snprintf(s,sizeof(s),"%f",pn->coord.x);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.6 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%f",pn->coord.y);
+		snprintf(s,sizeof(s),"%f",pn->coord.y);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.8 * width;
 		yy = GbMes.low.y + 0.2 * height;
 		pv = pn->extra;
-		sprintf(s,"%f",pv->speed[pv->actual]);
+		snprintf(s,sizeof(s),"%f",pv->speed[pv->actual]);
 		QText(xx,yy,s);
 
 	} else if( ActNode > 0 ) { /* write node info to mes window */
@@ -291,28 +291,28 @@ void WriteToMesWindow( void )
 
 		xx = GbMes.low.x + 0.05 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pn->number);
+		snprintf(s,sizeof(s),"%d",pn->number);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.25 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%d",pn->type);
+		snprintf(s,sizeof(s),"%d",pn->type);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.4 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%f",pn->coord.x);
+		snprintf(s,sizeof(s),"%f",pn->coord.x);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.6 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%f",pn->coord.y);
+		snprintf(s,sizeof(s),"%f",pn->coord.y);
 		QText(xx,yy,s);
 
 		if( pn->depth != NULLDEPTH ) {
 			xx = GbMes.low.x + 0.8 * width;
 			yy = GbMes.low.y + 0.2 * height;
-			sprintf(s,"%f",pn->depth);
+			snprintf(s,sizeof(s),"%f",pn->depth);
 			QText(xx,yy,s);
 		}
 
@@ -329,12 +329,12 @@ void WriteToMesWindow( void )
 
 		xx = GbMes.low.x + 0.20 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%f",ActX);
+		snprintf(s,sizeof(s),"%f",ActX);
 		QText(xx,yy,s);
 
 		xx = GbMes.low.x + 0.40 * width;
 		yy = GbMes.low.y + 0.2 * height;
-		sprintf(s,"%f",ActY);
+		snprintf(s,sizeof(s),"%f",ActY);
 		QText(xx,yy,s);
 
 	}

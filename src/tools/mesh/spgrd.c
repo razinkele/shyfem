@@ -119,10 +119,15 @@ void ReadFiles( int argc , char *argv[] )
 {
 	char sfile[80];
 	char *s;
+	char *name;
+	int n;
 
 	while( OpArgc < argc ) {
-		s=strcpy(sfile,argv[OpArgc++]);
-		s=strcat(s,".grd");
+		name = argv[OpArgc++];
+		n = snprintf(sfile,sizeof(sfile),"%s.grd",name);
+		if( n < 0 || (size_t)n >= sizeof(sfile) )
+			Error2("ReadFiles: file name too long ",name);
+		s = sfile;
 		ReadStandard(s,G);
 	}
 }

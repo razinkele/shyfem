@@ -145,10 +145,12 @@ void ReadFiles( int argc , char *argv[] )
 
 {
 	char sfile[80];
+	char base[80];
 	char *file,*s;
 	int nodes,elems;
 	int ftype;
 	int errors=0;
+	int n;
 
 	FileType = -1;
 
@@ -160,16 +162,19 @@ void ReadFiles( int argc , char *argv[] )
 		if( argc == 0 ) {
 			printf("Enter filename (<CR> to end) : ");
 			file=getlin( stdin );
-			s=strcpy(sfile,file);
 		} else if( OpArgc < argc ) {
-			s=strcpy(sfile,argv[OpArgc++]);
+			file=argv[OpArgc++];
 		} else {
-			s=NULL;	/* everything read */
+			file=NULL;	/* everything read */
 		}
 
-		if( !s || !*s ) break;
+		if( !file || !*file ) break;
 
-		s = stripgrd(s);
+		n = snprintf(base,sizeof(base),"%s",file);
+		if( n < 0 || (size_t)n >= sizeof(base) )
+			Error2("ReadFiles: file name too long ",file);
+
+		s = stripgrd(base);
 
 		if( OpType == -1 ) {
 			ftype = 0;
@@ -178,8 +183,10 @@ void ReadFiles( int argc , char *argv[] )
 
 		switch(ftype) {
 			case 0 :
-				s=strcat(s,".grd");
-				ReadStandard(s,HNN,HEL,HLI,HVC,CM);
+				n = snprintf(sfile,sizeof(sfile),"%s.grd",s);
+				if( n < 0 || (size_t)n >= sizeof(sfile) )
+					Error2("ReadFiles: file name too long ",s);
+				ReadStandard(sfile,HNN,HEL,HLI,HVC,CM);
 				if(FileType == -1) FileType = ftype;
 				nodes=0;
 				elems=0;
@@ -215,6 +222,7 @@ void WriteFiles( void )
 	char sfile[80];
 	char *file,*s;
 	int slength;
+	int n;
 
 	/* files are always written in format 2 */
 
@@ -224,9 +232,10 @@ void WriteFiles( void )
 	ClosePS();
 
 	if( OpOutFile ) {	/* output file name already given -> force */
-		s=strcpy(sfile,OpOutFile);
-		s=strcat(s,".grd");
-		WriteStandard(s,HNN,HEL,HLI,HVC,CM);
+		n = snprintf(sfile,sizeof(sfile),"%s.grd",OpOutFile);
+		if( n < 0 || (size_t)n >= sizeof(sfile) )
+			Error2("WriteFiles: file name too long ",OpOutFile);
+		WriteStandard(sfile,HNN,HEL,HLI,HVC,CM);
 		return;
 	}
 
@@ -237,7 +246,10 @@ void WriteFiles( void )
 		    if( ! file ) {
 			s = NULL;
 		    } else {
-		    	s=strcpy(sfile,file);
+			n = snprintf(sfile,sizeof(sfile),"%s",file);
+			if( n < 0 || (size_t)n >= sizeof(sfile) )
+				Error2("WriteFiles: file name too long ",file);
+		    	s = sfile;
 		    }
 		} else {
 		    s=NULL;
@@ -248,6 +260,8 @@ void WriteFiles( void )
 		/* test if file is already existing */
 
 		slength=strlen(s);
+		if( slength + 4 >= (int)sizeof(sfile) )
+			Error2("WriteFiles: file name too long ",s);
 		if(FileType == 3)
 			s=strcat(s,".geo");
 		else

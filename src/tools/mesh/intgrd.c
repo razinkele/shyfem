@@ -101,9 +101,12 @@ void ReadFiles( char *argv , Grid_type *G )
 {
 	char sfile[80];
 	char *s;
+	int n;
 
-	s=strcpy(sfile,argv);
-	s=strcat(s,".grd");
+	n = snprintf(sfile,sizeof(sfile),"%s.grd",argv);
+	if( n < 0 || (size_t)n >= sizeof(sfile) )
+		Error2("ReadFiles: file name too long ",argv);
+	s = sfile;
 	ReadStandard(s,G);
 }
 
