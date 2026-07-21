@@ -499,6 +499,7 @@ class CeleryJobQueue(JobQueue):
         simulation_id: int | None = None,
         limit: int = 100,
         session_id: str | None = None,
+        user_id: int | None = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
         rc = self._get_redis_client()
@@ -520,6 +521,9 @@ class CeleryJobQueue(JobQueue):
                 continue
 
             if session_id is not None and job_info.metadata.get("session_id") != session_id:
+                continue
+
+            if user_id is not None and job_info.metadata.get("user_id") != user_id:
                 continue
 
             jobs.append(job_info)

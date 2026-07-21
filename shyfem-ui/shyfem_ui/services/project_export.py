@@ -1,11 +1,14 @@
 """Project export, import, and clone operations."""
 
+import asyncio
 import json
 import shutil
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+
+from shyfem_ui.config import get_config
 
 MANIFEST_VERSION = "1.0"
 
@@ -16,33 +19,67 @@ MAX_IMPORT_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_IMPORT_COMPRESSION_RATIO = 100
 
 
-def export_project(work_dir: Path, project_meta: dict) -> BytesIO:
+async def export_project(
+    work_dir: Path, project_meta: dict, max_export_bytes: int | None = None
+) -> BytesIO:
     """Export a project as a ZIP archive with manifest.
+
+    Runs the CPU/disk-bound ZIP build in a worker thread (via asyncio.to_thread)
+    so the Shiny event loop stays responsive while a large project is compressed.
 
     Args:
         work_dir: Absolute path to the project's work directory.
         project_meta: Dict with keys: name, description, grids, simulations.
+        max_export_bytes: Cap on total uncompressed size of exported files.
+            Defaults to config.max_export_bytes when not given.
 
     Returns:
         BytesIO containing the ZIP archive.
+
+    Raises:
+        ValueError: If the project's files exceed max_export_bytes.
     """
+    if max_export_bytes is None:
+        max_export_bytes = get_config().max_export_bytes
+    return await asyncio.to_thread(_export_project_sync, work_dir, project_meta, max_export_bytes)
+
+
+def _export_project_sync(work_dir: Path, project_meta: dict, max_export_bytes: int) -> BytesIO:
+    """Synchronous ZIP-build body for export_project. Call via asyncio.to_thread,
+    not directly, so the blocking compression/disk work never runs on the event
+    loop thread."""
     buf = BytesIO()
     work_dir = Path(work_dir).resolve()
 
+    # Pre-sum file sizes (and collect the filtered file list) before writing
+    # any bytes to the ZIP, so an oversized project is rejected without ever
+    # starting compression.
+    files_to_export: list[Path] = []
+    total_size = 0
+    for file_path in sorted(work_dir.rglob("*")):
+        if file_path.is_symlink():
+            continue
+        if not file_path.is_file():
+            continue
+        resolved = file_path.resolve()
+        try:
+            resolved.relative_to(work_dir)
+        except ValueError:
+            continue
+        if file_path.suffix in _EXCLUDE_EXTENSIONS:
+            continue
+        total_size += file_path.stat().st_size
+        if total_size > max_export_bytes:
+            max_mb = max_export_bytes // (1024 * 1024)
+            raise ValueError(
+                f"project export exceeds {max_mb} MB limit "
+                f"(work dir contains at least {total_size} bytes)"
+            )
+        files_to_export.append(file_path)
+
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # Write project files
-        for file_path in sorted(work_dir.rglob("*")):
-            if file_path.is_symlink():
-                continue
-            if not file_path.is_file():
-                continue
-            resolved = file_path.resolve()
-            try:
-                resolved.relative_to(work_dir)
-            except ValueError:
-                continue
-            if file_path.suffix in _EXCLUDE_EXTENSIONS:
-                continue
+        for file_path in files_to_export:
             arcname = str(file_path.relative_to(work_dir))
             zf.write(file_path, arcname)
 
@@ -64,8 +101,11 @@ def export_project(work_dir: Path, project_meta: dict) -> BytesIO:
     return buf
 
 
-def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
+async def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
     """Import a project from a ZIP archive.
+
+    Runs the disk-bound extraction in a worker thread (via asyncio.to_thread)
+    so the Shiny event loop stays responsive while a large archive is unpacked.
 
     Args:
         zip_data: BytesIO containing the ZIP archive.
@@ -77,6 +117,13 @@ def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
     Raises:
         ValueError: If the archive is invalid.
     """
+    return await asyncio.to_thread(_import_project_sync, zip_data, base_dir)
+
+
+def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
+    """Synchronous extraction body for import_project. Call via
+    asyncio.to_thread, not directly, so the blocking disk I/O never runs on
+    the event loop thread."""
     base_dir = Path(base_dir)
 
     with zipfile.ZipFile(zip_data, "r") as zf:

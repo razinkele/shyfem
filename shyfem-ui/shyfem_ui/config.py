@@ -45,8 +45,21 @@ class Config(BaseSettings):
     )
 
     # Database settings
+    #
+    # F25: the old default ("sqlite:///./shyfem_ui.db") is a relative path
+    # that SQLite resolves against the process's CWD at connect time, not
+    # against this package. A worker started from a different directory would
+    # silently create/open a *different* database file. Anchor it to this
+    # package's own location instead -- shyfem-ui/shyfem_ui.db -- which is
+    # the same physical file laguna prod already resolves to today (the app
+    # is started from the shyfem-ui git checkout), so this is CWD-independent
+    # without changing prod's behavior. SHYFEM_UI_DATABASE_URL/DATABASE_URL
+    # still override (pydantic env-var precedence beats the Field default).
     database_url: str = Field(
-        default="sqlite:///./shyfem_ui.db", description="SQLAlchemy database URL"
+        default_factory=lambda: (
+            f"sqlite:///{(Path(__file__).resolve().parents[1] / 'shyfem_ui.db')}"
+        ),
+        description="SQLAlchemy database URL",
     )
     db_pool_size: int = Field(
         default=5, description="SQLAlchemy connection pool size (PostgreSQL only)"
@@ -234,6 +247,10 @@ class Config(BaseSettings):
     max_upload_size_mb: int = Field(default=500, description="Maximum file upload size in MB")
     max_project_storage_mb: int = Field(
         default=5000, description="Maximum total storage per project in MB"
+    )
+    max_export_bytes: int = Field(
+        default=2 * 1024 * 1024 * 1024,
+        description="Maximum total uncompressed project size (bytes) allowed for ZIP export",
     )
 
     # Proxy settings (server mode)

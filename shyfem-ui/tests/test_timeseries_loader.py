@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from shyfem_ui.services.timeseries_loader import (
+    _load_whitespace,
     _looks_numeric,
     load_timeseries,
     load_timeseries_raw,
@@ -126,3 +127,51 @@ class TestLoadTimeseriesRaw:
         f.write_text("1 2\n3 4\n")
         result = load_timeseries_raw(str(f))
         assert len(result) == 2
+
+
+# ── _load_whitespace: leading blank line header detection (F48) ─
+
+
+class TestLoadWhitespaceLeadingBlankLine:
+    def test_leading_blank_line_header_detected_identically(self, tmp_path: Path):
+        """A leading blank line must not shift the header off index 0.
+
+        _load_whitespace historically only checked ``enumerate`` index ``i == 0``
+        to decide whether the first row is a header. Blank lines are skipped
+        with ``continue`` but still consume an index, so a file that starts
+        with a blank line before the header silently lost its header row.
+        """
+        with_blank = tmp_path / "with_blank.txt"
+        with_blank.write_text("\ntime temp sal\n1 10.5 35.0\n2 11.0 34.8\n")
+
+        without_blank = tmp_path / "without_blank.txt"
+        without_blank.write_text("time temp sal\n1 10.5 35.0\n2 11.0 34.8\n")
+
+        result_with = _load_whitespace(with_blank)
+        result_without = _load_whitespace(without_blank)
+
+        assert result_with["columns"] == ["time", "temp", "sal"]
+        assert result_with["columns"] == result_without["columns"]
+        assert result_with["data"] == result_without["data"]
+
+    def test_multiple_leading_blank_lines_header_detected(self, tmp_path: Path):
+        f = tmp_path / "data.txt"
+        f.write_text("\n\n\ntime temp\n1 10.5\n")
+        result = _load_whitespace(f)
+        assert result["columns"] == ["time", "temp"]
+        assert result["data"] == [[1.0, 10.5]]
+
+    def test_no_leading_blank_still_works(self, tmp_path: Path):
+        f = tmp_path / "data.txt"
+        f.write_text("time temp\n1 10.5\n")
+        result = _load_whitespace(f)
+        assert result["columns"] == ["time", "temp"]
+        assert result["data"] == [[1.0, 10.5]]
+
+    def test_leading_blank_line_no_header_still_numeric(self, tmp_path: Path):
+        """File with no header row (first non-blank row is numeric) is unaffected."""
+        f = tmp_path / "data.txt"
+        f.write_text("\n1 10.5\n2 11.0\n")
+        result = _load_whitespace(f)
+        assert result["columns"] == ["col0", "col1"]
+        assert result["data"] == [[1.0, 10.5], [2.0, 11.0]]

@@ -40,8 +40,12 @@ from shyfem_ui.services.run_logic import (  # re-exported for backward compat (t
     _preflight_validate,  # noqa: F401  -- used by tests/test_run_validation.py
     _stat_card,
     build_job_spec,
+    compute_restart_choices,
     detect_mesh_node_count,
     get_solver_recommendation,
+    restart_info_text,
+    restart_selection_denied_reason,
+    write_restart_str,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.str_validator import validate_str
@@ -445,17 +449,13 @@ def run_server(
         if tool != "shyfem":
             return ui.span()
 
-        # Build choices from completed shyfem jobs that have .rst files
+        # Build choices from completed shyfem jobs that have .rst files.
+        # compute_restart_choices is the SAME function _submit_job uses to
+        # re-validate a submitted restart_from server-side (N42 IDOR
+        # follow-up) -- sharing it means the dropdown and the allowlist can
+        # never silently drift apart.
         choices: dict[str, str] = {"": "Fresh start (no restart)"}
-        jobs = all_jobs_data.get()
-        for job in jobs:
-            if job.tool_name != "shyfem" or job.status != JobStatus.COMPLETED:
-                continue
-            work_dir = Path(job.working_dir)
-            rst_files = sorted(work_dir.glob("*.rst"))
-            if rst_files:
-                label = f"{job.name} ({rst_files[-1].name})"
-                choices[str(rst_files[-1])] = label
+        choices.update(compute_restart_choices(all_jobs_data.get()))
 
         return ui.div(
             ui.hr(),
@@ -469,25 +469,32 @@ def run_server(
         )
 
     @render.ui
-    def restart_info():
-        """Show selected restart file path."""
+    async def restart_info():
+        """Show selected restart file path.
+
+        Final security review, Finding 2: this used to stat() whatever
+        path input.restart_from() held with NO allowlist -- a filesystem-
+        wide existence/size oracle over anything the shiny worker process
+        can stat (restart_from is client-controlled; a spoofed WS value
+        could probe arbitrary paths). Gate on restart_info_text, which
+        checks the SAME server-recomputed allowlist _submit_job uses
+        (restart_selection_denied_reason + _list_scoped_jobs) before ever
+        touching the filesystem, and render nothing for a denied value.
+        Fail-closed: an unresolved identity makes _list_scoped_jobs return
+        an empty list, so everything is denied.
+        """
         try:
             rst = input.restart_from()
         except Exception:
             return ui.span()
-        if not rst:
+
+        allowed_jobs = await _list_scoped_jobs()
+        text = restart_info_text(rst, allowed_jobs)
+        if text is None:
             return ui.span()
-        rst_path = Path(rst)
-        if rst_path.exists():
-            size_kb = rst_path.stat().st_size / 1024
-            return ui.p(
-                f"Restart file: {rst_path.name} ({size_kb:.0f} KB)",
-                class_="text-muted small mb-0",
-            )
-        return ui.p(
-            f"Warning: restart file not found: {rst}",
-            class_="text-warning small mb-0",
-        )
+
+        css_class = "text-warning" if text.startswith("Warning") else "text-muted"
+        return ui.p(text, class_=f"{css_class} small mb-0")
 
     # State
     active_jobs_data = reactive.value([])
@@ -558,18 +565,42 @@ def run_server(
         except Exception as e:
             ui.notification_show(f"Refresh failed: {e}", type="error", duration=6)
 
-    async def _refresh_jobs():
-        """Refresh job lists."""
-        show_all = input.show_all_run_jobs() if _is_server_mode else True
-        if _is_server_mode and show_all:
-            # IDOR fix: only admins may list every user's jobs; others get own.
-            from shyfem_ui.models.user import ROLE_ADMIN
+    async def _list_scoped_jobs() -> list[JobInfo]:
+        """Jobs visible to the current identity, server-side (F17).
 
-            _usr = current_user() if current_user is not None else None
-            if not (_usr and _usr.get("role") == ROLE_ADMIN):
-                show_all = False
-        sid = None if show_all else _session_id
-        jobs = await job_queue.list_jobs(limit=50, session_id=sid)
+        Server-mode listing is scoped by the server-validated user identity
+        (never session_id, which is ephemeral per-WS-connection and does
+        not track ownership across reconnects/tabs). Fail-closed: an
+        unresolved identity in server mode sees no jobs rather than falling
+        through to an unfiltered list.
+
+        Shared by _refresh_jobs (job lists/dashboard rendering) and
+        _submit_job's restart_from allowlist check (N42 IDOR follow-up) so
+        both always agree on which jobs -- and therefore which .rst restart
+        files -- this identity may see. Recomputing this at submit time
+        (rather than trusting the possibly-stale all_jobs_data reactive
+        value) is deliberate: the allowlist must reflect a fresh
+        server-side query, not client-cached state.
+        """
+        if not _is_server_mode:
+            return await job_queue.list_jobs(limit=50)
+
+        from shyfem_ui.models.user import ROLE_ADMIN
+
+        _usr = current_user() if current_user is not None else None
+        if _usr is None:
+            return []
+
+        # IDOR fix: only admins may list every user's jobs; others get own.
+        show_all = bool(input.show_all_run_jobs()) and _usr.get("role") == ROLE_ADMIN
+        uid = None if show_all else _usr["id"]
+        return await job_queue.list_jobs(limit=50, user_id=uid)
+
+    async def _refresh_jobs():
+        """Refresh the reactive job-list state used by dashboard/history/
+        restart_section rendering. See _list_scoped_jobs for the scoping
+        rules."""
+        jobs = await _list_scoped_jobs()
         _update_job_lists(jobs)
 
     def _update_job_lists(jobs: list[JobInfo]):
@@ -659,6 +690,44 @@ def run_server(
             restart_from = None
         depends_on = input.depends_on()
         solver = input.solver_select() if tool == "shyfem" else "sparskit"
+
+        # N42 IDOR follow-up: restart_from is a client-controlled input
+        # value that write_restart_str below actually opens and folds into
+        # the STR the SHYFEM worker executes -- a crafted WS message could
+        # set it to any path, bypassing the restart_section dropdown
+        # entirely (e.g. another user's .rst, disclosing their simulation
+        # state). Re-validate it server-side against an allowlist freshly
+        # recomputed from THIS identity's own scoped job list (the same
+        # scoping restart_section's dropdown is built from) before it is
+        # ever used. A bare confine_path check would be wrong here: the
+        # admin "show all jobs" toggle legitimately lets an admin pick a
+        # restart file outside their own sandbox, which confine_path would
+        # incorrectly reject -- the allowlist check handles both cases
+        # correctly.
+        if restart_from:
+            _allowed_jobs = await _list_scoped_jobs()
+            _restart_denied = restart_selection_denied_reason(restart_from, _allowed_jobs)
+            if _restart_denied:
+                ui.notification_show(_restart_denied, type="error", duration=6)
+                return
+
+        # N42: apply the selected restart file to the STR SHYFEM actually
+        # reads (previously it was recorded only in build_job_spec's
+        # metadata and never applied, so the run silently started fresh).
+        # This runs after the editor gate at the top of this handler and
+        # after both confine_path validations above (validated_input,
+        # validated_workdir), so the derived STR is only written once every
+        # access/sandbox guard has already cleared.
+        if restart_from and validated_input.suffix == ".str":
+            try:
+                validated_input = write_restart_str(
+                    validated_input, restart_from, validated_workdir
+                )
+            except (FileNotFoundError, OSError, ValueError) as e:
+                ui.notification_show(
+                    f"Could not apply restart selection: {e}", type="error", duration=6
+                )
+                return
 
         spec = build_job_spec(
             name=name,

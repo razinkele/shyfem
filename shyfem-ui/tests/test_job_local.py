@@ -47,10 +47,15 @@ def queue(tmp_path, mock_wrapper):
     """Create a LocalJobQueue with mock wrapper."""
     q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2)
     q.wrapper = mock_wrapper
-    # Start each test with a clean in-memory job set. The constructor loads any
-    # rows from the shared test DB; prior tests can leave RUNNING rows (now that
-    # persistence is async via to_thread), which would skew active_job_count.
+    # Start each test with a clean in-memory job set. History now loads
+    # lazily (F51) rather than in __init__, so clearing alone would just be
+    # undone by the first submit()/list_jobs() reloading the shared test
+    # DB's rows -- mark history as already "loaded" too, so that reload
+    # never fires and prior tests' rows (which can include RUNNING ones,
+    # now that persistence is async via to_thread) never leak in and skew
+    # things like active_job_count.
     q._jobs.clear()
+    q._history_loaded = True
     return q
 
 
@@ -756,6 +761,336 @@ class TestCleanupDeletesDbRows:
         with dbb.db_session() as db:
             assert db.query(Job).filter(Job.job_uuid == "evicted-old-1").count() == 0
             assert db.query(Job).filter(Job.job_uuid == "recent-db-1").count() == 1
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
+
+class TestDbRowToJobInfoOutputFiles:
+    """_db_row_to_job_info must restore output_files from the ``jobs.output_files``
+    column (migration 7e41388e2c8d), tolerating NULL or non-list values as []
+    (N40 -- the column was added but never read back)."""
+
+    def _row(self, **over):
+        from types import SimpleNamespace
+
+        base = dict(
+            job_uuid="u1",
+            name="n",
+            job_type="shyfem",
+            working_dir="/tmp",
+            status=JobStatus.RUNNING,
+            progress=0.0,
+            progress_message="",
+            created_at=datetime.now(),
+            queued_at=None,
+            started_at=None,
+            completed_at=None,
+            return_code=None,
+            error_message=None,
+            stdout_file=None,
+            stderr_file=None,
+            simulation_id=None,
+            session_id=None,
+            user_id=None,
+            project_id=None,
+            output_files=None,
+        )
+        base.update(over)
+        return SimpleNamespace(**base)
+
+    def test_null_output_files_becomes_empty_list(self):
+        info = LocalJobQueue._db_row_to_job_info(self._row(output_files=None))
+        assert info.output_files == []
+
+    def test_invalid_output_files_becomes_empty_list(self):
+        info = LocalJobQueue._db_row_to_job_info(self._row(output_files="not-a-list"))
+        assert info.output_files == []
+
+    def test_valid_output_files_round_trip(self):
+        info = LocalJobQueue._db_row_to_job_info(
+            self._row(output_files=["/tmp/a.shy", "/tmp/b.ext"])
+        )
+        assert info.output_files == ["/tmp/a.shy", "/tmp/b.ext"]
+
+
+class TestOutputFilesPersistence:
+    """jobs.output_files (migration 7e41388e2c8d) must round-trip through
+    _persist_job and survive a fresh LocalJobQueue reload (simulated server
+    restart) -- previously the column existed but was never written (N40),
+    so restarts silently lost every job's output-file list."""
+
+    @pytest.mark.asyncio
+    async def test_output_files_persist_and_reload(self, tmp_path, monkeypatch, mock_wrapper):
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        expected_files = [str(tmp_path / "out.shy"), str(tmp_path / "out.ext")]
+        mock_wrapper.run_command.return_value = CommandResult(
+            success=True,
+            return_code=0,
+            stdout="",
+            stderr="",
+            command="test",
+            working_dir=str(tmp_path),
+            duration=1.0,
+            output_files=expected_files,
+        )
+
+        q1 = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q1.wrapper = mock_wrapper
+        q1._jobs.clear()
+
+        spec = JobSpec(name="out", tool_name="shypre", args=[], working_dir=tmp_path / "w")
+        job_id = await q1.submit(spec)
+        for _ in range(50):
+            status = await q1.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.05)
+
+        status = await q1.get_status(job_id)
+        assert status.status == JobStatus.COMPLETED
+        assert sorted(status.output_files) == sorted(expected_files)
+
+        # The persisted DB row itself must carry output_files (not just the
+        # in-memory JobInfo) -- assert directly against the ORM column.
+        from shyfem_ui.models.project import Job
+
+        with dbb.db_session() as db:
+            row = db.query(Job).filter(Job.job_uuid == job_id).first()
+            assert row is not None
+            assert sorted(row.output_files) == sorted(expected_files)
+
+        # Simulate a server restart: a brand-new LocalJobQueue reloading from
+        # the same DB must restore output_files, not silently drop them.
+        # History now loads lazily (F51) -- get_status is the guaranteed
+        # trigger, not raw attribute access on the fresh instance.
+        q2 = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        reloaded = await q2.get_status(job_id)
+        assert reloaded is not None
+        assert sorted(reloaded.output_files) == sorted(expected_files)
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
+    @pytest.mark.asyncio
+    async def test_no_output_files_persists_as_empty_list(
+        self, tmp_path, monkeypatch, mock_wrapper
+    ):
+        """A job that produced no output files persists (and reloads) as []
+        rather than NULL, keeping downstream consumers (workflow chaining,
+        run.py's output-file list) list-shaped."""
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'jobs2.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        q.wrapper = mock_wrapper
+        q._jobs.clear()
+
+        spec = JobSpec(name="empty", tool_name="shypre", args=[], working_dir=tmp_path / "w")
+        job_id = await q.submit(spec)
+        for _ in range(50):
+            status = await q.get_status(job_id)
+            if status and not status.is_active:
+                break
+            await asyncio.sleep(0.05)
+
+        from shyfem_ui.models.project import Job
+
+        with dbb.db_session() as db:
+            row = db.query(Job).filter(Job.job_uuid == job_id).first()
+            assert row.output_files == []
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
+
+class TestAsyncHygieneF22F51:
+    """F22: every persistence write reachable from an async def must be
+    offloaded via asyncio.to_thread -- a bare synchronous call blocks the
+    event loop (and every other concurrent session) for the duration of the
+    DB write. F51: __init__ must not run the (also synchronous) history-load
+    query either -- it may run before any event loop exists (app startup) or
+    on one (async tests/sessions), and either way a bare call there blocks
+    whoever is waiting on construction. Both are locked so a future edit
+    can't quietly reintroduce a blocking call on an async path."""
+
+    def test_no_bare_persist_job_call_on_async_paths(self):
+        """Source-scan (AST) lock, mirroring tests/test_dead_controls_wired.py's
+        style: walk job_local.py's AST and flag every `self._persist_job(...)`
+        CALL node (parens directly after the attribute) that is textually
+        inside an `async def`. The offloaded form -- `await asyncio.to_thread(
+        self._persist_job, job)` -- passes `self._persist_job` as a bare
+        attribute reference (an argument, not a call), so it never produces a
+        Call node here; only a genuine straggler does."""
+        import ast
+        import inspect
+
+        import shyfem_ui.services.job_local as job_local_mod
+
+        source = inspect.getsource(job_local_mod)
+        tree = ast.parse(source)
+
+        # Functions allowed to call _persist_job synchronously because they
+        # only ever run fully off the event loop already (e.g. a sync-only
+        # helper invoked exclusively via asyncio.to_thread, never awaited
+        # directly). Empty today -- kept so a legitimate future sync-only
+        # helper doesn't have to fight this lock.
+        SYNC_ALLOWLIST: set[str] = set()
+
+        violations = []
+
+        class _Visitor(ast.NodeVisitor):
+            def __init__(self):
+                self.stack: list[ast.AST] = []
+
+            def _enter(self, node):
+                self.stack.append(node)
+                self.generic_visit(node)
+                self.stack.pop()
+
+            def visit_AsyncFunctionDef(self, node):
+                self._enter(node)
+
+            def visit_FunctionDef(self, node):
+                self._enter(node)
+
+            def visit_Call(self, node):
+                func = node.func
+                is_persist_job_call = (
+                    isinstance(func, ast.Attribute)
+                    and func.attr == "_persist_job"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "self"
+                )
+                if is_persist_job_call and self.stack:
+                    enclosing = self.stack[-1]
+                    if (
+                        isinstance(enclosing, ast.AsyncFunctionDef)
+                        and enclosing.name not in SYNC_ALLOWLIST
+                    ):
+                        violations.append((enclosing.name, node.lineno))
+                self.generic_visit(node)
+
+        _Visitor().visit(tree)
+        assert not violations, (
+            "bare self._persist_job(...) call(s) inside async def, not "
+            f"offloaded via asyncio.to_thread: {violations}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_construction_and_first_history_load_do_not_block_event_loop(
+        self, tmp_path, monkeypatch
+    ):
+        """F51: simulate a slow synchronous DB by monkeypatching
+        _load_history_from_db to sleep. Prove (a) __init__ returns near-
+        instantly regardless (it must not call the slow method at all), and
+        (b) the eventual load -- triggered by the first public call that
+        needs job history -- still lets a concurrently scheduled coroutine
+        keep ticking, i.e. the slow work runs off the event loop
+        (asyncio.to_thread), not inline on it."""
+        import time
+
+        def slow_load(self):
+            time.sleep(0.4)  # simulate a slow synchronous DB query
+            return []
+
+        monkeypatch.setattr(LocalJobQueue, "_load_history_from_db", slow_load)
+
+        t0 = time.monotonic()
+        queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        construction_time = time.monotonic() - t0
+        assert construction_time < 0.1, (
+            f"constructor blocked for {construction_time:.3f}s -- history "
+            "load must not run synchronously in __init__ (F51)"
+        )
+
+        ticks = []
+
+        async def ticker():
+            for _ in range(30):
+                ticks.append(time.monotonic())
+                await asyncio.sleep(0.02)
+
+        ticker_task = asyncio.create_task(ticker())
+        await queue.list_jobs()  # first public entry -- triggers the deferred load
+        ticker_task.cancel()
+        try:
+            await ticker_task
+        except asyncio.CancelledError:
+            pass
+
+        assert len(ticks) >= 5, (
+            "the event loop was starved while history loaded -- the slow "
+            "DB query must run via asyncio.to_thread, not inline on the "
+            "loop (F51)"
+        )
+
+    def test_load_history_from_db_does_not_mutate_jobs_dict(self, tmp_path, monkeypatch):
+        """Cross-thread race guard: _load_history_from_db runs on a worker
+        thread (via _ensure_history_loaded's asyncio.to_thread) while an
+        unlocked sync reader such as active_job_count can be iterating
+        self._jobs.values() concurrently on the event-loop thread. If
+        _load_history_from_db wrote self._jobs directly (as it did before
+        this task), that would race and could raise "dictionary changed
+        size during iteration". It must only READ the DB and RETURN the
+        rows; the merge into self._jobs happens back on the event-loop
+        thread in _ensure_history_loaded.
+
+        Uses its own fresh temp DB (seeded with one row) rather than the
+        shared session DB: against a possibly-empty shared DB this test
+        would pass vacuously (nothing loaded => nothing to detect) even
+        with the old, mutating implementation. Seeding a row makes the
+        assertion have teeth -- if _load_history_from_db still wrote
+        self._jobs directly, `queue._jobs == before` below would fail.
+        """
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'race.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+
+        with dbb.db_session() as db:
+            db.add(
+                Job(
+                    job_uuid="seed-1",
+                    name="seeded",
+                    job_type="shypre",
+                    working_dir="/tmp/w",
+                    status=JobStatus.COMPLETED,
+                    completed_at=datetime.now(),
+                )
+            )
+
+        queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        before = dict(queue._jobs)
+
+        result = queue._load_history_from_db()
+
+        assert [info.id for info in result] == ["seed-1"], "seeded row was not returned"
+        assert all(isinstance(info, JobInfo) for info in result)
+        assert queue._jobs == before, "_load_history_from_db must not touch self._jobs itself"
 
         dbb._engine = None
         dbb._SessionLocal = None

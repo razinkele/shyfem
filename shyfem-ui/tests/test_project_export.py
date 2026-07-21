@@ -1,6 +1,8 @@
 """Tests for project export/import/clone service."""
 
+import asyncio
 import json
+import time
 import zipfile
 from io import BytesIO
 
@@ -71,22 +73,22 @@ def project_meta():
 
 class TestExportProject:
 
-    def test_returns_valid_zip(self, project_dir, project_meta):
-        result = export_project(project_dir, project_meta)
+    async def test_returns_valid_zip(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta)
         assert isinstance(result, BytesIO)
         with zipfile.ZipFile(result) as zf:
             assert zf.testzip() is None  # no corrupt files
 
-    def test_zip_contains_manifest(self, project_dir, project_meta):
-        result = export_project(project_dir, project_meta)
+    async def test_zip_contains_manifest(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:
             assert "manifest.json" in zf.namelist()
             manifest = json.loads(zf.read("manifest.json"))
             assert manifest["version"] == MANIFEST_VERSION
             assert manifest["project"]["name"] == "Test Project"
 
-    def test_zip_contains_project_files(self, project_dir, project_meta):
-        result = export_project(project_dir, project_meta)
+    async def test_zip_contains_project_files(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:
             names = zf.namelist()
             assert "GRID/mesh.grd" in names
@@ -94,15 +96,15 @@ class TestExportProject:
             assert "INPUT/wind.txt" in names
             assert "sim.str" in names
 
-    def test_zip_excludes_log_files(self, project_dir, project_meta):
-        result = export_project(project_dir, project_meta)
+    async def test_zip_excludes_log_files(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:
             names = zf.namelist()
             assert not any(n.endswith(".stdout") for n in names)
             assert not any(n.endswith(".stderr") for n in names)
 
-    def test_manifest_has_grids_and_simulations(self, project_dir, project_meta):
-        result = export_project(project_dir, project_meta)
+    async def test_manifest_has_grids_and_simulations(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:
             manifest = json.loads(zf.read("manifest.json"))
             assert len(manifest["grids"]) == 1
@@ -110,94 +112,169 @@ class TestExportProject:
             assert len(manifest["simulations"]) == 1
             assert manifest["simulations"][0]["name"] == "sim"
 
-    def test_manifest_has_exported_at(self, project_dir, project_meta):
-        result = export_project(project_dir, project_meta)
+    async def test_manifest_has_exported_at(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:
             manifest = json.loads(zf.read("manifest.json"))
             assert "exported_at" in manifest
 
-    def test_manifest_includes_file_inventory(self, project_dir, project_meta):
+    async def test_manifest_includes_file_inventory(self, project_dir, project_meta):
         project_meta["files"] = [
-            {"filename": "wind.txt", "rel_path": "INPUT/wind.txt",
-             "file_type": "forcing", "size_bytes": 9},
+            {
+                "filename": "wind.txt",
+                "rel_path": "INPUT/wind.txt",
+                "file_type": "forcing",
+                "size_bytes": 9,
+            },
         ]
-        result = export_project(project_dir, project_meta)
+        result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:
             manifest = json.loads(zf.read("manifest.json"))
             assert "files" in manifest
             assert len(manifest["files"]) == 1
             assert manifest["files"][0]["filename"] == "wind.txt"
 
-    def test_empty_project_dir(self, tmp_path, project_meta):
+    async def test_empty_project_dir(self, tmp_path, project_meta):
         empty = tmp_path / "empty"
         empty.mkdir()
         project_meta["grids"] = []
         project_meta["simulations"] = []
-        result = export_project(empty, project_meta)
+        result = await export_project(empty, project_meta)
         with zipfile.ZipFile(result) as zf:
             assert "manifest.json" in zf.namelist()
 
-    def test_export_skips_symlink_escape(self, tmp_path, project_meta):
+    async def test_export_skips_symlink_escape(self, tmp_path, project_meta):
         project = tmp_path / "project"
         project.mkdir()
         outside = tmp_path / "secret.txt"
         outside.write_text("secret")
         (project / "link.txt").symlink_to(outside)
 
-        result = export_project(project, project_meta)
+        result = await export_project(project, project_meta)
 
         with zipfile.ZipFile(result) as zf:
             assert "link.txt" not in zf.namelist()
 
 
+class TestExportProjectAsync:
+    """N47: export_project must not block the Shiny event loop."""
+
+    async def test_export_does_not_block_event_loop(self, project_dir, project_meta, monkeypatch):
+        """Monkeypatch the (private) sync zip-building body to sleep, then
+        prove a concurrently-scheduled coroutine keeps ticking while the
+        export runs -- i.e. the blocking work is off the event loop thread."""
+        import shyfem_ui.services.project_export as pe
+
+        original_sync = pe._export_project_sync
+
+        def slow_sync(*args, **kwargs):
+            time.sleep(0.5)
+            return original_sync(*args, **kwargs)
+
+        monkeypatch.setattr(pe, "_export_project_sync", slow_sync)
+
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            for _ in range(20):
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        ticker_task = asyncio.ensure_future(ticker())
+        try:
+            await export_project(project_dir, project_meta)
+        finally:
+            ticker_task.cancel()
+
+        # 0.5s of blocking work with a 0.05s ticker should yield roughly 10
+        # ticks if the loop was never blocked; require a healthy margin.
+        assert ticks >= 5, (
+            f"event loop only ticked {ticks} times during export -- "
+            "export_project is blocking the loop instead of running in a thread"
+        )
+
+    async def test_export_uses_config_max_export_bytes_by_default(
+        self, project_dir, project_meta, monkeypatch
+    ):
+        """The wrapper must resolve the cap from get_config() when the caller
+        does not pass max_export_bytes explicitly -- pins the production wiring,
+        not just the explicit-parameter path."""
+        import shyfem_ui.services.project_export as pe
+        from shyfem_ui.config import Config
+
+        fake_config = Config(max_export_bytes=1)
+        monkeypatch.setattr(pe, "get_config", lambda: fake_config)
+
+        with pytest.raises(ValueError, match="exceeds"):
+            await export_project(project_dir, project_meta)
+
+
+class TestExportSizeCap:
+    """N47: export refuses beyond max_export_bytes."""
+
+    async def test_export_refuses_beyond_max_export_bytes(self, project_dir, project_meta):
+        with pytest.raises(ValueError, match="exceeds"):
+            await export_project(project_dir, project_meta, max_export_bytes=1)
+
+    async def test_export_succeeds_within_max_export_bytes(self, project_dir, project_meta):
+        result = await export_project(project_dir, project_meta, max_export_bytes=10**9)
+        assert isinstance(result, BytesIO)
+
+    def test_config_default_max_export_bytes_is_two_gib(self):
+        from shyfem_ui.config import Config
+
+        assert Config().max_export_bytes == 2 * 1024 * 1024 * 1024
+
+
 @pytest.fixture
-def exported_zip(project_dir, project_meta):
+async def exported_zip(project_dir, project_meta):
     """Create an exported ZIP for import tests."""
-    return export_project(project_dir, project_meta)
+    return await export_project(project_dir, project_meta)
 
 
 class TestImportProject:
 
-    def test_import_creates_directory(self, exported_zip, tmp_path):
-        result = import_project(exported_zip, tmp_path)
+    async def test_import_creates_directory(self, exported_zip, tmp_path):
+        result = await import_project(exported_zip, tmp_path)
         assert result["work_dir"].is_dir()
 
-    def test_import_extracts_files(self, exported_zip, tmp_path):
-        result = import_project(exported_zip, tmp_path)
+    async def test_import_extracts_files(self, exported_zip, tmp_path):
+        result = await import_project(exported_zip, tmp_path)
         wd = result["work_dir"]
         assert (wd / "GRID" / "mesh.grd").exists()
         assert (wd / "sim.str").exists()
 
-    def test_import_returns_manifest_data(self, exported_zip, tmp_path):
-        result = import_project(exported_zip, tmp_path)
+    async def test_import_returns_manifest_data(self, exported_zip, tmp_path):
+        result = await import_project(exported_zip, tmp_path)
         assert result["name"] == "Test Project"
         assert len(result["grids"]) == 1
         assert len(result["simulations"]) == 1
 
-    def test_import_name_collision_appends_suffix(self, exported_zip, tmp_path):
-        import_project(exported_zip, tmp_path)
+    async def test_import_name_collision_appends_suffix(self, exported_zip, tmp_path):
+        await import_project(exported_zip, tmp_path)
         exported_zip.seek(0)
-        result = import_project(exported_zip, tmp_path)
+        result = await import_project(exported_zip, tmp_path)
         assert result["name"] != "Test Project"
         assert result["name"].startswith("Test Project_")
 
-    def test_import_rejects_missing_manifest(self, tmp_path):
+    async def test_import_rejects_missing_manifest(self, tmp_path):
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("file.txt", "hello")
         buf.seek(0)
         with pytest.raises(ValueError, match="manifest.json"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_bad_json(self, tmp_path):
+    async def test_import_rejects_bad_json(self, tmp_path):
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             zf.writestr("manifest.json", "not json")
         buf.seek(0)
         with pytest.raises(ValueError, match="manifest"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_path_traversal(self, tmp_path):
+    async def test_import_rejects_path_traversal(self, tmp_path):
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             manifest = {
@@ -211,9 +288,9 @@ class TestImportProject:
             zf.writestr("../../../etc/passwd", "pwned")
         buf.seek(0)
         with pytest.raises(ValueError, match="path traversal"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_path_traversal_outside_project_dir(self, tmp_path):
+    async def test_import_rejects_path_traversal_outside_project_dir(self, tmp_path):
         buf = BytesIO()
         base_name = tmp_path.name
         with zipfile.ZipFile(buf, "w") as zf:
@@ -229,10 +306,10 @@ class TestImportProject:
         buf.seek(0)
 
         with pytest.raises(ValueError, match="path traversal"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
         assert not (tmp_path / base_name / "escaped.txt").exists()
 
-    def test_import_rejects_missing_version(self, tmp_path):
+    async def test_import_rejects_missing_version(self, tmp_path):
         buf = BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
             manifest = {
@@ -243,9 +320,9 @@ class TestImportProject:
             zf.writestr("manifest.json", json.dumps(manifest))
         buf.seek(0)
         with pytest.raises(ValueError, match="version"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_too_many_files(self, tmp_path, monkeypatch):
+    async def test_import_rejects_too_many_files(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "shyfem_ui.services.project_export.MAX_IMPORT_FILES",
             1,
@@ -268,9 +345,9 @@ class TestImportProject:
         buf.seek(0)
 
         with pytest.raises(ValueError, match="too many files"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_uncompressed_size_limit(self, tmp_path, monkeypatch):
+    async def test_import_rejects_uncompressed_size_limit(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "shyfem_ui.services.project_export.MAX_IMPORT_UNCOMPRESSED_BYTES",
             5,
@@ -292,9 +369,9 @@ class TestImportProject:
         buf.seek(0)
 
         with pytest.raises(ValueError, match="uncompressed size"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_oversized_manifest_before_json_parse(self, tmp_path, monkeypatch):
+    async def test_import_rejects_oversized_manifest_before_json_parse(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "shyfem_ui.services.project_export.MAX_IMPORT_UNCOMPRESSED_BYTES",
             10,
@@ -305,9 +382,9 @@ class TestImportProject:
         buf.seek(0)
 
         with pytest.raises(ValueError, match="uncompressed size"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_rejects_suspicious_compression_ratio(self, tmp_path, monkeypatch):
+    async def test_import_rejects_suspicious_compression_ratio(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "shyfem_ui.services.project_export.MAX_IMPORT_COMPRESSION_RATIO",
             2,
@@ -329,9 +406,9 @@ class TestImportProject:
         buf.seek(0)
 
         with pytest.raises(ValueError, match="compression ratio"):
-            import_project(buf, tmp_path)
+            await import_project(buf, tmp_path)
 
-    def test_import_streams_extracted_members(self, exported_zip, tmp_path, monkeypatch):
+    async def test_import_streams_extracted_members(self, exported_zip, tmp_path, monkeypatch):
         original_read = zipfile.ZipExtFile.read
 
         def guarded_read(self, size=-1):
@@ -341,13 +418,47 @@ class TestImportProject:
 
         monkeypatch.setattr(zipfile.ZipExtFile, "read", guarded_read)
 
-        result = import_project(exported_zip, tmp_path)
+        result = await import_project(exported_zip, tmp_path)
         assert (result["work_dir"] / "GRID" / "mesh.grd").exists()
 
     def test_import_limit_defaults_are_reasonable(self):
         assert MAX_IMPORT_FILES > 100
         assert MAX_IMPORT_UNCOMPRESSED_BYTES > 100 * 1024 * 1024
         assert MAX_IMPORT_COMPRESSION_RATIO > 10
+
+
+class TestImportProjectAsync:
+    """N47: import_project must not block the Shiny event loop."""
+
+    async def test_import_does_not_block_event_loop(self, exported_zip, tmp_path, monkeypatch):
+        import shyfem_ui.services.project_export as pe
+
+        original_sync = pe._import_project_sync
+
+        def slow_sync(*args, **kwargs):
+            time.sleep(0.5)
+            return original_sync(*args, **kwargs)
+
+        monkeypatch.setattr(pe, "_import_project_sync", slow_sync)
+
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            for _ in range(20):
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        ticker_task = asyncio.ensure_future(ticker())
+        try:
+            await import_project(exported_zip, tmp_path)
+        finally:
+            ticker_task.cancel()
+
+        assert ticks >= 5, (
+            f"event loop only ticked {ticks} times during import -- "
+            "import_project is blocking the loop instead of running in a thread"
+        )
 
 
 class TestCloneProject:
@@ -368,9 +479,7 @@ class TestCloneProject:
         assert result["name"] == "Test Project (Copy)"
 
     def test_clone_custom_name(self, project_dir, project_meta):
-        result = clone_project(
-            project_dir, project_meta, project_dir.parent, new_name="My Clone"
-        )
+        result = clone_project(project_dir, project_meta, project_dir.parent, new_name="My Clone")
         assert result["name"] == "My Clone"
 
     def test_clone_returns_metadata(self, project_dir, project_meta):

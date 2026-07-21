@@ -88,6 +88,7 @@ class _StubQueue(JobQueue):
         simulation_id: int | None = None,
         limit: int = 100,
         session_id: str | None = None,
+        user_id: int | None = None,
     ) -> list[JobInfo]:
         return []
 

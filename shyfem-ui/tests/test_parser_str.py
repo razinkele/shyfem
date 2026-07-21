@@ -570,3 +570,90 @@ $end
         assert parsed.get_param("para", "idt") == 300
         assert parsed.get_param("lagrg", "nbdy") == 100
         assert parsed.get_param("sedtr", "isedi") == 1
+
+
+class TestNoPhantomEndSection:
+    """A bare '$end' line must only close the current section, never be
+    parsed as a NEW section named 'end'.
+
+    Found while wiring N42 (run.py restart selection): SECTION_START's
+    ``\\$(\\w+)`` regex matches "$end" too (the word "end" is a valid
+    \\w+), and the parser checked SECTION_START before SECTION_END -- so
+    every legitimate closing "$end" was ALSO recorded as a phantom section
+    literally named "end" in both sections{} and _structure. generate()
+    then re-emitted each phantom as its own extra "$end" pair, so every
+    STR this codebase writes via StrParser.generate()/save() (ensemble.py's
+    per-combo runs, physics.py's save_file, simulation.py's save, and this
+    task's write_restart_str) carried a stray, ownerless "$end" between
+    every pair of real sections.
+
+    That is not cosmetic: SHYFEM's actual Fortran STR reader
+    (src/shyfem/iostr.f90, subroutine nlsh2d) is NOT tolerant of it --
+    encountering "$end" where it expects the next section header is a
+    hard ``stop 'error stop : nlsh2d'`` (see the `section.eq.'end'` branch
+    there). Any consumer that fed a generate()-round-tripped STR to the
+    real binary would have crashed on startup, before ever reaching
+    whatever section (e.g. $name/restrt) came after the phantom.
+    """
+
+    def test_end_marker_is_not_recorded_as_a_section(self):
+        content = "$title\n        test\n$end\n$para\n        idt = 300\n$end\n"
+        parsed = StrParser.parse(content)
+
+        assert "end" not in parsed.sections
+        assert set(parsed.sections.keys()) == {"title", "para"}
+
+    def test_end_marker_is_not_recorded_in_structure(self):
+        content = "$title\n        test\n$end\n$para\n        idt = 300\n$end\n"
+        parsed = StrParser.parse(content)
+
+        section_names = [name for kind, name in parsed._structure if kind == "section"]
+        assert section_names == ["title", "para"]
+
+    def test_generated_output_has_exactly_one_end_per_section(self):
+        content = "$title\n        test\n$end\n$para\n        idt = 300\n$end\n"
+        parsed = StrParser.parse(content)
+        generated = StrParser.generate(parsed)
+
+        assert generated.count("$end") == 2
+
+    def test_generated_output_has_no_ownerless_end_between_sections(self):
+        """A section header must always follow directly after the previous
+        section's $end (aside from blank/comment lines) -- never another
+        bare $end, which is what a phantom 'end' section would emit."""
+        content = "$title\n        test\n$end\n$para\n        idt = 300\n$end\n"
+        parsed = StrParser.parse(content)
+        generated = StrParser.generate(parsed)
+
+        lines = [ln for ln in generated.splitlines() if ln.strip()]
+        end_positions = [i for i, ln in enumerate(lines) if ln.strip() == "$end"]
+        assert len(end_positions) == 2
+        for pos in end_positions:
+            if pos + 1 < len(lines):
+                assert lines[pos + 1].strip().startswith("$") and not lines[
+                    pos + 1
+                ].strip().startswith("$end"), (
+                    f"line after $end at index {pos} is {lines[pos + 1]!r} -- "
+                    "looks like a phantom 'end' section, not a real next section"
+                )
+
+    def test_regenerated_real_mar_menor_str_has_no_phantom_end(self, tmp_path):
+        """End-to-end guard using an actual shipped testcase STR file."""
+        from pathlib import Path
+
+        real_str = (
+            Path(__file__).parent.parent.parent
+            / "testcases"
+            / "examples"
+            / "mar_menor"
+            / "mm_hyd_00.str"
+        )
+        if not real_str.exists():
+            pytest.skip("testcases/examples/mar_menor/mm_hyd_00.str not present")
+
+        parsed = StrParser.parse_file(real_str)
+        assert "end" not in parsed.sections
+
+        generated = StrParser.generate(parsed)
+        # One $end per real section, none dangling as their own section.
+        assert generated.count("$end") == len([n for k, n in parsed._structure if k == "section"])

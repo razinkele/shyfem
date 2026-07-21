@@ -603,3 +603,50 @@ class TestElementContinuation:
         result = GrdParser.parse(content)
         assert 1 in result.lines
         assert result.lines[1].nodes == [10, 11, 12, 13, 14]
+
+
+class TestMalformedFieldsWarn:
+    """Malformed optional fields (node IDs, depth) must be recorded in
+    ``parse_warnings`` naming the line number + offending field, not silently
+    dropped (deep-review F50). Parsing must still succeed (tolerant)."""
+
+    def test_element_malformed_depth_warns(self):
+        # 'abc' after the 3 node IDs is the optional depth field.
+        content = "1 1 0 0.0 0.0\n1 2 0 1.0 0.0\n1 3 0 0.5 1.0\n2 1 1 3 1 2 3 abc\n"
+        grd = GrdParser.parse(content)
+        elem = grd.elements[1]
+        assert elem.nodes == [1, 2, 3]
+        assert elem.depth is None
+        assert any(
+            "Line 4" in w and "abc" in w and "depth" in w for w in grd.parse_warnings
+        ), grd.parse_warnings
+
+    def test_continuation_malformed_node_id_warns_and_keeps_valid_tokens(self):
+        # Node 'xx' on the continuation line is malformed; parsing must warn
+        # but still keep the valid tokens that surround it (pass-site, not break).
+        content = (
+            "1 10 0 0.0 0.0\n"
+            "1 20 0 1.0 0.0\n"
+            "1 30 0 2.0 0.0\n"
+            "1 40 0 3.0 0.0\n"
+            "1 50 0 4.0 0.0\n"
+            "3 1 2 5\n"
+            " 10 20 xx 40 50\n"
+        )
+        grd = GrdParser.parse(content)
+        assert any("Line 7" in w and "xx" in w for w in grd.parse_warnings), grd.parse_warnings
+        assert grd.lines[1].nodes == [10, 20, 40, 50]
+
+    def test_element_partial_gather_malformed_node_id_warns(self):
+        # 'bad' appears among the node IDs collected before continuation;
+        # the element is still completed via the continuation line.
+        content = "2 1 0 4 10 bad 12\n14 15 16\n"
+        grd = GrdParser.parse(content)
+        assert any("Line 1" in w and "bad" in w for w in grd.parse_warnings), grd.parse_warnings
+        assert grd.elements[1].nodes == [10, 14, 15, 16]
+
+    def test_line_partial_gather_malformed_node_id_warns(self):
+        content = "3 1 2 3 10 bad\n11 12\n"
+        grd = GrdParser.parse(content)
+        assert any("Line 1" in w and "bad" in w for w in grd.parse_warnings), grd.parse_warnings
+        assert grd.lines[1].nodes == [10, 11, 12]

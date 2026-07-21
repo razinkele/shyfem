@@ -77,6 +77,22 @@ class StrParser:
         for line in content.splitlines():
             stripped = line.strip()
 
+            # Check for section end BEFORE section start: SECTION_START's
+            # \$(\w+) also matches a bare "$end" line ("end" is a valid
+            # \w+ word), so checking it first mis-parses every legitimate
+            # closing marker as a new section literally named "end". That
+            # phantom section then round-trips through generate() as an
+            # extra, ownerless "$end" pair sitting between real sections --
+            # which SHYFEM's own Fortran STR reader (iostr.f90 nlsh2d) is
+            # NOT tolerant of: encountering "$end" where it expects a new
+            # section header is a hard `stop 'error stop : nlsh2d'`. Since
+            # SECTION_END only ever matches the literal word "end", checking
+            # it first is strictly more specific and cannot shadow any real
+            # section name (title, para, name, bound1, ...).
+            if cls.SECTION_END.match(stripped):
+                current_section = None
+                continue
+
             # Check for section start
             section_match = cls.SECTION_START.match(stripped)
             if section_match:
@@ -93,11 +109,6 @@ class StrParser:
                 current_section = StrSection(name=section_name)
                 result.sections[section_name] = current_section
                 result._structure.append(("section", section_name))
-                continue
-
-            # Check for section end
-            if cls.SECTION_END.match(stripped):
-                current_section = None
                 continue
 
             # Handle content outside sections

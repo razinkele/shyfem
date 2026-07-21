@@ -180,22 +180,27 @@ def boundary_editor_server(
     def _add_boundary():
         current = boundaries.get()
         bid = _next_id.get()
-        current.append(
-            {
-                "id": bid,
-                "label": f"bound{bid}",
-                "nodes": "",
-                "ibtyp": 1,
-                "boundn": "",
-                "zfact": 1.0,
-                "intpol": 1,
-                "saltn": "",
-                "tempn": "",
-                "conzn": "",
-            }
-        )
+        new_entry = {
+            "id": bid,
+            "label": f"bound{bid}",
+            "nodes": "",
+            "ibtyp": 1,
+            "boundn": "",
+            "zfact": 1.0,
+            "intpol": 1,
+            "saltn": "",
+            "tempn": "",
+            "conzn": "",
+        }
         _next_id.set(bid + 1)
-        boundaries.set(current)
+        # Copy-on-write (N41): reactive.Value.set() short-circuits with
+        # `self._value is value` and skips invalidation when passed the SAME
+        # object reference. Mutating `current` in place and calling
+        # boundaries.set(current) is therefore a silent no-op -- boundary_list
+        # and the remove-handler registration effect never re-run. Building a
+        # new list here guarantees a distinct identity so the set() actually
+        # registers as a change.
+        boundaries.set([*current, new_entry])
 
     # Dynamic remove handlers for remove_bound_{bid} buttons. This effect re-runs
     # every time `boundaries` changes; a reactive.effect registered inside it is
@@ -238,8 +243,9 @@ def boundary_editor_server(
 
         if imported:
             current = boundaries.get()
-            current.extend(imported)
-            boundaries.set(current)
+            # Copy-on-write (N41) -- see _add_boundary for why in-place
+            # extend() + set(current) is a silent no-op.
+            boundaries.set([*current, *imported])
             _next_id.set(imported[-1]["id"] + 1)
             show_csv_import.set(False)
             ui.notification_show(f"Imported {len(imported)} boundaries", type="message")

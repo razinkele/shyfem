@@ -91,24 +91,6 @@ def job_identity_metadata(row) -> dict[str, Any]:
     return meta
 
 
-async def cancel_active_jobs_for_session(job_queue, session_id, is_server_mode, logger):
-    """Cancel a session's still-active jobs when its WebSocket session ends.
-
-    In local mode session_id is ignored (single user) so all active jobs are
-    considered; in server mode only the ending session's jobs are touched. Any
-    error is logged and swallowed — session teardown must never raise.
-    """
-    try:
-        sid = session_id if is_server_mode else None
-        jobs = await job_queue.list_jobs(limit=100, session_id=sid)
-        for job in jobs:
-            if job.is_active:
-                logger.info("Session ended — cancelling orphaned job %s", job.id)
-                await job_queue.cancel(job.id)
-    except Exception as exc:
-        logger.warning("Session cleanup failed: %s", exc)
-
-
 class JobQueue(ABC):
     """Abstract base class for job queues."""
 
@@ -134,8 +116,13 @@ class JobQueue(ABC):
         simulation_id: int | None = None,
         limit: int = 100,
         session_id: str | None = None,
+        user_id: int | None = None,
     ) -> list[JobInfo]:
-        """List jobs, optionally filtered by status, simulation, or session."""
+        """List jobs, optionally filtered by status, simulation, session, or
+        owning user. ``user_id`` is the server-validated identity's id — the
+        basis for per-user job listing in server mode (never a client-pushed
+        signal, and distinct from ``session_id`` which is an ephemeral
+        per-WS-connection value)."""
         pass
 
     @abstractmethod

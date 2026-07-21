@@ -40,11 +40,7 @@ except ImportError:
 
 from shyfem_ui.services.audit_service import AuditService
 from shyfem_ui.services.auth_service import AuthService
-from shyfem_ui.services.job_queue import (
-    JobQueue,
-    JobQueueFactory,
-    cancel_active_jobs_for_session,
-)
+from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
 from shyfem_ui.services.notification_service import JobTransitionDetector
 from shyfem_ui.services.notification_service import NotificationService as EmailNotificationService
 
@@ -769,16 +765,18 @@ def _build_server(
         """Navigate to a tab via client-side JavaScript."""
         session.send_custom_message("shyfem_nav", {"tab": tab_name})
 
-    # Cancel orphaned running jobs when the browser session disconnects
+    # Jobs are owned by users, not by WebSocket sessions (N13): a session
+    # ending (page refresh, network blip, laptop sleep) must NEVER cancel a
+    # running job — Shiny has no reconnection, so that coupling was cancelling
+    # legitimate long-running simulations on every disconnect. Jobs now end
+    # only by completing, explicit cancel, or startup reconciliation of
+    # phantom rows left by a previous process (see LocalJobQueue.
+    # _load_history_from_db). _cleanup_session_id/_is_server are still used
+    # below for session-scoped progress polling (unrelated to cancellation).
     _cleanup_session_id = str(id(session))
     _is_server = config.deployment_mode == "server"
     _current_user = get_current_user()
     _user_id = _current_user["id"] if _current_user else None
-
-    async def _on_session_ended():
-        await cancel_active_jobs_for_session(job_queue, _cleanup_session_id, _is_server, logger)
-
-    session.on_ended(_on_session_ended)
 
     @reactive.effect
     @reactive.event(input._dark_mode)
