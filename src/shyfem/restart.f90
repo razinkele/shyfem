@@ -222,8 +222,14 @@
             write(6,*) '*** Continuing with cold start...'
             return
 	  else if( ierr == 94 ) then
-            write(6,*) '*** hlv not compatible'
-            stop 'error stop rst_perform_restart: hlv'
+	    !N26: this used to be mislabeled "hlv not compatible" -- but
+	    !hlv/ilhv/ilhkv incompatibility (and any other record read
+	    !failure) is now caught and aborted directly inside
+	    !rst_read_record/rst_get_vertical (see shympi_abort_internal
+	    !calls there). the only path that still returns here with
+	    !ierr=94 is an unrecognized restart file id (bad idfile magic)
+            write(6,*) '*** restart file not recognized (bad file id)'
+            stop 'error stop rst_perform_restart: bad restart file format'
           end if
           write(6,*) '*** Another time record is used for restart'
 	  call dts_format_abs_time(atrst,aline)
@@ -492,7 +498,10 @@
 	  if( .not. bonce ) then
             iunit = ifemop('.rst','unformatted','new')
             if( iunit .le. 0 ) then
-              stop 'error stop rst_write_restart: Cannot open rst file'
+              write(6,*) 'rst_write_restart: cannot open rst file'
+              flush(6)
+              call shympi_abort_internal( &
+     &		'rst_write_restart: cannot open rst file')
             end if
 	    da_out(4) = iunit
 	  end if
@@ -513,12 +522,11 @@
 	  if( bdebug .and. bmpi_master ) then
 	    write(6,*) 'writing single restart record'
 	  end if
-          iunit = ifemop('.rst','unformatted','new')
-          if( iunit .le. 0 ) then
-            stop 'error stop rst_write_restart: Cannot open rst file'
-          end if
-          call rst_write_record(atime,iunit)
-	  close(iunit)
+	  !N27: single-record mode overwrites the only recovery point in
+	  !place -> write to a temp file and rename into place only after
+	  !a fully successful write (also shields the unguarded writes in
+	  !restart_write_value_* from destroying the live .rst on failure)
+	  call rst_write_restart_atomic(atime)
 	else
 	  if( bdebug .and. bmpi_master ) then
 	    write(6,*) 'writing restart record'
@@ -534,6 +542,78 @@
 
         return
         end
+
+!*******************************************************************
+
+	subroutine rst_write_restart_atomic(atime)
+
+! writes a single restart record to a temp file and renames it into
+! place only after a fully successful write (N27)
+!
+! this is used for single-record ("bonce") restart mode, where the
+! previous implementation re-opened the live .rst file with status
+! 'new' (silently mapped to 'unknown' by ifileo) and so truncated the
+! only recovery point in place before the new record was durably
+! written. Writing to <name>.rst.tmp and renaming it into place means
+! a failed/interrupted write (disk full, node killed, ...) leaves the
+! previous .rst untouched.
+!
+! only the mpi master actually opens/writes/closes/renames the file;
+! all writes inside rst_write_record are already gated on bmaster (or
+! use a collective gather that master alone flushes to disk), so a
+! dummy unit number on the other ranks is never touched for i/o.
+
+	use shympi
+
+	implicit none
+
+	double precision atime
+
+	integer iunit,ios
+	integer ifileo
+	character*256 realname,tmpname
+
+	iunit = -1
+
+	if( bmpi_master ) then
+	  call def_make('.rst',realname)
+	  call def_make('.rst.tmp',tmpname)
+
+	  iunit = ifileo(0,tmpname,'unformatted','new')
+	  if( iunit .le. 0 ) then
+	    write(6,*) 'rst_write_restart: cannot open temp restart file'
+	    flush(6)
+	    call shympi_abort_internal( &
+     &		'rst_write_restart: cannot open temp restart file')
+	  end if
+	end if
+
+	call rst_write_record(atime,iunit)	!collective - all ranks join
+
+	if( bmpi_master ) then
+	  close(iunit,iostat=ios)
+	  if( ios /= 0 ) then
+	    write(6,*) 'rst_write_restart: error closing temp restart file'
+	    flush(6)
+	    call shympi_abort_internal( &
+     &		'rst_write_restart: error closing temp restart file')
+	  end if
+
+	  call rename(trim(tmpname),trim(realname),ios)
+	  if( ios /= 0 ) then
+	    write(6,*) 'rename failed: ',ios
+	    write(6,*) 'from: ',trim(tmpname)
+	    write(6,*) 'to:   ',trim(realname)
+	    flush(6)
+	    call shympi_abort_internal( &
+     &		'rst_write_restart: cannot rename temp restart file'// &
+     &		' into place')
+	  end if
+	end if
+
+	call shympi_barrier
+
+	end subroutine rst_write_restart_atomic
 
 !*******************************************************************
 !*******************************************************************
@@ -564,6 +644,7 @@
 	integer ibarcl,iconz,ibio,ibfm,ieco,imerc,iturb
         integer nvers
 	integer date,time
+	integer ios
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
@@ -586,14 +667,21 @@
 	ieco = ibio
 
 	if( bmaster ) then
-          write(iunit) idfrst,nvers,1
-          write(iunit) date,time
-          write(iunit) atime
-          write(iunit) nkn_global,nel_global,nlv_global
+          write(iunit,iostat=ios) idfrst,nvers,1
+	  call rst_check_write(ios,'header')
+          write(iunit,iostat=ios) date,time
+	  call rst_check_write(ios,'date/time')
+          write(iunit,iostat=ios) atime
+	  call rst_check_write(ios,'atime')
+          write(iunit,iostat=ios) nkn_global,nel_global,nlv_global
+	  call rst_check_write(ios,'nkn/nel/nlv')
 	end if
 
 	if( b3d ) then
-          if( bmaster ) write(iunit) hlv_global
+          if( bmaster ) then
+	    write(iunit,iostat=ios) hlv_global
+	    call rst_check_write(ios,'hlv')
+	  end if
 	  call restart_write_value(iunit,be,ilhv)
 	  call restart_write_value(iunit,bn,ilhkv)
 	end if
@@ -647,6 +735,31 @@
 	call shympi_barrier
 
         end
+
+!*******************************************************************
+
+	subroutine rst_check_write(ios,name)
+
+! aborts cleanly (collective-safe) if writing a restart file record
+! failed, instead of leaving an unguarded write error unhandled (N27)
+
+	use shympi
+
+	implicit none
+
+	integer ios
+	character*(*) name
+
+	if( ios == 0 ) return
+
+	write(6,*) 'error writing restart file record: ',trim(name)
+	write(6,*) 'iostat = ',ios
+
+	flush(6)
+	call shympi_abort_internal( &
+     &		'restart: failed write of '//trim(name))
+
+	end subroutine rst_check_write
 
 !*******************************************************************
 
@@ -872,7 +985,7 @@
 	use mod_ts
 	use mod_hydro_vel
 	use mod_hydro
-	use levels, only : nlvdi,nlv,hlv
+	use levels, only : nlvdi,nlv,hlv,ilhv,ilhkv
 	use basin
 	use mod_restart
 	use shympi
@@ -903,12 +1016,17 @@
           return
         else if( ios > 0 ) then
           write(6,*) 'error reading header of restart file...'
-          stop 'error stop rst_read_record: cannot read header'
+          write(6,*) 'iostat = ',ios
+          flush(6)
+          call shympi_abort_internal( &
+     &		'restart: truncated/failed read of header')
         end if
         if( nvers .lt. 3 ) then
           write(6,*) 'error reading restart file...'
           write(6,*) 'nvers: ',nvers
-          stop 'error stop rst_read_record: cannot read this version'
+          flush(6)
+          call shympi_abort_internal( &
+     &		'restart: unsupported restart file version')
         end if
 
         ierr = 0
@@ -919,8 +1037,14 @@
 	time = 0
 	iflag = 0
 
-        if( nvers >= 9 ) read(iunit) date,time
-        if( nvers >= 11 ) read(iunit) atime
+        if( nvers >= 9 ) then
+          read(iunit,iostat=ios) date,time
+          call rst_check_read(ios,'date/time')
+        end if
+        if( nvers >= 11 ) then
+          read(iunit,iostat=ios) atime
+          call rst_check_read(ios,'atime')
+        end if
 
 	if( nvers <= 10 ) then
 	  it = idfile
@@ -934,7 +1058,8 @@
 	  return
 	end if
 
-          read(iunit) nknaux,nelaux,nlvaux
+          read(iunit,iostat=ios) nknaux,nelaux,nlvaux
+          call rst_check_read(ios,'nkn/nel/nlv')
           if( nknaux .ne. nkn_global .or. &
      &        nelaux .ne. nel_global .or. &
      &        nlvaux .ne. nlv_global ) then
@@ -942,10 +1067,18 @@
             write(6,*) 'nkn,nel,nlv:'
             write(6,*) 'shyfem:  ',nkn,nel,nlv
             write(6,*) 'rstfile: ',nknaux,nelaux,nlvaux
-            stop 'error stop rst_read_record: incompatible parameters'
+            flush(6)
+            call shympi_abort_internal( &
+     &		'restart: nkn/nel/nlv incompatible with running basin')
           end if
 
 	  call rst_read_vertical(iunit,nvers,nkn,nel,nlv)
+
+	  !N26: validate vertical layer structure (hlv/ilhv/ilhkv) just
+	  !read from the restart file against the running basin's own
+	  !vertical structure -- aborts on mismatch instead of silently
+	  !loading 3d fields onto an incompatible layer geometry
+	  call rst_get_vertical(nkn,nel,nlv,nvers,hlv,ilhv,ilhkv)
 
 	  id = id_hydro_rst
 	  call rst_add_flag(id,iflag)
@@ -956,11 +1089,16 @@
 	    call restart_read_value(iunit,be,utlnv)
 	    call restart_read_value(iunit,be,vtlnv)
 	  else
-            read(iunit)
-            read(iunit)
-            read(iunit)
-            read(iunit)
-            read(iunit)
+            read(iunit,iostat=ios)
+            call rst_check_read(ios,'iwegv (skip)')
+            read(iunit,iostat=ios)
+            call rst_check_read(ios,'znv (skip)')
+            read(iunit,iostat=ios)
+            call rst_check_read(ios,'zenv (skip)')
+            read(iunit,iostat=ios)
+            call rst_check_read(ios,'utlnv (skip)')
+            read(iunit,iostat=ios)
+            call rst_check_read(ios,'vtlnv (skip)')
 	  end if
 
           if( nvers .ge. 4 ) then
@@ -969,13 +1107,15 @@
 	    if( rst_want_restart(id) ) then
 	      call restart_read_value(iunit,be,3,hm3v)
 	    else
-              read(iunit)
+              read(iunit,iostat=ios)
+              call rst_check_read(ios,'hm3v (skip)')
 	    end if
           end if
 
           if( nvers .ge. 5 ) then
 	    id = id_barcl_rst
-            read(iunit) ibarcl
+            read(iunit,iostat=ios) ibarcl
+	    call rst_check_read(ios,'ibarcl')
 	    ibarcl_rst = ibarcl
             if( ibarcl .gt. 0 ) then
 	      call rst_add_flag(id,iflag)
@@ -984,16 +1124,20 @@
 	        call restart_read_value(iunit,bn,tempv)
 	        call restart_read_value(iunit,bn,rhov)
 	      else
-                read(iunit)
-                read(iunit)
-                read(iunit)
+                read(iunit,iostat=ios)
+                call rst_check_read(ios,'saltv (skip)')
+                read(iunit,iostat=ios)
+                call rst_check_read(ios,'tempv (skip)')
+                read(iunit,iostat=ios)
+                call rst_check_read(ios,'rhov (skip)')
 	      end if
             end if
           end if
 
 	  if( nvers .ge. 15 ) then
 	    id = id_gotm_rst
-	    read(iunit) iturb
+	    read(iunit,iostat=ios) iturb
+	    call rst_check_read(ios,'iturb')
 	    iturb_rst = iturb
 	    if( iturb .eq. 1 ) then
 	      call rst_add_flag(id,iflag)
@@ -1007,7 +1151,8 @@
 
           if( nvers .ge. 6 ) then
 	    id = id_conz_rst
-            read(iunit) iconz
+            read(iunit,iostat=ios) iconz
+	    call rst_check_read(ios,'iconz')
 	    iconz_rst = iconz
 	    if( iconz > 0 ) then
 	      call rst_add_flag(id,iflag)
@@ -1021,21 +1166,24 @@
 
 	  if( nvers .ge. 7 ) then
 	    id = id_wvert_rst
-	    read(iunit) iwvert
+	    read(iunit,iostat=ios) iwvert
+	    call rst_check_read(ios,'iwvert')
 	    iwvert_rst = iwvert
 	    if( iwvert .gt. 0 ) then
 	      call rst_add_flag(id,iflag)
 	      if( rst_want_restart(id) ) then
 	        call restart_read_value(iunit,bn,wlnv)
 	      else
-                read(iunit)
+                read(iunit,iostat=ios)
+                call rst_check_read(ios,'wlnv (skip)')
 	      end if
 	    end if
 	  end if
 
 	  if( nvers .ge. 8 ) then
 	    id = id_eco_rst
-	    read(iunit) ieco
+	    read(iunit,iostat=ios) ieco
+	    call rst_check_read(ios,'ieco')
 	    ieco_rst = ieco
             if( ieco .gt. 0 ) then
 	      call rst_add_flag(id,iflag)
@@ -1049,7 +1197,8 @@
 
 	  if( nvers .ge. 12 ) then
 	    id = id_merc_rst
-	    read(iunit) imerc
+	    read(iunit,iostat=ios) imerc
+	    call rst_check_read(ios,'imerc')
 	    imerc_rst = imerc
             if( imerc .gt. 0 ) then
 	      call rst_add_flag(id,iflag)
@@ -1064,7 +1213,8 @@
 
 	  if( nvers .ge. 17 ) then
 	    id = id_bfm_rst
-	    read(iunit) ibfm
+	    read(iunit,iostat=ios) ibfm
+	    call rst_check_read(ios,'ibfm')
             if( ibfm .gt. 0 ) then
 	      call rst_add_flag(id,iflag)
 	      if( rst_want_restart(id) ) then
@@ -1081,6 +1231,41 @@
 
 !*******************************************************************
 
+	subroutine rst_check_read(ios,name)
+
+! aborts cleanly (collective-safe) if a restart file record read
+! failed partway through, instead of an uncontrolled crash (N24).
+!
+! this only covers reads once a record's header has already been
+! confirmed to exist -- an end-of-file here means the record that
+! was being written is truncated (e.g. a walltime-killed job), not a
+! legitimate "no more records" condition (that is still handled at
+! the header read in rst_read_record, which returns ierr=-1 and lets
+! the caller fall back to the last complete record read so far)
+
+	use shympi
+
+	implicit none
+
+	integer ios
+	character*(*) name
+
+	if( ios == 0 ) return
+
+	write(6,*) 'error reading restart file record: ',trim(name)
+	write(6,*) 'iostat = ',ios
+	if( ios < 0 ) then
+	  write(6,*) 'unexpected end of file - restart record is truncated'
+	end if
+
+	flush(6)
+	call shympi_abort_internal( &
+     &		'restart: truncated/failed read of '//trim(name))
+
+	end subroutine rst_check_read
+
+!*******************************************************************
+
 	subroutine rst_read_vertical(iunit,nvers,nkn,nel,nlv)
 
 ! nkn,... are local values
@@ -1094,6 +1279,7 @@
 	integer nvers
 	integer nkn,nel,nlv
 	integer ierr
+	integer ios
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
@@ -1116,7 +1302,8 @@
 	  ilhkrst = 1
 	else
 	  if( nvers .ge. 10 ) then
-	    read(iunit) hlvrst
+	    read(iunit,iostat=ios) hlvrst
+	    call rst_check_read(ios,'hlv')
 	  end if
 	  if( nvers .ge. 13 ) then
 	    call restart_read_value(iunit,be,ilhrst)
@@ -1129,24 +1316,47 @@
 
 !*******************************************************************
 
-	subroutine rst_get_vertical(nkn,nel,nlv,hlv,ilhv,ilhkv)
+	subroutine rst_get_vertical(nkn,nel,nlv,nvers,hlv,ilhv,ilhkv)
+
+! validates the vertical layer structure just read from the restart
+! file (hlvrst,ilhrst,ilhkrst, filled by rst_read_vertical) against
+! the running basin's own vertical structure (hlv,ilhv,ilhkv) (N26).
+!
+! previously this routine was dead code (never called) and, when it
+! was called, blindly overwrote the caller's hlv/ilhv/ilhkv with the
+! restart file's values instead of checking them -- so a restart file
+! written with a different vertical discretization (but the same nlv)
+! was accepted silently and 3d fields ended up mapped onto the wrong
+! layer geometry. this now aborts on any mismatch instead.
+!
+! nvers gates what was actually written to the file: hlv is only
+! present from version 10 on, ilhv/ilhkv only from version 13 on (see
+! rst_read_vertical) -- older files legitimately have nothing to
+! validate here and must not be flagged as incompatible.
 
 	use mod_restart
+	use shympi
 
 	implicit none
 
-	integer nkn,nel,nlv
+	integer nkn,nel,nlv,nvers
 	real hlv(nlv)
 	integer ilhv(nel)
 	integer ilhkv(nkn)
 
+	logical bhlv,bilh
+
 	if( nkn <= 0 .or. nel <= 0 .or. nlv <= 0 ) then
 	  write(6,*) 'nkn,nel,nlv: ',nkn,nel,nlv
-	  stop 'error stop rst_get_hlv: error in parameters'
+	  flush(6)
+	  call shympi_abort_internal('rst_get_vertical: error in parameters')
 	end if
 
 	if( .not. allocated(hlvrst) ) then
-	  stop 'error stop rst_get_hlv: hlvrst not allocated'
+	  write(6,*) 'rst_get_vertical: hlvrst not allocated'
+	  flush(6)
+	  call shympi_abort_internal( &
+     &		'rst_get_vertical: hlvrst not allocated')
 	end if
 	if( nlv /= size(hlvrst) .or. &
      &      nkn /= size(ilhkrst) .or. &
@@ -1154,12 +1364,43 @@
 	  write(6,*) 'nkn: ',nkn,size(ilhkrst)
 	  write(6,*) 'nel: ',nel,size(ilhrst)
 	  write(6,*) 'nlv: ',nlv,size(hlvrst)
-	  stop 'error stop rst_get_hlv: arrays not compatible'
+	  flush(6)
+	  call shympi_abort_internal( &
+     &		'restart: vertical structure array size mismatch')
 	end if
 
-	hlv = hlvrst
-	ilhv = ilhrst
-	ilhkv = ilhkrst
+	bhlv = ( nvers >= 10 )		!hlv only written from this version on
+	bilh = ( nvers >= 13 )		!ilhv/ilhkv only written from here on
+
+	if( bhlv ) then
+	  if( any( hlv /= hlvrst ) ) then
+	    write(6,*) 'restart file hlv:  ',hlvrst
+	    write(6,*) 'running basin hlv: ',hlv
+	    flush(6)
+	    call shympi_abort_internal( &
+     &	      'restart: vertical layer depths (hlv) incompatible'// &
+     &	      ' with running basin')
+	  end if
+	end if
+
+	if( bilh ) then
+	  if( any( ilhv /= ilhrst ) ) then
+	    write(6,*) 'restart: element layer counts (ilhv) incompatible'// &
+     &	      ' with running basin'
+	    flush(6)
+	    call shympi_abort_internal( &
+     &	      'restart: element layer counts (ilhv) incompatible'// &
+     &	      ' with running basin')
+	  end if
+	  if( any( ilhkv /= ilhkrst ) ) then
+	    write(6,*) 'restart: node layer counts (ilhkv) incompatible'// &
+     &	      ' with running basin'
+	    flush(6)
+	    call shympi_abort_internal( &
+     &	      'restart: node layer counts (ilhkv) incompatible'// &
+     &	      ' with running basin')
+	  end if
+	end if
 
 	return
 	end
