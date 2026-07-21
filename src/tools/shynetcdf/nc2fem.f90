@@ -963,6 +963,12 @@
 	  do i=1,nvar
 	    nzz = nz
 	    if( dims(i) == 2 ) nzz = 1
+	    if( nzz > lmax ) then
+	      write(6,*) 'nc2fem: record lmax exceeds header lmax'
+	      write(6,*) 'header lmax = ',lmax
+	      write(6,*) 'record lmax = ',nzz
+	      stop 'error stop write_variables: record lmax > header lmax'
+	    end if
             call handle_data(ncid,bdebug,vars(i),it,dims(i),flags(i)    &
      &                          ,nx,ny,nzz                              &
      &                          ,x,y                                    &
@@ -985,13 +991,12 @@
 	      where( data /= my_flag ) data = data + offs(i)
 	    end if
 
-	    lmax = nzz
 	    string = descrps(i)
             call fem_file_write_data(iformat,iunit                      &
-     &                          ,nvers,npnew,lmax                       &
+     &                          ,nvers,npnew,nzz                        &
      &                          ,string                                 &
      &                          ,ilhkv,hd                               &
-     &                          ,lmax,femdata)
+     &                          ,nzz,femdata)
 
 	    if( bdebug ) then
               call write_grd_var(vars(i),it,nx,ny,nzz,nxnew,nynew       &
