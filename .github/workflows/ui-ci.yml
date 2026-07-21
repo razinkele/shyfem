@@ -93,5 +93,5 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Build Docker image (builder stage)
-        run: docker build --target builder -t shyfem-ui-test .
+      - name: Build Docker image (all stages)
+        run: docker build -t shyfem-ui-test .
