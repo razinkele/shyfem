@@ -162,6 +162,28 @@ class TestImportBoundaries:
         assert 1 in line_types  # exterior
         assert 2 in line_types  # hole
 
+    def test_projected_coords_without_projected_crs_warns(self, tmp_path):
+        """L33: coords that can't be WGS84 lon/lat (|x|>180) with no projected
+        CRS (so no reprojection happened) must produce a warning rather than
+        silently being tagged epsg=4326 and mis-projected."""
+        coords = [
+            [500000, 4000000],
+            [510000, 4000000],
+            [510000, 4010000],
+            [500000, 4010000],
+            [500000, 4000000],
+        ]
+        path = _make_geojson_polygon(coords, tmp_path / "utm.geojson")
+        grd = import_boundaries(path)
+        assert any("WGS84 bounds" in w for w in grd.parse_warnings)
+
+    def test_valid_wgs84_coords_produce_no_crs_warning(self, tmp_path):
+        """Real lon/lat coords must not trip the WGS84-bounds sanity check."""
+        coords = [[0, 0], [10, 0], [10, 10], [0, 10], [0, 0]]
+        path = _make_geojson_polygon(coords, tmp_path / "wgs84.geojson")
+        grd = import_boundaries(path)
+        assert not any("WGS84 bounds" in w for w in grd.parse_warnings)
+
     def test_empty_geometry_warning(self, tmp_path):
         """Empty FeatureCollection produces a warning."""
         geojson = {"type": "FeatureCollection", "features": []}

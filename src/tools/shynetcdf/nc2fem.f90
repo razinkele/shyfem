@@ -622,7 +622,7 @@
 
 	integer i,idir
 	character*256 text
-	character*1, save :: post(0:3) = (/' ','x','y','z'/)
+	character*1, save :: post(2) = (/'x','y'/)
 
 	logical has_direction
 
@@ -631,7 +631,7 @@
 	do i=1,nvar
 	  text = descrps(i)
 	  if( has_direction(text) ) then
-	    idir = mod(idir+1,4)
+	    idir = mod(idir,2) + 1
 	    text = trim(text) // ' - ' // post(idir)
 	  end if
 	  descrps(i) = text

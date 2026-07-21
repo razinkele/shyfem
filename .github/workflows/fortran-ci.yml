@@ -69,9 +69,8 @@ jobs:
           # src/shyfem and src/tools are clean — block any regression.
           ./bin/check_implicit_none.py src/shyfem --max-violations 0
           ./bin/check_implicit_none.py src/tools  --max-violations 0
-          # src/utils has 31 known offenders; gate prevents new ones,
-          # ratchet down as files get cleaned up.
-          ./bin/check_implicit_none.py src/utils  --max-violations 31
+          # src/utils is now clean (offenders cleaned to 0); block any regression.
+          ./bin/check_implicit_none.py src/utils  --max-violations 0
 
   mpi-build:
     runs-on: ubuntu-latest

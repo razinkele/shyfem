@@ -2562,7 +2562,6 @@
           write(6,*) 'internal number = ',int
           write(6,*) items
           write(6,*) '==========================='
-          call shympi_finalize
           call shympi_abort_internal('error stop shympi_check_find_item: more than one or no domain')
         end if
 

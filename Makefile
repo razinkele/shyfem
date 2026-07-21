@@ -34,7 +34,7 @@ include ./Rules.make
 
 RULES_MAKE_EXPECTED = 1.11
 RULES_MAKE_COMPATIBILITY = RULES_MAKE_OK
-ifneq ($(RULES_MAKE_VERSION),"0.0")
+ifneq ($(RULES_MAKE_VERSION),0.0)
   ifneq ($(RULES_MAKE_VERSION),$(RULES_MAKE_EXPECTED))
     RULES_MAKE_COMPATIBILITY = RULES_MAKE_NOT_COMPATIBLE
   endif
@@ -44,7 +44,7 @@ useX11 = true
 
 #---------------------------------------------------------------
 
-ifeq ($(SHYFEMDIR),"")
+ifeq ($(SHYFEMDIR),)
         SHYFEMDIR := $(CURDIR)
 endif
 export SHYFEMDIR

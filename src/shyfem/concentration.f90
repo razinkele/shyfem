@@ -2252,6 +2252,7 @@
 	use mod_bound_dynamic
 	use levels
 	use basin
+	use shympi, only : nkn_unique
 
 	use para
 	implicit none
@@ -2349,7 +2350,11 @@
 
 	call get_act_timeline(aline)
 
-	do k=1,nkn
+	!only owned (unique) nodes: ghost nodes hold unsolved RHS in the
+	!node-partitioned path and are overwritten by the later exchange,
+	!so counting them would inflate the diagnostic error count.
+	!nkn_unique == nkn in serial, so this is unchanged there.
+	do k=1,nkn_unique
 	 !if( .not. is_external_boundary(k) ) then	!might be relaxed
 	 if( .not. is_zeta_bound(k) ) then	!might be relaxed
 	  lmax = ilhkv(k)

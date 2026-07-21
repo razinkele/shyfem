@@ -222,7 +222,7 @@ No fixed item list — input is the 46 leads in report §4. Recommended: a verif
 - [x] **Batch 4 — UI security hardening & CI honesty** (17 items: N43, N44, N45, N49, N50, N51, N52, F14, F15, F16, F26, F44, F45, F46, F47, F52, F53) — DONE (commits 03ccf86..28c75a8; F14 not-code-fixable, F16 false-positive — see notes)
 - [x] **Batch 5 — Fortran model tail — restart, transport, MPI hygiene, eco** (28 items: N21, N22, N23, N24, N25, N26, N27, N28, N37, N38, N39, N53, N54, F07, F08, F09, F10, F11, F27, F28, F29, F30, F31, F32, F33, F34, F37, F38) — DONE (commits 4b279b6..da93d18; F30 superseded, F08+N23-latch escalated as owner decisions — see notes)
 - [x] **Batch 6 — Tools — Fortran & C utilities** (14 items: N06, N07, N08, N30, N31, N32, N33, N34, N35, N36, F12, F39, F40, F43) — DONE (commits 3ab2e82..4e7249a; N06 compile-restore + NULL guard, all C tools ASan-verified)
-- [ ] **Batch 7 — Low-tier triage sweep** (46 unverified leads from report §4)
+- [x] **Batch 7 — Low-tier triage sweep** (46 unverified leads from report §4) — VERIFIED 2026-07-21 (workflow wf_6a941180-1b6, refute-by-default): 20 confirmed-fix / 4 defer / 5 trivial / 17 refuted-false-positive. 20 confirmed FIXED (commits 737d767..95a1785, final review ready-to-merge); 4 defer + 5 trivial + 17 refuted recorded in .superpowers/sdd/progress.md B7 section. ALL 7 BATCHES COMPLETE.
 
 ## Explicitly out of scope
 

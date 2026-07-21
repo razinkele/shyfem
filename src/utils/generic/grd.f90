@@ -887,7 +887,7 @@
         itype=nint(f(3))
         nvert=nint(f(4))
 
-        if(nvert.gt.3) goto 87
+        if(nvert.lt.1 .or. nvert.gt.3) goto 87
 
         istart=4
         ivert=nvert

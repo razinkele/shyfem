@@ -1,6 +1,5 @@
 """Tests for FileService.validate_simulation_files."""
 
-
 import pytest
 
 
@@ -12,12 +11,15 @@ def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv("SHYFEM_UI_WORK_DIR", str(tmp_path / "projects"))
 
     import shyfem_ui.config as cfg_mod
+
     cfg_mod._config = None
     import shyfem_ui.db.base as db_mod
+
     db_mod._engine = None
     db_mod._SessionLocal = None
 
     from shyfem_ui.db.base import init_db
+
     init_db()
     yield
     db_mod._engine = None
@@ -66,7 +68,8 @@ $end
         db.add(p)
         db.flush()
         s = Simulation(
-            project_id=p.id, name="val_sim",
+            project_id=p.id,
+            name="val_sim",
             str_file="val_sim.str",
         )
         db.add(s)
@@ -78,12 +81,14 @@ class TestValidateSimulationFiles:
 
     def test_all_missing_returns_warnings(self, sim_project):
         from shyfem_ui.services.file_service import FileService
+
         warnings = FileService.validate_simulation_files(sim_project["sim_id"])
         # wind, gotmpa, boundn, tempn, basin — all missing
         assert len(warnings) >= 4
 
     def test_no_warnings_when_all_present(self, sim_project):
         from shyfem_ui.services.file_service import FileService
+
         work = sim_project["work"]
 
         # Create all referenced files
@@ -100,6 +105,7 @@ class TestValidateSimulationFiles:
 
     def test_partial_missing(self, sim_project):
         from shyfem_ui.services.file_service import FileService
+
         work = sim_project["work"]
 
         # Create some but not all
@@ -112,8 +118,33 @@ class TestValidateSimulationFiles:
         assert len(warnings) >= 2
         assert any("levels.dat" in w for w in warnings)
 
+    def test_missing_str_file_no_detached_instance_error(self, tmp_path):
+        """L34: when the STR file is absent, the 'not found' warning must use a
+        scalar captured INSIDE the db_session. db_session commits (expire_on_
+        commit=True) and closes; touching the expired ORM instance afterwards
+        raises DetachedInstanceError, dropping the warning entirely."""
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import Project, Simulation
+        from shyfem_ui.services.file_service import FileService
+
+        work = tmp_path / "projects" / "detach_proj"
+        work.mkdir(parents=True)
+        with db_session() as db:
+            p = Project(name="detach_proj", work_dir=str(work))
+            db.add(p)
+            db.flush()
+            s = Simulation(project_id=p.id, name="detach_sim", str_file="does_not_exist.str")
+            db.add(s)
+            db.flush()
+            sim_id = s.id
+
+        # Must not raise DetachedInstanceError and must name the missing file.
+        warnings = FileService.validate_simulation_files(sim_id)
+        assert warnings == ["STR file not found: does_not_exist.str"]
+
     def test_invalid_sim_id_raises(self):
         from shyfem_ui.services.file_service import FileService
+
         with pytest.raises(ValueError, match="not found"):
             FileService.validate_simulation_files(99999)
 
@@ -126,8 +157,7 @@ class TestValidateSimulationFiles:
         work = tmp_path / "projects" / "minimal"
         work.mkdir(parents=True)
         (work / "minimal.str").write_text(
-            "$title\nMinimal\nminimal\nGRID/m\n$end\n"
-            "$para\nidt = 300\n$end\n"
+            "$title\nMinimal\nminimal\nGRID/m\n$end\n" "$para\nidt = 300\n$end\n"
         )
         (work / "GRID").mkdir()
         (work / "GRID" / "m.bas").write_text("data")

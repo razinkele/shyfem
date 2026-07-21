@@ -273,6 +273,10 @@ class LocalJobQueue(JobQueue):
                 "working_dir": job.working_dir,
                 "stderr": job.error_message or "",
             }
+            if job.status == JobStatus.CANCELLED:
+                # A user-cancelled job is not a failure — sending a
+                # "simulation failed" email on a deliberate cancel is wrong.
+                return
             if job.status == JobStatus.COMPLETED:
                 self.notification_service.notify_job_success(user_dict, job_dict)
             else:
@@ -402,6 +406,9 @@ class LocalJobQueue(JobQueue):
                         solver=solver,
                         progress_callback=progress_callback,
                         output_callback=output_callback,
+                        # Stdout is streamed to the job log file via
+                        # output_callback; don't also buffer it all in RAM.
+                        capture_stdout=False,
                     )
                 elif spec.tool_name == "shyfem":
                     # Serial shyfem (may use petsc solver)
@@ -411,6 +418,7 @@ class LocalJobQueue(JobQueue):
                         solver=solver,
                         progress_callback=progress_callback,
                         output_callback=output_callback,
+                        capture_stdout=False,
                     )
                 else:
                     result = await self.wrapper.run_command(
@@ -419,6 +427,7 @@ class LocalJobQueue(JobQueue):
                         spec.working_dir,
                         progress_callback,
                         output_callback,
+                        capture_stdout=False,
                     )
 
                 # Update job with result
@@ -536,7 +545,14 @@ class LocalJobQueue(JobQueue):
     async def cleanup_old_jobs(self, days: int = 7) -> int:
         """Remove jobs older than N days."""
         await self._ensure_history_loaded()
+        # Local cutoff for the in-memory pass and for Job.completed_at, which is
+        # persisted from job.completed_at = datetime.now() (naive LOCAL).
         cutoff = datetime.now() - timedelta(days=days)
+        # UTC cutoff for Job.created_at, which is populated by
+        # server_default=func.now() (SQLite CURRENT_TIMESTAMP = UTC) and never
+        # written from Python. Comparing it against a local cutoff prunes the
+        # wrong window by the local offset on a non-UTC server.
+        utc_cutoff = datetime.utcnow() - timedelta(days=days)
         to_remove = []
 
         for job_id, job in self._jobs.items():
@@ -564,23 +580,31 @@ class LocalJobQueue(JobQueue):
 
         # Also delete the persisted rows, else the jobs table grows unbounded
         # (eviction from the in-memory dict alone left thousands of stale rows).
-        self._delete_job_rows(to_remove)
+        # Offloaded to a thread: both are synchronous DB work (unbounded scan +
+        # per-row delete) that would otherwise block the event loop — this is
+        # awaited directly from maintenance.py, unlike the sibling cleanups.
+        await asyncio.to_thread(self._delete_job_rows, to_remove)
 
         # Purge OLD rows that are no longer in the in-memory window. The loop
         # above only sees self._jobs (capped at MAX_STORED_JOBS), so once that
         # cap is exceeded the evicted rows were never deleted and the jobs table
         # grew without bound. Delete them directly by timestamp.
-        db_purged = self._delete_old_db_rows(cutoff, exclude=to_remove)
+        db_purged = await asyncio.to_thread(self._delete_old_db_rows, cutoff, utc_cutoff, to_remove)
 
         return len(to_remove) + db_purged
 
-    def _delete_old_db_rows(self, cutoff: datetime, exclude: list[str]) -> int:
-        """Delete persisted Job rows older than ``cutoff`` regardless of whether
-        they are still tracked in memory, returning the number removed. Mirrors
-        the in-memory cutoff (a completed job past the cutoff, or a non-active
-        job created before it). Output files are unlinked best-effort. Rows in
-        ``exclude`` are skipped (already handled by the in-memory pass).
-        Best-effort: a DB failure must not abort cleanup."""
+    def _delete_old_db_rows(
+        self, cutoff: datetime, utc_cutoff: datetime, exclude: list[str]
+    ) -> int:
+        """Delete persisted Job rows older than the retention window regardless
+        of whether they are still tracked in memory, returning the number
+        removed. Each timestamp column is compared against a cutoff in ITS OWN
+        zone: ``completed_at`` is naive-LOCAL (persisted from datetime.now()) so
+        it uses ``cutoff``, while ``created_at`` is UTC (server_default
+        func.now(), never written from Python) so it uses ``utc_cutoff``. Output
+        files are unlinked best-effort. Rows in ``exclude`` are skipped (already
+        handled by the in-memory pass). Best-effort: a DB failure must not abort
+        cleanup."""
         try:
             from sqlalchemy import and_, or_
 
@@ -590,7 +614,7 @@ class LocalJobQueue(JobQueue):
             active = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
             old_filter = or_(
                 and_(Job.completed_at.isnot(None), Job.completed_at < cutoff),
-                and_(Job.created_at < cutoff, Job.status.notin_(active)),
+                and_(Job.created_at < utc_cutoff, Job.status.notin_(active)),
             )
             with db_session() as db:
                 query = db.query(Job).filter(old_filter)

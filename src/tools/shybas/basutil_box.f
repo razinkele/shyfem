@@ -283,7 +283,8 @@ c*******************************************************************
 	i = 1
 	do while( i .le. nf )
 	  is = i
-	  do while( i .le. nf .and. list(i) .gt. 0 )	!FIXME - read past end of array
+	  do while( i .le. nf )
+	    if( list(i) .le. 0 ) exit
 	    i = i + 1
 	  end do
 	  ie = i - 1
@@ -464,7 +465,8 @@ c*******************************************************************
 	i = 1
 	do while( i .le. n )
 	  is = i
-	  do while( list(i) .gt. 0 )	!FIXME - read past end of array
+	  do while( i .le. n )
+	    if( list(i) .le. 0 ) exit
 	    i = i + 1
 	  end do
 	  ie = i - 1

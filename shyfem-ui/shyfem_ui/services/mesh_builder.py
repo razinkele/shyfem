@@ -74,6 +74,19 @@ def _wgs84_transformer(source_crs, *, context: str):
         ) from exc
 
 
+def _coords_exceed_wgs84_bounds(xs, ys) -> bool:
+    """True if any coordinate falls outside valid WGS84 bounds (|lon|>180 or
+    |lat|>90). Impossible for real geographic lon/lat, so it is a strong signal
+    that an untagged (or geographic-labelled) dataset was actually projected and
+    NOT reprojected — tagging such coords epsg=4326 would silently mis-project
+    the whole mesh."""
+    xs = np.asarray(xs, dtype=float)
+    ys = np.asarray(ys, dtype=float)
+    if xs.size == 0 or ys.size == 0:
+        return False
+    return bool(np.nanmax(np.abs(xs)) > 180.0 or np.nanmax(np.abs(ys)) > 90.0)
+
+
 # ---------------------------------------------------------------------------
 # 1. Import boundaries
 # ---------------------------------------------------------------------------
@@ -192,6 +205,19 @@ def import_boundaries(file_path: Path) -> GrdFile:
 
     if not grd.nodes:
         grd.parse_warnings.append("No geometries found in file")
+
+    # No reprojection happened (geographic or missing CRS). If the coordinates
+    # can't be WGS84 lon/lat, the source was almost certainly projected but
+    # untagged — warn instead of silently tagging it epsg=4326 (mis-projected).
+    if transformer is None and grd.nodes:
+        xs = [n.x for n in grd.nodes.values()]
+        ys = [n.y for n in grd.nodes.values()]
+        if _coords_exceed_wgs84_bounds(xs, ys):
+            grd.parse_warnings.append(
+                "Coordinates exceed WGS84 bounds (|lon|>180 or |lat|>90) but the "
+                "source has no projected CRS; treating as epsg=4326 may be wrong. "
+                "Set the correct CRS on the source dataset before importing."
+            )
 
     # Boundaries are always in WGS84 after reprojection
     grd.epsg = 4326
@@ -869,8 +895,22 @@ def load_bathymetry_contours(
     if not points:
         raise ValueError(f"No valid contour points extracted from {path}")
 
+    pts = np.array(points)
+    # No reprojection happened and the coords can't be WGS84 lon/lat: the source
+    # is almost certainly projected but untagged. Warn (don't fail) — a workflow
+    # may legitimately use consistent untagged projected coords (e.g. the Mar
+    # Menor sample, whose boundary + isobaths are both untagged UTM), so surface
+    # the risk in the logs rather than silently assuming WGS84 or breaking it.
+    if transformer is None and _coords_exceed_wgs84_bounds(pts[:, 0], pts[:, 1]):
+        logger.warning(
+            "Bathymetry contours in %s exceed WGS84 bounds (|lon|>180 or |lat|>90) "
+            "but the source has no projected CRS; coordinates are used as-is. Set "
+            "the correct CRS on the dataset if this is unexpected.",
+            path,
+        )
+
     logger.info("Loaded %d points from %s (attr=%s)", len(points), path.name, resolved_attr)
-    return np.array(points)
+    return pts
 
 
 def _load_bathymetry_raster(path: Path) -> np.ndarray:
@@ -926,6 +966,17 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
             xs, ys = transformer.transform(xs, ys)
             xs = np.asarray(xs, dtype=float)
             ys = np.asarray(ys, dtype=float)
+        elif _coords_exceed_wgs84_bounds(xs, ys):
+            # No reprojection happened and the coords can't be WGS84 lon/lat: the
+            # raster is projected but untagged. Warn (don't fail) so a consistent
+            # untagged-projected workflow keeps working while a genuine
+            # mis-projection is still surfaced in the logs.
+            logger.warning(
+                "Raster %s coordinates exceed WGS84 bounds (|lon|>180 or |lat|>90) "
+                "but it has no projected CRS; coordinates are used as-is. Set the "
+                "correct CRS on the raster if this is unexpected.",
+                path,
+            )
 
     return np.column_stack([xs, ys, vals])
 

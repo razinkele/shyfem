@@ -125,6 +125,7 @@ class ShyfemWrapper:
         output_callback: Callable[[str], None] | None = None,
         env: dict[str, str] | None = None,
         command_prefix: list[str] | None = None,
+        capture_stdout: bool = True,
     ) -> CommandResult:
         """Run a SHYFEM command asynchronously.
 
@@ -136,6 +137,12 @@ class ShyfemWrapper:
             output_callback: Called with each line of output
             env: Additional environment variables
             command_prefix: Optional prefix for the command (e.g. ["mpirun", "-np", "4"])
+            capture_stdout: Retain stdout lines in memory for CommandResult.stdout.
+                Set False for long-running simulations that stream their output to
+                a file via output_callback — otherwise the full stdout is buffered
+                in RAM for the whole run and grows unbounded. stderr is always
+                retained (needed for error messages) and output_callback still
+                fires per line regardless.
 
         Returns:
             CommandResult with execution details
@@ -195,7 +202,12 @@ class ShyfemWrapper:
                     if not line:
                         break
                     decoded = line.decode("utf-8", errors="replace").rstrip()
-                    lines_list.append(decoded)
+                    # Always retain stderr (error messages); retain stdout only
+                    # when requested — a long sim would otherwise buffer all of
+                    # stdout in memory for the whole run. The callback below
+                    # still fires per line regardless, so streaming is unaffected.
+                    if is_stderr or capture_stdout:
+                        lines_list.append(decoded)
 
                     if output_callback:
                         output_callback(decoded)
@@ -456,6 +468,7 @@ class ShyfemWrapper:
         solver: str = "sparskit",
         progress_callback: Callable[[float, str], None] | None = None,
         output_callback: Callable[[str], None] | None = None,
+        capture_stdout: bool = True,
     ) -> CommandResult:
         """Run shyfem simulation.
 
@@ -467,6 +480,8 @@ class ShyfemWrapper:
             mpirun_path: Path to mpirun executable
             options: Additional options
             solver: Solver variant ('sparskit' or 'petsc')
+            capture_stdout: See run_command. Set False for job-runner call sites
+                that stream output to a file (a full sim's stdout is large).
         """
         tool_name = self.SOLVER_EXECUTABLES.get(solver, "shyfem")
         args_list = list(options) if options else []  # copy: never mutate caller's list
@@ -483,6 +498,7 @@ class ShyfemWrapper:
             progress_callback,
             output_callback,
             command_prefix=prefix,
+            capture_stdout=capture_stdout,
         )
 
     async def run_shyelab(

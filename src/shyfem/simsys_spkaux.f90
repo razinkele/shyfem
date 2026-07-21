@@ -790,6 +790,7 @@
 ! adds right hand side to system array
 
 	use mod_system
+	use shympi, only : bmpi, id_node, my_id
 
         implicit none
 
@@ -799,7 +800,17 @@
 
         integer k
 
+!	Under MPI, rvec2d on interface nodes is summed across the
+!	owner and every ghost copy in the explicit zeta solve
+!	(shympi_exchange_and_sum_2d_nodes). Accumulating dt*array on
+!	both owner and ghosts would count the flux BC once per sharing
+!	rank. Skip non-owned nodes so the exchange yields a single count.
+!	The element-matrix assembly is already owner-only, and the
+!	implicit MPI gather (system_solve_global) assigns from inner
+!	nodes only, discarding ghost rvec2d, so this is safe there too.
+!	Serial: bmpi is .false., so the loop is unchanged.
         do k=1,n
+          if( bmpi .and. id_node(k) /= my_id ) cycle
           l_matrix%rvec2d(k) = l_matrix%rvec2d(k) + dt * array(k)
         end do
 
