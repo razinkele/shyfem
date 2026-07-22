@@ -8,7 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Upstream cherry-picks (shyfemcm pnrr)** — six small fixes ported: `lnkmpi.f90` guards `kantv` entries of 0 before indexing `id_node` (out-of-bounds read for MPI ghost boundary nodes); `baroclinic.f90` calls `ts_nudge` after the observation/relaxation arrays are zeroed (the zeroing silently wiped parameter-given nudging timescales) and confines the parameter reads to first call; shy files accept and write format version 15 (upstream's compatibility bump — no record change, but pre-bump binaries reject v15 files until rebuilt) with clearer version/type error messages; nc2fem reads long WRF-style variable names (15→80 chars), validates NetCDF-3/4 format up front with a conversion hint, tolerates `standard_name == 'unknown'` by falling through to `long_name`, and knows wave variable names (wheight/wper/wdir); parametric wave directions are averaged element→node as vectors via new `aver_wave_dir` (arithmetic averaging was wrong across the 0/360 wrap; `polar2xy`/`xy2polar`/`p2c` added to `geometrical.f90`); `gmsh2grd.pl` reads the `$MeshFormat` version and computes node-column offsets instead of hardcoding them
+
 ### Added
+
+- **WW3 switch-file build glue** — optional `WW3SWITCH` in `Rules.make` names the WW3 switch file whose switches are compiled into the binary as `__WW3_SWITCHES__` (with a fallback list matching the compiled flags), and the WW3 coupling setup guide `docs/modules_wind_wave.tex` is imported from upstream — fixing the manual's previously broken `\input` of that file (`src/shyfem/Makefile`, `Rules.make`)
 
 - **Tracer beaching/burial algorithm** — Ported from the shyfemcm community model (pnrr branch): nodes on material (closed) boundaries lose a fraction of surface-layer tracer per time step into a per-node beach store, and nodes lose a fraction of bottom-layer tracer into a burial store, with rates looked up per element area code from presets; both stores are written as 2D scalar files (`beach`, `burry`) at the conz output frequency and reset per window. Activated by the new STR parameter `ibeach` (1 = Curonian lagoon preset, 2 = Danube delta preset; needs `iconz` ≥ 2) instead of upstream's hardcoded basin sniffing; the port also fixes upstream's out-of-bounds preset writes on grids without the expected area codes and a latent MPI deadlock in the debug path, and verifies serial ≡ MPI bit-identical output (`beaching.f90`, `def_para.f90`, `shyfem_subs.f90`, `geom.f90`, test case `mm_hyd_beach.str`, PR #51)
 

@@ -368,6 +368,12 @@ WW3 = false
 #WW3 = true
 WW3DIR = ${WW3_HOME}
 #WW3DIR = /path/to/WW3
+#
+# WW3SWITCH names the WW3 switch file (under $WW3DIR/model/bin) whose
+# switches are compiled into the binary as __WW3_SWITCHES__; if unset,
+# a built-in default switch list is used
+#
+#WW3SWITCH = switch_itedev
 
 ##############################################
 # Experimental features

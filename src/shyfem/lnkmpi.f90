@@ -105,13 +105,16 @@
 !-------------------------------------------------------------
 
 	do k=1,nkn
-	  if( iboundv(k) == 0 ) then
+	  if( iboundv(k) == 0 ) then			!not a boundary node
 	    kantv(:,k) = 0
-	  else if( .not. shympi_is_inner_node(k) ) then		!in other domain
+	  else if( .not. shympi_is_inner_node(k) ) then	!in other domain
 	    do i=1,2
 	      kk = kantv(i,k)
-	      id = id_node(kk)
-	      if( id /= my_id ) kantv(i,k) = 0
+	      ! kk can be 0 for ghost boundary nodes - id_node(0) is an
+	      ! out-of-bounds read (upstream fix 22.04.2026 ggu&clc)
+	      id = -1
+	      if( kk > 0 ) id = id_node(kk)
+	      if( id /= my_id ) kantv(i,k) = 0		!node outside domain
 	    end do
 	  end if
 	end do
