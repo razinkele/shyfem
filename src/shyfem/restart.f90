@@ -993,7 +993,7 @@
           end if
         end if
 
-	if( nvers .ge. 18 ) then
+	if( nvers .ge. 19 ) then
 	  id = id_ssedi_rst
           read(iunit) issedi
           if( issedi .gt. 0 ) then
@@ -1061,6 +1061,22 @@
           flush(6)
           call shympi_abort_internal( &
      &		'restart: unsupported restart file version')
+        end if
+        if( nvers .eq. 18 ) then
+          ! version 18 is ambiguous and refused: upstream shyfemcm uses
+          ! 18 for old-time-level hydro state, while this fork briefly
+          ! (2026-07-21..22) wrote 18 for the ssedi bed-mass block that
+          ! is now version 19 - the two layouts would be mis-parsed as
+          ! garbage, not cleanly rejected. Regenerate fork-written v18
+          ! files by rerunning the simulation that produced them.
+          write(6,*) 'error reading restart file...'
+          write(6,*) 'nvers: ',nvers
+          write(6,*) 'restart version 18 is ambiguous ' // &
+     &		'(upstream hydro-levels vs fork ssedi layout)'
+          write(6,*) 'regenerate the restart file with this version'
+          flush(6)
+          call shympi_abort_internal( &
+     &		'restart: ambiguous restart file version 18')
         end if
 
         ierr = 0
@@ -1260,7 +1276,7 @@
 	    end if
           end if
 
-	  if( nvers .ge. 18 ) then
+	  if( nvers .ge. 19 ) then
 	    id = id_ssedi_rst
 	    read(iunit,iostat=ios) issedi
 	    call rst_check_read(ios,'issedi')
