@@ -1,0 +1,18 @@
+
+$title
+        2D sim for Mar Menor - periodic restart write (Task 2 smoke test)
+        mm_rst_periodic
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-02'
+        idt = '300s'
+
+        date = 20090101
+
+        ilin = 1
+
+        idtrst = '6h'
+        itmrst = -1
+$end

@@ -1,0 +1,30 @@
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+
+$title
+        2D sim for Mar Menor - simple-sediment restart write (Task 3 N25 test)
+        mm_rst_ssedi_write
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-03'
+        idt = '300s'
+
+        date = 20090101
+
+        ilin = 1
+
+        iconz = 1
+        conref = 1.
+        issedi = 1
+
+        idtrst = -1
+        itmrst = -1
+$end

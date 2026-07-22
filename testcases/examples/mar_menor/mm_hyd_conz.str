@@ -1,0 +1,31 @@
+
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+
+
+$title
+        2D sim for Mar Menor
+        mm_hyd_conz
+        GRID/MM_coarse
+$end
+     
+$para
+	 nomp = -1
+	 iconz = 2
+	 conref = 1.
+	 idecay = 1
+	 taupar = 0.5 1.
+	 levdbg = 3
+        itanf = '2009-01-01'    itend = '2009-01-05'
+        idt = '300s'  
+
+        date = 20090101
+
+        ilin = 1  
+$end
+

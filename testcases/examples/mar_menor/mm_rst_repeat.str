@@ -1,0 +1,18 @@
+
+$title
+        2D sim for Mar Menor - repeated single-record restart (N27 replace test)
+        mm_rst_repeat
+        GRID/MM_coarse
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-03'
+        idt = '300s'
+
+        date = 20090101
+
+        ilin = 1
+
+        idtrst = -43200
+        itmrst = -1
+$end
