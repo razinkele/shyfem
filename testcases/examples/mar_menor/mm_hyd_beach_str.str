@@ -1,0 +1,36 @@
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# tracer beaching/burial with rates from the STR (ibeach = 3): a single
+# beachrate/burryrate value applies to every area code, replicating the
+# danube preset values used by mm_hyd_beach.str (mar menor carries only
+# area code 0) - the two runs must produce identical beach/burry output
+
+
+$title
+        2D sim for Mar Menor - tracer beaching test (STR rates)
+        mm_hyd_beach_str
+        GRID/MM_coarse
+$end
+
+$para
+        nomp = -1
+        iconz = 2
+        conref = 1.
+        ibeach = 3
+        beachrate = 0.3
+        burryrate = 0.1
+
+        itanf = '2009-01-01'    itend = '2009-01-02'
+        idt = '300s'
+        idtcon = '1h'
+
+        date = 20090101
+
+        ilin = 1
+$end
