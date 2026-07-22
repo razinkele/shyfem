@@ -298,9 +298,7 @@ def _imetout_decode(value: object) -> dict[str, bool]:
 
 def _imetout_encode(flags: dict[str, bool]) -> int:
     """Compose the 5 stream flags back into the imetout integer (on -> 1)."""
-    return sum(
-        int(bool(flags.get(f))) * 10**i for i, f in enumerate(_IMETOUT_FIELDS)
-    )
+    return sum(int(bool(flags.get(f))) * 10**i for i, f in enumerate(_IMETOUT_FIELDS))
 
 
 def _scalar_or_none(raw: object) -> float | None:
@@ -1153,9 +1151,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     12,
-                    ui.tags.label(
-                        "Meteo output (imetout)", class_="fw-semibold"
-                    ),
+                    ui.tags.label("Meteo output (imetout)", class_="fw-semibold"),
                 ),
             ),
             ui.row(
@@ -1177,9 +1173,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_checkbox(
-                        "imetout_hflx", "Heat fluxes", value=_met["hflx"]
-                    ),
+                    ui.input_checkbox("imetout_hflx", "Heat fluxes", value=_met["hflx"]),
                 ),
             ),
             ui.row(
