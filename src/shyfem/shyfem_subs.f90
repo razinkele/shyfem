@@ -606,6 +606,7 @@
 
 	   call trace_point_0('run_scalar')
 	   call run_scalar
+	   call output_meteo_and_heat_flux_data	!after heat flux computation
 
            call turb_closure
 

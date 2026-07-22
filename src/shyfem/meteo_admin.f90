@@ -110,8 +110,12 @@
 	integer k
 
 	do k=1,nkn
-	  evapv(k) = 0.	
+	  evapv(k) = 0.
 	end do
+
+	qsensv = 0.
+	qlatv = 0.
+	qlongv = 0.
 
 	end
 
@@ -228,6 +232,24 @@
         call get_timestep(dt)
 	call get_act_dtime(dtime)
         call qflux3d(dtime,dt,nkn,nlvdi,tempv,dq)	!compute heat flux
+
+	end
+
+!*******************************************************************
+
+	subroutine output_meteo_and_heat_flux_data
+
+! outputs meteo and heat flux data - called from the main time loop
+! (not from meteo_force) so the heat fluxes of THIS step are written;
+! unconditional, so barotropic runs (ibarcl=0) keep their meteo output
+! (upstream moved the call inside barocl, which returns early for
+! ibarcl<=0 and silently lost meteo output for barotropic runs)
+
+	use meteo_forcing_module
+
+	implicit none
+
+	call output_meteo_data
 
 	end
 
