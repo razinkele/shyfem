@@ -48,6 +48,29 @@ new-widget-pattern complexity as the assimilation station-list, which is
 deliberately sequenced last. A user needing true per-area arrays hand-edits
 the `.str` (advanced, rare).
 
+**Graceful array handling (added after security review).** Because the core
+params *are* arrays, an existing `.str` may already contain a per-area value
+(`beachrate = 0.3, 0.25, 0.1`). The parser truncates such a value to the
+string `"0.3,"`, which `float()` cannot coerce — a naive scalar widget would
+crash the whole Tracers panel on load, and a naive `try/except → 0.0` would
+silently flatten the array to a scalar on the next save. So each rate field
+renders conditionally via `_scalar_or_none(raw)`:
+
+- clean scalar (or absent) → editable `input_numeric` (the common case);
+- non-scalar/array → a static note ("per-area rates set in the STR — edit
+  the file directly") and **no** input control.
+
+When the note is shown, the control does not exist, so the save loop's
+`input[<id>]()` read fails and the raw STR line is preserved verbatim
+(`_generate_section` raw-line passthrough) — the array is never flattened.
+
+**Known limitation (not fixed here).** A *space*-separated array
+(`beachrate = 0.3 0.25 0.1`) parses to a clean-looking `0.3`, so the UI
+cannot distinguish it from a real scalar and will show/save `0.3`. Fixing
+this needs a parser change (the whitespace stop in `PARAM_PATTERN` is
+load-bearing for the multi-param-per-line form) and is out of scope. The
+comma-separated form — what SHYFEM writes — is handled correctly.
+
 ## Changes
 
 Three source files plus tests, all following existing patterns.

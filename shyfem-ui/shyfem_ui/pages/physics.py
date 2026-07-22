@@ -279,6 +279,39 @@ def build_panel_params(str_file: StrFile, panel_id: str) -> dict:
     return result
 
 
+def _scalar_or_none(raw: object) -> float | None:
+    """Return *raw* as a float if it is a single clean scalar, else None.
+
+    ``beachrate``/``burryrate`` are per-area-code arrays in the core. A
+    multi-area value like ``0.3, 0.25, 0.1`` is truncated by the parser to
+    the string ``"0.3,"`` (PARAM_PATTERN stops at whitespace), which is not a
+    clean scalar. Returning None for such values lets the caller show a note
+    instead of an editable field, so the array is never flattened on save.
+    """
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _rate_field(input_id: str, label: str, raw: object) -> ui.Tag:
+    """A beaching-rate column: an editable numeric for a scalar value, or a
+    static note for a per-area-code array (edited directly in the STR).
+
+    When the note is shown the ``input_id`` control is intentionally not
+    created, so the save loop's ``input[input_id]()`` read fails and the raw
+    STR line is preserved verbatim rather than overwritten with a scalar.
+    """
+    val = _scalar_or_none(raw)
+    if val is None:
+        return ui.help_text(
+            f"{label}: per-area rates set in the STR — edit the file directly."
+        )
+    return ui.input_numeric(input_id, label, value=val, min=0, step=0.01)
+
+
 @module.ui
 def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
@@ -2038,22 +2071,16 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_numeric(
-                        "beachrate",
-                        "Beaching rate (mode 3)",
-                        value=float(params.get("beachrate", 0) or 0),
-                        min=0,
-                        step=0.01,
+                    _rate_field(
+                        "beachrate", "Beaching rate (mode 3)",
+                        params.get("beachrate", 0),
                     ),
                 ),
                 ui.column(
                     4,
-                    ui.input_numeric(
-                        "burryrate",
-                        "Burial rate (mode 3)",
-                        value=float(params.get("burryrate", 0) or 0),
-                        min=0,
-                        step=0.01,
+                    _rate_field(
+                        "burryrate", "Burial rate (mode 3)",
+                        params.get("burryrate", 0),
                     ),
                 ),
             ),
