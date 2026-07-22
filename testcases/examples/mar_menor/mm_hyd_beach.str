@@ -1,0 +1,34 @@
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# tracer beaching/burial test (ibeach) - uses the danube preset (ibeach=2)
+# because its rates act on area codes 0/1 and the Mar Menor grid carries
+# area code 0; boundary nodes lose surface tracer to the beach store and
+# all nodes lose bottom-layer tracer to the burial store
+
+
+$title
+        2D sim for Mar Menor - tracer beaching test
+        mm_hyd_beach
+        GRID/MM_coarse
+$end
+
+$para
+        nomp = -1
+        iconz = 2
+        conref = 1.
+        ibeach = 2
+
+        itanf = '2009-01-01'    itend = '2009-01-02'
+        idt = '300s'
+        idtcon = '1h'
+
+        date = 20090101
+
+        ilin = 1
+$end

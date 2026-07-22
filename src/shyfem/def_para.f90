@@ -1233,12 +1233,23 @@
 !		the value is referred to the age of the water body,
 !		not the concentration. Boundary values for conz should
 !		be set to 0. (Default 0)
+! |ibeach|	Enables the experimental beaching/burial algorithm for
+!		the tracers of |iconz| (needs |iconz| $\geq$ 2). Nodes on
+!		material (closed) boundaries lose a fraction of surface
+!		tracer per time step into a beach store, and nodes lose a
+!		fraction of bottom-layer tracer into a burial store; both
+!		stores are written as 2D scalar files (beach, burry) with
+!		the frequency of |itmcon|/|idtcon|. Rates are applied per
+!		element area code from presets: a value of 1 uses the
+!		Curonian lagoon preset (area codes 2/3), 2 uses the Danube
+!		delta preset (area codes 0/1). (Default 0)
 
 	call addpar('iconz',0.)		!compute concentration ?
 !c	call addpar('iconza',0.)	!average values ? - not working
 	call addpar('conref',0.)	!reference concentration
 	call addpar('idecay',0.)	!type of decay
 	call addpar('iage',0.)		!age concentration
+	call addpar('ibeach',0.)	!beaching/burial of tracers
 
 	call para_deprecate('contau','taupar')	!no contau anymore -> use taupar
 	call para_add_array_value('taupar',0.)	!decay rate [days]

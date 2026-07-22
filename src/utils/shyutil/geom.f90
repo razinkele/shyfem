@@ -157,6 +157,21 @@
 
 !------------------------------------------------------------------
 
+	pure function is_material_boundary_node(k)
+
+! boundary node on the coastline (material boundary); note that open
+! boundary nodes are also flagged - exclude them with
+! is_open_boundary_node() where the distinction matters
+
+	logical is_material_boundary_node
+	integer, intent(in) :: k
+
+	is_material_boundary_node = ( iboundv(k) /= 0 )
+
+	end function is_material_boundary_node
+
+!------------------------------------------------------------------
+
 	pure function n_nodes_around(k)
 
 	integer n_nodes_around

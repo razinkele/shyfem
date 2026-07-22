@@ -512,6 +512,7 @@
 	call handle_offline(1)
 
 	call init_nudging
+	call beaching_init
 
 	call trace_point('handle do_init')
 	call do_init
@@ -618,6 +619,7 @@
 	   call ecological_module	!ecological model
            call atoxi3d			!toxi
            call mercury_module
+	   call beaching_run
 
            call lagrange
 
