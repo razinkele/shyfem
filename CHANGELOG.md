@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Temperature surface-boundary sentinel restored — 3D heat-forced runs no longer explode** — a magic-number cleanup (2026-02-11) replaced the `ssurface = -999.` sentinel for temperature with `mkonst`'s `flag` (−9,988,765), which besides the intended "use ambient value" branch (`ssurf ≤ −990`) also trips `make_scal_flux`'s `≤ −5555` "difference" branch, injecting ~10⁷-degree water through the surface flux: the venice_lagoon example blew up to 234 °C within 4 simulated minutes, on every fork version since February. Found by bisect after test-running the example; unnoticed for five months because no mar_menor test exercises temperature transport. A committed 6-hour `venlag_smoke.str` now guards the 3D baroclinic + GOTM + wet/dry + heat path (`concentration.f90`, `testcases/examples/venice_lagoon/venlag_smoke.str`)
+
 ### Changed
 
 - **Topbar About/Changelog split per package** — The About and Changelog topbar buttons are now dropdowns with separate SHYFEM (core) and SHYFEM UI entries: About shows the respective README (repo root vs `shyfem-ui/`) with the matching version in the title (core from `VERSION`, UI from package metadata), and Changelog shows only that package's sections of the shared CHANGELOG (`pages/about.py`, `changelog.py` — `filter_changelog`, `core_version`, allowlisted `read_repo_markdown`)

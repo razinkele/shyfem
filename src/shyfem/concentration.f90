@@ -704,8 +704,17 @@
 ! set up flux boundary conditions (temporary) -> put in sbflux
 !-------------------------------------------------------------
 
+	! -999 selects the "use ambient value" branch of make_scal_flux
+	! (ssurf <= -990). Do NOT replace it with mkonst's flag
+	! (-9988765): that value also trips the <= -5555 "difference"
+	! branch, which computes conz = ambient - 10000 - ssurf and so
+	! injects ~1e7-degree water through the surface flux - a 3d
+	! heat-forced run (venice_lagoon) blows up within minutes. This
+	! exact substitution happened in a magic-number cleanup on
+	! 2026-02-11 (5b8ad7f1) and went unnoticed until 2026-07-22
+	! because no mar_menor test exercises temperature transport.
 	ssurface = 0.
-	if( what .eq. 'temp' ) ssurface = flag	! sentinel: use ambient value
+	if( what .eq. 'temp' ) ssurface = -999.	!sentinel: use ambient value
 
 ! make_scal_flux has been moved inside time loop of isact (see below)
 ! to increase stability when treating outflow flux boundary
