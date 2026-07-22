@@ -57,6 +57,34 @@ jobs:
           make init
           bash mm_hyd_00.sh
 
+      # Feature battery: each STR exercises a subsystem the basic
+      # mm_hyd_00 run never touches (beaching, OI assimilation,
+      # restart write/read cycle). Success marker is a normal
+      # "simulation end" in the output.
+      - name: Run feature battery (beaching, assimilation, restart)
+        run: |
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/mar_menor
+          for t in mm_hyd_beach mm_hyd_assim mm_rst_cycle_write mm_rst_cycle_read; do
+            echo "=== $t ==="
+            shyfem $t.str > $t.out 2>&1 || { tail -40 $t.out; exit 1; }
+            grep -q "simulation end" $t.out || { echo "$t: no simulation end"; tail -40 $t.out; exit 1; }
+            echo "$t: OK"
+          done
+
+      # The venice smoke is the ONLY test covering the 3d baroclinic +
+      # GOTM + wet/dry + heat-forcing path - the ssurface sentinel bug
+      # (PR #58) blew this up for five months while every mar_menor
+      # test stayed green.
+      - name: Run Venice lagoon 3D smoke test
+        run: |
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/venice_lagoon
+          shypre -silent GRID/venlag62.grd
+          shyfem venlag_smoke.str > venlag_smoke.out 2>&1 || { tail -40 venlag_smoke.out; exit 1; }
+          grep -q "simulation end" venlag_smoke.out || { echo "no simulation end"; tail -40 venlag_smoke.out; exit 1; }
+          echo "venlag_smoke: OK"
+
   fortran-lint:
     runs-on: ubuntu-latest
     steps:
