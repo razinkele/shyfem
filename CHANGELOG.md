@@ -11,6 +11,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **Topbar About/Changelog split per package** — The About and Changelog topbar buttons are now dropdowns with separate SHYFEM (core) and SHYFEM UI entries: About shows the respective README (repo root vs `shyfem-ui/`) with the matching version in the title (core from `VERSION`, UI from package metadata), and Changelog shows only that package's sections of the shared CHANGELOG (`pages/about.py`, `changelog.py` — `filter_changelog`, `core_version`, allowlisted `read_repo_markdown`)
+
+---
+
+## [8.3.0] — 2026-07-22
+
+Correctness and safety release for the Fortran core: the 2026-07-18 deep-review remediation batches (PRs #40–#47) plus the June fix wave. No new features; every change hardens existing behavior. Tagged `v8.3.0`.
+
+### Fixed
+
+- **OpenMP save-array caching races reverted** — `allocatable, save` work arrays in routines reachable from OMP tasks are thread-shared and raced under parallel sections; reverted to per-call allocation in `conz3d_omp`, `scal_adv`/`scal_adv_nudge`/`scal_adv_fact`, and `conzstab`, and guarded `limit_scalar` initialization (`concentration_omp.f90`, `concentration.f90` — N01, N09, N10, and the conzstab init race)
+- **MPI collective-safe aborts** — error paths that previously called bare `stop` from one rank (hanging the other ranks in collectives) now abort collectively, preserving the original message text: conz3d_nodes, SPARSKIT, turbulence, chezy, mercury sediment, mpi_node allocation failures, wetting/drying, plus `flush(6)` inside `shympi_abort_internal` so diagnostics survive the abort (F07, F09, F11, F27, F38, N22, N23)
+- **MPI ghost/setup hardening** — allocatable setup arrays, ghost-exchange `ierr` checks, unified buffer sizing, explicit-RHS ownership filter, ghost-node diagnostics, and documented non-deterministic reductions (N28, F32, F33, F34, L01, L05)
+- **PETSc solver honesty** — the solve now aborts on KSP divergence instead of silently accepting garbage zeta (N04), and the zeta matrix is no longer double-assembled on the PETSc path (#33)
+- **Numerics guards** — Munk-Anderson clamps Ri ≥ 0 to avoid NaN/SIGFPE (#34); `angle()` guarded against division by zero and acos domain errors (#39); COARE/hersbach drag formulas floor wind/friction velocity (N03, N20, F37); `istod` rejects trailing signs and keeps exponent precision (N53, N54)
+- **Model-time bookkeeping** — femtime's `it` updates every step and `itend` is set/guarded, fixing stale end-time comparisons (N05, and the Batch-1 `itend` carry-over)
+- **Restart correctness** — read/write paths check `iostat`, validate vertical structure, write single records atomically, wire simple-sediment bed mass into restart, and read `ile`/`ilk` exactly once for io_off v3 (N24–N27, N25, N54)
+- **Transport correctness** — intent chain repaired, decay no longer double-counted, `ts_shell` counter fixed, clamping is mass-accounted, allocation failures abort (N37–N39, F28, F29); WW3 coupling recognized by `has_waves` (N21)
+- **Tools hardening** — nc2fem preserves header `lmax`, errors on oversized records, fixes direction handling, and accepts valid `nz1<nz` input (N36, F43); shyelab/femelab/extelab striding, vorticity records, stats-buffer conventions (N07, N08, N34, N35); shybas bmode-3 and interpolation scratch sizing (N32, N33); mesh/grid tools get bounded filename/coordinate formatting, realloc NULL-checks, and InterpolateDepth guards (F12, F39, F40, N06, N30, N31); femfile EOF handling, grd `nvert` guard, dts integer overflow (L20–L25, L29)
+
+### Changed
+
+- **Documented build flags actually work** — `MPI=`/`OMP=` on the make command line now map onto `PARALLEL_MPI`/`PARALLEL_OMP` as the docs claim (N19, `Rules.make`)
 - **CI skips docs-only builds** — The Fortran and UI build workflows ignore markdown-only changes via a trailing `!**/*.md` path-filter negation, so a docs/changelog PR runs only the review check (`.github/workflows/fortran-ci.yml`, `.github/workflows/ui-ci.yml`)
 
 ### Documentation
