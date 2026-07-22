@@ -947,7 +947,7 @@
 	ns = 0
 	if( sfile == ' ' ) return
 
-	open(newunit=iu,file=sfile,form='formatted',status='old'
+	open(newunit=iu,file=sfile,form='formatted',status='old'	&
      &			,iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(sfile)

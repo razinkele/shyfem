@@ -81,7 +81,7 @@
 	call compress_data(nx,ny,nz,aux,aux)
 	call scale_val(nx*ny*nz,aux,fact)
 
-	open(newunit=iu,file=new,form='formatted',status='unknown'
+	open(newunit=iu,file=new,form='formatted',status='unknown'	&
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(new)
@@ -132,7 +132,7 @@
 	call compress_data(nx,ny,nz,aux,aux)
 	call scale_val(nx*ny,aux,fact)
 
-	open(newunit=iu,file=new,form='formatted',status='unknown'
+	open(newunit=iu,file=new,form='formatted',status='unknown'	&
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(new)
@@ -518,7 +518,7 @@
 
 	call nc_get_domain(ix1,ix2,iy1,iy2,iz1,iz2)
 
-	open(newunit=iu,file=file,status='unknown',form='formatted'
+	open(newunit=iu,file=file,status='unknown',form='formatted'     &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
@@ -741,7 +741,7 @@
 	datetime = 0
 	ntype = 10
 
-	open(newunit=iunit,file=file,status='unknown',form='formatted'
+	open(newunit=iunit,file=file,status='unknown',form='formatted'	&
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
@@ -775,7 +775,7 @@
 
 	integer ix,iy,iu,ierr
 
-	open(newunit=iu,file=file,status='unknown',form='formatted'
+	open(newunit=iu,file=file,status='unknown',form='formatted'     &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
@@ -803,7 +803,7 @@
 	integer i,iu,ierr
 	real, parameter :: flag = -999.
 
-	open(newunit=iu,file=file,status='unknown',form='formatted'
+	open(newunit=iu,file=file,status='unknown',form='formatted'     &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
@@ -841,7 +841,7 @@
 
 	n = 0
 
-	open(newunit=iu,file=file,status='unknown',form='formatted'
+	open(newunit=iu,file=file,status='unknown',form='formatted'     &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
@@ -1071,13 +1071,13 @@
 
 	n = 0
 
-	open(newunit=iu1,file='coords_orig.grd',status='unknown'
+	open(newunit=iu1,file='coords_orig.grd',status='unknown'	&
      &			,form='formatted',iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: coords_orig.grd'
 	  stop 'error stop: cannot open file'
 	end if
-	open(newunit=iu2,file='coords_orig.dat',status='unknown'
+	open(newunit=iu2,file='coords_orig.dat',status='unknown'	&
      &			,form='formatted',iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: coords_orig.dat'
@@ -1118,7 +1118,7 @@
 
 	call get_regpar(regpar,nx,ny,dx,dy,x0,y0,x1,y1,flag)
 
-	open(newunit=iu,file='coords_new.grd',status='unknown'
+	open(newunit=iu,file='coords_new.grd',status='unknown'          &
      &			,form='formatted',iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: coords_new.grd'
@@ -1161,7 +1161,7 @@
 
 	call get_regpar(regpar,nx,ny,dx,dy,x0,y0,x1,y1,flag)
 
-	open(newunit=iu,file=file,status='unknown',form='formatted'
+	open(newunit=iu,file=file,status='unknown',form='formatted'     &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: ',trim(file)
