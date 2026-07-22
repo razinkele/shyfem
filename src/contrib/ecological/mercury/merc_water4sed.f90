@@ -185,11 +185,11 @@
         if (POMw .LE. 0.0) then  !if
         write(*,*)'instability - negative POMw in sed4merc_wat kext=', &
      &  ipext(k)
-        stop
-        else if (Sw .LE. 0.0) then 
+        call shympi_abort_internal('sed4merc_water: negative POMw')
+        else if (Sw .LE. 0.0) then
         write(*,*)'instability - negative siltw in sed4merc_wat kext=', &
      &  ipext(k)
-        stop
+        call shympi_abort_internal('sed4merc_water: negative siltw')
         end if
       
 !       _________________________________________________________

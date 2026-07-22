@@ -133,6 +133,9 @@
        integer ipext,ipint,kext     !nodes external and internal numbers
        integer fortfilenum, iter
        real tday
+!      obsolete Venice/Marano per-station debug dump to hardcoded units
+!      350-382 (see block below); inert for any other domain. Kept off.
+       logical, parameter :: bstation_debug = .false.
                        
 !       --------------------------------------------------
 !       volatilization formula
@@ -413,11 +416,11 @@
 
 
        if(silt.LT.0) then
-       write(445,*) 'SILTW<=0',silt,'node',ipext(k),depth,'m_watbef'
+       write(6,*) 'SILTW<=0',silt,'node',ipext(k),depth,'m_watbef'
        end if
 
        if(org .LT.0) then
-       write(448,*) 'POMW<=0',org,'node',ipext(k),depth,'m_watbef'
+       write(6,*) 'POMW<=0',org,'node',ipext(k),depth,'m_watbef'
        end if
 
 
@@ -463,7 +466,7 @@
 !     iter=nint(tday*86400.)
 
 !       if (MOD (iter,1800) .EQ. 0) then
-       if (k .GE. 1) then
+       if (bstation_debug .and. k .GE. 1) then   !hardcoded-unit station dump (F31)
            kext=ipext(k)
            fortfilenum=-1
            if(kext==3985)then

@@ -466,12 +466,12 @@
 
        if(C(1).LT.0) then
        write(*,*) 'Hg2Sed<=0',C(1),'at node',ipext(k),'merc_sed bef'
-       stop
+       call shympi_abort_internal('mercury_sed_react: Hg2Sed<0 before euler')
        end if
 
        if(C(2).LT.0) then
        write(*,*) 'MHgSed c<=0',C(2),'at node',ipext(k),'merc_sed bef'
-       stop
+       call shympi_abort_internal('mercury_sed_react: MeHgSed<0 before euler')
        end if
 
        if(Cw(2) .LT.0) then
@@ -495,12 +495,12 @@
 
        if(C(1) .LT.0) then
        write(*,*) 'Hg2Sed<=0',C(1),'at node',ipext(k),'merc_sed aft'
-       stop
+       call shympi_abort_internal('mercury_sed_react: Hg2Sed<0 after euler')
        end if
 
        if(C(2).LT.0) then
        write(*,*) 'MHgSed c<=0',C(2),'at node',ipext(k),'merc_sed aft'
-       stop
+       call shympi_abort_internal('mercury_sed_react: MeHgSed<0 after euler')
        end if
 
        if(Cw(2) .LT.0) then
