@@ -1,11 +1,10 @@
 """Unit tests for run page file-picker UI rendering and wiring.
 
-NOTE: run.py uses _stub_run_server in tests (search _test_app.py for
-_stub_run_server) to work around an event-loop deadlock in run_server's
-job-queue effects. The stub mirrors the picker's wiring (project_id_val
-+ file_picker_server) so Playwright tests CAN exercise the picker —
-see test_playwright_run_picker.py. The deadlock itself remains tracked
-as Section M.1 in the followups doc.
+NOTE: the browser test app (_test_app.py) now mounts the REAL run_server;
+the old _stub_run_server workaround (event-loop deadlock in run_server's
+poll effects, tracked as Section M.1) is gone — the deadlock was fixed in
+run.py by deduplicating reactive writes in _update_job_lists. Playwright
+coverage of the picker lives in test_playwright_run_picker.py.
 """
 
 

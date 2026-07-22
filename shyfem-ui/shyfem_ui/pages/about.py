@@ -1,12 +1,17 @@
-"""About page -- renders README / CHANGELOG and hosts the feedback form.
+"""About / Changelog / Feedback -- topbar buttons that open modals.
 
-Three tabs:
-  * About      -- README.md rendered as markdown
-  * Changelog  -- CHANGELOG.md rendered as markdown
+Three icon buttons rendered in the top bar (left of the theme toggle):
+  * About      -- README.md rendered as markdown in a modal
+  * Changelog  -- CHANGELOG.md rendered as markdown in a modal
   * Feedback   -- a bug-report / suggestion form (stored via FeedbackService)
 
 The form submits server-side for logged-in users; anonymous / external
 submission goes through the rate-limited ``POST /api/feedback`` endpoint.
+
+Modal content is built at show-time (plain ``ui.markdown``, no output_ui),
+so nothing here depends on hidden-output scheduling. Inputs created inside
+the modals are namespaced automatically: effects run under the module's
+session context, which activates the module namespace for UI creation.
 """
 
 from __future__ import annotations
@@ -20,6 +25,9 @@ from shyfem_ui.changelog import read_repo_markdown
 from shyfem_ui.services.feedback_service import FeedbackService
 
 logger = logging.getLogger(__name__)
+
+# Scroll long markdown inside the modal body instead of the whole dialog.
+_SCROLL_STYLE = "max-height: 70vh; overflow-y: auto;"
 
 
 def _feedback_form() -> ui.Tag:
@@ -43,33 +51,76 @@ def _feedback_form() -> ui.Tag:
         ui.input_action_button("fb_submit", "Submit feedback", class_="btn-primary mt-2"),
         ui.output_ui("fb_status"),
         class_="p-2",
-        style="max-width: 640px;",
+    )
+
+
+def _topbar_button(input_id: str, icon: str, label: str) -> ui.Tag:
+    """A compact icon-only topbar action button with a tooltip/aria label."""
+    return ui.input_action_button(
+        input_id,
+        None,
+        icon=ui.tags.i(class_=f"bi {icon}"),
+        class_="btn btn-sm sf-topbar-btn me-2",
+        title=label,
+        aria_label=label,
     )
 
 
 @module.ui
-def about_ui() -> ui.Tag:
-    """About page UI -- tabbed README / Changelog / Feedback."""
-    return ui.navset_card_tab(
-        ui.nav_panel("About", ui.div(ui.output_ui("about_md"), class_="p-2")),
-        ui.nav_panel("Changelog", ui.div(ui.output_ui("changelog_md"), class_="p-2")),
-        ui.nav_panel("Feedback", _feedback_form()),
-        title="About SHYFEM Workbench",
+def about_topbar_ui() -> ui.Tag:
+    """Topbar cluster: About / Changelog / Feedback buttons."""
+    return ui.span(
+        _topbar_button("show_about", "bi-info-circle", "About SHYFEM Workbench"),
+        _topbar_button("show_changelog", "bi-journal-text", "Changelog"),
+        _topbar_button("show_feedback", "bi-chat-dots", "Send feedback"),
+        class_="d-inline-flex align-items-center",
     )
 
 
 @module.server
 def about_server(input, output, session, config, current_user=None) -> None:
-    """About page server -- render docs + handle feedback submission."""
+    """Open the About / Changelog / Feedback modals + handle feedback submission."""
     _submit_msg: reactive.Value[tuple[str, str] | None] = reactive.value(None)
 
-    @render.ui
-    def about_md():
-        return ui.markdown(read_repo_markdown("README.md"))
+    @reactive.effect
+    @reactive.event(input.show_about)
+    def _show_about_modal():
+        ui.modal_show(
+            ui.modal(
+                ui.div(ui.markdown(read_repo_markdown("README.md")), style=_SCROLL_STYLE),
+                title=f"About SHYFEM Workbench — UI v{__version__}",
+                size="xl",
+                easy_close=True,
+                footer=ui.modal_button("Close"),
+            )
+        )
 
-    @render.ui
-    def changelog_md():
-        return ui.markdown(read_repo_markdown("CHANGELOG.md"))
+    @reactive.effect
+    @reactive.event(input.show_changelog)
+    def _show_changelog_modal():
+        ui.modal_show(
+            ui.modal(
+                ui.div(ui.markdown(read_repo_markdown("CHANGELOG.md")), style=_SCROLL_STYLE),
+                title="Changelog",
+                size="xl",
+                easy_close=True,
+                footer=ui.modal_button("Close"),
+            )
+        )
+
+    @reactive.effect
+    @reactive.event(input.show_feedback)
+    def _show_feedback_modal():
+        _submit_msg.set(None)
+        ui.modal_show(
+            ui.modal(
+                _feedback_form(),
+                title="Feedback",
+                size="l",
+                easy_close=True,
+                footer=ui.modal_button("Close"),
+            )
+        )
 
     @reactive.effect
     @reactive.event(input.fb_submit)

@@ -1,11 +1,11 @@
 """Test-specific Shiny app entry point.
 
-Patches the run module's server to avoid reactive effects that block Shiny's
-async event loop.  The run module has many reactive.effect + render functions
-whose interplay deadlocks the single-threaded event loop during the initial
-flush cycle.  We replace run_server with a lightweight version that only
-initialises state (so the UI elements exist) without the polling/refresh
-effects.
+Runs the REAL run_server. Historically it was stubbed out here because its
+_auto_refresh effect self-invalidated (read-then-write of active_jobs_data
+with identity-compared set()) and spun the reactive flush loop, freezing
+every output in the session. That loop is fixed (dedup in _update_job_lists);
+keeping the real module in the test app makes the E2E suite the regression
+gate for it.
 
 Uses the new sidebar layout (matching app.py) so that E2E selectors
 like `.sf-nav-item[data-nav='...']` and `#sf-sidebar` work correctly.
@@ -15,7 +15,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from shiny import App, module, reactive, render, ui
+from shiny import App, reactive, ui
 
 # Ensure the package is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -29,9 +29,10 @@ try:
     from shiny_deckgl import head_includes as deckgl_head_includes
 except ImportError:  # pragma: no cover
     deckgl_head_includes = None
-from shyfem_ui.config import Config, get_config, set_config
+from shyfem_ui.config import get_config, set_config
 from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
+    about,
     admin,
     compare,
     ensemble,
@@ -49,117 +50,7 @@ from shyfem_ui.pages import (
     visualize,
 )
 from shyfem_ui.services.auth_service import AuthService
-from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory
-
-
-@module.server
-def _stub_run_server(
-    input,
-    output,
-    session,
-    config: Config,
-    job_queue: JobQueue = None,
-    active_project=None,
-):
-    """Minimal run_server that doesn't block the event loop.
-
-    Provides just enough state for the UI elements to render without
-    the polling/refresh effects that deadlock the async event loop.
-
-    The picker is mounted here (mirroring run_server) so Playwright
-    tests can exercise the picker UI. Auto-fill semantics aren't
-    replicated — see Section M.1 followup.
-    """
-    from shyfem_ui.components.file_picker import (
-        file_picker_server,
-        fill_picker_input,
-    )
-
-    reactive.value([])
-    reactive.value([])
-    reactive.value(None)
-    reactive.value(None)
-    reactive.value("")
-
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
-
-    @reactive.effect
-    def _stub_on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
-        project_id_val.set(proj.get("id") if proj else None)
-
-    file_picker_server(
-        "fp_input",
-        project_id=project_id_val,
-        file_types=["str"],
-        on_selected=lambda rel: fill_picker_input(
-            "input_file",
-            active_project.get() if active_project else None,
-            rel,
-        ),
-    )
-
-    @render.ui
-    def dashboard():
-        return ui.p("No active jobs.", class_="text-muted text-center")
-
-    @render.ui
-    def job_details_panel():
-        return ui.p("Select a job.", class_="text-muted")
-
-    # Render the MPI checkbox unconditionally so it has a stable position in
-    # the DOM, then have a separate output for the conditional mpi_np input.
-    # This avoids the @render.ui re-run not picking up input.mpi_enabled
-    # changes when the checkbox is itself defined inside the same render.
-
-    @render.ui
-    def shyfem_options():
-        """MPI/solver options for shyfem (reactive, no polling)."""
-        try:
-            tool = input.tool_select()
-        except Exception:
-            tool = None
-        if tool != "shyfem":
-            return ui.span()
-        return ui.div(
-            ui.h6("MPI Options"),
-            ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
-            ui.output_ui("mpi_np_control"),
-            ui.hr(),
-            ui.h6("Solver Options"),
-            ui.input_select(
-                "solver_select",
-                "Solver",
-                choices={
-                    "sparskit": "Direct Solver (SPARSKIT)",
-                    "petsc": "Iterative Solver (PETSc)",
-                },
-                selected="sparskit",
-            ),
-        )
-
-    @render.ui
-    def mpi_np_control():
-        """Show the process-count input only when MPI is enabled."""
-        try:
-            enabled = bool(input.mpi_enabled())
-        except Exception:
-            return ui.span()
-        if not enabled:
-            return ui.span()
-        return ui.input_numeric(
-            "mpi_np",
-            "Number of Processes",
-            value=4,
-            min=2,
-            max=128,
-        )
-
-    @render.ui
-    def solver_hint():
-        return ui.span()
+from shyfem_ui.services.job_queue import JobQueueFactory
 
 
 def create_test_app(config=None):
@@ -180,11 +71,16 @@ def create_test_app(config=None):
 
     sidebar = _build_sidebar_nav()
 
-    # Top bar (simplified for tests)
+    # Top bar (simplified for tests; includes the About/Changelog/Feedback
+    # cluster so E2E can exercise the topbar modals)
     topbar = ui.div(
         ui.div(
             ui.tags.i(class_="bi bi-tsunami me-2", style="font-size:1.3rem"),
             ui.span("SHYFEM Workbench", style="font-weight:600;font-size:1rem"),
+            class_="d-flex align-items-center",
+        ),
+        ui.div(
+            about.about_topbar_ui("about"),
             class_="d-flex align-items-center",
         ),
         class_="sf-topbar",
@@ -287,8 +183,13 @@ window.__test_set_active_project = function(projectDict) {
             "simulation", config, active_project=active_project, tutorial_context=tutorial_context
         )
         ibm.ibm_server("ibm", config, active_project=active_project)
-        # Use stub run_server to avoid event loop deadlock
-        _stub_run_server("run", config, job_queue, active_project=active_project)
+        # Real run_server: its _auto_refresh poll used to self-invalidate
+        # (read-then-write of active_jobs_data with identity-compared set())
+        # and spin the flush loop, freezing every output in the session --
+        # which is why a stub existed here. The loop is fixed by dedup in
+        # _update_job_lists; running the real thing makes the whole E2E
+        # suite the regression gate for it.
+        run.run_server("run", config, job_queue, active_project=active_project)
         postprocess.postprocess_server(
             "postprocess", config, active_project=active_project, tutorial_context=tutorial_context
         )
@@ -298,6 +199,7 @@ window.__test_set_active_project = function(projectDict) {
         compare.compare_server("compare", config, job_queue, active_project=active_project)
         ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
         files.files_server("files", config, active_project=active_project)
+        about.about_server("about", config)
         auth_service = AuthService()
         admin.admin_server("admin", config, auth_service)
 

@@ -1,9 +1,9 @@
 """Playwright tests for run file-picker session-driven behaviour.
 
-Coverage via _stub_run_server (see Section M.1 followup) — auto-fill
-semantics are NOT tested here (the stub doesn't replicate them; they're
-covered by the unit-test wiring assertion). Picker UI wiring,
-no-project placeholder, and traversal-warning toast ARE tested.
+Runs against the real run_server (the former _stub_run_server workaround
+is gone — its event-loop deadlock is fixed in run.py). Picker UI wiring,
+no-project placeholder, and traversal-warning toast are tested here;
+auto-fill semantics are covered by the unit-test wiring assertion.
 """
 
 import pytest

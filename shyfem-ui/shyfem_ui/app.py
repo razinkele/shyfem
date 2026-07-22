@@ -54,7 +54,6 @@ SIDEBAR_GROUPS = [
         "items": [
             {"label": "Dashboard", "icon": "bi-house", "value": "Dashboard"},
             {"label": "Tutorial", "icon": "bi-mortarboard", "value": "Tutorial"},
-            {"label": "About", "icon": "bi-info-circle", "value": "About"},
         ],
     },
     {
@@ -679,6 +678,7 @@ def _build_ui(config: Config) -> ui.Tag:
             class_="d-flex align-items-center",
         ),
         ui.div(
+            about.about_topbar_ui("about"),
             ui.tags.button(
                 ui.tags.i(class_="bi bi-moon"),
                 id="dark-mode-toggle",
@@ -708,7 +708,6 @@ def _build_ui(config: Config) -> ui.Tag:
     content_panels = ui.div(
         ui.div(home.home_ui("home"), id="sf-page-Dashboard", class_="sf-page active"),
         ui.div(tutorial.tutorial_ui("tutorial"), id="sf-page-Tutorial", class_="sf-page"),
-        ui.div(about.about_ui("about"), id="sf-page-About", class_="sf-page"),
         ui.div(
             mesh_builder.mesh_builder_ui("mesh_builder"),
             id="sf-page-Mesh-Builder",
