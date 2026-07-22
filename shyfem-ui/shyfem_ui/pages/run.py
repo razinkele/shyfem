@@ -372,23 +372,15 @@ def run_server(
         if tool != "shyfem":
             return ui.span()
 
-        mpi_np_control = ui.span()
-        try:
-            if input.mpi_enabled():
-                mpi_np_control = ui.input_numeric(
-                    "mpi_np",
-                    "Number of Processes",
-                    value=config.mpi_default_np,
-                    min=2,
-                    max=128,
-                )
-        except Exception:
-            logger.debug("MPI input not yet available", exc_info=True)
-
+        # The MPI checkbox renders unconditionally here; the conditional
+        # process-count input lives in its own output (mpi_np_control).
+        # Reading input.mpi_enabled() in THIS render would re-create the
+        # checkbox on every toggle, resetting its client-side state and
+        # flapping the toggle so the count input never stabilizes.
         return ui.div(
             ui.h6("MPI Options"),
             ui.input_checkbox("mpi_enabled", "Enable MPI", value=False),
-            mpi_np_control,
+            ui.output_ui("mpi_np_control"),
             ui.hr(),
             ui.h6("Solver Options"),
             ui.input_select(
@@ -401,6 +393,23 @@ def run_server(
                 selected="sparskit",
             ),
             ui.output_ui("solver_hint"),
+        )
+
+    @render.ui
+    def mpi_np_control():
+        """Show the process-count input only when MPI is enabled."""
+        try:
+            enabled = bool(input.mpi_enabled())
+        except Exception:
+            return ui.span()
+        if not enabled:
+            return ui.span()
+        return ui.input_numeric(
+            "mpi_np",
+            "Number of Processes",
+            value=config.mpi_default_np,
+            min=2,
+            max=128,
         )
 
     @render.ui
@@ -538,7 +547,15 @@ def run_server(
         refresh_interval=get_config().log_refresh_interval,
     )
 
-    # Single unified poll loop: refresh every 2s while jobs or workflows are active
+    # Single unified poll loop: refresh every 2s while jobs or workflows are
+    # active. CAUTION: this effect both READS reactive values (active_jobs_data
+    # here, selected_job via _refresh_log) and WRITES them (via
+    # _update_job_lists). reactive.Value.set() compares by identity, so every
+    # write of a freshly-built-but-equal list would self-invalidate the effect
+    # and spin the flush loop at 100% CPU, freezing every output in the
+    # session before the first flush ever completes. _update_job_lists
+    # therefore skips set() when content is unchanged, and the tick bump below
+    # isolates its own read.
     @reactive.effect
     async def _auto_refresh():
         try:
@@ -551,7 +568,8 @@ def run_server(
 
             if active or wf_active:
                 reactive.invalidate_later(2)
-                _refresh_tick.set(_refresh_tick.get() + 1)
+                with reactive.isolate():
+                    _refresh_tick.set(_refresh_tick.get() + 1)
             await _refresh_jobs()
             await _refresh_log()
         except Exception:
@@ -586,7 +604,21 @@ def run_server(
         value) is deliberate: the allowlist must reflect a fresh
         server-side query, not client-cached state.
         """
-        show_all_fn = (lambda: bool(input.show_all_run_jobs())) if _is_server_mode else None
+
+        def _show_all_requested() -> bool:
+            # The "All jobs" switch renders only once the Run page is shown
+            # (render.ui outputs stay suspended while hidden), so reading it
+            # raises SilentException for sessions that never open Run. Treat
+            # "not rendered yet" as the fail-closed default (own jobs only)
+            # instead of letting the exception abort the whole poll cycle.
+            from shiny.types import SilentException
+
+            try:
+                return bool(input.show_all_run_jobs())
+            except SilentException:
+                return False
+
+        show_all_fn = _show_all_requested if _is_server_mode else None
         return await list_scoped_jobs(
             job_queue, _is_server_mode, current_user, show_all_fn=show_all_fn, limit=50
         )
@@ -604,15 +636,29 @@ def run_server(
             if job.id in _latest_progress:
                 job.progress, job.progress_message = _latest_progress[job.id]
 
-        all_jobs_data.set(jobs)
+        # Skip set() when content is unchanged. This runs inside _auto_refresh,
+        # which READS active_jobs_data and selected_job; Value.set() compares
+        # by identity, so unconditionally setting a fresh (but equal) list
+        # every poll would self-invalidate that effect into an infinite flush
+        # loop that freezes the whole session (blank About/Changelog pages,
+        # worker at 100% CPU). JobInfo is a dataclass, so == compares fields.
+        with reactive.isolate():
+            prev_all = all_jobs_data.get()
+            prev_active = active_jobs_data.get()
+            prev_selected = selected_job.get()
+
+        if jobs != prev_all:
+            all_jobs_data.set(jobs)
         active = [j for j in jobs if j.is_active]
-        active_jobs_data.set(active)
+        if active != prev_active:
+            active_jobs_data.set(active)
 
         # Update selected job if exists
         if selected_job_id.get():
             for job in jobs:
                 if job.id == selected_job_id.get():
-                    selected_job.set(job)
+                    if job != prev_selected:
+                        selected_job.set(job)
                     break
 
     @reactive.effect
