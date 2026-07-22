@@ -224,6 +224,9 @@
 	subroutine shympi_init_internal(my_id,n_threads,binit)
 
 	use shympi_internal
+	use ieee_exceptions, only: ieee_divide_by_zero, ieee_invalid &
+     &		, ieee_overflow, ieee_get_halting_mode &
+     &		, ieee_set_halting_mode
 
 	implicit none
 
@@ -232,8 +235,24 @@
 
 	integer ierr,iberr
 	integer required,provided
+	logical halt_zero,halt_invalid,halt_overflow
 
 	required = MPI_THREAD_FUNNELED
+	provided = 0
+
+	! OpenMPI 5 throws a floating point exception inside MPI_Init
+	! when FPE trapping is enabled (upstream shyfemcm 29.05.2026,
+	! same failure family as the Intel-MPI UCX FPE documented in
+	! CLAUDE.md). Suspend FPE halting around the call and RESTORE
+	! the previous modes afterwards (upstream re-enables them
+	! unconditionally, which would newly arm trapping in builds
+	! compiled without -ffpe-trap).
+	call ieee_get_halting_mode(ieee_divide_by_zero, halt_zero)
+	call ieee_get_halting_mode(ieee_invalid, halt_invalid)
+	call ieee_get_halting_mode(ieee_overflow, halt_overflow)
+	call ieee_set_halting_mode(ieee_divide_by_zero, .false.)
+	call ieee_set_halting_mode(ieee_invalid, .false.)
+	call ieee_set_halting_mode(ieee_overflow, .false.)
 
 	ierr = 0
         if( binit ) call MPI_INIT_THREAD( required, provided, ierr )
@@ -248,6 +267,12 @@
 	call shympi_error('shympi_init_internal','size',ierr)
 	call MPI_BARRIER( MPI_COMM_WORLD, ierr)
 	call shympi_error('shympi_init_internal','barrier',ierr)
+
+	! restore FPE halting only after the init barriers - the
+	! bracket placement matches what upstream tested
+	call ieee_set_halting_mode(ieee_divide_by_zero, halt_zero)
+	call ieee_set_halting_mode(ieee_invalid, halt_invalid)
+	call ieee_set_halting_mode(ieee_overflow, halt_overflow)
 
 	n_p_threads = n_threads
 	my_p_id = my_id

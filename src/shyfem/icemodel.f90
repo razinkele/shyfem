@@ -3184,6 +3184,7 @@ double precision ISI_it
 I0_it=vis_fr*Fs*exp(-ks_snow*(hs_old+hs_prec_bucket));
 IM_it=I0_it*exp(-kmi_av*hmi_old);
 
+ISI_it = 0.	!defensive init (upstream 29.05.2026 ggu)
 call temperature_fraction_of_solar_radiation_penetration(ksi_10_av,ksi_av, &
     hi_old,IM_it,ISI_it);
 

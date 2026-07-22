@@ -3543,8 +3543,12 @@
 
 	if( my_id /= 0 ) return
 
-	open(iu,file='boxes_matrix.txt',status='unknown',form='formatted' &
-     &		,iostat=ios)
+	! iu was never assigned before this open - with -finit-integer
+	! the open targeted an invalid unit and the iostat guard below
+	! always fired, silently breaking boxes_matrix.txt output
+	! (upstream fixed with a hardcoded iu=1; we use newunit=)
+	open(newunit=iu,file='boxes_matrix.txt',status='unknown' &
+     &		,form='formatted',iostat=ios)
 	if( ios /= 0 ) then
 	  write(6,*) 'error opening file: boxes_matrix.txt'
 	  stop 'error stop: error opening file'

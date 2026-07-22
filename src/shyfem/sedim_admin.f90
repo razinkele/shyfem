@@ -3083,6 +3083,10 @@
 !        -------------------------------------------------------------------
 
          gsa = 0.d0
+         gssold = 0.d0	!silences a spurious maybe-uninitialized
+			!warning - the is>1 guard means gssold is
+			!always set on is=1 before any use
+			!(upstream 29.05.2026 ggu)
          do is = 1,nscls
           gss = gs(is)
 	  if (is .gt. 1) then
