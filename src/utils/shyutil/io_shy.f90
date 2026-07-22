@@ -225,7 +225,10 @@
 	integer, parameter, private :: idshy = 1617
 
 	integer, parameter, private :: minvers = 11
-	integer, parameter, private :: maxvers = 14
+	! 15 introduced upstream (shyfemcm, 15.01.2026) "just for
+	! compatibility" - no record-format change vs 14; accepting it
+	! lets our tools read shy files written by current upstream
+	integer, parameter, private :: maxvers = 15
 
 	integer, parameter, private ::  no_type = 0
 	integer, parameter, private :: ous_type = 1
@@ -1294,10 +1297,21 @@
         read(iunit,iostat=ios) ntype,nvers
 	if( ios /= 0 ) return
 
-	ierr = 91
-	if( ntype /= idshy ) return
-	ierr = 92
-	if( nvers < minvers .or. nvers > maxvers ) return
+	if( ntype /= idshy ) then
+	  ierr = 91
+	  write(6,*) '*** not a shy file'
+	  write(6,*) 'should be:  ',idshy
+	  write(6,*) 'instead is: ',ntype
+	  return
+	end if
+
+	if( nvers < minvers .or. nvers > maxvers ) then
+	  ierr = 92
+	  write(6,*) '*** shy file version not recognized'
+	  write(6,*) 'min/max version: ',minvers,maxvers
+	  write(6,*) 'actual version:  ',nvers
+	  return
+	end if
 	pentry(id)%nvers = nvers
 
 	ierr = 2

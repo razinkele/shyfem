@@ -1290,7 +1290,10 @@
 
         call e2n2d(waeh,waveh,v1v)
         call e2n2d(waep,wavep,v1v)
-        call e2n2d(waed,waved,v1v)
+	! directions must be averaged as vectors - a plain arithmetic
+	! element-to-node average is wrong across the 0/360 wrap
+	! (e.g. 350 and 10 average to 180 instead of 0)
+	call aver_wave_dir(nel,nkn,waeh,waed,waved)
 
 	wavepp = wavep                  !peak period is not computed
 
@@ -1839,5 +1842,31 @@
 	end if
 
         end function has_waves
+
+!*********************************************************************
+
+	subroutine aver_wave_dir(nel,nkn,waeh,waed,waved)
+
+! averages wave direction from elements to nodes as a vector average
+! (upstream 25.09.2025 ggu) - arithmetic averaging of the direction
+! angle is wrong across the 0/360 wrap
+
+	implicit none
+
+	integer, intent(in) :: nel,nkn
+	real, intent(in) :: waeh(nel)
+	real, intent(in) :: waed(nel)
+	real, intent(out) :: waved(nkn)
+
+	real uv(nel),vv(nel)
+	real unode(nkn),vnode(nkn)
+	real v1v(nkn)
+
+	call polar2xy(nel,waeh,waed,uv,vv)
+	call e2n2d(uv,unode,v1v)
+	call e2n2d(vv,vnode,v1v)
+	call xy2polar(nkn,unode,vnode,v1v,waved)
+
+	end
 
 !*********************************************************************

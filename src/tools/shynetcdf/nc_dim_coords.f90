@@ -405,6 +405,7 @@
 	    if( bdebug ) write(6,*) 'looking in ',trim(where(j))
             call nc_get_var_attr(ncid,var_id,trim(where(j)),atext)
 	    if( atext == ' ' ) cycle
+	    if( atext == 'unknown' ) cycle
 	    call ncnames_get('coord',atext,short)
 	    if( bdebug ) write(6,*) 'found ',trim(atext),'  ',trim(short)
 	    if( short /= ' ' ) exit
@@ -481,6 +482,7 @@
 	  do j=1,nwhere
             call nc_get_var_attr(ncid,var_id,trim(where(j)),atext)
 	    if( atext == ' ' ) cycle
+	    if( atext == 'unknown' ) cycle
 	    call ncnames_get('var',atext,short)
 	    if( short /= ' ' ) exit
 	  end do
@@ -518,6 +520,7 @@
 	do j=1,nwhere
           call nc_get_var_attr(ncid,var_id,trim(where(j)),atext)
 	  if( atext == ' ' ) cycle
+	  if( atext == 'unknown' ) cycle
 	  call ncnames_get('var',atext,short)
 	  if( short /= ' ' ) exit
 	end do
@@ -531,6 +534,7 @@
           call nc_get_var_attr(ncid,var_id,trim(where(j)),atext)
 	  write(6,*) '   ',trim(where(j)),'  ',trim(atext)
 	  if( atext == ' ' ) cycle
+	  if( atext == 'unknown' ) cycle
 	  !do i=1,20
 	  !  write(6,*) 'atext ',i,ichar(atext(i:i))
 	  !end do
@@ -1059,6 +1063,10 @@
      &                  ,'ACCUMULATED TOTAL GRID SCALE PRECIPITATION')
 	call ncnames_add_var('rain','Total Precipitation')
 	call ncnames_add_var('rain','Precipitation')
+        call ncnames_add_var('wheight'                                     &
+     &                  ,'Significant height of combined wind waves and swell')
+        call ncnames_add_var('wper','Mean wave period')
+        call ncnames_add_var('wdir','Mean wave direction')
 
 	end subroutine ncnames_add_variables 
 

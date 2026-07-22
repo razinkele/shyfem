@@ -429,7 +429,7 @@
 ! ******************************************************
 ! ******************************************************
 
-	subroutine polar2xy(n,speed,dir,uv,vv)
+	subroutine polar2xy00(n,speed,dir,uv,vv)	!renamed - polar2xy now lives in libutil (geometrical.f90)
 
 	implicit none
 

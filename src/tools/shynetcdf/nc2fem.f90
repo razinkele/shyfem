@@ -101,6 +101,7 @@
 	integer nxdim,nydim,nlvdim,ndim,ierr
 
 	integer ncid
+	integer iformat
         character*132 file
         character*256 var_name,files,sfile
         character*256 name,xcoord,ycoord,zcoord,tcoord,bathy,slmask
@@ -297,6 +298,8 @@
 	if( .not. bsilent ) call global_information(ncid)
 
 	if( bwrite ) write(6,*) 'ncid = ',ncid
+
+	call nc_check_file_format(ncid,3,iformat)
 
 	call ncnames_init
 
@@ -552,7 +555,8 @@
 
 	logical bstop
 	integer var_id,i,ivar
-	character*15 var,descrp,short
+	character*15 descrp,short
+	character*80 var	!long WRF-style names truncate at 15
 	character*50 full
 	character*15 shorts(nvar)
 

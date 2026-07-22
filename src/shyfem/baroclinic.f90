@@ -347,11 +347,6 @@
 		  end if
 		end if
 
-		if( bobs ) then
-	  	  call ts_nudge(dtime0,nlvdi,nlv,nkn,tobsv,sobsv &
-     &						,ttauv,stauv)
-		end if
-
 !		--------------------------------------------
 !		initialize observations and relaxation times
 !		--------------------------------------------
@@ -360,6 +355,15 @@
 		sobsv = 0.
 		ttauv = 0.
 		stauv = 0.
+
+		! ts_nudge must run AFTER the zeroing above - it fills
+		! ttauv/stauv (from taupar or obs files), and zeroing
+		! afterwards silently wiped the parameter-given
+		! relaxation times (upstream fix 30.01.2026 ggu)
+		if( bobs ) then
+	  	  call ts_nudge(dtime0,nlvdi,nlv,nkn,tobsv,sobsv &
+     &						,ttauv,stauv)
+		end if
 
 !		--------------------------------------------
 !		initialize open boundary conditions
@@ -937,21 +941,21 @@
 
 	character*256 tempf,saltf,ttauf,stauf
 	character*256 string
-	real ttaup,staup
+	real, save :: ttaup = 0.
+	real, save :: staup = 0.
 	logical, save :: btnudge,bsnudge
 	integer, save :: idtemp,idsalt
 	integer, save :: idttau,idstau
 	integer, save :: icall = 0
 
-
-	call getfnm('tempobs',tempf)
-	call getfnm('saltobs',saltf)
-	call getfnm('temptau',ttauf)
-	call getfnm('salttau',stauf)
-	ttaup = getpar('temptaup')
-	staup = getpar('salttaup')
-
 	if( icall .eq. 0 ) then
+	  call getfnm('tempobs',tempf)
+	  call getfnm('saltobs',saltf)
+	  call getfnm('temptau',ttauf)
+	  call getfnm('salttau',stauf)
+	  ttaup = getpar('temptaup')
+	  staup = getpar('salttaup')
+
 	  string = 'temp tau'
 	  write(6,'(a)') 'ts_nudge: opening file for '//trim(string)
 	  call ts_nudge_get_tau(string,ttauf,ttaup,dtime,nkn,nlv,idttau)

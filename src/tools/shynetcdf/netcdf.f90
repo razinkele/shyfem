@@ -1589,8 +1589,11 @@
 	if( .not. nc_has_err(retval) ) then
 	  call nc_get_var_attrib(ncid,var_id,aname,atext,avalue)
 	  description = atext
-	  return
 	end if
+
+	! fall through to long_name when standard_name is missing OR is
+	! the literal 'unknown' some producers write (upstream 17.06.2025)
+	if( description /= ' ' .and. description /= 'unknown' ) return
 
 	aname = 'long_name'
 	retval = nf_inq_att(ncid,var_id,aname,xtype,length)
@@ -1636,6 +1639,48 @@
 
 	retval = nf_inq_nvars(ncid,nvars)
 	call nc_handle_err(retval,'get_var_totnum')
+
+	end
+
+!*****************************************************************
+
+	subroutine nc_check_file_format(ncid,iformat_max,iformat)
+
+! detects netcdf-4 string attributes up front (xtype 12) and stops
+! with a conversion hint if the caller cannot handle them, instead
+! of failing later mid-read (upstream 19.06.2025 ggu)
+
+	use netcdf_params
+
+	implicit none
+
+	integer ncid
+	integer iformat_max	!maximum format that can be handled
+	integer iformat
+
+	integer nvars,xtype,len,var_id
+	integer retval
+	character*20 aname
+
+	aname = 'standard_name'
+	iformat = 3
+
+	call nc_get_var_totnum(ncid,nvars)
+
+	do var_id=1,nvars
+	  retval = nf_inq_att(ncid,var_id,aname,xtype,len)
+	  if( nc_has_err(retval) ) cycle
+	  if( xtype == 12 ) iformat = 4
+	end do
+
+	if( iformat > iformat_max ) then
+	  write(6,*) 'this is a netcdf-4 file which contains string values'
+	  write(6,*) 'this file cannot be read by the present routines'
+	  write(6,*) 'please convert this file to netcdf-3 with ncks:'
+	  write(6,*) '   ncks -3 nc4-file.nc nc3-file.nc'
+	  write(6,*) 'you might have to install the nco package'
+	  stop 'error stop nc_check_file_format: string format unsupported'
+	end if
 
 	end
 
