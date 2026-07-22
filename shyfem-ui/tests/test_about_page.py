@@ -9,15 +9,25 @@ def _render(tag) -> str:
     return str(ui.div(tag).tagify())
 
 
-def test_about_topbar_has_three_buttons():
+def test_about_topbar_has_dropdowns_and_feedback():
     html = _render(about.about_topbar_ui("about"))
-    # Module-namespaced ids still contain the base id.
-    for input_id in ("show_about", "show_changelog", "show_feedback"):
+    # Per-package menu entries (module-namespaced ids contain the base id).
+    for input_id in (
+        "show_about_core",
+        "show_about_ui",
+        "show_changelog_core",
+        "show_changelog_ui",
+        "show_feedback",
+    ):
         assert input_id in html
-    # Icon classes and accessible labels.
+    # Dropdown toggles with stable DOM ids for E2E.
+    for toggle_id in ("sf-about-menu", "sf-changelog-menu"):
+        assert toggle_id in html
+    assert 'data-bs-toggle="dropdown"' in html
+    # Icons and labels.
     for icon in ("bi-info-circle", "bi-journal-text", "bi-chat-dots"):
         assert icon in html
-    for label in ("About SHYFEM Workbench", "Changelog", "Send feedback"):
+    for label in ("About", "Changelog", "SHYFEM UI", "Send feedback"):
         assert label in html
 
 

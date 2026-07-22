@@ -1,9 +1,10 @@
-"""About / Changelog / Feedback -- topbar buttons that open modals.
+"""About / Changelog / Feedback -- topbar dropdowns + button that open modals.
 
-Three icon buttons rendered in the top bar (left of the theme toggle):
-  * About      -- README.md rendered as markdown in a modal
-  * Changelog  -- CHANGELOG.md rendered as markdown in a modal
-  * Feedback   -- a bug-report / suggestion form (stored via FeedbackService)
+Rendered in the top bar (left of the theme toggle):
+  * About ▾      -- SHYFEM (repo README.md) / SHYFEM UI (shyfem-ui/README.md)
+  * Changelog ▾  -- SHYFEM / SHYFEM UI views of the shared CHANGELOG.md,
+                    split by section label (``[shyfem-ui X.Y.Z]`` vs core)
+  * Feedback     -- a bug-report / suggestion form (stored via FeedbackService)
 
 The form submits server-side for logged-in users; anonymous / external
 submission goes through the rate-limited ``POST /api/feedback`` endpoint.
@@ -21,7 +22,7 @@ import logging
 from shiny import module, reactive, render, ui
 
 from shyfem_ui import __version__
-from shyfem_ui.changelog import read_repo_markdown
+from shyfem_ui.changelog import core_version, filter_changelog, read_repo_markdown
 from shyfem_ui.services.feedback_service import FeedbackService
 
 logger = logging.getLogger(__name__)
@@ -66,14 +67,67 @@ def _topbar_button(input_id: str, icon: str, label: str) -> ui.Tag:
     )
 
 
+def _menu_item(input_id: str, label: str) -> ui.Tag:
+    """A dropdown-menu entry that fires a Shiny action input.
+
+    ``dropdown-item`` is defined after ``.btn`` in Bootstrap's CSS, so it
+    wins the text-align/border conflict with the action-button classes.
+    """
+    return ui.input_action_button(input_id, label, class_="dropdown-item")
+
+
+def _topbar_dropdown(toggle_id: str, icon: str, label: str, *items: ui.Tag) -> ui.Tag:
+    """A topbar Bootstrap dropdown. ``toggle_id`` is a raw DOM id (module
+    instances of this UI exist once per app), used by E2E selectors."""
+    return ui.tags.div(
+        ui.tags.button(
+            ui.tags.i(class_=f"bi {icon} me-1"),
+            label,
+            type="button",
+            id=toggle_id,
+            class_="btn btn-sm sf-topbar-btn dropdown-toggle me-2",
+            **{"data-bs-toggle": "dropdown", "aria-expanded": "false"},
+        ),
+        ui.tags.ul(
+            *[ui.tags.li(item) for item in items],
+            class_="dropdown-menu dropdown-menu-end",
+        ),
+        class_="dropdown d-inline-block",
+    )
+
+
 @module.ui
 def about_topbar_ui() -> ui.Tag:
-    """Topbar cluster: About / Changelog / Feedback buttons."""
+    """Topbar cluster: About ▾ / Changelog ▾ dropdowns + Feedback button."""
     return ui.span(
-        _topbar_button("show_about", "bi-info-circle", "About SHYFEM Workbench"),
-        _topbar_button("show_changelog", "bi-journal-text", "Changelog"),
+        _topbar_dropdown(
+            "sf-about-menu",
+            "bi-info-circle",
+            "About",
+            _menu_item("show_about_core", "SHYFEM"),
+            _menu_item("show_about_ui", "SHYFEM UI"),
+        ),
+        _topbar_dropdown(
+            "sf-changelog-menu",
+            "bi-journal-text",
+            "Changelog",
+            _menu_item("show_changelog_core", "SHYFEM"),
+            _menu_item("show_changelog_ui", "SHYFEM UI"),
+        ),
         _topbar_button("show_feedback", "bi-chat-dots", "Send feedback"),
         class_="d-inline-flex align-items-center",
+    )
+
+
+def _markdown_modal(md: str, title: str) -> None:
+    ui.modal_show(
+        ui.modal(
+            ui.div(ui.markdown(md), style=_SCROLL_STYLE),
+            title=title,
+            size="xl",
+            easy_close=True,
+            footer=ui.modal_button("Close"),
+        )
     )
 
 
@@ -83,29 +137,34 @@ def about_server(input, output, session, config, current_user=None) -> None:
     _submit_msg: reactive.Value[tuple[str, str] | None] = reactive.value(None)
 
     @reactive.effect
-    @reactive.event(input.show_about)
-    def _show_about_modal():
-        ui.modal_show(
-            ui.modal(
-                ui.div(ui.markdown(read_repo_markdown("README.md")), style=_SCROLL_STYLE),
-                title=f"About SHYFEM Workbench — UI v{__version__}",
-                size="xl",
-                easy_close=True,
-                footer=ui.modal_button("Close"),
-            )
+    @reactive.event(input.show_about_core)
+    def _show_about_core_modal():
+        version = core_version()
+        title = f"About SHYFEM — v{version}" if version else "About SHYFEM"
+        _markdown_modal(read_repo_markdown("README.md"), title)
+
+    @reactive.effect
+    @reactive.event(input.show_about_ui)
+    def _show_about_ui_modal():
+        _markdown_modal(
+            read_repo_markdown("shyfem-ui/README.md"),
+            f"About SHYFEM Workbench (UI) — v{__version__}",
         )
 
     @reactive.effect
-    @reactive.event(input.show_changelog)
-    def _show_changelog_modal():
-        ui.modal_show(
-            ui.modal(
-                ui.div(ui.markdown(read_repo_markdown("CHANGELOG.md")), style=_SCROLL_STYLE),
-                title="Changelog",
-                size="xl",
-                easy_close=True,
-                footer=ui.modal_button("Close"),
-            )
+    @reactive.event(input.show_changelog_core)
+    def _show_changelog_core_modal():
+        _markdown_modal(
+            filter_changelog(read_repo_markdown("CHANGELOG.md"), "core"),
+            "Changelog — SHYFEM",
+        )
+
+    @reactive.effect
+    @reactive.event(input.show_changelog_ui)
+    def _show_changelog_ui_modal():
+        _markdown_modal(
+            filter_changelog(read_repo_markdown("CHANGELOG.md"), "ui"),
+            "Changelog — SHYFEM UI",
         )
 
     @reactive.effect
