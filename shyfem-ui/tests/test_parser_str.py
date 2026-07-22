@@ -426,6 +426,16 @@ class TestCommonParams:
         assert isinstance(desc, str)
         assert len(desc) > 0
 
+    def test_common_params_has_imetout(self):
+        """imetout meteo-output selector is registered in $para."""
+        assert "imetout" in COMMON_PARAMS["para"]
+        assert COMMON_PARAMS["para"]["imetout"][1] == "int"
+
+    def test_parse_imetout(self):
+        content = "$para\n    imetout = 10010\n$end\n"
+        para = StrParser.parse(content).sections["para"].parameters
+        assert para["imetout"] == 10010 and isinstance(para["imetout"], int)
+
     def test_common_params_has_beaching(self):
         """Eulerian beaching params are registered in $para."""
         for p in ("ibeach", "beachrate", "burryrate"):
