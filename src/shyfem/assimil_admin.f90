@@ -336,6 +336,8 @@
 	call para_add_array_value('sigobs',0.)
 	call para_add_array_value('sigback',0.)
 	call para_add_array_value('iuse',1.)
+	call para_add_array_value('layer',0.)
+	call para_add_array_value('vcorlength',0.)
 
 	call addfnm('filecoords',' ')
 	call addfnm('fileobs',' ')
@@ -362,6 +364,8 @@
 	allocate(passim(id)%sigobs(nobs))
 	allocate(passim(id)%sigback(nobs))
 	allocate(passim(id)%iuse(nobs))
+	allocate(passim(id)%layer(nobs))
+	allocate(passim(id)%vcorlength(nobs))
 
 	passim(id)%num = num	!upstream never stored it - duplicate
 				!section detection relied on it
@@ -377,9 +381,20 @@
 	call para_set_array_value('sigobs',nobs,passim(id)%sigobs)
 	call para_set_array_value('sigback',nobs,passim(id)%sigback)
 	call para_set_array_value('iuse',nobs,passim(id)%iuse)
+	call para_set_array_value('layer',nobs,passim(id)%layer)
+	call para_set_array_value('vcorlength',nobs,passim(id)%vcorlength)
 
 	call getfnm('filecoords',passim(id)%filecoords)
 	call getfnm('fileobs',passim(id)%fileobs)
+
+	if( any( passim(id)%layer /= passim(id)%layer(1) ) .or. &
+     &	    any( passim(id)%vcorlength /= passim(id)%vcorlength(1) ) ) then
+	  write(6,*) 'layer and vcorlength must (currently) be the'
+	  write(6,*) 'same for all observations of one section'
+	  call shympi_abort_internal( &
+     &		'error stop assimil_init_section: layer not uniform')
+	end if
+	if( passim(id)%layer(1) < 0 ) goto 97
 
 	if( any( passim(id)%corlength<=0 ) ) goto 97
 	if( any( passim(id)%sigobs<=0 ) ) goto 97
