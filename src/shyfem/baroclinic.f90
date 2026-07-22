@@ -490,6 +490,8 @@
 
 	  !call ts_dia('after T/D')
 
+	  call assimil_ts(tempv,saltv)	!optimal-interpolation assimilation
+
 	end if
 
 	if( binfo ) then

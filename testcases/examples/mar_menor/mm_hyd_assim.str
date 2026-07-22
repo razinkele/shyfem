@@ -1,0 +1,63 @@
+#------------------------------------------------------------------------
+#
+#    Copyright (C) 1985-2020  Georg Umgiesser
+#
+#    This file is part of SHYFEM.
+#
+#------------------------------------------------------------------------
+#
+# T + S assimilation test ($assimil sections, optimal interpolation)
+# two synthetic stations inside the lagoon report constant T = 25 C and
+# S = 30 while the model initializes at temref 20 C / salref 35; the
+# analysis is applied by direct insertion (mode=1) every step; ibarcl=3
+# transports T/S as passive tracers (no baroclinic momentum feedback),
+# so the inserted fronts cannot destabilize the run; two numbered
+# sections exercise the multi-variable path (T = ivar 12, S = ivar 11)
+
+
+$title
+        2D sim for Mar Menor - T/S assimilation test
+        mm_hyd_assim
+        GRID/MM_coarse
+$end
+
+$para
+        nomp = -1
+        ibarcl = 3
+        itemp = 1
+        isalt = 1
+        temref = 20.
+        salref = 35.
+        idtcon = '6h'
+
+        itanf = '2009-01-01'    itend = '2009-01-02'
+        idt = '300s'
+
+        date = 20090101
+
+        ilin = 1
+$end
+
+$assimil1
+        nobs = 2
+        ivar = 12
+        mode = 1
+        tau = 0.
+        corlength = 2000.
+        sigobs = 0.1
+        sigback = 1.0
+        filecoords = 'mm_assim_coords.dat'
+        fileobs = 'mm_assim_obs.dat'
+$end
+
+$assimil2
+        nobs = 2
+        ivar = 11
+        mode = 1
+        tau = 0.
+        corlength = 2000.
+        sigobs = 0.1
+        sigback = 1.0
+        filecoords = 'mm_assim_coords.dat'
+        fileobs = 'mm_assim_obs_salt.dat'
+$end

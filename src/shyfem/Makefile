@@ -234,6 +234,7 @@ OBJ = \
       concentration.o baroclinic.o def_para.o \
       f_vol.o mkdistance.o conz_admin.o \
       beaching.o \
+      suboi.o assimil_admin.o assimil.o \
       water_ren_time.o atoxi.o toxical.o \
       befor_after.o iostr.o const.o \
       test_zeta.o \
@@ -401,6 +402,7 @@ cleanlinks:
 ../../lib/mod/meteo_forcing_module.mod: meteo_forcing.o
 ../../lib/mod/mod_bndo.mod: bndo.o
 ../../lib/mod/mod_bstress.mod: substress.o
+../../lib/mod/mod_assimil_admin.mod: assimil_admin.o
 ../../lib/mod/mod_beaching.mod: beaching.o
 ../../lib/mod/mod_conz.mod: conz_common.o
 ../../lib/mod/mod_gotm_aux.mod: gotm_aux.o
@@ -546,6 +548,11 @@ const.o: ../../lib/mod/basin.mod ../../lib/mod/befor_after.mod \
 		../../lib/mod/mkonst.mod ../../lib/mod/mod_bnd.mod \
 		../../lib/mod/mod_bound_geom.mod \
 		../../lib/mod/pkonst.mod 
+assimil.o: ../../lib/mod/basin.mod ../../lib/mod/intp_fem_file.mod \
+		../../lib/mod/levels.mod \
+		../../lib/mod/mod_assimil_admin.mod \
+		../../lib/mod/shympi.mod
+assimil_admin.o: ../../lib/mod/nls.mod ../../lib/mod/para.mod
 beaching.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_conz.mod \
 		../../lib/mod/mod_geom.mod ../../lib/mod/para.mod \

@@ -2451,6 +2451,64 @@
 
 !****************************************************************
 
+	function iff_file_has_data(id,t)
+
+! determines if data for interpolation at time t is available,
+! reading records forward as needed (upstream shyfemcm 2025-11)
+
+	logical iff_file_has_data
+	integer id
+	double precision t		!time for which to interpolate
+
+	logical bok
+	integer ilast,ifirst,nintp
+	double precision tlast,tfirst,tt,tc
+
+	nintp = pinfo(id)%nintp
+	ilast = pinfo(id)%ilast			!index of last record
+	if( ilast <= 0 ) goto 98
+	tlast = nint(pinfo(id)%time(ilast))
+	ifirst = mod(ilast,nintp) + 1
+	tfirst = nint(pinfo(id)%time(ifirst))
+
+	bok = .true.
+	iff_file_has_data = .false.
+	if( t > tlast .and. pinfo(id)%eof ) return
+	if( t < tfirst ) return
+
+	tc = tcomp(t,nintp,ilast,pinfo(id)%time)
+
+	do while( tc < t )
+	  bok = iff_read_next_record(id,tt)
+	  if( .not. bok ) exit
+	  if( tt <= tlast ) goto 99
+	  ilast = mod(ilast,nintp) + 1
+	  pinfo(id)%time(ilast) = tt
+	  call iff_space_interpolate(id,ilast,tt)
+	  tc = tcomp(t,nintp,ilast,pinfo(id)%time)
+	  tlast = tt
+	end do
+
+	pinfo(id)%ilast	= ilast
+	pinfo(id)%eof = .not. bok	!arm the early-out for next call
+	if( .not. bok ) return
+	iff_file_has_data = .true.
+
+	return
+   98	continue
+	write(6,*) 'record has not been populated with data'
+	write(6,*) 't,ilast: ',t,ilast
+	call iff_print_file_info(id)
+	stop 'error stop iff_file_has_data'
+   99	continue
+	write(6,*) 'time record not in increasing sequence'
+	write(6,*) 'it,tlast: ',tt,tlast
+	call iff_print_file_info(id)
+	stop 'error stop iff_file_has_data'
+	end function iff_file_has_data
+
+!****************************************************************
+
 	function iff_must_read(id,t)
 
 ! this routine determines if new data has to be read from file

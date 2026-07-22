@@ -109,6 +109,20 @@
 
 !******************************************************************
 
+	function has_sigma_levels()
+
+	use sigma
+
+	implicit none
+
+	logical has_sigma_levels
+
+	has_sigma_levels = ( nsigma_com > 0 )
+
+	end
+
+!******************************************************************
+
 	subroutine get_sigma_info(nlv,nsigma,hsigma)
 
 	use sigma
