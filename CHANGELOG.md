@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Topbar About/Changelog split per package** — The About and Changelog topbar buttons are now dropdowns with separate SHYFEM (core) and SHYFEM UI entries: About shows the respective README (repo root vs `shyfem-ui/`) with the matching version in the title (core from `VERSION`, UI from package metadata), and Changelog shows only that package's sections of the shared CHANGELOG (`pages/about.py`, `changelog.py` — `filter_changelog`, `core_version`, allowlisted `read_repo_markdown`)
 - **CI skips docs-only builds** — The Fortran and UI build workflows ignore markdown-only changes via a trailing `!**/*.md` path-filter negation, so a docs/changelog PR runs only the review check (`.github/workflows/fortran-ci.yml`, `.github/workflows/ui-ci.yml`)
 
 ### Documentation
