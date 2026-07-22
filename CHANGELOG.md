@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Restart ssedi extension renumbered to version 19** — the fork's bed-mass restart block (N25) had claimed version 18, which upstream shyfemcm independently uses for old-time-level hydro state; the identical header version with different record layouts meant files from either side would be silently mis-parsed as garbage by the other. The ssedi block is now version 19, and version-18 files are refused with an explanatory error instead of being mis-read; fork-written v18 files (possible only 2026-07-21/22) must be regenerated (`mod_restart.f90`, `restart.f90`)
+
 ### Added
 
 - **Tracer beaching/burial algorithm** — Ported from the shyfemcm community model (pnrr branch): nodes on material (closed) boundaries lose a fraction of surface-layer tracer per time step into a per-node beach store, and nodes lose a fraction of bottom-layer tracer into a burial store, with rates looked up per element area code from presets; both stores are written as 2D scalar files (`beach`, `burry`) at the conz output frequency and reset per window. Activated by the new STR parameter `ibeach` (1 = Curonian lagoon preset, 2 = Danube delta preset; needs `iconz` ≥ 2) instead of upstream's hardcoded basin sniffing; the port also fixes upstream's out-of-bounds preset writes on grids without the expected area codes and a latent MPI deadlock in the debug path, and verifies serial ≡ MPI bit-identical output (`beaching.f90`, `def_para.f90`, `shyfem_subs.f90`, `geom.f90`, test case `mm_hyd_beach.str`, PR #51)
