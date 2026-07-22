@@ -36,6 +36,33 @@ class TestPhysicsPanels:
         params = PHYSICS_PANELS["ecology"]["params"]
         assert "ibio" in params
 
+    def test_tracers_panel_has_beaching(self):
+        params = PHYSICS_PANELS["tracers"]["params"]
+        for p in ("ibeach", "beachrate", "burryrate"):
+            assert p in params, f"Missing {p} in tracers panel"
+            assert params[p] == "para"
+
+    def test_tracers_beaching_roundtrip(self):
+        content = (
+            "$para\n    iconz = 2\n    ibeach = 3\n"
+            "    beachrate = 0.3\n    burryrate = 0.1\n$end\n"
+        )
+        parsed = StrParser.parse(content)
+        result = build_panel_params(parsed, "tracers")
+        assert result["ibeach"] == 3
+        assert result["beachrate"] == pytest.approx(0.3)
+        assert result["burryrate"] == pytest.approx(0.1)
+
+    def test_panel_tracers_renders_beaching_inputs(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert '"ibeach"' in src, "ibeach input not rendered"
+        assert '"beachrate"' in src, "beachrate input not rendered"
+        assert '"burryrate"' in src, "burryrate input not rendered"
+
     def test_lagrangian_panel_has_section(self):
         panel = PHYSICS_PANELS["lagrangian"]
         assert panel.get("section") == "lagrg" or "ilagr" in panel["params"]

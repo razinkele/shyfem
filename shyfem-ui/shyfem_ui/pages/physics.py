@@ -159,6 +159,9 @@ PHYSICS_PANELS = {
             "conref": "para",
             "chpar": "para",
             "wsettl": "para",
+            "ibeach": "para",
+            "beachrate": "para",
+            "burryrate": "para",
         },
     },
     "sediment": {
@@ -2015,6 +2018,42 @@ def physics_server(
                             "2": "2 - Chapra",
                         },
                         selected=str(params.get("idecay", 0) or 0),
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(
+                    4,
+                    ui.input_select(
+                        "ibeach",
+                        "Tracer beaching/burial",
+                        choices={
+                            "0": "0 - Off",
+                            "1": "1 - Curonian preset",
+                            "2": "2 - Danube preset",
+                            "3": "3 - Rates from STR",
+                        },
+                        selected=str(params.get("ibeach", 0) or 0),
+                    ),
+                ),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "beachrate",
+                        "Beaching rate (mode 3)",
+                        value=float(params.get("beachrate", 0) or 0),
+                        min=0,
+                        step=0.01,
+                    ),
+                ),
+                ui.column(
+                    4,
+                    ui.input_numeric(
+                        "burryrate",
+                        "Burial rate (mode 3)",
+                        value=float(params.get("burryrate", 0) or 0),
+                        min=0,
+                        step=0.01,
                     ),
                 ),
             ),
