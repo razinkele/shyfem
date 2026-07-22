@@ -469,6 +469,12 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         # --- Concentration / Tracers ---
         "iconz": _p("Number of concentrations/tracers", "int", 0, "", "0=off"),
         "idecay": _p("Tracer decay type", "int", 0, "", "0=none,1=exponential,2=Chapra"),
+        "ibeach": _p("Tracer beaching/burial mode", "int", 0, "",
+                     "0=off,1=Curonian,2=Danube,3=STR rates"),
+        "beachrate": _p("Beaching rate (surface loss/step)", "float", 0.0, "",
+                        "used when ibeach=3"),
+        "burryrate": _p("Burial rate (bottom loss/step)", "float", 0.0, "",
+                        "used when ibeach=3"),
         "iage": _p("Water age tracer mode", "int", 0, "", "0/1"),
         "conref": _p("Initial reference concentration", "float", 0.0, "", ""),
         "chpar": _p("Concentration horizontal diffusion", "float", -1.0, "", "-1=use dhpar"),
