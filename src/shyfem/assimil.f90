@@ -37,6 +37,9 @@
 ! 10.11.2025    ggu     general assimilation of scalar variables
 ! 14.11.2025    ggu     set up debug file
 ! 13.12.2025    ggu     new routine make_vertical_correlation()
+! 22.07.2026    arb     3d application completed: layer/vcorlength
+!                       parsed, increment distributed with gaussian
+!                       vertical weights (2d path kept verbatim)
 ! 22.07.2026    arb     ported to razinkele/shyfem: observation-window
 !                       check no longer hidden behind the debug flag,
 !                       debug file opt-in with newunit, checked opens,
@@ -81,6 +84,10 @@
 	integer, save :: icall = 0
 	integer, save :: nobs = 0
 	real tau,rtau,dt,tacum
+	real alpha,vcorr
+	integer lobs,l
+	real rwgt(nlvdi)
+	real, allocatable :: zincr(:)
 	real, parameter :: flag = -999.
 	double precision dtime
 	character*80 file_coords
@@ -98,11 +105,9 @@
 ! check basics and set parameters
 !---------------------------------------------------------------
 
-	if( nlvdi > 1 ) then
-	  write(6,*) 'nlvdi = ',nlvdi
-	  call shympi_abort_internal( &
-     &		'error stop scalar_assimilation: only 2d ready')
-	end if
+	! 3d: the analysis is computed on the observation layer and its
+	! increment applied over the vertical with gaussian weights from
+	! make_vertical_correlation (layer 0 or vcorlength 0 -> uniform)
 
 	call get_act_dtime(dtime)
 
@@ -281,7 +286,13 @@
 ! compute background values at observation points
 !---------------------------------------------------------------
 
-	zback2d = zback(1,:)
+	lobs = max(1,passim(idass)%layer(1))	!0 = column -> use surface
+	if( lobs > nlvdi ) then
+	  write(6,*) 'layer,nlvdi: ',lobs,nlvdi
+	  call shympi_abort_internal( &
+     &		'error stop scalar_assimilation: layer > nlvdi')
+	end if
+	zback2d = zback(lobs,:)
 	call get_bobs(nobs,xobs,yobs,zback2d,bobs,passim(idass)%ies)
 
 !---------------------------------------------------------------
@@ -328,32 +339,69 @@
 	end if
 
 !---------------------------------------------------------------
-! if needed apply nudging
+! apply the analysis (nudging or direct insertion)
 !---------------------------------------------------------------
 
-	if( mode == 0 ) then	!nudging
-	  if( tau > 0. ) then
-	    if( bwrite ) write(iudbg,*) 'doing nudging'
-	    rtau = 1./tau
-	    call scalar_nudging_0(dt,zback2d,zanal,rtau)
-	  else
-	    write(6,*) 'for mode==0 tau>0 must be given'
-	    call shympi_abort_internal( &
-     &		'error stop scalar_assimilation: mode==0 and tau==0')
-	  end if
-	else if( mode == 1 ) then	!apply directly
-	  zback2d = zanal
-	else
+	if( mode /= 0 .and. mode /= 1 ) then
 	  write(6,*) 'error in mode: ',mode
 	  call shympi_abort_internal( &
      &		'error stop scalar_assimilation: error in mode')
 	end if
+	if( mode == 0 .and. tau <= 0. ) then
+	  write(6,*) 'for mode==0 tau>0 must be given'
+	  call shympi_abort_internal( &
+     &		'error stop scalar_assimilation: mode==0 and tau==0')
+	end if
 
-!---------------------------------------------------------------
-! copy analysis back to background
-!---------------------------------------------------------------
+	if( nlvdi == 1 ) then
 
-	zback(1,:) = zback2d
+	  ! 2d path - kept verbatim (bit-identical to the original)
+	  if( mode == 0 ) then	!nudging
+	    if( bwrite ) write(iudbg,*) 'doing nudging'
+	    rtau = 1./tau
+	    call scalar_nudging_0(dt,zback2d,zanal,rtau)
+	  else			!apply directly
+	    zback2d = zanal
+	  end if
+	  zback(1,:) = zback2d
+
+	else
+
+	  ! 3d path: distribute the analysis increment of the
+	  ! observation layer over the vertical. weights: 1 at the
+	  ! observation layer, gaussian decay with vcorlength [m];
+	  ! layer 0 or vcorlength 0 -> uniform over the column.
+	  ! mode 0 uses the implicit-nudging factor alpha = r/(1+r),
+	  ! algebraically identical to scalar_nudging_0 at the
+	  ! observation layer itself
+	  vcorr = passim(idass)%vcorlength(1)
+	  if( passim(idass)%layer(1) <= 0 .or. vcorr <= 0. ) then
+	    rwgt = 1.
+	  else
+	    call make_vertical_correlation(vcorr,lobs,rwgt)
+	  end if
+
+	  alpha = 1.
+	  if( mode == 0 ) then
+	    if( bwrite ) write(iudbg,*) 'doing nudging (3d)'
+	    rtau = dt/tau
+	    alpha = rtau/(1.+rtau)
+	  end if
+
+	  ! apply per node only over its existing layers - writing
+	  ! below the local bottom corrupts inactive layer slots that
+	  ! other code may still read
+	  allocate(zincr(nkn))
+	  zincr = zanal - zback2d
+	  do i=1,nkn
+	    do l=1,ilhkv(i)
+	      if( rwgt(l) <= 0. ) cycle
+	      zback(l,i) = zback(l,i) + alpha*rwgt(l)*zincr(i)
+	    end do
+	  end do
+	  deallocate(zincr)
+
+	end if
 
 !---------------------------------------------------------------
 ! end of routine
@@ -481,7 +529,7 @@
 	integer nobs
 	real xobs(nobs)
 	real yobs(nobs)
-	real zback(nlvdi,nkn)
+	real zback(nkn)		!2d field (extracted layer)
 	real bobs(nobs)
 	integer ies(nobs)	!element where obs point is in
 
@@ -529,7 +577,7 @@
 	  if( ie == 0 ) cycle
 	  do ii=1,3
 	    k = nen3v(ii,ie)
-	    z(ii) = zback(1,k)
+	    z(ii) = zback(k)
 	  end do
 	  call femintp(ie,z,xobs(i),yobs(i),zp)
 	  bobs(i) = zp

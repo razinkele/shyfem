@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **3D data assimilation completed** — the `$assimil` framework now works in 3D runs: the new `layer` and `vcorlength` section parameters place the observation on a model layer and spread the optimal-interpolation analysis increment over the water column with Gaussian vertical weights (`layer = 0` or `vcorlength = 0` applies it uniformly); applied per node only over existing layers. The 2D code path is byte-identical to before (verified by output fingerprint, serial and MPI). New 3D smoke test on the Venice lagoon shows the expected vertical localization; local overshoot near a deep mixing station is documented as inherent to increment spreading (`assimil.f90`, `assimil_admin.f90`, test case `venlag_assim.str`)
 - **Beaching rates configurable from the STR** — `ibeach = 3` reads the per-area-code beaching/burial rates from the new `beachrate`/`burryrate` array parameters (one value for all area codes, or exactly one per code), so the algorithm works on any grid without code edits; the hardcoded Curonian/Danube presets (`ibeach` 1/2) remain. Negative rates are rejected, and a wrong value count aborts with a clear message. Verified bit-identical to the Danube preset on mar_menor, serial and MPI (`beaching.f90`, `def_para.f90`, test case `mm_hyd_beach_str.str`)
 
 ### Changed
