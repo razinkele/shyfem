@@ -1,0 +1,10 @@
+# run artifacts
+*.shy
+*.inf
+*.run.log
+*.ext
+*.flx
+*.rst
+fort.*
+# generated basin (rebuild via shypre)
+GRID/*.bas

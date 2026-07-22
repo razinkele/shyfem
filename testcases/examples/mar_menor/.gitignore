@@ -1,0 +1,8 @@
+# run artifacts
+*.shy
+*.inf
+*.run.log
+*.ext
+*.flx
+*.rst
+fort.*
