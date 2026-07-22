@@ -67,6 +67,10 @@
         real, allocatable, save :: windcd(:)	! wind drag coefficient
         real, allocatable, save :: evapv(:)	! evaporation [m/s]
 
+        real, allocatable, save :: qsensv(:)	! sensible heat flux [W/m**2]
+        real, allocatable, save :: qlatv(:)	! latent heat flux [W/m**2]
+        real, allocatable, save :: qlongv(:)	! long wave heat flux [W/m**2]
+
         contains
 
 !************************************************************
@@ -95,6 +99,9 @@
           deallocate(metws)
           deallocate(windcd)
           deallocate(evapv)
+          deallocate(qsensv)
+          deallocate(qlatv)
+          deallocate(qlongv)
         end if
 
         nkn_meteo = nkn
@@ -132,6 +139,12 @@
         allocate(windcd(nkn),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'
         allocate(evapv(nkn),stat=ierr)
+        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        allocate(qsensv(nkn),stat=ierr)
+        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        allocate(qlatv(nkn),stat=ierr)
+        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        allocate(qlongv(nkn),stat=ierr)
         if( ierr /= 0 ) stop 'error stop: allocation failed'
 
         end subroutine mod_meteo_init

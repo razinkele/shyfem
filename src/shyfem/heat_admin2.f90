@@ -665,6 +665,9 @@
 
 	  evap = evap / rhow			!evaporation in m/s
 	  evapv(k) = evap			!positive if loosing mass
+	  qsensv(k) = qsens
+	  qlatv(k) = qlat
+	  qlongv(k) = qlong
 
           ddq = ddq + qtot * dt * area
 
