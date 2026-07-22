@@ -1243,9 +1243,21 @@
 !		fraction of bottom-layer tracer into a burial store; both
 !		stores are written as 2D scalar files (beach, burry) with
 !		the frequency of |itmcon|/|idtcon|. Rates are applied per
-!		element area code from presets: a value of 1 uses the
-!		Curonian lagoon preset (area codes 2/3), 2 uses the Danube
-!		delta preset (area codes 0/1). (Default 0)
+!		element area code: a value of 1 uses the Curonian lagoon
+!		preset (area codes 2/3), 2 uses the Danube delta preset
+!		(area codes 0/1), and 3 takes the rates from the
+!		|beachrate| and |burryrate| parameters. (Default 0)
+! |beachrate|	Beaching rates per element area code for |ibeach| = 3:
+!		either one value for every area code, or exactly one
+!		value per area code present in the basin (the i-th value
+!		applies to area code i-1). Values are the fraction of
+!		surface-layer tracer moved to the beach store per time
+!		step; |beachrate| + |burryrate| must not exceed 1 for
+!		any area code. (Default 0)
+! |burryrate|	Burial rates per element area code for |ibeach| = 3,
+!		with the same conventions as |beachrate|: fraction of
+!		bottom-layer tracer moved to the burial store per time
+!		step. (Default 0)
 
 	call addpar('iconz',0.)		!compute concentration ?
 !c	call addpar('iconza',0.)	!average values ? - not working
@@ -1253,6 +1265,8 @@
 	call addpar('idecay',0.)	!type of decay
 	call addpar('iage',0.)		!age concentration
 	call addpar('ibeach',0.)	!beaching/burial of tracers
+	call para_add_array_value('beachrate',0.)	!beach rate per area code
+	call para_add_array_value('burryrate',0.)	!burial rate per area code
 
 	call para_deprecate('contau','taupar')	!no contau anymore -> use taupar
 	call para_add_array_value('taupar',0.)	!decay rate [days]

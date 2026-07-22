@@ -51,6 +51,7 @@
 ! 06.02.2026    ggu     routine made more general (rates for single area codes)
 ! 05.05.2026    ggu     more documentation, bug fix for iconz == 1
 ! 22.07.2026    arb     ported to razinkele/shyfem; ibeach STR parameter
+! 22.07.2026    arb     ibeach=3: rates from STR (beachrate/burryrate)
 !
 !**************************************************************
 
@@ -114,9 +115,12 @@
 	  what_beach = 'curonian'
 	else if( ibeach == 2 ) then
 	  what_beach = 'danube'
+	else if( ibeach == 3 ) then
+	  what_beach = 'str'	!rates from beachrate/burryrate arrays
 	else
 	  write(6,*) 'beaching algorithm: unknown ibeach = ',ibeach
-	  write(6,*) 'valid values: 0 (off), 1 (curonian), 2 (danube)'
+	  write(6,*) 'valid values: 0 (off), 1 (curonian), 2 (danube)' &
+     &		//', 3 (rates from STR)'
 	  call shympi_abort_internal('error stop beaching_init: ibeach')
 	end if
 
@@ -505,11 +509,20 @@
 	  call beaching_rate_setup_curonian(iamax)
 	else if( what_beach == 'danube' ) then
 	  call beaching_rate_setup_danube(iamax)
+	else if( what_beach == 'str' ) then
+	  call beaching_rate_setup_str(iamax)
 	else
 	  bbeach = .false.
 	end if
 
 	if( .not. bbeach ) return
+
+	if( any(beach_rates < 0.) .or. any(burry_rates < 0.) ) then
+	  write(6,*) 'beach_rates: ',beach_rates
+	  write(6,*) 'burry_rates: ',burry_rates
+	  call shympi_abort_internal('error stop beaching_rate_setup:' &
+     &		//' negative rate')
+	end if
 
 !----------------------------------------------
 ! check and write out final rates for beach/burry
@@ -596,6 +609,27 @@
 	  beach_rates(3) = 0.4
 	  burry_rates(3) = 0.2
 	end if
+
+	end
+
+!**************************************************************
+
+	subroutine beaching_rate_setup_str(iamax)
+
+! rates from the STR arrays beachrate/burryrate (ibeach = 3): either a
+! single value (applied to every area code) or exactly one value per
+! area code present in the basin (i-th value -> area code i-1);
+! any other count aborts with a clear message from para
+
+	use mod_beaching
+	use para
+
+	implicit none
+
+	integer, intent(in) :: iamax
+
+	call para_set_array_value('beachrate',iamax+1,beach_rates)
+	call para_set_array_value('burryrate',iamax+1,burry_rates)
 
 	end
 

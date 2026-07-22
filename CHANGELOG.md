@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Beaching rates configurable from the STR** — `ibeach = 3` reads the per-area-code beaching/burial rates from the new `beachrate`/`burryrate` array parameters (one value for all area codes, or exactly one per code), so the algorithm works on any grid without code edits; the hardcoded Curonian/Danube presets (`ibeach` 1/2) remain. Negative rates are rejected, and a wrong value count aborts with a clear message. Verified bit-identical to the Danube preset on mar_menor, serial and MPI (`beaching.f90`, `def_para.f90`, test case `mm_hyd_beach_str.str`)
+
 ### Changed
 
 - **Topbar About/Changelog split per package** — The About and Changelog topbar buttons are now dropdowns with separate SHYFEM (core) and SHYFEM UI entries: About shows the respective README (repo root vs `shyfem-ui/`) with the matching version in the title (core from `VERSION`, UI from package metadata), and Changelog shows only that package's sections of the shared CHANGELOG (`pages/about.py`, `changelog.py` — `filter_changelog`, `core_version`, allowlisted `read_repo_markdown`)
