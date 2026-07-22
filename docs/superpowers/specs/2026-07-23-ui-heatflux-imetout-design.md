@@ -70,9 +70,13 @@ def _imetout_encode(flags: dict[str, bool]) -> int:
 ```
 
 **Widgets** in `panel_heat()` (the "Heat Flux" panel), a row of five
-`ui.input_checkbox`es under a "Meteo output (imetout)" label, initial state
-from `_imetout_decode(params.get("imetout", 0))`. Input IDs:
-`imetout_wind`, `imetout_heat`, `imetout_rain`, `imetout_ice`,
+`ui.input_checkbox`es under a "Meteo output (imetout)" label. Initial state
+is decoded from the value read **directly off the StrFile** —
+`_imetout_decode(str_data.get().get_param("para", "imetout"))` — NOT from
+`build_panel_params`, which only returns panel-registered params and so
+would always yield 0 (a dead load that then silently zeroes `imetout` on
+save; caught in security review). `_imetout_decode(None)` → all-off. Input
+IDs: `imetout_wind`, `imetout_heat`, `imetout_rain`, `imetout_ice`,
 `imetout_hflx`.
 
 **Save (composite param).** `imetout` is NOT added to
@@ -107,8 +111,9 @@ untouched (same preservation pattern as beaching).
 
 ## Data flow
 
-1. Load: `build_panel_params(str_data, "heat")` returns current `imetout`
-   (int, or default 0) → `_imetout_decode` → five checkbox `value=`.
+1. Load: `str_data.get().get_param("para", "imetout")` (read directly, since
+   `imetout` is not a panel-registered param) → `_imetout_decode` → five
+   checkbox `value=`.
 2. Edit: user toggles checkboxes.
 3. Save: `_collect_panel_values` composite step reads the five inputs →
    `_imetout_encode` → `set_param("para","imetout",value)`.

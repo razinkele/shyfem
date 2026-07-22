@@ -1146,7 +1146,9 @@ def physics_server(
     @render.ui
     def panel_heat():
         params = build_panel_params(str_data.get(), "heat")
-        _met = _imetout_decode(params.get("imetout", 0))
+        # imetout is a composite param (not in the panel registry), so read it
+        # straight from the StrFile — build_panel_params would always return 0.
+        _met = _imetout_decode(str_data.get().get_param("para", "imetout"))
         return ui.div(
             ui.row(
                 ui.column(
