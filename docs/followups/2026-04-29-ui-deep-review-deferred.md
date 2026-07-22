@@ -326,12 +326,14 @@ prior `_on_project_changed`; one was added as part of the rollout.
   (`pw_page` is session-scoped).
 
 **Outstanding gaps:**
-- Section M.1 — `run_server`'s reactive-effect deadlock blocks
+- ~~Section M.1 — `run_server`'s reactive-effect deadlock blocks
   end-to-end test mounting. Picker coverage works around this via
   `_stub_run_server` extension; the underlying deadlock remains
   unresolved. **DEFERRED 2026-05-06** after design + 8-agent review
-  found ~30 issues plus a strategic "no consumer waiting" challenge.
-  See the M.1 entry below for trigger conditions and pre-pickup steps.
+  found ~30 issues plus a strategic "no consumer waiting" challenge.~~
+  **CLOSED 2026-07-22 (PR #49):** root cause found and fixed — see the
+  M.1 entry below. `_stub_run_server` is deleted; the browser test app
+  mounts the real `run_server`.
 - ~~Section M.2 — `pages/ibm.py` retains a glob fallback for `.lgr`
   files outside the FileService index. Picker dropdown and the glob
   can disagree on which file is shown; provenance is unobservable.~~
@@ -345,7 +347,26 @@ prior `_on_project_changed`; one was added as part of the rollout.
 **Section L (output-directory picker) remains deferred** — different
 abstraction (directory picker, not file picker). Tracked separately.
 
-## Section M.1 — run.py reactive-effect deadlock (DEFERRED 2026-05-06)
+## Section M.1 — run.py reactive-effect deadlock (RESOLVED 2026-07-22)
+
+**RESOLVED 2026-07-22 (PR #49).** The "deadlock" was not job-queue +
+tutorial-context interplay but a reactive self-invalidation loop:
+`_auto_refresh` reads `active_jobs_data` (and `selected_job` via
+`_refresh_log`) and re-wrote them every poll via `_update_job_lists`
+with freshly-built lists. `reactive.Value.set()` compares by identity,
+so an equal-but-new list re-invalidated the still-running effect →
+infinite flush loop (~7k iterations/s, 100 % CPU) starving the
+session's first flush — nothing ever rendered. In production it was
+armed by Batch 3's fail-closed `list_scoped_jobs` (returning `[]`
+where the old path raised `SilentException` before the writes) and
+froze every session. Fix: content-compare before `set()` (previous
+values read under `reactive.isolate()`), isolate the `_refresh_tick`
+self-increment, tolerate `SilentException` from the not-yet-rendered
+"All jobs" switch. `_stub_run_server` is deleted — `tests/_test_app.py`
+mounts the real `run_server`, so the whole Playwright suite is the
+regression gate. The DI-seam design below was never needed; Phase 0's
+hypothesis ("_auto_refresh is the causer") was correct. Kept for
+design history.
 
 **Source:** Section M file-picker rollout (2026-05-04 → 2026-05-05).
 

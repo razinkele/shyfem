@@ -14,6 +14,7 @@ A modern Python Shiny web application providing a unified interface for the SHYF
 - **Job Comparison** - Side-by-side runtime stats, parameter diffs, overlaid time series
 - **Parameter Sweeps** - Ensemble runs with grid/zip sweep modes, result overlay with min/max envelope
 - **Report Generation** - Self-contained HTML reports with embedded Plotly charts, simulation parameters, grid info, and runtime statistics
+- **In-App Docs & Feedback** - Topbar buttons (left of the theme toggle) open About (README), Changelog, and a feedback form (bug reports / suggestions stored server-side, with an anonymous rate-limited `POST /api/feedback` for external submission)
 
 ## Installation
 

@@ -18,6 +18,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [shyfem-ui 0.4.0] — 2026-07-22
+
+Session-freeze fix and a leaner docs/feedback entry point. Tagged `shyfem-ui-v0.4.0`.
+
+### Fixed
+
+- **Reactive flush loop froze whole sessions** — `run.py`'s `_auto_refresh` poll read `active_jobs_data` (and `selected_job` via the log refresher) and re-wrote them every cycle with freshly-built lists; `reactive.Value.set()` compares by identity, so the effect self-invalidated into an infinite flush loop (~7k iterations/s, worker pinned at 100 % CPU) that starved the first flush — every output in the session stayed blank (most visibly About/Changelog). Writes are now skipped when content is unchanged (dataclass equality, previous values read under `reactive.isolate()`), and the `_refresh_tick` bump isolates its own read (`pages/run.py`, PR #49)
+- **"All jobs" toggle read no longer aborts the poll** — the switch renders only once the Run page is shown, so its `SilentException` is treated as the fail-closed default (own jobs) instead of failing the whole refresh cycle (`pages/run.py`)
+- **MPI toggle actually reveals the process-count input** — the checkbox and the `input.mpi_enabled()` read lived in the same `@render.ui`, so toggling re-created the checkbox and reset its state; the count input now lives in its own `mpi_np_control` output (`pages/run.py`)
+
+### Changed
+
+- **About / Changelog / Feedback moved to the top bar** — the About sidebar page (tabbed README/Changelog/Feedback) is replaced by three icon buttons left of the theme toggle that open modals; modal content is plain `ui.markdown` built at show-time (`pages/about.py`, `app.py`)
+
+### Testing
+
+- **Browser tests exercise the real `run_server`** — the `_stub_run_server` workaround in `tests/_test_app.py` (which existed only to mask the flush-loop deadlock, tracked as followup Section M.1) is removed, making the whole E2E suite the regression gate; new `test_playwright_topbar_about.py` covers the three topbar modals including an end-to-end feedback submission
+
+Also since 0.3.0 (unreleased in-between work): the 2026-07-18 deep-review remediation batches (PRs #40–#47) landed UI security and robustness fixes — user-owned jobs that survive WebSocket disconnects with orphan reconciliation and per-user listings, path-confinement and username-slug hardening, CSRF-safe logout, proxy-validated `X-Forwarded-For`, feedback content/email validation with retention pruning, restart-continuation (`itrst=-1`) correctness, and job outputs persisted across restarts.
+
+---
+
 ## [shyfem-ui 0.3.0] — 2026-06-14
 
 In-app documentation and a feedback channel. Tagged `shyfem-ui-v0.3.0`.
