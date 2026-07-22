@@ -464,10 +464,13 @@
 ! |idtmet|, |itmmet|	Time step and start time for writing meteo
 !			variables read from file. 
 ! |imetout|		This parameters indicates what meteo parameters
-!			should be output. For wind set it to 1, for heat 10,
-!			for rain 100, and for ice 1000. 
-!			Combinations are possible, e.g., 11 writes wind 
-!			and heat data, and 1111 writes all available data
+!			should be output. For wind set it to 1,
+!			for heat data 10, for rain 100, for ice 1000,
+!			and for computed heat fluxes (sensible, latent,
+!			long wave, evaporation) 10000. The heat fluxes
+!			need an active heat module (|iheat| $>$ 0).
+!			Combinations are possible, e.g., 11 writes wind
+!			and heat data, and 11111 writes all available data
 !			to the file. (Default 0)
 
 	call addpar('idtmet',0.)

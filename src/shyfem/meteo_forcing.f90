@@ -539,7 +539,10 @@
 !------------------------------------------------------------------
 
 	call output_debug_data
-	call output_meteo_data
+	!output_meteo_data is now called from the main time loop (via
+	!output_meteo_and_heat_flux_data) AFTER the heat fluxes of this
+	!step have been computed - calling it here would write the
+	!previous step's qsensv/qlatv/qlongv
 
 	if( bextra_exchange ) then
 	  call shympi_exchange_2d_node(tauxnv)
@@ -600,11 +603,11 @@
 	integer			:: id
 	integer			:: nvar_act
 	integer			:: ierr
-	integer, save		:: imetout
+	integer, save		:: imetout,iheat
 	double precision 	:: dtime
 	integer, save		:: nvar = 0
 	logical, save 		:: b2d = .true.
-	logical, save		:: bwind,bheat,brain,bice
+	logical, save		:: bwind,bheat,brain,bice,bhflx
         real, parameter		:: zconv = 86400. / 1000. !convert m/s to mm/day
 	real, allocatable	:: maux(:)
 
@@ -619,20 +622,26 @@
 	  if( da_met(4) < 0 ) return
 
 	  imetout = getpar('imetout')	!what type of meteo output
+	  iheat = getpar('iheat')	!heat flux parameterization
+					!(upstream read imetout here by
+					!mistake, neutering the guard)
 	  bwind = ( bit10_extract_value(imetout,1) > 0 )
 	  bheat = ( bit10_extract_value(imetout,2) > 0 )
 	  brain = ( bit10_extract_value(imetout,3) > 0 )
 	  bice  = ( bit10_extract_value(imetout,4) > 0 )
+	  bhflx = ( bit10_extract_value(imetout,5) > 0 )
 	  bwind = bwind .and. iff_has_file(idwind)
 	  bheat = bheat .and. iff_has_file(idheat)
 	  brain = brain .and. iff_has_file(idrain)
 	  bice  = bice  .and. iff_has_file(idice)
+	  bhflx = bhflx .and. iheat > 0 .and. iff_has_file(idheat)
 
 	  nvar = 0
 	  if( bwind ) nvar = nvar + 4
 	  if( bheat ) nvar = nvar + 4
 	  if( brain ) nvar = nvar + 1
 	  if( bice  ) nvar = nvar + 1
+	  if( bhflx ) nvar = nvar + 4
 	  if( nvar == 0 ) da_met(4) = -1
 	  if( da_met(4) < 0 ) return
 
@@ -670,6 +679,12 @@
 	end if
 	if( bice ) then
           call shy_write_scalar_record2d(id,dtime,85,metice)
+	end if
+	if( bhflx ) then
+          call shy_write_scalar_record2d(id,dtime,47,qsensv)
+          call shy_write_scalar_record2d(id,dtime,48,qlatv)
+          call shy_write_scalar_record2d(id,dtime,49,qlongv)
+          call shy_write_scalar_record2d(id,dtime,27,evapv)
 	end if
 
 	call shy_get_nvar_act(id,nvar_act)
