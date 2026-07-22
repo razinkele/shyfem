@@ -306,9 +306,7 @@ def _rate_field(input_id: str, label: str, raw: object) -> ui.Tag:
     """
     val = _scalar_or_none(raw)
     if val is None:
-        return ui.help_text(
-            f"{label}: per-area rates set in the STR — edit the file directly."
-        )
+        return ui.help_text(f"{label}: per-area rates set in the STR — edit the file directly.")
     return ui.input_numeric(input_id, label, value=val, min=0, step=0.01)
 
 
@@ -2072,14 +2070,16 @@ def physics_server(
                 ui.column(
                     4,
                     _rate_field(
-                        "beachrate", "Beaching rate (mode 3)",
+                        "beachrate",
+                        "Beaching rate (mode 3)",
                         params.get("beachrate", 0),
                     ),
                 ),
                 ui.column(
                     4,
                     _rate_field(
-                        "burryrate", "Burial rate (mode 3)",
+                        "burryrate",
+                        "Burial rate (mode 3)",
                         params.get("burryrate", 0),
                     ),
                 ),
