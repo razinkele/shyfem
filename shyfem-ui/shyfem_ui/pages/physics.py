@@ -279,6 +279,30 @@ def build_panel_params(str_file: StrFile, panel_id: str) -> dict:
     return result
 
 
+_IMETOUT_FIELDS = ("wind", "heat", "rain", "ice", "hflx")  # imetout positions 1..5
+
+
+def _imetout_decode(value: object) -> dict[str, bool]:
+    """Split the imetout integer into its 5 meteo-output stream flags.
+
+    Each decimal digit (position 1..5 = wind/heat/rain/ice/heat-fluxes) is
+    "on" when > 0 (matching the core's bit10_extract_value > 0 test). A
+    non-integer value is treated as 0 (all off) rather than raising.
+    """
+    try:
+        v = int(value)
+    except (TypeError, ValueError):
+        v = 0
+    return {f: (v // 10**i) % 10 > 0 for i, f in enumerate(_IMETOUT_FIELDS)}
+
+
+def _imetout_encode(flags: dict[str, bool]) -> int:
+    """Compose the 5 stream flags back into the imetout integer (on -> 1)."""
+    return sum(
+        int(bool(flags.get(f))) * 10**i for i, f in enumerate(_IMETOUT_FIELDS)
+    )
+
+
 def _scalar_or_none(raw: object) -> float | None:
     """Return *raw* as a float if it is a single clean scalar, else None.
 
@@ -449,6 +473,14 @@ def physics_server(
         # --- handle remapped input IDs (duplicates across panels) ---
         for input_id, (section, param) in _INPUT_ID_REMAP.items():
             _read_input_and_set(sf, input_id, section, param)
+
+        # --- composite param: imetout <- 5 meteo-output checkboxes ---
+        try:
+            flags = {f: bool(input[f"imetout_{f}"]()) for f in _IMETOUT_FIELDS}
+        except Exception:
+            flags = None  # heat panel not rendered -> leave imetout untouched
+        if flags is not None:
+            sf.set_param("para", "imetout", _imetout_encode(flags))
 
     def _read_input_and_set(
         sf: StrFile,
@@ -1116,7 +1148,40 @@ def physics_server(
     @render.ui
     def panel_heat():
         params = build_panel_params(str_data.get(), "heat")
+        _met = _imetout_decode(params.get("imetout", 0))
         return ui.div(
+            ui.row(
+                ui.column(
+                    12,
+                    ui.tags.label(
+                        "Meteo output (imetout)", class_="fw-semibold"
+                    ),
+                ),
+            ),
+            ui.row(
+                ui.column(
+                    2,
+                    ui.input_checkbox("imetout_wind", "Wind", value=_met["wind"]),
+                ),
+                ui.column(
+                    2,
+                    ui.input_checkbox("imetout_heat", "Heat", value=_met["heat"]),
+                ),
+                ui.column(
+                    2,
+                    ui.input_checkbox("imetout_rain", "Rain", value=_met["rain"]),
+                ),
+                ui.column(
+                    2,
+                    ui.input_checkbox("imetout_ice", "Ice", value=_met["ice"]),
+                ),
+                ui.column(
+                    4,
+                    ui.input_checkbox(
+                        "imetout_hflx", "Heat fluxes", value=_met["hflx"]
+                    ),
+                ),
+            ),
             ui.row(
                 ui.column(
                     4,
