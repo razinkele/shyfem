@@ -79,10 +79,11 @@
 	integer, save :: idfrst = 749652	!id for restart file
 
 	! version history (fork): 17 = last common version with upstream;
-	! 18 SKIPPED - the number is ambiguous: upstream shyfemcm uses 18
-	! for old-time-level hydro state (iwetv,zov,zeov,utlov,vtlov,wlov)
-	! while this fork briefly wrote 18 for the ssedi bed-mass block
-	! (N25, 2026-07-21..22 only); 19 = ssedi bed-mass block (this fork)
+	! 18 = READ-ONLY, upstream shyfemcm layout (old-time-level hydro:
+	! iwetv, zov, zeov) - never written by this fork (the fork briefly
+	! wrote 18 with the ssedi layout 2026-07-21/22 only; such files
+	! fail to read and must be regenerated); 19 = ssedi bed-mass block
+	! (this fork, what we write)
 	integer, save :: nvmax = 19		!last version of file
 	integer, parameter :: nidmax = 10
 

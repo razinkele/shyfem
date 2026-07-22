@@ -905,6 +905,20 @@
 	  write(iuout,*) rval3d2(1:nlv*nel)
 	end if
 
+	if( nvers .eq. 18 ) then	!upstream shyfemcm old-time levels
+	  read(iunit) ival(1:nel)
+	  read(iunit) rval2d(1:nkn)
+	  read(iunit) rval2d3(1:3*nel)
+	  if( brewrite ) then
+	    write(iuout,*) 'rst: iwetv'
+	    write(iuout,*) ival(1:nel)
+	    write(iuout,*) 'rst: zov'
+	    write(iuout,*) rval2d(1:nkn)
+	    write(iuout,*) 'rst: zeov'
+	    write(iuout,*) rval2d3(1:3*nel)
+	  end if
+	end if
+
 	if( nvers .ge. 4 ) then
 	  id = id_depth_rst
 	  call rst_add_flag(id,iflag)
@@ -947,6 +961,7 @@
 	if( nvers .ge. 6 ) then
 	  id = id_conz_rst
 	  read(iunit) iconz
+	  iconz_rst = iconz	!export tracer count (rst2shy needs it)
 	  if( iconz .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_conz(iunit,iconz)
@@ -1062,22 +1077,10 @@
           call shympi_abort_internal( &
      &		'restart: unsupported restart file version')
         end if
-        if( nvers .eq. 18 ) then
-          ! version 18 is ambiguous and refused: upstream shyfemcm uses
-          ! 18 for old-time-level hydro state, while this fork briefly
-          ! (2026-07-21..22) wrote 18 for the ssedi bed-mass block that
-          ! is now version 19 - the two layouts would be mis-parsed as
-          ! garbage, not cleanly rejected. Regenerate fork-written v18
-          ! files by rerunning the simulation that produced them.
-          write(6,*) 'error reading restart file...'
-          write(6,*) 'nvers: ',nvers
-          write(6,*) 'restart version 18 is ambiguous ' // &
-     &		'(upstream hydro-levels vs fork ssedi layout)'
-          write(6,*) 'regenerate the restart file with this version'
-          flush(6)
-          call shympi_abort_internal( &
-     &		'restart: ambiguous restart file version 18')
-        end if
+        ! version 18 is read as UPSTREAM shyfemcm layout (old-time-level
+        ! hydro state: iwetv, zov, zeov). The short-lived fork v18 (ssedi
+        ! layout, written only 2026-07-21/22) is NOT readable and fails
+        ! with a record-read error - regenerate such files (version 19).
 
         ierr = 0
 
@@ -1149,6 +1152,30 @@
             call rst_check_read(ios,'utlnv (skip)')
             read(iunit,iostat=ios)
             call rst_check_read(ios,'vtlnv (skip)')
+	  end if
+
+	  if( nvers .eq. 18 ) then
+	    ! upstream shyfemcm v18: old-time-level hydro state (iwetv,
+	    ! zov, zeov; utlov/vtlov are commented out upstream and NOT
+	    ! in the file). Records must be consumed to keep the stream
+	    ! in sync; of the values only iwetv survives - zov/zeov are
+	    ! re-derived from znv/zenv by init_old_vars right after the
+	    ! restart (exact old-time-level fidelity not implemented).
+	    ! NOTE: nvers=18 files written by this fork on 2026-07-21/22
+	    ! carry the ssedi layout instead and cannot be read -
+	    ! regenerate them (they now write as version 19).
+	    if( rst_want_restart(id) ) then
+	      call restart_read_value(iunit,be,iwetv)
+	      call restart_read_value(iunit,bn,zov)
+	      call restart_read_value(iunit,be,3,zeov)
+	    else
+	      read(iunit,iostat=ios)
+	      call rst_check_read(ios,'iwetv (skip)')
+	      read(iunit,iostat=ios)
+	      call rst_check_read(ios,'zov (skip)')
+	      read(iunit,iostat=ios)
+	      call rst_check_read(ios,'zeov (skip)')
+	    end if
 	  end if
 
           if( nvers .ge. 4 ) then
@@ -1344,12 +1371,19 @@
 	integer nkn,nel,nlv
 	integer ierr
 	integer ios
+	integer nlvaux
 
 	logical, parameter :: be = .true.
 	logical, parameter :: bn = .false.
 
+	! in the model nlv_global is already sized by shympi; standalone
+	! tools (rstinf, rst2shy) read the file before any basin/shympi
+	! sizing, so fall back to the file header's nlv there
+	nlvaux = nlv_global
+	if( nlvaux <= 0 ) nlvaux = nlv
+
 	if( .not. allocated(hlvrst) ) then
-	  allocate(hlvrst(nlv_global),stat=ierr)
+	  allocate(hlvrst(nlvaux),stat=ierr)
 	  if( ierr /= 0 ) then
 	    write(6,*) 'rst_read_vertical: allocation failed (hlvrst)'
 	    call shympi_abort_internal('rst_read_vertical: allocation failed')
