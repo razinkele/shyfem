@@ -360,7 +360,7 @@
 !---------------------------------------------------------------
 !---------------------------------------------------------------
 
-	character*6 section,extra,last
+	character*10 section,extra,last	!10 to fit 'assimil' (was 6)
 	logical bdebug
 	integer nsc,num,iline
 !	integer nrdsec,nrdveci,nrdvecr
@@ -424,6 +424,8 @@
 			call nrdins(section)
 		else if(section.eq.'bound') then
 			call rdbnds(num)
+		else if(section.eq.'assimil') then
+			call read_assimil(num)
 		else if(section.eq.'float') then
 			!call rdfloa(nfldin)
 			call section_deleted(section,'use section $lagrg')
@@ -875,6 +877,7 @@
 	    if( ic > 1 ) then
 	      if( sections(i) == 'bound' ) cycle
 	      if( sections(i) == 'close' ) cycle
+	      if( sections(i) == 'assimil' ) cycle	!numbered per variable
 	      write(6,*) 'section ',trim(sections(i)),' - count = ',ic
 	      ierr = 1
 	    end if

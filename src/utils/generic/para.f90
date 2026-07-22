@@ -129,6 +129,12 @@
      &				,para_add_array_value_i
         END INTERFACE
 
+        INTERFACE para_set_array_value
+        MODULE PROCEDURE	 para_set_array_value_d    &
+     &				,para_set_array_value_r             &
+     &				,para_set_array_value_i
+        END INTERFACE
+
 !==================================================================
 	contains
 !==================================================================
@@ -813,6 +819,63 @@
 	end if
 
 	end subroutine para_get_array_value_d
+
+!******************************************************************
+
+	subroutine para_set_array_value_i(name,ndim,values)
+
+	character*(*) name
+	integer ndim
+	integer values(ndim)
+
+	double precision dvalues(ndim)
+
+	call para_set_array_value_d(name,ndim,dvalues)
+	values = nint(dvalues)
+
+	end subroutine para_set_array_value_i
+
+!******************************************************************
+
+	subroutine para_set_array_value_r(name,ndim,values)
+
+	character*(*) name
+	integer ndim
+	real values(ndim)
+
+	double precision dvalues(ndim)
+
+	call para_set_array_value_d(name,ndim,dvalues)
+	values = dvalues
+
+	end subroutine para_set_array_value_r
+
+!******************************************************************
+
+	subroutine para_set_array_value_d(name,ndim,values)
+
+! returns ndim values for parameter name: a single given value is
+! broadcast to all ndim entries, ndim given values are copied through
+
+	character*(*) name
+	integer ndim
+	double precision values(ndim)
+
+	integer n
+
+	call para_get_array_size(name,n)
+
+	if( n /= 1 .and. n /= ndim ) then
+	  write(6,*) 'size of array is not compatible: ',n
+	  write(6,*) 'name = ',trim(name)
+	  write(6,*) 'values given must be 1 or ',ndim
+	  stop 'error stop para_set_array_value: incompatible size'
+	end if
+
+	call para_get_array_value_d(name,ndim,n,values)
+	if( n == 1 ) values(:) = values(1)
+
+	end subroutine para_set_array_value_d
 
 !******************************************************************
 
