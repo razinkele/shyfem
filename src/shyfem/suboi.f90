@@ -432,6 +432,7 @@
 !******************************************************************
 
 	subroutine opt_intp_test
+	implicit none
 	call opt_intp_test_1_obs
 	call opt_intp_test_sin_cos
 	end
