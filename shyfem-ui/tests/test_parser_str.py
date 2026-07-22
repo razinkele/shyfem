@@ -426,6 +426,22 @@ class TestCommonParams:
         assert isinstance(desc, str)
         assert len(desc) > 0
 
+    def test_common_params_has_beaching(self):
+        """Eulerian beaching params are registered in $para."""
+        for p in ("ibeach", "beachrate", "burryrate"):
+            assert p in COMMON_PARAMS["para"], f"Missing {p} in $para"
+        assert COMMON_PARAMS["para"]["ibeach"][1] == "int"
+        assert COMMON_PARAMS["para"]["beachrate"][1] == "float"
+        assert COMMON_PARAMS["para"]["burryrate"][1] == "float"
+
+    def test_parse_beaching_params(self):
+        """A $para block with ibeach=3 + rates parses to int/float."""
+        content = "$para\n    ibeach = 3\n    beachrate = 0.3\n    burryrate = 0.1\n$end\n"
+        para = StrParser.parse(content).sections["para"].parameters
+        assert para["ibeach"] == 3 and isinstance(para["ibeach"], int)
+        assert para["beachrate"] == pytest.approx(0.3)
+        assert para["burryrate"] == pytest.approx(0.1)
+
     def test_common_params_has_restart_params(self):
         """Restart and offline params are defined in $para."""
         for param in ("itrst", "itmrst", "ityrst", "idtoff", "itmoff"):

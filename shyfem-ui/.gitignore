@@ -11,6 +11,8 @@ venv/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # Testing/IDE
 .pytest_cache/

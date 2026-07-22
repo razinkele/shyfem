@@ -36,6 +36,74 @@ class TestPhysicsPanels:
         params = PHYSICS_PANELS["ecology"]["params"]
         assert "ibio" in params
 
+    def test_tracers_panel_has_beaching(self):
+        params = PHYSICS_PANELS["tracers"]["params"]
+        for p in ("ibeach", "beachrate", "burryrate"):
+            assert p in params, f"Missing {p} in tracers panel"
+            assert params[p] == "para"
+
+    def test_tracers_beaching_roundtrip(self):
+        content = (
+            "$para\n    iconz = 2\n    ibeach = 3\n"
+            "    beachrate = 0.3\n    burryrate = 0.1\n$end\n"
+        )
+        parsed = StrParser.parse(content)
+        result = build_panel_params(parsed, "tracers")
+        assert result["ibeach"] == 3
+        assert result["beachrate"] == pytest.approx(0.3)
+        assert result["burryrate"] == pytest.approx(0.1)
+
+    def test_panel_tracers_renders_beaching_inputs(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert '"ibeach"' in src, "ibeach input not rendered"
+        assert '"beachrate"' in src, "beachrate input not rendered"
+        assert '"burryrate"' in src, "burryrate input not rendered"
+
+    def test_scalar_or_none_distinguishes_scalar_from_array(self):
+        from shyfem_ui.pages.physics import _scalar_or_none
+
+        assert _scalar_or_none(0.3) == pytest.approx(0.3)
+        assert _scalar_or_none("0.5") == pytest.approx(0.5)
+        assert _scalar_or_none(0) == 0.0
+        # array truncated by the parser to "0.3," -> not a clean scalar
+        assert _scalar_or_none("0.3,") is None
+        assert _scalar_or_none(None) is None
+        assert _scalar_or_none("abc") is None
+
+    def test_rate_field_scalar_renders_editable_input(self):
+        from shyfem_ui.pages.physics import _rate_field
+
+        html = str(_rate_field("beachrate", "Beaching rate", 0.3))
+        assert 'id="beachrate"' in html, "scalar value must render editable input"
+
+    def test_rate_field_array_renders_note_not_input(self):
+        from shyfem_ui.pages.physics import _rate_field
+
+        # parser-truncated per-area array value
+        html = str(_rate_field("beachrate", "Beaching rate", "0.3,"))
+        assert 'id="beachrate"' not in html, "array must NOT render an editable input"
+        assert "edit the file directly" in html
+
+    def test_array_beachrate_survives_save_roundtrip(self):
+        """Loading + re-serializing an STR with per-area beaching rates must
+        preserve the full array (no flatten-to-scalar corruption)."""
+        content = (
+            "$para\n    iconz = 2\n    ibeach = 3\n"
+            "    beachrate = 0.3, 0.25, 0.1\n    burryrate = 0.1, 0.05, 0.02\n$end\n"
+        )
+        parsed = StrParser.parse(content)
+        # build_panel_params must not raise on the array values
+        result = build_panel_params(parsed, "tracers")
+        assert result["ibeach"] == 3
+        # untouched -> generate preserves the raw array lines verbatim
+        generated = StrParser.generate(parsed)
+        assert "0.3, 0.25, 0.1" in generated
+        assert "0.1, 0.05, 0.02" in generated
+
     def test_lagrangian_panel_has_section(self):
         panel = PHYSICS_PANELS["lagrangian"]
         assert panel.get("section") == "lagrg" or "ilagr" in panel["params"]
