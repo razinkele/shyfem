@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Tracer beaching/burial algorithm** — Ported from the shyfemcm community model (pnrr branch): nodes on material (closed) boundaries lose a fraction of surface-layer tracer per time step into a per-node beach store, and nodes lose a fraction of bottom-layer tracer into a burial store, with rates looked up per element area code from presets; both stores are written as 2D scalar files (`beach`, `burry`) at the conz output frequency and reset per window. Activated by the new STR parameter `ibeach` (1 = Curonian lagoon preset, 2 = Danube delta preset; needs `iconz` ≥ 2) instead of upstream's hardcoded basin sniffing; the port also fixes upstream's out-of-bounds preset writes on grids without the expected area codes and a latent MPI deadlock in the debug path, and verifies serial ≡ MPI bit-identical output (`beaching.f90`, `def_para.f90`, `shyfem_subs.f90`, `geom.f90`, test case `mm_hyd_beach.str`, PR #51)
+
 ### Changed
 
 - **Topbar About/Changelog split per package** — The About and Changelog topbar buttons are now dropdowns with separate SHYFEM (core) and SHYFEM UI entries: About shows the respective README (repo root vs `shyfem-ui/`) with the matching version in the title (core from `VERSION`, UI from package metadata), and Changelog shows only that package's sections of the shared CHANGELOG (`pages/about.py`, `changelog.py` — `filter_changelog`, `core_version`, allowlisted `read_repo_markdown`)
