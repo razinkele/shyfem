@@ -608,6 +608,25 @@ $end
         # guarantee.
         assert out == content
 
+    def test_multi_assign_line_overlay_targets_correct_param_by_span(self):
+        """A first-occurrence substring replace mis-targets a param whose
+        name is a suffix of an earlier key on the same multi-assign line
+        (``vcorlength`` contains ``corlength``): modifying ``corlength``
+        must not clobber ``vcorlength``'s value."""
+        content = (
+            "$assimil1\n"
+            "        nobs = 1\n"
+            "        ivar = 12\n"
+            "        vcorlength = 2000.  corlength = 2000.\n"
+            "$end\n"
+        )
+        parsed = StrParser.parse(content)
+        parsed.set_param("assimil1", "corlength", 999.0)
+        out = StrParser.generate(parsed)
+        assert "vcorlength = 2000." in out
+        assert "corlength = 999.0" in out
+        assert "vcorlength = 999.0" not in out
+
     def test_multi_section_str_with_new_sections(self):
         """Full STR with multiple new sections parses correctly."""
         content = """$para

@@ -300,6 +300,43 @@ class TestPhysicsPanels:
         # $assimil1 created alongside it
         assert "assimil1" not in sf.get_section_names()
 
+    def test_assimil_apply_file_field_rejects_quotes_and_newlines(self):
+        """A file-field value carrying a quote or newline could smuggle
+        STR structure (fake $end/$section) or emit an unbalanced quote;
+        such values must be skipped (keep-old-value), not written."""
+        from shyfem_ui.pages.physics import _assimil_apply
+        from shyfem_ui.services.parser_str import StrFile, StrParser
+
+        sf = StrFile()
+        name = _assimil_apply(
+            sf,
+            12,
+            1,
+            True,
+            {
+                "nobs": 1,
+                "filecoords": "evil'\n$end\n$para",
+                "fileobs": "ok.dat",
+            },
+        )
+        assert sf.get_param(name, "filecoords") is None
+        assert sf.get_param(name, "fileobs") == "'ok.dat'"
+        generated = StrParser.generate(sf)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_section_names() == [name]
+
+    def test_assimil_apply_nonfinite_numeric_skipped(self):
+        """inf/nan must not crash the coercion (OverflowError on
+        int(float('inf'))) and must not be written into the STR."""
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        name = _assimil_apply(sf, 12, 1, True, {"nobs": "inf", "tau": "nan", "corlength": 2000.0})
+        assert name == "assimil7"
+        assert sf.get_param("assimil7", "nobs") == 2  # unchanged, not written
+        assert sf.get_param("assimil7", "tau") == 1800.0  # unchanged, not written
+        assert sf.get_param("assimil7", "corlength") == 2000.0
+
     def test_purge_nduge(self):
         from shyfem_ui.pages.physics import _purge_nduge
         from shyfem_ui.services.parser_str import StrParser
@@ -419,7 +456,9 @@ class TestPhysicsPanels:
         assert "_purge_nduge(" in collect
         assert 'input[f"assim_{prefix}_on"]' in collect
         assert 'input[f"assim_{prefix}_{param}"]' in collect
-        assert '(("t", 12, 1), ("s", 11, 2))' in collect  # T=ivar 12, S=ivar 11 — order is load-bearing
+        assert (
+            '(("t", 12, 1), ("s", 11, 2))' in collect
+        )  # T=ivar 12, S=ivar 11 — order is load-bearing
 
 
 class TestTimingPanel:

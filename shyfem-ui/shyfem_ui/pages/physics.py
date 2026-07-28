@@ -6,6 +6,7 @@ STR files.
 """
 
 import logging
+import math
 import re
 from pathlib import Path
 
@@ -427,10 +428,17 @@ def _assimil_apply(sf: StrFile, ivar: int, preferred: int, on: bool, values: dic
     Disabled: set nobs = 0 only (the core ignores and logs such sections;
     the stored tuning survives for re-enabling). Enabled: write every
     field present in *values*; a missing field (its input was never
-    created — the per-station-array case) keeps its raw STR line. File
-    fields are stored pre-quoted because _format_value leaves bare
-    dash-less filenames unquoted, which the Fortran namelist reader
-    rejects for character parameters.
+    created — the per-station-array case) keeps its raw STR line.
+    Non-finite numerics (inf/nan) are skipped (keep-old-value), since
+    int(float("inf")) raises OverflowError and neither belongs in a STR
+    file. File fields are stored pre-quoted because _format_value leaves
+    bare dash-less filenames unquoted, which the Fortran namelist reader
+    rejects for character parameters; a value whose contents (after
+    stripping one optional surrounding quote pair -- the round-trip shape
+    _assimil_block re-renders into the input from a prior save) still
+    contain a quote or any newline/carriage-return is skipped
+    (keep-old-value) instead, since it could either smuggle STR structure
+    (a fake $end/$section) or emit an unbalanced quote.
     """
     name = _assimil_find(sf, ivar)
     if not on:
@@ -447,16 +455,23 @@ def _assimil_apply(sf: StrFile, ivar: int, preferred: int, on: bool, values: dic
             num = (
                 int(float(values[param])) if param in _ASSIMIL_INT_FIELDS else float(values[param])
             )
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(num):
             continue
         sf.set_param(name, param, num)
     for param in _ASSIMIL_FILE_FIELDS:
         raw = str(values.get(param, "") or "").strip()
         if not raw:
             continue
-        if not (raw.startswith("'") and raw.endswith("'")):
-            raw = f"'{raw}'"
-        sf.set_param(name, param, raw)
+        # A prior save round-trips this field back into the input already
+        # single-quoted (see docstring) -- strip that one surrounding pair
+        # before scanning, so re-submitting an unedited field doesn't get
+        # treated as an injection attempt and silently dropped.
+        inner = raw[1:-1] if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'") else raw
+        if any(ch in inner for ch in ("'", '"', "\n", "\r")):
+            continue
+        sf.set_param(name, param, f"'{inner}'")
     return name
 
 
