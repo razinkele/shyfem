@@ -473,6 +473,110 @@ def _purge_nduge(sf: StrFile) -> bool:
     return True
 
 
+def _assimil_num_field(
+    prefix: str, param: str, label: str, raw: object, is_array: bool = False, **kwargs
+) -> ui.Tag:
+    """Numeric column for one OI parameter.
+
+    Editable when the stored value is a clean scalar or absent (absent
+    falls back to _ASSIMIL_DEFAULTS); a per-station array renders as a
+    static note with NO input control, so the save step's read fails and
+    the raw STR line survives verbatim (slice-1 pattern). Arrays arrive
+    two ways: comma forms parse to a non-scalar string (caught here via
+    _scalar_or_none), space forms parse to a clean first token and are
+    flagged by the caller via is_array (raw-line detection).
+    """
+    val = _scalar_or_none(raw)
+    if is_array or (raw is not None and val is None):
+        return ui.help_text(f"{label}: per-station values set in the STR — edit the file directly.")
+    if val is None:
+        val = _ASSIMIL_DEFAULTS[param]
+    if param in _ASSIMIL_INT_FIELDS:
+        val = int(val)
+    return ui.input_numeric(f"assim_{prefix}_{param}", label, value=val, **kwargs)
+
+
+def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
+    """One variable block (Temperature or Salinity) of the panel.
+
+    All fields always render; the checkbox gates only what the save step
+    writes (ui.panel_conditional is avoided: its JS condition strings
+    are not namespaced inside Shiny modules).
+    """
+    name = _assimil_find(sf, ivar)
+    enabled = name is not None and _assimil_nobs(sf, name) > 0
+
+    def raw(param: str) -> object:
+        return sf.get_param(name, param) if name else None
+
+    def num(param: str, label: str, **kwargs) -> ui.Tag:
+        return _assimil_num_field(
+            prefix,
+            param,
+            label,
+            raw(param),
+            is_array=_assimil_is_array(sf, name, param),
+            **kwargs,
+        )
+
+    try:
+        mode_sel = str(int(raw("mode")))
+    except (TypeError, ValueError):
+        mode_sel = "0"
+    if mode_sel not in ("0", "1"):
+        mode_sel = "0"
+
+    return ui.div(
+        ui.h6(f"{title} (ivar {ivar})", class_="text-muted mt-3"),
+        ui.input_checkbox(f"assim_{prefix}_on", f"Assimilate {title.lower()}", value=enabled),
+        ui.row(
+            ui.column(4, num("nobs", "Observation stations", min=1, step=1)),
+            ui.column(
+                4,
+                ui.input_select(
+                    f"assim_{prefix}_mode",
+                    "Application mode",
+                    choices={"0": "0 - Nudging", "1": "1 - Direct insertion"},
+                    selected=mode_sel,
+                ),
+            ),
+            ui.column(4, num("tau", "Timescale tau (s)", min=0, step=60.0)),
+        ),
+        ui.row(
+            ui.column(4, num("corlength", "Correlation length (m)", min=1.0, step=100.0)),
+            ui.column(
+                4, num("maxlength", "Max influence radius (m, 0 = no cutoff)", min=0, step=100.0)
+            ),
+            ui.column(4, num("sigobs", "Observation error sigma", min=1e-6, step=0.05)),
+        ),
+        ui.row(
+            ui.column(4, num("sigback", "Background error sigma", min=1e-6, step=0.05)),
+            ui.column(4, num("layer", "Observation layer (0 = uniform column)", min=0, step=1)),
+            ui.column(
+                4, num("vcorlength", "Vertical corr. length (m, 0 = uniform)", min=0, step=0.5)
+            ),
+        ),
+        ui.row(
+            ui.column(
+                6,
+                ui.input_text(
+                    f"assim_{prefix}_filecoords",
+                    "Station coordinates file",
+                    value=str(raw("filecoords") or ""),
+                ),
+            ),
+            ui.column(
+                6,
+                ui.input_text(
+                    f"assim_{prefix}_fileobs",
+                    "Observations file",
+                    value=str(raw("fileobs") or ""),
+                ),
+            ),
+        ),
+    )
+
+
 @module.ui
 def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
@@ -585,7 +689,6 @@ def physics_server(
     # Map of input IDs that differ from the STR param name.
     # key = input_id used in the UI, value = (section, param_name).
     _INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
-        "ibarcl_assim": ("para", "ibarcl"),
         "idtcon_out": ("para", "idtcon"),
         "icon_av_out": ("para", "icon_av"),
     }
@@ -736,7 +839,7 @@ def physics_server(
             ("Lagrangian", "lagrg" in sf.sections, None),
             ("Ice", sf.get_param("para", "icemod", 0) == 1, None),
             ("Waves", (sf.get_param("para", "iwave", 0) or 0) > 0, None),
-            ("Nudging", "nduge" in sf.sections, None),
+            ("Assimilation", any(_ASSIMIL_NAME.match(n) for n in sf.get_section_names()), None),
             ("Tracers", (sf.get_param("para", "iconz", 0) or 0) > 0, None),
             ("Wind", (sf.get_param("para", "iwtype", 0) or 0) > 1, None),
             ("WRT", "wrt" in sf.sections, None),
@@ -1948,75 +2051,25 @@ def physics_server(
 
     @render.ui
     def panel_assimilation():
-        params = build_panel_params(str_data.get(), "assimilation")
-        return ui.div(
-            ui.row(
-                ui.column(
-                    4,
-                    ui.input_select(
-                        "ibarcl_assim",
-                        "Baroclinic mode",
-                        choices={
-                            "0": "0 - Off",
-                            "4": "4 - Nudging",
-                            "5": "5 - Assimilation",
-                        },
-                        selected=str(params.get("ibarcl", 0) or 0),
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "nvars",
-                        "Observation stations",
-                        value=int(params.get("nvars", 0) or 0),
-                        min=0,
-                        max=50,
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "tramp",
-                        "Ramp-up time (s)",
-                        value=float(params.get("tramp", 0) or 0),
-                        min=0,
-                        step=1.0,
-                    ),
-                ),
+        sf = str_data.get()
+        adopted = {_assimil_find(sf, 12), _assimil_find(sf, 11)}
+        others = [n for n in sf.get_section_names() if _ASSIMIL_NAME.match(n) and n not in adopted]
+        children = [
+            ui.help_text(
+                "Optimal-interpolation assimilation runs in prognostic "
+                "baroclinic mode (ibarcl = 3, set in the Baroclinic panel)."
             ),
-            ui.row(
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "ttau",
-                        "Relaxation time (s)",
-                        value=float(params.get("ttau", 0) or 0),
-                        min=0,
-                        step=1.0,
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "sigma",
-                        "Spatial influence radius (m)",
-                        value=float(params.get("sigma", 0) or 0),
-                        min=0,
-                        step=100.0,
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_select(
-                        "bmulti",
-                        "Multi-station nudging",
-                        choices={"0": "0 - Off", "1": "1 - On"},
-                        selected=str(params.get("bmulti", 1) or 0),
-                    ),
-                ),
-            ),
-        )
+        ]
+        if others:
+            children.append(
+                ui.help_text(
+                    "Other $assimil sections present (edited in the STR): "
+                    + ", ".join(f"${n}" for n in others)
+                )
+            )
+        children.append(_assimil_block(sf, "Temperature", "t", 12))
+        children.append(_assimil_block(sf, "Salinity", "s", 11))
+        return ui.div(*children)
 
     @render.ui
     def panel_output():

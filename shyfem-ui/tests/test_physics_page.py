@@ -309,6 +309,102 @@ class TestPhysicsPanels:
         assert "nduge" not in StrParser.generate(sf)
         assert _purge_nduge(sf) is False  # second call: nothing to do
 
+    def test_ibarcl_assim_remap_removed(self):
+        """The baroclinic panel owns ibarcl; a duplicate select here was
+        a last-writer-wins footgun (and offered only the wrong modes)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert "ibarcl_assim" not in src
+
+    def test_panel_assimilation_renders_block_inputs(self):
+        """Behavioral: render both blocks and check the namespaced ids in
+        the HTML (the ids are f-string-built, so source-grepping for
+        literals like "assim_t_on" would never match)."""
+        from shyfem_ui.pages.physics import _assimil_block
+        from shyfem_ui.services.parser_str import StrFile
+
+        html = str(_assimil_block(StrFile(), "Temperature", "t", 12)) + str(
+            _assimil_block(StrFile(), "Salinity", "s", 11)
+        )
+        for input_id in ("assim_t_on", "assim_s_on", "assim_t_nobs", "assim_s_fileobs"):
+            assert input_id in html, f"missing {input_id}"
+
+    def test_assimil_blocks_reflect_stored_values(self):
+        """Spec test 1: an mm_hyd_assim-shaped STR (T + S sections) fills
+        both blocks — checkbox from nobs, numerics and filenames from the
+        adopted section."""
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sf = self._assim_sf(
+            "\n$assimil2\n        nobs = 0\n        ivar = 11\n        tau = 600.\n$end\n"
+        )
+        t_html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "checked" in t_html  # nobs = 2 -> enabled
+        assert 'value="1800.0"' in t_html  # tau from $assimil7
+        assert "mm_assim_coords.dat" in t_html  # filecoords, unquoted on load
+        s_html = str(_assimil_block(sf, "Salinity", "s", 11))
+        assert "checked" not in s_html  # nobs = 0 -> disabled
+        assert 'value="600.0"' in s_html  # stored tuning still shown
+
+    def test_assimil_block_space_separated_array_renders_note(self):
+        """Spec test 4, space form: the parser truncates space-separated
+        per-station values to a clean scalar, so the block must classify
+        the field from its raw line and render the note, not an input."""
+        from shyfem_ui.pages.physics import _assimil_block
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse(
+            "$assimil1\n        nobs = 2\n        ivar = 12\n"
+            "        corlength = 2000. 3000.\n$end\n"
+        )
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html
+        assert "set in the STR" in html
+
+    def test_module_badges_key_assimilation_not_nduge(self):
+        """The sidebar badge must reflect real $assimil sections, not the
+        dead $nduge (which would advertise a guaranteed-fatal STR)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert '"nduge" in sf.sections' not in src
+        assert '("Assimilation",' in src
+
+    def test_assimil_block_reads_strfile_not_registry(self):
+        """Slice-2 lesson: composite params must come from the StrFile
+        (build_panel_params only returns registered params -> always 0)."""
+        import inspect
+
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sig = inspect.signature(_assimil_block)
+        assert list(sig.parameters)[0] == "sf"
+
+    def test_assimil_num_field_array_renders_note_not_input(self):
+        from shyfem_ui.pages.physics import _assimil_num_field
+
+        note = _assimil_num_field("t", "corlength", "Correlation length (m)", "2000.,")
+        assert "assim_t_corlength" not in str(note)
+        assert "set in the STR" in str(note)
+
+    def test_assimil_num_field_scalar_renders_input(self):
+        from shyfem_ui.pages.physics import _assimil_num_field
+
+        tag = _assimil_num_field("t", "corlength", "Correlation length (m)", 2000.0)
+        assert "assim_t_corlength" in str(tag)
+
+    def test_assimil_num_field_absent_uses_default(self):
+        from shyfem_ui.pages.physics import _assimil_num_field
+
+        tag = str(_assimil_num_field("s", "sigback", "Background error sigma", None))
+        assert "assim_s_sigback" in tag
+        assert 'value="1.0"' in tag  # _ASSIMIL_DEFAULTS["sigback"]
+
 
 class TestTimingPanel:
     """Simulation timing panel with itanf/itend/idt."""
@@ -519,7 +615,6 @@ $end
     def test_collect_remap_ids_are_valid(self):
         """Verify the remapped input IDs point to valid params."""
         remap = {
-            "ibarcl_assim": ("para", "ibarcl"),
             "idtcon_out": ("para", "idtcon"),
             "icon_av_out": ("para", "icon_av"),
         }
