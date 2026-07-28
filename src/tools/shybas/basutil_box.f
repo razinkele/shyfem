@@ -44,6 +44,14 @@ c 08.06.2022	ggu	save external nodes in basboxgrd for grd_write_item()
 c 16.06.2022	ggu	write coloring errors to grd files
 c 13.07.2022	ggu	forgot setting listold(0,:)
 c 20.12.2024	ggu	general read for index file
+c 28.07.2026	arb	write/read the index on the opened unit, not on
+c			hardcoded units 69 and 1: -box left boxes.txt
+c			empty (index went to fort.69) and -boxgrd
+c			crashed reading an unconnected unit 1
+c 28.07.2026	arb	write_line() overwrote its own iu argument with 88
+c			(and derived 89), so line_boxes.grd/.txt stayed
+c			empty and the data landed in fort.88/fort.89;
+c			both units are now passed in as intent(in)
 c
 c****************************************************************
 
@@ -113,9 +121,9 @@ c-----------------------------------------------------------------
 	  stop 'error stop: cannot open file'
 	end if
 
-	call write_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,bnew)
+	call write_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,bnew,iu)
 	call sort_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,neib
-     +			,iaux1,iaux2)
+     +			,iaux1,iaux2,iu)
 
 	close(iu)
  
@@ -137,7 +145,7 @@ c*******************************************************************
 c*******************************************************************
 
 	subroutine sort_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,neib
-     +				,iaux1,iaux2)
+     +				,iaux1,iaux2,iu)
 
 c creates boxinf that contains information on sections
 c boxinf(ii,n,ib)
@@ -158,6 +166,7 @@ c there are nblink(ib) node pairs in boxinf, so n=1,nblink(ib)
 	integer neib(nbxdim)
 	integer iaux1(2,nlbdim)
 	integer iaux2(nlbdim)
+	integer, intent(in) :: iu		!unit of the open index file
 	integer ib,n,i,ii,ibn,nn,k
 	integer jfill,j,ibb,nf,ns,nt,ntt
 	integer id
@@ -218,14 +227,14 @@ c there are nblink(ib) node pairs in boxinf, so n=1,nblink(ib)
 
 		nt = nt + nf - ns + 1	!real nodes, no zeros
 		ntt = ntt + nf + 1
-		call write_section(nf,iaux2,id,ib,ibn,ipv)
+		call write_section(nf,iaux2,id,ib,ibn,ipv,iu)
 
 	      end if
 	    end do
 	  end if
 	end do
 
-	write(69,*) 0,0,0,0
+	write(iu,*) 0,0,0,0
 	write(6,*) 'total number of sections: ',id
 	write(6,*) 'total number of nodes in sections: ',nt
 	write(6,*) 'total number of needed nodes in sections: ',ntt
@@ -446,7 +455,7 @@ c*******************************************************************
 
 c*******************************************************************
 
-	subroutine write_section(n,list,id,ib,ibn,ipv)
+	subroutine write_section(n,list,id,ib,ibn,ipv,iu)
 
 ! nodes of section are written as external numbers
 
@@ -458,6 +467,7 @@ c*******************************************************************
 	integer ib		!first box number (from-box)
 	integer ibn		!second box number (to-box)
 	integer ipv(*)		!external node numbers
+	integer, intent(in) :: iu	!unit of the open index file
 
 	integer i,j,is,ie,nn
 
@@ -474,8 +484,8 @@ c*******************************************************************
 	  nn = ie - is + 1
 	  !write(68,*) id,nn,ib,ibn
 	  !write(68,*) (ipv(list(j)),j=is,ie)
-	  write(69,*) id,nn,ib,ibn
-	  write(69,'((8i9))') (ipv(list(j)),j=is,ie)
+	  write(iu,*) id,nn,ib,ibn
+	  write(iu,'((8i9))') (ipv(list(j)),j=is,ie)
 	  i = i + 1
 	end do
 
@@ -503,7 +513,7 @@ c*******************************************************************
 
 c*******************************************************************
 
-	subroutine write_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,bnew)
+	subroutine write_boxes(nbxdim,nlbdim,nbox,nblink,boxinf,bnew,iu)
 
 ! in new version external element numbers are written
 
@@ -515,6 +525,7 @@ c*******************************************************************
 	integer nblink(nbxdim)
 	integer boxinf(3,nlbdim,nbxdim)
 	logical bnew				!new version of boxes.txt
+	integer, intent(in) :: iu		!unit of the open index file
 
 	integer ib,n,i,ii,ie
 	integer nu
@@ -537,14 +548,14 @@ c*******************************************************************
 	end do
 
 	if( bnew ) then
-	  write(69,*) idbox,ftype,nversbox
-	  write(69,*) nel,nbox,nu
+	  write(iu,*) idbox,ftype,nversbox
+	  write(iu,*) nel,nbox,nu
 	  do ie=1,nel
-	    write(69,*) ipev(ie),iarv(ie)
+	    write(iu,*) ipev(ie),iarv(ie)
 	  end do
 	else
-	  write(69,*) nel,nbox,nu
-	  write(69,'((8i9))') (iarv(ie),ie=1,nel)
+	  write(iu,*) nel,nbox,nu
+	  write(iu,'((8i9))') (iarv(ie),ie=1,nel)
 	end if
 
 	end
@@ -913,7 +924,7 @@ c area code 0 is not allowed !!!!
 ! read box header info
 !-----------------------------------------------------------
 
-	call boxes_read_header(ne,nbox,nmax,nvers)
+	call boxes_read_header(ne,nbox,nmax,nvers,iu)
 
 !-----------------------------------------------------------
 ! read box information and write index.grd
@@ -923,7 +934,7 @@ c area code 0 is not allowed !!!!
 
 	allocate(iboxes(ne),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call boxes_read_boxes(ne,iboxes,nbox,nmax,nvers)
+	call boxes_read_boxes(ne,iboxes,nbox,nmax,nvers,iu)
 	
 	iarv = iboxes
 
@@ -950,7 +961,7 @@ c area code 0 is not allowed !!!!
 	iline = 0
 
 	do
-	  call boxes_read_section(nnodes,nodes,extnodes,ib1,ib2)
+	  call boxes_read_section(nnodes,nodes,extnodes,ib1,ib2,iu)
 	  if( nnodes == 0 ) exit
 	  iline = iline + 1
 	  itype = iline
@@ -979,18 +990,19 @@ c area code 0 is not allowed !!!!
 
 !*******************************************************************
 
-	subroutine boxes_read_header(ne,nbox,nmax,nvers)
+	subroutine boxes_read_header(ne,nbox,nmax,nvers,iu)
 
 	use basin
 
 	implicit none
 
 	integer ne,nbox,nmax,nvers
+	integer, intent(in) :: iu	!unit of the open index file
 
 	integer id,ftype
         integer, parameter :: idbox = 473226            !id for box files
 
-	read(1,*) id,ftype,nvers
+	read(iu,*) id,ftype,nvers
 
         if( id /= idbox .or. ftype /= 9 ) then  !old read: nel,nbox,nb
           ne = id
@@ -998,7 +1010,7 @@ c area code 0 is not allowed !!!!
           nmax = nvers
 	  nvers = 2
         else                                    !new read: id,ftype,nvers
-          read(1,*) ne,nbox,nmax
+          read(iu,*) ne,nbox,nmax
 	end if
 
         if( ne .ne. nel ) goto 99
@@ -1015,7 +1027,7 @@ c area code 0 is not allowed !!!!
 
 !*******************************************************************
 
-	subroutine boxes_read_boxes(ne,iboxes,nbox,nmax,nvers)
+	subroutine boxes_read_boxes(ne,iboxes,nbox,nmax,nvers,iu)
 
 	use basin
 
@@ -1025,6 +1037,7 @@ c area code 0 is not allowed !!!!
 	integer iboxes(ne)
 	integer nbox,nmax
 	integer nvers
+	integer, intent(in) :: iu	!unit of the open index file
 
 	integer ie,ie_int,ie_ext,ia,ic,itot,ierr
 	integer, allocatable :: icount(:)
@@ -1037,10 +1050,10 @@ c area code 0 is not allowed !!!!
         iboxes = -1
 
 	if( nvers <= 2 ) then
-	  read(1,*) (iboxes(ie),ie=1,ne)
+	  read(iu,*) (iboxes(ie),ie=1,ne)
 	else
           do ie=1,ne
-            read(1,*) ie_ext,ia
+            read(iu,*) ie_ext,ia
             ie_int = ieint(ie_ext)
             if( ie_int > 0 ) iboxes(ie_int) = ia
           end do
@@ -1079,7 +1092,7 @@ c area code 0 is not allowed !!!!
 
 !*******************************************************************
 
-	subroutine boxes_read_section(nnodes,nodes,extnodes,ib1,ib2)
+	subroutine boxes_read_section(nnodes,nodes,extnodes,ib1,ib2,iu)
 
 	use basin
 
@@ -1089,16 +1102,17 @@ c area code 0 is not allowed !!!!
 	integer ib1,ib2
 	integer nodes(nkn)
 	integer extnodes(nkn)
+	integer, intent(in) :: iu	!unit of the open index file
 
 	integer is,i
 	integer, save :: iline = 0
 	integer ipint
 
-	read(1,*) is,nnodes,ib1,ib2
+	read(iu,*) is,nnodes,ib1,ib2
 	if( is == 0 ) return
 	iline = iline + 1
 	if( is /= iline ) goto 99
-	read(1,*) (extnodes(i),i=1,nnodes)
+	read(iu,*) (extnodes(i),i=1,nnodes)
 	do i=1,nnodes
 	  nodes(i) = ipint(extnodes(i))	!nodes are external numbers!!!!
 	end do
@@ -1349,7 +1363,7 @@ c area code 0 is not allowed !!!!
 	  end if
 	  line_nodes(1:itot) = iorder(istart:iend)
 
-	  call write_line(iu,ia,itot,line_nodes,nkn,iuse)
+	  call write_line(iu,iu1,ia,itot,line_nodes,nkn,iuse)
 	end do
 
 	write(6,*) 'lines have been written to files:'
@@ -1473,25 +1487,23 @@ c area code 0 is not allowed !!!!
 
 !*****************************************************************
 
-	subroutine write_line(iu,ia,itot,line_nodes,n,iuse)
+	subroutine write_line(iu,iu1,ia,itot,line_nodes,n,iuse)
 
 	use basin
 
 	implicit none
 
-	integer iu
+	integer, intent(in) :: iu	!unit of line_boxes.grd
+	integer, intent(in) :: iu1	!unit of line_boxes.txt
 	integer ia
 	integer itot
 	integer line_nodes(itot)
 	integer n
 	integer iuse(n)
 
-	integer iu1,i,k
+	integer i,k
 	integer is,ie
 	real x,y
-
-	iu = 88
-	iu1 = iu + 1
 
 	write(iu1,*) ia,itot
 
