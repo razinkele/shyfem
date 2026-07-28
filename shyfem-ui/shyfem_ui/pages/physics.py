@@ -6,6 +6,7 @@ STR files.
 """
 
 import logging
+import re
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
@@ -331,6 +332,139 @@ def _rate_field(input_id: str, label: str, raw: object) -> ui.Tag:
     if val is None:
         return ui.help_text(f"{label}: per-area rates set in the STR — edit the file directly.")
     return ui.input_numeric(input_id, label, value=val, min=0, step=0.01)
+
+
+_ASSIMIL_NAME = re.compile(r"^assimil(\d+)$")
+
+# Numbered $assimil sections (assimil_admin.f90): one section per
+# assimilated variable, single values broadcast to all nobs stations.
+_ASSIMIL_NUMERIC_FIELDS = (
+    "nobs", "mode", "tau", "corlength", "maxlength",
+    "sigobs", "sigback", "layer", "vcorlength",
+)
+_ASSIMIL_INT_FIELDS = {"nobs", "mode", "layer"}
+_ASSIMIL_FILE_FIELDS = ("filecoords", "fileobs")
+# Prefills for a freshly enabled block; corlength/sigobs/sigback must be
+# > 0 for the core to accept the section.
+_ASSIMIL_DEFAULTS = {
+    "nobs": 1, "mode": 0, "tau": 0.0, "corlength": 1000.0, "maxlength": 0.0,
+    "sigobs": 0.1, "sigback": 1.0, "layer": 0, "vcorlength": 0.0,
+}
+
+
+def _assimil_find(sf: StrFile, ivar: int) -> str | None:
+    """Name of the $assimilN section assimilating *ivar*, or None.
+
+    Adoption is by ivar, not by section number: a hand-written $assimil7
+    with ivar = 12 is the temperature section and is written back under
+    its own name.
+    """
+    for name in sf.get_section_names():
+        if not _ASSIMIL_NAME.match(name):
+            continue
+        try:
+            if int(sf.get_param(name, "ivar")) == ivar:
+                return name
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _assimil_nobs(sf: StrFile, name: str) -> int:
+    """nobs of a section, 0 when absent or not a clean integer."""
+    try:
+        return int(sf.get_param(name, "nobs"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _assimil_new_name(sf: StrFile, preferred: int) -> str:
+    """assimil<preferred>, or the first free number above it."""
+    used = {
+        int(m.group(1))
+        for m in (_ASSIMIL_NAME.match(n) for n in sf.get_section_names())
+        if m
+    }
+    num = preferred
+    while num in used:
+        num += 1
+    return f"assimil{num}"
+
+
+def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
+    """True when *param*'s raw STR line carries more than one value token.
+
+    PARAM_PATTERN truncates a space-separated per-station array
+    (``corlength = 2000. 3000.``) to a clean first-token scalar, so the
+    parsed value alone cannot reveal it — scan the section's raw line.
+    Multi-token remainders are treated as arrays conservatively: the
+    field goes read-only and the raw line survives; never a partial
+    rewrite of station 1 only.
+    """
+    if name is None or name not in sf.sections:
+        return False
+    pat = re.compile(rf"^\s*{re.escape(param)}\s*=\s*(.+)$")
+    for line in sf.sections[name].raw_lines:
+        m = pat.match(line)
+        if m:
+            return len(m.group(1).split()) > 1
+    return False
+
+
+def _assimil_apply(
+    sf: StrFile, ivar: int, preferred: int, on: bool, values: dict
+) -> str | None:
+    """Write one assimilation block into *sf*; returns the section touched.
+
+    Disabled: set nobs = 0 only (the core ignores and logs such sections;
+    the stored tuning survives for re-enabling). Enabled: write every
+    field present in *values*; a missing field (its input was never
+    created — the per-station-array case) keeps its raw STR line. File
+    fields are stored pre-quoted because _format_value leaves bare
+    dash-less filenames unquoted, which the Fortran namelist reader
+    rejects for character parameters.
+    """
+    name = _assimil_find(sf, ivar)
+    if not on:
+        if name is not None:
+            sf.set_param(name, "nobs", 0)
+        return name
+    if name is None:
+        name = _assimil_new_name(sf, preferred)
+    sf.set_param(name, "ivar", ivar)
+    for param in _ASSIMIL_NUMERIC_FIELDS:
+        if param not in values:
+            continue
+        try:
+            num = (
+                int(float(values[param]))
+                if param in _ASSIMIL_INT_FIELDS
+                else float(values[param])
+            )
+        except (TypeError, ValueError):
+            continue
+        sf.set_param(name, param, num)
+    for param in _ASSIMIL_FILE_FIELDS:
+        raw = str(values.get(param, "") or "").strip()
+        if not raw:
+            continue
+        if not (raw.startswith("'") and raw.endswith("'")):
+            raw = f"'{raw}'"
+        sf.set_param(name, param, raw)
+    return name
+
+
+def _purge_nduge(sf: StrFile) -> bool:
+    """Drop the dead $nduge section the old UI used to write.
+
+    No core code reads it and iostr.f90 hard-stops on unknown sections,
+    so any STR carrying it cannot run. generate() skips the stale
+    _structure entry once the section is gone.
+    """
+    if "nduge" not in sf.sections:
+        return False
+    del sf.sections["nduge"]
+    return True
 
 
 @module.ui

@@ -184,6 +184,121 @@ class TestPhysicsPanels:
         panel = PHYSICS_PANELS["lagrangian"]
         assert panel.get("section") == "lagrg" or "ilagr" in panel["params"]
 
+    def _assim_sf(self, extra=""):
+        from shyfem_ui.services.parser_str import StrParser
+
+        return StrParser.parse(
+            "$para\n        ibarcl = 3\n$end\n\n"
+            "$assimil7\n"
+            "        nobs = 2\n"
+            "        ivar = 12\n"
+            "        mode = 1\n"
+            "        tau = 1800.\n"
+            "        corlength = 2000.\n"
+            "        sigobs = 0.1\n"
+            "        sigback = 1.0\n"
+            "        filecoords = 'mm_assim_coords.dat'\n"
+            "        fileobs = 'mm_assim_obs.dat'\n"
+            "$end\n" + extra
+        )
+
+    def test_assimil_find_adopts_by_ivar_not_number(self):
+        from shyfem_ui.pages.physics import _assimil_find
+
+        sf = self._assim_sf()
+        assert _assimil_find(sf, 12) == "assimil7"
+        assert _assimil_find(sf, 11) is None
+
+    def test_assimil_nobs_corrupt_reads_as_zero(self):
+        from shyfem_ui.pages.physics import _assimil_nobs
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$assimil1\n        nobs = 2, 3\n        ivar = 12\n$end\n")
+        assert _assimil_nobs(sf, "assimil1") == 0  # "2," is not a clean int
+
+    def test_assimil_new_name_skips_taken_numbers(self):
+        from shyfem_ui.pages.physics import _assimil_new_name
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$assimil1\n        ivar = 30\n$end\n")
+        assert _assimil_new_name(sf, 1) == "assimil2"
+        assert _assimil_new_name(sf, 2) == "assimil2"
+
+    def test_assimil_is_array_detects_space_form(self):
+        """Space-separated per-station arrays parse to a clean first-token
+        scalar (PARAM_PATTERN truncation), so detection must come from the
+        section's raw line, not the parsed value."""
+        from shyfem_ui.pages.physics import _assimil_is_array
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse(
+            "$assimil1\n        corlength = 2000. 3000.\n        tau = 1800.\n$end\n"
+        )
+        assert _assimil_is_array(sf, "assimil1", "corlength") is True
+        assert _assimil_is_array(sf, "assimil1", "tau") is False
+        assert _assimil_is_array(sf, None, "corlength") is False
+        assert _assimil_is_array(sf, "missing", "corlength") is False
+
+    def test_assimil_apply_creates_wellformed_section(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+        from shyfem_ui.services.parser_str import StrFile, StrParser
+
+        sf = StrFile()
+        name = _assimil_apply(
+            sf, 11, 2, True,
+            {"nobs": 1, "mode": "0", "tau": 1800.0, "corlength": 2000.0,
+             "sigobs": 0.1, "sigback": 1.0,
+             "filecoords": "coords.dat", "fileobs": "obs.dat"},
+        )
+        assert name == "assimil2"
+        assert sf.get_param("assimil2", "ivar") == 11
+        assert sf.get_param("assimil2", "nobs") == 1
+        assert sf.get_param("assimil2", "mode") == 0  # "0" coerced to int
+        assert sf.get_param("assimil2", "filecoords") == "'coords.dat'"
+        out = StrParser.generate(sf)
+        assert "$assimil2" in out
+        assert "filecoords = 'coords.dat'" in out  # quoted, not bare
+
+    def test_assimil_apply_disable_touches_only_nobs(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        name = _assimil_apply(sf, 12, 1, False, {"corlength": 9999.0})
+        assert name == "assimil7"
+        assert sf.get_param("assimil7", "nobs") == 0
+        assert sf.get_param("assimil7", "corlength") == 2000.0  # untouched
+        assert sf.sections["assimil7"]._modified_params == {"nobs"}
+        # disabled + no section for this ivar -> no-op, nothing created
+        from shyfem_ui.services.parser_str import StrFile
+
+        empty = StrFile()
+        assert _assimil_apply(empty, 12, 1, False, {}) is None
+        assert empty.get_section_names() == []
+
+    def test_assimil_apply_skips_missing_fields(self):
+        """A field absent from values (array-note case: no input was
+        created) must not be written, so its raw line survives."""
+        from shyfem_ui.pages.physics import _assimil_apply
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = self._assim_sf()
+        _assimil_apply(sf, 12, 1, True, {"nobs": 2, "tau": 900.0})
+        out = StrParser.generate(sf)
+        assert "        corlength = 2000." in out.splitlines()
+        assert sf.get_param("assimil7", "tau") == 900.0
+        # write-back went to the adopted section's own name — no spurious
+        # $assimil1 created alongside it
+        assert "assimil1" not in sf.get_section_names()
+
+    def test_purge_nduge(self):
+        from shyfem_ui.pages.physics import _purge_nduge
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$nduge\n        nvars = 3\n$end\n\n$para\n        idt = 300\n$end\n")
+        assert _purge_nduge(sf) is True
+        assert "nduge" not in StrParser.generate(sf)
+        assert _purge_nduge(sf) is False  # second call: nothing to do
+
 
 class TestTimingPanel:
     """Simulation timing panel with itanf/itend/idt."""
