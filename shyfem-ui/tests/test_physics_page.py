@@ -419,6 +419,7 @@ class TestPhysicsPanels:
         assert "_purge_nduge(" in collect
         assert 'input[f"assim_{prefix}_on"]' in collect
         assert 'input[f"assim_{prefix}_{param}"]' in collect
+        assert '(("t", 12, 1), ("s", 11, 2))' in collect  # T=ivar 12, S=ivar 11 — order is load-bearing
 
 
 class TestTimingPanel:
