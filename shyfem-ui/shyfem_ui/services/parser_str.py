@@ -323,7 +323,6 @@ COMMON_SECTIONS = {
     "lagrg": "Lagrangian particle tracking (IBM, oil spill, connectivity)",
     "connec": "Particle connectivity analysis (source-destination tracking)",
     "bfmsc": "BFM biogeochemical flux model",
-    "nduge": "Data assimilation via zeta/velocity nudging",
     "wrt": "Custom write sections",
     "nonhyd": "Non-hydrostatic mode parameters",
 }
@@ -638,13 +637,6 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "iaout": _p("Outside area code", "int", -1, "", "-1=none"),
         "percmin": _p("Completion percentage threshold", "float", 0.0, "%", "0-100"),
         "iret": _p("Return flow flag", "int", 1, "", "0=explicit zero, 1=return"),
-    },
-    "nduge": {
-        "nvars": _p("Number of nudging observation stations", "int", 0, "", "0-50"),
-        "tramp": _p("Nudging ramp-up time", "float", 0.0, "s", ">=0"),
-        "ttau": _p("Relaxation time constant", "float", 0.0, "s", ">0"),
-        "sigma": _p("Spatial influence radius (Gaussian)", "float", 0.0, "m", ">0"),
-        "bmulti": _p("Multi-station nudging", "int", 1, "", "0=off, 1=on"),
     },
     "nonhyd": {
         "inohyd": _p("Non-hydrostatic mode", "int", 0, "", "0=hydrostatic, 1=non-hydrostatic"),

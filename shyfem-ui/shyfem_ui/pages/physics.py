@@ -196,8 +196,9 @@ PHYSICS_PANELS = {
     "assimilation": {
         "label": "Data Assimilation",
         "icon": "bi-bullseye",
-        "section": "nduge",
-        "params": {"ibarcl": "para"},
+        # composite panel: reads/writes numbered $assimil sections
+        # directly, nothing registered for the generic save loop
+        "params": {},
     },
     "renewal_time": {
         "label": "Water Renewal Time",

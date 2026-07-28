@@ -305,6 +305,15 @@ class TestPhysicsPanelsConfig:
                     f"not in COMMON_PARAMS"
                 )
 
+    def test_assimilation_panel_registry_is_composite(self):
+        """No 1:1 registered params and no dedicated section: the old
+        registry wrote a $nduge section the core hard-rejects."""
+        from shyfem_ui.pages.physics import PHYSICS_PANELS
+
+        panel = PHYSICS_PANELS["assimilation"]
+        assert panel["params"] == {}
+        assert "section" not in panel
+
 
 class TestPhysicsIntegration:
     """End-to-end: parse STR -> extract panel params -> modify -> serialize -> re-parse."""
