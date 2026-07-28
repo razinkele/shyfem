@@ -339,16 +339,30 @@ _ASSIMIL_NAME = re.compile(r"^assimil(\d+)$")
 # Numbered $assimil sections (assimil_admin.f90): one section per
 # assimilated variable, single values broadcast to all nobs stations.
 _ASSIMIL_NUMERIC_FIELDS = (
-    "nobs", "mode", "tau", "corlength", "maxlength",
-    "sigobs", "sigback", "layer", "vcorlength",
+    "nobs",
+    "mode",
+    "tau",
+    "corlength",
+    "maxlength",
+    "sigobs",
+    "sigback",
+    "layer",
+    "vcorlength",
 )
 _ASSIMIL_INT_FIELDS = {"nobs", "mode", "layer"}
 _ASSIMIL_FILE_FIELDS = ("filecoords", "fileobs")
 # Prefills for a freshly enabled block; corlength/sigobs/sigback must be
 # > 0 for the core to accept the section.
 _ASSIMIL_DEFAULTS = {
-    "nobs": 1, "mode": 0, "tau": 0.0, "corlength": 1000.0, "maxlength": 0.0,
-    "sigobs": 0.1, "sigback": 1.0, "layer": 0, "vcorlength": 0.0,
+    "nobs": 1,
+    "mode": 0,
+    "tau": 0.0,
+    "corlength": 1000.0,
+    "maxlength": 0.0,
+    "sigobs": 0.1,
+    "sigback": 1.0,
+    "layer": 0,
+    "vcorlength": 0.0,
 }
 
 
@@ -380,11 +394,7 @@ def _assimil_nobs(sf: StrFile, name: str) -> int:
 
 def _assimil_new_name(sf: StrFile, preferred: int) -> str:
     """assimil<preferred>, or the first free number above it."""
-    used = {
-        int(m.group(1))
-        for m in (_ASSIMIL_NAME.match(n) for n in sf.get_section_names())
-        if m
-    }
+    used = {int(m.group(1)) for m in (_ASSIMIL_NAME.match(n) for n in sf.get_section_names()) if m}
     num = preferred
     while num in used:
         num += 1
@@ -411,9 +421,7 @@ def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
     return False
 
 
-def _assimil_apply(
-    sf: StrFile, ivar: int, preferred: int, on: bool, values: dict
-) -> str | None:
+def _assimil_apply(sf: StrFile, ivar: int, preferred: int, on: bool, values: dict) -> str | None:
     """Write one assimilation block into *sf*; returns the section touched.
 
     Disabled: set nobs = 0 only (the core ignores and logs such sections;
@@ -437,9 +445,7 @@ def _assimil_apply(
             continue
         try:
             num = (
-                int(float(values[param]))
-                if param in _ASSIMIL_INT_FIELDS
-                else float(values[param])
+                int(float(values[param])) if param in _ASSIMIL_INT_FIELDS else float(values[param])
             )
         except (TypeError, ValueError):
             continue

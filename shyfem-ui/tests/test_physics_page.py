@@ -245,10 +245,20 @@ class TestPhysicsPanels:
 
         sf = StrFile()
         name = _assimil_apply(
-            sf, 11, 2, True,
-            {"nobs": 1, "mode": "0", "tau": 1800.0, "corlength": 2000.0,
-             "sigobs": 0.1, "sigback": 1.0,
-             "filecoords": "coords.dat", "fileobs": "obs.dat"},
+            sf,
+            11,
+            2,
+            True,
+            {
+                "nobs": 1,
+                "mode": "0",
+                "tau": 1800.0,
+                "corlength": 2000.0,
+                "sigobs": 0.1,
+                "sigback": 1.0,
+                "filecoords": "coords.dat",
+                "fileobs": "obs.dat",
+            },
         )
         assert name == "assimil2"
         assert sf.get_param("assimil2", "ivar") == 11
@@ -323,6 +333,7 @@ class TestBuildPanelParams:
 
     def test_extracts_known_param(self):
         from shyfem_ui.services.parser_str import StrParser
+
         content = "$para\n    ireib = 5\n    czdef = 2.5e-3\n$end\n"
         parsed = StrParser.parse(content)
         result = build_panel_params(parsed, "friction")
@@ -407,8 +418,7 @@ class TestPhysicsPanelsConfig:
         for pid, panel in PHYSICS_PANELS.items():
             for param, section in panel["params"].items():
                 assert section in known_sections, (
-                    f"Panel {pid}, param {param} references unknown "
-                    f"section '{section}'"
+                    f"Panel {pid}, param {param} references unknown " f"section '{section}'"
                 )
 
     def test_dedicated_sections_exist_in_common_params(self):
@@ -416,8 +426,7 @@ class TestPhysicsPanelsConfig:
             dedicated = panel.get("section")
             if dedicated:
                 assert dedicated in COMMON_PARAMS, (
-                    f"Panel {pid} has dedicated section '{dedicated}' "
-                    f"not in COMMON_PARAMS"
+                    f"Panel {pid} has dedicated section '{dedicated}' " f"not in COMMON_PARAMS"
                 )
 
     def test_assimilation_panel_registry_is_composite(self):
@@ -516,12 +525,10 @@ $end
         }
         for input_id, (section, param) in remap.items():
             assert section in COMMON_PARAMS, (
-                f"Remap {input_id} -> {section}.{param}: "
-                f"section not in COMMON_PARAMS"
+                f"Remap {input_id} -> {section}.{param}: " f"section not in COMMON_PARAMS"
             )
             assert param in COMMON_PARAMS[section], (
-                f"Remap {input_id} -> {section}.{param}: "
-                f"param not in COMMON_PARAMS[{section}]"
+                f"Remap {input_id} -> {section}.{param}: " f"param not in COMMON_PARAMS[{section}]"
             )
 
 
