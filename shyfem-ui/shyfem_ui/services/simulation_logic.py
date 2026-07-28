@@ -747,7 +747,7 @@ $para
         iwtype = 3              dragco = 2.5e-3
         ireib = 5               czdef = 2.5e-3
 
-        ibarcl = 4
+        ibarcl = 3
         itemp = 1
         isalt = 1
 $end
@@ -756,17 +756,32 @@ $levels
         0.5 1 2 3 5 7 10 15 20
 $end
 
-$nduge
-        nvars = 3
-        tramp = 43200
-        ttau = 3600
-        sigma = 5000
+$assimil1
+        nobs = 1
+        ivar = 12
+        mode = 0
+        tau = 1800.
+        corlength = 2000.
+        sigobs = 0.1
+        sigback = 1.0
+        filecoords = 'INPUT/assim_coords.dat'
+        fileobs = 'INPUT/assim_obs_temp.dat'
+$end
+
+$assimil2
+        nobs = 1
+        ivar = 11
+        mode = 0
+        tau = 1800.
+        corlength = 2000.
+        sigobs = 0.1
+        sigback = 1.0
+        filecoords = 'INPUT/assim_coords.dat'
+        fileobs = 'INPUT/assim_obs_salt.dat'
 $end
 
 $name
         wind = 'INPUT/wind.txt'
-        tempn = 'INPUT/temp_obs.txt'
-        saltn = 'INPUT/salt_obs.txt'
 $end
 """,
         "offline_tracer": """

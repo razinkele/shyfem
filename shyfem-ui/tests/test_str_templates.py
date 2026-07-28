@@ -172,16 +172,32 @@ class TestOilSpillTemplate:
 
 
 class TestDataAssimilationTemplate:
-    """Data assimilation template has $nduge."""
+    """Data assimilation template uses the real $assimil framework.
 
-    def test_has_nduge(self):
+    The old template emitted a $nduge section no core code reads —
+    iostr.f90 hard-stops on unknown sections, so every simulation
+    created from it crashed at STR read."""
+
+    def test_has_assimil_sections_not_nduge(self):
         content = generate_template("data_assimilation")
-        assert "$nduge" in content
+        assert "nduge" not in content
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("assimil1", "ivar") == 12
+        assert parsed.get_param("assimil2", "ivar") == 11
+        for name in ("assimil1", "assimil2"):
+            assert parsed.get_param(name, "nobs") == 1
+            assert parsed.get_param(name, "corlength") > 0
+            assert parsed.get_param(name, "sigobs") > 0
+            assert parsed.get_param(name, "sigback") > 0
+            assert parsed.get_param(name, "filecoords")
+            assert parsed.get_param(name, "fileobs")
 
-    def test_has_ibarcl_4(self):
+    def test_has_ibarcl_3(self):
+        """assimil_ts runs under the active-transport branch: prognostic
+        baroclinic (ibarcl = 3) required."""
         content = generate_template("data_assimilation")
         parsed = StrParser.parse(content)
-        assert parsed.get_param("para", "ibarcl") == 4
+        assert parsed.get_param("para", "ibarcl") == 3
 
 
 class TestOfflineTracerTemplate:
