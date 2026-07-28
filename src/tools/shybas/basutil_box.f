@@ -48,6 +48,10 @@ c 28.07.2026	arb	write/read the index on the opened unit, not on
 c			hardcoded units 69 and 1: -box left boxes.txt
 c			empty (index went to fort.69) and -boxgrd
 c			crashed reading an unconnected unit 1
+c 28.07.2026	arb	write_line() overwrote its own iu argument with 88
+c			(and derived 89), so line_boxes.grd/.txt stayed
+c			empty and the data landed in fort.88/fort.89;
+c			both units are now passed in as intent(in)
 c
 c****************************************************************
 
@@ -1359,7 +1363,7 @@ c area code 0 is not allowed !!!!
 	  end if
 	  line_nodes(1:itot) = iorder(istart:iend)
 
-	  call write_line(iu,ia,itot,line_nodes,nkn,iuse)
+	  call write_line(iu,iu1,ia,itot,line_nodes,nkn,iuse)
 	end do
 
 	write(6,*) 'lines have been written to files:'
@@ -1483,25 +1487,23 @@ c area code 0 is not allowed !!!!
 
 !*****************************************************************
 
-	subroutine write_line(iu,ia,itot,line_nodes,n,iuse)
+	subroutine write_line(iu,iu1,ia,itot,line_nodes,n,iuse)
 
 	use basin
 
 	implicit none
 
-	integer iu
+	integer, intent(in) :: iu	!unit of line_boxes.grd
+	integer, intent(in) :: iu1	!unit of line_boxes.txt
 	integer ia
 	integer itot
 	integer line_nodes(itot)
 	integer n
 	integer iuse(n)
 
-	integer iu1,i,k
+	integer i,k
 	integer is,ie
 	real x,y
-
-	iu = 88
-	iu1 = iu + 1
 
 	write(iu1,*) ia,itot
 
