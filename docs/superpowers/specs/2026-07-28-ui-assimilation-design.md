@@ -82,14 +82,19 @@ use that form exclusively, including with `nobs = 2`.
   (`physics.py`).
 - Rewrite the `data_assimilation` template in `simulation_logic.py`:
   drop `$nduge`, set `ibarcl = 3`, add an `$assimil1` (T) + `$assimil2`
-  (S) pair modeled on `mm_hyd_assim.str`.
+  (S) pair modeled on `mm_hyd_assim.str`, and drop the `$name`
+  `tempn`/`saltn` entries (they feed only the dead ibarcl=4 nudging
+  path; `wind` stays).
 
 ### 2. Panel UI (`panel_assimilation`)
 
 - Top: hint line — "Optimal-interpolation assimilation runs in
   prognostic baroclinic mode (ibarcl = 3, set in the Baroclinic panel)."
 - Two blocks, Temperature and Salinity. Each: an enable checkbox
-  (`assim_t_on` / `assim_s_on`) revealing, via `ui.panel_conditional`:
+  (`assim_t_on` / `assim_s_on`) above always-rendered fields — the
+  checkbox gates only save behavior. (Amended from panel_conditional:
+  its JS condition strings are not namespaced inside Shiny modules.)
+  Fields per block:
   - `nobs` (int, min 1), `mode` (select: 0 nudging / 1 direct
     insertion), `tau` (s, min 0)
   - `corlength` (m), `maxlength` (m), `sigobs`, `sigback`, `layer`
@@ -98,11 +103,16 @@ use that form exclusively, including with `nobs = 2`.
 - Input IDs are prefixed `assim_t_` / `assim_s_`.
 - `iuse` is not exposed: uniform iuse is either "all on" (default) or
   "section off" (that is the checkbox).
-- Per-field array handling: a param whose stored value exists but is
-  not a clean scalar (`_scalar_or_none` returns None) renders as a static
-  "per-station values set in the STR — edit the file directly" note and
-  **no input control is created**, so the save loop's read fails and the
-  raw line survives verbatim (slice-1 pattern). String params
+- Per-field array handling: a param renders as a static "per-station
+  values set in the STR — edit the file directly" note with **no input
+  control created** (so the save loop's read fails and the raw line
+  survives verbatim, slice-1 pattern) in either of two cases: the stored
+  value exists but is not a clean scalar (`_scalar_or_none` returns
+  None — the comma form), or the param's raw STR line carries more than
+  one value token (the space form, `corlength = 2000. 3000.`, which
+  `PARAM_PATTERN` truncates to a clean first-token scalar that would
+  otherwise render editable and be half-rewritten on save; detection
+  scans the section's `raw_lines`). String params
   (`filecoords`/`fileobs`) are exempt — they are never arrays.
 
 ### 3. Load semantics
@@ -133,7 +143,10 @@ use that form exclusively, including with `nobs = 2`.
 - Block disabled, no section → no-op.
 - `$nduge` present in `str_file.sections` → delete it (section dict +
   structure entry handled by `generate()`'s missing-section guard) and
-  notify.
+  notify. The purge runs whenever panel values are collected — save and
+  STR preview alike — matching the page's existing behavior of mutating
+  the in-memory StrFile on preview; the preview then honestly shows what
+  save would write.
 
 ### 5. Error handling
 
@@ -152,9 +165,14 @@ Discriminator tests in the established style (`test_physics_page.py`,
    blocks reflect stored values.
 2. Adoption by ivar: a `$assimil7` with `ivar = 12` feeds the T block
    and is written back under its own name.
-3. Untouched load → save round-trips byte-identical (raw-lines path).
+3. Untouched load → save round-trips byte-identical (raw-lines path;
+   single-section fixture — the generator's inter-section blank-line
+   handling precludes multi-section byte-identity, so the guarantee is
+   per-section).
 4. Array-valued `corlength` → note rendered, no input, raw line
-   verbatim after save.
+   verbatim after save — in BOTH array forms: comma (parses to a
+   non-scalar string) and space-separated (parses to a clean
+   first-token scalar; must be caught via raw-line detection).
 5. Disable an existing section → only `nobs` changes, to 0.
 6. Enable from scratch → well-formed `$assimil1`/`$assimil2` with all
    written fields; numbering skips occupied numbers.

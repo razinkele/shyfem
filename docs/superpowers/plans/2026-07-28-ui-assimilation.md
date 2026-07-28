@@ -21,15 +21,24 @@
 
 ---
 
-### Task 1: Parser metadata — drop `$nduge`, lock `$assimilN` round-trip
+### Task 1: Parser metadata + panel registry — drop `$nduge`, lock `$assimilN` round-trip
 
 **Files:**
 - Modify: `shyfem-ui/shyfem_ui/services/parser_str.py` (COMMON_SECTIONS entry ~line 326, COMMON_PARAMS block ~lines 642-648)
-- Test: `shyfem-ui/tests/test_parser_str.py`
+- Modify: `shyfem-ui/shyfem_ui/pages/physics.py` (registry entry ~lines 196-201)
+- Test: `shyfem-ui/tests/test_parser_str.py`, `shyfem-ui/tests/test_physics_page.py`
+
+The registry change ships in this task, not Task 3: removing
+`COMMON_PARAMS["nduge"]` while `PHYSICS_PANELS["assimilation"]` still
+carries `"section": "nduge"` makes the existing
+`TestPhysicsPanelsConfig::test_dedicated_sections_exist_in_common_params`
+(tests/test_physics_page.py:299-306) fail, which would leave the Task 1
+and Task 2 commits red on the full suite (bisect hazard). Changing both
+together also stops the UI writing `$nduge` from this commit onward.
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: `COMMON_SECTIONS`/`COMMON_PARAMS` without `"nduge"`; guarantees `$assimil1`-style sections parse as sections named `"assimil1"` and round-trip verbatim when unmodified (later tasks rely on both).
+- Produces: `COMMON_SECTIONS`/`COMMON_PARAMS` without `"nduge"`; `PHYSICS_PANELS["assimilation"]` as a composite panel (`"params": {}`, no `"section"` key); guarantees `$assimil1`-style sections parse as sections named `"assimil1"` and round-trip byte-identically when unmodified (later tasks rely on all three).
 
 - [ ] **Step 1: Rewrite the nduge metadata test as its inverse, add round-trip tests**
 
@@ -85,14 +94,59 @@ In the same file, add to the class that holds `test_nduge_roundtrip`:
         content = f"$assimil1\n        nobs = 2\n        ivar = 12\n{line}\n$end\n"
         out = StrParser.generate(StrParser.parse(content))
         assert line in out.splitlines()
+        # spec test 3: untouched load -> save is byte-identical. Single
+        # section only: the generator's inter-section blank-line handling
+        # precludes multi-section byte-identity, so per-section is the
+        # guarantee.
+        assert out == content
 ```
 
-- [ ] **Step 2: Run tests — new metadata test fails, round-trip tests pass**
+And add to `TestPhysicsPanels` in `shyfem-ui/tests/test_physics_page.py`:
 
-Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_parser_str.py -q`
-Expected: `test_nduge_metadata_removed` FAILS (`"nduge" in COMMON_PARAMS`); both new assimil tests PASS (parser already handles numbered sections — these are regression locks).
+```python
+    def test_assimilation_panel_registry_is_composite(self):
+        """No 1:1 registered params and no dedicated section: the old
+        registry wrote a $nduge section the core hard-rejects."""
+        from shyfem_ui.pages.physics import PHYSICS_PANELS
 
-- [ ] **Step 3: Remove the nduge metadata**
+        panel = PHYSICS_PANELS["assimilation"]
+        assert panel["params"] == {}
+        assert "section" not in panel
+```
+
+- [ ] **Step 2: Run tests — new metadata + registry tests fail, round-trip tests pass**
+
+Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_parser_str.py tests/test_physics_page.py -q`
+Expected: `test_nduge_metadata_removed` FAILS (`"nduge" in COMMON_PARAMS`) and `test_assimilation_panel_registry_is_composite` FAILS (registry still carries `"section": "nduge"`); both new assimil round-trip tests PASS (parser already handles numbered sections — these are regression locks); everything else PASSES.
+
+- [ ] **Step 3: Remove the nduge metadata and re-register the panel as composite**
+
+In `shyfem-ui/shyfem_ui/pages/physics.py` replace:
+
+```python
+    "assimilation": {
+        "label": "Data Assimilation",
+        "icon": "bi-bullseye",
+        "section": "nduge",
+        "params": {"ibarcl": "para"},
+    },
+```
+
+with:
+
+```python
+    "assimilation": {
+        "label": "Data Assimilation",
+        "icon": "bi-bullseye",
+        # composite panel: reads/writes numbered $assimil sections
+        # directly, nothing registered for the generic save loop
+        "params": {},
+    },
+```
+
+(The panel's render function still shows the old controls until Task 3;
+with the registry emptied they become inert — nothing is written for
+this panel, so `$nduge` can no longer be produced.)
 
 In `shyfem-ui/shyfem_ui/services/parser_str.py` delete the
 `COMMON_SECTIONS` entry:
@@ -113,15 +167,19 @@ and the whole `COMMON_PARAMS` block:
     },
 ```
 
-- [ ] **Step 4: Run the whole parser test file**
+- [ ] **Step 4: Run both test files fully**
 
-Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_parser_str.py -q`
-Expected: ALL PASS. (If anything else referenced `COMMON_PARAMS["nduge"]`, it surfaces here — fix by deleting the reference, not by re-adding nduge.)
+Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_parser_str.py tests/test_physics_page.py -q`
+Expected: ALL PASS — including the pre-existing
+`test_dedicated_sections_exist_in_common_params`, which stays green only
+because the registry and metadata changed together. (If anything else
+referenced `COMMON_PARAMS["nduge"]`, it surfaces here — fix by deleting
+the reference, not by re-adding nduge.)
 
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/razinka/shyfem && git add shyfem-ui/shyfem_ui/services/parser_str.py shyfem-ui/tests/test_parser_str.py && git commit -m "feat(ui): drop dead \$nduge STR metadata, lock \$assimilN parser round-trip"
+cd /home/razinka/shyfem && git add shyfem-ui/shyfem_ui/services/parser_str.py shyfem-ui/shyfem_ui/pages/physics.py shyfem-ui/tests/test_parser_str.py shyfem-ui/tests/test_physics_page.py && git commit -m "feat(ui): drop dead \$nduge metadata + registry wiring, lock \$assimilN round-trip"
 ```
 
 ---
@@ -140,6 +198,7 @@ cd /home/razinka/shyfem && git add shyfem-ui/shyfem_ui/services/parser_str.py sh
   - `_assimil_find(sf: StrFile, ivar: int) -> str | None`
   - `_assimil_nobs(sf: StrFile, name: str) -> int`
   - `_assimil_new_name(sf: StrFile, preferred: int) -> str`
+  - `_assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool`
   - `_assimil_apply(sf: StrFile, ivar: int, preferred: int, on: bool, values: dict) -> str | None`
   - `_purge_nduge(sf: StrFile) -> bool`
 
@@ -189,6 +248,21 @@ Add to `shyfem-ui/tests/test_physics_page.py`, inside `TestPhysicsPanels`
         assert _assimil_new_name(sf, 1) == "assimil2"
         assert _assimil_new_name(sf, 2) == "assimil2"
 
+    def test_assimil_is_array_detects_space_form(self):
+        """Space-separated per-station arrays parse to a clean first-token
+        scalar (PARAM_PATTERN truncation), so detection must come from the
+        section's raw line, not the parsed value."""
+        from shyfem_ui.pages.physics import _assimil_is_array
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse(
+            "$assimil1\n        corlength = 2000. 3000.\n        tau = 1800.\n$end\n"
+        )
+        assert _assimil_is_array(sf, "assimil1", "corlength") is True
+        assert _assimil_is_array(sf, "assimil1", "tau") is False
+        assert _assimil_is_array(sf, None, "corlength") is False
+        assert _assimil_is_array(sf, "missing", "corlength") is False
+
     def test_assimil_apply_creates_wellformed_section(self):
         from shyfem_ui.pages.physics import _assimil_apply
         from shyfem_ui.services.parser_str import StrFile, StrParser
@@ -218,6 +292,12 @@ Add to `shyfem-ui/tests/test_physics_page.py`, inside `TestPhysicsPanels`
         assert sf.get_param("assimil7", "nobs") == 0
         assert sf.get_param("assimil7", "corlength") == 2000.0  # untouched
         assert sf.sections["assimil7"]._modified_params == {"nobs"}
+        # disabled + no section for this ivar -> no-op, nothing created
+        from shyfem_ui.services.parser_str import StrFile
+
+        empty = StrFile()
+        assert _assimil_apply(empty, 12, 1, False, {}) is None
+        assert empty.get_section_names() == []
 
     def test_assimil_apply_skips_missing_fields(self):
         """A field absent from values (array-note case: no input was
@@ -230,6 +310,9 @@ Add to `shyfem-ui/tests/test_physics_page.py`, inside `TestPhysicsPanels`
         out = StrParser.generate(sf)
         assert "        corlength = 2000." in out.splitlines()
         assert sf.get_param("assimil7", "tau") == 900.0
+        # write-back went to the adopted section's own name — no spurious
+        # $assimil1 created alongside it
+        assert "assimil1" not in sf.get_section_names()
 
     def test_purge_nduge(self):
         from shyfem_ui.pages.physics import _purge_nduge
@@ -243,8 +326,8 @@ Add to `shyfem-ui/tests/test_physics_page.py`, inside `TestPhysicsPanels`
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q -k assimil`
-Expected: all new tests FAIL with `ImportError: cannot import name '_assimil_find'` (etc.).
+Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q -k "assim or nduge"`
+Expected: all new tests FAIL with `ImportError: cannot import name '_assimil_find'` (etc.). (`-k "assim or nduge"` — not `-k assimil` — so `test_purge_nduge` is selected too; the Task 1 registry test also matches and stays green.)
 
 - [ ] **Step 3: Implement the helpers**
 
@@ -309,6 +392,26 @@ def _assimil_new_name(sf: StrFile, preferred: int) -> str:
     return f"assimil{num}"
 
 
+def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
+    """True when *param*'s raw STR line carries more than one value token.
+
+    PARAM_PATTERN truncates a space-separated per-station array
+    (``corlength = 2000. 3000.``) to a clean first-token scalar, so the
+    parsed value alone cannot reveal it — scan the section's raw line.
+    Multi-token remainders are treated as arrays conservatively: the
+    field goes read-only and the raw line survives; never a partial
+    rewrite of station 1 only.
+    """
+    if name is None or name not in sf.sections:
+        return False
+    pat = re.compile(rf"^\s*{re.escape(param)}\s*=\s*(.+)$")
+    for line in sf.sections[name].raw_lines:
+        m = pat.match(line)
+        if m:
+            return len(m.group(1).split()) > 1
+    return False
+
+
 def _assimil_apply(
     sf: StrFile, ivar: int, preferred: int, on: bool, values: dict
 ) -> str | None:
@@ -367,7 +470,7 @@ def _purge_nduge(sf: StrFile) -> bool:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q -k assimil`
+Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q -k "assim or nduge"`
 Expected: ALL PASS.
 
 - [ ] **Step 5: Commit**
@@ -381,28 +484,19 @@ cd /home/razinka/shyfem && git add shyfem-ui/shyfem_ui/pages/physics.py shyfem-u
 ### Task 3: Panel UI rewrite, registry, remap removal
 
 **Files:**
-- Modify: `shyfem-ui/shyfem_ui/pages/physics.py` — registry entry (~lines 196-201), `_INPUT_ID_REMAP` (~line 447), `panel_assimilation` (~lines 1808-1878), new block/field builders after `_ASSIMIL_DEFAULTS`
-- Modify: `docs/superpowers/specs/2026-07-28-ui-assimilation-design.md` (one line: panel_conditional → always-render)
-- Test: `shyfem-ui/tests/test_physics_page.py`
+- Modify: `shyfem-ui/shyfem_ui/pages/physics.py` — `_INPUT_ID_REMAP` (~line 447), `module_badges` "Nudging" row (~line 598), `panel_assimilation` (~lines 1808-1878), new block/field builders after `_purge_nduge` (the registry entry was already made composite in Task 1)
+- Test: `shyfem-ui/tests/test_physics_page.py` (new tests + one stale hardcoded remap copy at ~lines 386-401)
 
 **Interfaces:**
-- Consumes: Task 2 helpers (`_assimil_find`, `_assimil_nobs`, `_ASSIMIL_NAME`, `_ASSIMIL_DEFAULTS`, `_ASSIMIL_INT_FIELDS`), `_scalar_or_none`.
-- Produces: input IDs read by Task 4's save step — `assim_t_on`, `assim_s_on`, and `assim_{t|s}_{nobs,mode,tau,corlength,maxlength,sigobs,sigback,layer,vcorlength,filecoords,fileobs}`. Module-level `_assimil_block(sf, title, prefix, ivar) -> ui.Tag` and `_assimil_num_field(prefix, param, label, raw, **kwargs) -> ui.Tag`.
+- Consumes: Task 2 helpers (`_assimil_find`, `_assimil_nobs`, `_assimil_is_array`, `_ASSIMIL_NAME`, `_ASSIMIL_DEFAULTS`, `_ASSIMIL_INT_FIELDS`), `_scalar_or_none`.
+- Produces: input IDs read by Task 4's save step — `assim_t_on`, `assim_s_on`, and `assim_{t|s}_{nobs,mode,tau,corlength,maxlength,sigobs,sigback,layer,vcorlength,filecoords,fileobs}`. Module-level `_assimil_block(sf, title, prefix, ivar) -> ui.Tag` and `_assimil_num_field(prefix, param, label, raw, is_array=False, **kwargs) -> ui.Tag`.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `TestPhysicsPanels` in `shyfem-ui/tests/test_physics_page.py`:
+Add to `TestPhysicsPanels` in `shyfem-ui/tests/test_physics_page.py`
+(the registry-is-composite test already exists from Task 1):
 
 ```python
-    def test_assimilation_panel_registry_is_composite(self):
-        """No 1:1 registered params and no dedicated section: the old
-        registry wrote a $nduge section the core hard-rejects."""
-        from shyfem_ui.pages.physics import PHYSICS_PANELS
-
-        panel = PHYSICS_PANELS["assimilation"]
-        assert panel["params"] == {}
-        assert "section" not in panel
-
     def test_ibarcl_assim_remap_removed(self):
         """The baroclinic panel owns ibarcl; a duplicate select here was
         a last-writer-wins footgun (and offered only the wrong modes)."""
@@ -414,15 +508,60 @@ Add to `TestPhysicsPanels` in `shyfem-ui/tests/test_physics_page.py`:
         assert "ibarcl_assim" not in src
 
     def test_panel_assimilation_renders_block_inputs(self):
+        """Behavioral: render both blocks and check the namespaced ids in
+        the HTML (the ids are f-string-built, so source-grepping for
+        literals like "assim_t_on" would never match)."""
+        from shyfem_ui.pages.physics import _assimil_block
+        from shyfem_ui.services.parser_str import StrFile
+
+        html = str(_assimil_block(StrFile(), "Temperature", "t", 12)) + str(
+            _assimil_block(StrFile(), "Salinity", "s", 11)
+        )
+        for input_id in ("assim_t_on", "assim_s_on", "assim_t_nobs", "assim_s_fileobs"):
+            assert input_id in html, f"missing {input_id}"
+
+    def test_assimil_blocks_reflect_stored_values(self):
+        """Spec test 1: an mm_hyd_assim-shaped STR (T + S sections) fills
+        both blocks — checkbox from nobs, numerics and filenames from the
+        adopted section."""
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sf = self._assim_sf(
+            "\n$assimil2\n        nobs = 0\n        ivar = 11\n        tau = 600.\n$end\n"
+        )
+        t_html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "checked" in t_html  # nobs = 2 -> enabled
+        assert 'value="1800.0"' in t_html  # tau from $assimil7
+        assert "mm_assim_coords.dat" in t_html  # filecoords, unquoted on load
+        s_html = str(_assimil_block(sf, "Salinity", "s", 11))
+        assert "checked" not in s_html  # nobs = 0 -> disabled
+        assert 'value="600.0"' in s_html  # stored tuning still shown
+
+    def test_assimil_block_space_separated_array_renders_note(self):
+        """Spec test 4, space form: the parser truncates space-separated
+        per-station values to a clean scalar, so the block must classify
+        the field from its raw line and render the note, not an input."""
+        from shyfem_ui.pages.physics import _assimil_block
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse(
+            "$assimil1\n        nobs = 2\n        ivar = 12\n"
+            "        corlength = 2000. 3000.\n$end\n"
+        )
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html
+        assert "set in the STR" in html
+
+    def test_module_badges_key_assimilation_not_nduge(self):
+        """The sidebar badge must reflect real $assimil sections, not the
+        dead $nduge (which would advertise a guaranteed-fatal STR)."""
         import inspect
 
         from shyfem_ui.pages import physics
 
         src = inspect.getsource(physics)
-        for input_id in ("assim_t_on", "assim_s_on"):
-            assert input_id in src, f"missing {input_id}"
-        # field ids are built as assim_{prefix}_{param}
-        assert 'f"assim_{prefix}_{param}"' in src
+        assert '"nduge" in sf.sections' not in src
+        assert '("Assimilation",' in src
 
     def test_assimil_block_reads_strfile_not_registry(self):
         """Slice-2 lesson: composite params must come from the StrFile
@@ -452,60 +591,63 @@ Add to `TestPhysicsPanels` in `shyfem-ui/tests/test_physics_page.py`:
 
         tag = str(_assimil_num_field("s", "sigback", "Background error sigma", None))
         assert "assim_s_sigback" in tag
-        assert "1.0" in tag  # _ASSIMIL_DEFAULTS["sigback"]
+        assert 'value="1.0"' in tag  # _ASSIMIL_DEFAULTS["sigback"]
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q -k assimil`
-Expected: the seven new tests FAIL (missing `_assimil_block` / `_assimil_num_field`, registry still has `"section": "nduge"`, `ibarcl_assim` still present).
+Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q -k "assim or nduge"`
+Expected: the nine new Task 3 tests FAIL — most with `ImportError: cannot import name '_assimil_block'`/`'_assimil_num_field'`; `test_ibarcl_assim_remap_removed` and `test_module_badges_key_assimilation_not_nduge` with AssertionError (`ibarcl_assim` and the nduge badge still present). Task 1/2 assimil tests stay green.
 
-- [ ] **Step 3a: Registry + remap edits**
+- [ ] **Step 3a: Remap, badge, and stale-test edits**
 
-In `shyfem-ui/shyfem_ui/pages/physics.py` replace:
+In `shyfem-ui/shyfem_ui/pages/physics.py` delete the remap entry:
 
 ```python
-    "assimilation": {
-        "label": "Data Assimilation",
-        "icon": "bi-bullseye",
-        "section": "nduge",
-        "params": {"ibarcl": "para"},
-    },
+        "ibarcl_assim": ("para", "ibarcl"),
+```
+
+In the same file's `module_badges` checks list (~line 598) replace:
+
+```python
+            ("Nudging", "nduge" in sf.sections, None),
 ```
 
 with:
 
 ```python
-    "assimilation": {
-        "label": "Data Assimilation",
-        "icon": "bi-bullseye",
-        # composite panel: reads/writes numbered $assimil sections
-        # directly, nothing registered for the generic save loop
-        "params": {},
-    },
+            (
+                "Assimilation",
+                any(_ASSIMIL_NAME.match(n) for n in sf.get_section_names()),
+                None,
+            ),
 ```
 
-and delete the remap entry:
-
-```python
-        "ibarcl_assim": ("para", "ibarcl"),
-```
+In `shyfem-ui/tests/test_physics_page.py`, `test_collect_remap_ids_are_valid`
+(~lines 386-401) keeps a hardcoded copy of the remap dict — delete its
+`"ibarcl_assim": ("para", "ibarcl"),` row so the copy matches the real
+`_INPUT_ID_REMAP` again.
 
 - [ ] **Step 3b: Field and block builders**
 
 Insert after `_purge_nduge` (module level):
 
 ```python
-def _assimil_num_field(prefix: str, param: str, label: str, raw: object, **kwargs) -> ui.Tag:
+def _assimil_num_field(
+    prefix: str, param: str, label: str, raw: object, is_array: bool = False, **kwargs
+) -> ui.Tag:
     """Numeric column for one OI parameter.
 
     Editable when the stored value is a clean scalar or absent (absent
-    falls back to _ASSIMIL_DEFAULTS); a per-station array value renders
-    as a static note with NO input control, so the save step's read
-    fails and the raw STR line survives verbatim (slice-1 pattern).
+    falls back to _ASSIMIL_DEFAULTS); a per-station array renders as a
+    static note with NO input control, so the save step's read fails and
+    the raw STR line survives verbatim (slice-1 pattern). Arrays arrive
+    two ways: comma forms parse to a non-scalar string (caught here via
+    _scalar_or_none), space forms parse to a clean first token and are
+    flagged by the caller via is_array (raw-line detection).
     """
     val = _scalar_or_none(raw)
-    if raw is not None and val is None:
+    if is_array or (raw is not None and val is None):
         return ui.help_text(f"{label}: per-station values set in the STR — edit the file directly.")
     if val is None:
         val = _ASSIMIL_DEFAULTS[param]
@@ -528,7 +670,14 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
         return sf.get_param(name, param) if name else None
 
     def num(param: str, label: str, **kwargs) -> ui.Tag:
-        return _assimil_num_field(prefix, param, label, raw(param), **kwargs)
+        return _assimil_num_field(
+            prefix,
+            param,
+            label,
+            raw(param),
+            is_array=_assimil_is_array(sf, name, param),
+            **kwargs,
+        )
 
     try:
         mode_sel = str(int(raw("mode")))
@@ -621,28 +770,13 @@ rendering `ibarcl_assim`/`nvars`/`tramp`/`ttau`/`sigma`/`bmulti`) with:
 Run: `cd /home/razinka/shyfem/shyfem-ui && CONDA_PREFIX= /opt/micromamba/envs/shiny/bin/python -m pytest tests/test_physics_page.py -q`
 Expected: ALL PASS (whole file — catches any old test of the removed panel; if one asserts `nduge`/`ibarcl_assim` behavior, delete it, it tests the bug).
 
-- [ ] **Step 5: Amend the spec's panel_conditional line**
+- [ ] **Step 5: Commit**
 
-In `docs/superpowers/specs/2026-07-28-ui-assimilation-design.md` replace:
-
-```markdown
-- Two blocks, Temperature and Salinity. Each: an enable checkbox
-  (`assim_t_on` / `assim_s_on`) revealing, via `ui.panel_conditional`:
-```
-
-with:
-
-```markdown
-- Two blocks, Temperature and Salinity. Each: an enable checkbox
-  (`assim_t_on` / `assim_s_on`) above always-rendered fields — the
-  checkbox gates only save behavior. (Amended from panel_conditional:
-  its JS condition strings are not namespaced inside Shiny modules.)
-```
-
-- [ ] **Step 6: Commit**
+(The spec's panel_conditional line was already amended to always-render
+during plan review — no spec edit needed here.)
 
 ```bash
-cd /home/razinka/shyfem && git add shyfem-ui/shyfem_ui/pages/physics.py shyfem-ui/tests/test_physics_page.py docs/superpowers/specs/2026-07-28-ui-assimilation-design.md && git commit -m "feat(ui): rebuild Data Assimilation panel on \$assimilN T/S blocks"
+cd /home/razinka/shyfem && git add shyfem-ui/shyfem_ui/pages/physics.py shyfem-ui/tests/test_physics_page.py && git commit -m "feat(ui): rebuild Data Assimilation panel on \$assimilN T/S blocks"
 ```
 
 ---
@@ -919,8 +1053,8 @@ EOF
 
 ---
 
-## Self-Review (executed while writing)
+## Self-Review + review-in-loop (3 verifier agents, 2026-07-28)
 
-- **Spec coverage:** registry/metadata → T1+T3; helpers/adoption/save → T2+T4; panel UI → T3; nduge purge + notify → T2 (pure) + T4 (glue/notification); template → T5; testing list items 1-9 → T1 (9), T2 (2,3,4,5,6,7 via helpers), T3 (renders/registry), T4 (glue lock), T5 (8); gates → T6.
-- **Deviation from spec:** always-render instead of panel_conditional; spec amended in T3 Step 5 with rationale.
-- **Type consistency:** `_assimil_apply(sf, ivar, preferred, on, values)` used identically in T2 tests and T4 glue; input IDs `assim_{prefix}_{param}` consistent between T3 builders and T4 reads; `_purge_nduge -> bool` consumed by T4's notification gate.
+- **Spec coverage:** registry/metadata → T1; helpers/adoption/save → T2+T4; panel UI + badge → T3; nduge purge + notify → T2 (pure) + T4 (glue/notification); template → T5; testing list items 1-9 → item 1 T3 (`test_assimil_blocks_reflect_stored_values`), 2 T2 (find + own-name write-back assert), 3 T1 (byte-identical single-section), 4 T2/T3 (comma AND space forms), 5-7 T2, 8 T5, 9 T1; gates → T6.
+- **Review-in-loop fixes applied:** literal-ID source assertions replaced with behavioral block rendering (blocker); space-separated array detection added via `_assimil_is_array` raw-line scan (silent partial-rewrite hazard); registry change moved to T1 (mid-plan red-suite bisect hazard); `-k "assim or nduge"` selectors; `module_badges` nduge row replaced; stale remap-copy test row deleted; `'value="1.0"'` attribute-anchored asserts; disable-no-op and own-name write-back asserts added. Spec amendments (always-render, space-form arrays, template `$name` trim, purge-on-collect, per-section byte-identity) applied directly to the spec.
+- **Type consistency:** `_assimil_apply(sf, ivar, preferred, on, values)` used identically in T2 tests and T4 glue; input IDs `assim_{prefix}_{param}` consistent between T3 builders and T4 reads; `_assimil_num_field(..., is_array=False, ...)` matches the `num()` closure's call; `_purge_nduge -> bool` consumed by T4's notification gate.
