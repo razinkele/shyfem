@@ -416,6 +416,13 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
             "0=off, 1=AREG, 2=POM bulk, 3=Gill, 4=Dejak, 5=GOTM, "
             "6=COARE 3.0, 7=read from file, 8=MFS bulk",
         ),
+        "imetout": _p(
+            "Meteo output streams (bitmask)",
+            "int",
+            0,
+            "",
+            "digits: 1s=wind,10s=heat,100s=rain,1000s=ice,10000s=heat-fluxes",
+        ),
         "ihtype": _p("Water vapor input type", "int", 1, "", "1=RH%, 2=Tw, 3=Td, 4=q"),
         "hdecay": _p("Radiation penetration depth", "float", 0.0, "m", "0=no penetration"),
         "albedo": _p("Surface albedo", "float", 0.06, "", "[0,1]"),

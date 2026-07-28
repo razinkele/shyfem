@@ -36,6 +36,82 @@ class TestPhysicsPanels:
         params = PHYSICS_PANELS["ecology"]["params"]
         assert "ibio" in params
 
+    def test_imetout_decode_encode_roundtrip(self):
+        from shyfem_ui.pages.physics import _imetout_decode, _imetout_encode
+
+        flags = _imetout_decode(10010)  # heat (10s) + heat-fluxes (10000s)
+        assert flags == {
+            "wind": False,
+            "heat": True,
+            "rain": False,
+            "ice": False,
+            "hflx": True,
+        }
+        assert _imetout_encode(flags) == 10010
+
+    def test_imetout_decode_zero_and_encode_empty(self):
+        from shyfem_ui.pages.physics import _imetout_decode, _imetout_encode
+
+        allf = ("wind", "heat", "rain", "ice", "hflx")
+        assert _imetout_decode(0) == {f: False for f in allf}
+        assert _imetout_encode({}) == 0
+
+    def test_imetout_normalizes_digit_gt_one(self):
+        from shyfem_ui.pages.physics import _imetout_decode, _imetout_encode
+
+        # heat place = 3 (>1) decodes as "on", re-encodes as 1 -> 10
+        assert _imetout_encode(_imetout_decode(30)) == 10
+
+    def test_imetout_decode_handles_garbage(self):
+        from shyfem_ui.pages.physics import _imetout_decode
+
+        allf = ("wind", "heat", "rain", "ice", "hflx")
+        assert _imetout_decode("x") == {f: False for f in allf}
+
+    def test_imetout_load_reflects_stored_value(self):
+        """Checkboxes must initialize from the STR's imetout, not always 0 —
+        exercises the same path panel_heat uses (StrFile.get_param -> decode)."""
+        from shyfem_ui.pages.physics import _imetout_decode
+
+        parsed = StrParser.parse("$para\n    imetout = 10010\n$end\n")
+        flags = _imetout_decode(parsed.get_param("para", "imetout"))
+        assert flags == {
+            "wind": False,
+            "heat": True,
+            "rain": False,
+            "ice": False,
+            "hflx": True,
+        }
+        # absent imetout -> all off (None handled, no crash)
+        assert _imetout_decode(StrFile().get_param("para", "imetout")) == {
+            f: False for f in ("wind", "heat", "rain", "ice", "hflx")
+        }
+
+    def test_panel_heat_loads_imetout_from_strfile_not_registry(self):
+        """Regression lock: the load must read imetout via get_param, not the
+        panel-registry build_panel_params (which never returns imetout)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert 'get_param("para", "imetout")' in src
+
+    def test_panel_heat_renders_imetout_checkboxes(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        for f in (
+            "imetout_wind",
+            "imetout_heat",
+            "imetout_rain",
+            "imetout_ice",
+            "imetout_hflx",
+        ):
+            assert f'"{f}"' in src, f"{f} checkbox not rendered"
+
     def test_tracers_panel_has_beaching(self):
         params = PHYSICS_PANELS["tracers"]["params"]
         for p in ("ibeach", "beachrate", "burryrate"):
