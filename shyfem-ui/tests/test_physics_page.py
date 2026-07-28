@@ -405,6 +405,21 @@ class TestPhysicsPanels:
         assert "assim_s_sigback" in tag
         assert 'value="1.0"' in tag  # _ASSIMIL_DEFAULTS["sigback"]
 
+    def test_collect_panel_values_wires_assimil_and_nduge_purge(self):
+        """Regression locks on the composite save step: per-block guarded
+        checkbox read, per-field guarded input reads feeding
+        _assimil_apply, and the unconditional $nduge purge."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
+        assert "_assimil_apply(" in collect
+        assert "_purge_nduge(" in collect
+        assert 'input[f"assim_{prefix}_on"]' in collect
+        assert 'input[f"assim_{prefix}_{param}"]' in collect
+
 
 class TestTimingPanel:
     """Simulation timing panel with itanf/itend/idt."""

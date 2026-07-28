@@ -724,6 +724,32 @@ def physics_server(
         if flags is not None:
             sf.set_param("para", "imetout", _imetout_encode(flags))
 
+        # --- composite sections: $assimilN <- T/S assimilation blocks ---
+        for prefix, ivar, preferred in (("t", 12, 1), ("s", 11, 2)):
+            try:
+                on = bool(input[f"assim_{prefix}_on"]())
+            except Exception:
+                continue  # panel not rendered -> sections untouched
+            values: dict[str, object] = {}
+            for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
+                try:
+                    raw = input[f"assim_{prefix}_{param}"]()
+                except Exception:
+                    continue  # array-note field: input never created
+                if raw is None or str(raw).strip() == "":
+                    continue
+                values[param] = raw
+            _assimil_apply(sf, ivar, preferred, on, values)
+
+        # --- purge the dead $nduge section on every save: the core
+        # hard-stops on it, so an STR carrying it can never run ---
+        if _purge_nduge(sf):
+            ui.notification_show(
+                "Removed dead $nduge section (the core rejects it).",
+                type="message",
+                duration=6,
+            )
+
     def _read_input_and_set(
         sf: StrFile,
         input_id: str,
