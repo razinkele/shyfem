@@ -6,6 +6,8 @@ STR files.
 """
 
 import logging
+import math
+import re
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
@@ -196,8 +198,9 @@ PHYSICS_PANELS = {
     "assimilation": {
         "label": "Data Assimilation",
         "icon": "bi-bullseye",
-        "section": "nduge",
-        "params": {"ibarcl": "para"},
+        # composite panel: reads/writes numbered $assimil sections
+        # directly, nothing registered for the generic save loop
+        "params": {},
     },
     "renewal_time": {
         "label": "Water Renewal Time",
@@ -332,6 +335,263 @@ def _rate_field(input_id: str, label: str, raw: object) -> ui.Tag:
     return ui.input_numeric(input_id, label, value=val, min=0, step=0.01)
 
 
+_ASSIMIL_NAME = re.compile(r"^assimil(\d+)$")
+
+# Numbered $assimil sections (assimil_admin.f90): one section per
+# assimilated variable, single values broadcast to all nobs stations.
+_ASSIMIL_NUMERIC_FIELDS = (
+    "nobs",
+    "mode",
+    "tau",
+    "corlength",
+    "maxlength",
+    "sigobs",
+    "sigback",
+    "layer",
+    "vcorlength",
+)
+_ASSIMIL_INT_FIELDS = {"nobs", "mode", "layer"}
+_ASSIMIL_FILE_FIELDS = ("filecoords", "fileobs")
+# Prefills for a freshly enabled block; corlength/sigobs/sigback must be
+# > 0 for the core to accept the section.
+_ASSIMIL_DEFAULTS = {
+    "nobs": 1,
+    "mode": 0,
+    "tau": 0.0,
+    "corlength": 1000.0,
+    "maxlength": 0.0,
+    "sigobs": 0.1,
+    "sigback": 1.0,
+    "layer": 0,
+    "vcorlength": 0.0,
+}
+
+
+def _assimil_find(sf: StrFile, ivar: int) -> str | None:
+    """Name of the $assimilN section assimilating *ivar*, or None.
+
+    Adoption is by ivar, not by section number: a hand-written $assimil7
+    with ivar = 12 is the temperature section and is written back under
+    its own name.
+    """
+    for name in sf.get_section_names():
+        if not _ASSIMIL_NAME.match(name):
+            continue
+        try:
+            if int(sf.get_param(name, "ivar")) == ivar:
+                return name
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _assimil_nobs(sf: StrFile, name: str) -> int:
+    """nobs of a section, 0 when absent or not a clean integer."""
+    try:
+        return int(sf.get_param(name, "nobs"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _assimil_new_name(sf: StrFile, preferred: int) -> str:
+    """assimil<preferred>, or the first free number above it."""
+    used = {int(m.group(1)) for m in (_ASSIMIL_NAME.match(n) for n in sf.get_section_names()) if m}
+    num = preferred
+    while num in used:
+        num += 1
+    return f"assimil{num}"
+
+
+def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
+    """True when *param*'s raw STR line carries more than one value token.
+
+    PARAM_PATTERN truncates a space-separated per-station array
+    (``corlength = 2000. 3000.``) to a clean first-token scalar, so the
+    parsed value alone cannot reveal it — scan the section's raw line.
+    Multi-token remainders are treated as arrays conservatively: the
+    field goes read-only and the raw line survives; never a partial
+    rewrite of station 1 only.
+    """
+    if name is None or name not in sf.sections:
+        return False
+    pat = re.compile(rf"^\s*{re.escape(param)}\s*=\s*(.+)$")
+    for line in sf.sections[name].raw_lines:
+        m = pat.match(line)
+        if m:
+            return len(m.group(1).split()) > 1
+    return False
+
+
+def _assimil_apply(sf: StrFile, ivar: int, preferred: int, on: bool, values: dict) -> str | None:
+    """Write one assimilation block into *sf*; returns the section touched.
+
+    Disabled: set nobs = 0 only (the core ignores and logs such sections;
+    the stored tuning survives for re-enabling). Enabled: write every
+    field present in *values*; a missing field (its input was never
+    created — the per-station-array case) keeps its raw STR line.
+    Non-finite numerics (inf/nan) are skipped (keep-old-value), since
+    int(float("inf")) raises OverflowError and neither belongs in a STR
+    file. File fields are stored pre-quoted because _format_value leaves
+    bare dash-less filenames unquoted, which the Fortran namelist reader
+    rejects for character parameters; a value whose contents (after
+    stripping one optional surrounding quote pair -- the round-trip shape
+    _assimil_block re-renders into the input from a prior save) still
+    contain a quote or any newline/carriage-return is skipped
+    (keep-old-value) instead, since it could either smuggle STR structure
+    (a fake $end/$section) or emit an unbalanced quote.
+    """
+    name = _assimil_find(sf, ivar)
+    if not on:
+        if name is not None:
+            sf.set_param(name, "nobs", 0)
+        return name
+    if name is None:
+        name = _assimil_new_name(sf, preferred)
+    sf.set_param(name, "ivar", ivar)
+    for param in _ASSIMIL_NUMERIC_FIELDS:
+        if param not in values:
+            continue
+        try:
+            num = (
+                int(float(values[param])) if param in _ASSIMIL_INT_FIELDS else float(values[param])
+            )
+        except (TypeError, ValueError, OverflowError):
+            continue
+        if not math.isfinite(num):
+            continue
+        sf.set_param(name, param, num)
+    for param in _ASSIMIL_FILE_FIELDS:
+        raw = str(values.get(param, "") or "").strip()
+        if not raw:
+            continue
+        # A prior save round-trips this field back into the input already
+        # single-quoted (see docstring) -- strip that one surrounding pair
+        # before scanning, so re-submitting an unedited field doesn't get
+        # treated as an injection attempt and silently dropped.
+        inner = raw[1:-1] if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'") else raw
+        if any(ch in inner for ch in ("'", '"', "\n", "\r")):
+            continue
+        sf.set_param(name, param, f"'{inner}'")
+    return name
+
+
+def _purge_nduge(sf: StrFile) -> bool:
+    """Drop the dead $nduge section the old UI used to write.
+
+    No core code reads it and iostr.f90 hard-stops on unknown sections,
+    so any STR carrying it cannot run. generate() skips the stale
+    _structure entry once the section is gone.
+    """
+    if "nduge" not in sf.sections:
+        return False
+    del sf.sections["nduge"]
+    return True
+
+
+def _assimil_num_field(
+    prefix: str, param: str, label: str, raw: object, is_array: bool = False, **kwargs
+) -> ui.Tag:
+    """Numeric column for one OI parameter.
+
+    Editable when the stored value is a clean scalar or absent (absent
+    falls back to _ASSIMIL_DEFAULTS); a per-station array renders as a
+    static note with NO input control, so the save step's read fails and
+    the raw STR line survives verbatim (slice-1 pattern). Arrays arrive
+    two ways: comma forms parse to a non-scalar string (caught here via
+    _scalar_or_none), space forms parse to a clean first token and are
+    flagged by the caller via is_array (raw-line detection).
+    """
+    val = _scalar_or_none(raw)
+    if is_array or (raw is not None and val is None):
+        return ui.help_text(f"{label}: per-station values set in the STR — edit the file directly.")
+    if val is None:
+        val = _ASSIMIL_DEFAULTS[param]
+    if param in _ASSIMIL_INT_FIELDS:
+        val = int(val)
+    return ui.input_numeric(f"assim_{prefix}_{param}", label, value=val, **kwargs)
+
+
+def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
+    """One variable block (Temperature or Salinity) of the panel.
+
+    All fields always render; the checkbox gates only what the save step
+    writes (ui.panel_conditional is avoided: its JS condition strings
+    are not namespaced inside Shiny modules).
+    """
+    name = _assimil_find(sf, ivar)
+    enabled = name is not None and _assimil_nobs(sf, name) > 0
+
+    def raw(param: str) -> object:
+        return sf.get_param(name, param) if name else None
+
+    def num(param: str, label: str, **kwargs) -> ui.Tag:
+        return _assimil_num_field(
+            prefix,
+            param,
+            label,
+            raw(param),
+            is_array=_assimil_is_array(sf, name, param),
+            **kwargs,
+        )
+
+    try:
+        mode_sel = str(int(raw("mode")))
+    except (TypeError, ValueError):
+        mode_sel = "0"
+    if mode_sel not in ("0", "1"):
+        mode_sel = "0"
+
+    return ui.div(
+        ui.h6(f"{title} (ivar {ivar})", class_="text-muted mt-3"),
+        ui.input_checkbox(f"assim_{prefix}_on", f"Assimilate {title.lower()}", value=enabled),
+        ui.row(
+            ui.column(4, num("nobs", "Observation stations", min=1, step=1)),
+            ui.column(
+                4,
+                ui.input_select(
+                    f"assim_{prefix}_mode",
+                    "Application mode",
+                    choices={"0": "0 - Nudging", "1": "1 - Direct insertion"},
+                    selected=mode_sel,
+                ),
+            ),
+            ui.column(4, num("tau", "Timescale tau (s)", min=0, step=60.0)),
+        ),
+        ui.row(
+            ui.column(4, num("corlength", "Correlation length (m)", min=1.0, step=100.0)),
+            ui.column(
+                4, num("maxlength", "Max influence radius (m, 0 = no cutoff)", min=0, step=100.0)
+            ),
+            ui.column(4, num("sigobs", "Observation error sigma", min=1e-6, step=0.05)),
+        ),
+        ui.row(
+            ui.column(4, num("sigback", "Background error sigma", min=1e-6, step=0.05)),
+            ui.column(4, num("layer", "Observation layer (0 = uniform column)", min=0, step=1)),
+            ui.column(
+                4, num("vcorlength", "Vertical corr. length (m, 0 = uniform)", min=0, step=0.5)
+            ),
+        ),
+        ui.row(
+            ui.column(
+                6,
+                ui.input_text(
+                    f"assim_{prefix}_filecoords",
+                    "Station coordinates file",
+                    value=str(raw("filecoords") or ""),
+                ),
+            ),
+            ui.column(
+                6,
+                ui.input_text(
+                    f"assim_{prefix}_fileobs",
+                    "Observations file",
+                    value=str(raw("fileobs") or ""),
+                ),
+            ),
+        ),
+    )
+
+
 @module.ui
 def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
@@ -444,7 +704,6 @@ def physics_server(
     # Map of input IDs that differ from the STR param name.
     # key = input_id used in the UI, value = (section, param_name).
     _INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
-        "ibarcl_assim": ("para", "ibarcl"),
         "idtcon_out": ("para", "idtcon"),
         "icon_av_out": ("para", "icon_av"),
     }
@@ -479,6 +738,32 @@ def physics_server(
             flags = None  # heat panel not rendered -> leave imetout untouched
         if flags is not None:
             sf.set_param("para", "imetout", _imetout_encode(flags))
+
+        # --- composite sections: $assimilN <- T/S assimilation blocks ---
+        for prefix, ivar, preferred in (("t", 12, 1), ("s", 11, 2)):
+            try:
+                on = bool(input[f"assim_{prefix}_on"]())
+            except Exception:
+                continue  # panel not rendered -> sections untouched
+            values: dict[str, object] = {}
+            for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
+                try:
+                    raw = input[f"assim_{prefix}_{param}"]()
+                except Exception:
+                    continue  # array-note field: input never created
+                if raw is None or str(raw).strip() == "":
+                    continue
+                values[param] = raw
+            _assimil_apply(sf, ivar, preferred, on, values)
+
+        # --- purge the dead $nduge section on every save: the core
+        # hard-stops on it, so an STR carrying it can never run ---
+        if _purge_nduge(sf):
+            ui.notification_show(
+                "Removed dead $nduge section (the core rejects it).",
+                type="message",
+                duration=6,
+            )
 
     def _read_input_and_set(
         sf: StrFile,
@@ -595,7 +880,7 @@ def physics_server(
             ("Lagrangian", "lagrg" in sf.sections, None),
             ("Ice", sf.get_param("para", "icemod", 0) == 1, None),
             ("Waves", (sf.get_param("para", "iwave", 0) or 0) > 0, None),
-            ("Nudging", "nduge" in sf.sections, None),
+            ("Assimilation", any(_ASSIMIL_NAME.match(n) for n in sf.get_section_names()), None),
             ("Tracers", (sf.get_param("para", "iconz", 0) or 0) > 0, None),
             ("Wind", (sf.get_param("para", "iwtype", 0) or 0) > 1, None),
             ("WRT", "wrt" in sf.sections, None),
@@ -1807,75 +2092,25 @@ def physics_server(
 
     @render.ui
     def panel_assimilation():
-        params = build_panel_params(str_data.get(), "assimilation")
-        return ui.div(
-            ui.row(
-                ui.column(
-                    4,
-                    ui.input_select(
-                        "ibarcl_assim",
-                        "Baroclinic mode",
-                        choices={
-                            "0": "0 - Off",
-                            "4": "4 - Nudging",
-                            "5": "5 - Assimilation",
-                        },
-                        selected=str(params.get("ibarcl", 0) or 0),
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "nvars",
-                        "Observation stations",
-                        value=int(params.get("nvars", 0) or 0),
-                        min=0,
-                        max=50,
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "tramp",
-                        "Ramp-up time (s)",
-                        value=float(params.get("tramp", 0) or 0),
-                        min=0,
-                        step=1.0,
-                    ),
-                ),
+        sf = str_data.get()
+        adopted = {_assimil_find(sf, 12), _assimil_find(sf, 11)}
+        others = [n for n in sf.get_section_names() if _ASSIMIL_NAME.match(n) and n not in adopted]
+        children = [
+            ui.help_text(
+                "Optimal-interpolation assimilation runs in prognostic "
+                "baroclinic mode (ibarcl = 3, set in the Baroclinic panel)."
             ),
-            ui.row(
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "ttau",
-                        "Relaxation time (s)",
-                        value=float(params.get("ttau", 0) or 0),
-                        min=0,
-                        step=1.0,
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_numeric(
-                        "sigma",
-                        "Spatial influence radius (m)",
-                        value=float(params.get("sigma", 0) or 0),
-                        min=0,
-                        step=100.0,
-                    ),
-                ),
-                ui.column(
-                    4,
-                    ui.input_select(
-                        "bmulti",
-                        "Multi-station nudging",
-                        choices={"0": "0 - Off", "1": "1 - On"},
-                        selected=str(params.get("bmulti", 1) or 0),
-                    ),
-                ),
-            ),
-        )
+        ]
+        if others:
+            children.append(
+                ui.help_text(
+                    "Other $assimil sections present (edited in the STR): "
+                    + ", ".join(f"${n}" for n in others)
+                )
+            )
+        children.append(_assimil_block(sf, "Temperature", "t", 12))
+        children.append(_assimil_block(sf, "Salinity", "s", 11))
+        return ui.div(*children)
 
     @render.ui
     def panel_output():

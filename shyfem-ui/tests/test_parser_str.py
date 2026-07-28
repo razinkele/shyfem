@@ -4,6 +4,7 @@ import pytest
 
 from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
+    COMMON_SECTIONS,
     StrFile,
     StrParser,
 )
@@ -526,11 +527,12 @@ class TestCommonParams:
         assert "bfmsc" in COMMON_PARAMS
         assert "ibfm" in COMMON_PARAMS["bfmsc"]
 
-    def test_common_params_has_nduge_section(self):
-        """COMMON_PARAMS has $nduge data assimilation section."""
-        assert "nduge" in COMMON_PARAMS
-        for p in ("nvars", "tramp", "ttau", "sigma"):
-            assert p in COMMON_PARAMS["nduge"], f"Missing {p} in $nduge"
+    def test_nduge_metadata_removed(self):
+        """$nduge is a fiction of the old UI: no core code reads it and
+        iostr.f90 hard-stops on unknown sections, so the UI must never
+        recreate it via the dedicated-section save path."""
+        assert "nduge" not in COMMON_PARAMS
+        assert "nduge" not in COMMON_SECTIONS
 
 
 class TestNewSectionRoundTrip:
@@ -576,6 +578,54 @@ $end
         generated = StrParser.generate(parsed)
         reparsed = StrParser.parse(generated)
         assert reparsed.get_param("nduge", "nvars") == 3
+
+    def test_assimil_numbered_sections_parse_distinct(self):
+        content = (
+            "$assimil1\n"
+            "        nobs = 2\n"
+            "        ivar = 12\n"
+            "        corlength = 2000.\n"
+            "$end\n"
+            "\n"
+            "$assimil2\n"
+            "        nobs = 1\n"
+            "        ivar = 11\n"
+            "$end\n"
+        )
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("assimil1", "ivar") == 12
+        assert parsed.get_param("assimil2", "ivar") == 11
+        assert parsed.get_param("assimil1", "nobs") == 2
+
+    def test_assimil_section_roundtrips_verbatim_when_unmodified(self):
+        line = "        corlength = 2000. 3000."  # per-station array form
+        content = f"$assimil1\n        nobs = 2\n        ivar = 12\n{line}\n$end\n"
+        out = StrParser.generate(StrParser.parse(content))
+        assert line in out.splitlines()
+        # spec test 3: untouched load -> save is byte-identical. Single
+        # section only: the generator's inter-section blank-line handling
+        # precludes multi-section byte-identity, so per-section is the
+        # guarantee.
+        assert out == content
+
+    def test_multi_assign_line_overlay_targets_correct_param_by_span(self):
+        """A first-occurrence substring replace mis-targets a param whose
+        name is a suffix of an earlier key on the same multi-assign line
+        (``vcorlength`` contains ``corlength``): modifying ``corlength``
+        must not clobber ``vcorlength``'s value."""
+        content = (
+            "$assimil1\n"
+            "        nobs = 1\n"
+            "        ivar = 12\n"
+            "        vcorlength = 2000.  corlength = 2000.\n"
+            "$end\n"
+        )
+        parsed = StrParser.parse(content)
+        parsed.set_param("assimil1", "corlength", 999.0)
+        out = StrParser.generate(parsed)
+        assert "vcorlength = 2000." in out
+        assert "corlength = 999.0" in out
+        assert "vcorlength = 999.0" not in out
 
     def test_multi_section_str_with_new_sections(self):
         """Full STR with multiple new sections parses correctly."""

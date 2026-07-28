@@ -184,6 +184,282 @@ class TestPhysicsPanels:
         panel = PHYSICS_PANELS["lagrangian"]
         assert panel.get("section") == "lagrg" or "ilagr" in panel["params"]
 
+    def _assim_sf(self, extra=""):
+        from shyfem_ui.services.parser_str import StrParser
+
+        return StrParser.parse(
+            "$para\n        ibarcl = 3\n$end\n\n"
+            "$assimil7\n"
+            "        nobs = 2\n"
+            "        ivar = 12\n"
+            "        mode = 1\n"
+            "        tau = 1800.\n"
+            "        corlength = 2000.\n"
+            "        sigobs = 0.1\n"
+            "        sigback = 1.0\n"
+            "        filecoords = 'mm_assim_coords.dat'\n"
+            "        fileobs = 'mm_assim_obs.dat'\n"
+            "$end\n" + extra
+        )
+
+    def test_assimil_find_adopts_by_ivar_not_number(self):
+        from shyfem_ui.pages.physics import _assimil_find
+
+        sf = self._assim_sf()
+        assert _assimil_find(sf, 12) == "assimil7"
+        assert _assimil_find(sf, 11) is None
+
+    def test_assimil_nobs_corrupt_reads_as_zero(self):
+        from shyfem_ui.pages.physics import _assimil_nobs
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$assimil1\n        nobs = 2, 3\n        ivar = 12\n$end\n")
+        assert _assimil_nobs(sf, "assimil1") == 0  # "2," is not a clean int
+
+    def test_assimil_new_name_skips_taken_numbers(self):
+        from shyfem_ui.pages.physics import _assimil_new_name
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$assimil1\n        ivar = 30\n$end\n")
+        assert _assimil_new_name(sf, 1) == "assimil2"
+        assert _assimil_new_name(sf, 2) == "assimil2"
+
+    def test_assimil_is_array_detects_space_form(self):
+        """Space-separated per-station arrays parse to a clean first-token
+        scalar (PARAM_PATTERN truncation), so detection must come from the
+        section's raw line, not the parsed value."""
+        from shyfem_ui.pages.physics import _assimil_is_array
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse(
+            "$assimil1\n        corlength = 2000. 3000.\n        tau = 1800.\n$end\n"
+        )
+        assert _assimil_is_array(sf, "assimil1", "corlength") is True
+        assert _assimil_is_array(sf, "assimil1", "tau") is False
+        assert _assimil_is_array(sf, None, "corlength") is False
+        assert _assimil_is_array(sf, "missing", "corlength") is False
+
+    def test_assimil_apply_creates_wellformed_section(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+        from shyfem_ui.services.parser_str import StrFile, StrParser
+
+        sf = StrFile()
+        name = _assimil_apply(
+            sf,
+            11,
+            2,
+            True,
+            {
+                "nobs": 1,
+                "mode": "0",
+                "tau": 1800.0,
+                "corlength": 2000.0,
+                "sigobs": 0.1,
+                "sigback": 1.0,
+                "filecoords": "coords.dat",
+                "fileobs": "obs.dat",
+            },
+        )
+        assert name == "assimil2"
+        assert sf.get_param("assimil2", "ivar") == 11
+        assert sf.get_param("assimil2", "nobs") == 1
+        assert sf.get_param("assimil2", "mode") == 0  # "0" coerced to int
+        assert sf.get_param("assimil2", "filecoords") == "'coords.dat'"
+        out = StrParser.generate(sf)
+        assert "$assimil2" in out
+        assert "filecoords = 'coords.dat'" in out  # quoted, not bare
+
+    def test_assimil_apply_disable_touches_only_nobs(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        name = _assimil_apply(sf, 12, 1, False, {"corlength": 9999.0})
+        assert name == "assimil7"
+        assert sf.get_param("assimil7", "nobs") == 0
+        assert sf.get_param("assimil7", "corlength") == 2000.0  # untouched
+        assert sf.sections["assimil7"]._modified_params == {"nobs"}
+        # disabled + no section for this ivar -> no-op, nothing created
+        from shyfem_ui.services.parser_str import StrFile
+
+        empty = StrFile()
+        assert _assimil_apply(empty, 12, 1, False, {}) is None
+        assert empty.get_section_names() == []
+
+    def test_assimil_apply_skips_missing_fields(self):
+        """A field absent from values (array-note case: no input was
+        created) must not be written, so its raw line survives."""
+        from shyfem_ui.pages.physics import _assimil_apply
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = self._assim_sf()
+        _assimil_apply(sf, 12, 1, True, {"nobs": 2, "tau": 900.0})
+        out = StrParser.generate(sf)
+        assert "        corlength = 2000." in out.splitlines()
+        assert sf.get_param("assimil7", "tau") == 900.0
+        # write-back went to the adopted section's own name — no spurious
+        # $assimil1 created alongside it
+        assert "assimil1" not in sf.get_section_names()
+
+    def test_assimil_apply_file_field_rejects_quotes_and_newlines(self):
+        """A file-field value carrying a quote or newline could smuggle
+        STR structure (fake $end/$section) or emit an unbalanced quote;
+        such values must be skipped (keep-old-value), not written."""
+        from shyfem_ui.pages.physics import _assimil_apply
+        from shyfem_ui.services.parser_str import StrFile, StrParser
+
+        sf = StrFile()
+        name = _assimil_apply(
+            sf,
+            12,
+            1,
+            True,
+            {
+                "nobs": 1,
+                "filecoords": "evil'\n$end\n$para",
+                "fileobs": "ok.dat",
+            },
+        )
+        assert sf.get_param(name, "filecoords") is None
+        assert sf.get_param(name, "fileobs") == "'ok.dat'"
+        generated = StrParser.generate(sf)
+        reparsed = StrParser.parse(generated)
+        assert reparsed.get_section_names() == [name]
+
+    def test_assimil_apply_nonfinite_numeric_skipped(self):
+        """inf/nan must not crash the coercion (OverflowError on
+        int(float('inf'))) and must not be written into the STR."""
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        name = _assimil_apply(sf, 12, 1, True, {"nobs": "inf", "tau": "nan", "corlength": 2000.0})
+        assert name == "assimil7"
+        assert sf.get_param("assimil7", "nobs") == 2  # unchanged, not written
+        assert sf.get_param("assimil7", "tau") == 1800.0  # unchanged, not written
+        assert sf.get_param("assimil7", "corlength") == 2000.0
+
+    def test_purge_nduge(self):
+        from shyfem_ui.pages.physics import _purge_nduge
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$nduge\n        nvars = 3\n$end\n\n$para\n        idt = 300\n$end\n")
+        assert _purge_nduge(sf) is True
+        assert "nduge" not in StrParser.generate(sf)
+        assert _purge_nduge(sf) is False  # second call: nothing to do
+
+    def test_ibarcl_assim_remap_removed(self):
+        """The baroclinic panel owns ibarcl; a duplicate select here was
+        a last-writer-wins footgun (and offered only the wrong modes)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert "ibarcl_assim" not in src
+
+    def test_panel_assimilation_renders_block_inputs(self):
+        """Behavioral: render both blocks and check the namespaced ids in
+        the HTML (the ids are f-string-built, so source-grepping for
+        literals like "assim_t_on" would never match)."""
+        from shyfem_ui.pages.physics import _assimil_block
+        from shyfem_ui.services.parser_str import StrFile
+
+        html = str(_assimil_block(StrFile(), "Temperature", "t", 12)) + str(
+            _assimil_block(StrFile(), "Salinity", "s", 11)
+        )
+        for input_id in ("assim_t_on", "assim_s_on", "assim_t_nobs", "assim_s_fileobs"):
+            assert input_id in html, f"missing {input_id}"
+
+    def test_assimil_blocks_reflect_stored_values(self):
+        """Spec test 1: an mm_hyd_assim-shaped STR (T + S sections) fills
+        both blocks — checkbox from nobs, numerics and filenames from the
+        adopted section."""
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sf = self._assim_sf(
+            "\n$assimil2\n        nobs = 0\n        ivar = 11\n        tau = 600.\n$end\n"
+        )
+        t_html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "checked" in t_html  # nobs = 2 -> enabled
+        assert 'value="1800.0"' in t_html  # tau from $assimil7
+        assert "mm_assim_coords.dat" in t_html  # filecoords, unquoted on load
+        s_html = str(_assimil_block(sf, "Salinity", "s", 11))
+        assert "checked" not in s_html  # nobs = 0 -> disabled
+        assert 'value="600.0"' in s_html  # stored tuning still shown
+
+    def test_assimil_block_space_separated_array_renders_note(self):
+        """Spec test 4, space form: the parser truncates space-separated
+        per-station values to a clean scalar, so the block must classify
+        the field from its raw line and render the note, not an input."""
+        from shyfem_ui.pages.physics import _assimil_block
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse(
+            "$assimil1\n        nobs = 2\n        ivar = 12\n"
+            "        corlength = 2000. 3000.\n$end\n"
+        )
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html
+        assert "set in the STR" in html
+
+    def test_module_badges_key_assimilation_not_nduge(self):
+        """The sidebar badge must reflect real $assimil sections, not the
+        dead $nduge (which would advertise a guaranteed-fatal STR)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert '"nduge" in sf.sections' not in src
+        assert '("Assimilation",' in src
+
+    def test_assimil_block_reads_strfile_not_registry(self):
+        """Slice-2 lesson: composite params must come from the StrFile
+        (build_panel_params only returns registered params -> always 0)."""
+        import inspect
+
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sig = inspect.signature(_assimil_block)
+        assert list(sig.parameters)[0] == "sf"
+
+    def test_assimil_num_field_array_renders_note_not_input(self):
+        from shyfem_ui.pages.physics import _assimil_num_field
+
+        note = _assimil_num_field("t", "corlength", "Correlation length (m)", "2000.,")
+        assert "assim_t_corlength" not in str(note)
+        assert "set in the STR" in str(note)
+
+    def test_assimil_num_field_scalar_renders_input(self):
+        from shyfem_ui.pages.physics import _assimil_num_field
+
+        tag = _assimil_num_field("t", "corlength", "Correlation length (m)", 2000.0)
+        assert "assim_t_corlength" in str(tag)
+
+    def test_assimil_num_field_absent_uses_default(self):
+        from shyfem_ui.pages.physics import _assimil_num_field
+
+        tag = str(_assimil_num_field("s", "sigback", "Background error sigma", None))
+        assert "assim_s_sigback" in tag
+        assert 'value="1.0"' in tag  # _ASSIMIL_DEFAULTS["sigback"]
+
+    def test_collect_panel_values_wires_assimil_and_nduge_purge(self):
+        """Regression locks on the composite save step: per-block guarded
+        checkbox read, per-field guarded input reads feeding
+        _assimil_apply, and the unconditional $nduge purge."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
+        assert "_assimil_apply(" in collect
+        assert "_purge_nduge(" in collect
+        assert 'input[f"assim_{prefix}_on"]' in collect
+        assert 'input[f"assim_{prefix}_{param}"]' in collect
+        assert (
+            '(("t", 12, 1), ("s", 11, 2))' in collect
+        )  # T=ivar 12, S=ivar 11 — order is load-bearing
+
 
 class TestTimingPanel:
     """Simulation timing panel with itanf/itend/idt."""
@@ -208,6 +484,7 @@ class TestBuildPanelParams:
 
     def test_extracts_known_param(self):
         from shyfem_ui.services.parser_str import StrParser
+
         content = "$para\n    ireib = 5\n    czdef = 2.5e-3\n$end\n"
         parsed = StrParser.parse(content)
         result = build_panel_params(parsed, "friction")
@@ -292,8 +569,7 @@ class TestPhysicsPanelsConfig:
         for pid, panel in PHYSICS_PANELS.items():
             for param, section in panel["params"].items():
                 assert section in known_sections, (
-                    f"Panel {pid}, param {param} references unknown "
-                    f"section '{section}'"
+                    f"Panel {pid}, param {param} references unknown " f"section '{section}'"
                 )
 
     def test_dedicated_sections_exist_in_common_params(self):
@@ -301,9 +577,17 @@ class TestPhysicsPanelsConfig:
             dedicated = panel.get("section")
             if dedicated:
                 assert dedicated in COMMON_PARAMS, (
-                    f"Panel {pid} has dedicated section '{dedicated}' "
-                    f"not in COMMON_PARAMS"
+                    f"Panel {pid} has dedicated section '{dedicated}' " f"not in COMMON_PARAMS"
                 )
+
+    def test_assimilation_panel_registry_is_composite(self):
+        """No 1:1 registered params and no dedicated section: the old
+        registry wrote a $nduge section the core hard-rejects."""
+        from shyfem_ui.pages.physics import PHYSICS_PANELS
+
+        panel = PHYSICS_PANELS["assimilation"]
+        assert panel["params"] == {}
+        assert "section" not in panel
 
 
 class TestPhysicsIntegration:
@@ -386,18 +670,15 @@ $end
     def test_collect_remap_ids_are_valid(self):
         """Verify the remapped input IDs point to valid params."""
         remap = {
-            "ibarcl_assim": ("para", "ibarcl"),
             "idtcon_out": ("para", "idtcon"),
             "icon_av_out": ("para", "icon_av"),
         }
         for input_id, (section, param) in remap.items():
             assert section in COMMON_PARAMS, (
-                f"Remap {input_id} -> {section}.{param}: "
-                f"section not in COMMON_PARAMS"
+                f"Remap {input_id} -> {section}.{param}: " f"section not in COMMON_PARAMS"
             )
             assert param in COMMON_PARAMS[section], (
-                f"Remap {input_id} -> {section}.{param}: "
-                f"param not in COMMON_PARAMS[{section}]"
+                f"Remap {input_id} -> {section}.{param}: " f"param not in COMMON_PARAMS[{section}]"
             )
 
 

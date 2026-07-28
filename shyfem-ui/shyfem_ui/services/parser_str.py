@@ -239,18 +239,33 @@ class StrParser:
             # Overlay modified params onto raw lines
             emitted_modified = set()
             for raw_line in section.raw_lines:
-                new_line = raw_line
                 stripped = raw_line.strip()
                 # Skip comments and blanks — emit as-is
                 if stripped and not cls.COMMENT.match(stripped):
-                    for match in cls.PARAM_PATTERN.finditer(stripped):
+                    # Rebuild the line by match span rather than substring
+                    # replace: a substring replace can land inside the wrong
+                    # param when an earlier key+value on the same
+                    # multi-assign line textually contains a later param's
+                    # "key = value" (e.g. "vcorlength = 2000.  corlength =
+                    # 2000." — modifying corlength must not clobber
+                    # vcorlength). PARAM_PATTERN has no anchors, so matching
+                    # the unstripped raw_line keeps spans aligned with it.
+                    parts = []
+                    pos = 0
+                    for match in cls.PARAM_PATTERN.finditer(raw_line):
                         key = match.group(1).lower()
+                        parts.append(raw_line[pos : match.start()])
                         if key in section._modified_params:
-                            old_val_str = match.group(0)
                             new_val = cls._format_value(section.parameters[key])
-                            new_kv = f"{key} = {new_val}"
-                            new_line = new_line.replace(old_val_str, new_kv, 1)
+                            parts.append(f"{key} = {new_val}")
                             emitted_modified.add(key)
+                        else:
+                            parts.append(match.group(0))
+                        pos = match.end()
+                    parts.append(raw_line[pos:])
+                    new_line = "".join(parts)
+                else:
+                    new_line = raw_line
                 lines.append(new_line)
             # Append any new params not found in raw_lines
             for key in section._modified_params - emitted_modified:
@@ -323,7 +338,6 @@ COMMON_SECTIONS = {
     "lagrg": "Lagrangian particle tracking (IBM, oil spill, connectivity)",
     "connec": "Particle connectivity analysis (source-destination tracking)",
     "bfmsc": "BFM biogeochemical flux model",
-    "nduge": "Data assimilation via zeta/velocity nudging",
     "wrt": "Custom write sections",
     "nonhyd": "Non-hydrostatic mode parameters",
 }
@@ -638,13 +652,6 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "iaout": _p("Outside area code", "int", -1, "", "-1=none"),
         "percmin": _p("Completion percentage threshold", "float", 0.0, "%", "0-100"),
         "iret": _p("Return flow flag", "int", 1, "", "0=explicit zero, 1=return"),
-    },
-    "nduge": {
-        "nvars": _p("Number of nudging observation stations", "int", 0, "", "0-50"),
-        "tramp": _p("Nudging ramp-up time", "float", 0.0, "s", ">=0"),
-        "ttau": _p("Relaxation time constant", "float", 0.0, "s", ">0"),
-        "sigma": _p("Spatial influence radius (Gaussian)", "float", 0.0, "m", ">0"),
-        "bmulti": _p("Multi-station nudging", "int", 1, "", "0=off, 1=on"),
     },
     "nonhyd": {
         "inohyd": _p("Non-hydrostatic mode", "int", 0, "", "0=hydrostatic, 1=non-hydrostatic"),

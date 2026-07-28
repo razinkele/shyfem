@@ -101,8 +101,10 @@ class TestGenerateTemplateContent:
     def test_ice_model_has_icemod(self):
         assert "icemod" in generate_template("ice_model")
 
-    def test_data_assimilation_has_nduge(self):
-        assert "$nduge" in generate_template("data_assimilation")
+    def test_data_assimilation_has_assimil(self):
+        out = generate_template("data_assimilation")
+        assert "$assimil1" in out
+        assert "$nduge" not in out
 
     def test_eulerian_tracer_has_iconz_and_iage(self):
         out = generate_template("eulerian_tracer")
