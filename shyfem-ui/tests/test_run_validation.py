@@ -115,3 +115,20 @@ class TestPreflightDoesNotHideErrors:
         from shyfem_ui.pages.run import _preflight_validate
 
         assert _preflight_validate(99999) == []
+
+
+class TestPreflightSkipSurfaced:
+    def test_preflight_validation_skip_is_surfaced(self):
+        """The pre-run STR validation gate used to swallow every failure
+        at debug level — combined with the validate_str shape bug this
+        made the preflight a silent no-op for months. A skipped
+        validation must now be visible to the user and the log."""
+        import inspect
+
+        from shyfem_ui.pages import run
+
+        src = inspect.getsource(run)
+        block = src[src.index("Validate STR parameters before submission") :]
+        block = block[: block.index("if not working_dir")]
+        assert "logger.warning" in block
+        assert "notification_show" in block.split("except Exception")[1]

@@ -352,12 +352,18 @@ _ASSIMIL_NUMERIC_FIELDS = (
 )
 _ASSIMIL_INT_FIELDS = {"nobs", "mode", "layer"}
 _ASSIMIL_FILE_FIELDS = ("filecoords", "fileobs")
+# Must hold a value for the core to accept an enabled section; the other
+# numerics ("optional") default to 0 in the core, so a cleared input
+# becomes an explicit 0 rather than an error.
+_ASSIMIL_REQUIRED_FIELDS = ("nobs", "corlength", "sigobs", "sigback")
+_ASSIMIL_OPTIONAL_FIELDS = ("tau", "maxlength", "layer", "vcorlength")
 # Prefills for a freshly enabled block; corlength/sigobs/sigback must be
-# > 0 for the core to accept the section.
+# > 0 for the core to accept the section, and tau must be > 0 in nudging
+# mode (mode=0) or the core error-stops mid-run at the first observation.
 _ASSIMIL_DEFAULTS = {
     "nobs": 1,
     "mode": 0,
-    "tau": 0.0,
+    "tau": 1800.0,
     "corlength": 1000.0,
     "maxlength": 0.0,
     "sigobs": 0.1,
@@ -422,57 +428,113 @@ def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
     return False
 
 
-def _assimil_apply(sf: StrFile, ivar: int, preferred: int, on: bool, values: dict) -> str | None:
-    """Write one assimilation block into *sf*; returns the section touched.
+def _assimil_apply(
+    sf: StrFile, ivar: int, preferred: int, on: bool, values: dict
+) -> tuple[str | None, list[str]]:
+    """Write one assimilation block into *sf*; returns (name, errors).
+
+    On any error NOTHING is written and the messages are returned for the
+    caller to surface — a rejected value must never be silently replaced
+    by the old one, since a saved STR that differs from the panel state
+    means a run with parameters the user never saw.
 
     Disabled: set nobs = 0 only (the core ignores and logs such sections;
     the stored tuning survives for re-enabling). Enabled: write every
-    field present in *values*; a missing field (its input was never
-    created — the per-station-array case) keeps its raw STR line.
-    Non-finite numerics (inf/nan) are skipped (keep-old-value), since
-    int(float("inf")) raises OverflowError and neither belongs in a STR
-    file. File fields are stored pre-quoted because _format_value leaves
-    bare dash-less filenames unquoted, which the Fortran namelist reader
-    rejects for character parameters; a value whose contents (after
-    stripping one optional surrounding quote pair -- the round-trip shape
-    _assimil_block re-renders into the input from a prior save) still
-    contain a quote or any newline/carriage-return is skipped
-    (keep-old-value) instead, since it could either smuggle STR structure
-    (a fake $end/$section) or emit an unbalanced quote.
+    field present in *values*; a field absent from *values* (its input
+    was never created — the per-station-array case) keeps its raw STR
+    line, which also satisfies the required-field checks. A field present
+    but blank was cleared in the UI: required fields error, optional
+    tuning becomes an explicit 0 (the core default). File fields are
+    stored pre-quoted because _format_value's quoting is applied on
+    emit while these values also round-trip through the panel inputs;
+    a value whose contents (after stripping one optional surrounding
+    quote pair -- the round-trip shape _assimil_block re-renders into
+    the input from a prior save) contain a quote or any
+    newline/carriage-return is an error, since it could either smuggle
+    STR structure (a fake $end/$section) or emit an unbalanced quote.
     """
     name = _assimil_find(sf, ivar)
     if not on:
         if name is not None:
             sf.set_param(name, "nobs", 0)
-        return name
-    if name is None:
-        name = _assimil_new_name(sf, preferred)
-    sf.set_param(name, "ivar", ivar)
+        return name, []
+
+    new_section = name is None
+    target = _assimil_new_name(sf, preferred) if new_section else name
+    errors: list[str] = []
+    staged: dict[str, object] = {"ivar": ivar}
+
     for param in _ASSIMIL_NUMERIC_FIELDS:
         if param not in values:
+            continue  # input never created -> raw line survives
+        raw = "" if values[param] is None else str(values[param]).strip()
+        if raw == "":
+            if param in _ASSIMIL_OPTIONAL_FIELDS:
+                staged[param] = 0 if param in _ASSIMIL_INT_FIELDS else 0.0
+            else:
+                errors.append(f"{param}: a value is required")
             continue
         try:
-            num = (
-                int(float(values[param])) if param in _ASSIMIL_INT_FIELDS else float(values[param])
-            )
+            num = int(float(raw)) if param in _ASSIMIL_INT_FIELDS else float(raw)
         except (TypeError, ValueError, OverflowError):
+            errors.append(f"{param}: {raw!r} is not a valid number")
             continue
         if not math.isfinite(num):
+            errors.append(f"{param}: value must be finite")
             continue
-        sf.set_param(name, param, num)
+        staged[param] = num
+
     for param in _ASSIMIL_FILE_FIELDS:
-        raw = str(values.get(param, "") or "").strip()
+        if param not in values:
+            if new_section:
+                errors.append(f"{param}: an observation file is required")
+            continue  # existing raw line survives
+        raw = str(values[param] or "").strip()
         if not raw:
+            errors.append(
+                f"{param}: a file is required while assimilation is enabled "
+                "(disable the block to stop assimilating)"
+            )
             continue
-        # A prior save round-trips this field back into the input already
-        # single-quoted (see docstring) -- strip that one surrounding pair
-        # before scanning, so re-submitting an unedited field doesn't get
-        # treated as an injection attempt and silently dropped.
         inner = raw[1:-1] if len(raw) >= 2 and raw.startswith("'") and raw.endswith("'") else raw
         if any(ch in inner for ch in ("'", '"', "\n", "\r")):
+            errors.append(f"{param}: path must not contain quotes or newlines")
             continue
-        sf.set_param(name, param, f"'{inner}'")
-    return name
+        staged[param] = f"'{inner}'"
+
+    def _effective(param: str) -> float | None:
+        """Numeric value the section would end up with, or None."""
+        if param in staged:
+            return float(staged[param])  # staged values are already numeric
+        if not new_section:
+            try:
+                return float(sf.get_param(target, param))
+            except (TypeError, ValueError):
+                return None
+        return None
+
+    for param in _ASSIMIL_REQUIRED_FIELDS:
+        if _effective(param) is None and not any(e.startswith(f"{param}:") for e in errors):
+            errors.append(f"{param}: a value is required")
+
+    nobs_eff = _effective("nobs")
+    if nobs_eff is not None and nobs_eff < 1:
+        errors.append("nobs: must be >= 1 while assimilation is enabled (0 disables the block)")
+
+    mode_eff = _effective("mode") or 0
+    tau_eff = _effective("tau") or 0
+    if mode_eff == 0 and tau_eff <= 0:
+        errors.append(
+            "tau: must be > 0 for nudging (mode = 0) — the core error-stops "
+            "at the first observation time"
+        )
+
+    if errors:
+        return (None if new_section else target), errors
+
+    for param, value in staged.items():
+        sf.set_param(target, param, value)
+    return target, []
 
 
 def _purge_nduge(sf: StrFile) -> bool:
@@ -711,8 +773,13 @@ def physics_server(
     for _np in COMMON_PARAMS.get("name", {}):
         _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
 
-    def _collect_panel_values() -> None:
-        """Read all panel input values and update str_data before saving."""
+    def _collect_panel_values() -> list[str]:
+        """Read all panel input values and update str_data before saving.
+
+        Returns the list of assimilation-field errors; on any error the
+        offending block was NOT applied and the caller must not report
+        the save as successful.
+        """
         sf = str_data.get()
 
         for panel in PHYSICS_PANELS.values():
@@ -740,7 +807,11 @@ def physics_server(
             sf.set_param("para", "imetout", _imetout_encode(flags))
 
         # --- composite sections: $assimilN <- T/S assimilation blocks ---
-        for prefix, ivar, preferred in (("t", 12, 1), ("s", 11, 2)):
+        errors: list[str] = []
+        for prefix, ivar, preferred, label in (
+            ("t", 12, 1, "Temperature"),
+            ("s", 11, 2, "Salinity"),
+        ):
             try:
                 on = bool(input[f"assim_{prefix}_on"]())
             except Exception:
@@ -751,10 +822,12 @@ def physics_server(
                     raw = input[f"assim_{prefix}_{param}"]()
                 except Exception:
                     continue  # array-note field: input never created
-                if raw is None or str(raw).strip() == "":
-                    continue
-                values[param] = raw
-            _assimil_apply(sf, ivar, preferred, on, values)
+                # A rendered-but-blank input means the user cleared it;
+                # pass it through so _assimil_apply can error on required
+                # fields instead of silently keeping the old value.
+                values[param] = raw if raw is not None else ""
+            _, errs = _assimil_apply(sf, ivar, preferred, on, values)
+            errors.extend(f"{label} assimilation — {e}" for e in errs)
 
         # --- purge the dead $nduge section on every save: the core
         # hard-stops on it, so an STR carrying it can never run ---
@@ -764,6 +837,8 @@ def physics_server(
                 type="message",
                 duration=6,
             )
+
+        return errors
 
     def _read_input_and_set(
         sf: StrFile,
@@ -820,7 +895,16 @@ def physics_server(
             return
         path.parent.mkdir(parents=True, exist_ok=True)
         try:
-            _collect_panel_values()
+            assim_errors = _collect_panel_values()
+            if assim_errors:
+                for e in assim_errors:
+                    ui.notification_show(e, type="error", duration=8)
+                ui.notification_show(
+                    "Not saved — fix the assimilation fields first.",
+                    type="warning",
+                    duration=8,
+                )
+                return
             sf = str_data.get()
             StrParser.save(sf, path)
             # Run cross-parameter validation
@@ -844,7 +928,10 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
-        _collect_panel_values()
+        for e in _collect_panel_values():
+            # Rejected assimilation fields were NOT applied: the preview
+            # shows the last valid state for those, so say why.
+            ui.notification_show(e, type="error", duration=8)
         content = StrParser.generate(str_data.get())
         ui.modal_show(
             ui.modal(
