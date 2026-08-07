@@ -733,3 +733,43 @@ class TestNoPhantomEndSection:
         generated = StrParser.generate(parsed)
         # One $end per real section, none dangling as their own section.
         assert generated.count("$end") == len([n for k, n in parsed._structure if k == "section"])
+
+
+class TestFormatValueQuoting:
+    """Bare (unquoted) non-numeric strings must be quoted on emit: the
+    core's reader hard-stops on an unquoted character value (nls.f90
+    'no value found'), so `wind = INPUT/wind.txt` is fatal. Before this
+    rule, a no-op save of the Input Files panel stripped the quotes from
+    every dash-less filename and broke the STR."""
+
+    def test_bare_filename_is_quoted(self):
+        assert StrParser._format_value("INPUT/wind.txt") == "'INPUT/wind.txt'"
+
+    def test_prequoted_not_double_wrapped(self):
+        assert StrParser._format_value("'obs.dat'") == "'obs.dat'"
+        assert StrParser._format_value('"obs.dat"') == '"obs.dat"'
+
+    def test_numeric_strings_stay_bare(self):
+        # These are numbers to the Fortran reader (incl. d-exponents);
+        # quoting them would turn a numeric param into a character one.
+        for s in ("5", "-5", "0.5", "1e-3", "1.5E+6", "1.d-3", ".5"):
+            assert StrParser._format_value(s) == s, s
+
+    def test_fortran_logicals_stay_bare(self):
+        assert StrParser._format_value(".true.") == ".true."
+        assert StrParser._format_value(".False.") == ".False."
+
+    def test_apostrophe_value_uses_double_quotes(self):
+        # nls.f90 accepts '..' and ".." — a value containing an apostrophe
+        # must switch delimiter, not emit an unbalanced quote.
+        assert StrParser._format_value("O'Brien.dat") == "\"O'Brien.dat\""
+
+    def test_name_section_roundtrip_keeps_quotes(self):
+        # The physics Input Files panel reads back the (unquoted) display
+        # value of every rendered field and re-sets it on save; that
+        # unmodified round-trip must not strip the quotes the core needs.
+        content = "$name\n        wind = 'INPUT/wind.txt'\n$end\n"
+        sf = StrParser.parse(content)
+        sf.set_param("name", "wind", sf.get_param("name", "wind"))
+        out = StrParser.generate(sf)
+        assert "wind = 'INPUT/wind.txt'" in out
