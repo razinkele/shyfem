@@ -352,11 +352,9 @@ def write_restart_str(str_path: Path, restart_file: str, dest_dir: Path) -> Path
     # so set_param can act on it directly; no extra generate()->parse()
     # round-trip needed.
     base_str = StrParser.parse_file(str_path)
-    # _format_value only auto-quotes strings containing a space or '-'; an
-    # absolute restart path with neither (e.g. no hyphens in the project/user
-    # names) would otherwise be emitted UNQUOTED (`restrt = /a/b/out.rst`).
-    # Pre-quoting is the idiom _format_value itself documents for this case
-    # ("Already single-quoted ... emit as-is") -- it skips re-wrapping, and
+    # _format_value now quotes every non-numeric bare string itself, but
+    # pre-quoting remains the documented idiom for values that must stay
+    # verbatim ("Already quoted ... emit as-is" skips re-wrapping), and
     # StrParser.parse() strips the quotes back off on read.
     base_str.set_param("name", "restrt", f"'{restart_file}'")
     # itrst is a real/numeric parameter (addpar('itrst',0.)) -- pass a bare

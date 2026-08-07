@@ -975,3 +975,20 @@ class TestAssimilApplyErrors:
         assert collect_pos < write_pos
         gate = save[collect_pos:write_pos]
         assert "return" in gate  # abort path between collect and write
+
+
+class TestSaveValidationOrdering:
+    def test_save_file_validates_before_write(self):
+        """Error-level validate_str findings must block the write, not be
+        reported after the invalid file is already on disk (mirrors the
+        str_editor convention of validate-then-write)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        validate_pos = save.index("validate_str(")
+        write_pos = save.index("StrParser.save")
+        assert validate_pos < write_pos
+        assert "return" in save[validate_pos:write_pos]  # errors abort the save

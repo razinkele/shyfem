@@ -424,3 +424,64 @@ class TestAssimilValidation:
     def test_ivar11_with_isalt_zero_is_error(self):
         msgs = self._msgs(self._section(ivar=11), para_extra="  isalt = 0")
         assert any("isalt" in m.message and m.level == "error" for m in msgs)
+
+
+class TestDurationStringRobustness:
+    """idt*/output-interval params legitimately hold quoted duration
+    strings ('1h', '30m') — the documented STR format used by 9 of the
+    mar_menor files and 5 templates. Comparisons like `idtcon > 0` must
+    not TypeError on them: a validator crash re-creates the app-wide
+    no-op this branch removes (save misreported, run gate bypassed,
+    ensemble submit dead)."""
+
+    def _parse(self, text):
+        from shyfem_ui.services.parser_str import StrParser
+
+        return StrParser.parse(text)
+
+    def test_duration_string_idtcon_does_not_crash(self):
+        sf = self._parse(
+            "$para\n"
+            "        itanf = 0  itend = 86400  idt = 300\n"
+            "        idtcon = '1h'\n"
+            "$end\n"
+        )
+        msgs = validate_str(sf.sections)  # must not raise
+        assert [m for m in msgs if m.level == "error"] == []
+
+    def test_string_values_in_guarded_params_do_not_crash(self):
+        # Every param compared with > 0 must survive a string value.
+        sf = self._parse(
+            "$para\n"
+            "        itanf = 0  itend = 86400  idt = 300\n"
+            "        iheat = '1h'  ilagr = 'x'  iconz = 'y'\n"
+            "        nsigma = 'a'  dzreg = 'b'  hsigma = 'c'\n"
+            "$end\n"
+        )
+        validate_str(sf.sections)  # must not raise
+
+
+class TestAssimilMissingRequiredIdentity:
+    """The core defaults nobs and ivar to -1 and error-stops on either
+    being unset (assimil_admin.f90:349) — BEFORE the nobs=0 skip. A
+    missing nobs must not be reported as a benign 'disabled' info."""
+
+    def _msgs(self, section_text):
+        from shyfem_ui.services.parser_str import StrParser
+
+        text = "$para\n        itend = 86400  idt = 300  ibarcl = 3\n$end\n\n" + section_text
+        return validate_str(StrParser.parse(text).sections)
+
+    def test_missing_nobs_is_error_not_disabled_info(self):
+        msgs = self._msgs("$assimil1\n        ivar = 12\n        mode = 1\n$end\n")
+        assert any("nobs" in m.message and m.level == "error" for m in msgs)
+        assert not any("disabled" in m.message for m in msgs)
+
+    def test_nobs_zero_without_ivar_is_error(self):
+        msgs = self._msgs("$assimil1\n        nobs = 0\n$end\n")
+        assert any("ivar" in m.message and m.level == "error" for m in msgs)
+
+    def test_nobs_zero_with_ivar_still_benign_info(self):
+        msgs = self._msgs("$assimil1\n        nobs = 0\n        ivar = 12\n$end\n")
+        assert [m for m in msgs if m.level == "error"] == []
+        assert any("disabled" in m.message and m.level == "info" for m in msgs)
