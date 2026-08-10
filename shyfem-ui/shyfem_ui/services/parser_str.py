@@ -97,7 +97,14 @@ class StrParser:
             # it first is strictly more specific and cannot shadow any real
             # section name (title, para, name, bound1, ...).
             if cls.SECTION_END.match(stripped):
-                current_section = None
+                if current_section is None:
+                    # Ownerless: the opening header was decorated
+                    # ("$nduge  ! legacy"), which SECTION_START does not
+                    # match, so the whole block is inter-section text.
+                    # Dropping this line would emit an unterminated block.
+                    inter_section_lines.append(line)
+                else:
+                    current_section = None
                 continue
 
             # Check for section start
@@ -133,8 +140,10 @@ class StrParser:
                 continue
 
             # Try to parse parameters
+            code = cls._split_comment(stripped)[0]
+
             # Handle standalone values (like in $extra section)
-            standalone_match = cls.STANDALONE_PATTERN.match(stripped)
+            standalone_match = cls.STANDALONE_PATTERN.match(code)
             if standalone_match:
                 node_id = int(standalone_match.group(1))
                 description = standalone_match.group(2)
@@ -146,7 +155,7 @@ class StrParser:
                 continue
 
             # Parse key=value parameters
-            for match in cls.PARAM_PATTERN.finditer(stripped):
+            for match in cls.PARAM_PATTERN.finditer(code):
                 key = match.group(1).lower()
                 # Value is in group 2 (single quoted), 3 (double quoted), or 4 (unquoted)
                 value = match.group(2) or match.group(3) or match.group(4)
@@ -171,6 +180,26 @@ class StrParser:
         result = cls.parse(content)
         result.file_path = file_path
         return result
+
+    @staticmethod
+    def _split_comment(line: str) -> tuple[str, str]:
+        """Split a line into its code part and its trailing comment.
+
+        The core stops reading at the first ``!``/``#`` that is not inside
+        a quoted value (nls.f90 nls_skip_whitespace_on_line), so anything
+        past it is text, not parameters. An unterminated quote swallows the
+        rest of the line, which is what the Fortran reader does too.
+        """
+        quote = ""
+        for i, char in enumerate(line):
+            if quote:
+                if char == quote:
+                    quote = ""
+            elif char in "'\"":
+                quote = char
+            elif char in "!#":
+                return line[:i], line[i:]
+        return line, ""
 
     @staticmethod
     def _convert_value(value: str) -> Any:
@@ -256,12 +285,18 @@ class StrParser:
                     # "key = value" (e.g. "vcorlength = 2000.  corlength =
                     # 2000." — modifying corlength must not clobber
                     # vcorlength). PARAM_PATTERN has no anchors, so matching
-                    # the unstripped raw_line keeps spans aligned with it.
+                    # the unstripped code part keeps spans aligned with it.
+                    # The trailing comment is excluded and re-attached
+                    # verbatim: a "key = value" inside it is text to the
+                    # core, so rewriting it there would both corrupt the
+                    # comment and mark the param emitted, dropping the
+                    # user's real edit.
+                    code, comment = cls._split_comment(raw_line)
                     parts = []
                     pos = 0
-                    for match in cls.PARAM_PATTERN.finditer(raw_line):
+                    for match in cls.PARAM_PATTERN.finditer(code):
                         key = match.group(1).lower()
-                        parts.append(raw_line[pos : match.start()])
+                        parts.append(code[pos : match.start()])
                         if key in section._modified_params:
                             new_val = cls._format_value(section.parameters[key])
                             parts.append(f"{key} = {new_val}")
@@ -269,7 +304,8 @@ class StrParser:
                         else:
                             parts.append(match.group(0))
                         pos = match.end()
-                    parts.append(raw_line[pos:])
+                    parts.append(code[pos:])
+                    parts.append(comment)
                     new_line = "".join(parts)
                 else:
                     new_line = raw_line
@@ -315,16 +351,26 @@ class StrParser:
             # Everything else is a character value: the core's reader
             # hard-stops on an unquoted one (nls.f90: 'no value found'),
             # so `wind = INPUT/wind.txt` would make the STR fatal.
+            # nls.f90's reader is delimiter-matched with no escape
+            # mechanism, so a value holding BOTH quote characters has no
+            # valid emission — either wrapper closes early and ships a
+            # fatal STR line.
+            if "'" in value and '"' in value:
+                raise ValueError(
+                    f"value cannot be written to a .str file: {value!r} contains both "
+                    "a single and a double quote, and the SHYFEM reader has no escape "
+                    "mechanism for either delimiter"
+                )
             # nls.f90 accepts '..' and ".." — switch delimiter when the
             # value itself contains an apostrophe.
             if "'" in value:
                 return f'"{value}"'
             return f"'{value}'"
         if isinstance(value, float):
-            # Use scientific notation for very small/large values
-            if abs(value) < 1e-3 or abs(value) > 1e6:
-                return f"{value:.2e}"
-            return str(value)
+            # repr() is the shortest form float() reads back exactly; a
+            # fixed-precision one (%.2e) silently rewrote e.g.
+            # tau = 1234567. as 1.23e+06.
+            return repr(value)
         return str(value)
 
     @classmethod

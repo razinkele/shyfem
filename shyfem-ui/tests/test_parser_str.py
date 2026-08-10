@@ -735,6 +735,114 @@ class TestNoPhantomEndSection:
         assert generated.count("$end") == len([n for k, n in parsed._structure if k == "section"])
 
 
+class TestTrailingCommentsAreNotCode:
+    """The core stops reading a line at the first ``!``/``#`` that is not
+    inside a quoted value (nls.f90 nls_skip_whitespace_on_line). Matching
+    ``key = value`` inside the comment made the UI display a value the core
+    never uses, and — worse — made an overlay save rewrite the *comment*
+    and mark the param emitted, so the user's real edit never reached the
+    file and the run silently used the core default."""
+
+    def test_param_named_only_in_a_comment_is_not_parsed(self):
+        parsed = StrParser.parse("$para\n        idt = 300  ! tau = 1800\n$end\n")
+        assert parsed.sections["para"].parameters == {"idt": 300}
+
+    def test_commented_out_older_value_does_not_shadow_the_live_one(self):
+        parsed = StrParser.parse("$para\n        tau = 3600  ! was tau = 1800\n$end\n")
+        assert parsed.get_param("para", "tau") == 3600
+
+    def test_editing_a_param_named_in_a_comment_emits_a_real_assignment(self):
+        parsed = StrParser.parse("$para\n        idt = 300  ! tau = 1800\n$end\n")
+        parsed.set_param("para", "tau", 7200)
+        lines = StrParser.generate(parsed).splitlines()
+        assert "        idt = 300  ! tau = 1800" in lines
+        assert "        tau = 7200" in lines
+
+    def test_comment_survives_verbatim_when_a_code_param_changes(self):
+        parsed = StrParser.parse("$para\n        idt = 300  ! tau = 1800\n$end\n")
+        parsed.set_param("para", "idt", 600)
+        assert "        idt = 600  ! tau = 1800" in StrParser.generate(parsed).splitlines()
+
+    def test_quoted_comment_char_is_part_of_the_value(self):
+        content = "$name\n        wind = 'IN!PUT/w#nd.txt'  ! forcing\n$end\n"
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("name", "wind") == "IN!PUT/w#nd.txt"
+        parsed.set_param("name", "rain", "rain.txt")
+        lines = StrParser.generate(parsed).splitlines()
+        assert "        wind = 'IN!PUT/w#nd.txt'  ! forcing" in lines
+
+    def test_hash_comment_is_stripped_like_bang(self):
+        parsed = StrParser.parse("$para\n        idt = 300  # tau = 1800\n$end\n")
+        assert parsed.sections["para"].parameters == {"idt": 300}
+
+    def test_comment_only_lines_are_untouched_by_an_overlay(self):
+        content = "$para\n! header note\n        idt = 300\n# tau = 1800\n$end\n"
+        parsed = StrParser.parse(content)
+        parsed.set_param("para", "idt", 600)
+        lines = StrParser.generate(parsed).splitlines()
+        assert "! header note" in lines
+        assert "# tau = 1800" in lines
+
+    def test_unmodified_section_with_comments_roundtrips_byte_identically(self):
+        content = (
+            "$para\n"
+            "        idt = 300  ! tau = 1800\n"
+            "! standalone note\n"
+            "        itanf = '2020-01-01'\n"
+            "$end\n"
+        )
+        assert StrParser.generate(StrParser.parse(content)) == content
+
+    def test_overlay_leaves_every_other_line_byte_identical(self):
+        content = (
+            "$para\n"
+            "        idt = 300  ! tau = 1800\n"
+            "        itanf = '2020-01-01'   # start\n"
+            "$end\n"
+        )
+        parsed = StrParser.parse(content)
+        parsed.set_param("para", "idt", 600)
+        out = StrParser.generate(parsed)
+        assert out == content.replace("idt = 300", "idt = 600")
+
+
+class TestOwnerlessEndPreserved:
+    """SECTION_START requires a bare ``$name`` line, so a decorated header
+    (``$nduge  ! legacy nudging``) is not recognised as a section: its body
+    becomes inter-section content and its ``$end`` reaches the SECTION_END
+    branch with no section open. Dropping that ``$end`` leaves the
+    regenerated STR with an unterminated block, which the core's reader
+    (iostr.f90 nlsh2d) hard-stops on."""
+
+    DECORATED = (
+        "$title\n"
+        "        test\n"
+        "$end\n"
+        "\n"
+        "$nduge  ! legacy nudging\n"
+        "        nduge = 1\n"
+        "$end\n"
+        "\n"
+        "$para\n"
+        "        idt = 300\n"
+        "$end\n"
+    )
+
+    def test_decorated_block_roundtrips_every_line(self):
+        out = StrParser.generate(StrParser.parse(self.DECORATED))
+        assert [ln for ln in out.splitlines() if ln.strip()] == [
+            ln for ln in self.DECORATED.splitlines() if ln.strip()
+        ]
+
+    def test_decorated_header_does_not_become_a_section(self):
+        parsed = StrParser.parse(self.DECORATED)
+        assert set(parsed.sections) == {"title", "para"}
+
+    def test_end_count_survives_regeneration(self):
+        out = StrParser.generate(StrParser.parse(self.DECORATED))
+        assert [ln for ln in out.splitlines() if ln.strip() == "$end"] == ["$end"] * 3
+
+
 class TestFormatValueQuoting:
     """Bare (unquoted) non-numeric strings must be quoted on emit: the
     core's reader hard-stops on an unquoted character value (nls.f90
@@ -762,7 +870,7 @@ class TestFormatValueQuoting:
     def test_apostrophe_value_uses_double_quotes(self):
         # nls.f90 accepts '..' and ".." — a value containing an apostrophe
         # must switch delimiter, not emit an unbalanced quote.
-        assert StrParser._format_value("O'Brien.dat") == "\"O'Brien.dat\""
+        assert StrParser._format_value("O'Brien.dat") == '"O\'Brien.dat"'
 
     def test_name_section_roundtrip_keeps_quotes(self):
         # The physics Input Files panel reads back the (unquoted) display
@@ -773,3 +881,31 @@ class TestFormatValueQuoting:
         sf.set_param("name", "wind", sf.get_param("name", "wind"))
         out = StrParser.generate(sf)
         assert "wind = 'INPUT/wind.txt'" in out
+
+    def test_value_with_both_quote_chars_is_rejected(self):
+        # nls.f90's reader is delimiter-matched with no escape mechanism:
+        # a value holding both quote characters has no valid emission, so
+        # wrapping it in either one ships an unbalanced, fatal STR line.
+        with pytest.raises(ValueError):
+            StrParser._format_value("a'b\"c")
+
+    def test_prequoted_value_containing_the_other_quote_still_passes(self):
+        assert StrParser._format_value('"a\'b"') == '"a\'b"'
+        assert StrParser._format_value("'a\"b'") == "'a\"b'"
+
+
+class TestFormatValuePrecision:
+    """``_format_value`` must emit a form that ``float()`` reads back
+    exactly. A fixed-precision ``%.2e`` rewrote e.g. ``tau = 1234567.``
+    (11.5 days, a plausible nudging relaxation time) as ``1.23e+06`` --
+    a 0.4% change to a value the user never edited."""
+
+    @pytest.mark.parametrize("value", [1234567.0, 1e-5, 0.1, 1e7, 1234567.891, 9.87654321e-7])
+    def test_float_roundtrips_exactly(self, value):
+        assert float(StrParser._format_value(value)) == value
+
+    def test_large_float_is_not_truncated_on_save(self):
+        content = "$para\n        idt = 300\n$end\n"
+        parsed = StrParser.parse(content)
+        parsed.set_param("para", "tau", 1234567.0)
+        assert StrParser.parse(StrParser.generate(parsed)).get_param("para", "tau") == 1234567.0
