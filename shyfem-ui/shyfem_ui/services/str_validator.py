@@ -338,6 +338,10 @@ def _validate_assimil(
     seen_ivars: dict[Any, str] = {}
     enabled_any = False
 
+    # `param` is the field-highlighting key, so it always names a
+    # PARAMETER (never the section — the message text carries that).
+    # The two section-identity rules below have no offending field and
+    # so leave it empty.
     for name in sections:
         if name == "assimil":
             msgs.append(
@@ -345,7 +349,6 @@ def _validate_assimil(
                     "error",
                     "$assimil must be numbered ($assimil1, $assimil2, ...) — "
                     "the core error-stops on an unnumbered section",
-                    name,
                 )
             )
             continue
@@ -358,7 +361,6 @@ def _validate_assimil(
                     "error",
                     f"${name} is invalid — assimil sections must be numbered from 1 "
                     "(the core error-stops on num <= 0)",
-                    name,
                 )
             )
             continue
@@ -372,15 +374,15 @@ def _validate_assimil(
                 ValidationMessage(
                     "error",
                     f"nobs is required in ${name} — the core error-stops when unset",
-                    name,
+                    "nobs",
                 )
             )
             continue
         if not isinstance(nobs, (int, float)):
-            msgs.append(ValidationMessage("error", f"nobs in ${name} is not a number", name))
+            msgs.append(ValidationMessage("error", f"nobs in ${name} is not a number", "nobs"))
             continue
         if nobs < 0:
-            msgs.append(ValidationMessage("error", f"nobs must be >= 0 in ${name}", name))
+            msgs.append(ValidationMessage("error", f"nobs must be >= 0 in ${name}", "nobs"))
             continue
         if nobs == 0:
             if _get(sections, name, "ivar") is None:
@@ -389,7 +391,7 @@ def _validate_assimil(
                         "error",
                         f"ivar is required in ${name} even when disabled (nobs = 0) — "
                         "the core error-stops when unset",
-                        name,
+                        "ivar",
                     )
                 )
             else:
@@ -397,7 +399,7 @@ def _validate_assimil(
                     ValidationMessage(
                         "info",
                         f"${name} is disabled (nobs = 0) — the core will skip it",
-                        name,
+                        "nobs",
                     )
                 )
             continue
@@ -405,7 +407,7 @@ def _validate_assimil(
 
         ivar = _get(sections, name, "ivar")
         if ivar is None:
-            msgs.append(ValidationMessage("error", f"ivar is required in ${name}", name))
+            msgs.append(ValidationMessage("error", f"ivar is required in ${name}", "ivar"))
         else:
             if ivar in seen_ivars:
                 msgs.append(
@@ -413,18 +415,21 @@ def _validate_assimil(
                         "error",
                         f"ivar = {ivar} in ${name} duplicates ${seen_ivars[ivar]} — "
                         "the core error-stops on duplicate ivars",
-                        name,
+                        "ivar",
                     )
                 )
             else:
                 seen_ivars[ivar] = name
+            # itemp/isalt live in $para; ivar is the field in *this*
+            # section the user has to change (same convention as the
+            # iheat/ibarcl rule above).
             if ivar == 12 and itemp == 0:
                 msgs.append(
                     ValidationMessage(
                         "error",
                         f"${name} assimilates temperature (ivar = 12) but itemp = 0 — "
                         "T is never computed, assimilation silently skipped",
-                        name,
+                        "ivar",
                     )
                 )
             if ivar == 11 and isalt == 0:
@@ -433,7 +438,7 @@ def _validate_assimil(
                         "error",
                         f"${name} assimilates salinity (ivar = 11) but isalt = 0 — "
                         "S is never computed, assimilation silently skipped",
-                        name,
+                        "ivar",
                     )
                 )
 
@@ -443,7 +448,7 @@ def _validate_assimil(
                 ValidationMessage(
                     "error",
                     f"mode = {mode} in ${name} is invalid — 0 (nudging) or 1 (direct insertion)",
-                    name,
+                    "mode",
                 )
             )
         tau = _get(sections, name, "tau", 0) or 0
@@ -453,20 +458,20 @@ def _validate_assimil(
                     "error",
                     f"tau must be > 0 in ${name} for nudging (mode = 0) — "
                     "the core error-stops at the first observation time",
-                    name,
+                    "tau",
                 )
             )
 
         for p in ("corlength", "sigobs", "sigback"):
             v = _get(sections, name, p)
             if not isinstance(v, (int, float)) or v <= 0:
-                msgs.append(ValidationMessage("error", f"{p} must be > 0 in ${name}", name))
+                msgs.append(ValidationMessage("error", f"{p} must be > 0 in ${name}", p))
 
         for p in ("filecoords", "fileobs"):
             v = _get(sections, name, p)
             blank = v is None or (isinstance(v, str) and not v.strip().strip("'\""))
             if blank:
-                msgs.append(ValidationMessage("error", f"{p} is required in ${name}", name))
+                msgs.append(ValidationMessage("error", f"{p} is required in ${name}", p))
 
     if enabled_any and (not isinstance(ibarcl, (int, float)) or ibarcl <= 0):
         msgs.append(

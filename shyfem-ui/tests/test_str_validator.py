@@ -1,5 +1,7 @@
 """Tests for STR cross-parameter validation."""
 
+import re
+
 from shyfem_ui.services.str_validator import validate_str
 
 
@@ -404,9 +406,8 @@ class TestAssimilValidation:
         # and neither must ibarcl = 0 — nothing will run anyway.
         from shyfem_ui.services.parser_str import StrParser
 
-        text = (
-            "$para\n        itend = 86400  idt = 300  ibarcl = 0\n$end\n\n"
-            + self._section(nobs=0, files=False, corlength=0.0)
+        text = "$para\n        itend = 86400  idt = 300  ibarcl = 0\n$end\n\n" + self._section(
+            nobs=0, files=False, corlength=0.0
         )
         msgs = validate_str(StrParser.parse(text).sections)
         assert [m for m in msgs if m.level == "error"] == []
@@ -485,3 +486,96 @@ class TestAssimilMissingRequiredIdentity:
         msgs = self._msgs("$assimil1\n        nobs = 0\n        ivar = 12\n$end\n")
         assert [m for m in msgs if m.level == "error"] == []
         assert any("disabled" in m.message and m.level == "info" for m in msgs)
+
+
+class TestMessageParamIsParameterName:
+    """`ValidationMessage.param` is the field-highlighting key: every rule
+    must name a PARAMETER. `_validate_assimil` set it to the SECTION name
+    ("assimil1"), which would highlight a field that does not exist. The
+    section stays named in the message text."""
+
+    _SECTION_NAME = re.compile(r"^assimil\d*$")
+
+    def _msgs(self, section_text, para_extra=""):
+        from shyfem_ui.services.parser_str import StrParser
+
+        text = f"$para\n        itend = 86400  idt = 300  ibarcl = 3{para_extra}\n$end\n\n"
+        return validate_str(StrParser.parse(text + section_text).sections)
+
+    def _section(self, name="assimil1", files=True, **over):
+        vals = {
+            "ivar": 12,
+            "nobs": 1,
+            "mode": 0,
+            "tau": 1800.0,
+            "corlength": 2000.0,
+            "sigobs": 0.1,
+            "sigback": 1.0,
+        }
+        vals.update(over)
+        body = "".join(f"        {k} = {v}\n" for k, v in vals.items() if v is not None)
+        if files:
+            body += "        filecoords = 'c.dat'\n        fileobs = 'o.dat'\n"
+        return f"${name}\n{body}$end\n"
+
+    def _params_of(self, msgs, needle):
+        return [m.param for m in msgs if needle in m.message]
+
+    def test_no_message_carries_a_section_name_in_param(self):
+        # One file tripping most assimil rules at once.
+        msgs = self._msgs(
+            self._section(tau=0.0, corlength=0.0, sigobs=0.0, sigback=0.0, files=False)
+            + "\n"
+            + self._section(name="assimil2", mode=5)
+            + "\n"
+            + self._section(name="assimil3", nobs=0, files=False)
+        )
+        offenders = [(m.param, m.message) for m in msgs if self._SECTION_NAME.match(m.param)]
+        assert offenders == []
+
+    def test_missing_nobs_error_names_nobs(self):
+        msgs = self._msgs("$assimil1\n        ivar = 12\n        mode = 1\n$end\n")
+        assert self._params_of(msgs, "nobs is required") == ["nobs"]
+
+    def test_disabled_info_names_nobs(self):
+        msgs = self._msgs(self._section(nobs=0, files=False))
+        assert self._params_of(msgs, "is disabled") == ["nobs"]
+
+    def test_tau_error_names_tau(self):
+        msgs = self._msgs(self._section(tau=0.0))
+        assert self._params_of(msgs, "tau must be > 0") == ["tau"]
+
+    def test_mode_error_names_mode(self):
+        msgs = self._msgs(self._section(mode=2))
+        assert self._params_of(msgs, "is invalid — 0 (nudging)") == ["mode"]
+
+    def test_tuning_errors_name_their_own_param(self):
+        msgs = self._msgs(self._section(corlength=0.0, sigobs=0.0, sigback=0.0))
+        for p in ("corlength", "sigobs", "sigback"):
+            assert self._params_of(msgs, f"{p} must be > 0") == [p], p
+
+    def test_file_errors_name_their_own_param(self):
+        msgs = self._msgs(self._section(files=False))
+        for p in ("filecoords", "fileobs"):
+            assert self._params_of(msgs, f"{p} is required") == [p], p
+
+    def test_ivar_errors_name_ivar(self):
+        missing = self._msgs("$assimil1\n        nobs = 1\n        mode = 1\n$end\n")
+        assert self._params_of(missing, "ivar is required in") == ["ivar"]
+        dup = self._msgs(self._section() + "\n" + self._section(name="assimil2"))
+        assert self._params_of(dup, "duplicates") == ["ivar"]
+
+    def test_scalar_gate_errors_name_ivar(self):
+        # ivar is the param the user must change; itemp/isalt live in $para.
+        temp = self._msgs(self._section(), para_extra="  itemp = 0")
+        assert self._params_of(temp, "itemp = 0") == ["ivar"]
+        salt = self._msgs(self._section(ivar=11), para_extra="  isalt = 0")
+        assert self._params_of(salt, "isalt = 0") == ["ivar"]
+
+    def test_section_identity_errors_carry_no_param(self):
+        # Nothing to highlight: the section name itself is the mistake.
+        for name in ("assimil", "assimil0"):
+            msgs = self._msgs(self._section(name=name))
+            errs = [m for m in msgs if m.level == "error" and name in m.message]
+            assert errs, name
+            assert all(m.param == "" for m in errs), (name, [m.param for m in errs])
