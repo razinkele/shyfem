@@ -614,6 +614,35 @@ def _assimil_num_field(
     return ui.input_numeric(f"assim_{prefix}_{param}", label, value=val, **kwargs)
 
 
+def _assimil_mode_field(prefix: str, raw: object, is_array: bool = False) -> ui.Tag:
+    """Application-mode column: the dropdown, or a static note.
+
+    The core accepts only 0 and 1 (assimil_admin.f90) and stops on
+    anything else, naming the offending value. Coercing a stored 2 into
+    the dropdown would write 0 back and erase the mistake the user needs
+    to see, so an out-of-range, unparseable or per-station value renders
+    without a control: nothing is read at save time and the raw line
+    survives for validate_str to flag.
+    """
+    try:
+        stored = None if raw is None else int(raw)
+    except (TypeError, ValueError):
+        stored = None
+        is_array = True  # not a clean scalar -> never rewrite the line
+    if is_array or (stored is not None and stored not in (0, 1)):
+        shown = "per-station values" if raw is None else f"mode = {raw}"
+        return ui.help_text(
+            f"Application mode: {shown} is not editable here — the core accepts "
+            "only 0 (nudging) or 1 (direct insertion). Edit the file directly."
+        )
+    return ui.input_select(
+        f"assim_{prefix}_mode",
+        "Application mode",
+        choices={"0": "0 - Nudging", "1": "1 - Direct insertion"},
+        selected=str(stored if stored is not None else 0),
+    )
+
+
 def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
     """One variable block (Temperature or Salinity) of the panel.
 
@@ -637,13 +666,6 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
             **kwargs,
         )
 
-    try:
-        mode_sel = str(int(raw("mode")))
-    except (TypeError, ValueError):
-        mode_sel = "0"
-    if mode_sel not in ("0", "1"):
-        mode_sel = "0"
-
     return ui.div(
         ui.h6(f"{title} (ivar {ivar})", class_="text-muted mt-3"),
         ui.input_checkbox(f"assim_{prefix}_on", f"Assimilate {title.lower()}", value=enabled),
@@ -651,11 +673,8 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
             ui.column(4, num("nobs", "Observation stations", min=1, step=1)),
             ui.column(
                 4,
-                ui.input_select(
-                    f"assim_{prefix}_mode",
-                    "Application mode",
-                    choices={"0": "0 - Nudging", "1": "1 - Direct insertion"},
-                    selected=mode_sel,
+                _assimil_mode_field(
+                    prefix, raw("mode"), is_array=_assimil_is_array(sf, name, "mode")
                 ),
             ),
             ui.column(4, num("tau", "Timescale tau (s)", min=0, step=60.0)),

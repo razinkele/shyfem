@@ -686,6 +686,63 @@ class TestAssimilArrayDetection:
         assert "assim_t_corlength" not in html
 
 
+class TestAssimilModeField:
+    """A stored mode outside (0, 1) is fatal in the core, which says so
+    and points at the real mistake. Rendering it as "0 - Nudging" and
+    writing 0 back replaces the user's value with one they never chose
+    and hides the mistake."""
+
+    def _sf(self, mode_line: str):
+        return StrParser.parse(
+            "$assimil1\n        ivar = 12\n        nobs = 2\n"
+            f"{mode_line}"
+            "        corlength = 2000.\n        sigobs = 0.1\n        sigback = 1.0\n$end\n"
+        )
+
+    def _html(self, mode_line: str) -> str:
+        from shyfem_ui.pages.physics import _assimil_block
+
+        return str(_assimil_block(self._sf(mode_line), "Temperature", "t", 12))
+
+    def test_valid_mode_renders_the_dropdown(self):
+        html = self._html("        mode = 1\n")
+        assert 'id="assim_t_mode"' in html
+        assert '<option value="1" selected' in html
+
+    def test_absent_mode_defaults_to_nudging(self):
+        html = self._html("")
+        assert 'id="assim_t_mode"' in html
+        assert '<option value="0" selected' in html
+
+    def test_out_of_range_mode_is_surfaced_not_coerced(self):
+        html = self._html("        mode = 2\n")
+        assert "assim_t_mode" not in html, "no control -> nothing to write back"
+        assert "mode = 2" in html, "the stored value must be named"
+        assert "assim_t_nobs" in html  # the rest of the block still edits
+
+    def test_unparseable_mode_is_surfaced_not_coerced(self):
+        html = self._html("        mode = later\n")
+        assert "assim_t_mode" not in html
+
+    def test_array_mode_renders_a_note(self):
+        html = self._html("        mode = 0 1\n")
+        assert "assim_t_mode" not in html
+
+    def test_out_of_range_mode_survives_a_save(self):
+        """No control means no value in the panel dict, so the raw line is
+        kept and validate_str is what tells the user to fix it."""
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._sf("        mode = 2\n")
+        name, errors = _assimil_apply(
+            sf, 12, 1, True, {"nobs": 2, "filecoords": "c.dat", "fileobs": "o.dat"}
+        )
+        assert errors == []
+        assert sf.get_param("assimil1", "mode") == 2
+        assert "mode" not in sf.sections["assimil1"]._modified_params
+        assert "        mode = 2" in StrParser.generate(sf).splitlines()
+
+
 class TestNdugePurgeReporting:
     """The "$nduge removed" notice must describe a write that happened.
     It used to fire inside _collect_panel_values, which also runs on
