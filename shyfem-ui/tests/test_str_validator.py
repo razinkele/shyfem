@@ -663,3 +663,58 @@ class TestLineLengthCap:
             }
         )
         assert self._too_long(msgs) == []
+
+
+class TestLineLengthUsesRealIndent:
+    """The 80-char rule must measure what is actually emitted, not assume
+    the 8-space indent this repo's generator uses for NEW params. Across
+    the repo's STR files, `key = value` lines are indented 1 space 432
+    times and 7 spaces 48 times — over-estimating there turns a legal,
+    currently-running model into one that cannot be saved OR launched
+    (physics save, ensemble submit and run submit all abort on an
+    error-level message)."""
+
+    def _sf(self, indent, quoted=True):
+        from shyfem_ui.services.parser_str import StrParser
+
+        pad = " " * indent
+        overhead = indent + len("wind") + len(" = ") + (2 if quoted else 0)
+        path = "I" * (80 - overhead)
+        value = f"'{path}'" if quoted else path
+        line = f"{pad}wind = {value}"
+        assert len(line) == 80, len(line)
+        return StrParser.parse(
+            f"$para\n        itend = 86400  idt = 300\n$end\n\n$name\n{line}\n$end\n"
+        )
+
+    def _too_long(self, sf):
+        return [m for m in validate_str(sf.sections) if "80" in m.message]
+
+    def test_exactly_80_at_one_space_indent_is_not_flagged(self):
+        assert self._too_long(self._sf(1)) == []
+
+    def test_exactly_80_at_seven_space_indent_is_not_flagged(self):
+        assert self._too_long(self._sf(7)) == []
+
+    def test_exactly_80_unquoted_value_is_not_flagged(self):
+        assert self._too_long(self._sf(1, quoted=False)) == []
+
+    def test_over_80_at_one_space_indent_is_still_flagged(self):
+        from shyfem_ui.services.parser_str import StrParser
+
+        path = "I" * 80
+        sf = StrParser.parse(
+            f"$para\n        itend = 86400  idt = 300\n$end\n\n$name\n wind = '{path}'\n$end\n"
+        )
+        assert len(self._too_long(sf)) == 1
+
+    def test_new_param_with_no_raw_line_uses_the_generator_indent(self):
+        # A param the UI adds has no raw line; _generate_section writes it
+        # with an 8-space indent, so that is the right shape to measure.
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$para\n        itend = 86400  idt = 300\n$end\n")
+        sf.set_param("name", "wind", "'" + "I" * 64 + "'")
+        emitted = [line for line in StrParser.generate(sf).splitlines() if "wind" in line][0]
+        assert len(emitted) == 81, len(emitted)
+        assert len(self._too_long(sf)) == 1

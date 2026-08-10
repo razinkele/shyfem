@@ -182,13 +182,20 @@ def str_editor_server(
                         logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
                         continue
 
-        # Regenerate text from modified parsed file
+        # Regenerate text from modified parsed file. _format_value refuses
+        # values the STR reader cannot express (it has no escape for either
+        # quote delimiter), so serialization can fail on free-text input.
         _form_syncing = True
-        text = StrParser.generate(parsed)
-        content.set(text)
-        ui.update_text_area("editor_content", value=text)
-        is_modified.set(True)
-        _form_syncing = False
+        try:
+            text = StrParser.generate(parsed)
+            content.set(text)
+            ui.update_text_area("editor_content", value=text)
+            is_modified.set(True)
+        except ValueError as e:
+            logger.exception("Regenerating STR text from form edits failed")
+            ui.notification_show(f"Cannot apply: {e}", type="error", duration=8)
+        finally:
+            _form_syncing = False
 
     @reactive.effect
     @reactive.event(input.load_btn)

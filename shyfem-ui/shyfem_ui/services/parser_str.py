@@ -187,8 +187,13 @@ class StrParser:
 
         The core stops reading at the first ``!``/``#`` that is not inside
         a quoted value (nls.f90 nls_skip_whitespace_on_line), so anything
-        past it is text, not parameters. An unterminated quote swallows the
-        rest of the line, which is what the Fortran reader does too.
+        past it is text, not parameters.
+
+        An unterminated quote leaves the scan with no comment boundary, so
+        the whole line reads as code. That only arises for input the core
+        rejects outright — nls_read_text stops the run when istos finds no
+        closing delimiter — so it is not a case to preserve, just one that
+        must not corrupt anything on the way to that error.
         """
         quote = ""
         for i, char in enumerate(line):

@@ -21,7 +21,7 @@ _ASSIMIL_NUM = re.compile(r"^assimil(\d+)$")
 # nls.f90:398 error-stops on any STR line with len_trim(line) > 80.
 _STR_LINE_MAX = 80
 # parser_str._generate_section writes a param as `        key = value`.
-_EMIT_OVERHEAD = len("        ") + len(" = ")
+_EMIT_INDENT = len("        ")
 
 
 def _normalize_sections(sections: dict) -> tuple[dict, set]:
@@ -92,6 +92,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         List of ValidationMessage with errors and warnings.
     """
     msgs: list[ValidationMessage] = []
+    raw_sections = sections  # keeps raw_lines, which the line-length rule measures
     sections, present = _normalize_sections(sections)
     para = sections.get("para", {})
 
@@ -325,13 +326,40 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     msgs.extend(_validate_assimil(sections, ibarcl, itemp, isalt))
 
     # --- Fortran reader's hard 80-char line cap (nls.f90:398) ---
-    msgs.extend(_validate_line_length(sections))
+    msgs.extend(_validate_line_length(raw_sections))
 
     return msgs
 
 
-def _emitted_length(param: str, value: str) -> int:
-    """Length of the line the editor would write for *param = value*.
+def _line_length_for(param: str, value: str, raw_lines: list, modified: set) -> int:
+    """Length of the line ``param`` will occupy once written.
+
+    Mirrors _generate_section: an existing param is rebuilt in place
+    inside its raw line, and only a param with no raw line of its own is
+    appended using the generator's own indent.
+    """
+    for line in raw_lines:
+        span = _assignment_span(param, line)
+        if span is None:
+            continue
+        if param not in modified:
+            return len(line)
+        start, end = span
+        return len(line) - (end - start) + _assignment_length(param, value)
+    return _emitted_length(param, value)
+
+
+def _assignment_span(param: str, line: str) -> tuple[int, int] | None:
+    """Span of ``param``'s `key = value` assignment in *line*, if present."""
+    m = re.search(
+        rf"(?<![A-Za-z0-9_]){re.escape(param)}\s*=\s*('[^']*'|\"[^\"]*\"|\S+)",
+        line,
+    )
+    return (m.start(), m.end()) if m else None
+
+
+def _assignment_length(param: str, value: str) -> int:
+    """Length of the `param = value` text the editor would write.
 
     Mirrors parser_str._format_value's quoting instead of importing it:
     that function raises on some inputs, and an exception escaping
@@ -341,7 +369,12 @@ def _emitted_length(param: str, value: str) -> int:
     passthrough, so that branch cannot apply here.
     """
     already_quoted = len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]
-    return _EMIT_OVERHEAD + len(param) + len(value) + (0 if already_quoted else 2)
+    return len(param) + len(" = ") + len(value) + (0 if already_quoted else 2)
+
+
+def _emitted_length(param: str, value: str) -> int:
+    """Length of a freshly appended line, at the generator's own indent."""
+    return _EMIT_INDENT + _assignment_length(param, value)
 
 
 def _validate_line_length(sections: dict) -> list[ValidationMessage]:
@@ -355,16 +388,22 @@ def _validate_line_length(sections: dict) -> list[ValidationMessage]:
     and `_`-prefixed keys ($extra/$title standalone entries) hold lists
     that _generate_section emits in its own format.
 
-    When the param already exists in the file, _generate_section rebuilds
-    it in place inside the original raw line, which may be indented
-    differently — this rule then under-reports rather than crying wolf.
+    A param that already exists in the file is emitted inside its own raw
+    line, so that line is measured directly (verbatim when the param is
+    unmodified, otherwise with the assignment span swapped) — assuming
+    the generator's 8-space indent instead would cry wolf on the 1- and
+    7-space indents used throughout the existing STR corpus, blocking
+    saves and job submission for files that are perfectly legal.
     """
     msgs: list[ValidationMessage] = []
-    for name, params in sections.items():
+    for name, sec in sections.items():
+        params = getattr(sec, "parameters", sec) or {}
+        raw_lines = getattr(sec, "raw_lines", None) or []
+        modified = getattr(sec, "_modified_params", None) or set()
         for param, value in params.items():
             if param.startswith("_") or not isinstance(value, str):
                 continue
-            length = _emitted_length(param, value)
+            length = _line_length_for(param, value, raw_lines, modified)
             if length > _STR_LINE_MAX:
                 msgs.append(
                     ValidationMessage(

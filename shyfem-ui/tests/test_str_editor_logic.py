@@ -178,28 +178,19 @@ class TestValidateStrContent:
 
     def test_bound_section_missing_ibtyp_warns(self):
         """A $bound1/$bound2/$boundN section without ibtyp triggers a warning."""
-        content = (
-            MINIMAL_VALID_STR
-            + "$bound1\n    1  0  1  0.0\n$end\n"
-        )
+        content = MINIMAL_VALID_STR + "$bound1\n    1  0  1  0.0\n$end\n"
         warns = _warnings(validate_str_content(content))
         assert any("ibtyp" in w for w in warns)
 
     def test_bound_section_with_ibtyp_no_ibtyp_warning(self):
         """A $bound1 section that supplies ibtyp does not trigger the ibtyp warning."""
-        content = (
-            MINIMAL_VALID_STR
-            + "$bound1\n    ibtyp = 1\n$end\n"
-        )
+        content = MINIMAL_VALID_STR + "$bound1\n    ibtyp = 1\n$end\n"
         warns = _warnings(validate_str_content(content))
         assert not any("ibtyp" in w for w in warns)
 
     def test_plain_bound_section_not_checked_for_ibtyp(self):
         """The base $bound section (== 'bound') is exempt from the ibtyp check."""
-        content = (
-            MINIMAL_VALID_STR
-            + "$bound\n    1  0  1  0.0\n$end\n"
-        )
+        content = MINIMAL_VALID_STR + "$bound\n    1  0  1  0.0\n$end\n"
         warns = _warnings(validate_str_content(content))
         assert not any("ibtyp" in w for w in warns)
 
@@ -207,10 +198,7 @@ class TestValidateStrContent:
 
     def test_check_files_false_skips_file_check(self, tmp_path):
         """check_files=False never warns about missing files."""
-        content = (
-            MINIMAL_VALID_STR
-            + "$name\n    wind = 'definitely_missing_file.txt'\n$end\n"
-        )
+        content = MINIMAL_VALID_STR + "$name\n    wind = 'definitely_missing_file.txt'\n$end\n"
         warns = _warnings(validate_str_content(content, check_files=False, working_dir=tmp_path))
         assert not any("file not found" in w for w in warns)
 
@@ -253,3 +241,35 @@ class TestGenerateSectionTemplate:
         """Return type is always str."""
         assert isinstance(generate_section_template("para"), str)
         assert isinstance(generate_section_template("unknown_xyz"), str)
+
+
+class TestApplyFormSerializationFailure:
+    """StrParser.generate raises ValueError on a value carrying both quote
+    characters. In a Shiny effect an unhandled exception closes the
+    session (shiny/session/_session.py _unhandled_error -> close), so the
+    Apply Form handler must catch it — and must not leave the _form_syncing
+    latch stuck, which it sets immediately before serializing."""
+
+    def _handler_source(self):
+        import inspect
+
+        from shyfem_ui.components import str_editor
+
+        src = inspect.getsource(str_editor)
+        return src[src.index("def _apply_form_changes") : src.index("def _handle_load")]
+
+    def test_generate_is_guarded(self):
+        body = self._handler_source()
+        gen = body.index("StrParser.generate(")
+        assert "try:" in body[:gen], "serialization must run inside a try block"
+        assert "except ValueError" in body[gen:], "the writer's ValueError must be caught"
+
+    def test_failure_surfaces_to_the_user_and_logs(self):
+        body = self._handler_source()
+        tail = body[body.index("StrParser.generate(") :]
+        assert "notification_show" in tail, "a failed apply must tell the user"
+        assert "logger.exception" in tail, "a failed apply must be diagnosable"
+
+    def test_sync_latch_is_released_on_failure(self):
+        body = self._handler_source()
+        assert "finally:" in body, "_form_syncing must be released even when serializing raises"

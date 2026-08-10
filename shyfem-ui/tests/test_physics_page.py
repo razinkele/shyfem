@@ -754,9 +754,14 @@ class TestAssimilModeField:
         assert '<option value="0" selected' in html
 
     def test_out_of_range_mode_is_surfaced_not_coerced(self):
+        # Offered as its own preselected choice: an untouched save writes
+        # 2 back verbatim (no silent rewrite), but the user can still pick
+        # a valid mode — without a control, validate_str's error on this
+        # value would block every save the page makes.
         html = self._html("        mode = 2\n")
-        assert "assim_t_mode" not in html, "no control -> nothing to write back"
-        assert "mode = 2" in html, "the stored value must be named"
+        assert 'value="2"' in html and "selected" in html
+        assert "invalid" in html.lower(), "the stored value must be called out"
+        assert 'value="0"' in html and 'value="1"' in html, "must be repairable in-page"
         assert "assim_t_nobs" in html  # the rest of the block still edits
 
     def test_unparseable_mode_is_surfaced_not_coerced(self):
@@ -1357,7 +1362,10 @@ class TestAssimilApplyErrors:
         collect_pos = save.index("_collect_into_copy(")
         write_pos = save.index("StrParser.save")
         assert collect_pos < write_pos
-        gate = save[collect_pos:write_pos]
+        # Scope the span to THIS guard: the wider collect->write span also
+        # contains the validate_str guard's return, so a deleted
+        # panel_errors check would still find a `return` and pass.
+        gate = save[save.index("if panel_errors", collect_pos) : save.index("validate_str(")]
         assert "return" in gate  # abort path between collect and write
 
 
@@ -1487,3 +1495,43 @@ class TestSaveValidationOrdering:
         write_pos = save.index("StrParser.save")
         assert validate_pos < write_pos
         assert "return" in save[validate_pos:write_pos]  # errors abort the save
+
+
+class TestModeOutOfRangeIsRepairable:
+    """An out-of-range `mode` must not be silently coerced (L3) — but it
+    must still be fixable from this page. The validator errors on it, and
+    save_file aborts on any error-level finding, so rendering a bare note
+    with no control leaves the user unable to save ANY panel edit while
+    that value is in the file."""
+
+    def _field(self, raw, is_array=False):
+        from shyfem_ui.pages.physics import _assimil_mode_field
+
+        return str(_assimil_mode_field("t", raw, is_array))
+
+    def test_out_of_range_mode_still_offers_a_control(self):
+        assert "assim_t_mode" in self._field(2), "the user must be able to correct it"
+
+    def test_out_of_range_value_is_offered_and_preselected(self):
+        # Preselecting the stored value keeps the no-silent-rewrite
+        # guarantee: an untouched save writes back exactly what was there.
+        html = self._field(2)
+        assert 'value="2"' in html and "selected" in html
+
+    def test_out_of_range_mode_is_labelled_invalid(self):
+        assert "invalid" in self._field(2).lower()
+
+    def test_valid_modes_are_selectable(self):
+        html = self._field(2)
+        assert 'value="0"' in html and 'value="1"' in html
+
+    def test_in_range_mode_renders_normally(self):
+        html = self._field(1)
+        assert "assim_t_mode" in html and "invalid" not in html.lower()
+
+    def test_per_station_array_still_renders_a_note(self):
+        # A value list cannot be rewritten without clobbering station 1.
+        assert "assim_t_mode" not in self._field(0, is_array=True)
+
+    def test_unparseable_mode_still_renders_a_note(self):
+        assert "assim_t_mode" not in self._field("abc")

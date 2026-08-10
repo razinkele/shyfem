@@ -641,26 +641,34 @@ def _assimil_mode_field(prefix: str, raw: object, is_array: bool = False) -> ui.
     The core accepts only 0 and 1 (assimil_admin.f90) and stops on
     anything else, naming the offending value. Coercing a stored 2 into
     the dropdown would write 0 back and erase the mistake the user needs
-    to see, so an out-of-range, unparseable or per-station value renders
-    without a control: nothing is read at save time and the raw line
-    survives for validate_str to flag.
+    to see — but offering no control at all is worse: validate_str errors
+    on the bad value and save_file aborts on any error, so the page could
+    not save ANY edit while it sat in the file. An out-of-range scalar is
+    therefore offered as its own preselected choice (an untouched save
+    writes it back verbatim) alongside the two the core accepts.
+
+    A per-station list or an unparseable value still renders without a
+    control: rewriting either would clobber the raw line.
     """
     try:
-        stored = None if raw is None else int(raw)
+        stored = 0 if raw is None else int(raw)  # absent -> the core's default
     except (TypeError, ValueError):
         stored = None
         is_array = True  # not a clean scalar -> never rewrite the line
-    if is_array or (stored is not None and stored not in (0, 1)):
-        shown = "per-station values" if raw is None else f"mode = {raw}"
+    if is_array or stored is None:
+        shown = "per-station values" if raw is None or is_array else f"mode = {raw}"
         return ui.help_text(
             f"Application mode: {shown} is not editable here — the core accepts "
             "only 0 (nudging) or 1 (direct insertion). Edit the file directly."
         )
+    choices = {"0": "0 - Nudging", "1": "1 - Direct insertion"}
+    if stored not in (0, 1):
+        choices = {str(stored): f"{stored} - invalid, the core rejects it", **choices}
     return ui.input_select(
         f"assim_{prefix}_mode",
         "Application mode",
-        choices={"0": "0 - Nudging", "1": "1 - Direct insertion"},
-        selected=str(stored if stored is not None else 0),
+        choices=choices,
+        selected=str(stored),
     )
 
 
