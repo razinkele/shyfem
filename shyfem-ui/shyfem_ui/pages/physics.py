@@ -690,12 +690,14 @@ def _read_input(inputs, input_id: str, errors: list[str]) -> object:
         return _INPUT_ABSENT
 
 
-def _collect_panel_values(inputs, sf: StrFile) -> list[str]:
+def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
     """Read all panel input values and update *sf* before saving.
 
-    Returns the list of field errors; on any error the offending block
-    was NOT applied and the caller must not report the save as
-    successful.
+    Returns (field errors, $nduge purged). On any error the offending
+    block was NOT applied and the caller must not report the save as
+    successful. The purge is reported rather than announced here: this
+    runs on Preview and on the save-abort path too, where nothing is
+    written, so only the caller knows whether the removal reached disk.
     """
     errors: list[str] = []
 
@@ -756,14 +758,7 @@ def _collect_panel_values(inputs, sf: StrFile) -> list[str]:
 
     # --- purge the dead $nduge section on every save: the core
     # hard-stops on it, so an STR carrying it can never run ---
-    if _purge_nduge(sf):
-        ui.notification_show(
-            "Removed dead $nduge section (the core rejects it).",
-            type="message",
-            duration=6,
-        )
-
-    return errors
+    return errors, _purge_nduge(sf)
 
 
 def _read_input_and_set(
@@ -928,7 +923,7 @@ def physics_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
         try:
-            panel_errors = _collect_panel_values(input, str_data.get())
+            panel_errors, nduge_purged = _collect_panel_values(input, str_data.get())
             if panel_errors:
                 for e in panel_errors:
                     ui.notification_show(e, type="error", duration=8)
@@ -956,6 +951,13 @@ def physics_server(
             StrParser.save(sf, path)
             for m in warnings:
                 ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
+            if nduge_purged:
+                # Only now is the removal real on disk.
+                ui.notification_show(
+                    "Removed dead $nduge section (the core rejects it).",
+                    type="message",
+                    duration=6,
+                )
             ui.notification_show(f"Saved to {path}", type="message", duration=3)
         except Exception as e:
             ui.notification_show(f"Save error: {e}", type="error")
@@ -966,7 +968,8 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
-        for e in _collect_panel_values(input, str_data.get()):
+        panel_errors, _purged = _collect_panel_values(input, str_data.get())
+        for e in panel_errors:
             # Rejected assimilation fields were NOT applied: the preview
             # shows the last valid state for those, so say why.
             ui.notification_show(e, type="error", duration=8)

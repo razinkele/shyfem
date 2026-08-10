@@ -45,8 +45,9 @@ class FakeInputs:
 
 
 def collect_errors(inputs, sf: StrFile) -> list[str]:
-    """_collect_panel_values' error list (the purge flag is B2's business)."""
-    return _collect_panel_values(inputs, sf)
+    """_collect_panel_values' error list, dropping the $nduge purge flag."""
+    errors, _purged = _collect_panel_values(inputs, sf)
+    return errors
 
 
 class TestPhysicsPanels:
@@ -589,6 +590,48 @@ class TestInputReadErrors:
         assert any("itanf" in e for e in errors), errors
         assert any(r.exc_info for r in caplog.records), "must log with a traceback"
         assert sf.get_param("para", "itanf") is None
+
+
+class TestNdugePurgeReporting:
+    """The "$nduge removed" notice must describe a write that happened.
+    It used to fire inside _collect_panel_values, which also runs on
+    Preview and on the save-abort path: the user was told the core-fatal
+    section was gone while it was still on disk — and since it had been
+    dropped from the in-memory StrFile, the later successful save removed
+    it with no notice at all."""
+
+    _NDUGE_STR = "$nduge\n        nvars = 3\n$end\n\n$para\n        idt = 300\n$end\n"
+
+    def test_collect_returns_errors_and_purge_flag(self):
+        sf = StrParser.parse("$para\n        idt = 300\n$end\n")
+        result = _collect_panel_values(FakeInputs(), sf)
+        assert isinstance(result, tuple), "collect must report the purge to its caller"
+        errors, purged = result
+        assert errors == []
+        assert purged is False
+
+    def test_collect_reports_purge_without_announcing_it(self):
+        """ui.notification_show needs a live session, so a collect that
+        still announces cannot even run outside one."""
+        sf = StrParser.parse(self._NDUGE_STR)
+        errors, purged = _collect_panel_values(FakeInputs(), sf)
+        assert errors == []
+        assert purged is True
+        assert "nduge" not in sf.sections
+
+    def test_purge_is_announced_only_after_a_successful_write(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        notice = "Removed dead $nduge"
+        collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
+        assert notice not in collect, "collect must not notify — it writes nothing"
+        preview = src[src.index("def preview_str") : src.index("def module_badges")]
+        assert notice not in preview, "Preview writes nothing — it must not announce a purge"
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        assert save.index("StrParser.save") < save.index(notice), "notify only after the write"
 
 
 _IMETOUT_ALL = ("wind", "heat", "rain", "ice", "hflx")
