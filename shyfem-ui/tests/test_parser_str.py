@@ -805,6 +805,19 @@ class TestTrailingCommentsAreNotCode:
         out = StrParser.generate(parsed)
         assert out == content.replace("idt = 300", "idt = 600")
 
+    def test_labelled_standalone_node_survives(self):
+        # $extra/$flux/$volume node lists routinely carry a trailing label.
+        content = "$extra\n        128     'sea boundary'  ! main inlet\n$end\n"
+        parsed = StrParser.parse(content)
+        assert parsed.get_param("extra", "_standalone") == [
+            {"id": 128, "description": "sea boundary"}
+        ]
+        assert StrParser.generate(parsed) == content
+        parsed.set_param("extra", "idtext", 300)
+        assert "        128     'sea boundary'  ! main inlet" in (
+            StrParser.generate(parsed).splitlines()
+        )
+
 
 class TestOwnerlessEndPreserved:
     """SECTION_START requires a bare ``$name`` line, so a decorated header
