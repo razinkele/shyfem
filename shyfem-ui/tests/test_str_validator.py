@@ -579,3 +579,87 @@ class TestMessageParamIsParameterName:
             errs = [m for m in msgs if m.level == "error" and name in m.message]
             assert errs, name
             assert all(m.param == "" for m in errs), (name, [m.param for m in errs])
+
+
+class TestLineLengthCap:
+    """nls.f90:398 error-stops on any STR line with len_trim > 80. The
+    editor writes a character value as `        {key} = '{value}'`
+    (8-space indent, parser_str._generate_section), so a long
+    filecoords/fileobs path makes the saved STR fatal at read time."""
+
+    _PARA = "$para\n        itend = 86400  idt = 300  ibarcl = 3\n$end\n\n"
+
+    def _path(self, total_len, tail=".dat"):
+        head = "INPUT/"
+        p = head + "o" * (total_len - len(head) - len(tail)) + tail
+        assert len(p) == total_len
+        return p
+
+    def _assimil(self, filecoords):
+        return (
+            "$assimil1\n"
+            "        ivar = 12  nobs = 1  mode = 0  tau = 1800.\n"
+            "        corlength = 2000.  sigobs = 0.1  sigback = 1.\n"
+            f"        filecoords = '{filecoords}'\n"
+            "        fileobs = 'o.dat'\n"
+            "$end\n"
+        )
+
+    def _msgs(self, section_text):
+        from shyfem_ui.services.parser_str import StrParser
+
+        return validate_str(StrParser.parse(self._PARA + section_text).sections)
+
+    def _too_long(self, msgs):
+        return [m for m in msgs if m.level == "error" and "80" in m.message]
+
+    def test_path_at_the_80_char_boundary_passes(self):
+        # 8 indent + len('filecoords') + len(' = ') + len("'path'") == 80
+        path = self._path(57)
+        assert len(f"        filecoords = '{path}'") == 80
+        msgs = self._msgs(self._assimil(path))
+        assert self._too_long(msgs) == []
+        assert [m for m in msgs if m.level == "error"] == []
+
+    def test_path_one_char_over_the_boundary_is_error(self):
+        path = self._path(58)
+        assert len(f"        filecoords = '{path}'") == 81
+        msgs = self._msgs(self._assimil(path))
+        errs = self._too_long(msgs)
+        assert len(errs) == 1, [(m.param, m.message) for m in msgs]
+        assert errs[0].param == "filecoords"
+        assert "assimil1" in errs[0].message
+
+    def test_long_path_outside_assimil_is_error(self):
+        # The cap is on the line, not on the section: $name paths and
+        # $boundN forcing files hit it exactly the same way.
+        long_path = self._path(70)
+        msgs = self._msgs(f"$name\n        wind = '{long_path}'\n$end\n")
+        errs = self._too_long(msgs)
+        assert len(errs) == 1, [(m.param, m.message) for m in msgs]
+        assert errs[0].param == "wind"
+
+    def test_already_quoted_value_is_not_double_counted(self):
+        # apply_quick_settings stores values with their quotes; _format_value
+        # emits those as-is, so the rule must not add a second pair.
+        value = "'" + "o" * 63 + "'"
+        assert len(f"        wind = {value}") == 80
+        msgs = validate_str(
+            {"para": {"itend": "86400", "idt": "300"}, "name": {"wind": value}},
+        )
+        assert self._too_long(msgs) == []
+
+    def test_short_paths_produce_no_finding(self):
+        msgs = self._msgs(self._assimil("INPUT/assim_coords.dat"))
+        assert [m for m in msgs if m.level == "error"] == []
+
+    def test_non_string_params_do_not_crash(self):
+        # $extra/$title park a list of dicts under '_standalone'; numeric
+        # params have no length at all. Neither may reach the rule.
+        msgs = validate_str(
+            {
+                "para": {"itend": "86400", "idt": "300", "dragco": 2.5e-3, "ilin": 1},
+                "extra": {"_standalone": [{"id": 1, "description": "output node 1"}]},
+            }
+        )
+        assert self._too_long(msgs) == []

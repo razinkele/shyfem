@@ -18,6 +18,11 @@ class ValidationMessage:
 
 _ASSIMIL_NUM = re.compile(r"^assimil(\d+)$")
 
+# nls.f90:398 error-stops on any STR line with len_trim(line) > 80.
+_STR_LINE_MAX = 80
+# parser_str._generate_section writes a param as `        key = value`.
+_EMIT_OVERHEAD = len("        ") + len(" = ")
+
 
 def _normalize_sections(sections: dict) -> tuple[dict, set]:
     """Accept both plain nested dicts and StrFile.sections.
@@ -319,6 +324,57 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     # --- Data assimilation sections (assimil_admin.f90 / assimil.f90) ---
     msgs.extend(_validate_assimil(sections, ibarcl, itemp, isalt))
 
+    # --- Fortran reader's hard 80-char line cap (nls.f90:398) ---
+    msgs.extend(_validate_line_length(sections))
+
+    return msgs
+
+
+def _emitted_length(param: str, value: str) -> int:
+    """Length of the line the editor would write for *param = value*.
+
+    Mirrors parser_str._format_value's quoting instead of importing it:
+    that function raises on some inputs, and an exception escaping
+    validate_str turns validation into an app-wide no-op. A character
+    value is wrapped in quotes unless it already carries a matching
+    pair; a file path never matches _format_value's bare-numeric
+    passthrough, so that branch cannot apply here.
+    """
+    already_quoted = len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]
+    return _EMIT_OVERHEAD + len(param) + len(value) + (0 if already_quoted else 2)
+
+
+def _validate_line_length(sections: dict) -> list[ValidationMessage]:
+    """Flag character values (file paths) that make the STR fatal to read.
+
+    The core hard-stops on any line over 80 chars, so a long
+    filecoords/fileobs/wind path saved by the editor kills the run at
+    STR read time with a message that names no parameter.
+
+    Only character values are measured: numbers cannot approach the cap,
+    and `_`-prefixed keys ($extra/$title standalone entries) hold lists
+    that _generate_section emits in its own format.
+
+    When the param already exists in the file, _generate_section rebuilds
+    it in place inside the original raw line, which may be indented
+    differently — this rule then under-reports rather than crying wolf.
+    """
+    msgs: list[ValidationMessage] = []
+    for name, params in sections.items():
+        for param, value in params.items():
+            if param.startswith("_") or not isinstance(value, str):
+                continue
+            length = _emitted_length(param, value)
+            if length > _STR_LINE_MAX:
+                msgs.append(
+                    ValidationMessage(
+                        "error",
+                        f"{param} in ${name} needs a {length}-character line — the core "
+                        f"error-stops on any STR line longer than {_STR_LINE_MAX} chars; "
+                        "shorten the path or move the file closer to the run directory",
+                        param,
+                    )
+                )
     return msgs
 
 
