@@ -1211,6 +1211,30 @@ class TestAssimilApplyErrors:
         assert sf.get_param("assimil7", "vcorlength") == 0.0
         assert sf.get_param("assimil7", "tau") == 0.0
 
+    def test_nonintegral_value_for_an_int_field_is_rejected(self):
+        # int(float("2.7")) used to store 2 with no feedback: the run then
+        # assimilates a different number of stations than the user typed.
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrFile()
+        vals = self._valid_values()
+        vals["nobs"] = "2.7"
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("nobs" in e for e in errors), errors
+        assert sf.get_section_names() == []
+
+    def test_integral_int_field_values_still_accepted(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        for raw, expected in (("2", 2), ("2.0", 2), (3, 3), (3.0, 3)):
+            sf = StrFile()
+            vals = self._valid_values()
+            vals["nobs"] = raw
+            name, errors = _assimil_apply(sf, 12, 1, True, vals)
+            assert errors == [], (raw, errors)
+            assert sf.get_param("assimil1", "nobs") == expected
+            assert isinstance(sf.get_param("assimil1", "nobs"), int)
+
     def test_defaults_are_core_safe(self):
         # A freshly enabled block saved with untouched defaults must not
         # produce a config the core rejects (the old tau=0 default

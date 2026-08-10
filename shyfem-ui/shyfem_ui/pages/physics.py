@@ -511,13 +511,18 @@ def _assimil_apply(
                 errors.append(f"{param}: a value is required")
             continue
         try:
-            num = int(float(raw)) if param in _ASSIMIL_INT_FIELDS else float(raw)
+            num: float | int = float(raw)
         except (TypeError, ValueError, OverflowError):
             errors.append(f"{param}: {raw!r} is not a valid number")
             continue
         if not math.isfinite(num):
             errors.append(f"{param}: value must be finite")
             continue
+        if param in _ASSIMIL_INT_FIELDS:
+            if not float(num).is_integer():
+                errors.append(f"{param}: must be a whole number (got {raw})")
+                continue
+            num = int(num)
         staged[param] = num
 
     for param in _ASSIMIL_FILE_FIELDS:
