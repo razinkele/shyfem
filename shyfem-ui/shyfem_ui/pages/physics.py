@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
+from shiny.types import SilentException
 
 from shyfem_ui.components.file_picker import (
     file_picker_server,
@@ -665,58 +666,92 @@ for _np in COMMON_PARAMS.get("name", {}):
     _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
 
 
+_INPUT_ABSENT = object()
+
+
+def _read_input(inputs, input_id: str, errors: list[str]) -> object:
+    """Read one panel input, or _INPUT_ABSENT when it was never rendered.
+
+    SilentException is Shiny's "value not set" signal — raised for every
+    input of a panel the user has not opened — and KeyError covers a
+    lookup that never resolves; both are normal here and stay silent.
+    Anything else is a defect (input-id drift after a rename, module
+    namespace bug) that would otherwise turn Save into a silent no-op:
+    the panel is edited, the save reports success, the STR never
+    changes. Those are logged with a traceback and reported.
+    """
+    try:
+        return inputs[input_id]()
+    except (SilentException, KeyError):
+        return _INPUT_ABSENT
+    except Exception as exc:
+        logger.exception("Failed to read panel input %r", input_id)
+        errors.append(f"{input_id}: input could not be read ({type(exc).__name__}) — not applied")
+        return _INPUT_ABSENT
+
+
 def _collect_panel_values(inputs, sf: StrFile) -> list[str]:
     """Read all panel input values and update *sf* before saving.
 
-    Returns the list of assimilation-field errors; on any error the
-    offending block was NOT applied and the caller must not report
-    the save as successful.
+    Returns the list of field errors; on any error the offending block
+    was NOT applied and the caller must not report the save as
+    successful.
     """
+    errors: list[str] = []
+
     for panel in PHYSICS_PANELS.values():
         # --- params explicitly listed in the panel definition ---
         for param, section in panel["params"].items():
-            _read_input_and_set(inputs, sf, param, section, param)
+            _read_input_and_set(inputs, sf, param, section, param, errors)
 
         # --- params from a dedicated section (sedtr, lagrg, nduge) ---
         dedicated = panel.get("section")
         if dedicated and dedicated in COMMON_PARAMS:
             for param in COMMON_PARAMS[dedicated]:
                 if param not in panel["params"]:
-                    _read_input_and_set(inputs, sf, param, dedicated, param)
+                    _read_input_and_set(inputs, sf, param, dedicated, param, errors)
 
     # --- handle remapped input IDs (duplicates across panels) ---
     for input_id, (section, param) in _INPUT_ID_REMAP.items():
-        _read_input_and_set(inputs, sf, input_id, section, param)
+        _read_input_and_set(inputs, sf, input_id, section, param, errors)
 
     # --- composite param: imetout <- 5 meteo-output checkboxes ---
-    try:
-        flags = {f: bool(inputs[f"imetout_{f}"]()) for f in _IMETOUT_FIELDS}
-    except Exception:
-        flags = None  # heat panel not rendered -> leave imetout untouched
-    if flags is not None:
+    # All-or-nothing: imetout is one packed integer, so encoding a
+    # partial read would silently zero streams nobody touched.
+    flags: dict[str, bool] = {}
+    for f in _IMETOUT_FIELDS:
+        raw = _read_input(inputs, f"imetout_{f}", errors)
+        if raw is _INPUT_ABSENT:
+            break  # heat panel not rendered (or a failed read) -> imetout untouched
+        flags[f] = bool(raw)
+    else:
         sf.set_param("para", "imetout", _imetout_encode(flags))
 
     # --- composite sections: $assimilN <- T/S assimilation blocks ---
-    errors: list[str] = []
     for prefix, ivar, preferred, label in (
         ("t", 12, 1, "Temperature"),
         ("s", 11, 2, "Salinity"),
     ):
-        try:
-            on = bool(inputs[f"assim_{prefix}_on"]())
-        except Exception:
+        block_errors: list[str] = []
+        on_raw = _read_input(inputs, f"assim_{prefix}_on", block_errors)
+        if on_raw is _INPUT_ABSENT:
+            errors.extend(block_errors)
             continue  # panel not rendered -> sections untouched
         values: dict[str, object] = {}
         for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
-            try:
-                raw = inputs[f"assim_{prefix}_{param}"]()
-            except Exception:
+            raw = _read_input(inputs, f"assim_{prefix}_{param}", block_errors)
+            if raw is _INPUT_ABSENT:
                 continue  # array-note field: input never created
             # A rendered-but-blank input means the user cleared it;
             # pass it through so _assimil_apply can error on required
             # fields instead of silently keeping the old value.
             values[param] = raw if raw is not None else ""
-        _, errs = _assimil_apply(sf, ivar, preferred, on, values)
+        if block_errors:
+            # The panel state is unknown, so applying it would write a
+            # half-read block — report and leave the sections alone.
+            errors.extend(block_errors)
+            continue
+        _, errs = _assimil_apply(sf, ivar, preferred, bool(on_raw), values)
         errors.extend(f"{label} assimilation — {e}" for e in errs)
 
     # --- purge the dead $nduge section on every save: the core
@@ -737,14 +772,11 @@ def _read_input_and_set(
     input_id: str,
     section: str,
     param: str,
+    errors: list[str],
 ) -> None:
     """Try reading a single input value and write it into *sf*."""
-    try:
-        raw = inputs[input_id]()
-    except Exception:
-        return  # input not yet rendered
-
-    if raw is None:
+    raw = _read_input(inputs, input_id, errors)
+    if raw is _INPUT_ABSENT or raw is None:
         return
 
     raw_str = str(raw).strip()
@@ -896,12 +928,12 @@ def physics_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
         try:
-            assim_errors = _collect_panel_values(input, str_data.get())
-            if assim_errors:
-                for e in assim_errors:
+            panel_errors = _collect_panel_values(input, str_data.get())
+            if panel_errors:
+                for e in panel_errors:
                     ui.notification_show(e, type="error", duration=8)
                 ui.notification_show(
-                    "Not saved — fix the assimilation fields first.",
+                    "Not saved — fix the reported panel fields first.",
                     type="warning",
                     duration=8,
                 )

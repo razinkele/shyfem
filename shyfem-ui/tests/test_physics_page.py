@@ -1,12 +1,52 @@
 """Tests for physics configuration page."""
 
+import logging
+
 import pytest
+from shiny.types import SilentException
 
 from shyfem_ui.pages.physics import (
     PHYSICS_PANELS,
+    _collect_panel_values,
     build_panel_params,
 )
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
+
+
+class FakeInputs:
+    """Stand-in for Shiny's ``Inputs``: ``fake[id]()`` returns a stored value.
+
+    An id that was never registered raises ``SilentException``, which is
+    exactly what an unrendered input does (``reactive.Value.get`` on an
+    unset value). Ids in *raisers* raise the given exception instead,
+    standing in for a real defect (input-id drift, namespace bug).
+    """
+
+    def __init__(self, values: dict | None = None, raisers: dict | None = None):
+        self._values = values or {}
+        self._raisers = raisers or {}
+
+    def __getitem__(self, key: str):
+        if key in self._raisers:
+            exc = self._raisers[key]
+
+            def _raise():
+                raise exc
+
+            return _raise
+        if key in self._values:
+            value = self._values[key]
+            return lambda: value
+
+        def _silent():
+            raise SilentException()
+
+        return _silent
+
+
+def collect_errors(inputs, sf: StrFile) -> list[str]:
+    """_collect_panel_values' error list (the purge flag is B2's business)."""
+    return _collect_panel_values(inputs, sf)
 
 
 class TestPhysicsPanels:
@@ -459,12 +499,99 @@ class TestPhysicsPanels:
         collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
         assert "_assimil_apply(" in collect
         assert "_purge_nduge(" in collect
-        assert 'inputs[f"assim_{prefix}_on"]' in collect
-        assert 'inputs[f"assim_{prefix}_{param}"]' in collect
+        assert '_read_input(inputs, f"assim_{prefix}_on"' in collect
+        assert '_read_input(inputs, f"assim_{prefix}_{param}"' in collect
         assert (
             '("t", 12, 1, "Temperature")' in collect and '("s", 11, 2, "Salinity")' in collect
         )  # T=ivar 12, S=ivar 11 — order is load-bearing
         assert "return errors" in collect  # apply errors must reach the caller
+
+
+class TestInputReadErrors:
+    """A panel input read that fails for any reason other than "never
+    rendered" is a defect (input-id drift after a rename, module-namespace
+    bug). Swallowing it makes the save a silent no-op: the user edits the
+    panel, the save reports success, the sections never change. Every such
+    read must be logged with a traceback and reported to the caller."""
+
+    def _assim_sf(self):
+        return StrParser.parse(
+            "$para\n        ibarcl = 3\n$end\n\n"
+            "$assimil7\n"
+            "        nobs = 2\n"
+            "        ivar = 12\n"
+            "        mode = 1\n"
+            "        tau = 1800.\n"
+            "        corlength = 2000.\n"
+            "        sigobs = 0.1\n"
+            "        sigback = 1.0\n"
+            "        filecoords = 'mm_assim_coords.dat'\n"
+            "        fileobs = 'mm_assim_obs.dat'\n"
+            "$end\n"
+        )
+
+    def test_unrendered_inputs_are_not_errors(self):
+        """SilentException is Shiny's "never rendered" signal — the whole
+        point of the guard; it must stay silent and write nothing."""
+        sf = StrFile()
+        assert collect_errors(FakeInputs(), sf) == []
+        assert sf.get_section_names() == []
+
+    def test_checkbox_read_failure_is_reported_and_logged(self, caplog):
+        sf = self._assim_sf()
+        inputs = FakeInputs(raisers={"assim_t_on": RuntimeError("input id drift")})
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("assim_t_on" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        # the block's sections stay untouched — a half-read panel is never applied
+        assert sf.sections["assimil7"]._modified_params == set()
+
+    def test_field_read_failure_reported_and_block_not_applied(self, caplog):
+        sf = self._assim_sf()
+        inputs = FakeInputs(
+            values={"assim_t_on": True, "assim_t_nobs": 3},
+            raisers={"assim_t_corlength": RuntimeError("input id drift")},
+        )
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("assim_t_corlength" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        # nobs read fine, but the panel state is incomplete -> write nothing
+        assert sf.sections["assimil7"]._modified_params == set()
+        assert sf.get_param("assimil7", "nobs") == 2
+
+    def test_imetout_read_failure_is_reported_and_writes_nothing(self, caplog):
+        """imetout is one packed integer: a partial read must never be
+        encoded, or streams the user never touched are silently zeroed."""
+        sf = StrParser.parse("$para\n        imetout = 10010\n$end\n")
+        values = {f"imetout_{f}": True for f in ("heat", "rain", "ice", "hflx")}
+        inputs = FakeInputs(values=values, raisers={"imetout_wind": RuntimeError("boom")})
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("imetout_wind" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        assert sf.get_param("para", "imetout") == 10010  # untouched, not re-encoded
+
+    def test_imetout_all_rendered_still_writes(self):
+        sf = StrParser.parse("$para\n        imetout = 0\n$end\n")
+        inputs = FakeInputs(
+            values={f"imetout_{f}": (f in ("heat", "hflx")) for f in _IMETOUT_ALL},
+        )
+        assert collect_errors(inputs, sf) == []
+        assert sf.get_param("para", "imetout") == 10010
+
+    def test_plain_param_read_failure_is_reported_and_logged(self, caplog):
+        sf = StrFile()
+        inputs = FakeInputs(raisers={"itanf": RuntimeError("input id drift")})
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("itanf" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        assert sf.get_param("para", "itanf") is None
+
+
+_IMETOUT_ALL = ("wind", "heat", "rain", "ice", "hflx")
 
 
 class TestTimingPanel:
