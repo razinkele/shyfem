@@ -338,6 +338,11 @@ def _rate_field(input_id: str, label: str, raw: object) -> ui.Tag:
 
 
 _ASSIMIL_NAME = re.compile(r"^assimil(\d+)$")
+# Any section the user meant as an assimilation block, including the
+# numberless and zero forms the core rejects (read_assimil error-stops
+# on num <= 0, assimil_admin.f90) — the panel must name them rather
+# than leave them invisible next to an offer to create $assimil1.
+_ASSIMIL_ANY_NAME = re.compile(r"^assimil(\d*)$")
 
 # Numbered $assimil sections (assimil_admin.f90): one section per
 # assimilated variable, single values broadcast to all nobs stations.
@@ -413,6 +418,21 @@ def _assimil_new_name(sf: StrFile, preferred: int) -> str:
 # An assignment anywhere on a line. The lookbehind keeps "corlength"
 # from matching inside "vcorlength", which would freeze the wrong field.
 _ASSIGNMENT = re.compile(r"(?<![A-Za-z0-9_])(\w+)\s*=\s*")
+
+
+def _assimil_other_sections(sf: StrFile, adopted) -> tuple[list[str], list[str]]:
+    """($assimilN sections the panel does not own, ones the core rejects)."""
+    others: list[str] = []
+    invalid: list[str] = []
+    for name in sf.get_section_names():
+        if name in adopted or not _ASSIMIL_ANY_NAME.match(name):
+            continue
+        numbered = _ASSIMIL_NAME.match(name)
+        if numbered and int(numbered.group(1)) > 0:
+            others.append(name)
+        else:
+            invalid.append(name)
+    return others, invalid
 
 
 def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
@@ -2300,7 +2320,7 @@ def physics_server(
     def panel_assimilation():
         sf = str_data.get()
         adopted = {_assimil_find(sf, 12), _assimil_find(sf, 11)}
-        others = [n for n in sf.get_section_names() if _ASSIMIL_NAME.match(n) and n not in adopted]
+        others, invalid = _assimil_other_sections(sf, adopted)
         children = [
             ui.help_text(
                 "Optimal-interpolation assimilation runs in prognostic "
@@ -2312,6 +2332,15 @@ def physics_server(
                 ui.help_text(
                     "Other $assimil sections present (edited in the STR): "
                     + ", ".join(f"${n}" for n in others)
+                )
+            )
+        if invalid:
+            children.append(
+                ui.div(
+                    ", ".join(f"${n}" for n in invalid)
+                    + ": the core rejects an assimilation section without a positive "
+                    "number — renumber it ($assimil1, $assimil2, …) in the STR.",
+                    class_="text-danger small",
                 )
             )
         children.append(_assimil_block(sf, "Temperature", "t", 12))

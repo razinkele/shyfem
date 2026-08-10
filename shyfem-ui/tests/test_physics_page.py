@@ -686,6 +686,45 @@ class TestAssimilArrayDetection:
         assert "assim_t_corlength" not in html
 
 
+class TestAssimilOtherSections:
+    """A hand-written $assimil / $assimil0 is core-fatal (read_assimil
+    error-stops on num <= 0) but matched no panel regex, so the panel
+    neither listed it nor said anything — it just offered to create a
+    parallel $assimil1 next to a section the user believed was live."""
+
+    def _others(self, sf, adopted=frozenset()):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_assimil_other_sections", None)
+        assert helper is not None, "the panel must be able to list unmanaged sections"
+        return helper(sf, adopted)
+
+    def test_unnumbered_and_zero_sections_are_listed_as_invalid(self):
+        sf = StrParser.parse(
+            "$assimil\n        ivar = 12\n$end\n\n"
+            "$assimil0\n        ivar = 11\n$end\n\n"
+            "$assimil3\n        ivar = 30\n$end\n"
+        )
+        others, invalid = self._others(sf)
+        assert invalid == ["assimil", "assimil0"]
+        assert others == ["assimil3"]
+
+    def test_adopted_sections_are_not_listed(self):
+        sf = StrParser.parse("$assimil3\n        ivar = 12\n$end\n")
+        others, invalid = self._others(sf, adopted={"assimil3"})
+        assert others == []
+        assert invalid == []
+
+    def test_panel_names_the_invalid_section(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        panel = src[src.index("def panel_assimilation") : src.index("def panel_output")]
+        assert "_assimil_other_sections(" in panel, "the panel must use the listing helper"
+
+
 class TestAssimilModeField:
     """A stored mode outside (0, 1) is fatal in the core, which says so
     and points at the real mistake. Rendering it as "0 - Nudging" and
