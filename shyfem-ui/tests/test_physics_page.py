@@ -1315,11 +1315,61 @@ class TestAssimilApplyErrors:
 
         src = inspect.getsource(physics)
         save = src[src.index("def save_file") : src.index("def preview_str")]
-        collect_pos = save.index("_collect_panel_values(")
+        collect_pos = save.index("_collect_into_copy(")
         write_pos = save.index("StrParser.save")
         assert collect_pos < write_pos
         gate = save[collect_pos:write_pos]
         assert "return" in gate  # abort path between collect and write
+
+
+class TestSaveIsolatesPartialState:
+    """_collect_panel_values mutates the StrFile in place, so an aborted
+    save (or a Preview) used to leave the shared model half-updated — the
+    next successful save then persisted whatever the failure left behind.
+    Collect into a copy and adopt it only once the write has happened."""
+
+    def _save_src(self) -> str:
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        return src[src.index("def save_file") : src.index("def preview_str")]
+
+    def test_collect_into_copy_leaves_the_shared_model_untouched(self):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_collect_into_copy", None)
+        assert helper is not None, "save/preview must collect into a copy"
+        sf = StrParser.parse(
+            "$para\n        idt = 300\n$end\n\n$nduge\n        nvars = 3\n$end\n"
+        )
+        working, errors, purged = helper(FakeInputs(values={"idt": 600}), sf)
+        assert errors == []
+        assert purged is True
+        assert working.get_param("para", "idt") == 600
+        assert sf.get_param("para", "idt") == 300, "shared model must not be touched"
+        assert "nduge" in sf.sections, "the purge belongs to the copy until a write"
+
+    def test_save_swaps_the_copy_in_only_after_the_write(self):
+        save = self._save_src()
+        assert "_collect_into_copy(" in save
+        assert save.index("StrParser.save") < save.index("str_data.set(")
+
+    def test_save_logs_the_traceback_of_an_unexpected_failure(self):
+        save = self._save_src()
+        catch_all = save[save.rindex("except Exception") :]
+        assert "logger.exception" in catch_all, "a failed save must be diagnosable"
+
+    def test_preview_does_not_mutate_the_shared_model(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        preview = src[src.index("def preview_str") : src.index("def module_badges")]
+        assert "_collect_into_copy(" in preview
+        assert "str_data.set(" not in preview, "Preview writes nothing — it owns no state"
 
 
 class TestSaveValidationOrdering:

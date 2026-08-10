@@ -5,6 +5,7 @@ accordion panels for each physics module. Reads/writes the same
 STR files.
 """
 
+import copy
 import logging
 import math
 import re
@@ -820,6 +821,18 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
     return errors, _purge_nduge(sf)
 
 
+def _collect_into_copy(inputs, sf: StrFile) -> tuple[StrFile, list[str], bool]:
+    """Apply the panel values to a copy of *sf*; returns it with the collect result.
+
+    Preview writes nothing and an aborted save writes nothing, so neither
+    may leave the shared StrFile half-updated — the next successful save
+    would persist that partial state without the user ever seeing it.
+    """
+    working = copy.deepcopy(sf)
+    errors, purged = _collect_panel_values(inputs, working)
+    return working, errors, purged
+
+
 def _read_input_and_set(
     inputs,
     sf: StrFile,
@@ -981,8 +994,9 @@ def physics_server(
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
+        working: StrFile | None = None
         try:
-            panel_errors, nduge_purged = _collect_panel_values(input, str_data.get())
+            working, panel_errors, nduge_purged = _collect_into_copy(input, str_data.get())
             if panel_errors:
                 for e in panel_errors:
                     ui.notification_show(e, type="error", duration=8)
@@ -992,11 +1006,10 @@ def physics_server(
                     duration=8,
                 )
                 return
-            sf = str_data.get()
             # Cross-parameter validation BEFORE the write (mirrors
             # str_editor): error-level findings block the save so an
             # invalid STR never lands on disk; warnings don't.
-            msgs = validate_str(sf.sections)
+            msgs = validate_str(working.sections)
             errors = [m for m in msgs if m.level == "error"]
             warnings = [m for m in msgs if m.level == "warning"]
             if errors:
@@ -1007,7 +1020,12 @@ def physics_server(
                 )
                 return
             path.parent.mkdir(parents=True, exist_ok=True)
-            StrParser.save(sf, path)
+            StrParser.save(working, path)
+            # The panel state is on disk now, so it becomes the shared
+            # model (badges and validation follow it). No self-write loop:
+            # reactive.event isolates this body, so the .get() above takes
+            # no dependency on the value being set here.
+            str_data.set(working)
             for m in warnings:
                 ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
             if nduge_purged:
@@ -1019,6 +1037,7 @@ def physics_server(
                 )
             ui.notification_show(f"Saved to {path}", type="message", duration=3)
         except Exception as e:
+            logger.exception("Saving STR file to %s failed", path)
             ui.notification_show(f"Save error: {e}", type="error")
 
     @reactive.effect
@@ -1027,12 +1046,12 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
-        panel_errors, _purged = _collect_panel_values(input, str_data.get())
+        working, panel_errors, _purged = _collect_into_copy(input, str_data.get())
         for e in panel_errors:
             # Rejected assimilation fields were NOT applied: the preview
             # shows the last valid state for those, so say why.
             ui.notification_show(e, type="error", duration=8)
-        content = StrParser.generate(str_data.get())
+        content = StrParser.generate(working)
         ui.modal_show(
             ui.modal(
                 ui.tags.pre(
