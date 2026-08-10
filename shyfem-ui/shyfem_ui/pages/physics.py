@@ -654,6 +654,114 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
     )
 
 
+# Map of input IDs that differ from the STR param name.
+# key = input_id used in the UI, value = (section, param_name).
+_INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
+    "idtcon_out": ("para", "idtcon"),
+    "icon_av_out": ("para", "icon_av"),
+}
+# Add name_ prefixed input IDs for $name section params
+for _np in COMMON_PARAMS.get("name", {}):
+    _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
+
+
+def _collect_panel_values(inputs, sf: StrFile) -> list[str]:
+    """Read all panel input values and update *sf* before saving.
+
+    Returns the list of assimilation-field errors; on any error the
+    offending block was NOT applied and the caller must not report
+    the save as successful.
+    """
+    for panel in PHYSICS_PANELS.values():
+        # --- params explicitly listed in the panel definition ---
+        for param, section in panel["params"].items():
+            _read_input_and_set(inputs, sf, param, section, param)
+
+        # --- params from a dedicated section (sedtr, lagrg, nduge) ---
+        dedicated = panel.get("section")
+        if dedicated and dedicated in COMMON_PARAMS:
+            for param in COMMON_PARAMS[dedicated]:
+                if param not in panel["params"]:
+                    _read_input_and_set(inputs, sf, param, dedicated, param)
+
+    # --- handle remapped input IDs (duplicates across panels) ---
+    for input_id, (section, param) in _INPUT_ID_REMAP.items():
+        _read_input_and_set(inputs, sf, input_id, section, param)
+
+    # --- composite param: imetout <- 5 meteo-output checkboxes ---
+    try:
+        flags = {f: bool(inputs[f"imetout_{f}"]()) for f in _IMETOUT_FIELDS}
+    except Exception:
+        flags = None  # heat panel not rendered -> leave imetout untouched
+    if flags is not None:
+        sf.set_param("para", "imetout", _imetout_encode(flags))
+
+    # --- composite sections: $assimilN <- T/S assimilation blocks ---
+    errors: list[str] = []
+    for prefix, ivar, preferred, label in (
+        ("t", 12, 1, "Temperature"),
+        ("s", 11, 2, "Salinity"),
+    ):
+        try:
+            on = bool(inputs[f"assim_{prefix}_on"]())
+        except Exception:
+            continue  # panel not rendered -> sections untouched
+        values: dict[str, object] = {}
+        for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
+            try:
+                raw = inputs[f"assim_{prefix}_{param}"]()
+            except Exception:
+                continue  # array-note field: input never created
+            # A rendered-but-blank input means the user cleared it;
+            # pass it through so _assimil_apply can error on required
+            # fields instead of silently keeping the old value.
+            values[param] = raw if raw is not None else ""
+        _, errs = _assimil_apply(sf, ivar, preferred, on, values)
+        errors.extend(f"{label} assimilation — {e}" for e in errs)
+
+    # --- purge the dead $nduge section on every save: the core
+    # hard-stops on it, so an STR carrying it can never run ---
+    if _purge_nduge(sf):
+        ui.notification_show(
+            "Removed dead $nduge section (the core rejects it).",
+            type="message",
+            duration=6,
+        )
+
+    return errors
+
+
+def _read_input_and_set(
+    inputs,
+    sf: StrFile,
+    input_id: str,
+    section: str,
+    param: str,
+) -> None:
+    """Try reading a single input value and write it into *sf*."""
+    try:
+        raw = inputs[input_id]()
+    except Exception:
+        return  # input not yet rendered
+
+    if raw is None:
+        return
+
+    raw_str = str(raw).strip()
+    if not raw_str:
+        return
+
+    try:
+        if "." in raw_str or "e" in raw_str.lower():
+            value: object = float(raw_str)
+        else:
+            value = int(raw_str)
+    except ValueError:
+        value = raw_str
+
+    sf.set_param(section, param, value)
+
+
 @module.ui
 def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
@@ -763,112 +871,6 @@ def physics_server(
         else:
             ui.notification_show("File not found or not .str", type="warning")
 
-    # Map of input IDs that differ from the STR param name.
-    # key = input_id used in the UI, value = (section, param_name).
-    _INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
-        "idtcon_out": ("para", "idtcon"),
-        "icon_av_out": ("para", "icon_av"),
-    }
-    # Add name_ prefixed input IDs for $name section params
-    for _np in COMMON_PARAMS.get("name", {}):
-        _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
-
-    def _collect_panel_values() -> list[str]:
-        """Read all panel input values and update str_data before saving.
-
-        Returns the list of assimilation-field errors; on any error the
-        offending block was NOT applied and the caller must not report
-        the save as successful.
-        """
-        sf = str_data.get()
-
-        for panel in PHYSICS_PANELS.values():
-            # --- params explicitly listed in the panel definition ---
-            for param, section in panel["params"].items():
-                _read_input_and_set(sf, param, section, param)
-
-            # --- params from a dedicated section (sedtr, lagrg, nduge) ---
-            dedicated = panel.get("section")
-            if dedicated and dedicated in COMMON_PARAMS:
-                for param in COMMON_PARAMS[dedicated]:
-                    if param not in panel["params"]:
-                        _read_input_and_set(sf, param, dedicated, param)
-
-        # --- handle remapped input IDs (duplicates across panels) ---
-        for input_id, (section, param) in _INPUT_ID_REMAP.items():
-            _read_input_and_set(sf, input_id, section, param)
-
-        # --- composite param: imetout <- 5 meteo-output checkboxes ---
-        try:
-            flags = {f: bool(input[f"imetout_{f}"]()) for f in _IMETOUT_FIELDS}
-        except Exception:
-            flags = None  # heat panel not rendered -> leave imetout untouched
-        if flags is not None:
-            sf.set_param("para", "imetout", _imetout_encode(flags))
-
-        # --- composite sections: $assimilN <- T/S assimilation blocks ---
-        errors: list[str] = []
-        for prefix, ivar, preferred, label in (
-            ("t", 12, 1, "Temperature"),
-            ("s", 11, 2, "Salinity"),
-        ):
-            try:
-                on = bool(input[f"assim_{prefix}_on"]())
-            except Exception:
-                continue  # panel not rendered -> sections untouched
-            values: dict[str, object] = {}
-            for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
-                try:
-                    raw = input[f"assim_{prefix}_{param}"]()
-                except Exception:
-                    continue  # array-note field: input never created
-                # A rendered-but-blank input means the user cleared it;
-                # pass it through so _assimil_apply can error on required
-                # fields instead of silently keeping the old value.
-                values[param] = raw if raw is not None else ""
-            _, errs = _assimil_apply(sf, ivar, preferred, on, values)
-            errors.extend(f"{label} assimilation — {e}" for e in errs)
-
-        # --- purge the dead $nduge section on every save: the core
-        # hard-stops on it, so an STR carrying it can never run ---
-        if _purge_nduge(sf):
-            ui.notification_show(
-                "Removed dead $nduge section (the core rejects it).",
-                type="message",
-                duration=6,
-            )
-
-        return errors
-
-    def _read_input_and_set(
-        sf: StrFile,
-        input_id: str,
-        section: str,
-        param: str,
-    ) -> None:
-        """Try reading a single input value and write it into *sf*."""
-        try:
-            raw = input[input_id]()
-        except Exception:
-            return  # input not yet rendered
-
-        if raw is None:
-            return
-
-        raw_str = str(raw).strip()
-        if not raw_str:
-            return
-
-        try:
-            if "." in raw_str or "e" in raw_str.lower():
-                value: object = float(raw_str)
-            else:
-                value = int(raw_str)
-        except ValueError:
-            value = raw_str
-
-        sf.set_param(section, param, value)
-
     @reactive.effect
     @reactive.event(input.save_btn)
     def save_file():
@@ -894,7 +896,7 @@ def physics_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
         try:
-            assim_errors = _collect_panel_values()
+            assim_errors = _collect_panel_values(input, str_data.get())
             if assim_errors:
                 for e in assim_errors:
                     ui.notification_show(e, type="error", duration=8)
@@ -932,7 +934,7 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
-        for e in _collect_panel_values():
+        for e in _collect_panel_values(input, str_data.get()):
             # Rejected assimilation fields were NOT applied: the preview
             # shows the last valid state for those, so say why.
             ui.notification_show(e, type="error", duration=8)

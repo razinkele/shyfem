@@ -459,8 +459,8 @@ class TestPhysicsPanels:
         collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
         assert "_assimil_apply(" in collect
         assert "_purge_nduge(" in collect
-        assert 'input[f"assim_{prefix}_on"]' in collect
-        assert 'input[f"assim_{prefix}_{param}"]' in collect
+        assert 'inputs[f"assim_{prefix}_on"]' in collect
+        assert 'inputs[f"assim_{prefix}_{param}"]' in collect
         assert (
             '("t", 12, 1, "Temperature")' in collect and '("s", 11, 2, "Salinity")' in collect
         )  # T=ivar 12, S=ivar 11 — order is load-bearing
@@ -970,7 +970,7 @@ class TestAssimilApplyErrors:
 
         src = inspect.getsource(physics)
         save = src[src.index("def save_file") : src.index("def preview_str")]
-        collect_pos = save.index("_collect_panel_values()")
+        collect_pos = save.index("_collect_panel_values(")
         write_pos = save.index("StrParser.save")
         assert collect_pos < write_pos
         gate = save[collect_pos:write_pos]
