@@ -540,7 +540,7 @@ def _assimil_apply(
             errors.append(f"{param}: value must be finite")
             continue
         if param in _ASSIMIL_INT_FIELDS:
-            if not float(num).is_integer():
+            if not num.is_integer():
                 errors.append(f"{param}: must be a whole number (got {raw})")
                 continue
             num = int(num)
