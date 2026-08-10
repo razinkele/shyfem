@@ -853,6 +853,39 @@ def _collect_into_copy(inputs, sf: StrFile) -> tuple[StrFile, list[str], bool]:
     return working, errors, purged
 
 
+def _unwritable_fields(sf: StrFile) -> list[str]:
+    """`$section param` for each edited value the STR writer must reject.
+
+    _format_value refuses a value holding both quote characters, since
+    the core's reader is delimiter-matched with no escape mechanism. Its
+    message names the value but not the field, and the panel has some
+    200 of them.
+    """
+    return [
+        f"${name} {param}"
+        for name, section in sf.sections.items()
+        for param in sorted(section._modified_params)
+        if isinstance(section.parameters.get(param), str)
+        and "'" in section.parameters[param]
+        and '"' in section.parameters[param]
+    ]
+
+
+def _preview_content(sf: StrFile) -> tuple[str | None, str | None]:
+    """(STR text, error message) — generation must not escape the caller.
+
+    An unhandled exception inside a reactive effect kills the session,
+    and a value the writer rejects is a user-input problem, not a bug.
+    """
+    try:
+        return StrParser.generate(sf), None
+    except ValueError as exc:
+        logger.exception("Generating the STR preview failed")
+        fields = _unwritable_fields(sf)
+        where = f" — check {', '.join(fields)}" if fields else ""
+        return None, f"Cannot write this STR: {exc}{where}"
+
+
 def _read_input_and_set(
     inputs,
     sf: StrFile,
@@ -1058,7 +1091,9 @@ def physics_server(
             ui.notification_show(f"Saved to {path}", type="message", duration=3)
         except Exception as e:
             logger.exception("Saving STR file to %s failed", path)
-            ui.notification_show(f"Save error: {e}", type="error")
+            fields = _unwritable_fields(working) if working is not None else []
+            where = f" — check {', '.join(fields)}" if fields else ""
+            ui.notification_show(f"Save error: {e}{where}", type="error", duration=10)
 
     @reactive.effect
     @reactive.event(input.preview_btn)
@@ -1071,7 +1106,10 @@ def physics_server(
             # Rejected assimilation fields were NOT applied: the preview
             # shows the last valid state for those, so say why.
             ui.notification_show(e, type="error", duration=8)
-        content = StrParser.generate(working)
+        content, gen_error = _preview_content(working)
+        if gen_error is not None:
+            ui.notification_show(gen_error, type="error", duration=10)
+            return
         ui.modal_show(
             ui.modal(
                 ui.tags.pre(

@@ -1411,6 +1411,69 @@ class TestSaveIsolatesPartialState:
         assert "str_data.set(" not in preview, "Preview writes nothing — it owns no state"
 
 
+class TestPreviewGeneratesSafely:
+    """_format_value raises ValueError for a value the core's reader could
+    never read back (both quote characters, no escape mechanism). Preview
+    called StrParser.generate bare inside a reactive effect, where an
+    unhandled exception kills the session."""
+
+    def _unwritable_sf(self) -> StrFile:
+        sf = StrParser.parse("$name\n        wind = 'wind.txt'\n$end\n")
+        sf.set_param("name", "wind", "a'b\"c.dat")  # only modified params are re-emitted
+        return sf
+
+    def test_generate_really_rejects_the_value(self):
+        with pytest.raises(ValueError):
+            StrParser.generate(self._unwritable_sf())
+
+    def test_preview_content_reports_the_failure_instead_of_raising(self, caplog):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_preview_content", None)
+        assert helper is not None, "preview must route generate through a guarded helper"
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            content, error = helper(self._unwritable_sf())
+        assert content is None
+        assert error and "wind" in error, error
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+
+    def test_preview_content_returns_the_str_when_writable(self):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_preview_content", None)
+        assert helper is not None, "preview must route generate through a guarded helper"
+        content, error = helper(StrParser.parse("$para\n        idt = 300\n$end\n"))
+        assert error is None
+        assert "$para" in content
+
+    def test_unwritable_fields_names_the_offending_field(self):
+        from shyfem_ui.pages import physics
+
+        assert physics._unwritable_fields(self._unwritable_sf()) == ["$name wind"]
+        assert physics._unwritable_fields(StrParser.parse("$para\n        idt = 300\n$end\n")) == []
+
+    def test_save_error_message_names_the_offending_field(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        catch_all = save[save.rindex("except Exception") :]
+        assert "_unwritable_fields(" in catch_all, "echoing the raw exception is not actionable"
+
+    def test_preview_does_not_open_the_modal_on_a_failure(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        preview = src[src.index("def preview_str") : src.index("def module_badges")]
+        assert "_preview_content(" in preview
+        assert "StrParser.generate(" not in preview, "generate must stay behind the guard"
+        assert preview.index("return") < preview.index("ui.modal_show"), "abort before the modal"
+
+
 class TestSaveValidationOrdering:
     def test_save_file_validates_before_write(self):
         """Error-level validate_str findings must block the write, not be
