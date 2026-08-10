@@ -4,6 +4,7 @@ Checks Fortran parameter interdependencies and reports
 errors (missing required params) and warnings (likely misconfigurations).
 """
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -13,6 +14,45 @@ class ValidationMessage:
     level: str  # "error", "warning", "info"
     message: str
     param: str = ""
+
+
+_ASSIMIL_NUM = re.compile(r"^assimil(\d+)$")
+
+
+def _normalize_sections(sections: dict) -> tuple[dict, set]:
+    """Accept both plain nested dicts and StrFile.sections.
+
+    Page call sites pass StrFile.sections (name -> StrSection dataclass);
+    the validator's own tests pass plain {name: {param: value}} dicts.
+    Returns (params_by_section, names_of_sections_with_any_content) — the
+    second set is needed because a parsed section can be non-empty while
+    holding only raw lines (e.g. $levels depths carry no key=value pairs).
+    """
+    params: dict = {}
+    present: set = set()
+    for name, sec in sections.items():
+        if hasattr(sec, "parameters"):
+            params[name] = sec.parameters
+            if sec.parameters or getattr(sec, "raw_lines", None):
+                present.add(name)
+        else:
+            params[name] = sec or {}
+            if sec:
+                present.add(name)
+    return params, present
+
+
+def _num(sections: dict, section: str, param: str, default: Any = None) -> Any:
+    """_get restricted to numeric results.
+
+    idt*/interval params legitimately hold duration strings ('1h', '30m')
+    that _get cannot convert; a `> 0` comparison on one raises TypeError,
+    which would crash the whole validator. Non-numeric values fall back
+    to *default* — the rules using this helper are numeric sanity checks,
+    not format checks.
+    """
+    val = _get(sections, section, param, default)
+    return val if isinstance(val, (int, float)) else default
 
 
 def _get(sections: dict, section: str, param: str, default: Any = None) -> Any:
@@ -47,6 +87,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         List of ValidationMessage with errors and warnings.
     """
     msgs: list[ValidationMessage] = []
+    sections, present = _normalize_sections(sections)
     para = sections.get("para", {})
 
     # --- Required timing params ---
@@ -100,7 +141,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
             )
 
     # --- Dependency: iheat>0 needs ibarcl>0 ---
-    iheat = _get(sections, "para", "iheat", 0)
+    iheat = _num(sections, "para", "iheat", 0)
     if iheat > 0 and ibarcl == 0:
         msgs.append(
             ValidationMessage(
@@ -113,9 +154,8 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     # --- Dependency: issedi=1 needs $sedtr section ---
     issedi = _get(sections, "para", "issedi", 0)
     if issedi == 1:
-        sedtr = sections.get("sedtr", {})
         isedi = _get(sections, "sedtr", "isedi", 0)
-        if not sedtr or isedi == 0:
+        if "sedtr" not in present or isedi == 0:
             msgs.append(
                 ValidationMessage(
                     "warning",
@@ -125,12 +165,11 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
             )
 
     # --- Dependency: ilagr>0 needs $lagrg section ---
-    ilagr = _get(sections, "para", "ilagr", 0)
+    ilagr = _num(sections, "para", "ilagr")
     if ilagr is None:
-        ilagr = _get(sections, "lagrg", "ilagr", 0)
+        ilagr = _num(sections, "lagrg", "ilagr", 0)
     if ilagr and ilagr > 0:
-        lagrg = sections.get("lagrg", {})
-        if not lagrg:
+        if "lagrg" not in present:
             msgs.append(
                 ValidationMessage(
                     "warning",
@@ -160,7 +199,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         )
 
     # --- Dependency: iwave valid range (waves_admin.f90:1227-1229) ---
-    iwave = _get(sections, "para", "iwave", 0)
+    iwave = _num(sections, "para", "iwave", 0)
     if iwave is not None and isinstance(iwave, int) and iwave not in (0, 1, 2, 3, 4, 5):
         msgs.append(
             ValidationMessage(
@@ -182,7 +221,7 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
         )
 
     # --- Dependency: iconz>0 but no conzin or boundary file ---
-    iconz = _get(sections, "para", "iconz", 0)
+    iconz = _num(sections, "para", "iconz", 0)
     if iconz and iconz > 0:
         conzin = _get(sections, "name", "conzin")
         conzn = _get(sections, "name", "conzn")
@@ -197,10 +236,10 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
             )
 
     # --- Level system consistency (initialize.f90:476-555) ---
-    has_levels = "levels" in sections and sections["levels"]
-    nsigma = _get(sections, "para", "nsigma", 0) or 0
-    dzreg = _get(sections, "para", "dzreg", 0) or 0
-    hsigma = _get(sections, "para", "hsigma", 0) or 0
+    has_levels = "levels" in present
+    nsigma = _num(sections, "para", "nsigma", 0) or 0
+    dzreg = _num(sections, "para", "dzreg", 0) or 0
+    hsigma = _num(sections, "para", "hsigma", 0) or 0
 
     if has_levels and dzreg > 0:
         msgs.append(
@@ -265,13 +304,177 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
             )
 
     # --- Output interval without active module ---
-    idtcon = _get(sections, "para", "idtcon", 0)
+    # _num: idtcon commonly holds a duration string ('1h'); treat that as
+    # "set but not numerically comparable" and skip this info-level rule.
+    idtcon = _num(sections, "para", "idtcon", 0)
     if idtcon and idtcon > 0 and iconz == 0 and ibarcl == 0:
         msgs.append(
             ValidationMessage(
                 "info",
                 "idtcon>0 but no scalars active (iconz=0, ibarcl=0) — output will be empty",
                 "idtcon",
+            )
+        )
+
+    # --- Data assimilation sections (assimil_admin.f90 / assimil.f90) ---
+    msgs.extend(_validate_assimil(sections, ibarcl, itemp, isalt))
+
+    return msgs
+
+
+def _validate_assimil(
+    sections: dict, ibarcl: Any, itemp: Any, isalt: Any
+) -> list[ValidationMessage]:
+    """Rules for numbered $assimilN sections.
+
+    Mirrors the core's acceptance checks (read_assimil error-stops on
+    num<=0; init error-stops on missing files or non-positive tuning;
+    scalar_assimilation error-stops MID-RUN on mode=0 with tau<=0) plus
+    the one gate the core never checks: ibarcl<=0 means barocl() — and
+    with it assimil_ts — is never called, so assimilation is silently
+    skipped while the run completes normally (baroclinic.f90).
+    """
+    msgs: list[ValidationMessage] = []
+    seen_ivars: dict[Any, str] = {}
+    enabled_any = False
+
+    for name in sections:
+        if name == "assimil":
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    "$assimil must be numbered ($assimil1, $assimil2, ...) — "
+                    "the core error-stops on an unnumbered section",
+                    name,
+                )
+            )
+            continue
+        m = _ASSIMIL_NUM.match(name)
+        if not m:
+            continue
+        if int(m.group(1)) <= 0:
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    f"${name} is invalid — assimil sections must be numbered from 1 "
+                    "(the core error-stops on num <= 0)",
+                    name,
+                )
+            )
+            continue
+
+        # The core defaults nobs and ivar to -1 and error-stops on either
+        # being unset (assimil_admin.f90) BEFORE the nobs=0 skip — a
+        # missing nobs is fatal, not "disabled".
+        nobs = _get(sections, name, "nobs")
+        if nobs is None:
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    f"nobs is required in ${name} — the core error-stops when unset",
+                    name,
+                )
+            )
+            continue
+        if not isinstance(nobs, (int, float)):
+            msgs.append(ValidationMessage("error", f"nobs in ${name} is not a number", name))
+            continue
+        if nobs < 0:
+            msgs.append(ValidationMessage("error", f"nobs must be >= 0 in ${name}", name))
+            continue
+        if nobs == 0:
+            if _get(sections, name, "ivar") is None:
+                msgs.append(
+                    ValidationMessage(
+                        "error",
+                        f"ivar is required in ${name} even when disabled (nobs = 0) — "
+                        "the core error-stops when unset",
+                        name,
+                    )
+                )
+            else:
+                msgs.append(
+                    ValidationMessage(
+                        "info",
+                        f"${name} is disabled (nobs = 0) — the core will skip it",
+                        name,
+                    )
+                )
+            continue
+        enabled_any = True
+
+        ivar = _get(sections, name, "ivar")
+        if ivar is None:
+            msgs.append(ValidationMessage("error", f"ivar is required in ${name}", name))
+        else:
+            if ivar in seen_ivars:
+                msgs.append(
+                    ValidationMessage(
+                        "error",
+                        f"ivar = {ivar} in ${name} duplicates ${seen_ivars[ivar]} — "
+                        "the core error-stops on duplicate ivars",
+                        name,
+                    )
+                )
+            else:
+                seen_ivars[ivar] = name
+            if ivar == 12 and itemp == 0:
+                msgs.append(
+                    ValidationMessage(
+                        "error",
+                        f"${name} assimilates temperature (ivar = 12) but itemp = 0 — "
+                        "T is never computed, assimilation silently skipped",
+                        name,
+                    )
+                )
+            if ivar == 11 and isalt == 0:
+                msgs.append(
+                    ValidationMessage(
+                        "error",
+                        f"${name} assimilates salinity (ivar = 11) but isalt = 0 — "
+                        "S is never computed, assimilation silently skipped",
+                        name,
+                    )
+                )
+
+        mode = _get(sections, name, "mode", 0) or 0
+        if mode not in (0, 1):
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    f"mode = {mode} in ${name} is invalid — 0 (nudging) or 1 (direct insertion)",
+                    name,
+                )
+            )
+        tau = _get(sections, name, "tau", 0) or 0
+        if mode == 0 and (not isinstance(tau, (int, float)) or tau <= 0):
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    f"tau must be > 0 in ${name} for nudging (mode = 0) — "
+                    "the core error-stops at the first observation time",
+                    name,
+                )
+            )
+
+        for p in ("corlength", "sigobs", "sigback"):
+            v = _get(sections, name, p)
+            if not isinstance(v, (int, float)) or v <= 0:
+                msgs.append(ValidationMessage("error", f"{p} must be > 0 in ${name}", name))
+
+        for p in ("filecoords", "fileobs"):
+            v = _get(sections, name, p)
+            blank = v is None or (isinstance(v, str) and not v.strip().strip("'\""))
+            if blank:
+                msgs.append(ValidationMessage("error", f"{p} is required in ${name}", name))
+
+    if enabled_any and (not isinstance(ibarcl, (int, float)) or ibarcl <= 0):
+        msgs.append(
+            ValidationMessage(
+                "error",
+                "data assimilation is configured but ibarcl = 0 — barocl() never runs, "
+                "so assimilation is silently skipped; set ibarcl = 3 (prognostic T/S)",
+                "ibarcl",
             )
         )
 

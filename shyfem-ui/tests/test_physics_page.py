@@ -244,7 +244,7 @@ class TestPhysicsPanels:
         from shyfem_ui.services.parser_str import StrFile, StrParser
 
         sf = StrFile()
-        name = _assimil_apply(
+        name, errors = _assimil_apply(
             sf,
             11,
             2,
@@ -260,6 +260,7 @@ class TestPhysicsPanels:
                 "fileobs": "obs.dat",
             },
         )
+        assert errors == []
         assert name == "assimil2"
         assert sf.get_param("assimil2", "ivar") == 11
         assert sf.get_param("assimil2", "nobs") == 1
@@ -273,8 +274,8 @@ class TestPhysicsPanels:
         from shyfem_ui.pages.physics import _assimil_apply
 
         sf = self._assim_sf()
-        name = _assimil_apply(sf, 12, 1, False, {"corlength": 9999.0})
-        assert name == "assimil7"
+        name, errors = _assimil_apply(sf, 12, 1, False, {"corlength": 9999.0})
+        assert (name, errors) == ("assimil7", [])
         assert sf.get_param("assimil7", "nobs") == 0
         assert sf.get_param("assimil7", "corlength") == 2000.0  # untouched
         assert sf.sections["assimil7"]._modified_params == {"nobs"}
@@ -282,7 +283,7 @@ class TestPhysicsPanels:
         from shyfem_ui.services.parser_str import StrFile
 
         empty = StrFile()
-        assert _assimil_apply(empty, 12, 1, False, {}) is None
+        assert _assimil_apply(empty, 12, 1, False, {}) == (None, [])
         assert empty.get_section_names() == []
 
     def test_assimil_apply_skips_missing_fields(self):
@@ -292,7 +293,8 @@ class TestPhysicsPanels:
         from shyfem_ui.services.parser_str import StrParser
 
         sf = self._assim_sf()
-        _assimil_apply(sf, 12, 1, True, {"nobs": 2, "tau": 900.0})
+        _, errors = _assimil_apply(sf, 12, 1, True, {"nobs": 2, "tau": 900.0})
+        assert errors == []  # required fields satisfied by existing raw lines
         out = StrParser.generate(sf)
         assert "        corlength = 2000." in out.splitlines()
         assert sf.get_param("assimil7", "tau") == 900.0
@@ -303,12 +305,12 @@ class TestPhysicsPanels:
     def test_assimil_apply_file_field_rejects_quotes_and_newlines(self):
         """A file-field value carrying a quote or newline could smuggle
         STR structure (fake $end/$section) or emit an unbalanced quote;
-        such values must be skipped (keep-old-value), not written."""
+        such values must be reported as errors with nothing written."""
         from shyfem_ui.pages.physics import _assimil_apply
         from shyfem_ui.services.parser_str import StrFile, StrParser
 
         sf = StrFile()
-        name = _assimil_apply(
+        name, errors = _assimil_apply(
             sf,
             12,
             1,
@@ -319,23 +321,26 @@ class TestPhysicsPanels:
                 "fileobs": "ok.dat",
             },
         )
-        assert sf.get_param(name, "filecoords") is None
-        assert sf.get_param(name, "fileobs") == "'ok.dat'"
-        generated = StrParser.generate(sf)
-        reparsed = StrParser.parse(generated)
-        assert reparsed.get_section_names() == [name]
+        assert any("filecoords" in e and "quote" in e for e in errors)
+        # nothing written at all — no smuggled structure can reach the STR
+        assert sf.get_section_names() == []
+        assert "$para" not in StrParser.generate(sf)
 
-    def test_assimil_apply_nonfinite_numeric_skipped(self):
+    def test_assimil_apply_nonfinite_numeric_is_error(self):
         """inf/nan must not crash the coercion (OverflowError on
-        int(float('inf'))) and must not be written into the STR."""
+        int(float('inf'))) and must be reported, with nothing written."""
         from shyfem_ui.pages.physics import _assimil_apply
 
         sf = self._assim_sf()
-        name = _assimil_apply(sf, 12, 1, True, {"nobs": "inf", "tau": "nan", "corlength": 2000.0})
+        name, errors = _assimil_apply(
+            sf, 12, 1, True, {"nobs": "inf", "tau": "nan", "corlength": 2000.0}
+        )
         assert name == "assimil7"
+        assert any("nobs" in e for e in errors)
+        assert any("tau" in e for e in errors)
         assert sf.get_param("assimil7", "nobs") == 2  # unchanged, not written
         assert sf.get_param("assimil7", "tau") == 1800.0  # unchanged, not written
-        assert sf.get_param("assimil7", "corlength") == 2000.0
+        assert sf.sections["assimil7"]._modified_params == set()
 
     def test_purge_nduge(self):
         from shyfem_ui.pages.physics import _purge_nduge
@@ -457,8 +462,9 @@ class TestPhysicsPanels:
         assert 'input[f"assim_{prefix}_on"]' in collect
         assert 'input[f"assim_{prefix}_{param}"]' in collect
         assert (
-            '(("t", 12, 1), ("s", 11, 2))' in collect
+            '("t", 12, 1, "Temperature")' in collect and '("s", 11, 2, "Salinity")' in collect
         )  # T=ivar 12, S=ivar 11 — order is load-bearing
+        assert "return errors" in collect  # apply errors must reach the caller
 
 
 class TestTimingPanel:
@@ -798,3 +804,191 @@ class TestPhysicalConstants:
         result = build_panel_params(StrFile(), "advanced_hydro")
         assert result["rowass"] == 1025.0
         assert result["roluft"] == 1.225
+
+
+class TestAssimilApplyErrors:
+    """_assimil_apply must notify-and-fail, never keep-old-value silently:
+    a save whose STR differs from the panel state is the top-severity
+    failure class for this codebase (run completes with parameters the
+    user never saw)."""
+
+    def _assim_sf(self):
+        return StrParser.parse(
+            "$para\n        ibarcl = 3\n$end\n\n"
+            "$assimil7\n"
+            "        nobs = 2\n"
+            "        ivar = 12\n"
+            "        mode = 1\n"
+            "        tau = 1800.\n"
+            "        corlength = 2000.\n"
+            "        sigobs = 0.1\n"
+            "        sigback = 1.0\n"
+            "        filecoords = 'mm_assim_coords.dat'\n"
+            "        fileobs = 'mm_assim_obs.dat'\n"
+            "$end\n"
+        )
+
+    def _valid_values(self):
+        return {
+            "nobs": 1,
+            "mode": 0,
+            "tau": 1800.0,
+            "corlength": 2000.0,
+            "sigobs": 0.1,
+            "sigback": 1.0,
+            "filecoords": "coords.dat",
+            "fileobs": "obs.dat",
+        }
+
+    def test_valid_apply_returns_name_and_no_errors(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrFile()
+        name, errors = _assimil_apply(sf, 12, 1, True, self._valid_values())
+        assert name == "assimil1"
+        assert errors == []
+        assert sf.get_param("assimil1", "nobs") == 1
+
+    def test_invalid_file_field_is_error_and_nothing_written(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrFile()
+        vals = self._valid_values()
+        vals["filecoords"] = "evil'\n$end\n$para"
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("filecoords" in e for e in errors)
+        # no partial section may be created on error
+        assert sf.get_section_names() == []
+
+    def test_cleared_file_field_is_error_when_enabled(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        vals = self._valid_values()
+        vals["fileobs"] = ""
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("fileobs" in e for e in errors)
+        # old value untouched, no partial write of the good fields
+        assert sf.get_param("assimil7", "fileobs") == "mm_assim_obs.dat"
+        assert sf.sections["assimil7"]._modified_params == set()
+
+    def test_nobs_zero_when_enabled_is_error(self):
+        # Re-enabling a block disabled via the checkbox prefills nobs with
+        # the stored 0; writing it through would silently disable
+        # assimilation while the UI shows it on.
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        vals = self._valid_values()
+        vals["nobs"] = 0
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("nobs" in e for e in errors)
+        assert sf.get_param("assimil7", "nobs") == 2  # untouched
+
+    def test_unparseable_and_nonfinite_numerics_are_errors(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        vals = self._valid_values()
+        vals["corlength"] = "abc"
+        vals["tau"] = "inf"
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("corlength" in e for e in errors)
+        assert any("tau" in e for e in errors)
+        assert sf.sections["assimil7"]._modified_params == set()
+
+    def test_mode0_with_zero_tau_is_error(self):
+        # The core error-stops MID-RUN on mode=0 with tau<=0
+        # (assimil.f90) — potentially hours into a simulation.
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrFile()
+        vals = self._valid_values()
+        vals["mode"] = 0
+        vals["tau"] = 0.0
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("tau" in e for e in errors)
+        assert sf.get_section_names() == []
+
+    def test_new_section_missing_required_numeric_is_error(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrFile()
+        vals = self._valid_values()
+        del vals["corlength"]  # input absent AND no raw line to fall back on
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("corlength" in e for e in errors)
+        assert sf.get_section_names() == []
+
+    def test_existing_section_absent_field_keeps_raw_line_no_error(self):
+        # The array-note case: no input was created, the section's raw
+        # line must survive and satisfy the required-field check.
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        vals = self._valid_values()
+        del vals["corlength"]
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert errors == []
+        assert sf.get_param("assimil7", "corlength") == 2000.0
+
+    def test_cleared_optional_numeric_stages_zero(self):
+        # Optional tuning (maxlength/layer/vcorlength) cleared in the UI
+        # means "unset" -> explicit 0, the core default.
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._assim_sf()
+        vals = self._valid_values()
+        vals["mode"] = 1  # tau not required in direct-insertion mode
+        vals["tau"] = ""
+        vals["vcorlength"] = ""
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert errors == []
+        assert sf.get_param("assimil7", "vcorlength") == 0.0
+        assert sf.get_param("assimil7", "tau") == 0.0
+
+    def test_defaults_are_core_safe(self):
+        # A freshly enabled block saved with untouched defaults must not
+        # produce a config the core rejects (the old tau=0 default
+        # error-stopped mid-run in nudging mode).
+        from shyfem_ui.pages.physics import _ASSIMIL_DEFAULTS, _assimil_apply
+
+        assert _ASSIMIL_DEFAULTS["tau"] > 0
+        sf = StrFile()
+        vals = dict(_ASSIMIL_DEFAULTS)
+        vals["filecoords"] = "coords.dat"
+        vals["fileobs"] = "obs.dat"
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert errors == []
+
+    def test_save_file_blocks_on_assimil_errors(self):
+        # save_file must abort before StrParser.save when the panel
+        # collection reports errors — the write must never happen.
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        collect_pos = save.index("_collect_panel_values()")
+        write_pos = save.index("StrParser.save")
+        assert collect_pos < write_pos
+        gate = save[collect_pos:write_pos]
+        assert "return" in gate  # abort path between collect and write
+
+
+class TestSaveValidationOrdering:
+    def test_save_file_validates_before_write(self):
+        """Error-level validate_str findings must block the write, not be
+        reported after the invalid file is already on disk (mirrors the
+        str_editor convention of validate-then-write)."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        validate_pos = save.index("validate_str(")
+        write_pos = save.index("StrParser.save")
+        assert validate_pos < write_pos
+        assert "return" in save[validate_pos:write_pos]  # errors abort the save

@@ -712,7 +712,17 @@ def run_server(
                 for m in warnings:
                     ui.notification_show(f"STR warning: {m.message}", type="warning", duration=6)
             except Exception:
-                logger.debug("STR validation skipped (parse error)", exc_info=True)
+                # A file the parser cannot read at all still gets submitted
+                # (the core gives the authoritative error), but silently
+                # skipping the preflight hid a validator crash for months —
+                # surface the skip.
+                logger.warning("STR preflight validation skipped", exc_info=True)
+                ui.notification_show(
+                    "STR preflight validation could not run (unparseable file) — "
+                    "submitting anyway; the core will report the exact error.",
+                    type="warning",
+                    duration=8,
+                )
 
         if not working_dir:
             working_dir = str(validated_input.parent)

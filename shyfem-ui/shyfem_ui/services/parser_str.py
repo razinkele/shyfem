@@ -54,6 +54,13 @@ class StrFile:
         return list(self.sections.keys())
 
 
+# Values that are not character data to the Fortran reader and must stay
+# unquoted: numbers (incl. d-exponent forms) and logicals.
+_BARE_STR_VALUE = re.compile(
+    r"[+-]?(\d+\.?\d*|\.\d+)([ed][+-]?\d+)?|\.(true|false)\.", re.IGNORECASE
+)
+
+
 class StrParser:
     """Parser for SHYFEM .str parameter files."""
 
@@ -297,14 +304,22 @@ class StrParser:
         if isinstance(value, bool):
             return ".true." if value else ".false."
         if isinstance(value, str):
-            # Already single-quoted (e.g. from apply_quick_settings) — emit as-is
+            # Already quoted (e.g. from apply_quick_settings) — emit as-is
             # so we never double-wrap into ''value''.
-            if len(value) >= 2 and value.startswith("'") and value.endswith("'"):
+            if len(value) >= 2 and value[0] in "'\"" and value[-1] == value[0]:
                 return value
-            # Quote strings that contain spaces or are date-like
-            if " " in value or "-" in value:
-                return f"'{value}'"
-            return value
+            # Fortran logicals and numeric-looking strings (incl. d-exponents)
+            # are not character values — leave bare.
+            if _BARE_STR_VALUE.fullmatch(value):
+                return value
+            # Everything else is a character value: the core's reader
+            # hard-stops on an unquoted one (nls.f90: 'no value found'),
+            # so `wind = INPUT/wind.txt` would make the STR fatal.
+            # nls.f90 accepts '..' and ".." — switch delimiter when the
+            # value itself contains an apostrophe.
+            if "'" in value:
+                return f'"{value}"'
+            return f"'{value}'"
         if isinstance(value, float):
             # Use scientific notation for very small/large values
             if abs(value) < 1e-3 or abs(value) > 1e6:
