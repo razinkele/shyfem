@@ -409,23 +409,54 @@ def _assimil_new_name(sf: StrFile, preferred: int) -> str:
     return f"assimil{num}"
 
 
+# An assignment anywhere on a line. The lookbehind keeps "corlength"
+# from matching inside "vcorlength", which would freeze the wrong field.
+_ASSIGNMENT = re.compile(r"(?<![A-Za-z0-9_])(\w+)\s*=\s*")
+
+
 def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
-    """True when *param*'s raw STR line carries more than one value token.
+    """True when *param* carries more than one value token in the raw STR.
 
     PARAM_PATTERN truncates a space-separated per-station array
     (``corlength = 2000. 3000.``) to a clean first-token scalar, so the
-    parsed value alone cannot reveal it — scan the section's raw line.
+    parsed value alone cannot reveal it — scan the section's raw lines.
+    An array is not necessarily alone on its line: the core takes every
+    unnamed number following an assignment as a further value of that
+    parameter, whether it sits after another ``key = value`` on the same
+    line or on a following line, since its whitespace skip crosses lines
+    and ignores blanks and comment-only ones (nls.f90 nls_next_item /
+    nls_next_line). Trailing ``!``/``#`` comments are not values, so they
+    are cut first.
+
     Multi-token remainders are treated as arrays conservatively: the
     field goes read-only and the raw line survives; never a partial
     rewrite of station 1 only.
     """
     if name is None or name not in sf.sections:
         return False
-    pat = re.compile(rf"^\s*{re.escape(param)}\s*=\s*(.+)$")
-    for line in sf.sections[name].raw_lines:
-        m = pat.match(line)
-        if m:
-            return len(m.group(1).split()) > 1
+    lines = sf.sections[name].raw_lines
+    for index, line in enumerate(lines):
+        code = StrParser._split_comment(line)[0]
+        assignments = list(_ASSIGNMENT.finditer(code))
+        for pos, match in enumerate(assignments):
+            if match.group(1).lower() != param.lower():
+                continue
+            end = assignments[pos + 1].start() if pos + 1 < len(assignments) else len(code)
+            if len(code[match.end() : end].replace(",", " ").split()) > 1:
+                return True
+            if pos + 1 < len(assignments):
+                return False  # value ends where the next key starts
+            return _continues_on_next_line(lines[index + 1 :])
+    return False
+
+
+def _continues_on_next_line(following: list[str]) -> bool:
+    """True when the next data line extends the previous value list."""
+    for line in following:
+        code = StrParser._split_comment(line)[0].strip()
+        if not code:
+            continue  # blanks and comment-only lines do not end a value list
+        return not _ASSIGNMENT.match(code)
     return False
 
 
@@ -457,6 +488,10 @@ def _assimil_apply(
     name = _assimil_find(sf, ivar)
     if not on:
         if name is not None:
+            if _assimil_is_array(sf, name, "nobs"):
+                # Writing 0 would overlay the first token only, leaving
+                # the rest of the value list behind.
+                return name, ["nobs: is a value list in the STR — disable the block there"]
             sf.set_param(name, "nobs", 0)
         return name, []
 

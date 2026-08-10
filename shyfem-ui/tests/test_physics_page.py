@@ -592,6 +592,100 @@ class TestInputReadErrors:
         assert sf.get_param("para", "itanf") is None
 
 
+class TestAssimilArrayDetection:
+    """A per-station array must never render as an editable scalar: the
+    save would rewrite station 1 and drop the rest, which is exactly the
+    partial rewrite _assimil_is_array's docstring guarantees cannot
+    happen. The core takes every unnamed number after an assignment as a
+    further value of that parameter, on the same line or a following one
+    (nls.f90 nls_next_item/nls_next_line), so line-anchored detection is
+    not enough."""
+
+    def _is_array(self, body: str, param: str) -> bool:
+        from shyfem_ui.pages.physics import _assimil_is_array
+
+        sf = StrParser.parse(f"$assimil1\n{body}$end\n")
+        return _assimil_is_array(sf, "assimil1", param)
+
+    def test_multi_assign_line_array_is_detected(self):
+        body = "        nobs = 2  corlength = 100. 200.\n"
+        assert self._is_array(body, "corlength") is True
+        assert self._is_array(body, "nobs") is False  # value ends at the next key
+
+    def test_continuation_line_array_is_detected(self):
+        body = "        corlength = 2000.\n                    3000.\n"
+        assert self._is_array(body, "corlength") is True
+
+    def test_continuation_survives_blank_and_comment_lines(self):
+        # nls_next_line skips blanks and comment-only lines, so neither
+        # terminates a value list.
+        body = "        corlength = 2000.\n\n! per-station\n                    3000.\n"
+        assert self._is_array(body, "corlength") is True
+
+    def test_next_assignment_is_not_a_continuation(self):
+        body = "        corlength = 2000.\n        sigobs = 0.1\n"
+        assert self._is_array(body, "corlength") is False
+        assert self._is_array(body, "sigobs") is False
+
+    def test_continuation_belongs_to_the_last_assignment_only(self):
+        body = "        corlength = 2000.  nobs = 2\n        3\n"
+        assert self._is_array(body, "nobs") is True
+        assert self._is_array(body, "corlength") is False
+
+    def test_trailing_comment_scalar_stays_editable(self):
+        for body in (
+            "        corlength = 2000.  ! meters\n",
+            "        corlength = 2000.  # meters, was 3000. 4000.\n",
+        ):
+            assert self._is_array(body, "corlength") is False, body
+
+    def test_longer_param_name_does_not_leak(self):
+        # "corlength" occurs inside "vcorlength": a scan without a word
+        # boundary would make every vcorlength array freeze corlength too.
+        body = "        vcorlength = 1. 2.\n        corlength = 2000.\n"
+        assert self._is_array(body, "corlength") is False
+        assert self._is_array(body, "vcorlength") is True
+
+    def test_comma_separated_array_is_detected(self):
+        assert self._is_array("        corlength = 100., 200.\n", "corlength") is True
+
+    def test_multi_assign_array_renders_note_and_survives_roundtrip(self):
+        from shyfem_ui.pages.physics import _assimil_block
+
+        content = (
+            "$assimil1\n        ivar = 12\n"
+            "        nobs = 2  corlength = 100. 200.\n"
+            "        sigobs = 0.1\n        sigback = 1.0\n$end\n"
+        )
+        sf = StrParser.parse(content)
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html, "array must not render an editable input"
+        assert "assim_t_nobs" in html, "the scalar on the same line stays editable"
+        assert "        nobs = 2  corlength = 100. 200." in StrParser.generate(sf).splitlines()
+
+    def test_disable_refuses_to_rewrite_a_multi_token_nobs(self):
+        """Disabling writes nobs = 0 through the span-exact overlay, which
+        would turn "nobs = 2 3" into "nobs = 0 3" — a partial rewrite of a
+        value list. Malformed to begin with, but the guarantee is absolute:
+        report it instead."""
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrParser.parse("$assimil1\n        ivar = 12\n        nobs = 2 3\n$end\n")
+        name, errors = _assimil_apply(sf, 12, 1, False, {})
+        assert any("nobs" in e for e in errors), errors
+        assert sf.sections["assimil1"]._modified_params == set()
+
+    def test_continuation_array_renders_note(self):
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sf = StrParser.parse(
+            "$assimil1\n        ivar = 12\n        nobs = 2\n"
+            "        corlength = 100.\n                    200.\n$end\n"
+        )
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html
+
+
 class TestNdugePurgeReporting:
     """The "$nduge removed" notice must describe a write that happened.
     It used to fire inside _collect_panel_values, which also runs on
