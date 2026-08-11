@@ -238,7 +238,13 @@ $para
         assert len(result.header_comments) >= 1
 
     def test_parse_duplicate_section_names(self):
-        """Later section with same name should overwrite earlier one."""
+        """A repeated section keeps both blocks; lookups take the first.
+
+        This previously asserted "latest wins", which described the bug
+        rather than a requirement: the second block replaced the first in
+        the name-keyed dict, so generate() emitted the survivor at both
+        positions and destroyed the first block's content on save.
+        """
         content = """
 $para
     idt = 300
@@ -248,8 +254,12 @@ $para
 $end
 """
         result = StrParser.parse(content)
-        # Latest wins
-        assert result.get_param("para", "idt") == 600
+        assert result.get_param("para", "idt") == 300
+        # the repeat is not addressable by name — it lives in _structure —
+        # but it is not lost either
+        assert result.get_section_names() == ["para"]
+        out = StrParser.generate(result)
+        assert "idt = 300" in out and "idt = 600" in out
 
     def test_parse_case_insensitive_section_names(self):
         """Section names should be case-insensitive."""
@@ -337,7 +347,7 @@ $end
 """
         result = StrParser.parse(content)
         # Should have structure entries for sections and inter-section content
-        section_entries = [v for t, v in result._structure if t == "section"]
+        section_entries = [v.name for t, v in result._structure if t == "section"]
         assert "para" in section_entries
         assert "name" in section_entries
 
@@ -683,7 +693,7 @@ class TestNoPhantomEndSection:
         content = "$title\n        test\n$end\n$para\n        idt = 300\n$end\n"
         parsed = StrParser.parse(content)
 
-        section_names = [name for kind, name in parsed._structure if kind == "section"]
+        section_names = [sec.name for kind, sec in parsed._structure if kind == "section"]
         assert section_names == ["title", "para"]
 
     def test_generated_output_has_exactly_one_end_per_section(self):
@@ -922,3 +932,96 @@ class TestFormatValuePrecision:
         parsed = StrParser.parse(content)
         parsed.set_param("para", "tau", 1234567.0)
         assert StrParser.parse(StrParser.generate(parsed)).get_param("para", "tau") == 1234567.0
+
+
+class TestDuplicateSectionNames:
+    """A .str file may repeat a section: the core's reader dispatches in a
+    loop (subnsa.f90 nrdsec), so two $color blocks are two color tables.
+    Keying sections by name alone made the second overwrite the first, and
+    since _structure recorded the name twice, generate() emitted the
+    survivor at both positions — silently destroying the first block's
+    content on save. 7 of the repo's 64 .str files repeat a section.
+    """
+
+    _TWO = (
+        "$para\n        itanf = 0\n$end\n\n"
+        "$color\n        x0col = 0.05\n        colfil = 'first.dat'\n$end\n\n"
+        "$color\n        icolor = 1\n        colfil = 'second.dat'\n$end\n"
+    )
+
+    def test_both_blocks_survive_generation(self):
+        out = StrParser.generate(StrParser.parse(self._TWO))
+        assert "first.dat" in out, "the first block must not be destroyed"
+        assert "second.dat" in out
+        assert out.count("$color") == 2
+
+    def test_no_content_is_duplicated(self):
+        out = StrParser.generate(StrParser.parse(self._TWO))
+        assert out.count("first.dat") == 1
+        assert out.count("second.dat") == 1
+
+    def test_every_non_blank_line_round_trips(self):
+        want = [ln for ln in self._TWO.splitlines() if ln.strip()]
+        got = [
+            ln for ln in StrParser.generate(StrParser.parse(self._TWO)).splitlines() if ln.strip()
+        ]
+        assert got == want
+
+    def test_round_trip_is_stable_across_two_saves(self):
+        # A save->reload->save cycle must not shift content again: the keys
+        # a reparse derives have to match the ones the first parse used.
+        # Compared on non-blank lines because generate() adds a blank line
+        # per section on every pass — a separate pre-existing defect that
+        # affects files with no repeated sections at all.
+        once = StrParser.generate(StrParser.parse(self._TWO))
+        twice = StrParser.generate(StrParser.parse(once))
+        assert [ln for ln in twice.splitlines() if ln.strip()] == [
+            ln for ln in once.splitlines() if ln.strip()
+        ]
+
+    def test_repeats_never_enter_the_name_space(self):
+        # The dict keys are treated as real section names across the app
+        # (Shiny input ids, COMMON_PARAMS lookups, emitted headers), so a
+        # repeat must not invent one: it is reachable through _structure.
+        sf = StrParser.parse(self._TWO)
+        assert sf.get_section_names() == ["para", "color"]
+        assert all(name.isidentifier() for name in sf.get_section_names())
+        blocks = [s for kind, s in sf._structure if kind == "section"]
+        assert [s.name for s in blocks] == ["para", "color", "color"]
+
+    def test_structure_is_stable_across_a_reload(self):
+        sf = StrParser.parse(self._TWO)
+        reloaded = StrParser.parse(StrParser.generate(sf))
+        assert reloaded.get_section_names() == sf.get_section_names()
+        assert reloaded.get_param("color", "colfil") == "first.dat"
+
+    def test_lookup_resolves_to_the_first_occurrence(self):
+        sf = StrParser.parse(self._TWO)
+        assert sf.get_param("color", "colfil") == "first.dat"
+        assert sf.get_param("color", "x0col") == 0.05
+
+    def test_set_param_edits_the_first_occurrence_only(self):
+        sf = StrParser.parse(self._TWO)
+        sf.set_param("color", "colfil", "'edited.dat'")
+        out = StrParser.generate(sf)
+        assert "edited.dat" in out
+        assert "second.dat" in out, "the later block must be untouched"
+        assert "first.dat" not in out
+
+    def test_three_occurrences_all_survive(self):
+        text = self._TWO + "\n$color\n        colfil = 'third.dat'\n$end\n"
+        out = StrParser.generate(StrParser.parse(text))
+        for expected in ("first.dat", "second.dat", "third.dat"):
+            assert out.count(expected) == 1, expected
+        assert out.count("$color") == 3
+
+    def test_apnbath_preserves_every_line(self):
+        # The real file that exposed this: 2 bare $color headers.
+        path = "/home/razinka/shyfem/testcases/examples/mar_menor/apnbath.str"
+        want = [ln.rstrip() for ln in open(path).read().splitlines() if ln.strip()]
+        got = [
+            ln.rstrip()
+            for ln in StrParser.generate(StrParser.parse_file(path)).splitlines()
+            if ln.strip()
+        ]
+        assert got == want

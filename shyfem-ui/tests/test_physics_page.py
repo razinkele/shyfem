@@ -1535,3 +1535,49 @@ class TestModeOutOfRangeIsRepairable:
 
     def test_unparseable_mode_still_renders_a_note(self):
         assert "assim_t_mode" not in self._field("abc")
+
+
+class TestPurgeNdugeWithRepeats:
+    """The core hard-stops on $nduge, so the purge must remove EVERY
+    block. Once repeated sections stopped collapsing into one dict entry,
+    deleting the bare name left any later block in the file — and the
+    save still reported the section as removed, shipping a core-fatal STR.
+    """
+
+    _TWO = (
+        "$para\n        idt = 300\n$end\n\n"
+        "$nduge\n        nvars = 3\n$end\n\n"
+        "$nduge\n        nvars = 4\n$end\n"
+    )
+
+    def test_every_nduge_block_is_removed(self):
+        from shyfem_ui.pages.physics import _purge_nduge
+
+        sf = StrParser.parse(self._TWO)
+        assert _purge_nduge(sf) is True
+        assert "$nduge" not in StrParser.generate(sf)
+
+    def test_unrelated_repeated_sections_are_untouched(self):
+        from shyfem_ui.pages.physics import _purge_nduge
+
+        sf = StrParser.parse(
+            self._TWO + "\n$color\n        colfil = 'a.dat'\n$end\n"
+            "\n$color\n        colfil = 'b.dat'\n$end\n"
+        )
+        _purge_nduge(sf)
+        out = StrParser.generate(sf)
+        assert "a.dat" in out and "b.dat" in out
+        assert "$nduge" not in out
+
+    def test_single_nduge_still_removed(self):
+        from shyfem_ui.pages.physics import _purge_nduge
+
+        sf = StrParser.parse("$nduge\n        nvars = 3\n$end\n\n$para\n        idt = 300\n$end\n")
+        assert _purge_nduge(sf) is True
+        assert "$nduge" not in StrParser.generate(sf)
+
+    def test_no_nduge_reports_nothing_purged(self):
+        from shyfem_ui.pages.physics import _purge_nduge
+
+        sf = StrParser.parse("$para\n        idt = 300\n$end\n")
+        assert _purge_nduge(sf) is False

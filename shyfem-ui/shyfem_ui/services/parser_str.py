@@ -29,21 +29,39 @@ class StrSection:
 class StrFile:
     """Parsed representation of a .str file."""
 
+    # One entry per section NAME, holding the first occurrence. A file may
+    # legitimately repeat a section — the core reads them in a dispatch
+    # loop (shyplot/subnsa.f90 nrdsec) — and every later block is held by
+    # _structure, which is what generate() walks. Keeping repeats out of
+    # this dict deliberately: its keys are treated as real section names
+    # all over the app (input ids, COMMON_PARAMS lookups, emitted headers),
+    # so a synthetic key for a repeat would leak into all of them.
     sections: dict[str, StrSection] = field(default_factory=dict)
     header_comments: list[str] = field(default_factory=list)
     # Preserves the order of top-level elements for round-trip fidelity:
-    # each entry is ("section", name) or ("inter", [lines])
+    # each entry is ("section", StrSection) or ("inter", [lines]). Holding
+    # the section itself rather than its name is what lets a repeated
+    # section survive: by name, every occurrence resolved to the same
+    # entry and generate() emitted it once per occurrence, overwriting the
+    # earlier blocks' content.
     _structure: list[tuple[str, Any]] = field(default_factory=list)
     file_path: Path | None = None
 
     def get_param(self, section: str, key: str, default: Any = None) -> Any:
-        """Get a parameter value from a section."""
+        """Get a parameter value from a section.
+
+        A repeated section resolves to its first occurrence.
+        """
         if section in self.sections:
             return self.sections[section].parameters.get(key, default)
         return default
 
     def set_param(self, section: str, key: str, value: Any) -> None:
-        """Set a parameter value in a section."""
+        """Set a parameter value in a section.
+
+        A repeated section resolves to its first occurrence; later blocks
+        keep their own values and round-trip untouched.
+        """
         if section not in self.sections:
             self.sections[section] = StrSection(name=section)
         self.sections[section].parameters[key] = value
@@ -52,6 +70,23 @@ class StrFile:
     def get_section_names(self) -> list[str]:
         """Get all section names."""
         return list(self.sections.keys())
+
+    def remove_sections(self, name: str) -> bool:
+        """Drop every section called *name*; True if any was removed.
+
+        Deletion is the one operation that cannot settle for the first
+        occurrence: a surviving later block is still read by the core.
+        """
+        found = self.sections.pop(name, None) is not None
+        kept = [
+            entry
+            for entry in self._structure
+            if not (entry[0] == "section" and entry[1].name == name)
+        ]
+        if len(kept) != len(self._structure):
+            found = True
+            self._structure[:] = kept
+        return found
 
 
 # Values that are not character data to the Fortran reader and must stay
@@ -121,8 +156,10 @@ class StrParser:
                 in_header = False
                 section_name = section_match.group(1).lower()
                 current_section = StrSection(name=section_name)
-                result.sections[section_name] = current_section
-                result._structure.append(("section", section_name))
+                # First occurrence is the one addressable by name; every
+                # occurrence is recorded in _structure so none is lost.
+                result.sections.setdefault(section_name, current_section)
+                result._structure.append(("section", current_section))
                 continue
 
             # Handle content outside sections
@@ -256,14 +293,14 @@ class StrParser:
                 if entry_type == "inter":
                     lines.extend(entry_value)
                 elif entry_type == "section":
-                    section = str_file.sections.get(entry_value)
-                    if section:
-                        cls._generate_section(lines, section)
+                    cls._generate_section(lines, entry_value)
 
-            # Emit any new sections not in the original structure
-            structured_names = {v for t, v in str_file._structure if t == "section"}
-            for section_name, section in str_file.sections.items():
-                if section_name not in structured_names:
+            # Emit any new sections not in the original structure. Compared
+            # by identity, not name: a repeated section contributes several
+            # structure entries that share one name.
+            structured = [v for t, v in str_file._structure if t == "section"]
+            for section in str_file.sections.values():
+                if not any(section is known for known in structured):
                     cls._generate_section(lines, section)
         else:
             for section in str_file.sections.values():
