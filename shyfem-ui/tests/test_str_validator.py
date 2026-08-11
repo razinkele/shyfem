@@ -1,5 +1,7 @@
 """Tests for STR cross-parameter validation."""
 
+import re
+
 from shyfem_ui.services.str_validator import validate_str
 
 
@@ -404,9 +406,8 @@ class TestAssimilValidation:
         # and neither must ibarcl = 0 — nothing will run anyway.
         from shyfem_ui.services.parser_str import StrParser
 
-        text = (
-            "$para\n        itend = 86400  idt = 300  ibarcl = 0\n$end\n\n"
-            + self._section(nobs=0, files=False, corlength=0.0)
+        text = "$para\n        itend = 86400  idt = 300  ibarcl = 0\n$end\n\n" + self._section(
+            nobs=0, files=False, corlength=0.0
         )
         msgs = validate_str(StrParser.parse(text).sections)
         assert [m for m in msgs if m.level == "error"] == []
@@ -485,3 +486,235 @@ class TestAssimilMissingRequiredIdentity:
         msgs = self._msgs("$assimil1\n        nobs = 0\n        ivar = 12\n$end\n")
         assert [m for m in msgs if m.level == "error"] == []
         assert any("disabled" in m.message and m.level == "info" for m in msgs)
+
+
+class TestMessageParamIsParameterName:
+    """`ValidationMessage.param` is the field-highlighting key: every rule
+    must name a PARAMETER. `_validate_assimil` set it to the SECTION name
+    ("assimil1"), which would highlight a field that does not exist. The
+    section stays named in the message text."""
+
+    _SECTION_NAME = re.compile(r"^assimil\d*$")
+
+    def _msgs(self, section_text, para_extra=""):
+        from shyfem_ui.services.parser_str import StrParser
+
+        text = f"$para\n        itend = 86400  idt = 300  ibarcl = 3{para_extra}\n$end\n\n"
+        return validate_str(StrParser.parse(text + section_text).sections)
+
+    def _section(self, name="assimil1", files=True, **over):
+        vals = {
+            "ivar": 12,
+            "nobs": 1,
+            "mode": 0,
+            "tau": 1800.0,
+            "corlength": 2000.0,
+            "sigobs": 0.1,
+            "sigback": 1.0,
+        }
+        vals.update(over)
+        body = "".join(f"        {k} = {v}\n" for k, v in vals.items() if v is not None)
+        if files:
+            body += "        filecoords = 'c.dat'\n        fileobs = 'o.dat'\n"
+        return f"${name}\n{body}$end\n"
+
+    def _params_of(self, msgs, needle):
+        return [m.param for m in msgs if needle in m.message]
+
+    def test_no_message_carries_a_section_name_in_param(self):
+        # One file tripping most assimil rules at once.
+        msgs = self._msgs(
+            self._section(tau=0.0, corlength=0.0, sigobs=0.0, sigback=0.0, files=False)
+            + "\n"
+            + self._section(name="assimil2", mode=5)
+            + "\n"
+            + self._section(name="assimil3", nobs=0, files=False)
+        )
+        offenders = [(m.param, m.message) for m in msgs if self._SECTION_NAME.match(m.param)]
+        assert offenders == []
+
+    def test_missing_nobs_error_names_nobs(self):
+        msgs = self._msgs("$assimil1\n        ivar = 12\n        mode = 1\n$end\n")
+        assert self._params_of(msgs, "nobs is required") == ["nobs"]
+
+    def test_disabled_info_names_nobs(self):
+        msgs = self._msgs(self._section(nobs=0, files=False))
+        assert self._params_of(msgs, "is disabled") == ["nobs"]
+
+    def test_tau_error_names_tau(self):
+        msgs = self._msgs(self._section(tau=0.0))
+        assert self._params_of(msgs, "tau must be > 0") == ["tau"]
+
+    def test_mode_error_names_mode(self):
+        msgs = self._msgs(self._section(mode=2))
+        assert self._params_of(msgs, "is invalid — 0 (nudging)") == ["mode"]
+
+    def test_tuning_errors_name_their_own_param(self):
+        msgs = self._msgs(self._section(corlength=0.0, sigobs=0.0, sigback=0.0))
+        for p in ("corlength", "sigobs", "sigback"):
+            assert self._params_of(msgs, f"{p} must be > 0") == [p], p
+
+    def test_file_errors_name_their_own_param(self):
+        msgs = self._msgs(self._section(files=False))
+        for p in ("filecoords", "fileobs"):
+            assert self._params_of(msgs, f"{p} is required") == [p], p
+
+    def test_ivar_errors_name_ivar(self):
+        missing = self._msgs("$assimil1\n        nobs = 1\n        mode = 1\n$end\n")
+        assert self._params_of(missing, "ivar is required in") == ["ivar"]
+        dup = self._msgs(self._section() + "\n" + self._section(name="assimil2"))
+        assert self._params_of(dup, "duplicates") == ["ivar"]
+
+    def test_scalar_gate_errors_name_ivar(self):
+        # ivar is the param the user must change; itemp/isalt live in $para.
+        temp = self._msgs(self._section(), para_extra="  itemp = 0")
+        assert self._params_of(temp, "itemp = 0") == ["ivar"]
+        salt = self._msgs(self._section(ivar=11), para_extra="  isalt = 0")
+        assert self._params_of(salt, "isalt = 0") == ["ivar"]
+
+    def test_section_identity_errors_carry_no_param(self):
+        # Nothing to highlight: the section name itself is the mistake.
+        for name in ("assimil", "assimil0"):
+            msgs = self._msgs(self._section(name=name))
+            errs = [m for m in msgs if m.level == "error" and name in m.message]
+            assert errs, name
+            assert all(m.param == "" for m in errs), (name, [m.param for m in errs])
+
+
+class TestLineLengthCap:
+    """nls.f90:398 error-stops on any STR line with len_trim > 80. The
+    editor writes a character value as `        {key} = '{value}'`
+    (8-space indent, parser_str._generate_section), so a long
+    filecoords/fileobs path makes the saved STR fatal at read time."""
+
+    _PARA = "$para\n        itend = 86400  idt = 300  ibarcl = 3\n$end\n\n"
+
+    def _path(self, total_len, tail=".dat"):
+        head = "INPUT/"
+        p = head + "o" * (total_len - len(head) - len(tail)) + tail
+        assert len(p) == total_len
+        return p
+
+    def _assimil(self, filecoords):
+        return (
+            "$assimil1\n"
+            "        ivar = 12  nobs = 1  mode = 0  tau = 1800.\n"
+            "        corlength = 2000.  sigobs = 0.1  sigback = 1.\n"
+            f"        filecoords = '{filecoords}'\n"
+            "        fileobs = 'o.dat'\n"
+            "$end\n"
+        )
+
+    def _msgs(self, section_text):
+        from shyfem_ui.services.parser_str import StrParser
+
+        return validate_str(StrParser.parse(self._PARA + section_text).sections)
+
+    def _too_long(self, msgs):
+        return [m for m in msgs if m.level == "error" and "80" in m.message]
+
+    def test_path_at_the_80_char_boundary_passes(self):
+        # 8 indent + len('filecoords') + len(' = ') + len("'path'") == 80
+        path = self._path(57)
+        assert len(f"        filecoords = '{path}'") == 80
+        msgs = self._msgs(self._assimil(path))
+        assert self._too_long(msgs) == []
+        assert [m for m in msgs if m.level == "error"] == []
+
+    def test_path_one_char_over_the_boundary_is_error(self):
+        path = self._path(58)
+        assert len(f"        filecoords = '{path}'") == 81
+        msgs = self._msgs(self._assimil(path))
+        errs = self._too_long(msgs)
+        assert len(errs) == 1, [(m.param, m.message) for m in msgs]
+        assert errs[0].param == "filecoords"
+        assert "assimil1" in errs[0].message
+
+    def test_long_path_outside_assimil_is_error(self):
+        # The cap is on the line, not on the section: $name paths and
+        # $boundN forcing files hit it exactly the same way.
+        long_path = self._path(70)
+        msgs = self._msgs(f"$name\n        wind = '{long_path}'\n$end\n")
+        errs = self._too_long(msgs)
+        assert len(errs) == 1, [(m.param, m.message) for m in msgs]
+        assert errs[0].param == "wind"
+
+    def test_already_quoted_value_is_not_double_counted(self):
+        # apply_quick_settings stores values with their quotes; _format_value
+        # emits those as-is, so the rule must not add a second pair.
+        value = "'" + "o" * 63 + "'"
+        assert len(f"        wind = {value}") == 80
+        msgs = validate_str(
+            {"para": {"itend": "86400", "idt": "300"}, "name": {"wind": value}},
+        )
+        assert self._too_long(msgs) == []
+
+    def test_short_paths_produce_no_finding(self):
+        msgs = self._msgs(self._assimil("INPUT/assim_coords.dat"))
+        assert [m for m in msgs if m.level == "error"] == []
+
+    def test_non_string_params_do_not_crash(self):
+        # $extra/$title park a list of dicts under '_standalone'; numeric
+        # params have no length at all. Neither may reach the rule.
+        msgs = validate_str(
+            {
+                "para": {"itend": "86400", "idt": "300", "dragco": 2.5e-3, "ilin": 1},
+                "extra": {"_standalone": [{"id": 1, "description": "output node 1"}]},
+            }
+        )
+        assert self._too_long(msgs) == []
+
+
+class TestLineLengthUsesRealIndent:
+    """The 80-char rule must measure what is actually emitted, not assume
+    the 8-space indent this repo's generator uses for NEW params. Across
+    the repo's STR files, `key = value` lines are indented 1 space 432
+    times and 7 spaces 48 times — over-estimating there turns a legal,
+    currently-running model into one that cannot be saved OR launched
+    (physics save, ensemble submit and run submit all abort on an
+    error-level message)."""
+
+    def _sf(self, indent, quoted=True):
+        from shyfem_ui.services.parser_str import StrParser
+
+        pad = " " * indent
+        overhead = indent + len("wind") + len(" = ") + (2 if quoted else 0)
+        path = "I" * (80 - overhead)
+        value = f"'{path}'" if quoted else path
+        line = f"{pad}wind = {value}"
+        assert len(line) == 80, len(line)
+        return StrParser.parse(
+            f"$para\n        itend = 86400  idt = 300\n$end\n\n$name\n{line}\n$end\n"
+        )
+
+    def _too_long(self, sf):
+        return [m for m in validate_str(sf.sections) if "80" in m.message]
+
+    def test_exactly_80_at_one_space_indent_is_not_flagged(self):
+        assert self._too_long(self._sf(1)) == []
+
+    def test_exactly_80_at_seven_space_indent_is_not_flagged(self):
+        assert self._too_long(self._sf(7)) == []
+
+    def test_exactly_80_unquoted_value_is_not_flagged(self):
+        assert self._too_long(self._sf(1, quoted=False)) == []
+
+    def test_over_80_at_one_space_indent_is_still_flagged(self):
+        from shyfem_ui.services.parser_str import StrParser
+
+        path = "I" * 80
+        sf = StrParser.parse(
+            f"$para\n        itend = 86400  idt = 300\n$end\n\n$name\n wind = '{path}'\n$end\n"
+        )
+        assert len(self._too_long(sf)) == 1
+
+    def test_new_param_with_no_raw_line_uses_the_generator_indent(self):
+        # A param the UI adds has no raw line; _generate_section writes it
+        # with an 8-space indent, so that is the right shape to measure.
+        from shyfem_ui.services.parser_str import StrParser
+
+        sf = StrParser.parse("$para\n        itend = 86400  idt = 300\n$end\n")
+        sf.set_param("name", "wind", "'" + "I" * 64 + "'")
+        emitted = [line for line in StrParser.generate(sf).splitlines() if "wind" in line][0]
+        assert len(emitted) == 81, len(emitted)
+        assert len(self._too_long(sf)) == 1

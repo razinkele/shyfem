@@ -5,12 +5,14 @@ accordion panels for each physics module. Reads/writes the same
 STR files.
 """
 
+import copy
 import logging
 import math
 import re
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
+from shiny.types import SilentException
 
 from shyfem_ui.components.file_picker import (
     file_picker_server,
@@ -336,6 +338,11 @@ def _rate_field(input_id: str, label: str, raw: object) -> ui.Tag:
 
 
 _ASSIMIL_NAME = re.compile(r"^assimil(\d+)$")
+# Any section the user meant as an assimilation block, including the
+# numberless and zero forms the core rejects (read_assimil error-stops
+# on num <= 0, assimil_admin.f90) — the panel must name them rather
+# than leave them invisible next to an offer to create $assimil1.
+_ASSIMIL_ANY_NAME = re.compile(r"^assimil(\d*)$")
 
 # Numbered $assimil sections (assimil_admin.f90): one section per
 # assimilated variable, single values broadcast to all nobs stations.
@@ -408,23 +415,69 @@ def _assimil_new_name(sf: StrFile, preferred: int) -> str:
     return f"assimil{num}"
 
 
+# An assignment anywhere on a line. The lookbehind keeps "corlength"
+# from matching inside "vcorlength", which would freeze the wrong field.
+_ASSIGNMENT = re.compile(r"(?<![A-Za-z0-9_])(\w+)\s*=\s*")
+
+
+def _assimil_other_sections(sf: StrFile, adopted) -> tuple[list[str], list[str]]:
+    """($assimilN sections the panel does not own, ones the core rejects)."""
+    others: list[str] = []
+    invalid: list[str] = []
+    for name in sf.get_section_names():
+        if name in adopted or not _ASSIMIL_ANY_NAME.match(name):
+            continue
+        numbered = _ASSIMIL_NAME.match(name)
+        if numbered and int(numbered.group(1)) > 0:
+            others.append(name)
+        else:
+            invalid.append(name)
+    return others, invalid
+
+
 def _assimil_is_array(sf: StrFile, name: str | None, param: str) -> bool:
-    """True when *param*'s raw STR line carries more than one value token.
+    """True when *param* carries more than one value token in the raw STR.
 
     PARAM_PATTERN truncates a space-separated per-station array
     (``corlength = 2000. 3000.``) to a clean first-token scalar, so the
-    parsed value alone cannot reveal it — scan the section's raw line.
+    parsed value alone cannot reveal it — scan the section's raw lines.
+    An array is not necessarily alone on its line: the core takes every
+    unnamed number following an assignment as a further value of that
+    parameter, whether it sits after another ``key = value`` on the same
+    line or on a following line, since its whitespace skip crosses lines
+    and ignores blanks and comment-only ones (nls.f90 nls_next_item /
+    nls_next_line). Trailing ``!``/``#`` comments are not values, so they
+    are cut first.
+
     Multi-token remainders are treated as arrays conservatively: the
     field goes read-only and the raw line survives; never a partial
     rewrite of station 1 only.
     """
     if name is None or name not in sf.sections:
         return False
-    pat = re.compile(rf"^\s*{re.escape(param)}\s*=\s*(.+)$")
-    for line in sf.sections[name].raw_lines:
-        m = pat.match(line)
-        if m:
-            return len(m.group(1).split()) > 1
+    lines = sf.sections[name].raw_lines
+    for index, line in enumerate(lines):
+        code = StrParser._split_comment(line)[0]
+        assignments = list(_ASSIGNMENT.finditer(code))
+        for pos, match in enumerate(assignments):
+            if match.group(1).lower() != param.lower():
+                continue
+            end = assignments[pos + 1].start() if pos + 1 < len(assignments) else len(code)
+            if len(code[match.end() : end].replace(",", " ").split()) > 1:
+                return True
+            if pos + 1 < len(assignments):
+                return False  # value ends where the next key starts
+            return _continues_on_next_line(lines[index + 1 :])
+    return False
+
+
+def _continues_on_next_line(following: list[str]) -> bool:
+    """True when the next data line extends the previous value list."""
+    for line in following:
+        code = StrParser._split_comment(line)[0].strip()
+        if not code:
+            continue  # blanks and comment-only lines do not end a value list
+        return not _ASSIGNMENT.match(code)
     return False
 
 
@@ -456,6 +509,10 @@ def _assimil_apply(
     name = _assimil_find(sf, ivar)
     if not on:
         if name is not None:
+            if _assimil_is_array(sf, name, "nobs"):
+                # Writing 0 would overlay the first token only, leaving
+                # the rest of the value list behind.
+                return name, ["nobs: is a value list in the STR — disable the block there"]
             sf.set_param(name, "nobs", 0)
         return name, []
 
@@ -475,13 +532,18 @@ def _assimil_apply(
                 errors.append(f"{param}: a value is required")
             continue
         try:
-            num = int(float(raw)) if param in _ASSIMIL_INT_FIELDS else float(raw)
+            num: float | int = float(raw)
         except (TypeError, ValueError, OverflowError):
             errors.append(f"{param}: {raw!r} is not a valid number")
             continue
         if not math.isfinite(num):
             errors.append(f"{param}: value must be finite")
             continue
+        if param in _ASSIMIL_INT_FIELDS:
+            if not num.is_integer():
+                errors.append(f"{param}: must be a whole number (got {raw})")
+                continue
+            num = int(num)
         staged[param] = num
 
     for param in _ASSIMIL_FILE_FIELDS:
@@ -573,6 +635,43 @@ def _assimil_num_field(
     return ui.input_numeric(f"assim_{prefix}_{param}", label, value=val, **kwargs)
 
 
+def _assimil_mode_field(prefix: str, raw: object, is_array: bool = False) -> ui.Tag:
+    """Application-mode column: the dropdown, or a static note.
+
+    The core accepts only 0 and 1 (assimil_admin.f90) and stops on
+    anything else, naming the offending value. Coercing a stored 2 into
+    the dropdown would write 0 back and erase the mistake the user needs
+    to see — but offering no control at all is worse: validate_str errors
+    on the bad value and save_file aborts on any error, so the page could
+    not save ANY edit while it sat in the file. An out-of-range scalar is
+    therefore offered as its own preselected choice (an untouched save
+    writes it back verbatim) alongside the two the core accepts.
+
+    A per-station list or an unparseable value still renders without a
+    control: rewriting either would clobber the raw line.
+    """
+    try:
+        stored = 0 if raw is None else int(raw)  # absent -> the core's default
+    except (TypeError, ValueError):
+        stored = None
+        is_array = True  # not a clean scalar -> never rewrite the line
+    if is_array or stored is None:
+        shown = "per-station values" if raw is None or is_array else f"mode = {raw}"
+        return ui.help_text(
+            f"Application mode: {shown} is not editable here — the core accepts "
+            "only 0 (nudging) or 1 (direct insertion). Edit the file directly."
+        )
+    choices = {"0": "0 - Nudging", "1": "1 - Direct insertion"}
+    if stored not in (0, 1):
+        choices = {str(stored): f"{stored} - invalid, the core rejects it", **choices}
+    return ui.input_select(
+        f"assim_{prefix}_mode",
+        "Application mode",
+        choices=choices,
+        selected=str(stored),
+    )
+
+
 def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
     """One variable block (Temperature or Salinity) of the panel.
 
@@ -596,13 +695,6 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
             **kwargs,
         )
 
-    try:
-        mode_sel = str(int(raw("mode")))
-    except (TypeError, ValueError):
-        mode_sel = "0"
-    if mode_sel not in ("0", "1"):
-        mode_sel = "0"
-
     return ui.div(
         ui.h6(f"{title} (ivar {ivar})", class_="text-muted mt-3"),
         ui.input_checkbox(f"assim_{prefix}_on", f"Assimilate {title.lower()}", value=enabled),
@@ -610,11 +702,8 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
             ui.column(4, num("nobs", "Observation stations", min=1, step=1)),
             ui.column(
                 4,
-                ui.input_select(
-                    f"assim_{prefix}_mode",
-                    "Application mode",
-                    choices={"0": "0 - Nudging", "1": "1 - Direct insertion"},
-                    selected=mode_sel,
+                _assimil_mode_field(
+                    prefix, raw("mode"), is_array=_assimil_is_array(sf, name, "mode")
                 ),
             ),
             ui.column(4, num("tau", "Timescale tau (s)", min=0, step=60.0)),
@@ -652,6 +741,185 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
             ),
         ),
     )
+
+
+# Map of input IDs that differ from the STR param name.
+# key = input_id used in the UI, value = (section, param_name).
+_INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
+    "idtcon_out": ("para", "idtcon"),
+    "icon_av_out": ("para", "icon_av"),
+}
+# Add name_ prefixed input IDs for $name section params
+for _np in COMMON_PARAMS.get("name", {}):
+    _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
+
+
+_INPUT_ABSENT = object()
+
+
+def _read_input(inputs, input_id: str, errors: list[str]) -> object:
+    """Read one panel input, or _INPUT_ABSENT when it was never rendered.
+
+    SilentException is Shiny's "value not set" signal — raised for every
+    input of a panel the user has not opened — and KeyError covers a
+    lookup that never resolves; both are normal here and stay silent.
+    Anything else is a defect (input-id drift after a rename, module
+    namespace bug) that would otherwise turn Save into a silent no-op:
+    the panel is edited, the save reports success, the STR never
+    changes. Those are logged with a traceback and reported.
+    """
+    try:
+        return inputs[input_id]()
+    except (SilentException, KeyError):
+        return _INPUT_ABSENT
+    except Exception as exc:
+        logger.exception("Failed to read panel input %r", input_id)
+        errors.append(f"{input_id}: input could not be read ({type(exc).__name__}) — not applied")
+        return _INPUT_ABSENT
+
+
+def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
+    """Read all panel input values and update *sf* before saving.
+
+    Returns (field errors, $nduge purged). On any error the offending
+    block was NOT applied and the caller must not report the save as
+    successful. The purge is reported rather than announced here: this
+    runs on Preview and on the save-abort path too, where nothing is
+    written, so only the caller knows whether the removal reached disk.
+    """
+    errors: list[str] = []
+
+    for panel in PHYSICS_PANELS.values():
+        # --- params explicitly listed in the panel definition ---
+        for param, section in panel["params"].items():
+            _read_input_and_set(inputs, sf, param, section, param, errors)
+
+        # --- params from a dedicated section (sedtr, lagrg, nduge) ---
+        dedicated = panel.get("section")
+        if dedicated and dedicated in COMMON_PARAMS:
+            for param in COMMON_PARAMS[dedicated]:
+                if param not in panel["params"]:
+                    _read_input_and_set(inputs, sf, param, dedicated, param, errors)
+
+    # --- handle remapped input IDs (duplicates across panels) ---
+    for input_id, (section, param) in _INPUT_ID_REMAP.items():
+        _read_input_and_set(inputs, sf, input_id, section, param, errors)
+
+    # --- composite param: imetout <- 5 meteo-output checkboxes ---
+    # All-or-nothing: imetout is one packed integer, so encoding a
+    # partial read would silently zero streams nobody touched.
+    flags: dict[str, bool] = {}
+    for f in _IMETOUT_FIELDS:
+        raw = _read_input(inputs, f"imetout_{f}", errors)
+        if raw is _INPUT_ABSENT:
+            break  # heat panel not rendered (or a failed read) -> imetout untouched
+        flags[f] = bool(raw)
+    else:
+        sf.set_param("para", "imetout", _imetout_encode(flags))
+
+    # --- composite sections: $assimilN <- T/S assimilation blocks ---
+    for prefix, ivar, preferred, label in (
+        ("t", 12, 1, "Temperature"),
+        ("s", 11, 2, "Salinity"),
+    ):
+        block_errors: list[str] = []
+        on_raw = _read_input(inputs, f"assim_{prefix}_on", block_errors)
+        if on_raw is _INPUT_ABSENT:
+            errors.extend(block_errors)
+            continue  # panel not rendered -> sections untouched
+        values: dict[str, object] = {}
+        for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
+            raw = _read_input(inputs, f"assim_{prefix}_{param}", block_errors)
+            if raw is _INPUT_ABSENT:
+                continue  # array-note field: input never created
+            # A rendered-but-blank input means the user cleared it;
+            # pass it through so _assimil_apply can error on required
+            # fields instead of silently keeping the old value.
+            values[param] = raw if raw is not None else ""
+        if block_errors:
+            # The panel state is unknown, so applying it would write a
+            # half-read block — report and leave the sections alone.
+            errors.extend(block_errors)
+            continue
+        _, errs = _assimil_apply(sf, ivar, preferred, bool(on_raw), values)
+        errors.extend(f"{label} assimilation — {e}" for e in errs)
+
+    # --- purge the dead $nduge section on every save: the core
+    # hard-stops on it, so an STR carrying it can never run ---
+    return errors, _purge_nduge(sf)
+
+
+def _collect_into_copy(inputs, sf: StrFile) -> tuple[StrFile, list[str], bool]:
+    """Apply the panel values to a copy of *sf*; returns it with the collect result.
+
+    Preview writes nothing and an aborted save writes nothing, so neither
+    may leave the shared StrFile half-updated — the next successful save
+    would persist that partial state without the user ever seeing it.
+    """
+    working = copy.deepcopy(sf)
+    errors, purged = _collect_panel_values(inputs, working)
+    return working, errors, purged
+
+
+def _unwritable_fields(sf: StrFile) -> list[str]:
+    """`$section param` for each edited value the STR writer must reject.
+
+    _format_value refuses a value holding both quote characters, since
+    the core's reader is delimiter-matched with no escape mechanism. Its
+    message names the value but not the field, and the panel has some
+    200 of them.
+    """
+    return [
+        f"${name} {param}"
+        for name, section in sf.sections.items()
+        for param in sorted(section._modified_params)
+        if isinstance(section.parameters.get(param), str)
+        and "'" in section.parameters[param]
+        and '"' in section.parameters[param]
+    ]
+
+
+def _preview_content(sf: StrFile) -> tuple[str | None, str | None]:
+    """(STR text, error message) — generation must not escape the caller.
+
+    An unhandled exception inside a reactive effect kills the session,
+    and a value the writer rejects is a user-input problem, not a bug.
+    """
+    try:
+        return StrParser.generate(sf), None
+    except ValueError as exc:
+        logger.exception("Generating the STR preview failed")
+        fields = _unwritable_fields(sf)
+        where = f" — check {', '.join(fields)}" if fields else ""
+        return None, f"Cannot write this STR: {exc}{where}"
+
+
+def _read_input_and_set(
+    inputs,
+    sf: StrFile,
+    input_id: str,
+    section: str,
+    param: str,
+    errors: list[str],
+) -> None:
+    """Try reading a single input value and write it into *sf*."""
+    raw = _read_input(inputs, input_id, errors)
+    if raw is _INPUT_ABSENT or raw is None:
+        return
+
+    raw_str = str(raw).strip()
+    if not raw_str:
+        return
+
+    try:
+        if "." in raw_str or "e" in raw_str.lower():
+            value: object = float(raw_str)
+        else:
+            value = int(raw_str)
+    except ValueError:
+        value = raw_str
+
+    sf.set_param(section, param, value)
 
 
 @module.ui
@@ -763,112 +1031,6 @@ def physics_server(
         else:
             ui.notification_show("File not found or not .str", type="warning")
 
-    # Map of input IDs that differ from the STR param name.
-    # key = input_id used in the UI, value = (section, param_name).
-    _INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
-        "idtcon_out": ("para", "idtcon"),
-        "icon_av_out": ("para", "icon_av"),
-    }
-    # Add name_ prefixed input IDs for $name section params
-    for _np in COMMON_PARAMS.get("name", {}):
-        _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
-
-    def _collect_panel_values() -> list[str]:
-        """Read all panel input values and update str_data before saving.
-
-        Returns the list of assimilation-field errors; on any error the
-        offending block was NOT applied and the caller must not report
-        the save as successful.
-        """
-        sf = str_data.get()
-
-        for panel in PHYSICS_PANELS.values():
-            # --- params explicitly listed in the panel definition ---
-            for param, section in panel["params"].items():
-                _read_input_and_set(sf, param, section, param)
-
-            # --- params from a dedicated section (sedtr, lagrg, nduge) ---
-            dedicated = panel.get("section")
-            if dedicated and dedicated in COMMON_PARAMS:
-                for param in COMMON_PARAMS[dedicated]:
-                    if param not in panel["params"]:
-                        _read_input_and_set(sf, param, dedicated, param)
-
-        # --- handle remapped input IDs (duplicates across panels) ---
-        for input_id, (section, param) in _INPUT_ID_REMAP.items():
-            _read_input_and_set(sf, input_id, section, param)
-
-        # --- composite param: imetout <- 5 meteo-output checkboxes ---
-        try:
-            flags = {f: bool(input[f"imetout_{f}"]()) for f in _IMETOUT_FIELDS}
-        except Exception:
-            flags = None  # heat panel not rendered -> leave imetout untouched
-        if flags is not None:
-            sf.set_param("para", "imetout", _imetout_encode(flags))
-
-        # --- composite sections: $assimilN <- T/S assimilation blocks ---
-        errors: list[str] = []
-        for prefix, ivar, preferred, label in (
-            ("t", 12, 1, "Temperature"),
-            ("s", 11, 2, "Salinity"),
-        ):
-            try:
-                on = bool(input[f"assim_{prefix}_on"]())
-            except Exception:
-                continue  # panel not rendered -> sections untouched
-            values: dict[str, object] = {}
-            for param in _ASSIMIL_NUMERIC_FIELDS + _ASSIMIL_FILE_FIELDS:
-                try:
-                    raw = input[f"assim_{prefix}_{param}"]()
-                except Exception:
-                    continue  # array-note field: input never created
-                # A rendered-but-blank input means the user cleared it;
-                # pass it through so _assimil_apply can error on required
-                # fields instead of silently keeping the old value.
-                values[param] = raw if raw is not None else ""
-            _, errs = _assimil_apply(sf, ivar, preferred, on, values)
-            errors.extend(f"{label} assimilation — {e}" for e in errs)
-
-        # --- purge the dead $nduge section on every save: the core
-        # hard-stops on it, so an STR carrying it can never run ---
-        if _purge_nduge(sf):
-            ui.notification_show(
-                "Removed dead $nduge section (the core rejects it).",
-                type="message",
-                duration=6,
-            )
-
-        return errors
-
-    def _read_input_and_set(
-        sf: StrFile,
-        input_id: str,
-        section: str,
-        param: str,
-    ) -> None:
-        """Try reading a single input value and write it into *sf*."""
-        try:
-            raw = input[input_id]()
-        except Exception:
-            return  # input not yet rendered
-
-        if raw is None:
-            return
-
-        raw_str = str(raw).strip()
-        if not raw_str:
-            return
-
-        try:
-            if "." in raw_str or "e" in raw_str.lower():
-                value: object = float(raw_str)
-            else:
-                value = int(raw_str)
-        except ValueError:
-            value = raw_str
-
-        sf.set_param(section, param, value)
-
     @reactive.effect
     @reactive.event(input.save_btn)
     def save_file():
@@ -893,22 +1055,22 @@ def physics_server(
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
+        working: StrFile | None = None
         try:
-            assim_errors = _collect_panel_values()
-            if assim_errors:
-                for e in assim_errors:
+            working, panel_errors, nduge_purged = _collect_into_copy(input, str_data.get())
+            if panel_errors:
+                for e in panel_errors:
                     ui.notification_show(e, type="error", duration=8)
                 ui.notification_show(
-                    "Not saved — fix the assimilation fields first.",
+                    "Not saved — fix the reported panel fields first.",
                     type="warning",
                     duration=8,
                 )
                 return
-            sf = str_data.get()
             # Cross-parameter validation BEFORE the write (mirrors
             # str_editor): error-level findings block the save so an
             # invalid STR never lands on disk; warnings don't.
-            msgs = validate_str(sf.sections)
+            msgs = validate_str(working.sections)
             errors = [m for m in msgs if m.level == "error"]
             warnings = [m for m in msgs if m.level == "warning"]
             if errors:
@@ -919,12 +1081,27 @@ def physics_server(
                 )
                 return
             path.parent.mkdir(parents=True, exist_ok=True)
-            StrParser.save(sf, path)
+            StrParser.save(working, path)
+            # The panel state is on disk now, so it becomes the shared
+            # model (badges and validation follow it). No self-write loop:
+            # reactive.event isolates this body, so the .get() above takes
+            # no dependency on the value being set here.
+            str_data.set(working)
             for m in warnings:
                 ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
+            if nduge_purged:
+                # Only now is the removal real on disk.
+                ui.notification_show(
+                    "Removed dead $nduge section (the core rejects it).",
+                    type="message",
+                    duration=6,
+                )
             ui.notification_show(f"Saved to {path}", type="message", duration=3)
         except Exception as e:
-            ui.notification_show(f"Save error: {e}", type="error")
+            logger.exception("Saving STR file to %s failed", path)
+            fields = _unwritable_fields(working) if working is not None else []
+            where = f" — check {', '.join(fields)}" if fields else ""
+            ui.notification_show(f"Save error: {e}{where}", type="error", duration=10)
 
     @reactive.effect
     @reactive.event(input.preview_btn)
@@ -932,11 +1109,15 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
-        for e in _collect_panel_values():
+        working, panel_errors, _purged = _collect_into_copy(input, str_data.get())
+        for e in panel_errors:
             # Rejected assimilation fields were NOT applied: the preview
             # shows the last valid state for those, so say why.
             ui.notification_show(e, type="error", duration=8)
-        content = StrParser.generate(str_data.get())
+        content, gen_error = _preview_content(working)
+        if gen_error is not None:
+            ui.notification_show(gen_error, type="error", duration=10)
+            return
         ui.modal_show(
             ui.modal(
                 ui.tags.pre(
@@ -2185,7 +2366,7 @@ def physics_server(
     def panel_assimilation():
         sf = str_data.get()
         adopted = {_assimil_find(sf, 12), _assimil_find(sf, 11)}
-        others = [n for n in sf.get_section_names() if _ASSIMIL_NAME.match(n) and n not in adopted]
+        others, invalid = _assimil_other_sections(sf, adopted)
         children = [
             ui.help_text(
                 "Optimal-interpolation assimilation runs in prognostic "
@@ -2197,6 +2378,15 @@ def physics_server(
                 ui.help_text(
                     "Other $assimil sections present (edited in the STR): "
                     + ", ".join(f"${n}" for n in others)
+                )
+            )
+        if invalid:
+            children.append(
+                ui.div(
+                    ", ".join(f"${n}" for n in invalid)
+                    + ": the core rejects an assimilation section without a positive "
+                    "number — renumber it ($assimil1, $assimil2, …) in the STR.",
+                    class_="text-danger small",
                 )
             )
         children.append(_assimil_block(sf, "Temperature", "t", 12))

@@ -1,12 +1,53 @@
 """Tests for physics configuration page."""
 
+import logging
+
 import pytest
+from shiny.types import SilentException
 
 from shyfem_ui.pages.physics import (
     PHYSICS_PANELS,
+    _collect_panel_values,
     build_panel_params,
 )
 from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
+
+
+class FakeInputs:
+    """Stand-in for Shiny's ``Inputs``: ``fake[id]()`` returns a stored value.
+
+    An id that was never registered raises ``SilentException``, which is
+    exactly what an unrendered input does (``reactive.Value.get`` on an
+    unset value). Ids in *raisers* raise the given exception instead,
+    standing in for a real defect (input-id drift, namespace bug).
+    """
+
+    def __init__(self, values: dict | None = None, raisers: dict | None = None):
+        self._values = values or {}
+        self._raisers = raisers or {}
+
+    def __getitem__(self, key: str):
+        if key in self._raisers:
+            exc = self._raisers[key]
+
+            def _raise():
+                raise exc
+
+            return _raise
+        if key in self._values:
+            value = self._values[key]
+            return lambda: value
+
+        def _silent():
+            raise SilentException()
+
+        return _silent
+
+
+def collect_errors(inputs, sf: StrFile) -> list[str]:
+    """_collect_panel_values' error list, dropping the $nduge purge flag."""
+    errors, _purged = _collect_panel_values(inputs, sf)
+    return errors
 
 
 class TestPhysicsPanels:
@@ -459,12 +500,336 @@ class TestPhysicsPanels:
         collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
         assert "_assimil_apply(" in collect
         assert "_purge_nduge(" in collect
-        assert 'input[f"assim_{prefix}_on"]' in collect
-        assert 'input[f"assim_{prefix}_{param}"]' in collect
+        assert '_read_input(inputs, f"assim_{prefix}_on"' in collect
+        assert '_read_input(inputs, f"assim_{prefix}_{param}"' in collect
         assert (
             '("t", 12, 1, "Temperature")' in collect and '("s", 11, 2, "Salinity")' in collect
         )  # T=ivar 12, S=ivar 11 — order is load-bearing
         assert "return errors" in collect  # apply errors must reach the caller
+
+
+class TestInputReadErrors:
+    """A panel input read that fails for any reason other than "never
+    rendered" is a defect (input-id drift after a rename, module-namespace
+    bug). Swallowing it makes the save a silent no-op: the user edits the
+    panel, the save reports success, the sections never change. Every such
+    read must be logged with a traceback and reported to the caller."""
+
+    def _assim_sf(self):
+        return StrParser.parse(
+            "$para\n        ibarcl = 3\n$end\n\n"
+            "$assimil7\n"
+            "        nobs = 2\n"
+            "        ivar = 12\n"
+            "        mode = 1\n"
+            "        tau = 1800.\n"
+            "        corlength = 2000.\n"
+            "        sigobs = 0.1\n"
+            "        sigback = 1.0\n"
+            "        filecoords = 'mm_assim_coords.dat'\n"
+            "        fileobs = 'mm_assim_obs.dat'\n"
+            "$end\n"
+        )
+
+    def test_unrendered_inputs_are_not_errors(self):
+        """SilentException is Shiny's "never rendered" signal — the whole
+        point of the guard; it must stay silent and write nothing."""
+        sf = StrFile()
+        assert collect_errors(FakeInputs(), sf) == []
+        assert sf.get_section_names() == []
+
+    def test_checkbox_read_failure_is_reported_and_logged(self, caplog):
+        sf = self._assim_sf()
+        inputs = FakeInputs(raisers={"assim_t_on": RuntimeError("input id drift")})
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("assim_t_on" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        # the block's sections stay untouched — a half-read panel is never applied
+        assert sf.sections["assimil7"]._modified_params == set()
+
+    def test_field_read_failure_reported_and_block_not_applied(self, caplog):
+        sf = self._assim_sf()
+        inputs = FakeInputs(
+            values={"assim_t_on": True, "assim_t_nobs": 3},
+            raisers={"assim_t_corlength": RuntimeError("input id drift")},
+        )
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("assim_t_corlength" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        # nobs read fine, but the panel state is incomplete -> write nothing
+        assert sf.sections["assimil7"]._modified_params == set()
+        assert sf.get_param("assimil7", "nobs") == 2
+
+    def test_imetout_read_failure_is_reported_and_writes_nothing(self, caplog):
+        """imetout is one packed integer: a partial read must never be
+        encoded, or streams the user never touched are silently zeroed."""
+        sf = StrParser.parse("$para\n        imetout = 10010\n$end\n")
+        values = {f"imetout_{f}": True for f in ("heat", "rain", "ice", "hflx")}
+        inputs = FakeInputs(values=values, raisers={"imetout_wind": RuntimeError("boom")})
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("imetout_wind" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        assert sf.get_param("para", "imetout") == 10010  # untouched, not re-encoded
+
+    def test_imetout_all_rendered_still_writes(self):
+        sf = StrParser.parse("$para\n        imetout = 0\n$end\n")
+        inputs = FakeInputs(
+            values={f"imetout_{f}": (f in ("heat", "hflx")) for f in _IMETOUT_ALL},
+        )
+        assert collect_errors(inputs, sf) == []
+        assert sf.get_param("para", "imetout") == 10010
+
+    def test_plain_param_read_failure_is_reported_and_logged(self, caplog):
+        sf = StrFile()
+        inputs = FakeInputs(raisers={"itanf": RuntimeError("input id drift")})
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            errors = collect_errors(inputs, sf)
+        assert any("itanf" in e for e in errors), errors
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+        assert sf.get_param("para", "itanf") is None
+
+
+class TestAssimilArrayDetection:
+    """A per-station array must never render as an editable scalar: the
+    save would rewrite station 1 and drop the rest, which is exactly the
+    partial rewrite _assimil_is_array's docstring guarantees cannot
+    happen. The core takes every unnamed number after an assignment as a
+    further value of that parameter, on the same line or a following one
+    (nls.f90 nls_next_item/nls_next_line), so line-anchored detection is
+    not enough."""
+
+    def _is_array(self, body: str, param: str) -> bool:
+        from shyfem_ui.pages.physics import _assimil_is_array
+
+        sf = StrParser.parse(f"$assimil1\n{body}$end\n")
+        return _assimil_is_array(sf, "assimil1", param)
+
+    def test_multi_assign_line_array_is_detected(self):
+        body = "        nobs = 2  corlength = 100. 200.\n"
+        assert self._is_array(body, "corlength") is True
+        assert self._is_array(body, "nobs") is False  # value ends at the next key
+
+    def test_continuation_line_array_is_detected(self):
+        body = "        corlength = 2000.\n                    3000.\n"
+        assert self._is_array(body, "corlength") is True
+
+    def test_continuation_survives_blank_and_comment_lines(self):
+        # nls_next_line skips blanks and comment-only lines, so neither
+        # terminates a value list.
+        body = "        corlength = 2000.\n\n! per-station\n                    3000.\n"
+        assert self._is_array(body, "corlength") is True
+
+    def test_next_assignment_is_not_a_continuation(self):
+        body = "        corlength = 2000.\n        sigobs = 0.1\n"
+        assert self._is_array(body, "corlength") is False
+        assert self._is_array(body, "sigobs") is False
+
+    def test_continuation_belongs_to_the_last_assignment_only(self):
+        body = "        corlength = 2000.  nobs = 2\n        3\n"
+        assert self._is_array(body, "nobs") is True
+        assert self._is_array(body, "corlength") is False
+
+    def test_trailing_comment_scalar_stays_editable(self):
+        for body in (
+            "        corlength = 2000.  ! meters\n",
+            "        corlength = 2000.  # meters, was 3000. 4000.\n",
+        ):
+            assert self._is_array(body, "corlength") is False, body
+
+    def test_longer_param_name_does_not_leak(self):
+        # "corlength" occurs inside "vcorlength": a scan without a word
+        # boundary would make every vcorlength array freeze corlength too.
+        body = "        vcorlength = 1. 2.\n        corlength = 2000.\n"
+        assert self._is_array(body, "corlength") is False
+        assert self._is_array(body, "vcorlength") is True
+
+    def test_comma_separated_array_is_detected(self):
+        assert self._is_array("        corlength = 100., 200.\n", "corlength") is True
+
+    def test_multi_assign_array_renders_note_and_survives_roundtrip(self):
+        from shyfem_ui.pages.physics import _assimil_block
+
+        content = (
+            "$assimil1\n        ivar = 12\n"
+            "        nobs = 2  corlength = 100. 200.\n"
+            "        sigobs = 0.1\n        sigback = 1.0\n$end\n"
+        )
+        sf = StrParser.parse(content)
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html, "array must not render an editable input"
+        assert "assim_t_nobs" in html, "the scalar on the same line stays editable"
+        assert "        nobs = 2  corlength = 100. 200." in StrParser.generate(sf).splitlines()
+
+    def test_disable_refuses_to_rewrite_a_multi_token_nobs(self):
+        """Disabling writes nobs = 0 through the span-exact overlay, which
+        would turn "nobs = 2 3" into "nobs = 0 3" — a partial rewrite of a
+        value list. Malformed to begin with, but the guarantee is absolute:
+        report it instead."""
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrParser.parse("$assimil1\n        ivar = 12\n        nobs = 2 3\n$end\n")
+        name, errors = _assimil_apply(sf, 12, 1, False, {})
+        assert any("nobs" in e for e in errors), errors
+        assert sf.sections["assimil1"]._modified_params == set()
+
+    def test_continuation_array_renders_note(self):
+        from shyfem_ui.pages.physics import _assimil_block
+
+        sf = StrParser.parse(
+            "$assimil1\n        ivar = 12\n        nobs = 2\n"
+            "        corlength = 100.\n                    200.\n$end\n"
+        )
+        html = str(_assimil_block(sf, "Temperature", "t", 12))
+        assert "assim_t_corlength" not in html
+
+
+class TestAssimilOtherSections:
+    """A hand-written $assimil / $assimil0 is core-fatal (read_assimil
+    error-stops on num <= 0) but matched no panel regex, so the panel
+    neither listed it nor said anything — it just offered to create a
+    parallel $assimil1 next to a section the user believed was live."""
+
+    def _others(self, sf, adopted=frozenset()):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_assimil_other_sections", None)
+        assert helper is not None, "the panel must be able to list unmanaged sections"
+        return helper(sf, adopted)
+
+    def test_unnumbered_and_zero_sections_are_listed_as_invalid(self):
+        sf = StrParser.parse(
+            "$assimil\n        ivar = 12\n$end\n\n"
+            "$assimil0\n        ivar = 11\n$end\n\n"
+            "$assimil3\n        ivar = 30\n$end\n"
+        )
+        others, invalid = self._others(sf)
+        assert invalid == ["assimil", "assimil0"]
+        assert others == ["assimil3"]
+
+    def test_adopted_sections_are_not_listed(self):
+        sf = StrParser.parse("$assimil3\n        ivar = 12\n$end\n")
+        others, invalid = self._others(sf, adopted={"assimil3"})
+        assert others == []
+        assert invalid == []
+
+    def test_panel_names_the_invalid_section(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        panel = src[src.index("def panel_assimilation") : src.index("def panel_output")]
+        assert "_assimil_other_sections(" in panel, "the panel must use the listing helper"
+
+
+class TestAssimilModeField:
+    """A stored mode outside (0, 1) is fatal in the core, which says so
+    and points at the real mistake. Rendering it as "0 - Nudging" and
+    writing 0 back replaces the user's value with one they never chose
+    and hides the mistake."""
+
+    def _sf(self, mode_line: str):
+        return StrParser.parse(
+            "$assimil1\n        ivar = 12\n        nobs = 2\n"
+            f"{mode_line}"
+            "        corlength = 2000.\n        sigobs = 0.1\n        sigback = 1.0\n$end\n"
+        )
+
+    def _html(self, mode_line: str) -> str:
+        from shyfem_ui.pages.physics import _assimil_block
+
+        return str(_assimil_block(self._sf(mode_line), "Temperature", "t", 12))
+
+    def test_valid_mode_renders_the_dropdown(self):
+        html = self._html("        mode = 1\n")
+        assert 'id="assim_t_mode"' in html
+        assert '<option value="1" selected' in html
+
+    def test_absent_mode_defaults_to_nudging(self):
+        html = self._html("")
+        assert 'id="assim_t_mode"' in html
+        assert '<option value="0" selected' in html
+
+    def test_out_of_range_mode_is_surfaced_not_coerced(self):
+        # Offered as its own preselected choice: an untouched save writes
+        # 2 back verbatim (no silent rewrite), but the user can still pick
+        # a valid mode — without a control, validate_str's error on this
+        # value would block every save the page makes.
+        html = self._html("        mode = 2\n")
+        assert 'value="2"' in html and "selected" in html
+        assert "invalid" in html.lower(), "the stored value must be called out"
+        assert 'value="0"' in html and 'value="1"' in html, "must be repairable in-page"
+        assert "assim_t_nobs" in html  # the rest of the block still edits
+
+    def test_unparseable_mode_is_surfaced_not_coerced(self):
+        html = self._html("        mode = later\n")
+        assert "assim_t_mode" not in html
+
+    def test_array_mode_renders_a_note(self):
+        html = self._html("        mode = 0 1\n")
+        assert "assim_t_mode" not in html
+
+    def test_out_of_range_mode_survives_a_save(self):
+        """No control means no value in the panel dict, so the raw line is
+        kept and validate_str is what tells the user to fix it."""
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = self._sf("        mode = 2\n")
+        name, errors = _assimil_apply(
+            sf, 12, 1, True, {"nobs": 2, "filecoords": "c.dat", "fileobs": "o.dat"}
+        )
+        assert errors == []
+        assert sf.get_param("assimil1", "mode") == 2
+        assert "mode" not in sf.sections["assimil1"]._modified_params
+        assert "        mode = 2" in StrParser.generate(sf).splitlines()
+
+
+class TestNdugePurgeReporting:
+    """The "$nduge removed" notice must describe a write that happened.
+    It used to fire inside _collect_panel_values, which also runs on
+    Preview and on the save-abort path: the user was told the core-fatal
+    section was gone while it was still on disk — and since it had been
+    dropped from the in-memory StrFile, the later successful save removed
+    it with no notice at all."""
+
+    _NDUGE_STR = "$nduge\n        nvars = 3\n$end\n\n$para\n        idt = 300\n$end\n"
+
+    def test_collect_returns_errors_and_purge_flag(self):
+        sf = StrParser.parse("$para\n        idt = 300\n$end\n")
+        result = _collect_panel_values(FakeInputs(), sf)
+        assert isinstance(result, tuple), "collect must report the purge to its caller"
+        errors, purged = result
+        assert errors == []
+        assert purged is False
+
+    def test_collect_reports_purge_without_announcing_it(self):
+        """ui.notification_show needs a live session, so a collect that
+        still announces cannot even run outside one."""
+        sf = StrParser.parse(self._NDUGE_STR)
+        errors, purged = _collect_panel_values(FakeInputs(), sf)
+        assert errors == []
+        assert purged is True
+        assert "nduge" not in sf.sections
+
+    def test_purge_is_announced_only_after_a_successful_write(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        notice = "Removed dead $nduge"
+        collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
+        assert notice not in collect, "collect must not notify — it writes nothing"
+        preview = src[src.index("def preview_str") : src.index("def module_badges")]
+        assert notice not in preview, "Preview writes nothing — it must not announce a purge"
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        assert save.index("StrParser.save") < save.index(notice), "notify only after the write"
+
+
+_IMETOUT_ALL = ("wind", "heat", "rain", "ice", "hflx")
 
 
 class TestTimingPanel:
@@ -947,6 +1312,30 @@ class TestAssimilApplyErrors:
         assert sf.get_param("assimil7", "vcorlength") == 0.0
         assert sf.get_param("assimil7", "tau") == 0.0
 
+    def test_nonintegral_value_for_an_int_field_is_rejected(self):
+        # int(float("2.7")) used to store 2 with no feedback: the run then
+        # assimilates a different number of stations than the user typed.
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        sf = StrFile()
+        vals = self._valid_values()
+        vals["nobs"] = "2.7"
+        name, errors = _assimil_apply(sf, 12, 1, True, vals)
+        assert any("nobs" in e for e in errors), errors
+        assert sf.get_section_names() == []
+
+    def test_integral_int_field_values_still_accepted(self):
+        from shyfem_ui.pages.physics import _assimil_apply
+
+        for raw, expected in (("2", 2), ("2.0", 2), (3, 3), (3.0, 3)):
+            sf = StrFile()
+            vals = self._valid_values()
+            vals["nobs"] = raw
+            name, errors = _assimil_apply(sf, 12, 1, True, vals)
+            assert errors == [], (raw, errors)
+            assert sf.get_param("assimil1", "nobs") == expected
+            assert isinstance(sf.get_param("assimil1", "nobs"), int)
+
     def test_defaults_are_core_safe(self):
         # A freshly enabled block saved with untouched defaults must not
         # produce a config the core rejects (the old tau=0 default
@@ -970,11 +1359,125 @@ class TestAssimilApplyErrors:
 
         src = inspect.getsource(physics)
         save = src[src.index("def save_file") : src.index("def preview_str")]
-        collect_pos = save.index("_collect_panel_values()")
+        collect_pos = save.index("_collect_into_copy(")
         write_pos = save.index("StrParser.save")
         assert collect_pos < write_pos
-        gate = save[collect_pos:write_pos]
+        # Scope the span to THIS guard: the wider collect->write span also
+        # contains the validate_str guard's return, so a deleted
+        # panel_errors check would still find a `return` and pass.
+        gate = save[save.index("if panel_errors", collect_pos) : save.index("validate_str(")]
         assert "return" in gate  # abort path between collect and write
+
+
+class TestSaveIsolatesPartialState:
+    """_collect_panel_values mutates the StrFile in place, so an aborted
+    save (or a Preview) used to leave the shared model half-updated — the
+    next successful save then persisted whatever the failure left behind.
+    Collect into a copy and adopt it only once the write has happened."""
+
+    def _save_src(self) -> str:
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        return src[src.index("def save_file") : src.index("def preview_str")]
+
+    def test_collect_into_copy_leaves_the_shared_model_untouched(self):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_collect_into_copy", None)
+        assert helper is not None, "save/preview must collect into a copy"
+        sf = StrParser.parse("$para\n        idt = 300\n$end\n\n$nduge\n        nvars = 3\n$end\n")
+        working, errors, purged = helper(FakeInputs(values={"idt": 600}), sf)
+        assert errors == []
+        assert purged is True
+        assert working.get_param("para", "idt") == 600
+        assert sf.get_param("para", "idt") == 300, "shared model must not be touched"
+        assert "nduge" in sf.sections, "the purge belongs to the copy until a write"
+
+    def test_save_swaps_the_copy_in_only_after_the_write(self):
+        save = self._save_src()
+        assert "_collect_into_copy(" in save
+        assert save.index("StrParser.save") < save.index("str_data.set(")
+
+    def test_save_logs_the_traceback_of_an_unexpected_failure(self):
+        save = self._save_src()
+        catch_all = save[save.rindex("except Exception") :]
+        assert "logger.exception" in catch_all, "a failed save must be diagnosable"
+
+    def test_preview_does_not_mutate_the_shared_model(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        preview = src[src.index("def preview_str") : src.index("def module_badges")]
+        assert "_collect_into_copy(" in preview
+        assert "str_data.set(" not in preview, "Preview writes nothing — it owns no state"
+
+
+class TestPreviewGeneratesSafely:
+    """_format_value raises ValueError for a value the core's reader could
+    never read back (both quote characters, no escape mechanism). Preview
+    called StrParser.generate bare inside a reactive effect, where an
+    unhandled exception kills the session."""
+
+    def _unwritable_sf(self) -> StrFile:
+        sf = StrParser.parse("$name\n        wind = 'wind.txt'\n$end\n")
+        sf.set_param("name", "wind", "a'b\"c.dat")  # only modified params are re-emitted
+        return sf
+
+    def test_generate_really_rejects_the_value(self):
+        with pytest.raises(ValueError):
+            StrParser.generate(self._unwritable_sf())
+
+    def test_preview_content_reports_the_failure_instead_of_raising(self, caplog):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_preview_content", None)
+        assert helper is not None, "preview must route generate through a guarded helper"
+        with caplog.at_level(logging.ERROR, logger="shyfem_ui.pages.physics"):
+            content, error = helper(self._unwritable_sf())
+        assert content is None
+        assert error and "wind" in error, error
+        assert any(r.exc_info for r in caplog.records), "must log with a traceback"
+
+    def test_preview_content_returns_the_str_when_writable(self):
+        from shyfem_ui.pages import physics
+
+        helper = getattr(physics, "_preview_content", None)
+        assert helper is not None, "preview must route generate through a guarded helper"
+        content, error = helper(StrParser.parse("$para\n        idt = 300\n$end\n"))
+        assert error is None
+        assert "$para" in content
+
+    def test_unwritable_fields_names_the_offending_field(self):
+        from shyfem_ui.pages import physics
+
+        assert physics._unwritable_fields(self._unwritable_sf()) == ["$name wind"]
+        assert physics._unwritable_fields(StrParser.parse("$para\n        idt = 300\n$end\n")) == []
+
+    def test_save_error_message_names_the_offending_field(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        save = src[src.index("def save_file") : src.index("def preview_str")]
+        catch_all = save[save.rindex("except Exception") :]
+        assert "_unwritable_fields(" in catch_all, "echoing the raw exception is not actionable"
+
+    def test_preview_does_not_open_the_modal_on_a_failure(self):
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        preview = src[src.index("def preview_str") : src.index("def module_badges")]
+        assert "_preview_content(" in preview
+        assert "StrParser.generate(" not in preview, "generate must stay behind the guard"
+        assert preview.index("return") < preview.index("ui.modal_show"), "abort before the modal"
 
 
 class TestSaveValidationOrdering:
@@ -992,3 +1495,43 @@ class TestSaveValidationOrdering:
         write_pos = save.index("StrParser.save")
         assert validate_pos < write_pos
         assert "return" in save[validate_pos:write_pos]  # errors abort the save
+
+
+class TestModeOutOfRangeIsRepairable:
+    """An out-of-range `mode` must not be silently coerced (L3) — but it
+    must still be fixable from this page. The validator errors on it, and
+    save_file aborts on any error-level finding, so rendering a bare note
+    with no control leaves the user unable to save ANY panel edit while
+    that value is in the file."""
+
+    def _field(self, raw, is_array=False):
+        from shyfem_ui.pages.physics import _assimil_mode_field
+
+        return str(_assimil_mode_field("t", raw, is_array))
+
+    def test_out_of_range_mode_still_offers_a_control(self):
+        assert "assim_t_mode" in self._field(2), "the user must be able to correct it"
+
+    def test_out_of_range_value_is_offered_and_preselected(self):
+        # Preselecting the stored value keeps the no-silent-rewrite
+        # guarantee: an untouched save writes back exactly what was there.
+        html = self._field(2)
+        assert 'value="2"' in html and "selected" in html
+
+    def test_out_of_range_mode_is_labelled_invalid(self):
+        assert "invalid" in self._field(2).lower()
+
+    def test_valid_modes_are_selectable(self):
+        html = self._field(2)
+        assert 'value="0"' in html and 'value="1"' in html
+
+    def test_in_range_mode_renders_normally(self):
+        html = self._field(1)
+        assert "assim_t_mode" in html and "invalid" not in html.lower()
+
+    def test_per_station_array_still_renders_a_note(self):
+        # A value list cannot be rewritten without clobbering station 1.
+        assert "assim_t_mode" not in self._field(0, is_array=True)
+
+    def test_unparseable_mode_still_renders_a_note(self):
+        assert "assim_t_mode" not in self._field("abc")

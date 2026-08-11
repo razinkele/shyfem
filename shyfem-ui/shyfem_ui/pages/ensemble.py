@@ -603,10 +603,18 @@ def ensemble_server(
             run_dir = work_dir_path / run_label
             run_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save modified STR file
+            # Save modified STR file. A variation value the STR reader
+            # cannot express (it has no escape for either quote
+            # delimiter) makes serialization fail for this combo only —
+            # the runs already submitted must not be stranded.
             str_filename = base_file.name
             run_str_path = run_dir / str_filename
-            StrParser.save(modified_str, run_str_path)
+            try:
+                StrParser.save(modified_str, run_str_path)
+            except ValueError as e:
+                logger.exception("Writing STR for ensemble run %s failed", run_label)
+                ui.notification_show(f"Skipped run {run_label}: {e}", type="error", duration=8)
+                continue
 
             # Submit job
             spec = JobSpec(

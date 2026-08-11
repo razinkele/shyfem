@@ -115,3 +115,34 @@ class TestCancelJobs:
         queue = _MockJobQueue({})
         cancelled, denied = await _cancel_jobs(queue, [], user=None, is_server_mode=False)
         assert (cancelled, denied) == (0, 0)
+
+
+class TestEnsembleSubmitSerializationFailure:
+    """StrParser.save raises ValueError on a value the STR reader cannot
+    express. Inside the per-combo submit loop that would abort mid-way:
+    combos before the failure are already submitted and running, the
+    failing combo leaves an orphan run directory with no job, and the
+    remaining combos never exist — and since the raise escapes the
+    effect, the session closes before any notification renders."""
+
+    def _loop_source(self):
+        import inspect
+
+        from shyfem_ui.pages import ensemble
+
+        src = inspect.getsource(ensemble)
+        start = src.index("for i, combo in enumerate(combos)")
+        return src[start : src.index("if job_ids:", start)]
+
+    def test_per_combo_save_is_guarded(self):
+        loop = self._loop_source()
+        save = loop.index("StrParser.save(")
+        assert "try:" in loop[:save], "the per-combo write must run inside a try block"
+        assert "except ValueError" in loop[save:], "the writer's ValueError must be caught"
+
+    def test_failure_reports_the_combo_and_continues(self):
+        loop = self._loop_source()
+        tail = loop[loop.index("StrParser.save(") :]
+        handler = tail[tail.index("except ValueError") :]
+        assert "notification_show" in handler, "the user must learn which run failed"
+        assert "continue" in handler, "one bad combo must not abort the whole ensemble"
