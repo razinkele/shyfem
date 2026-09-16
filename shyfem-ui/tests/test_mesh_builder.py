@@ -2318,3 +2318,39 @@ class TestStageBoundaryUpload:
         out = stage_boundary_upload(files, work)
         assert out.name == "a.geojson"
         assert out.exists()
+
+
+class TestDownloadRendererCompat:
+    """The .grd download must not use the deprecated @render.download.
+
+    shiny 1.7 renamed it to @render.download_button and warns at decoration
+    time (i.e. once per session, in the worker log). CI still pins shiny 1.6,
+    which only has the old name, so the page goes through a shim that picks
+    whichever the running shiny provides.
+    """
+
+    def test_shim_prefers_download_button_when_available(self):
+        from shiny import render
+
+        from shyfem_ui.pages import mesh_builder
+
+        expected = getattr(render, "download_button", None) or render.download
+        assert mesh_builder._render_download_button is expected
+
+    def test_decorating_emits_no_shiny_deprecation_warning(self):
+        import warnings
+
+        from shyfem_ui.pages import mesh_builder
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            mesh_builder._render_download_button(filename=lambda: "x.grd")(lambda: None)
+        names = [type(w.message).__name__ for w in caught]
+        assert "ShinyDeprecationWarning" not in names, names
+
+    def test_no_page_calls_deprecated_render_download(self):
+        pages = Path(__file__).parent.parent / "shyfem_ui" / "pages"
+        offenders = [
+            f.name for f in sorted(pages.glob("*.py")) if "@render.download(" in f.read_text()
+        ]
+        assert offenders == [], offenders

@@ -36,6 +36,11 @@ from shyfem_ui.services.mesh_builder import (
 from shyfem_ui.services.parser_grd import GrdFile, Node
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
+# shiny 1.7 renamed @render.download to @render.download_button and the old
+# name warns at decoration time (once per session, straight into the worker
+# log). CI still pins shiny 1.6, which only has the old name.
+_render_download_button = getattr(render, "download_button", None) or render.download
+
 logger = logging.getLogger(__name__)
 
 # Step definitions for the wizard navigation
@@ -1499,7 +1504,7 @@ def mesh_builder_server(
             _log(f"Export error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
 
-    @render.download(filename=lambda: input.export_filename() or "mesh_output.grd")
+    @_render_download_button(filename=lambda: input.export_filename() or "mesh_output.grd")
     def download_grd():
         """Download .grd file to the browser."""
         import os
