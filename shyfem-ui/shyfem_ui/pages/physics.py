@@ -604,12 +604,10 @@ def _purge_nduge(sf: StrFile) -> bool:
 
     No core code reads it and iostr.f90 hard-stops on unknown sections,
     so any STR carrying it cannot run. generate() skips the stale
-    _structure entry once the section is gone.
+    _structure entry once the section is gone. Every occurrence has to
+    go: one surviving block still stops the run.
     """
-    if "nduge" not in sf.sections:
-        return False
-    del sf.sections["nduge"]
-    return True
+    return sf.remove_sections("nduge")
 
 
 def _assimil_num_field(
