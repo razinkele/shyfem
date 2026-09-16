@@ -1017,8 +1017,18 @@ class TestDuplicateSectionNames:
 
     def test_apnbath_preserves_every_line(self):
         # The real file that exposed this: 2 bare $color headers.
-        path = "/home/razinka/shyfem/testcases/examples/mar_menor/apnbath.str"
-        want = [ln.rstrip() for ln in open(path).read().splitlines() if ln.strip()]
+        from pathlib import Path
+
+        path = (
+            Path(__file__).parent.parent.parent
+            / "testcases"
+            / "examples"
+            / "mar_menor"
+            / "apnbath.str"
+        )
+        if not path.exists():
+            pytest.skip("testcases/examples/mar_menor/apnbath.str not present")
+        want = [ln.rstrip() for ln in path.read_text().splitlines() if ln.strip()]
         got = [
             ln.rstrip()
             for ln in StrParser.generate(StrParser.parse_file(path)).splitlines()
