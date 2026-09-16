@@ -76,7 +76,7 @@ cp shyfem_ui.db "shyfem_ui.db.bak.$(date +%Y%m%d-%H%M%S)"
 
 > The `.db` file AND its parent dir must be writable by the `shiny` user (uid 998) — SQLite needs to create WAL/journal files. If permissions drifted: `chgrp shiny shyfem_ui.db && chmod 664 shyfem_ui.db`.
 >
-> ⚠️ **WAL-sidecar trap (bit us 2026-09-16).** Any process that opens the prod DB read-write creates `shyfem_ui.db-wal`/`-shm` with *its* primary group. From a plain `razinka` shell that is group `razinka`, which `shiny` is not in — the worker then fails every write with `attempt to write a readonly database` (first symptom: `GET /api/whoami` → 500, logins break) and the files persist while the worker holds its pooled connection. **Run every read-write DB action here — alembic, session minting, scripts — as `sg shiny -c "umask 002; <command>"`.** Read-only inspection is safe via `sqlite3.connect("file:shyfem_ui.db?mode=ro", uri=True)`. Recovery: `chgrp shiny shyfem_ui.db-wal shyfem_ui.db-shm` (no sudo; razinka owns them).
+> ⚠️ **WAL-sidecar trap (bit us 2026-09-16).** Any process that opens the prod DB read-write creates `shyfem_ui.db-wal`/`-shm` with *its* primary group. From a plain `razinka` shell that is group `razinka`, which `shiny` is not in — the worker then fails every write with `attempt to write a readonly database` (first symptom: `GET /api/whoami` → 500, logins break) and the files persist while the worker holds its pooled connection. **Closed structurally on 2026-09-17: `shyfem-ui/` carries the setgid bit (`drwxrwsr-x razinka:shiny`), so every file created directly in it inherits group `shiny`, and razinka's umask 0002 makes it group-writable** — verified by opening the DB read-write from a plain shell and inspecting the live `-wal`/`-shm` (`-rw-rw-r-- razinka:shiny`). It relies on that umask: a `umask 022` shell would still produce group-read-only sidecars, so `sg shiny -c "umask 002; <command>"` remains the belt-and-braces form for scripted DB writes. Directory modes are not tracked by git; re-check with `stat -c '%A' shyfem-ui` after any re-clone. Read-only inspection is always safe via `sqlite3.connect("file:shyfem_ui.db?mode=ro", uri=True)`. Recovery if it ever recurs: `chgrp shiny shyfem_ui.db-wal shyfem_ui.db-shm` (no sudo; razinka owns them).
 
 ## Step 2 — Version bump only: refresh editable metadata
 
@@ -164,7 +164,7 @@ touch restart.txt
 
 - [ ] Pre-flight: tree is the intended commit; app dir symlink confirmed; worker shiny version checked
 - [ ] Unit suite run with `PYTHONNOUSERSITE=1` against the worker env (only async-plugin failures allowed); diff scanned for shiny APIs new to the worker's version
-- [ ] Every read-write DB action run under `sg shiny -c "umask 002; …"`
+- [ ] `stat -c '%A' shyfem-ui` shows `drwxrwsr-x` (setgid) and `umask` is 0002; otherwise run DB writes under `sg shiny -c "umask 002; …"`
 - [ ] (Schema) DB backed up, then `alembic upgrade head`, then `alembic current` confirms advance
 - [ ] (Version) `pip install -e . --no-deps` to refresh metadata
 - [ ] `touch restart.txt`
