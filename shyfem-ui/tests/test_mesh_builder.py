@@ -2324,9 +2324,9 @@ class TestDownloadRendererCompat:
     """The .grd download must not use the deprecated @render.download.
 
     shiny 1.7 renamed it to @render.download_button and warns at decoration
-    time (i.e. once per session, in the worker log). CI still pins shiny 1.6,
-    which only has the old name, so the page goes through a shim that picks
-    whichever the running shiny provides.
+    time (i.e. once per session, in the worker log). Older shiny (<1.7) only
+    has the old name, so the page goes through a shim that picks whichever
+    the running shiny provides.
     """
 
     def test_shim_prefers_download_button_when_available(self):

@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **UI CI runs on the shiny the laguna worker runs** — `shyfem-ui/environment.yml` pin raised from `shiny>=1.6,<1.7` to `shiny>=1.8,<1.9` (the worker's conda env is 1.8.0), so CI stops validating a version prod no longer uses. The cap stays: bump it deliberately when the worker env moves, after running the suite with `PYTHONNOUSERSITE=1` against that env.
 - **Topbar About/Changelog split per package** — The About and Changelog topbar buttons are now dropdowns with separate SHYFEM (core) and SHYFEM UI entries: About shows the respective README (repo root vs `shyfem-ui/`) with the matching version in the title (core from `VERSION`, UI from package metadata), and Changelog shows only that package's sections of the shared CHANGELOG (`pages/about.py`, `changelog.py` — `filter_changelog`, `core_version`, allowlisted `read_repo_markdown`)
 
 ---

@@ -48,7 +48,7 @@ ls -l /srv/shiny-server/shyfem-ui
 PYTHONNOUSERSITE=1 /opt/micromamba/envs/shiny/bin/python -c "import shiny; print('worker shiny', shiny.__version__)"
 ```
 
-> ⚠️ **shiny version drift.** The conda env the worker loads drifts independently of `environment.yml`/CI (which pin `shiny>=1.6,<1.7`) and of the interactive user-site in `~/.local` (which shadows it). History: 1.4.0 → 1.6.3 (2026-07-22) → 1.8.0 (2026-09-16). CI green ≠ prod-safe. Before deploying, run the unit suite against the worker's exact env:
+> ⚠️ **shiny version drift.** The conda env the worker loads drifts independently of `environment.yml`/CI and of the interactive user-site in `~/.local` (which shadows it). History: 1.4.0 → 1.6.3 (2026-07-22) → 1.8.0 (2026-09-16). CI pins the worker's current minor (`shiny>=1.8,<1.9` since 2026-09-16) — when the worker env moves, bump that pin deliberately. Until then CI green ≠ prod-safe. Before deploying, run the unit suite against the worker's exact env:
 >
 > ```bash
 > PYTHONNOUSERSITE=1 /opt/micromamba/envs/shiny/bin/python -m pytest -q \

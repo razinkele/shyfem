@@ -33,13 +33,15 @@ dependencies:
 
   # Install remaining packages via pip (pure-Python or PyPI-only)
   - pip:
-      # Pinned to a tested range (not unpinned): shiny 1.6.x made the
-      # priority:'event' setInputValue reset fire reliably (1.5 deduped an
-      # unchanged value away), which the E2E active-project tests relied on; the
-      # tests now (re)activate explicitly and pass on 1.6.x. Cap <1.7 so a future
-      # minor can't silently float CI to an untested version (how 1.6.3 first
-      # broke E2E). Lift after validating the next minor + any test fixes.
-      - shiny>=1.6,<1.7
+      # Pinned to the minor the laguna worker actually runs (conda env: shiny
+      # 1.8.0 as of 2026-09-16) so CI exercises prod's version. History: 1.6.x
+      # fixed the priority:'event' setInputValue reset the E2E active-project
+      # tests rely on; 1.7 renamed @render.download -> @render.download_button
+      # (pages/mesh_builder.py shims both). Keep the <next-minor cap so a new
+      # shiny can't silently float CI to an untested version (how 1.6.3 first
+      # broke E2E); bump it deliberately when the worker env moves, after
+      # running the suite with PYTHONNOUSERSITE=1 against that env.
+      - shiny>=1.8,<1.9
       - shinyswatch>=0.7.0
       - shinywidgets>=0.3
       - shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git
