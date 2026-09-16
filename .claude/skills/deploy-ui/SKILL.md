@@ -48,7 +48,16 @@ ls -l /srv/shiny-server/shyfem-ui
 PYTHONNOUSERSITE=1 /opt/micromamba/envs/shiny/bin/python -c "import shiny; print('worker shiny', shiny.__version__)"
 ```
 
-> ⚠️ **shiny version split.** The worker runs **conda shiny 1.4.0**, but the interactive/test env loads **1.6.3 from `~/.local`** (user-site shadow). CI green ≠ prod-safe. Any shiny ≥1.6-only API (e.g. `ui.update_navset`) must be guarded with a `getattr(ui, "update_navset", None) or ui.update_navs` fallback, or it crashes the WS session on the 1.4.0 worker. **Restarting the worker is what exposes latent 1.6-API crashes** (long-lived workers ran old code in memory). Grep your diff for new `ui.update_*`/1.6 APIs before deploying.
+> ⚠️ **shiny version drift.** The conda env the worker loads drifts independently of `environment.yml`/CI (which pin `shiny>=1.6,<1.7`) and of the interactive user-site in `~/.local` (which shadows it). History: 1.4.0 → 1.6.3 (2026-07-22) → 1.8.0 (2026-09-16). CI green ≠ prod-safe. Before deploying, run the unit suite against the worker's exact env:
+>
+> ```bash
+> PYTHONNOUSERSITE=1 /opt/micromamba/envs/shiny/bin/python -m pytest -q \
+>   --ignore=tests/test_db_init_alembic.py --ignore=tests/test_db_fk.py --ignore=tests/test_migrations_env.py
+> ```
+>
+> Expect a block of failures that all read `async def functions are not natively supported` (pytest-asyncio, alembic and playwright live only in the user-site, not the conda env) — those are noise. Any *other* failure is a real incompatibility. Also `git diff <last-deploy>..HEAD -- shyfem-ui/shyfem_ui | grep '^+' | grep -oE 'ui\.[a-z_]+\('` and check the added calls exist in the worker's shiny.
+
+> ℹ️ **The worker is short-lived.** `shiny-server.conf` sets no `app_idle_timeout` for shyfem-ui (default ≈5 s), so the worker exits a few seconds after the last session closes and the next visit spawns a fresh one from the symlinked tree. Merged code therefore goes live on the next visit even without a restart; `touch restart.txt` guarantees replacement of a lingering worker (open session, spinning). `/health` reporting `uptime_seconds` ≈0 means the request itself spawned the worker.
 
 ## Step 1 — Schema change only: back up DB + migrate
 
@@ -66,6 +75,8 @@ cp shyfem_ui.db "shyfem_ui.db.bak.$(date +%Y%m%d-%H%M%S)"
 ```
 
 > The `.db` file AND its parent dir must be writable by the `shiny` user (uid 998) — SQLite needs to create WAL/journal files. If permissions drifted: `chgrp shiny shyfem_ui.db && chmod 664 shyfem_ui.db`.
+>
+> ⚠️ **WAL-sidecar trap (bit us 2026-09-16).** Any process that opens the prod DB read-write creates `shyfem_ui.db-wal`/`-shm` with *its* primary group. From a plain `razinka` shell that is group `razinka`, which `shiny` is not in — the worker then fails every write with `attempt to write a readonly database` (first symptom: `GET /api/whoami` → 500, logins break) and the files persist while the worker holds its pooled connection. **Run every read-write DB action here — alembic, session minting, scripts — as `sg shiny -c "umask 002; <command>"`.** Read-only inspection is safe via `sqlite3.connect("file:shyfem_ui.db?mode=ro", uri=True)`. Recovery: `chgrp shiny shyfem_ui.db-wal shyfem_ui.db-shm` (no sudo; razinka owns them).
 
 ## Step 2 — Version bump only: refresh editable metadata
 
@@ -96,6 +107,42 @@ grep '^version' /home/razinka/shyfem/shyfem-ui/pyproject.toml
 - `/health` should return **200** and the **new** version. If it 503s or shows the old version, the deploy did not fully take — re-check Step 2 (metadata) and Step 3 (restart).
 - Open `https://laguna.ku.lt/shyfem-ui/` in a browser and confirm login works and no WS-disconnect-on-login (the classic shiny-version-split symptom).
 
+### Password-less headless smoke test
+
+No credentials needed: mint a 1 h session for the least-privileged real user, inject the cookie, load the app, then delete the session. Run it **under `sg shiny`** (see the WAL-sidecar trap above).
+
+```bash
+cd /home/razinka/shyfem/shyfem-ui
+sg shiny -c "umask 002; /opt/micromamba/envs/shiny/bin/python - <<'PY'
+import glob, os, time
+from shyfem_ui.services.auth_service import AuthService
+from playwright.sync_api import sync_playwright
+BASE = 'https://laguna.ku.lt/shyfem-ui/'
+svc = AuthService(); token = svc.create_session(user_id=3, ttl_hours=1, ip_address='deploy-smoke')
+try:
+    with sync_playwright() as p:
+        b = p.chromium.launch(); ctx = b.new_context()
+        ctx.add_cookies([{'name': 'shyfem_session', 'value': token, 'url': BASE, 'secure': True, 'httpOnly': True}])
+        page = ctx.new_page(); errs = []
+        page.on('console', lambda m: errs.append(m.text) if m.type == 'error' else None)
+        page.goto(BASE, wait_until='networkidle', timeout=60000)
+        assert '/login' not in page.url, 'cookie rejected'
+        page.locator('.shiny-bound-output').first.wait_for(state='attached', timeout=30000)
+        time.sleep(5)
+        assert any(t.strip() for t in page.locator('.shiny-bound-output').all_inner_texts()), 'no output rendered'
+        for sel in ('#shiny-disconnected-overlay', '#ss-connect-dialog'):
+            loc = page.locator(sel); assert not (loc.count() and loc.first.is_visible()), sel + ' visible'
+        print('console errors:', errs)
+        log = sorted(glob.glob('/var/log/shiny-server/shyfem-ui-*.log'), key=os.path.getmtime)[-1]
+        print(open(log).read()[-1500:])   # read while the session keeps the worker alive
+        b.close()
+finally:
+    print('session deleted:', svc.delete_session(token))
+PY"
+```
+
+Pass = landed on the app (not `/login`), outputs carry text, neither overlay is *visible* (`#ss-connect-dialog` is always in the DOM), no console errors, and the worker log shows `GET /api/whoami … 200` with no traceback.
+
 ## Observing failures
 
 Shiny Server **deletes a worker's log on clean exit** — only crashed workers leave logs in `/var/log/shiny-server/`. To capture a traceback for a WS-disconnect, read `/var/log/shiny-server/*shyfem*` **while the worker is alive** (readable as the `shiny` group). The browser console shows only the SockJS close code (e.g. 4503), never the server traceback.
@@ -116,9 +163,10 @@ touch restart.txt
 ## Deploy checklist (create one todo per item)
 
 - [ ] Pre-flight: tree is the intended commit; app dir symlink confirmed; worker shiny version checked
-- [ ] Diff scanned for shiny ≥1.6-only APIs without a `getattr` fallback
+- [ ] Unit suite run with `PYTHONNOUSERSITE=1` against the worker env (only async-plugin failures allowed); diff scanned for shiny APIs new to the worker's version
+- [ ] Every read-write DB action run under `sg shiny -c "umask 002; …"`
 - [ ] (Schema) DB backed up, then `alembic upgrade head`, then `alembic current` confirms advance
 - [ ] (Version) `pip install -e . --no-deps` to refresh metadata
 - [ ] `touch restart.txt`
 - [ ] `/health` returns 200 with the expected version
-- [ ] Browser smoke test: login + no WS-disconnect
+- [ ] Browser smoke test: password-less headless recipe above (or manual login) + no WS-disconnect + `whoami` 200 in the worker log
