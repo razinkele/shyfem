@@ -84,6 +84,9 @@ ignore = ["E501"]
 asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "--ignore-glob=tests/test_playwright_*.py -p no:zarr"
+# datetime.utcnow() is deprecated (3.12) and was silently in use for retention
+# cutoffs; any call in a tested path now fails. Use shyfem_ui.timeutil.utcnow().
+filterwarnings = ["error:datetime.datetime.utcnow:DeprecationWarning"]
 markers = [
     "e2e: end-to-end browser tests (require Playwright + live server)",
     "slow: tests that take more than 5 seconds",

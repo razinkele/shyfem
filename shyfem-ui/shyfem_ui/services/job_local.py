@@ -14,6 +14,7 @@ from shyfem_ui.services.job_queue import (
     JobStatus,
     job_identity_metadata,
 )
+from shyfem_ui.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -552,7 +553,7 @@ class LocalJobQueue(JobQueue):
         # server_default=func.now() (SQLite CURRENT_TIMESTAMP = UTC) and never
         # written from Python. Comparing it against a local cutoff prunes the
         # wrong window by the local offset on a non-UTC server.
-        utc_cutoff = datetime.utcnow() - timedelta(days=days)
+        utc_cutoff = utcnow() - timedelta(days=days)
         to_remove = []
 
         for job_id, job in self._jobs.items():
