@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from shyfem_ui.models.audit_log import AuditLog
+from shyfem_ui.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,7 @@ class AuditService:
         # SQLite CURRENT_TIMESTAMP (UTC). The retention cutoff must be computed
         # in UTC too, or on a non-UTC server the prune window is off by the
         # local offset (naive-local vs naive-UTC mismatch).
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = utcnow() - timedelta(days=days)
         session = self._session_factory()
         try:
             count = (

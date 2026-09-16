@@ -10,22 +10,13 @@ Steps can reference outputs from previous steps.
 import asyncio
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from shyfem_ui.models.workflow import Workflow, WorkflowStatus
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
-
-
-def _utcnow() -> datetime:
-    """Naive UTC timestamp — drop-in for the deprecated ``datetime.utcnow()``.
-
-    Returns a tz-naive datetime (tzinfo stripped) to stay compatible with the
-    naive DateTime columns and the naive ``datetime.now()`` values this module
-    already produces; mixing aware and naive datetimes would raise on compare.
-    """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+from shyfem_ui.timeutil import utcnow
 
 
 @dataclass
@@ -80,7 +71,7 @@ class WorkflowInstance:
     current_step_index: int = 0
     step_job_ids: dict[str, str] = field(default_factory=dict)  # step_name -> job_id
     step_results: dict[str, dict[str, Any]] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=_utcnow)
+    created_at: datetime = field(default_factory=utcnow)
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
@@ -231,7 +222,7 @@ def _row_to_instance(row: Workflow) -> WorkflowInstance:
         current_step_index=meta_entry.get("current_step_index", 0),
         step_job_ids=meta_entry.get("step_job_ids", {}),
         step_results=meta_entry.get("step_results", {}),
-        created_at=row.created_at or _utcnow(),
+        created_at=row.created_at or utcnow(),
         started_at=_parse_dt(meta_entry.get("started_at")),
         completed_at=row.completed_at,
         error_message=meta_entry.get("error_message"),
@@ -393,8 +384,8 @@ class WorkflowEngine:
                 await self._queue.cancel(wf.step_job_ids[step.name])
 
             row.status = WorkflowStatus.CANCELLED
-            row.completed_at = _utcnow()
-            row.updated_at = _utcnow()
+            row.completed_at = utcnow()
+            row.updated_at = utcnow()
             session.commit()
         finally:
             session.close()
@@ -440,7 +431,7 @@ class WorkflowEngine:
                 return
             row.status = wf.status
             row.steps = _pack_steps(wf)
-            row.updated_at = _utcnow()
+            row.updated_at = utcnow()
             if wf.completed_at:
                 row.completed_at = wf.completed_at
             session.commit()
@@ -455,7 +446,7 @@ class WorkflowEngine:
             return
 
         wf.status = WorkflowStatus.RUNNING
-        wf.started_at = _utcnow()
+        wf.started_at = utcnow()
         self._save_instance(wf)
 
         params = wf.metadata.get("params", {})
@@ -520,7 +511,7 @@ class WorkflowEngine:
             wf.status = WorkflowStatus.COMPLETED
             wf.current_step_index = len(wf.steps)
 
-        wf.completed_at = _utcnow()
+        wf.completed_at = utcnow()
         self._save_instance(wf)
         self._polling_tasks.pop(workflow_id, None)
 

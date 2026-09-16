@@ -584,7 +584,7 @@ class TestWorkflowPersistence:
 
 
 class TestWorkflowTimestampsAreUTC:
-    """All workflow timestamps must be naive UTC (via _utcnow), consistent with
+    """All workflow timestamps must be naive UTC (via timeutil.utcnow), consistent with
     how they are persisted/reloaded. A mix of local datetime.now() (in-memory)
     and UTC (persisted) makes duration wrong by the server's UTC offset after a
     reload."""
@@ -592,16 +592,17 @@ class TestWorkflowTimestampsAreUTC:
     def test_created_at_tracks_utc_not_local(self, monkeypatch):
         import time
 
-        from shyfem_ui.services.workflow import WorkflowInstance, _utcnow
+        from shyfem_ui.services.workflow import WorkflowInstance
+        from shyfem_ui.timeutil import utcnow
 
         # Force a non-UTC local zone so local and UTC clocks differ measurably.
         monkeypatch.setenv("TZ", "America/New_York")  # UTC-4/-5
         time.tzset()
         try:
-            before = _utcnow()
+            before = utcnow()
             wf = WorkflowInstance(id="t", name="t", steps=[], working_dir="/tmp")
-            after = _utcnow()
-            # created_at must be on the UTC clock (within the _utcnow bracket),
+            after = utcnow()
+            # created_at must be on the UTC clock (within the utcnow() bracket),
             # not local time (which would be hours behind -> outside the bracket).
             assert before <= wf.created_at <= after
         finally:
@@ -610,7 +611,7 @@ class TestWorkflowTimestampsAreUTC:
 
     def test_module_datetime_now_always_passes_a_timezone(self):
         """Static guard: every `datetime.now` in workflow.py must be called with
-        a tz arg (i.e. datetime.now(timezone.utc) inside _utcnow); no bare
+        a tz arg; no bare
         `datetime.now` reference and no zero-arg `datetime.now()` (local)."""
         import ast
         import pathlib
@@ -641,6 +642,6 @@ class TestWorkflowTimestampsAreUTC:
                 and id(node) not in good_call_funcs
             ):
                 bad.append(f"bare/zero-arg datetime.now at line {node.lineno}")
-        assert not bad, "workflow.py must use _utcnow()/datetime.now(tz): " + "; ".join(
+        assert not bad, "workflow.py must use utcnow()/datetime.now(tz): " + "; ".join(
             sorted(set(bad))
         )

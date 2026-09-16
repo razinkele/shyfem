@@ -1,18 +1,11 @@
 """SQLAlchemy model for persisted workflow instances."""
 
-from datetime import datetime, timezone
 from enum import Enum as PyEnum
 
 from sqlalchemy import JSON, Column, DateTime, Enum, Integer, String
 
 from shyfem_ui.db.base import Base
-
-
-def _utcnow() -> datetime:
-    """Naive UTC timestamp for column defaults — replaces the deprecated
-    ``datetime.utcnow`` callable. Naive to match the plain ``DateTime`` columns
-    (no ``timezone=True``)."""
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+from shyfem_ui.timeutil import utcnow
 
 
 class WorkflowStatus(PyEnum):
@@ -44,11 +37,11 @@ class Workflow(Base):
     steps = Column(JSON, nullable=False, default=list)
     project_id = Column(Integer, nullable=True, index=True)
     user_id = Column(Integer, nullable=True, index=True)
-    created_at = Column(DateTime, default=_utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(
         DateTime,
-        default=_utcnow,
-        onupdate=_utcnow,
+        default=utcnow,
+        onupdate=utcnow,
         nullable=False,
     )
     completed_at = Column(DateTime, nullable=True)

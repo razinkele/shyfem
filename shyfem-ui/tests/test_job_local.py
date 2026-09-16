@@ -1,7 +1,7 @@
 """Tests for local job queue implementation."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -810,7 +810,7 @@ class TestCleanupDeletesDbRows:
 
         from shyfem_ui.models.project import Job
 
-        real_utc = datetime.utcnow()
+        real_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
         class _SkewedDateTime(datetime):
             @classmethod
@@ -822,6 +822,7 @@ class TestCleanupDeletesDbRows:
                 return real_utc
 
         monkeypatch.setattr(job_local_mod, "datetime", _SkewedDateTime)
+        monkeypatch.setattr(job_local_mod, "utcnow", lambda: real_utc)
 
         q = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
         q._jobs.clear()  # row is outside the in-memory window
