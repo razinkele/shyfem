@@ -10,6 +10,7 @@ SHYFEM UI entries; each entry opens its own modal.
 """
 
 import pytest
+from playwright.sync_api import expect
 
 from tests.conftest import _dismiss_modals
 
@@ -91,7 +92,7 @@ class TestTopbarAboutCluster:
         modal.locator("#about-fb_title").fill("E2E feedback title")
         modal.locator("#about-fb_desc").fill("E2E feedback description text.")
         modal.locator("#about-fb_submit").click()
-        status = pw_page.locator("#about-fb_status")
-        status.wait_for(state="visible", timeout=10000)
-        assert "recorded" in status.inner_text()
+        # Auto-retrying: the element turns visible a beat before Shiny fills
+        # its text, so wait_for(visible) + inner_text() raced (flaked in CI).
+        expect(pw_page.locator("#about-fb_status")).to_contain_text("recorded", timeout=10000)
         _close_modal(pw_page)
