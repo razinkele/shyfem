@@ -105,10 +105,17 @@ def load_box_polygons(
             )
         # OGR's GeoJSON driver resolves a field holding inconsistent types across
         # features (e.g. an int on one feature, a string on another) to an
-        # ambiguous "json" schema type; fiona then raises while *building* that
-        # feature (not later, when the field is read), so we route the id-field
-        # message through this flag rather than a generic message.
-        ambiguous_id_type = schema_props[id_field] == "json"
+        # ambiguous "json" schema type. Reject up front: even where a particular
+        # mixed-in value happens to be JSON-parseable back to an int (e.g. "2"),
+        # the field still cannot be trusted to be a plain integer on every
+        # feature, and some values (e.g. a non-numeric string) would otherwise
+        # raise a raw JSONDecodeError while fiona *builds* that feature, before
+        # we ever get to read it.
+        if schema_props[id_field] == "json":
+            raise PolygonError(
+                f"{path}: field {id_field!r} has inconsistent types across features "
+                "(must be a plain integer on every feature)"
+            )
         try:
             to_wgs84 = _to_wgs84(src.crs)
         except Exception as exc:
@@ -124,11 +131,6 @@ def load_box_polygons(
             except StopIteration:
                 break
             except Exception as exc:
-                if ambiguous_id_type:
-                    raise PolygonError(
-                        f"{path}: field {id_field!r} must be an integer on every feature "
-                        f"(inconsistent types across features: {exc})"
-                    ) from exc
                 raise PolygonError(f"{path}: cannot read feature {index} ({exc})") from exc
 
             if index >= MAX_FEATURES:
