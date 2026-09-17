@@ -57,6 +57,14 @@ def test_run_id_must_be_a_unique_slug(project, local_cfg):
     (project / "boxmodel.json").write_text(json.dumps(d))
     with pytest.raises(bm.ManifestError, match="unique"):
         bm.load_manifest(project, local_cfg, None)
+    # "$" matches before a trailing newline, so a bare re.match(pattern) would
+    # accept "fix\n" as a slug distinct from "fix" -- two ids that would name
+    # the same cache directory once written to a filesystem path. fullmatch
+    # must reject it as a format error, not silently treat it as unique.
+    d["runs"][1]["id"] = "fix\n"
+    (project / "boxmodel.json").write_text(json.dumps(d))
+    with pytest.raises(bm.ManifestError, match=r"runs\[1\].id"):
+        bm.load_manifest(project, local_cfg, None)
 
 
 def test_server_mode_absolute_run_dir_must_be_under_a_root(outside_tmp_dir, monkeypatch):
@@ -111,9 +119,104 @@ def test_server_mode_absolute_run_dir_must_be_under_a_root(outside_tmp_dir, monk
         bm.load_manifest(proj, no_root, user)
 
 
-def test_paths_may_not_escape_the_project(project, local_cfg, tmp_path):
+def test_paths_may_not_escape_the_project(project, local_cfg):
     d = json.loads((project / "boxmodel.json").read_text())
     d["grid"]["grd"] = "../../etc/passwd"
     (project / "boxmodel.json").write_text(json.dumps(d))
+    # runs[0].dir (an absolute path outside the project, per the fixture) is
+    # resolved before grid.grd in load_manifest's field order, so this test
+    # only reaches the grid.grd assertion because that absolute run dir is
+    # accepted first (confined by Config.confine_path, not project-contained).
     with pytest.raises(bm.ManifestError, match="grid.grd"):
         bm.load_manifest(project, local_cfg, None)
+
+
+def test_relative_path_symlink_escaping_the_project_is_rejected(project, local_cfg):
+    # A relative value must stay inside the project even when a symlink
+    # along the way makes it *resolve* somewhere else -- the containment
+    # check runs on the fully resolved path, not the literal string.
+    outside = project.parent / "outside"
+    outside.mkdir()
+    (project / "link").symlink_to("../outside")
+    d = json.loads((project / "boxmodel.json").read_text())
+    d["grid"]["grd"] = "link/x.grd"
+    (project / "boxmodel.json").write_text(json.dumps(d))
+    with pytest.raises(bm.ManifestError, match="grid.grd: must stay inside the project directory"):
+        bm.load_manifest(project, local_cfg, None)
+
+
+def test_server_mode_absolute_path_outside_home_and_roots_is_rejected(outside_tmp_dir, monkeypatch):
+    # An absolute value that resolves cleanly (no symlink trickery) but sits
+    # under another user's home, with no analysis root configured, must be
+    # rejected by Config.confine_path itself.
+    base = outside_tmp_dir
+    udr = base / "users"
+    (udr / "alice").mkdir(parents=True)
+    (udr / "bob").mkdir(parents=True)
+    (udr / "bob" / "secret.grd").write_text("0 secret\n")
+    wd = base / "projects"
+    wd.mkdir()
+    run = udr / "alice" / "run"
+    make_box_run(run, days=1)
+    proj = make_box_project(udr / "alice" / "proj", run)
+    d = json.loads((proj / "boxmodel.json").read_text())
+    d["grid"]["grd"] = str(udr / "bob" / "secret.grd")
+    (proj / "boxmodel.json").write_text(json.dumps(d))
+    user = {"id": 1, "username": "alice", "role": "user"}
+    cfg = Config(
+        _env_file=None,
+        deployment_mode="server",
+        default_admin_password="x" * 12,
+        user_data_root=udr,
+        work_dir=wd,
+        shyfem_dir=base / "shyfem",
+        database_url=f"sqlite:///{base / 'db' / 'ui.db'}",
+    )
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.accessible_shared_work_dirs",
+        lambda user, session_factory=None: [],
+    )
+    with pytest.raises(bm.ManifestError, match="grid.grd"):
+        bm.load_manifest(proj, cfg, user)
+
+
+def test_server_mode_run_dir_symlink_escaping_the_analysis_root_is_rejected(
+    outside_tmp_dir, monkeypatch
+):
+    # An absolute run dir that is textually under the analysis root but
+    # escapes it via a symlink must be rejected -- the confinement acts on
+    # the fully resolved (symlink-followed) path, never a string prefix.
+    base = outside_tmp_dir
+    udr = base / "users"
+    (udr / "alice").mkdir(parents=True)
+    wd = base / "projects"
+    wd.mkdir()
+    root = base / "data"
+    root.mkdir()
+    escape_target = base / "outside_secret"
+    real_run = escape_target / "run"
+    make_box_run(real_run, days=1)
+    (root / "escape").symlink_to(escape_target)
+    home_run = udr / "alice" / "run"
+    make_box_run(home_run, days=1)
+    proj = make_box_project(udr / "alice" / "proj", home_run)
+    d = json.loads((proj / "boxmodel.json").read_text())
+    d["runs"][0]["dir"] = str(root / "escape" / "run")
+    (proj / "boxmodel.json").write_text(json.dumps(d))
+    user = {"id": 1, "username": "alice", "role": "user"}
+    cfg = Config(
+        _env_file=None,
+        deployment_mode="server",
+        default_admin_password="x" * 12,
+        user_data_root=udr,
+        work_dir=wd,
+        shyfem_dir=base / "shyfem",
+        database_url=f"sqlite:///{base / 'db' / 'ui.db'}",
+        analysis_roots=[str(root)],
+    )
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.accessible_shared_work_dirs",
+        lambda user, session_factory=None: [],
+    )
+    with pytest.raises(bm.ManifestError, match=r"runs\[0\].dir"):
+        bm.load_manifest(proj, cfg, user)

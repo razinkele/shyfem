@@ -23,6 +23,23 @@ class ManifestError(ValueError):
     """User-facing manifest problem; the message names the key."""
 
 
+def _section(d: dict, name: str) -> dict:
+    """Fetch a top-level manifest section as a dict, defaulting absent/null to ``{}``.
+
+    A present-but-wrong-type section (e.g. ``"boxes": [1, 2]`` or
+    ``"observations": "x"``) would otherwise reach a bare ``.get(...)`` call
+    downstream and raise ``AttributeError``, escaping ``load_manifest``'s
+    ``ManifestError`` contract (spec §4: a bad manifest always yields a clear
+    error, never a raw exception).
+    """
+    value = d.get(name)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ManifestError(f"{name}: must be an object")
+    return value
+
+
 @dataclass(frozen=True)
 class RunEntry:
     id: str
@@ -78,12 +95,18 @@ def _resolve(
     raw = Path(value)
     proj = project_dir.resolve()
     candidate = raw if raw.is_absolute() else proj / raw
+    # expanduser() runs on the already-joined candidate, not on raw alone: a
+    # relative value like "~otheruser/x" must stay a literal directory name
+    # inside the project, never expand to another user's home directory once
+    # it has been joined onto project_dir (an absolute raw value is its own
+    # candidate here, so this only ever expands a leading "~" in an absolute
+    # value, e.g. an unexpanded "~/curonian/runs/...").
     try:
         resolved = candidate.expanduser().resolve()
     except (OSError, RuntimeError) as e:
         raise ManifestError(f"{key}: cannot resolve path ({e})") from e
     if not raw.is_absolute():
-        if resolved != proj and not resolved.is_relative_to(proj):
+        if not resolved.is_relative_to(proj):
             raise ManifestError(f"{key}: must stay inside the project directory")
     try:
         return config.confine_path(resolved, user, must_exist=False, for_write=False)
@@ -100,20 +123,31 @@ def load_manifest(project_dir: Path, config: Config, user: dict | None) -> BoxMo
         raise ManifestError(f"{MANIFEST_NAME} exceeds 64 KB")
     try:
         d = json.loads(path.read_text(encoding="utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
+    except (OSError, ValueError, RecursionError) as e:
+        # json.JSONDecodeError and UnicodeDecodeError are both ValueError
+        # subclasses; OSError also covers a read_text() race/permission
+        # failure after the is_file()/size checks above, and RecursionError
+        # guards a pathologically deeply-nested JSON body within the 64 KB
+        # cap -- all must yield ManifestError, never escape as a raw
+        # exception (spec §4).
         raise ManifestError(f"{MANIFEST_NAME}: invalid JSON ({e})") from e
     if not isinstance(d, dict) or d.get("schema") != 1:
         raise ManifestError("schema: must be 1")
     title = d.get("title") or "Box model"
     if not isinstance(title, str) or len(title) > 200:
         raise ManifestError("title: must be a string of at most 200 characters")
-    boxes = d.get("boxes") or {}
-    grid = d.get("grid") or {}
-    forcing = d.get("forcing") or {}
-    obs = d.get("observations") or {}
+    boxes = _section(d, "boxes")
+    grid = _section(d, "grid")
+    forcing = _section(d, "forcing")
+    obs = _section(d, "observations")
     id_field = boxes.get("id_field") or "box"
-    if not isinstance(id_field, str) or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", id_field):
+    if not isinstance(id_field, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", id_field):
         raise ManifestError("boxes.id_field: must be an identifier")
+    polygons_layer = boxes.get("layer") or None
+    if polygons_layer is not None and (
+        not isinstance(polygons_layer, str) or len(polygons_layer) > 200
+    ):
+        raise ManifestError("boxes.layer: must be a string of at most 200 characters")
     runs_raw = d.get("runs")
     if not isinstance(runs_raw, list) or not runs_raw:
         raise ManifestError("runs: at least one run is required")
@@ -123,7 +157,7 @@ def load_manifest(project_dir: Path, config: Config, user: dict | None) -> BoxMo
         if not isinstance(r, dict):
             raise ManifestError(f"runs[{i}]: must be an object")
         rid = r.get("id")
-        if not isinstance(rid, str) or not _SLUG.match(rid) or len(rid) > 64:
+        if not isinstance(rid, str) or not _SLUG.fullmatch(rid) or len(rid) > 64:
             raise ManifestError(f"runs[{i}].id: must match [a-z0-9_-]+ (max 64)")
         if rid in seen:
             raise ManifestError(f"runs[{i}].id: {rid!r} is not unique")
@@ -138,7 +172,7 @@ def load_manifest(project_dir: Path, config: Config, user: dict | None) -> BoxMo
         polygons=_resolve(
             boxes.get("polygons"), "boxes.polygons", project_dir, config, user, required=False
         ),
-        polygons_layer=boxes.get("layer") or None,
+        polygons_layer=polygons_layer,
         id_field=id_field,
         grd=_resolve(grid.get("grd"), "grid.grd", project_dir, config, user, required=True),
         bas=_resolve(grid.get("bas"), "grid.bas", project_dir, config, user, required=False),
