@@ -1,7 +1,7 @@
 # Box-model analysis in the SHYFEM Workbench — design
 
 **Date:** 2026-09-17 · **Status:** revised after a three-lens review (architecture, security,
-domain); awaiting owner sign-off · **Path:** architectural · **Revision:** 2
+domain) and a verification pass; awaiting owner sign-off · **Path:** architectural · **Revision:** 3
 
 ## 1. Purpose
 
@@ -146,26 +146,42 @@ exactly as `compare_runs.read()` does.
 Sizes for the 22-year Curonian run: ~1.6 GB read (state + meteo), daily cache 10–20 MB, hourly
 cache 50–100 MB, build about one minute (two is the cap used for the progress estimate).
 
-**Build model — an in-process background thread, not a job.** The job queue only launches a
-closed set of compiled SHYFEM tools and discovers outputs by a flat, extension-keyed glob, so a
-Python cache builder cannot be represented without a generic-exec primitive or a rewrite; neither
-is worth it. Instead `boxmodel_cache.py` keeps a module-level `BuildRegistry` keyed by
-`(project_id, run_id)`:
-- `start_build(project_id, run_id, run_dir, cache_root, user)` is called only after
+**Build model — a child process launched by the service, not a job and not a thread.** The
+job queue only launches a closed set of compiled SHYFEM tools and discovers outputs by a flat,
+extension-keyed glob, so it cannot represent a Python builder without a generic-exec primitive.
+A thread inside the Shiny worker is ruled out too: parsing ~1.6 GB of text in pure Python would
+hold the GIL and lag every session on that worker for a minute. So `boxmodel_cache.py` itself
+launches `[sys.executable, "-m", "shyfem_ui.services.boxmodel_cache", "--run", <run_dir>,
+"--out", <tmp_dir>]` with `start_new_session=True`, bypassing the wrapper's executable lookup
+entirely (no change to `ALLOWED_TOOLS`); the CLI's argparse accepts exactly those two arguments
+and re-validates both paths at open time (regular directory, no symlink component, run dir under
+an accepted root, out dir under the project's cache directory). A module-level `BuildRegistry`
+(plain Python state under a lock — never a `reactive.Value`, which must not be shared across
+sessions) keyed by `(project_id, run_id)` tracks the child's pid, start time and owner:
+- `start_build(project_id, run_id, run_dir, project_dir, user)` runs only after
   `editor_denied_reason(project_id, user)` passes and `run_dir` has been confined for the acting
-  user with `must_exist=True`; a second request for a running key returns the existing handle.
-- The thread writes into `<cache_root>/.boxmodel_cache/<run_id>.tmp-<token>/`, updates
-  `progress.json` (records done / expected from file size, phase, error) and the registry, writes
-  `meta.json` last, then atomically renames the directory over the target.
-- The builder re-validates at open time that `run_dir` and its files are regular files/directories
-  without symlink components under an accepted root, and that the cache root is the project dir.
-- State shown on the page: `missing`, `stale` (any source name/size/mtime differs from
-  `meta.json`), `building` (registry or a fresh `.tmp-*` with a live progress file), `ready`,
-  `failed` (progress file with an error; kept for display, deleted on the next build). A build
-  survives the browser session because the thread belongs to the worker process; a worker restart
-  leaves a `.tmp-*` directory that is reported as failed and cleaned by the next build.
-- The page polls `progress.json` with `invalidate_later` only while a build for the shown run is
-  active; a reactive trigger on completion invalidates the per-session memo of `cache.load`.
+  user with `must_exist=True`; a request for a key already building returns the existing handle.
+- Concurrency: a global semaphore of 2 builds per worker process and at most one active build per
+  user; requests beyond that are queued in the registry and reported as `queued`.
+- Cancel: the page's cancel control (editor-gated) sends SIGTERM to the child's process group,
+  the same mechanism the job queue uses; the child removes its tmp directory on SIGTERM. Worker
+  shutdown terminates children the same way.
+- The child writes into `<project_dir>/.boxmodel_cache/<run_id>.tmp-<token>/`, updates
+  `progress.json` in that directory via write-to-temp-then-rename (records done / expected from
+  the file size, phase, error), writes `meta.json` last, then exits 0. The parent, on exit 0,
+  performs the **two-step publish**: rename any existing `<run_id>` to `<run_id>.old-<token>`,
+  rename the tmp directory to `<run_id>`, then remove the old directory (a plain rename over a
+  non-empty directory fails with ENOTEMPTY, so the one-step form is not an option). The token and
+  the two-step rename are also the cross-worker safety: Shiny Server may run several worker
+  processes with independent registries.
+- Page state per run: `missing`, `stale` (any source name/size/mtime differs from `meta.json`),
+  `queued`, `building` (registry entry, or a `.tmp-*` directory whose `progress.json` mtime is
+  younger than three poll intervals), `ready`, `failed` (a `progress.json` with an error, or a
+  `.tmp-*` older than that — reported and removed by the next build).
+- Thread/loop boundary: nothing off the event loop touches reactive state. The page polls
+  `progress.json` and the registry with `invalidate_later` only while a build for the shown run is
+  queued or active (the precedent is the run page's job polling), and it is the poller that sets
+  the completion trigger which invalidates the per-session memo of `cache.load`.
 - Cache bytes are counted toward the project quota by extending `_sum_project_bytes` to include
   `.boxmodel_cache/` (or the gap is documented if the owner prefers).
 
@@ -186,16 +202,16 @@ repo, transcribed here so the two cannot drift:
 - `n`; `bias = mean(m) − mean(o)`; `RMSE`; `r` with population standard deviations (ddof = 0);
   `R² = 1 − Σ(m−o)² / Σ(o−ō)²` (the Nash–Sutcliffe form the scripts call R²);
   `sd_mod/sd_obs` with ddof = 0. Minimum `n`: 30 for the skill table, 60 for the per-year and
-  grid tables; the observed sd needs at least 3 values or the ratio is blank.
+  grid tables; a target with fewer than 3 observation days in the common window is skipped.
 - Band amplitude (level only): Hann-windowed FFT amplitude ratio model/observed in the 2–4, 4–10,
   10–30 and 30–400 day bands over a gap-free daily window of at least 120 days; shown beside the
   table because matching total variance can be a compensating error.
 - Presentation: amplitude is judged by `sd_mod/sd_obs` (1.00 is right) and phase by `r`; R² is
   shown with a caption that it is not the headline.
 - Observation import rules: strict ISO dates; non-finite values dropped; duplicate
-  `(date, site, variable)` rejected; **`level ≤ 0` rejected** (the Juodkrantė zero-sentinel lesson,
-  where two `0.0` rows in a 470–560 cm series wrecked r), while zeros in salinity and temperature
-  are real and kept; row cap 2 million.
+  `(date, site, variable)` rejected; **`level ≤ 0` dropped and counted in the import report** (the
+  Juodkrantė zero-sentinel lesson, where two `0.0` rows in a 472–555 cm series wrecked r), while
+  zeros in salinity and temperature are real and kept; row cap 2 million.
 
 ## 8. Page: "Box model" (`pages/boxmodel.py`)
 
@@ -249,8 +265,9 @@ All plots use `plotly_theme`; text from the manifest, labels and site names is r
   pydantic-settings default for list fields; default `[]`). Applies in **server mode only** (local
   mode bypasses `confine_path`). Validated at config load: each root must strictly resolve to an
   existing directory; `/` is rejected; a root equal to, containing or contained by
-  `user_data_root`, `work_dir`, `shyfem_dir`, the database file's directory or `/tmp` is
-  rejected; the accepted list is logged at startup.
+  `user_data_root`, `work_dir`, `shyfem_dir`, the database file's directory (sqlite URLs only) or
+  `/tmp` is rejected; the accepted list is logged at startup. The `.env` example in the admin
+  guide shows the JSON-array form, e.g. `SHYFEM_UI_ANALYSIS_ROOTS='["/home/razinka/curonian"]'`.
 - In `confine_path`, when `for_write=False`, the resolved roots are appended to the allowed roots
   exactly as `testcases_dir` and `bin_dir` are today. Roots are never writable and no code path
   writes under them: the builder's working directory is the cache directory, not the run
@@ -265,10 +282,11 @@ All plots use `plotly_theme`; text from the manifest, labels and site names is r
   `id_field` integer, unique and matching the stats box table; a CRS failure raises like
   `_wgs84_transformer` does; CSV via `read_csv(dtype=..., usecols=...)` with the rules of §7;
   polygons and observations ≤ 50 MB; box files streamed with the caps of §5.
-- Concurrent builds: the registry dedupes; the `.tmp-<token>` + atomic rename makes a lost race
-  harmless.
-- Export excludes `.boxmodel_cache/`; import deletes any `.boxmodel_cache/` it finds (forcing a
-  rebuild) and validates nothing about the manifest (that happens on page load for the acting
+- Concurrent builds: the registry dedupes within a worker; the `.tmp-<token>` + two-step rename
+  makes a race between workers harmless; the semaphore and per-user limit bound the load.
+- Export excludes `.boxmodel_cache/`; import **skips** any member under `.boxmodel_cache/` in the
+  member loop, so such files never touch disk or the size budget (forcing a rebuild), and
+  validates nothing about the manifest (that happens on page load for the acting
   user). Zip-slip is already covered by `_import_project_sync`.
 - `confine_path` is applied once per manifest load, not per render.
 
@@ -282,7 +300,9 @@ All plots use `plotly_theme`; text from the manifest, labels and site names is r
   section and a multi-line `kbound`.
 - Unit: parsers (record structure, preamble/file_type, malformed line → error with record
   number, duplicate box, `layers > 1` refused, run-log streaming); cache build → load round trip,
-  staleness, `.tmp` handling, registry dedupe; flux aggregation (`total = positive − negative`,
+  staleness, `.tmp` liveness and cleanup, two-step publish over an existing cache, registry
+  dedupe, semaphore and per-user limit, cancel (SIGTERM removes the tmp dir), CLI argument and
+  path re-validation; flux aggregation (`total = positive − negative`,
   split interface, boundary sections); skill metrics against hand-computed values for every
   definition in §7 including the band ratios and the minimum-`n` rules; manifest validation
   (relative, absolute-under-root, escape, symlink escape, oversized, invalid JSON); config root
