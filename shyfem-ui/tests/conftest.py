@@ -9,10 +9,13 @@ Provides:
 
 import contextlib
 import os
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -125,6 +128,23 @@ def _isolate_env(tmp_path_factory):
     _cfg._config = None
     _db_base._engine = None
     _db_base._SessionLocal = None
+
+
+@pytest.fixture
+def outside_tmp_dir() -> Iterator[Path]:
+    """Writable scratch directory outside /tmp.
+
+    Config.analysis_roots rejects anything under /tmp (spec: box-model analysis
+    design, Config.analysis_roots), and pytest's tmp_path lives there, so tests
+    that need an accepted analysis root build it here instead.
+    """
+    base = Path.home() / ".cache" / "shyfem-ui-tests"
+    base.mkdir(parents=True, exist_ok=True)
+    scratch = Path(tempfile.mkdtemp(prefix="root-", dir=base))
+    try:
+        yield scratch
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

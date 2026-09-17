@@ -227,20 +227,15 @@ class Config(BaseSettings):
         """Resolve and vet analysis roots (server mode only; local mode never uses them)."""
         if self.deployment_mode != "server" or not self.analysis_roots:
             return self
-        # /tmp is checked for exact equality only, not full-subtree containment:
-        # pytest's own tmp_path fixture (and this app's own scratch-file use of
-        # /tmp) lives *under* /tmp, so a subtree ban would also reject a
-        # perfectly good admin-declared root that merely happens to sit in a
-        # /tmp subdirectory. Using /tmp itself as a root is still forbidden.
-        forbidden_exact = {Path("/tmp").resolve()}
-        forbidden_contain = [
+        forbidden = [
             Path("/"),
+            Path("/tmp").resolve(),
             self.user_data_root.resolve(),
             Path(self.work_dir).resolve(),
             Path(self.shyfem_dir).resolve(),
         ]
         if self.database_url.startswith("sqlite:///"):
-            forbidden_contain.append(Path(self.database_url[len("sqlite:///") :]).resolve().parent)
+            forbidden.append(Path(self.database_url[len("sqlite:///") :]).resolve().parent)
         resolved: list[str] = []
         for raw in self.analysis_roots:
             try:
@@ -251,9 +246,7 @@ class Config(BaseSettings):
                 ) from e
             if not root.is_dir():
                 raise ValueError(f"analysis_roots: {raw!r} is not a directory")
-            if root in forbidden_exact:
-                raise ValueError(f"analysis_roots: {raw!r} overlaps a protected location ({root})")
-            for f in forbidden_contain:
+            for f in forbidden:
                 if (
                     root == f
                     or str(root).startswith(str(f) + "/")
