@@ -130,3 +130,82 @@ def test_band_amplitude_ratios_on_sine():
     r = sk.band_amplitude_ratios(obs, mod)
     assert r is not None and r["4-10 d"] == pytest.approx(2.0, rel=0.05)
     assert sk.band_amplitude_ratios(obs.head(100), mod.head(100)) is None  # < 120 days
+
+
+def test_per_year_table_splits_by_calendar_year_and_gates_on_min_n(tmp_path):
+    start, end = date(2009, 11, 1), date(2010, 3, 31)
+    dates = pd.date_range(start, end, freq="D")
+
+    # salinity obs = model salt(box=1) + a constant +0.3 offset (so the
+    # per-day difference, and hence bias, is exactly -0.3 regardless of
+    # which days end up matched); temperature obs is a constant offset from
+    # the model's constant 5.0.
+    obs_lines = ["date,site,variable,value"]
+    for d in dates:
+        obs_lines.append(f"{d:%Y-%m-%d},A,salinity,{1.0 + 0.1 * d.day + 0.3}")
+        obs_lines.append(f"{d:%Y-%m-%d},A,temperature,5.2")
+    (tmp_path / "observations.csv").write_text("\n".join(obs_lines) + "\n")
+    (tmp_path / "sites.csv").write_text("site,lat,lon,box\nA,55.0,21.0,1\n")
+
+    obs, _ = sk.load_observations(tmp_path / "observations.csv")
+    sites = sk.load_sites(tmp_path / "sites.csv")
+    assert str(obs["site"].dtype) == "string" and str(sites["box"].dtype) == "Int64"
+
+    # The model run covers all of 2009 but only a truncated slice of 2010,
+    # deliberately short of MIN_N_YEAR (60) -- exercises the per-year gate.
+    # (A fully-covered 2010 would give 90 matched days, i.e. >= MIN_N_YEAR
+    # for *both* years, and would never exercise the "absent" branch.)
+    model_last = pd.Timestamp("2010-02-14")
+    model_days = (model_last - pd.Timestamp("2009-01-01")).days + 1
+    run_a = _fake_run("a", days=model_days, offset=0.0)
+
+    days_2009 = len(pd.date_range("2009-11-01", "2009-12-31", freq="D"))
+    days_2010 = len(pd.date_range("2010-01-01", model_last, freq="D"))
+    assert days_2009 >= sk.MIN_N_YEAR and days_2010 < sk.MIN_N_YEAR  # sanity on the fixture
+
+    result = sk.per_year_table({"a": run_a}, obs, sites, start, end, min_n=sk.MIN_N_YEAR)
+
+    # (a) contract columns (year first, as skill_table's own columns plus a
+    # leading year -- matching the non-empty-case behaviour asserted below,
+    # not the "run, site, variable, box, year, ..." order suggested in the
+    # ruling, which would be inconsistent with it; see the fix report),
+    # year is an int column, one row per (run, site, variable, year).
+    contract_columns = [
+        "year",
+        "run",
+        "site",
+        "variable",
+        "box",
+        "n",
+        "bias",
+        "rmse",
+        "r",
+        "r2",
+        "sd_ratio",
+    ]
+    assert list(result.columns) == contract_columns
+    assert pd.api.types.is_integer_dtype(result["year"])
+    key = list(zip(result["run"], result["site"], result["variable"], result["year"], strict=True))
+    assert len(key) == len(set(key))
+    assert set(key) == {("a", "A", "salinity", 2009), ("a", "A", "temperature", 2009)}
+
+    # (b) 2010 (45 matched days, < 60) is absent; 2009 (61 matched days,
+    # >= 60) is present.
+    assert set(result["year"]) == {2009}
+    assert (result["n"] == days_2009).all()
+
+    # (c) hand-computed bias for the salinity row, on the matched pairs only
+    matched = pd.date_range("2009-11-01", "2009-12-31", freq="D")
+    obs_salt = np.array([1.0 + 0.1 * d.day + 0.3 for d in matched])
+    mod_salt = np.array([1.0 + 0.1 * d.day for d in matched])
+    expected_bias = float(mod_salt.mean() - obs_salt.mean())
+    got_bias = result.loc[result["variable"] == "salinity", "bias"].iloc[0]
+    assert got_bias == pytest.approx(expected_bias, abs=1e-9)
+    assert got_bias == pytest.approx(-0.3, abs=1e-9)
+
+    # (d) no matching site -> empty frame, contract columns preserved
+    sites_no_match = sites.copy()
+    sites_no_match["site"] = pd.array(["Z"], dtype="string")
+    empty = sk.per_year_table({"a": run_a}, obs, sites_no_match, start, end, min_n=sk.MIN_N_YEAR)
+    assert empty.empty
+    assert list(empty.columns) == contract_columns
