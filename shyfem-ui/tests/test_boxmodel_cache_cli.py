@@ -4,9 +4,12 @@ import sys
 from datetime import date, datetime
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from shyfem_ui import boxmodel_cache_cli as cli
+from shyfem_ui import boxmodel_output as bo
 from tests._boxmodel_fixture import flux_at, make_box_run, value_at
 
 
@@ -81,6 +84,12 @@ def test_meteo_daily_and_meta_sources_are_relative(run, tmp_path):
     assert all("/" not in k for k in meta["sources"]) and meta["hourly"] is True
     hourly = pd.read_parquet(out / "state_hourly.parquet")
     assert len(hourly) == 72 * 3 and str(hourly["temp"].dtype) == "float32"
+    hourly_table = pq.read_table(out / "state_hourly.parquet")
+    assert hourly_table.schema.field("stamp").type == pa.timestamp("ms")
+    assert hourly_table.schema.field("box").type == pa.int32()
+    for v in bo.STATE_VARS:
+        assert hourly_table.schema.field(v).type == pa.float32()
+    assert hourly_table.num_rows == meta["records"] * len(meta["boxes"])
     assert meta["run_log"]["program_stop_time"] == "2009-01-04::00:00:00"
     assert meta["section_nodes"]["1"] == [[21.01, 55.5], [21.01, 55.51]]
     prog = json.loads((out / "progress.json").read_text())
@@ -176,3 +185,57 @@ def test_error_is_recorded_in_progress_for_uncaught_exception_type(run, tmp_path
     assert prog["phase"] == "error"
     assert prog["error"] and "IndexError" in prog["error"]
     assert prog["exit"] == 1
+
+
+def test_meteo_daily_empty_has_contract_schema_when_meteo_file_absent(run, tmp_path):
+    (run / "boxes_meteo.txt").unlink()
+    base, out = _out(tmp_path)
+    cli.build(run, out, hourly=False)
+    table = pq.read_table(out / "meteo_daily.parquet")
+    assert table.num_rows == 0
+    assert table.schema.field("date").type == pa.date32()
+    assert table.schema.field("box").type == pa.int32()
+    for v in bo.METEO_VARS:
+        assert table.schema.field(v).type == pa.float64()
+
+
+def test_flux_daily_empty_has_contract_schema_when_no_sections(tmp_path, monkeypatch):
+    # Patch the shared fixture module's SECTIONS list to empty before generating
+    # a run, so every "# sections" block in boxes_2d.txt/boxes_stats.txt reports
+    # count 0 (the fixture always emits the header + count line, just with zero
+    # data rows when SECTIONS is empty -- both files stay parseable).
+    monkeypatch.setattr("tests._boxmodel_fixture.SECTIONS", [])
+    run_dir = tmp_path / "run_nosec"
+    make_box_run(run_dir, days=1)
+    base, out = _out(tmp_path)
+    cli.build(run_dir, out, hourly=False)
+    table = pq.read_table(out / "flux_daily.parquet")
+    assert table.num_rows == 0
+    assert table.schema.field("date").type == pa.date32()
+    for c in ("section", "from_box", "to_box"):
+        assert table.schema.field(c).type == pa.int32()
+    for c in ("total", "positive", "negative"):
+        assert table.schema.field(c).type == pa.float64()
+
+
+def test_section_table_change_mid_run_is_rejected(run, tmp_path):
+    base, out = _out(tmp_path)
+    lines = (run / "boxes_2d.txt").read_text().splitlines()
+    marks = [i for i, ln in enumerate(lines) if ln.strip() == "# time record"]
+    assert len(marks) >= 2
+    start = marks[1]  # second "# time record" block == record 2
+    hdr = next(i for i in range(start, len(lines)) if lines[i].strip().startswith("# section"))
+    sec_line = hdr + 1  # first section data row in record 2
+    parts = lines[sec_line].split()
+    parts[1] = "99"  # corrupt the "from" box of section 1
+    lines[sec_line] = " ".join(parts)
+    (run / "boxes_2d.txt").write_text("\n".join(lines) + "\n")
+    rc = cli.main(["--run", str(run), "--out", str(out), "--trusted-base", str(base)])
+    assert rc == 1
+    prog = json.loads((out / "progress.json").read_text())
+    assert prog["phase"] == "error" and "section table changed" in prog["error"]
+    # record 1 completed before record 2 raised: the shared _Progress object
+    # (build() now takes main()'s prog instead of creating its own) must
+    # report the real count reached, not the 0 a fresh throwaway object would
+    # show since n=1 never hit the every-500 periodic update.
+    assert prog["records"] == 1

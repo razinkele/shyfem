@@ -15,6 +15,15 @@ lat], ...]}``), ``element_box`` (list of ``[element, box]`` pairs, or
 ``null`` when ``boxes_geom.txt`` is absent -- consumed by Task 10 for the
 polygon dissolve), ``run_log`` (``RunLogFacts`` as a dict, or ``null``),
 ``sources`` (``{filename: {"size", "mtime_ns"}}`` for every input file read).
+
+``--hourly`` streams ``state_hourly.parquet`` with a ``pyarrow.parquet.
+ParquetWriter`` opened lazily on the first hourly record and flushed one
+completed calendar day at a time, so peak memory is bounded by one day's
+rows (not the whole run) -- see ``_write_hourly_batch``. ``flux_daily.
+parquet`` and ``meteo_daily.parquet`` are always written through explicit
+``pyarrow.Schema`` objects (``FLUX_DAILY_SCHEMA``, ``METEO_DAILY_SCHEMA``),
+including the section-less / meteo-less empty case, so a downstream reader
+never sees Arrow ``null``-typed columns.
 """
 
 from __future__ import annotations
@@ -28,11 +37,13 @@ import sys
 import tempfile
 import traceback
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from shyfem_ui import boxmodel_output as bo
 
@@ -47,6 +58,25 @@ MINMAX_VARS = ("temp", "salt", "act_eta")
 BYTES_PER_STATE_RECORD_GUESS = 6200  # 29 boxes + 56 sections; only for the progress estimate
 _OUT_NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}\.tmp-[A-Za-z0-9_-]+$")
 
+HOURLY_STATE_SCHEMA = pa.schema(
+    [("stamp", pa.timestamp("ms")), ("box", pa.int32())]
+    + [(v, pa.float32()) for v in bo.STATE_VARS]
+)
+FLUX_DAILY_SCHEMA = pa.schema(
+    [
+        ("date", pa.date32()),
+        ("section", pa.int32()),
+        ("from_box", pa.int32()),
+        ("to_box", pa.int32()),
+        ("total", pa.float64()),
+        ("positive", pa.float64()),
+        ("negative", pa.float64()),
+    ]
+)
+METEO_DAILY_SCHEMA = pa.schema(
+    [("date", pa.date32()), ("box", pa.int32())] + [(v, pa.float64()) for v in bo.METEO_VARS]
+)
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -54,9 +84,16 @@ def _now() -> str:
 
 def _atomic_json(path: Path, payload: dict) -> None:
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
-    with os.fdopen(fd, "w") as fh:
-        json.dump(payload, fh)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 class _Progress:
@@ -108,7 +145,7 @@ def _validate(run_dir: Path, out_dir: Path, bases: list[Path]) -> str | None:
     return None
 
 
-def _day_accumulate(acc_sum, acc_cnt, acc_min, acc_max, day, ids, values):
+def _day_accumulate(acc_sum, acc_cnt, acc_min, acc_max, day, values):
     s = acc_sum[day]
     if s is None:
         acc_sum[day] = values.copy()
@@ -123,10 +160,31 @@ def _day_accumulate(acc_sum, acc_cnt, acc_min, acc_max, day, ids, values):
     np.maximum(acc_max[day], sub, out=acc_max[day])
 
 
-def build(run_dir: Path, out_dir: Path, *, hourly: bool, progress_cb=None) -> dict:
+def _write_hourly_batch(
+    writer: pq.ParquetWriter, stamps: list[datetime], values: list[np.ndarray], box_ids: np.ndarray
+) -> None:
+    """Write one calendar day's hourly rows as a single Table (bounds peak memory)."""
+    ts = np.repeat(np.array(stamps, dtype="datetime64[ms]"), len(box_ids))
+    vals = np.vstack(values)
+    boxes = np.tile(box_ids.astype(np.int32), len(stamps))
+    arrays = [pa.array(ts, type=pa.timestamp("ms")), pa.array(boxes, type=pa.int32())]
+    for j in range(len(bo.STATE_VARS)):
+        arrays.append(pa.array(vals[:, j], type=pa.float32()))
+    writer.write_table(pa.Table.from_arrays(arrays, schema=HOURLY_STATE_SCHEMA))
+
+
+def build(
+    run_dir: Path,
+    out_dir: Path,
+    *,
+    hourly: bool,
+    progress_cb=None,
+    progress: _Progress | None = None,
+) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     expected = max(1, os.path.getsize(run_dir / STATE_FILE) // BYTES_PER_STATE_RECORD_GUESS)
-    prog = _Progress(out_dir, expected)
+    prog = progress if progress is not None else _Progress(out_dir, expected)
+    prog.expected = expected
     prog.write("state")
     stats = bo.read_stats(run_dir / STATS_FILE)
     geom = bo.read_geom(run_dir / GEOM_FILE) if (run_dir / GEOM_FILE).is_file() else None
@@ -139,36 +197,66 @@ def build(run_dir: Path, out_dir: Path, *, hourly: bool, progress_cb=None) -> di
     fsum: dict = defaultdict(lambda: None)
     fcnt: dict = {}
     sec_meta = None
-    hourly_rows = []
     n = 0
-    for rec in bo.iter_state_records(run_dir / STATE_FILE):
-        if box_ids is None:
-            box_ids = rec.box_ids.copy()
-        elif not np.array_equal(box_ids, rec.box_ids):
-            raise bo.BoxOutputError(f"{STATE_FILE}: box ids change at record {n + 1}")
-        day = rec.stamp.date()
-        _day_accumulate(ssum, scnt, smin, smax, day, rec.box_ids, rec.values)
-        if rec.sections.size:
-            if sec_meta is None:
-                sec_meta = rec.sections[:, :3].astype(int)
-            f = fsum[day]
-            if f is None:
-                fsum[day] = rec.sections[:, 3:].copy()
-                fcnt[day] = 1
-            else:
-                f += rec.sections[:, 3:]
-                fcnt[day] += 1
-        if hourly:
-            hourly_rows.append((rec.stamp, rec.values.astype(np.float32)))
-        n += 1
-        if n % 500 == 0:
-            prog.records = n
-            prog.write("state")
-            if progress_cb:
-                progress_cb(n, expected)
-    if n == 0:
-        raise bo.BoxOutputError(f"{STATE_FILE}: no records")
-    prog.records = n
+    hourly_writer: pq.ParquetWriter | None = None
+    hourly_day: date | None = None
+    hourly_stamps: list[datetime] = []
+    hourly_values: list[np.ndarray] = []
+    try:
+        for rec in bo.iter_state_records(run_dir / STATE_FILE):
+            if box_ids is None:
+                box_ids = rec.box_ids.copy()
+            elif not np.array_equal(box_ids, rec.box_ids):
+                raise bo.BoxOutputError(f"{STATE_FILE}: box ids change at record {n + 1}")
+            day = rec.stamp.date()
+            _day_accumulate(ssum, scnt, smin, smax, day, rec.values)
+            if rec.sections.size:
+                cur_sec_meta = rec.sections[:, :3].astype(int)
+                if sec_meta is None:
+                    sec_meta = cur_sec_meta
+                elif not np.array_equal(sec_meta, cur_sec_meta):
+                    raise bo.BoxOutputError(f"{STATE_FILE}: record {n + 1}: section table changed")
+                f = fsum[day]
+                if f is None:
+                    fsum[day] = rec.sections[:, 3:].copy()
+                    fcnt[day] = 1
+                else:
+                    f += rec.sections[:, 3:]
+                    fcnt[day] += 1
+            if hourly:
+                if hourly_writer is None:
+                    hourly_writer = pq.ParquetWriter(
+                        str(out_dir / "state_hourly.parquet"),
+                        HOURLY_STATE_SCHEMA,
+                        compression="zstd",
+                    )
+                if hourly_day is None:
+                    hourly_day = day
+                elif day != hourly_day:
+                    _write_hourly_batch(hourly_writer, hourly_stamps, hourly_values, box_ids)
+                    hourly_stamps = []
+                    hourly_values = []
+                    hourly_day = day
+                hourly_stamps.append(rec.stamp)
+                hourly_values.append(rec.values.astype(np.float32))
+            n += 1
+            if n % 500 == 0:
+                prog.records = n
+                prog.write("state")
+                if progress_cb:
+                    progress_cb(n, expected)
+        if n == 0:
+            raise bo.BoxOutputError(f"{STATE_FILE}: no records")
+        if hourly and hourly_stamps:
+            _write_hourly_batch(hourly_writer, hourly_stamps, hourly_values, box_ids)
+    finally:
+        # Runs on both the success path and every exception path (box-id
+        # mismatch, section-table mismatch, no-records) so a caught error
+        # always reports the real record count reached so far, not whatever
+        # prog.records last held from the periodic every-500 update.
+        prog.records = n
+        if hourly_writer is not None:
+            hourly_writer.close()
     # ---- meteo ----------------------------------------------------------------
     prog.write("meteo")
     msum: dict = defaultdict(lambda: None)
@@ -206,33 +294,25 @@ def build(run_dir: Path, out_dir: Path, *, hourly: bool, progress_cb=None) -> di
             df.insert(0, "section", sec_meta[:, 0])
             df.insert(0, "date", day)
             fframes.append(df)
-        pd.concat(fframes, ignore_index=True).to_parquet(
-            out_dir / "flux_daily.parquet", index=False
+        flux_table = pa.Table.from_pandas(
+            pd.concat(fframes, ignore_index=True), schema=FLUX_DAILY_SCHEMA, preserve_index=False
         )
     else:
-        pd.DataFrame(
-            columns=["date", "section", "from_box", "to_box", "total", "positive", "negative"]
-        ).to_parquet(out_dir / "flux_daily.parquet", index=False)
+        flux_table = pa.Table.from_pylist([], schema=FLUX_DAILY_SCHEMA)
+    pq.write_table(flux_table, out_dir / "flux_daily.parquet")
     mframes = []
     for day in sorted(mcnt):
         df = pd.DataFrame(msum[day] / mcnt[day], columns=list(bo.METEO_VARS))
         df.insert(0, "box", box_ids.astype(np.int32))
         df.insert(0, "date", day)
         mframes.append(df)
-    (
-        pd.concat(mframes, ignore_index=True)
-        if mframes
-        else pd.DataFrame(columns=["date", "box", *bo.METEO_VARS])
-    ).to_parquet(out_dir / "meteo_daily.parquet", index=False)
-    if hourly:
-        stamps = np.repeat(
-            np.array([s for s, _ in hourly_rows], dtype="datetime64[s]"), len(box_ids)
+    if mframes:
+        meteo_table = pa.Table.from_pandas(
+            pd.concat(mframes, ignore_index=True), schema=METEO_DAILY_SCHEMA, preserve_index=False
         )
-        vals = np.vstack([v for _, v in hourly_rows])
-        hdf = pd.DataFrame(vals, columns=list(bo.STATE_VARS))
-        hdf.insert(0, "box", np.tile(box_ids.astype(np.int32), len(hourly_rows)))
-        hdf.insert(0, "stamp", stamps)
-        hdf.to_parquet(out_dir / "state_hourly.parquet", index=False, compression="zstd")
+    else:
+        meteo_table = pa.Table.from_pylist([], schema=METEO_DAILY_SCHEMA)
+    pq.write_table(meteo_table, out_dir / "meteo_daily.parquet")
     run_log = None
     if (run_dir / LOG_FILE).is_file():
         run_log = dataclasses.asdict(bo.read_run_log(run_dir / LOG_FILE))
@@ -275,9 +355,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     prog = _Progress(out_dir, 1)
     try:
-        build(run_dir, out_dir, hourly=a.hourly)
+        # bo.BoxOutputError is a ValueError subclass, so it's covered below.
+        build(run_dir, out_dir, hourly=a.hourly, progress=prog)
         return 0
-    except (bo.BoxOutputError, OSError, ValueError) as e:
+    except (OSError, ValueError) as e:
         prog.write("error", error=str(e), exit_code=1)
         print(f"error: {e}", file=sys.stderr)
         return 1
