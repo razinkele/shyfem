@@ -49,6 +49,7 @@ dependencies:
       - pydantic>=2.0
       - pydantic-settings>=2.0
       - plotly>=5.24
+      - pyarrow>=15
       - ipyleaflet>=0.18
       - triangle>=20220202
       - aiofiles>=23.0
