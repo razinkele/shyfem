@@ -215,7 +215,13 @@ def read_stats(path: Path) -> BoxStats:
     start = datetime.strptime(take().split("=")[1].strip(), _STAMP)
     end = datetime.strptime(take().split("=")[1].strip(), _STAMP)
     take()  # '#      boxes       nvars'
-    nbox = int(take().split()[0])
+    g = take().split()
+    if len(g) != 2:
+        raise BoxOutputError(f"{path.name}: malformed boxes/nvars line")
+    n = int(g[1])
+    if n != 4:
+        raise BoxOutputError(f"{path.name}: expected nvars=4 in stats header, got {n}")
+    nbox = int(g[0])
     if nbox <= 0 or nbox > MAX_BOXES:
         raise BoxOutputError(f"{path.name}: boxes={nbox} outside 1..{MAX_BOXES}")
     take()  # column header
@@ -227,8 +233,8 @@ def read_stats(path: Path) -> BoxStats:
         raise BoxOutputError(f"{path.name}: layers > 1 (3-D box output is not supported)")
     take()  # '#   sections'
     nsec = int(take().split()[0])
-    if nsec > MAX_SECTIONS:
-        raise BoxOutputError(f"{path.name}: sections={nsec} exceeds {MAX_SECTIONS}")
+    if nsec < 0 or nsec > MAX_SECTIONS:
+        raise BoxOutputError(f"{path.name}: sections={nsec} outside 0..{MAX_SECTIONS}")
     take()
     srows = [take().split() for _ in range(nsec)]
     sections = pd.DataFrame(
@@ -254,7 +260,15 @@ def read_stats(path: Path) -> BoxStats:
 def read_geom(path: Path) -> pd.DataFrame:
     _expect_preamble(path, FILE_TYPE_GEOM)
     lines = [ln for _, ln in _lines(path)][2:]
-    nel = int(lines[1].split()[0])
+    if "elements" not in lines[0]:
+        raise BoxOutputError(f"{path.name}: expected elements header")
+    g = lines[1].split()
+    if len(g) != 2:
+        raise BoxOutputError(f"{path.name}: malformed elements/nvars line")
+    n = int(g[1])
+    if n != 3:
+        raise BoxOutputError(f"{path.name}: expected nvars=3 in geom header, got {n}")
+    nel = int(g[0])
     rows = [ln.split() for ln in lines[3 : 3 + nel]]
     if len(rows) != nel or any(len(r) != 4 for r in rows):
         raise BoxOutputError(f"{path.name}: malformed element table")

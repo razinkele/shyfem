@@ -81,9 +81,23 @@ def test_read_stats_refuses_3d(run):
         bo.read_stats(p)
 
 
+def test_stats_nvars_mismatch_is_refused(run):
+    p = run / "boxes_stats.txt"
+    p.write_text(p.read_text().replace("          3           4", "          3           5", 1))
+    with pytest.raises(bo.BoxOutputError, match="nvars"):
+        bo.read_stats(p)
+
+
 def test_read_geom(run):
     g = bo.read_geom(run / "boxes_geom.txt")
     assert g["element"].tolist() == [1, 2, 3, 4, 5, 6] and g["box"].tolist() == [1, 1, 2, 2, 3, 3]
+
+
+def test_geom_nvars_mismatch_is_refused(run):
+    p = run / "boxes_geom.txt"
+    p.write_text(p.read_text().replace("        6           3", "        6           2", 1))
+    with pytest.raises(bo.BoxOutputError, match="nvars"):
+        bo.read_geom(p)
 
 
 def test_read_run_log_facts(run):
