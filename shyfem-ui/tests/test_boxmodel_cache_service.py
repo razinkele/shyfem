@@ -24,6 +24,7 @@ used in ``test_registry_dedupes_and_limits`` and ``test_cancel_removes_tmp``.
 import asyncio
 import json
 import os
+import signal
 import time
 from pathlib import Path
 
@@ -158,6 +159,33 @@ def test_publish_over_existing_cache_and_old_cleanup(tmp_path):
     assert not list(root.glob("fix.old-*")) and not tmp.exists()
 
 
+def test_publish_called_twice_on_same_tmp_dir_does_not_destroy_the_cache(tmp_path):
+    """Critical 1: reachable in production -- this worker's own _run_build
+    publishes at the end of a build at the same moment another session's
+    page-load reconcile_tmp_dirs has already listed that same finished tmp
+    dir (from an earlier directory scan) and calls publish on it too. The
+    second call must be a safe no-op, not destroy the published cache.
+    """
+    root = tmp_path / ".boxmodel_cache"
+    root.mkdir()
+    tmp = root / "fix.tmp-abc"
+    tmp.mkdir()
+    (tmp / "meta.json").write_text('{"schema":1}')
+    (tmp / "state_daily.parquet").write_text("data")
+
+    out1 = bc.publish(tmp, "fix")
+    assert out1 == root / "fix"
+    assert (root / "fix" / "meta.json").read_text() == '{"schema":1}'
+    assert (root / "fix" / "state_daily.parquet").read_text() == "data"
+
+    out2 = bc.publish(tmp, "fix")
+    assert out2 == root / "fix"
+    assert (root / "fix").is_dir()
+    assert (root / "fix" / "meta.json").read_text() == '{"schema":1}'
+    assert (root / "fix" / "state_daily.parquet").read_text() == "data"
+    assert not list(root.glob("fix.old-*"))
+
+
 def test_reconcile_publishes_finished_and_removes_dead_tmp(tmp_path):
     wd = tmp_path
     root = wd / ".boxmodel_cache"
@@ -175,6 +203,38 @@ def test_reconcile_publishes_finished_and_removes_dead_tmp(tmp_path):
     stray.mkdir()
     msgs = bc.reconcile_tmp_dirs(wd)
     assert (root / "a").exists() and not dead.exists() and not stray.exists() and len(msgs) == 3
+
+
+def test_clear_stale_keeps_fresh_empty_tmp_removes_old_empty_tmp(tmp_path):
+    """Important 3: a tmp dir freshly created by start_build (queued behind
+    the per-worker cap) has no progress.json yet -- its own mtime, not the
+    1e9 "infinitely old" sentinel, must decide whether it looks dead.
+    """
+    root = tmp_path / ".boxmodel_cache"
+    root.mkdir()
+    fresh = root / "fix.tmp-fresh"
+    fresh.mkdir()  # empty: no progress.json yet, mtime is "now"
+    old = root / "fix.tmp-old"
+    old.mkdir()
+    old_t = time.time() - 2 * bc.LIVE_TMP_SECONDS
+    os.utime(old, (old_t, old_t))
+
+    bc._clear_stale_tmp_dirs(root, "fix")
+    assert fresh.exists() and not old.exists()
+
+
+def test_reconcile_keeps_fresh_empty_tmp_removes_old_empty_tmp(tmp_path):
+    root = tmp_path / ".boxmodel_cache"
+    root.mkdir()
+    fresh = root / "fix.tmp-fresh"
+    fresh.mkdir()
+    old = root / "fix.tmp-old"
+    old.mkdir()
+    old_t = time.time() - 2 * bc.LIVE_TMP_SECONDS
+    os.utime(old, (old_t, old_t))
+
+    bc.reconcile_tmp_dirs(tmp_path)
+    assert fresh.exists() and not old.exists()
 
 
 def test_registry_dedupes_and_limits(env, monkeypatch):
@@ -325,6 +385,130 @@ def test_start_build_clears_dead_and_error_tmp_but_not_live(env, monkeypatch):
     assert live.exists()
 
 
+# --- Review round 1 findings ------------------------------------------------
+
+
+def test_run_build_survives_publish_raising(env, monkeypatch):
+    """Important 2: publish() raising after a real, successful CLI run must
+    not wedge the handle in "building" forever -- it must end "failed", be
+    popped from the registry, and never block a fresh build for the same key.
+    """
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    real_publish = bc.publish
+    state = {"raise": True}
+
+    def flaky_publish(tmp_dir, run_id):
+        if state["raise"]:
+            raise RuntimeError("boom")
+        return real_publish(tmp_dir, run_id)
+
+    monkeypatch.setattr(bc, "publish", flaky_publish)
+    reg = bc.BuildRegistry()
+
+    async def build_once():
+        h = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
+        )
+        await _wait(h)
+        return h
+
+    h1 = asyncio.run(build_once())
+    assert h1.state == "failed"
+    assert reg.get(h1.key) is None
+    prog = bc._read_json(h1.tmp_dir / "progress.json")
+    assert prog is not None and prog.get("phase") == "error" and "boom" in prog.get("error", "")
+
+    state["raise"] = False
+    h2 = asyncio.run(build_once())
+    assert h2.state == "done" and h2 is not h1
+    assert bc.cache_status(Path(project["work_dir"]), "fix", run, reg).state == "ready"
+
+
+def test_cancel_task_while_queued_behind_worker_cap(env, monkeypatch):
+    """Important 2 follow-up: a build's own asyncio task can be cancelled
+    directly (e.g. asyncio.run's own task-cancellation on loop teardown, or
+    a real server shutdown) while it is still queued behind
+    MAX_BUILDS_PER_WORKER, i.e. still awaiting registry.semaphore()'s
+    __aenter__ -- BEFORE the try/finally that normally guarantees a
+    terminal state and a registry pop has even been entered. The semaphore
+    acquisition must sit INSIDE the try for this to be caught at all;
+    otherwise the handle stays "queued" forever and is never popped.
+    """
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    monkeypatch.setattr(bc, "MAX_BUILDS_PER_WORKER", 1)
+    monkeypatch.setattr(bc, "MAX_BUILDS_PER_USER", 2)  # both builds are alice's
+    other = run.parent / "other"
+    make_box_run(other, days=1)
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h1 = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
+        )
+        h2 = await bc.start_build(
+            reg, project=project, run_id="other", run_dir=other, user=user, config=cfg
+        )
+        # Give the loop a few cycles so h1's task actually acquires the
+        # (uncontended) semaphore first and h2's task genuinely parks on it.
+        for _ in range(50):
+            await asyncio.sleep(0.01)
+            if h1.state == "building":
+                break
+        assert h1.state == "building"
+        assert h2.state == "queued"
+
+        h2.task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await h2.task
+        assert h2.state == "cancelled"
+        assert reg.get(h2.key) is None
+        assert not h2.tmp_dir.exists()
+
+        await _wait(h1)
+        assert h1.state == "done"
+
+    asyncio.run(go())
+
+
+def test_run_id_must_be_a_safe_slug(env, monkeypatch):
+    """Important 4: run_id reaches glob()/mkdir() unvalidated otherwise -- a
+    run_id of "../../victim" must be rejected before any filesystem access.
+    """
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    wd = Path(project["work_dir"])
+
+    with pytest.raises(ValueError, match="run_id"):
+        asyncio.run(
+            bc.start_build(
+                bc.BuildRegistry(),
+                project=project,
+                run_id="../../victim",
+                run_dir=run,
+                user=user,
+                config=cfg,
+            )
+        )
+    with pytest.raises(ValueError, match="run_id"):
+        bc.cache_status(wd, "../../victim", run, None)
+    with pytest.raises(ValueError, match="run_id"):
+        bc.cache_dir_for(wd, "../../victim")
+    with pytest.raises(ValueError, match="run_id"):
+        bc._clear_stale_tmp_dirs(bc.cache_root(wd), "../../victim")
+
+    # start_build validated run_id before touching the filesystem at all --
+    # nothing was created anywhere, not even the cache root itself.
+    assert not bc.cache_root(wd).exists()
+
+
 # --- Controller ruling on concern 3 (real-child concurrency) ---------------
 #
 # Measured with a standalone timing script (make_box_run + the real CLI,
@@ -345,6 +529,23 @@ async def _wait_for_phase(tmp_dir: Path, phase: str, timeout: float = 5.0) -> di
     raise AssertionError(f"progress.json never reached phase={phase!r} within {timeout}s")
 
 
+def _kill_process_group_if_alive(pid: int | None) -> None:
+    """Best-effort cleanup for the real-child tests below: a failed
+    assertion inside ``go()`` must never leave an orphaned
+    boxmodel_cache_cli process behind.
+    """
+    if pid is None:
+        return
+    try:
+        pgid = os.getpgid(pid)
+    except ProcessLookupError:
+        return
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+
+
 def test_cancel_mid_run_kills_real_child(env, monkeypatch):
     cfg, user, project, run = env
     big = run.parent / "big"
@@ -353,11 +554,13 @@ def test_cancel_mid_run_kills_real_child(env, monkeypatch):
         "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
     )
     reg = bc.BuildRegistry()
+    h_box: list = [None]
 
     async def go():
         h = await bc.start_build(
             reg, project=project, run_id="big", run_dir=big, user=user, config=cfg
         )
+        h_box[0] = h
         await _wait_for_phase(h.tmp_dir, "state")
         pid = h.pid
         assert pid is not None
@@ -374,7 +577,12 @@ def test_cancel_mid_run_kills_real_child(env, monkeypatch):
         assert not h.tmp_dir.exists()
         return pid
 
-    pid = asyncio.run(go())
+    try:
+        pid = asyncio.run(go())
+    finally:
+        if h_box[0] is not None:
+            _kill_process_group_if_alive(h_box[0].pid)
+
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
 
@@ -388,15 +596,22 @@ def test_timeout_marks_failed_with_timeout_message(env, monkeypatch):
     )
     cfg.command_timeout_seconds = 1
     reg = bc.BuildRegistry()
+    h_box: list = [None]
 
     async def go():
         h = await bc.start_build(
             reg, project=project, run_id="big2", run_dir=big, user=user, config=cfg
         )
+        h_box[0] = h
         await _wait(h, timeout=15)
         return h
 
-    h = asyncio.run(go())
+    try:
+        h = asyncio.run(go())
+    finally:
+        if h_box[0] is not None:
+            _kill_process_group_if_alive(h_box[0].pid)
+
     assert h.state == "failed"
     # Design choice: on a timeout the tmp dir is kept (not deleted) and its
     # progress.json is overwritten to an error phase naming the timeout --
