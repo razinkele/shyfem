@@ -65,6 +65,7 @@ Rules:
 - Relative paths resolve against the project directory; absolute paths must resolve, after strict
   symlink resolution, under one of `config.analysis_roots` or the project directory. Anything else
   fails validation with the offending key named. Validation never opens the files.
+- `boxes.polygons` is optional. When absent, box outlines are derived from `boxes_geom.txt` (element → box) and the `.grd` element triangles, dissolved per box; a polygon file gives cleaner outlines and is preferred.
 - `runs[].id` is a slug (`[a-z0-9_-]+`, unique); it names the cache subdirectory.
 - `observations.file` is long format, header `date,site,variable,value`, ISO dates, `variable`
   in `{salinity, temperature, level}`, units psu / °C / m. `sites` has header
@@ -193,8 +194,10 @@ pattern; reactive effects follow the compare-before-set rule (memory: reactive s
   a 3-polygon GeoJSON, `observations.csv` and `sites.csv`.
 - Unit: parser (record structure, malformed line → error with record number, `layers > 1`
   refused); cache build → load round trip and staleness; flux aggregation (`total = positive −
-  negative`, boundary sections); skill metrics vs hand-computed values AND vs
-  `compare_runs.py` run on the same fixture (bit-for-bit to 6 decimals); manifest validation
+  negative`, boundary sections); skill metrics vs hand-computed values (the fixture is small enough to compute by hand);
+  the cross-check against `compare_runs.py` is a one-off script in the Curonian repo run on a
+  real run and recorded in PR 4 — not a CI test, because that script reads the Curonian
+  database schema; manifest validation
   (relative, absolute-under-root, escape, symlink escape); `confine_path` with analysis roots.
 - Page wiring: `_test_helpers.get_server_source` assertions for the four tabs' handlers.
 - E2E: one Playwright test importing the fixture project, building the cache, and asserting the
@@ -206,7 +209,8 @@ pattern; reactive effects follow the compare-before-set rule (memory: reactive s
 Writes `ui_bundle/` and zips it for the Workbench project import:
 `boxmodel.json`; `observations.csv` from `physical_daily` (salinity, `wtemp_mean`, `wlevel_mean`
 per site/date); `sites.csv` with the post→box mapping already used by the scripts (Klaipėda 11,
-Juodkrantė 17, Nida 23, Ventė 25; Uostadvaris mapped when its box is confirmed); `b29polys.gpkg`;
+Juodkrantė 17, Nida 23, Ventė 25; Uostadvaris is exported with an empty box, so it is drawn on the map and excluded from
+skill until someone confirms which box it represents); `b29polys.gpkg`;
 `curonian29.grd/.bas`, `boxes.txt`; the STR; the four river `.txt`. Runs point at
 `/home/razinka/curonian/runs/<run>`; laguna sets
 `SHYFEM_UI_ANALYSIS_ROOTS=/home/razinka/curonian`. The 2016 run is added to the manifest when it
