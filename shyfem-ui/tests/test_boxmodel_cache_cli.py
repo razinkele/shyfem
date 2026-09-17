@@ -98,6 +98,20 @@ def test_cli_rejects_out_dir_outside_trusted_base(run, tmp_path):
     assert cli.main(["--run", str(run), "--out", str(bad), "--trusted-base", str(base)]) == 2
 
 
+def test_cli_rejects_out_dir_bad_name_or_symlink(run, tmp_path):
+    base, out = _out(tmp_path)
+    # out dir name lacks the required "<run-id>.tmp-<token>" shape
+    no_suffix = out.parent / "fix"
+    no_suffix.mkdir()
+    assert cli.main(["--run", str(run), "--out", str(no_suffix), "--trusted-base", str(base)]) == 2
+    # out itself is a symlink into the same .boxmodel_cache directory
+    real = out.parent / "fix.tmp-real"
+    real.mkdir()
+    link = out.parent / "fix.tmp-link"
+    link.symlink_to(real)
+    assert cli.main(["--run", str(run), "--out", str(link), "--trusted-base", str(base)]) == 2
+
+
 def test_cli_rejects_symlinked_run_dir(run, tmp_path):
     base, out = _out(tmp_path)
     link = tmp_path / "link"
@@ -145,3 +159,20 @@ def test_error_is_recorded_in_progress(run, tmp_path):
     assert rc == 1
     prog = json.loads((out / "progress.json").read_text())
     assert prog["phase"] == "error" and "preamble" in prog["error"]
+
+
+def test_error_is_recorded_in_progress_for_uncaught_exception_type(run, tmp_path):
+    # Truncate boxes_stats.txt mid-table: read_stats() raises a bare IndexError
+    # (lines[i - 1] past the end), which is NOT one of the (BoxOutputError,
+    # OSError, ValueError) types main()'s specific except clause names. The
+    # catch-all in main() must still record phase="error" (never leave
+    # progress.json stuck at "state") and return exit code 1.
+    base, out = _out(tmp_path)
+    lines = (run / "boxes_stats.txt").read_text().splitlines()[:4]
+    (run / "boxes_stats.txt").write_text("\n".join(lines) + "\n")
+    rc = cli.main(["--run", str(run), "--out", str(out), "--trusted-base", str(base)])
+    assert rc == 1
+    prog = json.loads((out / "progress.json").read_text())
+    assert prog["phase"] == "error"
+    assert prog["error"] and "IndexError" in prog["error"]
+    assert prog["exit"] == 1

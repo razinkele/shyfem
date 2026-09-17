@@ -3,7 +3,18 @@ PROCESS: ``python -m shyfem_ui.boxmodel_cache_cli --run DIR --out DIR
 --trusted-base DIR ...``. Imports only the parser module, stdlib, numpy,
 pandas, pyarrow -- never ``shyfem_ui.services`` (its package init loads the
 ORM) -- and re-validates its paths structurally because it has no project
-row: ``--out`` must be ``<base>/.../<project>/.boxmodel_cache/<name>``.
+row: ``--out`` must be ``<base>/.../<project>/.boxmodel_cache/<run-id>.tmp-
+<token>`` (checked against ``_OUT_NAME_RE``), must not itself be a symlink,
+and its ``.boxmodel_cache`` parent must sit below one of ``--trusted-base``.
+
+``meta.json`` keys: ``schema`` (1), ``built_at`` (ISO UTC), ``hourly`` (bool),
+``records`` (int), ``period`` (``{"start", "end"}``), ``step_seconds``,
+``boxes`` (list of ``{box, area, volume, depth}``), ``sections`` (list of
+``{section, from_box, to_box}``), ``section_nodes`` (``{section: [[lon,
+lat], ...]}``), ``element_box`` (list of ``[element, box]`` pairs, or
+``null`` when ``boxes_geom.txt`` is absent -- consumed by Task 10 for the
+polygon dissolve), ``run_log`` (``RunLogFacts`` as a dict, or ``null``),
+``sources`` (``{filename: {"size", "mtime_ns"}}`` for every input file read).
 """
 
 from __future__ import annotations
@@ -12,8 +23,10 @@ import argparse
 import dataclasses
 import json
 import os
+import re
 import sys
 import tempfile
+import traceback
 from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -32,6 +45,7 @@ STATE_FILE, METEO_FILE, STATS_FILE, GEOM_FILE, LOG_FILE = (
 )
 MINMAX_VARS = ("temp", "salt", "act_eta")
 BYTES_PER_STATE_RECORD_GUESS = 6200  # 29 boxes + 56 sections; only for the progress estimate
+_OUT_NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}\.tmp-[A-Za-z0-9_-]+$")
 
 
 def _now() -> str:
@@ -82,6 +96,10 @@ def _validate(run_dir: Path, out_dir: Path, bases: list[Path]) -> str | None:
         return "run dir must be a real directory without symlink components"
     if not (run_dir / STATE_FILE).is_file() or (run_dir / STATE_FILE).is_symlink():
         return f"run dir has no regular {STATE_FILE}"
+    if out_dir.is_symlink():
+        return "out dir must not itself be a symlink"
+    if not _OUT_NAME_RE.fullmatch(out_dir.name):
+        return "out dir name must look like <run-id>.tmp-<token>"
     if out_dir.parent.name != ".boxmodel_cache" or not _no_symlink_components(out_dir.parent):
         return "out dir must sit directly under a .boxmodel_cache directory"
     project = out_dir.parent.parent.resolve()
@@ -262,6 +280,14 @@ def main(argv: list[str] | None = None) -> int:
     except (bo.BoxOutputError, OSError, ValueError) as e:
         prog.write("error", error=str(e), exit_code=1)
         print(f"error: {e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        # Catch-all: progress.json must never be left stuck mid-phase, even for a
+        # parser failure mode not in the tuple above (e.g. IndexError on a
+        # truncated boxes_stats.txt). The traceback goes to stderr for the
+        # parent's build.log; the short message goes to progress.json.
+        prog.write("error", error=f"{type(e).__name__}: {e}", exit_code=1)
+        traceback.print_exc(file=sys.stderr)
         return 1
 
 
