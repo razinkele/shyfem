@@ -1,7 +1,7 @@
 # Box-model analysis in the SHYFEM Workbench — design
 
 **Date:** 2026-09-17 · **Status:** revised after a three-lens review (architecture, security,
-domain) and a verification pass; awaiting owner sign-off · **Path:** architectural · **Revision:** 3
+domain) and two verification passes (all findings closed); awaiting owner sign-off · **Path:** architectural · **Revision:** 4
 
 ## 1. Purpose
 
@@ -29,7 +29,8 @@ outputs stay outside the user sandbox behind admin-declared read-only analysis r
 shyfem_ui/pages/boxmodel.py              boxmodel_ui / boxmodel_server, four tabs
 shyfem_ui/services/boxmodel_manifest.py  manifest load/validate, path resolution + confinement
 shyfem_ui/services/boxmodel_output.py    streaming parsers: boxes_2d / boxes_meteo / boxes_stats / boxes_geom / run.log
-shyfem_ui/services/boxmodel_cache.py     build (background thread) + load of the Parquet cache; progress + registry
+shyfem_ui/services/boxmodel_cache.py     launch/track/publish builds (registry, reaper) + load of the Parquet cache
+shyfem_ui/boxmodel_cache_cli.py          thin CLI (the child process): parsers → Parquet; imports no services/db
 shyfem_ui/services/boxmodel_skill.py     observation join + metrics (definitions in §7)
 shyfem_ui/services/boxmodel_setup.py     tolerant STR reader, forcing readers, section geometry
 shyfem_ui/services/boxmodel_polygons.py  GeoPackage/GeoJSON → WGS84 features keyed by box
@@ -155,9 +156,15 @@ launches `[sys.executable, "-m", "shyfem_ui.services.boxmodel_cache", "--run", <
 "--out", <tmp_dir>]` with `start_new_session=True`, bypassing the wrapper's executable lookup
 entirely (no change to `ALLOWED_TOOLS`); the CLI's argparse accepts exactly those two arguments
 and re-validates both paths at open time (regular directory, no symlink component, run dir under
-an accepted root, out dir under the project's cache directory). A module-level `BuildRegistry`
-(plain Python state under a lock — never a `reactive.Value`, which must not be shared across
-sessions) keyed by `(project_id, run_id)` tracks the child's pid, start time and owner:
+an accepted root, out dir under the project's cache directory). The CLI lives in a thin top-level module
+`shyfem_ui/boxmodel_cache_cli.py` (the command is `-m shyfem_ui.boxmodel_cache_cli`), because
+`services/__init__.py` imports the workflow engine, the ORM models and the config; a test asserts
+that importing the CLI module does not import `shyfem_ui.db` or `shyfem_ui.services`. The child's
+stdout and stderr go to `build.log` inside the tmp directory (never an undrained pipe), and a
+wall-clock timeout (`config.command_timeout_seconds`) terminates a hung child so it cannot hold a
+slot. A module-level `BuildRegistry` (plain Python state under a lock — never a `reactive.Value`,
+which must not be shared across sessions) keyed by `(project_id, run_id)` tracks the child's pid,
+start time and owner:
 - `start_build(project_id, run_id, run_dir, project_dir, user)` runs only after
   `editor_denied_reason(project_id, user)` passes and `run_dir` has been confined for the acting
   user with `must_exist=True`; a request for a key already building returns the existing handle.
@@ -166,14 +173,21 @@ sessions) keyed by `(project_id, run_id)` tracks the child's pid, start time and
 - Cancel: the page's cancel control (editor-gated) sends SIGTERM to the child's process group,
   the same mechanism the job queue uses; the child removes its tmp directory on SIGTERM. Worker
   shutdown terminates children the same way.
+- The child re-validates its `--out` structurally, since it has no project row: the parent
+  directory must be named `.boxmodel_cache` and its grandparent must lie strictly below
+  `user_data_root` or `work_dir`, mirroring `confine_path`'s trusted bases.
 - The child writes into `<project_dir>/.boxmodel_cache/<run_id>.tmp-<token>/`, updates
   `progress.json` in that directory via write-to-temp-then-rename (records done / expected from
-  the file size, phase, error), writes `meta.json` last, then exits 0. The parent, on exit 0,
+  the file size, phase, error), writes `meta.json` last, then exits 0. The service awaits the
+  child on the worker's event loop (`asyncio.create_subprocess_exec` + `wait()`, as
+  `run_command` does), so publishing does not depend on any browser session; on exit 0 it
   performs the **two-step publish**: rename any existing `<run_id>` to `<run_id>.old-<token>`,
   rename the tmp directory to `<run_id>`, then remove the old directory (a plain rename over a
   non-empty directory fails with ENOTEMPTY, so the one-step form is not an option). The token and
   the two-step rename are also the cross-worker safety: Shiny Server may run several worker
-  processes with independent registries.
+  processes with independent registries. Publishing is idempotent: on page load, a `.tmp-*` that
+  contains `meta.json` and a `progress.json` reporting exit 0 is published the same way, and a
+  stray `.old-*` left by a crash between the two renames is removed like a stale `.tmp-*`.
 - Page state per run: `missing`, `stale` (any source name/size/mtime differs from `meta.json`),
   `queued`, `building` (registry entry, or a `.tmp-*` directory whose `progress.json` mtime is
   younger than three poll intervals), `ready`, `failed` (a `progress.json` with an error, or a
