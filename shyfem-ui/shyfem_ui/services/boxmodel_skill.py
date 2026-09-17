@@ -1,6 +1,11 @@
 """Observation import rules and skill metrics, transcribed from the Curonian
 scripts ``compare_runs.py`` / ``grid_summary.py`` (spec §7). Keep them in
-sync by hand; the plan's tests pin every definition.
+sync by hand; the tests here pin every formula we can exercise directly,
+but a same-input-and-output numerical cross-check against the standalone
+scripts is what actually caught a wrong ``band_amplitude_ratios`` formula
+that a degenerate (scalar-multiple) test had let through -- treat "the
+tests pass" as necessary, not sufficient, evidence of a correct
+transcription.
 """
 
 from __future__ import annotations
@@ -75,7 +80,11 @@ def load_observations(path: Path) -> tuple[pd.DataFrame, dict]:
     ``level``) plus a report of what was dropped and why.
     """
     path = Path(path)
-    if path.stat().st_size > MAX_OBS_BYTES:
+    try:
+        size = path.stat().st_size
+    except FileNotFoundError as e:
+        raise ObservationError(f"observations: file not found: {path}") from e
+    if size > MAX_OBS_BYTES:
         raise ObservationError("observations file exceeds 50 MB")
     try:
         df = pd.read_csv(
@@ -88,6 +97,9 @@ def load_observations(path: Path) -> tuple[pd.DataFrame, dict]:
         raise ObservationError(f"observations: {e}") from e
     if len(df) > MAX_OBS_ROWS:
         raise ObservationError("observations exceed 2 000 000 rows")
+
+    if df["site"].isna().any() or df["variable"].isna().any():
+        raise ObservationError("observations: site and variable must be non-empty")
 
     bad_var = set(df["variable"].dropna()) - set(VARIABLE_COLUMNS)
     if bad_var:
@@ -112,6 +124,12 @@ def load_observations(path: Path) -> tuple[pd.DataFrame, dict]:
     level_mask = df["variable"] == "level"
     df.loc[level_mask, "value"] = df.loc[level_mask, "value"] / 100.0  # cm -> m
 
+    # Checked LAST, after the non-finite and level<=0 drops: the fixture's
+    # own `2009-01-05,A,level,0` sentinel row shares a (date, site,
+    # variable) key with that day's real level reading, and is only
+    # resolved to a single row once the le0 drop above has removed the
+    # sentinel -- checking duplicates any earlier would raise on that
+    # fixture. Don't reorder this without re-checking that fixture row.
     if df.duplicated(["date", "site", "variable"]).any():
         raise ObservationError("observations: duplicate (date, site, variable) rows")
 
@@ -120,13 +138,27 @@ def load_observations(path: Path) -> tuple[pd.DataFrame, dict]:
 
 def load_sites(path: Path) -> pd.DataFrame:
     """Load ``sites.csv`` (columns ``site, lat, lon, box``); ``box`` is a
-    nullable ``Int64`` (a blank cell means "not mapped to a box").
+    nullable ``Int64`` (a blank/whitespace-only cell means "not mapped to a
+    box"). Anything else that isn't an integer (``"abc"``, ``"1.7"``)
+    raises :class:`ObservationError` naming the offending value, rather
+    than silently coercing a typo to a plausible-looking box id.
     """
     try:
         s = pd.read_csv(path, usecols=["site", "lat", "lon", "box"], dtype={"site": "string"})
+    except FileNotFoundError as e:
+        raise ObservationError(f"sites: file not found: {path}") from e
     except (ValueError, KeyError) as e:
         raise ObservationError(f"sites: {e}") from e
-    s["box"] = pd.array(pd.to_numeric(s["box"], errors="coerce").round(), dtype="Int64")
+
+    raw = s["box"].astype("string")  # normalize whatever read_csv inferred
+    stripped = raw.str.strip()
+    blank = raw.isna() | (stripped == "")
+    numeric = pd.to_numeric(stripped, errors="coerce")
+    bad = ~blank & (numeric.isna() | (numeric != numeric.round()))
+    if bad.any():
+        bad_value = raw[bad].iloc[0]
+        raise ObservationError(f"sites: box must be an integer, got {bad_value!r}")
+    s["box"] = pd.array(numeric.round().where(~blank), dtype="Int64")
     return s
 
 
@@ -170,7 +202,13 @@ def skill_table(
     """One row per (run, site, variable) with at least ``min_n`` matched days
     in ``[start, end]``. A target with fewer than ``MIN_OBS_DAYS`` matched
     observation days (before the per-run model-availability filter) is
-    skipped entirely, mirroring ``compare_runs.py``.
+    skipped entirely, mirroring ``compare_runs.py``. Within those matched
+    days, only the ones where *both* the observation and the model value
+    are finite are counted or passed to :func:`compute_metrics` -- a
+    non-finite model value (``inf``/``nan``, e.g. from a diverged run) is
+    excluded exactly like a missing one, so this function stays
+    self-sufficient even when ``obs`` didn't come from
+    :func:`load_observations` (which already guarantees finite values).
     """
     rows: list[dict] = []
     common: set | None = None
@@ -183,19 +221,32 @@ def skill_table(
         days = sorted(set(o.index) & common)
         if len(days) < MIN_OBS_DAYS:
             continue  # target skipped, like compare_runs.py
-        obs_on_days = o.reindex(days)
+        obs_values = o.reindex(days).to_numpy(dtype=float)
         for run_id, r in runs.items():
-            m = model_series(r, box, col, start, end).reindex(days)
-            k = m.notna().to_numpy()
+            mod_values = model_series(r, box, col, start, end).reindex(days).to_numpy(dtype=float)
+            k = np.isfinite(obs_values) & np.isfinite(mod_values)
             if k.sum() < min_n:
                 continue
-            mt = compute_metrics(
-                obs_on_days.to_numpy()[k], m.to_numpy()[k], is_level=(var == "level")
-            )
+            mt = compute_metrics(obs_values[k], mod_values[k], is_level=(var == "level"))
             rows.append({"run": run_id, "site": site, "variable": var, "box": box, **asdict(mt)})
-    return pd.DataFrame(
-        rows, columns=["run", "site", "variable", "box", "n", "bias", "rmse", "r", "r2", "sd_ratio"]
-    )
+    columns = ["run", "site", "variable", "box", "n", "bias", "rmse", "r", "r2", "sd_ratio"]
+    dtypes = {
+        "run": "str",
+        "site": "str",
+        "variable": "str",
+        "box": "int64",
+        "n": "int64",
+        "bias": "float64",
+        "rmse": "float64",
+        "r": "float64",
+        "r2": "float64",
+        "sd_ratio": "float64",
+    }
+    # .astype unconditionally (not just on the rows=[] branch): guarantees
+    # the empty and populated cases always agree on dtypes, rather than
+    # relying on pandas' string-dtype-inference default (a global option)
+    # to happen to match what an explicit empty-frame cast would produce.
+    return pd.DataFrame(rows, columns=columns).astype(dtypes)
 
 
 def per_year_table(
@@ -220,30 +271,53 @@ def per_year_table(
             t.insert(0, "year", y)
             frames.append(t)
     if not frames:
-        return pd.DataFrame(
-            columns=[
-                "year",
-                "run",
-                "site",
-                "variable",
-                "box",
-                "n",
-                "bias",
-                "rmse",
-                "r",
-                "r2",
-                "sd_ratio",
-            ]
-        )
+        columns = [
+            "year",
+            "run",
+            "site",
+            "variable",
+            "box",
+            "n",
+            "bias",
+            "rmse",
+            "r",
+            "r2",
+            "sd_ratio",
+        ]
+        dtypes = {
+            "year": "int64",
+            "run": "str",
+            "site": "str",
+            "variable": "str",
+            "box": "int64",
+            "n": "int64",
+            "bias": "float64",
+            "rmse": "float64",
+            "r": "float64",
+            "r2": "float64",
+            "sd_ratio": "float64",
+        }
+        return pd.DataFrame(columns=columns).astype(dtypes)
     return pd.concat(frames, ignore_index=True)
 
 
 def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[str, float] | None:
     """Hann-windowed FFT amplitude ratio (model / observed) per period band.
 
-    Requires at least 120 gap-free (one-per-calendar-day) common days;
-    returns ``None`` when that cannot be satisfied, or when a band's
-    observed amplitude is zero (nothing to compare against).
+    Per band, the amplitude of a series is
+    ``sqrt(sum(|rfft((x - xbar) * hanning(n))|**2))`` over that band's
+    frequency bins, and the ratio is the model's amplitude divided by the
+    observed one -- this is ``bandamp`` in ``compare_runs.py``, and must
+    stay numerically equivalent to it (an earlier version of this function
+    summed the magnitudes instead of taking the root-sum-of-squares, and
+    used a closed upper band edge; both were wrong, caught only by a
+    numerical cross-check against ``compare_runs.py`` itself). Band
+    membership is the half-open ``1/hi <= f < 1/lo`` (the shared edge
+    between adjacent bands belongs to
+    the *lower-frequency* -- i.e. longer-period -- band only). Requires at
+    least 120 gap-free (one-per-calendar-day) common days; returns ``None``
+    when that cannot be satisfied, or when a band's observed power is zero
+    (nothing to compare against).
     """
     idx = obs_daily.index.intersection(mod_daily.index).sort_values()
     if len(idx) < 120:
@@ -263,7 +337,9 @@ def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[st
 
     out: dict[str, float] = {}
     for lo, hi in BANDS:
-        sel = (freqs > 0) & (freqs >= 1.0 / hi) & (freqs <= 1.0 / lo)
-        if sel.any() and fo[sel].sum() > 0:
-            out[f"{lo}-{hi} d"] = float(fm[sel].sum() / fo[sel].sum())
+        sel = (freqs >= 1.0 / hi) & (freqs < 1.0 / lo)
+        obs_power = float((fo[sel] ** 2).sum())
+        if sel.any() and obs_power > 0:
+            mod_power = float((fm[sel] ** 2).sum())
+            out[f"{lo}-{hi} d"] = math.sqrt(mod_power) / math.sqrt(obs_power)
     return out or None

@@ -61,6 +61,24 @@ def test_load_observations_rejects_duplicates_and_bad_variable(tmp_path):
         sk.load_observations(p)
 
 
+def test_load_observations_rejects_blank_site_or_variable(tmp_path):
+    p = tmp_path / "o.csv"
+    p.write_text("date,site,variable,value\n2009-01-01,,salinity,1\n")
+    with pytest.raises(sk.ObservationError, match="non-empty"):
+        sk.load_observations(p)
+    p.write_text("date,site,variable,value\n2009-01-01,A,,1\n")
+    with pytest.raises(sk.ObservationError, match="non-empty"):
+        sk.load_observations(p)
+
+
+def test_load_observations_and_load_sites_wrap_missing_file(tmp_path):
+    missing = tmp_path / "does_not_exist.csv"
+    with pytest.raises(sk.ObservationError, match="file not found"):
+        sk.load_observations(missing)
+    with pytest.raises(sk.ObservationError, match="file not found"):
+        sk.load_sites(missing)
+
+
 def test_load_sites_nullable_box(tmp_path):
     make_box_run(tmp_path / "run", days=1)
     proj = make_box_project(tmp_path / "proj", tmp_path / "run")
@@ -68,6 +86,25 @@ def test_load_sites_nullable_box(tmp_path):
     assert s.loc[s["site"] == "A", "box"].iloc[0] == 1 and pd.isna(
         s.loc[s["site"] == "B", "box"].iloc[0]
     )
+
+
+def test_load_sites_rejects_malformed_box(tmp_path):
+    p = tmp_path / "sites.csv"
+    p.write_text("site,lat,lon,box\nA,55.0,21.0,abc\n")
+    with pytest.raises(sk.ObservationError, match="box must be an integer"):
+        sk.load_sites(p)
+    p.write_text("site,lat,lon,box\nA,55.0,21.0,1.7\n")
+    with pytest.raises(sk.ObservationError, match="box must be an integer"):
+        sk.load_sites(p)
+
+
+def test_load_sites_blank_or_whitespace_box_stays_na(tmp_path):
+    p = tmp_path / "sites.csv"
+    p.write_text("site,lat,lon,box\nA,55.0,21.0,\nB,55.0,21.0, \nC,55.0,21.0,3\n")
+    s = sk.load_sites(p)
+    assert pd.isna(s.loc[s["site"] == "A", "box"].iloc[0])
+    assert pd.isna(s.loc[s["site"] == "B", "box"].iloc[0])
+    assert s.loc[s["site"] == "C", "box"].iloc[0] == 3
 
 
 def _fake_run(run_id, days=40, offset=0.0):
@@ -119,9 +156,86 @@ def test_skill_table_uses_common_days_and_min_n():
     assert t.loc[t["run"] == "b", "bias"].iloc[0] == pytest.approx(0.5)
     short = sk.skill_table({"a": a}, obs.head(20), sites, date(2009, 1, 1), date(2009, 2, 9))
     assert short.empty  # n < 30 -> no row
+    assert pd.api.types.is_integer_dtype(short["n"])  # empty frame keeps real dtypes, not object
+
+
+def test_skill_table_drops_nonfinite_model_values():
+    a = _fake_run("a", days=40)
+    inf_date = pd.Timestamp("2009-01-10")
+    mask = (a.state_daily["box"] == 1) & (a.state_daily["date"] == inf_date)
+    a.state_daily.loc[mask, "salt"] = np.inf
+
+    dates = pd.date_range("2009-01-01", periods=40, freq="D")
+    obs = pd.DataFrame(
+        {
+            "date": dates,
+            "site": "A",
+            "variable": "salinity",
+            "value": [1.0 + 0.1 * d.day for d in dates],
+        }
+    )
+    sites = pd.DataFrame(
+        {"site": ["A"], "lat": [0.0], "lon": [0.0], "box": pd.array([1], dtype="Int64")}
+    )
+    t = sk.skill_table({"a": a}, obs, sites, date(2009, 1, 1), date(2009, 2, 9))
+    row = t.loc[t["run"] == "a"].iloc[0]
+    assert row["n"] == 39  # the one inf day is excluded, like a missing one
+    assert np.isfinite(row["bias"])
+    assert np.isfinite(row["rmse"])
+    assert np.isfinite(row["r"])
+    assert np.isfinite(row["r2"])
+
+
+def test_skill_table_level_anomaly_hides_constant_offset(tmp_path):
+    """End-to-end through load_observations/load_sites/skill_table: a
+    constant offset between model and gauge vanishes from the level metrics
+    (anomaly comparison) but not from an ordinary variable's bias.
+    """
+    dates = pd.date_range("2009-01-01", periods=40, freq="D")
+    rows = []
+    for d in dates:
+        rows.append(
+            {
+                "date": d,
+                "box": 1,
+                "salt": (1.0 + 0.1 * d.day) + 0.5,  # model = obs + 0.5
+                "temp": 5.0,
+                "act_eta": (0.01 * d.day) + 0.5,  # model = obs/100 + 0.5
+                "cur_speed": 0,
+                "aver_eta": 0,
+                "bstress": 0,
+                "volume": 1,
+            }
+        )
+    run = CachedRun("a", {}, pd.DataFrame(rows), pd.DataFrame(), pd.DataFrame(), None)
+
+    obs_lines = ["date,site,variable,value"]
+    for d in dates:
+        level_cm = (0.01 * d.day) * 100.0  # obs in cm; load_observations -> m
+        obs_lines.append(f"{d:%Y-%m-%d},A,level,{level_cm}")
+        obs_lines.append(f"{d:%Y-%m-%d},A,salinity,{1.0 + 0.1 * d.day}")
+    (tmp_path / "observations.csv").write_text("\n".join(obs_lines) + "\n")
+    (tmp_path / "sites.csv").write_text("site,lat,lon,box\nA,55.0,21.0,1\n")
+
+    obs, _ = sk.load_observations(tmp_path / "observations.csv")
+    sites = sk.load_sites(tmp_path / "sites.csv")
+
+    t = sk.skill_table({"a": run}, obs, sites, date(2009, 1, 1), date(2009, 2, 9))
+
+    level_row = t.loc[t["variable"] == "level"].iloc[0]
+    assert level_row["bias"] == pytest.approx(0.0, abs=1e-9)
+    assert level_row["r"] == pytest.approx(1.0, abs=1e-9)
+    assert level_row["rmse"] == pytest.approx(0.0, abs=1e-9)
+
+    salt_row = t.loc[t["variable"] == "salinity"].iloc[0]
+    assert salt_row["bias"] == pytest.approx(0.5, abs=1e-9)
 
 
 def test_band_amplitude_ratios_on_sine():
+    # A degenerate sanity check only: mod = 2*obs gives a ratio of exactly
+    # 2.0 whether the formula sums magnitudes or takes sqrt(sum(power)), so
+    # this alone cannot pin the formula -- see
+    # test_band_amplitude_ratios_matches_reference_formula for that.
     t = np.arange(400)
     obs = pd.Series(
         np.sin(2 * np.pi * t / 7.0), index=pd.date_range("2009-01-01", periods=400, freq="D")
@@ -130,6 +244,48 @@ def test_band_amplitude_ratios_on_sine():
     r = sk.band_amplitude_ratios(obs, mod)
     assert r is not None and r["4-10 d"] == pytest.approx(2.0, rel=0.05)
     assert sk.band_amplitude_ratios(obs.head(100), mod.head(100)) is None  # < 120 days
+
+
+def test_band_amplitude_ratios_matches_reference_formula():
+    """Non-scalar-multiple case (peaked obs, broadband mod): every band
+    ratio is checked against the reference formula
+    (``sqrt(sum(|rfft((x - xbar) * hanning(n))|**2))`` per band, band
+    membership ``1/hi <= f < 1/lo``) spelled out independently here, not by
+    calling into ``band_amplitude_ratios`` or any other module helper.
+    """
+    n = 365
+    rng = np.random.default_rng(20260917)
+    t = np.arange(n)
+    obs = np.sin(2 * np.pi * t / 3.0) + np.sin(2 * np.pi * t / 7.0) + np.sin(2 * np.pi * t / 60.0)
+    noise = rng.normal(scale=0.05, size=n)  # deterministic (seeded) broadband noise
+    mod = (
+        0.3 * np.sin(2 * np.pi * t / 3.0)
+        + np.sin(2 * np.pi * t / 7.0)
+        + np.sin(2 * np.pi * t / 60.0)
+        + noise
+    )
+    idx = pd.date_range("2009-01-01", periods=n, freq="D")
+    got = sk.band_amplitude_ratios(pd.Series(obs, index=idx), pd.Series(mod, index=idx))
+    assert got is not None
+
+    # Independent oracle: the same reference formula, written out again
+    # here rather than re-using any part of the implementation.
+    w = np.hanning(n)
+    fo = np.abs(np.fft.rfft((obs - obs.mean()) * w))
+    fm = np.abs(np.fft.rfft((mod - mod.mean()) * w))
+    freqs = np.fft.rfftfreq(n, d=1.0)
+    checked_any = False
+    for lo, hi in sk.BANDS:
+        sel = (freqs >= 1.0 / hi) & (freqs < 1.0 / lo)
+        obs_power = (fo[sel] ** 2).sum()
+        label = f"{lo}-{hi} d"
+        if obs_power <= 0:
+            assert label not in got
+            continue
+        expected = math.sqrt((fm[sel] ** 2).sum()) / math.sqrt(obs_power)
+        assert got[label] == pytest.approx(expected, abs=1e-9)
+        checked_any = True
+    assert checked_any
 
 
 def test_per_year_table_splits_by_calendar_year_and_gates_on_min_n(tmp_path):
@@ -209,3 +365,4 @@ def test_per_year_table_splits_by_calendar_year_and_gates_on_min_n(tmp_path):
     empty = sk.per_year_table({"a": run_a}, obs, sites_no_match, start, end, min_n=sk.MIN_N_YEAR)
     assert empty.empty
     assert list(empty.columns) == contract_columns
+    assert pd.api.types.is_integer_dtype(empty["n"])
