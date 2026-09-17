@@ -19,9 +19,6 @@ import pytest
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
-# Add tests directory to sys.path so tests can import fixtures like _boxmodel_fixture
-sys.path.insert(0, str(Path(__file__).parent))
-
 # ---------------------------------------------------------------------------
 # Foreign-key enforcement for the whole test session
 # ---------------------------------------------------------------------------
