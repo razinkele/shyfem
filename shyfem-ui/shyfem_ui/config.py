@@ -222,6 +222,57 @@ class Config(BaseSettings):
                 self.trusted_proxies = ["127.0.0.0/8", "::1/128"]
         return self
 
+    @model_validator(mode="after")
+    def _check_analysis_roots(self):
+        """Resolve and vet analysis roots (server mode only; local mode never uses them)."""
+        if self.deployment_mode != "server" or not self.analysis_roots:
+            return self
+        # /tmp is checked for exact equality only, not full-subtree containment:
+        # pytest's own tmp_path fixture (and this app's own scratch-file use of
+        # /tmp) lives *under* /tmp, so a subtree ban would also reject a
+        # perfectly good admin-declared root that merely happens to sit in a
+        # /tmp subdirectory. Using /tmp itself as a root is still forbidden.
+        forbidden_exact = {Path("/tmp").resolve()}
+        forbidden_contain = [
+            Path("/"),
+            self.user_data_root.resolve(),
+            Path(self.work_dir).resolve(),
+            Path(self.shyfem_dir).resolve(),
+        ]
+        if self.database_url.startswith("sqlite:///"):
+            forbidden_contain.append(Path(self.database_url[len("sqlite:///") :]).resolve().parent)
+        resolved: list[str] = []
+        for raw in self.analysis_roots:
+            try:
+                root = Path(raw).expanduser().resolve(strict=True)
+            except (FileNotFoundError, RuntimeError) as e:
+                raise ValueError(
+                    f"analysis_roots: {raw!r} does not resolve to an existing directory"
+                ) from e
+            if not root.is_dir():
+                raise ValueError(f"analysis_roots: {raw!r} is not a directory")
+            if root in forbidden_exact:
+                raise ValueError(f"analysis_roots: {raw!r} overlaps a protected location ({root})")
+            for f in forbidden_contain:
+                if (
+                    root == f
+                    or str(root).startswith(str(f) + "/")
+                    or str(f).startswith(str(root) + "/")
+                ):
+                    raise ValueError(f"analysis_roots: {raw!r} overlaps a protected location ({f})")
+            resolved.append(str(root))
+        self.analysis_roots = resolved
+        import logging
+
+        logging.getLogger(__name__).info("analysis_roots accepted: %s", resolved)
+        return self
+
+    def resolved_analysis_roots(self) -> list[Path]:
+        """The validated roots as Paths (empty outside server mode)."""
+        if self.deployment_mode != "server":
+            return []
+        return [Path(r) for r in self.analysis_roots]
+
     @property
     def bin_dir(self) -> Path:
         """Path to SHYFEM binaries."""
@@ -269,6 +320,17 @@ class Config(BaseSettings):
     trusted_proxies: list[str] = Field(
         default_factory=list,
         description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])",
+    )
+
+    analysis_roots: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Admin-declared directories readable (never writable) by EVERY authenticated "
+            "user in server mode, for box-model run outputs kept outside the sandbox. "
+            "JSON array in the environment, e.g. SHYFEM_UI_ANALYSIS_ROOTS='[\"/data/runs\"]'. "
+            "Each must exist and must not overlap the user data root, the work dir, the "
+            "SHYFEM dir, the database directory or /tmp. Ignored in local mode."
+        ),
     )
 
     # Static asset caching
@@ -476,8 +538,10 @@ class Config(BaseSettings):
 
         allowed_roots = [home]
         if not for_write:
-            # Read-only bundled assets stay reachable for reads (tutorials/examples).
+            # Read-only bundled assets stay reachable for reads (tutorials/examples),
+            # plus the admin-declared analysis roots (box-model run outputs).
             allowed_roots += [self.testcases_dir.resolve(), self.bin_dir.resolve()]
+            allowed_roots += self.resolved_analysis_roots()
 
         resolved = Path(path).expanduser().resolve()
         if resolved.exists():
