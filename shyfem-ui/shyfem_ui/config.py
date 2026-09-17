@@ -1,10 +1,13 @@
 """Configuration management using Pydantic settings."""
 
+import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Config(BaseSettings):
@@ -224,10 +227,22 @@ class Config(BaseSettings):
 
     @model_validator(mode="after")
     def _check_analysis_roots(self):
-        """Resolve and vet analysis roots (server mode only; local mode never uses them)."""
+        """Resolve and vet analysis roots (server mode only; local mode never uses them).
+
+        The accepted, resolved list is written ONLY to ``self._vetted_analysis_roots``
+        (a private attr), never back to ``self.analysis_roots`` (the user-supplied
+        field). ``deployment_mode`` can be mutated after construction (no
+        ``validate_assignment``), so validated-ness must live on a separate
+        attribute that a later mode flip cannot retroactively make "true" for
+        roots this validator never actually vetted. See ``resolved_analysis_roots``.
+        """
         if self.deployment_mode != "server" or not self.analysis_roots:
             return self
         forbidden = [
+            # "/" is protected via the equality arm below only (the spec's
+            # separate "/ is rejected" clause) -- it can never also match via
+            # the containment arms, since every resolved root is an absolute
+            # path already rooted at "/". Do not "optimize" this away.
             Path("/"),
             Path("/tmp").resolve(),
             self.user_data_root.resolve(),
@@ -240,7 +255,7 @@ class Config(BaseSettings):
         for raw in self.analysis_roots:
             try:
                 root = Path(raw).expanduser().resolve(strict=True)
-            except (FileNotFoundError, RuntimeError) as e:
+            except (OSError, RuntimeError) as e:
                 raise ValueError(
                     f"analysis_roots: {raw!r} does not resolve to an existing directory"
                 ) from e
@@ -254,17 +269,22 @@ class Config(BaseSettings):
                 ):
                     raise ValueError(f"analysis_roots: {raw!r} overlaps a protected location ({f})")
             resolved.append(str(root))
-        self.analysis_roots = resolved
-        import logging
-
-        logging.getLogger(__name__).info("analysis_roots accepted: %s", resolved)
+        self._vetted_analysis_roots = resolved
+        logger.warning(
+            "analysis_roots enabled (read-only for all authenticated users): %s", resolved
+        )
         return self
 
     def resolved_analysis_roots(self) -> list[Path]:
-        """The validated roots as Paths (empty outside server mode)."""
-        if self.deployment_mode != "server":
-            return []
-        return [Path(r) for r in self.analysis_roots]
+        """The validated roots as Paths.
+
+        Backed by ``_vetted_analysis_roots``, populated only by
+        ``_check_analysis_roots`` at construction time -- never derived from
+        ``analysis_roots``/``deployment_mode`` at call time, so a Config that
+        was never validated in server mode (built local then mutated) fails
+        closed to ``[]`` rather than surfacing its raw, unvetted strings.
+        """
+        return [Path(p) for p in self._vetted_analysis_roots]
 
     @property
     def bin_dir(self) -> Path:
@@ -325,6 +345,15 @@ class Config(BaseSettings):
             "SHYFEM dir, the database directory or /tmp. Ignored in local mode."
         ),
     )
+    # Resolved/accepted analysis_roots, populated ONLY by _check_analysis_roots
+    # below. Deliberately NOT derived from analysis_roots + deployment_mode at
+    # read time: mode is mutable post-construction (model_config has no
+    # validate_assignment), so a Config built in local mode and later flipped
+    # to server mode (e.g. app.py's --mode server path) must not suddenly
+    # treat its never-vetted analysis_roots as accepted. This private attr is
+    # the only source of truth for resolved_analysis_roots() -- an
+    # unvalidated config fails closed to [].
+    _vetted_analysis_roots: list[str] = PrivateAttr(default_factory=list)
 
     # Static asset caching
     static_cache_max_age: int = Field(

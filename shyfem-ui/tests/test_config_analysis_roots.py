@@ -1,3 +1,6 @@
+import logging
+import os
+
 import pytest
 
 from shyfem_ui.config import Config
@@ -78,6 +81,26 @@ def test_local_mode_ignores_roots(outside_tmp_dir):
         analysis_roots=["/definitely/missing"],
     )
     assert cfg.analysis_roots == ["/definitely/missing"]  # not validated, not used
+    assert cfg.resolved_analysis_roots() == []
+
+
+def test_mode_flipped_after_construction_yields_no_roots(outside_tmp_dir):
+    """Validated-ness lives on _vetted_analysis_roots, not on deployment_mode.
+
+    A Config built in local mode is never vetted; mutating deployment_mode to
+    "server" afterwards (as app.py's --mode server path does) must not
+    retroactively treat its raw, never-checked analysis_roots as accepted.
+    """
+    root = outside_tmp_dir / "data"
+    root.mkdir()
+    cfg = Config(
+        _env_file=None,
+        deployment_mode="local",
+        work_dir=outside_tmp_dir,
+        analysis_roots=[str(root)],
+    )
+    cfg.deployment_mode = "server"
+    assert cfg.resolved_analysis_roots() == []
 
 
 def test_confine_path_reads_under_root_but_never_writes(outside_tmp_dir):
@@ -102,6 +125,36 @@ def test_confine_path_symlink_from_root_into_sandbox_is_rejected(outside_tmp_dir
     (cfg.user_data_root / "alice").mkdir()
     with pytest.raises(ValueError):
         cfg.confine_path(root / "link", user, must_exist=True)
+
+
+def test_accepted_roots_are_logged_at_warning(outside_tmp_dir, caplog):
+    """No handler is configured this early in either entry path (Shiny Server's
+
+    create_app() never calls basicConfig; the CLI calls basicConfig AFTER
+    Config()), so an INFO log here would be silently dropped -- only WARNING+
+    reaches logging.lastResort. Enabling host-wide read roots is a
+    warning-worthy security event regardless.
+    """
+    root = outside_tmp_dir / "data"
+    root.mkdir()
+    with caplog.at_level(logging.WARNING, logger="shyfem_ui.config"):
+        _server_cfg(outside_tmp_dir, [str(root)])
+    assert str(root.resolve()) in caplog.text
+
+
+def test_root_with_non_directory_parent_component_is_rejected(outside_tmp_dir):
+    afile = outside_tmp_dir / "afile"
+    afile.write_text("x")
+    with pytest.raises(ValueError, match="analysis_roots"):
+        _server_cfg(outside_tmp_dir, [str(afile / "sub")])
+
+
+def test_root_symlinked_to_protected_location_is_rejected(outside_tmp_dir):
+    base = outside_tmp_dir
+    (base / "users").mkdir(exist_ok=True)
+    os.symlink(base / "users", base / "link_to_users")
+    with pytest.raises(ValueError, match="overlaps a protected location"):
+        _server_cfg(base, [str(base / "link_to_users")])
 
 
 def test_env_var_is_a_json_array(outside_tmp_dir, monkeypatch):
