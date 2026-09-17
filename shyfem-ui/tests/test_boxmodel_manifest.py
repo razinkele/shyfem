@@ -59,7 +59,7 @@ def test_run_id_must_be_a_unique_slug(project, local_cfg):
         bm.load_manifest(project, local_cfg, None)
 
 
-def test_server_mode_absolute_run_dir_must_be_under_a_root(outside_tmp_dir):
+def test_server_mode_absolute_run_dir_must_be_under_a_root(outside_tmp_dir, monkeypatch):
     # Ruling 4: analysis_roots may not overlap /tmp, and pytest's tmp_path lives
     # there -- build the whole server-mode scenario under outside_tmp_dir
     # instead. The project stays under user_data_root/alice (confine_path's
@@ -94,6 +94,18 @@ def test_server_mode_absolute_run_dir_must_be_under_a_root(outside_tmp_dir):
         work_dir=wd,
         shyfem_dir=base / "shyfem",
         database_url=f"sqlite:///{base / 'db' / 'ui.db'}",
+    )
+    # Without an analysis root, confine_path's N44 branch would otherwise query
+    # the DB for shared-project grants via the global session factory; the test
+    # suite's global DB is deliberately left uninitialised, so that query would
+    # raise sqlalchemy.exc.OperationalError and get caught by
+    # accessible_shared_work_dirs' own fail-closed handling -- a real rejection,
+    # but not a hermetic one (it depends on the global engine's state and logs
+    # an ERROR-level traceback). Stub it directly to keep this test's rejection
+    # coming from the roots check alone.
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.accessible_shared_work_dirs",
+        lambda user, session_factory=None: [],
     )
     with pytest.raises(bm.ManifestError, match=r"runs\[0\].dir"):
         bm.load_manifest(proj, no_root, user)

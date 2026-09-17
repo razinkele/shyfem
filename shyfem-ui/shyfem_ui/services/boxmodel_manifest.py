@@ -17,7 +17,6 @@ from shyfem_ui.config import Config
 MANIFEST_NAME = "boxmodel.json"
 MAX_MANIFEST_BYTES = 65_536
 _SLUG = re.compile(r"^[a-z0-9_-]+$")
-_VARIABLES = ("salinity", "temperature", "level")
 
 
 class ManifestError(ValueError):
