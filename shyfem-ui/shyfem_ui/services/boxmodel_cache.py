@@ -13,9 +13,11 @@ import secrets
 import shutil
 import signal
 import sys
+import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -114,9 +116,61 @@ def _sources_changed(meta: dict, run_dir: Path) -> bool:
     return False
 
 
+def _atomic_json(path: Path, payload: dict) -> None:
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
+    try:
+        with os.fdopen(fd, "w") as fh:
+            json.dump(payload, fh)
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
+def _tmp_dir_is_dead_or_error(tmp: Path) -> bool:
+    pj = tmp / "progress.json"
+    prog = _read_json(pj)
+    age = time.time() - pj.stat().st_mtime if pj.exists() else 1e9
+    return bool(prog and prog.get("phase") == "error") or age >= LIVE_TMP_SECONDS
+
+
+def _clear_stale_tmp_dirs(root: Path, run_id: str) -> None:
+    """Remove every existing ``<run_id>.tmp-*`` that is error-phase or dead
+    (``progress.json`` older than ``LIVE_TMP_SECONDS``, or absent), so a
+    successful build's later publish is never shadowed by an old failure
+    (see ``cache_status``). Never removes a *live* tmp dir -- that is
+    another build actually in flight (this worker's own in-flight builds
+    for the same key are already caught by the registry dedupe in
+    ``start_build``, so this only matters for another worker's build).
+    """
+    for tmp in root.glob(f"{run_id}.tmp-*"):
+        if _tmp_dir_is_dead_or_error(tmp):
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 def cache_status(
     project_work_dir: Path, run_id: str, run_dir: Path, registry: BuildRegistry | None
 ) -> CacheStatus:
+    """Precedence (a successful publish always wins over an old failure):
+
+    (a) a registry handle in ``queued``/``building`` -> that state;
+    (b) a live ``<run_id>.tmp-*`` (``progress.json`` younger than
+        ``LIVE_TMP_SECONDS``, phase not ``error``) -> ``building`` (another
+        worker's build -- this worker's own in-flight builds are already
+        covered by (a));
+    (c) a published ``<run_id>/`` with ``meta.json`` -> ``ready``/``stale``;
+    (d) an ``error``-phase ``<run_id>.tmp-*`` -> ``failed``, surfacing its
+        error message -- checked only once nothing valid was published;
+    (e) otherwise ``missing``.
+
+    A leftover error tmp dir from a failed build is only ever *reported*
+    here, never removed -- ``start_build`` clears it (see
+    ``_clear_stale_tmp_dirs``) the next time a build for the same
+    ``run_id`` is actually launched.
+    """
     root = cache_root(project_work_dir)
     if registry is not None:
         for h in registry.handles():
@@ -128,21 +182,32 @@ def cache_status(
                 return CacheStatus(
                     h.state, _read_json(h.tmp_dir / "progress.json"), None, "build in progress"
                 )
+
+    live_progress: dict | None = None
+    error_progress: dict | None = None
     for tmp in sorted(root.glob(f"{run_id}.tmp-*")):
-        prog = _read_json(tmp / "progress.json")
         pj = tmp / "progress.json"
+        prog = _read_json(pj)
         age = time.time() - pj.stat().st_mtime if pj.exists() else 1e9
         if prog and prog.get("phase") == "error":
-            return CacheStatus("failed", prog, None, prog.get("error") or "build failed")
-        if age < LIVE_TMP_SECONDS:
-            return CacheStatus("building", prog, None, "build in progress (another worker)")
+            error_progress = prog
+        elif age < LIVE_TMP_SECONDS:
+            live_progress = prog
+    if live_progress is not None:
+        return CacheStatus("building", live_progress, None, "build in progress (another worker)")
+
     cache_dir = root / run_id
     meta = _read_json(cache_dir / "meta.json") if (cache_dir / "meta.json").is_file() else None
-    if meta is None:
-        return CacheStatus("missing", None, None, "no cache yet")
-    if _sources_changed(meta, run_dir):
-        return CacheStatus("stale", None, meta, "run output changed since the cache was built")
-    return CacheStatus("ready", None, meta, "ready")
+    if meta is not None:
+        if _sources_changed(meta, run_dir):
+            return CacheStatus("stale", None, meta, "run output changed since the cache was built")
+        return CacheStatus("ready", None, meta, "ready")
+
+    if error_progress is not None:
+        return CacheStatus(
+            "failed", error_progress, None, error_progress.get("error") or "build failed"
+        )
+    return CacheStatus("missing", None, None, "no cache yet")
 
 
 def publish(tmp_dir: Path, run_id: str) -> Path:
@@ -249,6 +314,10 @@ async def start_build(
 
     root = cache_root(work_dir)
     root.mkdir(parents=True, exist_ok=True)
+    # A previous build's error tmp dir (kept around for cache_status to
+    # report) is only ever cleaned up here, right before a new build for the
+    # same run_id actually starts -- never by cache_status itself.
+    _clear_stale_tmp_dirs(root, run_id)
     tmp_dir = root / f"{run_id}.tmp-{secrets.token_hex(4)}"
     tmp_dir.mkdir()
 
@@ -303,9 +372,16 @@ async def _run_build(
                 try:
                     rc = await asyncio.wait_for(proc.wait(), timeout=timeout)
                 except asyncio.TimeoutError:
-                    logger.warning("boxmodel cache build %s timed out", h.key)
-                    await _terminate(proc)
+                    logger.warning("boxmodel cache build %s timed out after %ss", h.key, timeout)
+                    await _terminate(proc)  # waits for the child to actually exit
                     rc = -1
+                    if h.state != "cancelled":
+                        # The child never got a chance to write its own error
+                        # phase (it was killed from the outside), so write one
+                        # ourselves: keeps the tmp dir informative for
+                        # cache_status instead of silently vanishing, exactly
+                        # like a genuine CLI failure.
+                        _write_timeout_progress(h.tmp_dir, timeout)
         except Exception:
             # Never leave a build stuck mid-"building" -- log and fail closed.
             logger.exception("boxmodel cache build %s crashed", h.key)
@@ -322,6 +398,26 @@ async def _run_build(
             h.state = "failed"
             if not (h.tmp_dir / "progress.json").exists():
                 shutil.rmtree(h.tmp_dir, ignore_errors=True)
+
+
+def _write_timeout_progress(tmp_dir: Path, timeout: int | float | None) -> None:
+    """Overwrite ``progress.json`` with an error phase naming the timeout.
+
+    Called only after the child has already been confirmed dead (``_terminate``
+    has returned), so this can never race the child's own atomic writes.
+    """
+    prev = _read_json(tmp_dir / "progress.json") or {}
+    _atomic_json(
+        tmp_dir / "progress.json",
+        {
+            "phase": "error",
+            "records": prev.get("records", 0),
+            "expected": prev.get("expected", 0),
+            "error": f"build timed out after {timeout}s",
+            "exit": -1,
+            "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        },
+    )
 
 
 async def _terminate(proc: asyncio.subprocess.Process) -> None:

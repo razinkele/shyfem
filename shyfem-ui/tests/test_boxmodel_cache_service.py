@@ -240,3 +240,176 @@ def test_load_cache(env, monkeypatch):
     assert cr.run_id == "fix" and str(cr.state_daily["date"].dtype).startswith("datetime64")
     assert set(cr.state_daily["box"]) == {1, 2, 3} and cr.state_hourly is None
     assert cr.meta["period"]["start"] == "2009-01-01T00:00:00"
+
+
+# --- Controller ruling on concern 1 (stale-error-shadows-success) ----------
+
+
+def test_status_failed_build_does_not_shadow_later_success(env, monkeypatch):
+    """cache_status precedence: a published, up-to-date cache always wins over
+    an old error tmp dir left by a previous failed build for the same run_id.
+    """
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    wd = Path(project["work_dir"])
+    reg = bc.BuildRegistry()
+    stats_path = run / "boxes_stats.txt"
+    good_stats = stats_path.read_text()
+    # Corrupt an input the CLI parses early -- confirmed empirically to make
+    # the real CLI exit 1 with progress.json phase="error" (error: "boxes_
+    # stats.txt: truncated preamble"), and no meta.json, so the tmp dir is
+    # kept around (see _run_build's failed branch).
+    stats_path.write_text("garbage, not a stats file\n")
+
+    async def build_once():
+        h = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
+        )
+        await _wait(h)
+        return h
+
+    h1 = asyncio.run(build_once())
+    assert h1.state == "failed"
+    st1 = bc.cache_status(wd, "fix", run, reg)
+    assert st1.state == "failed" and "boxes_stats.txt" in st1.message
+
+    stats_path.write_text(good_stats)
+    h2 = asyncio.run(build_once())
+    assert h2.state == "done"
+    st2 = bc.cache_status(wd, "fix", run, reg)
+    assert st2.state == "ready"
+    # start_build (inside build_once's second call) cleared h1's error tmp
+    # dir before spawning its own -- nothing named "fix.tmp-*" survives a
+    # successful publish.
+    assert not list(bc.cache_root(wd).glob("fix.tmp-*"))
+
+
+def test_start_build_clears_dead_and_error_tmp_but_not_live(env, monkeypatch):
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    wd = Path(project["work_dir"])
+    root = bc.cache_root(wd)
+    root.mkdir(parents=True, exist_ok=True)
+
+    dead = root / "fix.tmp-dead"
+    dead.mkdir()
+    (dead / "progress.json").write_text(json.dumps({"phase": "state", "exit": None}))
+    old_t = time.time() - 2 * bc.LIVE_TMP_SECONDS
+    os.utime(dead / "progress.json", (old_t, old_t))
+
+    errored = root / "fix.tmp-err"
+    errored.mkdir()
+    (errored / "progress.json").write_text(json.dumps({"phase": "error", "exit": 1}))
+
+    live = root / "fix.tmp-live"
+    live.mkdir()
+    (live / "progress.json").write_text(json.dumps({"phase": "state", "exit": None}))
+    # fresh mtime (just written) -- simulates another worker's in-flight build
+
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
+        )
+        await _wait(h)
+
+    asyncio.run(go())
+
+    assert not dead.exists()
+    assert not errored.exists()
+    assert live.exists()
+
+
+# --- Controller ruling on concern 3 (real-child concurrency) ---------------
+#
+# Measured with a standalone timing script (make_box_run + the real CLI,
+# same box count as the fixture default): days=400 -> fixture generation
+# ~0.7s, CLI parse+write ~2.6s (days=200 -> ~1.6s, days=800 -> ~4.9s). 400
+# days gives several seconds of "state"-phase parsing to interrupt while
+# keeping each test's wall time well under the ~10s budget.
+_BIG_DAYS = 400
+
+
+async def _wait_for_phase(tmp_dir: Path, phase: str, timeout: float = 5.0) -> dict:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        prog = bc._read_json(tmp_dir / "progress.json")
+        if prog and prog.get("phase") == phase:
+            return prog
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"progress.json never reached phase={phase!r} within {timeout}s")
+
+
+def test_cancel_mid_run_kills_real_child(env, monkeypatch):
+    cfg, user, project, run = env
+    big = run.parent / "big"
+    make_box_run(big, days=_BIG_DAYS)
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h = await bc.start_build(
+            reg, project=project, run_id="big", run_dir=big, user=user, config=cfg
+        )
+        await _wait_for_phase(h.tmp_dir, "state")
+        pid = h.pid
+        assert pid is not None
+        ok = await bc.cancel_build(reg, h.key, project=project, user=user)
+        assert ok
+        assert h.state == "cancelled"
+        # _run_build's own tmp-dir cleanup runs concurrently (triggered once
+        # _terminate's SIGTERM makes the child's proc.wait() resolve), so give
+        # it a short grace period rather than asserting immediately.
+        for _ in range(60):  # up to ~3s
+            if not h.tmp_dir.exists():
+                break
+            await asyncio.sleep(0.05)
+        assert not h.tmp_dir.exists()
+        return pid
+
+    pid = asyncio.run(go())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+def test_timeout_marks_failed_with_timeout_message(env, monkeypatch):
+    cfg, user, project, run = env
+    big = run.parent / "big2"
+    make_box_run(big, days=_BIG_DAYS)
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    cfg.command_timeout_seconds = 1
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h = await bc.start_build(
+            reg, project=project, run_id="big2", run_dir=big, user=user, config=cfg
+        )
+        await _wait(h, timeout=15)
+        return h
+
+    h = asyncio.run(go())
+    assert h.state == "failed"
+    # Design choice: on a timeout the tmp dir is kept (not deleted) and its
+    # progress.json is overwritten to an error phase naming the timeout --
+    # the child never gets a chance to write its own error phase (it is
+    # killed from the outside), so without this the tmp dir would either
+    # vanish silently or freeze on its last "state"-phase snapshot with no
+    # indication of *why* the build stopped. This matches the visibility
+    # already given to a genuine CLI failure (test_status_failed_build_...
+    # above) rather than introducing a second, silent failure mode.
+    prog = bc._read_json(h.tmp_dir / "progress.json")
+    assert prog is not None and prog.get("phase") == "error"
+    assert "timed out" in (prog.get("error") or "").lower()
+    st = bc.cache_status(Path(project["work_dir"]), "big2", big, None)
+    assert st.state == "failed" and "timed out" in st.message.lower()
+    with pytest.raises(ProcessLookupError):
+        os.kill(h.pid, 0)
