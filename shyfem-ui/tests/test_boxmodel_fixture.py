@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from _boxmodel_fixture import make_box_project, make_box_run, value_at
+from tests._boxmodel_fixture import make_box_project, make_box_run, value_at
 
 
 def test_make_box_run_writes_all_files_with_real_envelope(tmp_path):
