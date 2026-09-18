@@ -57,7 +57,7 @@ class FileService:
             work_dir = Path(project.work_dir)
 
             # Check project storage quota
-            current = _sum_project_bytes(db, project_id)
+            current = _sum_project_bytes(db, project_id, work_dir=project.work_dir)
             limit = config.max_project_storage_mb * 1024 * 1024
             if current + size > limit:
                 raise ValueError(
@@ -454,8 +454,8 @@ class FileService:
             return {"used_bytes": total, "file_count": count}
 
 
-def _sum_project_bytes(db, project_id: int) -> int:
-    """Sum size_bytes for all files in a project."""
+def _sum_project_bytes(db, project_id: int, work_dir: str | Path | None = None) -> int:
+    """Sum size_bytes for all files in a project, plus the on-disk box-model cache."""
     from sqlalchemy import func as sa_func
 
     result = (
@@ -463,4 +463,11 @@ def _sum_project_bytes(db, project_id: int) -> int:
         .filter_by(project_id=project_id)
         .scalar()
     )
-    return int(result)
+    total = int(result)
+    if work_dir:
+        cache = Path(work_dir) / ".boxmodel_cache"
+        if cache.is_dir():
+            for p in cache.rglob("*"):
+                if p.is_file() and not p.is_symlink():
+                    total += p.stat().st_size
+    return total
