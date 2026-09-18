@@ -175,3 +175,43 @@ class TestLoadWhitespaceLeadingBlankLine:
         result = _load_whitespace(f)
         assert result["columns"] == ["col0", "col1"]
         assert result["data"] == [[1.0, 10.5], [2.0, 11.0]]
+
+
+def test_load_shyfem_forcing_txt(tmp_path):
+    """SHYFEM 'date::time value' forcing parses to a datetime time axis."""
+    from shyfem_ui.services.timeseries_loader import load_timeseries
+
+    f = tmp_path / "nemunas.txt"
+    f.write_text(
+        "1990-01-03::06:00:00        655.157\n"
+        "1990-01-04::06:00:00        568.419\n"
+        "1990-01-05::06:00:00        514.847\n"
+    )
+    r = load_timeseries(f)
+    df = r["df"]
+    assert df is not None
+    assert list(df.columns) == ["time", "value"]
+    assert str(df["time"].dtype).startswith("datetime64")
+    assert df.shape == (3, 2)
+    assert abs(df["value"].iloc[0] - 655.157) < 1e-6
+
+
+def test_load_observations_long_is_pivoted(tmp_path):
+    """A long date,site,variable,value CSV becomes one column per series."""
+    from shyfem_ui.services.timeseries_loader import load_timeseries
+
+    f = tmp_path / "observations.csv"
+    f.write_text(
+        "date,site,variable,value\n"
+        "2001-01-01,Nida,level,516.0\n"
+        "2001-01-01,Nida,salinity,0.05\n"
+        "2001-01-02,Nida,level,517.0\n"
+        "2001-01-01,Klaipeda,salinity,6.5\n"
+    )
+    r = load_timeseries(f)
+    df = r["df"]
+    assert df is not None
+    assert "date" in df.columns
+    assert {"Nida level", "Nida salinity", "Klaipeda salinity"} <= set(df.columns)
+    # two distinct dates -> two rows
+    assert df.shape[0] == 2

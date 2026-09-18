@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # so it parses to an empty grid rather than plotting (load the .grd instead).
 _DATA_TYPE_EXTS: dict[str, tuple[str, ...]] = {
     "grid": (".grd",),
-    "timeseries": (".ts",),
+    "timeseries": (".ts", ".txt", ".csv"),
     "netcdf": (".nc",),
 }
 # Cap the picker so a large project can't build an unwieldy dropdown.
@@ -247,7 +247,7 @@ def visualize_ui() -> ui.Tag:
                     "Data Type",
                     choices={
                         "grid": "Grid File (.grd)",
-                        "timeseries": "Time Series (.ts)",
+                        "timeseries": "Time Series (.ts/.txt/.csv)",
                         "netcdf": "NetCDF (.nc)",
                     },
                 ),

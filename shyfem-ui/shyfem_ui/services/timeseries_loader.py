@@ -15,6 +15,7 @@ Two entry-points:
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -23,10 +24,82 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# SHYFEM time-series stamp, e.g. ``1990-01-03::06:00:00`` (date ``::`` time).
+_SHYFEM_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}::\d{2}:\d{2}:\d{2}$")
+# Long-format observation columns (case-insensitive) -> pivoted to wide.
+_OBS_COLUMNS = {"date", "site", "variable", "value"}
+
 
 def _looks_numeric(token: str) -> bool:
     """Return *True* if *token* looks like a number (int or float)."""
     return token.replace(".", "").replace("-", "").replace("+", "").replace("e", "").isdigit()
+
+
+def _first_token(path: Path) -> str | None:
+    """First whitespace token of the first non-blank, non-comment line."""
+    try:
+        with open(path) as fh:
+            for line in fh:
+                s = line.strip()
+                if s and not s.startswith("#"):
+                    return s.split()[0]
+    except OSError:
+        return None
+    return None
+
+
+def _load_shyfem_ts(path: Path) -> dict:
+    """Parse a SHYFEM ``YYYY-MM-DD::HH:MM:SS  v1 [v2 ...]`` series.
+
+    Used for the river/forcing ``.txt`` files, which have no header and a
+    ``date::time`` stamp the generic CSV sniffer mis-reads. Returns the usual
+    ``columns``/``data``/``df`` dict with a parsed datetime first column so
+    the plot gets a real time axis.
+    """
+    import pandas as _pd
+
+    times: list[str] = []
+    rows: list[list[float]] = []
+    try:
+        with open(path) as fh:
+            for line in fh:
+                parts = line.split()
+                if not parts or not _SHYFEM_TS_RE.match(parts[0]):
+                    continue
+                try:
+                    vals = [float(p) for p in parts[1:]]
+                except ValueError:
+                    continue
+                times.append(parts[0].replace("::", " "))
+                rows.append(vals)
+    except OSError:
+        logger.warning("Could not open SHYFEM time-series %s", path, exc_info=True)
+        return {"columns": [], "data": [], "df": None}
+
+    if not rows:
+        return {"columns": [], "data": [], "df": None}
+
+    ncol = max(len(r) for r in rows)
+    rows = [r + [float("nan")] * (ncol - len(r)) for r in rows]
+    value_cols = ["value"] if ncol == 1 else [f"value{i + 1}" for i in range(ncol)]
+    df: pd.DataFrame = _pd.DataFrame(rows, columns=value_cols)
+    df.insert(0, "time", _pd.to_datetime(times, format="%Y-%m-%d %H:%M:%S", errors="coerce"))
+    return {"columns": list(df.columns), "data": df.values.tolist(), "df": df}
+
+
+def _pivot_observations(df: pd.DataFrame) -> dict:
+    """Pivot a long ``date,site,variable,value`` frame to one column per
+    ``site variable`` series, indexed by date, so it plots as time series."""
+    import pandas as _pd
+
+    d = df.copy()
+    d["date"] = _pd.to_datetime(d["date"], errors="coerce")
+    d["series"] = d["site"].astype(str) + " " + d["variable"].astype(str)
+    wide = d.pivot_table(
+        index="date", columns="series", values="value", aggfunc="mean"
+    ).reset_index()
+    wide.columns.name = None
+    return {"columns": list(wide.columns), "data": wide.values.tolist(), "df": wide}
 
 
 # ---------------------------------------------------------------------------
@@ -43,6 +116,10 @@ def load_timeseries(path: Path | str) -> dict:
         ``df``      — ``pandas.DataFrame`` if pandas parsing succeeded,
                       else ``None``
 
+    Two SHYFEM-specific shapes are handled before the generic path: forcing
+    ``.txt`` files (``date::time value``) and long-format ``observations.csv``
+    (``date,site,variable,value`` pivoted to one column per site+variable).
+
     If the file cannot be read at all an empty result is returned.
     """
     path = Path(path)
@@ -50,11 +127,20 @@ def load_timeseries(path: Path | str) -> dict:
         logger.debug("Time-series file does not exist: %s", path)
         return {"columns": [], "data": [], "df": None}
 
+    # ---- SHYFEM forcing (date::time value), before the CSV sniffer ----
+    tok = _first_token(path)
+    if tok is not None and _SHYFEM_TS_RE.match(tok):
+        shyfem = _load_shyfem_ts(path)
+        if shyfem["df"] is not None:
+            return shyfem
+
     # ---- attempt 1: pandas CSV (auto-detect delimiter) ----
     try:
         import pandas as _pd
 
         df: pd.DataFrame = _pd.read_csv(path, sep=None, engine="python")
+        if {str(c).lower() for c in df.columns} == _OBS_COLUMNS:
+            return _pivot_observations(df)
         return {
             "columns": list(df.columns),
             "data": df.values.tolist(),
