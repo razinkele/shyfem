@@ -11,12 +11,15 @@ def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv("SHYFEM_UI_WORK_DIR", str(tmp_path / "projects"))
 
     import shyfem_ui.config as cfg_mod
+
     cfg_mod._config = None
     import shyfem_ui.db.base as db_mod
+
     db_mod._engine = None
     db_mod._SessionLocal = None
 
     from shyfem_ui.db.base import init_db
+
     init_db()
     yield
     db_mod._engine = None
@@ -50,22 +53,26 @@ class TestBuildFileChoices:
 
     def test_returns_all_files_no_filter(self, project_with_files):
         from shyfem_ui.components.file_picker import build_file_choices
+
         choices = build_file_choices(project_with_files)
         assert len(choices) == 5
 
     def test_filters_by_single_type(self, project_with_files):
         from shyfem_ui.components.file_picker import build_file_choices
+
         choices = build_file_choices(project_with_files, file_types=["forcing"])
         assert len(choices) == 2
         assert all("INPUT/" in v for v in choices.values())
 
     def test_filters_by_multiple_types(self, project_with_files):
         from shyfem_ui.components.file_picker import build_file_choices
+
         choices = build_file_choices(project_with_files, file_types=["forcing", "boundary"])
         assert len(choices) == 3
 
     def test_returns_rel_path_as_value(self, project_with_files):
         from shyfem_ui.components.file_picker import build_file_choices
+
         choices = build_file_choices(project_with_files, file_types=["grid"])
         values = list(choices.values())
         assert "GRID/mesh.grd" in values
@@ -87,6 +94,7 @@ class TestBuildFileChoices:
 
     def test_none_project_returns_empty(self):
         from shyfem_ui.components.file_picker import build_file_choices
+
         choices = build_file_choices(None)
         assert len(choices) == 0
 
@@ -95,12 +103,47 @@ class TestIsFileParam:
 
     def test_wind_is_file_param(self):
         from shyfem_ui.components.file_picker import is_file_param
+
         assert is_file_param("wind") is True
 
     def test_boundn_is_file_param(self):
         from shyfem_ui.components.file_picker import is_file_param
+
         assert is_file_param("boundn") is True
 
     def test_idt_is_not_file_param(self):
         from shyfem_ui.components.file_picker import is_file_param
+
         assert is_file_param("idt") is False
+
+
+class TestBuildFileChoicesDiskScan:
+    """A project populated on disk (no upload DB rows) must still list files."""
+
+    def test_lists_disk_files_without_db_rows(self, tmp_path):
+        from shyfem_ui.components.file_picker import build_file_choices
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import Project
+
+        work = tmp_path / "projects" / "disk_proj"
+        (work / "sub").mkdir(parents=True)
+        (work / "curonian.grd").write_text("x")
+        (work / "curonian.bas").write_text("x")
+        (work / "sub" / "run.str").write_text("x")
+        with db_session() as db:
+            p = Project(name="disk_proj", work_dir=str(work))
+            db.add(p)
+            db.flush()
+            pid = p.id
+
+        assert list(build_file_choices(pid, file_types=["grid"]).values()) == ["curonian.grd"]
+        assert list(build_file_choices(pid, file_types=["basin"]).values()) == ["curonian.bas"]
+        assert list(build_file_choices(pid, file_types=["str"]).values()) == ["sub/run.str"]
+
+    def test_disk_and_db_files_dedupe_by_rel_path(self, project_with_files):
+        # project_with_files wrote uploads to disk *and* the DB; the grid file
+        # must appear exactly once, not duplicated by the disk scan.
+        from shyfem_ui.components.file_picker import build_file_choices
+
+        vals = list(build_file_choices(project_with_files, file_types=["grid"]).values())
+        assert vals.count("GRID/mesh.grd") == 1

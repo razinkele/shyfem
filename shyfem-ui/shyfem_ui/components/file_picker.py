@@ -53,18 +53,66 @@ def is_file_param(param_name: str) -> bool:
     return param_name in _NAME_FILE_PARAMS or param_name in _BOUND_FILE_PARAMS
 
 
+#: File-type category -> filename extensions, for listing project files that
+#: were placed on disk outside the upload flow (which never got a DB row and so
+#: were invisible to the picker). Only categories with an *unambiguous*
+#: extension are listed from disk: forcing/boundary/etc. share ``.fem``/``.txt``
+#: /``.dat``, so a disk scan can't honour their DB category and would leak
+#: cross-category files -- those keep relying on DB uploads.
+_TYPE_EXTS: dict[str, tuple[str, ...]] = {
+    "grid": (".grd",),
+    "basin": (".bas",),
+    "str": (".str",),
+    "output": (".shy", ".nc"),
+    "lagrangian": (".lgr",),
+}
+
+
+def _disk_file_rels(project_id: int, file_types: list[str] | None) -> list[str]:
+    """Project-relative paths of on-disk files matching ``file_types``.
+
+    Looks up the project's ``work_dir`` and scans it (recursively, hidden
+    trees skipped) so projects populated outside the upload flow still list
+    their files. Returns [] on any lookup/scan problem -- never raises.
+    """
+    from shyfem_ui.db.base import db_session
+    from shyfem_ui.models.project import Project
+    from shyfem_ui.services.project_files import list_project_files
+
+    if file_types:
+        exts: tuple[str, ...] = tuple(e for ft in file_types for e in _TYPE_EXTS.get(ft, ()))
+    else:
+        exts = tuple({e for v in _TYPE_EXTS.values() for e in v})
+    if not exts:
+        return []
+    try:
+        with db_session() as db:
+            proj = db.query(Project).filter_by(id=project_id).first()
+            work_dir = proj.work_dir if proj else None
+    except Exception:
+        logger.warning("build_file_choices: project %s work_dir lookup failed", project_id)
+        return []
+    if not work_dir:
+        return []
+    return list_project_files(Path(work_dir), exts)
+
+
 def build_file_choices(
     project_id: int | None,
     file_types: list[str] | None = None,
 ) -> dict:
     """Build {display_label: rel_path} choices from project files.
 
+    Includes both DB-registered uploads and files found on disk in the
+    project directory (so a project populated outside the upload flow -- e.g.
+    an imported analysis project -- still lists its files).
+
     Args:
         project_id: Project to list files from. None returns empty dict.
         file_types: Optional filter by file type categories.
 
     Returns:
-        Dict mapping "filename (type)" display labels to rel_path values.
+        Dict mapping display labels to rel_path values.
     """
     if project_id is None:
         return {}
@@ -90,6 +138,14 @@ def build_file_choices(
     for f in sorted(files, key=lambda x: x["rel_path"]):
         label = f"{f['rel_path']} ({f['file_type']})"
         choices[label] = f["rel_path"]
+
+    # Merge in on-disk files not already registered in the DB (dedup by
+    # rel_path, which is the picker's option value).
+    known = set(choices.values())
+    for rel in _disk_file_rels(project_id, file_types):
+        if rel not in known:
+            choices[rel] = rel
+            known.add(rel)
     return choices
 
 
