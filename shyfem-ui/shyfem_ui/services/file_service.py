@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import stat as _stat
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
@@ -468,6 +469,10 @@ def _sum_project_bytes(db, project_id: int, work_dir: str | Path | None = None) 
         cache = Path(work_dir) / ".boxmodel_cache"
         if cache.is_dir():
             for p in cache.rglob("*"):
-                if p.is_file() and not p.is_symlink():
-                    total += p.stat().st_size
+                try:
+                    st = p.lstat()
+                except OSError:
+                    continue
+                if _stat.S_ISREG(st.st_mode):
+                    total += st.st_size
     return total
