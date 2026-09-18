@@ -96,6 +96,35 @@ class TestExportProject:
             assert "INPUT/wind.txt" in names
             assert "sim.str" in names
 
+    async def test_zip_excludes_the_boxmodel_cache(self, project_dir, project_meta):
+        """Spec §9: the derived Parquet cache is rebuilt from the run output,
+        so it must never be swept into an export (nor count toward its size
+        cap). The whole subtree goes, not just the top-level entry."""
+        cache = project_dir / ".boxmodel_cache" / "fix"
+        cache.mkdir(parents=True)
+        (cache / "meta.json").write_text('{"schema": 1}')
+        (cache / "state_daily.parquet").write_bytes(b"parquet" * 100)
+        (project_dir / ".boxmodel_cache" / "fix.tmp-abc").mkdir()
+        (project_dir / ".boxmodel_cache" / "fix.tmp-abc" / "progress.json").write_text("{}")
+
+        result = await export_project(project_dir, project_meta)
+        with zipfile.ZipFile(result) as zf:
+            names = zf.namelist()
+        assert not any(".boxmodel_cache" in n for n in names), names
+        # ... while the ordinary project files are still there
+        assert "GRID/mesh.grd" in names and "sim.str" in names
+
+    async def test_cache_bytes_do_not_count_toward_the_export_cap(self, project_dir, project_meta):
+        """The exclusion happens before the size accounting, so a large cache
+        cannot push a legitimately small project over max_export_bytes."""
+        cache = project_dir / ".boxmodel_cache" / "fix"
+        cache.mkdir(parents=True)
+        (cache / "state_daily.parquet").write_bytes(b"x" * 100_000)
+
+        result = await export_project(project_dir, project_meta, max_export_bytes=10_000)
+        with zipfile.ZipFile(result) as zf:
+            assert "sim.str" in zf.namelist()
+
     async def test_zip_excludes_log_files(self, project_dir, project_meta):
         result = await export_project(project_dir, project_meta)
         with zipfile.ZipFile(result) as zf:

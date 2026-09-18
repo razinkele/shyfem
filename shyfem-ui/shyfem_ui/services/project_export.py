@@ -14,6 +14,14 @@ MANIFEST_VERSION = "1.0"
 
 # File extensions to exclude from export (job logs)
 _EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr"})
+# Directory names excluded from export, with everything below them (spec §9).
+# ``.boxmodel_cache`` is a derived Parquet cache that is rebuilt from the run
+# output on demand, so shipping it only inflates the archive (and the export
+# size cap) with bytes the importing project would regenerate anyway. Kept as
+# a literal rather than imported from ``services.boxmodel_cache`` to avoid
+# pulling that module (and pandas) into every export; ``file_service.py`` sets
+# the same precedent for ``boxmodel_cache.CACHE_DIRNAME``.
+_EXCLUDE_DIRNAMES = frozenset({".boxmodel_cache"})
 MAX_IMPORT_FILES = 10000
 MAX_IMPORT_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_IMPORT_COMPRESSION_RATIO = 100
@@ -73,6 +81,10 @@ def _export_project_sync(work_dir: Path, project_meta: dict, max_export_bytes: i
         except ValueError:
             continue
         if file_path.suffix in _EXCLUDE_EXTENSIONS:
+            continue
+        # Before the size accounting, so excluded bytes never count toward
+        # (or trip) the export cap.
+        if _EXCLUDE_DIRNAMES.intersection(file_path.relative_to(work_dir).parts):
             continue
         total_size += file_path.stat().st_size
         if total_size > max_export_bytes:

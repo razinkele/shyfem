@@ -447,12 +447,52 @@ class FileService:
         """Get storage usage for a project.
 
         Returns:
-            Dict with used_bytes and file_count.
+            Dict with used_bytes (uploaded files PLUS the on-disk box-model
+            cache), cache_bytes (the cache-only part of that total, so the UI
+            can explain a number the file list does not account for) and
+            file_count (uploaded files only -- cache files are not rows).
+
+        ``used_bytes`` must be computed exactly the way the upload quota
+        check computes it (``_sum_project_bytes`` with the project's
+        ``work_dir``): displaying a smaller number than the one enforced is
+        how a user ends up refused an upload with "plenty of space left" on
+        screen.
         """
         with db_session() as db:
-            total = _sum_project_bytes(db, project_id)
+            project = db.query(Project).filter_by(id=project_id).first()
+            work_dir = project.work_dir if project is not None else None
+            # _sum_project_bytes without work_dir = the DB rows only; the cache
+            # is added separately so the tree is walked exactly once.
+            db_bytes = _sum_project_bytes(db, project_id)
             count = db.query(ProjectFile).filter_by(project_id=project_id).count()
-            return {"used_bytes": total, "file_count": count}
+        cache = _cache_bytes(work_dir)
+        return {"used_bytes": db_bytes + cache, "cache_bytes": cache, "file_count": count}
+
+
+def _cache_bytes(work_dir: str | Path | None) -> int:
+    """Total size of the regular files under the project's box-model cache.
+
+    Symlinks are counted as links (``lstat``), never followed, so a link into
+    the project's own tree is not double-counted and one pointing outside it
+    cannot inflate the figure. A file that disappears mid-walk (a build
+    publishing underneath us) is skipped rather than raising.
+    """
+    if not work_dir:
+        return 0
+    # Literal rather than an import of services.boxmodel_cache.CACHE_DIRNAME:
+    # this module is on the upload path and must not pull in pandas.
+    cache = Path(work_dir) / ".boxmodel_cache"
+    if not cache.is_dir():
+        return 0
+    total = 0
+    for p in cache.rglob("*"):
+        try:
+            st = p.lstat()
+        except OSError:
+            continue
+        if _stat.S_ISREG(st.st_mode):
+            total += st.st_size
+    return total
 
 
 def _sum_project_bytes(db, project_id: int, work_dir: str | Path | None = None) -> int:
@@ -464,15 +504,4 @@ def _sum_project_bytes(db, project_id: int, work_dir: str | Path | None = None) 
         .filter_by(project_id=project_id)
         .scalar()
     )
-    total = int(result)
-    if work_dir:
-        cache = Path(work_dir) / ".boxmodel_cache"
-        if cache.is_dir():
-            for p in cache.rglob("*"):
-                try:
-                    st = p.lstat()
-                except OSError:
-                    continue
-                if _stat.S_ISREG(st.st_mode):
-                    total += st.st_size
-    return total
+    return int(result) + _cache_bytes(work_dir)
