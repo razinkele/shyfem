@@ -227,3 +227,20 @@ def test_dissolve_from_grid_without_epsg_and_undetectable_crs_raises(tmp_path):
 
     with pytest.raises(bp.PolygonError, match="EPSG"):
         bp.dissolve_boxes_from_grid(grd_path, element_box)
+
+
+def test_feature_cap_is_inclusive_and_reads_module_global(proj, monkeypatch):
+    """The cap must be read from the module global at call time (not copied
+    into a default argument), and must be inclusive: a file with exactly
+    MAX_FEATURES features loads fine; one more raises, naming the cap."""
+    monkeypatch.setattr(bp, "MAX_FEATURES", 3)
+    polys = bp.load_box_polygons(proj / "box_polygons.geojson", None, "box")
+    assert set(polys) == {1, 2, 3}
+
+    d = json.loads((proj / "box_polygons.geojson").read_text())
+    extra = json.loads(json.dumps(d["features"][0]))
+    extra["properties"]["box"] = 4
+    d["features"].append(extra)
+    (proj / "four.geojson").write_text(json.dumps(d))
+    with pytest.raises(bp.PolygonError, match="more than 3 features"):
+        bp.load_box_polygons(proj / "four.geojson", None, "box")

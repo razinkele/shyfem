@@ -178,10 +178,6 @@ def load_box_polygons(
         iterator = iter(src)
         index = 0
         while True:
-            # Check the cap before fetching, so at most MAX_FEATURES records
-            # are ever read from the driver (never one more to "peek" ahead).
-            if index >= MAX_FEATURES:
-                raise PolygonError(f"{path}: more than {MAX_FEATURES} features")
             try:
                 feature = next(iterator)
             except StopIteration:
@@ -189,6 +185,11 @@ def load_box_polygons(
             except Exception as exc:
                 raise PolygonError(f"{path}: cannot read feature {index} ({exc})") from exc
             index += 1
+            # The cap is inclusive (exactly MAX_FEATURES features must load),
+            # so it can only be checked after a successful fetch, never before
+            # -- reading one bounded extra record past the cap is acceptable.
+            if index > MAX_FEATURES:
+                raise PolygonError(f"{path}: more than {MAX_FEATURES} features")
 
             props = dict(feature["properties"])
             raw_id = props.get(id_field)
@@ -355,6 +356,9 @@ def dissolve_boxes_from_grid(
             f"absent from the grid (examples: {examples})"
         )
 
+    # Defensive: unreachable today, since any box that would land here got
+    # there via a missing element, and the missing_elements check above
+    # always raises first. Kept in case that check is ever relaxed.
     empty_boxes = sorted(box_id for box_id, has in contributed.items() if not has)
     if empty_boxes:
         raise PolygonError(f"{grd_path.name}: box(es) {empty_boxes} have no elements")
