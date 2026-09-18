@@ -17,6 +17,32 @@ import pytest
 from tests._test_helpers import get_server_source
 
 
+def _code_of(page_module, server_name: str):
+    """Return ``name -> source of that nested function with its docstring
+    removed``, for assertions about what a function *does* rather than what its
+    documentation happens to mention."""
+    import ast
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(get_server_source(page_module, server_name)))
+
+    def body(name: str) -> str:
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+                stripped = list(node.body)
+                if (
+                    stripped
+                    and isinstance(stripped[0], ast.Expr)
+                    and isinstance(stripped[0].value, ast.Constant)
+                    and isinstance(stripped[0].value.value, str)
+                ):
+                    stripped = stripped[1:]
+                return "\n".join(ast.unparse(n) for n in stripped)
+        raise AssertionError(f"nested function {name!r} not found in {server_name}")
+
+    return body
+
+
 def test_page_is_registered():
     import shyfem_ui.pages as pages
 
@@ -169,3 +195,107 @@ def test_ui_builds_without_a_session():
     html = str(boxmodel.boxmodel_ui("boxmodel"))
     for ident in ("boxmodel-run", "boxmodel-build", "boxmodel-cache_state", "boxmodel-skill_table"):
         assert ident in html, f"missing input/output id: {ident}"
+
+
+def test_safe_text_sanitises_a_service_message():
+    """Review Important 1: the cache badge's tooltip is ``CacheStatus.message``,
+    which for a failed build is the child process's own error text and can name
+    the absolute run directory. It is not an exception, so it needs the
+    text-flavoured sanitiser rather than ``_safe_error``."""
+    from shyfem_ui.pages import boxmodel
+
+    msg = "build failed: [Errno 2] No such file or directory: '/home/alice/proj/runs/fix'"
+    out = boxmodel._safe_text(msg, _StubConfig(), {"username": "alice"})
+    assert "/home/alice" not in out
+    assert "~/fix" in out
+    assert out.startswith("build failed:")
+
+
+def test_cache_badge_title_is_sanitised_not_raw():
+    """The badge must render the message through the sanitiser. Asserted at the
+    source, because the render needs a live session."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert "title=_text(current.message" in src, "badge tooltip must go through _safe_text"
+    assert "title=current.message" not in src, "raw CacheStatus.message reaches the browser"
+
+
+def test_posts_escape_site_names_before_the_tooltip():
+    """Review Important 2, page half: ``posts()`` feeds site names into
+    ``build_box_layers``, whose tooltip is rendered as innerHTML. Escaped at the
+    sink AND here, so the page does not depend on the component's behaviour."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert 'html.escape(str(site["site"]))' in src
+
+
+def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
+    """Review Important 3: the poller ticks every 2 s during a build. Only the
+    badge may depend on that tick -- if ``cached_result`` did, every tick would
+    re-read the parquet and re-open the polygons with fiona on the event loop,
+    and the map would flicker for the whole rebuild."""
+    from shyfem_ui.pages import boxmodel
+
+    # Compare CODE, not prose: these functions' docstrings name the very
+    # reactives the assertions are about, so a substring check over the raw
+    # source would pass or fail on documentation.
+    code = _code_of(boxmodel, "boxmodel_server")
+
+    # status() is the tick-driven calc, and only the badge reads it
+    assert "status_tick.get()" in code("status")
+    assert "status()" in code("cache_state")
+    # the head of the expensive chain reads the generation, never the tick
+    cached_body = code("cached_result")
+    assert "cache_generation.get()" in cached_body
+    assert "status_tick" not in cached_body
+    assert "status()" not in cached_body
+    # ... and it probes status non-reactively instead
+    assert "_status_now()" in cached_body
+    # the poller writes both and reads neither (no self-write loop)
+    poll_body = code("_poll")
+    assert "_bump_status()" in poll_body and "_bump_cache_generation()" in poll_body
+    assert "status_tick.get()" not in poll_body and "cache_generation.get()" not in poll_body
+
+
+def test_reconcile_is_gated_on_write_confinement():
+    """Review Important 4: ``reconcile_tmp_dirs`` renames and deletes inside the
+    project. The read confinement used for ``load_manifest`` also admits a
+    shared-project viewer and an analysis-root reader, and this page server is
+    mounted for every session, so the mutation needs its own write check."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    head, _, tail = src.partition("reconcile_tmp_dirs(")
+    assert tail, "reconcile_tmp_dirs call not found"
+    assert "for_write=True" in head, "reconcile must be preceded by a write-confinement check"
+    assert "for_write=False" in head, "load_manifest must keep the read confinement"
+    assert head.index("for_write=False") < head.index("for_write=True")
+
+
+def test_cached_run_survives_a_rebuild():
+    """Minor: ``cache_status`` reports the registry handle before the published
+    cache, so during a rebuild the state is "building" while last build's
+    parquet is still on disk and still valid. Blanking the map/series/skill for
+    the whole rebuild is worse than showing the previous run."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    start = src.index("def cached_result(")
+    body = src[start : src.index("\n    @", start)]
+    assert "if state in _LIVE_STATES:" in body
+    assert 'return last["good"], None' in body
+
+
+def test_layers_effect_wraps_its_upstream_calls():
+    """Minor: an exception escaping a ``reactive.effect`` ends the session, so
+    ``polygons()``/``box_values()`` must be inside the effect's try, not before
+    it."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    start = src.index("def _layers(")
+    body = src[start : src.index("extra_layers.set(", start)]
+    assert body.index("try:") < body.index("polygons()")
+    assert body.index("try:") < body.index("box_values()")

@@ -9,10 +9,13 @@ obligations the reviews of those services handed forward:
 * every manifest / observation / polygon / cache failure becomes a page
   message -- no exception ever escapes a render or an effect;
 * no raw absolute host path reaches the browser: every user-facing
-  exception string goes through :func:`_safe_error`, which rewrites
-  path-looking tokens with ``config.display_path``;
+  string from a service -- exception text via :func:`_safe_error`, and
+  ``CacheStatus.message`` via :func:`_safe_text` -- has its path-looking
+  tokens rewritten with ``config.display_path``;
 * all manifest-, label- and site-supplied text is emitted through
-  ``ui.tags`` (never ``ui.HTML``), so it is escaped;
+  ``ui.tags`` (never ``ui.HTML``), so it is escaped; the one place text
+  reaches raw HTML is the deck.gl tooltip, which is escaped both here
+  and at the sink in ``build_box_layers``;
 * writes (build / cancel) are gated by ``editor_denied_reason`` *inside*
   the handler -- hiding a button is only cosmetic;
 * builds run with a bounded timeout (``config.command_timeout_seconds``
@@ -25,6 +28,7 @@ obligations the reviews of those services handed forward:
 
 from __future__ import annotations
 
+import html
 import io
 import logging
 import re
@@ -85,6 +89,10 @@ _render_download = getattr(render, "download_button", None) or render.download
 #: the Config it is handed, so the page supplies a bounded one.
 BUILD_TIMEOUT_SECONDS = 30 * 60
 POLL_SECONDS = 2
+#: States in which no build is running, so the cache on disk is settled.
+_TERMINAL_STATES = ("ready", "stale", "failed", "missing")
+#: States in which a build is queued or running.
+_LIVE_STATES = ("queued", "building")
 
 VARIABLES = {"salt": "Salinity (psu)", "temp": "Temperature (°C)", "act_eta": "Water level (m)"}
 COLUMN_TO_VARIABLE = {v: k for k, v in VARIABLE_COLUMNS.items()}
@@ -110,18 +118,30 @@ _STATE_BADGE = {
 _ABS_PATH_RE = re.compile(r"(?<![\w])/[\w.@+~-]+(?:/[\w.@+~-]*)*")
 
 
+def _safe_text(text: str, config, user) -> str:
+    """Rewrite every absolute-path-looking token in ``text`` for display.
+
+    ``Config.display_path`` reduces a server-mode path to ``~/rel`` or to its
+    basename, and leaves a local-mode (single-user desktop) path alone. The
+    surrounding words -- the part that says *what* is wrong -- are kept, so
+    the message stays actionable.
+
+    Use this for **any** service-provided string that reaches the browser,
+    not just exceptions: ``CacheStatus.message`` carries the failed build
+    child's own error text (e.g. a ``FileNotFoundError`` naming the absolute
+    run directory), and it is rendered as the status badge's tooltip.
+    """
+    return _ABS_PATH_RE.sub(lambda m: config.display_path(m.group(0), user), str(text))
+
+
 def _safe_error(exc: BaseException, config, user) -> str:
-    """Render an exception for the UI without leaking the host layout.
+    """:func:`_safe_text` for an exception.
 
     ``ManifestError`` (and the ``ValueError`` ``confine_path`` raises inside
     ``load_manifest``/``start_build``) embeds the raw absolute path it
-    rejected. Rewrite every path-looking token through
-    ``Config.display_path``, which reduces a server-mode path to ``~/rel``
-    or to its basename and leaves a local-mode (single-user desktop) path
-    alone. The surrounding text -- the part that says *what* is wrong -- is
-    kept, so the message stays actionable.
+    rejected.
     """
-    return _ABS_PATH_RE.sub(lambda m: config.display_path(m.group(0), user), str(exc))
+    return _safe_text(str(exc), config, user)
 
 
 def _bounded_timeout_config(config: Config) -> Config:
@@ -233,18 +253,43 @@ def boxmodel_server(
     grd_file: reactive.Value = reactive.value(None)
     grd_error: reactive.Value = reactive.value(None)
     selected_box: reactive.Value = reactive.value(None)
-    # poll_kick is written ONLY by the build/cancel handlers and read ONLY by
-    # the poller; status_tick is written ONLY by the poller and read ONLY by
-    # status(). Splitting the two is what keeps the poller from depending on
-    # anything it writes (a reactive self-write loop pegs the worker at 100%
-    # CPU and freezes every output -- see the shiny reactive-loop postmortem).
+    # Three write-only-for-their-writer values, deliberately kept apart:
+    #
+    # * poll_kick     -- written ONLY by the build/cancel handlers, read ONLY
+    #                    by the poller (so a fresh build restarts polling);
+    # * status_tick   -- written ONLY by the poller, read ONLY by status(),
+    #                    which only the badge renders. It ticks every 2 s
+    #                    during a build so the records/expected progress
+    #                    moves;
+    # * cache_generation -- written ONLY by the poller, and only when the
+    #                    cache's *contents* can actually have changed (a
+    #                    terminal state reached or left). Everything
+    #                    expensive hangs off THIS, not off status_tick:
+    #                    cached_result -> polygons_result/series/skill.
+    #                    Coupling them would re-run load_box_polygons (a
+    #                    fiona re-open, on the event loop) and push a fresh
+    #                    layer set every 2 s while a build runs -- the map
+    #                    would flicker and the worker would do real work per
+    #                    tick for nothing.
+    #
+    # No value here is ever read by the effect that writes it: a read-then-write
+    # on the same reactive pegs the worker at 100% CPU and freezes every output
+    # (see the shiny reactive-loop postmortem).
     poll_kick: reactive.Value = reactive.value(0)
     status_tick: reactive.Value = reactive.value(0)
+    cache_generation: reactive.Value = reactive.value(0)
     # Plain (non-reactive) per-session bookkeeping, deliberately not
     # reactive.Values: read-then-write on a reactive from the same effect is
     # exactly the loop above.
-    counters = {"kick": 0, "tick": 0}
-    last = {"state": None, "runs": None, "boxes": None, "period": None, "grd": False}
+    counters = {"kick": 0, "tick": 0, "generation": 0}
+    last = {
+        "state": None,
+        "runs": None,
+        "boxes": None,
+        "period": None,
+        "grd": False,
+        "good": None,
+    }
 
     def _user():
         return current_user() if current_user is not None else None
@@ -255,13 +300,24 @@ def boxmodel_server(
     def _err(exc: BaseException) -> str:
         return _safe_error(exc, config, _user())
 
+    def _text(text: str) -> str:
+        """Sanitise a service-provided string before it reaches the browser."""
+        return _safe_text(text, config, _user())
+
     def _kick_poller() -> None:
         counters["kick"] += 1
         poll_kick.set(counters["kick"])
 
     def _bump_status() -> None:
+        """Badge-only refresh (build progress). Cheap: nothing heavy reads it."""
         counters["tick"] += 1
         status_tick.set(counters["tick"])
+
+    def _bump_cache_generation() -> None:
+        """The cache's contents may have changed -- re-read it and everything
+        derived from it. Only ever called on a terminal-state transition."""
+        counters["generation"] += 1
+        cache_generation.set(counters["generation"])
 
     # --- manifest ---------------------------------------------------------
 
@@ -297,7 +353,19 @@ def boxmodel_server(
         # dead tmp dirs -- before anything reads the cache status, so a
         # just-finished build shows as "ready" straight away. Idempotent, but
         # a genuine simultaneous publish race hands the loser an OSError.
+        #
+        # This RENAMES and DELETES inside the project, so it needs the write
+        # confinement, not the read one used above: for_write=False also
+        # admits a shared-project viewer and an analysis-root reader, and
+        # this page server is mounted for every session. A viewer has
+        # nothing to reconcile, so failing the write check just skips it --
+        # silently, since it is not an error the viewer can act on.
         notice = None
+        try:
+            config.confine_path(Path(proj["work_dir"]), usr, must_exist=True, for_write=True)
+        except (ValueError, OSError) as exc:
+            logger.info("boxmodel: skipping cache reconcile (no write access): %s", exc)
+            return manifest_obj, None, None
         try:
             for msg in reconcile_tmp_dirs(Path(proj["work_dir"])):
                 logger.info("boxmodel cache reconcile (%s): %s", proj.get("name"), msg)
@@ -356,8 +424,10 @@ def boxmodel_server(
     def _status_now():
         """Current cache status, deliberately independent of ``status_tick``.
 
-        The poller calls this (not ``status()``) so that bumping the tick can
-        never re-trigger the poller itself.
+        Both the poller and ``cached_result`` call this rather than
+        ``status()``: the poller so that bumping the tick cannot re-trigger
+        itself, and ``cached_result`` so that the 2 s badge tick does not drag
+        the whole parquet/polygon/layer chain along with it.
         """
         manifest_obj = manifest()
         run = _run_entry()
@@ -380,23 +450,40 @@ def boxmodel_server(
         """Poller-owned trigger: re-arm only while a build is actually live.
 
         Reads ``poll_kick`` (bumped by the build/cancel handlers) so a fresh
-        build starts it; writes ``status_tick`` (which only ``status()``
-        reads) so refreshing the UI cannot refresh the poller. Once no build
-        is queued or building, it publishes the terminal state once and
-        stops -- no timer keeps running on an idle page.
+        build starts it; writes ``status_tick`` and ``cache_generation``,
+        neither of which it reads, so refreshing the UI cannot refresh the
+        poller. Once no build is queued or building, it publishes the
+        terminal state once and stops -- no timer keeps running on an idle
+        page.
+
+        The two writes are deliberately not the same signal. ``status_tick``
+        fires on every 2 s tick, because the badge shows live
+        records/expected progress. ``cache_generation`` fires only when the
+        state crosses into or out of a terminal state -- i.e. only when the
+        cache on disk can actually have changed -- because everything
+        expensive (re-reading the parquet, re-opening the polygons with
+        fiona, rebuilding the map layers) hangs off it.
         """
         poll_kick.get()
         current = _status_now()
         state = current.state if current is not None else None
-        if state not in ("queued", "building"):
-            if last["state"] != state:
-                last["state"] = state
-                _bump_status()
-            return
+        previous = last["state"]
+        changed = previous != state
         last["state"] = state
-        # Bump every tick, not only on a state change: the badge shows
-        # records/expected, which moves while the state stays "building".
-        _bump_status()
+        live = state in _LIVE_STATES
+        if changed:
+            _bump_status()
+            # A terminal state was reached, or one was left: the published
+            # cache may be new (or gone). This is the ONLY path that
+            # invalidates the cached run and everything derived from it.
+            if state in _TERMINAL_STATES or previous in _TERMINAL_STATES:
+                _bump_cache_generation()
+        if not live:
+            return
+        # Tick the badge every poll, not only on a state change: the
+        # records/expected numbers move while the state stays "building".
+        if not changed:
+            _bump_status()
         reactive.invalidate_later(POLL_SECONDS)
 
     @render.ui
@@ -406,12 +493,14 @@ def boxmodel_server(
             return ui.tags.span("no run selected", class_="text-muted")
         text = current.state
         progress = current.progress or {}
-        if current.state in ("building", "queued") and progress:
+        if current.state in _LIVE_STATES and progress:
             text = f"{text} {progress.get('records', 0)}/{progress.get('expected', '?')}"
         return ui.tags.span(
             text,
             class_=f"badge bg-{_STATE_BADGE.get(current.state, 'secondary')}",
-            title=current.message or "",
+            # CacheStatus.message carries the failed build child's own
+            # error text, which can name the absolute run directory.
+            title=_text(current.message or ""),
         )
 
     # --- build / cancel (writes: gated inside the handler) -----------------
@@ -472,15 +561,32 @@ def boxmodel_server(
 
     @reactive.calc
     def cached_result() -> tuple:
-        current = status()
+        """The loaded cache, and a page message if it could not be read.
+
+        Depends on ``cache_generation`` and NOT on ``status_tick``: this is
+        the head of the expensive chain (parquet read -> polygons -> layers
+        -> series -> skill), so it must not re-run on the poller's 2 s badge
+        tick. ``_status_now()`` is the non-reactive status probe for the same
+        reason.
+        """
+        cache_generation.get()
         proj = _project()
         run = _run_entry()
-        if (
-            current is None
-            or proj is None
-            or run is None
-            or current.state not in ("ready", "stale")
-        ):
+        current = _status_now()
+        state = current.state if current is not None else None
+        if proj is None or run is None:
+            last["good"] = None
+            return None, None
+        if state in _LIVE_STATES:
+            # A rebuild is running. cache_status() reports the registry
+            # handle before the published cache, so the state is "building"
+            # even though last build's parquet is still on disk and still
+            # valid -- keep showing it rather than blanking map, series and
+            # skill table for the whole rebuild. The badge still says
+            # building, with progress.
+            return last["good"], None
+        if state not in ("ready", "stale"):
+            last["good"] = None
             return None, None
         try:
             cached_run = load_cache(cache_dir_for(Path(proj["work_dir"]), run.id), run.id)
@@ -494,9 +600,11 @@ def boxmodel_server(
             _cache_period(cached_run)
             if "box" not in cached_run.state_daily.columns:
                 raise KeyError("state_daily has no 'box' column")
+            last["good"] = cached_run
             return cached_run, None
         except (OSError, ValueError, KeyError, TypeError) as exc:
             logger.warning("boxmodel: cache could not be loaded: %s", exc)
+            last["good"] = None
             return None, f"Cache: {_err(exc)}"
 
     def cached():
@@ -699,7 +807,10 @@ def boxmodel_server(
             value = values.get(int(box)) if (values and pd.notna(box)) else None
             out.append(
                 {
-                    "site": str(site["site"]),
+                    # Escaped here as well as at the sink: this value is
+                    # interpolated into a deck.gl tooltip rendered as
+                    # innerHTML, and sites.csv is user-supplied.
+                    "site": html.escape(str(site["site"])),
                     "lon": float(site["lon"]),
                     "lat": float(site["lat"]),
                     "value": value,
@@ -711,10 +822,15 @@ def boxmodel_server(
     def _layers():
         """Rebuild the box layers. Writes ``extra_layers``/``legend_bins`` and
         reads neither, so pushing new layers can never re-trigger this effect
-        (``grid_map_server`` only reads them)."""
-        polys = polygons()
-        values, label = box_values()
+        (``grid_map_server`` only reads them).
+
+        The upstream calls are inside the ``try`` as well: an exception
+        escaping a ``reactive.effect`` ends the session, so any failure here
+        has to degrade to empty layers plus a log line.
+        """
         try:
+            polys = polygons()
+            values, label = box_values()
             layers, bins = build_box_layers(
                 polys,
                 values if polys else None,

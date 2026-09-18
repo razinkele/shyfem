@@ -10,6 +10,7 @@ Provides zoomable/pannable mesh visualization with:
 
 from __future__ import annotations
 
+import html
 import logging
 import math
 
@@ -408,6 +409,12 @@ def build_box_layers(
     """
     if polygon_layer is None:
         return [], []
+    # Every tooltip built here is rendered by deck.gl as innerHTML
+    # (``tooltip={"html": "{tooltip_html}"}``), so caller-supplied text --
+    # a site name straight out of sites.csv, a variable label -- is an XSS
+    # sink. Escape at the sink: a shared project's sites.csv is written by
+    # one user and rendered in every collaborator's browser.
+    safe_label = html.escape(str(label))
     boxes = sorted(polygons)
     if values:
         vals = [float(values.get(b, float("nan"))) for b in boxes]
@@ -425,7 +432,7 @@ def build_box_layers(
                     "box": b,
                     "value": v if v == v else None,
                     "color": [*rgb, alpha],
-                    "tooltip_html": f"<b>box {b}</b><br>{label}: {txt}",
+                    "tooltip_html": f"<b>box {b}</b><br>{safe_label}: {txt}",
                 }
             )
         layer = polygon_layer(
@@ -468,7 +475,7 @@ def build_box_layers(
                 "position": [p["lon"], p["lat"]],
                 "site": p["site"],
                 "value": p.get("value"),
-                "tooltip_html": f"<b>{p['site']}</b>"
+                "tooltip_html": f"<b>{html.escape(str(p['site']))}</b>"
                 + (f"<br>{p['value']:.3f}" if p.get("value") is not None else ""),
             }
             for p in posts
