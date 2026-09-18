@@ -14,8 +14,9 @@ obligations the reviews of those services handed forward:
   tokens rewritten with ``config.display_path``;
 * all manifest-, label- and site-supplied text is emitted through
   ``ui.tags`` (never ``ui.HTML``), so it is escaped; the one place text
-  reaches raw HTML is the deck.gl tooltip, which is escaped both here
-  and at the sink in ``build_box_layers``;
+  reaches raw HTML is the deck.gl tooltip, and that is escaped where the
+  HTML is built, in ``build_box_layers`` -- escaping it here as well
+  would double-escape an ampersand in a legitimate site name;
 * writes (build / cancel) are gated by ``editor_denied_reason`` *inside*
   the handler -- hiding a button is only cosmetic;
 * builds run with a bounded timeout (``config.command_timeout_seconds``
@@ -28,7 +29,6 @@ obligations the reviews of those services handed forward:
 
 from __future__ import annotations
 
-import html
 import io
 import logging
 import re
@@ -807,10 +807,14 @@ def boxmodel_server(
             value = values.get(int(box)) if (values and pd.notna(box)) else None
             out.append(
                 {
-                    # Escaped here as well as at the sink: this value is
-                    # interpolated into a deck.gl tooltip rendered as
-                    # innerHTML, and sites.csv is user-supplied.
-                    "site": html.escape(str(site["site"])),
+                    # Passed through raw on purpose. This ends up in a
+                    # deck.gl tooltip rendered as innerHTML, and sites.csv is
+                    # user-supplied -- but the escaping belongs to the code
+                    # that builds the HTML (``build_box_layers``), which does
+                    # escape it. Escaping here too would double-escape, so a
+                    # site legitimately named "Smith & Co" would render as
+                    # "Smith &amp; Co".
+                    "site": str(site["site"]),
                     "lon": float(site["lon"]),
                     "lat": float(site["lat"]),
                     "value": value,

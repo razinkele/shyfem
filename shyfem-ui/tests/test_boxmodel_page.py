@@ -221,14 +221,35 @@ def test_cache_badge_title_is_sanitised_not_raw():
     assert "title=current.message" not in src, "raw CacheStatus.message reaches the browser"
 
 
-def test_posts_escape_site_names_before_the_tooltip():
-    """Review Important 2, page half: ``posts()`` feeds site names into
-    ``build_box_layers``, whose tooltip is rendered as innerHTML. Escaped at the
-    sink AND here, so the page does not depend on the component's behaviour."""
+def test_posts_pass_site_names_through_raw_and_the_sink_escapes():
+    """Review Important 2 + the double-escaping ruling.
+
+    ``posts()`` hands site names to ``build_box_layers``, whose ``tooltip_html``
+    deck.gl renders as innerHTML. The escaping belongs to the code that builds
+    that HTML, not to this page: escaping in both places double-escapes, so a
+    site legitimately named "Smith & Co" would show as "Smith &amp; Co". So the
+    page passes the name through raw -- and the end-to-end guarantee still
+    holds, because the sink escapes it.
+    """
+    from shyfem_ui.components.grid_map import build_box_layers
     from shyfem_ui.pages import boxmodel
 
-    src = get_server_source(boxmodel, "boxmodel_server")
-    assert 'html.escape(str(site["site"]))' in src
+    code = _code_of(boxmodel, "boxmodel_server")
+    posts_body = code("posts")
+    assert "str(site['site'])" in posts_body or 'str(site["site"])' in posts_body
+    assert "html.escape" not in posts_body, "the page must not escape -- the sink does"
+
+    # ... and what the page hands over is still safe once the sink builds the HTML
+    evil = "<img src=x onerror=alert(1)>"
+    layers, _bins = build_box_layers(
+        {1: [[21.0, 55.5], [21.01, 55.5], [21.01, 55.51], [21.0, 55.5]]},
+        {1: 0.2},
+        label="Salinity (psu)",
+        posts=[{"site": evil, "lon": 21.005, "lat": 55.505, "value": 0.25}],
+    )
+    tooltip = layers[1]["data"][0]["tooltip_html"]
+    assert "<img" not in tooltip
+    assert "&lt;img src=x onerror=alert(1)&gt;" in tooltip
 
 
 def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():

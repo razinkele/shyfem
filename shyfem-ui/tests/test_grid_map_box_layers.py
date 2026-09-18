@@ -148,3 +148,22 @@ def test_build_box_layers_escapes_outline_only_tooltip():
     """The no-values branch builds its own tooltip; it must be safe too."""
     layers, _bins = gm.build_box_layers({1: [[0, 0], [1, 0], [1, 1], [0, 0]]}, None)
     assert "<" not in layers[0]["data"][0]["tooltip_html"].replace("<b>", "").replace("</b>", "")
+
+
+def test_build_box_layers_escapes_an_ampersand_exactly_once():
+    """Escaping must happen here and ONLY here. A site legitimately named
+    "Smith & Co" has to reach the tooltip as ``Smith &amp; Co`` -- if the caller
+    escaped it too, it would arrive as ``Smith &amp;amp; Co`` and render with a
+    visible "&amp;"."""
+    layers, _bins = gm.build_box_layers(
+        {1: [[21.0, 55.5], [21.01, 55.5], [21.01, 55.51], [21.0, 55.5]]},
+        {1: 0.2},
+        label="Salinity & more",
+        posts=[{"site": "Smith & Co", "lon": 21.005, "lat": 55.505, "value": 0.25}],
+    )
+    post_tip = layers[1]["data"][0]["tooltip_html"]
+    box_tip = layers[0]["data"][0]["tooltip_html"]
+    assert "Smith &amp; Co" in post_tip
+    assert "&amp;amp;" not in post_tip
+    assert "Salinity &amp; more" in box_tip
+    assert "&amp;amp;" not in box_tip
