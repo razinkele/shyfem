@@ -162,6 +162,12 @@ All variables use the `SHYFEM_UI_` prefix and can also be set in a `.env` file.
 | `SHYFEM_UI_ROOT_PATH` | (empty) | ASGI root_path for reverse proxy sub-path deployment (e.g., `/shyfem-ui`) |
 | `SHYFEM_UI_TRUSTED_PROXIES` | `[]` | JSON list of trusted proxy CIDR ranges for `X-Forwarded-For` (e.g., `["127.0.0.1/8","10.0.0.0/8"]`) |
 
+#### Box-Model Analysis (server mode)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SHYFEM_UI_ANALYSIS_ROOTS` | `[]` | JSON array of admin-declared, read-only directories the Box model page may read run output from (server mode only) — see "Box-model analysis roots (server mode)" below |
+
 #### Upload & Storage Limits
 
 | Variable | Default | Description |
@@ -209,7 +215,7 @@ user's own sandbox — a multi-decade run can be a gigabyte or more. In server m
 declare extra read-only directories for the app to read such runs from:
 
 ```bash
-export SHYFEM_UI_ANALYSIS_ROOTS='["/home/razinka/curonian"]'   # JSON array; default []
+export SHYFEM_UI_ANALYSIS_ROOTS='["/data/runs/curonian"]'   # JSON array; default []
 ```
 
 Rules, enforced when the config loads (`shyfem_ui/config.py::_check_analysis_roots`):
@@ -234,7 +240,8 @@ A project opts in with a `boxmodel.json` manifest (schema 1) in its directory �
 from the grid instead, which needs the grid's coordinate system to be known — a projected grid
 with small, locally-referenced coordinates can look geographic to the auto-detection, so give such
 a grid explicit `boxes.polygons`) plus `boxes.layer` and `boxes.id_field` (defaults to `box`);
-`str`; `forcing.dir`; `runs[]` with `id`/`label`/`dir`; `observations.file`/`observations.sites`.
+`str`; `forcing.dir`; `runs[]` with `id`/`label`/`dir` (`id` must match `[a-z0-9_-]{1,64}`);
+`observations.file`/`observations.sites`.
 Relative manifest paths resolve against the project directory; absolute paths (e.g. a `runs[].dir`
 kept outside the sandbox) must lie under an analysis root or the user's own sandbox. The manifest
 is capped at 64 KB.
@@ -245,13 +252,23 @@ up to 50 MB / 2,000,000 rows; `sites.csv` needs columns `site, lat, lon, box` (a
 the site is unmapped — kept, but never matched to a skill target); a `boxes.polygons` file is
 GeoPackage or GeoJSON, up to 50 MB, 1,000 features, 200,000 vertices.
 
+Skill metrics on the Time-series tab follow the Curonian reference scripts: daily means are
+computed by stamped date, then compared as bias, RMSE, r and R² (Nash–Sutcliffe form, which can go
+negative) using population (ddof=0) moments, plus an sd ratio. A water-level series is compared as
+an anomaly about its own mean, after converting cm to m, so a level row's bias is shown as "—". A
+target needs at least 30 matched days (60 per calendar year for the per-year breakdown); band
+amplitude ratios (2–4, 4–10, 10–30, 30–400 day periods) need at least 120 gap-free days. See
+`docs/superpowers/specs/2026-09-17-boxmodel-analysis-design.md` §7 for the exact formulas.
+
 Per-run Parquet caches are built on demand by a child process
 (`python -m shyfem_ui.boxmodel_cache_cli`) into `<project>/.boxmodel_cache/<run_id>/`. Building
-requires project-editor access, is capped at 2 concurrent builds per worker process and 1 per
-user, and a build is bounded by `SHYFEM_UI_COMMAND_TIMEOUT_SECONDS` when set, else a 30-minute
-default. Cache bytes on disk count toward the project's `SHYFEM_UI_MAX_PROJECT_STORAGE_MB` quota. Stale or
-failed temporary cache directories left behind by an interrupted build are tidied up automatically
-the next time a project editor loads the page.
+requires a project editor with write access to the project directory, is capped at 2 concurrent
+builds per worker process and 1 per user, and a build is bounded by
+`SHYFEM_UI_COMMAND_TIMEOUT_SECONDS` when set, else a 30-minute default. Cache bytes on disk count
+toward the project's `SHYFEM_UI_MAX_PROJECT_STORAGE_MB` quota. A stale directory left by an
+interrupted build is removed at page load by a project editor with write access to the project
+directory; a *failed* build's directory is kept, so its error stays visible in the status badge,
+until that run is rebuilt.
 
 ## Workflow
 
@@ -268,6 +285,7 @@ Additional pages:
 
 - **Compare** - Side-by-side job comparison (runtime stats, parameter diffs, overlaid time series)
 - **Ensemble** - Parameter sweep manager (grid/zip modes, batch submit, result overlay with envelope)
+- **Box model** - Map and time-series analysis of SHYFEM box output (`idtbox`) against observations, with a skill table
 
 ## Development
 
