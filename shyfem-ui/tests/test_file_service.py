@@ -208,6 +208,7 @@ class TestGetProjectStorage:
         storage = FileService.get_project_storage(pid)
         assert storage["used_bytes"] == 6
         assert storage["file_count"] == 2
+        assert storage["cache_bytes"] == 0
 
     def test_empty_project_returns_zero(self, project_with_dir):
         from shyfem_ui.services.file_service import FileService
@@ -217,6 +218,30 @@ class TestGetProjectStorage:
         storage = FileService.get_project_storage(pid)
         assert storage["used_bytes"] == 0
         assert storage["file_count"] == 0
+        assert storage["cache_bytes"] == 0
+
+    def test_used_bytes_matches_the_quota_check_and_breaks_out_the_cache(self, project_with_dir):
+        """Review Important 4: the displayed usage used to call
+        ``_sum_project_bytes`` WITHOUT the project's work_dir while the upload
+        quota check passed it, so the box-model cache was enforced but never
+        shown -- a user could be refused an upload with "plenty of space left"
+        on screen. The two must agree, and the cache-only part is reported
+        separately so the number can be explained."""
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.services.file_service import FileService, _sum_project_bytes
+
+        pid, work = project_with_dir
+        FileService.upload_file(pid, b"aaaa", "a.dat", "other")
+        cache = work / ".boxmodel_cache" / "fix"
+        cache.mkdir(parents=True)
+        (cache / "state_daily.parquet").write_bytes(b"x" * 250)
+
+        storage = FileService.get_project_storage(pid)
+        assert storage["cache_bytes"] == 250
+        assert storage["used_bytes"] == 254  # 4 uploaded + 250 cached
+        assert storage["file_count"] == 1  # cache files are not ProjectFile rows
+        with db_session() as db:
+            assert storage["used_bytes"] == _sum_project_bytes(db, pid, work_dir=str(work))
 
 
 class TestFileServiceUpload:

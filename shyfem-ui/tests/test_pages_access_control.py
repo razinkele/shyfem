@@ -43,6 +43,8 @@ WRITE_HANDLERS = [
     ("postprocess", "_run_preset", "editor"),  # runs a preset shyelab pipeline
     ("mesh_builder", "_on_save", "editor"),  # exports .grd into the project dir
     ("home", "_do_import_grid", "editor"),  # writes a Grid into an existing project
+    ("boxmodel", "_build", "editor"),  # spawns the box-model cache build child process
+    ("boxmodel", "_cancel", "editor"),  # kills another session's running build
 ]
 
 _PLACEHOLDER_PREFIX = "<TODO"

@@ -10,6 +10,7 @@ Provides zoomable/pannable mesh visualization with:
 
 from __future__ import annotations
 
+import html
 import logging
 import math
 
@@ -302,6 +303,221 @@ def _depth_to_colors(
         return []
     palette = PALETTES.get(palette_name, PALETTE_VIRIDIS)
     return color_bins(depths, n_bins=6, palette=palette)
+
+
+_NON_FINITE_COLOR: list[int] = [200, 200, 200]
+
+
+def value_colors(
+    values: list[float | None],
+    palette: str = "viridis",
+    n_bins: int = 6,
+) -> tuple[list[list[int]], list[tuple[float, float, list[int]]]]:
+    """Map scalar *values* to RGB colors plus a legend.
+
+    Non-finite entries (``None``, ``NaN``, ``+/-inf`` — box-model series
+    routinely have gaps) are coloured neutral grey ``[200, 200, 200]`` and
+    excluded from both the color-bin computation and the legend range, so
+    a single missing value can't blow up ``color_bins()`` for the rest of
+    the series. The returned color list is position-preserving: it has
+    the same length as *values*, with grey standing in for every
+    non-finite position.
+
+    Parameters
+    ----------
+    values
+        Scalar values (one per feature) to colour. May contain ``None``,
+        ``NaN``, or ``inf`` for missing/undefined entries.
+    palette
+        Key into :data:`PALETTES` (falls back to viridis).
+    n_bins
+        Number of equal-width color bins.
+
+    Returns
+    -------
+    tuple[list[list[int]], list[tuple[float, float, list[int]]]]
+        Per-value ``[R, G, B]`` colors (grey at non-finite positions), and
+        legend bins as ``(lo, hi, [R, G, B])`` tuples computed from the
+        finite values only. Bins are empty when ``shiny_deckgl`` is
+        unavailable (``color_bins`` is ``None``) or no finite values remain.
+    """
+    if color_bins is None or not values:
+        # Same neutral grey as every other "no colour to give" path: two
+        # different greys for the same meaning is just a bug waiting to be
+        # read as a signal.
+        return [list(_NON_FINITE_COLOR) for _ in values], []
+
+    finite_idx: list[int] = []
+    finite_vals: list[float] = []
+    for i, v in enumerate(values):
+        try:
+            fv = float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(fv):
+            finite_idx.append(i)
+            finite_vals.append(fv)
+
+    if not finite_vals:
+        return [list(_NON_FINITE_COLOR)] * len(values), []
+
+    pal = PALETTES.get(palette, PALETTE_VIRIDIS)
+    finite_colors = [list(c[:3]) for c in color_bins(finite_vals, n_bins=n_bins, palette=pal)]
+    colors = [list(_NON_FINITE_COLOR) for _ in values]
+    for i, c in zip(finite_idx, finite_colors, strict=True):
+        colors[i] = c
+
+    lo, hi = min(finite_vals), max(finite_vals)
+    step = (hi - lo) / n_bins if hi > lo else 1.0
+    idx = [int(round((i / max(n_bins - 1, 1)) * (len(pal) - 1))) for i in range(n_bins)]
+    bins = [(lo + i * step, lo + (i + 1) * step, list(pal[j][:3])) for i, j in enumerate(idx)]
+    return colors, bins
+
+
+def build_box_layers(
+    polygons: dict[int, list[list[float]]],
+    values: dict[int, float] | None,
+    *,
+    palette: str = "viridis",
+    label: str = "",
+    posts: list[dict] | None = None,
+    selected: int | None = None,
+) -> tuple[list[dict], list[tuple[float, float, list[int]]]]:
+    """Build a box-polygon layer (coloured by *values*) plus optional posts.
+
+    Parameters
+    ----------
+    polygons
+        ``{box_id: [[lon, lat], ...]}`` closed outer rings, e.g. from
+        ``load_box_polygons``/``dissolve_boxes_from_grid``.
+    values
+        ``{box_id: value}`` to colour boxes by. When ``None`` (or empty),
+        boxes are rendered outline-only (``filled=False``) and no legend
+        bins are returned.
+    palette
+        Key into :data:`PALETTES` (falls back to viridis).
+    label
+        Value label used in the tooltip HTML (e.g. ``"salt"``).
+    posts
+        Optional list of ``{"site", "lon", "lat", "value"}`` monitoring
+        posts rendered as a ``scatterplot_layer``.
+    selected
+        Box id to highlight (full opacity); other boxes are dimmed.
+
+    Returns
+    -------
+    tuple[list[dict], list[tuple[float, float, list[int]]]]
+        ``(layers, legend_bins)`` — ``layers`` is empty when
+        ``shiny_deckgl`` is unavailable.
+    """
+    if polygon_layer is None:
+        return [], []
+    # Every tooltip built here is rendered by deck.gl as innerHTML
+    # (``tooltip={"html": "{tooltip_html}"}``), so caller-supplied text --
+    # a site name straight out of sites.csv, a variable label -- is an XSS
+    # sink. Escape at the sink: a shared project's sites.csv is written by
+    # one user and rendered in every collaborator's browser.
+    safe_label = html.escape(str(label))
+    boxes = sorted(polygons)
+    if values:
+        vals = [float(values.get(b, float("nan"))) for b in boxes]
+        finite = [v for v in vals if v == v]
+        colors, bins = value_colors(finite, palette=palette) if finite else ([], [])
+        it = iter(colors)
+        data = []
+        for b, v in zip(boxes, vals, strict=True):
+            rgb = next(it) if v == v else [200, 200, 200]
+            alpha = 255 if (selected is None or b == selected) else 170
+            txt = f"{v:.3f}" if v == v else "n/a"
+            data.append(
+                {
+                    "polygon": polygons[b],
+                    "box": b,
+                    "value": v if v == v else None,
+                    "color": [*rgb, alpha],
+                    "tooltip_html": f"<b>box {b}</b><br>{safe_label}: {txt}",
+                }
+            )
+        layer = polygon_layer(
+            "boxes",
+            data,
+            getPolygon="@@d.polygon",
+            getFillColor="@@d.color",
+            getLineColor=[40, 40, 40, 200],
+            lineWidthMinPixels=1,
+            filled=True,
+            stroked=True,
+            pickable=True,
+        )
+    else:
+        bins = []
+        data = [
+            {
+                "polygon": polygons[b],
+                "box": b,
+                "value": None,
+                "color": [0, 0, 0, 0],
+                "tooltip_html": f"<b>box {b}</b>",
+            }
+            for b in boxes
+        ]
+        layer = polygon_layer(
+            "boxes",
+            data,
+            getPolygon="@@d.polygon",
+            getLineColor=[40, 40, 40, 220],
+            lineWidthMinPixels=1,
+            filled=False,
+            stroked=True,
+            pickable=True,
+        )
+    layers = [layer]
+    if posts:
+        pdata = [
+            {
+                "position": [p["lon"], p["lat"]],
+                "site": p["site"],
+                "value": p.get("value"),
+                "tooltip_html": f"<b>{html.escape(str(p['site']))}</b>"
+                + (f"<br>{p['value']:.3f}" if p.get("value") is not None else ""),
+            }
+            for p in posts
+        ]
+        layers.append(
+            scatterplot_layer(
+                "posts",
+                pdata,
+                getPosition="@@d.position",
+                getFillColor=[255, 60, 60, 230],
+                radiusMinPixels=5,
+                pickable=True,
+            )
+        )
+    return layers, bins
+
+
+def _bounds_from_layers(layers: list[dict]) -> list[list[float]] | None:
+    """Compute ``[[xmin, ymin], [xmax, ymax]]`` from layer feature data.
+
+    Scans each layer's ``data`` entries for a ``polygon`` ring or a
+    ``position`` point (as produced by :func:`build_box_layers`). Used to
+    fit the map to box layers when there is no grid loaded to derive
+    bounds from.
+    """
+    lons: list[float] = []
+    lats: list[float] = []
+    for lyr in layers:
+        for item in lyr.get("data") or []:
+            for lon, lat in item.get("polygon") or []:
+                lons.append(lon)
+                lats.append(lat)
+            pos = item.get("position")
+            if pos:
+                lons.append(pos[0])
+                lats.append(pos[1])
+    if not lons or not lats:
+        return None
+    return [[min(lons), min(lats)], [max(lons), max(lats)]]
 
 
 def _quality_to_colors(qualities: list[float]) -> list[list[int]]:
@@ -1382,6 +1598,8 @@ def _build_label_map(layers: list[dict], mode: str = "mesh") -> dict[str, str]:
         "wireframe": "Wireframe",
         "triangles": triangles_label,
         "nodes": "Nodes",
+        "boxes": "Boxes",
+        "posts": "Monitoring posts",
     }
     label_map: dict[str, str] = {}
     for layer in layers:
@@ -1497,6 +1715,9 @@ def grid_map_server(
     grd_file: reactive.Value,
     partition_map: reactive.Value | None = None,
     on_node_click: Callable[[int], None] | None = None,
+    *,
+    extra_layers: reactive.Value | None = None,
+    on_box_click: Callable[[int], None] | None = None,
 ):
     """Deck.gl interactive grid map server logic.
 
@@ -1510,6 +1731,19 @@ def grid_map_server(
         Optional reactive value holding ``{elem_id: partition_index}`` or ``None``.
     on_node_click
         Optional callback invoked with the clicked node ID.
+    extra_layers
+        Optional reactive value holding a list of additional deck.gl layer
+        dicts (e.g. from :func:`build_box_layers`) to overlay on the map.
+        Read (not written) by the render effect, so it may safely be
+        updated from the calling page without causing a reactive loop.
+        Callers should always pair ``extra_layers`` with a real
+        ``grd_file``: when ``grd_file.get()`` is ``None``, the map still
+        renders ``extra_layers`` and fits bounds to them, but falls back
+        to a minimal widget set (no basemap style, no layer-legend
+        widget) — that state is only meant to be transient, not a
+        supported box-only view.
+    on_box_click
+        Optional callback invoked with the clicked box id.
     """
     # Create MapWidget with the RESOLVED id (module namespace prefix).
     if MapWidget is None:
@@ -1523,22 +1757,33 @@ def grid_map_server(
     )
 
     selected_node: reactive.Value[int | None] = reactive.value(None)
+    selected_box: reactive.Value[int | None] = reactive.value(None)
 
     @reactive.effect
     async def _update_map():
         """Rebuild layers and push to the map when inputs change."""
         grd = grd_file.get()
         if grd is None:
-            # Clear the map
+            # Clear the map, but keep showing extra (e.g. box) layers if present.
+            extra = list(extra_layers.get() or []) if extra_layers is not None else []
             await _map.update(
                 session,
-                layers=[],
+                layers=extra,
                 widgets=[
                     zoom_widget(),
                     fullscreen_widget(placement="top-right"),
                 ],
             )
             await _map.set_controls(session, [])
+            if extra:
+                bounds = _bounds_from_layers(extra)
+                if bounds:
+                    await _map.fit_bounds(
+                        session,
+                        bounds=bounds,
+                        max_zoom=18,
+                        duration=800,
+                    )
             return
 
         mode = input.map_mode()
@@ -1580,6 +1825,8 @@ def grid_map_server(
             partition_map=pmap,
             epsg=epsg_val,
         )
+        if extra_layers is not None:
+            layers = layers + list(extra_layers.get() or [])
 
         vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"), epsg=epsg_val)
 
@@ -1623,8 +1870,17 @@ def grid_map_server(
         click_data = input["deckgl_map_click"]()
         if click_data is None:
             return
-        # Extract node_id from the clicked object
         obj = click_data.get("object") if isinstance(click_data, dict) else None
+        # Box polygons (build_box_layers) are checked first and are
+        # mutually exclusive with node clicks: a clicked object carries
+        # either "box" (box layer) or "node_id" (node layer), never both.
+        if obj and "box" in obj:
+            bid = int(obj["box"])
+            selected_box.set(bid)
+            if on_box_click is not None:
+                on_box_click(bid)
+            return
+        # Extract node_id from the clicked object
         if obj and "node_id" in obj:
             nid = int(obj["node_id"])
             selected_node.set(nid)
@@ -1658,4 +1914,4 @@ def grid_map_server(
             class_="mt-2",
         )
 
-    return {"selected_node": selected_node}
+    return {"selected_node": selected_node, "selected_box": selected_box}

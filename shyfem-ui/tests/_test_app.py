@@ -34,6 +34,7 @@ from shyfem_ui.db.base import init_db
 from shyfem_ui.pages import (
     about,
     admin,
+    boxmodel,
     compare,
     ensemble,
     files,
@@ -112,6 +113,7 @@ def create_test_app(config=None):
         ),
         ui.div(visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"),
         ui.div(compare.compare_ui("compare"), id="sf-page-Compare", class_="sf-page"),
+        ui.div(boxmodel.boxmodel_ui("boxmodel"), id="sf-page-Box-model", class_="sf-page"),
         ui.div(ensemble.ensemble_ui("ensemble"), id="sf-page-Ensemble", class_="sf-page"),
         ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
         ui.div(admin.admin_ui("admin"), id="sf-page-Admin", class_="sf-page"),
@@ -197,6 +199,12 @@ window.__test_set_active_project = function(projectDict) {
             "visualize", config, active_project=active_project, tutorial_context=tutorial_context
         )
         compare.compare_server("compare", config, job_queue, active_project=active_project)
+        boxmodel.boxmodel_server(
+            "boxmodel",
+            config,
+            active_project=active_project,
+            tutorial_context=tutorial_context,
+        )
         ensemble.ensemble_server("ensemble", config, job_queue, active_project=active_project)
         files.files_server("files", config, active_project=active_project)
         about.about_server("about", config)

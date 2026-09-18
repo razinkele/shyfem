@@ -274,3 +274,6 @@ src/tools/shyplot/util/plotbug
 src/tools/shyplot/util/plotcolb
 src/tools/shyplot/util/testdash
 src/tools/shyplot/util/windrose
+
+# subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

@@ -1,10 +1,13 @@
 """Configuration management using Pydantic settings."""
 
+import logging
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, PrivateAttr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
 
 
 class Config(BaseSettings):
@@ -222,6 +225,67 @@ class Config(BaseSettings):
                 self.trusted_proxies = ["127.0.0.0/8", "::1/128"]
         return self
 
+    @model_validator(mode="after")
+    def _check_analysis_roots(self):
+        """Resolve and vet analysis roots (server mode only; local mode never uses them).
+
+        The accepted, resolved list is written ONLY to ``self._vetted_analysis_roots``
+        (a private attr), never back to ``self.analysis_roots`` (the user-supplied
+        field). ``deployment_mode`` can be mutated after construction (no
+        ``validate_assignment``), so validated-ness must live on a separate
+        attribute that a later mode flip cannot retroactively make "true" for
+        roots this validator never actually vetted. See ``resolved_analysis_roots``.
+        """
+        if self.deployment_mode != "server" or not self.analysis_roots:
+            return self
+        forbidden = [
+            # "/" is protected via the equality arm below only (the spec's
+            # separate "/ is rejected" clause) -- it can never also match via
+            # the containment arms, since every resolved root is an absolute
+            # path already rooted at "/". Do not "optimize" this away.
+            Path("/"),
+            Path("/tmp").resolve(),
+            self.user_data_root.resolve(),
+            Path(self.work_dir).resolve(),
+            Path(self.shyfem_dir).resolve(),
+        ]
+        if self.database_url.startswith("sqlite:///"):
+            forbidden.append(Path(self.database_url[len("sqlite:///") :]).resolve().parent)
+        resolved: list[str] = []
+        for raw in self.analysis_roots:
+            try:
+                root = Path(raw).expanduser().resolve(strict=True)
+            except (OSError, RuntimeError) as e:
+                raise ValueError(
+                    f"analysis_roots: {raw!r} does not resolve to an existing directory"
+                ) from e
+            if not root.is_dir():
+                raise ValueError(f"analysis_roots: {raw!r} is not a directory")
+            for f in forbidden:
+                if (
+                    root == f
+                    or str(root).startswith(str(f) + "/")
+                    or str(f).startswith(str(root) + "/")
+                ):
+                    raise ValueError(f"analysis_roots: {raw!r} overlaps a protected location ({f})")
+            resolved.append(str(root))
+        self._vetted_analysis_roots = resolved
+        logger.warning(
+            "analysis_roots enabled (read-only for all authenticated users): %s", resolved
+        )
+        return self
+
+    def resolved_analysis_roots(self) -> list[Path]:
+        """The validated roots as Paths.
+
+        Backed by ``_vetted_analysis_roots``, populated only by
+        ``_check_analysis_roots`` at construction time -- never derived from
+        ``analysis_roots``/``deployment_mode`` at call time, so a Config that
+        was never validated in server mode (built local then mutated) fails
+        closed to ``[]`` rather than surfacing its raw, unvetted strings.
+        """
+        return [Path(p) for p in self._vetted_analysis_roots]
+
     @property
     def bin_dir(self) -> Path:
         """Path to SHYFEM binaries."""
@@ -270,6 +334,26 @@ class Config(BaseSettings):
         default_factory=list,
         description="Trusted proxy CIDR ranges for X-Forwarded-For (e.g., ['127.0.0.1/8', '10.0.0.0/8'])",
     )
+
+    analysis_roots: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Admin-declared directories readable (never writable) by EVERY authenticated "
+            "user in server mode, for box-model run outputs kept outside the sandbox. "
+            "JSON array in the environment, e.g. SHYFEM_UI_ANALYSIS_ROOTS='[\"/data/runs\"]'. "
+            "Each must exist and must not overlap the user data root, the work dir, the "
+            "SHYFEM dir, the database directory or /tmp. Ignored in local mode."
+        ),
+    )
+    # Resolved/accepted analysis_roots, populated ONLY by _check_analysis_roots
+    # below. Deliberately NOT derived from analysis_roots + deployment_mode at
+    # read time: mode is mutable post-construction (model_config has no
+    # validate_assignment), so a Config built in local mode and later flipped
+    # to server mode (e.g. app.py's --mode server path) must not suddenly
+    # treat its never-vetted analysis_roots as accepted. This private attr is
+    # the only source of truth for resolved_analysis_roots() -- an
+    # unvalidated config fails closed to [].
+    _vetted_analysis_roots: list[str] = PrivateAttr(default_factory=list)
 
     # Static asset caching
     static_cache_max_age: int = Field(
@@ -476,8 +560,10 @@ class Config(BaseSettings):
 
         allowed_roots = [home]
         if not for_write:
-            # Read-only bundled assets stay reachable for reads (tutorials/examples).
+            # Read-only bundled assets stay reachable for reads (tutorials/examples),
+            # plus the admin-declared analysis roots (box-model run outputs).
             allowed_roots += [self.testcases_dir.resolve(), self.bin_dir.resolve()]
+            allowed_roots += self.resolved_analysis_roots()
 
         resolved = Path(path).expanduser().resolve()
         if resolved.exists():
