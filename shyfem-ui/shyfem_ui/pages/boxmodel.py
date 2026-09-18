@@ -180,6 +180,59 @@ def _bias_cell(variable: str, bias) -> str:
     return "—" if variable == "level" else _fmt(bias)
 
 
+def _reconcile_cache_dir(config, user, work_dir, project_name=None) -> str | None:
+    """Publish finished builds and clear dead tmp dirs -- if the caller may write.
+
+    Returns a page notice, or ``None`` when there is nothing to report.
+
+    ``reconcile_tmp_dirs`` RENAMES and DELETES inside the project, so it needs
+    the WRITE confinement, not the read one the manifest load uses:
+    ``for_write=False`` also admits a shared-project viewer and an
+    analysis-root reader, and this page server is mounted for every session. A
+    viewer has nothing to reconcile, so failing the write check just skips it,
+    silently -- it is not an error the viewer could act on.
+
+    Module-level and dependency-free (it takes the config, the user and the
+    directory) so the gate can be tested without a live Shiny session.
+    """
+    try:
+        config.confine_path(Path(work_dir), user, must_exist=True, for_write=True)
+    except (ValueError, OSError) as exc:
+        logger.info("boxmodel: skipping cache reconcile (no write access): %s", exc)
+        return None
+    try:
+        for msg in reconcile_tmp_dirs(Path(work_dir)):
+            logger.info("boxmodel cache reconcile (%s): %s", project_name, msg)
+    except Exception as exc:  # noqa: BLE001 - page load must never die here
+        logger.warning("boxmodel: cache reconcile failed: %s", exc, exc_info=True)
+        return "Could not tidy the cache directory; a build may need to be re-run."
+    return None
+
+
+def _remember_good(last: dict, project_id, run_id: str, cached_run) -> None:
+    """Remember a successfully loaded run, KEYED by the run it belongs to."""
+    last["good"] = (project_id, run_id, cached_run)
+
+
+def _pick_live_fallback(last: dict, project_id, run_id: str):
+    """The previously loaded run to keep showing during a rebuild -- but only
+    if it is the run currently selected.
+
+    The slot must be keyed. Unkeyed, this sequence silently shows the wrong
+    data: run A ready -> Build A -> switch to run B (ready, so B is loaded and
+    remembered) -> switch back to A while A is still building -> the live
+    branch hands back B's frame while the Run select and the badge both say A,
+    so the map, the series and the skill table are all B's.
+    """
+    stored = last.get("good")
+    if not stored:
+        return None
+    stored_project, stored_run, cached_run = stored
+    if stored_project == project_id and stored_run == run_id:
+        return cached_run
+    return None
+
+
 def _cache_period(cached_run) -> tuple:
     meta = cached_run.meta.get("period") or {}
     return pd.Timestamp(meta["start"]).date(), pd.Timestamp(meta["end"]).date()
@@ -289,6 +342,7 @@ def boxmodel_server(
         "period": None,
         "grd": False,
         "good": None,
+        "project": None,
     }
 
     def _user():
@@ -351,31 +405,28 @@ def boxmodel_server(
 
         # Publish any build that finished while nobody was watching and clear
         # dead tmp dirs -- before anything reads the cache status, so a
-        # just-finished build shows as "ready" straight away. Idempotent, but
-        # a genuine simultaneous publish race hands the loser an OSError.
-        #
-        # This RENAMES and DELETES inside the project, so it needs the write
-        # confinement, not the read one used above: for_write=False also
-        # admits a shared-project viewer and an analysis-root reader, and
-        # this page server is mounted for every session. A viewer has
-        # nothing to reconcile, so failing the write check just skips it --
-        # silently, since it is not an error the viewer can act on.
-        notice = None
-        try:
-            config.confine_path(Path(proj["work_dir"]), usr, must_exist=True, for_write=True)
-        except (ValueError, OSError) as exc:
-            logger.info("boxmodel: skipping cache reconcile (no write access): %s", exc)
-            return manifest_obj, None, None
-        try:
-            for msg in reconcile_tmp_dirs(Path(proj["work_dir"])):
-                logger.info("boxmodel cache reconcile (%s): %s", proj.get("name"), msg)
-        except Exception as exc:  # noqa: BLE001 - page load must never die here
-            logger.warning("boxmodel: cache reconcile failed: %s", exc, exc_info=True)
-            notice = "Could not tidy the cache directory; a build may need to be re-run."
+        # just-finished build shows as "ready" straight away. Gated on the
+        # WRITE confinement and never raising; see _reconcile_cache_dir.
+        notice = _reconcile_cache_dir(config, usr, proj["work_dir"], proj.get("name"))
         return manifest_obj, None, notice
 
     def manifest():
         return manifest_result()[0]
+
+    @reactive.effect
+    def _forget_cached_run_on_project_change():
+        """Drop the remembered run when the project changes.
+
+        ``_pick_live_fallback`` already refuses to hand back a run that is not
+        the selected one, so this is not what makes the fallback correct -- it
+        is so a session that moves to another project stops holding the old
+        project's DataFrames.
+        """
+        proj = _project()
+        project_id = proj["id"] if proj else None
+        if project_id != last["project"]:
+            last["project"] = project_id
+            last["good"] = None
 
     @reactive.effect
     def _fill_runs():
@@ -583,8 +634,9 @@ def boxmodel_server(
             # even though last build's parquet is still on disk and still
             # valid -- keep showing it rather than blanking map, series and
             # skill table for the whole rebuild. The badge still says
-            # building, with progress.
-            return last["good"], None
+            # building, with progress. Only ever the run that is actually
+            # selected: see _pick_live_fallback.
+            return _pick_live_fallback(last, proj["id"], run.id), None
         if state not in ("ready", "stale"):
             last["good"] = None
             return None, None
@@ -600,7 +652,7 @@ def boxmodel_server(
             _cache_period(cached_run)
             if "box" not in cached_run.state_daily.columns:
                 raise KeyError("state_daily has no 'box' column")
-            last["good"] = cached_run
+            _remember_good(last, proj["id"], run.id, cached_run)
             return cached_run, None
         except (OSError, ValueError, KeyError, TypeError) as exc:
             logger.warning("boxmodel: cache could not be loaded: %s", exc)

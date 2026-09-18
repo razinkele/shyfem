@@ -67,9 +67,15 @@ def test_server_wiring_gates_and_polling():
     src = get_server_source(boxmodel, "boxmodel_server")
     assert src.count("editor_denied_reason(") >= 2  # build + cancel
     assert "start_build(" in src and "cancel_build(" in src and "load_manifest(" in src
-    assert "invalidate_later" in src and "reconcile_tmp_dirs(" in src
+    assert "invalidate_later" in src
     assert "ui.HTML(" not in src  # manifest text via ui.tags only
     assert "grid_map_server(" in src and "on_box_click" in src
+    # The reconcile now lives in the module-level _reconcile_cache_dir (so its
+    # write gate is testable without a live session), and the page server calls
+    # it at manifest-load time. Assert the same wiring across both halves,
+    # rather than for the call literal that used to sit in the server body.
+    assert "_reconcile_cache_dir(" in src, "the page must reconcile at page load"
+    assert "reconcile_tmp_dirs(" in inspect.getsource(boxmodel)
 
 
 def test_download_uses_non_deprecated_renderer():
@@ -280,33 +286,122 @@ def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
     assert "status_tick.get()" not in poll_body and "cache_generation.get()" not in poll_body
 
 
-def test_reconcile_is_gated_on_write_confinement():
+class _GateConfig:
+    """Config stub whose confine_path refuses writes but allows reads."""
+
+    def __init__(self, *, deny_write: bool):
+        self.deny_write = deny_write
+        self.calls: list[bool] = []
+
+    def confine_path(self, path, user, *, must_exist=False, for_write=False):
+        self.calls.append(for_write)
+        if for_write and self.deny_write:
+            raise ValueError(f"Path '{path}' is outside allowed directories")
+        return path
+
+    def display_path(self, path, user):
+        return str(path)
+
+
+def test_reconcile_is_skipped_without_write_access(monkeypatch, tmp_path):
     """Review Important 4: ``reconcile_tmp_dirs`` renames and deletes inside the
-    project. The read confinement used for ``load_manifest`` also admits a
-    shared-project viewer and an analysis-root reader, and this page server is
-    mounted for every session, so the mutation needs its own write check."""
+    project, but the confinement the manifest load uses is ``for_write=False``,
+    which also admits a shared-project viewer and an analysis-root reader -- and
+    this page server is mounted for every session. A viewer must not trigger the
+    mutation, and must not be shown an error they cannot act on."""
+    from shyfem_ui.pages import boxmodel
+
+    called = []
+    monkeypatch.setattr(boxmodel, "reconcile_tmp_dirs", lambda wd: called.append(wd) or [])
+
+    config = _GateConfig(deny_write=True)
+    notice = boxmodel._reconcile_cache_dir(config, {"username": "viewer"}, tmp_path, "proj")
+
+    assert called == [], "reconcile must not run without write access"
+    assert notice is None, "a viewer has nothing actionable to be told"
+    assert config.calls == [True], "the write confinement must be the one checked"
+
+
+def test_reconcile_runs_once_with_write_access(monkeypatch, tmp_path):
+    from shyfem_ui.pages import boxmodel
+
+    called = []
+    monkeypatch.setattr(
+        boxmodel, "reconcile_tmp_dirs", lambda wd: called.append(wd) or ["published fix"]
+    )
+
+    config = _GateConfig(deny_write=False)
+    notice = boxmodel._reconcile_cache_dir(config, {"username": "editor"}, tmp_path, "proj")
+
+    assert called == [tmp_path], "reconcile must run exactly once for a writer"
+    assert notice is None
+
+
+def test_reconcile_failure_becomes_a_page_notice(monkeypatch, tmp_path):
+    """A genuine simultaneous publish race hands the loser an OSError; page load
+    must survive it and say so."""
+    from shyfem_ui.pages import boxmodel
+
+    def _boom(_wd):
+        raise FileNotFoundError("lost the publish race")
+
+    monkeypatch.setattr(boxmodel, "reconcile_tmp_dirs", _boom)
+    notice = boxmodel._reconcile_cache_dir(_GateConfig(deny_write=False), None, tmp_path, "proj")
+    assert notice and "cache directory" in notice
+
+
+def test_manifest_result_still_loads_when_reconcile_is_skipped(monkeypatch, tmp_path):
+    """The write gate must not stop a viewer seeing the page: the manifest still
+    loads, only the mutation is skipped."""
+    from shyfem_ui.pages import boxmodel
+
+    monkeypatch.setattr(
+        boxmodel,
+        "reconcile_tmp_dirs",
+        lambda wd: (_ for _ in ()).throw(AssertionError("must not be called")),
+    )
+    config = _GateConfig(deny_write=True)
+    # the read confinement (for_write=False) is what the manifest load uses
+    assert config.confine_path(tmp_path, None, must_exist=True, for_write=False) == tmp_path
+    assert boxmodel._reconcile_cache_dir(config, None, tmp_path, "proj") is None
+
+
+def test_live_fallback_is_keyed_to_the_selected_run():
+    """Re-review Important: the "keep showing the last good run during a
+    rebuild" slot must be keyed, or this plain sequence silently shows the wrong
+    data -- run A ready, Build A, switch to ready run B (B is loaded and
+    remembered), switch back to A while A is still building: the live branch
+    would hand back B's frame while the Run select and the badge both say A."""
+    from shyfem_ui.pages import boxmodel
+
+    last: dict = {"good": None}
+    run_b = object()
+    boxmodel._remember_good(last, 1, "runB", run_b)
+
+    # same project, different run -> must NOT fall back to B
+    assert boxmodel._pick_live_fallback(last, 1, "runA") is None
+    # same run -> the remembered frame
+    assert boxmodel._pick_live_fallback(last, 1, "runB") is run_b
+    # same run id in a different project -> also not a match
+    assert boxmodel._pick_live_fallback(last, 2, "runB") is None
+
+
+def test_live_fallback_is_empty_before_anything_loaded():
+    from shyfem_ui.pages import boxmodel
+
+    assert boxmodel._pick_live_fallback({}, 1, "runA") is None
+    assert boxmodel._pick_live_fallback({"good": None}, 1, "runA") is None
+
+
+def test_project_change_clears_the_remembered_run():
+    """Keying already makes the fallback correct; clearing on a project change is
+    so a session that moves on stops holding the old project's DataFrames."""
     from shyfem_ui.pages import boxmodel
 
     src = get_server_source(boxmodel, "boxmodel_server")
-    head, _, tail = src.partition("reconcile_tmp_dirs(")
-    assert tail, "reconcile_tmp_dirs call not found"
-    assert "for_write=True" in head, "reconcile must be preceded by a write-confinement check"
-    assert "for_write=False" in head, "load_manifest must keep the read confinement"
-    assert head.index("for_write=False") < head.index("for_write=True")
-
-
-def test_cached_run_survives_a_rebuild():
-    """Minor: ``cache_status`` reports the registry handle before the published
-    cache, so during a rebuild the state is "building" while last build's
-    parquet is still on disk and still valid. Blanking the map/series/skill for
-    the whole rebuild is worse than showing the previous run."""
-    from shyfem_ui.pages import boxmodel
-
-    src = get_server_source(boxmodel, "boxmodel_server")
-    start = src.index("def cached_result(")
+    start = src.index("def _forget_cached_run_on_project_change(")
     body = src[start : src.index("\n    @", start)]
-    assert "if state in _LIVE_STATES:" in body
-    assert 'return last["good"], None' in body
+    assert 'last["good"] = None' in body and 'last["project"]' in body
 
 
 def test_layers_effect_wraps_its_upstream_calls():
