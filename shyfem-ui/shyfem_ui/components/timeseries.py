@@ -23,6 +23,16 @@ from shinywidgets import output_widget, render_widget
 logger = logging.getLogger(__name__)
 
 
+def _scatter_mode(style: str) -> str:
+    """Map the UI plot style to a valid Plotly scatter ``mode``.
+
+    The style select offers ``line``/``scatter``/``area``, but Plotly's
+    ``mode`` flaglist only accepts ``lines``/``markers``/``text`` — passing
+    ``"line"`` or ``"scatter"`` raises. ``area`` is drawn as filled lines.
+    """
+    return {"line": "lines", "scatter": "markers", "area": "lines"}.get(style, "lines")
+
+
 @module.ui
 def timeseries_ui(height: str = "500px"):
     """Interactive time series component UI."""
@@ -216,7 +226,9 @@ def timeseries_server(
 
             secondary = dual and i >= len(selected) // 2
 
-            mode = style if style != "area" else "lines"
+            # Map the UI style to a valid Plotly scatter mode: the select uses
+            # "line"/"scatter"/"area", but Plotly needs "lines"/"markers".
+            mode = _scatter_mode(style)
             fill = "tozeroy" if style == "area" else None
 
             trace_kwargs = dict(
