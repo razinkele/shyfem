@@ -707,3 +707,17 @@ def load_cache(cache_dir: Path, run_id: str) -> CachedRun:
     hp = cache_dir / "state_hourly.parquet"
     hourly = pd.read_parquet(hp) if hp.is_file() else None
     return CachedRun(run_id, meta, sd, fd, md, hourly)
+
+
+def load_cache_state(cache_dir: Path, run_id: str) -> CachedRun:
+    """Load only ``meta.json`` + ``state_daily`` from a published cache.
+
+    For multi-run skill comparison, which reads only ``state_daily`` -- the
+    large ``flux``/``meteo``/hourly frames are left empty so loading every run
+    at once stays cheap. Callers pass the published ``cache_dir_for(...)`` path.
+    """
+    meta = json.loads((cache_dir / "meta.json").read_text())
+    sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+    sd["date"] = _to_ns(sd["date"])
+    empty = pd.DataFrame()
+    return CachedRun(run_id, meta, sd, empty, empty, None)

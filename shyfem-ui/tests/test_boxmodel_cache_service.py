@@ -302,6 +302,29 @@ def test_load_cache(env, monkeypatch):
     assert cr.meta["period"]["start"] == "2009-01-01T00:00:00"
 
 
+def test_load_cache_state_reads_only_state_daily(env, monkeypatch):
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
+        )
+        await _wait(h)
+
+    asyncio.run(go())
+    cr = bc.load_cache_state(bc.cache_dir_for(Path(project["work_dir"]), "fix"), "fix")
+    # state_daily present (used by the multi-run skill comparison) ...
+    assert cr.run_id == "fix" and set(cr.state_daily["box"]) == {1, 2, 3}
+    assert str(cr.state_daily["date"].dtype).startswith("datetime64")
+    # ... while the large frames are left empty to keep loading every run cheap.
+    assert cr.flux_daily.empty and cr.meteo_daily.empty and cr.state_hourly is None
+    assert cr.meta["period"]["start"] == "2009-01-01T00:00:00"
+
+
 # --- Controller ruling on concern 1 (stale-error-shadows-success) ----------
 
 

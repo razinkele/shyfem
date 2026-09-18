@@ -55,6 +55,7 @@ from shyfem_ui.services.boxmodel_cache import (
     cache_status,
     cancel_build,
     load_cache,
+    load_cache_state,
     reconcile_tmp_dirs,
     start_build,
 )
@@ -364,6 +365,15 @@ def boxmodel_ui() -> ui.Tag:
                 output_widget("ts_plot"),
                 ui.output_ui("skill_table"),
                 ui.output_ui("band_ratios"),
+            ),
+            ui.nav_panel(
+                "Run comparison",
+                ui.p(
+                    "Fit statistics of every ready run against observations, "
+                    "over the days all runs share.",
+                    class_="text-muted small",
+                ),
+                ui.output_ui("run_comparison_table"),
             ),
             id="tabs",
         ),
@@ -1183,6 +1193,100 @@ def boxmodel_server(
                 "Judge amplitude by sd_mod/sd_obs (1.00 is right) and phase by r; R² is shown "
                 "but is not the headline. Level skill is computed on anomalies, so a level "
                 "row has no meaningful bias (—).",
+                class_="text-muted small",
+            ),
+        )
+
+    @reactive.calc
+    def all_run_states() -> dict:
+        """``{run_id: CachedRun}`` (state_daily only) for every manifest run
+        whose cache is ready/stale -- the multi-run skill comparison input.
+
+        Depends on ``cache_generation`` (so a finished rebuild refreshes it)
+        but reads only ``state_daily``, so loading every run stays cheap.
+        """
+        cache_generation.get()
+        manifest_obj = manifest()
+        proj = _project()
+        if manifest_obj is None or proj is None:
+            return {}
+        work_dir = Path(proj["work_dir"])
+        states: dict = {}
+        for run in manifest_obj.runs:
+            try:
+                st = cache_status(work_dir, run.id, run.dir, REGISTRY)
+            except (ValueError, OSError):
+                continue
+            if st.state not in ("ready", "stale"):
+                continue
+            try:
+                states[run.id] = load_cache_state(cache_dir_for(work_dir, run.id), run.id)
+            except (OSError, ValueError, KeyError) as exc:
+                logger.warning("boxmodel: run %s state cache unreadable: %s", run.id, exc)
+        return states
+
+    @render.ui
+    def run_comparison_table():
+        manifest_obj = manifest()
+        obs, sites = observations()
+        states = all_run_states()
+        if manifest_obj is None:
+            return ui.tags.p("Open a project first.", class_="text-muted")
+        if obs is None or sites is None:
+            return ui.tags.p("No observations configured for this project.", class_="text-muted")
+        if not states:
+            return ui.tags.p("No ready run caches to compare yet.", class_="text-muted")
+        # Widest span across runs; skill_table intersects the shared days.
+        starts = [r.state_daily["date"].min() for r in states.values()]
+        ends = [r.state_daily["date"].max() for r in states.values()]
+        try:
+            table = compute_skill_table(states, obs, sites, min(starts), max(ends))
+        except (ValueError, KeyError) as exc:
+            logger.warning("boxmodel: run-comparison skill failed: %s", exc)
+            return ui.tags.p(f"Run comparison: {_err(exc)}", class_="text-muted")
+        if table.empty:
+            return ui.tags.p(
+                "No target has enough common days across the runs.", class_="text-muted"
+            )
+        labels = {run.id: run.label for run in manifest_obj.runs}
+        table = table.sort_values(["site", "variable", "run"])
+        head = ui.tags.tr(
+            *[
+                ui.tags.th(c)
+                for c in (
+                    "run",
+                    "site",
+                    "variable",
+                    "box",
+                    "n",
+                    "bias",
+                    "RMSE",
+                    "r",
+                    "R²",
+                    "sd_mod/sd_obs",
+                )
+            ]
+        )
+        body = [
+            ui.tags.tr(
+                ui.tags.td(_text(labels.get(row.run, row.run))),
+                ui.tags.td(str(row.site)),
+                ui.tags.td(str(row.variable)),
+                ui.tags.td(str(row.box)),
+                ui.tags.td(str(row.n)),
+                ui.tags.td(_bias_cell(row.variable, row.bias)),
+                ui.tags.td(_fmt(row.rmse)),
+                ui.tags.td(_fmt(row.r, 2)),
+                ui.tags.td(_fmt(row.r2, 2)),
+                ui.tags.td(_fmt(row.sd_ratio, 2)),
+            )
+            for row in table.itertuples()
+        ]
+        return ui.tags.div(
+            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
+            ui.tags.p(
+                "All runs are compared on the days they all produced, so the window is the "
+                "runs' overlap. Aim for lower RMSE, sd_mod/sd_obs near 1.00, and higher r.",
                 class_="text-muted small",
             ),
         )
