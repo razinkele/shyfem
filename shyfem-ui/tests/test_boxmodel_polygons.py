@@ -131,3 +131,99 @@ def test_mixed_type_id_field_raises(proj):
     (proj / "mixed_id_type.geojson").write_text(json.dumps(d))
     with pytest.raises(bp.PolygonError, match="field 'box'"):
         bp.load_box_polygons(proj / "mixed_id_type.geojson", None, "box")
+
+
+def test_load_box_polygons_rejects_out_of_bounds_coordinates(proj):
+    """pyproj returns inf/nan for out-of-domain input instead of raising, so a
+    post-transform sanity check must catch a vertex outside valid WGS84
+    bounds even when the source is already tagged WGS84 (identity transform).
+
+    Mutates a middle vertex (index 1), not the first/last, so the ring stays
+    closed and this doesn't also trip GDAL's "non closed ring" warning."""
+    d = json.loads((proj / "box_polygons.geojson").read_text())
+    d["features"][0]["geometry"]["coordinates"][0][1] = [1e6, 1e6]
+    (proj / "bad_coord.geojson").write_text(json.dumps(d))
+    with pytest.raises(bp.PolygonError, match="box 1"):
+        bp.load_box_polygons(proj / "bad_coord.geojson", None, "box")
+
+
+def test_vertex_cap_counts_all_rings_and_parts(proj, monkeypatch):
+    """MAX_VERTICES must bound the cost of parsing a feature's whole raw
+    geometry (outer ring + holes), not just the outer ring _outer_ring keeps."""
+    d = json.loads((proj / "box_polygons.geojson").read_text())
+    outer = d["features"][0]["geometry"]["coordinates"][0]
+    hole = [
+        [21.002, 55.502],
+        [21.004, 55.502],
+        [21.004, 55.504],
+        [21.002, 55.504],
+        [21.002, 55.502],
+    ]
+    d["features"][0]["geometry"]["coordinates"].append(hole)
+    (proj / "with_hole.geojson").write_text(json.dumps(d))
+
+    # The outer ring alone fits exactly at this cap; outer + hole must overflow.
+    monkeypatch.setattr(bp, "MAX_VERTICES", len(outer))
+    with pytest.raises(bp.PolygonError, match="vertices"):
+        bp.load_box_polygons(proj / "with_hole.geojson", None, "box")
+
+
+def test_dissolve_missing_grid_raises(tmp_path):
+    with pytest.raises(bp.PolygonError, match="fixture.grd"):
+        bp.dissolve_boxes_from_grid(
+            tmp_path / "fixture.grd", [[e, b] for e, b in ELEMENT_BOX.items()]
+        )
+
+
+def test_dissolve_dangling_node_raises(proj):
+    grd_text = (proj / "fixture.grd").read_text()
+    # Element 1 originally references nodes 1, 2, 6; point one of them at a
+    # node id that does not exist in the grid.
+    modified = grd_text.replace("2 1 0 3 1 2 6", "2 1 0 3 1 2 99")
+    assert modified != grd_text
+    (proj / "dangling.grd").write_text(modified)
+    with pytest.raises(bp.PolygonError, match="99"):
+        bp.dissolve_boxes_from_grid(proj / "dangling.grd", [[e, b] for e, b in ELEMENT_BOX.items()])
+
+
+def test_dissolve_missing_element_raises_with_examples(proj):
+    element_box = [[e, b] for e, b in ELEMENT_BOX.items()] + [[99, 1], [98, 1]]
+    with pytest.raises(bp.PolygonError, match=r"2 element\(s\)"):
+        bp.dissolve_boxes_from_grid(proj / "fixture.grd", element_box)
+
+
+def _write_projected_grd(path, epsg: int) -> None:
+    from pyproj import Transformer
+
+    from tests._boxmodel_fixture import ELEMENTS, NODES
+
+    to_projected = Transformer.from_crs("EPSG:4326", f"EPSG:{epsg}", always_xy=True)
+    lines = ["0 projected fixture grid"]
+    for node_id, (lon, lat) in NODES.items():
+        x, y = to_projected.transform(lon, lat)
+        lines.append(f"1 {node_id} 0 {x:.6f} {y:.6f} 6.00")
+    for elem_id, (a, b, c) in ELEMENTS.items():
+        lines.append(f"2 {elem_id} 0 3 {a} {b} {c}")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def test_dissolve_from_grid_reprojects_with_explicit_epsg(tmp_path):
+    grd_path = tmp_path / "utm.grd"
+    _write_projected_grd(grd_path, 32634)
+    element_box = [[e, b] for e, b in ELEMENT_BOX.items()]
+
+    polys = bp.dissolve_boxes_from_grid(grd_path, element_box, epsg=32634)
+    assert set(polys) == {1, 2, 3}
+    xs = [p[0] for p in polys[1]]
+    ys = [p[1] for p in polys[1]]
+    assert min(xs) == pytest.approx(21.00, abs=1e-6) and max(xs) == pytest.approx(21.01, abs=1e-6)
+    assert min(ys) == pytest.approx(55.50, abs=1e-6) and max(ys) == pytest.approx(55.51, abs=1e-6)
+
+
+def test_dissolve_from_grid_without_epsg_and_undetectable_crs_raises(tmp_path):
+    grd_path = tmp_path / "utm_no_epsg.grd"
+    _write_projected_grd(grd_path, 32634)
+    element_box = [[e, b] for e, b in ELEMENT_BOX.items()]
+
+    with pytest.raises(bp.PolygonError, match="EPSG"):
+        bp.dissolve_boxes_from_grid(grd_path, element_box)

@@ -16,8 +16,27 @@ relevant, the box id.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from pathlib import Path
+
+try:
+    import fiona
+except ImportError:
+    fiona = None
+
+try:
+    import pyproj
+except ImportError:
+    pyproj = None
+
+try:
+    import shapely.geometry
+    import shapely.ops
+except ImportError:
+    shapely = None
+
+from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 
 MAX_POLYGON_BYTES = 50 * 1024 * 1024
 MAX_FEATURES = 1000
@@ -29,19 +48,48 @@ class PolygonError(ValueError):
     """User-facing polygon-file problem."""
 
 
+def _require_geospatial_stack() -> None:
+    if fiona is None or pyproj is None or shapely is None:
+        raise PolygonError("geospatial stack (fiona/pyproj/shapely) is not installed")
+
+
 def _to_wgs84(crs) -> Callable[[float, float], tuple[float, float]]:
     """Build an (x, y) -> (lon, lat) transform for the given source CRS.
 
     ``crs`` may be falsy (no CRS on the source, e.g. a bare GeoJSON, which is
     assumed to already be WGS84 lon/lat per RFC 7946).
     """
-    from pyproj import CRS, Transformer
-
-    src = CRS.from_user_input(crs) if crs else CRS.from_epsg(4326)
+    src = pyproj.CRS.from_user_input(crs) if crs else pyproj.CRS.from_epsg(4326)
     if src.to_epsg() == 4326:
         return lambda x, y: (x, y)
-    transformer = Transformer.from_crs(src, CRS.from_epsg(4326), always_xy=True)
+    transformer = pyproj.Transformer.from_crs(src, pyproj.CRS.from_epsg(4326), always_xy=True)
     return lambda x, y: transformer.transform(x, y)
+
+
+def _out_of_wgs84_bounds(x: float, y: float) -> bool:
+    """True if (x, y) is non-finite, or outside valid WGS84 lon/lat bounds.
+
+    pyproj returns inf/nan for out-of-domain input instead of raising, so
+    every transform result must be checked explicitly rather than trusted.
+    """
+    return not math.isfinite(x) or not math.isfinite(y) or abs(x) > 180.0 or abs(y) > 90.0
+
+
+def _count_vertices(geom: dict) -> int:
+    """Total vertex count over every ring of every part of a raw Polygon or
+    MultiPolygon geometry (outer rings AND holes, ALL MultiPolygon parts).
+
+    Counted on the geometry as fiona/OGR parsed it, before ``_outer_ring``
+    selects the largest part or drops holes, so ``MAX_VERTICES`` bounds the
+    cost of parsing a feature rather than just the size of the ring we end
+    up keeping.
+    """
+    geom_type = geom.get("type")
+    if geom_type == "Polygon":
+        return sum(len(ring) for ring in geom.get("coordinates", []))
+    if geom_type == "MultiPolygon":
+        return sum(len(ring) for part in geom.get("coordinates", []) for ring in part)
+    return 0
 
 
 def _outer_ring(geom: dict, path: Path, box: int) -> list[list[float]]:
@@ -69,12 +117,14 @@ def load_box_polygons(
     repeated as the last) and coordinates reprojected to WGS84.
 
     Raises ``PolygonError`` for anything the UI must surface to the user:
-    a missing/oversized/symlinked file, a disallowed driver, too many
-    features or vertices, a missing/non-integer/duplicate id field, a
-    geometry that cannot be reprojected, or (when ``expected_boxes`` is
-    given) a box-id set that does not match it exactly.
+    the geospatial stack not being installed, a missing/oversized/symlinked
+    file, a disallowed driver, too many features or vertices, a
+    missing/non-integer/duplicate id field, a geometry that reprojects to
+    non-finite or out-of-WGS84-bounds coordinates, or (when
+    ``expected_boxes`` is given) a box-id set that does not match it
+    exactly.
     """
-    import fiona
+    _require_geospatial_stack()
 
     path = Path(path)
     try:
@@ -82,8 +132,10 @@ def load_box_polygons(
         is_file = path.is_file()
     except OSError as exc:
         raise PolygonError(f"{path}: cannot stat polygon file ({exc})") from exc
-    if is_symlink or not is_file:
+    if is_symlink:
         raise PolygonError(f"{path}: polygon file must be a regular file, not a symlink")
+    if not is_file:
+        raise PolygonError(f"{path}: polygon file not found")
     size = path.stat().st_size
     if size > MAX_POLYGON_BYTES:
         raise PolygonError(f"{path}: polygon file exceeds {MAX_POLYGON_BYTES} bytes ({size})")
@@ -126,15 +178,16 @@ def load_box_polygons(
         iterator = iter(src)
         index = 0
         while True:
+            # Check the cap before fetching, so at most MAX_FEATURES records
+            # are ever read from the driver (never one more to "peek" ahead).
+            if index >= MAX_FEATURES:
+                raise PolygonError(f"{path}: more than {MAX_FEATURES} features")
             try:
                 feature = next(iterator)
             except StopIteration:
                 break
             except Exception as exc:
                 raise PolygonError(f"{path}: cannot read feature {index} ({exc})") from exc
-
-            if index >= MAX_FEATURES:
-                raise PolygonError(f"{path}: more than {MAX_FEATURES} features")
             index += 1
 
             props = dict(feature["properties"])
@@ -156,13 +209,21 @@ def load_box_polygons(
             geometry = feature["geometry"]
             if geometry is None:
                 raise PolygonError(f"{path}: box {box} has no geometry")
-            ring = _outer_ring(dict(geometry), path, box)
+            geometry = dict(geometry)
 
-            vertex_count += len(ring)
+            # Count vertices over the WHOLE raw geometry (all rings, all parts)
+            # before selecting the outer ring, so the cap bounds parse cost.
+            vertex_count += _count_vertices(geometry)
             if vertex_count > MAX_VERTICES:
                 raise PolygonError(f"{path}: more than {MAX_VERTICES} total vertices")
 
+            ring = _outer_ring(geometry, path, box)
             wgs_ring = [list(to_wgs84(x, y)) for x, y in ring]
+            for gx, gy in wgs_ring:
+                if _out_of_wgs84_bounds(gx, gy):
+                    raise PolygonError(
+                        f"{path}: box {box} reprojected to invalid coordinates ({gx}, {gy})"
+                    )
             if wgs_ring[0] != wgs_ring[-1]:
                 wgs_ring.append(list(wgs_ring[0]))
             out[box] = [[round(x, 7), round(y, 7)] for x, y in wgs_ring]
@@ -178,38 +239,138 @@ def load_box_polygons(
     return out
 
 
+def _resolve_grid_epsg(grd: GrdFile, epsg: int | None) -> int | None:
+    """Resolve the source EPSG code for a grid's coordinates, in priority order:
+
+    1. the ``epsg`` argument;
+    2. ``grd.epsg`` (set by a caller that already tagged the parsed grid);
+    3. the grid's own coordinates, treated as WGS84 if every value looks
+       geographic (``|x| <= 180`` and ``|y| <= 90`` everywhere);
+    4. ``grd.detect_coordinate_system()`` (``parser_grd.py``), if it resolves
+       a usable UTM zone + hemisphere;
+    5. otherwise ``None`` (the caller raises).
+    """
+    if epsg is not None:
+        return epsg
+    if grd.epsg is not None:
+        return grd.epsg
+    xmin, ymin, xmax, ymax = grd.get_bounds()
+    if abs(xmin) <= 180 and abs(xmax) <= 180 and abs(ymin) <= 90 and abs(ymax) <= 90:
+        return 4326
+    cs = grd.detect_coordinate_system()
+    if cs.is_utm and cs.utm_zone:
+        return (32600 if cs.utm_hemisphere == "N" else 32700) + cs.utm_zone
+    return None
+
+
 def dissolve_boxes_from_grid(
-    grd_path: Path, element_box: list[list[int]]
+    grd_path: Path,
+    element_box: list[list[int]],
+    *,
+    epsg: int | None = None,
 ) -> dict[int, list[list[float]]]:
     """Dissolve each box's element triangles from the .grd into one outer ring.
 
     ``element_box`` is a list of ``[element_id, box_id]`` pairs, as stored in
-    the cache builder's ``meta["element_box"]``. Coordinates are reprojected
-    to WGS84 when the grid carries a non-WGS84 EPSG code.
+    the cache builder's ``meta["element_box"]``.
+
+    The grid's source CRS is resolved via ``_resolve_grid_epsg`` (``epsg``
+    argument -> ``grd.epsg`` -> geographic-looking bounds -> a detected UTM
+    zone -> unresolvable). Nothing defaults silently to WGS84 for coordinates
+    that are not actually geographic and have no known EPSG: mis-projecting a
+    grid without telling the user is worse than refusing.
+
+    Raises ``PolygonError`` (naming the grid file and, where known, the
+    element/box) for: the geospatial stack not being installed, an
+    unparseable grid, an unresolvable source CRS, an element referenced in
+    ``element_box`` that is absent from the grid (one error listing the
+    count and up to five example element ids), an element referencing a node
+    absent from the grid, coordinates that reproject to non-finite or
+    out-of-WGS84-bounds values, or a box that ends up with no contributing
+    elements.
     """
-    from shapely.geometry import Polygon
-    from shapely.ops import unary_union
+    _require_geospatial_stack()
+    grd_path = Path(grd_path)
 
-    from shyfem_ui.services.parser_grd import GrdParser
+    try:
+        grd = GrdParser.parse_file(grd_path)
+    except Exception as exc:
+        raise PolygonError(f"{grd_path.name}: cannot parse grid ({exc})") from exc
 
-    grd = GrdParser.parse_file(grd_path)
+    resolved_epsg = _resolve_grid_epsg(grd, epsg)
+    if resolved_epsg is None:
+        raise PolygonError(
+            f"{grd_path.name}: grid is not in geographic coordinates and no EPSG is "
+            "known; pass epsg= or provide boxes.polygons in the manifest"
+        )
     to_wgs84 = (
-        _to_wgs84(f"EPSG:{grd.epsg}") if grd.epsg and grd.epsg != 4326 else (lambda x, y: (x, y))
+        (lambda x, y: (x, y)) if resolved_epsg == 4326 else _to_wgs84(f"EPSG:{resolved_epsg}")
     )
 
-    groups: dict[int, list[Polygon]] = {}
-    for elem_id, box_id in element_box:
-        element = grd.elements.get(int(elem_id))
+    groups: dict[int, list] = {}
+    contributed: dict[int, bool] = {}
+    missing_elements: list[int] = []
+
+    for raw_elem_id, raw_box_id in element_box:
+        elem_id = int(raw_elem_id)
+        box_id = int(raw_box_id)
+        contributed.setdefault(box_id, False)
+
+        element = grd.elements.get(elem_id)
         if element is None:
+            missing_elements.append(elem_id)
             continue
-        points = [to_wgs84(grd.nodes[n].x, grd.nodes[n].y) for n in element.nodes]
-        groups.setdefault(int(box_id), []).append(Polygon(points))
+
+        points: list[tuple[float, float]] = []
+        for node_id in element.nodes:
+            node = grd.nodes.get(node_id)
+            if node is None:
+                raise PolygonError(
+                    f"{grd_path.name}: element {elem_id} (box {box_id}) references node "
+                    f"{node_id}, which is absent from the grid"
+                )
+            x, y = to_wgs84(node.x, node.y)
+            if _out_of_wgs84_bounds(x, y):
+                raise PolygonError(
+                    f"{grd_path.name}: element {elem_id} (box {box_id}) reprojected to "
+                    f"invalid coordinates ({x}, {y})"
+                )
+            points.append((x, y))
+
+        try:
+            polygon = shapely.geometry.Polygon(points)
+        except Exception as exc:
+            raise PolygonError(
+                f"{grd_path.name}: element {elem_id} (box {box_id}) could not be built "
+                f"into a polygon ({exc})"
+            ) from exc
+
+        groups.setdefault(box_id, []).append(polygon)
+        contributed[box_id] = True
+
+    if missing_elements:
+        examples = missing_elements[:5]
+        raise PolygonError(
+            f"{grd_path.name}: {len(missing_elements)} element(s) in element_box are "
+            f"absent from the grid (examples: {examples})"
+        )
+
+    empty_boxes = sorted(box_id for box_id, has in contributed.items() if not has)
+    if empty_boxes:
+        raise PolygonError(f"{grd_path.name}: box(es) {empty_boxes} have no elements")
 
     out: dict[int, list[list[float]]] = {}
     for box_id, polygons in groups.items():
-        union = unary_union(polygons)
+        try:
+            union = shapely.ops.unary_union(polygons)
+        except Exception as exc:
+            raise PolygonError(
+                f"{grd_path.name}: box {box_id} could not be dissolved ({exc})"
+            ) from exc
         if union.geom_type == "MultiPolygon":
             # Disjoint parts (e.g. a box split by the grid): keep the largest by area.
             union = max(union.geoms, key=lambda g: g.area)
+        if union.is_empty or union.geom_type != "Polygon":
+            raise PolygonError(f"{grd_path.name}: box {box_id} dissolved to an empty shape")
         out[box_id] = [[round(x, 7), round(y, 7)] for x, y in union.exterior.coords]
     return out
