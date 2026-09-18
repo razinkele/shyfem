@@ -304,17 +304,29 @@ def _depth_to_colors(
     return color_bins(depths, n_bins=6, palette=palette)
 
 
+_NON_FINITE_COLOR: list[int] = [200, 200, 200]
+
+
 def value_colors(
-    values: list[float],
+    values: list[float | None],
     palette: str = "viridis",
     n_bins: int = 6,
 ) -> tuple[list[list[int]], list[tuple[float, float, list[int]]]]:
     """Map scalar *values* to RGB colors plus a legend.
 
+    Non-finite entries (``None``, ``NaN``, ``+/-inf`` — box-model series
+    routinely have gaps) are coloured neutral grey ``[200, 200, 200]`` and
+    excluded from both the color-bin computation and the legend range, so
+    a single missing value can't blow up ``color_bins()`` for the rest of
+    the series. The returned color list is position-preserving: it has
+    the same length as *values*, with grey standing in for every
+    non-finite position.
+
     Parameters
     ----------
     values
-        Scalar values (one per feature) to colour.
+        Scalar values (one per feature) to colour. May contain ``None``,
+        ``NaN``, or ``inf`` for missing/undefined entries.
     palette
         Key into :data:`PALETTES` (falls back to viridis).
     n_bins
@@ -323,14 +335,35 @@ def value_colors(
     Returns
     -------
     tuple[list[list[int]], list[tuple[float, float, list[int]]]]
-        Per-value ``[R, G, B]`` colors, and legend bins as
-        ``(lo, hi, [R, G, B])`` tuples.
+        Per-value ``[R, G, B]`` colors (grey at non-finite positions), and
+        legend bins as ``(lo, hi, [R, G, B])`` tuples computed from the
+        finite values only. Bins are empty when ``shiny_deckgl`` is
+        unavailable (``color_bins`` is ``None``) or no finite values remain.
     """
     if color_bins is None or not values:
         return [[120, 120, 120]] * len(values), []
+
+    finite_idx: list[int] = []
+    finite_vals: list[float] = []
+    for i, v in enumerate(values):
+        try:
+            fv = float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(fv):
+            finite_idx.append(i)
+            finite_vals.append(fv)
+
+    if not finite_vals:
+        return [list(_NON_FINITE_COLOR)] * len(values), []
+
     pal = PALETTES.get(palette, PALETTE_VIRIDIS)
-    colors = [list(c[:3]) for c in color_bins(list(values), n_bins=n_bins, palette=pal)]
-    lo, hi = float(min(values)), float(max(values))
+    finite_colors = [list(c[:3]) for c in color_bins(finite_vals, n_bins=n_bins, palette=pal)]
+    colors = [list(_NON_FINITE_COLOR) for _ in values]
+    for i, c in zip(finite_idx, finite_colors, strict=True):
+        colors[i] = c
+
+    lo, hi = min(finite_vals), max(finite_vals)
     step = (hi - lo) / n_bins if hi > lo else 1.0
     idx = [int(round((i / max(n_bins - 1, 1)) * (len(pal) - 1))) for i in range(n_bins)]
     bins = [(lo + i * step, lo + (i + 1) * step, list(pal[j][:3])) for i, j in enumerate(idx)]
@@ -1555,6 +1588,8 @@ def _build_label_map(layers: list[dict], mode: str = "mesh") -> dict[str, str]:
         "wireframe": "Wireframe",
         "triangles": triangles_label,
         "nodes": "Nodes",
+        "boxes": "Boxes",
+        "posts": "Monitoring posts",
     }
     label_map: dict[str, str] = {}
     for layer in layers:
@@ -1691,6 +1726,12 @@ def grid_map_server(
         dicts (e.g. from :func:`build_box_layers`) to overlay on the map.
         Read (not written) by the render effect, so it may safely be
         updated from the calling page without causing a reactive loop.
+        Callers should always pair ``extra_layers`` with a real
+        ``grd_file``: when ``grd_file.get()`` is ``None``, the map still
+        renders ``extra_layers`` and fits bounds to them, but falls back
+        to a minimal widget set (no basemap style, no layer-legend
+        widget) — that state is only meant to be transient, not a
+        supported box-only view.
     on_box_click
         Optional callback invoked with the clicked box id.
     """

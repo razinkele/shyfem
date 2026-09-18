@@ -60,6 +60,48 @@ def test_build_box_layers_without_values_is_outline_only():
     assert layers[0]["filled"] is False and bins == []
 
 
+def test_value_colors_handles_nan_and_none():
+    colors, bins = gm.value_colors([1.0, float("nan"), None, 2.0])
+    assert len(colors) == 4
+    assert colors[1] == [200, 200, 200] and colors[2] == [200, 200, 200]
+    assert colors[0] != [200, 200, 200] and colors[3] != [200, 200, 200]
+    assert len(bins) == 6
+    assert bins[0][0] == pytest.approx(1.0) and bins[-1][1] == pytest.approx(2.0)
+
+
+def test_value_colors_all_non_finite_returns_all_grey_and_empty_bins():
+    colors, bins = gm.value_colors([float("nan"), None, float("inf")])
+    assert colors == [[200, 200, 200], [200, 200, 200], [200, 200, 200]]
+    assert bins == []
+
+
+def test_helpers_degrade_without_shiny_deckgl(monkeypatch):
+    monkeypatch.setattr(gm, "polygon_layer", None)
+    monkeypatch.setattr(gm, "scatterplot_layer", None)
+    monkeypatch.setattr(gm, "color_bins", None)
+
+    polys = {1: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 0.0]]}
+    assert gm.build_box_layers(polys, {1: 1.0}) == ([], [])
+
+    colors, bins = gm.value_colors([1.0, 2.0])
+    assert colors == [[120, 120, 120], [120, 120, 120]]
+    assert bins == []
+
+
+def test_bounds_from_layers_polygon_and_point():
+    layers = [
+        {"data": [{"polygon": [[0.0, 1.0], [2.0, 1.0], [2.0, 3.0], [0.0, 1.0]]}]},
+        {"data": [{"position": [5.0, -1.0]}]},
+    ]
+    bounds = gm._bounds_from_layers(layers)
+    assert bounds == [[0.0, -1.0], [5.0, 3.0]]
+
+
+def test_bounds_from_layers_empty_returns_none():
+    assert gm._bounds_from_layers([]) is None
+    assert gm._bounds_from_layers([{"data": []}]) is None
+
+
 def test_grid_map_server_has_box_click_branch_and_extra_layers():
     src = (
         inspect.getsource(gm.grid_map_server.__closure__[0].cell_contents)
