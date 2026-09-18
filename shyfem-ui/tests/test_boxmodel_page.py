@@ -425,3 +425,186 @@ def test_layers_effect_wraps_its_upstream_calls():
     body = src[start : src.index("extra_layers.set(", start)]
     assert body.index("try:") < body.index("polygons()")
     assert body.index("try:") < body.index("box_values()")
+
+
+# --- band amplitude ratios (spec §7, shown beside the skill table) --------
+
+
+def _level_run(days=130, gain=2.0):
+    """A CachedRun whose act_eta is ``gain`` x a multi-band synthetic signal.
+
+    The signal sums periods of ~3, 7, 20 and 100 days so every one of the
+    2-4 / 4-10 / 10-30 / 30-400 d bands carries real power (a band whose
+    observed power is zero is dropped by ``band_amplitude_ratios``), and the
+    model is an exact scalar multiple of the observations so every band ratio
+    must come out at ``gain``.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from shyfem_ui.services.boxmodel_cache import CachedRun
+
+    dates = pd.date_range("2009-01-01", periods=days, freq="D")
+    t = np.arange(days, dtype=float)
+    signal = (
+        np.sin(2 * np.pi * t / 3.0)
+        + np.sin(2 * np.pi * t / 7.0)
+        + np.sin(2 * np.pi * t / 20.0)
+        + np.sin(2 * np.pi * t / 100.0)
+    )
+    rows = [
+        {
+            "date": d,
+            "box": 1,
+            "salt": 1.0,
+            "temp": 5.0,
+            "act_eta": gain * signal[i],
+            "cur_speed": 0.0,
+            "aver_eta": 0.0,
+            "bstress": 0.0,
+            "volume": 1.0,
+        }
+        for i, d in enumerate(dates)
+    ]
+    obs = pd.DataFrame(
+        {
+            "date": dates,
+            "site": "A",
+            "variable": "level",
+            "value": signal,
+        }
+    )
+    sites = pd.DataFrame(
+        {"site": ["A"], "lat": [0.0], "lon": [0.0], "box": pd.array([1], dtype="Int64")}
+    )
+    run = CachedRun(
+        "a",
+        {"period": {"start": str(dates[0]), "end": str(dates[-1])}},
+        pd.DataFrame(rows),
+        pd.DataFrame(),
+        pd.DataFrame(),
+        None,
+    )
+    return run, obs, sites, dates[0].date(), dates[-1].date()
+
+
+def test_band_ratio_rows_reports_every_band_for_a_level_target():
+    from shyfem_ui.pages import boxmodel
+
+    run, obs, sites, start, end = _level_run(gain=2.0)
+    rows = boxmodel._band_ratio_rows(run, obs, sites, start, end)
+
+    assert [r["site"] for r in rows] == ["A"]
+    ratios = rows[0]["ratios"]
+    assert ratios is not None
+    assert set(ratios) == set(boxmodel.BAND_COLUMNS)
+    for column, value in ratios.items():
+        assert value == pytest.approx(2.0, rel=1e-6), column
+
+
+def test_band_ratio_rows_returns_none_below_the_gap_free_minimum():
+    """120 gap-free common days is a much stronger requirement than the skill
+    table's 30 matched days, so a run can have a skill row and no ratios."""
+    from shyfem_ui.pages import boxmodel
+
+    run, obs, sites, start, end = _level_run(days=119)
+    rows = boxmodel._band_ratio_rows(run, obs, sites, start, end)
+    assert rows and rows[0]["ratios"] is None
+
+
+def test_band_ratio_rows_skips_sites_without_a_box_or_level_observations():
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    run, obs, sites, start, end = _level_run()
+    unmapped = pd.concat(
+        [sites, pd.DataFrame({"site": ["B"], "lat": [1.0], "lon": [1.0], "box": [pd.NA]})],
+        ignore_index=True,
+    )
+    unmapped["box"] = unmapped["box"].astype("Int64")
+    assert [r["site"] for r in boxmodel._band_ratio_rows(run, obs, unmapped, start, end)] == ["A"]
+
+    # a mapped site with only salinity observations is not a level target
+    salt_only = obs.assign(variable="salinity")
+    assert boxmodel._band_ratio_rows(run, salt_only, sites, start, end) == []
+
+
+def test_band_ratios_is_wired_to_the_cache_not_the_poll_tick():
+    """Spec §7 says the ratios are shown beside the skill table; the render
+    must hang off ``cached()`` (i.e. ``cache_generation``) like
+    ``skill_table`` does, never off the 2 s badge tick."""
+    from shyfem_ui.pages import boxmodel
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    body = code("band_ratios")
+    assert "_band_ratio_rows(" in body
+    assert "cached()" in body
+    assert "status_tick" not in body and "status()" not in body
+
+    html = str(boxmodel.boxmodel_ui("boxmodel"))
+    assert "boxmodel-band_ratios" in html
+
+
+# --- no box outlines at all (Review Important 6) --------------------------
+
+
+class _Manifest:
+    def __init__(self, polygons=None):
+        self.polygons = polygons
+
+
+class _Cached:
+    def __init__(self, meta):
+        self.meta = meta
+
+
+def test_no_polygons_message_when_neither_source_exists():
+    from shyfem_ui.pages import boxmodel
+
+    message = boxmodel._no_polygons_message(_Manifest(), _Cached({"element_box": []}))
+    assert message == boxmodel.NO_POLYGONS_MESSAGE
+    assert "boxes.polygons" in message and "boxes_geom.txt" in message
+    # element_box absent entirely (an older meta.json) reads the same way
+    assert boxmodel._no_polygons_message(_Manifest(), _Cached({})) == boxmodel.NO_POLYGONS_MESSAGE
+
+
+def test_no_polygons_message_is_silent_when_outlines_are_available():
+    from shyfem_ui.pages import boxmodel
+
+    # manifest polygons present
+    assert boxmodel._no_polygons_message(_Manifest("boxes.gpkg"), _Cached({})) is None
+    # or the run carries an element->box map to dissolve from
+    assert boxmodel._no_polygons_message(_Manifest(), _Cached({"element_box": [[1, 1]]})) is None
+    # no cache yet is "not known yet", not "no outlines"
+    assert boxmodel._no_polygons_message(_Manifest(), None) is None
+    assert boxmodel._no_polygons_message(None, _Cached({})) is None
+
+
+def test_polygons_result_returns_the_no_outlines_message():
+    from shyfem_ui.pages import boxmodel
+
+    body = _code_of(boxmodel, "boxmodel_server")("polygons_result")
+    assert "_no_polygons_message(manifest_obj, cached_run)" in body
+
+
+# --- download file name (Minor 9) ----------------------------------------
+
+
+def test_series_filename_uses_the_validated_variable_and_box():
+    from shyfem_ui.pages import boxmodel
+
+    assert boxmodel._series_filename({"box": 3, "variable": "salt"}) == "box3_salt.csv"
+    assert boxmodel._series_filename(None) == "box_series.csv"
+    # nothing outside [A-Za-z0-9_-] survives, whatever reached the dict
+    name = boxmodel._series_filename({"box": '1"; rm -rf /', "variable": "../../etc/passwd"})
+    assert name == "box1rm-rf_etcpasswd.csv"
+    assert all(c.isalnum() or c in "_-." for c in name)
+
+
+def test_download_name_is_built_from_series_not_the_raw_inputs():
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert "filename=lambda: _series_filename(series())" in src
+    assert 'f"box{input.box()' not in src, "the raw client input must not reach the file name"

@@ -67,6 +67,7 @@ from shyfem_ui.services.boxmodel_polygons import (
 from shyfem_ui.services.boxmodel_skill import (
     VARIABLE_COLUMNS,
     ObservationError,
+    band_amplitude_ratios,
     load_observations,
     load_sites,
     model_series,
@@ -95,6 +96,16 @@ _TERMINAL_STATES = ("ready", "stale", "failed", "missing")
 _LIVE_STATES = ("queued", "building")
 
 VARIABLES = {"salt": "Salinity (psu)", "temp": "Temperature (°C)", "act_eta": "Water level (m)"}
+#: Column order of the band-amplitude table, matching ``BANDS`` in
+#: ``boxmodel_skill`` and the keys ``band_amplitude_ratios`` returns.
+BAND_COLUMNS = ("2-4 d", "4-10 d", "10-30 d", "30-400 d")
+BAND_NEEDS_DAYS = "needs \u2265 120 gap-free days"
+NO_POLYGONS_MESSAGE = (
+    "No box outlines: add boxes.polygons to the manifest or run the model "
+    "with boxes_geom.txt output."
+)
+#: Everything a downloaded file name may contain; anything else is dropped.
+_FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
 COLUMN_TO_VARIABLE = {v: k for k, v in VARIABLE_COLUMNS.items()}
 MAP_MODES = {
     "day": "Value on the selected day",
@@ -178,6 +189,69 @@ def _bias_cell(variable: str, bias) -> str:
     rather than a number a reader would take for a real offset.
     """
     return "—" if variable == "level" else _fmt(bias)
+
+
+def _band_ratio_rows(cached_run, obs, sites, start, end) -> list[dict]:
+    """One row per LEVEL target (a site with a mapped box and level
+    observations) with its band amplitude ratios, for the table beside the
+    skill table (spec sec7).
+
+    ``{"site": str, "ratios": dict | None}``; ``ratios`` is ``None`` when
+    :func:`band_amplitude_ratios` cannot be computed -- it needs at least 120
+    gap-free (one-per-calendar-day) common days, which is a much stronger
+    requirement than the skill table's 30 matched days, so a run can have a
+    full skill row and no band ratios at all.
+
+    Module-level and reactive-free so it can be tested without a session.
+    """
+    rows: list[dict] = []
+    if obs is None or sites is None or cached_run is None:
+        return rows
+    low, high = pd.Timestamp(start), pd.Timestamp(end)
+    for _, site in sites.dropna(subset=["box"]).iterrows():
+        picked = obs[(obs["site"] == site["site"]) & (obs["variable"] == "level")]
+        picked = picked[(picked["date"] >= low) & (picked["date"] <= high)]
+        if not len(picked):
+            continue
+        box = int(site["box"])
+        observed = pd.Series(
+            picked["value"].to_numpy(), index=pd.Index(picked["date"])
+        ).sort_index()
+        model = model_series(cached_run, box, VARIABLE_COLUMNS["level"], start, end)
+        rows.append({"site": str(site["site"]), "ratios": band_amplitude_ratios(observed, model)})
+    return rows
+
+
+def _no_polygons_message(manifest_obj, cached_run) -> str | None:
+    """The message for a project that has no box outlines at all.
+
+    A manifest without ``boxes.polygons`` falls back to dissolving the boxes
+    out of the grid, which needs ``meta["element_box"]`` -- i.e. the run must
+    have been written with ``boxes_geom.txt``. With neither, the map is blank
+    and nothing said why. Returns ``None`` while there is no cache yet: that
+    is not "no outlines", it is "not known yet".
+    """
+    if manifest_obj is None or manifest_obj.polygons is not None:
+        return None
+    if cached_run is None or cached_run.meta.get("element_box"):
+        return None
+    return NO_POLYGONS_MESSAGE
+
+
+def _series_filename(data) -> str:
+    """Download name built from the box/variable ``series()`` actually
+    resolved, not from the raw inputs.
+
+    ``input.box()``/``input.variable()`` are client-supplied strings that
+    reach a Content-Disposition header; ``series()`` has already validated
+    both (``int(selected)``, ``column in VARIABLES``). Everything outside
+    ``[A-Za-z0-9_-]`` is dropped as a second line of defence.
+    """
+    if not data:
+        return "box_series.csv"
+    box = _FILENAME_UNSAFE.sub("", str(data.get("box", ""))) or "x"
+    variable = _FILENAME_UNSAFE.sub("", str(data.get("variable", ""))) or "series"
+    return f"box{box}_{variable}.csv"
 
 
 def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
@@ -289,6 +363,7 @@ def boxmodel_ui() -> ui.Tag:
                 ),
                 output_widget("ts_plot"),
                 ui.output_ui("skill_table"),
+                ui.output_ui("band_ratios"),
             ),
             id="tabs",
         ),
@@ -762,7 +837,11 @@ def boxmodel_server(
         except (PolygonError, OSError, ValueError, KeyError, TypeError) as exc:
             logger.warning("boxmodel: box polygons unavailable: %s", exc)
             return {}, f"Box polygons: {_err(exc)}"
-        return {}, None
+        # Neither source of outlines exists: without this the map renders
+        # blank and says nothing about why (Review Important 6). The message
+        # is fixed text -- no path, nothing from the manifest -- so it needs
+        # no sanitising.
+        return {}, _no_polygons_message(manifest_obj, cached_run)
 
     def polygons():
         return polygons_result()[0]
@@ -982,6 +1061,9 @@ def boxmodel_server(
                 ).sort_index()
         return {
             "box": box,
+            # The VALIDATED variable key (column in VARIABLES), which is what
+            # the download name is built from -- never the raw input.
+            "variable": column,
             "model": model,
             "low": low,
             "high": high,
@@ -1105,7 +1187,54 @@ def boxmodel_server(
             ),
         )
 
-    @_render_download(filename=lambda: f"box{input.box() or 'x'}_{input.variable()}.csv")
+    @render.ui
+    def band_ratios():
+        """Band amplitude ratios beside the skill table (spec sec7).
+
+        Depends on the cache through ``cached()`` -- i.e. on
+        ``cache_generation`` -- and never on ``status_tick``: an FFT per level
+        target must not re-run on the poller's 2 s badge tick.
+        """
+        cached_run = cached()
+        period = _period()
+        obs, sites = observations()
+        if cached_run is None or period is None or obs is None or sites is None:
+            return None
+        try:
+            rows = _band_ratio_rows(cached_run, obs, sites, *period)
+        except (ValueError, KeyError, TypeError) as exc:
+            logger.warning("boxmodel: band ratios failed: %s", exc)
+            return ui.tags.p(f"Band amplitude: {_err(exc)}", class_="text-muted small")
+        if not rows:
+            return None
+        head = ui.tags.tr(*[ui.tags.th(c) for c in ("site", *BAND_COLUMNS)])
+
+        def _cells(ratios):
+            """One row's band cells -- or a single spanning cell saying why
+            there are none (the 120-gap-free-day rule)."""
+            if not ratios:
+                return [ui.tags.td(BAND_NEEDS_DAYS, colspan=str(len(BAND_COLUMNS)))]
+            return [ui.tags.td(_fmt(ratios.get(column), 2)) for column in BAND_COLUMNS]
+
+        if all(row["ratios"] is None for row in rows):
+            # Nothing to compare anywhere: say it once rather than repeating
+            # the same explanation on every site row.
+            body = [ui.tags.tr(ui.tags.td("—"), *_cells(None))]
+        else:
+            body = [ui.tags.tr(ui.tags.td(row["site"]), *_cells(row["ratios"])) for row in rows]
+        return ui.tags.div(
+            ui.tags.strong("Band amplitude (model / observed), water level"),
+            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
+            ui.tags.p(
+                "1.00 means the model reproduces that period band's amplitude; matching the "
+                "total variance can still hide compensating errors between bands. Needs at "
+                "least 120 gap-free common days.",
+                class_="text-muted small",
+            ),
+            class_="mt-3",
+        )
+
+    @_render_download(filename=lambda: _series_filename(series()))
     def download_csv():
         data = series()
         if data is None:

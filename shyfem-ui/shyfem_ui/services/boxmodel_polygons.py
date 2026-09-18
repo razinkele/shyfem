@@ -101,7 +101,7 @@ def _outer_ring(geom: dict, path: Path, box: int) -> list[list[float]]:
         # Largest part by vertex count of its outer ring.
         part = max(geom["coordinates"], key=lambda poly: len(poly[0]))
         return [list(p[:2]) for p in part[0]]
-    raise PolygonError(f"{path}: box {box} has unsupported geometry type {geom_type!r}")
+    raise PolygonError(f"{path.name}: box {box} has unsupported geometry type {geom_type!r}")
 
 
 def load_box_polygons(
@@ -115,6 +115,11 @@ def load_box_polygons(
 
     Returns ``{box_id: [[lon, lat], ...]}`` with each ring closed (first point
     repeated as the last) and coordinates reprojected to WGS84.
+
+    Every ``PolygonError`` raised here names the file by ``path.name``, not
+    by its absolute path (as ``dissolve_boxes_from_grid`` already did): these
+    messages are rendered on the page, and a server-mode host path is not the
+    user's to see.
 
     Raises ``PolygonError`` for anything the UI must surface to the user:
     the geospatial stack not being installed, a missing/oversized/symlinked
@@ -131,29 +136,29 @@ def load_box_polygons(
         is_symlink = path.is_symlink()
         is_file = path.is_file()
     except OSError as exc:
-        raise PolygonError(f"{path}: cannot stat polygon file ({exc})") from exc
+        raise PolygonError(f"{path.name}: cannot stat polygon file ({exc})") from exc
     if is_symlink:
-        raise PolygonError(f"{path}: polygon file must be a regular file, not a symlink")
+        raise PolygonError(f"{path.name}: polygon file must be a regular file, not a symlink")
     if not is_file:
-        raise PolygonError(f"{path}: polygon file not found")
+        raise PolygonError(f"{path.name}: polygon file not found")
     size = path.stat().st_size
     if size > MAX_POLYGON_BYTES:
-        raise PolygonError(f"{path}: polygon file exceeds {MAX_POLYGON_BYTES} bytes ({size})")
+        raise PolygonError(f"{path.name}: polygon file exceeds {MAX_POLYGON_BYTES} bytes ({size})")
 
     try:
         src = fiona.open(str(path), layer=layer) if layer else fiona.open(str(path))
     except Exception as exc:  # fiona raises driver-specific exception types
-        raise PolygonError(f"{path}: cannot open polygon file ({exc})") from exc
+        raise PolygonError(f"{path.name}: cannot open polygon file ({exc})") from exc
 
     with src:
         if src.driver not in ALLOWED_DRIVERS:
             raise PolygonError(
-                f"{path}: driver {src.driver!r} is not allowed (expected one of {ALLOWED_DRIVERS})"
+                f"{path.name}: driver {src.driver!r} is not allowed (expected one of {ALLOWED_DRIVERS})"
             )
         schema_props = (src.schema or {}).get("properties", {})
         if id_field not in schema_props:
             raise PolygonError(
-                f"{path}: field {id_field!r} not found (available fields: {sorted(schema_props)})"
+                f"{path.name}: field {id_field!r} not found (available fields: {sorted(schema_props)})"
             )
         # OGR's GeoJSON driver resolves a field holding inconsistent types across
         # features (e.g. an int on one feature, a string on another) to an
@@ -165,13 +170,13 @@ def load_box_polygons(
         # we ever get to read it.
         if schema_props[id_field] == "json":
             raise PolygonError(
-                f"{path}: field {id_field!r} has inconsistent types across features "
+                f"{path.name}: field {id_field!r} has inconsistent types across features "
                 "(must be a plain integer on every feature)"
             )
         try:
             to_wgs84 = _to_wgs84(src.crs)
         except Exception as exc:
-            raise PolygonError(f"{path}: cannot reproject polygons to WGS84 ({exc})") from exc
+            raise PolygonError(f"{path.name}: cannot reproject polygons to WGS84 ({exc})") from exc
 
         out: dict[int, list[list[float]]] = {}
         vertex_count = 0
@@ -183,13 +188,13 @@ def load_box_polygons(
             except StopIteration:
                 break
             except Exception as exc:
-                raise PolygonError(f"{path}: cannot read feature {index} ({exc})") from exc
+                raise PolygonError(f"{path.name}: cannot read feature {index} ({exc})") from exc
             index += 1
             # The cap is inclusive (exactly MAX_FEATURES features must load),
             # so it can only be checked after a successful fetch, never before
             # -- reading one bounded extra record past the cap is acceptable.
             if index > MAX_FEATURES:
-                raise PolygonError(f"{path}: more than {MAX_FEATURES} features")
+                raise PolygonError(f"{path.name}: more than {MAX_FEATURES} features")
 
             props = dict(feature["properties"])
             raw_id = props.get(id_field)
@@ -200,30 +205,32 @@ def load_box_polygons(
                 or (isinstance(raw_id, float) and not raw_id.is_integer())
             ):
                 raise PolygonError(
-                    f"{path}: field {id_field!r} must be an integer on every feature "
+                    f"{path.name}: field {id_field!r} must be an integer on every feature "
                     f"(got {raw_id!r})"
                 )
             box = int(raw_id)
             if box in out:
-                raise PolygonError(f"{path}: {id_field!r} values must be unique (duplicate {box})")
+                raise PolygonError(
+                    f"{path.name}: {id_field!r} values must be unique (duplicate {box})"
+                )
 
             geometry = feature["geometry"]
             if geometry is None:
-                raise PolygonError(f"{path}: box {box} has no geometry")
+                raise PolygonError(f"{path.name}: box {box} has no geometry")
             geometry = dict(geometry)
 
             # Count vertices over the WHOLE raw geometry (all rings, all parts)
             # before selecting the outer ring, so the cap bounds parse cost.
             vertex_count += _count_vertices(geometry)
             if vertex_count > MAX_VERTICES:
-                raise PolygonError(f"{path}: more than {MAX_VERTICES} total vertices")
+                raise PolygonError(f"{path.name}: more than {MAX_VERTICES} total vertices")
 
             ring = _outer_ring(geometry, path, box)
             wgs_ring = [list(to_wgs84(x, y)) for x, y in ring]
             for gx, gy in wgs_ring:
                 if _out_of_wgs84_bounds(gx, gy):
                     raise PolygonError(
-                        f"{path}: box {box} reprojected to invalid coordinates ({gx}, {gy})"
+                        f"{path.name}: box {box} reprojected to invalid coordinates ({gx}, {gy})"
                     )
             if wgs_ring[0] != wgs_ring[-1]:
                 wgs_ring.append(list(wgs_ring[0]))
@@ -233,7 +240,7 @@ def load_box_polygons(
         missing = sorted(set(expected_boxes) - set(out))
         extra = sorted(set(out) - set(expected_boxes))
         raise PolygonError(
-            f"{path}: polygon box ids do not match the expected boxes "
+            f"{path.name}: polygon box ids do not match the expected boxes "
             f"(missing={missing}, extra={extra})"
         )
 

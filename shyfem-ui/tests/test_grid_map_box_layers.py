@@ -84,7 +84,9 @@ def test_helpers_degrade_without_shiny_deckgl(monkeypatch):
     assert gm.build_box_layers(polys, {1: 1.0}) == ([], [])
 
     colors, bins = gm.value_colors([1.0, 2.0])
-    assert colors == [[120, 120, 120], [120, 120, 120]]
+    # Minor 3: the degrade path used its own grey; there is one
+    # "no colour to give" colour and every path uses it.
+    assert colors == [list(gm._NON_FINITE_COLOR)] * 2
     assert bins == []
 
 

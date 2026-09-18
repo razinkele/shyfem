@@ -312,9 +312,10 @@ def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[st
     summed the magnitudes instead of taking the root-sum-of-squares, and
     used a closed upper band edge; both were wrong, caught only by a
     numerical cross-check against ``compare_runs.py`` itself). Band
-    membership is the half-open ``1/hi <= f < 1/lo`` (the shared edge
-    between adjacent bands belongs to
-    the *lower-frequency* -- i.e. longer-period -- band only). Requires at
+    membership is the half-open ``1/hi <= f < 1/lo``, so the shared edge
+    between adjacent bands belongs to the *higher-frequency* -- i.e.
+    shorter-period -- band only: ``f = 1/4`` (a 4-day period) falls in
+    ``2-4 d``, not in ``4-10 d``. Requires at
     least 120 gap-free (one-per-calendar-day) common days; returns ``None``
     when that cannot be satisfied, or when a band's observed power is zero
     (nothing to compare against).

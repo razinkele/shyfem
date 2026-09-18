@@ -342,7 +342,10 @@ def value_colors(
         unavailable (``color_bins`` is ``None``) or no finite values remain.
     """
     if color_bins is None or not values:
-        return [[120, 120, 120]] * len(values), []
+        # Same neutral grey as every other "no colour to give" path: two
+        # different greys for the same meaning is just a bug waiting to be
+        # read as a signal.
+        return [list(_NON_FINITE_COLOR) for _ in values], []
 
     finite_idx: list[int] = []
     finite_vals: list[float] = []
