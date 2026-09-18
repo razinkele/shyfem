@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [8.5.0] — 2026-09-18
+
 ### Added
 
 - **Box model page (PR 1 of 4)** — analyse SHYFEM `idtbox` box output in the Workbench: a project `boxmodel.json` manifest (grid, box polygons or dissolved-from-grid boxes, forcing, runs, observations), a per-run Parquet cache built by a child process (`python -m shyfem_ui.boxmodel_cache_cli`, cache bytes counted against the project's storage quota), admin-declared read-only `SHYFEM_UI_ANALYSIS_ROOTS` for run output kept outside the per-user sandbox, box polygons on the map coloured by value/period mean/bias with a day slider, and per-box time series with observations and a skill table (bias, RMSE, r, R², sd ratio) as defined by the Curonian comparison scripts. Adds a `pyarrow>=15` dependency for the cache. Compare and Setup tabs follow in later PRs.
