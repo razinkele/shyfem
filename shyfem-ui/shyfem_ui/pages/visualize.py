@@ -474,23 +474,33 @@ def visualize_server(
         site_choices = {s: s for s in sorted(mapped["site"].astype(str).unique())}
         var_choices = {v: v.capitalize() for v in ("level", "salinity", "temperature")}
         return ui.layout_columns(
-            ui.input_select("mvm_run", "Run", choices=run_choices),
+            ui.input_selectize(
+                "mvm_run",
+                "Runs",
+                choices=run_choices,
+                multiple=True,
+                selected=list(run_choices),
+            ),
             ui.input_select("mvm_site", "Station", choices=site_choices),
             ui.input_select("mvm_var", "Parameter", choices=var_choices),
             col_widths=(4, 4, 4),
         )
 
-    def _mvm_series():
-        """(days, modelled, measured, variable) for the current selection, else None."""
+    def _mvm_data():
+        """(measured series, variable, [(label, days, modelled, measured), ...])
+        for the current selection of one or more runs, else None."""
         runs = _mvm_runs()
         obs, sites = _mvm_obs()
         if not runs or obs is None or sites is None:
             return None
         try:
-            rid, site, var = input.mvm_run(), input.mvm_site(), input.mvm_var()
+            rids, site, var = input.mvm_run(), input.mvm_site(), input.mvm_var()
         except Exception:
             return None
-        if rid not in runs or var not in VARIABLE_COLUMNS:
+        if isinstance(rids, str):
+            rids = [rids]
+        rids = [r for r in (rids or []) if r in runs]
+        if not rids or var not in VARIABLE_COLUMNS:
             return None
         srow = sites[sites["site"].astype(str) == str(site)]
         if srow.empty or pd.isna(srow.iloc[0]["box"]):
@@ -503,25 +513,32 @@ def visualize_server(
         )
         if o.empty:
             return None
-        _label, cr = runs[rid]
-        mod = model_series(cr, box, VARIABLE_COLUMNS[var], o.index.min(), o.index.max())
-        days = sorted(set(o.index) & set(mod.index))
-        if not days:
+        series = []
+        for rid in rids:
+            label, cr = runs[rid]
+            mod = model_series(cr, box, VARIABLE_COLUMNS[var], o.index.min(), o.index.max())
+            days = sorted(set(o.index) & set(mod.index))
+            if not days:
+                continue
+            series.append(
+                (
+                    label,
+                    days,
+                    mod.reindex(days).to_numpy(dtype=float),
+                    o.reindex(days).to_numpy(dtype=float),
+                )
+            )
+        if not series:
             return None
-        return (
-            days,
-            mod.reindex(days).to_numpy(dtype=float),
-            o.reindex(days).to_numpy(dtype=float),
-            var,
-        )
+        return o, var, series
 
     @render_widget
     def mvm_plot():
-        sel = _mvm_series()
+        data = _mvm_data()
         fig = go.Figure()
-        if sel is None:
+        if data is None:
             fig.add_annotation(
-                text="Select a run, station and parameter.",
+                text="Select one or more runs, a station and a parameter.",
                 xref="paper",
                 yref="paper",
                 x=0.5,
@@ -532,18 +549,22 @@ def visualize_server(
             )
             fig.update_layout(height=500)
             return fig
-        days, mod, meas, var = sel
-        ylabel = var.capitalize()
-        if var == "level":
-            # Gauge datum vs model eta differ by a constant; compare anomalies
-            # (each minus its own mean), exactly as the skill metric does.
-            mod = mod - np.nanmean(mod)
-            meas = meas - np.nanmean(meas)
-            ylabel = "Level anomaly (m)"
-        fig.add_trace(go.Scattergl(x=days, y=mod, mode="lines", name="Modelled"))
+        o, var, series = data
+        is_level = var == "level"
+        ylabel = "Level anomaly (m)" if is_level else var.capitalize()
+        # Measured points once (anomaly for level so it overlays the models).
+        meas_y = o.to_numpy(dtype=float)
+        if is_level:
+            meas_y = meas_y - np.nanmean(meas_y)
         fig.add_trace(
-            go.Scattergl(x=days, y=meas, mode="markers", name="Measured", marker=dict(size=5))
+            go.Scattergl(
+                x=list(o.index), y=meas_y, mode="markers", name="Measured", marker=dict(size=5)
+            )
         )
+        # One modelled line per selected run.
+        for label, days, mod, _meas in series:
+            y = mod - np.nanmean(mod) if is_level else mod
+            fig.add_trace(go.Scattergl(x=days, y=y, mode="lines", name=label))
         fig.update_layout(
             height=500,
             xaxis_title="Date",
@@ -555,35 +576,41 @@ def visualize_server(
 
     @render.ui
     def mvm_stats():
-        sel = _mvm_series()
-        if sel is None:
+        data = _mvm_data()
+        if data is None:
             return None
-        _days, mod, meas, var = sel
-        k = np.isfinite(meas) & np.isfinite(mod)
-        if int(k.sum()) < 3:
-            return ui.p("Too few matched days for statistics.", class_="text-muted small")
-        mt = compute_metrics(meas[k], mod[k], is_level=(var == "level"))
+        _o, var, series = data
 
         def _f(x, d=3):
             return "—" if x is None else f"{x:.{d}f}"
 
-        bias = "—" if var == "level" else _f(mt.bias)
+        rows = []
+        for label, _days, mod, meas in series:
+            k = np.isfinite(meas) & np.isfinite(mod)
+            if int(k.sum()) < 3:
+                rows.append(ui.tags.tr(ui.tags.td(label), *[ui.tags.td("—") for _ in range(6)]))
+                continue
+            mt = compute_metrics(meas[k], mod[k], is_level=(var == "level"))
+            bias = "—" if var == "level" else _f(mt.bias)
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(label),
+                    ui.tags.td(str(mt.n)),
+                    ui.tags.td(bias),
+                    ui.tags.td(_f(mt.rmse)),
+                    ui.tags.td(_f(mt.r, 2)),
+                    ui.tags.td(_f(mt.r2, 2)),
+                    ui.tags.td(_f(mt.sd_ratio, 2)),
+                )
+            )
         head = ui.tags.tr(
-            *[ui.tags.th(h) for h in ("n", "bias", "RMSE", "r", "R²", "sd_mod/sd_obs")]
-        )
-        row = ui.tags.tr(
-            ui.tags.td(str(mt.n)),
-            ui.tags.td(bias),
-            ui.tags.td(_f(mt.rmse)),
-            ui.tags.td(_f(mt.r, 2)),
-            ui.tags.td(_f(mt.r2, 2)),
-            ui.tags.td(_f(mt.sd_ratio, 2)),
+            *[ui.tags.th(h) for h in ("run", "n", "bias", "RMSE", "r", "R²", "sd_mod/sd_obs")]
         )
         return ui.tags.div(
-            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(row), class_="table table-sm mt-2"),
+            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*rows), class_="table table-sm mt-2"),
             ui.tags.p(
-                "Modelled line vs measured points over their common days. Level "
-                "is compared as anomalies (datum-independent); bias is therefore "
+                "Modelled lines vs measured points over each run's common days. "
+                "Level is compared as anomalies (datum-independent), so bias is "
                 "not shown for level.",
                 class_="text-muted small",
             ),
