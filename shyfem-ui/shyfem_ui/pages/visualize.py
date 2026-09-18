@@ -23,6 +23,7 @@ from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser
+from shyfem_ui.services.project_files import list_project_files
 
 logger = logging.getLogger(__name__)
 
@@ -41,28 +42,13 @@ _MAX_PROJECT_FILES = 500
 def _project_file_choices(root: Path, data_type: str) -> dict[str, str]:
     """Files under ``root`` the given Data Type can plot, as select choices.
 
-    Recursive, relative to ``root``; hidden trees (e.g. the ``.boxmodel_cache``
-    parquet store) are skipped and the count is capped at
-    ``_MAX_PROJECT_FILES``. Returns ``{rel_path: rel_path}`` with a leading
-    empty placeholder, or just the placeholder when nothing matches. Path
-    confinement is the caller's job; the load handler re-validates on Load.
+    Returns ``{rel_path: rel_path}`` with a leading empty placeholder, or just
+    the placeholder when nothing matches. Path confinement is the caller's
+    job; the load handler re-validates on Load.
     """
-    exts = _DATA_TYPE_EXTS.get(data_type, ())
     choices: dict[str, str] = {"": "— select a file —"}
-    if not exts:
-        return choices
-    try:
-        for p in sorted(root.rglob("*")):
-            if len(choices) > _MAX_PROJECT_FILES:
-                break
-            if not p.is_file() or p.suffix.lower() not in exts:
-                continue
-            rel = p.relative_to(root)
-            if any(part.startswith(".") for part in rel.parts):
-                continue
-            choices[str(rel)] = str(rel)
-    except OSError:
-        pass
+    for rel in list_project_files(root, _DATA_TYPE_EXTS.get(data_type, ()), _MAX_PROJECT_FILES):
+        choices[rel] = rel
     return choices
 
 
@@ -397,7 +383,13 @@ def visualize_server(
     ts_data_val = reactive.value(None)
 
     # Wire up the timeseries component
-    timeseries_server("ts_viewer", ts_data_val, config=config, current_user=current_user)
+    timeseries_server(
+        "ts_viewer",
+        ts_data_val,
+        config=config,
+        current_user=current_user,
+        active_project=active_project,
+    )
 
     @render.ui
     def plot_type_select():

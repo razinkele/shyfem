@@ -321,7 +321,13 @@ def postprocess_server(
     log_viewer_server("command_log", log_content)
 
     # Initialize timeseries preview component
-    timeseries_server("ts_preview", ts_preview_data, config=config, current_user=current_user)
+    timeseries_server(
+        "ts_preview",
+        ts_preview_data,
+        config=config,
+        current_user=current_user,
+        active_project=active_project,
+    )
 
     @render.ui
     def next_step_html_out():

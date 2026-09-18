@@ -20,6 +20,8 @@ from plotly.subplots import make_subplots
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
+from shyfem_ui.services.project_files import list_project_files
+
 logger = logging.getLogger(__name__)
 
 
@@ -82,12 +84,7 @@ def timeseries_ui(height: str = "500px"):
             ui.h6("Observation Overlay"),
             ui.div(
                 ui.div(
-                    ui.input_text(
-                        "obs_path",
-                        "Observation File",
-                        placeholder="/path/to/observations.csv",
-                        width="100%",
-                    ),
+                    ui.output_ui("obs_file_picker"),
                     class_="col-8",
                 ),
                 ui.div(
@@ -119,6 +116,7 @@ def timeseries_server(
     ts_data: reactive.Value,
     config=None,
     current_user=None,
+    active_project=None,
 ):
     """Time series component server logic.
 
@@ -128,6 +126,9 @@ def timeseries_server(
             - data: list[list[float]] - rows of data
             - df: Optional[pandas.DataFrame] - if available
         config: Optional Config for path validation
+        active_project: Optional reactive.Value of the active project; drives
+            the observation-overlay file picker (project files, no free-text
+            path box).
     """
     obs_data = reactive.value(None)
 
@@ -366,25 +367,59 @@ def timeseries_server(
 
     # --- Observation overlay ---
 
+    # --- Observation overlay ---
+
+    @render.ui
+    def obs_file_picker():
+        """Dropdown of observation-shaped files (.csv/.txt) in the active
+        project — replaces the old free-text path box."""
+        proj = active_project.get() if active_project is not None else None
+        if proj is None:
+            return ui.p("Open a project to overlay observations.", class_="text-muted small mb-0")
+        usr = current_user() if current_user is not None else None
+        try:
+            if config is not None:
+                root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
+            else:
+                root = Path(proj["work_dir"])
+        except (ValueError, OSError):
+            return ui.p("Project directory unavailable.", class_="text-muted small mb-0")
+        choices = {"": "— select observations —"}
+        for rel in list_project_files(root, (".csv", ".txt")):
+            choices[rel] = rel
+        if len(choices) == 1:
+            return ui.p(
+                "No .csv/.txt observation files in this project.", class_="text-muted small mb-0"
+            )
+        return ui.input_select("obs_file", "Observation File", choices=choices, selected="")
+
     @reactive.effect
     @reactive.event(input.load_obs_btn)
     def _load_obs():
-        obs_path = input.obs_path()
-        if not obs_path:
-            ui.notification_show("Enter observation file path", type="warning")
+        try:
+            rel = input.obs_file()
+        except Exception:
+            rel = ""
+        if not rel:
+            ui.notification_show("Select an observation file", type="warning")
             return
-
-        path = Path(obs_path)
-        if config:
-            _usr = current_user() if current_user is not None else None
+        proj = active_project.get() if active_project is not None else None
+        if proj is None:
+            ui.notification_show("Open a project first", type="warning")
+            return
+        _usr = current_user() if current_user is not None else None
+        target = str(Path(proj["work_dir"]) / rel)
+        if config is not None:
             try:
-                path = config.confine_path(obs_path, _usr, must_exist=True)
+                path = config.confine_path(target, _usr, must_exist=True)
             except (ValueError, FileNotFoundError) as e:
-                ui.notification_show(str(e), type="error")
+                ui.notification_show(str(e), type="error", duration=6)
                 return
-        elif not path.exists():
-            ui.notification_show(f"File not found: {path}", type="error", duration=6)
-            return
+        else:
+            path = Path(target)
+            if not path.exists():
+                ui.notification_show(f"File not found: {path}", type="error", duration=6)
+                return
 
         try:
             obs = _load_obs_file(path)
