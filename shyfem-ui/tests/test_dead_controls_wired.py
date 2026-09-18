@@ -114,7 +114,10 @@ def test_project_details_modal_is_wired():
 
     src = inspect.getsource(home)
     assert "_make_details_handler(" in src, "no details handler factory"
-    assert 'g["num_layers"]' in src, "grid metadata not rendered in the modal"
+    # Grid metadata is now surfaced via the cached project summary (mesh stats:
+    # nodes/elements/depth) rather than the DB grid's num_layers column.
+    assert "load_summary(" in src, "details modal must load the project summary"
+    assert "_summary_grids_block(" in src, "grid metadata not rendered in the modal"
     assert 's["time_step"]' in src, "simulation metadata not rendered in the modal"
     assert "load_project_context(pid, user=" in src, (
         "details modal must read through the gated context loader"

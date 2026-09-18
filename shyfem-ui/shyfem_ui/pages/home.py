@@ -101,94 +101,118 @@ def _human_size(n: int) -> str:
     return f"{step:.1f} GB"
 
 
-def _project_files_block(work_dir: str, *, max_files: int = 100):
-    """A table of the files on disk in ``work_dir`` (rel path + size), so the
-    Details popup is informative even for projects with no DB grid/sim rows.
+def _fmt_num(x, d: int = 2) -> str:
+    """Format a number for a details table; None/NaN -> em dash."""
+    if x is None:
+        return "—"
+    if isinstance(x, float):
+        return "—" if x != x else f"{x:.{d}f}"  # NaN check
+    return str(x)
 
-    Hidden directories (e.g. the multi-hundred-MB ``.boxmodel_cache`` parquet
-    store) are pruned — never descended into — so this stays fast on large
-    projects. The listing is capped. Never raises."""
-    import os
 
-    root = Path(work_dir)
-    entries: list[tuple[str, int]] = []
-    try:
-        for dirpath, dirnames, filenames in os.walk(root):
-            # prune hidden subtrees in place so os.walk never descends them
-            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-            for fn in filenames:
-                if fn.startswith("."):
-                    continue
-                p = Path(dirpath) / fn
-                try:
-                    entries.append((str(p.relative_to(root)), p.stat().st_size))
-                except OSError:
-                    continue
-    except OSError:
-        return ui.p("Directory not readable.", class_="text-muted")
-    if not entries:
-        return ui.p("No files on disk.", class_="text-muted")
-    entries.sort()
-    truncated = len(entries) > max_files
+def _th_row(*headers):
+    return ui.tags.thead(ui.tags.tr(*[ui.tags.th(h) for h in headers]))
+
+
+def _summary_grids_block(summary: dict):
+    grids = summary.get("grids") or []
+    if not grids:
+        return None
     rows = [
-        ui.tags.tr(ui.tags.td(rel), ui.tags.td(_human_size(size), class_="text-end"))
-        for rel, size in entries[:max_files]
+        ui.tags.tr(
+            ui.tags.td(g["file"]),
+            ui.tags.td(_fmt_num(g.get("nodes"), 0), class_="text-end"),
+            ui.tags.td(_fmt_num(g.get("elements"), 0), class_="text-end"),
+            ui.tags.td(f"{_fmt_num(g.get('depth_min'))} – {_fmt_num(g.get('depth_max'))} m"),
+        )
+        for g in grids
     ]
-    table = ui.tags.table(
-        ui.tags.thead(ui.tags.tr(ui.tags.th("File"), ui.tags.th("Size", class_="text-end"))),
+    return ui.tags.table(
+        _th_row("Grid", "Nodes", "Elements", "Depth range"),
         ui.tags.tbody(*rows),
         class_="table table-sm",
     )
-    if truncated:
-        return ui.div(table, ui.p(f"Showing first {max_files} files.", class_="text-muted small"))
-    return table
 
 
-def _project_runs_block(work_dir: str):
-    """A table of the box-model runs declared in ``work_dir/boxmodel.json``
-    (label, simulated period, cache status), or None when the project has no
-    manifest. Read-only display; never raises."""
-    import json
-    import re
+def _summary_runs_block(summary: dict):
+    runs = summary.get("runs") or []
+    if not runs:
+        return None
+    rows = [
+        ui.tags.tr(
+            ui.tags.td(r.get("label") or r.get("id")),
+            ui.tags.td(r.get("period") or "—"),
+            ui.tags.td(r.get("cache") or "—"),
+        )
+        for r in runs
+    ]
+    return ui.tags.table(
+        _th_row("Run", "Period", "Cache"), ui.tags.tbody(*rows), class_="table table-sm"
+    )
 
-    mf = Path(work_dir) / "boxmodel.json"
-    if not mf.is_file():
+
+def _summary_forcing_block(summary: dict):
+    forcing = summary.get("forcing") or []
+    if not forcing:
         return None
-    try:
-        data = json.loads(mf.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    runs = data.get("runs") if isinstance(data, dict) else None
-    if not isinstance(runs, list) or not runs:
-        return None
-    slug = re.compile(r"^[a-z0-9_-]{1,64}$")
     rows = []
-    for r in runs:
-        if not isinstance(r, dict):
-            continue
-        rid = r.get("id") or ""
-        label = r.get("label") or rid
-        period = "—"
-        cache = "not built"
-        if isinstance(rid, str) and slug.fullmatch(rid):
-            meta = Path(work_dir) / ".boxmodel_cache" / rid / "meta.json"
-            if meta.is_file():
-                cache = "ready"
-                try:
-                    md = json.loads(meta.read_text(encoding="utf-8"))
-                    p = md.get("period") or {}
-                    if p.get("start") and p.get("end"):
-                        period = f"{p['start'][:10]} → {p['end'][:10]}"
-                except (OSError, ValueError):
-                    pass
-        rows.append(ui.tags.tr(ui.tags.td(str(label)), ui.tags.td(period), ui.tags.td(cache)))
+    for f in forcing:
+        for s in f.get("series", []):
+            name = f["file"] if s.get("series") == "value" else f"{f['file']} [{s['series']}]"
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(name),
+                    ui.tags.td(_fmt_num(s.get("n"), 0), class_="text-end"),
+                    ui.tags.td(f"{s.get('start') or '—'} … {s.get('end') or '—'}"),
+                    ui.tags.td(_fmt_num(s.get("min")), class_="text-end"),
+                    ui.tags.td(_fmt_num(s.get("max")), class_="text-end"),
+                    ui.tags.td(_fmt_num(s.get("mean")), class_="text-end"),
+                )
+            )
     if not rows:
         return None
     return ui.tags.table(
-        ui.tags.thead(ui.tags.tr(ui.tags.th("Run"), ui.tags.th("Period"), ui.tags.th("Cache"))),
+        _th_row("Forcing series", "n", "Period", "Min", "Max", "Mean"),
         ui.tags.tbody(*rows),
         class_="table table-sm",
     )
+
+
+def _summary_obs_block(summary: dict):
+    obs = summary.get("observations") or []
+    if not obs:
+        return None
+    rows = [
+        ui.tags.tr(
+            ui.tags.td(o["site"]),
+            ui.tags.td(o["variable"]),
+            ui.tags.td(_fmt_num(o.get("n"), 0), class_="text-end"),
+            ui.tags.td(f"{o.get('start') or '—'} … {o.get('end') or '—'}"),
+            ui.tags.td(_fmt_num(o.get("min")), class_="text-end"),
+            ui.tags.td(_fmt_num(o.get("max")), class_="text-end"),
+            ui.tags.td(_fmt_num(o.get("mean")), class_="text-end"),
+        )
+        for o in obs
+    ]
+    return ui.tags.table(
+        _th_row("Station", "Variable", "n", "Period", "Min", "Max", "Mean"),
+        ui.tags.tbody(*rows),
+        class_="table table-sm",
+    )
+
+
+def _summary_files_block(summary: dict):
+    files = summary.get("files") or []
+    if not files:
+        return ui.p("No files on disk.", class_="text-muted")
+    rows = [
+        ui.tags.tr(ui.tags.td(f["path"]), ui.tags.td(_human_size(f["size"]), class_="text-end"))
+        for f in files
+    ]
+    table = ui.tags.table(_th_row("File", "Size"), ui.tags.tbody(*rows), class_="table table-sm")
+    if summary.get("files_truncated"):
+        return ui.div(table, ui.p("Listing truncated.", class_="text-muted small"))
+    return table
 
 
 def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=None) -> str | None:
@@ -959,15 +983,6 @@ def home_server(
             def _fmt(value, suffix=""):
                 return f"{value}{suffix}" if value is not None else "—"
 
-            grid_rows = [
-                ui.tags.tr(
-                    ui.tags.td(g["name"]),
-                    ui.tags.td(_fmt(g["num_layers"])),
-                    ui.tags.td(_fmt(g["min_depth"], " m")),
-                    ui.tags.td(_fmt(g["max_depth"], " m")),
-                )
-                for g in ctx["grids"]
-            ]
             sim_rows = [
                 ui.tags.tr(
                     ui.tags.td(s["name"]),
@@ -977,22 +992,6 @@ def home_server(
                 )
                 for s in ctx["simulations"]
             ]
-            grids_block = (
-                ui.tags.table(
-                    ui.tags.thead(
-                        ui.tags.tr(
-                            ui.tags.th("Name"),
-                            ui.tags.th("Layers"),
-                            ui.tags.th("Min depth"),
-                            ui.tags.th("Max depth"),
-                        )
-                    ),
-                    ui.tags.tbody(*grid_rows),
-                    class_="table table-sm",
-                )
-                if grid_rows
-                else ui.p("No grids imported.", class_="text-muted")
-            )
             sims_block = (
                 ui.tags.table(
                     ui.tags.thead(
@@ -1009,6 +1008,10 @@ def home_server(
                 if sim_rows
                 else ui.p("No simulations.", class_="text-muted")
             )
+            from shyfem_ui.services.project_summary import load_summary
+
+            summary = load_summary(ctx["work_dir"])
+
             sections = [
                 ui.h6("Overview"),
                 ui.tags.dl(
@@ -1020,16 +1023,18 @@ def home_server(
                     ),
                     class_="row",
                 ),
-                ui.h6("Files"),
-                _project_files_block(ctx["work_dir"]),
             ]
-            runs_block = _project_runs_block(ctx["work_dir"])
-            if runs_block is not None:
-                sections += [ui.h6("Box-model runs"), runs_block]
-            if grid_rows:
-                sections += [ui.h6("Grids"), grids_block]
+            for title, block in (
+                ("Grids", _summary_grids_block(summary)),
+                ("Box-model runs", _summary_runs_block(summary)),
+                ("Forcing series", _summary_forcing_block(summary)),
+                ("Measurements", _summary_obs_block(summary)),
+            ):
+                if block is not None:
+                    sections += [ui.h6(title), block]
             if sim_rows:
                 sections += [ui.h6("Simulations"), sims_block]
+            sections += [ui.h6("Files"), _summary_files_block(summary)]
             m = ui.modal(
                 *sections,
                 title=f"Project: {ctx['name']}",
