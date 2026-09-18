@@ -279,7 +279,11 @@ def dissolve_boxes_from_grid(
     argument -> ``grd.epsg`` -> geographic-looking bounds -> a detected UTM
     zone -> unresolvable). Nothing defaults silently to WGS84 for coordinates
     that are not actually geographic and have no known EPSG: mis-projecting a
-    grid without telling the user is worse than refusing.
+    grid without telling the user is worse than refusing. Known limitation:
+    a local-origin projected grid whose coordinates all happen to fall
+    within |x| <= 180 and |y| <= 90 is indistinguishable from a genuinely
+    geographic one by this heuristic and will be silently treated as WGS84;
+    such a grid must be given an explicit ``epsg=``.
 
     Raises ``PolygonError`` (naming the grid file and, where known, the
     element/box) for: the geospatial stack not being installed, an
@@ -304,9 +308,14 @@ def dissolve_boxes_from_grid(
             f"{grd_path.name}: grid is not in geographic coordinates and no EPSG is "
             "known; pass epsg= or provide boxes.polygons in the manifest"
         )
-    to_wgs84 = (
-        (lambda x, y: (x, y)) if resolved_epsg == 4326 else _to_wgs84(f"EPSG:{resolved_epsg}")
-    )
+    try:
+        to_wgs84 = (
+            (lambda x, y: (x, y)) if resolved_epsg == 4326 else _to_wgs84(f"EPSG:{resolved_epsg}")
+        )
+    except Exception as exc:
+        raise PolygonError(
+            f"{grd_path.name}: cannot reproject grid from EPSG:{resolved_epsg} to WGS84 ({exc})"
+        ) from exc
 
     groups: dict[int, list] = {}
     contributed: dict[int, bool] = {}

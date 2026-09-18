@@ -244,3 +244,11 @@ def test_feature_cap_is_inclusive_and_reads_module_global(proj, monkeypatch):
     (proj / "four.geojson").write_text(json.dumps(d))
     with pytest.raises(bp.PolygonError, match="more than 3 features"):
         bp.load_box_polygons(proj / "four.geojson", None, "box")
+
+
+def test_dissolve_unknown_epsg_raises_polygon_error(proj):
+    """An epsg= that pyproj cannot resolve must become a PolygonError, not a
+    raw pyproj.exceptions.CRSError -- same contract as load_box_polygons."""
+    element_box = [[e, b] for e, b in ELEMENT_BOX.items()]
+    with pytest.raises(bp.PolygonError, match="EPSG:99999"):
+        bp.dissolve_boxes_from_grid(proj / "fixture.grd", element_box, epsg=99999)
