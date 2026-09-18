@@ -202,6 +202,57 @@ Options:
   --workers N           Number of job queue workers
 ```
 
+### Box-model analysis roots (server mode)
+
+The **Box model** page analyses SHYFEM box-model (`idtbox`) output, which often lives outside a
+user's own sandbox — a multi-decade run can be a gigabyte or more. In server mode, an admin can
+declare extra read-only directories for the app to read such runs from:
+
+```bash
+export SHYFEM_UI_ANALYSIS_ROOTS='["/home/razinka/curonian"]'   # JSON array; default []
+```
+
+Rules, enforced when the config loads (`shyfem_ui/config.py::_check_analysis_roots`):
+
+- Server mode only — ignored in local mode.
+- Each root must resolve to an existing directory, or startup fails.
+- A root may not be `/`; may not be, contain, or be contained by `/tmp` (the whole subtree is off
+  limits); and may not overlap `SHYFEM_UI_USER_DATA_ROOT`, `SHYFEM_UI_WORK_DIR`,
+  `SHYFEM_UI_SHYFEM_DIR`, or the SQLite database's directory.
+- The accepted, resolved list is logged at **WARNING** level at startup — declaring a root widens
+  read access, so the log line is a deliberate paper trail.
+
+Roots are **read-only**, but **readable by every authenticated user** through every read surface of
+the app, not only the Box model page. Never point a root at anything user-writable: a hard link
+placed inside the root by anyone with write access there cannot be resolved away by the app's path
+confinement. Give the directory read-only ownership (e.g. a dedicated non-app user/group) before
+declaring it.
+
+A project opts in with a `boxmodel.json` manifest (schema 1) in its directory — see
+`shyfem_ui/services/boxmodel_manifest.py` for the exact keys: `title`; `grid.grd` plus optional
+`grid.bas`/`grid.boxes_txt`; optional `boxes.polygons` (when omitted, box outlines are dissolved
+from the grid instead, which needs the grid's coordinate system to be known — a projected grid
+with small, locally-referenced coordinates can look geographic to the auto-detection, so give such
+a grid explicit `boxes.polygons`) plus `boxes.layer` and `boxes.id_field` (defaults to `box`);
+`str`; `forcing.dir`; `runs[]` with `id`/`label`/`dir`; `observations.file`/`observations.sites`.
+Relative manifest paths resolve against the project directory; absolute paths (e.g. a `runs[].dir`
+kept outside the sandbox) must lie under an analysis root or the user's own sandbox. The manifest
+is capped at 64 KB.
+
+Input file caps: `observations.csv` needs columns `date, site, variable, value` (`variable` one of
+`salinity`, `temperature`, `level`; level values are in cm and non-positive level rows are dropped),
+up to 50 MB / 2,000,000 rows; `sites.csv` needs columns `site, lat, lon, box` (a blank `box` means
+the site is unmapped — kept, but never matched to a skill target); a `boxes.polygons` file is
+GeoPackage or GeoJSON, up to 50 MB, 1,000 features, 200,000 vertices.
+
+Per-run Parquet caches are built on demand by a child process
+(`python -m shyfem_ui.boxmodel_cache_cli`) into `<project>/.boxmodel_cache/<run_id>/`. Building
+requires project-editor access, is capped at 2 concurrent builds per worker process and 1 per
+user, and a build is bounded by `SHYFEM_UI_COMMAND_TIMEOUT_SECONDS` when set, else a 30-minute
+default. Cache bytes on disk count toward the project's `SHYFEM_UI_MAX_PROJECT_STORAGE_MB` quota. Stale or
+failed temporary cache directories left behind by an interrupted build are tidied up automatically
+the next time a project editor loads the page.
+
 ## Workflow
 
 The application follows the typical SHYFEM simulation workflow:
