@@ -279,10 +279,17 @@ def build(
         # always reports the real record count reached so far, not whatever
         # prog.records last held from the periodic heartbeat update.
         prog.records = n
+        # Capture this BEFORE close(): inside the except below, sys.exc_info()
+        # would describe the close error, not the error being propagated.
+        propagating = sys.exc_info()[0] is not None
         if hourly_writer is not None:
             try:
                 hourly_writer.close()
             except Exception:  # noqa: BLE001 - must not mask an in-flight exception
+                if not propagating:
+                    # Nothing else is failing: a half-written hourly file must
+                    # fail the build loudly, not publish as "ready".
+                    raise
                 # This ``finally`` also runs while a parser error is
                 # propagating; letting a close() failure out here would
                 # replace that error (the one that says what is actually

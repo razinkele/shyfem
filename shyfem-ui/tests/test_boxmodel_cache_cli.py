@@ -338,3 +338,29 @@ def test_truncated_state_file_reaches_progress_as_a_named_parser_error(run, tmp_
     assert prog["phase"] == "error" and prog["exit"] == 1
     assert prog["error"].startswith("boxes_2d.txt: record 2:"), prog["error"]
     assert "RuntimeError" not in prog["error"]
+
+
+def test_hourly_writer_close_failure_fails_the_build_when_nothing_else_is_wrong(
+    run, tmp_path, monkeypatch
+):
+    """A ParquetWriter.close() error on the success path must not be swallowed:
+    the build must end in the error phase, never publish a truncated hourly file."""
+    import pyarrow.parquet as pq
+
+    calls = {"n": 0}
+
+    def _boom(self, *a, **k):
+        # Raise once: pyarrow's ParquetWriter.__del__ calls close() again, and a
+        # second raise would only surface as an unraisable-exception warning.
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise OSError("disk full while writing the footer")
+
+    monkeypatch.setattr(pq.ParquetWriter, "close", _boom)
+    base, out = _out(tmp_path)
+    rc = cli.main(["--run", str(run), "--out", str(out), "--trusted-base", str(base), "--hourly"])
+    assert rc == 1
+    prog = json.loads((out / "progress.json").read_text())
+    assert prog["phase"] == "error"
+    assert "footer" in (prog["error"] or "")
+    assert not (out / "meta.json").exists()
