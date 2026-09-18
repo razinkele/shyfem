@@ -26,6 +26,44 @@ from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 
 logger = logging.getLogger(__name__)
 
+# File extensions each Data Type can plot -> drives the "Project files" picker.
+_DATA_TYPE_EXTS: dict[str, tuple[str, ...]] = {
+    "grid": (".grd", ".bas"),
+    "timeseries": (".ts",),
+    "netcdf": (".nc",),
+}
+# Cap the picker so a large project can't build an unwieldy dropdown.
+_MAX_PROJECT_FILES = 500
+
+
+def _project_file_choices(root: Path, data_type: str) -> dict[str, str]:
+    """Files under ``root`` the given Data Type can plot, as select choices.
+
+    Recursive, relative to ``root``; hidden trees (e.g. the ``.boxmodel_cache``
+    parquet store) are skipped and the count is capped at
+    ``_MAX_PROJECT_FILES``. Returns ``{rel_path: rel_path}`` with a leading
+    empty placeholder, or just the placeholder when nothing matches. Path
+    confinement is the caller's job; the load handler re-validates on Load.
+    """
+    exts = _DATA_TYPE_EXTS.get(data_type, ())
+    choices: dict[str, str] = {"": "— select a file —"}
+    if not exts:
+        return choices
+    try:
+        for p in sorted(root.rglob("*")):
+            if len(choices) > _MAX_PROJECT_FILES:
+                break
+            if not p.is_file() or p.suffix.lower() not in exts:
+                continue
+            rel = p.relative_to(root)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            choices[str(rel)] = str(rel)
+    except OSError:
+        pass
+    return choices
+
+
 # Plotly modebar config — enables SVG export, better filenames, no logo
 PLOTLY_CONFIG = {
     "displaylogo": False,
@@ -211,6 +249,7 @@ def visualize_ui() -> ui.Tag:
                         "netcdf": "NetCDF (.nc)",
                     },
                 ),
+                ui.output_ui("project_files_picker"),
                 ui.input_text(
                     "data_path",
                     "File Path",
@@ -306,6 +345,39 @@ def visualize_server(
         if proj is None:
             return
         ui.update_text("data_path", value=proj["work_dir"])
+
+    # Files in the active project the Data Type can plot -> a dropdown that
+    # fills the File Path box, so the user selects instead of typing a path.
+    @render.ui
+    def project_files_picker():
+        if active_project is None:
+            return None
+        proj = active_project.get()
+        if proj is None:
+            return None
+        exts = _DATA_TYPE_EXTS.get(input.data_type(), ())
+        if not exts:
+            return None
+        usr = current_user() if current_user is not None else None
+        try:
+            root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
+        except (ValueError, OSError):
+            return None
+        choices = _project_file_choices(root, input.data_type())
+        if len(choices) == 1:
+            return ui.p("No matching files in this project.", class_="text-muted small mb-2")
+        return ui.input_select("project_file", "Project files", choices=choices, selected="")
+
+    @reactive.effect
+    @reactive.event(input.project_file)
+    def _fill_path_from_project_file():
+        rel = input.project_file()
+        if not rel:
+            return
+        proj = active_project.get() if active_project is not None else None
+        if proj is None:
+            return
+        ui.update_text("data_path", value=str(Path(proj["work_dir"]) / rel))
 
     # Auto-fill from tutorial navigation
     @reactive.effect
