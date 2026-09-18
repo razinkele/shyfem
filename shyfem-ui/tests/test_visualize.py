@@ -46,3 +46,12 @@ def test_project_file_choices_filters_by_data_type(tmp_path):
     assert set(_project_file_choices(tmp_path, "netcdf")) == {"", "field.nc"}
     # unknown data type -> placeholder only
     assert _project_file_choices(tmp_path, "bogus") == {"": "— select a file —"}
+
+
+def test_model_vs_measured_tab_present():
+    """The Visualize page exposes a Model vs Measured tab with its outputs."""
+    from shyfem_ui.pages.visualize import visualize_ui
+
+    html = str(visualize_ui("viz_test"))
+    assert "Model vs Measured" in html
+    assert "mvm_controls" in html and "mvm_plot" in html and "mvm_stats" in html

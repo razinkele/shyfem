@@ -13,6 +13,7 @@ import logging
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from shiny import module, reactive, render, ui
@@ -22,6 +23,15 @@ from shyfem_ui.components.grid_map import build_mesh_figure
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
+from shyfem_ui.services.boxmodel_cache import cache_dir_for, load_cache_state
+from shyfem_ui.services.boxmodel_manifest import ManifestError, load_manifest
+from shyfem_ui.services.boxmodel_skill import (
+    VARIABLE_COLUMNS,
+    compute_metrics,
+    load_observations,
+    load_sites,
+    model_series,
+)
 from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 from shyfem_ui.services.project_files import list_project_files
 
@@ -298,6 +308,12 @@ def visualize_ui() -> ui.Tag:
                     "Comparison",
                     output_widget("compare_plot"),
                 ),
+                ui.nav_panel(
+                    "Model vs Measured",
+                    ui.output_ui("mvm_controls"),
+                    output_widget("mvm_plot"),
+                    ui.output_ui("mvm_stats"),
+                ),
             ),
         ),
     )
@@ -390,6 +406,188 @@ def visualize_server(
         current_user=current_user,
         active_project=active_project,
     )
+
+    # --- Model vs Measured (box-model manifest driven) --------------------
+
+    @reactive.calc
+    def _mvm_manifest():
+        proj = active_project.get() if active_project is not None else None
+        if proj is None:
+            return None
+        usr = current_user() if current_user is not None else None
+        try:
+            project_dir = config.confine_path(proj["work_dir"], usr, must_exist=True)
+            return load_manifest(project_dir, config, usr)
+        except (ManifestError, ValueError, OSError):
+            return None
+
+    @reactive.calc
+    def _mvm_runs() -> dict:
+        """``{run_id: (label, CachedRun)}`` for manifest runs with a ready cache."""
+        m = _mvm_manifest()
+        proj = active_project.get() if active_project is not None else None
+        if m is None or proj is None:
+            return {}
+        work_dir = Path(proj["work_dir"])
+        out: dict = {}
+        for run in m.runs:
+            cd = cache_dir_for(work_dir, run.id)
+            if (cd / "state_daily.parquet").is_file() and (cd / "meta.json").is_file():
+                try:
+                    out[run.id] = (run.label, load_cache_state(cd, run.id))
+                except (OSError, ValueError, KeyError):
+                    logger.warning("visualize mvm: cache for %s unreadable", run.id)
+        return out
+
+    @reactive.calc
+    def _mvm_obs():
+        m = _mvm_manifest()
+        if m is None or not m.observations or not m.sites:
+            return None, None
+        try:
+            obs, _report = load_observations(m.observations)
+            sites = load_sites(m.sites)
+            return obs, sites
+        except Exception:
+            logger.warning("visualize mvm: observations/sites could not be loaded", exc_info=True)
+            return None, None
+
+    @render.ui
+    def mvm_controls():
+        runs = _mvm_runs()
+        obs, sites = _mvm_obs()
+        if not runs:
+            return ui.p(
+                "This tab needs a project with a box-model manifest "
+                "(boxmodel.json) and at least one ready run cache. Open such a "
+                "project (e.g. Curonian 29-box), or build a run cache on the "
+                "Box model page.",
+                class_="text-muted",
+            )
+        if obs is None or sites is None:
+            return ui.p(
+                "The project manifest has no observations/sites configured.",
+                class_="text-muted",
+            )
+        run_choices = {rid: lbl for rid, (lbl, _cr) in runs.items()}
+        mapped = sites.dropna(subset=["box"])
+        site_choices = {s: s for s in sorted(mapped["site"].astype(str).unique())}
+        var_choices = {v: v.capitalize() for v in ("level", "salinity", "temperature")}
+        return ui.layout_columns(
+            ui.input_select("mvm_run", "Run", choices=run_choices),
+            ui.input_select("mvm_site", "Station", choices=site_choices),
+            ui.input_select("mvm_var", "Parameter", choices=var_choices),
+            col_widths=(4, 4, 4),
+        )
+
+    def _mvm_series():
+        """(days, modelled, measured, variable) for the current selection, else None."""
+        runs = _mvm_runs()
+        obs, sites = _mvm_obs()
+        if not runs or obs is None or sites is None:
+            return None
+        try:
+            rid, site, var = input.mvm_run(), input.mvm_site(), input.mvm_var()
+        except Exception:
+            return None
+        if rid not in runs or var not in VARIABLE_COLUMNS:
+            return None
+        srow = sites[sites["site"].astype(str) == str(site)]
+        if srow.empty or pd.isna(srow.iloc[0]["box"]):
+            return None
+        box = int(srow.iloc[0]["box"])
+        o = (
+            obs[(obs["site"].astype(str) == str(site)) & (obs["variable"] == var)]
+            .set_index("date")["value"]
+            .sort_index()
+        )
+        if o.empty:
+            return None
+        _label, cr = runs[rid]
+        mod = model_series(cr, box, VARIABLE_COLUMNS[var], o.index.min(), o.index.max())
+        days = sorted(set(o.index) & set(mod.index))
+        if not days:
+            return None
+        return (
+            days,
+            mod.reindex(days).to_numpy(dtype=float),
+            o.reindex(days).to_numpy(dtype=float),
+            var,
+        )
+
+    @render_widget
+    def mvm_plot():
+        sel = _mvm_series()
+        fig = go.Figure()
+        if sel is None:
+            fig.add_annotation(
+                text="Select a run, station and parameter.",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+                font_size=15,
+                font_color="gray",
+            )
+            fig.update_layout(height=500)
+            return fig
+        days, mod, meas, var = sel
+        ylabel = var.capitalize()
+        if var == "level":
+            # Gauge datum vs model eta differ by a constant; compare anomalies
+            # (each minus its own mean), exactly as the skill metric does.
+            mod = mod - np.nanmean(mod)
+            meas = meas - np.nanmean(meas)
+            ylabel = "Level anomaly (m)"
+        fig.add_trace(go.Scattergl(x=days, y=mod, mode="lines", name="Modelled"))
+        fig.add_trace(
+            go.Scattergl(x=days, y=meas, mode="markers", name="Measured", marker=dict(size=5))
+        )
+        fig.update_layout(
+            height=500,
+            xaxis_title="Date",
+            yaxis_title=ylabel,
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=1.02),
+        )
+        return fig
+
+    @render.ui
+    def mvm_stats():
+        sel = _mvm_series()
+        if sel is None:
+            return None
+        _days, mod, meas, var = sel
+        k = np.isfinite(meas) & np.isfinite(mod)
+        if int(k.sum()) < 3:
+            return ui.p("Too few matched days for statistics.", class_="text-muted small")
+        mt = compute_metrics(meas[k], mod[k], is_level=(var == "level"))
+
+        def _f(x, d=3):
+            return "—" if x is None else f"{x:.{d}f}"
+
+        bias = "—" if var == "level" else _f(mt.bias)
+        head = ui.tags.tr(
+            *[ui.tags.th(h) for h in ("n", "bias", "RMSE", "r", "R²", "sd_mod/sd_obs")]
+        )
+        row = ui.tags.tr(
+            ui.tags.td(str(mt.n)),
+            ui.tags.td(bias),
+            ui.tags.td(_f(mt.rmse)),
+            ui.tags.td(_f(mt.r, 2)),
+            ui.tags.td(_f(mt.r2, 2)),
+            ui.tags.td(_f(mt.sd_ratio, 2)),
+        )
+        return ui.tags.div(
+            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(row), class_="table table-sm mt-2"),
+            ui.tags.p(
+                "Modelled line vs measured points over their common days. Level "
+                "is compared as anomalies (datum-independent); bias is therefore "
+                "not shown for level.",
+                class_="text-muted small",
+            ),
+        )
 
     @render.ui
     def plot_type_select():
