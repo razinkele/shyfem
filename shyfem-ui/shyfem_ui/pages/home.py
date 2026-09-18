@@ -876,6 +876,14 @@ def home_server(
             return
         if active_project is not None:
             active_project.set(ctx)
+        # Every opened project carries its cached summary; build it now if
+        # missing/stale (best-effort — never blocks opening the project).
+        try:
+            from shyfem_ui.services.project_summary import load_summary
+
+            load_summary(ctx["work_dir"])
+        except Exception:
+            logger.debug("project summary build skipped for %s", project_id, exc_info=True)
         ui.notification_show(f"Opened project: {ctx['name']}", type="message", duration=4)
         if nav_callback:
             nav_callback("Grid Prep")
