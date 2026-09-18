@@ -252,11 +252,6 @@ def visualize_ui() -> ui.Tag:
                     },
                 ),
                 ui.output_ui("project_files_picker"),
-                ui.input_text(
-                    "data_path",
-                    "File Path",
-                    placeholder="/path/to/data",
-                ),
                 ui.input_action_button(
                     "load_data_btn",
                     "Load Data",
@@ -282,11 +277,7 @@ def visualize_ui() -> ui.Tag:
                 ui.output_ui("netcdf_controls"),
                 # Comparison controls
                 ui.h5("Compare"),
-                ui.input_text(
-                    "compare_path",
-                    "Second File (optional)",
-                    placeholder="/path/to/compare",
-                ),
+                ui.output_ui("compare_files_picker"),
                 ui.input_action_button(
                     "load_compare_btn",
                     "Load for Comparison",
@@ -338,27 +329,15 @@ def visualize_server(
 ) -> None:
     """Visualization page server logic."""
 
-    # Auto-fill from active project
-    @reactive.effect
-    def _on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
-        if proj is None:
-            return
-        ui.update_text("data_path", value=proj["work_dir"])
-
-    # Files in the active project the Data Type can plot -> a dropdown that
-    # fills the File Path box, so the user selects instead of typing a path.
-    @render.ui
-    def project_files_picker():
+    # Files in the active project the current Data Type can plot -> dropdowns
+    # that drive the primary and comparison loads (no free-text path box).
+    def _picker_ui(select_id: str, label: str):
         if active_project is None:
             return None
         proj = active_project.get()
         if proj is None:
             return None
-        exts = _DATA_TYPE_EXTS.get(input.data_type(), ())
-        if not exts:
+        if not _DATA_TYPE_EXTS.get(input.data_type()):
             return None
         usr = current_user() if current_user is not None else None
         try:
@@ -368,18 +347,30 @@ def visualize_server(
         choices = _project_file_choices(root, input.data_type())
         if len(choices) == 1:
             return ui.p("No matching files in this project.", class_="text-muted small mb-2")
-        return ui.input_select("project_file", "Project files", choices=choices, selected="")
+        return ui.input_select(select_id, label, choices=choices, selected="")
 
-    @reactive.effect
-    @reactive.event(input.project_file)
-    def _fill_path_from_project_file():
-        rel = input.project_file()
+    def _resolve_selection(rel: str) -> Path | None:
+        """Confined absolute path for a picker selection, or None (+notify)."""
         if not rel:
-            return
+            return None
         proj = active_project.get() if active_project is not None else None
         if proj is None:
-            return
-        ui.update_text("data_path", value=str(Path(proj["work_dir"]) / rel))
+            ui.notification_show("Open a project first", type="warning")
+            return None
+        usr = current_user() if current_user is not None else None
+        try:
+            return config.confine_path(str(Path(proj["work_dir"]) / rel), usr, must_exist=True)
+        except (ValueError, FileNotFoundError) as exc:
+            ui.notification_show(str(exc), type="error", duration=6)
+            return None
+
+    @render.ui
+    def project_files_picker():
+        return _picker_ui("project_file", "Project files")
+
+    @render.ui
+    def compare_files_picker():
+        return _picker_ui("compare_file", "Compare file (optional)")
 
     # Auto-fill from tutorial navigation
     @reactive.effect
@@ -389,7 +380,8 @@ def visualize_server(
         ctx = tutorial_context.get()
         if ctx is None or ctx.get("target_tab") != "Visualize":
             return
-        ui.update_text("data_path", value=ctx["work_dir"])
+        # No path box any more; landing on the tab is enough — the user picks
+        # a file from the project dropdown.
         tutorial_context.set(None)
 
     # State
@@ -565,16 +557,16 @@ def visualize_server(
             return
 
         dtype = input.data_type()
-        path_str = input.data_path()
-
-        if not path_str:
-            ui.notification_show("Please enter a file path", type="warning")
+        try:
+            rel = input.project_file()
+        except Exception:
+            rel = ""
+        if not rel:
+            ui.notification_show("Please select a file", type="warning")
             return
 
-        try:
-            path = config.confine_path(path_str, _usr, must_exist=True)
-        except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+        path = _resolve_selection(rel)
+        if path is None:
             return
 
         _do_load(path, dtype, is_compare=False)
@@ -592,14 +584,15 @@ def visualize_server(
             ui.notification_show(_denied, type="error", duration=6)
             return
 
-        path_str = input.compare_path()
-        if not path_str:
-            ui.notification_show("Enter a comparison file path", type="warning")
-            return
         try:
-            path = config.confine_path(path_str, _usr, must_exist=True)
-        except (ValueError, FileNotFoundError) as e:
-            ui.notification_show(str(e), type="error")
+            rel = input.compare_file()
+        except Exception:
+            rel = ""
+        if not rel:
+            ui.notification_show("Select a comparison file", type="warning")
+            return
+        path = _resolve_selection(rel)
+        if path is None:
             return
         dtype = input.data_type()
         _do_load(path, dtype, is_compare=True)
