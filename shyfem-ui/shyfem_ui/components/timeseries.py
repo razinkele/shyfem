@@ -24,6 +24,11 @@ from shyfem_ui.services.project_files import list_project_files
 
 logger = logging.getLogger(__name__)
 
+#: Cap on observation-overlay points *per series* — a multi-year daily file
+#: pivoted to many series would otherwise render tens of thousands of WebGL
+#: markers and freeze the browser. Beyond this the overlay is downsampled.
+_MAX_OVERLAY_POINTS = 2000
+
 
 def _scatter_mode(style: str) -> str:
     """Map the UI plot style to a valid Plotly scatter ``mode``.
@@ -260,7 +265,11 @@ def timeseries_server(
             obs_cols = obs.get("columns", [])
             obs_rows = obs.get("data", [])
             if obs_rows and len(obs_cols) > 1:
-                obs_arr = np.array(obs_rows)
+                obs_arr = np.array(obs_rows, dtype=object)
+                # Downsample so a multi-year daily file can't flood the browser
+                # with tens of thousands of WebGL markers (freezes the tab).
+                step = max(1, len(obs_arr) // _MAX_OVERLAY_POINTS)
+                obs_arr = obs_arr[::step]
                 obs_x = obs_arr[:, 0].tolist()
                 for j in range(1, len(obs_cols)):
                     fig.add_trace(
@@ -268,9 +277,9 @@ def timeseries_server(
                             x=obs_x,
                             y=obs_arr[:, j].tolist(),
                             mode="markers",
-                            marker=dict(
-                                size=6, symbol="diamond", line=dict(width=1, color="black")
-                            ),
+                            # No marker.line: an outline on Scattergl is a known
+                            # per-point WebGL cost that hangs large overlays.
+                            marker=dict(size=6, symbol="diamond"),
                             name=f"Obs: {obs_cols[j]}",
                         )
                     )
