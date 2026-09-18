@@ -34,7 +34,8 @@ def test_project_file_choices_filters_by_data_type(tmp_path):
 
     grid = _project_file_choices(tmp_path, "grid")
     assert grid[""] == "— select a file —"
-    assert set(grid) == {"", "grid.grd", "mesh.bas", "GRID/nested.grd"}
+    # .bas is a binary basin file with no Python reader -> not offered
+    assert set(grid) == {"", "grid.grd", "GRID/nested.grd"}
 
     assert set(_project_file_choices(tmp_path, "timeseries")) == {"", "series.ts"}
     assert set(_project_file_choices(tmp_path, "netcdf")) == {"", "field.nc"}

@@ -27,8 +27,10 @@ from shyfem_ui.services.parser_grd import GrdFile, GrdParser
 logger = logging.getLogger(__name__)
 
 # File extensions each Data Type can plot -> drives the "Project files" picker.
+# Grid is .grd only: .bas is a compiled binary basin file with no Python reader,
+# so it parses to an empty grid rather than plotting (load the .grd instead).
 _DATA_TYPE_EXTS: dict[str, tuple[str, ...]] = {
-    "grid": (".grd", ".bas"),
+    "grid": (".grd",),
     "timeseries": (".ts",),
     "netcdf": (".nc",),
 }
@@ -244,7 +246,7 @@ def visualize_ui() -> ui.Tag:
                     "data_type",
                     "Data Type",
                     choices={
-                        "grid": "Grid File (.grd/.bas)",
+                        "grid": "Grid File (.grd)",
                         "timeseries": "Time Series (.ts)",
                         "netcdf": "NetCDF (.nc)",
                     },
@@ -607,6 +609,13 @@ def visualize_server(
         try:
             if dtype == "grid":
                 grd = GrdParser.parse_file(path)
+                if grd.num_nodes == 0:
+                    # A binary .bas (or any non-.grd) read as text parses to an
+                    # empty grid; surface that instead of "Loaded grid: 0 nodes".
+                    raise ValueError(
+                        "No nodes found — this is not a readable .grd grid "
+                        "(binary .bas files can't be plotted; load the .grd instead)."
+                    )
                 if is_compare:
                     compare_data.set(grd)
                     compare_type.set("grid")
