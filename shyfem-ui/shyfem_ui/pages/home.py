@@ -105,32 +105,35 @@ def _project_files_block(work_dir: str, *, max_files: int = 100):
     """A table of the files on disk in ``work_dir`` (rel path + size), so the
     Details popup is informative even for projects with no DB grid/sim rows.
 
-    Recursive; hidden trees (e.g. the ``.boxmodel_cache`` parquet store) are
-    skipped and the listing is capped. Never raises."""
+    Hidden directories (e.g. the multi-hundred-MB ``.boxmodel_cache`` parquet
+    store) are pruned — never descended into — so this stays fast on large
+    projects. The listing is capped. Never raises."""
+    import os
+
     root = Path(work_dir)
-    rows = []
-    truncated = False
+    entries: list[tuple[str, int]] = []
     try:
-        for p in sorted(root.rglob("*")):
-            if not p.is_file():
-                continue
-            rel = p.relative_to(root)
-            if any(part.startswith(".") for part in rel.parts):
-                continue
-            if len(rows) >= max_files:
-                truncated = True
-                break
-            try:
-                size = p.stat().st_size
-            except OSError:
-                continue
-            rows.append(
-                ui.tags.tr(ui.tags.td(str(rel)), ui.tags.td(_human_size(size), class_="text-end"))
-            )
+        for dirpath, dirnames, filenames in os.walk(root):
+            # prune hidden subtrees in place so os.walk never descends them
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for fn in filenames:
+                if fn.startswith("."):
+                    continue
+                p = Path(dirpath) / fn
+                try:
+                    entries.append((str(p.relative_to(root)), p.stat().st_size))
+                except OSError:
+                    continue
     except OSError:
         return ui.p("Directory not readable.", class_="text-muted")
-    if not rows:
+    if not entries:
         return ui.p("No files on disk.", class_="text-muted")
+    entries.sort()
+    truncated = len(entries) > max_files
+    rows = [
+        ui.tags.tr(ui.tags.td(rel), ui.tags.td(_human_size(size), class_="text-end"))
+        for rel, size in entries[:max_files]
+    ]
     table = ui.tags.table(
         ui.tags.thead(ui.tags.tr(ui.tags.th("File"), ui.tags.th("Size", class_="text-end"))),
         ui.tags.tbody(*rows),
@@ -139,6 +142,53 @@ def _project_files_block(work_dir: str, *, max_files: int = 100):
     if truncated:
         return ui.div(table, ui.p(f"Showing first {max_files} files.", class_="text-muted small"))
     return table
+
+
+def _project_runs_block(work_dir: str):
+    """A table of the box-model runs declared in ``work_dir/boxmodel.json``
+    (label, simulated period, cache status), or None when the project has no
+    manifest. Read-only display; never raises."""
+    import json
+    import re
+
+    mf = Path(work_dir) / "boxmodel.json"
+    if not mf.is_file():
+        return None
+    try:
+        data = json.loads(mf.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    runs = data.get("runs") if isinstance(data, dict) else None
+    if not isinstance(runs, list) or not runs:
+        return None
+    slug = re.compile(r"^[a-z0-9_-]{1,64}$")
+    rows = []
+    for r in runs:
+        if not isinstance(r, dict):
+            continue
+        rid = r.get("id") or ""
+        label = r.get("label") or rid
+        period = "—"
+        cache = "not built"
+        if isinstance(rid, str) and slug.fullmatch(rid):
+            meta = Path(work_dir) / ".boxmodel_cache" / rid / "meta.json"
+            if meta.is_file():
+                cache = "ready"
+                try:
+                    md = json.loads(meta.read_text(encoding="utf-8"))
+                    p = md.get("period") or {}
+                    if p.get("start") and p.get("end"):
+                        period = f"{p['start'][:10]} → {p['end'][:10]}"
+                except (OSError, ValueError):
+                    pass
+        rows.append(ui.tags.tr(ui.tags.td(str(label)), ui.tags.td(period), ui.tags.td(cache)))
+    if not rows:
+        return None
+    return ui.tags.table(
+        ui.tags.thead(ui.tags.tr(ui.tags.th("Run"), ui.tags.th("Period"), ui.tags.th("Cache"))),
+        ui.tags.tbody(*rows),
+        class_="table table-sm",
+    )
 
 
 def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=None) -> str | None:
@@ -959,7 +1009,7 @@ def home_server(
                 if sim_rows
                 else ui.p("No simulations.", class_="text-muted")
             )
-            m = ui.modal(
+            sections = [
                 ui.h6("Overview"),
                 ui.tags.dl(
                     ui.tags.dt("Description"),
@@ -972,10 +1022,16 @@ def home_server(
                 ),
                 ui.h6("Files"),
                 _project_files_block(ctx["work_dir"]),
-                ui.h6("Grids"),
-                grids_block,
-                ui.h6("Simulations"),
-                sims_block,
+            ]
+            runs_block = _project_runs_block(ctx["work_dir"])
+            if runs_block is not None:
+                sections += [ui.h6("Box-model runs"), runs_block]
+            if grid_rows:
+                sections += [ui.h6("Grids"), grids_block]
+            if sim_rows:
+                sections += [ui.h6("Simulations"), sims_block]
+            m = ui.modal(
+                *sections,
                 title=f"Project: {ctx['name']}",
                 easy_close=True,
                 footer=ui.modal_button("Close"),
