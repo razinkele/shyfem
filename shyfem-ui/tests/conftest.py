@@ -197,15 +197,50 @@ def app_url(app_port):
 
 
 @pytest.fixture(scope="session")
-def _app_server(tmp_path_factory, app_port):
+def app_work_dir(tmp_path_factory) -> Path:
+    """The ``work_dir`` the live ``_app_server`` app subprocess is configured with.
+
+    A test that only needs to *inject* an ``active_project`` dict via the
+    ``window.__test_set_active_project`` hook (the pattern every existing
+    picker E2E test uses) can point ``work_dir`` at any throwaway string --
+    nothing ever reads it from disk. But a test that makes the live app
+    actually READ a real project (e.g. the box-model E2E, which drives
+    ``load_manifest``/``confine_path`` inside the app subprocess and then
+    spawns a real cache-build child process) needs a project directory the
+    APP SUBPROCESS's own config will accept, and two independent checks both
+    key off *that* ``config.work_dir`` specifically:
+
+    * ``Config.confine_path`` -- in local mode this delegates to
+      ``validate_path``, which also accepts ``/tmp`` and ``config.shyfem_dir``;
+    * the cache-build child's own ``--trusted-base`` allowlist
+      (``services/boxmodel_cache.py::start_build`` passes only
+      ``[config.user_data_root, config.work_dir]`` -- NOT ``/tmp``, NOT
+      ``shyfem_dir``).
+
+    So a project under ``/tmp`` (e.g. pytest's own ``tmp_path``) would load
+    fine but every cache build would end ``failed``. And ``get_config()``
+    called from the pytest process itself is no help either: it reads that
+    process's own environment, which never has ``SHYFEM_UI_WORK_DIR`` set (see
+    ``_isolate_env`` above), so it defaults to ``~/.shyfem-ui/projects`` --
+    not the directory the running app subprocess actually trusts.
+
+    This fixture exposes that one true directory so such a test can build a
+    project inside it directly, instead of guessing.
+    """
+    d = tmp_path_factory.mktemp("shyfem_ui_test") / "work"
+    d.mkdir()
+    return d
+
+
+@pytest.fixture(scope="session")
+def _app_server(app_work_dir, app_port):
     """Start the Shiny app in a subprocess for the test session.
 
     The server is killed when the session ends.
     """
-    tmp_dir = tmp_path_factory.mktemp("shyfem_ui_test")
+    tmp_dir = app_work_dir.parent
     db_path = tmp_dir / "test.db"
-    work_dir = tmp_dir / "work"
-    work_dir.mkdir()
+    work_dir = app_work_dir
 
     env = os.environ.copy()
     env.update(
