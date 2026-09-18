@@ -89,6 +89,14 @@ def test_boxmodel_page_builds_cache_and_renders(pw_page, box_project):
         timeout=30000
     )
     assert "salinity" in pw_page.locator("#boxmodel-skill_table").inner_text()
+    # The band-amplitude block renders beside the skill table. The fixture has
+    # only 10 observation days, far short of the 120 gap-free days
+    # band_amplitude_ratios needs, so the "needs" row is the expected content
+    # -- and asserting on it proves the render itself did not error (a render
+    # exception would leave a shiny-output-error div here instead).
+    band = pw_page.locator("#boxmodel-band_ratios")
+    expect(band).to_contain_text("gap-free days", timeout=15000)
+    assert "shiny-output-error" not in (band.get_attribute("class") or "")
 
     # Leave the shared session page clean for the next test file: pw_page is
     # session-scoped, so a lingering non-Dashboard tab / modal would leak.

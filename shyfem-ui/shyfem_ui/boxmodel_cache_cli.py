@@ -410,10 +410,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     except Exception as e:
-        # Catch-all: progress.json must never be left stuck mid-phase, even for a
-        # parser failure mode not in the tuple above (e.g. IndexError on a
-        # truncated boxes_stats.txt). The traceback goes to stderr for the
-        # parent's build.log; the short message goes to progress.json.
+        # Catch-all: progress.json must never be left stuck mid-phase, even for
+        # a failure not in the tuple above -- a bug in the parser itself, a
+        # MemoryError on a huge run, an Arrow error from pyarrow. (Every
+        # *parser* failure is a BoxOutputError, hence a ValueError, and so is
+        # already covered by the clause above.) The traceback goes to stderr
+        # for the parent's build.log; the short message goes to progress.json.
         prog.write("error", error=f"{type(e).__name__}: {e}", exit_code=1)
         traceback.print_exc(file=sys.stderr)
         return 1
