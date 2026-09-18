@@ -17,6 +17,7 @@ __all__ = [
     "postprocess",
     "visualize",
     "compare",
+    "boxmodel",
     "ensemble",
     "ibm",
     "tutorial",

@@ -17,6 +17,7 @@ from shyfem_ui.middleware.session_auth import SessionAuthMiddleware, get_current
 from shyfem_ui.pages import (
     about,
     admin,
+    boxmodel,
     compare,
     ensemble,
     files,
@@ -79,6 +80,7 @@ SIDEBAR_GROUPS = [
             {"label": "Post-Process", "icon": "bi-gear", "value": "Post-Process"},
             {"label": "Visualize", "icon": "bi-graph-up", "value": "Visualize"},
             {"label": "Compare", "icon": "bi-layout-split", "value": "Compare"},
+            {"label": "Box model", "icon": "bi-grid-3x3-gap", "value": "Box-model"},
             {"label": "Ensemble", "icon": "bi-collection", "value": "Ensemble"},
         ],
     },
@@ -730,6 +732,7 @@ def _build_ui(config: Config) -> ui.Tag:
         ),
         ui.div(visualize.visualize_ui("visualize"), id="sf-page-Visualize", class_="sf-page"),
         ui.div(compare.compare_ui("compare"), id="sf-page-Compare", class_="sf-page"),
+        ui.div(boxmodel.boxmodel_ui("boxmodel"), id="sf-page-Box-model", class_="sf-page"),
         ui.div(ensemble.ensemble_ui("ensemble"), id="sf-page-Ensemble", class_="sf-page"),
         ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
         ui.div(admin.admin_ui("admin"), id="sf-page-Admin", class_="sf-page"),
@@ -974,6 +977,13 @@ def _build_server(
         "compare",
         config,
         job_queue,
+        active_project=active_project,
+        tutorial_context=tutorial_context,
+        current_user=current_user,
+    )
+    boxmodel.boxmodel_server(
+        "boxmodel",
+        config,
         active_project=active_project,
         tutorial_context=tutorial_context,
         current_user=current_user,
