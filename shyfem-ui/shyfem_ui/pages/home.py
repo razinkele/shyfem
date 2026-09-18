@@ -301,7 +301,7 @@ def home_server(
     # Dedup set prevents effect accumulation (Shiny for Python does not
     # auto-destroy child effects when a parent @reactive.effect re-runs).
     # Per-session (declared inside home_server); keys are prefix-namespaced
-    # (open_proj_, project_, details_, export_, clone_, share_, confirm_share_, unshare_)
+    # (load_, open_proj_, project_, details_, export_, clone_, share_, confirm_share_, unshare_)
     # so all per-project handler factories share this one set without collision.
     _registered_handlers: set = set()
 
@@ -453,6 +453,11 @@ def home_server(
                         p["updated_at"].strftime("%Y-%m-%d %H:%M") if p["updated_at"] else "-"
                     ),
                     ui.tags.td(
+                        ui.input_action_link(
+                            f"load_{p['id']}",
+                            "Load",
+                            class_="btn btn-sm btn-primary me-1",
+                        ),
                         ui.input_action_link(
                             f"details_{p['id']}",
                             "Details",
@@ -805,6 +810,23 @@ def home_server(
         @reactive.event(input[key])
         def _open():
             ui.modal_remove()
+            _activate_project(pid)
+
+    @reactive.effect
+    def _register_load_handlers():
+        project_data = projects.get()
+        for p in project_data:
+            _make_load_handler(p["id"])
+
+    def _make_load_handler(pid: int):
+        key = f"load_{pid}"
+        if key in _registered_handlers:
+            return
+        _registered_handlers.add(key)
+
+        @reactive.effect
+        @reactive.event(input[key])
+        def _load():
             _activate_project(pid)
 
     @reactive.effect
