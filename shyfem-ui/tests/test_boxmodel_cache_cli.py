@@ -239,3 +239,65 @@ def test_section_table_change_mid_run_is_rejected(run, tmp_path):
     # report the real count reached, not the 0 a fresh throwaway object would
     # show since n=1 never hit the every-500 periodic update.
     assert prog["records"] == 1
+
+
+def test_meteo_loop_and_write_phase_keep_the_heartbeat_alive(run, tmp_path, monkeypatch):
+    """Review Important 1 (CLI half): the meteo loop and the Parquet writes
+    used to write no progress.json at all, so a build could stay silent for
+    longer than LIVE_TMP_SECONDS and have its own tmp dir reconciled away.
+    Every long-running phase must tick.
+    """
+    base, out = _out(tmp_path)
+    monkeypatch.setattr(cli, "RECORDS_PER_HEARTBEAT", 10)
+    seen: list[tuple[str, int]] = []
+    original = cli._Progress.write
+
+    def spy(self, phase, **kw):
+        original(self, phase, **kw)
+        seen.append((phase, self.records))
+
+    monkeypatch.setattr(cli._Progress, "write", spy)
+    cli.build(run, out, hourly=False)
+
+    phases = [p for p, _ in seen]
+    # 72 state records / 10 per heartbeat
+    assert phases.count("state") >= 7
+    # 72 meteo records / 10 per heartbeat (plus the one entering the phase)
+    assert phases.count("meteo") >= 7, phases
+    # the write phase brackets each of the three Parquet tables
+    assert phases.count("write") >= 4, phases
+    assert phases[-1] == "done"
+    # the meteo heartbeats must not move the badge's record count backwards
+    records = [n for p, n in seen if p in ("meteo", "write")]
+    assert records and all(n == 72 for n in records), seen
+
+
+def test_progress_records_never_exceed_expected(run, tmp_path, monkeypatch):
+    """Minor 4: ``expected`` is a size-based estimate, so a run of smaller
+    records overshoots it and the page badge would read above 100%."""
+    base, out = _out(tmp_path)
+    monkeypatch.setattr(cli, "BYTES_PER_STATE_RECORD_GUESS", 10**9)  # -> expected == 1
+    cli.build(run, out, hourly=False)
+    prog = json.loads((out / "progress.json").read_text())
+    assert prog["records"] == 72
+    assert prog["expected"] >= prog["records"], prog
+
+
+def test_heartbeat_cadence_stays_well_inside_the_live_tmp_window():
+    """The heartbeat is a liveness signal for the cache service's reaper, so
+    the cadence must hold even with a pessimistic per-record cost.
+
+    Bound: 50 ms per record. Real cost on the fixture is well under 1 ms
+    (72 records parse in a few milliseconds), so this is ~100x headroom; the
+    resulting interval must still stay far below LIVE_TMP_SECONDS. This test
+    (not the CLI) imports the service -- the CLI itself must stay free of
+    ``shyfem_ui.services``; see the light-imports probe above.
+    """
+    from shyfem_ui.services import boxmodel_cache as bc
+
+    generous_seconds_per_record = 0.050
+    interval = cli.RECORDS_PER_HEARTBEAT * generous_seconds_per_record
+    assert interval < bc.LIVE_TMP_SECONDS / 3, (
+        f"{cli.RECORDS_PER_HEARTBEAT} records x {generous_seconds_per_record}s = {interval}s "
+        f"is not comfortably below LIVE_TMP_SECONDS={bc.LIVE_TMP_SECONDS}"
+    )

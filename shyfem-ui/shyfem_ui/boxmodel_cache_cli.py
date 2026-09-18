@@ -16,6 +16,14 @@ lat], ...]}``), ``element_box`` (list of ``[element, box]`` pairs, or
 polygon dissolve), ``run_log`` (``RunLogFacts`` as a dict, or ``null``),
 ``sources`` (``{filename: {"size", "mtime_ns"}}`` for every input file read).
 
+``progress.json`` is rewritten every ``RECORDS_PER_HEARTBEAT`` records in
+BOTH streaming loops and around every Parquet table write, because the
+parent treats that file's mtime as this build's liveness signal (a page
+load's ``reconcile_tmp_dirs`` removes a ``.tmp-*`` whose progress is older
+than ``LIVE_TMP_SECONDS``). Only the state loop advances ``records``; the
+meteo loop and the write phase merely refresh the timestamp, so the page
+badge's ``records/expected`` stays monotone.
+
 ``--hourly`` streams ``state_hourly.parquet`` with a ``pyarrow.parquet.
 ParquetWriter`` opened lazily on the first hourly record and flushed one
 completed calendar day at a time, so peak memory is bounded by one day's
@@ -56,6 +64,17 @@ STATE_FILE, METEO_FILE, STATS_FILE, GEOM_FILE, LOG_FILE = (
 )
 MINMAX_VARS = ("temp", "salt", "act_eta")
 BYTES_PER_STATE_RECORD_GUESS = 6200  # 29 boxes + 56 sections; only for the progress estimate
+#: How often ``build()`` refreshes ``progress.json`` while streaming records.
+#:
+#: This is a LIVENESS signal, not just a progress one:
+#: ``services/boxmodel_cache.reconcile_tmp_dirs`` (which any page load runs)
+#: deletes a ``.tmp-*`` directory whose ``progress.json`` is older than
+#: ``LIVE_TMP_SECONDS`` (90 s), so every loop in this module that can run for
+#: a long time has to tick at least that often or risk having its own output
+#: directory removed out from under it. At even a pessimistic 50 ms per
+#: record this cadence writes every ~25 s -- see
+#: ``test_heartbeat_cadence_stays_well_inside_the_live_tmp_window``.
+RECORDS_PER_HEARTBEAT = 500
 _OUT_NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}\.tmp-[A-Za-z0-9_-]+$")
 
 HOURLY_STATE_SCHEMA = pa.schema(
@@ -103,6 +122,11 @@ class _Progress:
         self.records = 0
 
     def write(self, phase: str, *, error: str | None = None, exit_code: int | None = None) -> None:
+        # ``expected`` is only an estimate (state file size / a per-record
+        # byte guess), so a run with smaller-than-guessed records overshoots
+        # it. Clamp here, the one place every progress write goes through, so
+        # the page badge's "records/expected" never reads above 100%.
+        self.expected = max(self.expected, self.records)
         _atomic_json(
             self.path,
             {
@@ -240,7 +264,7 @@ def build(
                 hourly_stamps.append(rec.stamp)
                 hourly_values.append(rec.values.astype(np.float32))
             n += 1
-            if n % 500 == 0:
+            if n % RECORDS_PER_HEARTBEAT == 0:
                 prog.records = n
                 prog.write("state")
                 if progress_cb:
@@ -253,15 +277,27 @@ def build(
         # Runs on both the success path and every exception path (box-id
         # mismatch, section-table mismatch, no-records) so a caught error
         # always reports the real record count reached so far, not whatever
-        # prog.records last held from the periodic every-500 update.
+        # prog.records last held from the periodic heartbeat update.
         prog.records = n
         if hourly_writer is not None:
-            hourly_writer.close()
+            try:
+                hourly_writer.close()
+            except Exception:  # noqa: BLE001 - must not mask an in-flight exception
+                # This ``finally`` also runs while a parser error is
+                # propagating; letting a close() failure out here would
+                # replace that error (the one that says what is actually
+                # wrong with the run) with an Arrow/OS error about the
+                # half-written hourly file.
+                # stderr is this child's log: the parent tees it to build.log.
+                hourly_path = out_dir / "state_hourly.parquet"
+                print(f"warning: could not close {hourly_path}", file=sys.stderr)
+                traceback.print_exc(file=sys.stderr)
     # ---- meteo ----------------------------------------------------------------
     prog.write("meteo")
     msum: dict = defaultdict(lambda: None)
     mcnt: dict = {}
     if (run_dir / METEO_FILE).is_file():
+        nm = 0
         for rec in bo.iter_meteo_records(run_dir / METEO_FILE):
             day = rec.stamp.date()
             m = msum[day]
@@ -271,6 +307,13 @@ def build(
             else:
                 m += rec.values
                 mcnt[day] += 1
+            nm += 1
+            if nm % RECORDS_PER_HEARTBEAT == 0:
+                # Heartbeat only: deliberately does NOT touch prog.records,
+                # which stays on the state count so the page badge's
+                # records/expected never jumps backwards when the meteo file
+                # (a second, independently long stream) starts from zero.
+                prog.write("meteo")
     # ---- write ---------------------------------------------------------------
     prog.write("write")
     days = sorted(scnt)
@@ -284,7 +327,9 @@ def build(
         df.insert(0, "date", day)
         frames.append(df)
     state_daily = pd.concat(frames, ignore_index=True)
+    prog.write("write")
     state_daily.to_parquet(out_dir / "state_daily.parquet", index=False)
+    prog.write("write")
     if sec_meta is not None:
         fframes = []
         for day in sorted(fcnt):
@@ -300,6 +345,7 @@ def build(
     else:
         flux_table = pa.Table.from_pylist([], schema=FLUX_DAILY_SCHEMA)
     pq.write_table(flux_table, out_dir / "flux_daily.parquet")
+    prog.write("write")
     mframes = []
     for day in sorted(mcnt):
         df = pd.DataFrame(msum[day] / mcnt[day], columns=list(bo.METEO_VARS))
@@ -313,6 +359,7 @@ def build(
     else:
         meteo_table = pa.Table.from_pylist([], schema=METEO_DAILY_SCHEMA)
     pq.write_table(meteo_table, out_dir / "meteo_daily.parquet")
+    prog.write("write")
     run_log = None
     if (run_dir / LOG_FILE).is_file():
         run_log = dataclasses.asdict(bo.read_run_log(run_dir / LOG_FILE))

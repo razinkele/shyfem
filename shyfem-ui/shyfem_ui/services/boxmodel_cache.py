@@ -298,22 +298,54 @@ def publish(tmp_dir: Path, run_id: str) -> Path:
     return target
 
 
-def reconcile_tmp_dirs(project_work_dir: Path) -> list[str]:
+def reconcile_tmp_dirs(
+    project_work_dir: Path,
+    registry: BuildRegistry | None = None,
+    project_id: int | None = None,
+) -> list[str]:
     """Publish finished tmp dirs, remove dead tmp dirs and stray .old dirs.
 
-    Never touches a live ``.tmp-*`` (see ``_progress_age``) or a published
-    cache directory -- only entries whose name contains ``.tmp-`` or
-    ``.old-`` are ever considered, and a symlink is never followed or
-    removed regardless of its name (it could point anywhere). A stray
-    non-directory entry with a ``.tmp-``/``.old-`` name (never produced by
-    this module, but nothing stops something else from leaving one) is
-    unlinked rather than skipped forever. Idempotent: running it again on an
-    already-reconciled tree finds nothing to do.
+    Never touches a live ``.tmp-*`` or a published cache directory -- only
+    entries whose name contains ``.tmp-`` or ``.old-`` are ever considered,
+    and a symlink is never followed or removed regardless of its name (it
+    could point anywhere). A stray non-directory entry with a
+    ``.tmp-``/``.old-`` name (never produced by this module, but nothing
+    stops something else from leaving one) is unlinked rather than skipped
+    forever. Idempotent: running it again on an already-reconciled tree
+    finds nothing to do.
+
+    "Live" is decided by TWO independent tests, and a directory is skipped
+    if either says it is alive:
+
+    * this worker's registry, when ``registry`` AND ``project_id`` are both
+      given: a ``.tmp-*`` whose ``(project_id, run_id)`` still has a
+      ``queued``/``building`` handle belongs to a build in flight HERE and
+      is that build's own to finish and publish. The age rule alone is not
+      enough, because every page load calls this and a build can be busy
+      for longer than ``LIVE_TMP_SECONDS`` between two ``progress.json``
+      writes (a slow disk, a long Parquet write) -- without this check a
+      page load could delete the output directory of a build running in the
+      same process. Skipping a live key before the publish branch also
+      means a finished-but-not-yet-published build is left to its own
+      ``_run_build``, instead of racing it into ``publish``.
+    * ``progress.json``'s age (see ``_progress_age``), which is the only
+      signal available for ANOTHER worker's builds and stays in force
+      whenever the registry is not given or does not know the key.
     """
     root = cache_root(project_work_dir)
     msgs: list[str] = []
     if not root.is_dir():
         return msgs
+
+    def _has_live_handle(run_id: str) -> bool:
+        # Both arguments are needed to form a registry key; with only one of
+        # them the age rule is all we have (and is what every pre-registry
+        # caller still gets). ``BuildRegistry.get`` already filters to the
+        # queued/building states.
+        if registry is None or project_id is None:
+            return False
+        return registry.get((int(project_id), run_id)) is not None
+
     for d in sorted(root.iterdir()):
         if d.is_symlink():
             continue
@@ -332,6 +364,8 @@ def reconcile_tmp_dirs(project_work_dir: Path) -> list[str]:
         if ".tmp-" not in d.name:
             continue
         run_id = d.name.split(".tmp-", 1)[0]
+        if _has_live_handle(run_id):
+            continue
         prog = _read_json(d / "progress.json")
         if (
             prog

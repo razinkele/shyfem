@@ -628,3 +628,82 @@ def test_timeout_marks_failed_with_timeout_message(env, monkeypatch):
     assert st.state == "failed" and "timed out" in st.message.lower()
     with pytest.raises(ProcessLookupError):
         os.kill(h.pid, 0)
+
+
+def _stale_tmp(root: Path, name: str) -> Path:
+    """A ``.tmp-*`` directory whose liveness signal is far older than the cap."""
+    tmp = root / name
+    tmp.mkdir(parents=True, exist_ok=True)
+    (tmp / "progress.json").write_text(json.dumps({"phase": "state", "exit": None}))
+    old_t = time.time() - 10 * bc.LIVE_TMP_SECONDS
+    os.utime(tmp / "progress.json", (old_t, old_t))
+    os.utime(tmp, (old_t, old_t))
+    return tmp
+
+
+def test_reconcile_keeps_a_tmp_dir_whose_build_is_live_in_this_registry(tmp_path):
+    """Review Important 1: every page load runs reconcile_tmp_dirs, and the
+    age rule alone cannot tell "abandoned" from "busy". A build in THIS
+    worker that has not written progress.json for longer than
+    LIVE_TMP_SECONDS (slow disk, long Parquet write, a phase with no
+    heartbeat) would have its own output directory deleted underneath it.
+    A live registry handle for (project_id, run_id) must veto the removal.
+    """
+    root = bc.cache_root(tmp_path)
+    tmp = _stale_tmp(root, "fix.tmp-x")
+
+    reg = bc.BuildRegistry()
+    reg.put(bc.BuildHandle(key=(7, "fix"), owner_id=1, tmp_dir=tmp, state="building"))
+
+    msgs = bc.reconcile_tmp_dirs(tmp_path, registry=reg, project_id=7)
+    assert tmp.is_dir(), "a live build's tmp dir must survive a page-load reconcile"
+    assert msgs == []
+
+    # ... and the age rule still applies to everything the registry does not
+    # claim: same directory, no handle -> removed.
+    assert bc.reconcile_tmp_dirs(tmp_path) == ["removed dead fix.tmp-x"]
+    assert not tmp.exists()
+
+
+def test_reconcile_registry_veto_needs_both_registry_and_project_id(tmp_path):
+    """Half the key is not a key: with only a registry (or only a project id)
+    the function must fall back to the age rule rather than silently keeping
+    -- or silently removing -- directories."""
+    root = bc.cache_root(tmp_path)
+    tmp = _stale_tmp(root, "fix.tmp-y")
+    reg = bc.BuildRegistry()
+    reg.put(bc.BuildHandle(key=(7, "fix"), owner_id=1, tmp_dir=tmp, state="building"))
+
+    assert bc.reconcile_tmp_dirs(tmp_path, registry=reg) == ["removed dead fix.tmp-y"]
+    assert not tmp.exists()
+
+
+def test_reconcile_registry_veto_ignores_a_finished_handle(tmp_path):
+    """``BuildRegistry.get`` only returns queued/building handles, so a
+    handle left in a terminal state must not keep a dead directory alive."""
+    root = bc.cache_root(tmp_path)
+    tmp = _stale_tmp(root, "fix.tmp-z")
+    reg = bc.BuildRegistry()
+    reg.put(bc.BuildHandle(key=(7, "fix"), owner_id=1, tmp_dir=tmp, state="done"))
+
+    assert bc.reconcile_tmp_dirs(tmp_path, registry=reg, project_id=7) == ["removed dead fix.tmp-z"]
+    assert not tmp.exists()
+
+
+def test_reconcile_leaves_a_live_builds_finished_dir_to_its_own_publish(tmp_path):
+    """A finished-but-unpublished tmp dir whose handle is still live belongs
+    to ``_run_build``: reconcile must not race it into ``publish``."""
+    root = bc.cache_root(tmp_path)
+    tmp = root / "fix.tmp-w"
+    tmp.mkdir(parents=True)
+    (tmp / "meta.json").write_text("{}")
+    (tmp / "progress.json").write_text(json.dumps({"phase": "done", "exit": 0}))
+    reg = bc.BuildRegistry()
+    reg.put(bc.BuildHandle(key=(7, "fix"), owner_id=1, tmp_dir=tmp, state="building"))
+
+    assert bc.reconcile_tmp_dirs(tmp_path, registry=reg, project_id=7) == []
+    assert tmp.is_dir() and not (root / "fix").exists()
+
+    # Without the handle the page load publishes it, exactly as before.
+    assert bc.reconcile_tmp_dirs(tmp_path) == ["published fix"]
+    assert (root / "fix" / "meta.json").is_file()

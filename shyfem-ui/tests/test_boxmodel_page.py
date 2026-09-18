@@ -312,10 +312,10 @@ def test_reconcile_is_skipped_without_write_access(monkeypatch, tmp_path):
     from shyfem_ui.pages import boxmodel
 
     called = []
-    monkeypatch.setattr(boxmodel, "reconcile_tmp_dirs", lambda wd: called.append(wd) or [])
+    monkeypatch.setattr(boxmodel, "reconcile_tmp_dirs", lambda wd, **kw: called.append(wd) or [])
 
     config = _GateConfig(deny_write=True)
-    notice = boxmodel._reconcile_cache_dir(config, {"username": "viewer"}, tmp_path, "proj")
+    notice = boxmodel._reconcile_cache_dir(config, {"username": "viewer"}, tmp_path, "proj", 7)
 
     assert called == [], "reconcile must not run without write access"
     assert notice is None, "a viewer has nothing actionable to be told"
@@ -327,13 +327,22 @@ def test_reconcile_runs_once_with_write_access(monkeypatch, tmp_path):
 
     called = []
     monkeypatch.setattr(
-        boxmodel, "reconcile_tmp_dirs", lambda wd: called.append(wd) or ["published fix"]
+        boxmodel,
+        "reconcile_tmp_dirs",
+        lambda wd, **kw: called.append((wd, kw)) or ["published fix"],
     )
 
     config = _GateConfig(deny_write=False)
-    notice = boxmodel._reconcile_cache_dir(config, {"username": "editor"}, tmp_path, "proj")
+    notice = boxmodel._reconcile_cache_dir(config, {"username": "editor"}, tmp_path, "proj", 7)
 
-    assert called == [tmp_path], "reconcile must run exactly once for a writer"
+    assert len(called) == 1, "reconcile must run exactly once for a writer"
+    work_dir, kwargs = called[0]
+    assert work_dir == tmp_path
+    # Review Important 1: without the registry AND the project id the
+    # reconcile decides on progress.json's age alone and can delete the tmp
+    # dir of a build running in this very worker.
+    assert kwargs["registry"] is boxmodel.REGISTRY
+    assert kwargs["project_id"] == 7
     assert notice is None
 
 
@@ -342,28 +351,29 @@ def test_reconcile_failure_becomes_a_page_notice(monkeypatch, tmp_path):
     must survive it and say so."""
     from shyfem_ui.pages import boxmodel
 
-    def _boom(_wd):
+    def _boom(_wd, **_kw):
         raise FileNotFoundError("lost the publish race")
 
     monkeypatch.setattr(boxmodel, "reconcile_tmp_dirs", _boom)
-    notice = boxmodel._reconcile_cache_dir(_GateConfig(deny_write=False), None, tmp_path, "proj")
+    notice = boxmodel._reconcile_cache_dir(_GateConfig(deny_write=False), None, tmp_path, "proj", 7)
     assert notice and "cache directory" in notice
 
 
-def test_manifest_result_still_loads_when_reconcile_is_skipped(monkeypatch, tmp_path):
-    """The write gate must not stop a viewer seeing the page: the manifest still
-    loads, only the mutation is skipped."""
+def test_reconcile_helper_returns_manifest_when_write_access_denied(monkeypatch, tmp_path):
+    """The write gate must not stop a viewer seeing the page: the read
+    confinement the manifest load uses still passes, and the helper returns
+    ``None`` (no notice) instead of raising or mutating anything."""
     from shyfem_ui.pages import boxmodel
 
     monkeypatch.setattr(
         boxmodel,
         "reconcile_tmp_dirs",
-        lambda wd: (_ for _ in ()).throw(AssertionError("must not be called")),
+        lambda wd, **kw: (_ for _ in ()).throw(AssertionError("must not be called")),
     )
     config = _GateConfig(deny_write=True)
     # the read confinement (for_write=False) is what the manifest load uses
     assert config.confine_path(tmp_path, None, must_exist=True, for_write=False) == tmp_path
-    assert boxmodel._reconcile_cache_dir(config, None, tmp_path, "proj") is None
+    assert boxmodel._reconcile_cache_dir(config, None, tmp_path, "proj", 7) is None
 
 
 def test_live_fallback_is_keyed_to_the_selected_run():

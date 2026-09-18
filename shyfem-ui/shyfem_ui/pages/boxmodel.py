@@ -180,7 +180,7 @@ def _bias_cell(variable: str, bias) -> str:
     return "—" if variable == "level" else _fmt(bias)
 
 
-def _reconcile_cache_dir(config, user, work_dir, project_name=None) -> str | None:
+def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
     """Publish finished builds and clear dead tmp dirs -- if the caller may write.
 
     Returns a page notice, or ``None`` when there is nothing to report.
@@ -192,6 +192,11 @@ def _reconcile_cache_dir(config, user, work_dir, project_name=None) -> str | Non
     viewer has nothing to reconcile, so failing the write check just skips it,
     silently -- it is not an error the viewer could act on.
 
+    ``REGISTRY`` and ``project_id`` are handed over so the reconcile can tell
+    a build running in THIS worker from an abandoned directory: without them
+    it decides purely on ``progress.json``'s age, and a page load during a
+    long, quiet build phase would delete that build's own output directory.
+
     Module-level and dependency-free (it takes the config, the user and the
     directory) so the gate can be tested without a live Shiny session.
     """
@@ -201,7 +206,7 @@ def _reconcile_cache_dir(config, user, work_dir, project_name=None) -> str | Non
         logger.info("boxmodel: skipping cache reconcile (no write access): %s", exc)
         return None
     try:
-        for msg in reconcile_tmp_dirs(Path(work_dir)):
+        for msg in reconcile_tmp_dirs(Path(work_dir), registry=REGISTRY, project_id=project_id):
             logger.info("boxmodel cache reconcile (%s): %s", project_name, msg)
     except Exception as exc:  # noqa: BLE001 - page load must never die here
         logger.warning("boxmodel: cache reconcile failed: %s", exc, exc_info=True)
@@ -407,7 +412,9 @@ def boxmodel_server(
         # dead tmp dirs -- before anything reads the cache status, so a
         # just-finished build shows as "ready" straight away. Gated on the
         # WRITE confinement and never raising; see _reconcile_cache_dir.
-        notice = _reconcile_cache_dir(config, usr, proj["work_dir"], proj.get("name"))
+        notice = _reconcile_cache_dir(
+            config, usr, proj["work_dir"], proj.get("name"), proj.get("id")
+        )
         return manifest_obj, None, notice
 
     def manifest():
