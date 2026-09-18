@@ -91,6 +91,56 @@ def _should_show_share_button(project: dict, user: dict | None) -> bool:
     return project.get("owner_id") == user.get("id")
 
 
+def _human_size(n: int) -> str:
+    """Byte count as a short human-readable string."""
+    step = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if step < 1024 or unit == "GB":
+            return f"{step:.0f} {unit}" if unit == "B" else f"{step:.1f} {unit}"
+        step /= 1024
+    return f"{step:.1f} GB"
+
+
+def _project_files_block(work_dir: str, *, max_files: int = 100):
+    """A table of the files on disk in ``work_dir`` (rel path + size), so the
+    Details popup is informative even for projects with no DB grid/sim rows.
+
+    Recursive; hidden trees (e.g. the ``.boxmodel_cache`` parquet store) are
+    skipped and the listing is capped. Never raises."""
+    root = Path(work_dir)
+    rows = []
+    truncated = False
+    try:
+        for p in sorted(root.rglob("*")):
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root)
+            if any(part.startswith(".") for part in rel.parts):
+                continue
+            if len(rows) >= max_files:
+                truncated = True
+                break
+            try:
+                size = p.stat().st_size
+            except OSError:
+                continue
+            rows.append(
+                ui.tags.tr(ui.tags.td(str(rel)), ui.tags.td(_human_size(size), class_="text-end"))
+            )
+    except OSError:
+        return ui.p("Directory not readable.", class_="text-muted")
+    if not rows:
+        return ui.p("No files on disk.", class_="text-muted")
+    table = ui.tags.table(
+        ui.tags.thead(ui.tags.tr(ui.tags.th("File"), ui.tags.th("Size", class_="text-end"))),
+        ui.tags.tbody(*rows),
+        class_="table table-sm",
+    )
+    if truncated:
+        return ui.div(table, ui.p(f"Showing first {max_files} files.", class_="text-muted small"))
+    return table
+
+
 def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=None) -> str | None:
     """Return a user-facing error if ``user`` may NOT modify sharing, else None.
 
@@ -910,6 +960,18 @@ def home_server(
                 else ui.p("No simulations.", class_="text-muted")
             )
             m = ui.modal(
+                ui.h6("Overview"),
+                ui.tags.dl(
+                    ui.tags.dt("Description"),
+                    ui.tags.dd(ctx.get("description") or "—"),
+                    ui.tags.dt("Directory"),
+                    ui.tags.dd(
+                        ui.tags.code(config.display_path(ctx["work_dir"], _user()), class_="small")
+                    ),
+                    class_="row",
+                ),
+                ui.h6("Files"),
+                _project_files_block(ctx["work_dir"]),
                 ui.h6("Grids"),
                 grids_block,
                 ui.h6("Simulations"),
