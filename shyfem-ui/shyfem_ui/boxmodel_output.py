@@ -85,6 +85,28 @@ def _lines(path: Path) -> Iterator[tuple[int, str]]:
             yield n, raw.rstrip("\n")
 
 
+def _next(it, path: Path, rec: int, what: str) -> tuple[int, str]:
+    """``next(it)`` that names the file and the record when the file ends.
+
+    A bare ``next()`` inside a generator turns a truncated file into
+    ``RuntimeError: generator raised StopIteration`` (PEP 479) -- a message
+    that says nothing about which file stopped where. Spec sec5 requires the
+    parsers to abort with the record number and the file name.
+    """
+    try:
+        return next(it)
+    except StopIteration as e:
+        raise BoxOutputError(f"{path.name}: record {rec}: truncated ({what})") from e
+
+
+def _int(text: str, path: Path, rec: int, what: str) -> int:
+    """``int(text)`` that names the file and the record on a bad field."""
+    try:
+        return int(text)
+    except (TypeError, ValueError) as e:
+        raise BoxOutputError(f"{path.name}: record {rec}: {what} is not an integer") from e
+
+
 def read_preamble(path: Path) -> Preamble:
     it = _lines(path)
     try:
@@ -97,7 +119,10 @@ def read_preamble(path: Path) -> Preamble:
     g = l2.split()
     if len(g) != 4 or g[0] != "#":
         raise BoxOutputError(f"{path.name}: malformed preamble line 2")
-    return Preamble(int(g[1]), int(g[2]), int(g[3]))
+    try:
+        return Preamble(int(g[1]), int(g[2]), int(g[3]))
+    except ValueError as e:
+        raise BoxOutputError(f"{path.name}: malformed preamble line 2") from e
 
 
 def _expect_preamble(path: Path, file_type: int) -> None:
@@ -120,10 +145,7 @@ def _read_block(it, path: Path, rec: int, count: int, ncols: int, label: str) ->
     out = np.empty((count, ncols), dtype=float)
     seen: set[int] = set()
     for i in range(count):
-        try:
-            n, line = next(it)
-        except StopIteration as e:
-            raise BoxOutputError(f"{path.name}: record {rec}: truncated {label} block") from e
+        n, line = _next(it, path, rec, f"{label} block")
         g = line.split()
         if len(g) != ncols:
             raise BoxOutputError(f"{path.name}: record {rec}: malformed {label} line {n}")
@@ -142,8 +164,8 @@ def _read_block(it, path: Path, rec: int, count: int, ncols: int, label: str) ->
 def _iter_records(path: Path, file_type: int, nvars: int, with_sections: bool):
     _expect_preamble(path, file_type)
     it = _lines(path)
-    next(it)
-    next(it)  # preamble
+    _next(it, path, 0, "preamble")
+    _next(it, path, 0, "preamble")
     rec = 0
     for n, line in it:
         if line.strip() != "# time record":
@@ -153,36 +175,39 @@ def _iter_records(path: Path, file_type: int, nvars: int, with_sections: bool):
                 f"{path.name}: record {rec + 1}: expected '# time record' at line {n}"
             )
         rec += 1
-        _, tl = next(it)
+        _, tl = _next(it, path, rec, "time line")
         seconds, stamp = _parse_stamp(tl.split(), path, rec)
-        _, hdr = next(it)
+        _, hdr = _next(it, path, rec, "boxes header")
         if "boxes" not in hdr:
             raise BoxOutputError(f"{path.name}: record {rec}: expected boxes header")
-        _, cnt = next(it)
+        _, cnt = _next(it, path, rec, "boxes/nvars line")
         g = cnt.split()
-        if len(g) != 2 or int(g[1]) != nvars:
+        if len(g) != 2 or _int(g[1], path, rec, "nvars") != nvars:
             raise BoxOutputError(
                 f"{path.name}: record {rec}: expected nvars={nvars}, got {cnt.strip()!r}"
             )
-        nbox = int(g[0])
+        nbox = _int(g[0], path, rec, "box count")
         if nbox <= 0 or nbox > MAX_BOXES:
             raise BoxOutputError(f"{path.name}: record {rec}: boxes={nbox} outside 1..{MAX_BOXES}")
-        next(it)  # '# box ...' column header
+        _next(it, path, rec, "box column header")
         block = _read_block(it, path, rec, nbox, nvars + 1, "box")
         box_ids = block[:, 0].astype(int)
         values = block[:, 1:]
         sections = np.empty((0, 6))
         if with_sections:
-            _, sh = next(it)
+            _, sh = _next(it, path, rec, "sections header")
             if "sections" not in sh:
                 raise BoxOutputError(f"{path.name}: record {rec}: expected sections header")
-            _, sc = next(it)
-            nsec = int(sc.split()[0])
+            _, sc = _next(it, path, rec, "sections count line")
+            fields = sc.split()
+            if not fields:
+                raise BoxOutputError(f"{path.name}: record {rec}: empty sections count line")
+            nsec = _int(fields[0], path, rec, "section count")
             if nsec < 0 or nsec > MAX_SECTIONS:
                 raise BoxOutputError(
                     f"{path.name}: record {rec}: sections={nsec} outside 0..{MAX_SECTIONS}"
                 )
-            next(it)  # '# section from to ...'
+            _next(it, path, rec, "section column header")
             sections = _read_block(it, path, rec, nsec, 6, "section")
         yield seconds, stamp, box_ids, values, sections
 
@@ -198,30 +223,59 @@ def iter_meteo_records(path: Path) -> Iterator[MeteoRecord]:
 
 
 def read_stats(path: Path) -> BoxStats:
+    """Read ``boxes_stats.txt``.
+
+    Every field is taken through ``take()``/``_field``, which turn a file
+    that simply stops early (or a header field that is not a number) into a
+    :class:`BoxOutputError` naming the file -- not the bare ``IndexError`` /
+    ``ValueError`` a short file used to raise from the middle of the table.
+    """
     _expect_preamble(path, FILE_TYPE_STATS)
     lines = [ln for _, ln in _lines(path)][2:]
     i = 0
 
-    def take():
+    def take() -> str:
         nonlocal i
         i += 1
+        if i > len(lines):
+            raise BoxOutputError(f"{path.name}: truncated (ran out of lines at line {i + 2})")
         return lines[i - 1]
+
+    def _field(text: str, what: str, cast=int):
+        try:
+            return cast(text)
+        except (TypeError, ValueError) as e:
+            raise BoxOutputError(f"{path.name}: malformed {what} ({text!r})") from e
+
+    def _stamp_field(line: str, what: str) -> datetime:
+        parts = line.split("=")
+        if len(parts) < 2:
+            raise BoxOutputError(f"{path.name}: malformed {what} ({line!r})")
+        try:
+            return datetime.strptime(parts[1].strip(), _STAMP)
+        except ValueError as e:
+            raise BoxOutputError(f"{path.name}: malformed {what} ({line!r})") from e
 
     if "information on simulation" not in take():
         raise BoxOutputError(f"{path.name}: expected simulation information block")
     d0 = take().split()
-    date0, time0 = int(d0[0]), int(d0[1])
-    idtbox = int(float(take().split()[0]))
-    start = datetime.strptime(take().split("=")[1].strip(), _STAMP)
-    end = datetime.strptime(take().split("=")[1].strip(), _STAMP)
+    if len(d0) < 2:
+        raise BoxOutputError(f"{path.name}: malformed date0/time0 line")
+    date0, time0 = _field(d0[0], "date0"), _field(d0[1], "time0")
+    idt = take().split()
+    if not idt:
+        raise BoxOutputError(f"{path.name}: malformed idtbox line")
+    idtbox = int(_field(idt[0], "idtbox", float))
+    start = _stamp_field(take(), "start of simulation")
+    end = _stamp_field(take(), "end of simulation")
     take()  # '#      boxes       nvars'
     g = take().split()
     if len(g) != 2:
         raise BoxOutputError(f"{path.name}: malformed boxes/nvars line")
-    n = int(g[1])
+    n = _field(g[1], "nvars in the stats header")
     if n != 4:
         raise BoxOutputError(f"{path.name}: expected nvars=4 in stats header, got {n}")
-    nbox = int(g[0])
+    nbox = _field(g[0], "box count in the stats header")
     if nbox <= 0 or nbox > MAX_BOXES:
         raise BoxOutputError(f"{path.name}: boxes={nbox} outside 1..{MAX_BOXES}")
     take()  # column header
@@ -232,7 +286,10 @@ def read_stats(path: Path) -> BoxStats:
     if (boxes["layers"] > 1).any():
         raise BoxOutputError(f"{path.name}: layers > 1 (3-D box output is not supported)")
     take()  # '#   sections'
-    nsec = int(take().split()[0])
+    sc = take().split()
+    if not sc:
+        raise BoxOutputError(f"{path.name}: malformed sections count line")
+    nsec = _field(sc[0], "sections count")
     if nsec < 0 or nsec > MAX_SECTIONS:
         raise BoxOutputError(f"{path.name}: sections={nsec} outside 0..{MAX_SECTIONS}")
     take()
@@ -247,12 +304,19 @@ def read_stats(path: Path) -> BoxStats:
         for _ in range(nsec):
             take()  # '#    section nodes from-box to-box layers'
             g = take().split()
-            sec, nn = int(g[0]), int(g[1])
+            if len(g) < 2:
+                raise BoxOutputError(f"{path.name}: malformed section details line")
+            sec = _field(g[0], "section id in the section details")
+            nn = _field(g[1], "node count in the section details")
             take()  # '#       node node-number x y'
             pts = []
             for _ in range(nn):
                 h = take().split()
-                pts.append((float(h[2]), float(h[3])))
+                if len(h) < 4:
+                    raise BoxOutputError(f"{path.name}: malformed section node line")
+                pts.append(
+                    (_field(h[2], "section node x", float), _field(h[3], "section node y", float))
+                )
             section_nodes[sec] = pts
     return BoxStats(date0, time0, idtbox, start, end, boxes, sections, section_nodes)
 
@@ -260,15 +324,21 @@ def read_stats(path: Path) -> BoxStats:
 def read_geom(path: Path) -> pd.DataFrame:
     _expect_preamble(path, FILE_TYPE_GEOM)
     lines = [ln for _, ln in _lines(path)][2:]
+    # A file that stops inside (or right after) the preamble must abort
+    # naming itself, not raise a bare IndexError from lines[0]/lines[1].
+    if len(lines) < 2:
+        raise BoxOutputError(f"{path.name}: truncated (no elements header)")
     if "elements" not in lines[0]:
         raise BoxOutputError(f"{path.name}: expected elements header")
     g = lines[1].split()
     if len(g) != 2:
         raise BoxOutputError(f"{path.name}: malformed elements/nvars line")
-    n = int(g[1])
+    try:
+        n, nel = int(g[1]), int(g[0])
+    except ValueError as e:
+        raise BoxOutputError(f"{path.name}: malformed elements/nvars line") from e
     if n != 3:
         raise BoxOutputError(f"{path.name}: expected nvars=3 in geom header, got {n}")
-    nel = int(g[0])
     rows = [ln.split() for ln in lines[3 : 3 + nel]]
     if len(rows) != nel or any(len(r) != 4 for r in rows):
         raise BoxOutputError(f"{path.name}: malformed element table")

@@ -170,12 +170,11 @@ def test_error_is_recorded_in_progress(run, tmp_path):
     assert prog["phase"] == "error" and "preamble" in prog["error"]
 
 
-def test_error_is_recorded_in_progress_for_uncaught_exception_type(run, tmp_path):
-    # Truncate boxes_stats.txt mid-table: read_stats() raises a bare IndexError
-    # (lines[i - 1] past the end), which is NOT one of the (BoxOutputError,
-    # OSError, ValueError) types main()'s specific except clause names. The
-    # catch-all in main() must still record phase="error" (never leave
-    # progress.json stuck at "state") and return exit code 1.
+def test_truncated_stats_file_is_reported_by_name_not_as_an_indexerror(run, tmp_path):
+    # Truncate boxes_stats.txt mid-table. This used to raise a bare IndexError
+    # (lines[i - 1] past the end) that named neither the file nor the place;
+    # review Important 2 made it a BoxOutputError naming the file, which is
+    # what reaches progress.json and the page badge.
     base, out = _out(tmp_path)
     lines = (run / "boxes_stats.txt").read_text().splitlines()[:4]
     (run / "boxes_stats.txt").write_text("\n".join(lines) + "\n")
@@ -183,7 +182,26 @@ def test_error_is_recorded_in_progress_for_uncaught_exception_type(run, tmp_path
     assert rc == 1
     prog = json.loads((out / "progress.json").read_text())
     assert prog["phase"] == "error"
-    assert prog["error"] and "IndexError" in prog["error"]
+    assert prog["error"].startswith("boxes_stats.txt:"), prog["error"]
+    assert "IndexError" not in prog["error"]
+    assert prog["exit"] == 1
+
+
+def test_error_is_recorded_in_progress_for_uncaught_exception_type(run, tmp_path, monkeypatch):
+    # An exception type outside the (OSError, ValueError) tuple main()'s
+    # specific except clause names must still leave progress.json in an
+    # "error" phase (never stuck mid-phase) and return exit code 1.
+    base, out = _out(tmp_path)
+
+    def _boom(*a, **k):
+        raise RuntimeError("something no parser models")
+
+    monkeypatch.setattr(cli, "build", _boom)
+    rc = cli.main(["--run", str(run), "--out", str(out), "--trusted-base", str(base)])
+    assert rc == 1
+    prog = json.loads((out / "progress.json").read_text())
+    assert prog["phase"] == "error"
+    assert prog["error"] == "RuntimeError: something no parser models"
     assert prog["exit"] == 1
 
 
@@ -301,3 +319,22 @@ def test_heartbeat_cadence_stays_well_inside_the_live_tmp_window():
         f"{cli.RECORDS_PER_HEARTBEAT} records x {generous_seconds_per_record}s = {interval}s "
         f"is not comfortably below LIVE_TMP_SECONDS={bc.LIVE_TMP_SECONDS}"
     )
+
+
+def test_truncated_state_file_reaches_progress_as_a_named_parser_error(run, tmp_path):
+    """Review Important 2, end to end: a state file that stops between two
+    lines used to surface as ``RuntimeError: generator raised StopIteration``
+    (PEP 479) in progress.json -- and therefore in the page's status badge.
+    It must name the file and the record instead."""
+    base, out = _out(tmp_path)
+    path = run / "boxes_2d.txt"
+    lines = path.read_text().splitlines()
+    marks = [i for i, ln in enumerate(lines) if ln.strip() == "# time record"]
+    path.write_text("\n".join(lines[: marks[1] + 2]) + "\n")  # ends after record 2's time line
+
+    rc = cli.main(["--run", str(run), "--out", str(out), "--trusted-base", str(base)])
+    assert rc == 1
+    prog = json.loads((out / "progress.json").read_text())
+    assert prog["phase"] == "error" and prog["exit"] == 1
+    assert prog["error"].startswith("boxes_2d.txt: record 2:"), prog["error"]
+    assert "RuntimeError" not in prog["error"]

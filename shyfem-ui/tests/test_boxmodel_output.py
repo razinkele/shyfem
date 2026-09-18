@@ -126,3 +126,96 @@ def test_caps_are_enforced(run, monkeypatch):
     monkeypatch.setattr(bo, "MAX_BOXES", 2)
     with pytest.raises(bo.BoxOutputError, match="boxes"):
         list(bo.iter_state_records(run / "boxes_2d.txt"))
+
+
+def _truncate_state_after(path, predicate) -> None:
+    """Rewrite ``path`` keeping every line up to and including the first one
+    that satisfies ``predicate``, and nothing after it."""
+    lines = path.read_text().splitlines()
+    cut = next(i for i, ln in enumerate(lines) if predicate(i, ln))
+    path.write_text("\n".join(lines[: cut + 1]) + "\n")
+
+
+def test_state_file_ending_after_a_time_line_names_file_and_record(run):
+    """Review Important 2: a file that stops between two lines used to leave
+    ``next(it)`` unguarded inside a generator, which PEP 479 turns into
+    ``RuntimeError: generator raised StopIteration`` -- a message naming
+    neither the file nor the record."""
+    path = run / "boxes_2d.txt"
+    marks = [
+        i for i, ln in enumerate(path.read_text().splitlines()) if ln.strip() == "# time record"
+    ]
+    # end the file right after record 2's time-stamp line
+    _truncate_state_after(path, lambda i, ln: i == marks[1] + 1)
+    with pytest.raises(bo.BoxOutputError) as exc:
+        list(bo.iter_state_records(path))
+    assert str(exc.value).startswith("boxes_2d.txt: record 2: truncated")
+    assert "RuntimeError" not in str(exc.value)
+
+
+def test_state_file_cut_inside_a_box_block_names_file_and_record(run):
+    path = run / "boxes_2d.txt"
+    lines = path.read_text().splitlines()
+    marks = [i for i, ln in enumerate(lines) if ln.strip() == "# time record"]
+    # record 2's box header is 4 lines past its "# time record"; stop one
+    # data row into the block
+    _truncate_state_after(path, lambda i, ln: i == marks[1] + 5)
+    with pytest.raises(
+        bo.BoxOutputError, match=r"boxes_2d\.txt: record 2: truncated \(box block\)"
+    ):
+        list(bo.iter_state_records(path))
+
+
+def test_state_file_cut_inside_a_section_block_names_file_and_record(run):
+    path = run / "boxes_2d.txt"
+    lines = path.read_text().splitlines()
+    marks = [i for i, ln in enumerate(lines) if ln.strip() == "# time record"]
+    start = marks[1]
+    hdr = next(i for i in range(start, len(lines)) if lines[i].strip().startswith("# section "))
+    _truncate_state_after(path, lambda i, ln: i == hdr + 1)  # one section row, then EOF
+    with pytest.raises(
+        bo.BoxOutputError, match=r"boxes_2d\.txt: record 2: truncated \(section block\)"
+    ):
+        list(bo.iter_state_records(path))
+
+
+def test_meteo_file_cut_mid_record_names_file_and_record(run):
+    path = run / "boxes_meteo.txt"
+    lines = path.read_text().splitlines()
+    marks = [i for i, ln in enumerate(lines) if ln.strip() == "# time record"]
+    _truncate_state_after(path, lambda i, ln: i == marks[1] + 3)  # header, no box rows
+    with pytest.raises(bo.BoxOutputError, match=r"boxes_meteo\.txt: record 2: truncated"):
+        list(bo.iter_meteo_records(path))
+
+
+def test_stats_file_cut_mid_table_names_the_file(run):
+    path = run / "boxes_stats.txt"
+    lines = path.read_text().splitlines()
+    # stop one row into the box table (preamble + 8 header lines + 1 row)
+    path.write_text("\n".join(lines[:11]) + "\n")
+    with pytest.raises(bo.BoxOutputError, match=r"^boxes_stats\.txt: truncated"):
+        bo.read_stats(path)
+
+
+def test_stats_file_with_a_non_numeric_header_field_names_the_file(run):
+    path = run / "boxes_stats.txt"
+    lines = path.read_text().splitlines()
+    lines[3] = "    not-a-date           0"  # the date0/time0 line
+    path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(bo.BoxOutputError, match=r"boxes_stats\.txt: malformed date0"):
+        bo.read_stats(path)
+
+
+def test_geom_file_cut_short_names_the_file(run):
+    path = run / "boxes_geom.txt"
+    lines = path.read_text().splitlines()
+    path.write_text("\n".join(lines[:3]) + "\n")  # preamble + elements header only
+    with pytest.raises(bo.BoxOutputError, match=r"^boxes_geom\.txt: truncated"):
+        bo.read_geom(path)
+
+
+def test_preamble_with_a_non_numeric_field_is_a_box_output_error(run, tmp_path):
+    path = tmp_path / "bad.txt"
+    path.write_text("#      idbox file_type     nvers\n#     xxx  2  7\n")
+    with pytest.raises(bo.BoxOutputError, match=r"bad\.txt: malformed preamble line 2"):
+        bo.read_preamble(path)
