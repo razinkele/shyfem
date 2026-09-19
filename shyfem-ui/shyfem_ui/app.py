@@ -6,7 +6,7 @@ import shutil
 import time
 from pathlib import Path
 
-from shiny import App, reactive, ui
+from shiny import App, reactive, render, ui
 
 from shyfem_ui.config import Config, get_config, set_config
 from shyfem_ui.db.base import init_db
@@ -677,6 +677,7 @@ def _build_ui(config: Config) -> ui.Tag:
             ),
             ui.tags.i(class_="bi bi-tsunami me-2", style="font-size:1.3rem"),
             ui.span("SHYFEM Workbench", style="font-weight:600;font-size:1rem"),
+            ui.output_ui("active_project_badge", inline=True),
             class_="d-flex align-items-center",
         ),
         ui.div(
@@ -768,6 +769,24 @@ def _build_server(
     """Build the application server logic."""
     active_project = reactive.value(None)
     tutorial_context = reactive.value(None)
+
+    @render.ui
+    def active_project_badge():
+        """Topbar indicator of the currently loaded project."""
+        proj = active_project.get()
+        if not proj:
+            return ui.span(
+                ui.tags.i(class_="bi bi-folder2 me-1"),
+                "No project",
+                class_="badge rounded-pill bg-secondary ms-3",
+                title="No project loaded — open one from the Workbench",
+            )
+        return ui.span(
+            ui.tags.i(class_="bi bi-folder2-open me-1"),
+            proj.get("name") or "Project",
+            class_="badge rounded-pill bg-info text-dark ms-3",
+            title="Loaded project",
+        )
 
     def nav_to(tab_name: str):
         """Navigate to a tab via client-side JavaScript."""
