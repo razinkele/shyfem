@@ -14,11 +14,6 @@ from pathlib import Path
 
 from shiny import module, reactive, render, ui
 
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
-)
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
 from shyfem_ui.components.sample_data import sample_data_card_ui
@@ -117,12 +112,7 @@ def postprocess_ui() -> ui.Tag:
             ui.sidebar(
                 # Input files
                 ui.h5("Input"),
-                file_picker_ui("fp_shy", label="Pick output file from project"),
-                ui.input_text(
-                    "shy_path",
-                    "Output File (.shy)",
-                    placeholder="/path/to/output.shy",
-                ),
+                ui.output_ui("shy_path_picker"),
                 ui.input_action_button(
                     "scan_btn",
                     "Scan File",
@@ -249,32 +239,43 @@ def postprocess_server(
             return
         pid = proj.get("id")
         project_id_val.set(pid)
-        prev_pid = last_project_id.get()
-        # Treat None -> pid as "first arrival" (don't overwrite typed
-        # input); only nonNone -> different nonNone counts as a real
-        # project switch that must force re-fill.
-        project_changed = prev_pid is not None and prev_pid != pid
         last_project_id.set(pid)
-        work = proj["work_dir"]
-        with reactive.isolate():
-            shy_empty = not input.shy_path()
-        # Force re-fill on actual project change (not just metadata
-        # refresh). Without project_changed, switching from project A
-        # to B would leak A's work_dir into shy_path until the user
-        # manually clears it.
-        if shy_empty or project_changed:
-            ui.update_text("shy_path", value=work)
 
-    # File picker delegates resolve/log/notify branching to
-    # fill_picker_input (see its docstring in components/file_picker.py).
-    file_picker_server(
-        "fp_shy",
-        project_id=project_id_val,
-        file_types=["output"],
-        on_selected=lambda rel: fill_picker_input(
-            "shy_path", active_project.get() if active_project else None, rel
-        ),
-    )
+    @render.ui
+    def shy_path_picker():
+        """Dropdown of ``.shy``/``.nc`` output files, consolidating the
+        project directory and every box-model run directory (confined to the
+        admin-declared analysis roots) — no free-text path box."""
+        from shyfem_ui.services.boxmodel_manifest import ManifestError, load_manifest
+        from shyfem_ui.services.project_files import list_project_files
+
+        proj = active_project.get() if active_project is not None else None
+        if proj is None:
+            return ui.p("Open a project to choose an output file.", class_="text-muted small mb-2")
+        usr = current_user() if current_user is not None else None
+        choices: dict[str, str] = {"": "— select an output file —"}
+        try:
+            root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
+        except (ValueError, OSError):
+            return ui.p("Project directory unavailable.", class_="text-muted small mb-2")
+        for rel in list_project_files(root, (".shy", ".nc")):
+            choices[str(root / rel)] = rel
+        # Run outputs live outside the project, under the analysis roots; the
+        # manifest's run dirs are already confined by load_manifest.
+        try:
+            manifest = load_manifest(root, config, usr)
+        except (ManifestError, ValueError, OSError):
+            manifest = None
+        if manifest is not None:
+            for run in manifest.runs:
+                for rel in list_project_files(Path(run.dir), (".shy", ".nc")):
+                    choices[str(Path(run.dir) / rel)] = f"{run.label} / {rel}"
+        if len(choices) == 1:
+            return ui.p(
+                "No .shy/.nc output files in this project or its runs.",
+                class_="text-muted small mb-2",
+            )
+        return ui.input_select("shy_path", "Output File (.shy/.nc)", choices=choices, selected="")
 
     # Auto-fill from tutorial navigation
     @reactive.effect
@@ -284,7 +285,7 @@ def postprocess_server(
         ctx = tutorial_context.get()
         if ctx is None or ctx.get("target_tab") != "Post-Process":
             return
-        ui.update_text("shy_path", value=ctx["work_dir"])
+        # No path box any more; the user picks an output from the dropdown.
         tutorial_context.set(None)
 
     # Load sample data handler
@@ -297,7 +298,6 @@ def postprocess_server(
                 f"Sample directory not found: {work_dir}", type="error", duration=6
             )
             return
-        ui.update_text("shy_path", value=str(work_dir))
         ui.notification_show(
             "Sample directory set. Run a simulation first to generate "
             ".shy output, then click Scan.",

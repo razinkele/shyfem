@@ -46,8 +46,9 @@ class TestGridPrepPage:
         """Test sub-tabs are present."""
         _switch_tab(pw_page, "Grid Prep")
         for tab in ["Interactive Map", "Static Plot", "Statistics", "Node Inspector", "Log"]:
-            assert pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1, \
-                f"Sub-tab '{tab}' not found on Grid Prep page"
+            assert (
+                pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            ), f"Sub-tab '{tab}' not found on Grid Prep page"
 
     def test_grd_path_input(self, pw_page):
         """Test grid file path input exists."""
@@ -98,7 +99,9 @@ class TestPartitioningPage:
         """Test sub-tabs are present."""
         _switch_tab(pw_page, "Partitioning")
         for tab in ["Partition Map", "Load Balance", "Partition Info", "Statistics", "Log"]:
-            assert pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            assert (
+                pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            )
 
 
 class TestSimulationPage:
@@ -165,7 +168,9 @@ class TestRunPage:
         _switch_tab(pw_page, "Run")
         # These are inside the Run page as inner tabs
         for tab in ["Active Jobs", "Job History"]:
-            assert pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            assert (
+                pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            )
 
     def test_mpi_controls_hidden_for_shybas(self, pw_page):
         """Test MPI controls not visible when non-MPI tool is selected."""
@@ -193,10 +198,10 @@ class TestPostProcessPage:
         assert pw_page.locator("text=shyelab").count() >= 1
 
     def test_shy_path_input(self, pw_page):
-        """Test .shy file path input exists."""
+        """The output-file dropdown picker exists (no free-text path box)."""
         _switch_tab(pw_page, "Post-Process")
-        shy_input = pw_page.locator("#postprocess-shy_path")
-        assert shy_input.is_visible()
+        picker = pw_page.locator("#postprocess-shy_path_picker")
+        assert picker.is_visible()
 
     def test_operation_select(self, pw_page):
         """Test operation dropdown exists."""
@@ -214,7 +219,9 @@ class TestPostProcessPage:
         """Test sub-tabs are present."""
         _switch_tab(pw_page, "Post-Process")
         for tab in ["File Info", "Output Files", "Log"]:
-            assert pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            assert (
+                pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            )
 
 
 class TestVisualizePage:
@@ -259,7 +266,9 @@ class TestComparePage:
         """Test sub-tabs are present."""
         _switch_tab(pw_page, "Compare")
         for tab in ["Runtime Stats", "Parameter Diff", "Time Series", "Summary"]:
-            assert pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            assert (
+                pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
+            )
 
 
 class TestEnsemblePage:

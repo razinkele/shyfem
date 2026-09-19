@@ -158,12 +158,12 @@ class TestPostProcessInteractions:
         pw_page.wait_for_timeout(300)
         assert op.input_value() == "extract_nc"
 
-    def test_fill_shy_path(self, pw_page):
-        """Test filling shy file path."""
+    def test_output_picker_present(self, pw_page):
+        """The output file is chosen via a dropdown picker, not a text box."""
         _switch_tab(pw_page, "Post-Process")
-        shy = pw_page.locator("#postprocess-shy_path")
-        shy.fill("/tmp/output.shy")
-        assert shy.input_value() == "/tmp/output.shy"
+        picker = pw_page.locator("#postprocess-shy_path_picker")
+        assert picker.is_visible()
+        assert pw_page.locator("input#postprocess-shy_path").count() == 0
 
     def test_switch_subtabs(self, pw_page):
         """Test switching between visible post-process sub-tabs."""
