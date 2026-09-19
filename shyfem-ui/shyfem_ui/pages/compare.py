@@ -174,64 +174,26 @@ def compare_server(
     def str_file_inputs():
         proj = active_project.get() if active_project is not None else None
         choices = _extract_str_choices(proj)
-        if choices:
-            select_choices = {"": "Select..."} | choices
-            return ui.div(
-                ui.input_select(
-                    "str_file_a",
-                    "STR File A",
-                    choices=select_choices,
-                ),
-                ui.input_select(
-                    "str_file_b",
-                    "STR File B",
-                    choices=select_choices,
-                ),
-            )
+        placeholder = "Select..." if choices else "— no .str files in project —"
+        select_choices = {"": placeholder} | choices
         return ui.div(
-            ui.input_text(
-                "str_file_a",
-                "STR File A",
-                placeholder="/path/to/file_a.str",
-            ),
-            ui.input_text(
-                "str_file_b",
-                "STR File B",
-                placeholder="/path/to/file_b.str",
-            ),
+            ui.input_select("str_file_a", "STR File A", choices=select_choices),
+            ui.input_select("str_file_b", "STR File B", choices=select_choices),
         )
 
     @render.ui
     def ts_picker_a():
         proj = active_project.get() if active_project is not None else None
         choices = _extract_ts_choices(proj)
-        if choices:
-            return ui.input_select(
-                "ts_file_a",
-                "Time Series A",
-                choices={"": "— select —", **choices},
-            )
-        return ui.input_text(
-            "ts_file_a",
-            "Time Series A",
-            placeholder="/path/to/result_a.ts (no active project — use absolute path)",
-        )
+        placeholder = "— select —" if choices else "— no time-series files in project —"
+        return ui.input_select("ts_file_a", "Time Series A", choices={"": placeholder} | choices)
 
     @render.ui
     def ts_picker_b():
         proj = active_project.get() if active_project is not None else None
         choices = _extract_ts_choices(proj)
-        if choices:
-            return ui.input_select(
-                "ts_file_b",
-                "Time Series B",
-                choices={"": "— select —", **choices},
-            )
-        return ui.input_text(
-            "ts_file_b",
-            "Time Series B",
-            placeholder="/path/to/result_b.ts (no active project — use absolute path)",
-        )
+        placeholder = "— select —" if choices else "— no time-series files in project —"
+        return ui.input_select("ts_file_b", "Time Series B", choices={"": placeholder} | choices)
 
     @reactive.effect
     @reactive.event(input.compare_jobs_btn)
@@ -541,19 +503,19 @@ def compare_server(
 
 
 def _extract_ts_choices(active_project: dict | None) -> dict[str, str]:
-    """Discover .ts and .ext time-series files in the active project's
-    work directory. Returns {abs_path: display_label} suitable for
+    """Discover time-series files (.ts, .ext, .txt, .csv) in the active
+    project's work directory. Returns {abs_path: display_label} suitable for
     ui.input_select(choices=...)."""
     if active_project is None:
         return {}
     work_dir = Path(active_project["work_dir"])
     if not work_dir.exists():
         return {}
+    from shyfem_ui.services.project_files import list_project_files
+
     choices: dict[str, str] = {}
-    for ext in (".ts", ".ext"):
-        for p in sorted(work_dir.rglob(f"*{ext}")):
-            rel = p.relative_to(work_dir).as_posix()
-            choices[str(p)] = f"{active_project['name']} / {rel}"
+    for rel in list_project_files(work_dir, (".ts", ".ext", ".txt", ".csv")):
+        choices[str(work_dir / rel)] = f"{active_project['name']} / {rel}"
     return choices
 
 
@@ -583,6 +545,14 @@ def _extract_str_choices(project_ctx: dict | None) -> dict[str, str]:
         if str_file:
             label = f"{sim['name']} ({Path(str_file).name})"
             choices[str_file] = label
+
+    # 3. Files on disk (projects populated outside the upload flow keep their
+    # .str files only on disk, with no ProjectFile/Simulation row).
+    if work_dir:
+        from shyfem_ui.services.project_files import list_project_files
+
+        for rel in list_project_files(Path(work_dir), (".str",)):
+            choices.setdefault(str(Path(work_dir) / rel), rel)
 
     return choices
 
