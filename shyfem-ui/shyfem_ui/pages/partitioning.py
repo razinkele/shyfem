@@ -8,11 +8,6 @@ from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
 # Reuse the partition color palette from grid_map
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
-)
 from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.config import Config
@@ -38,18 +33,8 @@ def partitioning_ui() -> ui.Tag:
             ui.sidebar(
                 # Input file
                 ui.h5("Input Basin"),
-                file_picker_ui("fp_bas", label="Pick basin from project"),
-                ui.input_text(
-                    "bas_path",
-                    "Basin File (.bas)",
-                    placeholder="/path/to/basin.bas",
-                ),
-                file_picker_ui("fp_grd", label="Pick grid from project"),
-                ui.input_text(
-                    "grd_path",
-                    "Grid File (.grd) for visualization",
-                    placeholder="/path/to/grid.grd (optional)",
-                ),
+                ui.output_ui("bas_path_picker"),
+                ui.output_ui("grd_path_picker"),
                 ui.input_action_button(
                     "load_grid_btn",
                     "Load Grid",
@@ -134,63 +119,37 @@ def partitioning_server(
     """Mesh partitioning page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
-    # Reactive value for picker project_id, updated inside _on_project_changed.
-    # `reactive.value` is just an alias for the class `reactive.Value`
-    # (verified -- `reactive.value is reactive.Value` returns True at runtime).
-    # Use the capital-V class name in the annotation (canonical), and
-    # the lowercase callable form for construction (idiomatic).
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
+    def _project_select(select_id, label, exts):
+        """A dropdown of the active project's files matching ``exts`` (option
+        values are absolute paths), replacing a free-text path box."""
+        from shyfem_ui.services.project_files import list_project_files
 
-    # Auto-fill from active project
-    @reactive.effect
-    def _on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
+        proj = active_project.get() if active_project is not None else None
         if proj is None:
-            project_id_val.set(None)
-            return
-        project_id_val.set(proj.get("id"))
-        work = proj["work_dir"]
-        if proj["grids"]:
-            grid = proj["grids"][0]
-            # `reactive.isolate()` prevents `input.bas_path()` / `input.grd_path()`
-            # from registering as dependencies of this effect -- without it,
-            # every keystroke in those fields would re-run this effect and
-            # clobber the user's edit. The intended trigger is
-            # `active_project` changing only.
-            # The empty-guard then prevents overwriting picker selections
-            # when active_project re-emits without an actual project change.
-            with reactive.isolate():
-                bas_empty = not input.bas_path()
-                grd_empty = not input.grd_path()
-            if grid.get("bas_file") and bas_empty:
-                ui.update_text("bas_path", value=str(Path(work) / grid["bas_file"]))
-            if grid.get("grd_file") and grd_empty:
-                ui.update_text("grd_path", value=str(Path(work) / grid["grd_file"]))
+            return ui.p(
+                f"Open a project to choose a {label.lower()}.", class_="text-muted small mb-2"
+            )
+        usr = current_user() if current_user is not None else None
+        try:
+            root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
+        except (ValueError, OSError):
+            return ui.p("Project directory unavailable.", class_="text-muted small mb-2")
+        choices = {"": "— select a file —"}
+        for rel in list_project_files(root, exts):
+            choices[str(root / rel)] = rel
+        if len(choices) == 1:
+            return ui.p(
+                f"No {'/'.join(exts)} files in this project.", class_="text-muted small mb-2"
+            )
+        return ui.input_select(select_id, label, choices=choices, selected="")
 
-    # File pickers delegate the resolve/log/notify branching to
-    # fill_picker_input (see its docstring in components/file_picker.py).
-    file_picker_server(
-        "fp_bas",
-        project_id=project_id_val,
-        file_types=["basin"],
-        on_selected=lambda rel: fill_picker_input(
-            "bas_path",
-            active_project.get() if active_project else None,
-            rel,
-        ),
-    )
-    file_picker_server(
-        "fp_grd",
-        project_id=project_id_val,
-        file_types=["grid"],
-        on_selected=lambda rel: fill_picker_input(
-            "grd_path",
-            active_project.get() if active_project else None,
-            rel,
-        ),
-    )
+    @render.ui
+    def bas_path_picker():
+        return _project_select("bas_path", "Basin File (.bas)", (".bas",))
+
+    @render.ui
+    def grd_path_picker():
+        return _project_select("grd_path", "Grid File (.grd)", (".grd",))
 
     # State
     log_content = reactive.value("")
