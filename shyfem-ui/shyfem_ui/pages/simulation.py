@@ -6,11 +6,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
-)
+from shyfem_ui.components.project_select import default_project_file, project_file_select
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
@@ -24,6 +20,33 @@ from shyfem_ui.services.str_validator import validate_str
 
 logger = logging.getLogger(__name__)
 
+# (absolute path, origin label) pushed into the STR dropdown by the sample
+# loader ("Sample"), the tutorial hand-off ("Tutorial") or Save As ("Saved").
+Preselect = tuple[str, str] | None
+
+
+def _preselect_option(pre: Preselect, proj: dict | None) -> tuple[str | None, dict | None]:
+    """``(selected, extra)`` for :func:`project_file_select` from a preselect.
+
+    A path under the project's work_dir is already listed by the dropdown,
+    so it is only preselected (canonicalised to match the option keys). A
+    path outside the project -- the bundled Mar Menor sample, a tutorial
+    asset, a Save As target elsewhere -- is injected as an extra option
+    labelled ``"<origin>: <file name>"``.
+    """
+    if pre is None:
+        return None, None
+    path, origin = pre
+    work_dir = proj.get("work_dir") if proj else None
+    if work_dir:
+        try:
+            resolved = Path(path).resolve()
+            resolved.relative_to(Path(work_dir).resolve())
+            return str(resolved), None
+        except (ValueError, OSError):
+            pass
+    return path, {path: f"{origin}: {Path(path).name}"}
+
 
 @module.ui
 def simulation_ui() -> ui.Tag:
@@ -36,12 +59,7 @@ def simulation_ui() -> ui.Tag:
             ui.sidebar(
                 # File selection
                 ui.h5("Parameter File"),
-                file_picker_ui("fp_str", label="Pick STR file from project"),
-                ui.input_text(
-                    "str_path",
-                    "File Path (.str)",
-                    placeholder="/path/to/simulation.str",
-                ),
+                ui.output_ui("str_path_picker"),
                 ui.div(
                     ui.input_action_button(
                         "load_btn",
@@ -153,30 +171,31 @@ def simulation_server(
 ) -> None:
     """Simulation configuration page server logic."""
 
-    # Auto-fill from active project
-    @reactive.effect
-    def _on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
-        if proj is None:
-            return
-        # NOTE: project_id_reactive is updated by the existing
-        # _sync_project_id effect (defined below); do NOT duplicate
-        # that work here.
-        work_dir = proj["work_dir"]
-        if proj["simulations"]:
-            sim = proj["simulations"][0]
-            if sim.get("str_file"):
-                with reactive.isolate():
-                    str_empty = not input.str_path()
-                if str_empty:
-                    ui.update_text(
-                        "str_path",
-                        value=str(Path(work_dir) / sim["str_file"]),
-                    )
+    # STR file to preselect in the dropdown when it did not come from the
+    # project's own listing: set by the sample loader, the tutorial hand-off
+    # and Save As. A fresh tuple each time, so the render below re-runs (and
+    # rescans the project dir, which is what makes a just-saved file appear).
+    preselect_str = reactive.value(None)
 
-    # Auto-fill from tutorial navigation
+    @render.ui
+    def str_path_picker():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        selected, extra = _preselect_option(preselect_str.get(), proj)
+        if selected is None:
+            selected = default_project_file(proj, "str")
+        return project_file_select(
+            "str_path",
+            "STR File (.str)",
+            (".str",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=selected,
+            extra=extra,
+        )
+
+    # Preselect from tutorial navigation
     @reactive.effect
     def _on_tutorial_context():
         if tutorial_context is None:
@@ -184,17 +203,14 @@ def simulation_server(
         ctx = tutorial_context.get()
         if ctx is None or ctx.get("target_tab") != "Simulation":
             return
-        ui.update_text(
-            "str_path",
-            value=str(Path(ctx["work_dir"]) / ctx["str_file"]),
-        )
+        preselect_str.set((str(Path(ctx["work_dir"]) / ctx["str_file"]), "Tutorial"))
         tutorial_context.set(None)
 
     # State
     current_file_path = reactive.value(None)
     parsed_str = reactive.value(None)
 
-    # Create project_id reactive value for file picker integration
+    # project_id reactive feeding the str_editor's embedded file pickers
     project_id_reactive = reactive.value(None)
 
     @reactive.effect
@@ -203,17 +219,6 @@ def simulation_server(
             return
         proj = active_project.get()
         project_id_reactive.set(proj["id"] if proj else None)
-
-    # File picker delegates resolve/log/notify branching to
-    # fill_picker_input (see its docstring in components/file_picker.py).
-    file_picker_server(
-        "fp_str",
-        project_id=project_id_reactive,  # reuse existing reactive
-        file_types=["str"],
-        on_selected=lambda rel: fill_picker_input(
-            "str_path", active_project.get() if active_project else None, rel
-        ),
-    )
 
     # Initialize str_editor and wire up its reactive state
     editor_state = str_editor_server(
@@ -266,7 +271,7 @@ def simulation_server(
         except (ValueError, FileNotFoundError):
             ui.notification_show(f"Sample STR not found: {selected}", type="error", duration=6)
             return
-        ui.update_text("str_path", value=str(str_path))
+        preselect_str.set((str(str_path), "Sample"))
         try:
             current_file_path.set(str_path)
             str_file = StrParser.parse_file(str_path)
@@ -285,7 +290,7 @@ def simulation_server(
     def _load_file():
         path_str = input.str_path()
         if not path_str:
-            ui.notification_show("Please enter a file path", type="warning")
+            ui.notification_show("Please select a STR file", type="warning")
             return
 
         _usr = current_user() if current_user is not None else None
@@ -387,7 +392,7 @@ def simulation_server(
                     elif m.level == "warning":
                         ui.notification_show(f"Warning: {m.message}", type="warning", duration=6)
             current_file_path.set(path)
-            ui.update_text("str_path", value=str(path))
+            preselect_str.set((str(path), "Saved"))
             ui.modal_remove()
             ui.notification_show(f"Saved: {path.name}", type="message", duration=4)
         except Exception as e:

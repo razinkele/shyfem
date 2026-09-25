@@ -85,6 +85,27 @@ class TestProjectFileSelect:
         assert "Open a project" in html
         assert "<select" not in html
 
+    def test_no_project_but_extra_renders_select_with_extra_only(self, config, tmp_path):
+        from shyfem_ui.components.project_select import project_file_select
+
+        sample = tmp_path / "mm_hyd_03.str"
+        sample.write_text("")
+        html = str(
+            project_file_select(
+                "str_path",
+                "STR file",
+                (".str",),
+                proj=None,
+                user=None,
+                config=config,
+                selected=str(sample),
+                extra={str(sample): "Sample: mm_hyd_03.str"},
+            )
+        )
+        assert "<select" in html
+        assert f'<option value="{sample}" selected="">Sample: mm_hyd_03.str</option>' in html
+        assert "Open a project" not in html
+
     def test_lists_matching_files_with_absolute_values(self, config, project_tree):
         from shyfem_ui.components.project_select import project_file_select
 
@@ -239,6 +260,37 @@ class TestProjectFileSelect:
         assert "Run one / out.shy" in html
 
 
+class TestSymlinkedWorkDir:
+    def test_selected_via_symlinked_work_dir_still_matches_resolved_option(
+        self, config, project_tree, tmp_path
+    ):
+        """default_project_file builds `selected` from the raw work_dir; option
+        values come from the confine_path-resolved root. They must still match."""
+        from shyfem_ui.components.project_select import (
+            default_project_file,
+            project_dir_select,
+            project_file_select,
+        )
+
+        link = tmp_path / "link"
+        link.symlink_to(project_tree, target_is_directory=True)
+        proj = _proj(link, simulations=[{"name": "s", "str_file": "INPUT/b.str"}])
+        want = default_project_file(proj, "str")
+        assert want == str(link / "INPUT" / "b.str")
+        html = str(
+            project_file_select(
+                "str_path", "STR", (".str",), proj=proj, user=None, config=config, selected=want
+            )
+        )
+        assert f'<option value="{project_tree / "INPUT" / "b.str"}" selected="">' in html
+        html = str(
+            project_dir_select(
+                "wd", "WD", proj=proj, user=None, config=config, selected=str(link / "OUT")
+            )
+        )
+        assert f'<option value="{project_tree / "OUT"}" selected="">' in html
+
+
 class TestProjectDirSelect:
     def test_no_project_renders_prompt(self, config):
         from shyfem_ui.components.project_select import project_dir_select
@@ -296,6 +348,47 @@ class TestProjectDirSelect:
             )
         )
         assert f'<option value="{want}" selected="">' in html
+
+
+class TestProjectDirSelectExtra:
+    def test_extra_dir_outside_project_is_injected_and_selected(
+        self, config, project_tree, tmp_path
+    ):
+        from shyfem_ui.components.project_select import project_dir_select
+
+        sample = tmp_path / "mar_menor"
+        sample.mkdir()
+        html = str(
+            project_dir_select(
+                "working_dir",
+                "Working dir",
+                proj=_proj(project_tree),
+                user=None,
+                config=config,
+                selected=str(sample),
+                extra={str(sample): "Sample: mar_menor/"},
+            )
+        )
+        assert f'<option value="{sample}" selected="">Sample: mar_menor/</option>' in html
+        assert f'value="{project_tree}"' in html
+
+    def test_no_project_but_extra_renders_select_with_extra_only(self, config, tmp_path):
+        from shyfem_ui.components.project_select import project_dir_select
+
+        sample = tmp_path / "mar_menor"
+        sample.mkdir()
+        html = str(
+            project_dir_select(
+                "working_dir",
+                "Working dir",
+                proj=None,
+                user=None,
+                config=config,
+                extra={str(sample): "Sample: mar_menor/"},
+            )
+        )
+        assert "<select" in html and "Open a project" not in html
+        assert f'<option value="{sample}" selected="">Sample: mar_menor/</option>' in html
 
 
 class TestProjectDefaults:

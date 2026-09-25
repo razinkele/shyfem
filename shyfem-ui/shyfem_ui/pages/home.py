@@ -9,6 +9,7 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 from sqlalchemy import or_
 
+from shyfem_ui.components.project_select import project_file_select
 from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
@@ -258,6 +259,23 @@ def _build_permissions_table_data(permissions: list[dict]) -> list[dict]:
         }
         for p in permissions
     ]
+
+
+def _project_by_id(project_rows: list[dict], pid) -> dict | None:
+    """The dashboard project row whose ``id`` matches ``pid`` (str or int), or None.
+
+    Used by the Import Grid modal to resolve the target project chosen in its
+    select (input values are strings) into the row carrying ``work_dir``/``name``
+    that ``project_file_select`` needs.
+    """
+    try:
+        pid_int = int(pid)
+    except (TypeError, ValueError):
+        return None
+    for row in project_rows:
+        if row.get("id") == pid_int:
+            return row
+    return None
 
 
 @module.ui
@@ -1083,11 +1101,7 @@ def home_server(
 
         m = ui.modal(
             ui.input_select("import_project_id", "Target Project", choices=choices),
-            ui.input_text(
-                "import_grd_path",
-                "Grid File Path (.grd)",
-                placeholder="/path/to/grid.grd",
-            ),
+            ui.output_ui("import_grd_path_picker"),
             ui.input_text(
                 "import_grid_name",
                 "Grid Name (optional)",
@@ -1101,6 +1115,22 @@ def home_server(
             ),
         )
         ui.modal_show(m)
+
+    @render.ui
+    def import_grd_path_picker():
+        # Dropdown of .grd files under the *target* project chosen in the
+        # modal (option values are absolute paths, so _do_import_grid's
+        # confine-and-copy of input.import_grd_path() is unchanged). A grid
+        # elsewhere is uploaded on the Files page first.
+        proj = _project_by_id(projects.get(), input.import_project_id())
+        return project_file_select(
+            "import_grd_path",
+            "Grid File (.grd)",
+            (".grd",),
+            proj=proj,
+            user=_user(),
+            config=config,
+        )
 
     @reactive.effect
     @reactive.event(input.import_confirm_btn)
@@ -1154,7 +1184,11 @@ def home_server(
             grid_name = src_path.stem
 
         try:
-            shutil.copy2(src_path, dest_path)
+            # The dropdown lists .grd files already under the project, so the
+            # pick may be GRID/<name> itself: just register it, don't copy a
+            # file onto itself (shutil raises SameFileError).
+            if not (dest_path.exists() and dest_path.samefile(src_path)):
+                shutil.copy2(src_path, dest_path)
         except Exception as e:
             logger.exception("Failed to copy grid file %s to %s", src_path, dest_path)
             ui.notification_show(f"Failed to copy grid file: {e}", type="error", duration=6)

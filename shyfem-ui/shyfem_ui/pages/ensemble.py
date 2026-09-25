@@ -19,6 +19,11 @@ from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
+from shyfem_ui.components.project_select import (
+    default_project_file,
+    project_dir_select,
+    project_file_select,
+)
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus
@@ -40,16 +45,8 @@ def ensemble_ui() -> ui.Tag:
         ui.layout_sidebar(
             ui.sidebar(
                 ui.h5("Base Configuration"),
-                ui.input_text(
-                    "base_str_file",
-                    "Base STR File",
-                    placeholder="/path/to/base.str",
-                ),
-                ui.input_text(
-                    "working_dir",
-                    "Working Directory",
-                    placeholder="/path/to/ensemble_output",
-                ),
+                ui.output_ui("base_str_file_picker"),
+                ui.output_ui("working_dir_picker"),
                 ui.input_text(
                     "ensemble_name",
                     "Ensemble Name",
@@ -141,19 +138,41 @@ def ensemble_server(
             redis_url=config.redis_url if config.use_celery else None,
         )
 
-    # Auto-fill from active project
-    @reactive.effect
-    def _on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
-        if proj is None:
-            return
-        ui.update_text("working_dir", value=str(Path(proj["work_dir"]) / "ensemble"))
-        if proj["simulations"]:
-            sim = proj["simulations"][0]
-            if sim.get("str_file"):
-                ui.update_text("base_str_file", value=str(Path(proj["work_dir"]) / sim["str_file"]))
+    def _ctx():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return proj, usr
+
+    # Base STR / working directory are dropdowns over the active project;
+    # option values are absolute paths, so the submit/preview handlers that
+    # read ``input.base_str_file()`` / ``input.working_dir()`` and re-confine
+    # them are unchanged.
+    @render.ui
+    def base_str_file_picker():
+        proj, usr = _ctx()
+        return project_file_select(
+            "base_str_file",
+            "Base STR File (.str)",
+            (".str",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=default_project_file(proj, "str"),
+        )
+
+    @render.ui
+    def working_dir_picker():
+        proj, usr = _ctx()
+        # The empty default keeps the submit handler's fallback of
+        # ``<base STR dir>/<ensemble name>``.
+        return project_dir_select(
+            "working_dir",
+            "Working Directory",
+            proj=proj,
+            user=usr,
+            config=config,
+            default_label="— next to the base STR file, named after the ensemble —",
+        )
 
     # State
     param_variations = reactive.value(

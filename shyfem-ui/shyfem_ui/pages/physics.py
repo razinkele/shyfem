@@ -9,15 +9,13 @@ import copy
 import logging
 import math
 import re
-from pathlib import Path
 
 from shiny import module, reactive, render, ui
 from shiny.types import SilentException
 
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
+from shyfem_ui.components.project_select import (
+    default_project_file,
+    project_file_select,
 )
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -932,12 +930,7 @@ def physics_ui() -> ui.Tag:
         ui.layout_sidebar(
             ui.sidebar(
                 ui.h5("Parameter File"),
-                file_picker_ui("fp_str", label="Pick STR file from project"),
-                ui.input_text(
-                    "str_path",
-                    "File Path (.str)",
-                    placeholder="/path/to/simulation.str",
-                ),
+                ui.output_ui("str_path_picker"),
                 ui.div(
                     ui.input_action_button(
                         "load_btn",
@@ -975,36 +968,19 @@ def physics_server(
 ) -> None:
     """Physics configuration page server."""
 
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
-
-    @reactive.effect
-    def _on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
-        if proj is None:
-            project_id_val.set(None)
-            return
-        project_id_val.set(proj.get("id"))
-        if proj["simulations"]:
-            sim = proj["simulations"][0]
-            if sim.get("str_file"):
-                with reactive.isolate():
-                    str_empty = not input.str_path()
-                if str_empty:
-                    ui.update_text(
-                        "str_path",
-                        value=str(Path(proj["work_dir"]) / sim["str_file"]),
-                    )
-
-    file_picker_server(
-        "fp_str",
-        project_id=project_id_val,
-        file_types=["str"],
-        on_selected=lambda rel: fill_picker_input(
-            "str_path", active_project.get() if active_project else None, rel
-        ),
-    )
+    @render.ui
+    def str_path_picker():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return project_file_select(
+            "str_path",
+            "STR File (.str)",
+            (".str",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=default_project_file(proj, "str"),
+        )
 
     str_data: reactive.Value[StrFile] = reactive.value(StrFile())
 

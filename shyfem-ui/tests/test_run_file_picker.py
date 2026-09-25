@@ -1,4 +1,4 @@
-"""Unit tests for run page file-picker UI rendering and wiring.
+"""Unit tests for the run page's project-file dropdowns (UI + wiring).
 
 NOTE: the browser test app (_test_app.py) now mounts the REAL run_server;
 the old _stub_run_server workaround (event-loop deadlock in run_server's
@@ -9,40 +9,91 @@ coverage of the picker lives in test_playwright_run_picker.py.
 
 
 class TestPickerUiRenders:
-    def test_picker_renders_above_input_file(self):
+    def test_dropdown_placeholders_present_and_no_text_boxes(self):
         from shyfem_ui.pages.run import run_ui
 
-        tag = run_ui("test")
-        html = str(tag)
+        html = str(run_ui("test"))
+        # Submit form: STR file and working directory are rendered dropdowns ...
+        assert 'id="test-input_file_picker"' in html
+        assert 'id="test-working_dir_picker"' in html
+        # ... and so are the workflow tab's inputs ...
+        assert 'id="test-wf_input_str_picker"' in html
+        assert 'id="test-wf_input_grd_picker"' in html
+        assert 'id="test-wf_working_dir_picker"' in html
+        # ... not free-text path boxes or the old companion file picker.
+        assert 'id="test-input_file"' not in html
+        assert 'id="test-working_dir"' not in html
+        assert 'id="test-wf_input_str"' not in html
+        assert 'id="test-wf_input_grd"' not in html
+        assert 'id="test-wf_working_dir"' not in html
+        assert 'id="test-fp_input-file_select"' not in html
 
-        assert 'id="test-fp_input-file_select"' in html
-        picker_pos = html.find('id="test-fp_input-file_select"')
-        input_pos = html.find('id="test-input_file"')
-        assert picker_pos != -1 and input_pos != -1
-        assert picker_pos < input_pos
 
-
-class TestModuleImports:
-    def test_run_wires_file_picker_server(self):
+class TestModuleWiring:
+    def test_run_renders_project_file_dropdowns(self):
         import shyfem_ui.pages.run as page_mod
-        from shyfem_ui.components import file_picker as fp_mod
         from tests._test_helpers import get_server_source
 
-        assert page_mod.file_picker_server is fp_mod.file_picker_server
-        assert page_mod.fill_picker_input is fp_mod.fill_picker_input
+        src = get_server_source(page_mod, "run_server")
+        # Five render.ui dropdowns backed by a project-dir scan ...
+        for name in (
+            "input_file_picker",
+            "working_dir_picker",
+            "wf_input_str_picker",
+            "wf_input_grd_picker",
+            "wf_working_dir_picker",
+        ):
+            assert f"def {name}(" in src, name
+        # ... built on the shared project_select helpers, preselecting the
+        # project's default STR / grid like the old text boxes auto-filled.
+        assert 'project_file_select(\n            "input_file"' in src
+        assert 'project_file_select(\n            "wf_input_str"' in src
+        assert 'project_file_select(\n            "wf_input_grd"' in src
+        assert 'project_dir_select(\n            "working_dir"' in src
+        assert 'project_dir_select(\n            "wf_working_dir"' in src
+        assert 'default_project_file(proj, "str")' in src
+        assert 'default_project_file(proj, "grd")' in src
+        # Working directories have no "same as input" fallback: the project
+        # root is preselected, so no default_label is passed.
+        assert "default_label=" not in src
+        # ... and the old file_picker / free-text wiring is gone.
+        assert "file_picker_server(" not in src
+        assert "fill_picker_input(" not in src
+        assert "ui.update_text(" not in src
+        assert "_on_project_changed" not in src
+        assert not hasattr(page_mod, "file_picker_server")
+        assert not hasattr(page_mod, "fill_picker_input")
+
+    def test_sample_and_tutorial_preselect_via_reactive_not_update_text(self):
+        """Paths outside the project (bundled Mar Menor sample; tutorial
+        context) cannot be pushed into a dropdown with update_text/
+        update_select. The effects set page-level preselect reactives and
+        the picker renders read them, injecting the file as an extra option."""
+        import shyfem_ui.pages.run as page_mod
+        from tests._test_helpers import get_server_source
 
         src = get_server_source(page_mod, "run_server")
-        assert src.count("file_picker_server(") >= 1
-        assert 'file_types=["str"]' in src
-        import re
+        assert "preselect_input_file" in src
+        assert "preselect_working_dir" in src
 
-        assert re.search(r'fill_picker_input\(\s*"input_file"', src)
-        # Both effects must be isolate-guarded
-        isolate_count = src.count("reactive.isolate()")
-        assert isolate_count >= 2, (
-            f"expected reactive.isolate() in both _on_project_changed "
-            f"AND _on_tutorial_context (found {isolate_count})"
-        )
+        def _body(name):
+            start = src.index(f"def {name}(")
+            end = src.index("\n    @", start)
+            return src[start:end]
+
+        for effect in ("_load_sample_data", "_on_tutorial_context"):
+            body = _body(effect)
+            assert "preselect_input_file.set(" in body, effect
+            assert "preselect_working_dir.set(" in body, effect
+            assert "update_text" not in body, effect
+            # The tool dropdown has a fixed option set, so update_select is fine.
+            assert 'ui.update_select("tool_select", selected="shyfem")' in body, effect
+
+        picker = _body("input_file_picker")
+        assert "preselect_input_file.get()" in picker
+        assert "extra=" in picker
+        wd_picker = _body("working_dir_picker")
+        assert "preselect_working_dir.get()" in wd_picker
 
 
 class TestRestartWiring:

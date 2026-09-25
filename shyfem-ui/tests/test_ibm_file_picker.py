@@ -1,65 +1,54 @@
-"""Unit tests for ibm page file-picker UI rendering and wiring."""
+"""Unit tests for the IBM page's project-file dropdown (LGR file)."""
+
+import pytest
 
 
 class TestPickerUiRenders:
-    def test_picker_renders_above_lgr_path(self):
+    def test_dropdown_placeholder_present_and_no_text_box(self):
+        # ibm_ui() renders an install hint instead of the page without it.
+        pytest.importorskip("shiny_deckgl")
         from shyfem_ui.pages.ibm import ibm_ui
 
-        tag = ibm_ui("test")
-        html = str(tag)
-
-        assert 'id="test-fp_lgr-file_select"' in html
-        picker_pos = html.find('id="test-fp_lgr-file_select"')
-        input_pos = html.find('id="test-lgr_path"')
-        assert picker_pos != -1 and input_pos != -1
-        assert picker_pos < input_pos
+        html = str(ibm_ui("test"))
+        # The .lgr file is chosen via a rendered dropdown placeholder ...
+        assert 'id="test-lgr_path_picker"' in html
+        # ... not a free-text path box, and the old FileService picker is gone.
+        assert 'id="test-lgr_path"' not in html
+        assert "fp_lgr" not in html
 
 
-class TestModuleImports:
-    def test_ibm_wires_file_picker_server(self):
+class TestModuleWiring:
+    def test_ibm_renders_project_file_dropdown(self):
         import shyfem_ui.pages.ibm as page_mod
-        from shyfem_ui.components import file_picker as fp_mod
         from tests._test_helpers import get_server_source
 
-        assert page_mod.file_picker_server is fp_mod.file_picker_server
-        assert page_mod.fill_picker_input is fp_mod.fill_picker_input
-
         src = get_server_source(page_mod, "ibm_server")
-        assert src.count("file_picker_server(") >= 1
-        assert 'file_types=["lagrangian"]' in src
-        import re
-
-        assert re.search(r'fill_picker_input\(\s*"lgr_path"', src)
-        assert "reactive.isolate()" in src
-
-
-class TestLagrangianFileType:
-    """Pin the dependency between ibm.py and the FileService taxonomy."""
-
-    def test_lgr_extension_maps_to_lagrangian_file_type(self):
-        from shyfem_ui.services.file_service import FileService
-
-        assert FileService._infer_file_type("trajectories.lgr") == "lagrangian"
+        # One render.ui dropdown backed by a project-dir scan ...
+        assert "def lgr_path_picker(" in src
+        # ... built on the shared project_select helper, preselecting the
+        # project's first .lgr like the old text box auto-filled.
+        assert 'project_file_select(\n            "lgr_path"' in src
+        assert 'list_project_files(root, (".lgr",))' in src
+        # ... and the old file_picker / free-text wiring is gone.
+        assert "file_picker_server(" not in src
+        assert "fill_picker_input(" not in src
+        assert "project_id_val" not in src
+        assert not hasattr(page_mod, "file_picker_server")
+        assert not hasattr(page_mod, "fill_picker_input")
 
 
-class TestGlobFallbackProvenance:
-    """Section M.2: when ibm_server's _on_project_changed fills lgr_path
-    from the work_dir glob (rather than a picker click), it must emit a
-    logger.info so ops can distinguish the two provenance paths.
-
-    Pins the log-string contract: a future refactor that drops the log
-    line silently brings back the unobservable-provenance bug.
+class TestGlobFallbackRemoved:
+    """The dropdown lists the project's .lgr files itself (recursively), so
+    the old ``Path(work).glob("*.lgr")`` auto-fill and its provenance INFO
+    log ("filled lgr_path from work_dir glob") are gone: there is no second
+    provenance path left to distinguish.
     """
 
-    def test_glob_fallback_path_emits_info_log(self):
-        """Source-inspection: the source of ibm_server contains the
-        provenance log call inside the glob-fill branch.
-        """
+    def test_no_work_dir_glob_or_provenance_log(self):
         import shyfem_ui.pages.ibm as page_mod
         from tests._test_helpers import get_server_source
 
         src = get_server_source(page_mod, "ibm_server")
-        # The log message must mention "filled lgr_path from" and
-        # "glob" so log consumers can grep for the provenance event.
-        assert "logger.info(" in src
-        assert "filled lgr_path from work_dir glob" in src
+        assert '.glob("*.lgr")' not in src
+        assert "filled lgr_path from work_dir glob" not in src
+        assert 'ui.update_text("lgr_path"' not in src

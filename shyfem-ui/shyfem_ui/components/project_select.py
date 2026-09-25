@@ -59,6 +59,28 @@ def _load_manifest_or_none(root: Path, config: Config, user: dict | None):
         return None
 
 
+def _match_choice(wanted: str | None, choices: Mapping[str, str]) -> str:
+    """The option value equal to ``wanted``, matching by resolved path when
+    the literal string differs (e.g. a project ``work_dir`` recorded through a
+    symlink while option values come from the confined, resolved root).
+    Returns ``""`` when nothing matches."""
+    if not wanted:
+        return ""
+    if wanted in choices:
+        return wanted
+    try:
+        target = Path(wanted).resolve()
+    except OSError:
+        return ""
+    for value in choices:
+        try:
+            if Path(value).resolve() == target:
+                return value
+        except OSError:
+            continue
+    return ""
+
+
 def default_project_file(proj: Mapping | None, kind: Literal["str", "grd", "bas"]) -> str | None:
     """Absolute path of the project's default file of ``kind``, or None.
 
@@ -109,21 +131,23 @@ def project_file_select(
             run directories (``boxmodel.json`` manifest, already confined).
         multiple: Render a multi-select (selectize) with no placeholder.
     """
-    if proj is None:
-        return ui.p(f"Open a project to choose a {label.lower()}.", class_=_MUTED)
-    root = _confined_root(proj, user, config)
-    if root is None:
-        return ui.p("Project directory unavailable.", class_=_MUTED)
-
     choices: dict[str, str] = {}
-    for rel in list_project_files(root, exts):
-        choices[str(root / rel)] = rel
-    if include_runs:
-        manifest = _load_manifest_or_none(root, config, user)
-        if manifest is not None:
-            for run in manifest.runs:
-                for rel in list_project_files(Path(run.dir), exts):
-                    choices.setdefault(str(Path(run.dir) / rel), f"{run.label} / {rel}")
+    if proj is None:
+        # A sample/tutorial file can still be offered without a project.
+        if not extra:
+            return ui.p(f"Open a project to choose a {label.lower()}.", class_=_MUTED)
+    else:
+        root = _confined_root(proj, user, config)
+        if root is None:
+            return ui.p("Project directory unavailable.", class_=_MUTED)
+        for rel in list_project_files(root, exts):
+            choices[str(root / rel)] = rel
+        if include_runs:
+            manifest = _load_manifest_or_none(root, config, user)
+            if manifest is not None:
+                for run in manifest.runs:
+                    for rel in list_project_files(Path(run.dir), exts):
+                        choices.setdefault(str(Path(run.dir) / rel), f"{run.label} / {rel}")
     for path, extra_label in (extra or {}).items():
         choices.setdefault(str(path), extra_label)
 
@@ -131,12 +155,13 @@ def project_file_select(
         return ui.p(f"No {'/'.join(exts)} files in this project.", class_=_MUTED)
 
     if multiple:
-        sel = [s for s in (selected or []) if s in choices] if selected else None
+        wanted = [selected] if isinstance(selected, str) else list(selected or [])
+        sel = [m for m in (_match_choice(w, choices) for w in wanted) if m]
         return ui.input_selectize(
             select_id, label, choices=choices, selected=sel or None, multiple=True
         )
 
-    sel_one = selected if isinstance(selected, str) and selected in choices else ""
+    sel_one = _match_choice(selected, choices) if isinstance(selected, str) else ""
     ordered = {"": "— select a file —", **choices}
     return ui.input_select(select_id, label, choices=ordered, selected=sel_one)
 
@@ -150,6 +175,7 @@ def project_dir_select(
     config: Config,
     selected: str | None = None,
     default_label: str | None = None,
+    extra: Mapping[str, str] | None = None,
 ) -> ui.Tag:
     """A dropdown of the project directory and its subdirectories.
 
@@ -157,28 +183,34 @@ def project_dir_select(
     ``"<name>/"``. When ``default_label`` is given, an empty option carrying
     that label comes first and is the default (the page then falls back to
     its own rule, e.g. "same directory as the input file"); otherwise the
-    project root is preselected.
+    project root is preselected. ``extra`` injects directories outside the
+    project (the bundled sample's directory), as for ``project_file_select``.
     """
-    if proj is None:
-        return ui.p(f"Open a project to choose a {label.lower()}.", class_=_MUTED)
-    root = _confined_root(proj, user, config)
-    if root is None:
-        return ui.p("Project directory unavailable.", class_=_MUTED)
-
-    name = str(proj.get("name") or root.name)
     choices: dict[str, str] = {}
-    for rel in list_project_dirs(root):
-        if rel == ".":
-            choices[str(root)] = f"{name}/"
-        else:
-            choices[str(root / rel)] = f"{rel}/"
-    if not choices:
-        return ui.p("Project directory unavailable.", class_=_MUTED)
+    root: Path | None = None
+    if proj is None:
+        if not extra:
+            return ui.p(f"Open a project to choose a {label.lower()}.", class_=_MUTED)
+    else:
+        root = _confined_root(proj, user, config)
+        if root is None:
+            return ui.p("Project directory unavailable.", class_=_MUTED)
+        name = str(proj.get("name") or root.name)
+        for rel in list_project_dirs(root):
+            if rel == ".":
+                choices[str(root)] = f"{name}/"
+            else:
+                choices[str(root / rel)] = f"{rel}/"
+        if not choices:
+            return ui.p("Project directory unavailable.", class_=_MUTED)
+    for path, extra_label in (extra or {}).items():
+        choices.setdefault(str(path), extra_label)
 
+    matched = _match_choice(selected, choices) if selected else ""
     if default_label is not None:
         ordered = {"": default_label, **choices}
-        sel = selected if selected in choices else ""
+        sel = matched
     else:
         ordered = choices
-        sel = selected if selected in choices else str(root)
+        sel = matched or (str(root) if root is not None else next(iter(choices)))
     return ui.input_select(select_id, label, choices=ordered, selected=sel)

@@ -96,9 +96,16 @@ def test_load_ts_empty_file(tmp_path):
 def _make_job(name="test", status=JobStatus.COMPLETED, duration_s=60.0, combo=None):
     now = datetime(2026, 2, 14, 12, 0, 0)
     return JobInfo(
-        id="j1", name=name, tool_name="shyfem", args=[], working_dir="/tmp",
-        status=status, progress=1.0, created_at=now,
-        started_at=now, completed_at=now + timedelta(seconds=duration_s),
+        id="j1",
+        name=name,
+        tool_name="shyfem",
+        args=[],
+        working_dir="/tmp",
+        status=status,
+        progress=1.0,
+        created_at=now,
+        started_at=now,
+        completed_at=now + timedelta(seconds=duration_s),
         metadata={"param_combo": combo or {}},
     )
 
@@ -149,3 +156,48 @@ def test_ensemble_ts_empty():
     fig = _build_ensemble_ts_plot([])
     assert isinstance(fig, go.Figure)
     assert len(fig.data) == 0
+
+
+# ── project-file dropdowns (base STR / working dir) ──────────────
+
+
+class TestPickerUiRenders:
+    def test_dropdown_placeholders_present_and_no_text_boxes(self):
+        from shyfem_ui.pages.ensemble import ensemble_ui
+
+        html = str(ensemble_ui("test"))
+        # Base STR and working directory are rendered dropdown placeholders ...
+        assert 'id="test-base_str_file_picker"' in html
+        assert 'id="test-working_dir_picker"' in html
+        # ... not free-text path boxes (the closing quote keeps the
+        # ``_picker`` ids from matching here).
+        assert 'id="test-base_str_file"' not in html
+        assert 'id="test-working_dir"' not in html
+        # The ensemble name stays a text box.
+        assert 'id="test-ensemble_name"' in html
+
+
+class TestModuleWiring:
+    def test_ensemble_renders_project_file_dropdowns(self):
+        import shyfem_ui.pages.ensemble as ens_mod
+        from tests._test_helpers import get_server_source
+
+        src = get_server_source(ens_mod, "ensemble_server")
+        # Two render.ui dropdowns backed by a project-dir scan ...
+        assert "def base_str_file_picker(" in src
+        assert "def working_dir_picker(" in src
+        # ... built on the shared project_select helpers, preselecting the
+        # project's first simulation STR like the old text box auto-filled ...
+        assert 'project_file_select(\n            "base_str_file"' in src
+        assert 'default_project_file(proj, "str")' in src
+        # ... and an empty working-dir default keeps the submit handler's
+        # "<base STR dir>/<ensemble name>" fallback.
+        assert 'project_dir_select(\n            "working_dir"' in src
+        assert 'default_label="— next to the base STR file, named after the ensemble —"' in src
+        # The old update_text auto-fill effect is gone.
+        assert "def _on_project_changed(" not in src
+        assert "update_text(" not in src
+        # The handlers still read the same input ids (option values are
+        # absolute paths, so their confinement is unchanged).
+        assert "input.base_str_file()" in src
+        assert "input.working_dir()" in src
