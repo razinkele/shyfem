@@ -10,6 +10,11 @@ from shinywidgets import output_widget, render_widget
 # Reuse the partition color palette from grid_map
 from shyfem_ui.components.grid_map import PARTITION_COLORS, grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.project_select import (
+    default_project_file,
+    project_dir_select,
+    project_file_select,
+)
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_grd import GrdParser
@@ -60,11 +65,7 @@ def partitioning_ui() -> ui.Tag:
                     "Use weighted partitioning",
                     value=True,
                 ),
-                ui.input_text(
-                    "output_dir",
-                    "Output Directory",
-                    placeholder="/path/to/output",
-                ),
+                ui.output_ui("output_dir_picker"),
                 ui.hr(),
                 # Actions
                 ui.input_action_button(
@@ -119,37 +120,48 @@ def partitioning_server(
     """Mesh partitioning page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
-    def _project_select(select_id, label, exts):
-        """A dropdown of the active project's files matching ``exts`` (option
-        values are absolute paths), replacing a free-text path box."""
-        from shyfem_ui.services.project_files import list_project_files
-
+    def _ctx():
         proj = active_project.get() if active_project is not None else None
-        if proj is None:
-            return ui.p(
-                f"Open a project to choose a {label.lower()}.", class_="text-muted small mb-2"
-            )
         usr = current_user() if current_user is not None else None
-        try:
-            root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
-        except (ValueError, OSError):
-            return ui.p("Project directory unavailable.", class_="text-muted small mb-2")
-        choices = {"": "— select a file —"}
-        for rel in list_project_files(root, exts):
-            choices[str(root / rel)] = rel
-        if len(choices) == 1:
-            return ui.p(
-                f"No {'/'.join(exts)} files in this project.", class_="text-muted small mb-2"
-            )
-        return ui.input_select(select_id, label, choices=choices, selected="")
+        return proj, usr
 
     @render.ui
     def bas_path_picker():
-        return _project_select("bas_path", "Basin File (.bas)", (".bas",))
+        proj, usr = _ctx()
+        return project_file_select(
+            "bas_path",
+            "Basin File (.bas)",
+            (".bas",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=default_project_file(proj, "bas"),
+        )
 
     @render.ui
     def grd_path_picker():
-        return _project_select("grd_path", "Grid File (.grd)", (".grd",))
+        proj, usr = _ctx()
+        return project_file_select(
+            "grd_path",
+            "Grid File (.grd)",
+            (".grd",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=default_project_file(proj, "grd"),
+        )
+
+    @render.ui
+    def output_dir_picker():
+        proj, usr = _ctx()
+        return project_dir_select(
+            "output_dir",
+            "Output Directory",
+            proj=proj,
+            user=usr,
+            config=config,
+            default_label="— same directory as the basin file —",
+        )
 
     # State
     log_content = reactive.value("")
