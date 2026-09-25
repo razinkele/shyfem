@@ -71,7 +71,7 @@ class TestPickerLists:
             )
         )
         assert "Open a project" in html
-        assert "<select" not in html
+        assert "disabled" in html  # placeholder select, so the input id still exists
 
 
 class TestModuleWiring:

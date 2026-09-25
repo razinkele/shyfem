@@ -54,6 +54,9 @@ from shyfem_ui.services.workflow import WorkflowEngine, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 
+#: Sentinel for "no project observed yet" in the preselect-drop effect.
+_UNSET = object()
+
 
 @module.ui
 def run_ui() -> ui.Tag:
@@ -268,7 +271,7 @@ def run_server(
     # sample/tutorial preselects so project A's files never leak into B's
     # dropdowns. None -> A ("first arrival") keeps them, so a sample picked
     # before opening a project stays selected.
-    last_project_id: reactive.Value[int | None] = reactive.value(None)
+    last_project_id: reactive.Value[int | None] = reactive.value(_UNSET)
 
     @reactive.effect
     def _drop_preselects_on_project_switch():
@@ -279,7 +282,10 @@ def run_server(
         with reactive.isolate():
             prev = last_project_id.get()
         last_project_id.set(pid)
-        if prev is not None and pid is not None and pid != prev:
+        if prev is not _UNSET and pid != prev:
+            # Any project change (including opening or closing one) drops a
+            # sample/tutorial preselect so it never leaks into another
+            # project's dropdown.
             preselect_input_file.set(None)
             preselect_working_dir.set(None)
 
@@ -1415,11 +1421,19 @@ def run_server(
 
         validated_workdir.mkdir(parents=True, exist_ok=True)
 
+        # The STR/GRD values are substituted straight into the workflow's
+        # subprocess args, so confine them to the requesting user's sandbox
+        # like _submit_job does (a client can post any string as the select
+        # value).
         params = {}
-        if input_str:
-            params["input_str"] = input_str
-        if input_grd:
-            params["input_grd"] = input_grd
+        try:
+            if input_str:
+                params["input_str"] = str(config.confine_path(input_str, _usr, must_exist=True))
+            if input_grd:
+                params["input_grd"] = str(config.confine_path(input_grd, _usr, must_exist=True))
+        except (ValueError, FileNotFoundError) as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
         if mpi_np:
             params["mpi_np"] = str(mpi_np)
 

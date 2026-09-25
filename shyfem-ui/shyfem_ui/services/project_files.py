@@ -54,8 +54,9 @@ def list_project_dirs(
     max_dirs: int = MAX_PROJECT_DIRS,
 ) -> list[str]:
     """Project-relative directories under ``root``: ``"."`` first, then the
-    non-hidden subdirectories down to ``max_depth`` levels, sorted, capped at
-    ``max_dirs``. Returns ``[]`` when ``root`` is not a directory. Path
+    non-hidden, non-symlinked subdirectories down to ``max_depth`` levels,
+    sorted, capped at ``max_dirs`` (symlinks are skipped so a link inside a
+    project cannot list another tree, matching ``list_project_files``). Returns ``[]`` when ``root`` is not a directory. Path
     confinement is the caller's job; nothing here is opened or created.
     """
     if max_depth < 1 or max_dirs < 1:
@@ -71,7 +72,11 @@ def list_project_dirs(
         if depth > max_depth or len(out) >= max_dirs:
             return
         try:
-            children = sorted(p for p in d.iterdir() if p.is_dir() and not p.name.startswith("."))
+            children = sorted(
+                p
+                for p in d.iterdir()
+                if p.is_dir() and not p.is_symlink() and not p.name.startswith(".")
+            )
         except OSError:
             return
         for child in children:

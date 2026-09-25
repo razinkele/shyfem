@@ -6,8 +6,8 @@ the (confined) project work_dir, so the load/run handlers that consume
 ``input.<id>()`` and re-confine the value stay unchanged; option *labels*
 are project-relative.
 
-The helpers are plain functions returning a Tag (or a muted ``<p>`` when
-there is nothing to choose from), meant to be called from a ``@render.ui``
+The helpers are plain functions returning a Tag (a disabled placeholder
+select when there is nothing to choose from, so the input id always exists), meant to be called from a ``@render.ui``
 so the list refreshes whenever the active project changes.
 
 Paths outside the project (tutorial assets, the bundled Mar Menor sample)
@@ -33,7 +33,27 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MUTED = "text-muted small mb-2"
+
+def _placeholder_select(select_id: str, label: str, message: str) -> ui.Tag:
+    """A disabled single-option select carrying ``message``.
+
+    Rendered instead of a bare paragraph when there is nothing to choose
+    from, so the Shiny input ``select_id`` still exists with value ``""`` and
+    the consuming handler's own "X is required" guard fires. A missing input
+    would make ``input.<id>()`` raise ``SilentException`` and the click
+    handler abort with no feedback at all.
+    """
+    tag = ui.input_select(select_id, label, choices={"": message}, selected="")
+
+    def _disable(node) -> None:
+        if getattr(node, "name", None) == "select":
+            node.attrs["disabled"] = "disabled"
+        for child in getattr(node, "children", ()) or ():
+            _disable(child)
+
+    _disable(tag)
+    tag.add_class("sf-picker-empty")
+    return tag
 
 
 def _confined_root(proj: Mapping | None, user: dict | None, config: Config) -> Path | None:
@@ -42,7 +62,11 @@ def _confined_root(proj: Mapping | None, user: dict | None, config: Config) -> P
         return None
     try:
         return Path(config.confine_path(proj["work_dir"], user, must_exist=True))
-    except (KeyError, ValueError, OSError):
+    except (KeyError, ValueError, OSError) as e:
+        # Fail closed (empty dropdown) but keep the reason in the log: in
+        # server mode this is how an unresolved identity or a foreign
+        # work_dir shows up.
+        logger.warning("project_select: project %r directory unavailable: %s", proj.get("id"), e)
         return None
 
 
@@ -135,11 +159,13 @@ def project_file_select(
     if proj is None:
         # A sample/tutorial file can still be offered without a project.
         if not extra:
-            return ui.p(f"Open a project to choose a {label.lower()}.", class_=_MUTED)
+            return _placeholder_select(
+                select_id, label, f"Open a project to choose a {label.lower()}."
+            )
     else:
         root = _confined_root(proj, user, config)
         if root is None:
-            return ui.p("Project directory unavailable.", class_=_MUTED)
+            return _placeholder_select(select_id, label, "Project directory unavailable.")
         for rel in list_project_files(root, exts):
             choices[str(root / rel)] = rel
         if include_runs:
@@ -152,7 +178,7 @@ def project_file_select(
         choices.setdefault(str(path), extra_label)
 
     if not choices:
-        return ui.p(f"No {'/'.join(exts)} files in this project.", class_=_MUTED)
+        return _placeholder_select(select_id, label, f"No {'/'.join(exts)} files in this project.")
 
     if multiple:
         wanted = [selected] if isinstance(selected, str) else list(selected or [])
@@ -190,11 +216,13 @@ def project_dir_select(
     root: Path | None = None
     if proj is None:
         if not extra:
-            return ui.p(f"Open a project to choose a {label.lower()}.", class_=_MUTED)
+            return _placeholder_select(
+                select_id, label, f"Open a project to choose a {label.lower()}."
+            )
     else:
         root = _confined_root(proj, user, config)
         if root is None:
-            return ui.p("Project directory unavailable.", class_=_MUTED)
+            return _placeholder_select(select_id, label, "Project directory unavailable.")
         name = str(proj.get("name") or root.name)
         for rel in list_project_dirs(root):
             if rel == ".":
@@ -202,7 +230,7 @@ def project_dir_select(
             else:
                 choices[str(root / rel)] = f"{rel}/"
         if not choices:
-            return ui.p("Project directory unavailable.", class_=_MUTED)
+            return _placeholder_select(select_id, label, "Project directory unavailable.")
     for path, extra_label in (extra or {}).items():
         choices.setdefault(str(path), extra_label)
 

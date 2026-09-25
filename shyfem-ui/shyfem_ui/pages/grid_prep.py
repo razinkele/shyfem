@@ -35,6 +35,9 @@ from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
 
+#: Sentinel for "no project observed yet" in the preselect-drop effect.
+_UNSET = object()
+
 
 @module.ui
 def grid_prep_ui() -> ui.Tag:
@@ -130,6 +133,22 @@ def grid_prep_server(
     # sample/tutorial effects set this and the picker render injects it as an
     # extra option and preselects it.
     preselect_grd: reactive.Value[tuple[str, str] | None] = reactive.value(None)
+
+    # Any project change drops a sample/tutorial preselect so it never leaks
+    # into another project's dropdown (or into a no-project view).
+    _last_pid_for_preselect = reactive.value(_UNSET)
+
+    @reactive.effect
+    def _drop_preselect_on_project_change():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        pid = proj.get("id") if proj is not None else None
+        with reactive.isolate():
+            prev = _last_pid_for_preselect.get()
+        _last_pid_for_preselect.set(pid)
+        if prev is not _UNSET and pid != prev:
+            preselect_grd.set(None)
 
     def _ctx():
         proj = active_project.get() if active_project is not None else None

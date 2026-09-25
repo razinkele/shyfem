@@ -69,6 +69,14 @@ class TestListProjectDirs:
         assert len(got) == 5
         assert got[0] == "."
 
+    def test_symlinked_dirs_are_not_followed(self, project_tree, tmp_path):
+        other = tmp_path / "elsewhere" / "secret"
+        other.mkdir(parents=True)
+        (project_tree / "link").symlink_to(other.parent, target_is_directory=True)
+        got = list_project_dirs(project_tree)
+        assert "link" not in got
+        assert not any("secret" in d for d in got)
+
     def test_missing_root_returns_empty(self, tmp_path):
         assert list_project_dirs(tmp_path / "nope") == []
 
@@ -83,7 +91,7 @@ class TestProjectFileSelect:
             )
         )
         assert "Open a project" in html
-        assert "<select" not in html
+        assert "disabled" in html  # placeholder select, so the input id still exists
 
     def test_no_project_but_extra_renders_select_with_extra_only(self, config, tmp_path):
         from shyfem_ui.components.project_select import project_file_select
@@ -138,7 +146,7 @@ class TestProjectFileSelect:
             )
         )
         assert "No .lgr files" in html
-        assert "<select" not in html
+        assert 'id="lgr"' in html and "disabled" in html
 
     def test_selected_preselects_when_in_choices(self, config, project_tree):
         from shyfem_ui.components.project_select import project_file_select
@@ -226,7 +234,7 @@ class TestProjectFileSelect:
             )
         )
         assert "unavailable" in html.lower()
-        assert "<select" not in html
+        assert 'id="x"' in html and "disabled" in html
 
     def test_include_runs_adds_manifest_run_files(
         self, config, project_tree, tmp_path, monkeypatch
@@ -299,7 +307,7 @@ class TestProjectDirSelect:
             project_dir_select("output_dir", "Output dir", proj=None, user=None, config=config)
         )
         assert "Open a project" in html
-        assert "<select" not in html
+        assert "disabled" in html  # placeholder select, so the input id still exists
 
     def test_lists_root_and_subdirs_with_absolute_values(self, config, project_tree):
         from shyfem_ui.components.project_select import project_dir_select

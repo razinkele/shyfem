@@ -1156,7 +1156,11 @@ def home_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
 
-        project_id = int(project_id_str)
+        try:
+            project_id = int(project_id_str)
+        except (TypeError, ValueError):
+            ui.notification_show("Select a target project", type="error", duration=6)
+            return
 
         # Importing a grid WRITES into the target project, so require editor
         # access (load_project_context below is only a viewer-level read gate).

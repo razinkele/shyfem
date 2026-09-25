@@ -294,3 +294,18 @@ class TestRestartInfoAllowlistWiring:
 
         assert ".exists()" not in body
         assert ".stat()" not in body
+
+
+class TestWorkflowInputsConfined:
+    def test_launch_workflow_confines_str_and_grd_before_building_params(self):
+        """A client can post any string as a select value; the workflow STR/GRD
+        go straight into subprocess args, so they must be confined like
+        _submit_job's input_file (review 2026-09-25)."""
+        import shyfem_ui.pages.run as run_mod
+        from tests._test_helpers import get_server_source
+
+        src = get_server_source(run_mod, "run_server")
+        launch = src[src.index("def _launch_workflow(") :]
+        assert "config.confine_path(input_str, _usr, must_exist=True)" in launch
+        assert "config.confine_path(input_grd, _usr, must_exist=True)" in launch
+        assert launch.index("confine_path(input_str") < launch.index("create_workflow(")

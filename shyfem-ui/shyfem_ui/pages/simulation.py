@@ -20,6 +20,9 @@ from shyfem_ui.services.str_validator import validate_str
 
 logger = logging.getLogger(__name__)
 
+#: Sentinel for "no project observed yet" in the preselect-drop effect.
+_UNSET = object()
+
 # (absolute path, origin label) pushed into the STR dropdown by the sample
 # loader ("Sample"), the tutorial hand-off ("Tutorial") or Save As ("Saved").
 Preselect = tuple[str, str] | None
@@ -176,6 +179,22 @@ def simulation_server(
     # and Save As. A fresh tuple each time, so the render below re-runs (and
     # rescans the project dir, which is what makes a just-saved file appear).
     preselect_str = reactive.value(None)
+
+    # Any project change drops a sample/tutorial preselect so it never leaks
+    # into another project's dropdown (or into a no-project view).
+    _last_pid_for_preselect = reactive.value(_UNSET)
+
+    @reactive.effect
+    def _drop_preselect_on_project_change():
+        if active_project is None:
+            return
+        proj = active_project.get()
+        pid = proj.get("id") if proj is not None else None
+        with reactive.isolate():
+            prev = _last_pid_for_preselect.get()
+        _last_pid_for_preselect.set(pid)
+        if prev is not _UNSET and pid != prev:
+            preselect_str.set(None)
 
     @render.ui
     def str_path_picker():
