@@ -8,10 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
----
-
 ### Changed
 - **UI:** every file/directory path box is a dropdown over the active project's directory (`components/project_select.py`); free text remains only for new names and STR-content fields (#79)
+
+---
 
 
 ## [8.5.0] — 2026-09-18
