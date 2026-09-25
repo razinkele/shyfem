@@ -182,3 +182,34 @@ class TestRunSamplePreselect:
         # The project root is still offered alongside the sample directory.
         assert any(t == "p/" for t in wd.locator("option").all_inner_texts())
         assert pw_page.locator("#run-tool_select").input_value() == "shyfem"
+
+
+@pytest.mark.e2e
+class TestRunNoProjectFeedback:
+    """With no project open the pickers render a disabled placeholder select,
+    so the input ids still exist (value "") and Submit reaches its own
+    "Input file is required" guard instead of aborting silently on a missing
+    input (review finding, 2026-09-25)."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_active_project(self, pw_page):
+        pw_page.evaluate("""
+            if (typeof window.__test_set_active_project === 'function') {
+                window.__test_set_active_project("");
+            }
+        """)
+        pw_page.wait_for_timeout(300)
+
+    def test_submit_without_project_shows_required_notice(self, pw_page, live_server):
+        _open_run(pw_page)
+        expect(pw_page.locator("#run-input_file_picker")).to_contain_text(
+            "Open a project", timeout=10000
+        )
+        # The placeholder select exists and is disabled.
+        sel = pw_page.locator("select#run-input_file")
+        expect(sel).to_be_attached(timeout=10000)
+        assert sel.is_disabled()
+        pw_page.locator("#run-submit_btn").click(force=True)
+        expect(pw_page.locator(".shiny-notification").filter(has_text="required")).to_be_visible(
+            timeout=10000
+        )
