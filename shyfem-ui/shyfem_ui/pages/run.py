@@ -16,11 +16,6 @@ import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget, render_widget
 
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
-)
 from shyfem_ui.components.job_status import (
     format_datetime,
     format_duration,
@@ -29,6 +24,11 @@ from shyfem_ui.components.job_status import (
 )
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
+from shyfem_ui.components.project_select import (
+    default_project_file,
+    project_dir_select,
+    project_file_select,
+)
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
@@ -53,6 +53,9 @@ from shyfem_ui.services.str_validator import validate_str
 from shyfem_ui.services.workflow import WorkflowEngine, WorkflowStatus
 
 logger = logging.getLogger(__name__)
+
+#: Sentinel for "no project observed yet" in the preselect-drop effect.
+_UNSET = object()
 
 
 @module.ui
@@ -87,17 +90,8 @@ def run_ui() -> ui.Tag:
                             "shyadj": "shyadj (Mesh Adjustment)",
                         },
                     ),
-                    file_picker_ui("fp_input", label="Pick STR file from project"),
-                    ui.input_text(
-                        "input_file",
-                        "Input File",
-                        placeholder="/path/to/input.str",
-                    ),
-                    ui.input_text(
-                        "working_dir",
-                        "Working Directory",
-                        placeholder="/path/to/workdir",
-                    ),
+                    ui.output_ui("input_file_picker"),
+                    ui.output_ui("working_dir_picker"),
                     ui.hr(),
                     # MPI + Solver options (rendered server-side for module compatibility)
                     ui.output_ui("shyfem_options"),
@@ -185,30 +179,18 @@ def run_ui() -> ui.Tag:
                             ui.h6("Parameters"),
                             ui.div(
                                 ui.div(
-                                    ui.input_text(
-                                        "wf_input_str",
-                                        "Input STR File",
-                                        placeholder="/path/to/input.str",
-                                    ),
+                                    ui.output_ui("wf_input_str_picker"),
                                     class_="col-6",
                                 ),
                                 ui.div(
-                                    ui.input_text(
-                                        "wf_input_grd",
-                                        "Input GRD File",
-                                        placeholder="/path/to/input.grd",
-                                    ),
+                                    ui.output_ui("wf_input_grd_picker"),
                                     class_="col-6",
                                 ),
                                 class_="row",
                             ),
                             ui.div(
                                 ui.div(
-                                    ui.input_text(
-                                        "wf_working_dir",
-                                        "Working Directory",
-                                        placeholder="/path/to/workdir",
-                                    ),
+                                    ui.output_ui("wf_working_dir_picker"),
                                     class_="col-6",
                                 ),
                                 ui.div(
@@ -272,66 +254,111 @@ def run_server(
             redis_url=config.redis_url if config.use_celery else None,
         )
 
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
-    # Tracks the last-seen project id so _on_project_changed can
-    # distinguish "metadata refresh of same project" (preserve user
-    # input) from "user switched to different project" (force re-fill).
-    last_project_id: reactive.Value[int | None] = reactive.value(None)
+    def _ctx():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return proj, usr
 
-    # Auto-fill from active project
+    # Paths outside the project (the bundled Mar Menor sample, a tutorial
+    # context) cannot be pushed into a dropdown with ui.update_select -- a
+    # value that is not one of the options is a silent no-op, and the select
+    # may not exist yet. The sample/tutorial effects set these (abs_path,
+    # label) pairs instead; the picker renders read them, preselect the path
+    # and, for the STR file, inject it as an extra option.
+    preselect_input_file: reactive.Value[tuple[str, str] | None] = reactive.value(None)
+    preselect_working_dir: reactive.Value[tuple[str, str] | None] = reactive.value(None)
+    # Last-seen project id: a switch to a *different* project drops the
+    # sample/tutorial preselects so project A's files never leak into B's
+    # dropdowns. None -> A ("first arrival") keeps them, so a sample picked
+    # before opening a project stays selected.
+    last_project_id: reactive.Value[int | None] = reactive.value(_UNSET)
+
     @reactive.effect
-    def _on_project_changed():
+    def _drop_preselects_on_project_switch():
         if active_project is None:
             return
         proj = active_project.get()
-        if proj is None:
-            project_id_val.set(None)
-            last_project_id.set(None)
-            return
-        pid = proj.get("id")
-        project_id_val.set(pid)
-        prev_pid = last_project_id.get()
-        # Treat None -> pid as "first arrival" (don't overwrite typed
-        # input); only nonNone -> different nonNone counts as a real
-        # project switch that must force re-fill.
-        project_changed = prev_pid is not None and prev_pid != pid
-        last_project_id.set(pid)
-        work = proj["work_dir"]
-
-        # working_dir is a directory prefill (project-tied).
-        # Force re-fill on actual project change (A->B) so project A's
-        # directory doesn't leak into project B. Preserve user input
-        # on metadata refresh and on first project load (None->A).
+        pid = proj.get("id") if proj is not None else None
         with reactive.isolate():
-            wd_empty = not input.working_dir()
-        if wd_empty or project_changed:
-            ui.update_text("working_dir", value=work)
+            prev = last_project_id.get()
+        last_project_id.set(pid)
+        if prev is not _UNSET and pid != prev:
+            # Any project change (including opening or closing one) drops a
+            # sample/tutorial preselect so it never leaks into another
+            # project's dropdown.
+            preselect_input_file.set(None)
+            preselect_working_dir.set(None)
 
-        # input_file is a file prefill (project-tied, picker can override).
-        # Standard isolate + empty-guard.
-        if proj["simulations"]:
-            sim = proj["simulations"][0]
-            if sim.get("str_file"):
-                with reactive.isolate():
-                    input_file_empty = not input.input_file()
-                if input_file_empty:
-                    ui.update_text(
-                        "input_file",
-                        value=str(Path(work) / sim["str_file"]),
-                    )
+    @render.ui
+    def input_file_picker():
+        pre = preselect_input_file.get()
+        proj, usr = _ctx()
+        return project_file_select(
+            "input_file",
+            "Input STR File",
+            (".str",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=pre[0] if pre else default_project_file(proj, "str"),
+            extra={pre[0]: pre[1]} if pre else None,
+        )
 
-    # File picker delegates resolve/log/notify branching to
-    # fill_picker_input (see its docstring in components/file_picker.py).
-    file_picker_server(
-        "fp_input",
-        project_id=project_id_val,
-        file_types=["str"],
-        on_selected=lambda rel: fill_picker_input(
-            "input_file", active_project.get() if active_project else None, rel
-        ),
-    )
+    @render.ui
+    def working_dir_picker():
+        # A preselect outside the project (the sample dir) is injected as an
+        # extra option, exactly like the sample STR in input_file_picker.
+        pre = preselect_working_dir.get()
+        proj, usr = _ctx()
+        return project_dir_select(
+            "working_dir",
+            "Working Directory",
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=pre[0] if pre else None,
+            extra={pre[0]: pre[1]} if pre else None,
+        )
 
-    # Auto-fill from tutorial navigation
+    @render.ui
+    def wf_input_str_picker():
+        proj, usr = _ctx()
+        return project_file_select(
+            "wf_input_str",
+            "Input STR File",
+            (".str",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=default_project_file(proj, "str"),
+        )
+
+    @render.ui
+    def wf_input_grd_picker():
+        proj, usr = _ctx()
+        return project_file_select(
+            "wf_input_grd",
+            "Input GRD File",
+            (".grd",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=default_project_file(proj, "grd"),
+        )
+
+    @render.ui
+    def wf_working_dir_picker():
+        proj, usr = _ctx()
+        return project_dir_select(
+            "wf_working_dir",
+            "Working Directory",
+            proj=proj,
+            user=usr,
+            config=config,
+        )
+
+    # Auto-fill from tutorial navigation (the tutorial's work_dir is the
+    # project's, so these normally resolve to listed options).
     @reactive.effect
     def _on_tutorial_context():
         if tutorial_context is None:
@@ -339,11 +366,11 @@ def run_server(
         ctx = tutorial_context.get()
         if ctx is None or ctx.get("target_tab") != "Run":
             return
-        ui.update_text(
-            "input_file",
-            value=str(Path(ctx["work_dir"]) / ctx["str_file"]),
+        str_path = Path(ctx["work_dir"]) / ctx["str_file"]
+        preselect_input_file.set((str(str_path), f"Tutorial: {ctx['str_file']}"))
+        preselect_working_dir.set(
+            (str(ctx["work_dir"]), f"Tutorial: {Path(ctx['work_dir']).name}/")
         )
-        ui.update_text("working_dir", value=ctx["work_dir"])
         ui.update_select("tool_select", selected="shyfem")
         tutorial_context.set(None)
 
@@ -356,8 +383,8 @@ def run_server(
         if not str_path.exists():
             ui.notification_show(f"Sample STR not found: {str_path}", type="error", duration=6)
             return
-        ui.update_text("input_file", value=str(str_path))
-        ui.update_text("working_dir", value=str(work_dir))
+        preselect_input_file.set((str(str_path), f"Sample: {str_path.name}"))
+        preselect_working_dir.set((str(work_dir), f"Sample: {work_dir.name}/"))
         ui.update_select("tool_select", selected="shyfem")
         ui.notification_show(
             "Sample loaded: mm_hyd_03.str ready to run (~3s serial)",
@@ -1394,11 +1421,19 @@ def run_server(
 
         validated_workdir.mkdir(parents=True, exist_ok=True)
 
+        # The STR/GRD values are substituted straight into the workflow's
+        # subprocess args, so confine them to the requesting user's sandbox
+        # like _submit_job does (a client can post any string as the select
+        # value).
         params = {}
-        if input_str:
-            params["input_str"] = input_str
-        if input_grd:
-            params["input_grd"] = input_grd
+        try:
+            if input_str:
+                params["input_str"] = str(config.confine_path(input_str, _usr, must_exist=True))
+            if input_grd:
+                params["input_grd"] = str(config.confine_path(input_grd, _usr, must_exist=True))
+        except (ValueError, FileNotFoundError) as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
         if mpi_np:
             params["mpi_np"] = str(mpi_np)
 

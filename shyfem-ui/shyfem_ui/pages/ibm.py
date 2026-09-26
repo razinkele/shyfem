@@ -34,15 +34,12 @@ except ImportError:
     scatterplot_layer = tile_layer = trips_layer = zoom_widget = None
     format_trips = trips_animation_ui = trips_animation_server = None
 
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
-)
 from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
+from shyfem_ui.components.project_select import project_file_select
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.lgr_service import LgrService, ParticleTrack, filter_by_time
+from shyfem_ui.services.project_files import list_project_files
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
@@ -209,12 +206,7 @@ def ibm_ui() -> ui.Tag:
         ui.layout_sidebar(
             ui.sidebar(
                 ui.h5("Trajectory File"),
-                file_picker_ui("fp_lgr", label="Pick Lagrangian output from project"),
-                ui.input_text(
-                    "lgr_path",
-                    "LGR File (.lgr)",
-                    placeholder="/path/to/output.lgr",
-                ),
+                ui.output_ui("lgr_path_picker"),
                 ui.input_action_button(
                     "load_btn",
                     "Load Trajectories",
@@ -298,8 +290,6 @@ def ibm_server(
     if MapWidget is None:
         return
 
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
-
     map_id = module.resolve_id("ibm_map")
     _map = MapWidget(
         id=map_id,
@@ -349,51 +339,35 @@ def ibm_server(
             return None
         return ui.p(f"Loaded: {min(starts)} – {max(ends)}", class_="text-muted small mb-0")
 
-    # Auto-fill from active project: prefer FileService-tracked .lgr
-    # files surfaced via the picker, fall back to glob-search of
-    # work_dir for .lgr files generated mid-run before the next scan.
-    @reactive.effect
-    def _on_project_changed():
-        if active_project is None:
-            return
-        proj = active_project.get()
-        if proj is None:
-            project_id_val.set(None)
-            return
-        project_id_val.set(proj.get("id"))
-        work = proj["work_dir"]
-        # Existing glob fallback - keep it for .lgr files that aren't
-        # tracked in FileService (e.g., generated mid-run before scan).
-        # Only fill if the input is empty so picker selections survive.
-        with reactive.isolate():
-            lgr_empty = not input.lgr_path()
-        if lgr_empty:
-            if work:
-                lgr_files = sorted(Path(work).glob("*.lgr"))
-                if lgr_files:
-                    chosen = str(lgr_files[0])
-                    # Section M.2: log provenance so ops can see when
-                    # lgr_path comes from the work_dir glob (e.g. a
-                    # mid-run generated file) rather than a picker
-                    # click. Picker dropdown only lists FileService-
-                    # tracked files; the glob can fill ahead of scan.
-                    logger.info(
-                        "ibm_server: filled lgr_path from work_dir glob "
-                        "(file not yet tracked by FileService): %s",
-                        chosen,
-                    )
-                    ui.update_text("lgr_path", value=chosen)
+    def _first_project_lgr(proj, usr) -> str | None:
+        """Absolute path of the project's first .lgr (sorted, recursive).
 
-    # File picker delegates resolve/log/notify branching to
-    # fill_picker_input (see its docstring in components/file_picker.py).
-    file_picker_server(
-        "fp_lgr",
-        project_id=project_id_val,
-        file_types=["lagrangian"],
-        on_selected=lambda rel: fill_picker_input(
-            "lgr_path", active_project.get() if active_project else None, rel
-        ),
-    )
+        Replaces the old ``work_dir/*.lgr`` glob auto-fill. Built from the
+        same confined root the dropdown lists from, so it matches an option
+        value exactly (``confine_path`` resolves symlinks).
+        """
+        if proj is None:
+            return None
+        try:
+            root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
+        except (KeyError, ValueError, OSError):
+            return None
+        files = list_project_files(root, (".lgr",))
+        return str(root / files[0]) if files else None
+
+    @render.ui
+    def lgr_path_picker():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return project_file_select(
+            "lgr_path",
+            "LGR File (.lgr)",
+            (".lgr",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=_first_project_lgr(proj, usr),
+        )
 
     @reactive.effect
     @reactive.event(input.load_btn)
@@ -409,7 +383,7 @@ def ibm_server(
 
         path_str = input.lgr_path()
         if not path_str:
-            ui.notification_show("Enter a .lgr file path", type="warning")
+            ui.notification_show("Select a .lgr file", type="warning")
             return
 
         try:

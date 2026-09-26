@@ -1,6 +1,7 @@
 """Playwright tests for individual page content and interactions."""
 
 import pytest
+from playwright.sync_api import expect
 
 from tests.conftest import _dismiss_modals
 
@@ -50,11 +51,14 @@ class TestGridPrepPage:
                 pw_page.locator(f"a:has-text('{tab}'), [role='tab']:has-text('{tab}')").count() >= 1
             ), f"Sub-tab '{tab}' not found on Grid Prep page"
 
-    def test_grd_path_input(self, pw_page):
-        """Test grid file path input exists."""
+    def test_grd_path_picker(self, pw_page):
+        """The grid file is chosen from a project-file dropdown; with no
+        project open the picker prompts to open one (no free-text box)."""
         _switch_tab(pw_page, "Grid Prep")
-        grd_input = pw_page.locator("#grid_prep-grd_path")
-        assert grd_input.is_visible()
+        picker = pw_page.locator("#grid_prep-grd_path_picker")
+        expect(picker).to_be_visible(timeout=10000)
+        expect(picker).to_contain_text("Open a project", timeout=10000)
+        assert pw_page.locator("input#grid_prep-grd_path").count() == 0
 
 
 class TestPartitioningPage:
@@ -139,17 +143,23 @@ class TestRunPage:
         select = pw_page.locator("#run-tool_select")
         assert select.is_visible()
 
-    def test_input_file_field(self, pw_page):
-        """Test input file field exists."""
+    def test_input_file_picker(self, pw_page):
+        """The STR file is a project-file dropdown; with no project open the
+        picker prompts to open one (no free-text box)."""
         _switch_tab(pw_page, "Run")
-        input_file = pw_page.locator("#run-input_file")
-        assert input_file.is_visible()
+        picker = pw_page.locator("#run-input_file_picker")
+        expect(picker).to_be_visible(timeout=10000)
+        expect(picker).to_contain_text("Open a project", timeout=10000)
+        assert pw_page.locator("input#run-input_file").count() == 0
 
-    def test_working_dir_field(self, pw_page):
-        """Test working directory field exists."""
+    def test_working_dir_picker(self, pw_page):
+        """The working directory is a project-directory dropdown; with no
+        project open the picker prompts to open one (no free-text box)."""
         _switch_tab(pw_page, "Run")
-        wd = pw_page.locator("#run-working_dir")
-        assert wd.is_visible()
+        picker = pw_page.locator("#run-working_dir_picker")
+        expect(picker).to_be_visible(timeout=10000)
+        expect(picker).to_contain_text("Open a project", timeout=10000)
+        assert pw_page.locator("input#run-working_dir").count() == 0
 
     def test_submit_button(self, pw_page):
         """Test Submit Job button is present."""

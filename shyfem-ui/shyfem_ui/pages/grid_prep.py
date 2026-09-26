@@ -8,14 +8,14 @@ import numpy as np
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.file_browser import file_browser_server, file_browser_ui
-from shyfem_ui.components.file_picker import (
-    file_picker_server,
-    file_picker_ui,
-    fill_picker_input,
-)
 from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.plot_widget import plot_widget_server, plot_widget_ui
+from shyfem_ui.components.project_select import (
+    default_project_file,
+    project_dir_select,
+    project_file_select,
+)
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -35,6 +35,9 @@ from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
 
+#: Sentinel for "no project observed yet" in the preselect-drop effect.
+_UNSET = object()
+
 
 @module.ui
 def grid_prep_ui() -> ui.Tag:
@@ -53,13 +56,8 @@ def grid_prep_ui() -> ui.Tag:
                     accept=[".grd"],
                 ),
                 ui.hr(),
-                # Or use path input
-                file_picker_ui("fp_grd", label="Pick grid from project"),
-                ui.input_text(
-                    "grd_path",
-                    "Or enter path:",
-                    placeholder="/path/to/grid.grd",
-                ),
+                # Or pick a grid from the active project
+                ui.output_ui("grd_path_picker"),
                 ui.input_action_button(
                     "load_path_btn",
                     "Load from Path",
@@ -72,11 +70,7 @@ def grid_prep_ui() -> ui.Tag:
                 ui.input_checkbox("renumber", "Renumber (-renumber)", value=False),
                 ui.hr(),
                 # Output directory
-                ui.input_text(
-                    "output_dir",
-                    "Output Directory",
-                    placeholder="/path/to/output",
-                ),
+                ui.output_ui("output_dir_picker"),
                 ui.hr(),
                 # Actions + status
                 ui.output_ui("shypre_action_area"),
@@ -130,44 +124,66 @@ def grid_prep_server(
     current_user=None,
 ) -> None:
     """Grid preparation page server logic."""
-    # Reactive value driven by `_on_project_changed`; consumed by the
-    # file picker to filter dropdown choices to the active project.
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
-
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
-    # Auto-fill from active project
+    # A grid path pushed from outside the dropdown's project scan (the bundled
+    # Mar Menor sample, a tutorial asset) as ``(abs_path, option_label)``. It
+    # cannot be pushed with ui.update_select (a value that is not one of the
+    # options is a silent no-op, and the select may not exist yet), so the
+    # sample/tutorial effects set this and the picker render injects it as an
+    # extra option and preselects it.
+    preselect_grd: reactive.Value[tuple[str, str] | None] = reactive.value(None)
+
+    # Any project change drops a sample/tutorial preselect so it never leaks
+    # into another project's dropdown (or into a no-project view).
+    _last_pid_for_preselect = reactive.value(_UNSET)
+
     @reactive.effect
-    def _on_project_changed():
+    def _drop_preselect_on_project_change():
         if active_project is None:
             return
         proj = active_project.get()
-        if proj is None:
-            project_id_val.set(None)
-            return
-        project_id_val.set(proj.get("id"))
-        work = proj["work_dir"]
-        if proj["grids"]:
-            grid = proj["grids"][0]
-            with reactive.isolate():
-                grd_empty = not input.grd_path()
-            if grid.get("grd_file") and grd_empty:
-                ui.update_text("grd_path", value=str(Path(work) / grid["grd_file"]))
+        pid = proj.get("id") if proj is not None else None
+        with reactive.isolate():
+            prev = _last_pid_for_preselect.get()
+        _last_pid_for_preselect.set(pid)
+        if prev is not _UNSET and pid != prev:
+            preselect_grd.set(None)
 
-    # File picker delegates resolve/log/notify branching to
-    # fill_picker_input (see its docstring in components/file_picker.py).
-    file_picker_server(
-        "fp_grd",
-        project_id=project_id_val,
-        file_types=["grid"],
-        on_selected=(
-            lambda rel: fill_picker_input(
-                "grd_path", active_project.get() if active_project else None, rel
-            )
-        ),
-    )
+    def _ctx():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return proj, usr
 
-    # Auto-fill from tutorial navigation
+    @render.ui
+    def grd_path_picker():
+        proj, usr = _ctx()
+        pre = preselect_grd.get()
+        # With no project the helper still offers a pushed sample/tutorial grid.
+        return project_file_select(
+            "grd_path",
+            "Grid File (.grd)",
+            (".grd",),
+            proj=proj,
+            user=usr,
+            config=config,
+            selected=pre[0] if pre is not None else default_project_file(proj, "grd"),
+            extra={pre[0]: pre[1]} if pre is not None else None,
+        )
+
+    @render.ui
+    def output_dir_picker():
+        proj, usr = _ctx()
+        return project_dir_select(
+            "output_dir",
+            "Output Directory",
+            proj=proj,
+            user=usr,
+            config=config,
+            default_label="— same directory as the grid file —",
+        )
+
+    # Preselect the tutorial's grid on tutorial navigation
     @reactive.effect
     def _on_tutorial_context():
         if tutorial_context is None:
@@ -175,10 +191,8 @@ def grid_prep_server(
         ctx = tutorial_context.get()
         if ctx is None or ctx.get("target_tab") != "Grid Prep":
             return
-        ui.update_text(
-            "grd_path",
-            value=str(Path(ctx["work_dir"]) / ctx["grd_file"]),
-        )
+        path = Path(ctx["work_dir"]) / ctx["grd_file"]
+        preselect_grd.set((str(path), f"Tutorial: {path.name}"))
         tutorial_context.set(None)
 
     # State
@@ -223,7 +237,7 @@ def grid_prep_server(
         if not grd_path.exists():
             ui.notification_show(f"Sample grid not found: {grd_path}", type="error", duration=6)
             return
-        ui.update_text("grd_path", value=str(grd_path))
+        preselect_grd.set((str(grd_path), f"Sample: {grd_path.name}"))
         try:
             grd = GrdParser.parse_file(grd_path)
             # Mar Menor grid is in UTM zone 30N

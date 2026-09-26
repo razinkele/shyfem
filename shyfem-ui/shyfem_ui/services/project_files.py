@@ -41,3 +41,49 @@ def list_project_files(
     except OSError:
         pass
     return out
+
+
+#: Default caps for directory listings (dropdown of output/working dirs).
+MAX_PROJECT_DIRS = 200
+MAX_PROJECT_DIR_DEPTH = 2
+
+
+def list_project_dirs(
+    root: Path,
+    max_depth: int = MAX_PROJECT_DIR_DEPTH,
+    max_dirs: int = MAX_PROJECT_DIRS,
+) -> list[str]:
+    """Project-relative directories under ``root``: ``"."`` first, then the
+    non-hidden, non-symlinked subdirectories down to ``max_depth`` levels,
+    sorted, capped at ``max_dirs`` (symlinks are skipped so a link inside a
+    project cannot list another tree, matching ``list_project_files``). Returns ``[]`` when ``root`` is not a directory. Path
+    confinement is the caller's job; nothing here is opened or created.
+    """
+    if max_depth < 1 or max_dirs < 1:
+        return []
+    try:
+        if not root.is_dir():
+            return []
+    except OSError:
+        return []
+    out: list[str] = ["."]
+
+    def _walk(d: Path, depth: int) -> None:
+        if depth > max_depth or len(out) >= max_dirs:
+            return
+        try:
+            children = sorted(
+                p
+                for p in d.iterdir()
+                if p.is_dir() and not p.is_symlink() and not p.name.startswith(".")
+            )
+        except OSError:
+            return
+        for child in children:
+            if len(out) >= max_dirs:
+                return
+            out.append(str(child.relative_to(root)))
+            _walk(child, depth + 1)
+
+    _walk(root, 1)
+    return out

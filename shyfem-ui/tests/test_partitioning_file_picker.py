@@ -23,9 +23,14 @@ class TestModuleWiring:
         # Two render.ui dropdowns backed by a project-dir scan ...
         assert "def bas_path_picker(" in src
         assert "def grd_path_picker(" in src
-        assert "list_project_files(root, exts)" in src
-        assert '_project_select("bas_path", "Basin File (.bas)", (".bas",))' in src
-        assert '_project_select("grd_path", "Grid File (.grd)", (".grd",))' in src
+        assert "def output_dir_picker(" in src
+        # ... built on the shared project_select helpers, preselecting the
+        # project's default basin/grid like the old text boxes auto-filled.
+        assert 'project_file_select(\n            "bas_path"' in src
+        assert 'project_file_select(\n            "grd_path"' in src
+        assert 'project_dir_select(\n            "output_dir"' in src
+        assert 'default_project_file(proj, "bas")' in src
+        assert 'default_project_file(proj, "grd")' in src
         # ... and the old file_picker / free-text wiring is gone.
         assert "file_picker_server(" not in src
         assert "fill_picker_input(" not in src

@@ -16,6 +16,7 @@ from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
+from shyfem_ui.components.project_select import project_dir_select, project_file_select
 from shyfem_ui.components.sample_data import sample_data_card_ui
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
@@ -139,11 +140,7 @@ def postprocess_ui() -> ui.Tag:
                 ui.hr(),
                 # Output options
                 ui.h5("Output"),
-                ui.input_text(
-                    "output_dir",
-                    "Output Directory",
-                    placeholder="/path/to/output (default: same as input)",
-                ),
+                ui.output_ui("output_dir_picker"),
                 ui.output_ui("custom_options_field"),
                 ui.hr(),
                 # Actions
@@ -159,12 +156,7 @@ def postprocess_ui() -> ui.Tag:
                 # Batch mode
                 ui.hr(),
                 ui.h5("Batch Mode"),
-                ui.input_text_area(
-                    "batch_paths",
-                    "File Paths (one per line)",
-                    placeholder="/path/to/file1.shy\n/path/to/file2.shy",
-                    rows=3,
-                ),
+                ui.output_ui("batch_paths_picker"),
                 ui.input_action_button(
                     "batch_run_btn",
                     "Batch Process All",
@@ -221,7 +213,6 @@ def postprocess_server(
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
 
-    project_id_val: reactive.Value[int | None] = reactive.value(None)
     # Tracks the last-seen project id so _on_project_changed can
     # distinguish "metadata refresh of same project" (preserve user
     # input) from "user switched to different project" (force re-fill).
@@ -234,48 +225,57 @@ def postprocess_server(
             return
         proj = active_project.get()
         if proj is None:
-            project_id_val.set(None)
             last_project_id.set(None)
             return
-        pid = proj.get("id")
-        project_id_val.set(pid)
-        last_project_id.set(pid)
+        last_project_id.set(proj.get("id"))
+
+    def _ctx():
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return proj, usr
 
     @render.ui
     def shy_path_picker():
-        """Dropdown of ``.shy``/``.nc`` output files, consolidating the
-        project directory and every box-model run directory (confined to the
-        admin-declared analysis roots) — no free-text path box."""
-        from shyfem_ui.services.boxmodel_manifest import ManifestError, load_manifest
-        from shyfem_ui.services.project_files import list_project_files
+        """Dropdown of ``.shy``/``.nc`` output files from the project directory
+        and every box-model run directory — no free-text path box."""
+        proj, usr = _ctx()
+        return project_file_select(
+            "shy_path",
+            "Output File (.shy/.nc)",
+            (".shy", ".nc"),
+            proj=proj,
+            user=usr,
+            config=config,
+            include_runs=True,
+        )
 
-        proj = active_project.get() if active_project is not None else None
-        if proj is None:
-            return ui.p("Open a project to choose an output file.", class_="text-muted small mb-2")
-        usr = current_user() if current_user is not None else None
-        choices: dict[str, str] = {"": "— select an output file —"}
-        try:
-            root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
-        except (ValueError, OSError):
-            return ui.p("Project directory unavailable.", class_="text-muted small mb-2")
-        for rel in list_project_files(root, (".shy", ".nc")):
-            choices[str(root / rel)] = rel
-        # Run outputs live outside the project, under the analysis roots; the
-        # manifest's run dirs are already confined by load_manifest.
-        try:
-            manifest = load_manifest(root, config, usr)
-        except (ManifestError, ValueError, OSError):
-            manifest = None
-        if manifest is not None:
-            for run in manifest.runs:
-                for rel in list_project_files(Path(run.dir), (".shy", ".nc")):
-                    choices[str(Path(run.dir) / rel)] = f"{run.label} / {rel}"
-        if len(choices) == 1:
-            return ui.p(
-                "No .shy/.nc output files in this project or its runs.",
-                class_="text-muted small mb-2",
-            )
-        return ui.input_select("shy_path", "Output File (.shy/.nc)", choices=choices, selected="")
+    @render.ui
+    def batch_paths_picker():
+        """Multi-select of ``.shy``/``.nc`` files (project + run dirs) for
+        batch processing; ``input.batch_paths()`` is a tuple of paths."""
+        proj, usr = _ctx()
+        return project_file_select(
+            "batch_paths",
+            "Files to process",
+            (".shy", ".nc"),
+            proj=proj,
+            user=usr,
+            config=config,
+            include_runs=True,
+            multiple=True,
+        )
+
+    @render.ui
+    def output_dir_picker():
+        proj, usr = _ctx()
+        return project_dir_select(
+            "output_dir",
+            "Output Directory",
+            proj=proj,
+            user=usr,
+            config=config,
+            default_label="— same directory as the input file —",
+        )
 
     # Auto-fill from tutorial navigation
     @reactive.effect
@@ -601,14 +601,9 @@ def postprocess_server(
             ui.notification_show(_denied, type="error", duration=6)
             return
 
-        paths_text = input.batch_paths()
-        if not paths_text:
-            ui.notification_show("No batch files specified", type="warning")
-            return
-
-        paths = [p.strip() for p in paths_text.strip().splitlines() if p.strip()]
+        paths = list(input.batch_paths() or ())
         if not paths:
-            ui.notification_show("No valid file paths", type="warning")
+            ui.notification_show("No batch files specified", type="warning")
             return
 
         options = _build_options()

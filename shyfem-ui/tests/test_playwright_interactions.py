@@ -1,6 +1,7 @@
 """Playwright tests for interactive form workflows and real-time updates."""
 
 import pytest
+from playwright.sync_api import expect
 
 from tests.conftest import _dismiss_modals
 
@@ -19,16 +20,19 @@ class TestJobSubmissionForm:
     """Tests for filling and submitting the job form on the Run page."""
 
     def test_fill_job_form(self, pw_page):
-        """Test filling all job form fields."""
+        """Fill the free-text/select fields; the STR file and working
+        directory are project dropdowns that prompt when no project is open."""
         _switch_tab(pw_page, "Run")
 
         pw_page.locator("#run-job_name").fill("e2e_test_job")
         pw_page.locator("#run-tool_select").select_option("shyfem")
-        pw_page.locator("#run-input_file").fill("/tmp/test.str")
-        pw_page.locator("#run-working_dir").fill("/tmp/test_run")
 
         assert pw_page.locator("#run-job_name").input_value() == "e2e_test_job"
-        assert pw_page.locator("#run-input_file").input_value() == "/tmp/test.str"
+        assert pw_page.locator("#run-tool_select").input_value() == "shyfem"
+        for name in ("input_file", "working_dir"):
+            picker = pw_page.locator(f"#run-{name}_picker")
+            expect(picker).to_contain_text("Open a project", timeout=10000)
+            assert pw_page.locator(f"input#run-{name}").count() == 0, name
 
     def test_tool_select_options(self, pw_page):
         """Test all tool options are available in dropdown."""
@@ -61,7 +65,7 @@ class TestJobSubmissionForm:
         _switch_tab(pw_page, "Run")
 
         pw_page.locator("#run-job_name").fill("")
-        pw_page.locator("#run-input_file").fill("")
+        # No project open -> no STR dropdown to pick from; submit anyway.
         pw_page.locator("#run-submit_btn").click()
 
         pw_page.wait_for_timeout(1500)
@@ -99,12 +103,13 @@ class TestWorkflowForm:
 class TestGridPrepInteractions:
     """Tests for Grid Prep page interactions."""
 
-    def test_fill_grd_path(self, pw_page):
-        """Test filling grid file path input."""
+    def test_grd_path_picker_prompts_without_project(self, pw_page):
+        """The grid file is a project-file dropdown (no free-text box); with
+        no project open it prompts to open one."""
         _switch_tab(pw_page, "Grid Prep")
-        grd = pw_page.locator("#grid_prep-grd_path")
-        grd.fill("/tmp/test.grd")
-        assert grd.input_value() == "/tmp/test.grd"
+        picker = pw_page.locator("#grid_prep-grd_path_picker")
+        expect(picker).to_contain_text("Open a project", timeout=10000)
+        assert pw_page.locator("input#grid_prep-grd_path").count() == 0
 
     def test_switch_subtabs(self, pw_page):
         """Test switching between sub-tabs on Grid Prep page."""
@@ -176,21 +181,27 @@ class TestPostProcessInteractions:
 class TestCompareInteractions:
     """Tests for Compare page interactions."""
 
-    def test_fill_str_file_paths(self, pw_page):
-        """Test filling STR file paths."""
+    def test_str_file_dropdowns(self, pw_page):
+        """STR files A/B are dropdowns over the project's .str files (no
+        free-text paths); with no project open only the placeholder remains."""
         _switch_tab(pw_page, "Compare")
-        pw_page.locator("#compare-str_file_a").fill("/tmp/a.str")
-        pw_page.locator("#compare-str_file_b").fill("/tmp/b.str")
-        assert pw_page.locator("#compare-str_file_a").input_value() == "/tmp/a.str"
-        assert pw_page.locator("#compare-str_file_b").input_value() == "/tmp/b.str"
+        for name in ("str_file_a", "str_file_b"):
+            sel = pw_page.locator(f"select#compare-{name}")
+            expect(sel).to_be_attached(timeout=10000)
+            assert pw_page.locator(f"input#compare-{name}").count() == 0, name
+            labels = sel.locator("option").all_inner_texts()
+            assert any("no .str files" in t for t in labels), labels
 
-    def test_fill_ts_file_paths(self, pw_page):
-        """Test filling time series file paths."""
+    def test_ts_file_dropdowns(self, pw_page):
+        """Time-series files A/B are dropdowns (no free-text paths); with no
+        project open only the placeholder remains."""
         _switch_tab(pw_page, "Compare")
-        pw_page.locator("#compare-ts_file_a").fill("/tmp/ts_a.dat")
-        pw_page.locator("#compare-ts_file_b").fill("/tmp/ts_b.dat")
-        assert pw_page.locator("#compare-ts_file_a").input_value() == "/tmp/ts_a.dat"
-        assert pw_page.locator("#compare-ts_file_b").input_value() == "/tmp/ts_b.dat"
+        for name in ("ts_file_a", "ts_file_b"):
+            sel = pw_page.locator(f"select#compare-{name}")
+            expect(sel).to_be_attached(timeout=10000)
+            assert pw_page.locator(f"input#compare-{name}").count() == 0, name
+            labels = sel.locator("option").all_inner_texts()
+            assert any("no time-series files" in t for t in labels), labels
 
     def test_switch_compare_subtabs(self, pw_page):
         """Test switching between visible compare sub-tabs."""
