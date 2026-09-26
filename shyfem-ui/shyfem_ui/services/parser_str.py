@@ -23,6 +23,20 @@ class StrSection:
     comments: list[str] = field(default_factory=list)
     # Track which parameters were modified after parsing (for smart regeneration)
     _modified_params: set = field(default_factory=set)
+    # The opening and closing lines exactly as they were read, so a parsed
+    # section round-trips byte-exact. SHYFEM's reader takes '&' or '$' for
+    # both (nls.f90::nls_is_section) and reads any text after the name as a
+    # documented "extra information" field, so "$bound1   ---- Baltic ----"
+    # and "&para" are ordinary headers -- but neither survives being
+    # regenerated from the name alone. None for a section built in memory,
+    # which is emitted as "$name" / "$end" as before.
+    header_line: str | None = None
+    end_line: str | None = None
+    #: The text after the section name on the header line ("---- Baltic ----").
+    header_extra: str = ""
+    # raw_lines index -> the parameter key a numeric continuation line belongs
+    # to, so an edit to a multi-line list can drop its continuations.
+    _continuation_owner: dict[int, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -100,11 +114,24 @@ class StrParser:
     """Parser for SHYFEM .str parameter files."""
 
     # Regex patterns
-    SECTION_START = re.compile(r"^\s*\$(\w+)\s*$", re.IGNORECASE)
-    SECTION_END = re.compile(r"^\s*\$end\s*$", re.IGNORECASE)
+    # '&' as well as '$' (nls.f90:543 takes either), and any text after the
+    # section name -- the Fortran reader returns it as `extra`. Group 2 is
+    # that text. SECTION_END is matched first (see parse()), so the "end"
+    # that \w+ would also accept here never reaches this pattern.
+    SECTION_START = re.compile(r"^\s*[$&](\w+)(?:\s+(\S.*?))?\s*$", re.IGNORECASE)
+    # A closing marker may carry a trailing comment ("$end  ! done"). \b keeps
+    # a section legitimately named "endX" from matching.
+    SECTION_END = re.compile(r"^\s*[$&]end\b.*$", re.IGNORECASE)
     COMMENT = re.compile(r"^\s*[#!]")
     # Parameter patterns: key = value or key = 'string'
-    PARAM_PATTERN = re.compile(r"(\w+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|(\S+))")
+    # The bare branch consumes a RUN of tokens ("kbound = 1855 1856 1882 1883"
+    # is one four-element value, not 1855 with three ignored tokens), stopping
+    # before a token that opens the next pair ("czdef =") thanks to the
+    # negative lookahead. Quoted branches are unaffected, so a quoted value
+    # containing spaces stays one string.
+    PARAM_PATTERN = re.compile(
+        r"(\w+)\s*=\s*(?:'([^']*)'|\"([^\"]*)\"|(\S+(?:\s+(?!\S+\s*=)\S+)*))"
+    )
     # Standalone value (like in $extra section): number 'description'
     STANDALONE_PATTERN = re.compile(r"^\s*(\d+)\s+'([^']+)'")
 
@@ -113,6 +140,11 @@ class StrParser:
         """Parse .str file content into structured data."""
         result = StrFile()
         current_section: StrSection | None = None
+        # The key of the most recent parameter whose value came out a list; a
+        # following numbers-only line continues it ("kbound = 1547 1548" then
+        # "        1554 1555"). Reset at every section boundary so a
+        # continuation can never attach across one.
+        last_list_key: str | None = None
         in_header = True
         inter_section_lines: list[str] = []
 
@@ -132,6 +164,7 @@ class StrParser:
             # it first is strictly more specific and cannot shadow any real
             # section name (title, para, name, bound1, ...).
             if cls.SECTION_END.match(stripped):
+                last_list_key = None
                 if current_section is None:
                     # Ownerless: the opening header was decorated
                     # ("$nduge  ! legacy"), which SECTION_START does not
@@ -139,6 +172,7 @@ class StrParser:
                     # Dropping this line would emit an unterminated block.
                     inter_section_lines.append(line)
                 else:
+                    current_section.end_line = line
                     current_section = None
                 continue
 
@@ -155,7 +189,12 @@ class StrParser:
 
                 in_header = False
                 section_name = section_match.group(1).lower()
-                current_section = StrSection(name=section_name)
+                last_list_key = None
+                current_section = StrSection(
+                    name=section_name,
+                    header_line=line,
+                    header_extra=(section_match.group(2) or "").strip(),
+                )
                 # First occurrence is the one addressable by name; every
                 # occurrence is recorded in _structure so none is lost.
                 result.sections.setdefault(section_name, current_section)
@@ -192,13 +231,32 @@ class StrParser:
                 continue
 
             # Parse key=value parameters
+            matched_any = False
             for match in cls.PARAM_PATTERN.finditer(code):
+                matched_any = True
                 key = match.group(1).lower()
                 # Value is in group 2 (single quoted), 3 (double quoted), or 4 (unquoted)
-                value = match.group(2) or match.group(3) or match.group(4)
-                # Try to convert to appropriate type
-                value = cls._convert_value(value)
+                if match.group(4) is not None:
+                    # Bare: possibly a run of tokens forming one list value.
+                    value = cls._convert_bare_value(match.group(4))
+                else:
+                    value = cls._convert_value(match.group(2) or match.group(3))
                 current_section.parameters[key] = value
+                last_list_key = key if isinstance(value, list) else None
+
+            if not matched_any and last_list_key is not None:
+                # A numbers-only line continues the list above it. SHYFEM reads
+                # a section's values as one stream, so "kbound = 1547 1548" over
+                # several lines is one list; parsing only the first line left
+                # boundaries short of most of their nodes.
+                extra = cls._numeric_tokens(code)
+                if extra is not None:
+                    current_section.parameters[last_list_key] = (
+                        list(current_section.parameters[last_list_key]) + extra
+                    )
+                    current_section._continuation_owner[len(current_section.raw_lines) - 1] = (
+                        last_list_key
+                    )
 
         # Save trailing inter-section content
         if inter_section_lines:
@@ -243,6 +301,41 @@ class StrParser:
                 return line[:i], line[i:]
         return line, ""
 
+    @classmethod
+    def _numeric_tokens(cls, text: str) -> list[Any] | None:
+        """Every token of ``text`` converted, or None if any is not a number.
+
+        Used for continuation lines, where even a single token extends the list
+        above ("kbound = 1547 1548" then a line holding just "1554"); that
+        differs from a value, where one token is a scalar.
+        """
+        tokens = text.split()
+        if not tokens:
+            return None
+        converted = [cls._convert_value(t) for t in tokens]
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in converted):
+            return converted
+        return None
+
+    @classmethod
+    def _convert_bare_value(cls, value: str) -> Any:
+        """Convert an unquoted value, which may be a whitespace-separated run.
+
+        Returns ``list[int]``/``list[float]`` when every token converts and
+        there is more than one, else the scalar conversion of the whole text.
+        A mixed or non-numeric run (which SHYFEM would not read as a list
+        either) stays a single string.
+        """
+        tokens = value.split()
+        if len(tokens) > 1:
+            converted = [cls._convert_value(t) for t in tokens]
+            if all(isinstance(v, int) and not isinstance(v, bool) for v in converted):
+                return converted
+            if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in converted):
+                return [float(v) for v in converted]
+            return value
+        return cls._convert_value(value)
+
     @staticmethod
     def _convert_value(value: str) -> Any:
         """Convert string value to appropriate Python type."""
@@ -284,8 +377,9 @@ class StrParser:
         for comment in str_file.header_comments:
             lines.append(comment)
 
-        if str_file.header_comments:
-            lines.append("")
+        # No separator is added here: the blank line before the first section is
+        # itself one of the header lines, so appending another inserted one on
+        # every save.
 
         # Use recorded structure if available, otherwise fall back to section dict order
         if str_file._structure:
@@ -306,17 +400,32 @@ class StrParser:
             for section in str_file.sections.values():
                 cls._generate_section(lines, section)
 
-        return "\n".join(lines)
+        # ``splitlines`` dropped the newline that ended each line, so joining
+        # puts one back between lines and this adds the one that ended the last
+        # line. That makes the transform the exact inverse of the split for any
+        # file ending in a newline (a file not ending in one gains it, which is
+        # what the previous implementation did too).
+        return "\n".join(lines) + "\n" if lines else ""
 
     @classmethod
     def _generate_section(cls, lines: list[str], section: StrSection) -> None:
         """Generate a single section, overlaying modifications on raw_lines."""
-        lines.append(f"${section.name}")
+        # The header exactly as it was read, so "&para" and
+        # "$bound1   ---- Baltic ----" survive; f"${name}" only for a section
+        # built in memory.
+        lines.append(section.header_line if section.header_line is not None else f"${section.name}")
 
         if section.raw_lines and section._modified_params:
             # Overlay modified params onto raw lines
             emitted_modified = set()
-            for raw_line in section.raw_lines:
+            for index, raw_line in enumerate(section.raw_lines):
+                owner = section._continuation_owner.get(index)
+                if owner is not None and owner in section._modified_params:
+                    # A continuation of a list that has been edited. The
+                    # overlay rewrites a parameter within one line, so the new
+                    # value is emitted whole on the line that opened it and the
+                    # continuations go; the result is valid, not byte-identical.
+                    continue
                 stripped = raw_line.strip()
                 # Skip comments and blanks — emit as-is
                 if stripped and not cls.COMMENT.match(stripped):
@@ -373,14 +482,25 @@ class StrParser:
                     formatted_value = cls._format_value(value)
                     lines.append(f"        {key} = {formatted_value}")
 
-        lines.append("$end")
-        lines.append("")
+        lines.append(section.end_line if section.end_line is not None else "$end")
+        # A parsed file already carries whatever separated its sections (as an
+        # inter-section entry), so adding one here inserted a blank line into
+        # the user's file on every save. Only a section built in memory needs
+        # the separator.
+        if section.header_line is None:
+            lines.append("")
 
     @staticmethod
     def _format_value(value: Any) -> str:
         """Format a Python value for .str file."""
         if isinstance(value, bool):
             return ".true." if value else ".false."
+        if isinstance(value, (list, tuple)):
+            # A list is a run of values in the STR ("kbound = 1855 1856"). The
+            # core's reader hard-stops on "[1855, 1856]" ('no value found'),
+            # so this branch is the difference between a valid file and a
+            # fatal one.
+            return " ".join(StrParser._format_value(v) for v in value)
         if isinstance(value, str):
             # Already quoted (e.g. from apply_quick_settings) — emit as-is
             # so we never double-wrap into ''value''.

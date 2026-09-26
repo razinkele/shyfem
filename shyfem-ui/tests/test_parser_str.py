@@ -830,12 +830,18 @@ class TestTrailingCommentsAreNotCode:
 
 
 class TestOwnerlessEndPreserved:
-    """SECTION_START requires a bare ``$name`` line, so a decorated header
-    (``$nduge  ! legacy nudging``) is not recognised as a section: its body
-    becomes inter-section content and its ``$end`` reaches the SECTION_END
-    branch with no section open. Dropping that ``$end`` leaves the
-    regenerated STR with an unterminated block, which the core's reader
-    (iostr.f90 nlsh2d) hard-stops on."""
+    """A ``$end`` with no section open must survive regeneration: dropping it
+    leaves the STR with an unterminated block, which the core's reader
+    (iostr.f90 nlsh2d) hard-stops on.
+
+    Until issue #86 this class also documented a decorated header
+    (``$nduge  ! legacy nudging``) NOT being a section -- that was the bug,
+    not the contract: SHYFEM's reader takes the text after a section name as
+    a documented ``extra`` field (nls.f90::nls_is_section), so such a header
+    opens section ``nduge`` there. Recognising it is also what lets the app's
+    core-fatal-``$nduge`` purge find a decorated one. The round-trip and
+    ``$end``-count guarantees below are unchanged and still the point.
+    """
 
     DECORATED = (
         "$title\n"
@@ -857,9 +863,20 @@ class TestOwnerlessEndPreserved:
             ln for ln in self.DECORATED.splitlines() if ln.strip()
         ]
 
-    def test_decorated_header_does_not_become_a_section(self):
+    def test_decorated_header_is_a_section(self):
+        """Reversed by issue #86 -- see the class docstring."""
         parsed = StrParser.parse(self.DECORATED)
-        assert set(parsed.sections) == {"title", "para"}
+        assert set(parsed.sections) == {"title", "nduge", "para"}
+        assert parsed.sections["nduge"].header_extra == "! legacy nudging"
+        assert parsed.get_param("nduge", "nduge") == 1
+
+    def test_a_truly_ownerless_end_is_still_preserved(self):
+        """The guarantee this class exists for, with no decorated header in
+        sight: a stray ``$end`` that never had an opener."""
+        text = "$title\n        test\n$end\n\n$end\n\n$para\n        idt = 300\n$end\n"
+        out = StrParser.generate(StrParser.parse(text))
+        assert out == text
+        assert [ln for ln in out.splitlines() if ln.strip() == "$end"] == ["$end"] * 3
 
     def test_end_count_survives_regeneration(self):
         out = StrParser.generate(StrParser.parse(self.DECORATED))
@@ -1035,3 +1052,264 @@ class TestDuplicateSectionNames:
             if ln.strip()
         ]
         assert got == want
+
+
+# A verbatim excerpt of the real Curonian 29-box STR (curonian29_1993_2016.str),
+# the configuration behind the box-model runs. Every construct below appears in
+# that file; the parser dropped 7 of its 11 sections before issue #86 was fixed.
+# Kept as a string (not a repo asset) so CI exercises it, matching the precedent
+# in tests/test_boxmodel_setup.py::CURONIAN_EXCERPT.
+CURONIAN_STR = """************************ SECTION TITLE **********************
+ - set simulation title and grid name
+
+$title
+        Curonian 29-box, 2d, 1993-2016 continuous
+        curonian29
+\tcuronian29
+$end
+
+************************ SECTION PARA **********************
+ - set parameter for the simulation
+
+ -----\tthe starting time of the input files is 1/1/1997 = 0
+ itanf  = 347068800\t itend  = 536450400\tidt = 300\t--> 2008-2013
+
+&para
+        itanf  = '1993-01-01'   itend  = '2016-12-31'\tidt = '5m'
+\tidtbox = '1h'\t\t!box output -- the deliverable
+        date   = 19930101   time   = 000000
+        ireib  = 5\tczdef  = 0.0025
+\tnomp   = 4
+&end
+\tnsigma = 12
+
+************************ SECTION BOUND **********************
+ - set open boundary conditions
+
+$bound1     ---- Baltic sea ---- raw CMEMS sla, NOT rescaled
+       kbound  = 1547 1548 1549 1550
+                 1554 1555
+\tibtyp  = 1
+\tboundn = 'fem_forcing/sea_level.fem'
+$end
+
+$bound2     ---- Nemunas (Silininkai) river ---- discharge in m3/s
+      kbound = 1855 1856 1882 1883
+      zfact  = 0.25
+      ibtyp  = 3
+      boundn = 'fem_forcing/nemunas.txt'
+      temp   = -999
+$end
+
+levels
+      1 2 3 4 5 6 7 8 9 10 11 13 15 18 25 35
+end
+
+$name
+      !gotmpa = ''\t\t!not needed: iturb = 0 (2-d run)
+      wind = 'fem_forcing/wind.fem'
+$end
+
+$extra
+        1823 'Klaipeda'
+        1657 'Juodkrante'
+$end
+"""
+
+
+class TestAmpersandSections:
+    """SHYFEM's reader takes '&' or '$' for both openers and 'end'
+    (nls.f90::nls_is_section: `if( c .ne. '&' .and. c .ne. '$' ) return`,
+    and `if( section == 'end' ) return` regardless of which opened it), so
+    the parser must too. The whole &para block of every real Curonian STR
+    was dropped before this.
+    """
+
+    def test_ampersand_section_is_parsed(self):
+        parsed = StrParser.parse("&para\n  idt = 300\n&end\n")
+        assert "para" in parsed.sections
+        assert parsed.get_param("para", "idt") == 300
+
+    def test_markers_need_not_pair(self):
+        for text in ("&para\n  idt = 300\n$end\n", "$para\n  idt = 300\n&end\n"):
+            parsed = StrParser.parse(text)
+            assert parsed.get_param("para", "idt") == 300, text
+
+    def test_original_markers_round_trip(self):
+        text = "&para\n  idt = 300\n&end\n"
+        assert StrParser.generate(StrParser.parse(text)) == text
+
+    def test_a_bare_end_is_not_a_section_end(self):
+        """`levels … end` blocks sit outside sections; a bare `end` must not
+        close anything, or the block's contents leak into the section above."""
+        parsed = StrParser.parse("$para\n  idt = 300\n$end\n\nlevels\n 1 2 3\nend\n")
+        assert parsed.get_param("para", "idt") == 300
+        assert "levels" not in parsed.sections
+
+
+class TestDecoratedHeaders:
+    """`$bound1     ---- Baltic sea ----` is a section, not prose: the
+    Fortran reader reads the trailing text as a documented field
+    (`nls_is_section(section, num, extra)`). All five Curonian boundaries
+    were dropped before this."""
+
+    def test_decorated_header_is_a_section(self):
+        parsed = StrParser.parse("$bound1     ---- Baltic sea ---- raw sla\n  ibtyp = 1\n$end\n")
+        assert "bound1" in parsed.sections
+        assert parsed.get_param("bound1", "ibtyp") == 1
+
+    def test_trailing_text_is_available_and_round_trips_verbatim(self):
+        text = "$bound1     ---- Baltic sea ---- raw sla\n  ibtyp = 1\n$end\n"
+        parsed = StrParser.parse(text)
+        assert parsed.sections["bound1"].header_extra == "---- Baltic sea ---- raw sla"
+        assert StrParser.generate(parsed) == text
+
+    def test_a_decorated_header_survives_a_parameter_edit(self):
+        text = "$bound1     ---- Baltic sea ----\n  ibtyp = 1\n$end\n"
+        parsed = StrParser.parse(text)
+        parsed.set_param("bound1", "ibtyp", 3)
+        out = StrParser.generate(parsed)
+        assert "$bound1     ---- Baltic sea ----" in out
+        assert "ibtyp = 3" in out
+
+
+class TestListValues:
+    """`kbound = 1855 1856 1882 1883` was silently truncated to `1855` --
+    the most damaging of issue #86's four symptoms, because the value looked
+    plausible. COMMON_PARAMS already types kbound as 'int_list'."""
+
+    def test_space_separated_ints_become_a_list(self):
+        parsed = StrParser.parse("$bound1\n  kbound = 1855 1856 1882 1883\n  ibtyp = 3\n$end\n")
+        assert parsed.get_param("bound1", "kbound") == [1855, 1856, 1882, 1883]
+        assert parsed.get_param("bound1", "ibtyp") == 3
+
+    def test_space_separated_floats_become_a_list(self):
+        parsed = StrParser.parse("$sedtr\n  sedgrs = 0.1 0.2 0.5\n$end\n")
+        assert parsed.get_param("sedtr", "sedgrs") == [0.1, 0.2, 0.5]
+
+    def test_a_single_value_is_still_a_scalar(self):
+        parsed = StrParser.parse("$bound1\n  kbound = 1855\n$end\n")
+        assert parsed.get_param("bound1", "kbound") == 1855
+
+    def test_a_multi_pair_line_still_splits_into_scalars(self):
+        """The guard that makes lists safe: a bare token followed by '=' opens
+        a new pair and must never be swallowed into the previous list."""
+        parsed = StrParser.parse(
+            "&para\n  itanf = '1993-01-01'   itend = '2016-12-31'\tidt = '5m'\n&end\n"
+        )
+        assert parsed.get_param("para", "itanf") == "1993-01-01"
+        assert parsed.get_param("para", "itend") == "2016-12-31"
+        assert parsed.get_param("para", "idt") == "5m"
+
+    def test_bare_pairs_on_one_line_do_not_merge(self):
+        parsed = StrParser.parse("&para\n  ireib  = 5\tczdef  = 0.0025\n&end\n")
+        assert parsed.get_param("para", "ireib") == 5
+        assert parsed.get_param("para", "czdef") == 0.0025
+
+    def test_continuation_lines_extend_the_list(self):
+        parsed = StrParser.parse(
+            "$bound1\n  kbound = 1547 1548 1549\n           1554 1555\n  ibtyp = 1\n$end\n"
+        )
+        assert parsed.get_param("bound1", "kbound") == [1547, 1548, 1549, 1554, 1555]
+        assert parsed.get_param("bound1", "ibtyp") == 1
+
+    def test_a_list_formats_space_separated_not_as_a_python_repr(self):
+        """The fatal path: `[1, 2, 3]` in an STR makes the core hard-stop."""
+        assert StrParser._format_value([1855, 1856]) == "1855 1856"
+        assert StrParser._format_value([0.1, 0.25]) == "0.1 0.25"
+
+    def test_a_modified_single_line_list_saves_space_separated(self):
+        parsed = StrParser.parse("$bound1\n  kbound = 1855 1856\n$end\n")
+        parsed.set_param("bound1", "kbound", [1855, 1856, 9])
+        out = StrParser.generate(parsed)
+        assert "kbound = 1855 1856 9" in out
+        assert "[" not in out
+
+    def test_a_modified_multi_line_list_collapses_to_one_line(self):
+        """Not byte-identical by design: the overlay writer rewrites a param
+        within one line, so an edited multi-line list is emitted once and its
+        continuation lines are dropped. The result must still be valid."""
+        parsed = StrParser.parse(
+            "$bound1\n  kbound = 1547 1548\n           1554\n  ibtyp = 1\n$end\n"
+        )
+        parsed.set_param("bound1", "kbound", [1, 2])
+        out = StrParser.generate(parsed)
+        assert "kbound = 1 2" in out
+        assert "1554" not in out
+        assert StrParser.parse(out).get_param("bound1", "kbound") == [1, 2]
+        assert StrParser.parse(out).get_param("bound1", "ibtyp") == 1
+
+
+class TestNoSpuriousBlankAfterEnd:
+    """generate() appended a blank line after every `$end`, so a parsed file
+    never round-tripped byte-exact. Harmless while only 4 of 11 sections
+    parsed; once they all do, saving a real STR in the editor would insert a
+    blank line throughout the user's file."""
+
+    def test_a_parsed_section_gains_no_blank_line(self):
+        text = "$para\n  idt = 300\n$end\n"
+        assert StrParser.generate(StrParser.parse(text)) == text
+
+    def test_two_sections_keep_their_original_separation(self):
+        text = "$para\n  idt = 300\n$end\n\n$name\n  wind = 'w.fem'\n$end\n"
+        assert StrParser.generate(StrParser.parse(text)) == text
+
+
+class TestRealSTRRoundTrip:
+    """The headline test: the real Curonian STR parses completely and comes
+    back byte-identical."""
+
+    def test_every_section_is_parsed(self):
+        parsed = StrParser.parse(CURONIAN_STR)
+        assert set(parsed.sections) == {"title", "para", "bound1", "bound2", "name", "extra"}
+
+    def test_the_parameter_section_is_read_from_ampersand_para_only(self):
+        """The prose above &para carries a decoy `itanf = 347068800`; it is
+        outside any section and must not leak into the parameters."""
+        parsed = StrParser.parse(CURONIAN_STR)
+        assert parsed.get_param("para", "itanf") == "1993-01-01"
+        assert parsed.get_param("para", "itend") == "2016-12-31"
+        assert parsed.get_param("para", "idtbox") == "1h"
+        assert parsed.get_param("para", "nomp") == 4
+
+    def test_boundary_node_lists_are_complete(self):
+        parsed = StrParser.parse(CURONIAN_STR)
+        assert parsed.get_param("bound1", "kbound") == [1547, 1548, 1549, 1550, 1554, 1555]
+        assert parsed.get_param("bound2", "kbound") == [1855, 1856, 1882, 1883]
+        assert parsed.get_param("bound2", "zfact") == 0.25
+        assert parsed.get_param("bound2", "boundn") == "fem_forcing/nemunas.txt"
+
+    def test_standalone_rows_still_parse(self):
+        parsed = StrParser.parse(CURONIAN_STR)
+        rows = parsed.sections["extra"].parameters["_standalone"]
+        assert [r["id"] for r in rows] == [1823, 1657]
+
+    def test_round_trips_byte_exact(self):
+        assert StrParser.generate(StrParser.parse(CURONIAN_STR)) == CURONIAN_STR
+
+    def test_the_shipped_mar_menor_files_round_trip_byte_exact(self):
+        from pathlib import Path
+
+        base = Path(__file__).parent.parent.parent / "testcases" / "examples" / "mar_menor"
+        if not base.is_dir():
+            pytest.skip("testcases/examples/mar_menor not present")
+        checked = 0
+        for path in sorted(base.glob("*.str")):
+            text = path.read_text()
+            assert StrParser.generate(StrParser.parse(text)) == text, path.name
+            checked += 1
+        assert checked > 0
+
+    def test_a_single_token_continuation_also_extends(self):
+        """The case that slipped through first: one number on its own line.
+        A value of one token is a scalar, but a continuation of one token is
+        still a continuation."""
+        parsed = StrParser.parse(
+            "$bound1\n  kbound = 1547 1548\n           1554\n  ibtyp = 1\n$end\n"
+        )
+        assert parsed.get_param("bound1", "kbound") == [1547, 1548, 1554]
+        assert parsed.get_param("bound1", "ibtyp") == 1
+
+    def test_a_non_numeric_line_is_not_a_continuation(self):
+        parsed = StrParser.parse("$name\n  wind = 'w.fem'\n  some prose here\n$end\n")
+        assert parsed.get_param("name", "wind") == "w.fem"
