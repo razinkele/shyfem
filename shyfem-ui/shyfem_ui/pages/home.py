@@ -647,8 +647,10 @@ def home_server(
         # folders there (a pick reuses one) and a fresh timestamped default;
         # any other name can be typed.
         user = _user()
-        if config.deployment_mode == "server" and user is not None:
-            root = config.user_data_root / user["username"]
+        if config.deployment_mode == "server":
+            # Fail closed: an unresolved identity gets no folder listing at all
+            # (never the shared work_dir), matching the rest of this page.
+            root = (config.user_data_root / user["username"]) if user is not None else None
         else:
             root = Path(config.work_dir)
         default_name = f"project_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -663,7 +665,7 @@ def home_server(
                 "project_dir",
                 "Project folder",
                 default_name,
-                dir_name_choices(root),
+                dir_name_choices(root) if root is not None else [],
                 placeholder="pick an existing folder or type a new name",
             ),
             title="Create New Project",

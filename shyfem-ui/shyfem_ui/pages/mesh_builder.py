@@ -1508,6 +1508,9 @@ def mesh_builder_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
         try:
+            # A picked/typed name may carry a subdirectory (GRID/x.grd); the
+            # path is already confined to the work tree, so create the parent.
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             export_grd(grd, output_path)
             _log(f"Exported mesh to: {output_path}")
             ui.notification_show(f"Saved: {output_path}", type="message", duration=5)
