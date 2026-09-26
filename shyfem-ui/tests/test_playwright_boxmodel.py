@@ -51,7 +51,14 @@ def box_project(app_work_dir):
     # A second run, 1.5 warmer/saltier, so the Compare tab has a non-zero
     # B - A difference map and two columns in the side-by-side table.
     make_box_run(run_b, days=40, offset=1.5)
-    make_box_project(work, run_dir, obs_days=40, extra_runs=[("b", "run B", run_b)])
+    make_box_project(
+        work,
+        run_dir,
+        obs_days=40,
+        extra_runs=[("b", "run B", run_b)],
+        str_file=True,
+        forcing=True,
+    )
     return {
         "id": 9001,
         "name": "e2e_boxmodel",
@@ -132,6 +139,27 @@ def test_boxmodel_page_builds_cache_and_renders(pw_page, box_project):
     )
     # No canvas assertion for the second map on purpose (the one WebGL check
     # above is the suite's single local flake).
+
+    # --- Setup tab: STR-derived boundaries, summary, river and meteo widgets --
+    pw_page.get_by_role("tab", name="Setup").click()
+    bounds = pw_page.locator("#boxmodel-setup_boundaries")
+    expect(bounds.locator("table tbody tr")).to_have_count(2, timeout=30000)
+    bounds_text = bounds.inner_text()
+    assert "Fixture river" in bounds_text and "0.25" in bounds_text, bounds_text
+    assert "fem_forcing/river.txt" in bounds_text and "not read (.fem)" in bounds_text
+    summary = pw_page.locator("#boxmodel-setup_summary")
+    expect(summary).to_contain_text("idtbox", timeout=15000)
+    assert "nsigma" in summary.inner_text()  # orphan key outside any section
+    for oid in ("setup_rivers", "setup_meteo", "setup_message", "setup_summary"):
+        el = pw_page.locator(f"#boxmodel-{oid}")
+        expect(el).to_be_attached(timeout=15000)
+        assert "shiny-output-error" not in (el.get_attribute("class") or ""), oid
+    # A ready cache is loaded for the header run, so meteo has a variable select.
+    expect(pw_page.locator("#boxmodel-setup_meteo_var")).to_be_attached(timeout=15000)
+    # Picking a boundary must not error (selection is shown on the map only).
+    pw_page.locator("#boxmodel-setup_pick_2").click()
+    pw_page.wait_for_timeout(500)
+    assert "shiny-output-error" not in (bounds.get_attribute("class") or "")
 
     # Leave the shared session page clean for the next test file: pw_page is
     # session-scoped, so a lingering non-Dashboard tab / modal would leak.

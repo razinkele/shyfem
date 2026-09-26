@@ -246,3 +246,185 @@ def test_build_box_layers_symmetric_legend_straddles_zero():
     # default is still the plain (min..max) scale
     _layers, plain = gm.build_box_layers(polys, {1: -1.5, 2: 0.2}, palette="diverging")
     assert plain[0][0] == pytest.approx(-1.5) and plain[-1][1] == pytest.approx(0.2)
+
+
+# --- PR 3 Task 3: node positions + setup layers ------------------------------
+
+
+def _iface(section, a, b, *, open_boundary=None, path=None):
+    return {
+        "section": section,
+        "from_box": a,
+        "to_box": b,
+        "open_boundary": open_boundary,
+        "path": path or [[21.0, 55.5], [21.01, 55.51]],
+    }
+
+
+def _bnode(node, boundary, kind, *, title="Fixture river", boundn="fem_forcing/river.txt"):
+    return {
+        "node": node,
+        "lon": 21.0 + node / 100,
+        "lat": 55.5,
+        "boundary": boundary,
+        "title": title,
+        "kind": kind,
+        "boundn": boundn,
+    }
+
+
+def _bare(tip: str) -> str:
+    return tip.replace("<b>", "").replace("</b>", "").replace("<br>", "")
+
+
+def test_node_positions_is_the_public_get_lonlat():
+    from shyfem_ui.services.parser_grd import GrdFile, Node
+
+    grd = GrdFile()
+    grd.nodes = {
+        1: Node(id=1, node_type=0, x=-0.80, y=37.70, depth=2.5),
+        2: Node(id=2, node_type=0, x=-0.78, y=37.70, depth=4.0),
+    }
+    assert gm.node_positions(grd) == gm._get_lonlat(grd) == {1: [-0.80, 37.70], 2: [-0.78, 37.70]}
+    assert gm.node_positions(GrdFile()) == {}
+    assert gm.node_positions(grd, epsg=None) == gm.node_positions(grd)
+
+
+def test_build_setup_layers_ids_and_open_vs_interior_split():
+    interfaces = [
+        _iface(1, 1, 2),
+        _iface(2, -1, 1, open_boundary=1),
+        _iface(3, 2, 3),
+    ]
+    points = [_bnode(1, 1, "level", title="Baltic sea", boundn="fem_forcing/sea.fem")]
+    layers = gm.build_setup_layers(interfaces, points)
+    assert [lyr["id"] for lyr in layers] == [
+        "setup_interfaces",
+        "setup_open_interfaces",
+        "setup_boundary_nodes",
+    ]
+    interior, opened, nodes = layers
+    assert [d["section"] for d in interior["data"]] == [1, 3]
+    assert [d["section"] for d in opened["data"]] == [2]
+    assert interior["data"][0]["path"] == [[21.0, 55.5], [21.01, 55.51]]
+    assert interior["getPath"] == "@@d.path" and opened["getPath"] == "@@d.path"
+    assert interior["pickable"] is True and opened["pickable"] is True
+    # open-boundary interfaces are blue and wider than the grey interior ones
+    assert opened["getColor"] == list(gm.SETUP_OPEN_INTERFACE_COLOR)
+    assert interior["getColor"] == list(gm.SETUP_INTERFACE_COLOR)
+    assert opened["widthMinPixels"] > interior["widthMinPixels"]
+    # tooltips
+    assert interior["data"][0]["tooltip_html"] == "section 1: box 1 → box 2"
+    assert opened["data"][0]["tooltip_html"] == "section 2: open boundary 1 → box 1"
+    # records carry the ids the page needs, but never the keys the click
+    # handler of grid_map_server branches on ("box", "node_id")
+    for d in interior["data"] + opened["data"] + nodes["data"]:
+        assert "box" not in d and "node_id" not in d
+    assert nodes["data"][0]["position"] == [21.01, 55.5]
+    assert nodes["data"][0]["node"] == 1 and nodes["data"][0]["boundary"] == 1
+
+
+def test_build_setup_layers_only_emits_layers_that_have_data():
+    only_nodes = gm.build_setup_layers([], [_bnode(3, 2, "discharge")])
+    assert [lyr["id"] for lyr in only_nodes] == ["setup_boundary_nodes"]
+    only_interior = gm.build_setup_layers([_iface(1, 1, 2)], [])
+    assert [lyr["id"] for lyr in only_interior] == ["setup_interfaces"]
+    only_open = gm.build_setup_layers([_iface(1, -2, 4, open_boundary=2)], [])
+    assert [lyr["id"] for lyr in only_open] == ["setup_open_interfaces"]
+    # a degenerate path (fewer than two points) is dropped, like mesh boundaries
+    assert gm.build_setup_layers([_iface(1, 1, 2, path=[[21.0, 55.5]])], []) == []
+
+
+def test_build_setup_layers_colours_nodes_by_kind():
+    points = [
+        _bnode(1, 1, "level"),
+        _bnode(2, 2, "discharge"),
+        _bnode(3, 3, "unknown"),
+        _bnode(4, 4, "something-else"),
+    ]
+    (nodes,) = gm.build_setup_layers([], points)
+    colors = [d["color"] for d in nodes["data"]]
+    assert colors[0] == list(gm.SETUP_KIND_COLORS["level"])
+    assert colors[1] == list(gm.SETUP_KIND_COLORS["discharge"])
+    assert colors[2] == list(gm.SETUP_KIND_COLORS["unknown"])
+    assert colors[3] == list(gm.SETUP_KIND_COLORS["unknown"])  # unknown kind -> grey
+    blue, green, grey = colors[0], colors[1], colors[2]
+    assert blue[2] > blue[0] and green[1] > green[0] and grey[0] == grey[1] == grey[2]
+    assert nodes["getFillColor"] == "@@d.color" and nodes["getPosition"] == "@@d.position"
+    assert nodes["pickable"] is True
+    # an unrecognised kind is rendered as "unknown", never echoed into the HTML
+    assert "something-else" not in nodes["data"][3]["tooltip_html"]
+    assert "unknown" in nodes["data"][3]["tooltip_html"]
+    assert "level" in nodes["data"][0]["tooltip_html"]
+
+
+def test_build_setup_layers_selected_boundary_nodes_are_larger():
+    points = [_bnode(1, 1, "level"), _bnode(2, 2, "discharge"), _bnode(3, 2, "discharge")]
+    (nodes,) = gm.build_setup_layers([], points, selected_boundary=2)
+    radii = {d["node"]: d["radius"] for d in nodes["data"]}
+    assert radii[2] == radii[3] > radii[1]
+    assert nodes["getRadius"] == "@@d.radius" and nodes["radiusUnits"] == "pixels"
+    assert nodes["radiusMinPixels"] <= radii[1]
+    # no selection -> everyone gets the small radius
+    (plain,) = gm.build_setup_layers([], points)
+    assert {d["radius"] for d in plain["data"]} == {radii[1]}
+
+
+def test_build_setup_layers_tooltip_names_boundary_node_and_file():
+    (nodes,) = gm.build_setup_layers(
+        [], [_bnode(7, 2, "discharge", title="Nemunas", boundn="fem_forcing/nemunas.txt")]
+    )
+    tip = nodes["data"][0]["tooltip_html"]
+    assert tip.startswith("<b>Nemunas</b>")
+    assert "boundary 2" in tip and "node 7" in tip and "discharge" in tip
+    assert "fem_forcing/nemunas.txt" in tip
+    # no title / no file: falls back to the boundary number, no "None" leaks
+    (bare,) = gm.build_setup_layers([], [_bnode(7, 2, "level", title="", boundn=None)])
+    tip2 = bare["data"][0]["tooltip_html"]
+    assert tip2.startswith("<b>boundary 2</b>") and "None" not in tip2
+
+
+def test_build_setup_layers_escapes_title_and_boundn():
+    """The STR's ``$boundN`` title and ``boundn`` are user text rendered as
+    innerHTML by deck.gl; this builder is the sink and must escape them."""
+    evil_title = "<b>Baltic</b><img src=x onerror=alert(1)>"
+    evil_file = "<script>alert(2)</script>.txt"
+    (nodes,) = gm.build_setup_layers(
+        [], [_bnode(1, 1, "level", title=evil_title, boundn=evil_file)]
+    )
+    tip = nodes["data"][0]["tooltip_html"]
+    assert "<img" not in tip and "<script" not in tip
+    assert "<" not in _bare(tip) and ">" not in _bare(tip)
+    # escaped, not dropped
+    assert "&lt;b&gt;Baltic&lt;/b&gt;" in tip and "&lt;script&gt;" in tip
+
+
+def test_build_setup_layers_escapes_an_ampersand_exactly_once():
+    (nodes,) = gm.build_setup_layers(
+        [], [_bnode(1, 1, "level", title="Smith & Co", boundn="a&b.txt")]
+    )
+    tip = nodes["data"][0]["tooltip_html"]
+    assert "Smith &amp; Co" in tip and "a&amp;b.txt" in tip and "&amp;amp;" not in tip
+
+
+def test_build_setup_layers_empty_inputs_return_empty_list():
+    assert gm.build_setup_layers([], []) == []
+    assert gm.build_setup_layers([], [], selected_boundary=1) == []
+
+
+def test_build_setup_layers_degrades_without_shiny_deckgl(monkeypatch):
+    monkeypatch.setattr(gm, "path_layer", None)
+    monkeypatch.setattr(gm, "scatterplot_layer", None)
+    assert gm.build_setup_layers([_iface(1, 1, 2)], [_bnode(1, 1, "level")]) == []
+    # either half missing is enough to degrade (the builder needs both)
+    monkeypatch.setattr(gm, "scatterplot_layer", object())
+    assert gm.build_setup_layers([_iface(1, 1, 2)], [_bnode(1, 1, "level")]) == []
+
+
+def test_setup_layer_ids_have_legend_labels():
+    layers = gm.build_setup_layers(
+        [_iface(1, 1, 2), _iface(2, -1, 1, open_boundary=1)], [_bnode(1, 1, "level")]
+    )
+    labels = gm._build_label_map(layers)
+    assert set(labels) == {"setup_interfaces", "setup_open_interfaces", "setup_boundary_nodes"}
+    assert all(labels[k] for k in labels)

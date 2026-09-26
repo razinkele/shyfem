@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **UI, Box model page (PR 3 of 4):** the **Setup** tab — mesh with box outlines and section interfaces, open-boundary and river nodes from the STR `$bound*` `kbound` lists (coloured by `ibtyp`), a boundaries table with `zfact` and file names, river series from the `.txt` files named by `boundn`, per-box meteo from the cache, and an STR summary — built on a tolerant STR reader (`services/boxmodel_setup.py`) that accepts the real Curonian STR (`&para`, trailing header text, multi-pair lines, multi-line `kbound`, prose between sections) and lists orphan keys SHYFEM ignores. Closes the PR 1 deferral of section-interface lines.
 - **UI, Box model page (PR 2 of 4):** the **Compare** tab — two to four runs from the manifest, a difference map (B − A of the period mean, diverging scale), overlaid daily series for the selected box, the skill table side by side per run plus the per-year table and a CSV download, all on the intersection of days the runs share. The build registry now lives in the cache service and the CLI/service share their atomic-JSON, run-id and symlink guards through `shyfem_ui/boxmodel_common.py`.
 
 ### Changed

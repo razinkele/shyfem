@@ -212,6 +212,14 @@ def test_ui_builds_without_a_session():
         "boxmodel-cmp_skill",
         "boxmodel-cmp_per_year",
         "boxmodel-cmp_download",
+        # PR 3: the Setup tab
+        "boxmodel-setup_message",
+        "boxmodel-setupmap",
+        "boxmodel-setup_boundaries",
+        "boxmodel-setup_summary",
+        "boxmodel-setup_rivers",
+        "boxmodel-setup_meteo_controls",
+        "boxmodel-setup_meteo",
     ):
         assert ident in html, f"missing input/output id: {ident}"
     # The old "Run comparison" tab IS the skill half of Compare; it was renamed,
@@ -219,6 +227,7 @@ def test_ui_builds_without_a_session():
     assert "Run comparison" not in html
     assert "run_comparison_table" not in html
     assert ">Compare<" in html
+    assert ">Setup<" in html
 
 
 def test_safe_text_sanitises_a_service_message():
@@ -309,6 +318,14 @@ def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
         assert "status_tick" not in body, name
         assert "status()" not in body, name
     assert "all_run_states()" in code("cmp_runs_selected")
+    # PR 3: the Setup chain hangs off manifest()/cached() (cache_generation),
+    # never off the badge tick.
+    for name in ("str_setup_result", "rivers_result", "interfaces_calc", "_setup_layers"):
+        body = code(name)
+        assert "status_tick" not in body, name
+        assert "status()" not in body, name
+    assert "manifest()" in code("str_setup_result")
+    assert "cached()" in code("interfaces_calc")
 
 
 class _GateConfig:
@@ -461,6 +478,20 @@ def test_layers_effect_wraps_its_upstream_calls():
     assert "extra_layers.set(" not in body and "legend_bins.set(" not in body.replace(
         "cmp_legend_bins.set(", ""
     )
+
+    # PR 3: the Setup map's layers effect -- same shape, writes setup_layers only.
+    start = src.index("def _setup_layers(")
+    body = src[start : src.index("setup_layers.set(", start)]
+    assert body.index("try:") < body.index("polygons()")
+    assert body.index("try:") < body.index("interfaces_calc()")
+    assert body.index("try:") < body.index("boundary_points_calc()")
+    for other in (
+        "extra_layers.set(",
+        "legend_bins.set(",
+        "cmp_layers.set(",
+        "cmp_legend_bins.set(",
+    ):
+        assert other not in body, other
 
 
 # --- band amplitude ratios (spec §7, shown beside the skill table) --------
@@ -809,3 +840,219 @@ def test_compare_messages_are_muted_paragraphs_and_the_map_is_never_bare():
     assert "cmp_days()" in code("cmp_overlay")
     assert "cmp_days()" in code("cmp_skill_frames")
     assert "common_days(" in code("cmp_days")
+
+
+# --- PR 3: Setup tab ------------------------------------------------------
+
+
+def test_rivers_are_read_only_through_the_resolver():
+    """Global Constraint (PR 3): ``boundn`` is run-relative user text out of the
+    STR. The page never opens it -- it goes through ``resolve_forcing_file``
+    (basename under ``forcing_dir``, no symlinks, re-confined) and then
+    ``read_forcing_series`` on the path the resolver returned."""
+    from shyfem_ui.pages import boxmodel
+
+    body = _code_of(boxmodel, "boxmodel_server")("rivers_result")
+    assert "resolve_forcing_file(" in body
+    assert "read_forcing_series(" in body
+    assert "open(" not in body
+    assert "read_text(" not in body
+    assert "read_bytes(" not in body
+    assert "pd.read_csv(" not in body and "read_csv(" not in body
+    # the discharge filter and the error types the read can raise
+    assert "kind(" in body
+    assert "StrSetupError" in body
+
+
+def test_setup_renders_never_reference_resolved_paths():
+    """Spec §4 / Global Constraint: resolved paths are never rendered -- the
+    table shows ``boundn`` as written and a resolver note, never
+    ``manifest.forcing_dir`` or ``manifest.str_path``."""
+    from shyfem_ui.pages import boxmodel
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    for name in (
+        "setup_message",
+        "setup_summary",
+        "setup_boundaries",
+        "setup_rivers",
+        "setup_meteo_controls",
+        "setup_meteo",
+    ):
+        body = code(name)
+        assert "forcing_dir" not in body, name
+        assert "str_path" not in body, name
+        assert "ui.HTML(" not in body, name
+    # the file column shows boundn as written, sanitised, next to the note
+    boundaries_body = code("setup_boundaries")
+    assert "rivers_result()" in boundaries_body
+    assert "_boundary_rows(" in boundaries_body
+    # the summary passes every value through _text and shows orphans as ONE row
+    summary_body = code("setup_summary")
+    assert "_text(" in summary_body
+    assert "SETUP_ORPHANS_LABEL" in summary_body
+
+
+def test_setup_pick_handlers_are_registered_once_per_boundary():
+    """One action link per boundary row selects it for the map; handlers are
+    registered from the render body behind a session-scoped set, the project's
+    dedup idiom (tests/test_handler_dedup.py), so a re-render never stacks
+    listeners."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert "_setup_pick_registered" in src
+    code = _code_of(boxmodel, "boxmodel_server")
+    reg = code("_register_setup_pick")
+    assert "if number in _setup_pick_registered:" in reg
+    assert "_setup_pick_registered.add(number)" in reg
+    assert reg.index("if number in _setup_pick_registered:") < reg.index(
+        "_setup_pick_registered.add(number)"
+    )
+    assert "setup_selected_boundary.set(" in reg
+    assert "_register_setup_pick(" in code("setup_boundaries")
+    table = code("setup_boundaries").replace('"', "'")
+    assert "input_action_link(f'setup_pick_{" in table
+
+
+def test_setup_meteo_controls_read_their_own_value_under_isolate():
+    """Same shape as ``cmp_controls``: the select is rendered (so the cache's
+    column set is the only thing that re-renders it) and its current value is
+    read under ``reactive.isolate()`` -- reading it reactively would re-render
+    the dropdown on every pick."""
+    from shyfem_ui.pages import boxmodel
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    body = code("setup_meteo_controls")
+    assert "reactive.isolate()" in body
+    assert "input.setup_meteo_var()" in body
+    assert "input_select('setup_meteo_var'" in body
+    assert "_meteo_variables(" in body
+    assert "cached()" in body
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert (
+        'update_select("setup_meteo_var"' not in src
+        and "update_select('setup_meteo_var'" not in src
+    )
+    plot = code("setup_meteo")
+    assert "'setup_meteo_var' in input" in plot
+    assert "_period()" in plot
+    assert "input.box()" in plot
+
+
+def test_setup_map_is_mounted_with_its_own_layers():
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server").replace('"', "'")
+    assert "grid_map_server('setupmap', grd_file, extra_layers=setup_layers" in src
+    assert "on_box_click=_on_box" in src.split("grid_map_server('setupmap'")[1][:200]
+    code = _code_of(boxmodel, "boxmodel_server")
+    body = code("_setup_layers")
+    assert "build_setup_layers(" in body
+    assert "build_box_layers(" in body
+    assert "setup_selected_boundary.get()" in body
+    # boundary node positions come from the grid the polygons path uses
+    points = code("boundary_points_calc")
+    assert "node_positions(" in points
+    assert "grd_file.get()" in points
+
+
+def test_meteo_variables_lists_the_meteo_columns_with_tair_first():
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    frame = pd.DataFrame(
+        {
+            "date": pd.to_datetime(["2009-01-01"]),
+            "box": [1],
+            "srad": [1.0],
+            "tair": [2.0],
+            "rhum": [3.0],
+            "wspeed": [4.0],
+        }
+    )
+    choices = boxmodel._meteo_variables(frame)
+    assert list(choices) == ["tair", "srad", "rhum", "wspeed"]
+    assert "date" not in choices and "box" not in choices
+    assert boxmodel._meteo_variables(pd.DataFrame({"date": [], "box": []})) == {}
+    assert boxmodel._meteo_variables(None) == {}
+    # no tair: file order, nothing invented
+    assert list(boxmodel._meteo_variables(frame.drop(columns=["tair"]))) == [
+        "srad",
+        "rhum",
+        "wspeed",
+    ]
+
+
+def test_boundary_rows_show_boundn_as_written_and_the_resolver_note():
+    from shyfem_ui.pages import boxmodel
+    from shyfem_ui.services.boxmodel_setup import Boundary
+
+    bounds = [
+        Boundary(
+            1, "Baltic sea", 1, 1.0, [1, 2, 3, 4], "fem_forcing/sea_level.fem", {"saltn": "s.fem"}
+        ),
+        Boundary(2, "Fixture river", 2, 0.25, [5, 6], "fem_forcing/river.txt", {}),
+        Boundary(3, "", None, 1.0, [], None, {}),
+    ]
+    notes = {1: (None, "not read (.fem)"), 2: (object(), None)}
+    rows = boxmodel._boundary_rows(bounds, notes)
+    assert [r["number"] for r in rows] == [1, 2, 3]
+    assert rows[0]["boundn"] == "fem_forcing/sea_level.fem"
+    assert rows[0]["note"] == "not read (.fem)"
+    assert rows[0]["kind"] == "level" and rows[0]["ibtyp"] == "1"
+    assert rows[0]["nodes"] == 4
+    assert rows[0]["other_files"] == "saltn: s.fem"
+    assert rows[1]["zfact"] == "0.25" and rows[0]["zfact"] == "1"
+    assert rows[1]["note"] == "" and rows[1]["kind"] == "discharge"
+    # a boundary the resolver never saw (no boundn) has an empty file cell
+    assert rows[2]["boundn"] == "" and rows[2]["note"] == "" and rows[2]["ibtyp"] == ""
+    assert rows[2]["kind"] == "unknown"
+    # no row carries anything path-like from the resolver
+    assert all("path" not in r for r in rows)
+
+
+def test_restrict_series_is_inclusive_through_the_end_day():
+    """A date-only ``itend`` ('2009-01-11') stamps midnight; the forcing rows
+    sit at 06:00. The restriction treats a date-only end as the whole end day,
+    and a timed end ('::06:00') as exact."""
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    idx = pd.to_datetime(
+        ["2008-12-31 06:00", "2009-01-01 06:00", "2009-01-11 06:00", "2009-01-12 06:00"]
+    )
+    series = pd.Series([1.0, 2.0, 3.0, 4.0], index=idx)
+    out = boxmodel._restrict_series(
+        series, (pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-11"))
+    )
+    assert out.tolist() == [2.0, 3.0]
+    exact = boxmodel._restrict_series(
+        series, (pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-11 03:00"))
+    )
+    assert exact.tolist() == [2.0]
+    assert boxmodel._restrict_series(series, None) is series
+    # date objects (the cache period) are accepted too
+    import datetime as dt
+
+    out2 = boxmodel._restrict_series(series, (dt.date(2009, 1, 1), dt.date(2009, 1, 11)))
+    assert out2.tolist() == [2.0, 3.0]
+
+
+def test_setup_messages_are_constants():
+    from shyfem_ui.pages import boxmodel
+
+    for text in (
+        boxmodel.SETUP_NO_STR_MESSAGE,
+        boxmodel.SETUP_NEEDS_CACHE_MESSAGE,
+        boxmodel.SETUP_ORPHANS_LABEL,
+        boxmodel.SETUP_NO_RIVERS_MESSAGE,
+        boxmodel.SETUP_NO_METEO_MESSAGE,
+    ):
+        assert isinstance(text, str) and text
+    assert "ignored by SHYFEM" in boxmodel.SETUP_ORPHANS_LABEL
+    assert "ready cache" in boxmodel.SETUP_NEEDS_CACHE_MESSAGE
+    assert boxmodel._missing_nodes_message([]) is None
+    assert boxmodel._missing_nodes_message([9, 3, 9]) == "STR boundary nodes not in the grid: 3, 9"

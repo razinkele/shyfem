@@ -267,6 +267,17 @@ pivoted to one column per run, with the per-year breakdown beneath, and can be d
 Everything is computed on the **intersection of days** the chosen runs all produced, so the three
 views always agree. Compare is read-only and needs at least two ready caches.
 
+The **Setup** tab describes the configuration behind the runs. It reads the manifest's `str` file
+with a tolerant reader (accepts `$name` and `&name` headers, trailing text after a section name
+such as `$bound1 ---- Baltic ----`, several `key = value` pairs per line and multi-line `kbound`
+lists; everything outside a section is ignored, as SHYFEM ignores it, and such orphan keys are
+listed in the summary). It shows the mesh with box outlines and section interfaces, the open-
+boundary and river nodes from the `$bound*` blocks coloured by `ibtyp`, a boundaries table with
+`zfact` and the file names as written, the river series from the `.txt` files named by `boundn`
+(resolved by basename inside `forcing.dir`; `.fem` forcing is listed but not read), the per-box
+meteo from the cache, and an STR summary (`itanf`, `itend`, `idt`, `idtbox`, `date`, selected
+`$para` values). Setup is read-only.
+
 Per-run Parquet caches are built on demand by a child process
 (`python -m shyfem_ui.boxmodel_cache_cli`) into `<project>/.boxmodel_cache/<run_id>/`. Building
 requires a project editor with write access to the project directory, is capped at 2 concurrent
@@ -292,7 +303,7 @@ Additional pages:
 
 - **Compare** - Side-by-side job comparison (runtime stats, parameter diffs, overlaid time series)
 - **Ensemble** - Parameter sweep manager (grid/zip modes, batch submit, result overlay with envelope)
-- **Box model** - Map, time-series and multi-run Compare analysis of SHYFEM box output (`idtbox`) against observations, with skill tables
+- **Box model** - Map, time-series, multi-run Compare and Setup analysis of SHYFEM box output (`idtbox`) against observations, with skill tables
 
 ## Development
 

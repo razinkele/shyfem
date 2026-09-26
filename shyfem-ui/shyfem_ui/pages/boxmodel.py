@@ -29,7 +29,13 @@ obligations the reviews of those services handed forward:
   computed once (``common_days``) and handed to the difference map, the
   overlay plot and the skill/per-year tables, so the three can never
   silently describe different days; everything in it hangs off
-  ``all_run_states()`` (``cache_generation``), never the 2 s badge tick.
+  ``all_run_states()`` (``cache_generation``), never the 2 s badge tick;
+* the Setup tab (PR 3) is read-only and reads the STR and the forcing files
+  through ``reactive.calc``s off ``manifest()`` (never per render); a
+  ``boundn`` is never opened directly -- it goes through
+  ``resolve_forcing_file`` (basename under the manifest's forcing dir, no
+  symlinks, re-confined on every call) -- and no resolved path is ever
+  rendered: the table shows ``boundn`` as written plus the resolver's note.
 """
 
 from __future__ import annotations
@@ -49,8 +55,10 @@ from shyfem_ui.components.grid_map import (
     _detect_projected_crs,
     _is_geographic,
     build_box_layers,
+    build_setup_layers,
     grid_map_server,
     grid_map_ui,
+    node_positions,
 )
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -75,6 +83,17 @@ from shyfem_ui.services.boxmodel_polygons import (
     PolygonError,
     dissolve_boxes_from_grid,
     load_box_polygons,
+)
+from shyfem_ui.services.boxmodel_setup import (
+    StrSetupError,
+    boundaries,
+    kind,
+    period_from_summary,
+    read_forcing_series,
+    read_str_tolerant,
+    resolve_forcing_file,
+    section_interfaces,
+    str_summary,
 )
 from shyfem_ui.services.boxmodel_skill import (
     VARIABLE_COLUMNS,
@@ -142,6 +161,39 @@ METRIC_LABELS = {
     "r": "r",
     "r2": "R\u00b2",
     "sd_ratio": "sd_mod/sd_obs",
+}
+#: Setup tab (spec §8): fixed state messages and labels. Nothing from the
+#: manifest or the STR is in them, so they need no sanitising.
+SETUP_NO_PROJECT_MESSAGE = "Open a project first."
+SETUP_NO_STR_MESSAGE = "Manifest has no STR"
+SETUP_NEEDS_CACHE_MESSAGE = (
+    "Section interfaces and per-box meteo need a ready cache; " "boundaries are drawn from the STR."
+)
+SETUP_ORPHANS_LABEL = "Keys outside any section (ignored by SHYFEM)"
+SETUP_NO_RIVERS_MESSAGE = "No discharge boundary with a readable .txt forcing file."
+SETUP_NO_METEO_MESSAGE = "Per-box meteo needs a ready cache."
+SETUP_NO_METEO_ROWS_MESSAGE = "No meteo rows for this box and period."
+SETUP_DEFAULT_METEO_VARIABLE = "tair"
+#: What the STR summary rows are called; unknown keys fall back to the key.
+SETUP_SUMMARY_LABELS = {
+    "title": "title",
+    "itanf": "itanf (start)",
+    "itend": "itend (end)",
+    "idt": "idt (time step)",
+    "idtbox": "idtbox (box output)",
+    "idtflx": "idtflx (flux output)",
+    "idtext": "idtext (extra output)",
+    "date": "date (reference)",
+    "time": "time (reference)",
+    "ireib": "ireib (friction law)",
+    "czdef": "czdef (friction)",
+    "ibarcl": "ibarcl (baroclinic)",
+    "iheat": "iheat (heat flux)",
+    "ievap": "ievap (evaporation)",
+    "iturb": "iturb (turbulence)",
+    "isalt": "isalt",
+    "itemp": "itemp",
+    "nomp": "nomp (OMP threads)",
 }
 _STATE_BADGE = {
     "ready": "success",
@@ -421,6 +473,77 @@ def _cache_period(cached_run) -> tuple:
     return pd.Timestamp(meta["start"]).date(), pd.Timestamp(meta["end"]).date()
 
 
+# --- Setup tab helpers (module-level, reactive-free, tested directly) --------
+
+
+def _meteo_variables(frame) -> dict[str, str]:
+    """Select choices for the per-box meteo plot: every ``meteo_daily`` column
+    other than ``date``/``box``, ``tair`` first when present, otherwise in
+    column order. ``{}`` for no frame or no meteo columns (a run without
+    ``boxes_meteo.txt`` has the two key columns and nothing else)."""
+    if frame is None:
+        return {}
+    names = [str(c) for c in frame.columns if str(c) not in ("date", "box")]
+    if SETUP_DEFAULT_METEO_VARIABLE in names:
+        names.remove(SETUP_DEFAULT_METEO_VARIABLE)
+        names.insert(0, SETUP_DEFAULT_METEO_VARIABLE)
+    return {name: name for name in names}
+
+
+def _boundary_rows(bounds, notes: dict) -> list[dict]:
+    """One display row per STR ``$bound<k>`` for the boundaries table.
+
+    ``notes`` is ``rivers_result()``'s ``{k: (series | None, note | None)}``;
+    only the NOTE is taken from it -- the row shows ``boundn`` exactly as the
+    STR wrote it plus the resolver's note, never a resolved path. Numbers are
+    formatted here (``zfact`` with ``:g`` so ``0.25`` and ``1`` read
+    naturally); the text fields are raw and are sanitised/escaped by the
+    render.
+    """
+    rows: list[dict] = []
+    for b in bounds:
+        _series, note = notes.get(b.number, (None, None))
+        rows.append(
+            {
+                "number": b.number,
+                "title": b.title or "",
+                "kind": kind(b),
+                "ibtyp": "" if b.ibtyp is None else str(b.ibtyp),
+                "nodes": len(b.kbound),
+                "zfact": f"{b.zfact:g}",
+                "boundn": b.boundn or "",
+                "note": note or "",
+                "other_files": ", ".join(f"{k}: {v}" for k, v in b.other_files.items()),
+            }
+        )
+    return rows
+
+
+def _restrict_series(series, bounds):
+    """Restrict a forcing series to ``bounds = (start, end)``.
+
+    ``bounds`` is ``period_from_summary`` (Timestamps; a date-only ``itend``
+    stamps midnight) or the cache period (``date`` objects). An end with no
+    time of day is taken as the WHOLE end day -- ``itend = '2009-01-11'`` keeps
+    the 06:00 row of the 11th -- while a timed end (``'::06:00'``) is exact.
+    ``None`` bounds return the series untouched.
+    """
+    if bounds is None:
+        return series
+    start, end = pd.Timestamp(bounds[0]), pd.Timestamp(bounds[1])
+    if end == end.normalize():
+        end = end + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
+    return series[(series.index >= start) & (series.index <= end)]
+
+
+def _missing_nodes_message(missing) -> str | None:
+    """The Setup message for STR ``kbound`` node ids the grid does not have."""
+    ids = sorted({int(n) for n in missing})
+    if not ids:
+        return None
+    return "STR boundary nodes not in the grid: " + ", ".join(str(n) for n in ids)
+
+
 @module.ui
 def boxmodel_ui() -> ui.Tag:
     """Box-model page UI: run/variable/period controls plus the Map,
@@ -493,6 +616,29 @@ def boxmodel_ui() -> ui.Tag:
                     class_="btn-outline-primary btn-sm mt-2",
                 ),
             ),
+            ui.nav_panel(
+                "Setup",
+                ui.p(
+                    "What the run was set up with: the STR's open boundaries on the mesh "
+                    "(nodes coloured by type, section interfaces from the cache), the river "
+                    "discharge files named by boundn, per-box meteo from the cache and the "
+                    "STR summary. Read-only.",
+                    class_="text-muted small",
+                ),
+                ui.output_ui("setup_message"),
+                ui.layout_columns(
+                    grid_map_ui("setupmap", height="440px"),
+                    ui.output_ui("setup_summary"),
+                    col_widths=(8, 4),
+                ),
+                ui.output_ui("setup_boundaries"),
+                output_widget("setup_rivers"),
+                ui.layout_columns(
+                    ui.output_ui("setup_meteo_controls"),
+                    output_widget("setup_meteo"),
+                    col_widths=(3, 9),
+                ),
+            ),
             id="tabs",
         ),
     )
@@ -515,6 +661,11 @@ def boxmodel_server(
     # the legend render (same discipline as extra_layers/legend_bins).
     cmp_layers: reactive.Value = reactive.value([])
     cmp_legend_bins: reactive.Value = reactive.value([])
+    # Setup map: written ONLY by _setup_layers; setup_selected_boundary is
+    # written by the per-row "select" links (see _register_setup_pick).
+    setup_layers: reactive.Value = reactive.value([])
+    setup_selected_boundary: reactive.Value = reactive.value(None)
+    _setup_pick_registered: set[int] = set()
     grd_file: reactive.Value = reactive.value(None)
     grd_error: reactive.Value = reactive.value(None)
     selected_box: reactive.Value = reactive.value(None)
@@ -1786,6 +1937,404 @@ def boxmodel_server(
         if yearly is not None:
             yearly.to_csv(buffer, index=False)
         yield buffer.getvalue()
+
+    # --- Setup (spec §8, PR 3) ---------------------------------------------
+    #
+    # Read-only. The STR and the forcing files are read in reactive.calcs off
+    # manifest() (never per render); interfaces and meteo come from cached()
+    # (cache_generation). Nothing here reads status()/status_tick.
+
+    @reactive.calc
+    def str_setup_result() -> tuple:
+        """``(StrSetup | None, message | None)`` for the manifest's STR."""
+        manifest_obj = manifest()
+        if manifest_obj is None:
+            return None, SETUP_NO_PROJECT_MESSAGE
+        path = manifest_obj.str_path
+        if path is None:
+            return None, SETUP_NO_STR_MESSAGE
+        try:
+            return read_str_tolerant(Path(path)), None
+        except (StrSetupError, OSError, ValueError) as exc:
+            logger.warning("boxmodel: STR could not be read: %s", exc)
+            return None, f"STR: {_err(exc)}"
+
+    @reactive.calc
+    def boundaries_calc() -> tuple:
+        """``(list[Boundary], message | None)`` -- ``boundaries`` raises for a
+        ``zfact`` that is not a number."""
+        setup, _error = str_setup_result()
+        if setup is None:
+            return [], None
+        try:
+            return boundaries(setup), None
+        except StrSetupError as exc:
+            logger.warning("boxmodel: STR boundaries unusable: %s", exc)
+            return [], f"STR boundaries: {_err(exc)}"
+
+    @reactive.calc
+    def summary_calc() -> dict:
+        setup, _error = str_setup_result()
+        return str_summary(setup) if setup is not None else {}
+
+    def _river_bounds():
+        """The window the river series are restricted to: the STR's own
+        ``itanf``/``itend`` when both are ISO dates, else the loaded cache's
+        period, else ``None`` (the whole file)."""
+        bounds = period_from_summary(summary_calc())
+        if bounds is not None:
+            return bounds
+        cached_run = cached()
+        return _cache_period(cached_run) if cached_run is not None else None
+
+    @reactive.calc
+    def rivers_result() -> dict:
+        """``{boundary number: (series | None, note | None)}`` for every
+        boundary that names a ``boundn``.
+
+        The resolver runs for each of them (so the table can say "not read
+        (.fem)" for a level boundary); the file is READ only for discharge
+        boundaries (``ibtyp`` 2/3) whose ``boundn`` resolved to a path. The
+        resolved path never leaves this calc.
+        """
+        manifest_obj = manifest()
+        bounds, _error = boundaries_calc()
+        if manifest_obj is None or not bounds:
+            return {}
+        usr = _user()
+        window = _river_bounds()
+        out: dict = {}
+        for b in bounds:
+            if not b.boundn:
+                continue
+            path, note = resolve_forcing_file(b.boundn, manifest_obj.forcing_dir, config, usr)
+            if path is None:
+                out[b.number] = (None, note)
+                continue
+            if kind(b) != "discharge":
+                out[b.number] = (None, None)
+                continue
+            try:
+                series_b = read_forcing_series(path)
+            except (StrSetupError, OSError, ValueError) as exc:
+                logger.warning("boxmodel: forcing file unreadable: %s", exc)
+                out[b.number] = (None, _err(exc))
+                continue
+            out[b.number] = (_restrict_series(series_b, window), None)
+        return out
+
+    @reactive.calc
+    def interfaces_calc() -> list[dict]:
+        """Section interfaces from the cache ``meta.json`` (needs a ready cache)."""
+        cached_run = cached()
+        if cached_run is None:
+            return []
+        try:
+            return section_interfaces(cached_run.meta)
+        except (TypeError, ValueError, KeyError) as exc:
+            logger.warning("boxmodel: section interfaces unavailable: %s", exc)
+            return []
+
+    @reactive.calc
+    def boundary_points_calc() -> tuple:
+        """``(points, missing)``: one record per STR ``kbound`` node placed on
+        the grid (``node_positions``, same frame as the polygons path) and the
+        node ids the grid does not have. Title/boundn are passed RAW -- the
+        tooltip HTML is escaped in ``build_setup_layers``, the sink."""
+        grd = grd_file.get()
+        bounds, _error = boundaries_calc()
+        if grd is None or not bounds:
+            return [], []
+        try:
+            positions = node_positions(grd)
+        except Exception as exc:  # noqa: BLE001 - projection detection can fail on odd grids
+            logger.warning("boxmodel: node positions unavailable: %s", exc)
+            return [], []
+        points: list[dict] = []
+        missing: list[int] = []
+        for b in bounds:
+            b_kind = kind(b)
+            for node in b.kbound:
+                pos = positions.get(int(node))
+                if pos is None:
+                    missing.append(int(node))
+                    continue
+                points.append(
+                    {
+                        "node": int(node),
+                        "lon": float(pos[0]),
+                        "lat": float(pos[1]),
+                        "boundary": b.number,
+                        "title": b.title,
+                        "kind": b_kind,
+                        "boundn": b.boundn,
+                    }
+                )
+        return points, missing
+
+    @reactive.effect
+    def _setup_layers():
+        """Rebuild the Setup map layers: box outlines plus the interfaces and
+        boundary nodes. Writes ``setup_layers`` only and reads nothing it
+        writes; every upstream call is inside the ``try`` (an exception
+        escaping an effect ends the session)."""
+        try:
+            polys = polygons()
+            layers, _bins = build_box_layers(polys, None) if polys else ([], [])
+            points, _missing = boundary_points_calc()
+            layers = list(layers) + build_setup_layers(
+                interfaces_calc(),
+                points,
+                selected_boundary=setup_selected_boundary.get(),
+            )
+        except Exception as exc:  # noqa: BLE001 - a layer failure must not kill the session
+            logger.warning("boxmodel: setup layers could not be built: %s", exc, exc_info=True)
+            layers = []
+        setup_layers.set(layers)
+
+    grid_map_server("setupmap", grd_file, extra_layers=setup_layers, on_box_click=_on_box)
+
+    @render.ui
+    def setup_message():
+        """Every Setup-level message in one place, all text via ui.tags."""
+        _setup, error = str_setup_result()
+        blocks = []
+        if error:
+            blocks.append(ui.tags.p(error, class_="text-muted"))
+        _bounds, bounds_error = boundaries_calc()
+        if bounds_error:
+            blocks.append(ui.div(ui.tags.span(bounds_error), class_="alert alert-warning"))
+        if error is None and cached() is None:
+            blocks.append(ui.tags.p(SETUP_NEEDS_CACHE_MESSAGE, class_="text-muted"))
+        _points, missing = boundary_points_calc()
+        missing_message = _missing_nodes_message(missing)
+        if missing_message:
+            blocks.append(ui.div(ui.tags.span(missing_message), class_="alert alert-warning"))
+        return ui.div(*blocks) if blocks else None
+
+    @render.ui
+    def setup_summary():
+        """Two-column table of ``str_summary``; the orphan assignments as ONE
+        muted row, comma-joined and untruncated. Values are STR text, so they
+        go through ``_text`` (an absolute path in a foreign STR is rewritten)
+        and ``ui.tags`` (escaped)."""
+        setup, _error = str_setup_result()
+        if setup is None:
+            return None  # setup_message says why
+        summary = summary_calc()
+        if not summary:
+            return ui.tags.p("The STR has no &para section to summarise.", class_="text-muted")
+        rows = []
+        for key, value in summary.items():
+            if key == "orphans":
+                continue
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(SETUP_SUMMARY_LABELS.get(key, key)),
+                    ui.tags.td(_text(value)),
+                )
+            )
+        if summary.get("orphans"):
+            rows.append(
+                ui.tags.tr(
+                    ui.tags.td(SETUP_ORPHANS_LABEL),
+                    ui.tags.td(_text(summary["orphans"])),
+                    class_="text-muted",
+                )
+            )
+        return ui.tags.div(
+            ui.tags.strong("STR summary"),
+            ui.tags.span(f" ({_text(setup.path_name)})", class_="text-muted small"),
+            ui.tags.table(ui.tags.tbody(*rows), class_="table table-sm"),
+        )
+
+    def _register_setup_pick(number: int) -> None:
+        """Register the "select" handler for one boundary row -- once per
+        boundary per session (the dedup idiom of pages/admin.py and home.py),
+        so a re-render of the table never stacks a second listener."""
+        if number in _setup_pick_registered:
+            return
+        _setup_pick_registered.add(number)
+
+        @reactive.effect
+        @reactive.event(input[f"setup_pick_{number}"])
+        def _pick():
+            if setup_selected_boundary.get() != number:
+                setup_selected_boundary.set(number)
+
+    @render.ui
+    def setup_boundaries():
+        """The boundaries table: one ``tbody`` row per ``$bound<k>``; the file
+        column shows ``boundn`` as written (sanitised) and the resolver's note,
+        never a path. Does not read ``setup_selected_boundary``: the selection
+        is shown on the map (node radius), so a click never re-renders the
+        table."""
+        setup, error = str_setup_result()
+        if setup is None:
+            return None  # setup_message says why
+        bounds, _bounds_error = boundaries_calc()
+        if not bounds:
+            return ui.tags.p("The STR has no $bound sections.", class_="text-muted")
+        rows = _boundary_rows(bounds, rivers_result())
+        head = ui.tags.tr(
+            *[
+                ui.tags.th(c)
+                for c in (
+                    "",
+                    "boundary",
+                    "title",
+                    "type",
+                    "ibtyp",
+                    "nodes",
+                    "zfact",
+                    "boundn (as written)",
+                    "other files",
+                )
+            ]
+        )
+        body = []
+        for row in rows:
+            _register_setup_pick(row["number"])
+            file_cell = [ui.tags.code(_text(row["boundn"]))] if row["boundn"] else []
+            if row["note"]:
+                file_cell.append(ui.tags.span(f" {_text(row['note'])}", class_="text-muted"))
+            body.append(
+                ui.tags.tr(
+                    ui.tags.td(
+                        ui.input_action_link(
+                            f"setup_pick_{row['number']}", "select", class_="small"
+                        )
+                    ),
+                    ui.tags.td(str(row["number"])),
+                    ui.tags.td(_text(row["title"])),
+                    ui.tags.td(row["kind"]),
+                    ui.tags.td(row["ibtyp"]),
+                    ui.tags.td(str(row["nodes"])),
+                    ui.tags.td(row["zfact"]),
+                    ui.tags.td(*file_cell),
+                    ui.tags.td(_text(row["other_files"])),
+                )
+            )
+        return ui.tags.div(
+            ui.tags.strong("Open boundaries"),
+            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
+            ui.tags.p(
+                "Forcing files are looked up by basename under the project's forcing "
+                "directory; only .txt time series are read (.fem files are named only). "
+                "Select a boundary to enlarge its nodes on the map.",
+                class_="text-muted small",
+            ),
+            class_="mt-3",
+        )
+
+    @render_widget
+    def setup_rivers():
+        """One trace per discharge boundary whose file was read; the raw file
+        values, with ``zfact`` noted in the trace name when it is not 1."""
+        figure = go.Figure()
+        bounds, _error = boundaries_calc()
+        rivers = rivers_result()
+        by_number = {b.number: b for b in bounds}
+        drawn = 0
+        for number, (series_b, _note) in rivers.items():
+            if series_b is None or not len(series_b):
+                continue
+            b = by_number.get(number)
+            if b is None:
+                continue
+            name = _text(b.title) or f"boundary {number}"
+            if b.zfact != 1:
+                name += f" (\u00d7{b.zfact:g})"
+            figure.add_trace(
+                go.Scatter(x=series_b.index, y=series_b.values, name=name, mode="lines")
+            )
+            drawn += 1
+        if not drawn:
+            figure.add_annotation(
+                text=SETUP_NO_RIVERS_MESSAGE,
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )
+            figure.update_layout(height=300)
+            return figure
+        figure.update_layout(
+            height=320,
+            yaxis_title="discharge (m\u00b3/s)",
+            title={
+                "text": "River discharge (file values; \u00d7zfact applied by SHYFEM)",
+                "font": {"size": 13},
+            },
+            margin={"l": 40, "r": 20, "t": 30, "b": 40},
+        )
+        return figure
+
+    @render.ui
+    def setup_meteo_controls():
+        """The meteo variable select, rendered (so the cache's column set is
+        the only thing that re-renders it); its current value is read under
+        ``reactive.isolate()`` and kept when still valid."""
+        cached_run = cached()
+        if cached_run is None:
+            return ui.tags.p(SETUP_NO_METEO_MESSAGE, class_="text-muted")
+        choices = _meteo_variables(cached_run.meteo_daily)
+        if not choices:
+            return ui.tags.p("This run has no meteo output (boxes_meteo.txt).", class_="text-muted")
+        with reactive.isolate():
+            current = input.setup_meteo_var() if "setup_meteo_var" in input else None
+        selected = current if current in choices else next(iter(choices))
+        return ui.input_select(
+            "setup_meteo_var", "Meteo variable", choices=choices, selected=selected
+        )
+
+    @render_widget
+    def setup_meteo():
+        """Per-box daily meteo from the cache for the shared box select over
+        the header period."""
+        figure = go.Figure()
+
+        def _empty(text: str, height: int = 300):
+            figure.add_annotation(
+                text=text, xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False
+            )
+            figure.update_layout(height=height)
+            return figure
+
+        cached_run = cached()
+        period = _period()
+        if cached_run is None or period is None:
+            return _empty(SETUP_NO_METEO_MESSAGE)
+        variable = input.setup_meteo_var() if "setup_meteo_var" in input else None
+        choices = _meteo_variables(cached_run.meteo_daily)
+        if not choices:
+            return _empty("This run has no meteo output (boxes_meteo.txt).")
+        if variable not in choices:
+            variable = next(iter(choices))
+        selected = input.box() if "box" in input else None
+        try:
+            box = int(selected)
+        except (TypeError, ValueError):
+            return _empty("Select a box on the Time-series tab or the map.")
+        frame = cached_run.meteo_daily
+        rows = frame[
+            (frame["box"].astype("int64") == box)
+            & (frame["date"] >= pd.Timestamp(period[0]))
+            & (frame["date"] <= pd.Timestamp(period[1]))
+        ]
+        if not len(rows):
+            return _empty(SETUP_NO_METEO_ROWS_MESSAGE)
+        figure.add_trace(
+            go.Scatter(x=rows["date"], y=rows[variable].astype(float), name=variable, mode="lines")
+        )
+        figure.update_layout(
+            height=320,
+            yaxis_title=variable,
+            title={"text": f"box {box}: {variable} (daily mean)", "font": {"size": 13}},
+            margin={"l": 40, "r": 20, "t": 30, "b": 40},
+        )
+        return figure
 
     @render.ui
     def band_ratios():
