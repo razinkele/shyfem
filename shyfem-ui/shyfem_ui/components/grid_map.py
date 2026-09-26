@@ -85,6 +85,19 @@ PARTITION_COLORS: list[list[int]] = [
     [158, 218, 229, 200],
 ]
 
+# Diverging blue -> white -> red (ColorBrewer RdBu, 7 classes, reversed).
+# Seven stops so that a symmetric scale with an odd bin count puts the
+# white stop exactly on the bin that straddles zero (see ``value_colors``).
+PALETTE_DIVERGING: list[list[int]] = [
+    [33, 102, 172],
+    [103, 169, 207],
+    [209, 229, 240],
+    [247, 247, 247],
+    [253, 219, 199],
+    [239, 138, 98],
+    [178, 24, 43],
+]
+
 # Map from user-facing palette name to shiny_deckgl palette
 PALETTES: dict[str, list[list[int]]] = {
     "viridis": PALETTE_VIRIDIS,
@@ -92,6 +105,7 @@ PALETTES: dict[str, list[list[int]]] = {
     "ocean": PALETTE_OCEAN,
     "thermal": PALETTE_THERMAL,
     "chlorophyll": PALETTE_CHLOROPHYLL,
+    "diverging": PALETTE_DIVERGING,
 }
 
 # Map from user-facing basemap name to URL
@@ -312,6 +326,8 @@ def value_colors(
     values: list[float | None],
     palette: str = "viridis",
     n_bins: int = 6,
+    *,
+    symmetric: bool = False,
 ) -> tuple[list[list[int]], list[tuple[float, float, list[int]]]]:
     """Map scalar *values* to RGB colors plus a legend.
 
@@ -332,6 +348,13 @@ def value_colors(
         Key into :data:`PALETTES` (falls back to viridis).
     n_bins
         Number of equal-width color bins.
+    symmetric
+        When true the bins span ``[-m, +m]`` with ``m = max(|finite|)``
+        (``[-1, 1]`` when every finite value is zero) instead of
+        ``[min, max]``, so a difference of zero always maps to the centre
+        of the palette. An even *n_bins* is bumped to the next odd count
+        so that one bin straddles zero rather than zero sitting on a bin
+        edge between two tints. Meant for the ``"diverging"`` palette.
 
     Returns
     -------
@@ -362,12 +385,23 @@ def value_colors(
         return [list(_NON_FINITE_COLOR)] * len(values), []
 
     pal = PALETTES.get(palette, PALETTE_VIRIDIS)
-    finite_colors = [list(c[:3]) for c in color_bins(finite_vals, n_bins=n_bins, palette=pal)]
+    if symmetric:
+        if n_bins % 2 == 0:
+            n_bins += 1
+        m = max(abs(v) for v in finite_vals) or 1.0
+        lo, hi = -m, m
+        # ``color_bins`` derives its range from min/max of what it is
+        # given, so pad with the two bounds as sentinels and drop their
+        # colours again: the result stays position-preserving.
+        binned = color_bins([*finite_vals, lo, hi], n_bins=n_bins, palette=pal)
+        finite_colors = [list(c[:3]) for c in binned[: len(finite_vals)]]
+    else:
+        finite_colors = [list(c[:3]) for c in color_bins(finite_vals, n_bins=n_bins, palette=pal)]
+        lo, hi = min(finite_vals), max(finite_vals)
     colors = [list(_NON_FINITE_COLOR) for _ in values]
     for i, c in zip(finite_idx, finite_colors, strict=True):
         colors[i] = c
 
-    lo, hi = min(finite_vals), max(finite_vals)
     step = (hi - lo) / n_bins if hi > lo else 1.0
     idx = [int(round((i / max(n_bins - 1, 1)) * (len(pal) - 1))) for i in range(n_bins)]
     bins = [(lo + i * step, lo + (i + 1) * step, list(pal[j][:3])) for i, j in enumerate(idx)]
@@ -382,6 +416,7 @@ def build_box_layers(
     label: str = "",
     posts: list[dict] | None = None,
     selected: int | None = None,
+    symmetric: bool = False,
 ) -> tuple[list[dict], list[tuple[float, float, list[int]]]]:
     """Build a box-polygon layer (coloured by *values*) plus optional posts.
 
@@ -403,6 +438,9 @@ def build_box_layers(
         posts rendered as a ``scatterplot_layer``.
     selected
         Box id to highlight (full opacity); other boxes are dimmed.
+    symmetric
+        Forwarded to :func:`value_colors`: colour scale ``[-m, +m]``
+        centred on zero (for difference maps with ``palette="diverging"``).
 
     Returns
     -------
@@ -422,7 +460,9 @@ def build_box_layers(
     if values:
         vals = [float(values.get(b, float("nan"))) for b in boxes]
         finite = [v for v in vals if v == v]
-        colors, bins = value_colors(finite, palette=palette) if finite else ([], [])
+        colors, bins = (
+            value_colors(finite, palette=palette, symmetric=symmetric) if finite else ([], [])
+        )
         it = iter(colors)
         data = []
         for b, v in zip(boxes, vals, strict=True):

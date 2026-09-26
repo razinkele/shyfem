@@ -38,11 +38,9 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
-import json
 import os
 import re
 import sys
-import tempfile
 import traceback
 from collections import defaultdict
 from datetime import date, datetime, timezone
@@ -54,6 +52,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from shyfem_ui import boxmodel_output as bo
+from shyfem_ui.boxmodel_common import atomic_json, no_symlink_components
 
 STATE_FILE, METEO_FILE, STATS_FILE, GEOM_FILE, LOG_FILE = (
     "boxes_2d.txt",
@@ -101,20 +100,6 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _atomic_json(path: Path, payload: dict) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w") as fh:
-            json.dump(payload, fh)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
-
-
 class _Progress:
     def __init__(self, out: Path, expected: int):
         self.path = out / "progress.json"
@@ -127,7 +112,7 @@ class _Progress:
         # it. Clamp here, the one place every progress write goes through, so
         # the page badge's "records/expected" never reads above 100%.
         self.expected = max(self.expected, self.records)
-        _atomic_json(
+        atomic_json(
             self.path,
             {
                 "phase": phase,
@@ -140,20 +125,11 @@ class _Progress:
         )
 
 
-def _no_symlink_components(p: Path) -> bool:
-    cur = Path(p.anchor)
-    for part in p.relative_to(p.anchor).parts:
-        cur = cur / part
-        if cur.is_symlink():
-            return False
-    return True
-
-
 def _validate(run_dir: Path, out_dir: Path, bases: list[Path]) -> str | None:
     """Return an error message or None."""
     if not run_dir.is_absolute() or not out_dir.is_absolute():
         return "run and out must be absolute"
-    if not run_dir.is_dir() or not _no_symlink_components(run_dir):
+    if not run_dir.is_dir() or not no_symlink_components(run_dir):
         return "run dir must be a real directory without symlink components"
     if not (run_dir / STATE_FILE).is_file() or (run_dir / STATE_FILE).is_symlink():
         return f"run dir has no regular {STATE_FILE}"
@@ -161,7 +137,7 @@ def _validate(run_dir: Path, out_dir: Path, bases: list[Path]) -> str | None:
         return "out dir must not itself be a symlink"
     if not _OUT_NAME_RE.fullmatch(out_dir.name):
         return "out dir name must look like <run-id>.tmp-<token>"
-    if out_dir.parent.name != ".boxmodel_cache" or not _no_symlink_components(out_dir.parent):
+    if out_dir.parent.name != ".boxmodel_cache" or not no_symlink_components(out_dir.parent):
         return "out dir must sit directly under a .boxmodel_cache directory"
     project = out_dir.parent.parent.resolve()
     if not any(str(project).startswith(str(b.resolve()) + "/") for b in bases):
@@ -390,7 +366,7 @@ def build(
         "run_log": run_log,
         "sources": sources,
     }
-    _atomic_json(out_dir / "meta.json", meta)
+    atomic_json(out_dir / "meta.json", meta)
     prog.write("done", exit_code=0)
     return meta
 

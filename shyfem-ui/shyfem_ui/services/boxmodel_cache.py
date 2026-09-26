@@ -9,12 +9,10 @@ import asyncio
 import json
 import logging
 import os
-import re
 import secrets
 import shutil
 import signal
 import sys
-import tempfile
 import threading
 import time
 from dataclasses import dataclass, field
@@ -24,6 +22,7 @@ from typing import Literal
 
 import pandas as pd
 
+from shyfem_ui.boxmodel_common import atomic_json, check_run_id
 from shyfem_ui.config import Config
 
 logger = logging.getLogger(__name__)
@@ -35,24 +34,13 @@ LIVE_TMP_SECONDS = 90  # a tmp dir whose progress.json is older than this is dea
 KILL_GRACE_SECONDS = 5.0
 CacheState = Literal["missing", "stale", "queued", "building", "ready", "failed"]
 
-# Same shape as the CLI's own --out slug component and boxmodel_manifest's
-# run id slug: [a-z0-9_-]{1,64}. run_id reaches glob()/mkdir() unvalidated
-# otherwise -- a run_id of "../../victim" would let a caller escape the
-# cache root entirely.
-_RUN_ID_RE = re.compile(r"^[a-z0-9_-]{1,64}$")
-
-
-def _check_run_id(run_id: str) -> None:
-    if not isinstance(run_id, str) or not _RUN_ID_RE.fullmatch(run_id):
-        raise ValueError("run_id: must match [a-z0-9_-]{1,64}")
-
 
 def cache_root(project_work_dir: Path) -> Path:
     return Path(project_work_dir) / CACHE_DIRNAME
 
 
 def cache_dir_for(project_work_dir: Path, run_id: str) -> Path:
-    _check_run_id(run_id)
+    check_run_id(run_id)
     return cache_root(project_work_dir) / run_id
 
 
@@ -130,6 +118,26 @@ class BuildRegistry:
             return list(self._handles.values())
 
 
+_registry: BuildRegistry | None = None
+_registry_lock = threading.Lock()
+
+
+def get_registry() -> BuildRegistry:
+    """The one ``BuildRegistry`` shared by every session of this worker process.
+
+    Created lazily on first use (under a lock, so two sessions racing on the
+    first page load cannot end up with two registries and therefore two
+    per-worker semaphores). ``BuildRegistry`` stays public and constructible:
+    tests build their own so they never share state with each other.
+    """
+    global _registry
+    if _registry is None:
+        with _registry_lock:
+            if _registry is None:
+                _registry = BuildRegistry()
+    return _registry
+
+
 def _read_json(path: Path) -> dict | None:
     try:
         return json.loads(path.read_text())
@@ -152,20 +160,6 @@ def _sources_changed(meta: dict, run_dir: Path) -> bool:
         if st.st_size != rec.get("size") or st.st_mtime_ns != rec.get("mtime_ns"):
             return True
     return False
-
-
-def _atomic_json(path: Path, payload: dict) -> None:
-    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
-    try:
-        with os.fdopen(fd, "w") as fh:
-            json.dump(payload, fh)
-        os.replace(tmp_name, path)
-    except Exception:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
 
 
 def _progress_age(tmp: Path) -> float:
@@ -203,7 +197,7 @@ def _clear_stale_tmp_dirs(root: Path, run_id: str) -> None:
     another worker's build). Skips symlinks: never follow or remove
     something this directory does not actually own.
     """
-    _check_run_id(run_id)
+    check_run_id(run_id)
     for tmp in root.glob(f"{run_id}.tmp-*"):
         if tmp.is_symlink():
             continue
@@ -231,7 +225,7 @@ def cache_status(
     ``_clear_stale_tmp_dirs``) the next time a build for the same
     ``run_id`` is actually launched.
     """
-    _check_run_id(run_id)
+    check_run_id(run_id)
     root = cache_root(project_work_dir)
     if registry is not None:
         for h in registry.handles():
@@ -402,7 +396,7 @@ async def start_build(
     ``_run_build`` -- only its path is decided, so a build still queued
     behind the per-worker cap has no on-disk footprint at all yet.
     """
-    _check_run_id(run_id)
+    check_run_id(run_id)
     from shyfem_ui.services.access_control import editor_denied_reason
 
     denied = editor_denied_reason(project["id"], user, min_role="editor")
@@ -596,7 +590,7 @@ def _write_error_progress(tmp_dir: Path, message: str, *, exit_code: int = -1) -
     freezing on a stale snapshot, exactly like a genuine CLI failure.
     """
     prev = _read_json(tmp_dir / "progress.json") or {}
-    _atomic_json(
+    atomic_json(
         tmp_dir / "progress.json",
         {
             "phase": "error",

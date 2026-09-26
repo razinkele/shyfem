@@ -364,3 +364,37 @@ def test_hourly_writer_close_failure_fails_the_build_when_nothing_else_is_wrong(
     assert prog["phase"] == "error"
     assert "footer" in (prog["error"] or "")
     assert not (out / "meta.json").exists()
+
+
+def test_cli_source_imports_nothing_from_services():
+    """Static complement of the runtime light-imports probe above: every
+    import statement in the CLI (and in the shared root module it depends
+    on) is checked, so a lazily executed ``from shyfem_ui.services import``
+    hidden inside a function cannot slip past the probe."""
+    import ast
+    from pathlib import Path
+
+    from shyfem_ui import boxmodel_common as bcm
+
+    for mod in (cli, bcm):
+        tree = ast.parse(Path(mod.__file__).read_text())
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                assert node.level == 0, f"{mod.__name__}: relative import"
+                module = node.module or ""
+                assert not module.startswith("shyfem_ui.services"), module
+                if module == "shyfem_ui":
+                    for alias in node.names:
+                        assert alias.name != "services", f"{mod.__name__}: services"
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith("shyfem_ui.services"), alias.name
+
+
+def test_cli_uses_the_shared_helpers():
+    from shyfem_ui import boxmodel_common as bcm
+
+    assert cli.atomic_json is bcm.atomic_json
+    assert cli.no_symlink_components is bcm.no_symlink_components
+    for private in ("_atomic_json", "_no_symlink_components"):
+        assert not hasattr(cli, private), private

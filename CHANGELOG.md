@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **UI, Box model page (PR 2 of 4):** the **Compare** tab — two to four runs from the manifest, a difference map (B − A of the period mean, diverging scale), overlaid daily series for the selected box, the skill table side by side per run plus the per-year table and a CSV download, all on the intersection of days the runs share. The build registry now lives in the cache service and the CLI/service share their atomic-JSON, run-id and symlink guards through `shyfem_ui/boxmodel_common.py`.
+
 ### Changed
 - **UI:** every file/directory path box is a dropdown over the active project's directory (`components/project_select.py`); free text remains only for new names and STR-content fields (#79)
 

@@ -260,6 +260,13 @@ target needs at least 30 matched days (60 per calendar year for the per-year bre
 amplitude ratios (2–4, 4–10, 10–30, 30–400 day periods) need at least 120 gap-free days. See
 `docs/superpowers/specs/2026-09-17-boxmodel-analysis-design.md` §7 for the exact formulas.
 
+The **Compare** tab puts two to four runs side by side. Pick the runs (A is the first); the map
+shows B − A of the period mean per box on a diverging scale centred on zero; the plot overlays the
+runs' daily series for the selected box with the mapped post's observations; the skill table is
+pivoted to one column per run, with the per-year breakdown beneath, and can be downloaded as CSV.
+Everything is computed on the **intersection of days** the chosen runs all produced, so the three
+views always agree. Compare is read-only and needs at least two ready caches.
+
 Per-run Parquet caches are built on demand by a child process
 (`python -m shyfem_ui.boxmodel_cache_cli`) into `<project>/.boxmodel_cache/<run_id>/`. Building
 requires a project editor with write access to the project directory, is capped at 2 concurrent
@@ -285,7 +292,7 @@ Additional pages:
 
 - **Compare** - Side-by-side job comparison (runtime stats, parameter diffs, overlaid time series)
 - **Ensemble** - Parameter sweep manager (grid/zip modes, batch submit, result overlay with envelope)
-- **Box model** - Map and time-series analysis of SHYFEM box output (`idtbox`) against observations, with a skill table
+- **Box model** - Map, time-series and multi-run Compare analysis of SHYFEM box output (`idtbox`) against observations, with skill tables
 
 ## Development
 

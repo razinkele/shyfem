@@ -9,6 +9,7 @@ existing node-click behaviour.
 from __future__ import annotations
 
 import inspect
+import math
 
 import pytest
 
@@ -169,3 +170,79 @@ def test_build_box_layers_escapes_an_ampersand_exactly_once():
     assert "&amp;amp;" not in post_tip
     assert "Salinity &amp; more" in box_tip
     assert "&amp;amp;" not in box_tip
+
+
+# --- PR 2 Task 4: diverging palette + symmetric scale -----------------------
+
+
+def test_diverging_palette_is_registered_blue_white_red():
+    pal = gm.PALETTES["diverging"]
+    assert pal is gm.PALETTE_DIVERGING and len(pal) == 7
+    first, mid, last = pal[0], pal[3], pal[-1]
+    assert first[2] > first[0]  # blue end
+    assert all(c >= 240 for c in mid[:3])  # white centre
+    assert last[0] > last[2]  # red end
+
+
+def test_value_colors_symmetric_bins_are_mirrored_around_zero():
+    colors, bins = gm.value_colors([-3.0, 1.0, 2.0], palette="diverging", symmetric=True)
+    assert len(colors) == 3 and all(len(c) == 3 for c in colors)
+    assert bins[0][0] == pytest.approx(-3.0) and bins[-1][1] == pytest.approx(3.0)
+    # every bin has a mirror image: (lo, hi) <-> (-hi, -lo)
+    edges = [(lo, hi) for lo, hi, _ in bins]
+    for lo, hi in edges:
+        assert any(mlo == pytest.approx(-hi) and mhi == pytest.approx(-lo) for mlo, mhi in edges), (
+            lo,
+            hi,
+        )
+    # one bin straddles zero and it is the white centre of the palette
+    centre = [b for b in bins if b[0] < 0 < b[1]]
+    assert len(centre) == 1 and centre[0][2] == list(gm.PALETTE_DIVERGING[3][:3])
+    # -3 is the extreme blue, +2 sits on the red side, neither is white
+    assert colors[0] == list(gm.PALETTE_DIVERGING[0][:3])
+    assert colors[2][0] > colors[2][2] and colors[2] != centre[0][2]
+
+
+def test_value_colors_symmetric_all_zero_does_not_divide_by_zero():
+    colors, bins = gm.value_colors([0.0, 0.0], palette="diverging", symmetric=True)
+    assert bins[0][0] == pytest.approx(-1.0) and bins[-1][1] == pytest.approx(1.0)
+    assert all(math.isfinite(lo) and math.isfinite(hi) for lo, hi, _ in bins)
+    # both zeros land in the central (white) bin
+    assert colors == [list(gm.PALETTE_DIVERGING[3][:3])] * 2
+
+
+def test_value_colors_symmetric_keeps_positions_and_grey_for_gaps():
+    colors, bins = gm.value_colors(
+        [float("nan"), -0.5, None, 0.25], palette="diverging", symmetric=True
+    )
+    assert len(colors) == 4
+    assert colors[0] == gm._NON_FINITE_COLOR and colors[2] == gm._NON_FINITE_COLOR
+    assert colors[1] != gm._NON_FINITE_COLOR and colors[3] != gm._NON_FINITE_COLOR
+    # legend spans [-m, m] with m = max(|finite|), not the sentinel-free range
+    assert bins[0][0] == pytest.approx(-0.5) and bins[-1][1] == pytest.approx(0.5)
+
+
+def test_value_colors_non_symmetric_path_unchanged_by_the_new_keyword():
+    before = gm.value_colors([-3.0, 1.0, 2.0], palette="viridis")
+    after = gm.value_colors([-3.0, 1.0, 2.0], palette="viridis", symmetric=False)
+    assert before == after
+    assert before[1][0][0] == pytest.approx(-3.0) and before[1][-1][1] == pytest.approx(2.0)
+
+
+def test_build_box_layers_symmetric_legend_straddles_zero():
+    polys = {
+        1: [[21.0, 55.5], [21.01, 55.5], [21.01, 55.51], [21.0, 55.5]],
+        2: [[21.01, 55.5], [21.02, 55.5], [21.02, 55.51], [21.01, 55.5]],
+        3: [[21.02, 55.5], [21.03, 55.5], [21.03, 55.51], [21.02, 55.5]],
+    }
+    layers, bins = gm.build_box_layers(
+        polys, {1: -1.5, 2: 0.2, 3: float("nan")}, palette="diverging", symmetric=True
+    )
+    assert bins[0][0] == pytest.approx(-1.5) and bins[-1][1] == pytest.approx(1.5)
+    assert any(lo < 0 < hi for lo, hi, _ in bins)
+    data = layers[0]["data"]
+    assert data[0]["color"][:3] == list(gm.PALETTE_DIVERGING[0][:3])  # extreme blue
+    assert data[2]["color"][:3] == [200, 200, 200]  # gap stays grey
+    # default is still the plain (min..max) scale
+    _layers, plain = gm.build_box_layers(polys, {1: -1.5, 2: 0.2}, palette="diverging")
+    assert plain[0][0] == pytest.approx(-1.5) and plain[-1][1] == pytest.approx(0.2)
