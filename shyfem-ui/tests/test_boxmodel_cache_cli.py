@@ -427,20 +427,39 @@ def _wait_for_refresh(path, before, timeout=3.0):
     return False
 
 
-def test_progress_json_carries_pid_and_a_fixed_start_stamp(tmp_path):
+def test_progress_json_carries_pid_and_a_fixed_start_stamp(tmp_path, monkeypatch):
     """``pid`` lets an operator tell "not beating because it died" from
     "beating"; ``started`` is the birth stamp the reaper's absolute age cap
-    needs -- it must NOT move when progress is rewritten, or the cap could
-    never be reached."""
+    measures from, so NOTHING may move it -- neither a later write nor a
+    heartbeat. If it moved, a hung child that still beats would be immortal
+    and the cap would be decoration.
+
+    The clock is monkeypatched because ``_now`` has one-second resolution: two
+    real writes land in the same second, so a stamp that IS being rewritten
+    still compares equal (this test was vacuous before the clock was pinned).
+    """
     _base, out = _out(tmp_path)
+    stamps = iter(f"2026-09-27T00:00:{n:02d}+00:00" for n in range(1, 40))
+    monkeypatch.setattr(cli, "_now", lambda: next(stamps))
+
     prog = cli._Progress(out, 10)
     prog.write("state")
     first = json.loads((out / "progress.json").read_text())
+    born = first["started"]
+    assert born == "2026-09-27T00:00:01+00:00", "started is stamped at construction"
+
     prog.records = 5
     prog.write("write")
     second = json.loads((out / "progress.json").read_text())
-    assert first["pid"] == second["pid"] == os.getpid()
-    assert second["started"] == first["started"] == prog.started
+    assert second["started"] == born, "a later write must not re-stamp started"
+    assert second["updated"] != first["updated"], "updated must move"
+
+    assert prog.touch() is True
+    third = json.loads((out / "progress.json").read_text())
+    assert third["started"] == born, "a heartbeat must not re-stamp started"
+    assert third["updated"] != second["updated"], "a heartbeat must move updated"
+    assert third["records"] == 5, "a heartbeat must not move the record count"
+    assert first["pid"] == second["pid"] == third["pid"] == os.getpid()
 
 
 def test_heartbeat_thread_refreshes_progress_while_one_step_runs_long(tmp_path, monkeypatch):
@@ -470,8 +489,10 @@ def test_stop_ends_the_heartbeat_thread(tmp_path, monkeypatch):
     prog = cli._Progress(out, 1)
     prog.write("state")
     prog.start_heartbeat()
-    assert _wait_for_refresh(pj, pj.stat().st_mtime_ns)
-    prog.stop()
+    try:
+        assert _wait_for_refresh(pj, pj.stat().st_mtime_ns)
+    finally:
+        prog.stop()
     thread = prog._thread
     assert thread is not None and not thread.is_alive()
     quiet = pj.stat().st_mtime_ns
@@ -554,3 +575,55 @@ def test_main_stops_the_heartbeat_before_recording_an_error(run, tmp_path, monke
     assert payload["phase"] == "error" and payload["error"] == "no state file"
     time.sleep(0.1)
     assert json.loads((out / "progress.json").read_text())["phase"] == "error"
+
+
+def test_one_failed_beat_does_not_end_liveness_for_the_rest_of_the_build(tmp_path, monkeypatch):
+    """A single transient write error (ENOSPC, EIO, an NFS hiccup) must not
+    retire the heartbeat thread. If it did, the build would fall back to the
+    500-record cadence alone -- silently, since nothing reports a failed beat
+    -- and the next long quiet step would be reaped by another worker: exactly
+    the bug the thread exists to prevent.
+    """
+    _base, out = _out(tmp_path)
+    monkeypatch.setattr(cli, "HEARTBEAT_SECONDS", 0.02)
+    pj = out / "progress.json"
+    prog = cli._Progress(out, 1)
+    prog.write("state")
+
+    real_atomic_json = cli.atomic_json
+    beats = {"n": 0}
+
+    def flaky(path, payload):
+        beats["n"] += 1
+        if beats["n"] == 1:
+            raise OSError("transient")
+        return real_atomic_json(path, payload)
+
+    monkeypatch.setattr(cli, "atomic_json", flaky)
+    before = pj.stat().st_mtime_ns
+    prog.start_heartbeat()
+    try:
+        assert _wait_for_refresh(pj, before), "the thread never recovered from one failed beat"
+        assert prog._thread.is_alive()
+    finally:
+        prog.stop()
+
+
+def test_a_beat_before_the_first_write_does_not_end_the_heartbeat(tmp_path, monkeypatch):
+    """The thread starts before build()'s first write. A beat that finds no
+    payload to re-publish has nothing to do -- and must keep the thread, or a
+    future edit that does slow work before the first write would silently lose
+    liveness for the whole build."""
+    _base, out = _out(tmp_path)
+    monkeypatch.setattr(cli, "HEARTBEAT_SECONDS", 0.02)
+    pj = out / "progress.json"
+    prog = cli._Progress(out, 1)
+    prog.start_heartbeat()
+    try:
+        time.sleep(0.1)  # several payload-less beats
+        assert prog._thread.is_alive()
+        assert not pj.exists(), "a payload-less beat must not invent progress"
+        prog.write("state")
+        assert _wait_for_refresh(pj, pj.stat().st_mtime_ns), "liveness did not resume"
+    finally:
+        prog.stop()

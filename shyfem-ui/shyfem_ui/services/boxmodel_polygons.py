@@ -281,10 +281,19 @@ def dissolve_boxes_from_grid(
 
     ``grid`` is the path to the ``.grd`` **or** an already-parsed ``GrdFile``:
     a caller that holds one (the Box-model page parses the grid for the map
-    and for the EPSG decision) hands the object over instead of making this
-    parse the whole file a second time. A parsed grid names itself in the
-    error messages through ``GrdFile.file_path``; one built in memory, which
-    has no path, is called ``grid`` there.
+    and for the EPSG decision) hands the object over rather than naming the
+    file again. ``GrdParser.parse_file`` memoises 8 grids by path, mtime and
+    size, so the path form is usually a dict hit rather than a second parse --
+    what handing the object over really guarantees is that the dissolve and
+    the map describe the SAME grid, whatever the cache did and whether or not
+    the file changed underneath them. A parsed grid names itself in the error
+    messages through ``GrdFile.file_path``; one built in memory, which has no
+    path, is called ``grid`` there.
+
+    Note that resolving the EPSG may call ``GrdFile.detect_coordinate_system``,
+    which caches its derived answer on the object. That is idempotent, it is
+    recomputed from the same nodes, and the parser's own cache already handed
+    every caller the same object, so this changes nothing for the map.
 
     ``element_box`` is a list of ``[element_id, box_id]`` pairs, as stored in
     the cache builder's ``meta["element_box"]``.

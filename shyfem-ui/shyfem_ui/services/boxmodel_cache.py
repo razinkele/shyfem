@@ -205,20 +205,27 @@ def _progress_age(tmp: Path) -> float:
         return 1e9
 
 
-def tmp_age_cap_seconds(config: Config) -> float:
-    """The absolute age cap for this deployment (see ``HARD_TMP_AGE_FLOOR_SECONDS``).
+def tmp_age_cap_seconds(command_timeout_seconds: float | None) -> float:
+    """The absolute age cap for a build bounded by ``command_timeout_seconds``.
 
-    Derived from the same setting the parent uses to bound a build, so an
-    operator who raises the subprocess timeout for a long run raises the cap
-    with it instead of having to find a second knob. A timeout *below* the
-    floor never shrinks the cap: the timeout bounds this worker's own builds,
-    which ``_run_build`` already kills and marks ``error``, while the cap has
-    to survive another worker's slowest legitimate build.
+    Takes the timeout itself, not a ``Config``, because the number that
+    matters differs by caller: the page bounds an unset timeout to its own
+    build default before a build is ever spawned.
+
+    Derived from the setting the parent uses to bound a build, so an operator
+    who raises the timeout for a long run raises the cap with it instead of
+    having to find a second knob -- and so the reaper can never judge a build
+    dead before the parent would have killed it. A timeout *below* the floor
+    never shrinks the cap: the timeout bounds this worker's own builds, which
+    ``_run_build`` already kills and marks ``error``, while the cap has to
+    survive another worker's slowest legitimate build.
     """
-    timeout = config.command_timeout_seconds
-    if not timeout:
+    if not command_timeout_seconds:
         return float(HARD_TMP_AGE_FLOOR_SECONDS)
-    return max(float(HARD_TMP_AGE_FLOOR_SECONDS), float(timeout) + TMP_AGE_MARGIN_SECONDS)
+    return max(
+        float(HARD_TMP_AGE_FLOOR_SECONDS),
+        float(command_timeout_seconds) + TMP_AGE_MARGIN_SECONDS,
+    )
 
 
 def _started_age(prog: dict | None) -> float | None:
@@ -230,6 +237,10 @@ def _started_age(prog: dict | None) -> float | None:
     own mtime). None for a foreign or pre-upgrade file with no stamp, or an
     unparsable one -- an unknown birth time must not be read as "infinitely
     old", which would reap a live build.
+
+    Wall clocks, so a cache tree read from a host whose clock differs from the
+    writer's misjudges the age. Same exposure as ``_progress_age``'s mtime
+    comparison, and the cap is hours wide, so skew would have to be gross.
     """
     if not prog:
         return None
@@ -279,7 +290,7 @@ def _clear_stale_tmp_dirs(root: Path, run_id: str, max_tmp_age: float | None = N
     for tmp in root.glob(f"{run_id}.tmp-*"):
         if tmp.is_symlink():
             continue
-        if _tmp_dir_is_dead_or_error(tmp):
+        if _tmp_dir_is_dead_or_error(tmp, max_tmp_age):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
@@ -524,7 +535,7 @@ async def start_build(
     # A previous build's error tmp dir (kept around for cache_status to
     # report) is only ever cleaned up here, right before a new build for the
     # same run_id actually starts -- never by cache_status itself.
-    _clear_stale_tmp_dirs(root, run_id, tmp_age_cap_seconds(config))
+    _clear_stale_tmp_dirs(root, run_id, tmp_age_cap_seconds(config.command_timeout_seconds))
     # Not created yet -- _run_build creates it only once the per-worker
     # semaphore is actually acquired (see below), so cancel_build's
     # pre-spawn cleanup of a still-queued build's tmp dir is a safe no-op

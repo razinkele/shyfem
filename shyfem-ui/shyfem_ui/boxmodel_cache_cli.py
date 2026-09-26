@@ -178,8 +178,10 @@ class _Progress:
         or the write failed. Best-effort on purpose: between the child's last
         write and its exit the parent -- or another worker's reconcile -- can
         publish this directory away, and a heartbeat must not turn that race
-        into a traceback. A real write failure is reported by the main
-        thread's own next ``write``.
+        into a traceback. Nothing reports a failed beat: liveness simply goes
+        quiet for that interval and the next beat tries again. A write failure
+        that also breaks the MAIN thread's ``write`` is what surfaces, as that
+        call's own OSError.
         """
         with self._lock:
             if self._last is None:
@@ -206,15 +208,25 @@ class _Progress:
         # test can shorten it; ``Event.wait`` makes ``stop()`` prompt instead
         # of leaving a sleeping thread behind for a whole interval.
         while not self._stop.wait(HEARTBEAT_SECONDS):
-            if not self.touch():
-                return
+            # Keep going whatever one beat returned. A transient ENOSPC/EIO,
+            # or a beat that fires before the first ``write`` has a payload to
+            # re-publish, must not end liveness for the rest of the build --
+            # that would silently restore the very bug this thread fixes. For
+            # a directory that really is gone the loop just fails every
+            # ``HEARTBEAT_SECONDS`` until the process exits, which costs an
+            # mkstemp attempt and nothing else.
+            self.touch()
 
     def stop(self) -> None:
         """Stop beating and wait for the thread to leave.
 
-        Called before the child's terminal write, so a beat can never
-        re-publish a pre-error payload on top of the failure the page has to
-        show. Idempotent, and safe when the thread was never started.
+        Called before the child's terminal write. Ordering is belt and
+        braces, not the mechanism: ``touch`` re-reads ``_last`` under the same
+        lock ``write`` replaced it under, so a beat cannot republish a
+        pre-error payload over the failure in any case. What stopping really
+        buys is that no thread outlives the build, beating into a directory
+        the parent is about to publish. Idempotent, and safe when the thread
+        was never started.
         """
         self._stop.set()
         if self._thread is not None:

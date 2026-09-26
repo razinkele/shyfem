@@ -833,19 +833,17 @@ def test_cache_status_does_not_report_a_capped_out_tmp_dir_as_building(tmp_path)
     assert bc.cache_status(tmp_path, "fix", run_dir, None).state == "building"
 
 
-def test_tmp_age_cap_seconds_rises_with_the_configured_build_timeout(tmp_path):
+def test_tmp_age_cap_seconds_rises_with_the_configured_build_timeout():
     """Sizing must not be two independent knobs: an operator who raises the
-    subprocess timeout to bound a long build raises the cap with it."""
-    cfg = Config(command_timeout_seconds=None)
-    assert bc.tmp_age_cap_seconds(cfg) == float(bc.HARD_TMP_AGE_FLOOR_SECONDS)
+    subprocess timeout to bound a long build raises the cap with it, so the
+    reaper can never judge a build dead before the parent would kill it."""
+    assert bc.tmp_age_cap_seconds(None) == float(bc.HARD_TMP_AGE_FLOOR_SECONDS)
+    assert bc.tmp_age_cap_seconds(0) == float(bc.HARD_TMP_AGE_FLOOR_SECONDS)
     generous = bc.HARD_TMP_AGE_FLOOR_SECONDS + 10_000
-    assert bc.tmp_age_cap_seconds(Config(command_timeout_seconds=generous)) == (
-        generous + bc.TMP_AGE_MARGIN_SECONDS
-    )
+    assert bc.tmp_age_cap_seconds(generous) == generous + bc.TMP_AGE_MARGIN_SECONDS
+    assert bc.tmp_age_cap_seconds(generous) > generous, "the cap must outlast the timeout"
     # A timeout below the floor never shrinks the cap.
-    assert bc.tmp_age_cap_seconds(Config(command_timeout_seconds=60)) == float(
-        bc.HARD_TMP_AGE_FLOOR_SECONDS
-    )
+    assert bc.tmp_age_cap_seconds(60) == float(bc.HARD_TMP_AGE_FLOOR_SECONDS)
 
 
 def test_clear_stale_tmp_dirs_applies_the_cap_to_a_beating_build(tmp_path):
@@ -858,3 +856,42 @@ def test_clear_stale_tmp_dirs_applies_the_cap_to_a_beating_build(tmp_path):
     bc._clear_stale_tmp_dirs(root, "fix")
     assert not hung.exists()
     assert busy.is_dir()
+
+
+def test_clear_stale_tmp_dirs_honours_an_explicit_cap(tmp_path):
+    """The cap argument must reach the decision, not just the signature: on a
+    deployment whose configured build timeout exceeds the floor, start_build
+    passes a wider cap and a foreign build inside it must survive."""
+    root = bc.cache_root(tmp_path)
+    doomed = _beating_tmp(root, "fix.tmp-old", age_seconds=120)
+    bc._clear_stale_tmp_dirs(root, "fix", 60)
+    assert not doomed.exists()
+
+    spared = _beating_tmp(root, "fix.tmp-new", age_seconds=bc.HARD_TMP_AGE_FLOOR_SECONDS + 600)
+    bc._clear_stale_tmp_dirs(root, "fix", bc.HARD_TMP_AGE_FLOOR_SECONDS + 4 * 3600)
+    assert spared.is_dir(), "a cap wider than the floor must be the one applied"
+
+
+def test_reconcile_leaves_an_error_phase_tmp_dir_for_cache_status(tmp_path):
+    """A failed build's directory is the ONLY record of why it failed:
+    cache_status reports it (with the message) and start_build clears it when
+    the run is next built. If the reaper removed it the page would offer a
+    rebuild with no explanation instead of reporting the failure."""
+    root = bc.cache_root(tmp_path)
+    tmp = root / "fix.tmp-err"
+    tmp.mkdir(parents=True)
+    (tmp / "progress.json").write_text(
+        json.dumps({"phase": "error", "error": "no state file", "exit": 1})
+    )
+    old_t = time.time() - 10 * bc.LIVE_TMP_SECONDS
+    os.utime(tmp / "progress.json", (old_t, old_t))
+    os.utime(tmp, (old_t, old_t))
+
+    assert bc.reconcile_tmp_dirs(tmp_path) == []
+    assert tmp.is_dir(), "the reaper removed the only record of the failure"
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    st = bc.cache_status(tmp_path, "fix", run_dir, None)
+    assert st.state == "failed"
+    assert "no state file" in st.message

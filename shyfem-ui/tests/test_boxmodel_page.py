@@ -338,9 +338,12 @@ def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
 class _GateConfig:
     """Config stub whose confine_path refuses writes but allows reads."""
 
-    def __init__(self, *, deny_write: bool):
+    def __init__(self, *, deny_write: bool, command_timeout_seconds: int | None = None):
         self.deny_write = deny_write
         self.calls: list[bool] = []
+        # _reconcile_cache_dir derives the reaper's age cap from the build
+        # timeout, so the stub has to carry it like the real Config does.
+        self.command_timeout_seconds = command_timeout_seconds
 
     def confine_path(self, path, user, *, must_exist=False, for_write=False):
         self.calls.append(for_write)
@@ -369,6 +372,36 @@ def test_reconcile_is_skipped_without_write_access(monkeypatch, tmp_path):
     assert called == [], "reconcile must not run without write access"
     assert notice is None, "a viewer has nothing actionable to be told"
     assert config.calls == [True], "the write confinement must be the one checked"
+
+
+def test_reconcile_passes_a_cap_derived_from_the_build_timeout(monkeypatch, tmp_path):
+    """The reaper's absolute age cap must reach the page load, and must come
+    from the timeout that actually bounds a build here.
+
+    With the cap left on its own floor, a deployment whose operator raised
+    command_timeout_seconds above it would reap a HEALTHY build's output
+    directory hours before the parent would have killed it -- the user loses
+    the run. Configured cap plumbing that reaches no call site is decoration,
+    so this asserts the value, not the signature.
+    """
+    from shyfem_ui.pages import boxmodel
+    from shyfem_ui.services import boxmodel_cache as bc
+
+    seen: dict = {}
+    monkeypatch.setattr(boxmodel, "reconcile_tmp_dirs", lambda wd, **kw: seen.update(kw) or [])
+
+    generous = 8 * 3600
+    config = _GateConfig(deny_write=False, command_timeout_seconds=generous)
+    boxmodel._reconcile_cache_dir(config, {"username": "editor"}, tmp_path, "proj", 7)
+    assert seen["max_tmp_age"] == bc.tmp_age_cap_seconds(generous)
+    assert seen["max_tmp_age"] > generous, "the cap must outlast the build timeout"
+
+    # With no timeout configured, the page's own build bound is the one used.
+    seen.clear()
+    boxmodel._reconcile_cache_dir(
+        _GateConfig(deny_write=False), {"username": "editor"}, tmp_path, "proj", 7
+    )
+    assert seen["max_tmp_age"] == bc.tmp_age_cap_seconds(boxmodel.BUILD_TIMEOUT_SECONDS)
 
 
 def test_reconcile_runs_once_with_write_access(monkeypatch, tmp_path):
@@ -665,8 +698,9 @@ def test_polygons_result_returns_the_no_outlines_message():
 def test_polygons_result_hands_over_the_grid_it_already_parsed():
     """Item 3: ``polygons_result`` holds the parsed ``GrdFile`` (it needs it for
     the EPSG decision), so it must hand that object to
-    ``dissolve_boxes_from_grid`` -- passing the path made the service parse the
-    whole .grd a second time. With no parsed grid (a grid that failed to parse)
+    ``dissolve_boxes_from_grid`` rather than the path, so the outlines and the
+    map always describe the same grid (the service-level test pins the
+    no-re-parse behaviour). With no parsed grid, a grid that failed to parse,
     the manifest path stays the fallback, so the page still works."""
     from shyfem_ui.pages import boxmodel
 
@@ -867,9 +901,14 @@ def test_compare_chain_guards_every_off_disk_frame_read():
     message = code("_cmp_message")
     assert "cmp_days_result()" in message
     assert message.index("cmp_days_result()") < message.index("CMP_NO_COMMON_DAYS_MESSAGE")
-    states = code("all_run_states")
-    assert "'box' column" in states or '"box" column' in states
-    assert "TypeError" in states
+    assert "_load_compare_state(" in code("all_run_states_result")
+    assert "all_run_states_result()" in code("all_run_states")
+    # A run dropped for an unreadable cache must not be reported as "pick two
+    # runs", which blames the user for it.
+    assert "run_state_problems()" in message
+    assert message.index("run_state_problems()") < message.index("CMP_NEED_TWO_MESSAGE")
+    # The box-column check and the TypeError clause themselves are pinned
+    # behaviourally, not by source text: see the _load_compare_state tests.
 
 
 def test_setup_meteo_frame_read_is_guarded():
@@ -884,6 +923,10 @@ def test_setup_meteo_frame_read_is_guarded():
     assert "try:" in slice_, "the meteo_daily read is not inside a try"
     assert slice_.index("try:") < slice_.index('frame["box"]')
     assert "_empty(" in slice_, "a failed read must become the plot's message"
+    # The VALUES are read in there too: _meteo_variables offers every non-key
+    # column with no dtype filter, so .astype(float) on a string column would
+    # otherwise raise straight out of the render.
+    assert slice_.index("try:") < slice_.index("astype(float)")
 
 
 def test_compare_int_cell_renders_side_by_side_n():
@@ -1145,3 +1188,59 @@ def test_setup_messages_are_constants():
     assert "ready cache" in boxmodel.SETUP_NEEDS_CACHE_MESSAGE
     assert boxmodel._missing_nodes_message([]) is None
     assert boxmodel._missing_nodes_message([9, 3, 9]) == "STR boundary nodes not in the grid: 3, 9"
+
+
+def _state_daily_run(frame):
+    """A CachedRun carrying just this state_daily frame."""
+    from shyfem_ui.services.boxmodel_cache import CachedRun
+
+    return CachedRun(
+        run_id="run9316", meta={}, state_daily=frame, flux_daily=None, meteo_daily=None
+    )
+
+
+def test_load_compare_state_rejects_a_frame_with_no_box_column(monkeypatch, tmp_path):
+    """The whole Compare chain indexes by box. load_cache_state normalises the
+    'date' column and validates nothing else, so a foreign or hand-edited
+    cache used to reach _cmp_box/period_mean_diff without a 'box' column."""
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    frame = pd.DataFrame({"date": pd.to_datetime(["2009-01-01"]), "temp": [1.0]})
+    monkeypatch.setattr(boxmodel, "load_cache_state", lambda d, r: _state_daily_run(frame))
+
+    state, problem = boxmodel._load_compare_state(tmp_path, "run9316", str)
+    assert state is None
+    assert problem is not None
+    assert problem.startswith("run9316: ")
+    assert "box" in problem
+
+
+def test_load_compare_state_reports_a_typeerror_from_the_date_column(monkeypatch, tmp_path):
+    """pd.to_datetime raises TypeError, not ValueError, on a column of the
+    wrong kind altogether -- the clause the old tuple was missing."""
+    from shyfem_ui.pages import boxmodel
+
+    def boom(cache_dir, run_id):
+        raise TypeError("cannot convert object to datetime")
+
+    monkeypatch.setattr(boxmodel, "load_cache_state", boom)
+    state, problem = boxmodel._load_compare_state(tmp_path, "run9316", str)
+    assert state is None
+    assert "datetime" in problem
+
+
+def test_load_compare_state_returns_a_readable_run_unchanged(monkeypatch, tmp_path):
+    """The control: a well-formed cache passes through with no message."""
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    frame = pd.DataFrame({"date": pd.to_datetime(["2009-01-01"]), "box": [1], "temp": [1.0]})
+    run = _state_daily_run(frame)
+    monkeypatch.setattr(boxmodel, "load_cache_state", lambda d, r: run)
+
+    state, problem = boxmodel._load_compare_state(tmp_path, "run9316", str)
+    assert state is run
+    assert problem is None
