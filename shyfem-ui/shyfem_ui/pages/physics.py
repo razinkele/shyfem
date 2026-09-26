@@ -9,6 +9,7 @@ import copy
 import logging
 import math
 import re
+from collections.abc import Sequence
 
 from shiny import module, reactive, render, ui
 from shiny.types import SilentException
@@ -16,6 +17,8 @@ from shiny.types import SilentException
 from shyfem_ui.components.project_select import (
     default_project_file,
     project_file_select,
+    project_rel_file_choices,
+    str_file_selectize,
 )
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -668,8 +671,17 @@ def _assimil_mode_field(prefix: str, raw: object, is_array: bool = False) -> ui.
     )
 
 
-def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
+def _assimil_block(
+    sf: StrFile,
+    title: str,
+    prefix: str,
+    ivar: int,
+    file_choices: Sequence[str] = (),
+) -> ui.Tag:
     """One variable block (Temperature or Salinity) of the panel.
+
+    ``file_choices`` are project-relative data files offered by the two file
+    fields (selectize with create: any name can still be typed).
 
     All fields always render; the checkbox gates only what the save step
     writes (ui.panel_conditional is avoided: its JS condition strings
@@ -721,18 +733,20 @@ def _assimil_block(sf: StrFile, title: str, prefix: str, ivar: int) -> ui.Tag:
         ui.row(
             ui.column(
                 6,
-                ui.input_text(
+                str_file_selectize(
                     f"assim_{prefix}_filecoords",
                     "Station coordinates file",
-                    value=str(raw("filecoords") or ""),
+                    str(raw("filecoords") or ""),
+                    file_choices,
                 ),
             ),
             ui.column(
                 6,
-                ui.input_text(
+                str_file_selectize(
                     f"assim_{prefix}_fileobs",
                     "Observations file",
-                    value=str(raw("fileobs") or ""),
+                    str(raw("fileobs") or ""),
+                    file_choices,
                 ),
             ),
         ),
@@ -967,6 +981,13 @@ def physics_server(
     input, output, session, config: Config, active_project=None, current_user=None
 ) -> None:
     """Physics configuration page server."""
+
+    def _str_file_choices() -> list[str]:
+        """Project-relative data files for the STR file fields (boundn,
+        assimilation files): pick one or type any name."""
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return project_rel_file_choices(proj, usr, config)
 
     @render.ui
     def str_path_picker():
@@ -2363,8 +2384,9 @@ def physics_server(
                     class_="text-danger small",
                 )
             )
-        children.append(_assimil_block(sf, "Temperature", "t", 12))
-        children.append(_assimil_block(sf, "Salinity", "s", 11))
+        choices = _str_file_choices()
+        children.append(_assimil_block(sf, "Temperature", "t", 12, choices))
+        children.append(_assimil_block(sf, "Salinity", "s", 11, choices))
         return ui.div(*children)
 
     @render.ui
@@ -3056,11 +3078,11 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_text(
+                    str_file_selectize(
                         "boundn",
                         "Boundary file",
-                        value=str(params.get("boundn", "") or ""),
-                        placeholder="timeseries.dat",
+                        str(params.get("boundn", "") or ""),
+                        _str_file_choices(),
                     ),
                 ),
             ),

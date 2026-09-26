@@ -1,6 +1,9 @@
 """Playwright tests for the Simulation page's project-file STR dropdown."""
 
+import re
+
 import pytest
+from playwright.sync_api import expect
 
 
 @pytest.mark.e2e
@@ -63,3 +66,52 @@ class TestSimulationStrDropdown:
         texts = select.locator("option").all_inner_texts()
         assert any(t.startswith("Sample:") for t in texts), texts
         assert select.input_value().endswith(".str")
+
+
+@pytest.mark.e2e
+class TestStrEditorFileFieldSelectize:
+    """A file parameter in the STR editor's Form view is a selectize with
+    create: a typed name survives blur + Apply and lands in the STR text."""
+
+    def test_typed_file_name_round_trips_into_editor_text(self, pw_page, live_server):
+        pw_page.locator(".sf-nav-item[data-nav='Simulation']").click(force=True)
+        pw_page.wait_for_timeout(800)
+        btn = pw_page.locator("#simulation-load_sample_btn")
+        if btn.count() == 0:
+            pytest.skip("sample-data card not rendered")
+        btn.click(force=True)
+        pw_page.wait_for_timeout(1500)
+        # Stay in the default Split view: both the raw textarea and the form
+        # panel exist there, so Apply's update of the textarea is observable.
+        area = pw_page.locator("#simulation-str_editor-editor_content")
+        area.wait_for(state="attached", timeout=10000)
+        # The sample STR has a $name section with file params; pick the first
+        # selectize-backed form field whose id names a known file param.
+        field = pw_page.locator("select[id^='simulation-str_editor-form_name_']").first
+        field.wait_for(state="attached", timeout=10000)
+        field_id = field.get_attribute("id")
+        control = pw_page.locator(
+            f"#{field_id} + .selectize-control input, "
+            f"[id='{field_id}'] ~ .selectize-control input"
+        ).first
+        if control.count() == 0:
+            control = pw_page.locator(
+                f".selectize-control:has(+ script[data-for='{field_id}']) input"
+            ).first
+        assert control.count() > 0, "selectize control not initialised"
+        control.click()
+        control.fill("INPUT/typed_by_test.dat")
+        control.press("Enter")
+        pw_page.wait_for_timeout(300)
+        pw_page.locator("#simulation-str_editor-apply_form_btn").click(force=True)
+        try:
+            expect(area).to_have_value(re.compile("typed_by_test"), timeout=10000)
+        except AssertionError:
+            # Diagnostics: what did the field hold, and what is the textarea now?
+            val = pw_page.evaluate(
+                "(id) => { const el = document.getElementById(id); return el ? el.value : null; }",
+                field_id,
+            )
+            raise AssertionError(
+                f"field {field_id} value={val!r}; textarea head={area.input_value()[:300]!r}"
+            ) from None

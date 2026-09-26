@@ -6,7 +6,11 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.boundary_editor import boundary_editor_server, boundary_editor_ui
-from shyfem_ui.components.project_select import default_project_file, project_file_select
+from shyfem_ui.components.project_select import (
+    default_project_file,
+    project_file_select,
+    project_rel_file_choices,
+)
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
 from shyfem_ui.config import Config
@@ -240,15 +244,22 @@ def simulation_server(
         project_id_reactive.set(proj["id"] if proj else None)
 
     # Initialize str_editor and wire up its reactive state
+    def _str_file_choices() -> list[str]:
+        """Project-relative data files for the editors' STR file fields."""
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return project_rel_file_choices(proj, usr, config)
+
     editor_state = str_editor_server(
         "str_editor",
         current_file_path,
         project_id=project_id_reactive,
         current_user=current_user,
+        file_choices=_str_file_choices,
     )
 
     # Initialize boundary editor
-    boundary_editor_server("boundary_editor", parsed_str=parsed_str)
+    boundary_editor_server("boundary_editor", parsed_str=parsed_str, file_choices=_str_file_choices)
 
     # One-way sync: editor -> parsed_str.
     # Handlers that modify parsed_str directly (templates, quick settings)

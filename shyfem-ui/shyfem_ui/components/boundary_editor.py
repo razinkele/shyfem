@@ -8,10 +8,11 @@ Provides a structured UI for defining $bound sections in .str files:
 - Auto-generate $bound section text
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 from shiny import module, reactive, render, ui
 
+from shyfem_ui.components.project_select import str_file_selectize
 from shyfem_ui.services.parser_str import StrFile
 
 
@@ -130,12 +131,16 @@ def boundary_editor_server(
     session,
     parsed_str: reactive.Value[StrFile | None] = None,
     on_boundaries_changed: Callable[[list[dict]], None] | None = None,
+    file_choices: Callable[[], Sequence[str]] | None = None,
 ):
     """Boundary editor component server logic.
 
     Args:
         parsed_str: Reactive StrFile to read/write boundary sections from/to
         on_boundaries_changed: Callback when boundaries are modified
+        file_choices: Callable returning project-relative data-file paths
+            offered by each boundary's time-series field (selectize with
+            create; any name can still be typed). None -> free text only.
     """
     # Each boundary: {"id": int, "nodes": str, "ibtyp": int, "boundn": str,
     #                  "zfact": float, "intpol": int, "label": str}
@@ -294,6 +299,7 @@ def boundary_editor_server(
                 "No boundaries defined. Click '+ Add Boundary' to start.", class_="text-muted small"
             )
 
+        choices = list(file_choices()) if file_choices is not None else []
         cards = []
         for b in bounds:
             bid = b["id"]
@@ -359,11 +365,8 @@ def boundary_editor_server(
                                 6,
                                 ui.div(
                                     ui.span("Time series file", class_="small fw-bold"),
-                                    ui.input_text(
-                                        f"bound_file_{bid}",
-                                        "",
-                                        value=b["boundn"],
-                                        placeholder="INPUT/boundary.txt",
+                                    str_file_selectize(
+                                        f"bound_file_{bid}", "", b["boundn"], choices
                                     ),
                                 ),
                             ),

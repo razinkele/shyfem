@@ -418,3 +418,67 @@ class TestProjectDefaults:
         assert default_project_file(None, "str") is None
         assert default_project_file(_proj(project_tree), "str") is None
         assert default_project_file(_proj(project_tree, grids=[{}]), "grd") is None
+
+
+class TestStrFileSelectize:
+    """Selectize-with-create for STR-content file fields: project-relative
+    choices, free text still allowed, empty value round-trips as empty."""
+
+    def test_choices_are_project_relative_and_filtered(self, config, project_tree):
+        from shyfem_ui.components.project_select import (
+            STR_DATA_EXTS,
+            project_rel_file_choices,
+        )
+
+        got = project_rel_file_choices(_proj(project_tree), None, config)
+        assert "GRID/mesh.grd" in got and "GRID/mesh.bas" in got
+        # .str files are not data files an STR parameter would point at
+        assert not any(c.endswith(".str") for c in got)
+        assert all(not c.startswith("/") for c in got)
+        assert ".grd" in STR_DATA_EXTS and ".fem" in STR_DATA_EXTS
+
+    def test_no_project_gives_empty_choices(self, config):
+        from shyfem_ui.components.project_select import project_rel_file_choices
+
+        assert project_rel_file_choices(None, None, config) == []
+
+    def test_empty_value_selects_the_empty_option_not_the_first_file(self):
+        from shyfem_ui.components.project_select import str_file_selectize
+
+        html = str(
+            str_file_selectize("boundn", "Boundary file", "", ["INPUT/a.txt", "INPUT/b.txt"])
+        )
+        assert '<option value="" selected=""></option>' in html
+        assert '<option value="INPUT/a.txt">INPUT/a.txt</option>' in html
+        assert 'value="INPUT/a.txt" selected' not in html
+
+    def test_value_not_in_choices_is_injected_and_selected(self):
+        from shyfem_ui.components.project_select import str_file_selectize
+
+        html = str(
+            str_file_selectize("boundn", "Boundary file", "custom/tide.dat", ["INPUT/a.txt"])
+        )
+        assert '<option value="custom/tide.dat" selected="">custom/tide.dat</option>' in html
+        assert '<option value="INPUT/a.txt">INPUT/a.txt</option>' in html
+
+    def test_listed_value_is_preselected(self):
+        from shyfem_ui.components.project_select import str_file_selectize
+
+        html = str(str_file_selectize("boundn", "Boundary file", "INPUT/a.txt", ["INPUT/a.txt"]))
+        assert '<option value="INPUT/a.txt" selected="">INPUT/a.txt</option>' in html
+
+    def test_create_on_blur_enabled_and_placeholder_present(self):
+        from shyfem_ui.components.project_select import str_file_selectize
+
+        html = str(str_file_selectize("boundn", "Boundary file", "", []))
+        assert '"create": true' in html
+        assert '"createOnBlur": true' in html
+        assert '"persist": false' in html
+        assert "placeholder" in html
+        assert 'id="boundn"' in html
+
+    def test_none_value_treated_as_empty(self):
+        from shyfem_ui.components.project_select import str_file_selectize
+
+        html = str(str_file_selectize("boundn", "", None, []))
+        assert '<option value="" selected=""></option>' in html

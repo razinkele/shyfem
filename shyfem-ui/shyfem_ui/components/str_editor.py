@@ -1,13 +1,14 @@
 """STR file editor component with split view: raw text + structured form."""
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
 from shiny import module, reactive, render, ui
 
-from shyfem_ui.components.file_picker import file_picker_ui, is_file_param
+from shyfem_ui.components.file_picker import is_file_param
+from shyfem_ui.components.project_select import str_file_selectize
 from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
     COMMON_SECTIONS,
@@ -109,13 +110,17 @@ def str_editor_server(
     on_save: Callable[[Path, str], None] | None = None,
     project_id: reactive.Value | None = None,
     current_user: Callable[[], dict | None] | None = None,
+    file_choices: Callable[[], Sequence[str]] | None = None,
 ):
     """STR file editor component server logic with split view support.
 
     Args:
         file_path: Reactive value containing the file path to edit
         on_save: Callback when file is saved
-        project_id: Reactive value with current project ID (enables file pickers)
+        project_id: Reactive value with current project ID
+        file_choices: Callable returning project-relative data-file paths
+            offered by the file-parameter fields (selectize with create; any
+            name can still be typed). None -> free text only.
         current_user: Callable returning the server-validated user dict (or
             None). Used to fail-closed the inline Save in server mode — the
             handler writes to disk directly, so it must re-check identity.
@@ -291,7 +296,10 @@ def str_editor_server(
             search_term = ""
         search_filter = filter_sections(search_term, parsed)
         pid = project_id.get() if project_id else None
-        form_panel = _build_form_panel(parsed, search_filter=search_filter, project_id=pid)
+        choices = list(file_choices()) if file_choices is not None else []
+        form_panel = _build_form_panel(
+            parsed, search_filter=search_filter, project_id=pid, file_choices=choices
+        )
 
         if mode == "raw":
             return raw_panel
@@ -358,8 +366,13 @@ def _build_form_panel(
     parsed: StrFile | None,
     search_filter: dict[str, list[str]] | None = None,
     project_id: int | None = None,
+    file_choices: Sequence[str] = (),
 ) -> ui.Tag:
-    """Build the structured form panel from parsed STR file data."""
+    """Build the structured form panel from parsed STR file data.
+
+    File parameters (wind, boundn, restrt, ...) render as a selectize over
+    ``file_choices`` (project-relative) that also accepts a typed name.
+    """
     if parsed is None or not parsed.sections:
         return ui.div(
             ui.p(
@@ -439,21 +452,11 @@ def _build_form_panel(
                             class_="mb-2",
                         )
                     )
-                elif project_id is not None and is_file_param(param_name):
-                    # file_types filtering wired when file_picker_server is connected
-                    picker_id = f"fp_{section_name}_{param_name}"
+                elif is_file_param(param_name):
                     fields.append(
                         ui.div(
                             label,
-                            file_picker_ui(picker_id, label=""),
-                            ui.div(
-                                ui.input_text(
-                                    field_id,
-                                    "",
-                                    value=str(param_val),
-                                ),
-                                style="display:none;",
-                            ),
+                            str_file_selectize(field_id, "", str(param_val), file_choices),
                             class_="mb-2",
                         )
                     )
@@ -471,20 +474,11 @@ def _build_form_panel(
                     )
             else:
                 # Unknown parameter — check if it's a file param
-                if project_id is not None and is_file_param(param_name):
-                    picker_id = f"fp_{section_name}_{param_name}"
+                if is_file_param(param_name):
                     fields.append(
                         ui.div(
                             ui.span(param_name, class_="fw-bold small", style=highlight_style),
-                            file_picker_ui(picker_id, label=""),
-                            ui.div(
-                                ui.input_text(
-                                    field_id,
-                                    "",
-                                    value=str(param_val),
-                                ),
-                                style="display:none;",
-                            ),
+                            str_file_selectize(field_id, "", str(param_val), file_choices),
                             class_="mb-2",
                         )
                     )
