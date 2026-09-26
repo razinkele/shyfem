@@ -548,3 +548,31 @@ class TestStrChoicesCache:
         got = project_rel_file_choices(_proj(project_tree), None, config)
         assert "INPUT/warm.rst" in got and "INPUT/gotmturb.nml" in got
         assert ".rst" in STR_DATA_EXTS and ".nml" in STR_DATA_EXTS
+
+
+class TestNameFieldHelpers:
+    def test_placeholder_is_configurable(self):
+        from shyfem_ui.components.project_select import str_file_selectize
+
+        html = str(
+            str_file_selectize("d", "Folder", "", ["INPUT"], placeholder="pick or type a folder")
+        )
+        assert '"placeholder": "pick or type a folder"' in html
+
+    def test_project_rel_dir_choices_exclude_root_and_hidden(self, config, project_tree):
+        from shyfem_ui.components.project_select import project_rel_dir_choices
+
+        got = project_rel_dir_choices(_proj(project_tree), None, config)
+        assert "." not in got
+        assert "INPUT" in got and "GRID" in got and str(Path("GRID") / "sub") in got
+        assert not any(".boxmodel_cache" in d for d in got)
+        assert project_rel_dir_choices(None, None, config) == []
+
+    def test_dir_name_choices_lists_only_direct_children(self, project_tree, tmp_path):
+        from shyfem_ui.components.project_select import dir_name_choices
+
+        got = dir_name_choices(project_tree)
+        assert got == sorted(got)
+        assert "INPUT" in got and "GRID" in got
+        assert not any("/" in d for d in got)
+        assert dir_name_choices(tmp_path / "missing") == []

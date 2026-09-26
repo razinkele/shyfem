@@ -9,7 +9,9 @@ from shyfem_ui.components.boundary_editor import boundary_editor_server, boundar
 from shyfem_ui.components.project_select import (
     default_project_file,
     project_file_select,
+    project_rel_file_choices,
     project_rel_file_choices_cached,
+    str_file_selectize,
 )
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
@@ -246,6 +248,15 @@ def simulation_server(
     # Initialize str_editor and wire up its reactive state
     _str_choices_cache: dict = {}  # per-session memo, see project_rel_file_choices_cached
 
+    def _project_root(proj, usr) -> Path | None:
+        """The confined project directory, or None without a project."""
+        if proj is None:
+            return None
+        try:
+            return Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
+        except (KeyError, ValueError, OSError):
+            return None
+
     def _str_file_choices() -> list[str]:
         """Project-relative data files for the editors' STR file fields."""
         proj = active_project.get() if active_project is not None else None
@@ -359,18 +370,31 @@ def simulation_server(
     @reactive.effect
     @reactive.event(input.save_as_btn)
     def _show_save_modal():
-        # Pre-fill with current path or suggest new one
+        # Offer the project's .str files (a pick overwrites) as project-relative
+        # paths and suggest "<current>_copy.str"; any relative path can be typed.
+        # Without a project the suggestion stays absolute (local mode only:
+        # server mode rejects writes outside the user's sandbox anyway).
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        root = _project_root(proj, usr)
+        choices = project_rel_file_choices(proj, usr, config, (".str",))
         current = current_file_path.get()
-        if current:
+        if current and root is not None and current.resolve().is_relative_to(root):
+            rel_parent = current.resolve().parent.relative_to(root)
+            suggested = str(rel_parent / f"{current.stem}_copy.str")
+        elif current:
             suggested = str(current.parent / f"{current.stem}_copy.str")
+        elif root is not None:
+            suggested = "simulation.str"
         else:
             suggested = str(config.work_dir / "simulation.str")
         m = ui.modal(
-            ui.input_text(
+            str_file_selectize(
                 "save_path",
-                "Save Path",
-                value=suggested,
-                placeholder="/path/to/new_simulation.str",
+                "Save as (relative to the project)",
+                suggested,
+                choices,
+                placeholder="pick a file to overwrite or type a new path",
             ),
             title="Save As",
             easy_close=True,
@@ -402,6 +426,13 @@ def simulation_server(
         if not path_str:
             ui.notification_show("Please enter a save path", type="warning")
             return
+        # A relative pick/typed value is rooted in the project directory.
+        if not Path(path_str).is_absolute():
+            root = _project_root(_proj, _usr)
+            if root is None:
+                ui.notification_show("Open a project to save a relative path", type="warning")
+                return
+            path_str = str(root / path_str)
 
         try:
             path = config.confine_path(path_str, _usr, for_write=True)

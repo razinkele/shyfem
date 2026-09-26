@@ -81,14 +81,33 @@ class TestStrEditorFileFieldSelectize:
             pytest.skip("sample-data card not rendered")
         btn.click(force=True)
         pw_page.wait_for_timeout(1500)
-        # Stay in the default Split view: both the raw textarea and the form
-        # panel exist there, so Apply's update of the textarea is observable.
+        # The editor lives in the "Editor" sub-tab; an earlier file may have
+        # left the page on another sub-tab, and Shiny suspends outputs in
+        # hidden tab panes (no form fields would render). Select it, and the
+        # Split view, explicitly: both persist on the session-scoped page.
+        editor_tab = pw_page.locator("#sf-page-Simulation a.nav-link:has-text('Editor')").first
+        if editor_tab.count():
+            editor_tab.click(force=True)
+            pw_page.wait_for_timeout(500)
+        pw_page.locator("#simulation-str_editor-view_mode input[value='split']").check(force=True)
+        pw_page.wait_for_timeout(800)
         area = pw_page.locator("#simulation-str_editor-editor_content")
         area.wait_for(state="attached", timeout=10000)
         # The sample STR has a $name section with file params; pick the first
         # selectize-backed form field whose id names a known file param.
         field = pw_page.locator("select[id^='simulation-str_editor-form_name_']").first
-        field.wait_for(state="attached", timeout=10000)
+        try:
+            field.wait_for(state="attached", timeout=10000)
+        except Exception:
+            info = pw_page.evaluate("""() => ({
+                    sample: (document.getElementById('simulation-sample_str_select')||{}).value,
+                    form_selects: [...document.querySelectorAll("select[id^='simulation-str_editor-form_']")].map(e=>e.id).slice(0,8),
+                    form_inputs: [...document.querySelectorAll("input[id^='simulation-str_editor-form_']")].map(e=>e.id).slice(0,8),
+                    view: [...document.querySelectorAll("#simulation-str_editor-view_mode input")].filter(e=>e.checked).map(e=>e.value),
+                    text: ((document.getElementById('simulation-str_editor-editor_content')||{}).value||'').slice(0,200),
+                    toasts: [...document.querySelectorAll('.shiny-notification')].map(e=>e.innerText.slice(0,80)),
+                })""")
+            raise AssertionError(f"no $name file field rendered; state={info!r}") from None
         field_id = field.get_attribute("id")
         control = pw_page.locator(
             f"#{field_id} + .selectize-control input, "

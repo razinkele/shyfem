@@ -107,7 +107,10 @@ class TestNewProjectModal:
         _open_new_project_modal(pw_page)
         assert pw_page.locator("#home-project_name").is_visible()
         assert pw_page.locator("#home-project_description").is_visible()
-        assert pw_page.locator("#home-project_dir").is_visible()
+        # The project folder is a selectize: the real <select> is hidden and
+        # the visible control sits next to it.
+        assert pw_page.locator("#home-project_dir").count() == 1
+        assert pw_page.locator("#home-project_dir ~ .selectize-control").is_visible()
         _close_modal(pw_page)
 
     def test_modal_create_button(self, pw_page):
@@ -173,7 +176,11 @@ class TestTutorialModal:
         modal_text = pw_page.locator(_MODAL).inner_text()
         # Keywords must match the actual phase titles in TUTORIAL_CONTENT.
         for keyword in [
-            "Hydrodynamics", "Boundaries", "Coriolis", "Salinity", "Temperature",
+            "Hydrodynamics",
+            "Boundaries",
+            "Coriolis",
+            "Salinity",
+            "Temperature",
         ]:
             assert keyword in modal_text
         _close_modal(pw_page)

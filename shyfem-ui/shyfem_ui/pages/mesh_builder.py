@@ -9,6 +9,7 @@ from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.grid_map import grid_map_server, grid_map_ui
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
+from shyfem_ui.components.project_select import project_rel_file_choices, str_file_selectize
 from shyfem_ui.config import Config
 from shyfem_ui.services.mesh_builder import (
     _check_boundary_gates,
@@ -270,11 +271,7 @@ def _step_export_panel() -> ui.Tag:
         ui.div(
             ui.h4("Step 5: Export"),
             ui.output_ui("export_summary"),
-            ui.input_text(
-                "export_filename",
-                "Output Filename",
-                value="mesh_output.grd",
-            ),
+            ui.output_ui("export_filename_picker"),
             ui.input_action_button(
                 "save_to_project",
                 "Save to Project Directory",
@@ -1462,6 +1459,20 @@ def mesh_builder_server(
             summary += f", depth {min(depths):.1f}\u2013{max(depths):.1f}"
         return ui.p(f"Mesh ready: {summary}", class_="text-muted")
 
+    @render.ui
+    def export_filename_picker():
+        """Project .grd files (a pick overwrites, as a project-relative path)
+        or a typed new name."""
+        proj = active_project.get() if active_project is not None else None
+        usr = current_user() if current_user is not None else None
+        return str_file_selectize(
+            "export_filename",
+            "Output Filename",
+            "mesh_output.grd",
+            project_rel_file_choices(proj, usr, config, (".grd",)),
+            placeholder="pick a .grd to overwrite or type a new name",
+        )
+
     @reactive.effect
     @reactive.event(input.save_to_project)
     def _on_save():
@@ -1497,6 +1508,9 @@ def mesh_builder_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
         try:
+            # A picked/typed name may carry a subdirectory (GRID/x.grd); the
+            # path is already confined to the work tree, so create the parent.
+            output_path.parent.mkdir(parents=True, exist_ok=True)
             export_grd(grd, output_path)
             _log(f"Exported mesh to: {output_path}")
             ui.notification_show(f"Saved: {output_path}", type="message", duration=5)
@@ -1504,7 +1518,9 @@ def mesh_builder_server(
             _log(f"Export error: {e}")
             ui.notification_show(f"Error: {e}", type="error", duration=5)
 
-    @_render_download_button(filename=lambda: input.export_filename() or "mesh_output.grd")
+    @_render_download_button(
+        filename=lambda: Path(input.export_filename() or "mesh_output.grd").name
+    )
     def download_grd():
         """Download .grd file to the browser."""
         import os
