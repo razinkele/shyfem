@@ -160,7 +160,7 @@ def project_file_select(
         # A sample/tutorial file can still be offered without a project.
         if not extra:
             return _placeholder_select(
-                select_id, label, f"Open a project to choose a {label.lower()}."
+                select_id, label, f"Open a project to choose the {label.lower()}."
             )
     else:
         root = _confined_root(proj, user, config)
@@ -217,7 +217,7 @@ def project_dir_select(
     if proj is None:
         if not extra:
             return _placeholder_select(
-                select_id, label, f"Open a project to choose a {label.lower()}."
+                select_id, label, f"Open a project to choose the {label.lower()}."
             )
     else:
         root = _confined_root(proj, user, config)
