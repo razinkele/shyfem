@@ -22,7 +22,12 @@ from shyfem_ui.components.project_select import (
 )
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
-from shyfem_ui.services.parser_str import COMMON_PARAMS, StrFile, StrParser
+from shyfem_ui.services.parser_str import (
+    COMMON_PARAMS,
+    StrFile,
+    StrParser,
+    format_param_display,
+)
 from shyfem_ui.services.str_validator import validate_str
 
 logger = logging.getLogger(__name__)
@@ -904,6 +909,41 @@ def _preview_content(sf: StrFile) -> tuple[str | None, str | None]:
         return None, f"Cannot write this STR: {exc}{where}"
 
 
+def _field_scalar(text: str) -> object:
+    """One field token as int, float, or the text itself."""
+    try:
+        if "." in text or "e" in text.lower():
+            return float(text)
+        return int(text)
+    except ValueError:
+        return text
+
+
+def _parse_field_value(raw_str: str) -> object:
+    """Convert a panel field's text to the value to store in the STR.
+
+    The inverse of ``format_param_display``, and the same rule the parser
+    applies when reading the file: a whitespace-separated run of numbers is a
+    value list (``kbound = 1855 1856 1882 1883``), not a string. Leaving it a
+    string would make ``_format_value`` quote it -- ``kbound = '1855 1856'``,
+    a character value the core hard-stops on -- so merely *opening* the
+    boundary panel and saving would corrupt the file.
+
+    A run whose tokens are not all numeric (a per-area array like
+    ``0.3, 0.25, 0.1``, or a path with a space) stays a single string, which
+    is what the parser does with it too.
+    """
+    tokens = raw_str.split()
+    if len(tokens) > 1:
+        converted = [_field_scalar(t) for t in tokens]
+        if all(isinstance(v, int) for v in converted):
+            return converted
+        if all(isinstance(v, (int, float)) for v in converted):
+            return [float(v) for v in converted]
+        return raw_str
+    return _field_scalar(raw_str)
+
+
 def _read_input_and_set(
     inputs,
     sf: StrFile,
@@ -921,15 +961,7 @@ def _read_input_and_set(
     if not raw_str:
         return
 
-    try:
-        if "." in raw_str or "e" in raw_str.lower():
-            value: object = float(raw_str)
-        else:
-            value = int(raw_str)
-    except ValueError:
-        value = raw_str
-
-    sf.set_param(section, param, value)
+    sf.set_param(section, param, _parse_field_value(raw_str))
 
 
 @module.ui
@@ -3112,7 +3144,11 @@ def physics_server(
                     ui.input_text(
                         "kbound",
                         "Boundary nodes",
-                        value=str(params.get("kbound", "") or ""),
+                        # kbound is an int_list: a node run parses to a
+                        # list, and str() would put "[1855, 1856]" in the
+                        # field -- which the save reads back and quotes into
+                        # a line the core hard-stops on.
+                        value=format_param_display(params.get("kbound")),
                         placeholder="Node numbers",
                     ),
                 ),

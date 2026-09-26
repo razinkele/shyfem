@@ -1581,3 +1581,70 @@ class TestPurgeNdugeWithRepeats:
 
         sf = StrParser.parse("$para\n        idt = 300\n$end\n")
         assert _purge_nduge(sf) is False
+
+
+class TestListValuedParamRoundTrip:
+    """`kbound` is an int_list in COMMON_PARAMS, and the parser now returns
+    one. The boundary panel rendered it with `str(...)` -- "[1855, 1856]" in
+    the field -- and the save read that text straight back: `int()`/`float()`
+    both fail, so it became a *string*, and `_format_value` quotes a string
+    that is not a bare number. The panel therefore rewrote
+
+        kbound = 1855 1856   ->   kbound = '[1855, 1856]'
+
+    which the core hard-stops on. Opening the panel and touching nothing
+    must leave the file byte-identical."""
+
+    _CONTENT = "$bound\n        kbound = 1855 1856 1882 1883\n        ibtyp = 1\n$end\n"
+
+    def test_the_panel_shows_the_nodes_space_separated(self):
+        from shyfem_ui.services.parser_str import format_param_display
+
+        sf = StrParser.parse(self._CONTENT)
+        params = build_panel_params(sf, "boundary")
+        assert params["kbound"] == [1855, 1856, 1882, 1883]
+        assert format_param_display(params["kbound"]) == "1855 1856 1882 1883"
+
+    def test_the_boundary_panel_renders_kbound_through_the_shared_formatter(self):
+        """Lock the render site: `str(params.get("kbound"...))` is the bug."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        src = inspect.getsource(physics)
+        assert 'format_param_display(params.get("kbound"' in src
+        assert 'str(params.get("kbound"' not in src
+
+    def test_an_untouched_node_list_field_leaves_the_file_unchanged(self):
+        from shyfem_ui.services.parser_str import format_param_display
+
+        sf = StrParser.parse(self._CONTENT)
+        shown = format_param_display(build_panel_params(sf, "boundary")["kbound"])
+        errors = collect_errors(FakeInputs({"kbound": shown, "ibtyp": "1"}), sf)
+        assert errors == []
+        out = StrParser.generate(sf)
+        assert "'" not in out, out
+        assert out == self._CONTENT, out
+
+    def test_an_edited_node_list_field_saves_a_valid_run_of_numbers(self):
+        sf = StrParser.parse(self._CONTENT)
+        errors = collect_errors(FakeInputs({"kbound": "1855 1856 9001"}), sf)
+        assert errors == []
+        out = StrParser.generate(sf)
+        assert "kbound = 1855 1856 9001" in out
+        assert "'" not in out and "[" not in out
+        assert StrParser.parse(out).get_param("bound", "kbound") == [1855, 1856, 9001]
+
+    def test_a_single_node_field_still_saves_as_a_scalar(self):
+        sf = StrParser.parse("$bound\n        kbound = 1855\n$end\n")
+        assert collect_errors(FakeInputs({"kbound": "1856"}), sf) == []
+        assert StrParser.parse(StrParser.generate(sf)).get_param("bound", "kbound") == 1856
+
+    def test_a_non_numeric_multi_token_field_stays_a_quoted_string(self):
+        """The list conversion must not swallow a genuine character value:
+        a per-area array (`0.3, 0.25, 0.1`) has non-numeric tokens and a file
+        name may hold spaces, so both stay strings and keep their quotes."""
+        sf = StrParser.parse("$para\n        beachrate = 0.3\n$end\n")
+        assert collect_errors(FakeInputs({"beachrate": "0.3, 0.25, 0.1"}), sf) == []
+        out = StrParser.generate(sf)
+        assert "beachrate = '0.3, 0.25, 0.1'" in out, out

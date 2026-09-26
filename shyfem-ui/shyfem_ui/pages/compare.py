@@ -18,7 +18,7 @@ from shyfem_ui.components.job_status import format_datetime, format_duration
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus
-from shyfem_ui.services.parser_str import COMMON_PARAMS, StrParser
+from shyfem_ui.services.parser_str import COMMON_PARAMS, StrParser, format_param_display
 from shyfem_ui.services.report import generate_comparison_report
 from shyfem_ui.services.run_logic import list_scoped_jobs
 
@@ -570,8 +570,10 @@ def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
         all_params = set(params_a.keys()) | set(params_b.keys())
 
         for param in sorted(all_params):
-            val_a = str(params_a.get(param, "-"))
-            val_b = str(params_b.get(param, "-"))
+            # Spelled as the .str spells it, so a value run reads
+            # "1855 1856" rather than Python's "[1855, 1856]".
+            val_a = format_param_display(params_a[param]) if param in params_a else "-"
+            val_b = format_param_display(params_b[param]) if param in params_b else "-"
             if val_a != val_b:
                 if val_b == "-":
                     diff_type = "only_a"

@@ -345,6 +345,36 @@ class TestAssimilValidation:
         text = self._PARA.format(extra=para_extra) + sections_text
         return validate_str(StrParser.parse(text).sections)
 
+    def test_a_per_observation_array_is_accepted(self):
+        """`corlength = 100. 200.` is one value per observation -- exactly what
+        physics.py::_assimil_is_array renders as a legal array. Reading a run
+        of numbers as a list (issue #86) must not turn that into an error: the
+        validator would contradict the editor for a valid file."""
+        msgs = self._msgs(self._section(nobs=2, corlength="100. 200.", sigobs="0.1 0.2"))
+        assert [m for m in msgs if m.level == "error"] == []
+
+    def test_a_non_positive_element_of_an_array_is_still_an_error(self):
+        msgs = self._msgs(self._section(nobs=2, corlength="100. -5."))
+        assert [m.param for m in msgs if m.level == "error"] == ["corlength"]
+        assert "must be > 0" in next(m.message for m in msgs if m.param == "corlength")
+
+    def test_a_non_numeric_array_element_is_an_error(self):
+        msgs = self._msgs(self._section(corlength="'a b'"))
+        assert [m.param for m in msgs if m.level == "error"] == ["corlength"]
+
+    def test_an_empty_array_is_an_error(self):
+        msgs = self._msgs(self._section(corlength="''"))
+        assert [m.param for m in msgs if m.level == "error"] == ["corlength"]
+
+    def test_a_list_valued_ivar_reports_instead_of_crashing(self):
+        """`ivar = 12 13` is malformed, but it reached `ivar in seen_ivars`
+        and raised TypeError: unhashable type: 'list' -- a traceback where the
+        user needs a message."""
+        msgs = self._msgs(self._section(ivar="12 13"))
+        errors = [m for m in msgs if m.level == "error"]
+        assert any(m.param == "ivar" for m in errors)
+        assert any("not a number" in m.message for m in errors)
+
     def test_valid_section_has_no_assimil_errors(self):
         msgs = self._msgs(self._section())
         assert [m for m in msgs if m.level == "error"] == []

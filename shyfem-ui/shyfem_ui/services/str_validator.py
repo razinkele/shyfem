@@ -503,6 +503,12 @@ def _validate_assimil(
         ivar = _get(sections, name, "ivar")
         if ivar is None:
             msgs.append(ValidationMessage("error", f"ivar is required in ${name}", "ivar"))
+        elif not isinstance(ivar, (int, float)) or isinstance(ivar, bool):
+            # ivar names the assimilated variable, so it is one number. A run
+            # ("ivar = 12 13") now parses as a list, which reached the
+            # duplicate check below and raised "unhashable type: 'list'" --
+            # a traceback where the user needs a message (mirrors nobs).
+            msgs.append(ValidationMessage("error", f"ivar in ${name} is not a number", "ivar"))
         else:
             if ivar in seen_ivars:
                 msgs.append(
@@ -559,7 +565,17 @@ def _validate_assimil(
 
         for p in ("corlength", "sigobs", "sigback"):
             v = _get(sections, name, p)
-            if not isinstance(v, (int, float)) or v <= 0:
+            # Any of these may legally carry ONE VALUE PER OBSERVATION --
+            # "corlength = 100. 200." -- which is what physics.py's
+            # _assimil_is_array renders as an array field. Since a run of
+            # numbers now parses as a list (issue #86), check every element
+            # rather than the container: treating the list itself as
+            # non-numeric made the validator reject files the editor offers
+            # as valid.
+            values = list(v) if isinstance(v, (list, tuple)) else [v]
+            if not values or not all(
+                isinstance(x, (int, float)) and not isinstance(x, bool) and x > 0 for x in values
+            ):
                 msgs.append(ValidationMessage("error", f"{p} must be > 0 in ${name}", p))
 
         for p in ("filecoords", "fileobs"):
