@@ -313,7 +313,14 @@ def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
     assert "status_tick.get()" not in poll_body and "cache_generation.get()" not in poll_body
     # PR 2: the Compare chain hangs off all_run_states() (cache_generation),
     # never off the badge tick either.
-    for name in ("cmp_runs_selected", "cmp_days", "cmp_diff", "cmp_skill_frames", "_cmp_layers"):
+    for name in (
+        "cmp_runs_selected",
+        "cmp_days",
+        "cmp_days_result",
+        "cmp_diff",
+        "cmp_skill_frames",
+        "_cmp_layers",
+    ):
         body = code(name)
         assert "status_tick" not in body, name
         assert "status()" not in body, name
@@ -655,6 +662,18 @@ def test_polygons_result_returns_the_no_outlines_message():
     assert "_no_polygons_message(manifest_obj, cached_run)" in body
 
 
+def test_polygons_result_hands_over_the_grid_it_already_parsed():
+    """Item 3: ``polygons_result`` holds the parsed ``GrdFile`` (it needs it for
+    the EPSG decision), so it must hand that object to
+    ``dissolve_boxes_from_grid`` -- passing the path made the service parse the
+    whole .grd a second time. With no parsed grid (a grid that failed to parse)
+    the manifest path stays the fallback, so the page still works."""
+    from shyfem_ui.pages import boxmodel
+
+    body = _code_of(boxmodel, "boxmodel_server")("polygons_result")
+    assert "dissolve_boxes_from_grid(grd if grd is not None else manifest_obj.grd" in body
+
+
 # --- download file name (Minor 9) ----------------------------------------
 
 
@@ -798,6 +817,75 @@ def test_compare_bounds_clamp_the_header_period_like_the_time_series_tab():
     assert boxmodel._compare_bounds({}, None) is None
 
 
+def test_compare_day_set_turns_a_broken_cache_into_a_page_message():
+    """Item 5: ``state_daily`` comes off disk and nothing validates it beyond
+    the ``date`` normalisation in ``load_cache_state``, so a foreign or
+    hand-edited cache can reach the Compare day set without a usable ``date``
+    column. That must become a page message, the way ``cached_result`` does it,
+    not an exception raised inside a reactive calc."""
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+    from shyfem_ui.services.boxmodel_cache import CachedRun
+
+    def run(run_id, frame):
+        return CachedRun(run_id, {}, frame, pd.DataFrame(), pd.DataFrame(), None)
+
+    good = pd.DataFrame({"date": pd.date_range("2009-01-01", periods=5, freq="D"), "box": 1})
+    states = {"a": run("a", good), "b": run("b", good)}
+    days, error = boxmodel._compare_day_set(states, None, str)
+    assert error is None and len(days) == 5
+
+    # no 'date' column at all
+    broken = {"a": run("a", good), "b": run("b", pd.DataFrame({"box": [1, 2]}))}
+    days, error = boxmodel._compare_day_set(broken, None, str)
+    assert len(days) == 0
+    assert error and error.startswith("Compare:") and "date" in error
+
+    # a 'date' column pandas cannot compare (Minor: a hand-written parquet)
+    odd = {"a": run("a", good), "b": run("b", pd.DataFrame({"date": [object()], "box": [1]}))}
+    days, error = boxmodel._compare_day_set(odd, None, str)
+    assert len(days) == 0 and error and error.startswith("Compare:")
+
+    # no runs at all is not an error, just an empty day set
+    days, error = boxmodel._compare_day_set({}, None, str)
+    assert len(days) == 0 and error is None
+    assert len(boxmodel._empty_day_set()) == 0
+
+
+def test_compare_chain_guards_every_off_disk_frame_read():
+    """The guard is wired where the reads happen: the day set goes through the
+    guarded ``_compare_day_set``, ``_cmp_message`` says what went wrong, and
+    ``all_run_states`` validates the ``box`` column the rest of the tab assumes
+    (``load_cache_state`` normalises ``date`` but checks nothing else) and
+    catches the ``TypeError`` ``pd.to_datetime`` raises on an odd column."""
+    from shyfem_ui.pages import boxmodel
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    assert "_compare_day_set(" in code("cmp_days_result")
+    assert "cmp_days_result()" in code("cmp_days")
+    message = code("_cmp_message")
+    assert "cmp_days_result()" in message
+    assert message.index("cmp_days_result()") < message.index("CMP_NO_COMMON_DAYS_MESSAGE")
+    states = code("all_run_states")
+    assert "'box' column" in states or '"box" column' in states
+    assert "TypeError" in states
+
+
+def test_setup_meteo_frame_read_is_guarded():
+    """Item 5 (Setup): ``meteo_daily`` comes off disk too -- a cache whose
+    frame has data columns but no ``box``/``date`` must leave the plot with a
+    message instead of raising out of the render."""
+    from shyfem_ui.pages import boxmodel
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    start = src.index("frame = cached_run.meteo_daily")
+    slice_ = src[start : src.index("if not len(rows)", start)]
+    assert "try:" in slice_, "the meteo_daily read is not inside a try"
+    assert slice_.index("try:") < slice_.index('frame["box"]')
+    assert "_empty(" in slice_, "a failed read must become the plot's message"
+
+
 def test_compare_int_cell_renders_side_by_side_n():
     """``side_by_side`` pivots ``n`` into a float column (NaN for a missing
     cell); the table shows it as an integer or an empty cell."""
@@ -839,7 +927,8 @@ def test_compare_messages_are_muted_paragraphs_and_the_map_is_never_bare():
     assert "cmp_days()" in code("cmp_diff")
     assert "cmp_days()" in code("cmp_overlay")
     assert "cmp_days()" in code("cmp_skill_frames")
-    assert "common_days(" in code("cmp_days")
+    assert "common_days(" in inspect.getsource(boxmodel._compare_day_set)
+    assert "_compare_day_set(" in code("cmp_days_result")
 
 
 # --- PR 3: Setup tab ------------------------------------------------------

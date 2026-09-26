@@ -408,6 +408,39 @@ def _compare_bounds(states: dict, chosen) -> tuple[pd.Timestamp, pd.Timestamp] |
     return low, high
 
 
+def _empty_day_set() -> pd.DatetimeIndex:
+    """The "no days at all" value every Compare consumer already handles."""
+    return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
+
+
+def _compare_day_set(states: dict, chosen, err) -> tuple[pd.DatetimeIndex, str | None]:
+    """``(the shared Compare day set, a page message)``: the runs' common days
+    inside ``_compare_bounds``, or an empty day set and a message.
+
+    ``err`` renders an exception for the browser; the page passes its own
+    ``_err`` (which sanitises host paths out of the text).
+
+    ``state_daily`` comes off disk. ``load_cache_state`` normalises its
+    ``date`` column but validates nothing else, so a foreign or hand-edited
+    cache can reach ``_compare_bounds``/``common_days`` with no ``date``
+    column at all, or one pandas cannot compare. Reading it inside the try
+    turns that into a page message -- the way ``cached_result`` does -- rather
+    than an exception out of a reactive calc: today that is an error box in
+    every Compare output, and a dead session the day any effect consumes the
+    chain without its own try.
+    """
+    if not states:
+        return _empty_day_set(), None
+    try:
+        bounds = _compare_bounds(states, chosen)
+        if bounds is None:
+            return _empty_day_set(), None
+        return common_days(states, *bounds), None
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.warning("boxmodel: compare day set unavailable: %s", exc)
+        return _empty_day_set(), f"Compare: {err(exc)}"
+
+
 def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
     """Publish finished builds and clear dead tmp dirs -- if the caller may write.
 
@@ -1113,7 +1146,14 @@ def boxmodel_server(
                 epsg = None if (grd is None or _is_geographic(grd)) else _detect_projected_crs(grd)
                 return (
                     dissolve_boxes_from_grid(
-                        manifest_obj.grd, cached_run.meta["element_box"], epsg=epsg
+                        # The parsed grid this page already holds (the EPSG
+                        # decision just above needs it): handing the object
+                        # over saves parsing the whole .grd a second time.
+                        # A grid that failed to parse leaves the reactive
+                        # None, and the manifest path still works.
+                        grd if grd is not None else manifest_obj.grd,
+                        cached_run.meta["element_box"],
+                        epsg=epsg,
                     ),
                     None,
                 )
@@ -1493,8 +1533,18 @@ def boxmodel_server(
             if st.state not in ("ready", "stale"):
                 continue
             try:
-                states[run.id] = load_cache_state(cache_dir_for(work_dir, run.id), run.id)
-            except (OSError, ValueError, KeyError) as exc:
+                state = load_cache_state(cache_dir_for(work_dir, run.id), run.id)
+                # Validate here, inside the try, what the whole Compare chain
+                # assumes: load_cache_state normalises the 'date' column but
+                # checks nothing else, so a foreign or hand-edited cache can
+                # reach _cmp_box/period_mean_diff without a 'box' column
+                # (cached_result makes the same check for the other tabs).
+                if "box" not in state.state_daily.columns:
+                    raise KeyError("state_daily has no 'box' column")
+                states[run.id] = state
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                # TypeError too: pd.to_datetime raises it, not ValueError, on a
+                # 'date' column of the wrong kind altogether.
                 logger.warning("boxmodel: run %s state cache unreadable: %s", run.id, exc)
         return states
 
@@ -1588,17 +1638,20 @@ def boxmodel_server(
         return {run_id: states[run_id] for run_id in ids}, b
 
     @reactive.calc
+    def cmp_days_result() -> tuple:
+        """``(day set, page message)`` -- see ``_compare_day_set``, which reads
+        the off-disk ``state_daily`` frames inside a try so a broken cache
+        becomes the tab's message instead of an exception out of this calc."""
+        picked = cmp_runs_selected()
+        if picked is None:
+            return _empty_day_set(), None
+        selected, _b = picked
+        return _compare_day_set(selected, input.period(), _err)
+
     def cmp_days() -> pd.DatetimeIndex:
         """THE shared day set: intersection of the selected runs' days within
         the header period (clamped to the runs' span, see _compare_bounds)."""
-        picked = cmp_runs_selected()
-        if picked is None:
-            return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
-        selected, _b = picked
-        bounds = _compare_bounds(selected, input.period())
-        if bounds is None:
-            return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
-        return common_days(selected, *bounds)
+        return cmp_days_result()[0]
 
     def _cmp_message() -> str | None:
         """The state message for the whole tab, or ``None`` when there is
@@ -1609,7 +1662,12 @@ def boxmodel_server(
             return CMP_NEED_TWO_MESSAGE
         if cmp_runs_selected() is None:
             return CMP_SELECT_RUNS_MESSAGE
-        if len(cmp_days()) == 0:
+        days, days_error = cmp_days_result()
+        if days_error:
+            # A cache the day set could not be read out of: say what went
+            # wrong rather than blaming the period for having no common days.
+            return days_error
+        if len(days) == 0:
             return CMP_NO_COMMON_DAYS_MESSAGE
         return None
 
@@ -2318,11 +2376,19 @@ def boxmodel_server(
         except (TypeError, ValueError):
             return _empty("Select a box on the Time-series tab or the map.")
         frame = cached_run.meteo_daily
-        rows = frame[
-            (frame["box"].astype("int64") == box)
-            & (frame["date"] >= pd.Timestamp(period[0]))
-            & (frame["date"] <= pd.Timestamp(period[1]))
-        ]
+        try:
+            # meteo_daily comes off disk and nothing validates its key columns:
+            # a foreign or hand-edited cache can offer variable columns without
+            # a 'box'/'date' pair. That is this plot's message, not a raise out
+            # of the render.
+            rows = frame[
+                (frame["box"].astype("int64") == box)
+                & (frame["date"] >= pd.Timestamp(period[0]))
+                & (frame["date"] <= pd.Timestamp(period[1]))
+            ]
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("boxmodel: setup meteo frame unreadable: %s", exc)
+            return _empty(f"Meteo: {_err(exc)}")
         if not len(rows):
             return _empty(SETUP_NO_METEO_ROWS_MESSAGE)
         figure.add_trace(
