@@ -262,6 +262,66 @@ async def exported_zip(project_dir, project_meta):
     return await export_project(project_dir, project_meta)
 
 
+class TestImportSkipsTheBoxmodelCache:
+    """Spec §9: import skips any member under ``.boxmodel_cache/`` in the
+    member loop, so such files never touch disk or the size budget (forcing a
+    rebuild). A bundle hand-built outside the app, or one made by an older
+    version that still swept the cache in, must not plant a stale cache in the
+    imported project.
+    """
+
+    def _zip_with_cache(self, *, cache_bytes: int = 4096, payload_bytes: int = 32) -> BytesIO:
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "p"}}))
+            zf.writestr("sim.str", "x" * payload_bytes)
+            zf.writestr(".boxmodel_cache/fix/meta.json", '{"schema": 1}')
+            zf.writestr(".boxmodel_cache/fix/state_daily.parquet", "p" * cache_bytes)
+            zf.writestr(".boxmodel_cache/fix.tmp-abc/progress.json", "{}")
+        buf.seek(0)
+        return buf
+
+    async def test_cache_members_are_not_written_to_disk(self, tmp_path):
+        result = await import_project(self._zip_with_cache(), tmp_path)
+        work_dir = result["work_dir"]
+        assert (work_dir / "sim.str").is_file()
+        assert not (work_dir / ".boxmodel_cache").exists()
+        assert not list(work_dir.rglob(".boxmodel_cache"))
+
+    async def test_cache_bytes_do_not_count_toward_the_import_budget(self, tmp_path, monkeypatch):
+        import shyfem_ui.services.project_export as pe
+
+        """The exclusion happens before the size accounting, so a large stale
+        cache cannot push a legitimately small archive over the budget."""
+        monkeypatch.setattr(pe, "MAX_IMPORT_UNCOMPRESSED_BYTES", 1024)
+        result = await import_project(self._zip_with_cache(cache_bytes=100_000), tmp_path)
+        assert (result["work_dir"] / "sim.str").is_file()
+
+    async def test_a_real_payload_over_the_budget_still_raises(self, tmp_path, monkeypatch):
+        import shyfem_ui.services.project_export as pe
+
+        monkeypatch.setattr(pe, "MAX_IMPORT_UNCOMPRESSED_BYTES", 1024)
+        with pytest.raises(ValueError, match="uncompressed size"):
+            await import_project(self._zip_with_cache(payload_bytes=100_000), tmp_path)
+
+    async def test_cache_members_do_not_count_toward_the_file_count(self, tmp_path, monkeypatch):
+        import shyfem_ui.services.project_export as pe
+
+        monkeypatch.setattr(pe, "MAX_IMPORT_FILES", 2)
+        result = await import_project(self._zip_with_cache(), tmp_path)
+        assert (result["work_dir"] / "sim.str").is_file()
+
+    async def test_export_import_round_trip_leaves_no_cache(
+        self, project_dir, project_meta, tmp_path
+    ):
+        cache = project_dir / ".boxmodel_cache" / "fix"
+        cache.mkdir(parents=True)
+        (cache / "state_daily.parquet").write_bytes(b"parquet" * 100)
+        zip_data = await export_project(project_dir, project_meta)
+        result = await import_project(zip_data, tmp_path)
+        assert not (result["work_dir"] / ".boxmodel_cache").exists()
+
+
 class TestImportProject:
 
     async def test_import_creates_directory(self, exported_zip, tmp_path):

@@ -468,12 +468,19 @@ def resolve_forcing_file(
     if forcing_dir is None:
         return None, "forcing dir not configured"
     candidate = Path(forcing_dir) / name
-    if not candidate.exists() and not candidate.is_symlink():
+    # A name the STR reader preserved verbatim can still be one pathlib
+    # refuses to stat (an embedded NUL byte is valid UTF-8 and survives the
+    # reader's "never raise on content" contract). Treat it as absent rather
+    # than letting ValueError escape into a render.
+    try:
+        if not candidate.exists() and not candidate.is_symlink():
+            return None, "not found"
+        if not no_symlink_components(candidate):
+            return None, "symlink refused"
+        if not candidate.is_file():
+            return None, "not a regular file"
+    except ValueError:
         return None, "not found"
-    if not no_symlink_components(candidate):
-        return None, "symlink refused"
-    if not candidate.is_file():
-        return None, "not a regular file"
     try:
         confined = config.confine_path(candidate, user, must_exist=True)
     except ValueError:
