@@ -705,3 +705,14 @@ def test_03c_quoted_value_may_contain_an_equals_sign(tmp_path: Path):
     p = _write(tmp_path, "$name\n wind = 'a = b.fem'  rain = 'r.fem'\n$end\n")
     prm = read_str_tolerant(p).get("name").params
     assert prm == {"wind": "a = b.fem", "rain": "r.fem"}
+
+
+def test_resolve_forcing_file_survives_a_nul_byte_in_the_name(tmp_path):
+    """The STR reader never raises on content, so a ``boundn`` with an embedded
+    NUL byte reaches the resolver; pathlib refuses to stat it. It must come
+    back as a note, not a ValueError escaping into a render (PR 3 review)."""
+    forcing = tmp_path / "forcing"
+    forcing.mkdir()
+    cfg = Config(deployment_mode="local", work_dir=str(tmp_path))
+    path, note = bs.resolve_forcing_file("fem_forcing/ri\x00ver.txt", forcing, cfg, None)
+    assert path is None and note == "not found"

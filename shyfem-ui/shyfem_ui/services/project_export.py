@@ -149,7 +149,13 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
         names = [info.filename for info in infos]
         if "manifest.json" not in names:
             raise ValueError("Invalid archive: missing manifest.json")
-        _validate_archive_limits(infos)
+        # Cache members are dropped before the limits are computed, so a stale
+        # cache cannot push a legitimate archive over the file-count or size
+        # budget (spec §9). The traversal check below still runs over EVERY
+        # member, so a traversal attempt disguised under the cache prefix is
+        # rejected rather than silently skipped.
+        cache_members = {name for name in names if _is_cache_member(name)}
+        _validate_archive_limits([i for i in infos if i.filename not in cache_members])
 
         try:
             manifest = json.loads(zf.read("manifest.json"))
@@ -192,6 +198,8 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
                 continue
             if member.endswith("/"):
                 continue
+            if member in cache_members:
+                continue
             target = project_dir / member
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, open(target, "wb") as dst:
@@ -226,6 +234,17 @@ def _validate_archive_limits(infos: list[zipfile.ZipInfo]) -> None:
         ratio = info.file_size / compressed_size
         if ratio > MAX_IMPORT_COMPRESSION_RATIO:
             raise ValueError(f"archive member {info.filename!r} has suspicious compression ratio")
+
+
+def _is_cache_member(name: str) -> bool:
+    """True when an archive member lies under an excluded cache directory.
+
+    Spec §9: import skips every member under ``.boxmodel_cache/`` so such
+    files never touch disk or the size budget, forcing a rebuild from the run
+    output. Exports written by this app never contain them; a hand-built
+    bundle, or an archive from a version that predates the export rule, can.
+    """
+    return bool(_EXCLUDE_DIRNAMES.intersection(Path(name).parts))
 
 
 def _sanitize_dirname(name: str) -> str:

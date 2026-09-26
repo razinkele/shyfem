@@ -234,6 +234,17 @@ placed inside the root by anyone with write access there cannot be resolved away
 confinement. Give the directory read-only ownership (e.g. a dedicated non-app user/group) before
 declaring it.
 
+**Onboarding a setup.** A project's bundle can be assembled by a script and imported through the
+Projects page rather than hand-copied. The Curonian Lagoon setup has one in its own repository,
+`shyfem_box/export_ui_bundle.py`: it writes a `ui_bundle/` directory (and a zip) holding
+`boxmodel.json`, the box polygons, the grid, the element-to-box table, the STR, the river forcing
+and `observations.csv`/`sites.csv` generated from the observation database, with the run
+directories pointing at the declared analysis root. Import the zip, then set the root, e.g.
+`SHYFEM_UI_ANALYSIS_ROOTS='["/home/razinka/curonian/published_runs"]'`. Point the root at the
+directory the manifest's run paths actually resolve to: path confinement resolves symlinks
+strictly, so a root that is itself a symlink farm into another tree will reject those runs. The
+Parquet cache is excluded from both export and import, so the first page load rebuilds it.
+
 A project opts in with a `boxmodel.json` manifest (schema 1) in its directory — see
 `shyfem_ui/services/boxmodel_manifest.py` for the exact keys: `title`; `grid.grd` plus optional
 `grid.bas`/`grid.boxes_txt`; optional `boxes.polygons` (when omitted, box outlines are dissolved
