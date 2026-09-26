@@ -311,6 +311,43 @@ class TestImportSkipsTheBoxmodelCache:
         result = await import_project(self._zip_with_cache(), tmp_path)
         assert (result["work_dir"] / "sim.str").is_file()
 
+    async def test_a_traversal_disguised_under_the_cache_prefix_is_still_rejected(self, tmp_path):
+        """The cache filter must never become a way past the traversal check.
+
+        ``.boxmodel_cache/../../evil`` is classified as a cache member (the
+        prefix is in its parts), so it is dropped from the budget and from the
+        extraction loop -- but the traversal loop runs over EVERY name, so the
+        import must still refuse the archive rather than silently skip the
+        member. This pins that ordering: budget filter, then unfiltered
+        traversal check, then mkdir.
+        """
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "p"}}))
+            zf.writestr(".boxmodel_cache/../../evil.txt", "pwned")
+        buf.seek(0)
+        before = set(tmp_path.rglob("*"))
+        with pytest.raises(ValueError, match="path traversal"):
+            await import_project(buf, tmp_path)
+        assert set(tmp_path.rglob("*")) == before
+        assert not (tmp_path.parent / "evil.txt").exists()
+
+    async def test_too_many_entries_is_refused_before_any_member_work(self, tmp_path, monkeypatch):
+        """The entry ceiling is checked before the traversal loop, so a zip of
+        bare directory entries (which the file-count budget skips) cannot tie a
+        worker thread up resolving paths."""
+        import shyfem_ui.services.project_export as pe
+
+        monkeypatch.setattr(pe, "MAX_IMPORT_ENTRIES", 3)
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "p"}}))
+            for i in range(5):
+                zf.writestr(f"d{i}/", "")
+        buf.seek(0)
+        with pytest.raises(ValueError, match="too many entries"):
+            await import_project(buf, tmp_path)
+
     async def test_export_import_round_trip_leaves_no_cache(
         self, project_dir, project_meta, tmp_path
     ):
