@@ -23,6 +23,14 @@ _EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr"})
 # the same precedent for ``boxmodel_cache.CACHE_DIRNAME``.
 _EXCLUDE_DIRNAMES = frozenset({".boxmodel_cache"})
 MAX_IMPORT_FILES = 10000
+# A hard ceiling on the number of archive ENTRIES, checked before any per-member
+# work. MAX_IMPORT_FILES counts only the members that survive filtering (bare
+# directory entries have always been excluded; the box-model cache is excluded
+# too), so on its own it does not bound the traversal check, which must run over
+# every name. Without this cap an archive of millions of bare directory entries
+# would keep one worker thread resolving paths for minutes. Generous enough that
+# no real project trips it: MAX_IMPORT_FILES is 10 000.
+MAX_IMPORT_ENTRIES = 200000
 MAX_IMPORT_UNCOMPRESSED_BYTES = 2 * 1024 * 1024 * 1024
 MAX_IMPORT_COMPRESSION_RATIO = 100
 # Only apply the per-member ratio (zip-bomb) check to members whose UNCOMPRESSED
@@ -147,6 +155,8 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
     with zipfile.ZipFile(zip_data, "r") as zf:
         infos = zf.infolist()
         names = [info.filename for info in infos]
+        if len(names) > MAX_IMPORT_ENTRIES:
+            raise ValueError(f"archive contains too many entries (max {MAX_IMPORT_ENTRIES})")
         if "manifest.json" not in names:
             raise ValueError("Invalid archive: missing manifest.json")
         # Cache members are dropped before the limits are computed, so a stale
