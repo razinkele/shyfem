@@ -1088,8 +1088,10 @@ $end
  - set open boundary conditions
 
 $bound1     ---- Baltic sea ---- raw CMEMS sla, NOT rescaled
-       kbound  = 1547 1548 1549 1550
-                 1554 1555
+       kbound  = 1547 1548 1549 1550 1551 1552 1553
+                 1554 1555 1556 1557 1558 1559 1560
+                 1561 1562 1563 1564 1565 1566 1567
+                 1568 1569 1570 1571 1572 2292 188
 \tibtyp  = 1
 \tboundn = 'fem_forcing/sea_level.fem'
 $end
@@ -1104,6 +1106,21 @@ $end
 
 levels
       1 2 3 4 5 6 7 8 9 10 11 13 15 18 25 35
+end
+
+************************ SECTION WAVES **********************
+$waves
+        itmwav = '1993-01-01'\tidtwav = 0\t!no wave .shy
+        iwave  = 1
+$end
+dtwave = '5m'
+
+ sediment transport is OFF: the marker below is dropped, which is how the
+ setup switches the section off without deleting it.
+sedtr
+        isedi  = 1
+        sedgrs = 0.1 0.2 0.5
+        percin = 0.3 0.3 0.4
 end
 
 $name
@@ -1262,7 +1279,15 @@ class TestRealSTRRoundTrip:
 
     def test_every_section_is_parsed(self):
         parsed = StrParser.parse(CURONIAN_STR)
-        assert set(parsed.sections) == {"title", "para", "bound1", "bound2", "name", "extra"}
+        assert set(parsed.sections) == {
+            "title",
+            "para",
+            "waves",
+            "bound1",
+            "bound2",
+            "name",
+            "extra",
+        }
 
     def test_the_parameter_section_is_read_from_ampersand_para_only(self):
         """The prose above &para carries a decoy `itanf = 347068800`; it is
@@ -1275,7 +1300,36 @@ class TestRealSTRRoundTrip:
 
     def test_boundary_node_lists_are_complete(self):
         parsed = StrParser.parse(CURONIAN_STR)
-        assert parsed.get_param("bound1", "kbound") == [1547, 1548, 1549, 1550, 1554, 1555]
+        assert parsed.get_param("bound1", "kbound") == [
+            1547,
+            1548,
+            1549,
+            1550,
+            1551,
+            1552,
+            1553,
+            1554,
+            1555,
+            1556,
+            1557,
+            1558,
+            1559,
+            1560,
+            1561,
+            1562,
+            1563,
+            1564,
+            1565,
+            1566,
+            1567,
+            1568,
+            1569,
+            1570,
+            1571,
+            1572,
+            2292,
+            188,
+        ]  # 28 nodes over four lines, as in the real file
         assert parsed.get_param("bound2", "kbound") == [1855, 1856, 1882, 1883]
         assert parsed.get_param("bound2", "zfact") == 0.25
         assert parsed.get_param("bound2", "boundn") == "fem_forcing/nemunas.txt"
@@ -1284,6 +1338,25 @@ class TestRealSTRRoundTrip:
         parsed = StrParser.parse(CURONIAN_STR)
         rows = parsed.sections["extra"].parameters["_standalone"]
         assert [r["id"] for r in rows] == [1823, 1657]
+
+    def test_an_inert_bare_word_block_stays_out_of_the_sections(self):
+        """The real file switches $sedtr off by dropping its marker, leaving a
+        bare "sedtr ... end" block. Its contents -- including two
+        space-separated runs -- must stay inter-section text, not become a
+        section, and must survive verbatim."""
+        parsed = StrParser.parse(CURONIAN_STR)
+        assert "sedtr" not in parsed.sections
+        assert "levels" not in parsed.sections
+        out = StrParser.generate(parsed)
+        assert "        sedgrs = 0.1 0.2 0.5" in out
+        assert "      1 2 3 4 5 6 7 8 9 10 11 13 15 18 25 35" in out
+
+    def test_a_key_after_a_closing_marker_is_not_a_parameter(self):
+        """`dtwave = '5m'` sits after $waves' $end and `nsigma = 12` after
+        &para's &end. SHYFEM ignores both; neither may reach a section."""
+        parsed = StrParser.parse(CURONIAN_STR)
+        assert parsed.get_param("waves", "dtwave") is None
+        assert parsed.get_param("para", "nsigma") is None
 
     def test_round_trips_byte_exact(self):
         assert StrParser.generate(StrParser.parse(CURONIAN_STR)) == CURONIAN_STR
@@ -1355,3 +1428,45 @@ class TestFormatParamDisplay:
         value = [1547, 1548, 1549, 1550, 1554, 1555]
         text = f"$bound1\n  kbound = {format_param_display(value)}\n$end\n"
         assert StrParser.parse(text).get_param("bound1", "kbound") == value
+
+
+class TestDisplayRoundTrip:
+    """``format_param_display`` and ``parse_param_display`` must be inverses.
+
+    Every STR form in the app shows a parsed value in a text field and reads
+    it back on save. If the pair is not an inverse, a field the user never
+    touched comes back *different* from the parsed value, the change guard
+    fires, and the value is rewritten -- for a value run, as a quoted Python
+    repr the core hard-stops on. That is exactly how the STR editor's Form
+    view corrupted $sedtr (PR #90 review).
+    """
+
+    CASES = [
+        [1855, 1856, 1882, 1883],
+        [0.1, 0.2, 0.3],
+        1855,
+        0.25,
+        "1h",
+        "fem_forcing/wind.fem",
+        "0.3, 0.25, 0.1",
+        0,
+    ]
+
+    def test_display_then_parse_returns_the_same_value(self):
+        from shyfem_ui.services.parser_str import format_param_display, parse_param_display
+
+        for value in self.CASES:
+            assert parse_param_display(format_param_display(value)) == value, value
+
+    def test_a_displayed_value_never_shows_python_syntax(self):
+        from shyfem_ui.services.parser_str import format_param_display
+
+        for value in self.CASES:
+            shown = format_param_display(value)
+            assert "[" not in shown and "]" not in shown, (value, shown)
+
+    def test_parse_keeps_a_non_numeric_run_as_one_string(self):
+        from shyfem_ui.services.parser_str import parse_param_display
+
+        assert parse_param_display("0.3, 0.25, 0.1") == "0.3, 0.25, 0.1"
+        assert parse_param_display("INPUT/a file.fem") == "INPUT/a file.fem"

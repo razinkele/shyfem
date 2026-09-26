@@ -569,6 +569,46 @@ def format_param_display(value: Any) -> str:
     return str(value)
 
 
+def _display_token(text: str) -> Any:
+    """One field token as int, float, or the text itself."""
+    try:
+        if "." in text or "e" in text.lower():
+            return float(text)
+        return int(text)
+    except ValueError:
+        return text
+
+
+def parse_param_display(text: str) -> Any:
+    """Convert a UI field's text back to the value to store in the STR.
+
+    The inverse of :func:`format_param_display`, and the same rule the parser
+    applies when reading a file: a whitespace-separated run of numbers is a
+    value run (``kbound = 1855 1856 1882 1883``), not a string. Leaving it a
+    string would make ``_format_value`` quote it -- ``kbound = '1855 1856'``,
+    a character value the core hard-stops on.
+
+    The pair must stay an inverse for every value the app can show. A form
+    reads a field back on save and rewrites the parameter when the value
+    differs from the parsed one, so a non-inverse silently corrupts a field
+    the user never touched: that is how the STR editor's Form view turned
+    ``sedgrs = 0.1 0.2 0.3`` into ``sedgrs = '[0.1, 0.2, 0.3]'``.
+
+    A run whose tokens are not all numeric (a per-area array like
+    ``0.3, 0.25, 0.1``, or a path containing a space) stays one string, which
+    is what the parser does with it too.
+    """
+    tokens = text.split()
+    if len(tokens) > 1:
+        converted = [_display_token(t) for t in tokens]
+        if all(isinstance(v, int) and not isinstance(v, bool) for v in converted):
+            return converted
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in converted):
+            return [float(v) for v in converted]
+        return text
+    return _display_token(text)
+
+
 # Section descriptions for UI
 COMMON_SECTIONS = {
     "title": "Simulation title and grid reference",

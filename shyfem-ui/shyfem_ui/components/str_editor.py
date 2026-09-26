@@ -13,6 +13,8 @@ from shyfem_ui.services.parser_str import (
     COMMON_SECTIONS,
     StrFile,
     StrParser,
+    format_param_display,
+    parse_param_display,
 )
 
 logger = logging.getLogger(__name__)
@@ -179,7 +181,13 @@ def str_editor_server(
                         new_val = input[field_id]()
                         if new_val is not None and str(new_val).strip():
                             old_val = section.parameters.get(param_name)
-                            converted = StrParser._convert_value(str(new_val).strip())
+                            # The inverse of the helper the field was rendered
+                            # with. _convert_value is scalar-only: for a value
+                            # run it returned the field's literal text, which
+                            # differs from the parsed list, so this guard fired
+                            # with no user edit and the save quoted a Python
+                            # repr into the file.
+                            converted = parse_param_display(str(new_val).strip())
                             if converted != old_val:
                                 parsed.set_param(section_name, param_name, converted)
                     except Exception:
@@ -466,7 +474,7 @@ def _build_form_panel(
                             ui.input_text(
                                 field_id,
                                 "",
-                                value=str(param_val),
+                                value=format_param_display(param_val),
                             ),
                             class_="mb-2",
                         )
@@ -488,7 +496,7 @@ def _build_form_panel(
                             ui.input_text(
                                 field_id,
                                 "",
-                                value=str(param_val),
+                                value=format_param_display(param_val),
                             ),
                             class_="mb-2",
                         )

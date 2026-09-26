@@ -143,7 +143,10 @@ def test_curonian_str_populates_physics_timing_and_boundaries(pw_page, str_proje
     # $bound1's run spans a continuation line; $bound2's is one line. Neither
     # may show a Python repr, and both must be complete -- the first token
     # alone ("1547", "1855") was the old, plausible-looking truncation.
-    expect(nodes1).to_have_value("1547 1548 1549 1550 1554 1555", timeout=15000)
+    expect(nodes1).to_have_value(
+        "1547 1548 1549 1550 1551 1552 1553 1554 1555 1556 1557 1558 1559 1560 1561 1562 1563 1564 1565 1566 1567 1568 1569 1570 1571 1572 2292 188",
+        timeout=15000,
+    )
     expect(pw_page.locator("#simulation-boundary_editor-bound_nodes_2")).to_have_value(
         "1855 1856 1882 1883"
     )
