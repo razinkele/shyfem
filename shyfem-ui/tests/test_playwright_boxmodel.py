@@ -46,8 +46,12 @@ def box_project(app_work_dir):
     """
     work = app_work_dir / "e2e_boxmodel"
     run_dir = work / "run"
+    run_b = work / "run_b"
     make_box_run(run_dir, days=40)
-    make_box_project(work, run_dir, obs_days=40)
+    # A second run, 1.5 warmer/saltier, so the Compare tab has a non-zero
+    # B - A difference map and two columns in the side-by-side table.
+    make_box_run(run_b, days=40, offset=1.5)
+    make_box_project(work, run_dir, obs_days=40, extra_runs=[("b", "run B", run_b)])
     return {
         "id": 9001,
         "name": "e2e_boxmodel",
@@ -97,6 +101,37 @@ def test_boxmodel_page_builds_cache_and_renders(pw_page, box_project):
     band = pw_page.locator("#boxmodel-band_ratios")
     expect(band).to_contain_text("gap-free days", timeout=15000)
     assert "shiny-output-error" not in (band.get_attribute("class") or "")
+
+    # --- Compare tab: build the second run for real, then compare ---------
+    pw_page.locator("#boxmodel-run").select_option("b")
+    expect(pw_page.locator("#boxmodel-cache_state")).not_to_contain_text("ready", timeout=15000)
+    pw_page.locator("#boxmodel-build").click()
+    expect(pw_page.locator("#boxmodel-cache_state")).to_contain_text("ready", timeout=60000)
+
+    pw_page.get_by_role("tab", name="Compare").click()
+    # The selectors render once two caches are ready; first two runs are
+    # preselected (A = fix, B = b), so nothing needs driving.
+    expect(pw_page.locator("#boxmodel-cmp_runs")).to_be_attached(timeout=30000)
+    # Diverging legend around B - A = +1.5 (temp): a negative and a positive
+    # bound, and the central bin straddling zero.
+    legend = pw_page.locator("#boxmodel-cmp_legend")
+    expect(legend).to_contain_text("B − A", timeout=30000)
+    legend_text = legend.inner_text()
+    assert "-1.5" in legend_text and "+1.5" in legend_text, legend_text
+    assert "shiny-output-error" not in (legend.get_attribute("class") or "")
+    # Side by side: one column per run label (A first) and populated rows.
+    skill = pw_page.locator("#boxmodel-cmp_skill")
+    expect(skill.locator("table tbody tr").first).to_be_visible(timeout=30000)
+    head = skill.locator("table thead").inner_text()
+    assert "fixture run" in head and "run B" in head, head
+    assert head.index("fixture run") < head.index("run B")
+    assert "salinity" in skill.inner_text()
+    # 40-day fixture: per-year needs 60 matched days -> the explanatory message.
+    expect(pw_page.locator("#boxmodel-cmp_per_year")).to_contain_text(
+        "60 matched days", timeout=15000
+    )
+    # No canvas assertion for the second map on purpose (the one WebGL check
+    # above is the suite's single local flake).
 
     # Leave the shared session page clean for the next test file: pw_page is
     # session-scoped, so a lingering non-Dashboard tab / modal would leak.
