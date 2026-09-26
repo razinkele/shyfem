@@ -730,3 +730,25 @@ def test_reconcile_leaves_a_live_builds_finished_dir_to_its_own_publish(tmp_path
     # Without the handle the page load publishes it, exactly as before.
     assert bc.reconcile_tmp_dirs(tmp_path) == ["published fix"]
     assert (root / "fix" / "meta.json").is_file()
+
+
+def test_get_registry_is_a_lazy_process_wide_singleton():
+    """PR 2 follow-up: the service, not the page, owns the process-wide
+    registry so every caller (page, tests, a future CLI status probe) shares
+    the same handles and semaphore."""
+    reg = bc.get_registry()
+    assert isinstance(reg, bc.BuildRegistry)
+    assert bc.get_registry() is reg
+    # a hand-built registry is still a separate object (tests rely on that)
+    assert bc.BuildRegistry() is not reg
+
+
+def test_service_uses_the_shared_helpers():
+    """The private copies moved to ``shyfem_ui.boxmodel_common``; the service
+    must use them rather than keep a drifting duplicate."""
+    from shyfem_ui import boxmodel_common as bcm
+
+    assert bc.check_run_id is bcm.check_run_id
+    assert bc.atomic_json is bcm.atomic_json
+    for private in ("_RUN_ID_RE", "_check_run_id", "_atomic_json"):
+        assert not hasattr(bc, private), private

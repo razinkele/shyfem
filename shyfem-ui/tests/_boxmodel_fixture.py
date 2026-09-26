@@ -31,9 +31,15 @@ ELEMENTS = {1: (1, 2, 6), 2: (1, 6, 5), 3: (2, 3, 7), 4: (2, 7, 6), 5: (3, 4, 8)
 T0 = datetime(2009, 1, 1)
 
 
-def value_at(var: str, box: int, stamp: datetime) -> float:
+def value_at(var: str, box: int, stamp: datetime, offset: float = 0.0) -> float:
+    """Deterministic value of ``var`` in ``box`` at ``stamp``.
+
+    ``offset`` is added to ``temp`` and ``salt`` only, so a second run built
+    with ``offset != 0`` differs from the primary by a known constant in the
+    two compared state variables and is identical everywhere else.
+    """
     h = stamp.hour
-    return {
+    v = {
         "temp": 10 + box + 0.1 * h,
         "salt": 0.5 * box + 0.01 * h,
         "cur_speed": 0.01 * box,
@@ -50,6 +56,9 @@ def value_at(var: str, box: int, stamp: datetime) -> float:
         "evap": 2.0,
         "ice": 0.0,
     }[var]
+    if var in ("temp", "salt"):
+        v += offset
+    return v
 
 
 def flux_at(section: int, stamp: datetime) -> tuple[float, float, float]:
@@ -62,7 +71,7 @@ def _stamp(k: int) -> datetime:
     return T0 + timedelta(hours=k)
 
 
-def _state_record(k: int, boxes: int) -> str:
+def _state_record(k: int, boxes: int, offset: float = 0.0) -> str:
     st = _stamp(k)
     out = [
         "# time record",
@@ -72,7 +81,7 @@ def _state_record(k: int, boxes: int) -> str:
         "# box      temp      salt cur_speed   act_eta  aver_eta   bstress        volume",
     ]
     for b in range(1, boxes + 1):
-        v = [value_at(x, b, st) for x in STATE_VARS]
+        v = [value_at(x, b, st, offset) for x in STATE_VARS]
         out.append(
             f"{b:5d} {v[0]:9.5f} {v[1]:9.5f} {v[2]:9.5f} {v[3]:9.5f} {v[4]:9.5f} {v[5]:9.5f} {v[6]:13.6E}"
         )
@@ -173,15 +182,21 @@ def _run_log(days: int) -> str:
 
 
 def make_box_run(
-    run_dir: Path, *, days: int = 10, boxes: int = 3, with_run_log: bool = True
+    run_dir: Path,
+    *,
+    days: int = 10,
+    boxes: int = 3,
+    with_run_log: bool = True,
+    offset: float = 0.0,
 ) -> dict:
+    """Write a synthetic run; ``offset`` shifts temp/salt in the state records only."""
     run_dir.mkdir(parents=True, exist_ok=True)
     n = 24 * days
     head2 = "#      idbox file_type     nvers\n"
     (run_dir / "boxes_2d.txt").write_text(
         head2
         + f"#     {IDBOX}         2         7\n"
-        + "\n".join(_state_record(k, boxes) for k in range(1, n + 1))
+        + "\n".join(_state_record(k, boxes, offset) for k in range(1, n + 1))
         + "\n"
     )
     (run_dir / "boxes_meteo.txt").write_text(
@@ -232,7 +247,9 @@ def make_box_project(
     run_id: str = "fix",
     polygons: bool = True,
     obs_days: int = 10,
+    extra_runs: list[tuple[str, str, Path]] | None = None,
 ) -> Path:
+    """Write a project; each ``(id, label, dir)`` in ``extra_runs`` follows the primary run."""
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / "fixture.grd").write_text(_grd())
     (project_dir / "boxes.txt").write_text(
@@ -265,7 +282,8 @@ def make_box_project(
         "grid": {"grd": "fixture.grd", "bas": None, "boxes_txt": "boxes.txt"},
         "str": None,
         "forcing": None,
-        "runs": [{"id": run_id, "label": "fixture run", "dir": str(run_dir)}],
+        "runs": [{"id": run_id, "label": "fixture run", "dir": str(run_dir)}]
+        + [{"id": i, "label": label, "dir": str(d)} for i, label, d in (extra_runs or [])],
         "observations": {"file": "observations.csv", "sites": "sites.csv"},
     }
     (project_dir / "boxmodel.json").write_text(json.dumps(manifest, indent=1))
