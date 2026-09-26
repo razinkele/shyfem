@@ -72,3 +72,37 @@ def test_cache_missing_file_during_walk_is_skipped(db, tmp_path, monkeypatch):
 
     # Should only count file1 (250) + DB file (100) = 350
     assert _sum_project_bytes(s, p.id, work_dir=p.work_dir) == 350
+
+
+def test_in_flight_and_superseded_dirs_are_not_double_counted(db, tmp_path):
+    """The two-step publish (``<run>`` -> ``<run>.old-<token>``, ``<run>.tmp-
+    <token>`` -> ``<run>``) leaves a run's bytes on disk twice for a moment.
+    Counting the marker dirs charged the project twice for one run -- in BOTH
+    windows: ``<run>`` + ``<run>.tmp-*`` before, ``<run>`` + ``<run>.old-*``
+    after.
+    """
+    s, p = db
+    root = tmp_path / "p" / ".boxmodel_cache"
+    for name, payload in (
+        ("fix", b"x" * 250),  # published
+        ("fix.tmp-a1b2c3", b"y" * 250),  # a build in flight
+        ("fix.old-a1b2c3", b"z" * 250),  # the superseded copy, about to go
+    ):
+        d = root / name
+        d.mkdir(parents=True)
+        (d / "state_daily.parquet").write_bytes(payload)
+    # 100 (the DB row) + 250 (the ONE published run)
+    assert _sum_project_bytes(s, p.id, work_dir=p.work_dir) == 350
+
+
+def test_every_published_run_and_top_level_file_still_counts(db, tmp_path):
+    """Skipping the marker dirs must not skip anything published: two runs and
+    a loose file at the cache root all count."""
+    s, p = db
+    root = tmp_path / "p" / ".boxmodel_cache"
+    for name in ("fix", "other-run_2"):
+        d = root / name
+        d.mkdir(parents=True)
+        (d / "state_daily.parquet").write_bytes(b"x" * 250)
+    (root / "registry.json").write_bytes(b"j" * 30)
+    assert _sum_project_bytes(s, p.id, work_dir=p.work_dir) == 100 + 250 + 250 + 30

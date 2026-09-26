@@ -470,7 +470,19 @@ class FileService:
 
 
 def _cache_bytes(work_dir: str | Path | None) -> int:
-    """Total size of the regular files under the project's box-model cache.
+    """Total size of the regular files under the project's *published*
+    box-model cache directories.
+
+    A cache build publishes in two steps (``<run>`` -> ``<run>.old-<token>``,
+    ``<run>.tmp-<token>`` -> ``<run>``), so for a moment one run's bytes are
+    on disk twice. Counting the ``.tmp-``/``.old-`` directories charged the
+    project twice for that one run against
+    ``SHYFEM_UI_MAX_PROJECT_STORAGE_MB`` -- in both windows. Only published
+    run directories are counted, which means a build **in flight does not
+    count until it publishes**: that is the deliberate trade-off (the
+    alternative is double-counting every publish). Run ids are
+    ``[a-z0-9_-]{1,64}`` (no dots), so a published name can never carry one
+    of these markers.
 
     Symlinks are counted as links (``lstat``), never followed, so a link into
     the project's own tree is not double-counted and one pointing outside it
@@ -485,13 +497,21 @@ def _cache_bytes(work_dir: str | Path | None) -> int:
     if not cache.is_dir():
         return 0
     total = 0
-    for p in cache.rglob("*"):
-        try:
-            st = p.lstat()
-        except OSError:
+    try:
+        entries = list(cache.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        if ".tmp-" in entry.name or ".old-" in entry.name:
             continue
-        if _stat.S_ISREG(st.st_mode):
-            total += st.st_size
+        paths = entry.rglob("*") if (entry.is_dir() and not entry.is_symlink()) else [entry]
+        for p in paths:
+            try:
+                st = p.lstat()
+            except OSError:
+                continue
+            if _stat.S_ISREG(st.st_mode):
+                total += st.st_size
     return total
 
 
