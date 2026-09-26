@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ---
 
 ## [Unreleased]
+### Fixed
+- **UI, STR parser:** `services/parser_str.py` silently misread real SHYFEM parameter files (#86). A run of numbers was truncated to its first token, so `kbound = 1855 1856 1882 1883` parsed as `1855` and boundaries lost most of their nodes; `&para … &end` sections and headers carrying trailing text (`$bound1     ---- Baltic sea ----`) were dropped entirely, which on the Curonian 29-box STR meant only 4 of its 11 sections parsed and the Physics page and STR editor showed no timing parameters and no boundaries for it; and a numbers-only continuation line was ignored. All four are read as SHYFEM reads them (`nls.f90`), the text after a section name is exposed as `StrSection.header_extra`, and `generate(parse(text))` is now byte-exact on that file and on every `testcases/examples/mar_menor/*.str` — none of which round-tripped before, because a blank line was appended after each `$end`.
 
 ### Added
 - **UI, Box model page (PR 4 of 4, closes the feature):** the Curonian onboarding bundle script (`shyfem_box/export_ui_bundle.py` in the Curonian repo) and a committed cross-check of the package's skill metrics against that repo's reference scripts; admin onboarding docs. Project **import** now skips every member under `.boxmodel_cache/` and leaves them out of the archive size and file-count budgets, so a stale cache can neither be planted on disk nor spend the importing project's budget (the export side landed in PR 1).
