@@ -199,8 +199,26 @@ def test_ui_builds_without_a_session():
     from shyfem_ui.pages import boxmodel
 
     html = str(boxmodel.boxmodel_ui("boxmodel"))
-    for ident in ("boxmodel-run", "boxmodel-build", "boxmodel-cache_state", "boxmodel-skill_table"):
+    for ident in (
+        "boxmodel-run",
+        "boxmodel-build",
+        "boxmodel-cache_state",
+        "boxmodel-skill_table",
+        # PR 2: the Compare tab
+        "boxmodel-cmp_controls",
+        "boxmodel-cmpmap",
+        "boxmodel-cmp_legend",
+        "boxmodel-cmp_plot",
+        "boxmodel-cmp_skill",
+        "boxmodel-cmp_per_year",
+        "boxmodel-cmp_download",
+    ):
         assert ident in html, f"missing input/output id: {ident}"
+    # The old "Run comparison" tab IS the skill half of Compare; it was renamed,
+    # not duplicated.
+    assert "Run comparison" not in html
+    assert "run_comparison_table" not in html
+    assert ">Compare<" in html
 
 
 def test_safe_text_sanitises_a_service_message():
@@ -284,6 +302,13 @@ def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
     poll_body = code("_poll")
     assert "_bump_status()" in poll_body and "_bump_cache_generation()" in poll_body
     assert "status_tick.get()" not in poll_body and "cache_generation.get()" not in poll_body
+    # PR 2: the Compare chain hangs off all_run_states() (cache_generation),
+    # never off the badge tick either.
+    for name in ("cmp_runs_selected", "cmp_days", "cmp_diff", "cmp_skill_frames", "_cmp_layers"):
+        body = code(name)
+        assert "status_tick" not in body, name
+        assert "status()" not in body, name
+    assert "all_run_states()" in code("cmp_runs_selected")
 
 
 class _GateConfig:
@@ -341,7 +366,9 @@ def test_reconcile_runs_once_with_write_access(monkeypatch, tmp_path):
     # Review Important 1: without the registry AND the project id the
     # reconcile decides on progress.json's age alone and can delete the tmp
     # dir of a build running in this very worker.
-    assert kwargs["registry"] is boxmodel.REGISTRY
+    from shyfem_ui.services.boxmodel_cache import get_registry
+
+    assert kwargs["registry"] is get_registry()
     assert kwargs["project_id"] == 7
     assert notice is None
 
@@ -425,6 +452,15 @@ def test_layers_effect_wraps_its_upstream_calls():
     body = src[start : src.index("extra_layers.set(", start)]
     assert body.index("try:") < body.index("polygons()")
     assert body.index("try:") < body.index("box_values()")
+
+    # PR 2: the Compare map's layers effect has the same shape.
+    start = src.index("def _cmp_layers(")
+    body = src[start : src.index("cmp_layers.set(", start)]
+    assert body.index("try:") < body.index("polygons()")
+    assert body.index("try:") < body.index("cmp_diff()")
+    assert "extra_layers.set(" not in body and "legend_bins.set(" not in body.replace(
+        "cmp_legend_bins.set(", ""
+    )
 
 
 # --- band amplitude ratios (spec §7, shown beside the skill table) --------
@@ -608,3 +644,168 @@ def test_download_name_is_built_from_series_not_the_raw_inputs():
     src = get_server_source(boxmodel, "boxmodel_server")
     assert "filename=lambda: _series_filename(series())" in src
     assert 'f"box{input.box()' not in src, "the raw client input must not reach the file name"
+
+
+# --- PR 2: Compare tab ----------------------------------------------------
+
+
+def test_page_uses_the_shared_registry_accessor():
+    """PR 2 follow-up: the registry moved into the cache service. The page must
+    not construct its own (two registries = two per-worker semaphores)."""
+    from shyfem_ui.pages import boxmodel
+
+    src = inspect.getsource(boxmodel)
+    assert "REGISTRY = BuildRegistry()" not in src
+    assert not hasattr(boxmodel, "REGISTRY")
+    assert "get_registry()" in src
+    server = get_server_source(boxmodel, "boxmodel_server")
+    assert "REGISTRY" not in server.replace("get_registry", "")
+
+
+def test_cmp_controls_read_current_choices_under_isolate_and_never_update_from_an_effect():
+    """The Compare selectors are rendered by ``render.ui`` (so they re-render
+    whenever the ready-run set changes). Pushing ``update_selectize`` from an
+    effect as well would be a second writer of the same input; and reading the
+    current choice reactively inside the render would re-render the selectize
+    on every user change -- the self-write loop. So: the renders read the
+    current inputs under ``reactive.isolate()``, and nothing in the server
+    updates ``cmp_runs``/``cmp_b`` from an effect."""
+    from shyfem_ui.pages import boxmodel
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    runs_body = code("cmp_controls")
+    assert "reactive.isolate()" in runs_body
+    assert "input.cmp_runs()" in runs_body
+    assert "input_selectize('cmp_runs'" in runs_body or 'input_selectize("cmp_runs"' in runs_body
+    assert "'maxItems': 4" in runs_body or '"maxItems": 4' in runs_body
+    b_body = code("cmp_b_control")
+    assert "reactive.isolate()" in b_body
+    assert "input.cmp_b()" in b_body
+    assert "input_select('cmp_b'" in b_body or 'input_select("cmp_b"' in b_body
+    # the runs render must not depend on its own output reactively
+    assert "all_run_states()" in runs_body
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert "update_selectize(" not in src
+    assert 'update_select("cmp_' not in src and "update_select('cmp_" not in src
+
+
+def test_compare_filename_is_built_from_validated_inputs():
+    from shyfem_ui.pages import boxmodel
+
+    assert boxmodel._compare_filename("salt", "run_a", "run-b") == "compare_salt_run_a_vs_run-b.csv"
+    assert boxmodel._compare_filename(None, None, None) == "compare.csv"
+    name = boxmodel._compare_filename("../etc", 'a"; rm', "b/c")
+    assert name == "compare_etc_arm_vs_bc.csv"
+    assert all(c.isalnum() or c in "_-." for c in name)
+
+    src = get_server_source(boxmodel, "boxmodel_server")
+    assert "_compare_filename(" in src
+    assert 'f"compare_{input.' not in src, "the raw client input must not reach the file name"
+
+
+def test_validate_compare_runs_orders_a_first_and_picks_b():
+    from shyfem_ui.pages import boxmodel
+
+    states = {"a": object(), "b": object(), "c": object(), "d": object(), "e": object()}
+    # selection order is A first; B = input if in the set else the second run
+    assert boxmodel._validate_compare_runs(("b", "a"), "a", states) == (["b", "a"], "a")
+    assert boxmodel._validate_compare_runs(("b", "a"), None, states) == (["b", "a"], "a")
+    assert boxmodel._validate_compare_runs(("b", "a", "c"), "c", states) == (["b", "a", "c"], "c")
+    # B may not be A
+    assert boxmodel._validate_compare_runs(("b", "a"), "b", states) == (["b", "a"], "a")
+    # unknown ids (a run whose cache went away) are dropped, not fatal
+    assert boxmodel._validate_compare_runs(("a", "zzz", "b"), "zzz", states) == (["a", "b"], "b")
+    # fewer than two, more than four, nothing at all -> None
+    assert boxmodel._validate_compare_runs(("a",), None, states) is None
+    assert boxmodel._validate_compare_runs(("a", "b", "c", "d", "e"), None, states) is None
+    assert boxmodel._validate_compare_runs(None, None, states) is None
+    assert boxmodel._validate_compare_runs(("a", "b"), None, {}) is None
+    # a duplicate id (a re-sent selection) does not count twice
+    assert boxmodel._validate_compare_runs(("a", "a", "b"), None, states) == (["a", "b"], "b")
+
+
+def test_compare_bounds_clamp_the_header_period_like_the_time_series_tab():
+    """``input_date_range`` reads (today, today) until the header run's cache
+    fills it; that run need not be one of the compared runs (or ready at all).
+    So the header period is clamped to the compared runs' span and, when the
+    clamp leaves nothing, the full span is used -- exactly what ``_period()``
+    does for the Time-series tab."""
+    import datetime as dt
+
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+    from shyfem_ui.services.boxmodel_cache import CachedRun
+
+    def run(run_id, start, days):
+        dates = pd.date_range(start, periods=days, freq="D")
+        return CachedRun(
+            run_id,
+            {},
+            pd.DataFrame({"date": dates, "box": 1, "salt": 1.0}),
+            pd.DataFrame(),
+            pd.DataFrame(),
+            None,
+        )
+
+    states = {"a": run("a", "2009-01-01", 10), "b": run("b", "2009-01-05", 40)}
+    span = (pd.Timestamp("2009-01-01"), pd.Timestamp("2009-02-13"))
+    assert boxmodel._compare_bounds(states, None) == span
+    assert boxmodel._compare_bounds(states, (None, dt.date(2009, 1, 8))) == span
+    assert boxmodel._compare_bounds(states, (dt.date(2009, 1, 3), dt.date(2009, 1, 8))) == (
+        pd.Timestamp("2009-01-03"),
+        pd.Timestamp("2009-01-08"),
+    )
+    # partly outside -> clamped
+    assert boxmodel._compare_bounds(states, (dt.date(2008, 12, 1), dt.date(2009, 1, 8))) == (
+        pd.Timestamp("2009-01-01"),
+        pd.Timestamp("2009-01-08"),
+    )
+    # entirely outside (today/today before the header effect lands) -> full span
+    assert boxmodel._compare_bounds(states, (dt.date(2026, 9, 26), dt.date(2026, 9, 26))) == span
+    assert boxmodel._compare_bounds({}, None) is None
+
+
+def test_compare_int_cell_renders_side_by_side_n():
+    """``side_by_side`` pivots ``n`` into a float column (NaN for a missing
+    cell); the table shows it as an integer or an empty cell."""
+    from shyfem_ui.pages import boxmodel
+
+    assert boxmodel._int_cell(40.0) == "40"
+    assert boxmodel._int_cell(float("nan")) == ""
+    assert boxmodel._int_cell(None) == ""
+
+
+def test_compare_messages_are_muted_paragraphs_and_the_map_is_never_bare():
+    """Every Compare state message is a ``ui.tags.p(..., class_="text-muted")``,
+    and the legend beside the map shows the state message when there are no
+    layers, so the map is never a bare mesh with nothing said."""
+    from shyfem_ui.pages import boxmodel
+
+    for text in (
+        boxmodel.CMP_NEED_TWO_MESSAGE,
+        boxmodel.CMP_SELECT_RUNS_MESSAGE,
+        boxmodel.CMP_NO_COMMON_DAYS_MESSAGE,
+        boxmodel.CMP_PER_YEAR_EMPTY_MESSAGE,
+        boxmodel.CMP_NO_OBSERVATIONS_MESSAGE,
+    ):
+        assert isinstance(text, str) and text
+    assert "60 matched days" in boxmodel.CMP_PER_YEAR_EMPTY_MESSAGE
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    # "build a cache" and "pick more runs" are different remedies
+    message = code("_cmp_message")
+    assert "CMP_NEED_TWO_MESSAGE" in message and "CMP_SELECT_RUNS_MESSAGE" in message
+    assert message.index("CMP_NEED_TWO_MESSAGE") < message.index("CMP_SELECT_RUNS_MESSAGE")
+    legend = code("cmp_legend")
+    assert "cmp_legend_bins.get()" in legend
+    assert "_cmp_message()" in legend
+    assert "grid_map_server('cmpmap'" in get_server_source(boxmodel, "boxmodel_server").replace(
+        '"', "'"
+    )
+    # the shared day set is computed once and handed to map, overlay and tables
+    assert "cmp_days()" in code("cmp_diff")
+    assert "cmp_days()" in code("cmp_overlay")
+    assert "cmp_days()" in code("cmp_skill_frames")
+    assert "common_days(" in code("cmp_days")

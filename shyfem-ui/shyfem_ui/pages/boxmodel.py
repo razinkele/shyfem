@@ -1,4 +1,4 @@
-"""Box model page (spec §8): Map and Time-series tabs over the Parquet cache.
+"""Box model page (spec §8): Map, Time-series and Compare tabs over the Parquet cache.
 
 Everything below the page already exists as a reviewed service: the manifest
 loader, the cache service (child-process builds + registry + two-step
@@ -24,7 +24,12 @@ obligations the reviews of those services handed forward:
 * ``reconcile_tmp_dirs`` runs at page load inside a ``try``;
 * the status poller owns its own trigger: it re-arms itself only while a
   build is live and never reads anything it writes, so there is no
-  reactive self-write loop.
+  reactive self-write loop;
+* the Compare tab (PR 2) works on ONE shared day set: ``cmp_days()`` is
+  computed once (``common_days``) and handed to the difference map, the
+  overlay plot and the skill/per-year tables, so the three can never
+  silently describe different days; everything in it hangs off
+  ``all_run_states()`` (``cache_generation``), never the 2 s badge tick.
 """
 
 from __future__ import annotations
@@ -50,14 +55,20 @@ from shyfem_ui.components.grid_map import (
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.boxmodel_cache import (
-    BuildRegistry,
     cache_dir_for,
     cache_status,
     cancel_build,
+    get_registry,
     load_cache,
     load_cache_state,
     reconcile_tmp_dirs,
     start_build,
+)
+from shyfem_ui.services.boxmodel_compare import (
+    common_days,
+    overlay_series,
+    period_mean_diff,
+    side_by_side,
 )
 from shyfem_ui.services.boxmodel_manifest import ManifestError, load_manifest
 from shyfem_ui.services.boxmodel_polygons import (
@@ -72,15 +83,16 @@ from shyfem_ui.services.boxmodel_skill import (
     load_observations,
     load_sites,
     model_series,
+    per_year_table,
 )
 from shyfem_ui.services.boxmodel_skill import skill_table as compute_skill_table
 from shyfem_ui.services.parser_grd import GrdParser
 
 logger = logging.getLogger(__name__)
 
-#: One registry per worker process -- every session on this worker shares it,
-#: which is what makes the per-worker/per-user build caps meaningful.
-REGISTRY = BuildRegistry()
+# The build registry is process-wide and owned by the cache service
+# (``get_registry()``): every session on this worker shares the one instance,
+# which is what makes the per-worker/per-user build caps meaningful.
 
 # shiny 1.7 renamed @render.download to @render.download_button and the old
 # name is deprecated; resolve whichever this shiny provides (mesh_builder.py).
@@ -112,6 +124,24 @@ MAP_MODES = {
     "day": "Value on the selected day",
     "mean": "Period mean",
     "bias": "Bias vs observations (posts)",
+}
+#: Compare tab (spec §8): the state messages, each rendered as a muted
+#: paragraph. Fixed text -- nothing from the manifest -- so no sanitising.
+CMP_NEED_TWO_MESSAGE = "Compare needs at least two runs with a ready cache."
+CMP_SELECT_RUNS_MESSAGE = "Select two to four runs to compare."
+CMP_NO_COMMON_DAYS_MESSAGE = "The selected runs share no days in this period."
+CMP_NO_OBSERVATIONS_MESSAGE = "No observations configured for this project."
+CMP_NO_PROJECT_MESSAGE = "Open a project first."
+CMP_SKILL_EMPTY_MESSAGE = "No target has 30 or more common days across the selected runs."
+CMP_PER_YEAR_EMPTY_MESSAGE = "Per-year skill needs \u2265 60 matched days per year."
+#: Side-by-side row labels, keyed by the ``skill_table`` metric name.
+METRIC_LABELS = {
+    "n": "n",
+    "bias": "bias",
+    "rmse": "RMSE",
+    "r": "r",
+    "r2": "R\u00b2",
+    "sd_ratio": "sd_mod/sd_obs",
 }
 _STATE_BADGE = {
     "ready": "success",
@@ -255,6 +285,77 @@ def _series_filename(data) -> str:
     return f"box{box}_{variable}.csv"
 
 
+def _int_cell(x) -> str:
+    """Format a count that ``side_by_side`` pivoted into a float column
+    (``n`` is NaN where a run has no row)."""
+    if x is None:
+        return ""
+    try:
+        value = float(x)
+    except (TypeError, ValueError):
+        return ""
+    if value != value:  # NaN
+        return ""
+    return str(int(value))
+
+
+def _compare_filename(variable, a, b) -> str:
+    """Download name for the Compare CSV, built from the VALIDATED variable
+    key and run ids (``cmp_runs_selected()``), never the raw inputs; anything
+    outside ``[A-Za-z0-9_-]`` is dropped as a second line of defence."""
+    if not variable or not a or not b:
+        return "compare.csv"
+    clean = [_FILENAME_UNSAFE.sub("", str(part)) for part in (variable, a, b)]
+    if not all(clean):
+        return "compare.csv"
+    return f"compare_{clean[0]}_{clean[1]}_vs_{clean[2]}.csv"
+
+
+def _validate_compare_runs(chosen, b, states: dict) -> tuple[list[str], str] | None:
+    """Validate the Compare selection against the ready runs.
+
+    ``chosen`` is the selectize value in SELECTION order (the shiny select
+    binding returns ``selectize.items``), so A is the first entry. Ids that
+    are not (or no longer) in ``states`` are dropped rather than fatal -- a
+    cache can go away under a live selection -- and duplicates count once.
+    B is ``b`` when it is one of the chosen runs other than A, else the
+    second run. ``None`` unless 2..4 runs remain.
+    """
+    if not chosen:
+        return None
+    ids: list[str] = []
+    for run_id in chosen:
+        if run_id in states and run_id not in ids:
+            ids.append(run_id)
+    if not 2 <= len(ids) <= 4:
+        return None
+    if b not in ids or b == ids[0]:
+        b = ids[1]
+    return ids, b
+
+
+def _compare_bounds(states: dict, chosen) -> tuple[pd.Timestamp, pd.Timestamp] | None:
+    """The period Compare works in: the header period clamped to the compared
+    runs' widest span, or that span when the header period is unset or falls
+    entirely outside it.
+
+    The clamp matches ``_period()`` on the Time-series tab. Without it the
+    header ``input_date_range`` -- which reads (today, today) until the
+    header run's cache fills it, and that run need not be one of the compared
+    runs or ready at all -- would make the day intersection empty for ever.
+    """
+    if not states:
+        return None
+    low = min(pd.Timestamp(r.state_daily["date"].min()) for r in states.values())
+    high = max(pd.Timestamp(r.state_daily["date"].max()) for r in states.values())
+    if chosen and chosen[0] is not None and chosen[1] is not None:
+        start = max(low, pd.Timestamp(chosen[0]))
+        end = min(high, pd.Timestamp(chosen[1]))
+        if start <= end:
+            return start, end
+    return low, high
+
+
 def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
     """Publish finished builds and clear dead tmp dirs -- if the caller may write.
 
@@ -267,7 +368,7 @@ def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=N
     viewer has nothing to reconcile, so failing the write check just skips it,
     silently -- it is not an error the viewer could act on.
 
-    ``REGISTRY`` and ``project_id`` are handed over so the reconcile can tell
+    The registry and ``project_id`` are handed over so the reconcile can tell
     a build running in THIS worker from an abandoned directory: without them
     it decides purely on ``progress.json``'s age, and a page load during a
     long, quiet build phase would delete that build's own output directory.
@@ -281,7 +382,9 @@ def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=N
         logger.info("boxmodel: skipping cache reconcile (no write access): %s", exc)
         return None
     try:
-        for msg in reconcile_tmp_dirs(Path(work_dir), registry=REGISTRY, project_id=project_id):
+        for msg in reconcile_tmp_dirs(
+            Path(work_dir), registry=get_registry(), project_id=project_id
+        ):
             logger.info("boxmodel cache reconcile (%s): %s", project_name, msg)
     except Exception as exc:  # noqa: BLE001 - page load must never die here
         logger.warning("boxmodel: cache reconcile failed: %s", exc, exc_info=True)
@@ -320,7 +423,8 @@ def _cache_period(cached_run) -> tuple:
 
 @module.ui
 def boxmodel_ui() -> ui.Tag:
-    """Box-model page UI: run/variable/period controls plus Map and Time-series tabs."""
+    """Box-model page UI: run/variable/period controls plus the Map,
+    Time-series and Compare tabs."""
     return ui.div(
         ui.h3("Box model"),
         ui.p(
@@ -367,13 +471,27 @@ def boxmodel_ui() -> ui.Tag:
                 ui.output_ui("band_ratios"),
             ),
             ui.nav_panel(
-                "Run comparison",
+                "Compare",
                 ui.p(
-                    "Fit statistics of every ready run against observations, "
-                    "over the days all runs share.",
+                    "Two to four runs on the days they all share: the map shows B \u2212 A "
+                    "of the period mean, the plot overlays the selected box's series, and "
+                    "the tables put the fit statistics side by side.",
                     class_="text-muted small",
                 ),
-                ui.output_ui("run_comparison_table"),
+                ui.output_ui("cmp_controls"),
+                ui.layout_columns(
+                    grid_map_ui("cmpmap", height="440px"),
+                    ui.output_ui("cmp_legend"),
+                    col_widths=(9, 3),
+                ),
+                output_widget("cmp_plot"),
+                ui.output_ui("cmp_skill"),
+                ui.output_ui("cmp_per_year"),
+                ui.download_button(
+                    "cmp_download",
+                    "Download comparison CSV",
+                    class_="btn-outline-primary btn-sm mt-2",
+                ),
             ),
             id="tabs",
         ),
@@ -393,6 +511,10 @@ def boxmodel_server(
     """Box-model page server."""
     extra_layers: reactive.Value = reactive.value([])
     legend_bins: reactive.Value = reactive.value([])
+    # Compare map: written ONLY by _cmp_layers, read by grid_map_server and
+    # the legend render (same discipline as extra_layers/legend_bins).
+    cmp_layers: reactive.Value = reactive.value([])
+    cmp_legend_bins: reactive.Value = reactive.value([])
     grd_file: reactive.Value = reactive.value(None)
     grd_error: reactive.Value = reactive.value(None)
     selected_box: reactive.Value = reactive.value(None)
@@ -578,7 +700,7 @@ def boxmodel_server(
         if manifest_obj is None or run is None or proj is None:
             return None
         try:
-            return cache_status(Path(proj["work_dir"]), run.id, run.dir, REGISTRY)
+            return cache_status(Path(proj["work_dir"]), run.id, run.dir, get_registry())
         except (OSError, ValueError) as exc:
             logger.warning("boxmodel: cache status failed: %s", exc)
             return None
@@ -663,7 +785,7 @@ def boxmodel_server(
             return
         try:
             await start_build(
-                REGISTRY,
+                get_registry(),
                 project=proj,
                 run_id=run.id,
                 run_dir=run.dir,
@@ -690,7 +812,7 @@ def boxmodel_server(
             return
         try:
             cancelled = await cancel_build(
-                REGISTRY, (int(proj["id"]), run.id), project=proj, user=usr
+                get_registry(), (int(proj["id"]), run.id), project=proj, user=usr
             )
         except (PermissionError, ValueError, RuntimeError, OSError) as exc:
             ui.notification_show(_err(exc), type="error", duration=8)
@@ -1214,7 +1336,7 @@ def boxmodel_server(
         states: dict = {}
         for run in manifest_obj.runs:
             try:
-                st = cache_status(work_dir, run.id, run.dir, REGISTRY)
+                st = cache_status(work_dir, run.id, run.dir, get_registry())
             except (ValueError, OSError):
                 continue
             if st.state not in ("ready", "stale"):
@@ -1225,54 +1347,408 @@ def boxmodel_server(
                 logger.warning("boxmodel: run %s state cache unreadable: %s", run.id, exc)
         return states
 
-    @render.ui
-    def run_comparison_table():
+    # --- Compare (spec §8) -------------------------------------------------
+    #
+    # Everything here hangs off all_run_states() (cache_generation) and the
+    # header/compare inputs -- never off status()/status_tick. One day set,
+    # cmp_days(), is shared by the map, the overlay and the tables.
+
+    def _run_labels() -> dict:
         manifest_obj = manifest()
-        obs, sites = observations()
+        return {r.id: r.label for r in manifest_obj.runs} if manifest_obj is not None else {}
+
+    def _cmp_choices(states: dict, current) -> dict:
+        """Selectize choices: ready runs in manifest order -- except that the
+        CURRENT selection comes first, in its own order. ``selected=`` marks
+        ``<option selected>`` in choices order and selectize initialises its
+        items in DOM order, so after a re-render (a build finishing) A would
+        otherwise silently become whichever chosen run the manifest lists
+        first, flipping the sign of B - A."""
+        labels = _run_labels()
+        ordered = [r for r in current if r in states]
+        ordered += [r for r in labels if r in states and r not in ordered]
+        ordered += [r for r in states if r not in ordered]
+        return {r: _text(labels.get(r, r)) for r in ordered}
+
+    @render.ui
+    def cmp_controls():
+        """The run multi-select. Rendered (not ``update_selectize``d from an
+        effect) so the ready-run set is the only thing that re-renders it;
+        the user's current choice is read under ``reactive.isolate()`` and
+        re-applied when still valid -- reading it reactively would re-render
+        the selectize on every pick (the self-write loop) and lose the
+        dropdown mid-selection. The B select is a nested output because ITS
+        choices do depend on ``input.cmp_runs()``.
+        """
+        if manifest() is None:
+            return ui.tags.p(CMP_NO_PROJECT_MESSAGE, class_="text-muted")
         states = all_run_states()
-        if manifest_obj is None:
-            return ui.tags.p("Open a project first.", class_="text-muted")
-        if obs is None or sites is None:
-            return ui.tags.p("No observations configured for this project.", class_="text-muted")
-        if not states:
-            return ui.tags.p("No ready run caches to compare yet.", class_="text-muted")
-        # Widest span across runs; skill_table intersects the shared days.
-        starts = [r.state_daily["date"].min() for r in states.values()]
-        ends = [r.state_daily["date"].max() for r in states.values()]
+        if len(states) < 2:
+            return ui.tags.p(CMP_NEED_TWO_MESSAGE, class_="text-muted")
+        with reactive.isolate():
+            current = tuple(input.cmp_runs() or ()) if "cmp_runs" in input else ()
+        choices = _cmp_choices(states, current)
+        selected = [r for r in current if r in choices][:4] or list(choices)[:2]
+        return ui.layout_columns(
+            ui.input_selectize(
+                "cmp_runs",
+                "Runs (2\u20134, A = first)",
+                choices=choices,
+                selected=selected,
+                multiple=True,
+                options={"maxItems": 4},
+            ),
+            ui.output_ui("cmp_b_control"),
+            ui.output_ui("cmp_message"),
+            col_widths=(5, 3, 4),
+        )
+
+    @render.ui
+    def cmp_b_control():
+        """B over the chosen runs minus A. Depends reactively on
+        ``input.cmp_runs()`` (so it follows the selection) and reads its own
+        current value under ``reactive.isolate()`` so re-rendering it can
+        never re-trigger itself."""
+        states = all_run_states()
+        chosen = tuple(input.cmp_runs() or ()) if "cmp_runs" in input else ()
+        with reactive.isolate():
+            current_b = input.cmp_b() if "cmp_b" in input else None
+        validated = _validate_compare_runs(chosen, current_b, states)
+        if validated is None:
+            return None
+        ids, b = validated
+        labels = _run_labels()
+        choices = {r: _text(labels.get(r, r)) for r in ids[1:]}
+        return ui.input_select(
+            "cmp_b", "B (difference map shows B \u2212 A)", choices=choices, selected=b
+        )
+
+    @reactive.calc
+    def cmp_runs_selected() -> tuple[dict, str] | None:
+        """``({run_id: CachedRun} in A-first order, b_id)`` for a valid
+        selection of 2..4 ready runs, else ``None``."""
+        states = all_run_states()
+        chosen = tuple(input.cmp_runs() or ()) if "cmp_runs" in input else ()
+        b = input.cmp_b() if "cmp_b" in input else None
+        validated = _validate_compare_runs(chosen, b, states)
+        if validated is None:
+            return None
+        ids, b = validated
+        return {run_id: states[run_id] for run_id in ids}, b
+
+    @reactive.calc
+    def cmp_days() -> pd.DatetimeIndex:
+        """THE shared day set: intersection of the selected runs' days within
+        the header period (clamped to the runs' span, see _compare_bounds)."""
+        picked = cmp_runs_selected()
+        if picked is None:
+            return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
+        selected, _b = picked
+        bounds = _compare_bounds(selected, input.period())
+        if bounds is None:
+            return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
+        return common_days(selected, *bounds)
+
+    def _cmp_message() -> str | None:
+        """The state message for the whole tab, or ``None`` when there is
+        something to show."""
+        if manifest() is None:
+            return CMP_NO_PROJECT_MESSAGE
+        if len(all_run_states()) < 2:
+            return CMP_NEED_TWO_MESSAGE
+        if cmp_runs_selected() is None:
+            return CMP_SELECT_RUNS_MESSAGE
+        if len(cmp_days()) == 0:
+            return CMP_NO_COMMON_DAYS_MESSAGE
+        return None
+
+    @render.ui
+    def cmp_message():
+        message = _cmp_message()
+        return ui.tags.p(message, class_="text-muted") if message else None
+
+    @reactive.calc
+    def cmp_diff() -> tuple:
+        """``(values, label)`` for the difference map: B - A of the period
+        mean of the header variable per box, over exactly ``cmp_days()``."""
+        picked = cmp_runs_selected()
+        column = input.variable()
+        if picked is None or column not in VARIABLES:
+            return None, ""
+        selected, b = picked
+        days = cmp_days()
+        ids = list(selected)
+        if len(days) == 0:
+            return None, ""
+        values = period_mean_diff(selected[ids[0]], selected[b], column, days)
+        labels = _run_labels()
+        # Run labels come from the manifest: path-looking tokens are rewritten
+        # here (_text); HTML escaping happens at the tooltip sink.
+        label_b, label_a = _text(labels.get(b, b)), _text(labels.get(ids[0], ids[0]))
+        return values, f"\u0394 {VARIABLES[column]}: {label_b} \u2212 {label_a}"
+
+    @reactive.effect
+    def _cmp_layers():
+        """Rebuild the Compare map layers. Writes ``cmp_layers`` and
+        ``cmp_legend_bins`` and reads neither; every upstream call is inside
+        the ``try`` (an exception escaping an effect ends the session)."""
         try:
-            table = compute_skill_table(states, obs, sites, min(starts), max(ends))
-        except (ValueError, KeyError) as exc:
-            logger.warning("boxmodel: run-comparison skill failed: %s", exc)
-            return ui.tags.p(f"Run comparison: {_err(exc)}", class_="text-muted")
-        if table.empty:
-            return ui.tags.p(
-                "No target has enough common days across the runs.", class_="text-muted"
+            polys = polygons()
+            values, label = cmp_diff()
+            layers, bins = build_box_layers(
+                polys,
+                values if polys else None,
+                label=label,
+                posts=None,
+                selected=selected_box.get(),
+                palette="diverging",
+                symmetric=True,
             )
-        labels = {run.id: run.label for run in manifest_obj.runs}
-        table = table.sort_values(["site", "variable", "run"])
+        except Exception as exc:  # noqa: BLE001 - a layer failure must not kill the session
+            logger.warning("boxmodel: compare layers could not be built: %s", exc, exc_info=True)
+            layers, bins = [], []
+        cmp_layers.set(layers)
+        cmp_legend_bins.set(bins)
+
+    @render.ui
+    def cmp_legend():
+        """Diverging legend beside the difference map -- or, when there are no
+        layers, the tab's state message, so the map is never a bare mesh with
+        nothing said."""
+        bins = cmp_legend_bins.get()
+        if not bins:
+            message = _cmp_message()
+            if message is None and not polygons():
+                # Runs and days are fine but there is nothing to colour: say
+                # why here too (the page-top alert already carries the detail).
+                message = polygons_result()[1] or NO_POLYGONS_MESSAGE
+            return ui.tags.p(message, class_="text-muted") if message else None
+        rows = [
+            ui.tags.div(
+                ui.tags.span(
+                    style=(
+                        "display:inline-block;width:14px;height:14px;"
+                        f"background:rgb({r},{g},{b});margin-right:6px"
+                    )
+                ),
+                ui.tags.span(f"{low:+.3g} \u2013 {high:+.3g}"),
+            )
+            for (low, high, (r, g, b)) in bins
+        ]
+        return ui.tags.div(ui.tags.strong("B \u2212 A"), *rows, class_="small")
+
+    grid_map_server("cmpmap", grd_file, extra_layers=cmp_layers, on_box_click=_on_box)
+
+    def _cmp_box(selected: dict) -> int | None:
+        """The box the overlay shows: the Time-series tab's box select (shared
+        with the maps through _on_box), else the last map click, else A's
+        first box. The header select belongs to the header run, which need
+        not be one of the compared runs, so a box A does not have falls
+        through to the next candidate."""
+        first = next(iter(selected.values()))
+        known = {int(b) for b in first.state_daily["box"].unique()}
+        if not known:
+            return None
+        raw = input.box() if "box" in input else None
+        for candidate in (raw, selected_box.get()):
+            try:
+                box = int(candidate)
+            except (TypeError, ValueError):
+                continue
+            if box in known:
+                return box
+        return min(known)
+
+    @reactive.calc
+    def cmp_overlay() -> dict | None:
+        """Series for the overlay plot: one per run plus the mapped post's
+        observations of the same box, all restricted to ``cmp_days()``."""
+        picked = cmp_runs_selected()
+        column = input.variable()
+        if picked is None or column not in VARIABLES:
+            return None
+        selected, _b = picked
+        days = cmp_days()
+        if len(days) == 0:
+            return None
+        box = _cmp_box(selected)
+        if box is None:
+            return None
+        lines = overlay_series(selected, box, column, days)
+        obs, sites = observations()
+        observed = None
+        if obs is not None and sites is not None:
+            mapped = sites.dropna(subset=["box"])
+            names = mapped[mapped["box"].astype("int64") == box]["site"].tolist()
+            rows = obs[obs["site"].isin(names) & (obs["variable"] == COLUMN_TO_VARIABLE[column])]
+            rows = rows[rows["date"].isin(days)]
+            if len(rows):
+                observed = pd.Series(
+                    rows["value"].to_numpy(), index=pd.Index(rows["date"])
+                ).sort_index()
+        return {"box": box, "lines": lines, "obs": observed, "label": VARIABLES[column]}
+
+    @render_widget
+    def cmp_plot():
+        figure = go.Figure()
+        data = cmp_overlay()
+        if data is None or not any(line.notna().any() for line in data["lines"].values()):
+            figure.add_annotation(
+                text=_cmp_message() or "Nothing to overlay for this box and period",
+                xref="paper",
+                yref="paper",
+                x=0.5,
+                y=0.5,
+                showarrow=False,
+            )
+            figure.update_layout(height=360)
+            return figure
+        labels = _run_labels()
+        for run_id, line in data["lines"].items():
+            figure.add_trace(
+                go.Scatter(
+                    x=line.index,
+                    y=line.values,
+                    name=_text(labels.get(run_id, run_id)),
+                    mode="lines",
+                )
+            )
+        if data["obs"] is not None:
+            figure.add_trace(
+                go.Scatter(
+                    x=data["obs"].index,
+                    y=data["obs"].values,
+                    name="observed",
+                    mode="markers",
+                    marker={"size": 5},
+                )
+            )
+        figure.update_layout(
+            height=360,
+            yaxis_title=data["label"],
+            title={"text": f"box {data['box']}", "font": {"size": 13}},
+            margin={"l": 40, "r": 20, "t": 30, "b": 40},
+        )
+        return figure
+
+    @reactive.calc
+    def cmp_skill_frames() -> tuple:
+        """``(side_by_side_df, per_year_df, error)`` over ``cmp_days()``; both
+        frames ``None`` (with a message) when there is nothing to compute.
+        ``skill_table`` intersects days itself; it is handed the bounds of the
+        shared day set so it lands on the same days as the map and overlay."""
+        obs, sites = observations()
+        picked = cmp_runs_selected()
+        if obs is None or sites is None or picked is None:
+            return None, None, None
+        selected, _b = picked
+        days = cmp_days()
+        if len(days) == 0:
+            return None, None, None
+        start, end = days.min(), days.max()
+        try:
+            skill = compute_skill_table(selected, obs, sites, start=start, end=end)
+            wide = side_by_side(skill, list(selected), _run_labels())
+            yearly = per_year_table(selected, obs, sites, start, end)
+        except (ValueError, KeyError) as exc:
+            logger.warning("boxmodel: compare skill failed: %s", exc)
+            return None, None, f"Compare: {_err(exc)}"
+        return wide, yearly, None
+
+    def _cmp_table_gate():
+        """The message that pre-empts both tables, or ``None``."""
+        if manifest() is None:
+            return CMP_NO_PROJECT_MESSAGE
+        obs, sites = observations()
+        if obs is None or sites is None:
+            return CMP_NO_OBSERVATIONS_MESSAGE
+        return _cmp_message()
+
+    @render.ui
+    def cmp_skill():
+        """Skill side by side: one column per run (A first), one row per
+        (site, variable, metric), over the shared days."""
+        gate = _cmp_table_gate()
+        if gate:
+            return ui.tags.p(gate, class_="text-muted")
+        wide, _yearly, error = cmp_skill_frames()
+        if error:
+            return ui.tags.p(error, class_="text-muted")
+        if wide is None or wide.empty:
+            return ui.tags.p(CMP_SKILL_EMPTY_MESSAGE, class_="text-muted")
+        head = ui.tags.tr(
+            ui.tags.th("site"),
+            ui.tags.th("variable"),
+            ui.tags.th("metric"),
+            *[ui.tags.th(_text(str(column))) for column in wide.columns],
+        )
+
+        def _cell(variable, metric, value):
+            if metric == "n":
+                return _int_cell(value)
+            if metric == "bias":
+                return _bias_cell(variable, value)
+            return _fmt(value, 3 if metric == "rmse" else 2)
+
+        body = [
+            ui.tags.tr(
+                ui.tags.td(str(site)),
+                ui.tags.td(str(variable)),
+                ui.tags.td(METRIC_LABELS.get(metric, metric)),
+                *[ui.tags.td(_cell(variable, metric, value)) for value in row],
+            )
+            for (site, variable, metric), row in zip(
+                wide.index, wide.to_numpy().tolist(), strict=True
+            )
+        ]
+        return ui.tags.div(
+            ui.tags.strong("Skill side by side"),
+            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
+            ui.tags.p(
+                "All runs are compared on the days they all produced within the period. "
+                "Aim for lower RMSE, sd_mod/sd_obs near 1.00, and higher r; R\u00b2 is shown "
+                "but is not the headline. Level skill is computed on anomalies, so a level "
+                "row has no meaningful bias (\u2014).",
+                class_="text-muted small",
+            ),
+            class_="mt-3",
+        )
+
+    @render.ui
+    def cmp_per_year():
+        gate = _cmp_table_gate()
+        if gate:
+            return None  # cmp_skill already says it
+        _wide, yearly, error = cmp_skill_frames()
+        if error:
+            return None
+        if yearly is None or yearly.empty:
+            return ui.tags.p(CMP_PER_YEAR_EMPTY_MESSAGE, class_="text-muted")
+        labels = _run_labels()
+        yearly = yearly.sort_values(["year", "site", "variable", "run"])
         head = ui.tags.tr(
             *[
                 ui.tags.th(c)
                 for c in (
+                    "year",
                     "run",
                     "site",
                     "variable",
-                    "box",
                     "n",
                     "bias",
                     "RMSE",
                     "r",
-                    "R²",
-                    "sd_mod/sd_obs",
+                    "R\u00b2",
+                    "sd",
                 )
             ]
         )
         body = [
             ui.tags.tr(
+                ui.tags.td(str(row.year)),
                 ui.tags.td(_text(labels.get(row.run, row.run))),
                 ui.tags.td(str(row.site)),
                 ui.tags.td(str(row.variable)),
-                ui.tags.td(str(row.box)),
                 ui.tags.td(str(row.n)),
                 ui.tags.td(_bias_cell(row.variable, row.bias)),
                 ui.tags.td(_fmt(row.rmse)),
@@ -1280,16 +1756,36 @@ def boxmodel_server(
                 ui.tags.td(_fmt(row.r2, 2)),
                 ui.tags.td(_fmt(row.sd_ratio, 2)),
             )
-            for row in table.itertuples()
+            for row in yearly.itertuples()
         ]
         return ui.tags.div(
+            ui.tags.strong("Per-year skill"),
             ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
             ui.tags.p(
-                "All runs are compared on the days they all produced, so the window is the "
-                "runs' overlap. Aim for lower RMSE, sd_mod/sd_obs near 1.00, and higher r.",
+                "One row per calendar year with at least 60 matched days; sd is sd_mod/sd_obs.",
                 class_="text-muted small",
             ),
+            class_="mt-3",
         )
+
+    def _cmp_download_name() -> str:
+        picked = cmp_runs_selected()
+        column = input.variable()
+        if picked is None or column not in VARIABLES:
+            return _compare_filename(None, None, None)
+        selected, b = picked
+        return _compare_filename(column, next(iter(selected)), b)
+
+    @_render_download(filename=_cmp_download_name)
+    def cmp_download():
+        wide, yearly, _error = cmp_skill_frames()
+        buffer = io.StringIO()
+        if wide is not None:
+            wide.to_csv(buffer)
+        buffer.write("\n")
+        if yearly is not None:
+            yearly.to_csv(buffer, index=False)
+        yield buffer.getvalue()
 
     @render.ui
     def band_ratios():
