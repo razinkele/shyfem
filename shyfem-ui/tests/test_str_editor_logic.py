@@ -273,3 +273,68 @@ class TestApplyFormSerializationFailure:
     def test_sync_latch_is_released_on_failure(self):
         body = self._handler_source()
         assert "finally:" in body, "_form_syncing must be released even when serializing raises"
+
+
+class TestListValuedFieldsInTheFormView:
+    """The Form view is the third place a parsed value reaches a text field.
+    A space-separated run (``$sedtr``'s ``sedgrs``, whose own description says
+    "space-separated", so several values is the normal case) must be shown and
+    read back as the .str spells it -- not as ``[0.1, 0.2, 0.3]``, which the
+    Apply handler stored back as that literal string and a save then quoted
+    into a file the core rejects.
+    """
+
+    STR = "$sedtr\n        sedgrs = 0.1 0.2 0.3\n        isedi = 1\n$end\n"
+
+    def _field_value(self, html: str, field_id: str) -> str:
+        import re
+
+        m = re.search(rf'id="{field_id}"[^>]*value="([^"]*)"', html)
+        assert m, f"{field_id} not found in the rendered panel"
+        return m.group(1)
+
+    def test_the_field_shows_the_str_spelling(self):
+        from shyfem_ui.components.str_editor import _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
+
+        html = str(_build_form_panel(StrParser.parse(self.STR)))
+        shown = self._field_value(html, "form_sedtr_sedgrs")
+        assert shown == "0.1 0.2 0.3", shown
+        assert "[" not in shown
+
+    def test_applying_the_form_without_edits_changes_nothing(self):
+        """The corruption needed no user edit at all: the round trip through
+        the field had to differ from the parsed value for the guard to fire."""
+        from shyfem_ui.components.str_editor import _build_form_panel
+        from shyfem_ui.services.parser_str import (
+            StrParser,
+            parse_param_display,
+        )
+
+        parsed = StrParser.parse(self.STR)
+        html = str(_build_form_panel(parsed))
+        shown = self._field_value(html, "form_sedtr_sedgrs")
+        read_back = parse_param_display(shown)
+        assert read_back == parsed.get_param("sedtr", "sedgrs")
+        # ... so the Apply handler's "did it change?" guard does not fire.
+        assert StrParser.generate(parsed) == self.STR
+
+    def test_an_edited_run_is_written_unquoted(self):
+        from shyfem_ui.services.parser_str import StrParser, parse_param_display
+
+        parsed = StrParser.parse(self.STR)
+        parsed.set_param("sedtr", "sedgrs", parse_param_display("0.1 0.4"))
+        out = StrParser.generate(parsed)
+        assert "sedgrs = 0.1 0.4" in out
+        assert "'" not in out and "[" not in out
+
+    def test_the_form_view_uses_the_display_helpers_not_str(self):
+        import inspect
+
+        from shyfem_ui.components import str_editor
+
+        src = inspect.getsource(str_editor)
+        assert "value=str(param_val)" not in src
+        assert "format_param_display(param_val)" in src
+        assert "parse_param_display(" in src
+        assert "StrParser._convert_value(str(new_val)" not in src
