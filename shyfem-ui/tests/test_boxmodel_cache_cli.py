@@ -150,6 +150,12 @@ def test_cli_end_to_end_as_subprocess_and_light_imports(run, tmp_path):
     )
     assert rc.returncode == 0, rc.stderr
     assert (out / "meta.json").exists()
+    # The real child path, not a monkeypatched one: the reaper's two inputs
+    # must be in the file a genuine build leaves behind.
+    final = json.loads((out / "progress.json").read_text())
+    assert final["phase"] == "done" and final["exit"] == 0
+    assert final["pid"] and final["pid"] != os.getpid(), "pid must be the CHILD's"
+    assert datetime.fromisoformat(final["started"]) <= datetime.fromisoformat(final["updated"])
     probe = subprocess.run(
         [
             sys.executable,
