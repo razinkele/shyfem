@@ -26,6 +26,7 @@ import json
 import os
 import signal
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -752,3 +753,108 @@ def test_service_uses_the_shared_helpers():
     assert bc.atomic_json is bcm.atomic_json
     for private in ("_RUN_ID_RE", "_check_run_id", "_atomic_json"):
         assert not hasattr(bc, private), private
+
+
+# --- the absolute age cap ----------------------------------------------------
+#
+# The 90 s mtime window used to do two jobs: liveness AND hang detection. Now
+# that the child beats progress.json from a daemon thread, a CRASHED child
+# still stops beating (the thread dies with the process) but a HUNG one beats
+# forever -- so age is measured a second way, from the ``started`` stamp the
+# child writes once, which no heartbeat refreshes.
+
+
+def _beating_tmp(root: Path, name: str, *, age_seconds: float, started: bool = True) -> Path:
+    """A ``.tmp-*`` whose heartbeat is FRESH but whose build began long ago."""
+    tmp = root / name
+    tmp.mkdir(parents=True, exist_ok=True)
+    payload = {"phase": "state", "records": 10, "exit": None, "pid": 4242}
+    if started:
+        begin = datetime.now(timezone.utc) - timedelta(seconds=age_seconds)
+        payload["started"] = begin.isoformat(timespec="seconds")
+    (tmp / "progress.json").write_text(json.dumps(payload))
+    return tmp
+
+
+def test_a_tmp_dir_past_the_cap_is_dead_even_with_a_fresh_heartbeat(tmp_path):
+    root = bc.cache_root(tmp_path)
+    hung = _beating_tmp(root, "fix.tmp-hung", age_seconds=bc.HARD_TMP_AGE_FLOOR_SECONDS + 60)
+    assert bc.reconcile_tmp_dirs(tmp_path) == ["removed dead fix.tmp-hung"]
+    assert not hung.exists()
+
+
+def test_a_long_but_within_cap_build_survives_the_reaper(tmp_path):
+    """The control for the test above: the cap must be generous enough that a
+    slow-but-healthy build is never reaped mid-flight."""
+    root = bc.cache_root(tmp_path)
+    busy = _beating_tmp(root, "fix.tmp-busy", age_seconds=bc.HARD_TMP_AGE_FLOOR_SECONDS / 2)
+    assert bc.reconcile_tmp_dirs(tmp_path) == []
+    assert busy.is_dir()
+
+
+def test_the_cap_is_skipped_for_a_progress_file_with_no_start_stamp(tmp_path):
+    """A foreign or pre-upgrade ``progress.json`` has no ``started``. Falling
+    back to the mtime rule alone keeps the old behaviour rather than treating
+    an unknown birth time as infinitely old."""
+    root = bc.cache_root(tmp_path)
+    old = _beating_tmp(root, "fix.tmp-nostamp", age_seconds=10 * 3600, started=False)
+    assert bc.reconcile_tmp_dirs(tmp_path) == []
+    assert old.is_dir()
+
+
+def test_an_unparsable_start_stamp_does_not_reap_a_beating_build(tmp_path):
+    root = bc.cache_root(tmp_path)
+    tmp = _beating_tmp(root, "fix.tmp-junk", age_seconds=1)
+    payload = json.loads((tmp / "progress.json").read_text())
+    payload["started"] = "not a timestamp"
+    (tmp / "progress.json").write_text(json.dumps(payload))
+    assert bc.reconcile_tmp_dirs(tmp_path) == []
+    assert tmp.is_dir()
+
+
+def test_caller_supplied_cap_overrides_the_floor(tmp_path):
+    root = bc.cache_root(tmp_path)
+    tmp = _beating_tmp(root, "fix.tmp-short", age_seconds=120)
+    assert bc.reconcile_tmp_dirs(tmp_path, max_tmp_age=60) == ["removed dead fix.tmp-short"]
+    assert not tmp.exists()
+
+
+def test_cache_status_does_not_report_a_capped_out_tmp_dir_as_building(tmp_path):
+    """Precedence (b) reports another worker's live tmp dir as ``building``.
+    A hung build beats forever, so without the cap the page would say "build
+    in progress" for good -- including for a viewer, whose page load skips
+    the reconcile that would otherwise remove the directory."""
+    root = bc.cache_root(tmp_path)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _beating_tmp(root, "fix.tmp-hung", age_seconds=bc.HARD_TMP_AGE_FLOOR_SECONDS + 60)
+    assert bc.cache_status(tmp_path, "fix", run_dir, None).state == "missing"
+    _beating_tmp(root, "fix.tmp-busy", age_seconds=30)
+    assert bc.cache_status(tmp_path, "fix", run_dir, None).state == "building"
+
+
+def test_tmp_age_cap_seconds_rises_with_the_configured_build_timeout(tmp_path):
+    """Sizing must not be two independent knobs: an operator who raises the
+    subprocess timeout to bound a long build raises the cap with it."""
+    cfg = Config(command_timeout_seconds=None)
+    assert bc.tmp_age_cap_seconds(cfg) == float(bc.HARD_TMP_AGE_FLOOR_SECONDS)
+    generous = bc.HARD_TMP_AGE_FLOOR_SECONDS + 10_000
+    assert bc.tmp_age_cap_seconds(Config(command_timeout_seconds=generous)) == (
+        generous + bc.TMP_AGE_MARGIN_SECONDS
+    )
+    # A timeout below the floor never shrinks the cap.
+    assert bc.tmp_age_cap_seconds(Config(command_timeout_seconds=60)) == float(
+        bc.HARD_TMP_AGE_FLOOR_SECONDS
+    )
+
+
+def test_clear_stale_tmp_dirs_applies_the_cap_to_a_beating_build(tmp_path):
+    """``start_build`` clears stale directories for the run it is about to
+    build. A hung predecessor that is still beating must not shadow the new
+    build's publish; a genuinely busy one (another worker) must survive."""
+    root = bc.cache_root(tmp_path)
+    hung = _beating_tmp(root, "fix.tmp-hung", age_seconds=bc.HARD_TMP_AGE_FLOOR_SECONDS + 60)
+    busy = _beating_tmp(root, "fix.tmp-busy", age_seconds=30)
+    bc._clear_stale_tmp_dirs(root, "fix")
+    assert not hung.exists()
+    assert busy.is_dir()
