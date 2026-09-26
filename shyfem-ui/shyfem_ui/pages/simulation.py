@@ -9,7 +9,7 @@ from shyfem_ui.components.boundary_editor import boundary_editor_server, boundar
 from shyfem_ui.components.project_select import (
     default_project_file,
     project_file_select,
-    project_rel_file_choices,
+    project_rel_file_choices_cached,
 )
 from shyfem_ui.components.sample_data import get_progressive_str_files, sample_data_card_ui
 from shyfem_ui.components.str_editor import str_editor_server, str_editor_ui
@@ -244,11 +244,13 @@ def simulation_server(
         project_id_reactive.set(proj["id"] if proj else None)
 
     # Initialize str_editor and wire up its reactive state
+    _str_choices_cache: dict = {}  # per-session memo, see project_rel_file_choices_cached
+
     def _str_file_choices() -> list[str]:
         """Project-relative data files for the editors' STR file fields."""
         proj = active_project.get() if active_project is not None else None
         usr = current_user() if current_user is not None else None
-        return project_rel_file_choices(proj, usr, config)
+        return project_rel_file_choices_cached(_str_choices_cache, proj, usr, config)
 
     editor_state = str_editor_server(
         "str_editor",

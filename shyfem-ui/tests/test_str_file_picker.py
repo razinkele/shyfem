@@ -100,7 +100,7 @@ class TestEditorsReceiveProjectFileChoices:
 
         src = get_server_source(mod, "simulation_server")
         assert "def _str_file_choices()" in src
-        assert "project_rel_file_choices(proj, usr, config)" in src
+        assert "project_rel_file_choices_cached(_str_choices_cache, proj, usr, config)" in src
         assert "file_choices=_str_file_choices" in src
         assert src.count("file_choices=_str_file_choices") == 2
 
