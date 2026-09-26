@@ -191,10 +191,20 @@ def test_extract_str_choices_project_files():
         "work_dir": "/tmp/proj",
         "simulations": [],
         "files": [
-            {"id": 1, "filename": "extra.str", "rel_path": "sims/extra.str",
-             "file_type": "str", "size_bytes": 100},
-            {"id": 2, "filename": "grid.grd", "rel_path": "grids/grid.grd",
-             "file_type": "grd", "size_bytes": 200},
+            {
+                "id": 1,
+                "filename": "extra.str",
+                "rel_path": "sims/extra.str",
+                "file_type": "str",
+                "size_bytes": 100,
+            },
+            {
+                "id": 2,
+                "filename": "grid.grd",
+                "rel_path": "grids/grid.grd",
+                "file_type": "grd",
+                "size_bytes": 200,
+            },
         ],
     }
     choices = _extract_str_choices(ctx)
@@ -212,8 +222,13 @@ def test_extract_str_choices_dedup_sim_wins():
             {"name": "My Sim", "str_file": "/tmp/proj/sims/extra.str"},
         ],
         "files": [
-            {"id": 1, "filename": "extra.str", "rel_path": "sims/extra.str",
-             "file_type": "str", "size_bytes": 100},
+            {
+                "id": 1,
+                "filename": "extra.str",
+                "rel_path": "sims/extra.str",
+                "file_type": "str",
+                "size_bytes": 100,
+            },
         ],
     }
     choices = _extract_str_choices(ctx)
@@ -245,3 +260,18 @@ def test_extract_str_choices_empty_str_file():
         "files": [],
     }
     assert _extract_str_choices(ctx) == {}
+
+
+def test_param_diff_spells_a_value_run_as_the_str_does():
+    """A parameter whose .str value is a run of numbers parses to a list; the
+    diff table must show "1855 1856", not Python's "[1855, 1856]"."""
+    from shyfem_ui.pages.compare import _compute_param_diff
+    from shyfem_ui.services.parser_str import StrParser
+
+    a = StrParser.parse("$bound1\n  kbound = 1855 1856\n$end\n")
+    b = StrParser.parse("$bound1\n  kbound = 1855 1857\n$end\n")
+    rows = _compute_param_diff(a, b, "a.str", "b.str")["rows"]
+    kbound = [r for r in rows if r["param"] == "kbound"]
+    assert kbound, rows
+    assert kbound[0]["value_a"] == "1855 1856"
+    assert kbound[0]["value_b"] == "1855 1857"

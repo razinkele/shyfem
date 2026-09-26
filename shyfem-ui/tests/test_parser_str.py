@@ -7,6 +7,7 @@ from shyfem_ui.services.parser_str import (
     COMMON_SECTIONS,
     StrFile,
     StrParser,
+    format_param_display,
 )
 
 
@@ -1313,3 +1314,44 @@ class TestRealSTRRoundTrip:
     def test_a_non_numeric_line_is_not_a_continuation(self):
         parsed = StrParser.parse("$name\n  wind = 'w.fem'\n  some prose here\n$end\n")
         assert parsed.get_param("name", "wind") == "w.fem"
+
+
+class TestFormatParamDisplay:
+    """The shared formatter the UI's render sites use for a parsed value.
+
+    Two sites stringified a parameter with ``str()``, which turns a parsed
+    list into ``"[1855, 1856]"`` -- shown to the user, and read straight back
+    out of the field on save, where ``_format_value`` quotes it into a
+    character value the core hard-stops on. One formatter, so the two sites
+    cannot drift apart.
+    """
+
+    def test_an_int_list_renders_space_separated(self):
+        assert format_param_display([1855, 1856, 1882, 1883]) == "1855 1856 1882 1883"
+
+    def test_a_float_list_renders_space_separated(self):
+        assert format_param_display([0.1, 0.25]) == "0.1 0.25"
+
+    def test_a_python_repr_never_reaches_the_field(self):
+        assert "[" not in format_param_display([1855, 1856])
+        assert "," not in format_param_display([1855, 1856])
+
+    def test_a_scalar_renders_as_itself_and_is_not_quoted(self):
+        assert format_param_display(1855) == "1855"
+        assert format_param_display(0.25) == "0.25"
+        assert format_param_display("fem_forcing/nemunas.txt") == "fem_forcing/nemunas.txt"
+
+    def test_a_missing_value_renders_empty(self):
+        """An absent parameter must leave the field blank, not show "None"."""
+        assert format_param_display(None) == ""
+
+    def test_a_logical_renders_in_fortran_form(self):
+        assert format_param_display(True) == ".true."
+        assert format_param_display(False) == ".false."
+
+    def test_what_the_field_shows_re_parses_to_the_same_list(self):
+        """The round-trip guard: the displayed text is what a save writes back,
+        so it has to be a value the parser reads as the very same list."""
+        value = [1547, 1548, 1549, 1550, 1554, 1555]
+        text = f"$bound1\n  kbound = {format_param_display(value)}\n$end\n"
+        assert StrParser.parse(text).get_param("bound1", "kbound") == value

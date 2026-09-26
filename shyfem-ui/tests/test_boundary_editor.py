@@ -415,3 +415,83 @@ class TestScalarBoundaryFiles:
         assert "saltn" not in result
         assert "tempn" not in result
         assert "conzn" not in result
+
+
+# ---------------------------------------------------------------------------
+# Loading node lists from a real STR (issue #86)
+# ---------------------------------------------------------------------------
+
+
+class TestLoadNodeListFromStr:
+    """`kbound = 1855 1856 1882 1883` now parses as a list, so the load that
+    did `str(section.parameters.get("kbound", ""))` put "[1855, 1856, 1882,
+    1883]" in the Nodes field -- and `generate_bound_text` writes that field
+    back verbatim (`kbound = {b['nodes']}`), which is a line the core
+    hard-stops on ('no value found'). The field must show, and emit, the
+    space-separated run the file itself spells."""
+
+    def _sf(self):
+        from shyfem_ui.services.parser_str import StrParser
+
+        return StrParser.parse(
+            "$bound1     ---- Baltic sea ----\n"
+            "       kbound  = 1547 1548 1549 1550\n"
+            "                 1554 1555\n"
+            "\tibtyp  = 1\n"
+            "\tboundn = 'fem_forcing/sea_level.fem'\n"
+            "$end\n"
+            "\n"
+            "$bound2     ---- Nemunas river ----\n"
+            "      kbound = 1855 1856 1882 1883\n"
+            "      zfact  = 0.25\n"
+            "      ibtyp  = 3\n"
+            "$end\n"
+        )
+
+    def _load(self, monkeypatch):
+        from shyfem_ui.components import boundary_editor as be
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        fake_input = _FakeInputs()
+        result = inner(fake_input, None, None, parsed_str=reactive.Value(self._sf()))
+        return result
+
+    async def test_node_lists_load_space_separated(self, monkeypatch):
+        result = self._load(monkeypatch)
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert [b["label"] for b in bounds] == ["bound1", "bound2"]
+        # The continuation line is part of the list, and neither field may
+        # carry a Python repr.
+        assert bounds[0]["nodes"] == "1547 1548 1549 1550 1554 1555"
+        assert bounds[1]["nodes"] == "1855 1856 1882 1883"
+
+    async def test_generated_bound_section_is_a_valid_str(self, monkeypatch):
+        """The text this component emits must re-parse to the same node lists
+        -- `[1547, ...]` in the Nodes field would ship a fatal STR line."""
+        from shyfem_ui.services.parser_str import StrParser
+
+        result = self._load(monkeypatch)
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        text = generate_bound_text(bounds)
+        assert "[" not in text
+        reparsed = StrParser.parse(text)
+        assert reparsed.get_param("bound1", "kbound") == [1547, 1548, 1549, 1550, 1554, 1555]
+        assert reparsed.get_param("bound2", "kbound") == [1855, 1856, 1882, 1883]
+
+    async def test_a_single_node_boundary_still_loads_as_one_number(self, monkeypatch):
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        sf = StrParser.parse("$bound1\n  kbound = 1855\n  ibtyp = 1\n$end\n")
+        result = inner(_FakeInputs(), None, None, parsed_str=reactive.Value(sf))
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert bounds[0]["nodes"] == "1855"

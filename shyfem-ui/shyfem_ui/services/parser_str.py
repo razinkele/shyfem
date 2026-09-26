@@ -543,6 +543,32 @@ class StrParser:
         file_path.write_text(content, encoding="utf-8")
 
 
+def format_param_display(value: Any) -> str:
+    """Render a parsed parameter value the way the .str file spells it.
+
+    The counterpart of ``StrParser._format_value`` for a UI text field: same
+    spelling for a value run, but no quoting, because a field shows the value
+    itself and the user edits it in place.
+
+    ``str()`` is not a substitute. A parameter whose .str value is a run of
+    numbers (``kbound = 1855 1856 1882 1883``, an ``int_list`` in
+    ``COMMON_PARAMS``) parses to a list, and ``str()`` on one yields
+    ``"[1855, 1856, 1882, 1883]"``. That text is not just ugly in the field:
+    it is what a save reads back out of it, and ``[..]`` in an .str makes the
+    core hard-stop (``nls.f90``: 'no value found').
+
+    ``None`` -- an absent parameter -- renders empty, so the field is blank
+    rather than showing the word "None".
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return ".true." if value else ".false."
+    if isinstance(value, (list, tuple)):
+        return " ".join(format_param_display(v) for v in value)
+    return str(value)
+
+
 # Section descriptions for UI
 COMMON_SECTIONS = {
     "title": "Simulation title and grid reference",

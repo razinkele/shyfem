@@ -13,7 +13,7 @@ from collections.abc import Callable, Sequence
 from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.project_select import str_file_selectize
-from shyfem_ui.services.parser_str import StrFile
+from shyfem_ui.services.parser_str import StrFile, format_param_display
 
 
 def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
@@ -164,7 +164,11 @@ def boundary_editor_server(
             entry = {
                 "id": bid,
                 "label": section_name,
-                "nodes": str(section.parameters.get("kbound", "")),
+                # A node run parses to a list ("kbound = 1855 1856 1882
+                # 1883"); str() would show "[1855, 1856, 1882, 1883]" and
+                # generate_bound_text writes this field back verbatim, so
+                # that repr would ship an .str line the core hard-stops on.
+                "nodes": format_param_display(section.parameters.get("kbound")),
                 "ibtyp": int(section.parameters.get("ibtyp", 1)),
                 "boundn": str(section.parameters.get("boundn", "")),
                 "zfact": float(section.parameters.get("zfact", 1.0)),
