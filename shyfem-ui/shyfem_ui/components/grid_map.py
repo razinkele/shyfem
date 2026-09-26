@@ -226,6 +226,20 @@ def _get_lonlat(
     return result
 
 
+def node_positions(grd: GrdFile, epsg: int | None = None) -> dict[int, list[float]]:
+    """Return ``{node_id: [lon, lat]}`` for every node in *grd*.
+
+    This is the supported entry point for pages that need node
+    coordinates in the map's frame (for example to place the STR
+    ``kbound`` nodes of a boundary, or to trace a box-section interface
+    through its nodes). It is a thin public wrapper of the private
+    :func:`_get_lonlat` and follows the same rules: geographic grids are
+    returned as-is, projected grids are reprojected to WGS84 using
+    *epsg* (or auto-detection when *epsg* is ``None``).
+    """
+    return _get_lonlat(grd, epsg=epsg)
+
+
 # ---------------------------------------------------------------------------
 # Task 2: _build_edge_data
 # ---------------------------------------------------------------------------
@@ -534,6 +548,162 @@ def build_box_layers(
             )
         )
     return layers, bins
+
+
+# Colours of the Setup-tab layers (box-model PR 3). Module constants so the
+# page and the tests refer to the same values.
+SETUP_INTERFACE_COLOR: list[int] = [110, 110, 110, 220]  # interior section: grey
+SETUP_OPEN_INTERFACE_COLOR: list[int] = [41, 128, 185, 240]  # open boundary: blue
+SETUP_KIND_COLORS: dict[str, list[int]] = {
+    "level": [41, 128, 185, 235],  # blue
+    "discharge": [39, 174, 96, 235],  # green
+    "unknown": [140, 140, 140, 235],  # grey
+}
+_SETUP_NODE_RADIUS_PX = 5
+_SETUP_NODE_RADIUS_SELECTED_PX = 9
+
+
+def build_setup_layers(
+    interfaces: list[dict],
+    boundary_points: list[dict],
+    *,
+    selected_boundary: int | None = None,
+) -> list[dict]:
+    """Build the Setup-tab overlay: section interfaces and boundary nodes.
+
+    Parameters
+    ----------
+    interfaces
+        Records ``{"section": int, "from_box": int, "to_box": int,
+        "open_boundary": int | None, "path": [[lon, lat], ...]}`` (from
+        ``boxmodel_setup.section_interfaces``). ``open_boundary`` is the
+        ``$bound<k>`` number ``k`` for an open-boundary section and
+        ``None`` for an interior one. Paths with fewer than two points
+        are dropped.
+    boundary_points
+        Records ``{"node": int, "lon": float, "lat": float, "boundary":
+        int, "title": str, "kind": "level" | "discharge" | "unknown",
+        "boundn": str | None}`` -- one per STR ``kbound`` node.
+    selected_boundary
+        ``$bound<k>`` number whose nodes are drawn with a larger radius.
+
+    Returns
+    -------
+    list[dict]
+        Up to three layers, in draw order and only when they have data:
+        ``setup_interfaces`` (interior sections, grey ``path_layer``),
+        ``setup_open_interfaces`` (open-boundary sections, blue and
+        wider ``path_layer``) and ``setup_boundary_nodes`` (a
+        ``scatterplot_layer`` coloured by ``kind``). Empty when both
+        inputs are empty or when ``shiny_deckgl`` is unavailable.
+
+    Notes
+    -----
+    Every ``tooltip_html`` is rendered by deck.gl as innerHTML, and the
+    boundary ``title`` and ``boundn`` come straight out of the STR (user
+    text). This builder is the sink: they are escaped here and only here.
+    Numbers are rendered through ``int()`` and ``kind`` is reduced to one
+    of the three canonical names, so nothing else reaches the HTML.
+    The records carry ``node``/``boundary``/``section`` ids but never
+    ``box`` or ``node_id`` -- the keys ``grid_map_server``'s click handler
+    branches on -- so clicking them selects nothing.
+    """
+    if path_layer is None or scatterplot_layer is None:
+        return []
+
+    interior: list[dict] = []
+    opened: list[dict] = []
+    for rec in interfaces:
+        path = rec.get("path") or []
+        if len(path) < 2:
+            continue
+        sec = int(rec["section"])
+        a = int(rec["from_box"])
+        b = int(rec["to_box"])
+        k = rec.get("open_boundary")
+        entry = {
+            "path": [[float(x), float(y)] for x, y in path],
+            "section": sec,
+            "from_box": a,
+            "to_box": b,
+            "open_boundary": None if k is None else int(k),
+        }
+        if k is None:
+            entry["tooltip_html"] = f"section {sec}: box {a} \u2192 box {b}"
+            interior.append(entry)
+        else:
+            entry["tooltip_html"] = f"section {sec}: open boundary {int(k)} \u2192 box {b}"
+            opened.append(entry)
+
+    layers: list[dict] = []
+    if interior:
+        layers.append(
+            path_layer(
+                "setup_interfaces",
+                interior,
+                getPath="@@d.path",
+                getColor=list(SETUP_INTERFACE_COLOR),
+                widthMinPixels=2,
+                pickable=True,
+            )
+        )
+    if opened:
+        layers.append(
+            path_layer(
+                "setup_open_interfaces",
+                opened,
+                getPath="@@d.path",
+                getColor=list(SETUP_OPEN_INTERFACE_COLOR),
+                widthMinPixels=4,
+                pickable=True,
+            )
+        )
+
+    ndata: list[dict] = []
+    for p in boundary_points:
+        node = int(p["node"])
+        bnum = int(p["boundary"])
+        kind = p.get("kind")
+        if kind not in SETUP_KIND_COLORS:
+            kind = "unknown"
+        title = html.escape(str(p.get("title") or "")) or f"boundary {bnum}"
+        boundn = p.get("boundn")
+        tip = f"<b>{title}</b><br>boundary {bnum} \u00b7 node {node}<br>{kind}"
+        if boundn:
+            tip += f"<br>file: {html.escape(str(boundn))}"
+        ndata.append(
+            {
+                "position": [float(p["lon"]), float(p["lat"])],
+                "node": node,
+                "boundary": bnum,
+                "kind": kind,
+                "color": list(SETUP_KIND_COLORS[kind]),
+                "radius": (
+                    _SETUP_NODE_RADIUS_SELECTED_PX
+                    if selected_boundary is not None and bnum == selected_boundary
+                    else _SETUP_NODE_RADIUS_PX
+                ),
+                "tooltip_html": tip,
+            }
+        )
+    if ndata:
+        layers.append(
+            scatterplot_layer(
+                "setup_boundary_nodes",
+                ndata,
+                getPosition="@@d.position",
+                getFillColor="@@d.color",
+                getRadius="@@d.radius",
+                radiusUnits="pixels",
+                radiusMinPixels=_SETUP_NODE_RADIUS_PX,
+                radiusMaxPixels=_SETUP_NODE_RADIUS_SELECTED_PX,
+                stroked=True,
+                getLineColor=[255, 255, 255, 220],
+                lineWidthMinPixels=1,
+                pickable=True,
+            )
+        )
+    return layers
 
 
 def _bounds_from_layers(layers: list[dict]) -> list[list[float]] | None:
@@ -1640,6 +1810,9 @@ def _build_label_map(layers: list[dict], mode: str = "mesh") -> dict[str, str]:
         "nodes": "Nodes",
         "boxes": "Boxes",
         "posts": "Monitoring posts",
+        "setup_interfaces": "Section interfaces",
+        "setup_open_interfaces": "Open-boundary interfaces",
+        "setup_boundary_nodes": "Boundary nodes",
     }
     label_map: dict[str, str] = {}
     for layer in layers:

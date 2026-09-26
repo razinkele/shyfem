@@ -240,6 +240,111 @@ def _geojson() -> dict:
     }
 
 
+def fixture_str(days: int = 10) -> str:
+    """A SHYFEM STR excerpt in the Curonian shape (``curonian29_1993_2016.str``).
+
+    Every feature of the tolerant STR reader's acceptance list that a fixture
+    can carry is here: a decoy ``itanf = 347068800 ...`` prose line outside
+    any section, ``&para ... &end`` with several ``key = value`` pairs per
+    tab-separated line, an orphan ``nsigma = 12`` right after ``&end``,
+    ``$boundN`` headers with trailing title text, a multi-line ``kbound``
+    list, ``boundn ='...'`` without a space before the quote, a bare
+    negative number, a ``!`` comment line inside ``$name``, a bare-word
+    ``levels ... end`` block, an ``$extra`` row without ``=``, and the
+    ``****** SECTION`` banner / `` - set`` comment lines. Tabs are written
+    as ``\t`` escapes so editors cannot expand them.
+
+    The run period is ``T0`` .. ``T0 + days`` (formatted as a real date, so
+    ``days=40`` gives ``2009-02-10``, never ``2009-01-41``). Node ids are
+    fixture node ids (1-8).
+    """
+    itend = T0 + timedelta(days=days)
+    return (
+        "\n"
+        "************************ SECTION TITLE **********************\n"
+        " - set simulation title and grid name\n"
+        "\n"
+        "$title\n"
+        "        Fixture lagoon, 2d, box output\n"
+        "        fixture\n"
+        "\tfixture\n"
+        "$end\n"
+        "\n"
+        "************************ SECTION PARA **********************\n"
+        " - set parameter for the simulation\n"
+        "\n"
+        " -----\tthe starting time of the input files is 1/1/1997 = 0\n"
+        " itanf  = 347068800\t itend  = 536450400\tidt = 300\t--> 2008-2013\n"
+        "\n"
+        "&para\n"
+        f"        itanf  = '{T0:%Y-%m-%d}'   itend  = '{itend:%Y-%m-%d}'\tidt = '5m'\n"
+        "\tidtbox = '1h'\t\t!box output -- the deliverable\n"
+        "        idtflx = '1h'\t\t!box fluxes -- needed by the box model\n"
+        "\n"
+        f"        date   = {T0:%Y%m%d}   time   = 000000\n"
+        "\n"
+        "        ireib  = 5\tczdef  = 0.0025\n"
+        "\n"
+        "        iturb = 0       ibarcl = 3      ievap  = 1\n"
+        "\n"
+        "\tnomp   = 4\n"
+        "&end\n"
+        "\tnsigma = 12\n"
+        "\n"
+        "************************ SECTION LEVEL **********************\n"
+        " - set layer depths (2d run: ignored, kept for the reader)\n"
+        "\n"
+        "levels\n"
+        " 1 2 3\n"
+        "end\n"
+        "\n"
+        "************************ SECTION BOUND **********************\n"
+        " - set open boundary conditions\n"
+        "\n"
+        "$bound1     ---- Baltic sea ---- open boundary\n"
+        "       kbound  = 1 2 3\n"
+        "                 4\n"
+        "\tibtyp  = 1\n"
+        "\tboundn = 'fem_forcing/sea_level.fem'\n"
+        "\tsaltn  = 'fem_forcing/salt.fem'\n"
+        "$end\n"
+        "\n"
+        "$bound2 ----- Fixture river ---- discharge in m3/s\n"
+        "      kbound = 5 6\n"
+        "      zfact  = 0.25\n"
+        "      ibtyp  = 2\n"
+        "      boundn ='fem_forcing/river.txt'\n"
+        "      temp   = -999\n"
+        "      salt   = 0.1\n"
+        "$end\n"
+        "\n"
+        "************************ SECTION 'NAME' **********************\n"
+        " - set input file for wind, radiative flux and rain\n"
+        "\n"
+        "$name\n"
+        "      !gotmpa = ''\t\t!not needed: iturb = 0 (2-d run)\n"
+        "      wind = 'fem_forcing/wind.fem'\n"
+        "$end\n"
+        "\n"
+        "************************ SECTION EXTRA **********************\n"
+        " - set extra point for water level and velocity\n"
+        "\n"
+        "$extra\n"
+        "        1 'A'\n"
+        "$end\n"
+    )
+
+
+FIXTURE_STR = fixture_str(10)
+
+
+def _river(days: int) -> str:
+    """Daily discharge ``T0 - 2 d`` .. ``T0 + days + 2 d`` inclusive; value = 100 + day index."""
+    first = T0 - timedelta(days=2)
+    rows = [f"{first + timedelta(days=i):%Y-%m-%d}::06:00:00  {100 + i}" for i in range(days + 5)]
+    return "# discharge m3/s\n" + "\n".join(rows) + "\n"
+
+
 def make_box_project(
     project_dir: Path,
     run_dir: Path,
@@ -248,9 +353,24 @@ def make_box_project(
     polygons: bool = True,
     obs_days: int = 10,
     extra_runs: list[tuple[str, str, Path]] | None = None,
+    str_file: bool = False,
+    forcing: bool = False,
 ) -> Path:
-    """Write a project; each ``(id, label, dir)`` in ``extra_runs`` follows the primary run."""
+    """Write a project; each ``(id, label, dir)`` in ``extra_runs`` follows the primary run.
+
+    ``str_file=True`` writes ``fixture.str`` (see ``fixture_str``) and sets
+    manifest ``"str"``; ``forcing=True`` writes ``forcing/river.txt`` and sets
+    manifest ``"forcing": {"dir": "forcing"}``. Both span ``obs_days`` -- the
+    fixture's single day count -- so pass the same value as
+    ``make_box_run(days=...)`` when the run is not the default 10 days.
+    With both flags False the output is byte-identical to the pre-PR-3 fixture.
+    """
     project_dir.mkdir(parents=True, exist_ok=True)
+    if str_file:
+        (project_dir / "fixture.str").write_text(fixture_str(obs_days))
+    if forcing:
+        (project_dir / "forcing").mkdir(exist_ok=True)
+        (project_dir / "forcing" / "river.txt").write_text(_river(obs_days))
     (project_dir / "fixture.grd").write_text(_grd())
     (project_dir / "boxes.txt").write_text(
         f"{IDBOX} 9 3\n{len(ELEMENTS)} 3 3\n"
@@ -280,8 +400,8 @@ def make_box_project(
             "id_field": "box",
         },
         "grid": {"grd": "fixture.grd", "bas": None, "boxes_txt": "boxes.txt"},
-        "str": None,
-        "forcing": None,
+        "str": "fixture.str" if str_file else None,
+        "forcing": {"dir": "forcing"} if forcing else None,
         "runs": [{"id": run_id, "label": "fixture run", "dir": str(run_dir)}]
         + [{"id": i, "label": label, "dir": str(d)} for i, label, d in (extra_runs or [])],
         "observations": {"file": "observations.csv", "sites": "sites.csv"},
