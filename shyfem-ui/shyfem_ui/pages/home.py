@@ -9,7 +9,11 @@ from pathlib import Path
 from shiny import module, reactive, render, ui
 from sqlalchemy import or_
 
-from shyfem_ui.components.project_select import project_file_select
+from shyfem_ui.components.project_select import (
+    dir_name_choices,
+    project_file_select,
+    str_file_selectize,
+)
 from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
@@ -638,7 +642,16 @@ def home_server(
     @reactive.effect
     @reactive.event(input.new_project_btn)
     def _show_new_project_modal():
-        default_dir = str(config.work_dir / f"project_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        # The folder is created under the caller's project area: the user's
+        # sandbox in server mode, config.work_dir locally. Offer the existing
+        # folders there (a pick reuses one) and a fresh timestamped default;
+        # any other name can be typed.
+        user = _user()
+        if config.deployment_mode == "server" and user is not None:
+            root = config.user_data_root / user["username"]
+        else:
+            root = Path(config.work_dir)
+        default_name = f"project_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         m = ui.modal(
             ui.input_text("project_name", "Project Name", placeholder="my_simulation"),
             ui.input_text_area(
@@ -646,10 +659,12 @@ def home_server(
                 "Description (optional)",
                 placeholder="Brief description of the project",
             ),
-            ui.input_text(
+            str_file_selectize(
                 "project_dir",
-                "Project Directory",
-                value=default_dir,
+                "Project folder",
+                default_name,
+                dir_name_choices(root),
+                placeholder="pick an existing folder or type a new name",
             ),
             title="Create New Project",
             easy_close=True,
@@ -680,6 +695,10 @@ def home_server(
         if not work_dir:
             ui.notification_show("Project directory is required", type="error", duration=6)
             return
+        # The folder picker yields a bare name (picked or typed); the local-mode
+        # branch below validates a full path, so root it under work_dir.
+        if not Path(work_dir).is_absolute():
+            work_dir = str(Path(config.work_dir) / work_dir)
 
         # Fail-closed: in server mode an unresolved identity must not create an
         # owner_id=None orphan project.

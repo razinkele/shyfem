@@ -7,6 +7,7 @@ from pathlib import Path
 
 from shiny import module, reactive, render, ui
 
+from shyfem_ui.components.project_select import project_rel_dir_choices, str_file_selectize
 from shyfem_ui.config import Config, get_config
 from shyfem_ui.services.file_service import FileService
 
@@ -252,10 +253,14 @@ def files_server(
                     "other": "Other",
                 },
             ),
-            ui.input_text(
+            str_file_selectize(
                 "upload_subdir",
                 "Subdirectory (optional)",
-                placeholder="e.g. INPUT, GRID",
+                "",
+                project_rel_dir_choices(
+                    proj, current_user() if current_user is not None else None, config
+                ),
+                placeholder="project root; pick a folder or type a new one",
             ),
             file_browser_ui("file_upload"),
             class_="card p-3 mb-3",

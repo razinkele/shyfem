@@ -333,9 +333,12 @@ def str_file_selectize(
     choices: Sequence[str],
     *,
     width: str | None = None,
+    placeholder: str = "pick a project file or type a name",
 ) -> ui.Tag:
-    """A selectize for an STR file parameter: pick a project file or type
-    any name (``create``), because the referenced file may not exist yet.
+    """A selectize for a name that may not exist yet: pick one of ``choices``
+    or type any value (``create``). Used for STR file parameters and for the
+    "new thing" fields (project folder, upload subdirectory, Save As path,
+    mesh export name).
 
     The option list always starts with an explicit empty option, selected when
     ``value`` is empty -- otherwise Shiny preselects the first real file and a
@@ -360,7 +363,7 @@ def str_file_selectize(
             "create": True,
             "createOnBlur": True,
             "persist": False,
-            "placeholder": "pick a project file or type a name",
+            "placeholder": placeholder,
         },
     )
 
@@ -393,3 +396,19 @@ def project_rel_file_choices_cached(
     values = project_rel_file_choices(proj, user, config, exts)
     cache["choices"] = (key, t, values)
     return values
+
+
+def project_rel_dir_choices(proj: Mapping | None, user: dict | None, config: Config) -> list[str]:
+    """Project-relative subdirectories (root itself excluded) for fields that
+    name a folder inside the project; ``[]`` with no project."""
+    root = _confined_root(proj, user, config) if proj is not None else None
+    if root is None:
+        return []
+    return [d for d in list_project_dirs(root) if d != "."]
+
+
+def dir_name_choices(root: Path) -> list[str]:
+    """Names of the directories directly under ``root`` (non-hidden, no
+    symlinks); ``[]`` when ``root`` is not a directory. For the new-project
+    folder picker, whose root is the user's project area, not a project."""
+    return [d for d in list_project_dirs(root, max_depth=1) if d != "."]
