@@ -33,6 +33,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+#: Suffixes an STR parameter (wind, boundn, restrt, ...) typically points at.
+#: ``.str`` is deliberately absent: a parameter file never references another.
+STR_DATA_EXTS: tuple[str, ...] = (
+    ".txt",
+    ".dat",
+    ".fem",
+    ".csv",
+    ".nc",
+    ".bin",
+    ".grd",
+    ".bas",
+    ".ts",
+)
+
 
 def _placeholder_select(select_id: str, label: str, message: str) -> ui.Tag:
     """A disabled single-option select carrying ``message``.
@@ -242,3 +256,61 @@ def project_dir_select(
         ordered = choices
         sel = matched or (str(root) if root is not None else next(iter(choices)))
     return ui.input_select(select_id, label, choices=ordered, selected=sel)
+
+
+def project_rel_file_choices(
+    proj: Mapping | None,
+    user: dict | None,
+    config: Config,
+    exts: Sequence[str] = STR_DATA_EXTS,
+) -> list[str]:
+    """Project-*relative* data-file paths for STR-content fields.
+
+    Unlike the page dropdowns (absolute values the handler re-confines), a
+    value written into an STR is resolved by SHYFEM against the run's working
+    directory -- the project root by default -- so the choices are relative.
+    ``[]`` with no project or an unavailable directory.
+    """
+    root = _confined_root(proj, user, config) if proj is not None else None
+    if root is None:
+        return []
+    return list_project_files(root, exts)
+
+
+def str_file_selectize(
+    input_id: str,
+    label: str,
+    value: str | None,
+    choices: Sequence[str],
+    *,
+    width: str | None = None,
+) -> ui.Tag:
+    """A selectize for an STR file parameter: pick a project file or type
+    any name (``create``), because the referenced file may not exist yet.
+
+    The option list always starts with an explicit empty option, selected when
+    ``value`` is empty -- otherwise Shiny preselects the first real file and a
+    blank parameter would silently gain a value on the next Apply/Save. A
+    ``value`` that is not among ``choices`` (a hand-typed name from the file)
+    is injected so it survives re-render. ``createOnBlur`` keeps a typed name
+    when the user tabs straight to Apply/Save instead of pressing Enter.
+    """
+    current = (value or "").strip()
+    opts: dict[str, str] = {"": ""}
+    if current and current not in choices:
+        opts[current] = current
+    for c in choices:
+        opts.setdefault(c, c)
+    return ui.input_selectize(
+        input_id,
+        label,
+        choices=opts,
+        selected=current,
+        width=width,
+        options={
+            "create": True,
+            "createOnBlur": True,
+            "persist": False,
+            "placeholder": "pick a project file or type a name",
+        },
+    )
