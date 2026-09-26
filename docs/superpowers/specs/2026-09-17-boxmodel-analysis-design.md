@@ -338,8 +338,10 @@ has no `wtemp_mean` rows and one year of `wlevel_mean`, Juodkrantė ends 2011-10
 starts 2010 without salinity, and the record begins 2001-01-01; `sites.csv` with the post→box
 mapping the scripts use (Klaipėda 11, Juodkrantė 17, Nida 23, Ventė 25; Uostadvaris with an
 empty box); `b29polys.gpkg` (layer `polygons`, EPSG:3346, field `box`); `curonian29.grd/.bas`,
-`boxes.txt`; the STR; the river `.txt` files. Runs point at `/home/razinka/curonian/runs/<run>`;
-laguna sets `SHYFEM_UI_ANALYSIS_ROOTS='["/home/razinka/curonian"]'`.
+`boxes.txt`; the STR; the river `.txt` files. Runs point at `/home/razinka/curonian/published_runs/<run>`
+(corrected in PR 4: `runs/<run>` are symlinks into `published_runs/`, and `confine_path`
+resolves symlinks strictly, so a root of `curonian/runs` would resolve outside itself);
+laguna sets `SHYFEM_UI_ANALYSIS_ROOTS='["/home/razinka/curonian/published_runs"]'`.
 
 ## 12. Delivery
 
