@@ -17,7 +17,7 @@ from shiny.types import SilentException
 from shyfem_ui.components.project_select import (
     default_project_file,
     project_file_select,
-    project_rel_file_choices,
+    project_rel_file_choices_cached,
     str_file_selectize,
 )
 from shyfem_ui.config import Config
@@ -982,12 +982,14 @@ def physics_server(
 ) -> None:
     """Physics configuration page server."""
 
+    _str_choices_cache: dict = {}  # per-session memo, see project_rel_file_choices_cached
+
     def _str_file_choices() -> list[str]:
         """Project-relative data files for the STR file fields (boundn,
         assimilation files): pick one or type any name."""
         proj = active_project.get() if active_project is not None else None
         usr = current_user() if current_user is not None else None
-        return project_rel_file_choices(proj, usr, config)
+        return project_rel_file_choices_cached(_str_choices_cache, proj, usr, config)
 
     @render.ui
     def str_path_picker():

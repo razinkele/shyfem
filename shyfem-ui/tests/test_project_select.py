@@ -482,3 +482,69 @@ class TestStrFileSelectize:
 
         html = str(str_file_selectize("boundn", "", None, []))
         assert '<option value="" selected=""></option>' in html
+
+
+class TestStrChoicesCache:
+    """The editors re-render on every debounced keystroke; the project scan
+    behind the file-field choices must not run each time."""
+
+    def _counting(self, monkeypatch):
+        from shyfem_ui.components import project_select as ps
+
+        calls = {"n": 0}
+        real = ps.list_project_files
+
+        def counted(root, exts, *a, **k):
+            calls["n"] += 1
+            return real(root, exts, *a, **k)
+
+        monkeypatch.setattr(ps, "list_project_files", counted)
+        return calls
+
+    def test_hit_within_ttl_does_not_rescan(self, config, project_tree, monkeypatch):
+        from shyfem_ui.components.project_select import project_rel_file_choices_cached
+
+        calls = self._counting(monkeypatch)
+        cache: dict = {}
+        clock = {"t": 100.0}
+        proj = _proj(project_tree)
+        a = project_rel_file_choices_cached(cache, proj, None, config, now=lambda: clock["t"])
+        clock["t"] += 5
+        b = project_rel_file_choices_cached(cache, proj, None, config, now=lambda: clock["t"])
+        assert a == b and calls["n"] == 1
+
+    def test_ttl_expiry_and_project_change_rescan(
+        self, config, project_tree, tmp_path, monkeypatch
+    ):
+        from shyfem_ui.components.project_select import project_rel_file_choices_cached
+
+        calls = self._counting(monkeypatch)
+        cache: dict = {}
+        clock = {"t": 100.0}
+        proj = _proj(project_tree)
+        project_rel_file_choices_cached(cache, proj, None, config, now=lambda: clock["t"])
+        clock["t"] += 31
+        project_rel_file_choices_cached(cache, proj, None, config, now=lambda: clock["t"])
+        assert calls["n"] == 2
+        other = tmp_path / "other"
+        other.mkdir()
+        project_rel_file_choices_cached(
+            cache, _proj(other, id=2), None, config, now=lambda: clock["t"]
+        )
+        assert calls["n"] == 3
+
+    def test_no_project_is_cheap_and_empty(self, config, monkeypatch):
+        from shyfem_ui.components.project_select import project_rel_file_choices_cached
+
+        calls = self._counting(monkeypatch)
+        assert project_rel_file_choices_cached({}, None, None, config) == []
+        assert calls["n"] == 0
+
+    def test_restart_and_gotm_namelist_extensions_are_listed(self, config, project_tree):
+        from shyfem_ui.components.project_select import STR_DATA_EXTS, project_rel_file_choices
+
+        (project_tree / "INPUT" / "warm.rst").write_bytes(b"")
+        (project_tree / "INPUT" / "gotmturb.nml").write_text("")
+        got = project_rel_file_choices(_proj(project_tree), None, config)
+        assert "INPUT/warm.rst" in got and "INPUT/gotmturb.nml" in got
+        assert ".rst" in STR_DATA_EXTS and ".nml" in STR_DATA_EXTS

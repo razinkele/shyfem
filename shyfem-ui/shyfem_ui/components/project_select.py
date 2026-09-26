@@ -20,7 +20,8 @@ not one of the options is a silent no-op. Pages therefore keep a
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -45,7 +46,14 @@ STR_DATA_EXTS: tuple[str, ...] = (
     ".grd",
     ".bas",
     ".ts",
+    ".rst",  # restrt
+    ".nml",  # gotmpa (GOTM namelist)
 )
+
+#: How long a page may reuse a project file listing for the STR file fields.
+#: The editors re-render on every debounced keystroke, so the listing is
+#: memoised per session; a file uploaded mid-session shows up within this.
+STR_CHOICES_TTL_S = 30.0
 
 
 def _placeholder_select(select_id: str, label: str, message: str) -> ui.Tag:
@@ -314,3 +322,33 @@ def str_file_selectize(
             "placeholder": "pick a project file or type a name",
         },
     )
+
+
+def project_rel_file_choices_cached(
+    cache: dict,
+    proj: Mapping | None,
+    user: dict | None,
+    config: Config,
+    exts: Sequence[str] = STR_DATA_EXTS,
+    *,
+    ttl: float = STR_CHOICES_TTL_S,
+    now: Callable[[], float] = time.monotonic,
+) -> list[str]:
+    """``project_rel_file_choices`` memoised in ``cache`` (a per-session dict
+    owned by the page) for ``ttl`` seconds per (project id, work_dir).
+
+    Not a ``reactive.calc`` on purpose: a reactive would need a periodic
+    invalidation to notice new uploads, and that would re-render the editor
+    form under the user's hands. A plain TTL cache keeps every existing
+    render trigger and just bounds the directory scans.
+    """
+    if proj is None:
+        return []
+    key = (proj.get("id"), proj.get("work_dir"), tuple(exts))
+    t = now()
+    hit = cache.get("choices")
+    if hit is not None and hit[0] == key and t - hit[1] < ttl:
+        return hit[2]
+    values = project_rel_file_choices(proj, user, config, exts)
+    cache["choices"] = (key, t, values)
+    return values
