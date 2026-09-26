@@ -50,6 +50,47 @@ STR_DATA_EXTS: tuple[str, ...] = (
     ".nml",  # gotmpa (GOTM namelist)
 )
 
+# STR parameters whose value names a file (formerly components/file_picker.py).
+_NAME_FILE_PARAMS = frozenset(
+    {
+        "wind",
+        "rain",
+        "qflux",
+        "ice",
+        "zinit",
+        "tempin",
+        "saltin",
+        "conzin",
+        "restrt",
+        "tempobs",
+        "saltobs",
+        "gotmpa",
+        "basnam",
+        "offlin",
+        "surfvel",
+        "temptau",
+        "salttau",
+    }
+)
+
+_BOUND_FILE_PARAMS = frozenset(
+    {
+        "boundn",
+        "tempn",
+        "saltn",
+        "conzn",
+        "vel3dn",
+        "bio2dn",
+        "sed2dn",
+    }
+)
+
+
+def is_file_param(param_name: str) -> bool:
+    """Check if an STR parameter name references a file."""
+    return param_name in _NAME_FILE_PARAMS or param_name in _BOUND_FILE_PARAMS
+
+
 #: How long a page may reuse a project file listing for the STR file fields.
 #: The editors re-render on every debounced keystroke, so the listing is
 #: memoised per session; a file uploaded mid-session shows up within this.

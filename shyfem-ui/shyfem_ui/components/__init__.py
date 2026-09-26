@@ -6,7 +6,6 @@ and a ``_server()`` function (registers reactive logic).
 Widgets:
     boundary_editor_ui / boundary_editor_server: CSV-based boundary condition editor.
     file_browser_ui / file_browser_server: File upload and path selection widget.
-    file_picker_ui / file_picker_server: File picker dropdown with browse modal.
     grid_map_ui / grid_map_server: Interactive deck.gl mesh map with zoom, pan, hover.
     log_viewer_ui / log_viewer_server: Real-time log output viewer with auto-scroll.
     str_editor_ui / str_editor_server: Rich STR parameter editor (split/form views).
@@ -22,8 +21,6 @@ __all__ = [
     "boundary_editor_server",
     "file_browser_ui",
     "file_browser_server",
-    "file_picker_ui",
-    "file_picker_server",
     "grid_map_ui",
     "grid_map_server",
     "log_viewer_ui",
@@ -43,8 +40,6 @@ _MAPPING = {
     "boundary_editor_server": "boundary_editor",
     "file_browser_ui": "file_browser",
     "file_browser_server": "file_browser",
-    "file_picker_ui": "file_picker",
-    "file_picker_server": "file_picker",
     "grid_map_ui": "grid_map",
     "grid_map_server": "grid_map",
     "log_viewer_ui": "log_viewer",

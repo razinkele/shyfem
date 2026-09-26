@@ -7,8 +7,7 @@ from typing import Any
 
 from shiny import module, reactive, render, ui
 
-from shyfem_ui.components.file_picker import is_file_param
-from shyfem_ui.components.project_select import str_file_selectize
+from shyfem_ui.components.project_select import is_file_param, str_file_selectize
 from shyfem_ui.services.parser_str import (
     COMMON_PARAMS,
     COMMON_SECTIONS,

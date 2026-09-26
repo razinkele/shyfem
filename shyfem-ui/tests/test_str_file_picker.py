@@ -4,22 +4,22 @@
 class TestDetectFileParams:
 
     def test_wind_detected_as_file_param(self):
-        from shyfem_ui.components.file_picker import is_file_param
+        from shyfem_ui.components.project_select import is_file_param
 
         assert is_file_param("wind") is True
 
     def test_boundn_detected_as_file_param(self):
-        from shyfem_ui.components.file_picker import is_file_param
+        from shyfem_ui.components.project_select import is_file_param
 
         assert is_file_param("boundn") is True
 
     def test_idt_not_file_param(self):
-        from shyfem_ui.components.file_picker import is_file_param
+        from shyfem_ui.components.project_select import is_file_param
 
         assert is_file_param("idt") is False
 
     def test_ilin_not_file_param(self):
-        from shyfem_ui.components.file_picker import is_file_param
+        from shyfem_ui.components.project_select import is_file_param
 
         assert is_file_param("ilin") is False
 
