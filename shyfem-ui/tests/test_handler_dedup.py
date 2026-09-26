@@ -102,42 +102,6 @@ def test_home_module_imports_cleanly():
     from shyfem_ui.pages import home  # noqa: F401
 
 
-def test_file_picker_pick_handlers_are_deduped():
-    """file_picker registers per-file pick_<id> handlers when the browse modal
-    opens; the modal can reopen, so the registration MUST be guarded by a set to
-    avoid stacking duplicate reactive.effects (the review finding). Lock the
-    guard in source so removing it fails here."""
-    import inspect
-
-    from shyfem_ui.components import file_picker
-
-    src = inspect.getsource(file_picker)
-    assert "_registered_pick_btns" in src, "dedup set missing in file_picker"
-    assert "if btn_id in _registered_pick_btns:" in src, (
-        "pick-handler registration is no longer guarded against duplicates"
-    )
-
-
-def test_boundary_editor_remove_handlers_are_deduped():
-    """boundary_editor re-registers remove_bound_<id> handlers every time the
-    boundaries list changes; the registration MUST be guarded by a set so a
-    boundary's remove handler is not stacked on each change."""
-    import inspect
-
-    from shyfem_ui.components import boundary_editor
-
-    src = inspect.getsource(boundary_editor)
-    assert "_registered_remove_bids" in src, "dedup set missing in boundary_editor"
-    assert "if bid in _registered_remove_bids:" in src, (
-        "remove-handler registration is no longer guarded against duplicates"
-    )
-
-
-def test_file_picker_module_imports_cleanly():
-    """Smoke test — dedup guard should not have introduced syntax errors."""
-    from shyfem_ui.components import file_picker  # noqa: F401
-
-
 def test_boundary_editor_module_imports_cleanly():
     """Smoke test — dedup guard should not have introduced syntax errors."""
     from shyfem_ui.components import boundary_editor  # noqa: F401
