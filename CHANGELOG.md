@@ -8,7 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+
+## [shyfem-ui 0.6.0] — 2026-09-27
+
+Closes the Box model analysis feature and hardens the paths it added. Tagged `shyfem-ui-v0.6.0`.
+
 ### Fixed
+- **UI, Box model cache:** a slow build could have its own output directory deleted while it was still running. The build child refreshed `progress.json` only every 500 records, and that file's age is the only liveness signal another worker has, so one long step -- a large Parquet write, the `run.log` tail -- could stay quiet past the 90 s reaper window and another session's page load would remove the directory, losing the whole build. The child now beats from a daemon thread, and because a *hung* child would beat forever, the reaper gained an absolute age cap derived from the configured build timeout. Four more in the same path: a short row in `boxes_stats.txt` was silent (pandas NaN-padded it, so a box was cached with no volume or depth) and is now named with its file and line; the project storage quota counted one run twice during the two-step publish, and charges each run once at its largest copy; a foreign or hand-edited cache raised out of a reactive calculation instead of becoming a message on the tab; and the grid is parsed once for the map and the box outlines instead of once each. (#92)
+- **UI:** two custom messages the server sends were built and never sent, because `send_custom_message` is a coroutine and both call sites were synchronous reactive effects. The "go to this page" buttons on the Dashboard and the Tutorial therefore did nothing, and the what's-new modal came back for every user on every visit, intercepting the first click on the page until dismissed. (#93)
 - **UI, STR parser:** `services/parser_str.py` silently misread real SHYFEM parameter files (#86). A run of numbers was truncated to its first token, so `kbound = 1855 1856 1882 1883` parsed as `1855` and boundaries lost most of their nodes; `&para … &end` sections and headers carrying trailing text (`$bound1     ---- Baltic sea ----`) were dropped entirely, which on the Curonian 29-box STR meant only 4 of its 11 sections parsed and the Physics page and STR editor showed no timing parameters and no boundaries for it; and a numbers-only continuation line was ignored. All four are read as SHYFEM reads them (`nls.f90`), the text after a section name is exposed as `StrSection.header_extra`, and `generate(parse(text))` is now byte-exact on that file and on every `testcases/examples/mar_menor/*.str` — none of which round-tripped before, because a blank line was appended after each `$end`. A parsed value is shown in a form field through `format_param_display` and read back through `parse_param_display`, its inverse: the STR editor's Form view, the Physics panels and the boundary editor each showed a value run as a Python list and wrote it back quoted, which the core rejects — in the Form view's case with no user edit at all.
 
 ### Added
