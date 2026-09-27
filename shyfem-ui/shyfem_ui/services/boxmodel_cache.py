@@ -21,7 +21,9 @@ from pathlib import Path
 from typing import Literal
 
 import pandas as pd
+import pyarrow.parquet as pq
 
+from shyfem_ui import boxmodel_output as bo
 from shyfem_ui.boxmodel_common import atomic_json, check_run_id
 from shyfem_ui.config import Config
 
@@ -807,9 +809,41 @@ def load_cache(cache_dir: Path, run_id: str) -> CachedRun:
     fd["date"] = _to_ns(fd["date"])
     md = pd.read_parquet(cache_dir / "meteo_daily.parquet")
     md["date"] = _to_ns(md["date"])
-    hp = cache_dir / "state_hourly.parquet"
-    hourly = pd.read_parquet(hp) if hp.is_file() else None
-    return CachedRun(run_id, meta, sd, fd, md, hourly)
+    # The hourly frame is deliberately NOT materialised here: it is the raw
+    # record stream, 6.1M rows and ~250 MB for the 22-year Curonian run, and
+    # this loader sits at the head of the page's expensive chain in the worker
+    # that serves every session. Read the visible window instead --
+    # ``read_hourly_window`` -- which the day-level row groups make cheap.
+    return CachedRun(run_id, meta, sd, fd, md, None)
+
+
+#: Columns of ``state_hourly.parquet``: the stamp, the box, and every state
+#: variable the parser emits, in the builder's order.
+HOURLY_COLUMNS = ("stamp", "box", *bo.STATE_VARS)
+
+
+def read_hourly_window(cache_dir: Path, lo, hi) -> pd.DataFrame:
+    """Raw output-step records in ``[lo, hi]``, or an empty frame.
+
+    "Hourly" is the file's name, not a promise: these are the model's output
+    records at whatever ``meta["step_seconds"]`` says.
+
+    Returns an empty frame -- never raises, never None -- when the run has no
+    hourly cache, because that is the normal case and the page falls back to
+    daily rather than showing an error. The builder flushes one calendar day
+    per row group, so the ``stamp`` filters prune whole days and a window costs
+    a fraction of the file.
+    """
+    path = cache_dir / "state_hourly.parquet"
+    if path.is_symlink() or not path.is_file():
+        return pd.DataFrame(columns=list(HOURLY_COLUMNS))
+    table = pq.read_table(
+        path, filters=[("stamp", ">=", pd.Timestamp(lo)), ("stamp", "<=", pd.Timestamp(hi))]
+    )
+    frame = table.to_pandas()
+    if not frame.empty:
+        frame["stamp"] = _to_ns(frame["stamp"])
+    return frame
 
 
 def load_cache_state(cache_dir: Path, run_id: str) -> CachedRun:

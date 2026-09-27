@@ -29,6 +29,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from shyfem_ui.config import Config
@@ -895,3 +896,81 @@ def test_reconcile_leaves_an_error_phase_tmp_dir_for_cache_status(tmp_path):
     st = bc.cache_status(tmp_path, "fix", run_dir, None)
     assert st.state == "failed"
     assert "no state file" in st.message
+
+
+# --- the hourly frame is read by window, never whole -------------------------
+
+
+def _hourly_build(env, monkeypatch) -> Path:
+    """Build the fixture run WITH the hourly frame; return its cache dir."""
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg, hourly=True
+        )
+        await _wait(h)
+
+    asyncio.run(go())
+    return bc.cache_dir_for(Path(project["work_dir"]), "fix")
+
+
+def test_load_cache_does_not_materialise_the_hourly_frame(env, monkeypatch):
+    """The published Curonian caches carry a 183-207 MB state_hourly.parquet
+    (6.1M rows, ~250 MB in memory). load_cache read it unconditionally and the
+    page's cached_result() calls exactly that loader, so every session on that
+    project pulled the whole thing into the worker for data no tab displayed.
+    It is read by window now (see read_hourly_window), so the eager load must
+    not come back."""
+    cache_dir = _hourly_build(env, monkeypatch)
+    assert (cache_dir / "state_hourly.parquet").is_file(), "the fixture must have hourly data"
+
+    cr = bc.load_cache(cache_dir, "fix")
+
+    assert cr.state_hourly is None, "load_cache must not materialise the hourly frame"
+    assert cr.meta["hourly"] is True, "...while meta still says the data is there"
+    assert not cr.state_daily.empty, "the daily frames still load"
+
+
+def test_read_hourly_window_returns_only_the_window(env, monkeypatch):
+    cache_dir = _hourly_build(env, monkeypatch)
+
+    lo = pd.Timestamp("2009-01-02 00:00:00")
+    hi = pd.Timestamp("2009-01-02 23:59:59")
+    frame = bc.read_hourly_window(cache_dir, lo, hi)
+
+    assert not frame.empty
+    assert frame["stamp"].min() >= lo and frame["stamp"].max() <= hi
+    assert set(frame["box"]) == {1, 2, 3}
+    for column in ("temp", "salt", "act_eta"):
+        assert column in frame.columns
+    # Genuinely a window: the run is 3 days, so one day is a strict subset.
+    whole = bc.read_hourly_window(cache_dir, pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-05"))
+    assert len(frame) < len(whole)
+
+
+def test_read_hourly_window_is_empty_when_there_is_no_hourly_frame(env, monkeypatch):
+    """A daily-only cache is the normal case and must not raise: the page falls
+    back to daily rather than showing an error."""
+    cfg, user, project, run = env
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    reg = bc.BuildRegistry()
+
+    async def go():
+        h = await bc.start_build(
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
+        )
+        await _wait(h)
+
+    asyncio.run(go())
+    cache_dir = bc.cache_dir_for(Path(project["work_dir"]), "fix")
+    assert not (cache_dir / "state_hourly.parquet").exists()
+
+    frame = bc.read_hourly_window(cache_dir, pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-05"))
+    assert frame is not None and frame.empty
