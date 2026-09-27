@@ -11,6 +11,7 @@ user-facing message carries a raw absolute host path.
 
 import inspect
 import re
+from datetime import date, timedelta
 
 import pytest
 
@@ -1244,3 +1245,67 @@ def test_load_compare_state_returns_a_readable_run_unchanged(monkeypatch, tmp_pa
     state, problem = boxmodel._load_compare_state(tmp_path, "run9316", str)
     assert state is run
     assert problem is None
+
+
+# --- hourly detail (spec sec8) -----------------------------------------------
+
+
+def test_hourly_is_unusable_without_an_hourly_cache():
+    """A daily-only cache is the normal case: the page falls back to daily
+    rather than showing an error or an hourly-looking control with no data."""
+    from shyfem_ui.pages import boxmodel
+
+    period = (date(2009, 1, 1), date(2009, 1, 5))
+    assert boxmodel._hourly_usable({"hourly": False, "step_seconds": 3600}, period) is False
+    assert boxmodel._hourly_usable({}, period) is False
+
+
+def test_hourly_is_usable_only_inside_the_window_cap():
+    """Spec sec246: hourly when the cache has it AND the window is at most 31
+    days. Wider windows would pull hundreds of thousands of rows per redraw."""
+    from shyfem_ui.pages import boxmodel
+
+    meta = {"hourly": True, "step_seconds": 3600}
+    start = date(2009, 1, 1)
+    edge = start + timedelta(days=boxmodel.HOURLY_WINDOW_DAYS)
+    assert boxmodel._hourly_usable(meta, (start, edge)) is True
+    assert boxmodel._hourly_usable(meta, (start, edge + timedelta(days=1))) is False
+    assert boxmodel._hourly_usable(meta, (start, start)) is True
+
+
+def test_the_slider_step_comes_from_the_run_not_from_the_name():
+    """ "Hourly" is the file's name, not a promise: the frame holds the model's
+    output records at meta['step_seconds']. A hardcoded hour would land between
+    stamps on any run with a different step and select nothing."""
+    from shyfem_ui.pages import boxmodel
+
+    assert boxmodel._hourly_step({"step_seconds": 3600}) == timedelta(hours=1)
+    assert boxmodel._hourly_step({"step_seconds": 21600}) == timedelta(hours=6)
+    assert boxmodel._hourly_step({}) is None
+    assert boxmodel._hourly_step({"step_seconds": 0}) is None
+
+
+def test_the_build_request_carries_the_hourly_checkbox():
+    """The knob has to reach the decision: start_build's hourly argument is what
+    puts --hourly on the child's command line."""
+    from shyfem_ui.pages import boxmodel
+
+    body = _code_of(boxmodel, "boxmodel_server")("_build")
+    assert "hourly=" in body, "the build call must pass the hourly flag"
+    assert "input.hourly()" in body or "_hourly_requested()" in body
+
+
+def test_the_map_and_the_series_share_one_hourly_window():
+    """One rule, one place: if the map and the series decided separately they
+    could describe different data under the same period."""
+    from shyfem_ui.pages import boxmodel
+
+    code = _code_of(boxmodel, "boxmodel_server")
+    assert "hourly_window()" in code("box_values")
+    assert "hourly_window()" in code("series")
+    assert "hourly_window()" in code("day_slider")
+    assert "read_hourly_window(" in code("hourly_window")
+    # The daily min/max band describes what a daily mean hides, so it has no
+    # meaning over raw records: the hourly branch must not draw one.
+    body = code("series")
+    assert "low = high = None" in body

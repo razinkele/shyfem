@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **UI, Box model page:** the cache can now be built with the model's raw output records ("Include output-step detail"), and the Map and Time series use them inside a window of up to 31 days: the day slider becomes a time slider stepping by the run's own output step, and the series plots the records themselves instead of daily means. Off by default, because the raw frame is several times larger than the daily one and counts against the project's storage quota. A run without it, or a wider window, behaves exactly as before. Closes the last deferred item of the Box model feature (spec §8).
+
+### Fixed
+- **UI, Box model page:** opening the page no longer reads the whole raw-record frame into the worker. The published Curonian caches already carried `state_hourly.parquet` (183–207 MB), and `load_cache` materialised it on every session — 6,100,440 rows, about 250 MB, at the head of the page's expensive chain, for data nothing displayed. Only the visible window is read now, which the builder's per-day row groups make cheap: 20,909 rows in 0.33 s for a 31-day window on the 22-year run.
+
 ---
 
 

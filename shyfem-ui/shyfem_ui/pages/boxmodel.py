@@ -70,6 +70,7 @@ from shyfem_ui.services.boxmodel_cache import (
     get_registry,
     load_cache,
     load_cache_state,
+    read_hourly_window,
     reconcile_tmp_dirs,
     start_build,
     tmp_age_cap_seconds,
@@ -141,6 +142,40 @@ NO_POLYGONS_MESSAGE = (
 #: Everything a downloaded file name may contain; anything else is dropped.
 _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
 COLUMN_TO_VARIABLE = {v: k for k, v in VARIABLE_COLUMNS.items()}
+#: Spec sec246: raw output-step detail only inside a window this wide. Wider
+#: windows would read hundreds of thousands of rows on every redraw, and a
+#: slider with one tick per output step stops being usable long before that.
+HOURLY_WINDOW_DAYS = 31
+
+
+def _hourly_step(meta) -> timedelta | None:
+    """The model's output step, or None when the cache does not record one.
+
+    "Hourly" is the file's name, not a promise: the frame holds whatever
+    ``idtbox`` produced. A hardcoded hour would land between stamps on any run
+    with a coarser step and select nothing at all.
+    """
+    try:
+        seconds = int((meta or {}).get("step_seconds") or 0)
+    except (TypeError, ValueError):
+        return None
+    return timedelta(seconds=seconds) if seconds > 0 else None
+
+
+def _hourly_usable(meta, period) -> bool:
+    """True when this run has raw records AND the window is short enough.
+
+    One rule in one place, used by the map and the series, so the two can never
+    describe different data under the same period. False is the ordinary
+    answer: most caches are daily-only, and that is a fallback, not an error.
+    """
+    if not (meta or {}).get("hourly") or _hourly_step(meta) is None:
+        return False
+    if not period or period[0] is None or period[1] is None:
+        return False
+    return (period[1] - period[0]).days <= HOURLY_WINDOW_DAYS
+
+
 MAP_MODES = {
     "day": "Value on the selected day",
     "mean": "Period mean",
@@ -644,6 +679,14 @@ def boxmodel_ui() -> ui.Tag:
                 ui.output_ui("cache_state"),
                 ui.input_action_button("build", "Build cache", class_="btn-primary btn-sm me-1"),
                 ui.input_action_button("cancel", "Cancel", class_="btn-outline-secondary btn-sm"),
+                ui.input_checkbox("hourly", "Include output-step detail", value=False),
+                ui.div(
+                    "Adds the raw records to the cache, so the map and the series can "
+                    f"step through a window of up to {HOURLY_WINDOW_DAYS} days. Several "
+                    "times larger than the daily cache, and it counts against the "
+                    "project's storage quota.",
+                    class_="form-text",
+                ),
             ),
             col_widths=(3, 2, 4, 3),
         ),
@@ -1035,6 +1078,7 @@ def boxmodel_server(
                 run_dir=run.dir,
                 user=usr,
                 config=_bounded_timeout_config(config),
+                hourly=bool(input.hourly()),
             )
         except (PermissionError, ValueError, RuntimeError, OSError) as exc:
             ui.notification_show(_err(exc), type="error", duration=8)
@@ -1260,12 +1304,54 @@ def boxmodel_server(
 
     # --- map --------------------------------------------------------------
 
+    @reactive.calc
+    def hourly_window():
+        """The raw output-step records for the visible window, or None.
+
+        None means "use the daily frames", which is the ordinary case: the run
+        may have no hourly cache, or the window may be wider than
+        ``HOURLY_WINDOW_DAYS``. Reading happens here, once per (run, period),
+        so a slider tick is a lookup rather than a disk read -- and only the
+        window is read, never the whole frame (see ``read_hourly_window``).
+        """
+        cached_run = cached()
+        period = _period()
+        proj = _project()
+        run = _run_entry()
+        if cached_run is None or period is None or proj is None or run is None:
+            return None
+        if not _hourly_usable(cached_run.meta, period):
+            return None
+        try:
+            frame = read_hourly_window(
+                cache_dir_for(Path(proj["work_dir"]), run.id),
+                pd.Timestamp(period[0]),
+                pd.Timestamp(period[1]) + timedelta(days=1) - timedelta(seconds=1),
+            )
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            logger.warning("boxmodel: hourly window unreadable: %s", exc)
+            return None
+        return None if frame.empty else frame
+
     @render.ui
     def day_slider():
         cached_run = cached()
         period = _period()
         if cached_run is None or period is None or input.map_mode() != "day":
             return None
+        frame = hourly_window()
+        if frame is not None:
+            low = frame["stamp"].min().to_pydatetime()
+            high = frame["stamp"].max().to_pydatetime()
+            return ui.input_slider(
+                "day",
+                "Time (model output step)",
+                min=low,
+                max=high,
+                value=low,
+                step=_hourly_step(cached_run.meta),
+                width="100%",
+            )
         return ui.input_slider(
             "day",
             "Day",
@@ -1286,13 +1372,29 @@ def boxmodel_server(
         state_daily = cached_run.state_daily
         mode = input.map_mode()
         if mode == "day":
-            day = input.day() if "day" in input else period[0]
-            day = min(max(day, period[0]), period[1])
-            selection = state_daily[state_daily["date"] == pd.Timestamp(day)]
+            frame = hourly_window()
+            if frame is not None:
+                stamps = frame["stamp"]
+                chosen = pd.Timestamp(input.day()) if "day" in input else stamps.min()
+                # Snap to a stamp that exists: the slider steps by the output
+                # step, but its value can still land between records after a
+                # period change, and an exact match would select nothing.
+                chosen = stamps.iloc[(stamps - chosen).abs().to_numpy().argmin()]
+                selection = frame[frame["stamp"] == chosen]
+                values = dict(
+                    zip(selection["box"].astype(int), selection[column].astype(float), strict=True)
+                )
+                return values, f"{VARIABLES[column]} at {chosen:%Y-%m-%d %H:%M}"
+            # A day slider and a time slider share one input id, so the value
+            # can be a datetime here right after the window widens. Normalise
+            # before comparing, or date-vs-datetime raises.
+            day = pd.Timestamp(input.day()) if "day" in input else pd.Timestamp(period[0])
+            day = min(max(day, pd.Timestamp(period[0])), pd.Timestamp(period[1])).normalize()
+            selection = state_daily[state_daily["date"] == day]
             values = dict(
                 zip(selection["box"].astype(int), selection[column].astype(float), strict=True)
             )
-            return values, f"{VARIABLES[column]} on {day}"
+            return values, f"{VARIABLES[column]} on {day.date()}"
         window = state_daily[
             (state_daily["date"] >= pd.Timestamp(period[0]))
             & (state_daily["date"] <= pd.Timestamp(period[1]))
@@ -1419,17 +1521,28 @@ def boxmodel_server(
         except (TypeError, ValueError):
             return None
         state_daily = cached_run.state_daily
-        model = model_series(cached_run, box, column, *period)
-        low = (
-            model_series(cached_run, box, f"{column}_min", *period)
-            if f"{column}_min" in state_daily
-            else None
-        )
-        high = (
-            model_series(cached_run, box, f"{column}_max", *period)
-            if f"{column}_max" in state_daily
-            else None
-        )
+        frame = hourly_window()
+        if frame is not None:
+            # The raw records ARE the detail, so there is no daily min/max band
+            # to draw around them -- the band exists only to show what a daily
+            # mean hides.
+            rows = frame[frame["box"].astype("int64") == box]
+            model = pd.Series(
+                rows[column].astype(float).to_numpy(), index=pd.Index(rows["stamp"])
+            ).sort_index()
+            low = high = None
+        else:
+            model = model_series(cached_run, box, column, *period)
+            low = (
+                model_series(cached_run, box, f"{column}_min", *period)
+                if f"{column}_min" in state_daily
+                else None
+            )
+            high = (
+                model_series(cached_run, box, f"{column}_max", *period)
+                if f"{column}_max" in state_daily
+                else None
+            )
         obs, sites = observations()
         observed = None
         if obs is not None and sites is not None:
