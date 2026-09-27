@@ -12,6 +12,8 @@ Default pytest config excludes `test_playwright_*.py`
 directly or via `--override-ini="addopts="`.
 """
 
+from pathlib import Path
+
 import pytest
 from playwright.sync_api import expect
 
@@ -87,10 +89,21 @@ def test_boxmodel_page_builds_cache_and_renders(pw_page, box_project):
     # itself is visible -- poll for the value rather than reading it once.
     expect(run_select).to_have_value("fix", timeout=15000)
 
+    # Ask for the raw output-step frame as well: this is the only check that
+    # the checkbox reaches the child's command line, which is where --hourly
+    # decides whether the frame is written at all.
+    pw_page.locator("#boxmodel-hourly").check()
     pw_page.locator("#boxmodel-build").click()
     # Real child process (shyfem_ui.boxmodel_cache_cli) parsing 40 days x 3
     # boxes; 60s is generous headroom over local run time.
     expect(pw_page.locator("#boxmodel-cache_state")).to_contain_text("ready", timeout=60000)
+    cache_dir = Path(box_project["work_dir"]) / ".boxmodel_cache" / "fix"
+    assert (
+        cache_dir / "state_hourly.parquet"
+    ).is_file(), "the hourly checkbox did not reach start_build"
+    # The window rule that decides whether the page USES it is unit-tested;
+    # this fixture's 40-day period is deliberately wider than the cap.
+    pw_page.locator("#boxmodel-hourly").uncheck()
     # Two canvases live inside the widget (maplibre's own + deck.gl's
     # overlay) once WebGL initializes; either proves the map rendered.
     expect(pw_page.locator("#boxmodel-boxmap-deckgl_map canvas").first).to_be_visible(timeout=15000)

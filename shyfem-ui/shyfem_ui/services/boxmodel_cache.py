@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Literal
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
+from shyfem_ui import boxmodel_output as bo
 from shyfem_ui.boxmodel_common import atomic_json, check_run_id
 from shyfem_ui.config import Config
 
@@ -782,6 +785,9 @@ class CachedRun:
     state_daily: pd.DataFrame
     flux_daily: pd.DataFrame
     meteo_daily: pd.DataFrame
+    #: Always ``None``: the raw-record frame is far too large to hold per
+    #: session (6.1M rows for the 22-year Curonian run). Read a window with
+    #: ``read_hourly_window`` instead. Kept so the dataclass shape is stable.
     state_hourly: pd.DataFrame | None = None
 
 
@@ -807,9 +813,56 @@ def load_cache(cache_dir: Path, run_id: str) -> CachedRun:
     fd["date"] = _to_ns(fd["date"])
     md = pd.read_parquet(cache_dir / "meteo_daily.parquet")
     md["date"] = _to_ns(md["date"])
-    hp = cache_dir / "state_hourly.parquet"
-    hourly = pd.read_parquet(hp) if hp.is_file() else None
-    return CachedRun(run_id, meta, sd, fd, md, hourly)
+    # The hourly frame is deliberately NOT materialised here: it is the raw
+    # record stream, 6.1M rows and ~250 MB for the 22-year Curonian run, and
+    # this loader sits at the head of the page's expensive chain in the worker
+    # that serves every session. Read the visible window instead --
+    # ``read_hourly_window`` -- which the day-level row groups make cheap.
+    return CachedRun(run_id, meta, sd, fd, md, None)
+
+
+#: Columns of ``state_hourly.parquet``: the stamp, the box, and every state
+#: variable the parser emits, in the builder's order.
+HOURLY_COLUMNS = ("stamp", "box", *bo.STATE_VARS)
+
+
+def read_hourly_window(cache_dir: Path, lo, hi) -> pd.DataFrame:
+    """Raw output-step records in ``[lo, hi]``, or an empty frame.
+
+    "Hourly" is the file's name, not a promise: these are the model's output
+    records at whatever ``meta["step_seconds"]`` says.
+
+    A missing file gives an empty frame rather than an error, because a
+    daily-only cache is the normal case and the caller falls back to daily. A
+    file that IS there but is not what it claims raises ``ValueError``, which
+    the caller turns into a page message: silently treating a broken cache as
+    "no hourly data" would hide it.
+
+    The builder flushes one calendar day per row group, so the ``stamp``
+    filters prune whole days and a window costs a fraction of the file.
+    """
+    path = cache_dir / "state_hourly.parquet"
+    if path.is_symlink() or not path.is_file():
+        return pd.DataFrame(columns=list(HOURLY_COLUMNS))
+    try:
+        table = pq.read_table(
+            path, filters=[("stamp", ">=", pd.Timestamp(lo)), ("stamp", "<=", pd.Timestamp(hi))]
+        )
+    except pa.ArrowException as exc:
+        # Every way pyarrow rejects a foreign file, as one caller-visible kind.
+        # ArrowNotImplementedError (a non-timestamp ``stamp``, so the filter has
+        # no kernel) is a RuntimeError, which no caller would have caught.
+        raise ValueError(f"state_hourly.parquet: cannot read ({exc})") from exc
+    frame = table.to_pandas()
+    missing = [c for c in HOURLY_COLUMNS if c not in frame.columns]
+    if missing:
+        # Declared columns have to be enforced, not just documented: a frame
+        # with only ``stamp``/``box`` reads as perfectly good data and then
+        # raises KeyError deep in a plot.
+        raise ValueError(f"state_hourly.parquet: missing column(s) {', '.join(missing)}")
+    if not frame.empty:
+        frame["stamp"] = _to_ns(frame["stamp"])
+    return frame
 
 
 def load_cache_state(cache_dir: Path, run_id: str) -> CachedRun:
