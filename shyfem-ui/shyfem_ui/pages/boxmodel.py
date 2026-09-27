@@ -41,7 +41,9 @@ obligations the reviews of those services handed forward:
 
 from __future__ import annotations
 
+import copy
 import io
+import json
 import logging
 import re
 from datetime import timedelta
@@ -60,6 +62,12 @@ from shyfem_ui.components.grid_map import (
     grid_map_server,
     grid_map_ui,
     node_positions,
+)
+from shyfem_ui.components.project_select import (
+    analysis_root_dir_choices,
+    project_dir_select,
+    project_file_select,
+    project_rel_dir_choices,
 )
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -81,7 +89,13 @@ from shyfem_ui.services.boxmodel_compare import (
     period_mean_diff,
     side_by_side,
 )
-from shyfem_ui.services.boxmodel_manifest import ManifestError, load_manifest
+from shyfem_ui.services.boxmodel_manifest import (
+    MANIFEST_NAME,
+    MAX_MANIFEST_BYTES,
+    ManifestError,
+    load_manifest,
+    write_manifest,
+)
 from shyfem_ui.services.boxmodel_polygons import (
     PolygonError,
     dissolve_boxes_from_grid,
@@ -186,6 +200,140 @@ def _hourly_usable(meta, period) -> bool:
     boxes = len((meta or {}).get("boxes") or ()) or 1
     per_day = 86400 / step.total_seconds()
     return days * boxes * per_day <= HOURLY_MAX_RECORDS
+
+
+def _manifest_path_value(picked, project_dir) -> str:
+    """How a picked path should be written in the manifest.
+
+    Relative when it is inside the project -- that is what keeps a manifest
+    portable, and the loader requires a relative value to stay inside -- and
+    absolute otherwise, which is the normal case for a run directory under an
+    analysis root. The pickers hand back absolute paths either way, so this is
+    the one place that decides.
+
+    Note that this NORMALISES: an absolute path that happens to point inside
+    the project is rewritten relative. Deliberate -- a manifest that names its
+    own project by absolute path cannot be moved or exported -- and harmless,
+    since the loader resolves a relative value against the project directory.
+    """
+    if not picked:
+        return ""
+    path = Path(picked)
+    if not path.is_absolute():
+        return str(path)
+    try:
+        return str(path.resolve().relative_to(Path(project_dir).resolve()))
+    except (ValueError, OSError):
+        return str(path)
+
+
+def _new_run_rows(counters: dict, entries) -> list[dict]:
+    """Rows for the runs table, with fresh keys from a monotonic counter.
+
+    Never reused, deliberately. The Remove buttons are watched by one effect
+    with a per-button ledger, so a key that came round again would be taken for
+    a click already handled and that row's Remove would do nothing at all.
+    """
+    rows = []
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        counters["run_key"] = counters.get("run_key", 0) + 1
+        rows.append(
+            {
+                "key": counters["run_key"],
+                "id": str(entry.get("id") or ""),
+                "label": str(entry.get("label") or ""),
+                "dir": str(entry.get("dir") or ""),
+                # Carried so a save keeps whatever else the entry holds.
+                "raw": entry,
+            }
+        )
+    return rows
+
+
+def _manifest_picker_options(value, project_dir) -> tuple[str, dict]:
+    """``(selected, extra)`` for a manifest path field's dropdown.
+
+    A picker must ALWAYS offer the value it was given. A stored path the
+    project listing does not contain -- a relative one the matcher resolves
+    elsewhere, or a legal absolute one outside the project -- otherwise renders
+    as an empty select, and the next save writes that emptiness back and
+    deletes the key. That is a silent edit to a file the user may have written
+    by hand, and it is why every field here injects its own current value.
+    """
+    if not value or not isinstance(value, str):
+        return "", {}
+    path = Path(value)
+    absolute = str(path if path.is_absolute() else (Path(project_dir) / path))
+    return absolute, {absolute: value}
+
+
+#: Where each form field lives in the document, as a key path.
+_MANIFEST_FIELDS = {
+    "title": ("title",),
+    "grd": ("grid", "grd"),
+    "bas": ("grid", "bas"),
+    "boxes_txt": ("grid", "boxes_txt"),
+    "polygons": ("boxes", "polygons"),
+    "layer": ("boxes", "layer"),
+    "id_field": ("boxes", "id_field"),
+    "str": ("str",),
+    "forcing_dir": ("forcing", "dir"),
+    "observations": ("observations", "file"),
+    "sites": ("observations", "sites"),
+}
+
+
+def _manifest_document(raw: dict, values: dict, runs) -> dict:
+    """The document a save should write: the form's values over ``raw``.
+
+    Overlaid, not rebuilt, and taken from the RAW file rather than from a
+    loaded ``BoxModelManifest``: that object's paths are resolved absolute, so
+    rebuilding from it would silently rewrite every relative path in the file
+    and destroy its portability. Keys this form knows nothing about -- a future
+    schema's, or a human's -- survive untouched.
+
+    A blank optional field removes its key, and a section left with nothing in
+    it goes too: the loader reads "" as absent either way, but this file is
+    meant to be opened by people.
+    """
+    doc = copy.deepcopy(raw) if isinstance(raw, dict) else {}
+    doc["schema"] = 1
+    for field, path in _MANIFEST_FIELDS.items():
+        value = (values.get(field) or "").strip() if values.get(field) is not None else ""
+        *parents, leaf = path
+        target = doc
+        for name in parents:
+            section = target.get(name)
+            if not isinstance(section, dict):
+                section = {}
+                target[name] = section
+            target = section
+        if value:
+            target[leaf] = value
+        else:
+            target.pop(leaf, None)
+    for name in ("grid", "boxes", "forcing", "observations"):
+        if isinstance(doc.get(name), dict) and not doc[name]:
+            del doc[name]
+    written = []
+    for row in runs:
+        entry = {"id": (row.get("id") or "").strip()}
+        label = (row.get("label") or "").strip()
+        if label:
+            # The loader defaults label to id, so writing the same thing twice
+            # is noise in a file people read.
+            entry["label"] = label
+        entry["dir"] = (row.get("dir") or "").strip()
+        # Anything else the entry carried stays, the same promise the top-level
+        # document gets. "key" and "raw" are the editor's own bookkeeping.
+        for name, value in row.items():
+            if name not in ("key", "raw", "id", "label", "dir"):
+                entry[name] = value
+        written.append(entry)
+    doc["runs"] = written
+    return doc
 
 
 def _snap_to_stamp(frame, chosen):
@@ -779,6 +927,20 @@ def boxmodel_ui() -> ui.Tag:
                 ),
             ),
             ui.nav_panel(
+                "Manifest",
+                ui.p(
+                    "What this project's boxmodel.json says: the mesh, the box outlines, "
+                    "the STR, the forcing directory, the observations and the runs to "
+                    "analyse. Editing it here is the alternative to writing the file by "
+                    "hand. Saving validates first, so a rejected change never reaches "
+                    "the file.",
+                    class_="text-muted small",
+                ),
+                ui.output_ui("manifest_form"),
+                ui.hr(),
+                ui.output_ui("manifest_runs"),
+            ),
+            ui.nav_panel(
                 "Setup",
                 ui.p(
                     "What the run was set up with: the STR's open boundaries on the mesh "
@@ -859,7 +1021,7 @@ def boxmodel_server(
     # Plain (non-reactive) per-session bookkeeping, deliberately not
     # reactive.Values: read-then-write on a reactive from the same effect is
     # exactly the loop above.
-    counters = {"kick": 0, "tick": 0, "generation": 0}
+    counters = {"kick": 0, "tick": 0, "generation": 0, "manifest": 0, "run_key": 0}
     last = {
         "state": None,
         "runs": None,
@@ -868,6 +1030,9 @@ def boxmodel_server(
         "grd": False,
         "good": None,
         "project": None,
+        # Remove buttons are watched by one effect, so it needs to remember
+        # which clicks it has already acted on.
+        "removed": {},
     }
 
     def _user():
@@ -900,6 +1065,12 @@ def boxmodel_server(
 
     # --- manifest ---------------------------------------------------------
 
+    #: Bumped by a successful manifest save. Read by ``manifest_result`` so the
+    #: run selector, the tabs and the cache badge follow a save immediately --
+    #: including the first save of all, which turns "boxmodel.json not found"
+    #: into a working page without a reload.
+    manifest_generation: reactive.Value = reactive.value(0)
+
     @reactive.calc
     def manifest_result() -> tuple:
         """``(manifest, error, notice)`` -- never raises.
@@ -909,6 +1080,7 @@ def boxmodel_server(
         manifest but not the project directory it is handed -- that is the
         caller's job).
         """
+        manifest_generation.get()
         proj = _project()
         if proj is None:
             return None, "Open a project first.", None
@@ -1341,6 +1513,284 @@ def boxmodel_server(
         if notice:
             blocks.append(ui.div(ui.tags.span(notice), class_="alert alert-info"))
         return ui.div(*blocks) if blocks else None
+
+    # --- manifest editing ---------------------------------------------------
+
+    #: The runs table being edited: {"key", "id", "label", "dir", "raw"}.
+    #: Keys are monotonic and NEVER reused -- a reused key would collide with
+    #: the per-button ledger below and leave that row's Remove dead.
+    runs_rows: reactive.Value = reactive.value([])
+
+    def _coerce_section(doc: dict, name: str) -> dict:
+        """A manifest section as a dict, whatever the file actually holds.
+
+        The loader's ``_section`` refuses a wrongly-typed section with a clear
+        error; the form has to keep rendering anyway, because replacing a
+        broken manifest is exactly what it is for.
+        """
+        value = doc.get(name)
+        return value if isinstance(value, dict) else {}
+
+    @reactive.calc
+    def raw_manifest() -> dict:
+        """The manifest document as it is ON DISK, or ``{}`` when there is none.
+
+        Raw on purpose: the form edits the file's own values, not the resolved
+        paths of a loaded ``BoxModelManifest``. An unreadable, oversized or
+        invalid file also gives ``{}`` -- the loader's error is already on the
+        page, and an empty form is what lets the user replace it.
+        """
+        manifest_generation.get()
+        proj = _project()
+        if proj is None:
+            return {}
+        try:
+            project_dir = config.confine_path(
+                Path(proj["work_dir"]), _user(), must_exist=True, for_write=False
+            )
+            path = Path(project_dir) / MANIFEST_NAME
+            if not path.is_file() or path.stat().st_size > MAX_MANIFEST_BYTES:
+                return {}
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, RecursionError) as exc:
+            logger.info("boxmodel: manifest not readable for editing: %s", exc)
+            return {}
+        return doc if isinstance(doc, dict) else {}
+
+    @reactive.effect
+    def _seed_runs_rows():
+        """Refill the runs table from the file whenever the file changes."""
+        runs_rows.set(_new_run_rows(counters, raw_manifest().get("runs")))
+
+    def _harvest_rows() -> list[dict]:
+        """The rows as the user currently has them on screen.
+
+        Called before any structural change: the row inputs are recreated from
+        ``runs_rows`` on every re-render, so a mutation that did not harvest
+        first would silently revert whatever the user had typed.
+        """
+        harvested = []
+        for row in runs_rows.get():
+            updated = dict(row)
+            for field in ("id", "label", "dir"):
+                input_id = f"run_{row['key']}_{field}"
+                if input_id in input:
+                    updated[field] = str(input[input_id]() or "").strip()
+            harvested.append(updated)
+        return harvested
+
+    def _run_dir_choices(current: str) -> dict:
+        """Project directories, analysis-root directories, and the row's own
+        value. The last one matters: the live manifest's dirs are absolute
+        under a root, and a select that does not list the current value renders
+        empty -- then a save would write that emptiness back."""
+        proj = _project()
+        choices: dict[str, str] = {}
+        for rel in project_rel_dir_choices(proj, _user(), config):
+            choices[rel] = rel
+        for absolute in analysis_root_dir_choices(config, _user()):
+            choices[absolute] = absolute
+        if current and current not in choices:
+            choices[current] = current
+        return choices
+
+    @render.ui
+    def manifest_form():
+        """The scalar half of the form. Separate from the runs table so that
+        adding or removing a run does not re-render these inputs and revert
+        whatever the user has typed into them."""
+        proj = _project()
+        if proj is None:
+            return ui.p("Open a project first.", class_="text-muted")
+        doc = raw_manifest()
+        grid = _coerce_section(doc, "grid")
+        boxes = _coerce_section(doc, "boxes")
+        forcing = _coerce_section(doc, "forcing")
+        obs = _coerce_section(doc, "observations")
+        usr = _user()
+        project_dir = Path(proj["work_dir"])
+
+        def _picker(input_id, label, exts, value):
+            """A file picker that ALWAYS offers the value it was given.
+
+            Without the injection a stored path the project listing does not
+            contain -- a relative one that the matcher resolves elsewhere, or a
+            legal absolute one outside the project -- renders as an empty
+            select, and the next save writes that emptiness back, deleting the
+            key. That is a silent edit to a file the user may have written by
+            hand, so it is guarded here rather than trusted.
+            """
+            selected, extra = _manifest_picker_options(value, project_dir)
+            return project_file_select(
+                input_id,
+                label,
+                exts,
+                proj=proj,
+                user=usr,
+                config=config,
+                selected=selected or None,
+                extra=extra or None,
+            )
+
+        forcing_abs, forcing_extra = _manifest_picker_options(forcing.get("dir"), project_dir)
+        return ui.div(
+            ui.input_text("mf_title", "Title", value=str(doc.get("title") or "")),
+            ui.layout_columns(
+                _picker("mf_grd", "Mesh (.grd)", [".grd"], grid.get("grd")),
+                _picker("mf_bas", "Basin (.bas, optional)", [".bas"], grid.get("bas")),
+                _picker("mf_boxes_txt", "Box index (optional)", [".txt"], grid.get("boxes_txt")),
+                col_widths=(4, 4, 4),
+            ),
+            ui.layout_columns(
+                _picker(
+                    "mf_polygons",
+                    "Box outlines (optional)",
+                    [".gpkg", ".geojson", ".json", ".shp"],
+                    boxes.get("polygons"),
+                ),
+                ui.input_text(
+                    "mf_layer", "Outline layer (optional)", value=str(boxes.get("layer") or "")
+                ),
+                ui.input_text(
+                    "mf_id_field", "Box id field", value=str(boxes.get("id_field") or "box")
+                ),
+                col_widths=(4, 4, 4),
+            ),
+            ui.layout_columns(
+                _picker("mf_str", "STR (optional)", [".str"], doc.get("str")),
+                project_dir_select(
+                    "mf_forcing_dir",
+                    "Forcing directory (optional)",
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=forcing_abs or None,
+                    extra=forcing_extra or None,
+                    default_label="(none)",
+                ),
+                col_widths=(6, 6),
+            ),
+            ui.layout_columns(
+                _picker("mf_observations", "Observations (optional)", [".csv"], obs.get("file")),
+                _picker("mf_sites", "Sites (optional)", [".csv"], obs.get("sites")),
+                col_widths=(6, 6),
+            ),
+        )
+
+    @render.ui
+    def manifest_runs():
+        if _project() is None:
+            return None
+        rows = []
+        for row in runs_rows.get():
+            rows.append(
+                ui.div(
+                    ui.layout_columns(
+                        ui.input_text(f"run_{row['key']}_id", "Run id", value=row["id"]),
+                        ui.input_text(f"run_{row['key']}_label", "Label", value=row["label"]),
+                        ui.input_select(
+                            f"run_{row['key']}_dir",
+                            "Directory",
+                            choices=_run_dir_choices(row["dir"]),
+                            selected=row["dir"] or None,
+                        ),
+                        ui.input_action_button(
+                            f"run_{row['key']}_remove",
+                            "Remove",
+                            class_="btn-outline-danger btn-sm mt-4",
+                        ),
+                        col_widths=(3, 3, 4, 2),
+                    ),
+                    class_="border rounded p-2 mb-2",
+                )
+            )
+        return ui.div(
+            ui.tags.strong("Runs"),
+            ui.p(
+                "At least one. A run directory is usually outside the project, under a "
+                "directory an administrator has opened for reading.",
+                class_="text-muted small",
+            ),
+            ui.div(*rows) if rows else ui.p("No runs yet.", class_="text-muted small"),
+            ui.input_action_button("mf_add_run", "Add run", class_="btn-outline-primary btn-sm"),
+            ui.hr(),
+            ui.input_action_button("mf_save", "Save manifest", class_="btn-primary"),
+        )
+
+    @reactive.effect
+    @reactive.event(input.mf_add_run)
+    def _add_run_row():
+        rows = _harvest_rows()
+        counters["run_key"] += 1
+        rows.append({"key": counters["run_key"], "id": "", "label": "", "dir": "", "raw": {}})
+        runs_rows.set(rows)  # a NEW list: Value.set dedups by identity
+
+    @reactive.effect
+    def _remove_run_row():
+        """One watcher for every row's Remove button.
+
+        The ledger is keyed by button id and the row keys are monotonic, so a
+        key is never reused and a click is never mistaken for an older one.
+        """
+        rows = _harvest_rows()
+        for row in rows:
+            button = f"run_{row['key']}_remove"
+            if button in input and input[button]() and not last["removed"].get(button):
+                last["removed"][button] = True
+                runs_rows.set([r for r in rows if r["key"] != row["key"]])
+                return
+
+    def _collect_runs() -> list[dict]:
+        """The runs table as the user has it, carrying each entry's other keys."""
+        project_dir = Path(_project()["work_dir"])
+        out = []
+        for row in _harvest_rows():
+            entry = dict(row.get("raw") or {})
+            entry["id"] = row["id"]
+            entry["label"] = row["label"]
+            entry["dir"] = _manifest_path_value(row["dir"], project_dir)
+            out.append(entry)
+        return out
+
+    @reactive.effect
+    @reactive.event(input.mf_save)
+    def _save_manifest():
+        proj = _project()
+        usr = _user()
+        if proj is None:
+            ui.notification_show("Open a project first.", type="warning", duration=5)
+            return
+        denied = editor_denied_reason(proj["id"], usr, min_role="editor")
+        if denied:
+            ui.notification_show(denied, type="error", duration=6)
+            return
+        project_dir = Path(proj["work_dir"])
+        values = {
+            "title": input.mf_title() if "mf_title" in input else "",
+            "layer": input.mf_layer() if "mf_layer" in input else "",
+            "id_field": input.mf_id_field() if "mf_id_field" in input else "",
+        }
+        for field, input_id in (
+            ("grd", "mf_grd"),
+            ("bas", "mf_bas"),
+            ("boxes_txt", "mf_boxes_txt"),
+            ("polygons", "mf_polygons"),
+            ("str", "mf_str"),
+            ("forcing_dir", "mf_forcing_dir"),
+            ("observations", "mf_observations"),
+            ("sites", "mf_sites"),
+        ):
+            picked = input[input_id]() if input_id in input else ""
+            values[field] = _manifest_path_value(picked, project_dir)
+        doc = _manifest_document(raw_manifest(), values, _collect_runs())
+        try:
+            write_manifest(project_dir, doc, config, usr)
+        except (ManifestError, OSError) as exc:
+            ui.notification_show(_err(exc), type="error", duration=10)
+            return
+        ui.notification_show("Manifest saved.", type="message", duration=4)
+        counters["manifest"] += 1
+        manifest_generation.set(counters["manifest"])
 
     # --- map --------------------------------------------------------------
 

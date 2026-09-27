@@ -179,3 +179,59 @@ def test_boxmodel_page_builds_cache_and_renders(pw_page, box_project):
     _dismiss_modals(pw_page)
     pw_page.locator(".sf-nav-item[data-nav='Dashboard']").click(force=True)
     pw_page.wait_for_timeout(300)
+
+
+def test_boxmodel_manifest_tab_saves_an_edit(pw_page, box_project):
+    """Edit boxmodel.json through the form and see it persist.
+
+    The whole chain in one test: render the form from the file, collect the
+    inputs, overlay them on the raw document, validate, write, and re-read --
+    the alternative to editing this file by hand, which is what the page
+    required until now.
+    """
+    import json
+
+    pw_page.evaluate("(proj) => window.__test_set_active_project(proj)", box_project)
+    pw_page.wait_for_timeout(300)
+    pw_page.evaluate("shyfemNavTo('Box-model')")
+
+    manifest_path = Path(box_project["work_dir"]) / "boxmodel.json"
+    before = json.loads(manifest_path.read_text())
+
+    pw_page.get_by_role("tab", name="Manifest").click()
+    title = pw_page.locator("#boxmodel-mf_title")
+    expect(title).to_be_visible(timeout=15000)
+    expect(title).to_have_value(before["title"], timeout=15000)
+
+    title.fill("Edited from the form")
+    pw_page.locator("#boxmodel-mf_save").click()
+
+    # The file is the assertion: the save validated and wrote.
+    for _ in range(40):
+        after = json.loads(manifest_path.read_text())
+        if after["title"] == "Edited from the form":
+            break
+        pw_page.wait_for_timeout(500)
+    assert after["title"] == "Edited from the form"
+    # A relative path stays relative and stays itself -- this is what breaks if
+    # the form is ever filled from the RESOLVED manifest instead of the file.
+    assert after["grid"]["grd"] == before["grid"]["grd"]
+    assert {r["id"] for r in after["runs"]} == {r["id"] for r in before["runs"]}
+    # The run dirs in this fixture are absolute but inside the project, so the
+    # save normalises them to relative on purpose (a manifest that names its
+    # own project by absolute path is not portable). Same directories either
+    # way, which is what has to hold.
+    project_dir = Path(box_project["work_dir"])
+
+    def _resolved(doc):
+        return sorted(str((project_dir / Path(r["dir"])).resolve()) for r in doc["runs"])
+
+    assert _resolved(after) == _resolved(before)
+    assert all(not Path(r["dir"]).is_absolute() for r in after["runs"])
+    # Nothing the user did not touch may disappear. A save used to delete every
+    # optional path whose picker could not offer its stored value -- forcing.dir
+    # on every project that had one -- and this test passed while writing that
+    # damaged file, because it only checked the fields it had edited.
+    for key in ("forcing", "str", "observations", "boxes"):
+        if before.get(key):
+            assert after.get(key), f"the save dropped {key!r}"

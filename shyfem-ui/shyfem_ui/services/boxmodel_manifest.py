@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from shyfem_ui.boxmodel_common import atomic_json
 from shyfem_ui.config import Config
 
 MANIFEST_NAME = "boxmodel.json"
@@ -115,6 +116,11 @@ def _resolve(
 
 
 def load_manifest(project_dir: Path, config: Config, user: dict | None) -> BoxModelManifest:
+    """Read ``boxmodel.json`` from a project and validate it.
+
+    Reading and validating are separate (see ``parse_manifest``) so that an
+    editor can check a candidate document BEFORE it replaces the live file.
+    """
     project_dir = Path(project_dir)
     path = project_dir / MANIFEST_NAME
     if not path.is_file():
@@ -131,6 +137,17 @@ def load_manifest(project_dir: Path, config: Config, user: dict | None) -> BoxMo
         # cap -- all must yield ManifestError, never escape as a raw
         # exception (spec §4).
         raise ManifestError(f"{MANIFEST_NAME}: invalid JSON ({e})") from e
+    return parse_manifest(d, project_dir, config, user)
+
+
+def parse_manifest(d, project_dir: Path, config: Config, user: dict | None) -> BoxModelManifest:
+    """Validate a manifest DOCUMENT. Reads nothing and writes nothing.
+
+    The single source of truth for what a manifest may say -- the editor form
+    asks this before writing, so the rules can never drift into a second copy,
+    and the message it raises already names the offending key.
+    """
+    project_dir = Path(project_dir)
     if not isinstance(d, dict) or d.get("schema") != 1:
         raise ManifestError("schema: must be 1")
     title = d.get("title") or "Box model"
@@ -191,3 +208,32 @@ def load_manifest(project_dir: Path, config: Config, user: dict | None) -> BoxMo
             obs.get("sites"), "observations.sites", project_dir, config, user, required=False
         ),
     )
+
+
+def write_manifest(
+    project_dir: Path, doc: dict, config: Config, user: dict | None
+) -> BoxModelManifest:
+    """Validate ``doc`` and only then write it as the project's manifest.
+
+    In that order on purpose. Writing first and re-reading would leave a window
+    in which the page loads a broken manifest, and would need a rollback that
+    can itself fail; validating first means a bad candidate never reaches the
+    disk and the previous file stays exactly as it was.
+
+    Returns the parsed manifest, so the caller can refresh the page from the
+    same object the loader would have produced.
+    """
+    project_dir = Path(project_dir)
+    parsed = parse_manifest(doc, project_dir, config, user)
+    try:
+        target = config.confine_path(project_dir, user, must_exist=True, for_write=True)
+    except (ValueError, OSError) as e:
+        raise ManifestError(f"{MANIFEST_NAME}: {e}") from e
+    payload = json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+    if len(payload.encode("utf-8")) > MAX_MANIFEST_BYTES:
+        raise ManifestError(f"{MANIFEST_NAME} exceeds 64 KB")
+    try:
+        atomic_json(Path(target) / MANIFEST_NAME, doc, indent=2)
+    except OSError as e:
+        raise ManifestError(f"{MANIFEST_NAME}: cannot write ({e})") from e
+    return parsed

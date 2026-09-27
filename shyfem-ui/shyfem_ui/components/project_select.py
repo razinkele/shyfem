@@ -407,6 +407,41 @@ def project_rel_dir_choices(proj: Mapping | None, user: dict | None, config: Con
     return [d for d in list_project_dirs(root) if d != "."]
 
 
+def analysis_root_dir_choices(config: Config, user: dict | None) -> list[str]:
+    """Absolute run directories under the admin-declared analysis roots.
+
+    A manifest's ``runs[].dir`` is usually OUTSIDE the project -- the live
+    Curonian manifest names three absolute paths under an analysis root -- so a
+    project-only dropdown could not express it. Absolute on purpose: a relative
+    value resolves against the project directory and would be rejected for
+    escaping it.
+
+    Depth 1, which is how a root is laid out in practice (one directory per
+    run), with the same guards as the project listing: directories only, no
+    hidden entries, no symlinks, so a link inside a root cannot list another
+    tree. Empty in local mode, which declares no roots.
+    """
+    if user is None and config.deployment_mode == "server":
+        # No resolved identity: offer nothing rather than enumerate an admin's
+        # directories. confine_path refuses user=None in server mode too.
+        return []
+    out: list[str] = []
+    for root in config.resolved_analysis_roots():
+        try:
+            entries = sorted(root.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            if entry.name.startswith(".") or entry.is_symlink():
+                continue
+            try:
+                if entry.is_dir():
+                    out.append(str(entry))
+            except OSError:
+                continue
+    return sorted(out)
+
+
 def dir_name_choices(root: Path) -> list[str]:
     """Names of the directories directly under ``root`` (non-hidden, no
     symlinks); ``[]`` when ``root`` is not a directory. For the new-project
