@@ -470,7 +470,29 @@ class FileService:
 
 
 def _cache_bytes(work_dir: str | Path | None) -> int:
-    """Total size of the regular files under the project's box-model cache.
+    """Total size of the regular files under the project's box-model cache,
+    charging each cache run ONCE.
+
+    A build publishes in two steps (``<run>`` -> ``<run>.old-<token>``,
+    ``<run>.tmp-<token>`` -> ``<run>``), so for a moment one run's bytes are
+    on disk twice and the project was charged twice for that single run
+    against ``SHYFEM_UI_MAX_PROJECT_STORAGE_MB`` -- in both windows. A large
+    run could push a project over its quota purely by being rebuilt.
+
+    So directories are grouped by run id (the name before ``.tmp-``/``.old-``)
+    and each group is charged its LARGEST member: one run's worth of bytes,
+    whichever copy that is. Simply skipping the marker directories would be
+    wrong in the other direction -- an ``error``-phase ``.tmp-`` dir is kept
+    on purpose (``cache_status`` reports it, the next ``start_build`` clears
+    it), so it can sit there for days holding the biggest artefact of all, a
+    fully written ``state_daily.parquet``, and its bytes must be charged.
+
+    What this does not model: two workers building the same run at once is
+    charged as one run, and a publish in progress is charged for one copy
+    rather than the two briefly on disk. Both are bounded and transient;
+    over-charging a rebuild is the failure that actually hurt. Run ids are
+    ``[a-z0-9_-]{1,64}`` (no dots), so a published name can never carry a
+    marker.
 
     Symlinks are counted as links (``lstat``), never followed, so a link into
     the project's own tree is not double-counted and one pointing outside it
@@ -484,15 +506,28 @@ def _cache_bytes(work_dir: str | Path | None) -> int:
     cache = Path(work_dir) / ".boxmodel_cache"
     if not cache.is_dir():
         return 0
-    total = 0
-    for p in cache.rglob("*"):
-        try:
-            st = p.lstat()
-        except OSError:
-            continue
-        if _stat.S_ISREG(st.st_mode):
-            total += st.st_size
-    return total
+    try:
+        entries = list(cache.iterdir())
+    except OSError:
+        return 0
+    charges: dict[str, int] = {}
+    for entry in entries:
+        run_id = entry.name
+        for marker in (".tmp-", ".old-"):
+            if marker in run_id:
+                run_id = run_id.split(marker, 1)[0]
+                break
+        paths = entry.rglob("*") if (entry.is_dir() and not entry.is_symlink()) else [entry]
+        size = 0
+        for p in paths:
+            try:
+                st = p.lstat()
+            except OSError:
+                continue
+            if _stat.S_ISREG(st.st_mode):
+                size += st.st_size
+        charges[run_id] = max(charges.get(run_id, 0), size)
+    return sum(charges.values())
 
 
 def _sum_project_bytes(db, project_id: int, work_dir: str | Path | None = None) -> int:

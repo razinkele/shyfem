@@ -16,13 +16,16 @@ lat], ...]}``), ``element_box`` (list of ``[element, box]`` pairs, or
 polygon dissolve), ``run_log`` (``RunLogFacts`` as a dict, or ``null``),
 ``sources`` (``{filename: {"size", "mtime_ns"}}`` for every input file read).
 
-``progress.json`` is rewritten every ``RECORDS_PER_HEARTBEAT`` records in
-BOTH streaming loops and around every Parquet table write, because the
-parent treats that file's mtime as this build's liveness signal (a page
-load's ``reconcile_tmp_dirs`` removes a ``.tmp-*`` whose progress is older
-than ``LIVE_TMP_SECONDS``). Only the state loop advances ``records``; the
-meteo loop and the write phase merely refresh the timestamp, so the page
-badge's ``records/expected`` stays monotone.
+``progress.json`` carries BOTH signals the parent needs, written by two
+different threads (see ``_Progress``). Progress: the file is rewritten every
+``RECORDS_PER_HEARTBEAT`` records in both streaming loops and around every
+Parquet table write. Only the state loop advances ``records``; the meteo loop
+and the write phase merely refresh the timestamp, so the page badge's
+``records/expected`` stays monotone. Liveness: a daemon heartbeat thread
+re-publishes the last payload every ``HEARTBEAT_SECONDS`` so the file's mtime
+stays fresh even inside one long step, because a page load's
+``reconcile_tmp_dirs`` removes a ``.tmp-*`` whose progress is older than
+``LIVE_TMP_SECONDS``.
 
 ``--hourly`` streams ``state_hourly.parquet`` with a ``pyarrow.parquet.
 ParquetWriter`` opened lazily on the first hourly record and flushed one
@@ -41,6 +44,7 @@ import dataclasses
 import os
 import re
 import sys
+import threading
 import traceback
 from collections import defaultdict
 from datetime import date, datetime, timezone
@@ -65,15 +69,20 @@ MINMAX_VARS = ("temp", "salt", "act_eta")
 BYTES_PER_STATE_RECORD_GUESS = 6200  # 29 boxes + 56 sections; only for the progress estimate
 #: How often ``build()`` refreshes ``progress.json`` while streaming records.
 #:
-#: This is a LIVENESS signal, not just a progress one:
-#: ``services/boxmodel_cache.reconcile_tmp_dirs`` (which any page load runs)
-#: deletes a ``.tmp-*`` directory whose ``progress.json`` is older than
-#: ``LIVE_TMP_SECONDS`` (90 s), so every loop in this module that can run for
-#: a long time has to tick at least that often or risk having its own output
-#: directory removed out from under it. At even a pessimistic 50 ms per
-#: record this cadence writes every ~25 s -- see
-#: ``test_heartbeat_cadence_stays_well_inside_the_live_tmp_window``.
+#: A PROGRESS cadence: it moves the page badge's record count. Liveness is
+#: the heartbeat thread's job (``_Progress.start_heartbeat``), which is what
+#: makes a long quiet step safe. The cadence is nonetheless kept comfortably
+#: inside the reaper's window so the two signals cannot disagree even if the
+#: thread never got started -- at a pessimistic 50 ms per record this writes
+#: every ~25 s; see ``test_heartbeat_cadence_stays_well_inside_the_live_tmp_window``.
 RECORDS_PER_HEARTBEAT = 500
+
+#: How often the heartbeat thread re-publishes ``progress.json``.
+#:
+#: Well inside ``services/boxmodel_cache.LIVE_TMP_SECONDS`` (90 s): four
+#: beats can be missed before another worker's page-load reconcile would
+#: judge this build dead and delete its output directory.
+HEARTBEAT_SECONDS = 20.0
 _OUT_NAME_RE = re.compile(r"^[a-z0-9_-]{1,64}\.tmp-[A-Za-z0-9_-]+$")
 
 HOURLY_STATE_SCHEMA = pa.schema(
@@ -101,10 +110,46 @@ def _now() -> str:
 
 
 class _Progress:
+    """``progress.json``: the child's progress report AND its liveness signal.
+
+    Two writers, deliberately in one object:
+
+    * ``write`` publishes real progress from the main thread (phase, record
+      count, terminal error).
+    * the ``start_heartbeat`` daemon thread re-publishes the LAST payload
+      every ``HEARTBEAT_SECONDS`` with a fresh ``updated``, so the file's
+      mtime keeps moving inside one long step. Without it a single big
+      Parquet write or the ``run.log`` tail could stay quiet past
+      ``LIVE_TMP_SECONDS`` and another worker's page-load
+      ``reconcile_tmp_dirs`` would delete a HEALTHY running build's own
+      output directory.
+
+    A touch is not a reset: the thread re-publishes the remembered payload
+    rather than inventing one, so the badge never moves backwards. Both
+    writers hold ``_lock`` across the whole ``atomic_json`` call, so the
+    last ``os.replace`` to land is always the newest payload.
+
+    What each failure looks like to the reaper:
+
+    * a CRASHED child stops beating by construction -- the thread is a
+      daemon and dies with the process -- which is what keeps the mtime rule
+      able to reap;
+    * a HUNG child keeps beating, so the reaper has a second, absolute age
+      cap measured from ``started`` (see
+      ``services/boxmodel_cache.tmp_age_cap_seconds``). ``started`` is
+      stamped once here and never refreshed, by ``write`` or by a touch.
+    """
+
     def __init__(self, out: Path, expected: int):
         self.path = out / "progress.json"
         self.expected = expected
         self.records = 0
+        #: Birth stamp for the reaper's absolute age cap. Never rewritten.
+        self.started = _now()
+        self._lock = threading.Lock()
+        self._last: dict | None = None
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
 
     def write(self, phase: str, *, error: str | None = None, exit_code: int | None = None) -> None:
         # ``expected`` is only an estimate (state file size / a per-record
@@ -112,17 +157,80 @@ class _Progress:
         # it. Clamp here, the one place every progress write goes through, so
         # the page badge's "records/expected" never reads above 100%.
         self.expected = max(self.expected, self.records)
-        atomic_json(
-            self.path,
-            {
-                "phase": phase,
-                "records": self.records,
-                "expected": self.expected,
-                "error": error,
-                "exit": exit_code,
-                "updated": _now(),
-            },
+        payload = {
+            "phase": phase,
+            "records": self.records,
+            "expected": self.expected,
+            "error": error,
+            "exit": exit_code,
+            "pid": os.getpid(),
+            "started": self.started,
+            "updated": _now(),
+        }
+        with self._lock:
+            self._last = payload
+            atomic_json(self.path, payload)
+
+    def touch(self) -> bool:
+        """Re-publish the last payload with a fresh ``updated``.
+
+        Returns False when there was nothing to re-publish (no ``write`` yet)
+        or the write failed. Best-effort on purpose: between the child's last
+        write and its exit the parent -- or another worker's reconcile -- can
+        publish this directory away, and a heartbeat must not turn that race
+        into a traceback. Nothing reports a failed beat: liveness simply goes
+        quiet for that interval and the next beat tries again. A write failure
+        that also breaks the MAIN thread's ``write`` is what surfaces, as that
+        call's own OSError.
+        """
+        with self._lock:
+            if self._last is None:
+                return False
+            payload = dict(self._last, updated=_now())
+            try:
+                atomic_json(self.path, payload)
+            except OSError:
+                return False
+            self._last = payload
+            return True
+
+    def start_heartbeat(self) -> None:
+        """Start the liveness thread. A second call is a no-op."""
+        if self._thread is not None or self._stop.is_set():
+            return
+        self._thread = threading.Thread(
+            target=self._beat, name="boxmodel-progress-heartbeat", daemon=True
         )
+        self._thread.start()
+
+    def _beat(self) -> None:
+        # ``HEARTBEAT_SECONDS`` is read per iteration (module attribute) so a
+        # test can shorten it; ``Event.wait`` makes ``stop()`` prompt instead
+        # of leaving a sleeping thread behind for a whole interval.
+        while not self._stop.wait(HEARTBEAT_SECONDS):
+            # Keep going whatever one beat returned. A transient ENOSPC/EIO,
+            # or a beat that fires before the first ``write`` has a payload to
+            # re-publish, must not end liveness for the rest of the build --
+            # that would silently restore the very bug this thread fixes. For
+            # a directory that really is gone the loop just fails every
+            # ``HEARTBEAT_SECONDS`` until the process exits, which costs an
+            # mkstemp attempt and nothing else.
+            self.touch()
+
+    def stop(self) -> None:
+        """Stop beating and wait for the thread to leave.
+
+        Called before the child's terminal write. Ordering is belt and
+        braces, not the mechanism: ``touch`` re-reads ``_last`` under the same
+        lock ``write`` replaced it under, so a beat cannot republish a
+        pre-error payload over the failure in any case. What stopping really
+        buys is that no thread outlives the build, beating into a directory
+        the parent is about to publish. Idempotent, and safe when the thread
+        was never started.
+        """
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=5.0)
 
 
 def _validate(run_dir: Path, out_dir: Path, bases: list[Path]) -> str | None:
@@ -384,9 +492,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"refused: {err}", file=sys.stderr)
         return 2
     prog = _Progress(out_dir, 1)
+    # The out dir already exists (the parent creates it before spawning), so
+    # the heartbeat can start before the first real write. The inner
+    # ``finally`` stops it BEFORE either error write below: a beat landing on
+    # top of the terminal payload would leave the page showing a build stuck
+    # mid-phase instead of the failure.
+    prog.start_heartbeat()
     try:
-        # bo.BoxOutputError is a ValueError subclass, so it's covered below.
-        build(run_dir, out_dir, hourly=a.hourly, progress=prog)
+        try:
+            # bo.BoxOutputError is a ValueError subclass, so it's covered below.
+            build(run_dir, out_dir, hourly=a.hourly, progress=prog)
+        finally:
+            prog.stop()
         return 0
     except (OSError, ValueError) as e:
         prog.write("error", error=str(e), exit_code=1)

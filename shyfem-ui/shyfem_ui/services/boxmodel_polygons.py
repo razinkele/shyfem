@@ -272,12 +272,28 @@ def _resolve_grid_epsg(grd: GrdFile, epsg: int | None) -> int | None:
 
 
 def dissolve_boxes_from_grid(
-    grd_path: Path,
+    grid: GrdFile | Path | str,
     element_box: list[list[int]],
     *,
     epsg: int | None = None,
 ) -> dict[int, list[list[float]]]:
     """Dissolve each box's element triangles from the .grd into one outer ring.
+
+    ``grid`` is the path to the ``.grd`` **or** an already-parsed ``GrdFile``:
+    a caller that holds one (the Box-model page parses the grid for the map
+    and for the EPSG decision) hands the object over rather than naming the
+    file again. ``GrdParser.parse_file`` memoises 8 grids by path, mtime and
+    size, so the path form is usually a dict hit rather than a second parse --
+    what handing the object over really guarantees is that the dissolve and
+    the map describe the SAME grid, whatever the cache did and whether or not
+    the file changed underneath them. A parsed grid names itself in the error
+    messages through ``GrdFile.file_path``; one built in memory, which has no
+    path, is called ``grid`` there.
+
+    Note that resolving the EPSG may call ``GrdFile.detect_coordinate_system``,
+    which caches its derived answer on the object. That is idempotent, it is
+    recomputed from the same nodes, and the parser's own cache already handed
+    every caller the same object, so this changes nothing for the map.
 
     ``element_box`` is a list of ``[element_id, box_id]`` pairs, as stored in
     the cache builder's ``meta["element_box"]``.
@@ -302,17 +318,21 @@ def dissolve_boxes_from_grid(
     elements.
     """
     _require_geospatial_stack()
-    grd_path = Path(grd_path)
-
-    try:
-        grd = GrdParser.parse_file(grd_path)
-    except Exception as exc:
-        raise PolygonError(f"{grd_path.name}: cannot parse grid ({exc})") from exc
+    if isinstance(grid, GrdFile):
+        grd = grid
+        name = grd.file_path.name if grd.file_path is not None else "grid"
+    else:
+        grd_path = Path(grid)
+        name = grd_path.name
+        try:
+            grd = GrdParser.parse_file(grd_path)
+        except Exception as exc:
+            raise PolygonError(f"{name}: cannot parse grid ({exc})") from exc
 
     resolved_epsg = _resolve_grid_epsg(grd, epsg)
     if resolved_epsg is None:
         raise PolygonError(
-            f"{grd_path.name}: grid is not in geographic coordinates and no EPSG is "
+            f"{name}: grid is not in geographic coordinates and no EPSG is "
             "known; pass epsg= or provide boxes.polygons in the manifest"
         )
     try:
@@ -321,7 +341,7 @@ def dissolve_boxes_from_grid(
         )
     except Exception as exc:
         raise PolygonError(
-            f"{grd_path.name}: cannot reproject grid from EPSG:{resolved_epsg} to WGS84 ({exc})"
+            f"{name}: cannot reproject grid from EPSG:{resolved_epsg} to WGS84 ({exc})"
         ) from exc
 
     groups: dict[int, list] = {}
@@ -343,13 +363,13 @@ def dissolve_boxes_from_grid(
             node = grd.nodes.get(node_id)
             if node is None:
                 raise PolygonError(
-                    f"{grd_path.name}: element {elem_id} (box {box_id}) references node "
+                    f"{name}: element {elem_id} (box {box_id}) references node "
                     f"{node_id}, which is absent from the grid"
                 )
             x, y = to_wgs84(node.x, node.y)
             if _out_of_wgs84_bounds(x, y):
                 raise PolygonError(
-                    f"{grd_path.name}: element {elem_id} (box {box_id}) reprojected to "
+                    f"{name}: element {elem_id} (box {box_id}) reprojected to "
                     f"invalid coordinates ({x}, {y})"
                 )
             points.append((x, y))
@@ -358,7 +378,7 @@ def dissolve_boxes_from_grid(
             polygon = shapely.geometry.Polygon(points)
         except Exception as exc:
             raise PolygonError(
-                f"{grd_path.name}: element {elem_id} (box {box_id}) could not be built "
+                f"{name}: element {elem_id} (box {box_id}) could not be built "
                 f"into a polygon ({exc})"
             ) from exc
 
@@ -368,7 +388,7 @@ def dissolve_boxes_from_grid(
     if missing_elements:
         examples = missing_elements[:5]
         raise PolygonError(
-            f"{grd_path.name}: {len(missing_elements)} element(s) in element_box are "
+            f"{name}: {len(missing_elements)} element(s) in element_box are "
             f"absent from the grid (examples: {examples})"
         )
 
@@ -377,20 +397,18 @@ def dissolve_boxes_from_grid(
     # always raises first. Kept in case that check is ever relaxed.
     empty_boxes = sorted(box_id for box_id, has in contributed.items() if not has)
     if empty_boxes:
-        raise PolygonError(f"{grd_path.name}: box(es) {empty_boxes} have no elements")
+        raise PolygonError(f"{name}: box(es) {empty_boxes} have no elements")
 
     out: dict[int, list[list[float]]] = {}
     for box_id, polygons in groups.items():
         try:
             union = shapely.ops.unary_union(polygons)
         except Exception as exc:
-            raise PolygonError(
-                f"{grd_path.name}: box {box_id} could not be dissolved ({exc})"
-            ) from exc
+            raise PolygonError(f"{name}: box {box_id} could not be dissolved ({exc})") from exc
         if union.geom_type == "MultiPolygon":
             # Disjoint parts (e.g. a box split by the grid): keep the largest by area.
             union = max(union.geoms, key=lambda g: g.area)
         if union.is_empty or union.geom_type != "Polygon":
-            raise PolygonError(f"{grd_path.name}: box {box_id} dissolved to an empty shape")
+            raise PolygonError(f"{name}: box {box_id} dissolved to an empty shape")
         out[box_id] = [[round(x, 7), round(y, 7)] for x, y in union.exterior.coords]
     return out

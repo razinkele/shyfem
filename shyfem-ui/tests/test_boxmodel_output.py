@@ -219,3 +219,45 @@ def test_preamble_with_a_non_numeric_field_is_a_box_output_error(run, tmp_path):
     path.write_text("#      idbox file_type     nvers\n#     xxx  2  7\n")
     with pytest.raises(bo.BoxOutputError, match=r"bad\.txt: malformed preamble line 2"):
         bo.read_preamble(path)
+
+
+def test_stats_box_row_cut_mid_line_names_file_line_and_width(run):
+    """A box row that stops mid-line is SILENT today: pandas pads the missing
+    fields with NaN, so the box table comes back with a NaN volume/depth
+    instead of an error naming the file."""
+    path = run / "boxes_stats.txt"
+    lines = path.read_text().splitlines()
+    lines[11] = "       2       1  4.000000E+06"  # file line 12: box 2, 3 of 5 fields
+    path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(
+        bo.BoxOutputError,
+        match=r"boxes_stats\.txt: line 12: malformed box table row "
+        r"\(expected 5 fields, got 3\)",
+    ):
+        bo.read_stats(path)
+
+
+def test_stats_box_row_with_an_extra_field_names_file_and_line(run):
+    path = run / "boxes_stats.txt"
+    lines = path.read_text().splitlines()
+    lines[11] = lines[11] + "      9.9999"  # file line 12: 6 of 5 fields
+    path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(
+        bo.BoxOutputError,
+        match=r"boxes_stats\.txt: line 12: malformed box table row "
+        r"\(expected 5 fields, got 6\)",
+    ):
+        bo.read_stats(path)
+
+
+def test_stats_section_row_cut_mid_line_names_file_line_and_width(run):
+    path = run / "boxes_stats.txt"
+    lines = path.read_text().splitlines()
+    lines[17] = "           2           1"  # file line 18: 2 of 6 fields
+    path.write_text("\n".join(lines) + "\n")
+    with pytest.raises(
+        bo.BoxOutputError,
+        match=r"boxes_stats\.txt: line 18: malformed sections table row "
+        r"\(expected 6 fields, got 2\)",
+    ):
+        bo.read_stats(path)

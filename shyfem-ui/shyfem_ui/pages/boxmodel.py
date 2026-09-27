@@ -25,11 +25,12 @@ obligations the reviews of those services handed forward:
 * the status poller owns its own trigger: it re-arms itself only while a
   build is live and never reads anything it writes, so there is no
   reactive self-write loop;
-* the Compare tab (PR 2) works on ONE shared day set: ``cmp_days()`` is
-  computed once (``common_days``) and handed to the difference map, the
-  overlay plot and the skill/per-year tables, so the three can never
-  silently describe different days; everything in it hangs off
-  ``all_run_states()`` (``cache_generation``), never the 2 s badge tick;
+* the Compare tab (PR 2) works on ONE shared day set: ``cmp_days_result()``
+  is the calc that computes it once (``common_days``), ``cmp_days()`` the
+  accessor handing it to the difference map, the overlay plot and the
+  skill/per-year tables, so the three can never silently describe different
+  days; everything in it hangs off ``all_run_states_result()``
+  (``cache_generation``), never the 2 s badge tick;
 * the Setup tab (PR 3) is read-only and reads the STR and the forcing files
   through ``reactive.calc``s off ``manifest()`` (never per render); a
   ``boundn`` is never opened directly -- it goes through
@@ -71,6 +72,7 @@ from shyfem_ui.services.boxmodel_cache import (
     load_cache_state,
     reconcile_tmp_dirs,
     start_build,
+    tmp_age_cap_seconds,
 )
 from shyfem_ui.services.boxmodel_compare import (
     common_days,
@@ -236,6 +238,16 @@ def _safe_error(exc: BaseException, config, user) -> str:
     rejected.
     """
     return _safe_text(str(exc), config, user)
+
+
+def _build_timeout_seconds(config) -> int:
+    """The wall-clock bound a cache build actually gets here.
+
+    The same number ``_bounded_timeout_config`` hands ``start_build``, without
+    copying the Config: the reaper's age cap is derived from it, so the two
+    must not drift.
+    """
+    return config.command_timeout_seconds or BUILD_TIMEOUT_SECONDS
 
 
 def _bounded_timeout_config(config: Config) -> Config:
@@ -408,6 +420,65 @@ def _compare_bounds(states: dict, chosen) -> tuple[pd.Timestamp, pd.Timestamp] |
     return low, high
 
 
+def _empty_day_set() -> pd.DatetimeIndex:
+    """The "no days at all" value every Compare consumer already handles."""
+    return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
+
+
+def _compare_day_set(states: dict, chosen, err) -> tuple[pd.DatetimeIndex, str | None]:
+    """``(the shared Compare day set, a page message)``: the runs' common days
+    inside ``_compare_bounds``, or an empty day set and a message.
+
+    ``err`` renders an exception for the browser; the page passes its own
+    ``_err`` (which sanitises host paths out of the text).
+
+    ``state_daily`` comes off disk. ``load_cache_state`` normalises its
+    ``date`` column but validates nothing else, so a foreign or hand-edited
+    cache can reach ``_compare_bounds``/``common_days`` with no ``date``
+    column at all, or one pandas cannot compare. Reading it inside the try
+    turns that into a page message -- the way ``cached_result`` does -- rather
+    than an exception out of a reactive calc: today that is an error box in
+    every Compare output, and a dead session the day any effect consumes the
+    chain without its own try.
+    """
+    if not states:
+        return _empty_day_set(), None
+    try:
+        bounds = _compare_bounds(states, chosen)
+        if bounds is None:
+            return _empty_day_set(), None
+        return common_days(states, *bounds), None
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.warning("boxmodel: compare day set unavailable: %s", exc)
+        return _empty_day_set(), f"Compare: {err(exc)}"
+
+
+def _load_compare_state(cache_dir, run_id: str, err):
+    """``(the run's state_daily CachedRun, a page message)``.
+
+    One place for every off-disk read of one run's state, so what the whole
+    Compare chain assumes is checked where it can be tested.
+    ``load_cache_state`` normalises the ``date`` column and validates nothing
+    else, so a foreign or hand-edited cache can reach ``_cmp_box`` /
+    ``period_mean_diff`` with no ``box`` column at all (``cached_result``
+    makes the same check for the other tabs), and ``pd.to_datetime`` raises
+    ``TypeError``, not ``ValueError``, on a ``date`` column of the wrong kind
+    altogether.
+
+    An unreadable run is DROPPED from the comparison, which is why the message
+    matters: without it the tab reports "select at least two runs" while the
+    Runs list still shows both as ready, blaming the user for a broken cache.
+    """
+    try:
+        state = load_cache_state(cache_dir, run_id)
+        if "box" not in state.state_daily.columns:
+            raise KeyError("state_daily has no 'box' column")
+        return state, None
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("boxmodel: run %s state cache unreadable: %s", run_id, exc)
+        return None, f"{run_id}: {err(exc)}"
+
+
 def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
     """Publish finished builds and clear dead tmp dirs -- if the caller may write.
 
@@ -435,7 +506,16 @@ def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=N
         return None
     try:
         for msg in reconcile_tmp_dirs(
-            Path(work_dir), registry=get_registry(), project_id=project_id
+            Path(work_dir),
+            registry=get_registry(),
+            project_id=project_id,
+            # The cap must come from the timeout that actually bounds a build
+            # here, or the reaper could delete a healthy build's directory
+            # before the parent would have killed it: an operator-set
+            # command_timeout_seconds is respected as-is (see
+            # _bounded_timeout_config) and this project's jobs legitimately
+            # run longer than the cap's own floor.
+            max_tmp_age=tmp_age_cap_seconds(_build_timeout_seconds(config)),
         ):
             logger.info("boxmodel cache reconcile (%s): %s", project_name, msg)
     except Exception as exc:  # noqa: BLE001 - page load must never die here
@@ -829,6 +909,17 @@ def boxmodel_server(
             grd_file.set(None)
             grd_error.set(f"Grid: {_err(exc)}")
 
+    def _tmp_age_cap() -> float:
+        """The reaper's absolute age cap for this deployment.
+
+        Derived from the same bounded config ``start_build`` gets, so status
+        and the reaper agree with the timeout that actually bounds a build:
+        with the cap on its own floor and an operator-raised timeout, a page
+        load could otherwise judge a healthy build dead hours before the
+        parent would have killed it.
+        """
+        return tmp_age_cap_seconds(_build_timeout_seconds(config))
+
     def _run_entry():
         manifest_obj = manifest()
         run_id = input.run()
@@ -851,7 +942,9 @@ def boxmodel_server(
         if manifest_obj is None or run is None or proj is None:
             return None
         try:
-            return cache_status(Path(proj["work_dir"]), run.id, run.dir, get_registry())
+            return cache_status(
+                Path(proj["work_dir"]), run.id, run.dir, get_registry(), _tmp_age_cap()
+            )
         except (OSError, ValueError) as exc:
             logger.warning("boxmodel: cache status failed: %s", exc)
             return None
@@ -1113,7 +1206,16 @@ def boxmodel_server(
                 epsg = None if (grd is None or _is_geographic(grd)) else _detect_projected_crs(grd)
                 return (
                     dissolve_boxes_from_grid(
-                        manifest_obj.grd, cached_run.meta["element_box"], epsg=epsg
+                        # The parsed grid this page already holds (the EPSG
+                        # decision just above needs it). The parser memoises 8
+                        # grids, so the path form was usually a cache hit, not
+                        # a second parse; what this guarantees is that the
+                        # outlines and the map describe the same grid. A grid
+                        # that failed to parse leaves the reactive None, and
+                        # the manifest path still works.
+                        grd if grd is not None else manifest_obj.grd,
+                        cached_run.meta["element_box"],
+                        epsg=epsg,
                     ),
                     None,
                 )
@@ -1471,9 +1573,10 @@ def boxmodel_server(
         )
 
     @reactive.calc
-    def all_run_states() -> dict:
-        """``{run_id: CachedRun}`` (state_daily only) for every manifest run
-        whose cache is ready/stale -- the multi-run skill comparison input.
+    def all_run_states_result() -> tuple[dict, list[str]]:
+        """``({run_id: CachedRun}, [messages])`` for every manifest run whose
+        cache is ready/stale -- the multi-run skill comparison input, plus one
+        message per run that could not be read (see ``_load_compare_state``).
 
         Depends on ``cache_generation`` (so a finished rebuild refreshes it)
         but reads only ``state_daily``, so loading every run stays cheap.
@@ -1482,21 +1585,31 @@ def boxmodel_server(
         manifest_obj = manifest()
         proj = _project()
         if manifest_obj is None or proj is None:
-            return {}
+            return {}, []
         work_dir = Path(proj["work_dir"])
         states: dict = {}
+        problems: list[str] = []
         for run in manifest_obj.runs:
             try:
-                st = cache_status(work_dir, run.id, run.dir, get_registry())
+                st = cache_status(work_dir, run.id, run.dir, get_registry(), _tmp_age_cap())
             except (ValueError, OSError):
                 continue
             if st.state not in ("ready", "stale"):
                 continue
-            try:
-                states[run.id] = load_cache_state(cache_dir_for(work_dir, run.id), run.id)
-            except (OSError, ValueError, KeyError) as exc:
-                logger.warning("boxmodel: run %s state cache unreadable: %s", run.id, exc)
-        return states
+            state, problem = _load_compare_state(cache_dir_for(work_dir, run.id), run.id, _err)
+            if state is None:
+                problems.append(problem)
+            else:
+                states[run.id] = state
+        return states, problems
+
+    def all_run_states() -> dict:
+        """``{run_id: CachedRun}`` for the runs that could be read."""
+        return all_run_states_result()[0]
+
+    def run_state_problems() -> list[str]:
+        """One message per manifest run whose cache could not be read."""
+        return all_run_states_result()[1]
 
     # --- Compare (spec §8) -------------------------------------------------
     #
@@ -1588,17 +1701,20 @@ def boxmodel_server(
         return {run_id: states[run_id] for run_id in ids}, b
 
     @reactive.calc
+    def cmp_days_result() -> tuple:
+        """``(day set, page message)`` -- see ``_compare_day_set``, which reads
+        the off-disk ``state_daily`` frames inside a try so a broken cache
+        becomes the tab's message instead of an exception out of this calc."""
+        picked = cmp_runs_selected()
+        if picked is None:
+            return _empty_day_set(), None
+        selected, _b = picked
+        return _compare_day_set(selected, input.period(), _err)
+
     def cmp_days() -> pd.DatetimeIndex:
         """THE shared day set: intersection of the selected runs' days within
         the header period (clamped to the runs' span, see _compare_bounds)."""
-        picked = cmp_runs_selected()
-        if picked is None:
-            return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
-        selected, _b = picked
-        bounds = _compare_bounds(selected, input.period())
-        if bounds is None:
-            return common_days({}, pd.Timestamp.min, pd.Timestamp.max)
-        return common_days(selected, *bounds)
+        return cmp_days_result()[0]
 
     def _cmp_message() -> str | None:
         """The state message for the whole tab, or ``None`` when there is
@@ -1606,10 +1722,20 @@ def boxmodel_server(
         if manifest() is None:
             return CMP_NO_PROJECT_MESSAGE
         if len(all_run_states()) < 2:
+            # A run whose cache could not be read is missing from the runs the
+            # comparison can offer, so "pick two" would blame the user for it.
+            problems = run_state_problems()
+            if problems:
+                return "Compare: " + "; ".join(problems)
             return CMP_NEED_TWO_MESSAGE
         if cmp_runs_selected() is None:
             return CMP_SELECT_RUNS_MESSAGE
-        if len(cmp_days()) == 0:
+        days, days_error = cmp_days_result()
+        if days_error:
+            # A cache the day set could not be read out of: say what went
+            # wrong rather than blaming the period for having no common days.
+            return days_error
+        if len(days) == 0:
             return CMP_NO_COMMON_DAYS_MESSAGE
         return None
 
@@ -2318,16 +2444,26 @@ def boxmodel_server(
         except (TypeError, ValueError):
             return _empty("Select a box on the Time-series tab or the map.")
         frame = cached_run.meteo_daily
-        rows = frame[
-            (frame["box"].astype("int64") == box)
-            & (frame["date"] >= pd.Timestamp(period[0]))
-            & (frame["date"] <= pd.Timestamp(period[1]))
-        ]
+        try:
+            # meteo_daily comes off disk and nothing validates it: a foreign or
+            # hand-edited cache can lack the 'box'/'date' pair, and _meteo_
+            # variables offers every other column with no dtype filter, so the
+            # selected variable can be strings that .astype(float) rejects.
+            # Both are this plot's message, not a raise out of the render --
+            # which is why the VALUES are read in here too, not just the mask.
+            rows = frame[
+                (frame["box"].astype("int64") == box)
+                & (frame["date"] >= pd.Timestamp(period[0]))
+                & (frame["date"] <= pd.Timestamp(period[1]))
+            ]
+            x_values = rows["date"]
+            y_values = rows[variable].astype(float)
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("boxmodel: setup meteo frame unreadable: %s", exc)
+            return _empty(f"Meteo: {_err(exc)}")
         if not len(rows):
             return _empty(SETUP_NO_METEO_ROWS_MESSAGE)
-        figure.add_trace(
-            go.Scatter(x=rows["date"], y=rows[variable].astype(float), name=variable, mode="lines")
-        )
+        figure.add_trace(go.Scatter(x=x_values, y=y_values, name=variable, mode="lines"))
         figure.update_layout(
             height=320,
             yaxis_title=variable,

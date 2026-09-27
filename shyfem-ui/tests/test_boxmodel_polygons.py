@@ -252,3 +252,46 @@ def test_dissolve_unknown_epsg_raises_polygon_error(proj):
     element_box = [[e, b] for e, b in ELEMENT_BOX.items()]
     with pytest.raises(bp.PolygonError, match="EPSG:99999"):
         bp.dissolve_boxes_from_grid(proj / "fixture.grd", element_box, epsg=99999)
+
+
+def test_dissolve_accepts_an_already_parsed_grid(proj, monkeypatch):
+    """The page already holds the parsed ``GrdFile`` (it uses it for the EPSG
+    decision), so handing the object over must dissolve without re-parsing the
+    whole .grd -- ``parse_file`` is monkeypatched to fail, and the dissolve
+    must still work."""
+    from shyfem_ui.services.parser_grd import GrdParser
+
+    grd = GrdParser.parse_file(proj / "fixture.grd")
+    from_path = bp.dissolve_boxes_from_grid(
+        proj / "fixture.grd", [[e, b] for e, b in ELEMENT_BOX.items()]
+    )
+
+    def _explode(_path):
+        raise AssertionError("the grid must not be re-parsed")
+
+    monkeypatch.setattr(bp.GrdParser, "parse_file", classmethod(lambda cls, p: _explode(p)))
+    polys = bp.dissolve_boxes_from_grid(grd, [[e, b] for e, b in ELEMENT_BOX.items()])
+    assert polys == from_path
+
+
+def test_dissolve_from_a_parsed_grid_still_names_the_file(proj):
+    """A parsed grid carries ``file_path``, so every PolygonError keeps naming
+    the .grd the way the path form does."""
+    from shyfem_ui.services.parser_grd import GrdParser
+
+    grd_text = (proj / "fixture.grd").read_text()
+    (proj / "dangling.grd").write_text(grd_text.replace("2 1 0 3 1 2 6", "2 1 0 3 1 2 99"))
+    grd = GrdParser.parse_file(proj / "dangling.grd")
+    with pytest.raises(bp.PolygonError, match=r"dangling\.grd: element 1 .* node 99"):
+        bp.dissolve_boxes_from_grid(grd, [[e, b] for e, b in ELEMENT_BOX.items()])
+
+
+def test_dissolve_from_a_parsed_grid_without_a_path_still_reports(proj):
+    """A ``GrdFile`` built in memory has ``file_path is None``; the messages
+    fall back to a neutral name instead of raising an AttributeError."""
+    from shyfem_ui.services.parser_grd import GrdParser
+
+    grd = GrdParser.parse((proj / "fixture.grd").read_text())
+    assert grd.file_path is None
+    with pytest.raises(bp.PolygonError, match=r"grid: 1 element\(s\)"):
+        bp.dissolve_boxes_from_grid(grd, [[99, 1]])

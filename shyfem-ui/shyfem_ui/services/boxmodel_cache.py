@@ -31,6 +31,29 @@ CACHE_DIRNAME = ".boxmodel_cache"
 MAX_BUILDS_PER_WORKER = 2
 MAX_BUILDS_PER_USER = 1
 LIVE_TMP_SECONDS = 90  # a tmp dir whose progress.json is older than this is dead
+
+#: Absolute age (seconds) beyond which a ``.tmp-*`` is dead however fresh its
+#: heartbeat is -- the floor, and the whole cap unless a caller passes one.
+#:
+#: The mtime window above reaps a child that STOPPED beating (it crashed: the
+#: heartbeat is a daemon thread and dies with the process). It cannot reap a
+#: child whose main thread is wedged while that thread keeps beating -- and
+#: such a directory is not harmless, because ``cache_status`` gives a live
+#: tmp dir precedence over a published cache, so the page would read "build
+#: in progress" for good.
+#:
+#: Sized to be generous, because reaping a healthy build costs the user the
+#: whole run while leaving a hung one costs only a stale badge. The module's
+#: own pessimistic estimate is 50 ms per record; the longest run we build
+#: (Curonian, 1993-2014 at 6 h) is ~32k records, so ~27 min daily and ~2.7 h
+#: hourly. Six hours leaves better than 2x headroom on that.
+HARD_TMP_AGE_FLOOR_SECONDS = 6 * 3600
+
+#: Added to a configured ``command_timeout_seconds`` to get the cap, so the
+#: cap can never fire before the parent's own timeout would have killed the
+#: child and written an error phase.
+TMP_AGE_MARGIN_SECONDS = 3600
+
 KILL_GRACE_SECONDS = 5.0
 CacheState = Literal["missing", "stale", "queued", "building", "ready", "failed"]
 
@@ -182,14 +205,80 @@ def _progress_age(tmp: Path) -> float:
         return 1e9
 
 
-def _tmp_dir_is_dead_or_error(tmp: Path) -> bool:
-    prog = _read_json(tmp / "progress.json")
-    return bool(prog and prog.get("phase") == "error") or _progress_age(tmp) >= LIVE_TMP_SECONDS
+def tmp_age_cap_seconds(command_timeout_seconds: float | None) -> float:
+    """The absolute age cap for a build bounded by ``command_timeout_seconds``.
+
+    Takes the timeout itself, not a ``Config``, because the number that
+    matters differs by caller: the page bounds an unset timeout to its own
+    build default before a build is ever spawned.
+
+    Derived from the setting the parent uses to bound a build, so an operator
+    who raises the timeout for a long run raises the cap with it instead of
+    having to find a second knob -- and so the reaper can never judge a build
+    dead before the parent would have killed it. A timeout *below* the floor
+    never shrinks the cap: the timeout bounds this worker's own builds, which
+    ``_run_build`` already kills and marks ``error``, while the cap has to
+    survive another worker's slowest legitimate build.
+    """
+    if not command_timeout_seconds:
+        return float(HARD_TMP_AGE_FLOOR_SECONDS)
+    return max(
+        float(HARD_TMP_AGE_FLOOR_SECONDS),
+        float(command_timeout_seconds) + TMP_AGE_MARGIN_SECONDS,
+    )
 
 
-def _clear_stale_tmp_dirs(root: Path, run_id: str) -> None:
+def _started_age(prog: dict | None) -> float | None:
+    """Seconds since the child stamped ``started``, or None when unknowable.
+
+    The child writes ``started`` once and no heartbeat refreshes it, which is
+    what makes it usable as a birth time (``progress.json``'s mtime is not:
+    every beat moves it, and so does every Parquet write for the directory's
+    own mtime). None for a foreign or pre-upgrade file with no stamp, or an
+    unparsable one -- an unknown birth time must not be read as "infinitely
+    old", which would reap a live build.
+
+    Wall clocks, so a cache tree read from a host whose clock differs from the
+    writer's misjudges the age. Same exposure as ``_progress_age``'s mtime
+    comparison, and the cap is hours wide, so skew would have to be gross.
+    """
+    if not prog:
+        return None
+    raw = prog.get("started")
+    if not isinstance(raw, str):
+        return None
+    try:
+        begin = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if begin.tzinfo is None:
+        begin = begin.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - begin).total_seconds()
+
+
+def _tmp_dir_is_live(tmp: Path, prog: dict | None, max_tmp_age: float | None) -> bool:
+    """The single liveness predicate: fresh heartbeat AND inside the age cap.
+
+    ``prog`` is passed in rather than re-read so a caller that already has
+    the parsed file (the reaper, ``cache_status``) judges exactly the payload
+    it is about to act on.
+    """
+    if prog and prog.get("phase") == "error":
+        return False
+    if _progress_age(tmp) >= LIVE_TMP_SECONDS:
+        return False
+    age = _started_age(prog)
+    cap = HARD_TMP_AGE_FLOOR_SECONDS if max_tmp_age is None else max_tmp_age
+    return not (age is not None and age >= cap)
+
+
+def _tmp_dir_is_dead_or_error(tmp: Path, max_tmp_age: float | None = None) -> bool:
+    return not _tmp_dir_is_live(tmp, _read_json(tmp / "progress.json"), max_tmp_age)
+
+
+def _clear_stale_tmp_dirs(root: Path, run_id: str, max_tmp_age: float | None = None) -> None:
     """Remove every existing ``<run_id>.tmp-*`` that is error-phase or dead
-    (see ``_progress_age``), so a successful build's later publish is never
+    (see ``_tmp_dir_is_live``), so a successful build's later publish is never
     shadowed by an old failure (see ``cache_status``). Never removes a
     *live* tmp dir -- that is another build actually in flight (this
     worker's own in-flight builds for the same key are already caught by
@@ -201,20 +290,27 @@ def _clear_stale_tmp_dirs(root: Path, run_id: str) -> None:
     for tmp in root.glob(f"{run_id}.tmp-*"):
         if tmp.is_symlink():
             continue
-        if _tmp_dir_is_dead_or_error(tmp):
+        if _tmp_dir_is_dead_or_error(tmp, max_tmp_age):
             shutil.rmtree(tmp, ignore_errors=True)
 
 
 def cache_status(
-    project_work_dir: Path, run_id: str, run_dir: Path, registry: BuildRegistry | None
+    project_work_dir: Path,
+    run_id: str,
+    run_dir: Path,
+    registry: BuildRegistry | None,
+    max_tmp_age: float | None = None,
 ) -> CacheStatus:
     """Precedence (a successful publish always wins over an old failure):
 
     (a) a registry handle in ``queued``/``building`` -> that state;
-    (b) a live ``<run_id>.tmp-*`` (``progress.json`` younger than
-        ``LIVE_TMP_SECONDS``, phase not ``error``) -> ``building`` (another
-        worker's build -- this worker's own in-flight builds are already
-        covered by (a));
+    (b) a live ``<run_id>.tmp-*`` (see ``_tmp_dir_is_live``: heartbeat
+        younger than ``LIVE_TMP_SECONDS``, inside the absolute age cap,
+        phase not ``error``) -> ``building`` (another worker's build -- this
+        worker's own in-flight builds are already covered by (a)). The cap
+        matters here too: a viewer's page load skips the reconcile that
+        would remove a hung build's directory, so without it the badge would
+        read "build in progress" for good;
     (c) a published ``<run_id>/`` with ``meta.json`` -> ``ready``/``stale``;
     (d) an ``error``-phase ``<run_id>.tmp-*`` -> ``failed``, surfacing its
         error message -- checked only once nothing valid was published;
@@ -242,10 +338,9 @@ def cache_status(
     error_progress: dict | None = None
     for tmp in sorted(root.glob(f"{run_id}.tmp-*")):
         prog = _read_json(tmp / "progress.json")
-        age = _progress_age(tmp)
         if prog and prog.get("phase") == "error":
             error_progress = prog
-        elif age < LIVE_TMP_SECONDS:
+        elif _tmp_dir_is_live(tmp, prog, max_tmp_age):
             live_progress = prog
     if live_progress is not None:
         return CacheStatus("building", live_progress, None, "build in progress (another worker)")
@@ -296,6 +391,7 @@ def reconcile_tmp_dirs(
     project_work_dir: Path,
     registry: BuildRegistry | None = None,
     project_id: int | None = None,
+    max_tmp_age: float | None = None,
 ) -> list[str]:
     """Publish finished tmp dirs, remove dead tmp dirs and stray .old dirs.
 
@@ -308,8 +404,10 @@ def reconcile_tmp_dirs(
     forever. Idempotent: running it again on an already-reconciled tree
     finds nothing to do.
 
-    "Live" is decided by TWO independent tests, and a directory is skipped
-    if either says it is alive:
+    "Live" is decided by the registry first, then by ``_tmp_dir_is_live``
+    (heartbeat freshness AND the absolute age cap). ``max_tmp_age`` overrides
+    the cap's default floor; a caller holding a ``Config`` should pass
+    ``tmp_age_cap_seconds(config)``:
 
     * this worker's registry, when ``registry`` AND ``project_id`` are both
       given: a ``.tmp-*`` whose ``(project_id, run_id)`` still has a
@@ -322,9 +420,15 @@ def reconcile_tmp_dirs(
       same process. Skipping a live key before the publish branch also
       means a finished-but-not-yet-published build is left to its own
       ``_run_build``, instead of racing it into ``publish``.
-    * ``progress.json``'s age (see ``_progress_age``), which is the only
-      signal available for ANOTHER worker's builds and stays in force
-      whenever the registry is not given or does not know the key.
+    * ``progress.json``'s freshness (see ``_progress_age``), which is the
+      only signal available for ANOTHER worker's builds and stays in force
+      whenever the registry is not given or does not know the key. The child
+      keeps it fresh from a daemon thread, so a quiet phase is no longer
+      mistaken for a dead build;
+    * the absolute age cap (see ``HARD_TMP_AGE_FLOOR_SECONDS``), which is
+      what still reaps a child whose main thread wedged while that thread
+      goes on beating. An ``error``-phase directory is left alone either
+      way, for ``cache_status`` to report and ``start_build`` to clear.
     """
     root = cache_root(project_work_dir)
     msgs: list[str] = []
@@ -370,7 +474,12 @@ def reconcile_tmp_dirs(
             publish(d, run_id)
             msgs.append(f"published {run_id}")
             continue
-        if _progress_age(d) >= LIVE_TMP_SECONDS and not (prog and prog.get("phase") == "error"):
+        if prog and prog.get("phase") == "error":
+            # Left in place on purpose: ``cache_status`` reports it as failed
+            # (with its message) and ``start_build`` clears it the next time a
+            # build for this run_id is launched.
+            continue
+        if not _tmp_dir_is_live(d, prog, max_tmp_age):
             shutil.rmtree(d, ignore_errors=True)
             msgs.append(f"removed dead {d.name}")
     return msgs
@@ -426,7 +535,7 @@ async def start_build(
     # A previous build's error tmp dir (kept around for cache_status to
     # report) is only ever cleaned up here, right before a new build for the
     # same run_id actually starts -- never by cache_status itself.
-    _clear_stale_tmp_dirs(root, run_id)
+    _clear_stale_tmp_dirs(root, run_id, tmp_age_cap_seconds(config.command_timeout_seconds))
     # Not created yet -- _run_build creates it only once the per-worker
     # semaphore is actually acquired (see below), so cancel_build's
     # pre-spawn cleanup of a still-queued build's tmp dir is a safe no-op

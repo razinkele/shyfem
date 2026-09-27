@@ -247,6 +247,24 @@ def read_stats(path: Path) -> BoxStats:
         except (TypeError, ValueError) as e:
             raise BoxOutputError(f"{path.name}: malformed {what} ({text!r})") from e
 
+    def take_row(what: str, ncols: int) -> list[str]:
+        """``take().split()`` with a per-row width check.
+
+        Without it a table row that stops mid-line is either SILENT (pandas
+        pads the missing fields with NaN, so a box comes back with a NaN
+        volume) or surfaces pandas' own "N columns passed, passed data had M"
+        / "cannot convert float NaN to integer" -- neither of which names the
+        file or the line. ``i + 2`` is the file line just read (``lines``
+        drops the two preamble lines).
+        """
+        parts = take().split()
+        if len(parts) != ncols:
+            raise BoxOutputError(
+                f"{path.name}: line {i + 2}: malformed {what} "
+                f"(expected {ncols} fields, got {len(parts)})"
+            )
+        return parts
+
     def _stamp_field(line: str, what: str) -> datetime:
         parts = line.split("=")
         if len(parts) < 2:
@@ -279,7 +297,7 @@ def read_stats(path: Path) -> BoxStats:
     if nbox <= 0 or nbox > MAX_BOXES:
         raise BoxOutputError(f"{path.name}: boxes={nbox} outside 1..{MAX_BOXES}")
     take()  # column header
-    rows = [take().split() for _ in range(nbox)]
+    rows = [take_row("box table row", 5) for _ in range(nbox)]
     boxes = pd.DataFrame(rows, columns=["box", "layers", "area", "volume", "depth"]).astype(
         {"box": int, "layers": int, "area": float, "volume": float, "depth": float}
     )
@@ -293,7 +311,7 @@ def read_stats(path: Path) -> BoxStats:
     if nsec < 0 or nsec > MAX_SECTIONS:
         raise BoxOutputError(f"{path.name}: sections={nsec} outside 0..{MAX_SECTIONS}")
     take()
-    srows = [take().split() for _ in range(nsec)]
+    srows = [take_row("sections table row", 6) for _ in range(nsec)]
     sections = pd.DataFrame(
         srows, columns=["section", "from_box", "to_box", "nls", "nlb1", "nlb2"]
     ).astype(int)
