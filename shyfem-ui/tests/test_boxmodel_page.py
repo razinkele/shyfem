@@ -1261,16 +1261,92 @@ def test_hourly_is_unusable_without_an_hourly_cache():
 
 
 def test_hourly_is_usable_only_inside_the_window_cap():
-    """Spec sec246: hourly when the cache has it AND the window is at most 31
-    days. Wider windows would pull hundreds of thousands of rows per redraw."""
+    """Spec sec246: hourly when the cache has it AND the window is short.
+
+    Absolute dates and the literal 31, deliberately: deriving the edge from
+    HOURLY_WINDOW_DAYS made this pass with the cap set to 3650.
+    """
     from shyfem_ui.pages import boxmodel
 
-    meta = {"hourly": True, "step_seconds": 3600}
-    start = date(2009, 1, 1)
-    edge = start + timedelta(days=boxmodel.HOURLY_WINDOW_DAYS)
-    assert boxmodel._hourly_usable(meta, (start, edge)) is True
-    assert boxmodel._hourly_usable(meta, (start, edge + timedelta(days=1))) is False
-    assert boxmodel._hourly_usable(meta, (start, start)) is True
+    assert boxmodel.HOURLY_WINDOW_DAYS == 31
+    meta = {"hourly": True, "step_seconds": 3600, "boxes": [{}] * 29}
+    assert boxmodel._hourly_usable(meta, (date(2009, 1, 1), date(2009, 1, 31))) is True
+    assert boxmodel._hourly_usable(meta, (date(2009, 1, 1), date(2009, 2, 1))) is False
+    assert boxmodel._hourly_usable(meta, (date(2009, 1, 1), date(2009, 1, 1))) is True
+    assert boxmodel._hourly_usable(meta, None) is False
+    assert boxmodel._hourly_usable(meta, (None, None)) is False
+
+
+def test_a_fine_output_step_is_refused_even_in_a_short_window():
+    """Days do not bound the work: rows are days x boxes x 86400/step. A run
+    with idtbox = 60 puts 1.29M rows and 44,640 slider ticks inside a 31-day
+    window, which is exactly what the day cap alone was supposed to prevent."""
+    from shyfem_ui.pages import boxmodel
+
+    month = (date(2009, 1, 1), date(2009, 1, 31))
+    coarse = {"hourly": True, "step_seconds": 3600, "boxes": [{}] * 29}
+    fine = {"hourly": True, "step_seconds": 60, "boxes": [{}] * 29}
+    assert boxmodel._hourly_usable(coarse, month) is True
+    assert boxmodel._hourly_usable(fine, month) is False
+    # ...but a short enough window of the same fine run is fine again.
+    assert boxmodel._hourly_usable(fine, (date(2009, 1, 1), date(2009, 1, 5))) is True
+
+
+def _hourly_frame():
+    """Two boxes, four stamps an hour apart."""
+    import pandas as pd
+
+    stamps = pd.to_datetime(
+        ["2009-01-01 00:00", "2009-01-01 01:00", "2009-01-01 02:00", "2009-01-01 03:00"]
+    )
+    rows = []
+    for i, stamp in enumerate(stamps):
+        for box in (1, 2):
+            rows.append({"stamp": stamp, "box": box, "salt": 10.0 + i + box, "temp": 5.0})
+    # Deliberately out of order: a parquet window is not promised sorted, and a
+    # pre-sorted fixture would let a dropped .sort_index() pass.
+    return pd.DataFrame(rows).iloc[::-1].reset_index(drop=True)
+
+
+def test_the_map_snaps_to_a_stamp_that_exists():
+    """The slider value can land between records after a period change, and an
+    exact match would select nothing and blank the map."""
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    frame = _hourly_frame()
+    assert boxmodel._snap_to_stamp(frame, pd.Timestamp("2009-01-01 01:29")) == pd.Timestamp(
+        "2009-01-01 01:00"
+    )
+    assert boxmodel._snap_to_stamp(frame, pd.Timestamp("2009-01-01 01:31")) == pd.Timestamp(
+        "2009-01-01 02:00"
+    )
+    # Outside the frame entirely: the nearest end, not an error.
+    assert boxmodel._snap_to_stamp(frame, pd.Timestamp("2008-06-01")) == pd.Timestamp(
+        "2009-01-01 00:00"
+    )
+
+
+def test_the_map_values_come_from_the_snapped_stamp():
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    values, label = boxmodel._hourly_box_values(
+        _hourly_frame(), pd.Timestamp("2009-01-01 02:10"), "salt"
+    )
+    assert values == {1: 13.0, 2: 14.0}, "one row per box at 02:00"
+    assert "02:00" in label and "Salinity" in label
+
+
+def test_the_hourly_series_is_one_box_in_time_order():
+    from shyfem_ui.pages import boxmodel
+
+    series = boxmodel._hourly_series(_hourly_frame(), 2, "salt")
+    assert list(series) == [12.0, 13.0, 14.0, 15.0]
+    assert series.index.is_monotonic_increasing
+    assert len(series) == 4, "the other box must not leak in"
 
 
 def test_the_slider_step_comes_from_the_run_not_from_the_name():
@@ -1304,7 +1380,10 @@ def test_the_map_and_the_series_share_one_hourly_window():
     assert "hourly_window()" in code("box_values")
     assert "hourly_window()" in code("series")
     assert "hourly_window()" in code("day_slider")
-    assert "read_hourly_window(" in code("hourly_window")
+    assert "read_hourly_window(" in code("hourly_window_result")
+    # A cache that HAS the file and cannot be read is a broken cache, not a
+    # daily one: it must reach the page's message block, not vanish.
+    assert "hourly_window_result()[1]" in code("manifest_error")
     # The daily min/max band describes what a daily mean hides, so it has no
     # meaning over raw records: the hourly branch must not draw one.
     body = code("series")

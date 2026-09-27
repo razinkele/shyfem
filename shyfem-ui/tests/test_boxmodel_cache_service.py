@@ -974,3 +974,45 @@ def test_read_hourly_window_is_empty_when_there_is_no_hourly_frame(env, monkeypa
 
     frame = bc.read_hourly_window(cache_dir, pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-05"))
     assert frame is not None and frame.empty
+
+
+def test_read_hourly_window_includes_both_bounds(env, monkeypatch):
+    """Inclusive bounds: a stamp exactly at either end belongs to the window."""
+    cache_dir = _hourly_build(env, monkeypatch)
+    whole = bc.read_hourly_window(cache_dir, pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-05"))
+    lo, hi = whole["stamp"].min(), whole["stamp"].max()
+
+    exact = bc.read_hourly_window(cache_dir, lo, hi)
+    assert exact["stamp"].min() == lo and exact["stamp"].max() == hi
+    assert len(exact) == len(whole)
+
+
+def test_a_foreign_hourly_file_is_a_value_error_not_a_surprise(env, monkeypatch, tmp_path):
+    """A file that IS there but is not what it claims must raise the one kind
+    the page catches. pyarrow rejects a non-timestamp stamp with
+    ArrowNotImplementedError -- a RuntimeError, which no caller would catch --
+    and a frame missing the state columns reads as perfectly good data and then
+    raises KeyError deep inside a plot."""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    cache_dir = _hourly_build(env, monkeypatch)
+    target = cache_dir / "state_hourly.parquet"
+
+    pq.write_table(
+        pa.table({"stamp": pa.array(["not-a-time"]), "box": pa.array([1], pa.int32())}), target
+    )
+    with pytest.raises(ValueError, match="cannot read"):
+        bc.read_hourly_window(cache_dir, pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-05"))
+
+    pq.write_table(
+        pa.table(
+            {
+                "stamp": pa.array([pd.Timestamp("2009-01-02")], pa.timestamp("ms")),
+                "box": pa.array([1], pa.int32()),
+            }
+        ),
+        target,
+    )
+    with pytest.raises(ValueError, match="missing column"):
+        bc.read_hourly_window(cache_dir, pd.Timestamp("2009-01-01"), pd.Timestamp("2009-01-05"))

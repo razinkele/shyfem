@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Literal
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 from shyfem_ui import boxmodel_output as bo
@@ -784,6 +785,9 @@ class CachedRun:
     state_daily: pd.DataFrame
     flux_daily: pd.DataFrame
     meteo_daily: pd.DataFrame
+    #: Always ``None``: the raw-record frame is far too large to hold per
+    #: session (6.1M rows for the 22-year Curonian run). Read a window with
+    #: ``read_hourly_window`` instead. Kept so the dataclass shape is stable.
     state_hourly: pd.DataFrame | None = None
 
 
@@ -828,19 +832,34 @@ def read_hourly_window(cache_dir: Path, lo, hi) -> pd.DataFrame:
     "Hourly" is the file's name, not a promise: these are the model's output
     records at whatever ``meta["step_seconds"]`` says.
 
-    Returns an empty frame -- never raises, never None -- when the run has no
-    hourly cache, because that is the normal case and the page falls back to
-    daily rather than showing an error. The builder flushes one calendar day
-    per row group, so the ``stamp`` filters prune whole days and a window costs
-    a fraction of the file.
+    A missing file gives an empty frame rather than an error, because a
+    daily-only cache is the normal case and the caller falls back to daily. A
+    file that IS there but is not what it claims raises ``ValueError``, which
+    the caller turns into a page message: silently treating a broken cache as
+    "no hourly data" would hide it.
+
+    The builder flushes one calendar day per row group, so the ``stamp``
+    filters prune whole days and a window costs a fraction of the file.
     """
     path = cache_dir / "state_hourly.parquet"
     if path.is_symlink() or not path.is_file():
         return pd.DataFrame(columns=list(HOURLY_COLUMNS))
-    table = pq.read_table(
-        path, filters=[("stamp", ">=", pd.Timestamp(lo)), ("stamp", "<=", pd.Timestamp(hi))]
-    )
+    try:
+        table = pq.read_table(
+            path, filters=[("stamp", ">=", pd.Timestamp(lo)), ("stamp", "<=", pd.Timestamp(hi))]
+        )
+    except pa.ArrowException as exc:
+        # Every way pyarrow rejects a foreign file, as one caller-visible kind.
+        # ArrowNotImplementedError (a non-timestamp ``stamp``, so the filter has
+        # no kernel) is a RuntimeError, which no caller would have caught.
+        raise ValueError(f"state_hourly.parquet: cannot read ({exc})") from exc
     frame = table.to_pandas()
+    missing = [c for c in HOURLY_COLUMNS if c not in frame.columns]
+    if missing:
+        # Declared columns have to be enforced, not just documented: a frame
+        # with only ``stamp``/``box`` reads as perfectly good data and then
+        # raises KeyError deep in a plot.
+        raise ValueError(f"state_hourly.parquet: missing column(s) {', '.join(missing)}")
     if not frame.empty:
         frame["stamp"] = _to_ns(frame["stamp"])
     return frame

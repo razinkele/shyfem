@@ -210,16 +210,6 @@ Options:
 
 ### Box-model analysis roots (server mode)
 
-### Output-step detail
-
-The cache normally stores daily means. Ticking **Include output-step detail** before *Build cache*
-also stores the model's raw records, and the Map and Time series then use them for any window of up
-to 31 days: the day slider becomes a time slider stepping by the run's own output step (from
-`meta.json`'s `step_seconds`, not an assumed hour), and the series plots the records rather than
-daily means with a min/max band. It is off by default because the raw frame is several times larger
-than the daily one and counts against the project's storage quota; a run built without it, or a
-wider window, behaves exactly as before. Only the visible window is ever read from disk.
-
 The **Box model** page analyses SHYFEM box-model (`idtbox`) output, which often lives outside a
 user's own sandbox — a multi-decade run can be a gigabyte or more. In server mode, an admin can
 declare extra read-only directories for the app to read such runs from:
@@ -308,6 +298,19 @@ toward the project's `SHYFEM_UI_MAX_PROJECT_STORAGE_MB` quota. A stale directory
 interrupted build is removed at page load by a project editor with write access to the project
 directory; a *failed* build's directory is kept, so its error stays visible in the status badge,
 until that run is rebuilt.
+
+### Output-step detail
+
+The cache normally stores daily means. Ticking **Include output-step detail** before *Build
+cache* also stores the model's raw records, and the Map and Time series then use them for any
+window of up to 31 days: the day slider becomes a time slider stepping by the run's own output
+step (from `meta.json`'s `step_seconds`, not an assumed hour), and the series plots the records
+rather than daily means with a min/max band. The skill table and the band ratios stay on daily
+means either way, because the observations are daily.
+
+It is off by default: the raw frame is several times larger than the daily one and counts
+against the project's storage quota. A run built without it, or a wider window, behaves exactly
+as before. Only the visible window is ever read from disk.
 
 ## Workflow
 
