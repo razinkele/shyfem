@@ -1,6 +1,7 @@
 """Main SHYFEM UI Shiny application."""
 
 import argparse
+import asyncio
 import logging
 import shutil
 import time
@@ -757,6 +758,39 @@ def _build_ui(config: Config) -> ui.Tag:
     )
 
 
+#: Strong references to in-flight custom-message tasks.
+#:
+#: ``asyncio`` keeps only a weak reference to a task, so without this a message
+#: can be garbage-collected before it is written to the websocket.
+_PENDING_SENDS: set[asyncio.Task] = set()
+
+
+def _send_message_soon(session, name: str, payload) -> asyncio.Task | None:
+    """Send a custom message from a SYNCHRONOUS reactive effect.
+
+    ``Session.send_custom_message`` is a coroutine. Calling it without
+    ``await`` builds a coroutine nobody ever runs: the browser receives
+    nothing, and the only trace is a ``RuntimeWarning`` in a worker log that
+    Shiny Server deletes on clean exit. Prefer making the effect ``async`` and
+    awaiting directly; use this only where the caller cannot be async, as with
+    ``nav_to``, which other page modules hold as a plain callback and call from
+    their own sync effects.
+
+    The loop is looked up BEFORE the coroutine is created, so the no-loop path
+    cannot leave an orphan coroutine behind -- which would reintroduce exactly
+    the warning this helper exists to remove.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        logger.warning("custom message %r dropped: no running event loop", name)
+        return None
+    task = loop.create_task(session.send_custom_message(name, payload))
+    _PENDING_SENDS.add(task)
+    task.add_done_callback(_PENDING_SENDS.discard)
+    return task
+
+
 def _build_server(
     input,
     output,
@@ -789,8 +823,14 @@ def _build_server(
         )
 
     def nav_to(tab_name: str):
-        """Navigate to a tab via client-side JavaScript."""
-        session.send_custom_message("shyfem_nav", {"tab": tab_name})
+        """Navigate to a tab via client-side JavaScript.
+
+        Handed to the Dashboard and Tutorial servers as a plain callback and
+        called from their sync effects, so it cannot await -- see
+        ``_send_message_soon``. Until that scheduling was added the message was
+        never sent and every "go to this page" button did nothing.
+        """
+        _send_message_soon(session, "shyfem_nav", {"tab": tab_name})
 
     # Jobs are owned by users, not by WebSocket sessions (N13): a session
     # ending (page refresh, network blip, laptop sleep) must NEVER cancel a
@@ -846,10 +886,13 @@ def _build_server(
 
     @reactive.effect
     @reactive.event(input._whatsnew_ok)
-    def _dismiss_whats_new():
+    async def _dismiss_whats_new():
+        # async so the message can be awaited: unawaited, the browser never
+        # stored the label, so the modal reappeared for every user on every
+        # visit -- and it intercepts the first click on the page.
         label = _whatsnew_label.get()
         if label:
-            session.send_custom_message("shyfem_whatsnew_seen", label)
+            await session.send_custom_message("shyfem_whatsnew_seen", label)
         ui.modal_remove()
 
     # Reactive calc for the current user's role.
