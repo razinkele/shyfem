@@ -421,6 +421,10 @@ def analysis_root_dir_choices(config: Config, user: dict | None) -> list[str]:
     hidden entries, no symlinks, so a link inside a root cannot list another
     tree. Empty in local mode, which declares no roots.
     """
+    if user is None and config.deployment_mode == "server":
+        # No resolved identity: offer nothing rather than enumerate an admin's
+        # directories. confine_path refuses user=None in server mode too.
+        return []
     out: list[str] = []
     for root in config.resolved_analysis_roots():
         try:

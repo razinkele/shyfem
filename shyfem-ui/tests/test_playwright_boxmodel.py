@@ -228,3 +228,10 @@ def test_boxmodel_manifest_tab_saves_an_edit(pw_page, box_project):
 
     assert _resolved(after) == _resolved(before)
     assert all(not Path(r["dir"]).is_absolute() for r in after["runs"])
+    # Nothing the user did not touch may disappear. A save used to delete every
+    # optional path whose picker could not offer its stored value -- forcing.dir
+    # on every project that had one -- and this test passed while writing that
+    # damaged file, because it only checked the fields it had edited.
+    for key in ("forcing", "str", "observations", "boxes"):
+        if before.get(key):
+            assert after.get(key), f"the save dropped {key!r}"

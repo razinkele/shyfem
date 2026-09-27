@@ -39,7 +39,9 @@ def atomic_json(path: Path, payload: dict, *, indent: int | None = None) -> None
     """
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
     try:
-        with os.fdopen(fd, "w") as fh:
+        # encoding is explicit: ensure_ascii=False can now emit non-ASCII, and
+        # every reader of these files decodes as UTF-8.
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
             json.dump(payload, fh, indent=indent, ensure_ascii=False)
             if indent is not None:
                 fh.write("\n")  # a file people edit by hand ends in a newline

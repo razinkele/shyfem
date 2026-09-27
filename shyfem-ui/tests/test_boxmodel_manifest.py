@@ -452,3 +452,141 @@ def test_a_picked_path_is_written_relative_inside_the_project_absolute_outside(t
     assert _manifest_path_value("already/relative.grd", project) == "already/relative.grd"
     assert _manifest_path_value("", project) == ""
     assert _manifest_path_value(None, project) == ""
+
+
+# --- the select layer, where a save used to delete keys ----------------------
+
+
+def test_every_picker_offers_the_value_it_was_given(tmp_path):
+    """THE regression test for a silent data-loss bug.
+
+    A stored path that the project listing does not contain -- a relative one
+    the matcher resolves against the worker's CWD, or a legal absolute one
+    outside the project -- rendered as an EMPTY select. The save then read ""
+    and removed the key. Opening the tab, editing the title and saving deleted
+    `forcing.dir`, and nothing said so.
+    """
+    from shyfem_ui.pages.boxmodel import _manifest_picker_options
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    outside = tmp_path / "elsewhere" / "run.str"
+
+    selected, extra = _manifest_picker_options("forcing", project)
+    assert selected == str(project / "forcing")
+    assert extra == {str(project / "forcing"): "forcing"}, "the option must carry the value"
+
+    selected, extra = _manifest_picker_options(str(outside), project)
+    assert selected == str(outside)
+    assert extra == {str(outside): str(outside)}
+
+    assert _manifest_picker_options("", project) == ("", {})
+    assert _manifest_picker_options(None, project) == ("", {})
+
+
+def test_the_injected_option_really_renders_as_selected(tmp_path, local_cfg):
+    """The contract the fix depends on: project_file_select keeps an injected
+    value and marks it selected, so the save reads it back unchanged."""
+    from shyfem_ui.components.project_select import project_file_select
+    from shyfem_ui.pages.boxmodel import _manifest_picker_options
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "a.str").write_text("x")
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    stored = str(outside / "real.str")
+
+    selected, extra = _manifest_picker_options(stored, project)
+    html = str(
+        project_file_select(
+            "mf_str",
+            "STR",
+            [".str"],
+            proj={"id": 1, "name": "proj", "work_dir": str(project)},
+            user=None,
+            config=local_cfg,
+            selected=selected,
+            extra=extra,
+        )
+    )
+    assert stored in html, "the stored path must be one of the options"
+    assert "selected" in html
+
+
+def test_a_no_edit_save_keeps_every_optional_key(project, local_cfg):
+    """The end of the same bug, one level up: a save that changes only the
+    title must not drop anything else. The fixture carries a forcing directory
+    and an STR precisely so this test can see them."""
+    from shyfem_ui.pages.boxmodel import _manifest_document, _manifest_picker_options
+
+    raw = json.loads((project / bm.MANIFEST_NAME).read_text())
+    grid = raw.get("grid") or {}
+    boxes = raw.get("boxes") or {}
+    forcing = raw.get("forcing") or {}
+    obs = raw.get("observations") or {}
+    stored = {
+        "grd": grid.get("grd"),
+        "bas": grid.get("bas"),
+        "boxes_txt": grid.get("boxes_txt"),
+        "polygons": boxes.get("polygons"),
+        "str": raw.get("str"),
+        "forcing_dir": forcing.get("dir"),
+        "observations": obs.get("file"),
+        "sites": obs.get("sites"),
+    }
+    # What the form would put in each select, and what the save reads back.
+    values = {
+        "title": "Only the title changed",
+        "layer": boxes.get("layer") or "",
+        "id_field": boxes.get("id_field") or "box",
+    }
+    for field, value in stored.items():
+        selected, _extra = _manifest_picker_options(value, project)
+        from shyfem_ui.pages.boxmodel import _manifest_path_value
+
+        values[field] = _manifest_path_value(selected, project)
+
+    doc = _manifest_document(raw, values, raw["runs"])
+    bm.write_manifest(project, doc, local_cfg, None)
+    after = json.loads((project / bm.MANIFEST_NAME).read_text())
+
+    assert after["title"] == "Only the title changed"
+
+    def _meaningful(value):
+        """Explicit nulls are dropped by a save on purpose; everything else
+        must survive untouched."""
+        if isinstance(value, dict):
+            return {k: _meaningful(v) for k, v in value.items() if v is not None}
+        return value
+
+    for key in ("forcing", "str", "observations", "boxes"):
+        if raw.get(key):
+            assert _meaningful(after.get(key)) == _meaningful(
+                raw.get(key)
+            ), f"a no-edit save dropped {key!r}"
+    assert (after.get("grid") or {}).get("grd") == grid.get("grd")
+
+
+def test_a_run_entry_keeps_its_other_keys(tmp_path):
+    """A runs[] entry may carry more than the three fields the form shows."""
+    from shyfem_ui.pages.boxmodel import _manifest_document
+
+    rows = [{"id": "fix", "label": "F", "dir": "runs/fix", "note": "hand-written"}]
+    doc = _manifest_document({"schema": 1}, _fields(), rows)
+
+    assert doc["runs"][0]["note"] == "hand-written"
+
+
+def test_run_row_keys_are_never_reused(tmp_path):
+    """A reused key collides with the per-button ledger and leaves that row's
+    Remove button permanently dead."""
+    from shyfem_ui.pages import boxmodel
+
+    seen = set()
+    counters = {"run_key": 0}
+    for _ in range(3):
+        rows = boxmodel._new_run_rows(counters, [{"id": "a"}, {"id": "b"}])
+        keys = [r["key"] for r in rows]
+        assert not (seen & set(keys)), "a key was reused across reseeds"
+        seen.update(keys)
