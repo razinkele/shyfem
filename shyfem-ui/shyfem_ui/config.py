@@ -169,9 +169,32 @@ class Config(BaseSettings):
     )
 
     # Debug settings
+    log_level: str = Field(
+        default="INFO",
+        description=(
+            "Level for the shyfem_ui package logger, applied wherever the app is "
+            "built (see app.configure_logging). Under Shiny Server nothing else "
+            "configures logging, so this is what decides whether INFO breadcrumbs "
+            "reach the worker log."
+        ),
+    )
     debug: bool = Field(
         default=False, description="Enable debug mode (verbose WebSocket logging, etc.)"
     )
+
+    @field_validator("log_level")
+    @classmethod
+    def _known_log_level(cls, v: str) -> str:
+        """Reject a typo instead of silently logging nothing.
+
+        ``logging.getLevelName`` maps an unknown NAME to the string
+        ``"Level <name>"``, so a misspelt level would be accepted and then set
+        no threshold at all.
+        """
+        name = str(v).strip().upper()
+        if name not in logging.getLevelNamesMapping():
+            raise ValueError(f"unknown log level {v!r}")
+        return name
 
     # UI settings
     log_refresh_interval: int = Field(

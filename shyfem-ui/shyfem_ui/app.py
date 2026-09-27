@@ -222,6 +222,72 @@ def _bootstrap_tutorial_project(admin_id: int, user_id: int, config: Config) -> 
             shutil.rmtree(project_path, ignore_errors=True)
 
 
+#: Format shared by both logging paths. ``request_id`` is supplied by
+#: ``RequestIdFilter``, which must sit on the HANDLER: a filter attached to a
+#: logger only sees records logged directly to it, never records propagated up
+#: from child loggers, so every ``shyfem_ui.*`` record would fail to format.
+LOG_FORMAT = "%(asctime)s [%(name)s] [%(request_id)s] %(levelname)s: %(message)s"
+LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+
+def configure_logging(config: Config) -> logging.Logger:
+    """Configure the ``shyfem_ui`` package logger. Idempotent.
+
+    Called from ``create_app``, because that is the only entry point BOTH
+    deployments share: Shiny Server imports the top-level ``app.py`` and calls
+    ``create_app()``, so ``main()`` never runs in production and the
+    ``logging.basicConfig`` there configured nothing. Unconfigured, Python's
+    last-resort handler still passed WARNING and above to stderr, but every
+    INFO breadcrumb this package writes -- cache reconciles, project opens,
+    build starts -- was dropped, which is exactly what you want when reading a
+    worker log to find out what a session did.
+
+    Configures the package logger rather than the root, so third-party
+    chatter is not swept in with it. Propagation stays ON: under Shiny Server
+    the root has no handler, so a record is emitted exactly once, and leaving
+    it on is what lets pytest's ``caplog`` (a root handler) see these loggers
+    at all -- turning it off here silently blinded ten existing tests and
+    would have done the same to every future one. The CLI path, which DOES
+    configure the root, opts out instead: see ``configure_cli_logging``.
+    """
+    from shyfem_ui.middleware.request_id import RequestIdFilter
+
+    logger_ = logging.getLogger("shyfem_ui")
+    logger_.setLevel(logging.DEBUG if config.debug else config.log_level)
+    if not logger_.handlers:
+        handler = logging.StreamHandler()  # stderr -> the Shiny Server worker log
+        handler.setFormatter(logging.Formatter(LOG_FORMAT, datefmt=LOG_DATEFMT))
+        handler.addFilter(RequestIdFilter())
+        logger_.addHandler(handler)
+    return logger_
+
+
+def configure_cli_logging(config: Config) -> None:
+    """Configure the ROOT logger for ``python -m shyfem_ui.app``.
+
+    ``create_app`` has already configured the package logger, so this exists
+    for everything else the CLI should show -- uvicorn and friends. Because
+    the root now has a handler of its own, the package logger stops
+    propagating here, and only here: that is where a record would otherwise be
+    written twice.
+
+    The root handler needs ``RequestIdFilter`` as well, or ``%(request_id)s``
+    in the shared format raises for every record that did not come from a
+    request. ``basicConfig`` installs no filters of its own.
+    """
+    from shyfem_ui.middleware.request_id import RequestIdFilter
+
+    logging.basicConfig(
+        level=logging.DEBUG if config.debug else logging.INFO,
+        format=LOG_FORMAT,
+        datefmt=LOG_DATEFMT,
+    )
+    for handler in logging.getLogger().handlers:
+        if not any(isinstance(f, RequestIdFilter) for f in handler.filters):
+            handler.addFilter(RequestIdFilter())
+    logging.getLogger("shyfem_ui").propagate = False
+
+
 def create_app(config: Config | None = None) -> App:
     """Create and return the Shiny application.
 
@@ -236,6 +302,10 @@ def create_app(config: Config | None = None) -> App:
         config = get_config()
     else:
         set_config(config)
+
+    # Before anything that logs: under Shiny Server this is the ONLY place
+    # logging is ever configured (see configure_logging).
+    configure_logging(config)
 
     # Ensure work directory exists
     config.ensure_work_dir()
@@ -1214,11 +1284,7 @@ Environment variables (can be used instead of arguments):
     port = args.port or config.port
 
     # Create and run app (RequestIdFilter already added in create_app())
-    logging.basicConfig(
-        level=logging.DEBUG if config.debug else logging.INFO,
-        format="%(asctime)s [%(name)s] [%(request_id)s] %(levelname)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    configure_cli_logging(config)
     logger.info("Starting SHYFEM Workbench...")
     logger.info("  Mode: %s", config.deployment_mode)
     logger.info("  SHYFEM Dir: %s", config.shyfem_dir)
