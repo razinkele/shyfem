@@ -38,9 +38,12 @@ confined by `Config.confine_path` alone.
 4. **Run directories can be outside the project**, so their picker offers
    project directories *and* directories under the configured analysis roots.
    A project-only dropdown could not express the one real manifest we have.
-5. **Save** writes atomically and then re-loads through `load_manifest`; a file
-   that does not load is rolled back, so the page can never be left pointing at
-   a manifest the loader rejects.
+5. **Save validates first and writes second.** `load_manifest` splits into
+   `parse_manifest(dict, project_dir, config, user)` and a thin file reader.
+   The form builds a candidate dict, parses it, and writes only on success, so
+   there is no window where the live file is bad and no rollback path that can
+   itself fail. The file keeps an indent, because the spec calls it
+   hand-editable.
 6. **Create when absent**: the tab is the way to write the first manifest, not
    just to edit one.
 
@@ -49,6 +52,17 @@ confined by `Config.confine_path` alone.
 - **One validator.** The form never re-implements the loader's rules. It
   builds a candidate, asks the loader, and shows the loader's own message,
   which already names the offending key.
+- **Edit the raw JSON, never the loaded dataclass.** `BoxModelManifest`'s
+  paths are *resolved absolute*; filling the form from them would rewrite
+  every relative path in the file as absolute on the first save, destroying
+  the manifest's portability. Initial values come from the raw dict, and a
+  save overlays the form's fields onto that dict, so keys the form does not
+  know about survive a round trip. Pinned by a test: load a Curonian-shaped
+  manifest, save with no edits, and the JSON must be unchanged.
+- **Relative for a project pick, absolute for an analysis-root pick**, decided
+  in one place in the writer. Each run row's directory picker must also offer
+  its *current* value, or the one real manifest we have — three absolute dirs
+  under a root — renders with empty selects and a save silently wipes them.
 - **Never leave a broken manifest.** Validate the candidate before replacing
   the file; on any failure the previous file stays exactly as it was.
 - **Editor gate on the server**, like build and cancel, not in the UI only.
@@ -56,7 +70,23 @@ confined by `Config.confine_path` alone.
 - After a successful save the page reloads the manifest, so the run selector
   and every tab follow immediately.
 
-## Open question for review before coding
+## Settled by review
+
+- Listing depth-1 directory names under the analysis roots is strictly less
+  than what any authenticated user can already read from them, so it is not a
+  new exposure. It uses the same guards as the project listing: directories
+  only, no hidden entries, no symlinks.
+- A non-owner editor of a shared project still cannot pass the write
+  confinement, exactly as for Build cache. A known limitation, not this
+  slice's problem.
+
+## Sequence
+
+Service half first, with its own tests and commit: the `parse_manifest` split,
+the writer that validates before writing, and the analysis-root listing. The
+tab second.
+
+## Superseded open question
 
 Listing directories under the analysis roots in a dropdown shows every
 authenticated user the names of run directories an admin has declared readable.
