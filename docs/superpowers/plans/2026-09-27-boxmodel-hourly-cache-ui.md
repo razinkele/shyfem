@@ -24,6 +24,33 @@ frame to load.
 - §147: for the 22-year Curonian run the hourly cache is 50–100 MB against a
   10–20 MB daily one, and it counts against `SHYFEM_UI_MAX_PROJECT_STORAGE_MB`.
 
+## A live defect found while scoping this, which the slice must fix first
+
+The three published Curonian caches **already contain** `state_hourly.parquet`
+(183, 184 and 207 MB), built outside the UI. `load_cache` reads it
+unconditionally whenever the file exists, and the Box model page's
+`cached_result()` calls exactly that loader. So today, opening the page on that
+project pulls **6,100,440 rows, about 250 MB before pandas overhead**, into the
+worker that serves every session, at the head of the expensive chain, for data
+no part of the UI has ever displayed.
+
+Measured, not estimated: `pq.ParquetFile(...).metadata` reports 6,100,440 rows
+over 9 columns in 8,766 row groups, and the row groups are one per calendar day
+because the builder flushes a day at a time.
+
+So the loader changes before anything else: `load_cache` stops materialising the
+hourly frame, exactly as `load_cache_state` already refuses to, and a new
+`read_hourly_window(cache_dir, lo, hi)` reads only the visible window with
+pyarrow `stamp` filters, which prune whole days.
+
+## A correction on "hourly"
+
+The name is only a name: the frame holds raw records at the model's output step.
+For these runs `meta["step_seconds"]` is 3600, so they genuinely are hourly, but
+a different run need not be. The slider's step therefore comes from
+`step_seconds`, never from a hardcoded hour, and the label says "model output
+step" rather than promising hours.
+
 ## Scope
 
 1. **Request it.** A checkbox beside Build cache, off by default, wired through
