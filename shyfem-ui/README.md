@@ -299,6 +299,15 @@ interrupted build is removed at page load by a project editor with write access 
 directory; a *failed* build's directory is kept, so its error stays visible in the status badge,
 until that run is rebuilt.
 
+### Editing the manifest
+
+The **Manifest** tab writes the project's `boxmodel.json`, so a new dataset does not have to
+start with a hand-written file. Every path is a dropdown over the project, and a run directory
+may also be chosen from the analysis roots, because runs usually live outside the project.
+Saving validates the document before it replaces the file, so a rejected edit leaves the
+previous manifest exactly as it was. A path inside the project is stored relative, which keeps
+the manifest portable; one outside it stays absolute.
+
 ### Output-step detail
 
 The cache normally stores daily means. Ticking **Include output-step detail** before *Build

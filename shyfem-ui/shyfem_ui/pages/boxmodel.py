@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import copy
 import io
+import json
 import logging
 import re
 from datetime import timedelta
@@ -61,6 +62,12 @@ from shyfem_ui.components.grid_map import (
     grid_map_server,
     grid_map_ui,
     node_positions,
+)
+from shyfem_ui.components.project_select import (
+    analysis_root_dir_choices,
+    project_dir_select,
+    project_file_select,
+    project_rel_dir_choices,
 )
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -82,7 +89,12 @@ from shyfem_ui.services.boxmodel_compare import (
     period_mean_diff,
     side_by_side,
 )
-from shyfem_ui.services.boxmodel_manifest import ManifestError, load_manifest
+from shyfem_ui.services.boxmodel_manifest import (
+    MANIFEST_NAME,
+    ManifestError,
+    load_manifest,
+    write_manifest,
+)
 from shyfem_ui.services.boxmodel_polygons import (
     PolygonError,
     dissolve_boxes_from_grid,
@@ -197,6 +209,11 @@ def _manifest_path_value(picked, project_dir) -> str:
     absolute otherwise, which is the normal case for a run directory under an
     analysis root. The pickers hand back absolute paths either way, so this is
     the one place that decides.
+
+    Note that this NORMALISES: an absolute path that happens to point inside
+    the project is rewritten relative. Deliberate -- a manifest that names its
+    own project by absolute path cannot be moved or exported -- and harmless,
+    since the loader resolves a relative value against the project directory.
     """
     if not picked:
         return ""
@@ -861,6 +878,18 @@ def boxmodel_ui() -> ui.Tag:
                 ),
             ),
             ui.nav_panel(
+                "Manifest",
+                ui.p(
+                    "What this project's boxmodel.json says: the mesh, the box outlines, "
+                    "the STR, the forcing directory, the observations and the runs to "
+                    "analyse. Editing it here is the alternative to writing the file by "
+                    "hand. Saving validates first, so a rejected change never reaches "
+                    "the file.",
+                    class_="text-muted small",
+                ),
+                ui.output_ui("manifest_form"),
+            ),
+            ui.nav_panel(
                 "Setup",
                 ui.p(
                     "What the run was set up with: the STR's open boundaries on the mesh "
@@ -950,6 +979,9 @@ def boxmodel_server(
         "grd": False,
         "good": None,
         "project": None,
+        # Remove buttons are watched by one effect, so it needs to remember
+        # which clicks it has already acted on.
+        "removed": {},
     }
 
     def _user():
@@ -1423,6 +1455,301 @@ def boxmodel_server(
         if notice:
             blocks.append(ui.div(ui.tags.span(notice), class_="alert alert-info"))
         return ui.div(*blocks) if blocks else None
+
+    # --- manifest editing ---------------------------------------------------
+
+    #: Bumped by a successful save so the manifest calc re-reads the file.
+    manifest_generation: reactive.Value = reactive.value(0)
+    #: The runs table being edited: a list of {"key", "id", "label", "dir"}.
+    #: Every mutation stores a NEW list -- reactive.Value dedups by identity.
+    runs_rows: reactive.Value = reactive.value([])
+
+    @reactive.calc
+    def raw_manifest() -> dict:
+        """The manifest document as it is ON DISK, or ``{}`` when there is none.
+
+        Raw on purpose: the form edits the file's own values, not the resolved
+        paths of a loaded ``BoxModelManifest``. An unreadable or invalid file
+        also gives ``{}`` -- the loader's error is already on the page, and an
+        empty form is what lets the user replace a broken manifest.
+        """
+        manifest_generation.get()
+        proj = _project()
+        if proj is None:
+            return {}
+        try:
+            project_dir = config.confine_path(
+                Path(proj["work_dir"]), _user(), must_exist=True, for_write=False
+            )
+            path = Path(project_dir) / MANIFEST_NAME
+            if not path.is_file():
+                return {}
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            logger.info("boxmodel: manifest not readable for editing: %s", exc)
+            return {}
+        return doc if isinstance(doc, dict) else {}
+
+    @reactive.effect
+    def _seed_runs_rows():
+        """Refill the runs table from the file whenever the file changes."""
+        doc = raw_manifest()
+        rows = []
+        for i, entry in enumerate(doc.get("runs") or []):
+            if not isinstance(entry, dict):
+                continue
+            rows.append(
+                {
+                    "key": i,
+                    "id": str(entry.get("id") or ""),
+                    "label": str(entry.get("label") or ""),
+                    "dir": str(entry.get("dir") or ""),
+                }
+            )
+        runs_rows.set(rows)
+
+    def _run_dir_choices(current: str) -> dict:
+        """Project directories, analysis-root directories, and the row's own
+        value. The last one matters: the live manifest's dirs are absolute
+        under a root, and a select that does not list the current value renders
+        empty -- then a save would write that emptiness back."""
+        proj = _project()
+        choices: dict[str, str] = {}
+        for rel in project_rel_dir_choices(proj, _user(), config):
+            choices[rel] = rel
+        for absolute in analysis_root_dir_choices(config, _user()):
+            choices[absolute] = absolute
+        if current and current not in choices:
+            choices[current] = current
+        return choices
+
+    @render.ui
+    def manifest_form():
+        proj = _project()
+        if proj is None:
+            return ui.p("Open a project first.", class_="text-muted")
+        doc = raw_manifest()
+        # `or {}` throughout: a section may be present-but-null, which is what
+        # the loader's own _section() absorbs.
+        grid = doc.get("grid") or {}
+        boxes = doc.get("boxes") or {}
+        forcing = doc.get("forcing") or {}
+        obs = doc.get("observations") or {}
+        usr = _user()
+        project_dir = Path(proj["work_dir"])
+
+        def _abs(value: str) -> str | None:
+            """A stored value as the pickers want it: absolute, or None."""
+            if not value:
+                return None
+            path = Path(value)
+            return str(path if path.is_absolute() else (project_dir / path))
+
+        rows = []
+        for row in runs_rows.get():
+            rows.append(
+                ui.div(
+                    ui.layout_columns(
+                        ui.input_text(f"run_{row['key']}_id", "Run id", value=row["id"]),
+                        ui.input_text(f"run_{row['key']}_label", "Label", value=row["label"]),
+                        ui.input_select(
+                            f"run_{row['key']}_dir",
+                            "Directory",
+                            choices=_run_dir_choices(row["dir"]),
+                            selected=row["dir"] or None,
+                        ),
+                        ui.input_action_button(
+                            f"run_{row['key']}_remove",
+                            "Remove",
+                            class_="btn-outline-danger btn-sm mt-4",
+                        ),
+                        col_widths=(3, 3, 4, 2),
+                    ),
+                    class_="border rounded p-2 mb-2",
+                )
+            )
+
+        return ui.div(
+            ui.input_text("mf_title", "Title", value=str(doc.get("title") or "")),
+            ui.layout_columns(
+                project_file_select(
+                    "mf_grd",
+                    "Mesh (.grd)",
+                    [".grd"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(grid.get("grd") or ""),
+                ),
+                project_file_select(
+                    "mf_bas",
+                    "Basin (.bas, optional)",
+                    [".bas"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(grid.get("bas") or ""),
+                ),
+                project_file_select(
+                    "mf_boxes_txt",
+                    "Box index (optional)",
+                    [".txt"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(grid.get("boxes_txt") or ""),
+                ),
+                col_widths=(4, 4, 4),
+            ),
+            ui.layout_columns(
+                project_file_select(
+                    "mf_polygons",
+                    "Box outlines (optional)",
+                    [".gpkg", ".geojson", ".json", ".shp"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(boxes.get("polygons") or ""),
+                ),
+                ui.input_text(
+                    "mf_layer", "Outline layer (optional)", value=str(boxes.get("layer") or "")
+                ),
+                ui.input_text(
+                    "mf_id_field", "Box id field", value=str(boxes.get("id_field") or "box")
+                ),
+                col_widths=(4, 4, 4),
+            ),
+            ui.layout_columns(
+                project_file_select(
+                    "mf_str",
+                    "STR (optional)",
+                    [".str"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(doc.get("str") or ""),
+                ),
+                project_dir_select(
+                    "mf_forcing_dir",
+                    "Forcing directory (optional)",
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=forcing.get("dir") or None,
+                    default_label="(none)",
+                ),
+                col_widths=(6, 6),
+            ),
+            ui.layout_columns(
+                project_file_select(
+                    "mf_observations",
+                    "Observations (optional)",
+                    [".csv"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(obs.get("file") or ""),
+                ),
+                project_file_select(
+                    "mf_sites",
+                    "Sites (optional)",
+                    [".csv"],
+                    proj=proj,
+                    user=usr,
+                    config=config,
+                    selected=_abs(obs.get("sites") or ""),
+                ),
+                col_widths=(6, 6),
+            ),
+            ui.hr(),
+            ui.tags.strong("Runs"),
+            ui.p(
+                "At least one. A run directory is usually outside the project, under a "
+                "directory an administrator has opened for reading.",
+                class_="text-muted small",
+            ),
+            ui.div(*rows) if rows else ui.p("No runs yet.", class_="text-muted small"),
+            ui.input_action_button("mf_add_run", "Add run", class_="btn-outline-primary btn-sm"),
+            ui.hr(),
+            ui.input_action_button("mf_save", "Save manifest", class_="btn-primary"),
+        )
+
+    @reactive.effect
+    @reactive.event(input.mf_add_run)
+    def _add_run_row():
+        rows = list(runs_rows.get())
+        key = max((r["key"] for r in rows), default=-1) + 1
+        rows.append({"key": key, "id": "", "label": "", "dir": ""})
+        runs_rows.set(rows)  # a NEW list: Value.set dedups by identity
+
+    @reactive.effect
+    def _remove_run_row():
+        """One watcher for every row's Remove button."""
+        rows = runs_rows.get()
+        for row in rows:
+            button = f"run_{row['key']}_remove"
+            if button in input and input[button]() and not last["removed"].get(button):
+                last["removed"][button] = True
+                runs_rows.set([r for r in rows if r["key"] != row["key"]])
+                return
+
+    def _collect_runs() -> list[dict]:
+        """The runs table as the user has it, reading only rows that exist --
+        a removed row's inputs linger in the session."""
+        project_dir = Path(_project()["work_dir"])
+        out = []
+        for row in runs_rows.get():
+            ids = f"run_{row['key']}_id", f"run_{row['key']}_label", f"run_{row['key']}_dir"
+            if not all(i in input for i in ids):
+                continue
+            out.append(
+                {
+                    "id": str(input[ids[0]]() or "").strip(),
+                    "label": str(input[ids[1]]() or "").strip(),
+                    "dir": _manifest_path_value(input[ids[2]](), project_dir),
+                }
+            )
+        return out
+
+    @reactive.effect
+    @reactive.event(input.mf_save)
+    def _save_manifest():
+        proj = _project()
+        usr = _user()
+        if proj is None:
+            ui.notification_show("Open a project first.", type="warning", duration=5)
+            return
+        denied = editor_denied_reason(proj["id"], usr, min_role="editor")
+        if denied:
+            ui.notification_show(denied, type="error", duration=6)
+            return
+        project_dir = Path(proj["work_dir"])
+        values = {
+            "title": input.mf_title() if "mf_title" in input else "",
+            "layer": input.mf_layer() if "mf_layer" in input else "",
+            "id_field": input.mf_id_field() if "mf_id_field" in input else "",
+        }
+        for field, input_id in (
+            ("grd", "mf_grd"),
+            ("bas", "mf_bas"),
+            ("boxes_txt", "mf_boxes_txt"),
+            ("polygons", "mf_polygons"),
+            ("str", "mf_str"),
+            ("forcing_dir", "mf_forcing_dir"),
+            ("observations", "mf_observations"),
+            ("sites", "mf_sites"),
+        ):
+            picked = input[input_id]() if input_id in input else ""
+            values[field] = _manifest_path_value(picked, project_dir)
+        doc = _manifest_document(raw_manifest(), values, _collect_runs())
+        try:
+            write_manifest(project_dir, doc, config, usr)
+        except (ManifestError, OSError) as exc:
+            ui.notification_show(_err(exc), type="error", duration=10)
+            return
+        ui.notification_show("Manifest saved.", type="message", duration=4)
+        counters["manifest"] = counters.get("manifest", 0) + 1
+        manifest_generation.set(counters["manifest"])
 
     # --- map --------------------------------------------------------------
 
