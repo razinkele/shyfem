@@ -41,6 +41,7 @@ obligations the reviews of those services handed forward:
 
 from __future__ import annotations
 
+import copy
 import io
 import logging
 import re
@@ -186,6 +187,87 @@ def _hourly_usable(meta, period) -> bool:
     boxes = len((meta or {}).get("boxes") or ()) or 1
     per_day = 86400 / step.total_seconds()
     return days * boxes * per_day <= HOURLY_MAX_RECORDS
+
+
+def _manifest_path_value(picked, project_dir) -> str:
+    """How a picked path should be written in the manifest.
+
+    Relative when it is inside the project -- that is what keeps a manifest
+    portable, and the loader requires a relative value to stay inside -- and
+    absolute otherwise, which is the normal case for a run directory under an
+    analysis root. The pickers hand back absolute paths either way, so this is
+    the one place that decides.
+    """
+    if not picked:
+        return ""
+    path = Path(picked)
+    if not path.is_absolute():
+        return str(path)
+    try:
+        return str(path.resolve().relative_to(Path(project_dir).resolve()))
+    except (ValueError, OSError):
+        return str(path)
+
+
+#: Where each form field lives in the document, as a key path.
+_MANIFEST_FIELDS = {
+    "title": ("title",),
+    "grd": ("grid", "grd"),
+    "bas": ("grid", "bas"),
+    "boxes_txt": ("grid", "boxes_txt"),
+    "polygons": ("boxes", "polygons"),
+    "layer": ("boxes", "layer"),
+    "id_field": ("boxes", "id_field"),
+    "str": ("str",),
+    "forcing_dir": ("forcing", "dir"),
+    "observations": ("observations", "file"),
+    "sites": ("observations", "sites"),
+}
+
+
+def _manifest_document(raw: dict, values: dict, runs) -> dict:
+    """The document a save should write: the form's values over ``raw``.
+
+    Overlaid, not rebuilt, and taken from the RAW file rather than from a
+    loaded ``BoxModelManifest``: that object's paths are resolved absolute, so
+    rebuilding from it would silently rewrite every relative path in the file
+    and destroy its portability. Keys this form knows nothing about -- a future
+    schema's, or a human's -- survive untouched.
+
+    A blank optional field removes its key, and a section left with nothing in
+    it goes too: the loader reads "" as absent either way, but this file is
+    meant to be opened by people.
+    """
+    doc = copy.deepcopy(raw) if isinstance(raw, dict) else {}
+    doc["schema"] = 1
+    for field, path in _MANIFEST_FIELDS.items():
+        value = (values.get(field) or "").strip() if values.get(field) is not None else ""
+        *parents, leaf = path
+        target = doc
+        for name in parents:
+            section = target.get(name)
+            if not isinstance(section, dict):
+                section = {}
+                target[name] = section
+            target = section
+        if value:
+            target[leaf] = value
+        else:
+            target.pop(leaf, None)
+    for name in ("grid", "boxes", "forcing", "observations"):
+        if isinstance(doc.get(name), dict) and not doc[name]:
+            del doc[name]
+    written = []
+    for row in runs:
+        entry = {"id": (row.get("id") or "").strip(), "dir": (row.get("dir") or "").strip()}
+        label = (row.get("label") or "").strip()
+        if label:
+            # The loader defaults label to id, so writing the same thing twice
+            # is noise in a file people read.
+            entry = {"id": entry["id"], "label": label, "dir": entry["dir"]}
+        written.append(entry)
+    doc["runs"] = written
+    return doc
 
 
 def _snap_to_stamp(frame, chosen):

@@ -306,3 +306,149 @@ def test_write_manifest_creates_the_first_manifest(tmp_path, local_cfg):
 
     assert written.title == "From nothing"
     assert bm.load_manifest(project, local_cfg, None).runs[0].dir == run.resolve()
+
+
+# --- what the form writes ----------------------------------------------------
+
+
+def _fields(**over):
+    base = {
+        "title": "Fixture lagoon",
+        "grd": "fixture.grd",
+        "bas": "",
+        "boxes_txt": "",
+        "polygons": "box_polygons.geojson",
+        "layer": "",
+        "id_field": "box",
+        "str": "",
+        "forcing_dir": "",
+        "observations": "",
+        "sites": "",
+    }
+    base.update(over)
+    return base
+
+
+def test_the_document_overlays_the_form_onto_what_was_there():
+    """A save edits the raw document; it does not rebuild one. Keys the form
+    knows nothing about have to survive, and so does the shape of the file."""
+    from shyfem_ui.pages.boxmodel import _manifest_document
+
+    raw = {
+        "schema": 1,
+        "title": "Old",
+        "grid": {"grd": "old.grd", "bas": "old.bas"},
+        "notes": {"kept": True},
+        "runs": [{"id": "old", "dir": "runs/old"}],
+    }
+    doc = _manifest_document(
+        raw, _fields(title="New"), [{"id": "fix", "label": "F", "dir": "runs/fix"}]
+    )
+
+    assert doc["notes"] == {"kept": True}, "unknown keys must survive a save"
+    assert doc["title"] == "New"
+    assert doc["grid"]["grd"] == "fixture.grd"
+    assert doc["runs"] == [{"id": "fix", "label": "F", "dir": "runs/fix"}]
+    assert raw["title"] == "Old", "the source document must not be mutated"
+
+
+def test_a_blank_optional_field_removes_the_key_rather_than_writing_empty():
+    """The loader treats "" as absent, but an empty string in the file is
+    noise for the human who opens it next."""
+    from shyfem_ui.pages.boxmodel import _manifest_document
+
+    raw = {"schema": 1, "grid": {"grd": "a.grd", "bas": "a.bas"}, "str": "old.str"}
+    doc = _manifest_document(raw, _fields(bas="", str=""), [{"id": "r", "label": "", "dir": "d"}])
+
+    assert "bas" not in doc["grid"]
+    assert "str" not in doc
+    assert doc["grid"]["grd"] == "fixture.grd"
+
+
+def test_an_empty_section_is_not_left_behind():
+    from shyfem_ui.pages.boxmodel import _manifest_document
+
+    raw = {"schema": 1, "observations": {"file": "obs.csv", "sites": "sites.csv"}}
+    doc = _manifest_document(raw, _fields(observations="", sites=""), [{"id": "r", "dir": "d"}])
+
+    assert "observations" not in doc
+
+
+def test_a_run_without_a_label_writes_no_label():
+    """The loader defaults label to the id, so writing one is redundant."""
+    from shyfem_ui.pages.boxmodel import _manifest_document
+
+    doc = _manifest_document({}, _fields(), [{"id": "fix", "label": "", "dir": "runs/fix"}])
+
+    assert doc["runs"] == [{"id": "fix", "dir": "runs/fix"}]
+    assert doc["schema"] == 1, "a document built from nothing still declares the schema"
+
+
+def test_the_document_round_trips_through_the_loader_unchanged(project, local_cfg):
+    """The real guard against the resolved-path trap: filling the form from the
+    LOADED manifest would rewrite every relative path as absolute. Saving with
+    no edits must leave the file's values exactly as they were."""
+    from shyfem_ui.pages.boxmodel import _manifest_document
+
+    before = json.loads((project / bm.MANIFEST_NAME).read_text())
+    fields = {
+        "title": before["title"],
+        "grd": (before.get("grid") or {})["grd"],
+        "bas": (before.get("grid") or {}).get("bas", ""),
+        "boxes_txt": (before.get("grid") or {}).get("boxes_txt", ""),
+        # `or {}` throughout: a section may be present-but-null, which is what
+        # the loader's own _section() helper exists to absorb.
+        "polygons": (before.get("boxes") or {}).get("polygons", ""),
+        "layer": (before.get("boxes") or {}).get("layer", ""),
+        "id_field": (before.get("boxes") or {}).get("id_field", "box"),
+        "str": before.get("str", ""),
+        "forcing_dir": (before.get("forcing") or {}).get("dir", ""),
+        "observations": (before.get("observations") or {}).get("file", ""),
+        "sites": (before.get("observations") or {}).get("sites", ""),
+    }
+    doc = _manifest_document(before, fields, before["runs"])
+
+    parsed_before = bm.load_manifest(project, local_cfg, None)
+    bm.write_manifest(project, doc, local_cfg, None)
+    after = json.loads((project / bm.MANIFEST_NAME).read_text())
+
+    # Same manifest to the loader...
+    assert bm.load_manifest(project, local_cfg, None) == parsed_before
+
+    # ...and every value that meant something is untouched, in particular every
+    # relative path: this is what fails if the form is ever filled from the
+    # resolved dataclass instead of the raw file.
+    def _flat(d, prefix=""):
+        out = {}
+        for k, v in d.items():
+            if isinstance(v, dict):
+                out.update(_flat(v, f"{prefix}{k}."))
+            elif v is not None:
+                out[f"{prefix}{k}"] = v
+        return out
+
+    assert _flat(after) == _flat(before)
+    assert after["runs"] == before["runs"]
+    # The only thing a save changes is that explicit nulls go away.
+    assert set(_flat(before, "")) <= set(_flat(after, ""))
+    assert before["grid"]["bas"] is None and "bas" not in after["grid"]
+
+
+def test_a_picked_path_is_written_relative_inside_the_project_absolute_outside(tmp_path):
+    """The pickers hand back absolute paths, but a manifest stores project
+    files relative -- that is what keeps it portable, and the loader rejects a
+    relative value that escapes the project. A run directory under an analysis
+    root has to stay absolute, which is the live Curonian case."""
+    from shyfem_ui.pages.boxmodel import _manifest_path_value
+
+    project = tmp_path / "proj"
+    (project / "sub").mkdir(parents=True)
+    outside = tmp_path / "published_runs" / "run9316"
+    outside.mkdir(parents=True)
+
+    assert _manifest_path_value(str(project / "fixture.grd"), project) == "fixture.grd"
+    assert _manifest_path_value(str(project / "sub" / "a.csv"), project) == "sub/a.csv"
+    assert _manifest_path_value(str(outside), project) == str(outside)
+    assert _manifest_path_value("already/relative.grd", project) == "already/relative.grd"
+    assert _manifest_path_value("", project) == ""
+    assert _manifest_path_value(None, project) == ""
