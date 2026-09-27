@@ -86,18 +86,11 @@ Service half first, with its own tests and commit: the `parse_manifest` split,
 the writer that validates before writing, and the analysis-root listing. The
 tab second.
 
-## Superseded open question
-
-Listing directories under the analysis roots in a dropdown shows every
-authenticated user the names of run directories an admin has declared readable.
-That is what an analysis root already means — the page reads run output from
-them for any user — but a *listing* is new, and it should be an explicit
-decision rather than a side effect.
-
 ## Tests
 
-- Service-level: building the JSON from a form state, round-tripping through
-  `load_manifest`, and the rollback when the candidate does not load.
+- Service-level: `parse_manifest` on a good and a bad dict, a write that
+  round-trips through `load_manifest`, and a rejected candidate leaving the
+  previous file byte-identical.
 - The runs editor: add, remove, duplicate id, empty list (the loader requires
   at least one run).
 - Path fields: a project-relative pick, an analysis-root pick, and a rejected

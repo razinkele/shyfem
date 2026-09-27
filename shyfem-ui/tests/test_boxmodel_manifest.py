@@ -220,3 +220,89 @@ def test_server_mode_run_dir_symlink_escaping_the_analysis_root_is_rejected(
     )
     with pytest.raises(bm.ManifestError, match=r"runs\[0\].dir"):
         bm.load_manifest(proj, cfg, user)
+
+
+# --- parsing a candidate, and writing one -----------------------------------
+
+
+def _raw(project):
+    return json.loads((project / bm.MANIFEST_NAME).read_text())
+
+
+def test_parse_manifest_validates_a_candidate_without_touching_disk(project, local_cfg):
+    """The form has to know whether a candidate is good BEFORE replacing the
+    live file. Parsing a dict is what makes validate-then-write possible, so
+    there is never a window where the page reads a broken manifest and no
+    rollback that could itself fail."""
+    parsed = bm.parse_manifest(_raw(project), project, local_cfg, None)
+    assert parsed.title == "Fixture lagoon"
+    assert parsed.runs[0].id == "fix"
+
+    bad = _raw(project)
+    bad["runs"] = []
+    with pytest.raises(bm.ManifestError, match="runs"):
+        bm.parse_manifest(bad, project, local_cfg, None)
+    # ...and the file on disk is untouched, because parsing never writes.
+    assert bm.load_manifest(project, local_cfg, None).runs[0].id == "fix"
+
+
+def test_load_manifest_still_reads_the_file_through_the_same_rules(project, local_cfg):
+    """The split must not fork the validation: loading is reading plus parsing."""
+    from_file = bm.load_manifest(project, local_cfg, None)
+    from_dict = bm.parse_manifest(_raw(project), project, local_cfg, None)
+    assert from_file == from_dict
+
+
+def test_write_manifest_round_trips_and_stays_readable(project, local_cfg):
+    doc = _raw(project)
+    doc["title"] = "Edited lagoon"
+
+    written = bm.write_manifest(project, doc, local_cfg, None)
+
+    assert written.title == "Edited lagoon"
+    assert bm.load_manifest(project, local_cfg, None).title == "Edited lagoon"
+    text = (project / bm.MANIFEST_NAME).read_text()
+    assert "\n  " in text, "the spec calls this file hand-editable: keep it indented"
+    assert text.endswith("\n")
+
+
+def test_write_manifest_keeps_keys_it_does_not_know_about(project, local_cfg):
+    """A save overlays the form's fields onto the raw document, so a key added
+    by a future schema or by hand survives a round trip."""
+    doc = _raw(project)
+    doc["notes"] = {"author": "arturas", "why": "kept"}
+
+    bm.write_manifest(project, doc, local_cfg, None)
+
+    assert _raw(project)["notes"] == {"author": "arturas", "why": "kept"}
+
+
+def test_a_rejected_candidate_leaves_the_previous_file_byte_identical(project, local_cfg):
+    before = (project / bm.MANIFEST_NAME).read_bytes()
+    doc = _raw(project)
+    doc["runs"] = [{"id": "no spaces allowed", "dir": "runs/fix"}]
+
+    with pytest.raises(bm.ManifestError, match="runs"):
+        bm.write_manifest(project, doc, local_cfg, None)
+
+    assert (project / bm.MANIFEST_NAME).read_bytes() == before
+
+
+def test_write_manifest_creates_the_first_manifest(tmp_path, local_cfg):
+    """Creating one is the point: the page is unusable until a manifest exists,
+    and today it has to be hand-written."""
+    run = tmp_path / "runs" / "fix"
+    make_box_run(run, days=1)
+    project = make_box_project(tmp_path / "fresh", run)
+    (project / bm.MANIFEST_NAME).unlink()
+
+    doc = {
+        "schema": 1,
+        "title": "From nothing",
+        "grid": {"grd": "fixture.grd"},
+        "runs": [{"id": "fix", "label": "Fixture", "dir": str(run)}],
+    }
+    written = bm.write_manifest(project, doc, local_cfg, None)
+
+    assert written.title == "From nothing"
+    assert bm.load_manifest(project, local_cfg, None).runs[0].dir == run.resolve()

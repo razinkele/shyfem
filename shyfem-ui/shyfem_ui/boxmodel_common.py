@@ -29,7 +29,7 @@ def check_run_id(run_id: str) -> None:
         raise ValueError("run_id: must match [a-z0-9_-]{1,64}")
 
 
-def atomic_json(path: Path, payload: dict) -> None:
+def atomic_json(path: Path, payload: dict, *, indent: int | None = None) -> None:
     """Write ``payload`` as JSON to ``path`` atomically.
 
     The bytes go to a ``mkstemp`` file in ``path.parent`` and are moved into
@@ -40,7 +40,9 @@ def atomic_json(path: Path, payload: dict) -> None:
     fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=".tmp-", suffix=".json")
     try:
         with os.fdopen(fd, "w") as fh:
-            json.dump(payload, fh)
+            json.dump(payload, fh, indent=indent, ensure_ascii=False)
+            if indent is not None:
+                fh.write("\n")  # a file people edit by hand ends in a newline
         os.replace(tmp_name, path)
     except Exception:
         try:
