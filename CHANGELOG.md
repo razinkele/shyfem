@@ -8,11 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+
+## [shyfem-ui 0.7.0] — 2026-09-28
+
+Completes the Box model analysis feature: a project's manifest and its raw
+output records are both reachable from the page now, and the app finally says
+what it is doing in the worker log. Tagged `shyfem-ui-v0.7.0`.
+
 ### Added
 - **UI, Box model page:** a **Manifest** tab that creates and edits the project's `boxmodel.json`, which until now had to be written by hand before the page could be used at all. Every path is a dropdown, the runs are a table with add and remove, and a run directory may be picked from the admin-declared analysis roots as well as from the project, because a run usually lives outside it. Saving validates the document first and writes only if it parses, so a rejected edit never reaches the file; the write keeps an indent, keeps keys the form does not know about, and rewrites nothing it was not asked to — a path inside the project is stored relative so the manifest stays portable, one outside it stays absolute.
 - **UI, Box model page:** the cache can now be built with the model's raw output records ("Include output-step detail"), and the Map and Time series use them inside a window of up to 31 days: the day slider becomes a time slider stepping by the run's own output step, and the series plots the records themselves instead of daily means. Off by default, because the raw frame is several times larger than the daily one and counts against the project's storage quota. A run without it, or a wider window, behaves exactly as before. Closes the last deferred item of the Box model feature (spec §8).
 
 ### Fixed
+- **UI:** the app configures its own logging where it is built, so INFO reaches the worker log in production. `logging.basicConfig` sat inside `main()`, which only runs for `python -m shyfem_ui.app`; Shiny Server imports the app and calls `create_app()`, so the package was never configured at all and every INFO breadcrumb — cache reconciles, project opens, build starts — was dropped, while warnings still reached stderr through Python's last-resort handler, which is why nothing looked wrong. The level comes from the new `SHYFEM_UI_LOG_LEVEL` setting. (#94)
 - **UI, Box model page:** opening the page no longer reads the whole raw-record frame into the worker. The published Curonian caches already carried `state_hourly.parquet` (183–207 MB), and `load_cache` materialised it on every session — 6,100,440 rows, about 250 MB, at the head of the page's expensive chain, for data nothing displayed. Only the visible window is read now, which the builder's per-day row groups make cheap: 20,909 rows in 0.33 s for a 31-day window on the 22-year run.
 
 ---
