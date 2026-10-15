@@ -8,15 +8,26 @@ Steps can reference outputs from previous steps.
 """
 
 import asyncio
+import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from shyfem_ui.models.workflow import Workflow, WorkflowStatus
-from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
+from shyfem_ui.services.job_queue import ORPHANED_ERROR, JobInfo, JobQueue, JobSpec, JobStatus
 from shyfem_ui.timeutil import utcnow
+
+logger = logging.getLogger(__name__)
+
+# A workflow in one of these states has an asyncio driver task in THIS process
+# (WorkflowEngine._run_workflow). After a restart no such task exists.
+_ACTIVE_STATUSES = (WorkflowStatus.PENDING, WorkflowStatus.RUNNING)
+# Only these are pruned by retention. PAUSED is deliberately excluded: nothing
+# sets it today and it has no job analogue, so it is never deleted (nor
+# reconciled) rather than guessing what "paused" should mean.
+_TERMINAL_STATUSES = (WorkflowStatus.COMPLETED, WorkflowStatus.FAILED, WorkflowStatus.CANCELLED)
 
 
 @dataclass
@@ -271,12 +282,134 @@ class WorkflowEngine:
 
     def _get_session(self):
         """Open and return a new DB session."""
-        if self._session_factory is None:
+        return self._open_session(self._session_factory)
+
+    @staticmethod
+    def _open_session(session_factory=None):
+        """Open a DB session from ``session_factory`` or the app default."""
+        if session_factory is None:
             from shyfem_ui.db.base import get_session_factory
 
-            factory = get_session_factory()
-            return factory()
-        return self._session_factory()
+            return get_session_factory()()
+        return session_factory()
+
+    @staticmethod
+    def reconcile_orphaned_workflows(session_factory=None) -> int:
+        """Mark workflow rows a previous process left active as FAILED.
+
+        A workflow is driven by an asyncio task (``_run_workflow``) living in
+        the web process -- in BOTH queue modes, since even under Celery the
+        step chaining happens here. A PENDING/RUNNING row found at process
+        start therefore has no driver and would otherwise stay "active"
+        forever (and be immune to retention). Same reconciliation as jobs
+        (N46, ``LocalJobQueue._load_history_from_db``): status FAILED, error
+        ``ORPHANED_ERROR``, ``completed_at`` stamped if unset (UTC, like every
+        workflow timestamp). The step job itself is NOT cancelled: if it is
+        genuinely alive (a Celery worker) it finishes on its own and the job
+        queue tracks it.
+
+        Must run ONCE PER PROCESS, before any workflow is started (it is
+        called from ``create_app``). Never call it from ``__init__``:
+        pages/run.py builds one engine per Shiny session, so a second session
+        would kill a live workflow belonging to the first.
+
+        Best-effort: returns the number of rows reconciled, 0 on any DB error.
+        """
+        try:
+            session = WorkflowEngine._open_session(session_factory)
+        except Exception:
+            logger.warning("Could not open DB to reconcile workflows", exc_info=True)
+            return 0
+        try:
+            rows = session.query(Workflow).filter(Workflow.status.in_(_ACTIVE_STATUSES)).all()
+            now = utcnow()
+            for row in rows:
+                wf = _row_to_instance(row)
+                wf.error_message = ORPHANED_ERROR
+                row.status = WorkflowStatus.FAILED
+                row.steps = _pack_steps(wf)
+                row.updated_at = now
+                if row.completed_at is None:
+                    row.completed_at = now
+            if rows:
+                session.commit()
+                logger.warning(
+                    "Reconciled %d phantom active workflow row(s) to FAILED at startup", len(rows)
+                )
+            return len(rows)
+        except Exception:
+            session.rollback()
+            logger.warning("Could not reconcile orphaned workflows", exc_info=True)
+            return 0
+        finally:
+            session.close()
+
+    @staticmethod
+    def cleanup_old_workflows(days: int, session_factory=None) -> int:
+        """Delete finished workflow rows older than ``days``; return the count.
+
+        The workflow analogue of ``JobQueue.cleanup_old_jobs`` and run with
+        the same ``job_retention_days`` by maintenance. Only COMPLETED /
+        FAILED / CANCELLED rows are candidates; age is ``completed_at``, or
+        ``created_at`` when a finished row has no ``completed_at``. All
+        workflow timestamps are naive UTC, so one ``utcnow()`` cutoff fits.
+
+        A candidate is kept while any of its step jobs is still live
+        (PENDING/QUEUED/RUNNING in the ``jobs`` table): a workflow can end
+        FAILED/CANCELLED while the job it submitted keeps running.
+
+        Synchronous DB work -- call it via ``asyncio.to_thread``. Best-effort:
+        returns 0 on any DB error.
+        """
+        from sqlalchemy import and_, or_
+
+        from shyfem_ui.models.project import Job
+
+        cutoff = utcnow() - timedelta(days=days)
+        live_job_statuses = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
+        try:
+            session = WorkflowEngine._open_session(session_factory)
+        except Exception:
+            logger.error("Could not open DB to prune old workflows", exc_info=True)
+            return 0
+        try:
+            candidates = (
+                session.query(Workflow)
+                .filter(Workflow.status.in_(_TERMINAL_STATUSES))
+                .filter(
+                    or_(
+                        and_(Workflow.completed_at.isnot(None), Workflow.completed_at < cutoff),
+                        and_(Workflow.completed_at.is_(None), Workflow.created_at < cutoff),
+                    )
+                )
+                .all()
+            )
+            job_ids = {
+                row.id: {str(j) for j in _row_to_instance(row).step_job_ids.values() if j}
+                for row in candidates
+            }
+            all_job_ids = set().union(*job_ids.values()) if job_ids else set()
+            live: set[str] = set()
+            if all_job_ids:
+                live = {
+                    uuid
+                    for (uuid,) in session.query(Job.job_uuid)
+                    .filter(Job.job_uuid.in_(all_job_ids))
+                    .filter(Job.status.in_(live_job_statuses))
+                }
+            doomed = [row.id for row in candidates if not (job_ids[row.id] & live)]
+            if doomed:
+                session.query(Workflow).filter(Workflow.id.in_(doomed)).delete(
+                    synchronize_session=False
+                )
+                session.commit()
+            return len(doomed)
+        except Exception:
+            session.rollback()
+            logger.error("DB cleanup of old workflow rows failed", exc_info=True)
+            return 0
+        finally:
+            session.close()
 
     @staticmethod
     def list_templates() -> dict[str, dict]:

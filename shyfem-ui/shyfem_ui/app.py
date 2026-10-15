@@ -313,6 +313,14 @@ def create_app(config: Config | None = None) -> App:
     # Initialize database
     init_db()
 
+    # Workflow rows a previous process left PENDING/RUNNING lost their driver
+    # task with it: reconcile them to FAILED now, once per process and before
+    # any session can start a workflow (L37, mirrors the jobs' N46). Not in
+    # WorkflowEngine.__init__ -- that runs once per Shiny session.
+    from shyfem_ui.services.workflow import WorkflowEngine
+
+    WorkflowEngine.reconcile_orphaned_workflows()
+
     # Register Plotly theme
     from shyfem_ui.plotly_theme import register_shyfem_template
 
@@ -417,6 +425,7 @@ def create_app(config: Config | None = None) -> App:
                 audit_retention_days=config.audit_retention_days,
                 feedback_service=feedback_service,
                 feedback_retention_days=config.feedback_retention_days,
+                workflow_cleanup=WorkflowEngine.cleanup_old_workflows,
             )
 
     app = MaintenanceMiddleware(app, _maint_factory)

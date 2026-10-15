@@ -10,6 +10,12 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+# Error recorded on a row that a previous process left in an active state: its
+# driving asyncio task died with that process (crash, deploy, restart), so the
+# row is reconciled to FAILED at startup. Shared by jobs (N46) and workflows
+# (L37) so both surface the same wording.
+ORPHANED_ERROR = "orphaned at server restart"
+
 
 class JobStatus(Enum):
     """Job execution status."""

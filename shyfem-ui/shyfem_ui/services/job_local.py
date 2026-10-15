@@ -8,6 +8,7 @@ from pathlib import Path
 
 from shyfem_ui.config import get_config
 from shyfem_ui.services.job_queue import (
+    ORPHANED_ERROR,
     JobInfo,
     JobQueue,
     JobSpec,
@@ -42,7 +43,7 @@ class LocalJobQueue(JobQueue):
 
     MAX_STORED_JOBS = 500
     TEMP_FILE_RETENTION_SECS = 3600  # Clean temp files 1 hour after job completion
-    ORPHANED_ERROR = "orphaned at server restart"
+    ORPHANED_ERROR = ORPHANED_ERROR
 
     def __init__(
         self,
