@@ -187,34 +187,23 @@ PARMETISDIR = ${PARMETIS_HOME}
 #
 # Here you have to specify what solver you want
 # to use for the solution of the system matrix.
-# You have a choice between Gaussian elimination,
-# iterative solution (Sparskit), the Pardiso
-# solver, and the Paralution solver.
-# The gaussian elimination is the most robust.
-# Sparskit is very fast on big matrices.
-# To use the Pardiso solver you must have the 
-# libraries installed. It is generally faster
-# then the default method. Please note that
-# in order to use Pardiso you must also use
-# the INTEL compiler. The option to use the
-# Pardiso solver is considered experimental.
-# Finally you can use the Paralution solver,
-# which allows you to use the GPU. 
-# This solver is still in a testing phase,
-# it should be faster with large matrices
-# and with a good GPU.
-# Moreover, it can reduce the CPU usage.
+# Two solvers build with the current code:
+#
+#   SPARSKIT  iterative, the default; serial and MPI
+#   PETSC     PETSc library (needs PETSC_DIR, see below)
+#
+# GAUSS, PARDISO, PARALUTION and PETSC_AmgX are no longer
+# supported: they all fall back to simsys_lp.f90, which
+# predates the current solver interface and does not compile
+# (upstream carries the same file). Choosing one of them stops
+# the build with a message instead of a page of compile errors.
 # If you are unsure what solver to use, leave
 # the default which is SPARSKIT.
 #
 ##############################################
 
-#SOLVER = GAUSS
 SOLVER = SPARSKIT
-#SOLVER = PARDISO
-#SOLVER = PARALUTION
 #SOLVER = PETSC
-#SOLVER = PETSC_AmgX
 
 ##############################################
 #
@@ -459,6 +448,11 @@ ifeq ($(SOLVER),)
   RULES_MAKE_MESSAGE = "No solver chosen. Please set SOLVER"
 endif
 
+# Only SPARSKIT and PETSC have a backend that matches the current solver
+# interface; every other value falls back to simsys_lp.f90, which no
+# longer compiles. Placed last among the solver checks so its message wins.
+SUPPORTED_SOLVERS = SPARSKIT PETSC
+
 ifneq ($(FORTRAN_COMPILER),INTEL)
   ifeq ($(SOLVER),PARDISO)
     RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
@@ -481,6 +475,13 @@ ifeq ($(SOLVER),PARALUTION)
   ifeq ($(PARADIR),)
     RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
     RULES_MAKE_MESSAGE = "PARALUTION solver needs PARADIR directory"
+  endif
+endif
+
+ifneq ($(SOLVER),)
+  ifeq ($(filter $(SOLVER),$(SUPPORTED_SOLVERS)),)
+    RULES_MAKE_PARAMETERS = RULES_MAKE_PARAMETER_ERROR
+    RULES_MAKE_MESSAGE = "SOLVER=$(SOLVER) is not supported - its backend simsys_lp.f90 no longer builds. Use SOLVER=SPARSKIT, the default, or SOLVER=PETSC"
   endif
 endif
 
