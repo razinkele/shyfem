@@ -958,7 +958,7 @@
 
         iwant = ioffline                !this is what we want (from idtoff)
 
-        if( itype < 1 .or. itype > 4 ) then         	!check itype
+        if( itype /= 1 .and. itype /= 2 .and. itype /= 4 ) then         	!check itype
           write(6,*) 'value for itype not allowed: ',itype
           flush(6)
           call shympi_abort_internal('error stop is_offline: itype')
