@@ -508,12 +508,13 @@
 	aa(0) = 0.
 	bb(0) = 1.
 	cc(0) = 0.
-	rr(0) = (taus/rho(1))**1.5 * 0.00002 / karman   !ERROR corrected
-	rr(0) = (taus/rho(1))**1.5 / (dzk(1)*karman)   !ERROR corrected
+	! log-law eps = u*^3/(kappa*L) with L = dh of the boundary layer;
+	! dzk already holds 1/dh here, so it multiplies (see dzk loop above)
+	rr(0) = (taus/rho(1))**1.5 * dzk(1) / karman
 	aa(lmax) = 0.
 	bb(lmax) = 1.
 	cc(lmax) = 0.
-	rr(lmax) = (taub/rho(lmax))**1.5 / (dzk(lmax)*karman)
+	rr(lmax) = (taub/rho(lmax))**1.5 * dzk(lmax) / karman
 
 !	---------------------------------
 !	solve system
