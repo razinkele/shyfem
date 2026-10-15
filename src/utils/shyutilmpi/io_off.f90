@@ -939,8 +939,10 @@
 
 ! this checks if the requested offline data (itype) is wanted and available
 !
-! itype: 1 hydro, 2 T/S, 4 turb, combinations are possible: 3,7
-! itype == 0 -> any offline
+! itype: 1 hydro, 2 T/S, 4 turb (a single type per call)
+! itype outside 1..4 is rejected: itype == 0 ("any offline") was never
+! supported (iwant/itype would divide by zero), and the test below is
+! only a bit test for the powers of two 1,2,4 - all callers use these
 !
 ! iwant is what we want for offline
 ! iread is what has been read
@@ -956,9 +958,10 @@
 
         iwant = ioffline                !this is what we want (from idtoff)
 
-        if( itype < 1 .and. itype > 4 ) then         	!check itype
+        if( itype < 1 .or. itype > 4 ) then         	!check itype
           write(6,*) 'value for itype not allowed: ',itype
-          stop 'error stop is_offline: itype'
+          flush(6)
+          call shympi_abort_internal('error stop is_offline: itype')
         else if( iwant .le. 0 ) then        		!no offline
           boff = .false.
         else
