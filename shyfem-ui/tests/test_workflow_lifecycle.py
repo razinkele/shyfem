@@ -122,6 +122,44 @@ class TestStartupReconciliation:
         # Steps survive the rewrite of the JSON column.
         assert [s.name for s in _row_to_instance(row).steps] == ["Grid prep"]
 
+    @pytest.mark.parametrize("job_status", [JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING])
+    def test_active_workflow_with_live_job_not_reconciled(self, session_factory, job_status):
+        """A restart.txt deploy starts a new process while the old one keeps
+        driving its workflows; their step job is still live in the jobs table.
+        Reconciling them would show FAILED (and refuse cancel) for the whole
+        running step. A workflow whose job is live is left alone."""
+        pk = _add_workflow(
+            session_factory, WorkflowStatus.RUNNING, completed=False, step_job_ids={"0": "j-live"}
+        )
+        _add_job(session_factory, "j-live", job_status)
+
+        n = WorkflowEngine.reconcile_orphaned_workflows(session_factory=session_factory)
+
+        assert n == 0
+        assert _get(session_factory, pk).status == WorkflowStatus.RUNNING
+
+    def test_active_workflow_with_finished_job_is_reconciled(self, session_factory):
+        pk = _add_workflow(
+            session_factory, WorkflowStatus.RUNNING, completed=False, step_job_ids={"0": "j-done"}
+        )
+        _add_job(session_factory, "j-done", JobStatus.FAILED)
+
+        assert WorkflowEngine.reconcile_orphaned_workflows(session_factory=session_factory) == 1
+        assert _get(session_factory, pk).status == WorkflowStatus.FAILED
+
+    def test_malformed_row_does_not_block_reconciliation(self, session_factory):
+        bad = _add_workflow(session_factory, WorkflowStatus.RUNNING, completed=False)
+        with session_factory() as s:
+            s.get(Workflow, bad).steps = [{"no": "such step fields"}]
+            s.commit()
+        good = _add_workflow(session_factory, WorkflowStatus.RUNNING, completed=False)
+
+        n = WorkflowEngine.reconcile_orphaned_workflows(session_factory=session_factory)
+
+        assert n == 1
+        assert _get(session_factory, good).status == WorkflowStatus.FAILED
+        assert _get(session_factory, bad).status == WorkflowStatus.RUNNING
+
     def test_finished_workflows_untouched(self, session_factory):
         pks = {
             st: _add_workflow(session_factory, st)
@@ -301,3 +339,17 @@ class TestMaintenanceWiring:
         kwargs = fake_loop.call_args.kwargs
         assert kwargs["workflow_cleanup"] == WorkflowEngine.cleanup_old_workflows
         assert kwargs["job_retention_days"] == 30
+
+
+def test_malformed_row_does_not_block_pruning(session_factory):
+    bad = _add_workflow(session_factory, WorkflowStatus.COMPLETED, age_days=400)
+    with session_factory() as s:
+        s.get(Workflow, bad).steps = [{"no": "such step fields"}]
+        s.commit()
+    good = _add_workflow(session_factory, WorkflowStatus.COMPLETED, age_days=400)
+
+    n = WorkflowEngine.cleanup_old_workflows(30, session_factory=session_factory)
+
+    assert n == 1
+    assert _get(session_factory, good) is None
+    assert _get(session_factory, bad) is not None  # unreadable: kept, not guessed at

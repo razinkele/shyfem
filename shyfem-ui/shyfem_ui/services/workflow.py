@@ -294,6 +294,45 @@ class WorkflowEngine:
         return session_factory()
 
     @staticmethod
+    def _readable_rows(rows, purpose: str) -> dict:
+        """Map row.id -> WorkflowInstance, skipping (and logging) any row whose
+        JSON cannot be read, so one malformed legacy row cannot stall every
+        later reconcile/prune pass."""
+        out = {}
+        for row in rows:
+            try:
+                out[row.id] = _row_to_instance(row)
+            except Exception:
+                logger.warning(
+                    "Skipping unreadable workflow row %s during %s", row.id, purpose, exc_info=True
+                )
+        return out
+
+    @staticmethod
+    def _live_job_uuids(session, instances: dict) -> tuple[dict, set]:
+        """(row.id -> its step job uuids, the subset still live in ``jobs``).
+
+        Live = PENDING/QUEUED/RUNNING. Checked in the DB, not a queue's
+        memory: these run at startup and from maintenance, outside any queue.
+        """
+        from shyfem_ui.models.project import Job
+
+        job_ids = {
+            rid: {str(j) for j in wf.step_job_ids.values() if j} for rid, wf in instances.items()
+        }
+        wanted = set().union(*job_ids.values()) if job_ids else set()
+        if not wanted:
+            return job_ids, set()
+        live_statuses = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
+        live = {
+            uuid
+            for (uuid,) in session.query(Job.job_uuid)
+            .filter(Job.job_uuid.in_(wanted))
+            .filter(Job.status.in_(live_statuses))
+        }
+        return job_ids, live
+
+    @staticmethod
     def reconcile_orphaned_workflows(session_factory=None) -> int:
         """Mark workflow rows a previous process left active as FAILED.
 
@@ -313,6 +352,13 @@ class WorkflowEngine:
         pages/run.py builds one engine per Shiny session, so a second session
         would kill a live workflow belonging to the first.
 
+        A row whose step job is still live (PENDING/QUEUED/RUNNING in
+        ``jobs``) is left alone: a ``restart.txt`` deploy starts a new process
+        while the old one keeps serving its sessions and driving their
+        workflows, and marking those FAILED would misreport them (and refuse
+        cancel) for the whole running step. A truly orphaned one is caught at
+        a later start, once its job row is terminal.
+
         Best-effort: returns the number of rows reconciled, 0 on any DB error.
         """
         try:
@@ -322,21 +368,27 @@ class WorkflowEngine:
             return 0
         try:
             rows = session.query(Workflow).filter(Workflow.status.in_(_ACTIVE_STATUSES)).all()
+            instances = WorkflowEngine._readable_rows(rows, "startup reconciliation")
+            job_ids, live = WorkflowEngine._live_job_uuids(session, instances)
             now = utcnow()
+            done = 0
             for row in rows:
-                wf = _row_to_instance(row)
+                wf = instances.get(row.id)
+                if wf is None or job_ids[row.id] & live:
+                    continue
                 wf.error_message = ORPHANED_ERROR
                 row.status = WorkflowStatus.FAILED
                 row.steps = _pack_steps(wf)
                 row.updated_at = now
                 if row.completed_at is None:
                     row.completed_at = now
-            if rows:
+                done += 1
+            if done:
                 session.commit()
                 logger.warning(
-                    "Reconciled %d phantom active workflow row(s) to FAILED at startup", len(rows)
+                    "Reconciled %d phantom active workflow row(s) to FAILED at startup", done
                 )
-            return len(rows)
+            return done
         except Exception:
             session.rollback()
             logger.warning("Could not reconcile orphaned workflows", exc_info=True)
@@ -363,10 +415,7 @@ class WorkflowEngine:
         """
         from sqlalchemy import and_, or_
 
-        from shyfem_ui.models.project import Job
-
         cutoff = utcnow() - timedelta(days=days)
-        live_job_statuses = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
         try:
             session = WorkflowEngine._open_session(session_factory)
         except Exception:
@@ -384,20 +433,11 @@ class WorkflowEngine:
                 )
                 .all()
             )
-            job_ids = {
-                row.id: {str(j) for j in _row_to_instance(row).step_job_ids.values() if j}
-                for row in candidates
-            }
-            all_job_ids = set().union(*job_ids.values()) if job_ids else set()
-            live: set[str] = set()
-            if all_job_ids:
-                live = {
-                    uuid
-                    for (uuid,) in session.query(Job.job_uuid)
-                    .filter(Job.job_uuid.in_(all_job_ids))
-                    .filter(Job.status.in_(live_job_statuses))
-                }
-            doomed = [row.id for row in candidates if not (job_ids[row.id] & live)]
+            # An unreadable row is kept, not guessed at: we cannot tell
+            # whether it still references a live job.
+            instances = WorkflowEngine._readable_rows(candidates, "retention pruning")
+            job_ids, live = WorkflowEngine._live_job_uuids(session, instances)
+            doomed = [rid for rid in instances if not (job_ids[rid] & live)]
             if doomed:
                 session.query(Workflow).filter(Workflow.id.in_(doomed)).delete(
                     synchronize_session=False

@@ -28,8 +28,11 @@ async def run_maintenance_once(
 
     ``workflow_cleanup`` (``WorkflowEngine.cleanup_old_workflows`` in prod) is
     called with ``job_retention_days``: workflows share the job retention
-    window. It runs AFTER ``cleanup_old_jobs``, whose first use reconciles
-    phantom active job rows, so a dead job never pins its workflow (L37).
+    window (L37). A workflow is kept while any of its step jobs is still
+    active in the ``jobs`` table. Phantom active job rows are reconciled by
+    ``LocalJobQueue`` when it first loads its history, not by this pass;
+    under Celery there is no such reconciliation, so a stale active job row
+    can keep its workflow indefinitely (safe direction: never a wrong delete).
 
     Each cleanup is independent — a failure in one is logged and must not block
     the others or propagate (the scheduling loop must never die).
