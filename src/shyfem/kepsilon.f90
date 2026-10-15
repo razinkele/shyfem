@@ -419,7 +419,7 @@
 	  dzk(l) = dh(l)
 	  dzr(l-1) = 0.5 * ( dzk(l) + dzk(l-1) )
 	end do
-	dzr(l) = 0.
+	dzr(lmax) = 0.		!was dzr(l) with l=lmax+1: past nlevdi at lmax=200
 	if( bdebug ) write(6,*) 'keps 12'
 
 	do l=1,lmax1
