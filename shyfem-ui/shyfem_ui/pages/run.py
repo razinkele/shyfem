@@ -611,6 +611,20 @@ def run_server(
         except Exception as e:
             ui.notification_show(f"Refresh failed: {e}", type="error", duration=6)
 
+    def _show_all_requested() -> bool:
+        # The "All jobs" switch renders only once the Run page is shown
+        # (render.ui outputs stay suspended while hidden), so reading it
+        # raises SilentException for sessions that never open Run. Treat
+        # "not rendered yet" as the fail-closed default (own jobs only)
+        # instead of letting the exception abort the whole poll cycle.
+        # Shared by the job and the workflow listings.
+        from shiny.types import SilentException
+
+        try:
+            return bool(input.show_all_run_jobs())
+        except SilentException:
+            return False
+
     async def _list_scoped_jobs() -> list[JobInfo]:
         """Jobs visible to the current identity, server-side (F17).
 
@@ -631,19 +645,6 @@ def run_server(
         value) is deliberate: the allowlist must reflect a fresh
         server-side query, not client-cached state.
         """
-
-        def _show_all_requested() -> bool:
-            # The "All jobs" switch renders only once the Run page is shown
-            # (render.ui outputs stay suspended while hidden), so reading it
-            # raises SilentException for sessions that never open Run. Treat
-            # "not rendered yet" as the fail-closed default (own jobs only)
-            # instead of letting the exception abort the whole poll cycle.
-            from shiny.types import SilentException
-
-            try:
-                return bool(input.show_all_run_jobs())
-            except SilentException:
-                return False
 
         show_all_fn = _show_all_requested if _is_server_mode else None
         return await list_scoped_jobs(
@@ -1443,6 +1444,8 @@ def run_server(
                 working_dir=validated_workdir,
                 params=params,
                 name=wf_name,
+                user_id=_usr["id"] if _usr else None,
+                project_id=_proj["id"] if _proj is not None else None,
             )
             active_workflow_id.set(wf_id)
             ui.notification_show(f"Workflow launched: {wf_id[:8]}", type="message", duration=4)
@@ -1580,7 +1583,15 @@ def run_server(
         # Trigger re-render when workflow state changes
         active_workflow_id.get()
 
-        workflows = workflow_engine.list_workflows(limit=10)
+        from shyfem_ui.services.run_logic import list_scoped_workflows
+
+        workflows = list_scoped_workflows(
+            workflow_engine,
+            _is_server_mode,
+            current_user,
+            show_all_fn=_show_all_requested if _is_server_mode else None,
+            limit=10,
+        )
         if not workflows:
             return ui.p("No workflows yet.", class_="text-muted small")
 
