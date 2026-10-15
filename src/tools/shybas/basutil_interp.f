@@ -613,11 +613,11 @@ c interpolates depth values with auto-correlation
 	real yp(np)
 	real dp(np)
 	real ap(np)		!sigma**2 for bathy points
-	integer nt
-	real xt(np)
-	real yt(np)
-	real at(np)
-	real ht(np)
+	integer nt		!points on which to interpolate
+	real xt(nt)
+	real yt(nt)
+	real at(nt)
+	real ht(nt)		!interpolated depth values (return)
 
 
 
