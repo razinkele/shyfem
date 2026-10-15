@@ -245,7 +245,7 @@
 		if( bexp ) then
 			kexp = 10*kexp + ic
 		else if( bdot ) then
-			fact = 0.1*fact
+			fact = fact/10.d0	!0.1 is inexact: 0.1*fact lost ~1e-8 per digit
 			ff = ff + fact*fh
 		else
 			ff = 10.*ff + fh
