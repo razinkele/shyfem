@@ -410,7 +410,11 @@ def admin_server(
                 auth_service.reset_password(user_id, new_pw)
                 _audit("reset_password", f"target={username}")
                 ui.modal_remove()
-                ui.notification_show(f"Password reset for '{username}'", type="message", duration=4)
+                ui.notification_show(
+                    f"Password reset for '{username}'; their open sessions were signed out",
+                    type="message",
+                    duration=5,
+                )
             except Exception as e:
                 logger.exception("Failed to reset password for user %d", user_id)
                 ui.notification_show(f"Error: {e}", type="error", duration=6)

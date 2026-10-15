@@ -228,7 +228,13 @@ class AuthService:
             session.close()
 
     def reset_password(self, user_id: int, new_password: str) -> bool:
-        """Reset a user's password.
+        """Reset a user's password and sign out every session they have.
+
+        Sessions opened with the old password -- an open tab or a stolen
+        cookie alike -- are deleted together with the WS-auth tokens minted
+        from them, in the same transaction as the new hash, so a reset takes
+        effect at the holder's next action rather than at session expiry.
+        Resetting your own password therefore signs you out too.
 
         Returns:
             True if the user was found and password was reset, False if not found.
@@ -239,6 +245,8 @@ class AuthService:
             if user is None:
                 return False
             user.password_hash = self.hash_password(new_password)
+            session.query(WSAuthToken).filter_by(user_id=user_id).delete()
+            session.query(AuthSession).filter_by(user_id=user_id).delete()
             session.commit()
             return True
         except Exception:
