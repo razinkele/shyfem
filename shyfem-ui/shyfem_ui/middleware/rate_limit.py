@@ -5,6 +5,8 @@ import logging
 import time
 from collections import defaultdict
 
+from shyfem_ui.middleware.cache_headers import is_static_asset_request
+
 logger = logging.getLogger(__name__)
 
 
@@ -79,9 +81,17 @@ class RateLimitMiddleware:
         rpm: int = 120,
         trusted_proxies: list[str] | None = None,
         max_clients: int = 10000,
+        static_rpm: int | None = None,
     ):
         self.app = app
         self.rpm = rpm
+        # Static assets (scripts, stylesheets, fonts) get their own bucket:
+        # one page load fetches dozens, so counting them against ``rpm``
+        # 429'd about the 5th load in a minute (broken page, api/whoami
+        # refused), and a class behind one NAT address shares a bucket. Still
+        # finite: an asset request with a forged session cookie costs a
+        # validate_session DB read in SessionAuthMiddleware.
+        self.static_rpm = static_rpm if static_rpm is not None else 20 * rpm
         self.trusted_proxies = trusted_proxies or []
         self._window = 60.0  # 1 minute sliding window
         self._requests: dict[str, list[float]] = defaultdict(list)
@@ -122,7 +132,13 @@ class RateLimitMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
 
-        client_key = get_client_ip(scope, self.trusted_proxies)
+        # Only static GET/HEAD moves to the asset bucket: this limiter is the
+        # only brute-force guard on POST /login.
+        client_ip = get_client_ip(scope, self.trusted_proxies)
+        if is_static_asset_request(scope):
+            client_key, limit = f"{client_ip}|static", self.static_rpm
+        else:
+            client_key, limit = client_ip, self.rpm
         now = time.monotonic()
 
         self._prune_clients(now)
@@ -133,7 +149,7 @@ class RateLimitMiddleware:
         self._requests[client_key] = [t for t in timestamps if t > cutoff]
         timestamps = self._requests[client_key]
 
-        if len(timestamps) >= self.rpm:
+        if len(timestamps) >= limit:
             body = b"Rate limit exceeded. Try again later."
             await send(
                 {

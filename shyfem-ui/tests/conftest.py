@@ -167,6 +167,24 @@ def _find_free_port() -> int:
         return s.getsockname()[1]
 
 
+def _open_server_log(tmp_dir: Path):
+    """Return a writable file for a test server's stdout/stderr.
+
+    Never ``subprocess.PIPE``: nothing drains the pipe while the server runs,
+    so once ~64 KB of log output (about 2.3 KB per page load) fills the OS pipe
+    buffer, the server blocks on its next log write and every later request
+    hangs. A file never fills; it is read back only for the startup-failure
+    message.
+    """
+    return open(tmp_dir / "server.log", "w+b")
+
+
+def _server_log_text(log) -> str:
+    log.flush()
+    log.seek(0)
+    return log.read().decode(errors="replace")
+
+
 def _wait_for_server(host: str, port: int, timeout: float = 30.0) -> bool:
     """Wait until the server accepts TCP connections."""
     deadline = time.monotonic() + timeout
@@ -239,6 +257,7 @@ def _app_server(app_work_dir, app_port):
     The server is killed when the session ends.
     """
     tmp_dir = app_work_dir.parent
+    log = _open_server_log(tmp_dir)
     db_path = tmp_dir / "test.db"
     work_dir = app_work_dir
 
@@ -269,14 +288,14 @@ def _app_server(app_work_dir, app_port):
             "127.0.0.1",
         ],
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=log,
         stderr=subprocess.STDOUT,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
 
     if not _wait_for_server("127.0.0.1", app_port, timeout=30):
         proc.kill()
-        stdout = proc.stdout.read().decode() if proc.stdout else ""
+        stdout = _server_log_text(log)
         pytest.fail(f"Shiny app did not start within 30 s.\nOutput:\n{stdout}")
 
     yield proc
@@ -287,6 +306,7 @@ def _app_server(app_work_dir, app_port):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+    log.close()
 
 
 @pytest.fixture(scope="session")
@@ -431,6 +451,7 @@ def auth_app_port():
 def _auth_app_server(tmp_path_factory, auth_app_port):
     """Start a server-mode Shiny app with authentication enabled."""
     tmp_dir = tmp_path_factory.mktemp("shyfem_ui_auth_test")
+    log = _open_server_log(tmp_dir)
     db_path = tmp_dir / "auth_test.db"
     work_dir = tmp_dir / "work"
     work_dir.mkdir()
@@ -473,14 +494,14 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
             str(work_dir),
         ],
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=log,
         stderr=subprocess.STDOUT,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
 
     if not _wait_for_server("127.0.0.1", auth_app_port, timeout=30):
         proc.kill()
-        stdout = proc.stdout.read().decode() if proc.stdout else ""
+        stdout = _server_log_text(log)
         pytest.fail(f"Auth app did not start within 30 s.\nOutput:\n{stdout}")
 
     yield proc
@@ -491,6 +512,7 @@ def _auth_app_server(tmp_path_factory, auth_app_port):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+    log.close()
 
 
 @pytest.fixture(scope="session")
@@ -568,6 +590,7 @@ def ws_identity_app_port():
 def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
     """Start the seeded server-mode app for WS trusted-identity E2E tests."""
     tmp_dir = tmp_path_factory.mktemp("shyfem_ui_ws_identity")
+    log = _open_server_log(tmp_dir)
     db_path = tmp_dir / "ws_identity.db"
     work_dir = tmp_dir / "work"
     work_dir.mkdir()
@@ -607,14 +630,14 @@ def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
             str(work_dir),
         ],
         env=env,
-        stdout=subprocess.PIPE,
+        stdout=log,
         stderr=subprocess.STDOUT,
         cwd=str(Path(__file__).resolve().parent.parent),
     )
 
     if not _wait_for_server("127.0.0.1", ws_identity_app_port, timeout=30):
         proc.kill()
-        stdout = proc.stdout.read().decode() if proc.stdout else ""
+        stdout = _server_log_text(log)
         pytest.fail(f"WS-identity app did not start within 30 s.\nOutput:\n{stdout}")
 
     proc.db_path = db_path  # tests that change accounts mid-session need it
@@ -626,6 +649,7 @@ def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+    log.close()
 
 
 @pytest.fixture(scope="session")
@@ -641,9 +665,20 @@ def ws_identity_db_path(_ws_identity_app_server):
 
 
 def _wait_hydrated(page):
-    """Block until Shiny's WS is live and the dashboard health badge rendered."""
+    """Block until Shiny's session is initialised and, while the Dashboard is
+    the active page, its health badge has rendered.
+
+    A non-admin is sent to Tutorial by whoami's callback; when that runs
+    before Shiny initialises, the Dashboard is hidden at bind time and its
+    outputs stay unrendered until the user opens it. Requiring the badge then
+    hung every non-admin fixture (seen in CI 2026-10-16).
+    """
     page.wait_for_function(
         "() => {"
+        "  const S = window.Shiny;"
+        "  if (!S || !S.initializedPromise || !S.initializedPromise.resolved()) return false;"
+        '  const dash = document.getElementById("sf-page-Dashboard");'
+        '  if (dash && !dash.classList.contains("active")) return true;'
         '  const el = document.getElementById("home-system_health_count");'
         '  return el && !el.classList.contains("recalculating") && el.children.length > 0;'
         "}",

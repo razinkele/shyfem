@@ -535,13 +535,24 @@ document.addEventListener('DOMContentLoaded', function() {
   fetch('api/whoami').then(function(r) { return r.json(); }).then(function(data) {
     var el = document.getElementById('sf-current-username');
     if (el) el.textContent = data.display_name || data.username || '';
-    // Propagate role into Shiny so server-side guards can use input.current_user_role()
-    if (window.Shiny && window.Shiny.setInputValue) {
-      window.Shiny.setInputValue('current_user_role', data.role || '');
-    }
-    // Push WS-auth token so the server can resolve identity in the WebSocket scope
-    if (data.ws_token && window.Shiny && window.Shiny.setInputValue) {
-      window.Shiny.setInputValue('_wsauth', data.ws_token, {priority: 'event'});
+    // Push role + WS-auth token (server-side identity) into Shiny. whoami can
+    // answer before Shiny's initialize() has defined setInputValue -- the two
+    // land within a millisecond -- and a push skipped then is never retried:
+    // the session stays fail-closed (no projects, no writes) until a reload.
+    // initializedPromise exists from shiny.js load and resolves on
+    // shiny:sessioninitialized, after the init message (sending earlier, at
+    // shiny:connected, kills the session with a ProtocolError).
+    if (window.Shiny && window.Shiny.initializedPromise) {
+      window.Shiny.initializedPromise.then(function() {
+        // Role so server-side guards can use input.current_user_role()
+        window.Shiny.setInputValue('current_user_role', data.role || '');
+        // Token so the server can resolve identity in the WebSocket scope
+        if (data.ws_token) {
+          window.Shiny.setInputValue('_wsauth', data.ws_token, {priority: 'event'});
+        }
+      });
+    } else {
+      console.error('[SHYFEM] Shiny not loaded; WS identity not pushed');
     }
 
     // Hide admin-only sidebar items and pages for non-admin users

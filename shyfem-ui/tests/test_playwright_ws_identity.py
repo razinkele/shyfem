@@ -72,12 +72,22 @@ def _project_pid(page, name: str):
 def _wait_identity_resolved_for_viewer(page):
     """Block until the async WS identity has resolved for viewer1.
 
-    On connect the dashboard first renders the unauthenticated view (recent
-    projects, no per-user filter). Once ``_wsauth`` resolves, the list is
-    re-filtered to projects viewer1 may see — ``Private`` (not shared with
-    viewer1) disappears. Its absence is the observable proof that
-    ``current_user()`` now returns the viewer, not None.
+    On connect the dashboard renders fail-closed (no projects) until
+    ``_wsauth`` resolves; then the list holds exactly the projects viewer1 may
+    see — ``Shared`` but not ``Private``. That content is the observable proof
+    that ``current_user()`` returns the viewer, not None.
+
+    A non-admin lands on Tutorial with the Dashboard hidden, and Shiny does
+    not re-render hidden outputs, so open the Dashboard (as a real viewer
+    does) once the server reports identity resolved. Before the push waited
+    for Shiny's init, these tests passed only when the token happened to
+    arrive before the Dashboard was hidden.
     """
+    page.wait_for_function(
+        "() => !!document.getElementById('sf-ws-ready-marker')",
+        timeout=30000,
+    )
+    page.evaluate("() => shyfemNavTo('Dashboard')")
     page.wait_for_function(
         """() => {
             const links = Array.from(
@@ -353,3 +363,84 @@ class TestLiveIdentityRevocation:
             assert page.locator(".shiny-notification-warning").count() == 0
         finally:
             _set_active(1)  # session-scoped server: leave the account usable
+
+
+# Holds back Shiny's client ``initialize()`` -- the step that defines
+# ``Shiny.setInputValue`` -- so ``api/whoami`` is guaranteed to answer first.
+# Unforced, the two land within a millisecond of each other (measured
+# 2026-10-16: whoami JSON at 570 ms, setInputValue at 570 ms), which is the
+# order a slow CI runner sometimes flipped.
+_DELAY_SHINY_INIT = """
+(() => {
+  let shiny;
+  Object.defineProperty(window, 'Shiny', {
+    configurable: true,
+    get() { return shiny; },
+    set(v) {
+      shiny = v;
+      if (v && typeof v.initialize === 'function' && !v.__sfDelayed) {
+        v.__sfDelayed = true;
+        const init = v.initialize.bind(v);
+        v.initialize = () => new Promise((r) => setTimeout(r, 1500)).then(init);
+      }
+    },
+  });
+})();
+"""
+
+
+class TestIdentityPushSurvivesLateShinyInit:
+    def test_identity_resolves_when_whoami_beats_shiny_init(
+        self, pw_browser, ws_identity_live_server
+    ):
+        """The ``_wsauth`` push must wait for Shiny, not be skipped.
+
+        whoami is fetched at DOMContentLoaded; Shiny defines ``setInputValue``
+        a timer tick after jQuery-ready. When whoami won that race, the old
+        ``if (window.Shiny && window.Shiny.setInputValue)`` guard dropped the
+        token silently, ``current_user()`` stayed None for the whole session,
+        and the dashboard rendered fail-closed: no projects, no Share button
+        (the intermittent ``test_admin_sees_share_button`` CI failure).
+        """
+        ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+        ctx.add_init_script(_DELAY_SHINY_INIT)
+        page = ctx.new_page()
+        page.set_default_timeout(15000)
+        try:
+            _login(page, ws_identity_live_server, "admin", "testpass")
+            _wait_hydrated(page)
+            page.wait_for_function(
+                "() => !!document.getElementById('sf-ws-ready-marker')",
+                timeout=15000,
+            )
+            page.wait_for_function(
+                "() => document.querySelectorAll("
+                "\"#home-projects_list a[id^='home-share_']\").length >= 1",
+                timeout=15000,
+            )
+        finally:
+            page.close()
+            ctx.close()
+
+    def test_viewer_hydrates_when_whoami_beats_shiny_init(
+        self, pw_browser, ws_identity_live_server
+    ):
+        """A non-admin whose Dashboard is hidden before Shiny's first flush.
+
+        whoami's callback sends non-admins to Tutorial; when it runs before
+        Shiny initialises, the Dashboard is hidden at bind time and its
+        outputs (the hydration badge among them) never render until the user
+        opens it. Hydration must not depend on a Dashboard output -- this is
+        the ordering that took down every viewer fixture in CI.
+        """
+        ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+        ctx.add_init_script(_DELAY_SHINY_INIT)
+        page = ctx.new_page()
+        page.set_default_timeout(15000)
+        try:
+            _login(page, ws_identity_live_server, VIEWER_USERNAME, VIEWER_PASSWORD)
+            _wait_hydrated(page)
+            _wait_identity_resolved_for_viewer(page)
+        finally:
+            page.close()
+            ctx.close()
