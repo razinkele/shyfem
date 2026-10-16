@@ -303,3 +303,93 @@ class TestProxyMisconfigWarning:
             RateLimitMiddleware(_mock_app, rpm=120, trusted_proxies=["127.0.0.0/8"])
         msgs = " ".join(r.getMessage() for r in caplog.records).lower()
         assert "trusted_proxies" not in msgs and "one bucket" not in msgs
+
+
+class TestStaticAssetBucket:
+    """Static assets have their own, much larger per-client bucket.
+
+    One page load fetches dozens of .js/.css/font files; counted, about the
+    5th load in a minute 429'd scripts and api/whoami (broken page, identity
+    never resolved) -- and a class behind one NAT address shares one bucket.
+    The limiter is the only brute-force guard on POST /login, so only static
+    GET/HEAD requests move to the asset bucket -- and that bucket is still
+    finite: an asset request carrying a forged session cookie costs a
+    validate_session DB read in SessionAuthMiddleware.
+    """
+
+    @staticmethod
+    def _scope(path: str, method: str = "GET"):
+        return {**_http_scope(), "path": path, "method": method}
+
+    @staticmethod
+    async def _status(mw, scope):
+        sent = []
+
+        async def capture(msg):
+            sent.append(msg)
+
+        await mw(scope, _noop_receive, capture)
+        return sent[0]["status"]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/shared/shiny.js",
+            "/lib/bootstrap-5.3.1/font.css",
+            "/deckgl-init.js",
+            "/lib/fonts/inter.woff2",
+            "/favicon.ico",
+            "/CSS/Site.CSS",
+        ],
+    )
+    async def test_static_assets_use_the_larger_bucket(self, path):
+        mw = RateLimitMiddleware(_mock_app, rpm=2)
+        for _ in range(10):
+            assert await self._status(mw, self._scope(path)) == 200
+
+    @pytest.mark.asyncio
+    async def test_static_assets_do_not_consume_the_bucket(self):
+        """Assets fetched first leave the whole budget for dynamic requests."""
+        mw = RateLimitMiddleware(_mock_app, rpm=2)
+        for _ in range(50):
+            await self._status(mw, self._scope("/shared/shiny.js"))
+        assert await self._status(mw, self._scope("/api/whoami")) == 200
+        assert await self._status(mw, self._scope("/api/whoami")) == 200
+        assert await self._status(mw, self._scope("/api/whoami")) == 429
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "path,method",
+        [
+            ("/login", "POST"),  # the brute-force target must stay counted
+            ("/login.js", "POST"),  # an asset extension does not exempt a write
+            ("/api/whoami", "GET"),
+            ("/", "GET"),
+            ("/session/abc123/download/report.png", "GET"),  # dynamic route
+            ("/shyfem/session/abc123/download/report.png", "GET"),  # behind a root_path
+            ("/shared/shiny.js/", "GET"),  # not a file path
+        ],
+    )
+    async def test_non_static_requests_still_limited(self, path, method):
+        mw = RateLimitMiddleware(_mock_app, rpm=2)
+        scope = self._scope(path, method)
+        assert await self._status(mw, scope) == 200
+        assert await self._status(mw, scope) == 200
+        assert await self._status(mw, scope) == 429
+
+    @pytest.mark.asyncio
+    async def test_default_static_bucket_is_twenty_times_rpm(self):
+        mw = RateLimitMiddleware(_mock_app, rpm=2)
+        for _ in range(40):
+            assert await self._status(mw, self._scope("/shared/shiny.js")) == 200
+        assert await self._status(mw, self._scope("/shared/shiny.js")) == 429
+
+    @pytest.mark.asyncio
+    async def test_static_bucket_is_capped_without_touching_dynamic(self):
+        """A static-asset flood is 429'd at static_rpm and leaves login alone."""
+        mw = RateLimitMiddleware(_mock_app, rpm=2, static_rpm=3)
+        for _ in range(3):
+            assert await self._status(mw, self._scope("/x.js")) == 200
+        assert await self._status(mw, self._scope("/x.js")) == 429
+        assert await self._status(mw, self._scope("/login", "POST")) == 200
