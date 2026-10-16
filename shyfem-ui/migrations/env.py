@@ -14,9 +14,15 @@ from alembic import context
 # Alembic Config object
 config = context.config
 
-# Set up loggers from the .ini file
+# Set up loggers from the .ini file. disable_existing_loggers=False is
+# load-bearing: fileConfig's default (True) permanently disables every logger
+# that already exists -- every module-level logging.getLogger(__name__) in the
+# app -- the first time a migration runs in-process. init_db() additionally
+# skips this block (it nulls config_file_name, see db/base.py) so alembic.ini
+# does not also replace the root logger's handlers; this kwarg is the guard
+# for every other caller (tests/test_alembic_logging.py).
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Import every model module so Base.metadata is fully populated for
 # autogenerate. Skipping a module here causes autogenerate to silently
