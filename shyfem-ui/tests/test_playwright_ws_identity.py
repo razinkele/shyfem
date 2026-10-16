@@ -408,6 +408,7 @@ class TestIdentityPushSurvivesLateShinyInit:
         page.set_default_timeout(15000)
         try:
             _login(page, ws_identity_live_server, "admin", "testpass")
+            _wait_hydrated(page)
             page.wait_for_function(
                 "() => !!document.getElementById('sf-ws-ready-marker')",
                 timeout=15000,
@@ -417,6 +418,29 @@ class TestIdentityPushSurvivesLateShinyInit:
                 "\"#home-projects_list a[id^='home-share_']\").length >= 1",
                 timeout=15000,
             )
+        finally:
+            page.close()
+            ctx.close()
+
+    def test_viewer_hydrates_when_whoami_beats_shiny_init(
+        self, pw_browser, ws_identity_live_server
+    ):
+        """A non-admin whose Dashboard is hidden before Shiny's first flush.
+
+        whoami's callback sends non-admins to Tutorial; when it runs before
+        Shiny initialises, the Dashboard is hidden at bind time and its
+        outputs (the hydration badge among them) never render until the user
+        opens it. Hydration must not depend on a Dashboard output -- this is
+        the ordering that took down every viewer fixture in CI.
+        """
+        ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+        ctx.add_init_script(_DELAY_SHINY_INIT)
+        page = ctx.new_page()
+        page.set_default_timeout(15000)
+        try:
+            _login(page, ws_identity_live_server, VIEWER_USERNAME, VIEWER_PASSWORD)
+            _wait_hydrated(page)
+            _wait_identity_resolved_for_viewer(page)
         finally:
             page.close()
             ctx.close()

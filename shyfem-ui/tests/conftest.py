@@ -665,9 +665,20 @@ def ws_identity_db_path(_ws_identity_app_server):
 
 
 def _wait_hydrated(page):
-    """Block until Shiny's WS is live and the dashboard health badge rendered."""
+    """Block until Shiny's session is initialised and, while the Dashboard is
+    the active page, its health badge has rendered.
+
+    A non-admin is sent to Tutorial by whoami's callback; when that runs
+    before Shiny initialises, the Dashboard is hidden at bind time and its
+    outputs stay unrendered until the user opens it. Requiring the badge then
+    hung every non-admin fixture (seen in CI 2026-10-16).
+    """
     page.wait_for_function(
         "() => {"
+        "  const S = window.Shiny;"
+        "  if (!S || !S.initializedPromise || !S.initializedPromise.resolved()) return false;"
+        '  const dash = document.getElementById("sf-page-Dashboard");'
+        '  if (dash && !dash.classList.contains("active")) return true;'
         '  const el = document.getElementById("home-system_health_count");'
         '  return el && !el.classList.contains("recalculating") && el.children.length > 0;'
         "}",
