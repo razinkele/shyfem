@@ -110,6 +110,32 @@ class TestUserCRUD:
     def test_reset_password_not_found(self, auth_service):
         assert auth_service.reset_password(9999, "whatever") is False
 
+    def test_reset_password_revokes_open_sessions(self, auth_service):
+        """A reset must cut off sessions opened with the old password -- an
+        open browser tab and a stolen cookie alike. Before, both kept working
+        until they expired (the L31 class: a credential change that never
+        reached a live session)."""
+        user = auth_service.create_user("eve", "old-pass", email="eve@example.com")
+        sess = auth_service.create_session(user["id"])
+        ws = auth_service.create_ws_token(user["id"], sess)
+        assert auth_service.validate_ws_token(ws) is not None
+
+        auth_service.reset_password(user["id"], "new-pass")
+
+        assert auth_service.validate_session(sess) is None
+        assert auth_service.validate_ws_token(ws) is None
+
+    def test_reset_password_leaves_other_users_sessions(self, auth_service):
+        eve = auth_service.create_user("eve", "pass", email="eve@example.com")
+        bob = auth_service.create_user("bob", "pass", email="bob@example.com")
+        bob_sess = auth_service.create_session(bob["id"])
+        bob_ws = auth_service.create_ws_token(bob["id"], bob_sess)
+
+        auth_service.reset_password(eve["id"], "new-pass")
+
+        assert auth_service.validate_session(bob_sess) is not None
+        assert auth_service.validate_ws_token(bob_ws) is not None
+
     def test_change_role(self, auth_service):
         created = auth_service.create_user("frank", "pass", email="frank@example.com")
         updated = auth_service.update_user(created["id"], role="admin")
