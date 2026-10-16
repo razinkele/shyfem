@@ -1308,7 +1308,8 @@
           call keps(numOfLev,dt,rho0 &
      &		,taus,taub &
      &		,hdknv(lmin,k),uprv(lmin,k),vprv(lmin,k) &
-     &		,rhoabs,visv(0,k),difv(0,k),tken(0,k),eps(0,k))
+     &		,rhoabs,visv(lmin-1,k),difv(lmin-1,k) &
+     &		,tken(lmin-1,k),eps(lmin-1,k))
 
 	end do
 

@@ -56,14 +56,14 @@
 	  ud(j) = u(j)
 	end do
 
-	if(b(1).eq.0.) stop 'error stop tridag: matrix singular'
+	if(b(1).eq.0.) call shympi_abort_internal('error stop tridag: matrix singular')
 	bet=b(1)
 	ud(1)=r(1)/bet
 
 	do j=2,n
 	  gam(j)=c(j-1)/bet
 	  bet=b(j)-a(j)*gam(j)
-	  if(bet.eq.0.) stop 'error stop tridag: matrix singular'
+	  if(bet.eq.0.) call shympi_abort_internal('error stop tridag: matrix singular')
 	  ud(j)=(r(j)-a(j)*ud(j-1))/bet
 	end do
 
@@ -91,14 +91,14 @@
 	integer j
 	real bet
 
-	if(b(1).eq.0.) stop 'error stop tridag: matrix singular'
+	if(b(1).eq.0.) call shympi_abort_internal('error stop tridag: matrix singular')
 	bet=b(1)
 	u(1)=r(1)/bet
 
 	do j=2,n
 	  gam(j)=c(j-1)/bet
 	  bet=b(j)-a(j)*gam(j)
-	  if(bet.eq.0.) stop 'error stop tridag: matrix singular'
+	  if(bet.eq.0.) call shympi_abort_internal('error stop tridag: matrix singular')
 	  u(j)=(r(j)-a(j)*u(j-1))/bet
 	end do
 
