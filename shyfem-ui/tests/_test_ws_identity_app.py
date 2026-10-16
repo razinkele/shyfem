@@ -29,6 +29,9 @@ from shyfem_ui.config import Config, set_config  # noqa: E402
 
 VIEWER_USERNAME = "viewer1"
 VIEWER_PASSWORD = "viewerpass"
+# Editor on Shared whose account the L31 E2E deactivates mid-session.
+DEMOTEE_USERNAME = "demotee"
+DEMOTEE_PASSWORD = "demoteepass"
 SHARED_PROJECT = "Shared"
 PRIVATE_PROJECT = "Private"
 
@@ -91,6 +94,23 @@ def _seed(config: Config) -> None:
 
     # --- share "Shared" with viewer1 at viewer permission (idempotent)
     SharingService().share_project(shared_id, viewer_id, role="viewer")
+
+    # --- demotee: an editor on Shared, deactivated mid-session by the L31 test
+    db = session_factory()
+    try:
+        demotee = db.query(User).filter_by(username=DEMOTEE_USERNAME).first()
+        demotee_id = demotee.id if demotee is not None else None
+    finally:
+        db.close()
+    if demotee_id is None:
+        demotee_id = auth.create_user(
+            DEMOTEE_USERNAME,
+            DEMOTEE_PASSWORD,
+            role="user",
+            email="demotee@example.com",
+            user_data_root=config.user_data_root,
+        )["id"]
+    SharingService().share_project(shared_id, demotee_id, role="editor")
 
 
 if __name__ == "__main__":

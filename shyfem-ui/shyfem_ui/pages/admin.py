@@ -99,6 +99,33 @@ def _check_admin_access(user: dict | None) -> bool:
     return user.get("role") == ROLE_ADMIN
 
 
+def _admin_decision(current_user, fallback_user, *, server_mode: bool) -> bool:
+    """Decide admin access for one action.
+
+    ``current_user`` is the live, server-validated WS identity (re-checked
+    against the DB on every call) or None when the caller has no resolver.
+    ``fallback_user`` returns the ContextVar user the middleware set when the
+    WebSocket opened -- a snapshot, stale as soon as an admin changes a role.
+
+    In server mode the live identity is authoritative: falling back to the
+    snapshot whenever it said "not admin" (or "no longer valid") let a demoted
+    admin keep admin rights until reconnect (L31). The snapshot is used only
+    when there is no resolver, or in local mode, where no WS token exists and
+    the snapshot is the synthetic local admin.
+    """
+    if current_user is not None:
+        try:
+            live = current_user()
+        except Exception:
+            logger.debug("current_user() not yet available", exc_info=True)
+            live = None
+        if server_mode:
+            return _check_admin_access(live)
+        if _check_admin_access(live):
+            return True
+    return _check_admin_access(fallback_user())
+
+
 # ---------------------------------------------------------------------------
 # Shiny UI module
 # ---------------------------------------------------------------------------
@@ -223,7 +250,16 @@ def admin_server(
     def _audit(action: str, detail: str | None = None):
         """Write an audit log entry for the current admin user."""
         if audit_service is not None:
-            user = get_current_user()
+            # The live WS identity: get_current_user() is the handshake
+            # ContextVar, None behind Shiny Server (rows read "unknown").
+            user = None
+            if current_user is not None:
+                try:
+                    user = current_user()
+                except Exception:
+                    user = None
+            if user is None:
+                user = get_current_user()
             username = user["username"] if user else "unknown"
             audit_service.log(username=username, action=action, detail=detail)
 
@@ -238,13 +274,11 @@ def admin_server(
         authorization boundary lets any authenticated user self-promote to
         admin. ``user_role()`` remains only a cosmetic hint for rendering.
         """
-        if current_user is not None:
-            try:
-                if _check_admin_access(current_user()):
-                    return True
-            except Exception:
-                logger.debug("current_user() not yet available", exc_info=True)
-        return _check_admin_access(get_current_user())
+        return _admin_decision(
+            current_user,
+            get_current_user,
+            server_mode=config.deployment_mode == "server",
+        )
 
     # Reactive value holding user list (always defined so render functions can reference it)
     users_data: reactive.Value[list[dict]] = reactive.value([])
