@@ -118,6 +118,36 @@ async def list_scoped_jobs(
     return await job_queue.list_jobs(limit=limit, user_id=uid)
 
 
+def list_scoped_workflows(
+    workflow_engine,
+    is_server_mode: bool,
+    current_user_fn: Callable[[], dict | None] | None,
+    show_all_fn: Callable[[], bool] | None = None,
+    limit: int = 10,
+) -> list:
+    """Per-user workflow listing, scoped exactly like :func:`list_scoped_jobs`.
+
+    The workflow history used to list every user's workflows to everyone
+    (``create_workflow`` recorded no owner). Local mode is unfiltered; in
+    server mode an unresolved identity sees nothing (no query is issued),
+    a user sees their own, and only an admin who asks for it sees all --
+    including rows created before owners were recorded (``user_id`` NULL),
+    which no non-admin can match.
+    """
+    if not is_server_mode:
+        return workflow_engine.list_workflows(limit=limit)
+
+    from shyfem_ui.models.user import ROLE_ADMIN
+
+    usr = current_user_fn() if current_user_fn is not None else None
+    if usr is None:
+        return []
+
+    requested_show_all = bool(show_all_fn()) if show_all_fn is not None else False
+    show_all = requested_show_all and usr.get("role") == ROLE_ADMIN
+    return workflow_engine.list_workflows(limit=limit, user_id=None if show_all else usr["id"])
+
+
 def get_solver_recommendation(num_nodes: int | None, threshold: int) -> dict[str, str | None]:
     """Return solver recommendation based on mesh node count.
 

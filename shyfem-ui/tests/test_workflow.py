@@ -212,6 +212,33 @@ class TestWorkflowEngine:
         assert engine.get_workflow("99999") is None
 
     @pytest.mark.asyncio
+    async def test_create_workflow_records_owner(self, engine, tmp_path, session_factory):
+        """The owner and project are stored so listings can be scoped."""
+        from shyfem_ui.models.workflow import Workflow
+
+        wf_id = await engine.create_workflow(
+            "grid_only",
+            working_dir=tmp_path,
+            params={"input_grd": "/tmp/test.grd"},
+            user_id=7,
+            project_id=3,
+        )
+        with session_factory() as s:
+            row = s.get(Workflow, int(wf_id))
+            assert (row.user_id, row.project_id) == (7, 3)
+
+    @pytest.mark.asyncio
+    async def test_list_workflows_filters_by_user(self, engine, tmp_path):
+        mine = await engine.create_workflow(
+            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/a.grd"}, user_id=7
+        )
+        theirs = await engine.create_workflow(
+            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/b.grd"}, user_id=8
+        )
+        assert [w.id for w in engine.list_workflows(user_id=7)] == [mine]
+        assert {w.id for w in engine.list_workflows()} >= {mine, theirs}
+
+    @pytest.mark.asyncio
     async def test_list_workflows(self, engine, tmp_path):
         """Test listing all workflows."""
         await engine.create_workflow(

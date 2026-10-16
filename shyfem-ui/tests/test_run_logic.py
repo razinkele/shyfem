@@ -15,6 +15,7 @@ from shyfem_ui.services.run_logic import (
     build_job_spec,
     compute_restart_choices,
     list_scoped_jobs,
+    list_scoped_workflows,
     restart_info_text,
     restart_selection_denied_reason,
     write_restart_str,
@@ -654,3 +655,53 @@ class TestListScopedJobs:
         await list_scoped_jobs(q, True, lambda: VIEWER, limit=5)
 
         assert q.calls[-1]["limit"] == 5
+
+
+class _FakeWorkflowEngine:
+    """Records list_workflows calls; filters like the real DB query."""
+
+    def __init__(self, owners: dict[str, int | None]):
+        self.owners = owners  # workflow id -> user_id
+        self.calls: list[dict] = []
+
+    def list_workflows(self, limit: int = 50, user_id: int | None = None):
+        self.calls.append({"limit": limit, "user_id": user_id})
+        return [wid for wid, uid in self.owners.items() if user_id is None or uid == user_id][
+            :limit
+        ]
+
+
+class TestListScopedWorkflows:
+    """The workflow history used to list every user's workflows to everyone:
+    create_workflow never recorded an owner. Scoped exactly like
+    list_scoped_jobs."""
+
+    def test_local_mode_is_unfiltered(self):
+        e = _FakeWorkflowEngine({"a": 1, "b": 2})
+        assert set(list_scoped_workflows(e, False, None)) == {"a", "b"}
+        assert e.calls[-1]["user_id"] is None
+
+    def test_server_mode_scopes_to_own_user_id(self):
+        e = _FakeWorkflowEngine({"mine": 2, "theirs": 3, "legacy": None})
+        assert list_scoped_workflows(e, True, lambda: VIEWER) == ["mine"]
+        assert e.calls[-1]["user_id"] == 2
+
+    def test_unresolved_identity_fails_closed_without_query(self):
+        e = _FakeWorkflowEngine({"mine": 2})
+        assert list_scoped_workflows(e, True, lambda: None) == []
+        assert list_scoped_workflows(e, True, None) == []
+        assert e.calls == []
+
+    def test_admin_show_all_is_unfiltered(self):
+        e = _FakeWorkflowEngine({"mine": 1, "theirs": 2, "legacy": None})
+        got = list_scoped_workflows(e, True, lambda: ADMIN, show_all_fn=lambda: True)
+        assert set(got) == {"mine", "theirs", "legacy"}
+
+    def test_admin_without_show_all_sees_own(self):
+        e = _FakeWorkflowEngine({"mine": 1, "theirs": 2})
+        assert list_scoped_workflows(e, True, lambda: ADMIN) == ["mine"]
+
+    def test_non_admin_show_all_request_is_downgraded(self):
+        e = _FakeWorkflowEngine({"mine": 2, "theirs": 3})
+        got = list_scoped_workflows(e, True, lambda: VIEWER, show_all_fn=lambda: True)
+        assert got == ["mine"]

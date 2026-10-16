@@ -473,6 +473,8 @@ class WorkflowEngine:
         working_dir: Path | str = "",
         params: dict[str, str] | None = None,
         name: str | None = None,
+        user_id: int | None = None,
+        project_id: int | None = None,
     ) -> str:
         """Create and start a workflow from a template.
 
@@ -482,6 +484,8 @@ class WorkflowEngine:
             params: Template parameter values like {"input_grd": "/path/to/file.grd",
                     "input_str": "/path/to/file.str", "mpi_np": "4"}
             name: Custom workflow name
+            user_id: Owner (server-validated identity's id); scopes listings
+            project_id: Project the workflow was launched from
 
         Returns:
             Workflow ID (as string representation of the DB integer PK)
@@ -525,6 +529,8 @@ class WorkflowEngine:
                 steps=_pack_steps(wf),
                 created_at=wf.created_at,
                 updated_at=wf.created_at,
+                user_id=user_id,
+                project_id=project_id,
             )
             session.add(row)
             session.commit()
@@ -585,11 +591,18 @@ class WorkflowEngine:
         finally:
             session.close()
 
-    def list_workflows(self, limit: int = 50) -> list[WorkflowInstance]:
-        """List all workflows, newest first."""
+    def list_workflows(self, limit: int = 50, user_id: int | None = None) -> list[WorkflowInstance]:
+        """List workflows newest first; only ``user_id``'s when given.
+
+        Callers in server mode go through ``run_logic.list_scoped_workflows``,
+        which decides the ``user_id`` from the server-validated identity.
+        """
         session = self._get_session()
         try:
-            rows = session.query(Workflow).order_by(Workflow.created_at.desc()).limit(limit).all()
+            query = session.query(Workflow)
+            if user_id is not None:
+                query = query.filter(Workflow.user_id == user_id)
+            rows = query.order_by(Workflow.created_at.desc()).limit(limit).all()
             return [_row_to_instance(r) for r in rows]
         finally:
             session.close()
