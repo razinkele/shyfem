@@ -787,7 +787,7 @@
 	month = month0
 	day = day0
 	hour = hour0
-	day = day0
+	min = min0
 	sec = sec0
 
 	end

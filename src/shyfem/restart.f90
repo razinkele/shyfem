@@ -836,8 +836,14 @@
 	time = 0
 	iflag = 0
 
-        if( nvers >= 9 ) read(iunit) date,time
-        if( nvers >= 11 ) read(iunit) atime
+        if( nvers >= 9 ) then
+          read(iunit,iostat=ios) date,time
+          call rst_check_read(ios,'date/time')
+        end if
+        if( nvers >= 11 ) then
+          read(iunit,iostat=ios) atime
+          call rst_check_read(ios,'atime')
+        end if
 
 	if( nvers <= 10 ) then
 	  it = idfile
@@ -851,7 +857,8 @@
 	  return
 	end if
 
-        read(iunit) nkn,nel,nlv
+        read(iunit,iostat=ios) nkn,nel,nlv
+        call rst_check_read(ios,'nkn/nel/nlv')
 
 	allocate(ival(nel),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
@@ -886,11 +893,16 @@
 	  write(iuout,*) ilhkrst
 	end if
 
-	read(iunit) ival(1:nel)
-	read(iunit) rval2d(1:nkn)
-	read(iunit) rval2d3(1:3*nel)
-	read(iunit) rval3d1(1:nlv*nel)
-	read(iunit) rval3d2(1:nlv*nel)
+	read(iunit,iostat=ios) ival(1:nel)
+	call rst_check_read(ios,'iwegv')
+	read(iunit,iostat=ios) rval2d(1:nkn)
+	call rst_check_read(ios,'znv')
+	read(iunit,iostat=ios) rval2d3(1:3*nel)
+	call rst_check_read(ios,'zenv')
+	read(iunit,iostat=ios) rval3d1(1:nlv*nel)
+	call rst_check_read(ios,'utlnv')
+	read(iunit,iostat=ios) rval3d2(1:nlv*nel)
+	call rst_check_read(ios,'vtlnv')
 
 	if( brewrite ) then
 	  write(iuout,*) 'rst: iwegv'
@@ -906,9 +918,12 @@
 	end if
 
 	if( nvers .eq. 18 ) then	!upstream shyfemcm old-time levels
-	  read(iunit) ival(1:nel)
-	  read(iunit) rval2d(1:nkn)
-	  read(iunit) rval2d3(1:3*nel)
+	  read(iunit,iostat=ios) ival(1:nel)
+	  call rst_check_read(ios,'iwetv')
+	  read(iunit,iostat=ios) rval2d(1:nkn)
+	  call rst_check_read(ios,'zov')
+	  read(iunit,iostat=ios) rval2d3(1:3*nel)
+	  call rst_check_read(ios,'zeov')
 	  if( brewrite ) then
 	    write(iuout,*) 'rst: iwetv'
 	    write(iuout,*) ival(1:nel)
@@ -922,7 +937,8 @@
 	if( nvers .ge. 4 ) then
 	  id = id_depth_rst
 	  call rst_add_flag(id,iflag)
-	  read(iunit) rval2d3(1:3*nel)
+	  read(iunit,iostat=ios) rval2d3(1:3*nel)
+	  call rst_check_read(ios,'hm3v')
 	  if( brewrite ) then
 	    write(iuout,*) 'rst: hm3v'
 	    write(iuout,*) rval2d3(1:3*nel)
@@ -931,12 +947,16 @@
 
 	if( nvers .ge. 5 ) then
 	  id = id_barcl_rst
-	  read(iunit) ibarcl
+	  read(iunit,iostat=ios) ibarcl
+	  call rst_check_read(ios,'ibarcl')
 	  if( ibarcl .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
-	    read(iunit) rval3d1(1:nlv*nkn)
-	    read(iunit) rval3d2(1:nlv*nkn)
-	    read(iunit) rval3d3(1:nlv*nkn)
+	    read(iunit,iostat=ios) rval3d1(1:nlv*nkn)
+	    call rst_check_read(ios,'saltv')
+	    read(iunit,iostat=ios) rval3d2(1:nlv*nkn)
+	    call rst_check_read(ios,'tempv')
+	    read(iunit,iostat=ios) rval3d3(1:nlv*nkn)
+	    call rst_check_read(ios,'rhov')
 	  end if
 	end if
 
@@ -951,7 +971,8 @@
 
 	if( nvers .ge. 15 ) then
 	  id = id_gotm_rst
-	  read(iunit) iturb
+	  read(iunit,iostat=ios) iturb
+	  call rst_check_read(ios,'iturb')
 	  if( iturb .eq. 1 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_gotm(iunit)
@@ -960,7 +981,8 @@
 
 	if( nvers .ge. 6 ) then
 	  id = id_conz_rst
-	  read(iunit) iconz
+	  read(iunit,iostat=ios) iconz
+	  call rst_check_read(ios,'iconz')
 	  iconz_rst = iconz	!export tracer count (rst2shy needs it)
 	  if( iconz .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
@@ -970,10 +992,12 @@
 
 	if( nvers .ge. 7 ) then
 	  id = id_wvert_rst
-	  read(iunit) iwvert
+	  read(iunit,iostat=ios) iwvert
+	  call rst_check_read(ios,'iwvert')
 	  if( iwvert .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
-	    read(iunit) rval3d1((nlv+1)*nkn)
+	    read(iunit,iostat=ios) rval3d1((nlv+1)*nkn)
+	    call rst_check_read(ios,'wlnv')
 	    if( brewrite ) then
 	      write(iuout,*) 'rst: wlnv'
 	      write(iuout,*) rval3d1((nlv+1)*nkn)
@@ -983,7 +1007,8 @@
 
 	if( nvers .ge. 8 ) then
 	  id = id_eco_rst
-          read(iunit) ieco
+          read(iunit,iostat=ios) ieco
+          call rst_check_read(ios,'ieco')
           if( ieco .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_eco(iunit)
@@ -992,7 +1017,8 @@
 
 	if( nvers .ge. 12 ) then
 	  id = id_merc_rst
-          read(iunit) imerc
+          read(iunit,iostat=ios) imerc
+          call rst_check_read(ios,'imerc')
           if( imerc .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_mercury(iunit)
@@ -1001,7 +1027,8 @@
 
 	if( nvers .ge. 17 ) then
 	  id = id_bfm_rst
-          read(iunit) ibfm
+          read(iunit,iostat=ios) ibfm
+          call rst_check_read(ios,'ibfm')
           if( ibfm .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_bfm(iunit)
@@ -1010,7 +1037,8 @@
 
 	if( nvers .ge. 19 ) then
 	  id = id_ssedi_rst
-          read(iunit) issedi
+          read(iunit,iostat=ios) issedi
+          call rst_check_read(ios,'issedi')
           if( issedi .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
 	    call skip_restart_ssedi(iunit)

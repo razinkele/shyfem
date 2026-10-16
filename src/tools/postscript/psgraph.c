@@ -727,7 +727,7 @@ void PsSetColorRange( float col )
 
 	MINMAX(col); 
 
-	i = (int) col * Csize;
+	i = (int) (col * Csize);
 	if( i >= Csize ) i = Csize-1;
 	if( i < 0 ) i = 0;
 
