@@ -1263,11 +1263,13 @@
 	use mod_hydro_print
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
+	use pkonst, only : rowass
 
 	implicit none
 
 	integer k,lmax,lmin,numOfLev,l
 	real rho0,rhoair
+	real rhoabs(nlvdi)	!absolute density - keps divides stress by it
 	real cd,cb
 	real wx,wy
 	real ubot,vbot
@@ -1283,7 +1285,7 @@
 
 	call get_timestep(dtreal)
 	dt = dtreal
-	rho0 = 1024.
+	rho0 = rowass		!rhov is relative to rowass (see baroclinic)
 	rhoair = 1.225
 	cd = 2.5e-3
 	cb = 2.5e-3
@@ -1299,10 +1301,15 @@
 	  taus = rhoair * cd * (wx*wx+wy*wy)
 	  taub = rho0 * cb * (ubot*ubot+vbot*vbot)
 
+	  ! rhov is the anomaly rho-rowass (zero without baroclinic, negative
+	  ! in fresh water); keps needs absolute density for u*^2 = tau/rho
+	  rhoabs(1:numOfLev) = rho0 + rhov(lmin:lmax,k)
+
           call keps(numOfLev,dt,rho0 &
      &		,taus,taub &
      &		,hdknv(lmin,k),uprv(lmin,k),vprv(lmin,k) &
-     &		,rhov(1,k),visv(0,k),difv(0,k),tken(0,k),eps(0,k))
+     &		,rhoabs,visv(lmin-1,k),difv(lmin-1,k) &
+     &		,tken(lmin-1,k),eps(lmin-1,k))
 
 	end do
 

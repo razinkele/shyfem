@@ -12,6 +12,7 @@ Start workers with:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable
@@ -552,7 +553,16 @@ class CeleryJobQueue(JobQueue):
         return tail_file(file_path, tail=tail)
 
     async def cleanup_old_jobs(self, days: int = 7) -> int:
-        """Remove jobs older than N days."""
+        """Remove jobs older than N days.
+
+        Awaited directly by maintenance.py; every step (Redis scan/deletes,
+        file unlinks, SQL row delete) is blocking, so the whole pass runs in a
+        worker thread instead of stalling the event loop.
+        """
+        return await asyncio.to_thread(self._cleanup_old_jobs_sync, days)
+
+    def _cleanup_old_jobs_sync(self, days: int) -> int:
+        """Blocking body of cleanup_old_jobs (run via asyncio.to_thread)."""
         rc = self._get_redis_client()
         cutoff = datetime.now() - timedelta(days=days)
         cutoff_timestamp = cutoff.timestamp()

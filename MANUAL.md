@@ -196,7 +196,7 @@ PARTS = METIS                 # NONE, METIS, PARMETIS
 METISDIR = /usr               # Path to METIS installation
 
 # Matrix solver
-SOLVER = SPARSKIT             # GAUSS, SPARSKIT, PARDISO, PETSC, PARALUTION
+SOLVER = SPARSKIT             # SPARSKIT or PETSC (GAUSS/PARDISO/PARALUTION no longer build)
 
 # NetCDF output
 NETCDF = false                # true/false

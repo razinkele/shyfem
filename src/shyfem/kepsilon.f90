@@ -327,8 +327,8 @@
 	real, intent(in) :: u(1:lmax)	!velocity in x direction
 	real, intent(in) :: v(1:lmax)	!velocity in y direction
 	real, intent(in) :: rho(1:lmax)	!density of single levels
-	real, intent(out) :: rkm(0:lmax)	!eddy coeff for momentum
-	real, intent(out) :: rkt(0:lmax)	!eddy coeff for scalars
+	real, intent(inout) :: rkm(0:lmax)	!eddy coeff for momentum
+	real, intent(inout) :: rkt(0:lmax)	!eddy coeff for scalars
 	real, intent(inout) :: k(0:lmax)	!turbulent kinetic energy
 	real, intent(inout) :: eps(0:lmax)	!turbulent dissipation
 ! parameters
@@ -399,7 +399,11 @@
 ! start of code
 !---------------------------------------------------------------------
 
-	if( lmax .gt. nlevdi ) stop 'error stop: nlevdi'
+	if( lmax .gt. nlevdi ) then
+	  write(6,*) 'too many levels for keps: ',lmax,nlevdi
+	  flush(6)
+	  call shympi_abort_internal('error stop keps: nlevdi')
+	end if
 
 	bdebug = .false.
 	lmax1 = lmax - 1
@@ -415,7 +419,7 @@
 	  dzk(l) = dh(l)
 	  dzr(l-1) = 0.5 * ( dzk(l) + dzk(l-1) )
 	end do
-	dzr(l) = 0.
+	dzr(lmax) = 0.		!was dzr(l) with l=lmax+1: past nlevdi at lmax=200
 	if( bdebug ) write(6,*) 'keps 12'
 
 	do l=1,lmax1
@@ -452,6 +456,8 @@
 	  n2(l) = ( b(l) - b(l+1) ) * dzr(l)
 	  n2(l) = max(0.,n2(l))
 	end do
+	n2(0) = 0.		!boundary interfaces: read by the k/eps limiter
+	n2(lmax) = 0.
 
 !---------------------------------------------------------------------
 ! compute horizontal shear m2 (M^2)
@@ -502,12 +508,13 @@
 	aa(0) = 0.
 	bb(0) = 1.
 	cc(0) = 0.
-	rr(0) = (taus/rho(1))**1.5 * 0.00002 / karman   !ERROR corrected
-	rr(0) = (taus/rho(1))**1.5 / (dzk(1)*karman)   !ERROR corrected
+	! log-law eps = u*^3/(kappa*L) with L = dh of the boundary layer;
+	! dzk already holds 1/dh here, so it multiplies (see dzk loop above)
+	rr(0) = (taus/rho(1))**1.5 * dzk(1) / karman
 	aa(lmax) = 0.
 	bb(lmax) = 1.
 	cc(lmax) = 0.
-	rr(lmax) = (taub/rho(lmax))**1.5 / (dzk(lmax)*karman)
+	rr(lmax) = (taub/rho(lmax))**1.5 * dzk(lmax) / karman
 
 !	---------------------------------
 !	solve system

@@ -613,11 +613,11 @@ c interpolates depth values with auto-correlation
 	real yp(np)
 	real dp(np)
 	real ap(np)		!sigma**2 for bathy points
-	integer nt
-	real xt(np)
-	real yt(np)
-	real at(np)
-	real ht(np)
+	integer nt		!points on which to interpolate
+	real xt(nt)
+	real yt(nt)
+	real at(nt)
+	real ht(nt)		!interpolated depth values (return)
 
 
 
@@ -755,10 +755,12 @@ c there are margins for improving this
 	real ufact		!extra factor for size of sigma
 
 	integer i,j
+	integer ncoinc
+	logical bcoinc
 	real d
 	double precision dm
 
-	real dist2 
+	real dist2
 
 	if( ufact <= 0. ) then
 	  write(6,*) 'ufact = ',ufact
@@ -767,17 +769,33 @@ c there are margins for improving this
 
 	write(6,*) 'computing auto correlation... ',np
 
+c coincident points (zero distance) are ignored when looking for the
+c nearest neighbour: a zero sigma**2 would give exp(-r2/0) in interpola
+
+	ncoinc = 0
 	do i=1,np
 	  dm = 1.e+30
+	  bcoinc = .false.
 	  do j=1,np
 	    if( i .ne. j ) then
 	      d = dist2(xp(i),yp(i),xp(j),yp(j))
-	      if( d .lt. dm ) dm = d
+	      if( d .le. 0. ) then
+	        bcoinc = .true.
+	      else if( d .lt. dm ) then
+	        dm = d
+	      end if
 	    end if
 	  end do
+	  if( bcoinc ) ncoinc = ncoinc + 1
 	  ap(i) = dm * ufact*ufact
 	  !write(6,*) i,ap(i),dp(i)
 	end do
+
+	if( ncoinc > 0 ) then
+	  write(6,*) '*** warning make_auto_corr: ',ncoinc
+     +		,' bathymetry points coincide with another point'
+	  write(6,*) '    zero distances ignored when computing sigma'
+	end if
 
 	write(6,*) 'auto correlation finished ',np
 

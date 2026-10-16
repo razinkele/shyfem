@@ -84,6 +84,10 @@ jobs:
           shyfem venlag_smoke.str > venlag_smoke.out 2>&1 || { tail -40 venlag_smoke.out; exit 1; }
           grep -q "simulation end" venlag_smoke.out || { echo "no simulation end"; tail -40 venlag_smoke.out; exit 1; }
           echo "venlag_smoke: OK"
+          # k-eps twin: iturb=2 never got past step 1 until PR #97
+          shyfem venlag_keps_smoke.str > venlag_keps_smoke.out 2>&1 || { tail -40 venlag_keps_smoke.out; exit 1; }
+          grep -q "simulation end" venlag_keps_smoke.out || { echo "no simulation end (keps)"; tail -40 venlag_keps_smoke.out; exit 1; }
+          echo "venlag_keps_smoke: OK"
 
   fortran-lint:
     runs-on: ubuntu-latest

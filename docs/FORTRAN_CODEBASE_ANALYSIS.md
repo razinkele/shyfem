@@ -1081,12 +1081,13 @@ make fem COMPILER_PROFILE=SPEED_PGO_USE   # step 3: optimize
 | Solver | Key | Type | Status |
 |---|---|---|---|
 | SPARSKIT | `SPARSKIT` | Iterative (BCGstab + ILUT) | **Default, production** |
-| Gauss | `GAUSS` | Direct band elimination | Legacy |
 | PETSc | `PETSC` | Iterative (GMRES + BJ) | Fixed, verified |
-| Pardiso | `PARDISO` | Direct sparse (Intel MKL) | Intel-only |
-| Paralution | `PARALUTION` | GPU-accelerated iterative | Experimental |
+| Gauss | `GAUSS` | Direct band elimination | **Not supported** — build stops |
+| Pardiso | `PARDISO` | Direct sparse (Intel MKL) | **Not supported** — build stops |
+| Paralution | `PARALUTION` | GPU-accelerated iterative | **Not supported** — build stops |
+| PETSc + AmgX | `PETSC_AmgX` | GPU AMG via PETSc | **Not supported** — build stops |
 
-All solvers implement the same interface (`system_initialize`, `system_init`, `system_assemble`, `system_solve`, `system_get`).
+SPARSKIT and PETSc implement the current interface (`system_initialize`, `system_init`, `system_assemble`, `system_assemble_omp`, `system_solve`, `system_get`, `system_setup_global`, `system_solve_global`, plus the `_3d` variants). Every other `SOLVER` value falls back to `simsys_lp.f90`, which predates that interface and no longer compiles (upstream carries the same file), so `Rules.make` rejects it with a message instead.
 
 ### SPARSKIT (Default)
 

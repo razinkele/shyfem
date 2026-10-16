@@ -1,4 +1,4 @@
-"""Periodic maintenance: prune old jobs and expired auth sessions/WS tokens.
+"""Periodic maintenance: prune old jobs/workflows and expired auth sessions/WS tokens.
 
 These cleanups (``JobQueue.cleanup_old_jobs`` and
 ``AuthService.cleanup_expired_sessions``) are implemented and tested but had no
@@ -21,9 +21,18 @@ async def run_maintenance_once(
     audit_retention_days: int = 365,
     feedback_service=None,
     feedback_retention_days: int = 180,
+    workflow_cleanup=None,
 ) -> None:
     """Run one maintenance pass: prune old jobs, expired sessions/tokens, old
-    audit logs, and old feedback submissions.
+    audit logs, old feedback submissions, and old finished workflows.
+
+    ``workflow_cleanup`` (``WorkflowEngine.cleanup_old_workflows`` in prod) is
+    called with ``job_retention_days``: workflows share the job retention
+    window (L37). A workflow is kept while any of its step jobs is still
+    active in the ``jobs`` table. Phantom active job rows are reconciled by
+    ``LocalJobQueue`` when it first loads its history, not by this pass;
+    under Celery there is no such reconciliation, so a stale active job row
+    can keep its workflow indefinitely (safe direction: never a wrong delete).
 
     Each cleanup is independent — a failure in one is logged and must not block
     the others or propagate (the scheduling loop must never die).
@@ -34,6 +43,19 @@ async def run_maintenance_once(
             logger.info("maintenance: pruned %d job(s) older than %dd", removed, job_retention_days)
     except Exception:
         logger.exception("maintenance: cleanup_old_jobs failed")
+
+    if workflow_cleanup is not None:
+        try:
+            # Synchronous DB delete — keep it off the event loop.
+            removed = await asyncio.to_thread(workflow_cleanup, job_retention_days)
+            if removed:
+                logger.info(
+                    "maintenance: pruned %d workflow(s) older than %dd",
+                    removed,
+                    job_retention_days,
+                )
+        except Exception:
+            logger.exception("maintenance: cleanup_old_workflows failed")
 
     try:
         # cleanup_expired_sessions is synchronous DB work — keep it off the loop.
@@ -80,6 +102,7 @@ async def run_maintenance_loop(
     audit_retention_days: int = 365,
     feedback_service=None,
     feedback_retention_days: int = 180,
+    workflow_cleanup=None,
 ) -> None:
     """Run :func:`run_maintenance_once` every ``interval_s`` seconds, forever.
 
@@ -105,4 +128,5 @@ async def run_maintenance_loop(
             audit_retention_days=audit_retention_days,
             feedback_service=feedback_service,
             feedback_retention_days=feedback_retention_days,
+            workflow_cleanup=workflow_cleanup,
         )

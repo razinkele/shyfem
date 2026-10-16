@@ -640,6 +640,7 @@ def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
         stdout = _server_log_text(log)
         pytest.fail(f"WS-identity app did not start within 30 s.\nOutput:\n{stdout}")
 
+    proc.db_path = db_path  # tests that change accounts mid-session need it
     yield proc
 
     proc.terminate()
@@ -655,6 +656,12 @@ def _ws_identity_app_server(tmp_path_factory, ws_identity_app_port):
 def ws_identity_live_server(_ws_identity_app_server, ws_identity_app_port):
     """Ensure the seeded WS-identity server is running and return its base URL."""
     return f"http://127.0.0.1:{ws_identity_app_port}"
+
+
+@pytest.fixture(scope="session")
+def ws_identity_db_path(_ws_identity_app_server):
+    """SQLite file of the seeded WS-identity server (to change accounts live)."""
+    return _ws_identity_app_server.db_path
 
 
 def _wait_hydrated(page):

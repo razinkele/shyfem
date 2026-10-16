@@ -313,6 +313,14 @@ def create_app(config: Config | None = None) -> App:
     # Initialize database
     init_db()
 
+    # Workflow rows a previous process left PENDING/RUNNING lost their driver
+    # task with it: reconcile them to FAILED now, once per process and before
+    # any session can start a workflow (L37, mirrors the jobs' N46). Not in
+    # WorkflowEngine.__init__ -- that runs once per Shiny session.
+    from shyfem_ui.services.workflow import WorkflowEngine
+
+    WorkflowEngine.reconcile_orphaned_workflows()
+
     # Register Plotly theme
     from shyfem_ui.plotly_theme import register_shyfem_template
 
@@ -417,6 +425,7 @@ def create_app(config: Config | None = None) -> App:
                 audit_retention_days=config.audit_retention_days,
                 feedback_service=feedback_service,
                 feedback_retention_days=config.feedback_retention_days,
+                workflow_cleanup=WorkflowEngine.cleanup_old_workflows,
             )
 
     app = MaintenanceMiddleware(app, _maint_factory)
@@ -993,29 +1002,48 @@ def _build_server(
     # editor_denied_reason / load_project_context guards.
     # Imports are lazy to avoid import-time DB/engine setup and circular imports.
     _ws_user: reactive.Value[dict | None] = reactive.value(None)
+    # The live identity behind _ws_user. _ws_user only records the resolution
+    # at token-arrival time (and is what reactive readers depend on);
+    # current_user() answers from this, re-validated on every call (L31).
+    _ws_identity: dict = {"live": None}
 
     @reactive.effect
     def _resolve_ws_identity():
-        from shyfem_ui.services.ws_identity import resolve_ws_user
+        from shyfem_ui.services.ws_identity import LiveWSIdentity
 
         tok = input._wsauth() if "_wsauth" in input else None
         svc = auth_service
-        if svc is None:
-            from shyfem_ui.services.auth_service import AuthService
-
-            svc = AuthService()
         try:
-            _ws_user.set(resolve_ws_user(tok, svc))
+            if svc is None:
+                from shyfem_ui.services.auth_service import AuthService
+
+                svc = AuthService()
+            live = LiveWSIdentity(svc)
+            live.bind(tok)
+            _ws_identity["live"] = live
+            _ws_user.set(live.current())
         except Exception:
             # Fail closed: leaving the user unresolved (None) denies every
             # edit-level mutation in server mode (editor_denied_reason), so a
             # transient validation/DB error can never silently fail OPEN.
             logger.warning("WS identity resolution failed; user set to None", exc_info=True)
+            _ws_identity["live"] = None
             _ws_user.set(None)
 
     def current_user() -> dict | None:
-        """Return the real, server-validated user in the WS scope (fallback path)."""
-        return _ws_user.get()
+        """Return the server-validated user in the WS scope, as the DB sees them NOW.
+
+        Re-validated on every call, so a role change, deactivation or logout
+        reaches an already-open session at its next decision (L31) instead of
+        at its next reconnect. Reading ``_ws_user`` first keeps the reactive
+        dependency on token resolution; nothing here may ``.set()`` a reactive
+        value -- this runs inside renders, and a fresh dict per call would
+        re-trigger them forever.
+        """
+        if _ws_user.get() is None:
+            return None
+        live = _ws_identity["live"]
+        return live.current() if live is not None else None
 
     _ws_ready_marked = {"done": False}
 

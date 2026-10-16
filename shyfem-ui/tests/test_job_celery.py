@@ -463,6 +463,44 @@ class TestCeleryCleanup:
         dbb._SessionLocal = None
         cfg._config = None
 
+    async def test_cleanup_blocking_work_runs_off_the_event_loop(self, queue, mock_redis):
+        """cleanup_old_jobs is awaited directly by maintenance.py. Its Redis
+        scan/deletes and the SQL row delete are all blocking calls, so they
+        must run in a worker thread -- not on the event-loop thread, where
+        they would stall every concurrent session (job_local already
+        offloads its delete helpers the same way, L38)."""
+        import contextlib
+        import threading
+
+        loop_thread = threading.get_ident()
+        seen: dict[str, int] = {}
+
+        info = _make_job_info(
+            job_id="old-job",
+            status=JobStatus.COMPLETED,
+            created_at=datetime(2026, 1, 1),
+            completed_at=datetime(2026, 1, 1, 1, 0, 0),
+        )
+
+        def _zrange(*_a, **_k):
+            seen["redis"] = threading.get_ident()
+            return [b"old-job"]
+
+        mock_redis.zrangebyscore.side_effect = _zrange
+        mock_redis.hget.return_value = _job_info_to_json(info)
+
+        @contextlib.contextmanager
+        def _fake_db_session():
+            seen["db"] = threading.get_ident()
+            yield MagicMock()
+
+        with patch("shyfem_ui.db.base.db_session", _fake_db_session):
+            count = await queue.cleanup_old_jobs(days=7)
+
+        assert count == 1
+        assert seen["redis"] != loop_thread, "Redis scan ran on the event loop"
+        assert seen["db"] != loop_thread, "SQL row delete ran on the event loop"
+
 
 # ---------------------------------------------------------------------------
 # TestCeleryReadsConfigShyfemDir

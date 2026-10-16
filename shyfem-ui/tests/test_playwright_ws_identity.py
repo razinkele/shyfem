@@ -24,7 +24,12 @@ import json
 
 import pytest
 
-from tests._test_ws_identity_app import VIEWER_PASSWORD, VIEWER_USERNAME
+from tests._test_ws_identity_app import (
+    DEMOTEE_PASSWORD,
+    DEMOTEE_USERNAME,
+    VIEWER_PASSWORD,
+    VIEWER_USERNAME,
+)
 from tests.conftest import _dismiss_modals, _login, _wait_hydrated
 
 PROJECTS_LIST = "#home-projects_list"
@@ -263,6 +268,101 @@ class TestWriteGuardWSAuthBypass:
         err.first.wait_for(state="visible", timeout=10000)
         txt = err.first.inner_text().lower()
         assert "permission denied" in txt and "editor" in txt
+
+
+@pytest.fixture(scope="module")
+def pw_demotee_page(pw_browser, ws_identity_live_server):
+    """A Playwright page logged in as ``demotee`` (editor on Shared)."""
+    ctx = pw_browser.new_context(viewport={"width": 1280, "height": 900})
+    page = ctx.new_page()
+    page.set_default_timeout(15000)
+    _login(page, ws_identity_live_server, DEMOTEE_USERNAME, DEMOTEE_PASSWORD)
+    _wait_hydrated(page)
+    _dismiss_modals(page)
+    yield page
+    page.close()
+    ctx.close()
+
+
+class TestLiveIdentityRevocation:
+    def test_deactivated_user_cannot_write_in_open_session(
+        self, pw_demotee_page, ws_identity_db_path
+    ):
+        """An account deactivated while its WebSocket is open loses write
+        access at the next action, not at the next reconnect (L31).
+
+        The identity used to be resolved once when ``_wsauth`` arrived and
+        then frozen, so a deactivated (or demoted, or logged-out) user kept
+        their old rights for the life of the socket. With the fix,
+        ``current_user()`` re-validates the token on every call, the
+        deactivated account reads as None, and the server-mode write guard
+        denies with its unresolved-identity message.
+        """
+        import sqlite3
+
+        page = pw_demotee_page
+        # Identity resolved as demotee: Shared listed, Private hidden.
+        _wait_identity_resolved_for_viewer(page)
+        pid = _project_pid(page, "Shared")
+        assert pid is not None, "Shared project link not found for demotee"
+
+        # Open Shared while still active, so the save below has a project
+        # and, before the fix, would be allowed on demotee's editor share.
+        page.evaluate(
+            "(pid) => window.Shiny.setInputValue("
+            "'home-project_' + pid, Date.now(), {priority: 'event'})",
+            pid,
+        )
+        page.wait_for_timeout(1500)
+
+        def _clear_notifications():
+            page.evaluate(
+                "() => document.querySelectorAll('.shiny-notification')" ".forEach(e => e.remove())"
+            )
+
+        def _fire_save():
+            page.evaluate(
+                "() => window.Shiny.setInputValue("
+                "'physics-save_btn', Date.now(), {priority: 'event'})"
+            )
+
+        def _set_active(active: int) -> int:
+            con = sqlite3.connect(str(ws_identity_db_path))
+            try:
+                n = con.execute(
+                    "UPDATE users SET is_active = ? WHERE username = ?",
+                    (active, DEMOTEE_USERNAME),
+                ).rowcount
+                con.commit()
+            finally:
+                con.close()
+            return n
+
+        # Positive control: while active, the save gets PAST the editor guard
+        # and stops at the next check (empty STR path) -- a warning, not an
+        # authorization error. The physics tab is not rendered here, so the
+        # path input is set explicitly; unset, it silently ends the handler.
+        page.evaluate(
+            "() => window.Shiny.setInputValue('physics-str_path', '', {priority: 'event'})"
+        )
+        _clear_notifications()
+        _fire_save()
+        warn = page.locator(".shiny-notification-warning")
+        warn.first.wait_for(state="visible", timeout=10000)
+        assert "no file path" in warn.first.inner_text().lower()
+        assert page.locator(".shiny-notification-error").count() == 0
+
+        # Deactivate the account in the server's DB, as the admin page does.
+        assert _set_active(0) == 1
+        try:
+            _clear_notifications()
+            _fire_save()
+            err = page.locator(".shiny-notification-error")
+            err.first.wait_for(state="visible", timeout=10000)
+            assert "could not be verified" in err.first.inner_text().lower()
+            assert page.locator(".shiny-notification-warning").count() == 0
+        finally:
+            _set_active(1)  # session-scoped server: leave the account usable
 
 
 # Holds back Shiny's client ``initialize()`` -- the step that defines

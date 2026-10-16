@@ -142,6 +142,8 @@
      &                    ,restart_read_value_fix_r
         END INTERFACE
 
+	private :: restart_check_ios
+
 !=====================================================================
 	contains
 !=====================================================================
@@ -202,9 +204,13 @@
 	subroutine restart_write_value_scalar_i(iu,ival)
 
 	integer iu
+	integer ios
 	integer ival
 
-	if( bmaster ) write(iu) ival
+	if( bmaster ) then
+	  write(iu,iostat=ios) ival
+	  call restart_check_ios(ios,'restart_write_value_scalar_i ival',.true.)
+	end if
 
 	end subroutine
 
@@ -213,10 +219,14 @@
 	subroutine restart_write_value_scalars_i(iu,n,ivals)
 
 	integer iu
+	integer ios
 	integer n
 	integer ivals(n)
 
-	if( bmaster ) write(iu) ivals
+	if( bmaster ) then
+	  write(iu,iostat=ios) ivals
+	  call restart_check_ios(ios,'restart_write_value_scalars_i ivals',.true.)
+	end if
 
 	end subroutine
 
@@ -227,6 +237,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	integer array(:)
 
@@ -240,9 +251,13 @@
 	  allocate(garray(nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  call shympi_l2g_array(array,garray)
-	  if( bmaster ) write(iu) garray
+	  if( bmaster ) then
+	    write(iu,iostat=ios) garray
+	    call restart_check_ios(ios,'restart_write_value_2d_i garray',.true.)
+	  end if
 	else
-	  write(iu) array
+	  write(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_write_value_2d_i array',.true.)
 	end if
 
 	end subroutine
@@ -254,6 +269,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	real array(:)
 
@@ -267,9 +283,13 @@
 	  allocate(garray(nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  call shympi_l2g_array(array,garray)
-	  if( bmaster ) write(iu) garray
+	  if( bmaster ) then
+	    write(iu,iostat=ios) garray
+	    call restart_check_ios(ios,'restart_write_value_2d_r garray',.true.)
+	  end if
 	else
-	  write(iu) array
+	  write(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_write_value_2d_r array',.true.)
 	end if
 
 	end subroutine
@@ -281,6 +301,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	real array(:,:)
 
@@ -295,9 +316,13 @@
 	  allocate(garray(nv_global,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  call shympi_l2g_array(array,garray)
-	  if( bmaster ) write(iu) garray
+	  if( bmaster ) then
+	    write(iu,iostat=ios) garray
+	    call restart_check_ios(ios,'restart_write_value_3d_r garray',.true.)
+	  end if
 	else
-	  write(iu) array
+	  write(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_write_value_3d_r array',.true.)
 	end if
 
 	end subroutine
@@ -309,6 +334,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	double precision array(:,:)
 
@@ -323,9 +349,13 @@
 	  allocate(garray(nv_global,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  call shympi_l2g_array(array,garray)
-	  if( bmaster ) write(iu) garray
+	  if( bmaster ) then
+	    write(iu,iostat=ios) garray
+	    call restart_check_ios(ios,'restart_write_value_3d_d garray',.true.)
+	  end if
 	else
-	  write(iu) array
+	  write(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_write_value_3d_d array',.true.)
 	end if
 
 	end subroutine
@@ -337,6 +367,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	integer nfix
 	real array(:,:)
@@ -354,9 +385,13 @@
 	  allocate(garray(nfix,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
 	  call shympi_l2g_array(nfix,array,garray)
-	  if( bmaster ) write(iu) garray
+	  if( bmaster ) then
+	    write(iu,iostat=ios) garray
+	    call restart_check_ios(ios,'restart_write_value_fix_r garray',.true.)
+	  end if
 	else
-	  write(iu) array
+	  write(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_write_value_fix_r array',.true.)
 	end if
 
 	end subroutine
@@ -368,6 +403,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	integer array(:)
 
@@ -380,10 +416,12 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  read(iu) garray
+	  read(iu,iostat=ios) garray
+	  call restart_check_ios(ios,'restart_read_value_2d_i garray',.false.)
 	  call shympi_g2l_array(garray,array)
 	else
-	  read(iu) array
+	  read(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_read_value_2d_i array',.false.)
 	end if
 
 	end subroutine
@@ -395,6 +433,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	real array(:)
 
@@ -407,10 +446,12 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  read(iu) garray
+	  read(iu,iostat=ios) garray
+	  call restart_check_ios(ios,'restart_read_value_2d_r garray',.false.)
 	  call shympi_g2l_array(garray,array)
 	else
-	  read(iu) array
+	  read(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_read_value_2d_r array',.false.)
 	end if
 
 	end subroutine
@@ -422,6 +463,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	real array(:,:)
 
@@ -435,10 +477,12 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  read(iu) garray
+	  read(iu,iostat=ios) garray
+	  call restart_check_ios(ios,'restart_read_value_3d_r garray',.false.)
 	  call shympi_g2l_array(garray,array)
 	else
-	  read(iu) array
+	  read(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_read_value_3d_r array',.false.)
 	end if
 
 	end subroutine
@@ -450,6 +494,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	double precision array(:,:)
 
@@ -463,10 +508,12 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  read(iu) garray
+	  read(iu,iostat=ios) garray
+	  call restart_check_ios(ios,'restart_read_value_3d_d garray',.false.)
 	  call shympi_g2l_array(garray,array)
 	else
-	  read(iu) array
+	  read(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_read_value_3d_d array',.false.)
 	end if
 
 	end subroutine
@@ -478,6 +525,7 @@
 	use shympi
 
 	integer iu
+	integer ios
 	logical belem
 	integer nfix
 	real array(:,:)
@@ -494,13 +542,49 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nfix,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  read(iu) garray
+	  read(iu,iostat=ios) garray
+	  call restart_check_ios(ios,'restart_read_value_fix_r garray',.false.)
 	  call shympi_g2l_array(garray,array)
 	else
-	  read(iu) array
+	  read(iu,iostat=ios) array
+	  call restart_check_ios(ios,'restart_read_value_fix_r array',.false.)
 	end if
 
 	end subroutine
+
+!--------------------------------
+
+	subroutine restart_check_ios(ios,name,bwrite)
+
+! aborts cleanly (collective-safe) if a bulk restart payload record
+! could not be written or read, instead of an uncontrolled runtime
+! crash - same diagnostics as rst_check_write/rst_check_read in
+! restart.f90 (which this library module cannot call)
+
+	integer, intent(in) :: ios
+	character*(*), intent(in) :: name
+	logical, intent(in) :: bwrite
+
+	if( ios == 0 ) return
+
+	if( bwrite ) then
+	  write(6,*) 'error writing restart file record: ',trim(name)
+	else
+	  write(6,*) 'error reading restart file record: ',trim(name)
+	end if
+	write(6,*) 'iostat = ',ios
+	if( .not. bwrite .and. ios < 0 ) then
+	  write(6,*) 'unexpected end of file - restart record is truncated'
+	end if
+
+	flush(6)
+	if( bwrite ) then
+	  call shympi_abort_internal('restart: failed write of '//trim(name))
+	else
+	  call shympi_abort_internal('restart: failed read of '//trim(name))
+	end if
+
+	end subroutine restart_check_ios
 
 !=====================================================================
 	end module mod_restart

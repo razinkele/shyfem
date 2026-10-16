@@ -116,6 +116,10 @@ def init_db() -> None:
         # time a migration/stamp actually runs. Do NOT reorder these two
         # lines: nulling config_file_name before set_main_option would make
         # `here` resolve to the cwd instead of the ini's directory.
+        # env.py now also passes disable_existing_loggers=False (the guard for
+        # every other caller); skipping fileConfig here still matters because
+        # it would otherwise replace the root logger's handlers with
+        # alembic.ini's console handler, double-printing propagated app logs.
         alembic_cfg.config_file_name = None
 
         # Check if the DB already has tables but no alembic_version

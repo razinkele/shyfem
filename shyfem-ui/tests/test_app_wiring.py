@@ -123,3 +123,35 @@ def test_notification_poll_reads_current_user_synchronously_not_inside_detached_
         "read must happen in the synchronous effect body and be passed "
         "in, since _check() runs detached from the reactive flush"
     )
+
+
+def test_create_app_hands_configured_trusted_proxies_to_session_auth(tmp_path):
+    """Behavioural F46 lock: build the real middleware stack via create_app()
+    and assert the configured trusted_proxies value actually REACHES the
+    SessionAuthMiddleware instance. A non-default value is used so that
+    dropping the kwarg (constructor default ``[]``) fails this test; without
+    it every audit-log client IP collapses to the proxy's own 127.0.0.1."""
+    from shyfem_ui.app import create_app
+    from shyfem_ui.config import Config
+    from shyfem_ui.middleware.session_auth import SessionAuthMiddleware
+
+    proxies = ["10.9.8.0/24"]
+    app = create_app(
+        Config(
+            shyfem_dir=str(tmp_path / "shyfem"),
+            work_dir=str(tmp_path / "work"),
+            # Local mode: server mode would need an admin password and
+            # bootstraps users into the DB. The wiring line is unconditional,
+            # and local mode leaves an explicit trusted_proxies untouched.
+            deployment_mode="local",
+            trusted_proxies=proxies,
+        )
+    )
+
+    layer, seen = app, []
+    while not isinstance(layer, SessionAuthMiddleware):
+        seen.append(type(layer).__name__)
+        layer = getattr(layer, "app", None)
+        assert layer is not None, f"no SessionAuthMiddleware in the stack: {seen}"
+
+    assert layer.trusted_proxies == proxies

@@ -572,10 +572,13 @@ def home_server(
         if not project_data:
             return ui.p("No projects yet. Create one to get started!", class_="text-muted")
 
+        # Resolve the identity once per render, not per row (every row of one
+        # render sees the same user; tests/test_home_user_hoist.py).
+        user = _user()
         rows = []
         for p in project_data:
             share_btn = ui.span()
-            if _should_show_share_button(p, (_user())):
+            if _should_show_share_button(p, user):
                 share_btn = ui.input_action_link(
                     f"share_{p['id']}",
                     "Share",
@@ -592,9 +595,7 @@ def home_server(
                         )
                     ),
                     ui.tags.td(p["description"] or "-"),
-                    ui.tags.td(
-                        ui.code(config.display_path(p["work_dir"], _user()), class_="small")
-                    ),
+                    ui.tags.td(ui.code(config.display_path(p["work_dir"], user), class_="small")),
                     ui.tags.td(
                         p["updated_at"].strftime("%Y-%m-%d %H:%M") if p["updated_at"] else "-"
                     ),
@@ -940,6 +941,7 @@ def home_server(
             ui.modal_show(m)
             return
 
+        user = _user()  # once per render, not per row
         project_links = []
         for p in project_data:
             project_links.append(
@@ -953,7 +955,7 @@ def home_server(
                         class_="text-muted small",
                     ),
                     ui.br(),
-                    ui.code(config.display_path(p["work_dir"], _user()), class_="small text-muted"),
+                    ui.code(config.display_path(p["work_dir"], user), class_="small text-muted"),
                     class_="mb-2 p-2 border rounded",
                 )
             )
