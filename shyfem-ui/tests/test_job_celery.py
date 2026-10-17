@@ -1362,3 +1362,162 @@ class TestCeleryWorkerEntryPoint:
             with pytest.raises(AttributeError):
                 jc.no_such_thing  # noqa: B018
         get_app.assert_not_called()
+
+
+class TestCeleryActiveJobCount:
+    """/health's active_jobs under Celery: the PENDING/QUEUED/RUNNING jobs in
+    the Redis job store (the queue had no count at all, so /health said -1)."""
+
+    async def test_counts_active_jobs_in_redis(self, queue):
+        import threading
+
+        store = _DictRedis()
+        for jid, st in [
+            ("p", JobStatus.PENDING),
+            ("q", JobStatus.QUEUED),
+            ("r", JobStatus.RUNNING),
+            ("c", JobStatus.COMPLETED),
+            ("f", JobStatus.FAILED),
+            ("x", JobStatus.CANCELLED),
+        ]:
+            _store_job_info(store, _make_job_info(job_id=jid, status=st))
+        store.jobs["junk"] = "not json"
+        seen = {}
+        real = store.jobs.values
+
+        def _hvals(key):
+            seen["thread"] = threading.get_ident()
+            return list(real())
+
+        store.hvals = _hvals
+        queue._redis_client = store
+        assert await queue.active_job_count_async() == 3
+        assert seen["thread"] != threading.get_ident(), "Redis scan ran on the event loop"
+
+    def test_web_side_client_is_bounded_worker_client_is_not(self, tmp_path):
+        """The web side must not park shared threads on a stalled Redis; a
+        worker must ride a stall out rather than lose a job's terminal write."""
+        import sys
+        import types
+
+        import shyfem_ui.services.job_celery as jc
+
+        fake = types.SimpleNamespace(from_url=MagicMock(return_value="client"))
+        with patch.dict(sys.modules, {"redis": fake}):
+            CeleryJobQueue(shyfem_dir=tmp_path, redis_url="redis://h:1/0")._get_redis_client()
+            web_kw = fake.from_url.call_args.kwargs
+            jc._get_redis_client("redis://h:1/0")  # what execute_shyfem_job uses
+            worker_kw = fake.from_url.call_args.kwargs
+        assert web_kw["socket_connect_timeout"] == jc.REDIS_CONNECT_TIMEOUT_S > 0
+        assert web_kw["socket_timeout"] == jc.REDIS_SOCKET_TIMEOUT_S > 0
+        assert "socket_timeout" not in worker_kw and "socket_connect_timeout" not in worker_kw
+
+    def test_worker_task_uses_the_unbounded_client(self, tmp_path):
+        import shyfem_ui.services.job_celery as jc
+
+        with patch.object(jc, "_get_redis_client", return_value=_DictRedis()) as get:
+            jc.execute_shyfem_job("missing-job", "redis://h:1/0", str(tmp_path))
+        get.assert_called_once_with("redis://h:1/0")
+
+    async def test_a_flood_of_probes_runs_one_scan(self, queue):
+        """/health is unauthenticated: 50 concurrent probes while Redis is
+        slow must share one thread, not take 50 from the to_thread pool."""
+        import asyncio
+        import threading
+
+        calls = []
+        gate = threading.Event()
+
+        def _slow_count():
+            calls.append(1)
+            gate.wait(5)
+            return 4
+
+        queue._count_active_jobs = _slow_count
+        probes = [asyncio.ensure_future(queue.active_job_count_async()) for _ in range(50)]
+        await asyncio.sleep(0.1)
+        gate.set()
+        assert await asyncio.gather(*probes) == [4] * 50
+        assert len(calls) == 1
+
+    async def test_a_probe_timing_out_does_not_cancel_the_scan(self, queue):
+        import asyncio
+        import threading
+
+        gate = threading.Event()
+        calls = []
+
+        def _slow_count():
+            calls.append(1)
+            gate.wait(5)
+            return 2
+
+        queue._count_active_jobs = _slow_count
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.active_job_count_async(), timeout=0.05)
+        late = asyncio.ensure_future(queue.active_job_count_async())
+        await asyncio.sleep(0.05)
+        gate.set()
+        assert await late == 2
+        assert len(calls) == 1
+
+    async def test_count_is_cached_briefly_and_errors_are_not(self, queue, monkeypatch):
+        import shyfem_ui.services.job_celery as jc
+
+        results = [ConnectionError("blip"), 5, 6]
+
+        def _count():
+            r = results.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        queue._count_active_jobs = _count
+        with pytest.raises(ConnectionError):
+            await queue.active_job_count_async()
+        assert await queue.active_job_count_async() == 5  # error was not cached
+        assert await queue.active_job_count_async() == 5  # cached
+        monkeypatch.setattr(jc, "ACTIVE_COUNT_CACHE_S", 0.0)
+        assert await queue.active_job_count_async() == 6
+
+    async def test_a_scan_finishing_after_every_waiter_gave_up_is_still_cached(self, queue):
+        """Slow but working Redis: each probe times out, but the next one must
+        get the finished count instead of starting another doomed scan."""
+        import asyncio
+        import threading
+
+        gate, calls = threading.Event(), []
+
+        def _slow_count():
+            calls.append(1)
+            gate.wait(5)
+            return 9
+
+        queue._count_active_jobs = _slow_count
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.active_job_count_async(), timeout=0.05)
+        gate.set()
+        await asyncio.sleep(0.2)  # the scan finishes with no one waiting
+        assert await queue.active_job_count_async() == 9
+        assert len(calls) == 1
+
+    async def test_a_failed_scan_no_one_awaited_logs_no_unretrieved_exception(self, queue, caplog):
+        import asyncio
+        import gc
+        import threading
+
+        gate = threading.Event()
+
+        def _failing_count():
+            gate.wait(5)
+            raise ConnectionError("redis blackholed")
+
+        queue._count_active_jobs = _failing_count
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.active_job_count_async(), timeout=0.05)
+        gate.set()
+        await asyncio.sleep(0.2)
+        queue._count_task = None  # as when the next probe replaces it
+        gc.collect()
+        await asyncio.sleep(0)
+        assert "exception was never retrieved" not in caplog.text
