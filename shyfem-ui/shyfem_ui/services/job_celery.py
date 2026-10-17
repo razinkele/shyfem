@@ -59,7 +59,7 @@ CELERY_LOST_ERROR = "lost: its Celery worker stopped while the job ran"
 # Seconds a reconcile pass waits for workers to answer the ``active`` query.
 INSPECT_TIMEOUT_S = 5.0
 
-# Redis client timeouts (s): connecting, and any single command.
+# Web-side Redis client timeouts (s): connecting, and any single command.
 REDIS_CONNECT_TIMEOUT_S = 5.0
 REDIS_SOCKET_TIMEOUT_S = 10.0
 
@@ -102,16 +102,25 @@ def get_celery_app(redis_url: str = "redis://localhost:6379/0") -> Any:
     return _celery_app
 
 
-def _get_redis_client(redis_url: str = "redis://localhost:6379/0") -> Any:
-    """Create a Redis client."""
+def _get_redis_client(redis_url: str = "redis://localhost:6379/0", *, bounded: bool = False) -> Any:
+    """Create a Redis client.
+
+    ``bounded`` (the web side) adds connect and per-command timeouts, so a
+    blackholed or stalled Redis fails a call instead of parking a thread of
+    the shared to_thread pool. A worker's client stays unbounded: it rides
+    out a Redis stall rather than lose a job's terminal write (a timeout in
+    the task's ``finally`` would skip the SQL row and the email, and the
+    reconcile would later call a finished job lost) or fail a running job
+    over one slow progress write.
+    """
     try:
         import redis
     except ImportError as exc:
         raise ImportError(
             "Redis is required for server mode. Install with: pip install redis"
         ) from exc
-    # Bounded: a blackholed Redis must fail a call, not hang the thread (the
-    # web side calls this from to_thread workers shared with the whole app).
+    if not bounded:
+        return redis.from_url(redis_url)
     return redis.from_url(
         redis_url,
         socket_connect_timeout=REDIS_CONNECT_TIMEOUT_S,
@@ -561,7 +570,7 @@ class CeleryJobQueue(JobQueue):
 
     def _get_redis_client(self):
         if self._redis_client is None:
-            self._redis_client = _get_redis_client(self.redis_url)
+            self._redis_client = _get_redis_client(self.redis_url, bounded=True)
         return self._redis_client
 
     async def submit(self, spec: JobSpec) -> str:

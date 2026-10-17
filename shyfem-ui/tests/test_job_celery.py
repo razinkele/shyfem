@@ -1394,7 +1394,9 @@ class TestCeleryActiveJobCount:
         assert await queue.active_job_count_async() == 3
         assert seen["thread"] != threading.get_ident(), "Redis scan ran on the event loop"
 
-    def test_redis_client_has_timeouts(self):
+    def test_web_side_client_is_bounded_worker_client_is_not(self, tmp_path):
+        """The web side must not park shared threads on a stalled Redis; a
+        worker must ride a stall out rather than lose a job's terminal write."""
         import sys
         import types
 
@@ -1402,10 +1404,20 @@ class TestCeleryActiveJobCount:
 
         fake = types.SimpleNamespace(from_url=MagicMock(return_value="client"))
         with patch.dict(sys.modules, {"redis": fake}):
-            assert jc._get_redis_client("redis://h:1/0") == "client"
-        kw = fake.from_url.call_args.kwargs
-        assert kw["socket_connect_timeout"] == jc.REDIS_CONNECT_TIMEOUT_S > 0
-        assert kw["socket_timeout"] == jc.REDIS_SOCKET_TIMEOUT_S > 0
+            CeleryJobQueue(shyfem_dir=tmp_path, redis_url="redis://h:1/0")._get_redis_client()
+            web_kw = fake.from_url.call_args.kwargs
+            jc._get_redis_client("redis://h:1/0")  # what execute_shyfem_job uses
+            worker_kw = fake.from_url.call_args.kwargs
+        assert web_kw["socket_connect_timeout"] == jc.REDIS_CONNECT_TIMEOUT_S > 0
+        assert web_kw["socket_timeout"] == jc.REDIS_SOCKET_TIMEOUT_S > 0
+        assert "socket_timeout" not in worker_kw and "socket_connect_timeout" not in worker_kw
+
+    def test_worker_task_uses_the_unbounded_client(self, tmp_path):
+        import shyfem_ui.services.job_celery as jc
+
+        with patch.object(jc, "_get_redis_client", return_value=_DictRedis()) as get:
+            jc.execute_shyfem_job("missing-job", "redis://h:1/0", str(tmp_path))
+        get.assert_called_once_with("redis://h:1/0")
 
     async def test_a_flood_of_probes_runs_one_scan(self, queue):
         """/health is unauthenticated: 50 concurrent probes while Redis is
