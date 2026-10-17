@@ -948,6 +948,7 @@ class _DictRedis:
         self.by_time: dict[str, float] = {}
         self.version = 0
         self.before_exec = None
+        self.sets: dict[str, set] = {}
 
     def hset(self, key, field, value):
         self.jobs[field] = value
@@ -979,6 +980,15 @@ class _DictRedis:
 
     def pipeline(self):
         return _DictPipeline(self)
+
+    def sadd(self, key, member):
+        self.sets.setdefault(key, set()).add(member)
+
+    def sismember(self, key, member):
+        return member in self.sets.get(key, set())
+
+    def srem(self, key, member):
+        self.sets.get(key, set()).discard(member)
 
 
 class _DictPipeline:
@@ -1521,3 +1531,199 @@ class TestCeleryActiveJobCount:
         gc.collect()
         await asyncio.sleep(0)
         assert "exception was never retrieved" not in caplog.text
+
+
+class TestCeleryStoppedTaskEndState:
+    """revoke(terminate=True) SIGTERMs the pool process; its handler raises
+    SystemExit, which skipped ``except Exception``, so the task's finally
+    wrote the in-memory RUNNING back over the CANCELLED the web side had
+    stored: a cancelled job showed as running (seen with a real Celery 5.6
+    worker), later mislabelled 'lost' by the reconcile."""
+
+    def _run(self, tmp_path, stored_status, exc):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="c1", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+
+        async def _interrupted(*_a, **_k):
+            # a user cancel marks the job before the revoke; then, as on a real
+            # worker, a progress write rewrites the record RUNNING; then the
+            # signal's exception
+            if stored_status == JobStatus.CANCELLED:
+                store.sadd(jc.CANCEL_REQUESTS_KEY, "c1")
+            info = _load_job_info(store, "c1")
+            info.status = JobStatus.RUNNING
+            _store_job_info(store, info)
+            raise exc
+
+        wrapper = MagicMock()
+        wrapper.run_command.side_effect = _interrupted
+        with (
+            patch.object(jc, "_get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch.object(jc, "_persist_job_to_db") as persist,
+            patch.object(jc, "_send_completion_notification") as notify,
+        ):
+            with pytest.raises(type(exc)):
+                jc.execute_shyfem_job("c1", "redis://x", str(tmp_path))
+        self.notified = notify.call_args.args[0].status
+        return _load_job_info(store, "c1"), persist.call_args.args[0]
+
+    def test_user_cancel_ends_cancelled_and_the_process_still_exits(self, tmp_path):
+        info, persisted = self._run(tmp_path, JobStatus.CANCELLED, SystemExit(-241))
+        assert info.status == JobStatus.CANCELLED and info.completed_at is not None
+        assert persisted.status == JobStatus.CANCELLED
+
+    def test_worker_stopping_on_its_own_ends_failed(self, tmp_path):
+        import shyfem_ui.services.job_celery as jc
+
+        info, persisted = self._run(tmp_path, JobStatus.RUNNING, SystemExit(-241))
+        assert info.status == JobStatus.FAILED
+        assert info.error_message == jc.CELERY_STOPPED_ERROR
+        assert persisted.status == JobStatus.FAILED
+
+    def test_a_cancelled_coroutine_is_handled_the_same_way(self, tmp_path):
+        import asyncio
+
+        info, _ = self._run(tmp_path, JobStatus.CANCELLED, asyncio.CancelledError())
+        assert info.status == JobStatus.CANCELLED
+
+    async def test_cancel_marks_the_request_before_the_revoke(self, queue, mock_celery_app):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(store, _make_job_info(job_id="r1", status=JobStatus.RUNNING))
+        queue._redis_client = store
+        seen = {}
+        mock_celery_app.control.revoke.side_effect = lambda *a, **k: seen.setdefault(
+            "marked", store.sismember(jc.CANCEL_REQUESTS_KEY, "r1")
+        )
+        assert await queue.cancel("r1") is True
+        assert seen["marked"] is True, "revoke sent before the cancel request was recorded"
+
+    def test_email_policy_cancel_sends_none_a_stop_reports_failure(self, tmp_path):
+        """_send_completion_notification sends nothing for CANCELLED and a
+        failure email otherwise: a user's own cancel is not a failure, but a
+        run their worker killed is one they need to hear about."""
+        self._run(tmp_path, JobStatus.CANCELLED, SystemExit(-241))
+        assert self.notified == JobStatus.CANCELLED
+        self._run(tmp_path, JobStatus.RUNNING, SystemExit(-241))
+        assert self.notified == JobStatus.FAILED
+
+    def test_keyboard_interrupt_is_handled_too(self, tmp_path):
+        info, _ = self._run(tmp_path, JobStatus.CANCELLED, KeyboardInterrupt())
+        assert info.status == JobStatus.CANCELLED
+
+    def test_redis_error_in_the_check_keeps_the_signal_and_never_running(self, tmp_path):
+        """A Redis blip while checking for a cancel must not replace the
+        SystemExit (the pool process must still exit) nor leave RUNNING."""
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="c1", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+        calls = {"n": 0}
+
+        def _flaky_sismember(key, member):
+            calls["n"] += 1
+            if calls["n"] > 1:  # the entry check passes, the interrupt-time one fails
+                raise ConnectionError("redis blip")
+            return False
+
+        store.sismember = _flaky_sismember
+
+        async def _interrupted(*_a, **_k):
+            raise SystemExit(-241)
+
+        wrapper = MagicMock()
+        wrapper.run_command.side_effect = _interrupted
+        with (
+            patch.object(jc, "_get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch.object(jc, "_persist_job_to_db"),
+            patch.object(jc, "_send_completion_notification"),
+        ):
+            with pytest.raises(SystemExit):
+                jc.execute_shyfem_job("c1", "redis://x", str(tmp_path))
+        info = _load_job_info(store, "c1")
+        assert info.status == JobStatus.FAILED and info.error_message == jc.CELERY_STOPPED_ERROR
+
+    def test_a_job_cancelled_while_queued_never_starts(self, tmp_path):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="q1", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+        store.sadd(jc.CANCEL_REQUESTS_KEY, "q1")
+        wrapper = MagicMock()
+        with (
+            patch.object(jc, "_get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch.object(jc, "_persist_job_to_db") as persist,
+            patch.object(jc, "_send_completion_notification") as notify,
+        ):
+            jc.execute_shyfem_job("q1", "redis://x", str(tmp_path))
+        wrapper.run_command.assert_not_called()
+        wrapper.run_shyfem.assert_not_called()
+        assert _load_job_info(store, "q1").status == JobStatus.CANCELLED
+        assert persist.call_args.args[0].status == JobStatus.CANCELLED
+        notify.assert_not_called()
+
+    def test_end_state_reaches_sql_and_email_when_redis_is_down(self, tmp_path):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="d1", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+        real_hset = store.hset
+
+        async def _done(*_a, **_k):
+            store.hset = MagicMock(side_effect=ConnectionError("redis down"))
+            from types import SimpleNamespace
+
+            return SimpleNamespace(
+                success=True, return_code=0, output_files=[], stdout="", stderr=""
+            )
+
+        wrapper = MagicMock()
+        wrapper.run_command.side_effect = _done
+        with (
+            patch.object(jc, "_get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch.object(jc, "_persist_job_to_db") as persist,
+            patch.object(jc, "_send_completion_notification") as notify,
+        ):
+            jc.execute_shyfem_job("d1", "redis://x", str(tmp_path))
+        store.hset = real_hset
+        assert persist.call_args.args[0].status == JobStatus.COMPLETED
+        assert notify.call_args.args[0].status == JobStatus.COMPLETED
+
+    async def test_a_revoke_that_fails_leaves_no_cancel_marker(self, queue, mock_celery_app):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(store, _make_job_info(job_id="r2", status=JobStatus.RUNNING))
+        queue._redis_client = store
+        mock_celery_app.control.revoke.side_effect = ConnectionError("broker down")
+        with pytest.raises(ConnectionError):
+            await queue.cancel("r2")
+        assert not store.sismember(jc.CANCEL_REQUESTS_KEY, "r2")
+        assert _load_job_info(store, "r2").status == JobStatus.RUNNING

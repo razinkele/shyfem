@@ -56,6 +56,16 @@ except ImportError:  # pragma: no cover - exercised only without redis installed
 # the task's ``finally`` never ran, so the reconcile pass writes this instead.
 CELERY_LOST_ERROR = "lost: its Celery worker stopped while the job ran"
 
+# Redis set of job ids a user asked to cancel. Written before the revoke, so
+# a worker stopped by that revoke can tell a cancel from its own shutdown:
+# the job record itself is no witness, since every progress write from the
+# worker rewrites it whole (status RUNNING) right up to the signal.
+CANCEL_REQUESTS_KEY = "shyfem:jobs:cancel_requested"
+
+# error_message of a job whose worker stopped it without a user cancel (a
+# cold worker shutdown, a revoke from outside the UI).
+CELERY_STOPPED_ERROR = "stopped: its Celery worker interrupted the job"
+
 # Seconds a reconcile pass waits for workers to answer the ``active`` query.
 INSPECT_TIMEOUT_S = 5.0
 
@@ -197,6 +207,16 @@ def _load_job_info(redis_client, job_id: str) -> JobInfo | None:
 # ---------------------------------------------------------------------------
 
 
+def _cancel_requested(rc: Any, job_id: str) -> bool:
+    """Whether a user asked to cancel ``job_id`` (``CANCEL_REQUESTS_KEY``).
+    Never raises: an unreadable set reads as no."""
+    try:
+        return bool(rc.sismember(CANCEL_REQUESTS_KEY, job_id))
+    except Exception:
+        logger.warning("Could not read the cancel requests for job %s", job_id, exc_info=True)
+        return False
+
+
 def execute_shyfem_job(
     job_id: str, redis_url: str, shyfem_dir: str, hostname: str | None = None
 ) -> None:
@@ -214,6 +234,14 @@ def execute_shyfem_job(
     rc = _get_redis_client(redis_url)
     job_info = _load_job_info(rc, job_id)
     if not job_info:
+        return
+    if _cancel_requested(rc, job_id):
+        # Cancelled while queued, and the revoke did not reach this worker
+        # before it took the task: do not start the run at all.
+        job_info.status = JobStatus.CANCELLED
+        job_info.completed_at = datetime.now()
+        _store_job_info(rc, job_info)
+        _persist_job_to_db(job_info)
         return
 
     # Mark as running
@@ -290,12 +318,33 @@ def execute_shyfem_job(
         if job_info.stderr_file:
             Path(job_info.stderr_file).write_text(result.stderr)
 
+    except (SystemExit, KeyboardInterrupt, asyncio.CancelledError):
+        # The worker stopped this task. revoke(terminate=True) -- what
+        # CeleryJobQueue.cancel sends -- SIGTERMs the pool process, whose
+        # handler raises SystemExit; asyncio.run's cleanup has already
+        # cancelled the run, so the wrapper stopped the shyfem/mpirun group.
+        # Without this clause the finally wrote the in-memory RUNNING back
+        # over the CANCELLED the web side stored: a phantom running job.
+        # CANCELLED if a user asked for it; otherwise the worker itself was
+        # stopping (a cold shutdown), and the job failed. FAILED is set
+        # first and the check cannot raise, so a Redis error here never
+        # replaces the original exception or leaves the status RUNNING.
+        job_info.status = JobStatus.FAILED
+        job_info.error_message = CELERY_STOPPED_ERROR
+        if _cancel_requested(rc, job_id):
+            job_info.status = JobStatus.CANCELLED
+            job_info.error_message = None
+        raise  # let the pool process exit as Celery intends
     except Exception as e:
         job_info.status = JobStatus.FAILED
         job_info.error_message = str(e)
     finally:
         job_info.completed_at = datetime.now()
-        _store_job_info(rc, job_info)
+        try:
+            _store_job_info(rc, job_info)
+        except Exception:
+            # Redis down: still write the SQL row and send the email below.
+            logger.warning("Could not store the end state of job %s", job_id, exc_info=True)
         # Persist terminal state to DB if a session_factory is available
         _persist_job_to_db(job_info)
         # Send completion notification if a notification_service is available
@@ -667,8 +716,17 @@ class CeleryJobQueue(JobQueue):
         if not job_info or not job_info.is_active:
             return False
 
-        app = self._get_celery_app()
-        app.control.revoke(job_id, terminate=True)
+        # Before the revoke: the worker it stops reads this to record a
+        # cancel rather than a failure (and to send no failure email).
+        rc.sadd(CANCEL_REQUESTS_KEY, job_id)
+        try:
+            app = self._get_celery_app()
+            app.control.revoke(job_id, terminate=True)
+        except Exception:
+            # Not sent: the job keeps running, so a later stop of its worker
+            # must not be read as this cancel.
+            rc.srem(CANCEL_REQUESTS_KEY, job_id)
+            raise
 
         job_info.status = JobStatus.CANCELLED
         job_info.completed_at = datetime.now()
@@ -908,6 +966,7 @@ class CeleryJobQueue(JobQueue):
             if job_info and not job_info.is_active:
                 rc.hdel("shyfem:jobs", job_id)
                 rc.zrem("shyfem:jobs:by_time", job_id)
+                rc.srem(CANCEL_REQUESTS_KEY, job_id)
 
                 for fp in [job_info.stdout_file, job_info.stderr_file]:
                     if fp:
