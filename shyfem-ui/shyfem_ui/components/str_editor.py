@@ -1,5 +1,6 @@
 """STR file editor component with split view: raw text + structured form."""
 
+import copy
 import logging
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -143,8 +144,13 @@ def str_editor_server(
         _push_text(text)
         try:
             parsed_file.set(StrParser.parse(text))
-        except Exception:
+        except Exception as e:
             logger.warning("Failed to re-parse edited STR text", exc_info=True)
+            ui.notification_show(
+                f"The edited text no longer parses; the form shows the previous version: {e}",
+                type="warning",
+                duration=8,
+            )
         is_modified.set(True)
 
     @reactive.effect
@@ -185,32 +191,23 @@ def str_editor_server(
     @reactive.event(input.apply_form_btn)
     def _apply_form_changes():
         """Apply structured form edits back to the raw editor."""
-        parsed = parsed_file.get()
-        if parsed is None:
+        current = parsed_file.get()
+        if current is None:
             return
 
-        # Collect form field values and update parsed sections
-        for section_name, section in parsed.sections.items():
-            section_params = COMMON_PARAMS.get(section_name, {})
-            for param_name in section_params:
-                if param_name in section.parameters or param_name.startswith("_"):
-                    field_id = f"form_{section_name}_{param_name}"
-                    try:
-                        new_val = input[field_id]()
-                        if new_val is not None and str(new_val).strip():
-                            old_val = section.parameters.get(param_name)
-                            # The inverse of the helper the field was rendered
-                            # with. _convert_value is scalar-only: for a value
-                            # run it returned the field's literal text, which
-                            # differs from the parsed list, so this guard fired
-                            # with no user edit and the save quoted a Python
-                            # repr into the file.
-                            converted = parse_param_display(str(new_val).strip())
-                            if converted != old_val:
-                                parsed.set_param(section_name, param_name, converted)
-                    except Exception:
-                        logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
-                        continue
+        def _field_value(field_id: str) -> Any:
+            return input[field_id]()
+
+        # Only the fields form_view rendered: a field the search hides keeps
+        # its last value on the server, which may predate a raw edit or come
+        # from a previously loaded file.
+        try:
+            search_term = input.param_search()
+        except Exception:
+            search_term = ""
+        parsed = _apply_form_values(
+            current, _field_value, search_filter=filter_sections(search_term, current)
+        )
 
         # Regenerate text from modified parsed file. _format_value refuses
         # values the STR reader cannot express (it has no escape for either
@@ -316,7 +313,23 @@ def str_editor_server(
             class_="str-editor-area",
             style="font-family: monospace; font-size: 13px;",
         )
-        form_panel = ui.output_ui("form_view")
+        # The search box filters form_view, so it must live outside it: a
+        # box inside the render it drives is rebuilt empty on each search.
+        with reactive.isolate():
+            try:
+                search_value = input.param_search() or ""
+            except Exception:
+                search_value = ""
+        form_panel = ui.div(
+            ui.input_text(
+                "param_search",
+                "",
+                value=search_value,
+                placeholder="Search parameters (e.g. 'wind', 'time step')...",
+                width="100%",
+            ),
+            ui.output_ui("form_view"),
+        )
 
         if mode == "raw":
             return raw_panel
@@ -391,6 +404,50 @@ def str_editor_server(
         "is_modified": is_modified,
         "set_content": set_content_text,
     }
+
+
+def _apply_form_values(
+    parsed: StrFile,
+    field_value: Callable[[str], Any],
+    search_filter: dict[str, list[str]] | None = None,
+) -> StrFile:
+    """Return a copy of ``parsed`` with the form fields' values applied.
+
+    ``search_filter`` is the filter the form was rendered with (None = all
+    shown); fields it hides are not read.
+
+    A copy, because ``parsed`` is shared with the parent page's parsed_str:
+    mutating it in place leaves that object half-edited, with no reactive
+    invalidation, when the regeneration afterwards refuses a value.
+    """
+    edited = copy.deepcopy(parsed)
+    for section_name, section in edited.sections.items():
+        if search_filter is not None and section_name not in search_filter:
+            continue
+        shown = search_filter.get(section_name) if search_filter is not None else None
+        section_params = COMMON_PARAMS.get(section_name, {})
+        for param_name in section_params:
+            if shown is not None and param_name not in shown:
+                continue
+            if param_name in section.parameters or param_name.startswith("_"):
+                field_id = f"form_{section_name}_{param_name}"
+                try:
+                    new_val = field_value(field_id)
+                    if new_val is not None and str(new_val).strip():
+                        old_val = section.parameters.get(param_name)
+                        # The inverse of the helper the field was rendered
+                        # with. _convert_value is scalar-only: for a value
+                        # run it returned the field's literal text, which
+                        # differs from the parsed list, so this guard fired
+                        # with no user edit and the save quoted a Python
+                        # repr into the file.
+                        converted = parse_param_display(str(new_val).strip())
+                        if converted != old_val:
+                            edited.set_param(section_name, param_name, converted)
+                except Exception:
+                    logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
+                    continue
+    return edited
 
 
 def _build_form_panel(
@@ -561,27 +618,14 @@ def _build_form_panel(
             match_info = ui.span("No matches", class_="badge bg-secondary ms-2")
 
     return ui.div(
-        # Search bar
         ui.div(
-            ui.div(
-                ui.input_text(
-                    "param_search",
-                    "",
-                    placeholder="Search parameters (e.g. 'wind', 'time step')...",
-                    width="100%",
-                ),
-                match_info,
-                class_="d-flex align-items-center",
-            ),
-            class_="mb-2",
-        ),
-        ui.div(
+            match_info,
             ui.input_action_button(
                 "apply_form_btn",
                 "Apply Form Changes",
-                class_="btn-sm btn-primary mb-2",
+                class_="btn-sm btn-primary mb-2 ms-auto",
             ),
-            class_="d-flex justify-content-end",
+            class_="d-flex align-items-center mt-2",
         ),
         (
             ui.div(

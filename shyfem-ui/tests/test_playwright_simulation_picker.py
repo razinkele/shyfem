@@ -141,3 +141,43 @@ class TestStrEditorFileFieldSelectize:
             raise AssertionError(
                 f"field {field_id} value={val!r}; textarea head={area.input_value()[:300]!r}"
             ) from None
+
+    def test_param_search_keeps_its_text_and_filters(self, pw_page, live_server):
+        """The search box used to sit inside the form render it filters, so
+        each search re-render replaced it with an empty box."""
+        pw_page.locator(".sf-nav-item[data-nav='Simulation']").click(force=True)
+        pw_page.wait_for_timeout(800)
+        btn = pw_page.locator("#simulation-load_sample_btn")
+        if btn.count() == 0:
+            pytest.skip("sample-data card not rendered")
+        btn.click(force=True)
+        pw_page.wait_for_timeout(1500)
+        editor_tab = pw_page.locator("#sf-page-Simulation a.nav-link:has-text('Editor')").first
+        if editor_tab.count():
+            editor_tab.click(force=True)
+            pw_page.wait_for_timeout(500)
+        pw_page.locator("#simulation-str_editor-view_mode input[value='split']").check(force=True)
+        box = pw_page.locator("#simulation-str_editor-param_search")
+        box.wait_for(state="visible", timeout=10000)
+        expect(
+            pw_page.locator("select[id^='simulation-str_editor-form_name_']").first
+        ).to_be_attached(timeout=10000)
+        pw_page.evaluate(
+            "() => { document.getElementById('simulation-str_editor-param_search').__tag = 1; }"
+        )
+        box.click()
+        box.press_sequentially("wind", delay=50)
+        box.press("Tab")  # text inputs commit on change/debounce
+        # The filter has applied once the badge reports matches...
+        expect(
+            pw_page.locator(
+                "#simulation-str_editor-form_view .badge.bg-info, "
+                "#simulation-str_editor-form_view .badge.bg-secondary"
+            )
+        ).to_contain_text(re.compile("param|No matches"), timeout=10000)
+        pw_page.wait_for_timeout(1500)
+        # ...and the box is still the same element, still holding the term.
+        expect(box).to_have_value("wind", timeout=100)
+        assert pw_page.evaluate(
+            "() => document.getElementById('simulation-str_editor-param_search').__tag === 1"
+        ), "search box was re-rendered"

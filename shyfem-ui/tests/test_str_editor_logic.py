@@ -368,3 +368,66 @@ class TestListValuedFieldsInTheFormView:
         assert "format_param_display(param_val)" in src
         assert "parse_param_display(" in src
         assert "StrParser._convert_value(str(new_val)" not in src
+
+
+class TestApplyFormValuesWorksOnACopy:
+    """parsed_file is the same object as the Simulation page's parsed_str.
+    Apply used to set_param on it in place, so a regeneration that refused
+    a value left the shared object half-edited with no invalidation."""
+
+    STR = "$name\n        wind = 'old.win'\n$end\n"
+
+    def test_original_is_untouched(self):
+        from shyfem_ui.components.str_editor import _apply_form_values
+        from shyfem_ui.services.parser_str import StrParser
+
+        original = StrParser.parse(self.STR)
+        before = StrParser.generate(original)
+        edited = _apply_form_values(
+            original, lambda fid: "new.win" if fid == "form_name_wind" else None
+        )
+        assert edited is not original
+        assert edited.sections["name"].parameters["wind"] == "new.win"
+        assert original.sections["name"].parameters["wind"] == "old.win"
+        assert StrParser.generate(original) == before
+
+    def test_a_refused_value_leaves_the_original_serializable(self):
+        import pytest
+
+        from shyfem_ui.components.str_editor import _apply_form_values
+        from shyfem_ui.services.parser_str import StrParser
+
+        original = StrParser.parse(self.STR)
+        before = StrParser.generate(original)
+        edited = _apply_form_values(
+            original, lambda fid: """a'b"c""" if fid == "form_name_wind" else None
+        )
+        with pytest.raises(ValueError):
+            StrParser.generate(edited)
+        assert StrParser.generate(original) == before
+
+    def test_fields_hidden_by_the_search_are_not_applied(self):
+        """Shiny keeps a removed input's last value: a field the search hid
+        returns a stale value, which Apply wrote over a raw edit."""
+        from shyfem_ui.components.str_editor import _apply_form_values, filter_sections
+        from shyfem_ui.services.parser_str import StrParser
+
+        parsed = StrParser.parse("$para\n        idt = 600\n$end\n" + self.STR)
+        stale = {"form_para_idt": "300", "form_name_wind": "new.win"}
+        edited = _apply_form_values(
+            parsed, stale.get, search_filter=filter_sections("wind", parsed)
+        )
+        assert edited.sections["para"].parameters["idt"] == 600
+        assert edited.sections["name"].parameters["wind"] == "new.win"
+
+    def test_a_hidden_field_in_a_shown_section_is_not_applied(self):
+        from shyfem_ui.components.str_editor import _apply_form_values, filter_sections
+        from shyfem_ui.services.parser_str import StrParser
+
+        parsed = StrParser.parse("$name\n        wind = 'old.win'\n        rain = 'r.dat'\n$end\n")
+        stale = {"form_name_wind": "new.win", "form_name_rain": "stale.dat"}
+        edited = _apply_form_values(
+            parsed, stale.get, search_filter=filter_sections("wind", parsed)
+        )
+        assert edited.sections["name"].parameters["rain"] == "r.dat"
+        assert edited.sections["name"].parameters["wind"] == "new.win"
