@@ -402,6 +402,31 @@ def _register_celery_task(app: Any) -> Any:
     return _execute_job_task
 
 
+# The task registered on the worker-side app, once (see __getattr__).
+_worker_task = None
+
+
+def __getattr__(name: str) -> Any:
+    """Module attribute ``app``: the Celery app with the job task registered.
+
+    ``celery -A shyfem_ui.services.job_celery worker`` looks this module up
+    for an ``app`` attribute; without one it finds no app and cannot start a
+    worker. It is built on first access only (PEP 562), so importing the
+    module never needs Celery installed: local mode and the tests import it
+    without. Asking for ``app`` itself (``hasattr`` included) does, and raises
+    ImportError without it -- kept so ``celery -A`` says "install celery"
+    rather than "no app". The broker URL is ``SHYFEM_UI_REDIS_URL``, as on the
+    web side; a worker reads ``.env`` from its working directory.
+    """
+    if name == "app":
+        global _worker_task
+        app = get_celery_app(get_config().redis_url)
+        if _worker_task is None:
+            _worker_task = _register_celery_task(app)
+        return app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 class CeleryJobQueue(JobQueue):
     """Celery-based job queue for distributed execution.
 

@@ -1204,3 +1204,37 @@ class TestCeleryWorkerRecordsItself:
         with patch("shyfem_ui.services.job_celery.execute_shyfem_job") as run:
             task(SimpleNamespace(request=SimpleNamespace(hostname="celery@w3")), "j", "u", "d")
         run.assert_called_once_with("j", "u", "d", hostname="celery@w3")
+
+
+class TestCeleryWorkerEntryPoint:
+    """``celery -A shyfem_ui.services.job_celery worker`` needs a module
+    attribute ``app`` carrying the job task; the module had none, so the
+    documented command (README, docker-compose) could not start a worker."""
+
+    def test_app_attribute_is_the_configured_app_with_the_task(self, monkeypatch):
+        import shyfem_ui.config as cfg
+        import shyfem_ui.services.job_celery as jc
+
+        monkeypatch.setenv("SHYFEM_UI_REDIS_URL", "redis://broker.example:6380/2")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(jc, "_worker_task", None)
+        fake_app = MagicMock(name="celery-app")
+        with (
+            patch.object(jc, "get_celery_app", return_value=fake_app) as get_app,
+            patch.object(jc, "_register_celery_task") as register,
+        ):
+            assert jc.app is fake_app
+            assert jc.app is fake_app
+        get_app.assert_called_with("redis://broker.example:6380/2")
+        register.assert_called_once_with(fake_app)
+
+    def test_import_and_other_attributes_need_no_celery(self):
+        """Celery is optional: importing the module and probing any other
+        attribute must not build an app."""
+        import shyfem_ui.services.job_celery as jc
+
+        with patch.object(jc, "get_celery_app") as get_app:
+            assert not hasattr(jc, "celery")
+            with pytest.raises(AttributeError):
+                jc.no_such_thing  # noqa: B018
+        get_app.assert_not_called()
