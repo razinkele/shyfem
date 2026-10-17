@@ -210,7 +210,8 @@
         if( iunit .le. 0 ) then
           if( ityrst .le. 0 ) then
             write(6,*) 'no such file : ',name
-            stop 'error stop rst_perform_restart: Cannot read restart file'
+            call shympi_abort_internal( &
+     &		'rst_perform_restart: Cannot read restart file')
           end if
           write(6,*) '*** Cannot find restart file ...'
           write(6,*) '*** Continuing with cold start...'
@@ -224,7 +225,8 @@
           if( ityrst .le. 1 ) then
             call dts_format_abs_time(atrst,aline)
             write(6,*) 'no record found for time = ',aline
-            stop 'error stop rst_perform_restart: Cannot find time record'
+            call shympi_abort_internal( &
+     &		'rst_perform_restart: Cannot find time record')
           end if
           if( ierr .eq. 95 ) then	!file is empty
             write(6,*) '*** No data in restart file ...'
@@ -238,7 +240,8 @@
 	    !calls there). the only path that still returns here with
 	    !ierr=94 is an unrecognized restart file id (bad idfile magic)
             write(6,*) '*** restart file not recognized (bad file id)'
-            stop 'error stop rst_perform_restart: bad restart file format'
+            call shympi_abort_internal( &
+     &		'rst_perform_restart: bad restart file format')
           end if
           write(6,*) '*** Another time record is used for restart'
 	  call dts_format_abs_time(atrst,aline)
@@ -806,6 +809,7 @@
 	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm,issedi
 	integer idfile
 	integer date,time,it,id,ios
+	integer nmax,ialloc
 
 	integer, allocatable :: ival(:)
 	real, allocatable :: rval2d(:)
@@ -860,18 +864,18 @@
         read(iunit,iostat=ios) nkn,nel,nlv
         call rst_check_read(ios,'nkn/nel/nlv')
 
-	allocate(ival(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rval2d(nkn),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rval2d3(3*nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rval3d1((nlv+1)*nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rval3d2((nlv+1)*nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	allocate(rval3d3((nlv+1)*nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	! the 3d buffers hold element records (nlv*nel: utlnv, vtlnv) and
+	! node records (nlv*nkn: saltv, tempv, rhov; (nlv+1)*nkn: wlnv),
+	! so size them for the larger of the two -- nkn > nel is legal
+	nmax = max(nkn,nel)
+	allocate(ival(nel),rval2d(nkn),rval2d3(3*nel) &
+     &		,rval3d1((nlv+1)*nmax),rval3d2((nlv+1)*nmax) &
+     &		,rval3d3((nlv+1)*nmax),stat=ialloc)
+	if( ialloc /= 0 ) then
+	  write(6,*) 'nkn,nel,nlv: ',nkn,nel,nlv
+	  call shympi_abort_internal( &
+     &		'rst_skip_record: buffer allocation failed')
+	end if
 
 	if( brewrite ) then
 	  write(iuout,*) 'rst: new time record'
@@ -996,11 +1000,11 @@
 	  call rst_check_read(ios,'iwvert')
 	  if( iwvert .gt. 0 ) then
 	    call rst_add_flag(id,iflag)
-	    read(iunit,iostat=ios) rval3d1((nlv+1)*nkn)
+	    read(iunit,iostat=ios) rval3d1(1:(nlv+1)*nkn)
 	    call rst_check_read(ios,'wlnv')
 	    if( brewrite ) then
 	      write(iuout,*) 'rst: wlnv'
-	      write(iuout,*) rval3d1((nlv+1)*nkn)
+	      write(iuout,*) rval3d1(1:(nlv+1)*nkn)
 	    end if
 	  end if
 	end if
