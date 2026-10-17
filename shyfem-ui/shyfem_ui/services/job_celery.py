@@ -344,6 +344,16 @@ def _persist_job_to_db(
         logger.error("Could not persist job %s to DB", job_info.id, exc_info=True)
 
 
+def _redacted_db_url(url: str) -> str:
+    """``url`` with any password masked, for logs."""
+    try:
+        from sqlalchemy.engine import make_url
+
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "(unparseable database URL)"
+
+
 def _worker_notification_service() -> Any | None:
     """The job-email service for a process no ``CeleryJobQueue`` injected one
     into -- a Celery worker. Built once from this process's config, as the web
@@ -354,7 +364,16 @@ def _worker_notification_service() -> Any | None:
         try:
             from shyfem_ui.services.notification_service import NotificationService
 
-            _worker_notifier = NotificationService(get_config())
+            config = get_config()
+            _worker_notifier = NotificationService(config)
+            # Recipients are looked up in this process's DB and mailed via its
+            # SMTP: both come from the worker's own config (.env in its cwd), so
+            # say which ones -- a worker started elsewhere may resolve another.
+            logger.info(
+                "Worker job emails: SMTP host %r, users from %s",
+                config.smtp_host or "(none: emails off)",
+                _redacted_db_url(config.database_url),
+            )
         except Exception:
             logger.warning("Cannot build the job email service in this worker", exc_info=True)
             return None

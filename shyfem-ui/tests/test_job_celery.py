@@ -67,6 +67,17 @@ def _job_info_to_json(job_info):
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_email_services(monkeypatch):
+    """CeleryJobQueue(notification_service=...) sets a module global, and the
+    worker fallback caches one built from config (a checkout's .env may name a
+    real SMTP host): reset both so no test inherits another's, or mails."""
+    import shyfem_ui.services.job_celery as jc
+
+    monkeypatch.setattr(jc, "_queue_notification_service", None)
+    monkeypatch.setattr(jc, "_worker_notifier", None, raising=False)
+
+
 @pytest.fixture
 def mock_redis():
     """A MagicMock standing in for a Redis client."""
@@ -799,6 +810,35 @@ class TestCeleryWorkerSendsJobEmails:
         with patch("smtplib.SMTP") as smtp:
             jc._send_completion_notification(self._job(uid, JobStatus.CANCELLED))
         smtp.assert_not_called()
+
+    def test_service_that_cannot_be_built_sends_nothing_and_is_retried(
+        self, worker_process, caplog
+    ):
+        jc, uid = worker_process
+        with (
+            patch(
+                "shyfem_ui.services.notification_service.NotificationService",
+                side_effect=RuntimeError("bad config"),
+            ),
+            patch("smtplib.SMTP") as smtp,
+        ):
+            jc._send_completion_notification(self._job(uid, JobStatus.COMPLETED))
+        smtp.assert_not_called()
+        assert jc._worker_notifier is None
+        assert "Cannot build the job email service" in caplog.text
+
+    def test_worker_logs_where_it_mails_from(self, worker_process, monkeypatch, caplog):
+        import logging
+
+        import shyfem_ui.config as cfg
+
+        jc, uid = worker_process
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", "postgresql://u:s3cret@db.example/shyfem")
+        monkeypatch.setattr(cfg, "_config", None)
+        with caplog.at_level(logging.INFO, logger="shyfem_ui.services.job_celery"):
+            assert jc._worker_notification_service() is not None
+        assert "smtp.example.org" in caplog.text and "db.example/shyfem" in caplog.text
+        assert "s3cret" not in caplog.text
 
     def test_injected_service_still_wins(self, worker_process, monkeypatch):
         jc, uid = worker_process
