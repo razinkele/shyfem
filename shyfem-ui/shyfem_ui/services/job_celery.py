@@ -31,12 +31,15 @@ from typing import Any
 from shyfem_ui.config import get_config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobSpec, JobStatus
 
-# Module-level sentinel for the optional session_factory / notification_service
-# injected at queue-construction time.  Celery task functions run in worker
-# processes and cannot reach the queue object directly; see _persist_job_standalone
-# / _send_notification_standalone for the worker-side equivalents.
+# The optional session_factory / notification_service a CeleryJobQueue was
+# built with. Only a process that builds a queue (the web process, tests) sets
+# them: a real Celery worker never does, so the worker-side helpers below fall
+# back to what the worker's own config provides (_persist_job_to_db: the
+# app-wide db_session; _send_completion_notification: _worker_notifier).
 _queue_session_factory: Callable | None = None
 _queue_notification_service: Any | None = None
+# The job-email service a worker process builds from its own config, once.
+_worker_notifier: Any | None = None
 
 logger = logging.getLogger(__name__)
 
@@ -341,13 +344,54 @@ def _persist_job_to_db(
         logger.error("Could not persist job %s to DB", job_info.id, exc_info=True)
 
 
+def _redacted_db_url(url: str) -> str:
+    """Where ``url`` points (driver, host, port, database), for logs: no
+    username, password or query string, any of which may hold credentials."""
+    try:
+        from sqlalchemy.engine import make_url
+
+        u = make_url(url)
+    except Exception:
+        return "(unparseable database URL)"
+    where = f"{u.host}:{u.port}" if u.port else (u.host or "")
+    return f"{u.drivername}://{where}/{u.database or ''}"
+
+
+def _worker_notification_service() -> Any | None:
+    """The job-email service for a process no ``CeleryJobQueue`` injected one
+    into -- a Celery worker. Built once from this process's config, as the web
+    app builds its own (``NotificationService`` itself skips sending when no
+    SMTP host is configured). None if it cannot be built."""
+    global _worker_notifier
+    if _worker_notifier is None:
+        try:
+            from shyfem_ui.services.notification_service import NotificationService
+
+            config = get_config()
+            _worker_notifier = NotificationService(config)
+            # Recipients are looked up in this process's DB and mailed via its
+            # SMTP: both come from the worker's own config (.env in its cwd), so
+            # say which ones -- a worker started elsewhere may resolve another.
+            logger.info(
+                "Worker job emails: SMTP host %r, users from %s",
+                config.smtp_host or "(none: emails off)",
+                _redacted_db_url(config.database_url),
+            )
+        except Exception:
+            logger.warning("Cannot build the job email service in this worker", exc_info=True)
+            return None
+    return _worker_notifier
+
+
 def _send_completion_notification(job_info: JobInfo) -> None:
     """Send email notification for job completion.
 
     Uses ``_queue_notification_service`` if set (injected by
-    ``CeleryJobQueue``).  Skips silently if not configured.
+    ``CeleryJobQueue``), else the worker's own service built from its config:
+    the task runs in a worker process, where no queue injected one, so without
+    the fallback a Celery job never emailed anyone.
     """
-    notification_service = _queue_notification_service
+    notification_service = _queue_notification_service or _worker_notification_service()
     if notification_service is None:
         return
     try:

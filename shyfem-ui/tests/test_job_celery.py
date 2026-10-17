@@ -67,6 +67,17 @@ def _job_info_to_json(job_info):
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_leaked_email_services(monkeypatch):
+    """CeleryJobQueue(notification_service=...) sets a module global, and the
+    worker fallback caches one built from config (a checkout's .env may name a
+    real SMTP host): reset both so no test inherits another's, or mails."""
+    import shyfem_ui.services.job_celery as jc
+
+    monkeypatch.setattr(jc, "_queue_notification_service", None)
+    monkeypatch.setattr(jc, "_worker_notifier", None, raising=False)
+
+
 @pytest.fixture
 def mock_redis():
     """A MagicMock standing in for a Redis client."""
@@ -729,6 +740,119 @@ class TestPersistJobThreadSafety:
         ), "Module global must not be mutated by _persist_job"
         # And the stub must have been called with the instance's own factory.
         stub.assert_called_once_with(info, session_factory=q1_sf)
+
+
+class TestCeleryWorkerSendsJobEmails:
+    """A real Celery worker never builds a CeleryJobQueue, so the injected
+    ``_queue_notification_service`` is None there and every job email was
+    dropped. The worker now builds its own service from its config."""
+
+    @pytest.fixture
+    def worker_process(self, tmp_path, monkeypatch):
+        """State as in a worker: nothing injected, SMTP in the env, a user."""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbbase
+        import shyfem_ui.services.job_celery as jc
+        from shyfem_ui.db.base import Base
+        from shyfem_ui.models.user import User
+
+        monkeypatch.setattr(jc, "_queue_notification_service", None)
+        monkeypatch.setattr(jc, "_worker_notifier", None, raising=False)
+        monkeypatch.setenv("SHYFEM_UI_SMTP_HOST", "smtp.example.org")
+        monkeypatch.setenv("SHYFEM_UI_SMTP_PORT", "2525")
+        monkeypatch.setattr(cfg, "_config", None)
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(bind=engine)
+        factory = sessionmaker(bind=engine)
+        monkeypatch.setattr(dbbase, "_SessionLocal", factory)
+        with factory() as db:
+            u = User(username="dana", password_hash="x", role="user", email="dana@example.com")
+            db.add(u)
+            db.commit()
+            uid = u.id
+        return jc, uid
+
+    def _job(self, uid, status):
+        return JobInfo(
+            id="wj1",
+            name="lagoon run",
+            tool_name="shyfem",
+            args=[],
+            working_dir="/tmp",
+            status=status,
+            metadata={"user_id": uid},
+        )
+
+    @pytest.mark.parametrize("status", [JobStatus.COMPLETED, JobStatus.FAILED])
+    def test_worker_without_injected_service_still_emails(self, worker_process, status):
+        jc, uid = worker_process
+        with patch("smtplib.SMTP") as smtp:
+            jc._send_completion_notification(self._job(uid, status))
+        smtp.assert_called_once()
+        assert smtp.call_args.args[:2] == ("smtp.example.org", 2525)
+        conn = smtp.return_value.__enter__.return_value
+        conn.sendmail.assert_called_once()
+        assert conn.sendmail.call_args.args[1] == "dana@example.com"
+
+    def test_worker_service_is_built_once(self, worker_process):
+        jc, uid = worker_process
+        with patch("smtplib.SMTP"):
+            jc._send_completion_notification(self._job(uid, JobStatus.COMPLETED))
+            first = jc._worker_notifier
+            jc._send_completion_notification(self._job(uid, JobStatus.COMPLETED))
+        assert first is not None and jc._worker_notifier is first
+
+    def test_cancelled_job_still_sends_nothing(self, worker_process):
+        jc, uid = worker_process
+        with patch("smtplib.SMTP") as smtp:
+            jc._send_completion_notification(self._job(uid, JobStatus.CANCELLED))
+        smtp.assert_not_called()
+
+    def test_service_that_cannot_be_built_sends_nothing_and_is_retried(
+        self, worker_process, caplog
+    ):
+        jc, uid = worker_process
+        with (
+            patch(
+                "shyfem_ui.services.notification_service.NotificationService",
+                side_effect=RuntimeError("bad config"),
+            ),
+            patch("smtplib.SMTP") as smtp,
+        ):
+            jc._send_completion_notification(self._job(uid, JobStatus.COMPLETED))
+        smtp.assert_not_called()
+        assert jc._worker_notifier is None
+        assert "Cannot build the job email service" in caplog.text
+
+    def test_worker_logs_where_it_mails_from(self, worker_process, monkeypatch, caplog):
+        import logging
+
+        import shyfem_ui.config as cfg
+
+        jc, uid = worker_process
+        monkeypatch.setenv(
+            "SHYFEM_UI_DATABASE_URL",
+            "postgresql://dbadmin:s3cret@db.example:5433/shyfem?password=qs3cret&sslmode=require",
+        )
+        monkeypatch.setattr(cfg, "_config", None)
+        with caplog.at_level(logging.INFO, logger="shyfem_ui.services.job_celery"):
+            assert jc._worker_notification_service() is not None
+        assert "smtp.example.org" in caplog.text
+        assert "postgresql://db.example:5433/shyfem" in caplog.text
+        for secret in ("s3cret", "qs3cret", "dbadmin", "sslmode"):
+            assert secret not in caplog.text
+
+    def test_injected_service_still_wins(self, worker_process, monkeypatch):
+        jc, uid = worker_process
+        injected = MagicMock()
+        monkeypatch.setattr(jc, "_queue_notification_service", injected)
+        with patch("smtplib.SMTP") as smtp:
+            jc._send_completion_notification(self._job(uid, JobStatus.COMPLETED))
+        injected.notify_job_success.assert_called_once()
+        smtp.assert_not_called()
 
 
 class TestCeleryCompletionNotificationUserLookup:
