@@ -2660,10 +2660,11 @@
         use eutro, only : nstate,nsstate,nshstate,nulstate
         implicit none
         integer, intent(in) :: iunit
-        integer i
+        integer i,ios
 
         do i=1,nstate+nsstate+nshstate+nulstate
-          read(iunit)
+          read(iunit,iostat=ios)
+          call rst_check_read(ios,'eco')
         end do
         end
 

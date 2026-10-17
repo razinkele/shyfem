@@ -134,10 +134,11 @@
 
         subroutine skip_restart_gotm(iunit)
         implicit none
-        integer iunit
-        integer i
+        integer, intent(in) :: iunit
+        integer i,ios
         do i=1,5
-          read(iunit)
+          read(iunit,iostat=ios)
+          call rst_check_read(ios,'gotm')
         end do
         end
 

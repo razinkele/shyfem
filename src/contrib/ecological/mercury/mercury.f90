@@ -967,12 +967,15 @@
 
         subroutine skip_restart_mercury(iunit)
         implicit none
-        integer iunit
-	integer i,nvers,narray
-	read(iunit) nvers
-	read(iunit) narray
+        integer, intent(in) :: iunit
+	integer i,nvers,narray,ios
+	read(iunit,iostat=ios) nvers
+	call rst_check_read(ios,'mercury nvers')
+	read(iunit,iostat=ios) narray
+	call rst_check_read(ios,'mercury narray')
 	do i=1,narray			!narray records follow (0 for legacy stub)
-	  read(iunit)
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'mercury')
 	end do
         end
 

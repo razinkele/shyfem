@@ -231,6 +231,7 @@
           if( ierr .eq. 95 ) then	!file is empty
             write(6,*) '*** No data in restart file ...'
             write(6,*) '*** Continuing with cold start...'
+            close(iunit)
             return
 	  else if( ierr == 94 ) then
 	    !N26: this used to be mislabeled "hlv not compatible" -- but
@@ -802,10 +803,12 @@
 
 	implicit none
 
+	integer, intent(in) :: iunit
+	double precision, intent(out) :: atime
+	integer, intent(out) :: nvers,nrec,nkn,nel,nlv,iflag,ierr
+
 	logical brewrite
 	integer iuout
-	integer iunit,nvers,nrec,nkn,nel,nlv,iflag,ierr
-	double precision atime
 	integer ibarcl,iconz,iwvert,ieco,imerc,iturb,ibfm,issedi
 	integer idfile
 	integer date,time,it,id,ios
@@ -818,8 +821,7 @@
 	real, allocatable :: rval3d2(:)
 	real, allocatable :: rval3d3(:)
 
-	iuout = 66
-	iuout = 0
+	iuout = 0		!set > 0 to dump the records read to this unit
 	brewrite = iuout > 0
 
 	read(iunit,iostat=ios) idfile,nvers,nrec
@@ -961,16 +963,15 @@
 	    call rst_check_read(ios,'tempv')
 	    read(iunit,iostat=ios) rval3d3(1:nlv*nkn)
 	    call rst_check_read(ios,'rhov')
+	    if( brewrite ) then
+	      write(iuout,*) 'rst: saltv'
+	      write(iuout,*) rval3d1(1:nlv*nkn)
+	      write(iuout,*) 'rst: tempv'
+	      write(iuout,*) rval3d2(1:nlv*nkn)
+	      write(iuout,*) 'rst: rhov'
+	      write(iuout,*) rval3d3(1:nlv*nkn)
+	    end if
 	  end if
-	end if
-
-	if( brewrite ) then
-	  write(iuout,*) 'rst: saltv'
-	  write(iuout,*) rval3d1(1:nlv*nkn)
-	  write(iuout,*) 'rst: tempv'
-	  write(iuout,*) rval3d2(1:nlv*nkn)
-	  write(iuout,*) 'rst: rhov'
-	  write(iuout,*) rval3d3(1:nlv*nkn)
 	end if
 
 	if( nvers .ge. 15 ) then
@@ -1398,9 +1399,9 @@
 
 	implicit none
 
-	integer iunit
-	integer nvers
-	integer nkn,nel,nlv
+	integer, intent(in) :: iunit
+	integer, intent(in) :: nvers
+	integer, intent(in) :: nkn,nel,nlv
 	integer ierr
 	integer ios
 	integer nlvaux

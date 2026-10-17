@@ -84,13 +84,16 @@
         end
 
         subroutine skip_restart_bfm(iunit)
+! skips nothing, matching write_restart_bfm above: without BFM linked,
+! ecological_module ignores ibfm (no stop), yet the writer still stores
+! ibfm > 0 -- such a file has the flag but no BFM records
         implicit none
-        integer iunit
+        integer, intent(in) :: iunit
         end
 
         subroutine read_restart_bfm(iunit)
         implicit none
-        integer iunit
+        integer, intent(in) :: iunit
         end
 
         subroutine bfm_init_for_restart()

@@ -80,8 +80,16 @@
 	integer iunit
 	end
         subroutine skip_restart_eco(iunit)
+! ieco > 0 means a real ecological model wrote its records (this dummy
+! stops in ecological_module when ibio > 0, so it never writes one). The
+! count depends on that model, so they cannot be skipped here -- skipping
+! none desyncs every later read (the next "record header" is eco data)
         implicit none
-	integer iunit
+	integer, intent(in) :: iunit
+	write(6,*) 'restart file contains ecological model data,'
+	write(6,*) 'but this program was built with ECOLOGICAL=NONE'
+	write(6,*) 'rebuild with the model that wrote the file'
+	call shympi_abort_internal('skip_restart_eco: cannot skip records')
 	end
         subroutine read_restart_eco(iunit)
         implicit none
