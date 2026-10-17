@@ -195,8 +195,11 @@ class ShyfemWrapper:
                 start_new_session=True,
             )
 
+            progress_failed = False
+
             # Read output streams concurrently
             async def read_stream(stream, lines_list, is_stderr=False):
+                nonlocal progress_failed
                 while True:
                     line = await stream.readline()
                     if not line:
@@ -216,7 +219,18 @@ class ShyfemWrapper:
                     if progress_callback and not is_stderr:
                         progress = self._parse_progress(tool_name, decoded)
                         if progress is not None:
-                            progress_callback(progress, decoded)
+                            # Progress is advisory: a failing update (a Redis
+                            # blip under Celery) must not fail the run.
+                            try:
+                                progress_callback(progress, decoded)
+                            except Exception:
+                                if not progress_failed:
+                                    progress_failed = True
+                                    logger.warning(
+                                        "Progress update failed for %r; the run continues",
+                                        cmd_str,
+                                        exc_info=True,
+                                    )
 
             async def _drain_and_wait():
                 await asyncio.gather(
@@ -250,6 +264,16 @@ class ShyfemWrapper:
                 # terminate its whole process group, then re-raise so the
                 # caller (job_local.py) still observes the cancellation.
                 logger.warning("Command %r cancelled; terminating process group", cmd_str)
+                await self._terminate_process_group(proc, cmd_str)
+                raise
+            except Exception:
+                # Anything else while reading its output (a failing
+                # output_callback, a line over the 64 KiB readline limit)
+                # ends this call with a failure: the child must not outlive
+                # it, unread and unsupervised.
+                logger.warning(
+                    "Command %r failed while running; terminating process group", cmd_str
+                )
                 await self._terminate_process_group(proc, cmd_str)
                 raise
 
