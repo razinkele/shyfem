@@ -719,8 +719,14 @@ class CeleryJobQueue(JobQueue):
         # Before the revoke: the worker it stops reads this to record a
         # cancel rather than a failure (and to send no failure email).
         rc.sadd(CANCEL_REQUESTS_KEY, job_id)
-        app = self._get_celery_app()
-        app.control.revoke(job_id, terminate=True)
+        try:
+            app = self._get_celery_app()
+            app.control.revoke(job_id, terminate=True)
+        except Exception:
+            # Not sent: the job keeps running, so a later stop of its worker
+            # must not be read as this cancel.
+            rc.srem(CANCEL_REQUESTS_KEY, job_id)
+            raise
 
         job_info.status = JobStatus.CANCELLED
         job_info.completed_at = datetime.now()

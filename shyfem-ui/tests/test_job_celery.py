@@ -1715,3 +1715,15 @@ class TestCeleryStoppedTaskEndState:
         store.hset = real_hset
         assert persist.call_args.args[0].status == JobStatus.COMPLETED
         assert notify.call_args.args[0].status == JobStatus.COMPLETED
+
+    async def test_a_revoke_that_fails_leaves_no_cancel_marker(self, queue, mock_celery_app):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(store, _make_job_info(job_id="r2", status=JobStatus.RUNNING))
+        queue._redis_client = store
+        mock_celery_app.control.revoke.side_effect = ConnectionError("broker down")
+        with pytest.raises(ConnectionError):
+            await queue.cancel("r2")
+        assert not store.sismember(jc.CANCEL_REQUESTS_KEY, "r2")
+        assert _load_job_info(store, "r2").status == JobStatus.RUNNING
