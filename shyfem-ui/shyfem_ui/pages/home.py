@@ -438,8 +438,14 @@ def home_server(
     active_project=None,
     nav_callback=None,
     current_user=None,
+    identity_rev=None,
 ) -> None:
-    """Dashboard page server logic."""
+    """Dashboard page server logic.
+
+    ``identity_rev`` is bumped when the live user's id or role changes
+    (deactivation, demotion, logout elsewhere); the project list and jobs
+    are re-scoped when it does.
+    """
     projects = reactive.value([])
     recent_jobs_list = reactive.value([])
     _is_server_mode = config.deployment_mode == "server"
@@ -464,6 +470,8 @@ def home_server(
     # Load initial data
     @reactive.effect
     async def _load_data():
+        if identity_rev is not None:
+            identity_rev.get()
         try:
             _refresh_projects()
             await _refresh_jobs()

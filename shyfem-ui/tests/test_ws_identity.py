@@ -111,3 +111,29 @@ def test_live_identity_fails_closed_on_service_error():
     ident = LiveWSIdentity(_RaisingAuth())
     ident.bind("tok")
     assert ident.current() is None
+
+
+class TestIdentityFingerprint:
+    """The live-identity poll bumps identity_rev only when this changes, so
+    it must be value-compared and ignore fields that do not affect what an
+    identity-scoped render shows."""
+
+    def test_no_user_is_none(self):
+        from shyfem_ui.services.ws_identity import identity_fingerprint
+
+        assert identity_fingerprint(None) is None
+        assert identity_fingerprint({}) is None
+
+    def test_equal_identities_compare_equal(self):
+        from shyfem_ui.services.ws_identity import identity_fingerprint
+
+        a = {"id": 3, "role": "user", "username": "u"}
+        b = {"id": 3, "role": "user", "username": "u", "last_seen": 123}
+        assert identity_fingerprint(a) == identity_fingerprint(b)
+
+    def test_demotion_and_deactivation_change_it(self):
+        from shyfem_ui.services.ws_identity import identity_fingerprint
+
+        admin = identity_fingerprint({"id": 3, "role": "admin"})
+        assert identity_fingerprint({"id": 3, "role": "user"}) != admin
+        assert identity_fingerprint(None) != admin

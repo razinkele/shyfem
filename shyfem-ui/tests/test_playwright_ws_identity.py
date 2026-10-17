@@ -364,6 +364,53 @@ class TestLiveIdentityRevocation:
         finally:
             _set_active(1)  # session-scoped server: leave the account usable
 
+    def test_dashboard_list_drops_projects_after_deactivation(
+        self, pw_demotee_page, ws_identity_db_path
+    ):
+        """The project list must follow the live identity without a reload.
+
+        #99 made every *decision* re-validate, but ``projects_list`` only
+        depended on the ``projects`` value, which was filled once: a
+        deactivated user kept seeing (and being offered actions on) their
+        projects until something else refreshed the page.
+        """
+        import sqlite3
+
+        page = pw_demotee_page
+        _wait_identity_resolved_for_viewer(page)
+        page.wait_for_function(
+            "() => [...document.querySelectorAll(\"#home-projects_list [id^='home-project_']\")]"
+            ".some(e => e.textContent.trim() === 'Shared')",
+            timeout=15000,
+        )
+
+        def _set_active(active: int) -> None:
+            con = sqlite3.connect(str(ws_identity_db_path))
+            try:
+                con.execute(
+                    "UPDATE users SET is_active = ? WHERE username = ?",
+                    (active, DEMOTEE_USERNAME),
+                )
+                con.commit()
+            finally:
+                con.close()
+
+        _set_active(0)
+        try:
+            # Fail-closed: an unresolved identity in server mode lists nothing.
+            page.wait_for_function(
+                "() => document.querySelectorAll(\"#home-projects_list [id^='home-project_']\").length === 0",
+                timeout=30000,
+            )
+        finally:
+            _set_active(1)
+        # And it comes back once the account is active again.
+        page.wait_for_function(
+            "() => [...document.querySelectorAll(\"#home-projects_list [id^='home-project_']\")]"
+            ".some(e => e.textContent.trim() === 'Shared')",
+            timeout=30000,
+        )
+
 
 # Holds back Shiny's client ``initialize()`` -- the step that defines
 # ``Shiny.setInputValue`` -- so ``api/whoami`` is guaranteed to answer first.

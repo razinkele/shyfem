@@ -30,6 +30,15 @@ def resolve_ws_user(ws_token: str | None, auth_service) -> dict | None:
     return auth_service.validate_ws_token(ws_token)
 
 
+def identity_fingerprint(user: dict | None) -> tuple | None:
+    """What a render built from the identity depends on: who, and with what
+    role. None for no (or an invalid, inactive or logged-out) user. Compared
+    by value, so an unchanged identity never re-triggers a render."""
+    if not user:
+        return None
+    return (user.get("id"), user.get("role"))
+
+
 class LiveWSIdentity:
     """The identity bound to one Shiny session's WS-auth token, re-validated on
     every read.
@@ -37,7 +46,7 @@ class LiveWSIdentity:
     Resolving the token once at connect time froze the user's role and active
     flag for the life of the WebSocket: an admin demoted, deactivated or logged
     out elsewhere kept their old rights until they reloaded (L31). Each
-    :meth:`current` call goes back to the DB (two indexed SELECTs), so the
+    :meth:`current` call goes back to the DB (three indexed SELECTs), so the
     answer at a decision site is the answer the DB gives now.
 
     :meth:`current` never raises: a DB error reads as None, which every guard
