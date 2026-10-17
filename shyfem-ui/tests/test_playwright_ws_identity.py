@@ -427,7 +427,13 @@ class TestLiveIdentityRevocation:
         page.wait_for_function(shared, timeout=15000)
 
         # A poll that finds nothing changed must not re-render the list:
-        # the same DOM node survives a full poll cycle.
+        # the same DOM node survives a full poll cycle. Settle first: the
+        # previous test re-activated this account, and the two polls run on
+        # independent timers, so the identity poll may still owe a (correct)
+        # re-render for that change when this test starts.
+        from shyfem_ui.services.ws_identity import IDENTITY_POLL_SECONDS
+
+        page.wait_for_timeout((IDENTITY_POLL_SECONDS + 2) * 1000)
         page.evaluate(
             "() => { document.querySelector(\"#home-projects_list [id^='home-project_']\")"
             ".__sfTag = 1; }"
