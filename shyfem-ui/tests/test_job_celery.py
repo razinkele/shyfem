@@ -833,12 +833,17 @@ class TestCeleryWorkerSendsJobEmails:
         import shyfem_ui.config as cfg
 
         jc, uid = worker_process
-        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", "postgresql://u:s3cret@db.example/shyfem")
+        monkeypatch.setenv(
+            "SHYFEM_UI_DATABASE_URL",
+            "postgresql://dbadmin:s3cret@db.example:5433/shyfem?password=qs3cret&sslmode=require",
+        )
         monkeypatch.setattr(cfg, "_config", None)
         with caplog.at_level(logging.INFO, logger="shyfem_ui.services.job_celery"):
             assert jc._worker_notification_service() is not None
-        assert "smtp.example.org" in caplog.text and "db.example/shyfem" in caplog.text
-        assert "s3cret" not in caplog.text
+        assert "smtp.example.org" in caplog.text
+        assert "postgresql://db.example:5433/shyfem" in caplog.text
+        for secret in ("s3cret", "qs3cret", "dbadmin", "sslmode"):
+            assert secret not in caplog.text
 
     def test_injected_service_still_wins(self, worker_process, monkeypatch):
         jc, uid = worker_process

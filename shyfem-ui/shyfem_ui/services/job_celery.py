@@ -345,13 +345,16 @@ def _persist_job_to_db(
 
 
 def _redacted_db_url(url: str) -> str:
-    """``url`` with any password masked, for logs."""
+    """Where ``url`` points (driver, host, port, database), for logs: no
+    username, password or query string, any of which may hold credentials."""
     try:
         from sqlalchemy.engine import make_url
 
-        return make_url(url).render_as_string(hide_password=True)
+        u = make_url(url)
     except Exception:
         return "(unparseable database URL)"
+    where = f"{u.host}:{u.port}" if u.port else (u.host or "")
+    return f"{u.drivername}://{where}/{u.database or ''}"
 
 
 def _worker_notification_service() -> Any | None:
