@@ -1479,3 +1479,45 @@ class TestCeleryActiveJobCount:
         assert await queue.active_job_count_async() == 5  # cached
         monkeypatch.setattr(jc, "ACTIVE_COUNT_CACHE_S", 0.0)
         assert await queue.active_job_count_async() == 6
+
+    async def test_a_scan_finishing_after_every_waiter_gave_up_is_still_cached(self, queue):
+        """Slow but working Redis: each probe times out, but the next one must
+        get the finished count instead of starting another doomed scan."""
+        import asyncio
+        import threading
+
+        gate, calls = threading.Event(), []
+
+        def _slow_count():
+            calls.append(1)
+            gate.wait(5)
+            return 9
+
+        queue._count_active_jobs = _slow_count
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.active_job_count_async(), timeout=0.05)
+        gate.set()
+        await asyncio.sleep(0.2)  # the scan finishes with no one waiting
+        assert await queue.active_job_count_async() == 9
+        assert len(calls) == 1
+
+    async def test_a_failed_scan_no_one_awaited_logs_no_unretrieved_exception(self, queue, caplog):
+        import asyncio
+        import gc
+        import threading
+
+        gate = threading.Event()
+
+        def _failing_count():
+            gate.wait(5)
+            raise ConnectionError("redis blackholed")
+
+        queue._count_active_jobs = _failing_count
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.active_job_count_async(), timeout=0.05)
+        gate.set()
+        await asyncio.sleep(0.2)
+        queue._count_task = None  # as when the next probe replaces it
+        gc.collect()
+        await asyncio.sleep(0)
+        assert "exception was never retrieved" not in caplog.text

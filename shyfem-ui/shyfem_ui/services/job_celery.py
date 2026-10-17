@@ -633,9 +633,21 @@ class CeleryJobQueue(JobQueue):
         task = self._count_task
         if task is None or task.done() or task.get_loop() is not loop:
             task = self._count_task = loop.create_task(asyncio.to_thread(self._count_active_jobs))
+            task.add_done_callback(self._harvest_count)
         count = await asyncio.shield(task)
         self._count_cache = (time.monotonic(), count)
         return count
+
+    def _harvest_count(self, task: asyncio.Future) -> None:
+        """Done-callback of the shared scan: cache its count even when every
+        waiter already timed out (a slow but working Redis would otherwise
+        never get a count to /health), and read its exception so asyncio
+        does not log "exception was never retrieved" for a scan no one
+        awaited to the end."""
+        if task.cancelled():
+            return
+        if task.exception() is None:
+            self._count_cache = (time.monotonic(), task.result())
 
     def _count_active_jobs(self) -> int:
         count = 0
