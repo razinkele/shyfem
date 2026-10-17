@@ -20,6 +20,7 @@ from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.models.user import ROLE_ADMIN, ProjectPermission
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 from shyfem_ui.services.run_logic import list_scoped_jobs
+from shyfem_ui.services.ws_identity import IDENTITY_POLL_SECONDS
 from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,12 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
     plus projects shared with them.
     """
     if role == ROLE_ADMIN:
-        return db.query(Project).order_by(Project.updated_at.desc()).limit(limit).all()
+        return (
+            db.query(Project)
+            .order_by(Project.updated_at.desc(), Project.id.desc())
+            .limit(limit)
+            .all()
+        )
 
     return (
         db.query(Project)
@@ -61,7 +67,7 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
                 ),
             )
         )
-        .order_by(Project.updated_at.desc())
+        .order_by(Project.updated_at.desc(), Project.id.desc())
         .limit(limit)
         .all()
     )
@@ -81,7 +87,7 @@ def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
         return []
     if user and user.get("role") != ROLE_ADMIN:
         return get_visible_projects(db, user["id"], user["role"])
-    return db.query(Project).order_by(Project.updated_at.desc()).limit(10).all()
+    return db.query(Project).order_by(Project.updated_at.desc(), Project.id.desc()).limit(10).all()
 
 
 def _should_show_share_button(project: dict, user: dict | None) -> bool:
@@ -483,19 +489,35 @@ def home_server(
         user = _user()
         with db_session() as db:
             project_list = _dashboard_projects(db, user, _is_server_mode)
-            projects.set(
-                [
-                    {
-                        "id": p.id,
-                        "name": p.name,
-                        "description": p.description,
-                        "work_dir": p.work_dir,
-                        "updated_at": p.updated_at,
-                        "owner_id": getattr(p, "owner_id", None),
-                    }
-                    for p in project_list
-                ]
-            )
+            rows = [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "description": p.description,
+                    "work_dir": p.work_dir,
+                    "updated_at": p.updated_at,
+                    "owner_id": getattr(p, "owner_id", None),
+                }
+                for p in project_list
+            ]
+        # Compare before set: Value.set() dedups by identity, so a fresh but
+        # equal list would re-render the list (and re-run every per-project
+        # handler effect) on each poll below.
+        with reactive.isolate():
+            if rows == projects.get():
+                return
+        projects.set(rows)
+
+    # A share or unshare changes neither the user's id nor role, so
+    # identity_rev cannot see it: re-query what this user may see.
+    @reactive.effect
+    def _poll_visible_projects():
+        reactive.invalidate_later(IDENTITY_POLL_SECONDS)
+        try:
+            _refresh_projects()
+        except Exception:
+            # An exception escaping an effect closes the session.
+            logger.warning("Dashboard project re-check failed", exc_info=True)
 
     def _requested_show_all() -> bool:
         try:
@@ -577,6 +599,10 @@ def home_server(
     @render.ui
     def projects_list():
         project_data = projects.get()
+        # The Share buttons depend on the role too: a demotion that leaves
+        # the visible rows equal must still re-render them.
+        if identity_rev is not None:
+            identity_rev.get()
         if not project_data:
             return ui.p("No projects yet. Create one to get started!", class_="text-muted")
 
@@ -1153,7 +1179,11 @@ def home_server(
         # modal (option values are absolute paths, so _do_import_grid's
         # confine-and-copy of input.import_grd_path() is unchanged). A grid
         # elsewhere is uploaded on the Files page first.
-        proj = _project_by_id(projects.get(), input.import_project_id())
+        # isolate: a poll refreshing `projects` must not reset the picker
+        # (and the user's choice) while the modal is open.
+        with reactive.isolate():
+            project_rows = projects.get()
+        proj = _project_by_id(project_rows, input.import_project_id())
         return project_file_select(
             "import_grd_path",
             "Grid File (.grd)",

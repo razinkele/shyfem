@@ -411,6 +411,68 @@ class TestLiveIdentityRevocation:
             timeout=30000,
         )
 
+    def test_dashboard_list_drops_a_project_after_unshare(
+        self, pw_demotee_page, ws_identity_db_path
+    ):
+        """An unshare changes neither the user's id nor role, so the identity
+        poll alone cannot see it; the list must still drop the project."""
+        import sqlite3
+
+        page = pw_demotee_page
+        _wait_identity_resolved_for_viewer(page)
+        shared = (
+            "() => [...document.querySelectorAll(\"#home-projects_list [id^='home-project_']\")]"
+            ".some(e => e.textContent.trim() === 'Shared')"
+        )
+        page.wait_for_function(shared, timeout=15000)
+
+        # A poll that finds nothing changed must not re-render the list:
+        # the same DOM node survives a full poll cycle. Settle first: the
+        # previous test re-activated this account, and the two polls run on
+        # independent timers, so the identity poll may still owe a (correct)
+        # re-render for that change when this test starts.
+        from shyfem_ui.services.ws_identity import IDENTITY_POLL_SECONDS
+
+        page.wait_for_timeout((IDENTITY_POLL_SECONDS + 2) * 1000)
+        page.evaluate(
+            "() => { document.querySelector(\"#home-projects_list [id^='home-project_']\")"
+            ".__sfTag = 1; }"
+        )
+        page.wait_for_timeout(12000)
+        assert page.evaluate(
+            "() => document.querySelector(\"#home-projects_list [id^='home-project_']\")"
+            ".__sfTag === 1"
+        ), "an unchanged poll re-rendered the project list"
+
+        con = sqlite3.connect(str(ws_identity_db_path))
+        try:
+            where = (
+                "project_id = (SELECT id FROM projects WHERE name = ?) "
+                "AND user_id = (SELECT id FROM users WHERE username = ?)"
+            )
+            args = ("Shared", DEMOTEE_USERNAME)
+            row = con.execute(
+                f"SELECT id, project_id, user_id, role, created_at "
+                f"FROM project_permissions WHERE {where}",
+                args,
+            ).fetchone()
+            assert row is not None, "demotee has no permission on Shared"
+            con.execute(f"DELETE FROM project_permissions WHERE {where}", args)
+            con.commit()
+            try:
+                page.wait_for_function(f"() => !({shared})()", timeout=30000)
+            finally:
+                con.execute(
+                    "INSERT INTO project_permissions "
+                    "(id, project_id, user_id, role, created_at) VALUES (?, ?, ?, ?, ?)",
+                    row,
+                )
+                con.commit()
+        finally:
+            con.close()
+        # A share shows up the same way.
+        page.wait_for_function(shared, timeout=30000)
+
 
 # Holds back Shiny's client ``initialize()`` -- the step that defines
 # ``Shiny.setInputValue`` -- so ``api/whoami`` is guaranteed to answer first.

@@ -98,10 +98,6 @@ SIDEBAR_GROUPS = [
 # Pages accessible to tutorial (read-only demo) accounts
 _TUTORIAL_ALLOWED_PAGES = {"Tutorial"}
 
-# How often an open session re-checks its live identity for renders that
-# depend on it (three indexed SELECTs per session per poll).
-IDENTITY_POLL_SECONDS = 10
-
 
 def _filter_sidebar_for_role(groups: list[dict], role: str) -> list[dict]:
     """Return a filtered copy of SIDEBAR_GROUPS for the given user role.
@@ -1059,7 +1055,7 @@ def _build_server(
 
     @reactive.effect
     def _watch_live_identity():
-        from shyfem_ui.services.ws_identity import identity_fingerprint
+        from shyfem_ui.services.ws_identity import IDENTITY_POLL_SECONDS, identity_fingerprint
 
         reactive.invalidate_later(IDENTITY_POLL_SECONDS)
         fp = identity_fingerprint(current_user())

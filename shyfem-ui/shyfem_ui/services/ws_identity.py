@@ -30,6 +30,11 @@ def resolve_ws_user(ws_token: str | None, auth_service) -> dict | None:
     return auth_service.validate_ws_token(ws_token)
 
 
+# How often an open session re-checks what depends on who the user is: the
+# live identity (three indexed SELECTs) and the dashboard's visible projects.
+IDENTITY_POLL_SECONDS = 10
+
+
 def identity_fingerprint(user: dict | None) -> tuple | None:
     """What a render built from the identity depends on: who, and with what
     role. None for no (or an invalid, inactive or logged-out) user. Compared
