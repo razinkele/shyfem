@@ -37,7 +37,7 @@
 !===========================================================
 
 	use shympi
-	use shympi_aux
+	use mpi		!MPI_* constants (came via shympi_aux, now shympi_internal)
 	use mod_meteo
 	use mod_waves
 	use mod_roughness
@@ -151,61 +151,88 @@
        !write(*,*) 'NSEAL =', NSEAL, 'NKN =', NKN
        !write(*,*) 'NKNDIM =', NKNDIM, 'NGLOBAL =', NP_GLOBAL
 
-		allocate(stokesx(nlv,nkn),stat=ierr); stokesx = 0.
+		allocate(stokesx(nlv,nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(stokesy(nlv,nkn),stat=ierr); stokesy = 0.
+		stokesx = 0.
+		allocate(stokesy(nlv,nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wavejb(nkn),stat=ierr); wavejb = 0.
+		stokesy = 0.
+		allocate(wavejb(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wtauw(nkn),stat=ierr); wtauw = 0.
+		wavejb = 0.
+		allocate(wtauw(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wavewl(nkn),stat=ierr); wavewl = 0.
+		wtauw = 0.
+		allocate(wavewl(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wavedi(nkn),stat=ierr); wavedi = 0.
+		wavewl = 0.
+		allocate(wavedi(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
+		wavedi = 0.
 
-		allocate(sxx3dlshyfem(nlv_global,nkn),stat=ierr); sxx3dlshyfem = 0.
+		allocate(sxx3dlshyfem(nlv_global,nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(sxy3dlshyfem(nlv_global,nkn),stat=ierr); sxy3dlshyfem = 0.
+		sxx3dlshyfem = 0.
+		allocate(sxy3dlshyfem(nlv_global,nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(syy3dlshyfem(nlv_global,nkn),stat=ierr); syy3dlshyfem = 0.
+		sxy3dlshyfem = 0.
+		allocate(syy3dlshyfem(nlv_global,nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(sxx3dgl(nlv_global,np_global),stat=ierr); sxx3dgl = 0.
+		syy3dlshyfem = 0.
+		allocate(sxx3dgl(nlv_global,np_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(sxy3dgl(nlv_global,np_global),stat=ierr); sxy3dgl = 0.
+		sxx3dgl = 0.
+		allocate(sxy3dgl(nlv_global,np_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(syy3dgl(nlv_global,np_global),stat=ierr); syy3dgl = 0.
+		sxy3dgl = 0.
+		allocate(syy3dgl(nlv_global,np_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(outvargl(nvarsww3,np_global),stat=ierr); outvargl = 0.
+		syy3dgl = 0.
+		allocate(outvargl(nvarsww3,np_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(outvarshyfem(nvarsww3, nkn),stat=ierr); outvarshyfem = 0.
+		outvargl = 0.
+		allocate(outvarshyfem(nvarsww3, nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wxvgl(nkn_global),stat=ierr); wxvgl = 0.
+		outvarshyfem = 0.
+		allocate(wxvgl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wyvgl(nkn_global),stat=ierr); wyvgl = 0.
+		wxvgl = 0.
+		allocate(wyvgl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(currxlshyfem(nkn),stat=ierr); currxlshyfem = 0.
+		wyvgl = 0.
+		allocate(currxlshyfem(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(currylshyfem(nkn),stat=ierr); currylshyfem = 0.
+		currxlshyfem = 0.
+		allocate(currylshyfem(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wlv(nkn),stat=ierr); wlv = 0.
+		currylshyfem = 0.
+		allocate(wlv(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(xgvgl(nkn_global),stat=ierr); xgvgl = 0.
+		wlv = 0.
+		allocate(xgvgl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(ygvgl(nkn_global),stat=ierr); ygvgl = 0.
+		xgvgl = 0.
+		allocate(ygvgl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(wlvgl(nkn_global),stat=ierr); wlvgl = 0.
+		ygvgl = 0.
+		allocate(wlvgl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(currxgl(nkn_global),stat=ierr); currxgl = 0.
+		wlvgl = 0.
+		allocate(currxgl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(currygl(nkn_global),stat=ierr); currygl = 0.
+		currxgl = 0.
+		allocate(currygl(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(ipgl_shyfem(nkn_global),stat=ierr); ipgl_shyfem = 0
+		currygl = 0.
+		allocate(ipgl_shyfem(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(iplg_shyfem(nkn),stat=ierr); iplg_shyfem = 0
+		ipgl_shyfem = 0
+		allocate(iplg_shyfem(nkn),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
-		allocate(node2domain(nkn_global),stat=ierr); node2domain = 0
+		iplg_shyfem = 0
+		allocate(node2domain(nkn_global),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal('error stop ww3_init_internal: allocation failed')
+		node2domain = 0
 !
 ! ... get the ghost hallo sums for all nodes ...
 !
@@ -435,7 +462,7 @@
 		double precision dtime
 		double precision daux
 		integer, save :: icall = 0   !initialization parameter
-		real, save :: tramp
+		real, save :: tramp = 0.	![s] ramp-in of wave forces, 0 = off (as waves_admin)
 		real alpha
 		logical has_output_d
 
@@ -669,8 +696,6 @@
 		double precision dtime
 		double precision daux
 		integer, save :: icall = 0   !initialization parameter
-		real, save :: tramp
-		real alpha
 		logical has_output_d
 
 !------------------------------------------------------
@@ -854,9 +879,10 @@
 		real, allocatable :: tmp(:)
 		integer           :: ip, ierr
 
-		allocate(tmp(NP_GLOBAL),stat=ierr); tmp = 0.
+		allocate(tmp(NP_GLOBAL),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal( &
      &			'error stop get_global_array_ww3: allocation failed')
+		tmp = 0.
 		globalarray = 0.
 
 		if (size(globalarray).ne. NP_GLOBAL) then
@@ -913,9 +939,10 @@
 
 		integer           :: ip, ierr
 
-		allocate(tmp(NP_GLOBAL),stat=ierr); tmp = 0.
+		allocate(tmp(NP_GLOBAL),stat=ierr)
 		if( ierr /= 0 ) call shympi_abort_internal( &
      &			'error stop fill_local_array_ww3: allocation failed')
+		tmp = 0.
 		localarray = 0.
 
 		if (size(globalarray).ne. NP_GLOBAL) then
