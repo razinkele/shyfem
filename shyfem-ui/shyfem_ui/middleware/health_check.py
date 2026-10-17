@@ -1,7 +1,13 @@
 """ASGI middleware for the /health JSON endpoint."""
 
+import asyncio
 import json
 import time
+
+# Seconds /health waits for a job queue's async probe (Celery: a Redis scan)
+# before reporting the queue as failed. The probe runs off the event loop;
+# this bounds the response, never the loop.
+QUEUE_PROBE_TIMEOUT_S = 3.0
 
 
 class HealthCheckMiddleware:
@@ -40,8 +46,16 @@ class HealthCheckMiddleware:
         active_jobs = -1
         queue_ok = True
         try:
-            val = getattr(self._job_queue, "active_job_count", -1)
-            active_jobs = val() if callable(val) else val
+            # A queue whose count needs I/O (CeleryJobQueue: Redis) offers an
+            # async probe; the in-memory LocalJobQueue count stays a plain
+            # attribute read on the loop thread, the only thread allowed to
+            # iterate its job dict.
+            probe = getattr(self._job_queue, "active_job_count_async", None)
+            if probe is not None:
+                active_jobs = await asyncio.wait_for(probe(), timeout=QUEUE_PROBE_TIMEOUT_S)
+            else:
+                val = getattr(self._job_queue, "active_job_count", -1)
+                active_jobs = val() if callable(val) else val
         except Exception:
             active_jobs = -1
             queue_ok = False

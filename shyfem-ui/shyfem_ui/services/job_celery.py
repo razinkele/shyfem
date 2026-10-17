@@ -58,6 +58,14 @@ CELERY_LOST_ERROR = "lost: its Celery worker stopped while the job ran"
 # Seconds a reconcile pass waits for workers to answer the ``active`` query.
 INSPECT_TIMEOUT_S = 5.0
 
+# Redis client timeouts (s): connecting, and any single command.
+REDIS_CONNECT_TIMEOUT_S = 5.0
+REDIS_SOCKET_TIMEOUT_S = 10.0
+
+_ACTIVE_STATUS_VALUES = frozenset(
+    s.value for s in (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
+)
+
 # Module-level Celery app (created lazily, shared across imports)
 _celery_app = None
 
@@ -98,7 +106,13 @@ def _get_redis_client(redis_url: str = "redis://localhost:6379/0") -> Any:
         raise ImportError(
             "Redis is required for server mode. Install with: pip install redis"
         ) from exc
-    return redis.from_url(redis_url)
+    # Bounded: a blackholed Redis must fail a call, not hang the thread (the
+    # web side calls this from to_thread workers shared with the whole app).
+    return redis.from_url(
+        redis_url,
+        socket_connect_timeout=REDIS_CONNECT_TIMEOUT_S,
+        socket_timeout=REDIS_SOCKET_TIMEOUT_S,
+    )
 
 
 def _store_job_info(redis_client, job_info: JobInfo) -> None:
@@ -582,6 +596,22 @@ class CeleryJobQueue(JobQueue):
         _store_job_info(rc, job_info)
 
         return job_id
+
+    async def active_job_count_async(self) -> int:
+        """Number of PENDING/QUEUED/RUNNING jobs in the Redis job store, for
+        /health. Counted in a worker thread: it is a Redis round trip."""
+        return await asyncio.to_thread(self._count_active_jobs)
+
+    def _count_active_jobs(self) -> int:
+        count = 0
+        for raw in self._get_redis_client().hvals("shyfem:jobs"):
+            try:
+                status = json.loads(raw).get("status")
+            except (TypeError, ValueError, AttributeError):
+                continue  # an unreadable row is not an active job
+            if status in _ACTIVE_STATUS_VALUES:
+                count += 1
+        return count
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a job."""

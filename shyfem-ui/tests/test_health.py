@@ -203,6 +203,57 @@ class TestHealthCheckMiddleware:
         assert body["worker_count"] == 8
 
 
+class TestHealthAsyncQueueProbe:
+    """A queue whose count needs I/O (Celery: Redis) offers
+    ``active_job_count_async``; /health awaits it, bounded, off the loop."""
+
+    async def test_async_probe_is_used(self):
+        class Q:
+            async def active_job_count_async(self):
+                return 7
+
+            active_job_count = property(lambda self: pytest.fail("sync count read"))
+
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_ok, job_queue=Q())
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        body = json.loads(sent[1]["body"])
+        assert sent[0]["status"] == 200
+        assert body["active_jobs"] == 7 and body["queue_depth"] == 7
+
+    async def test_hanging_probe_degrades_within_the_timeout(self, monkeypatch):
+        import asyncio
+        import time
+
+        import shyfem_ui.middleware.health_check as hc
+
+        monkeypatch.setattr(hc, "QUEUE_PROBE_TIMEOUT_S", 0.2)
+
+        class Q:
+            async def active_job_count_async(self):
+                await asyncio.sleep(30)
+
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_ok, job_queue=Q())
+        sent = []
+        t0 = time.monotonic()
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        assert time.monotonic() - t0 < 2
+        body = json.loads(sent[1]["body"])
+        assert sent[0]["status"] == 503
+        assert body["status"] == "degraded" and body["active_jobs"] == -1
+
+    async def test_probe_error_degrades(self):
+        class Q:
+            async def active_job_count_async(self):
+                raise ConnectionError("redis down")
+
+        mw = HealthCheckMiddleware(_mock_app, db_check=_mock_db_check_ok, job_queue=Q())
+        sent = []
+        await mw(_http_scope("/health"), _noop_receive, sent.append)
+        assert sent[0]["status"] == 503
+        assert json.loads(sent[1]["body"])["active_jobs"] == -1
+
+
 class TestHealthIntegration:
 
     def test_health_middleware_is_outermost(self):

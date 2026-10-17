@@ -1362,3 +1362,47 @@ class TestCeleryWorkerEntryPoint:
             with pytest.raises(AttributeError):
                 jc.no_such_thing  # noqa: B018
         get_app.assert_not_called()
+
+
+class TestCeleryActiveJobCount:
+    """/health's active_jobs under Celery: the PENDING/QUEUED/RUNNING jobs in
+    the Redis job store (the queue had no count at all, so /health said -1)."""
+
+    async def test_counts_active_jobs_in_redis(self, queue):
+        import threading
+
+        store = _DictRedis()
+        for jid, st in [
+            ("p", JobStatus.PENDING),
+            ("q", JobStatus.QUEUED),
+            ("r", JobStatus.RUNNING),
+            ("c", JobStatus.COMPLETED),
+            ("f", JobStatus.FAILED),
+            ("x", JobStatus.CANCELLED),
+        ]:
+            _store_job_info(store, _make_job_info(job_id=jid, status=st))
+        store.jobs["junk"] = "not json"
+        seen = {}
+        real = store.jobs.values
+
+        def _hvals(key):
+            seen["thread"] = threading.get_ident()
+            return list(real())
+
+        store.hvals = _hvals
+        queue._redis_client = store
+        assert await queue.active_job_count_async() == 3
+        assert seen["thread"] != threading.get_ident(), "Redis scan ran on the event loop"
+
+    def test_redis_client_has_timeouts(self):
+        import sys
+        import types
+
+        import shyfem_ui.services.job_celery as jc
+
+        fake = types.SimpleNamespace(from_url=MagicMock(return_value="client"))
+        with patch.dict(sys.modules, {"redis": fake}):
+            assert jc._get_redis_client("redis://h:1/0") == "client"
+        kw = fake.from_url.call_args.kwargs
+        assert kw["socket_connect_timeout"] == jc.REDIS_CONNECT_TIMEOUT_S > 0
+        assert kw["socket_timeout"] == jc.REDIS_SOCKET_TIMEOUT_S > 0
