@@ -56,6 +56,10 @@ except ImportError:  # pragma: no cover - exercised only without redis installed
 # the task's ``finally`` never ran, so the reconcile pass writes this instead.
 CELERY_LOST_ERROR = "lost: its Celery worker stopped while the job ran"
 
+# error_message of a job whose worker stopped it without a user cancel (a
+# cold worker shutdown, a revoke from outside the UI).
+CELERY_STOPPED_ERROR = "stopped: its Celery worker interrupted the job"
+
 # Seconds a reconcile pass waits for workers to answer the ``active`` query.
 INSPECT_TIMEOUT_S = 5.0
 
@@ -290,6 +294,22 @@ def execute_shyfem_job(
         if job_info.stderr_file:
             Path(job_info.stderr_file).write_text(result.stderr)
 
+    except (SystemExit, KeyboardInterrupt, asyncio.CancelledError):
+        # The worker stopped this task. revoke(terminate=True) -- what
+        # CeleryJobQueue.cancel sends -- SIGTERMs the pool process, whose
+        # handler raises SystemExit; asyncio.run's cleanup has already
+        # cancelled the run, so the wrapper stopped the shyfem/mpirun group.
+        # Without this clause the finally wrote the in-memory RUNNING back
+        # over the CANCELLED the web side stored: a phantom running job.
+        # CANCELLED if that is what the web side recorded; otherwise the
+        # worker itself was stopping (a cold shutdown), and the job failed.
+        stored = _load_job_info(rc, job_id)
+        if stored is not None and stored.status == JobStatus.CANCELLED:
+            job_info.status = JobStatus.CANCELLED
+        else:
+            job_info.status = JobStatus.FAILED
+            job_info.error_message = CELERY_STOPPED_ERROR
+        raise  # let the pool process exit as Celery intends
     except Exception as e:
         job_info.status = JobStatus.FAILED
         job_info.error_message = str(e)

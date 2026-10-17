@@ -1521,3 +1521,60 @@ class TestCeleryActiveJobCount:
         gc.collect()
         await asyncio.sleep(0)
         assert "exception was never retrieved" not in caplog.text
+
+
+class TestCeleryStoppedTaskEndState:
+    """revoke(terminate=True) SIGTERMs the pool process; its handler raises
+    SystemExit, which skipped ``except Exception``, so the task's finally
+    wrote the in-memory RUNNING back over the CANCELLED the web side had
+    stored: a cancelled job showed as running (seen with a real Celery 5.6
+    worker), later mislabelled 'lost' by the reconcile."""
+
+    def _run(self, tmp_path, stored_status, exc):
+        import shyfem_ui.services.job_celery as jc
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="c1", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+
+        async def _interrupted(*_a, **_k):
+            # what the web side did meanwhile, then the signal's exception
+            info = _load_job_info(store, "c1")
+            info.status = stored_status
+            _store_job_info(store, info)
+            raise exc
+
+        wrapper = MagicMock()
+        wrapper.run_command.side_effect = _interrupted
+        with (
+            patch.object(jc, "_get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch.object(jc, "_persist_job_to_db") as persist,
+            patch.object(jc, "_send_completion_notification"),
+        ):
+            with pytest.raises(type(exc)):
+                jc.execute_shyfem_job("c1", "redis://x", str(tmp_path))
+        return _load_job_info(store, "c1"), persist.call_args.args[0]
+
+    def test_user_cancel_ends_cancelled_and_the_process_still_exits(self, tmp_path):
+        info, persisted = self._run(tmp_path, JobStatus.CANCELLED, SystemExit(-241))
+        assert info.status == JobStatus.CANCELLED and info.completed_at is not None
+        assert persisted.status == JobStatus.CANCELLED
+
+    def test_worker_stopping_on_its_own_ends_failed(self, tmp_path):
+        import shyfem_ui.services.job_celery as jc
+
+        info, persisted = self._run(tmp_path, JobStatus.RUNNING, SystemExit(-241))
+        assert info.status == JobStatus.FAILED
+        assert info.error_message == jc.CELERY_STOPPED_ERROR
+        assert persisted.status == JobStatus.FAILED
+
+    def test_a_cancelled_coroutine_is_handled_the_same_way(self, tmp_path):
+        import asyncio
+
+        info, _ = self._run(tmp_path, JobStatus.CANCELLED, asyncio.CancelledError())
+        assert info.status == JobStatus.CANCELLED
