@@ -1227,7 +1227,6 @@ class TestCeleryWorkerEntryPoint:
             assert jc.app is fake_app
         get_app.assert_called_with("redis://broker.example:6380/2")
         register.assert_called_once_with(fake_app)
-        cfg._config = None
 
     def test_import_and_other_attributes_need_no_celery(self):
         """Celery is optional: importing the module and probing any other

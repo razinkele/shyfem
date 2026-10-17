@@ -413,7 +413,10 @@ def __getattr__(name: str) -> Any:
     for an ``app`` attribute; without one it finds no app and cannot start a
     worker. It is built on first access only (PEP 562), so importing the
     module never needs Celery installed: local mode and the tests import it
-    without. The broker URL is ``SHYFEM_UI_REDIS_URL``, as on the web side.
+    without. Asking for ``app`` itself (``hasattr`` included) does, and raises
+    ImportError without it -- kept so ``celery -A`` says "install celery"
+    rather than "no app". The broker URL is ``SHYFEM_UI_REDIS_URL``, as on the
+    web side; a worker reads ``.env`` from its working directory.
     """
     if name == "app":
         global _worker_task
