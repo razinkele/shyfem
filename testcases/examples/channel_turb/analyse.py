@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 
 KAPPA, G = 0.4, 9.81
+PI_COLES = 0.2   # Coles' wake parameter of open-channel experiments (Absi 2021)
 NX, NY, DX = 81, 5, 250.0
 MID = 2 * NX + NX // 2  # 0-based index of centreline node at x = 10 km (node 203)
 
@@ -60,17 +61,19 @@ def profile(path):
     u = np.hypot(r["uprv"][:, MID], r["vprv"][:, MID])   # layer-centre speed
     drift = np.max(np.abs(nut - r_prev["visv"][:, MID])) / np.max(nut)
     ana = KAPPA * ustar * zb * (1 - zb / H)
+    # log-wake-modified profile: the parabola corrected by Coles' wake term
+    wake = ana / (1 + np.pi * PI_COLES * (zb / H) * np.sin(np.pi * zb / H))
     # velocity-derived nu_t at the inner interfaces: stress u*^2 (1 - z/H) over shear
     shear = (u[:-1] - u[1:]) / dz
     nut_u = ustar**2 * (1 - zb[:-1] / H) / np.where(shear > 0, shear, np.nan)
-    return dict(nl=nl, H=H, S=S, ustar=ustar, U=u.mean(), zb=zb, nut=nut, ana=ana,
+    return dict(nl=nl, H=H, S=S, ustar=ustar, U=u.mean(), zb=zb, nut=nut, ana=ana, wake=wake,
                 nut_u=nut_u, drift=drift, u=u)
 
 
 # arguments: run names (each read at 20 and 40 layers) or explicit "stem:nl" pairs
 runs = sys.argv[1:] or ["keps", "gotm_gen", "gotm_ke1", "gotm_ke2"]
 print(f"{'run':<12}{'nl':>4}{'U m/s':>8}{'u* cm/s':>9}{'drift':>8}"
-      f"{'max nut/ana':>13}{'mean nut/ana':>14}{'nut(zb<0.2H)/ana':>18}{'nut/nut_from_u':>16}")
+      f"{'max nut/ana':>13}{'mean nut/ana':>14}{'nut(zb<0.2H)/ana':>18}{'mean/logwake':>14}{'nut/nut_from_u':>16}")
 results = {}
 pairs = []
 for run in runs:
@@ -89,6 +92,7 @@ for run, nl in pairs:
         print(f"{run:<12}{nl:>4}{p['U']:>8.3f}{100 * p['ustar']:>9.2f}{p['drift']:>8.1e}"
               f"{p['nut'].max() / p['ana'].max():>13.2f}"
               f"{p['nut'][inner].mean() / p['ana'][inner].mean():>14.2f}"
-              f"{p['nut'][lower].mean() / p['ana'][lower].mean():>18.2f}{ratio_u:>16.2f}")
+              f"{p['nut'][lower].mean() / p['ana'][lower].mean():>18.2f}"
+              f"{p['nut'][inner].mean() / p['wake'][inner].mean():>14.2f}{ratio_u:>16.2f}")
 
 np.save("profiles.npy", {f"{k[0]}_{k[1]}": v for k, v in results.items()}, allow_pickle=True)
