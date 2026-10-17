@@ -130,7 +130,22 @@ def str_editor_server(
     parsed_file = reactive.value(None)
     validation_errors = reactive.value([])
     is_modified = reactive.value(False)
-    _form_syncing = False
+
+    def _push_text(text: str) -> None:
+        # content tracks what the textarea holds, so the client's echo of
+        # this push compares equal in _track_changes and is a no-op.
+        content.set(text)
+        ui.update_text_area("editor_content", value=text)
+
+    def _push_edit(text: str) -> None:
+        # A server-side edit: the echo no longer re-parses, so parse here
+        # (a fresh object, so the parent's sync and the form both see it).
+        _push_text(text)
+        try:
+            parsed_file.set(StrParser.parse(text))
+        except Exception:
+            logger.warning("Failed to re-parse edited STR text", exc_info=True)
+        is_modified.set(True)
 
     @reactive.effect
     def _load_file():
@@ -138,8 +153,10 @@ def str_editor_server(
         if path and path.exists():
             try:
                 text = path.read_text()
-                content.set(text)
+                # Parse first: a file that fails to parse must not reach the
+                # textarea while the form still holds the previous file.
                 parsed = StrParser.parse(text)
+                _push_text(text)
                 parsed_file.set(parsed)
                 validation_errors.set([])
                 is_modified.set(False)
@@ -149,12 +166,14 @@ def str_editor_server(
     @reactive.effect
     @reactive.event(input.editor_content)
     def _track_changes():
-        nonlocal _form_syncing
-        if _form_syncing:
+        # Compare-before-set, not a sync flag: the echo of a server push
+        # arrives in a later flush, after any flag has been reset.
+        text = input.editor_content()
+        if text == content.get():
             return
+        content.set(text)
         is_modified.set(True)
         # Re-parse for form sync
-        text = input.editor_content()
         if text:
             try:
                 parsed = StrParser.parse(text)
@@ -166,7 +185,6 @@ def str_editor_server(
     @reactive.event(input.apply_form_btn)
     def _apply_form_changes():
         """Apply structured form edits back to the raw editor."""
-        nonlocal _form_syncing
         parsed = parsed_file.get()
         if parsed is None:
             return
@@ -197,17 +215,13 @@ def str_editor_server(
         # Regenerate text from modified parsed file. _format_value refuses
         # values the STR reader cannot express (it has no escape for either
         # quote delimiter), so serialization can fail on free-text input.
-        _form_syncing = True
         try:
             text = StrParser.generate(parsed)
-            content.set(text)
-            ui.update_text_area("editor_content", value=text)
-            is_modified.set(True)
         except ValueError as e:
             logger.exception("Regenerating STR text from form edits failed")
             ui.notification_show(f"Cannot apply: {e}", type="error", duration=8)
-        finally:
-            _form_syncing = False
+            return
+        _push_edit(text)
 
     @reactive.effect
     @reactive.event(input.load_btn)
@@ -238,7 +252,9 @@ def str_editor_server(
             validation_errors.set([_denied])
             return
 
-        text = input.editor_content()
+        # content, not input.editor_content: in Form view there is no
+        # textarea, so the input still holds the text from before an Apply.
+        text = content.get()
         try:
             errors = validate_str_content(text)
             if errors:
@@ -260,7 +276,7 @@ def str_editor_server(
     @reactive.effect
     @reactive.event(input.validate_btn)
     def _handle_validate():
-        text = input.editor_content()
+        text = content.get()
         errors = validate_str_content(text)
         validation_errors.set(errors if errors else ["File is valid"])
 
@@ -272,41 +288,35 @@ def str_editor_server(
             return
 
         template = generate_section_template(section)
-        current = input.editor_content() or ""
+        current = content.get() or ""
 
         new_content = current.rstrip() + "\n\n" + template
-        ui.update_text_area("editor_content", value=new_content)
+        _push_edit(new_content)
         ui.update_select("insert_section", selected="")
 
     # --- View rendering ---
 
+    # The layout depends on the view mode ONLY. The textarea must not sit in
+    # a render that re-runs on a re-parse: every edit (and Apply's own echo)
+    # re-parses, and a re-render replaces the textarea with a fresh one.
     @render.ui
     def editor_view():
         mode = input.view_mode()
-        parsed = parsed_file.get()
 
+        with reactive.isolate():
+            current_text = content.get()
         raw_panel = ui.div(
             ui.input_text_area(
                 "editor_content",
                 "",
+                value=current_text,
                 height="500px",
                 resize="vertical",
             ),
             class_="str-editor-area",
             style="font-family: monospace; font-size: 13px;",
         )
-
-        # Compute search filter
-        try:
-            search_term = input.param_search()
-        except Exception:
-            search_term = ""
-        search_filter = filter_sections(search_term, parsed)
-        pid = project_id.get() if project_id else None
-        choices = list(file_choices()) if file_choices is not None else []
-        form_panel = _build_form_panel(
-            parsed, search_filter=search_filter, project_id=pid, file_choices=choices
-        )
+        form_panel = ui.output_ui("form_view")
 
         if mode == "raw":
             return raw_panel
@@ -318,6 +328,20 @@ def str_editor_server(
                 ui.column(6, raw_panel),
                 ui.column(6, form_panel),
             )
+
+    @render.ui
+    def form_view():
+        parsed = parsed_file.get()
+        try:
+            search_term = input.param_search()
+        except Exception:
+            search_term = ""
+        search_filter = filter_sections(search_term, parsed)
+        pid = project_id.get() if project_id else None
+        choices = list(file_choices()) if file_choices is not None else []
+        return _build_form_panel(
+            parsed, search_filter=search_filter, project_id=pid, file_choices=choices
+        )
 
     @render.ui
     def status_bar():
@@ -359,7 +383,7 @@ def str_editor_server(
 
         This avoids the parent having to know the internal input ID.
         """
-        ui.update_text_area("editor_content", value=text)
+        _push_edit(text)
 
     return {
         "content": content,
