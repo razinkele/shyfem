@@ -1,7 +1,7 @@
 # CLAUDE.md - SHYFEM Project Instructions
 
 ## Project
-SHYFEM (System of HydroDYnamic Finite Element Modules) v8.4.1 - Finite element hydrodynamic simulation for lagoons, coastal seas, and estuaries. Fortran 90/95+ with C utilities.
+SHYFEM (System of HydroDYnamic Finite Element Modules) v8.5.1 - Finite element hydrodynamic simulation for lagoons, coastal seas, and estuaries. Fortran 90/95+ with C utilities.
 
 ## Build Commands
 
