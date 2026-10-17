@@ -8,6 +8,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Model, turbulence (changes results):** k-epsilon (`iturb=2`) runs no longer die with SIGFPE at the first time step. `keps_shell` passed the density *anomaly* ρ′ to `keps` as ρ, which divides stress by it: 0/0 with `ibarcl=0`, a negative base under `**1.5` in water lighter than `rowass`. It now passes `rowass + rhov`, as `model3d_util` and `substress` already do. (#97)
+- **Model, turbulence (changes results):** the k-epsilon epsilon boundary condition had the wrong units (`u*³·dh/κ` instead of `u*³/(κ·dh)`), because `dzk` already holds `1/dh`. Plus behaviour-neutral fixes on the same path: `n2` boundaries read uninitialised, an out-of-bounds `dzr(lmax+1)` write, `intent`s and bare `stop`s. (#98)
+- **Model, input parsing (changes results at round-off level):** decimal numbers in STR and other input files are parsed exactly. `istod` scaled each fractional digit by a single-precision `0.1`, so every value with a decimal part was off by about 1.5×10⁻⁸ relative (`0.3` read as 0.30000000447). (#102)
+- **Model, restart:** a truncated or unwritable restart file now aborts with a clear message instead of a Fortran runtime error. Every bulk payload read and write in `mod_restart.f90` and the skip reads in `rst_skip_record` check `iostat`. Also: the `is_offline` guard could never fire, and `dts_get_init_0` never set the minute. (#103)
+- **Model, restart tools:** `rstinf` and `rst2shy` no longer overrun their skip buffers on a mesh with more nodes than elements; the `wlnv` record is read as a slice. (#110)
+- **Model, restart:** a model built without EUTRO, reading a restart that carries eco data, used to skip none of those records and desync every later read; it now aborts with a clear message. The mercury reader skips its section correctly, the skip reads check `iostat`, and an abort before `MPI_Init` (as in `rstinf`) exits cleanly with code 33. (#111)
+- **Model, WaveWatch III coupling (`WW3=true`):** the 29 allocations check their status before touching the array; the never-assigned `tramp` is defined as 0 (off, as in `waves_admin`); the stale `use shympi_aux` that stopped a `WW3=true` build is replaced. Not exercised by CI, which builds without WW3. (#114)
+
+### Changed
+- **Build:** `SOLVER=GAUSS`, `PARDISO`, `PARALUTION` and `PETSC_AmgX` are rejected with a clear message: their shared backend `simsys_lp.f90` no longer builds. Use `SPARSKIT` (the default) or `PETSC`. (#101)
+
+---
+
+
+## [shyfem-ui 0.7.1] — 2026-10-17
+
+A fix release: open sessions now follow account changes, the STR editor keeps
+what you type, a failed run no longer leaves its simulation running, and server
+(Celery) mode gets job reconciliation, a worker that can start, job emails and a
+real `/health` count. Tagged `shyfem-ui-v0.7.1`.
+
+### Security
+- **UI:** a role change, deactivation or logout now reaches sessions that are already open. The WebSocket identity was validated once at connect, so a deactivated editor could keep saving and a demoted admin kept admin rights until they reloaded. It is now re-validated at every decision, admin checks no longer fall back to the connect-time identity in server mode, and admin actions are audited under the live user. (#99)
+- **UI:** a password reset signs out the user's open sessions and WebSocket tokens, so a tab or a stolen cookie from before the reset stops working. (#100)
+- **UI, Run page:** workflow history is scoped per user. Every user's workflow IDs and names were listed to everyone; now each user sees their own, and an admin sees all only with the "All jobs" switch on. (#106)
+
+### Fixed
+- **UI, simulation runs:** a run that fails while its output is being read no longer leaves the simulation running. A failing log write (a full disk), a failing progress update, or an output line over 64 KiB used to report the job failed but never stop the shyfem/mpirun process group. Now the whole group is stopped, a failed progress update is logged once and the run continues, and the failure message keeps the tool's own error output. (#119)
+- **UI, STR editor:** the raw text pane no longer empties itself. It sat inside a render that re-ran on every re-parse, so Apply's own echo replaced it with an empty box about 40 ms later, and a loaded file never reached it. (#108)
+- **UI, STR editor:** Apply works on a copy, so a refused value no longer leaves the file half-edited; the parameter search box keeps its text; and a field hidden by the search is no longer written back over a newer value. (#109)
+- **UI, Dashboard:** the project list follows a live deactivation, demotion, share or unshare within about 10 s, instead of only after a reload. (#112, #113)
+- **UI:** a sign-in token is no longer lost to a race with Shiny's start-up. When the identity check answered before Shiny was ready, the token was dropped silently and the session stayed signed out (no projects, no Share button) until a reload. Static assets also get their own rate-limit bucket. (#107)
+- **UI:** workflow rows a restarted server left "running" are reconciled to failed at start-up, and finished workflows are pruned with the job retention window. (#104)
+- **UI:** a database migration can no longer silently switch off app logging; the trusted-proxy setting is pinned by a behavioural test. (#105)
+
+### Fixed — server (Celery) mode
+These paths are not used by the default local job queue.
+- **Lost jobs:** a job whose Celery worker was killed mid-run stayed "running" forever and was never cleaned up. Each worker now records its name on the job, and a job is marked failed only when that worker replies, twice in a row, without it; a silent worker, a name two workers share, or no reply at all is never taken as evidence. (#115)
+- **Worker start:** the documented `celery -A shyfem_ui.services.job_celery worker` could not start a worker at all; it now finds the app. (#116)
+- **Job emails:** Celery workers never sent completion emails. A worker now builds its email service from its own config and logs which mail server and database it uses. (#117)
+- **`/health`:** reports the real active-job count instead of `-1`, without blocking the app on Redis, and returns "degraded" (503) within 3 s when Redis is unreachable. A flood of `/health` requests shares one bounded probe. (#118)
+
 ---
 
 
