@@ -1,0 +1,44 @@
+
+ Neutral steady open-channel benchmark for the turbulence closures
+ (gotm_ke2, 20 layers). Flat 10 m channel, 0.1 m level drop over 20 km,
+ roughness length z0 = 5 mm, no wind, no Coriolis, no stratification.
+
+$title
+	channel_turb
+	gotm_ke2_20
+	channel
+$end
+
+&para
+	date = '2026-01-01'  time = 0
+	itanf = '2026-01-01'  itend = '2026-01-03'
+	idt = '1m'  itsplt = 2  coumax = 0.9  idtmin = 0.1
+
+	itmout = '2026-01-02::12:00'  idtout = '1h'
+	itmdbg = '2026-01-02::22:00'  idtdbg = '1h'
+
+	ibarcl = 0  icor = 0
+	ireib = 6  czdef = 0.005
+	iturb = 1
+	ilin = 0  itlin = 0  ihwadv = 1
+	ampar = 0.6  azpar = 0.6  atpar = 1.0  adpar = 1.0  aapar = 0.
+&end
+
+$levels
+	0.5 1 1.5 2 2.5 3 3.5 4 4.5 5
+	5.5 6 6.5 7 7.5 8 8.5 9 9.5 10
+$end
+
+$bound1
+	kbound = 325 244 163 82 1
+	ibtyp = 1  ampli = 0.  zref = 0.1
+$end
+
+$bound2
+	kbound = 81 162 243 324 405
+	ibtyp = 1  ampli = 0.  zref = 0.
+$end
+
+$name
+	gotmpa = 'INPUT/gotm_ke2.nml'
+$end

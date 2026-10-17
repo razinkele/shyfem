@@ -1,0 +1,11 @@
+# model output and run logs (regenerate with run_all.sh)
+*.shy
+*.dbg
+*.inf
+*.out
+*.ext
+*.bas
+*.log
+fort.*
+profiles.npy
+*_d[0-9].str

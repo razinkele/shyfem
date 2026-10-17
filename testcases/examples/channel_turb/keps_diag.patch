@@ -1,0 +1,100 @@
+diff --git a/src/shyfem/kepsilon.f90 b/src/shyfem/kepsilon.f90
+index cfb24797..7b2fbb69 100644
+--- a/src/shyfem/kepsilon.f90
++++ b/src/shyfem/kepsilon.f90
+@@ -315,6 +315,8 @@
+ 	use mod_physical_constants, only : g => grav_sp, &
+      &			karman => vonkarman_sp
+ 
++	use mod_keps, only : keps_diag,keps_z0b
++
+ 	implicit none
+ 
+ ! arguments
+@@ -515,6 +517,9 @@
+ 	bb(lmax) = 1.
+ 	cc(lmax) = 0.
+ 	rr(lmax) = (taub/rho(lmax))**1.5 * dzk(lmax) / karman
++	if( iand(keps_diag,2) /= 0 ) then	!DIAG: wall distance dh/2+z0
++	  rr(lmax) = (taub/rho(lmax))**1.5 / ( karman * (0.5/dzk(lmax)+keps_z0b) )
++	end if
+ 
+ !	---------------------------------
+ !	solve system
+diff --git a/src/shyfem/turbulence.f90 b/src/shyfem/turbulence.f90
+index d9ab806b..ef9d4d6e 100644
+--- a/src/shyfem/turbulence.f90
++++ b/src/shyfem/turbulence.f90
+@@ -249,6 +249,7 @@
+ 	use mod_gotm_aux
+ 	use mod_ts
+ 	use mod_roughness
++	use mod_keps, only : keps_diag,keps_z0b
+ 	use mod_diff_visc_fric
+ 	use mod_layer_thickness
+ 	use mod_hydro_print
+@@ -492,6 +493,8 @@
+ !           ------------------------------------------------------
+ 
+ 	    z0b = z0bk(k)
++	    if( keps_diag < 0 ) call keps_diag_init
++	    if( iand(keps_diag,4) /= 0 ) z0b = keps_z0b	!DIAG: z0 of ireib=6
+ 	    z0b = max(z0bmin,z0b)			!GGUZ0
+ 	    u_taub = sqrt( taub(k) )
+ 
+@@ -1280,6 +1283,7 @@
+ 
+ 	if( icall .eq. 0 ) then
+ 	  call keps_init
++	  call keps_diag_init
+ 	  icall = 1
+ 	end if
+ 
+@@ -1300,6 +1304,10 @@
+ 	  call get_wind(k,wx,wy)
+ 	  taus = rhoair * cd * (wx*wx+wy*wy)
+ 	  taub = rho0 * cb * (ubot*ubot+vbot*vbot)
++	  if( iand(keps_diag,1) /= 0 ) then	!DIAG: u* of the momentum friction
++	    taub = rho0 * (0.4/log(0.5*(1.+hdknv(lmax,k)/keps_z0b)))**2  &
++     &			* (ubot*ubot+vbot*vbot)
++	  end if
+ 
+ 	  ! rhov is the anomaly rho-rowass (zero without baroclinic, negative
+ 	  ! in fresh water); keps needs absolute density for u*^2 = tau/rho
+@@ -1315,6 +1323,21 @@
+ 
+ 	end
+ 
++!**************************************************************
++
++	subroutine keps_diag_init
++	use mod_keps
++	use para
++	implicit none
++	character(len=16) :: s
++	if( keps_diag >= 0 ) return
++	call get_environment_variable('SHYFEM_KEPS_DIAG',s)
++	keps_diag = 0
++	if( s /= ' ' ) read(s,*) keps_diag
++	keps_z0b = getpar('czdef')
++	if( keps_diag /= 0 ) write(6,*) 'KEPS_DIAG active: ',keps_diag,keps_z0b
++	end
++
+ !**************************************************************
+ 
+         subroutine keps_init
+diff --git a/src/shyfem/turbulence_util.f90 b/src/shyfem/turbulence_util.f90
+index b4abb0c0..fa1bc868 100644
+--- a/src/shyfem/turbulence_util.f90
++++ b/src/shyfem/turbulence_util.f90
+@@ -45,6 +45,10 @@
+         real, allocatable, save :: tken(:,:)       ! turbulent kinetic energy 
+         real, allocatable, save :: eps(:,:)        ! dissipation rate
+         real, allocatable, save :: rls(:,:)        ! length scale
++        ! DIAGNOSTIC (benchmark only): SHYFEM_KEPS_DIAG bit 1 = k-eps gets the
++        ! momentum u*; bit 2 = eps wall value at dh/2+z0; bit 4 = GOTM z0b=czdef
++        integer, save :: keps_diag = -1
++        real, save :: keps_z0b = 0.
+ 
+ !==================================================================
+         contains
