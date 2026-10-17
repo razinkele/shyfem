@@ -1100,6 +1100,29 @@ class TestCeleryPhantomReconcile:
         assert self._status(store, "j") == JobStatus.COMPLETED
         persist.assert_not_called()
 
+    def test_another_jobs_write_only_retries_the_cas(self, rqueue, store):
+        """The WATCH covers the whole hash: a progress write from some other
+        job aborts the write, and the retry (status re-read) still lands."""
+        self._put(store, "lost", JobStatus.RUNNING)
+        self._put(store, "other", JobStatus.COMPLETED)
+        with patch(self.PERSIST):
+            rqueue.reconcile_phantom_jobs()  # first miss
+            store.before_exec = lambda: self._put(store, "other", JobStatus.COMPLETED)
+            assert rqueue.reconcile_phantom_jobs() == 1
+        assert self._status(store, "lost") == JobStatus.FAILED
+
+    def test_a_failed_scan_also_breaks_the_run_of_misses(self, rqueue, store):
+        self._put(store, "j", JobStatus.RUNNING)
+        with patch(self.PERSIST):
+            rqueue.reconcile_phantom_jobs()  # miss
+            real = store.zrange
+            store.zrange = MagicMock(side_effect=ConnectionError("redis blip"))
+            with pytest.raises(ConnectionError):
+                rqueue.reconcile_phantom_jobs()
+            store.zrange = real
+            assert rqueue.reconcile_phantom_jobs() == 0  # one miss again
+        assert self._status(store, "j") == JobStatus.RUNNING
+
     def test_no_running_jobs_broadcasts_nothing(self, rqueue, store, mock_celery_app):
         self._put(store, "done", JobStatus.COMPLETED)
         rqueue.reconcile_phantom_jobs()

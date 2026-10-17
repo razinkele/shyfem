@@ -628,6 +628,9 @@ class CeleryJobQueue(JobQueue):
         already taken is lost too, but telling it from one still waiting in
         the broker would mean reading kombu's Redis message format.
         """
+        # Only misses seen on the previous pass count; anything that ends
+        # this pass early (a Redis error, no reply) leaves the count reset.
+        previous, self._missing_last_pass = self._missing_last_pass, set()
         rc = self._get_redis_client()
         running = []
         for job_id in rc.zrange("shyfem:jobs:by_time", 0, -1):
@@ -636,9 +639,6 @@ class CeleryJobQueue(JobQueue):
             info = _load_job_info(rc, job_id)
             if info is not None and info.status == JobStatus.RUNNING:
                 running.append(info)
-        # Only misses seen on the previous pass count; anything that ends
-        # this pass early (no reply, an error) leaves the count reset.
-        previous, self._missing_last_pass = self._missing_last_pass, set()
         if not running:
             return 0
 
@@ -704,29 +704,37 @@ class CeleryJobQueue(JobQueue):
             )
         return {w: ids for w, ids in live_on.items() if w not in dupes}
 
-    @staticmethod
-    def _fail_if_still_running(rc, job_id: str) -> JobInfo | None:
+    CAS_ATTEMPTS = 3
+
+    @classmethod
+    def _fail_if_still_running(cls, rc, job_id: str) -> JobInfo | None:
         """Write FAILED for ``job_id`` only if it is RUNNING and the job store
-        is untouched from that read to the write; the written job, else None."""
-        with rc.pipeline() as pipe:
-            try:
-                pipe.watch("shyfem:jobs")
-                info = _load_job_info(pipe, job_id)
-                if info is None or info.status != JobStatus.RUNNING:
-                    return None  # finished (or removed) since the scan
-                info.status = JobStatus.FAILED
-                info.error_message = CELERY_LOST_ERROR
-                if info.completed_at is None:
-                    info.completed_at = datetime.now()
-                pipe.multi()
-                _store_job_info(pipe, info)
-                pipe.execute()
-            except _WatchError:
-                logger.info(
-                    "Job reconcile: job store changed under %s; left for a later pass", job_id
-                )
-                return None
-        return info
+        is untouched from that read to the write; the written job, else None.
+
+        The WATCH covers the whole hash, so any job's write aborts it; each
+        retry re-reads the status, so one that finished is never overwritten.
+        """
+        for _ in range(cls.CAS_ATTEMPTS):
+            with rc.pipeline() as pipe:
+                try:
+                    pipe.watch("shyfem:jobs")
+                    info = _load_job_info(pipe, job_id)
+                    if info is None or info.status != JobStatus.RUNNING:
+                        return None  # finished (or removed) since the scan
+                    info.status = JobStatus.FAILED
+                    info.error_message = CELERY_LOST_ERROR
+                    if info.completed_at is None:
+                        info.completed_at = datetime.now()
+                    pipe.multi()
+                    _store_job_info(pipe, info)
+                    pipe.execute()
+                    return info
+                except _WatchError:
+                    continue
+        logger.info(
+            "Job reconcile: job store kept changing under %s; left for a later pass", job_id
+        )
+        return None
 
     def _cleanup_old_jobs_sync(self, days: int) -> int:
         """Blocking body of cleanup_old_jobs (run via asyncio.to_thread).
