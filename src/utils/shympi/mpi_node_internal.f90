@@ -306,11 +306,17 @@
 
         implicit none
 
-        character*(*) message
+        character*(*), intent(in) :: message
         integer ierr
+        logical binit,bfinal
 
         write(6,*) trim(message)
 	flush(6)
+	!serial tools (rstinf, ...) can abort before MPI is initialized,
+	!and MPI_ABORT is not allowed outside MPI_Init..MPI_Finalize
+	call MPI_INITIALIZED(binit,ierr)
+	call MPI_FINALIZED(bfinal,ierr)
+	if( .not. binit .or. bfinal ) call exit(33)
 	!call MPI_BARRIER( MPI_COMM_WORLD, ierr)
 	!call MPI_FINALIZE(ierr_code)		!this will hang for ever
 	call MPI_ABORT(MPI_COMM_WORLD,33,ierr)

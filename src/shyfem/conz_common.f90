@@ -201,15 +201,17 @@
 
         implicit none
 
-        integer iunit,ic
+        integer, intent(in) :: iunit,ic
 
-	integer i
+	integer i,ios
 
 	if( nvers_rst < 16 ) then
-	  read(iunit)
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'conz')
 	else
 	  do i=1,ic
-            read(iunit)
+            read(iunit,iostat=ios)
+	    call rst_check_read(ios,'conz')
 	  end do
 	end if
 

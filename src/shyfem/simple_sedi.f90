@@ -588,8 +588,10 @@
 
         subroutine skip_restart_ssedi(iunit)
         implicit none
-        integer iunit
-	read(iunit)
+        integer, intent(in) :: iunit
+	integer ios
+	read(iunit,iostat=ios)
+	call rst_check_read(ios,'ssedi')
         end
 
         subroutine read_restart_ssedi(iunit)

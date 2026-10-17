@@ -102,13 +102,25 @@
 	end
 
 	subroutine skip_restart_mercury(iunit)
+! the mercury section is self-describing (nvers, narray, then narray
+! records), so a build without mercury can still skip it
 	implicit none
-	integer iunit
+	integer, intent(in) :: iunit
+	integer i,nvers,narray,ios
+	read(iunit,iostat=ios) nvers
+	call rst_check_read(ios,'mercury nvers')
+	read(iunit,iostat=ios) narray
+	call rst_check_read(ios,'mercury narray')
+	do i=1,narray
+	  read(iunit,iostat=ios)
+	  call rst_check_read(ios,'mercury')
+	end do
 	end
 
 	subroutine read_restart_mercury(iunit)
 	implicit none
-	integer iunit
+	integer, intent(in) :: iunit
+	call skip_restart_mercury(iunit)
 	end
 
 !*************************************************************
