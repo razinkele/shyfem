@@ -233,10 +233,20 @@ class ShyfemWrapper:
                                     )
 
             async def _drain_and_wait():
-                await asyncio.gather(
-                    read_stream(proc.stdout, stdout_lines),
-                    read_stream(proc.stderr, stderr_lines, is_stderr=True),
-                )
+                readers = [
+                    asyncio.ensure_future(read_stream(proc.stdout, stdout_lines)),
+                    asyncio.ensure_future(read_stream(proc.stderr, stderr_lines, is_stderr=True)),
+                ]
+                try:
+                    await asyncio.gather(*readers)
+                except BaseException:
+                    # gather does not cancel the sibling when one reader
+                    # fails: stop it, or it keeps reading (and calling
+                    # output_callback) after this call has given up.
+                    for reader in readers:
+                        reader.cancel()
+                    await asyncio.gather(*readers, return_exceptions=True)
+                    raise
                 await proc.wait()
 
             try:
@@ -266,7 +276,7 @@ class ShyfemWrapper:
                 logger.warning("Command %r cancelled; terminating process group", cmd_str)
                 await self._terminate_process_group(proc, cmd_str)
                 raise
-            except Exception:
+            except Exception as e:
                 # Anything else while reading its output (a failing
                 # output_callback, a line over the 64 KiB readline limit)
                 # ends this call with a failure: the child must not outlive
@@ -275,7 +285,14 @@ class ShyfemWrapper:
                     "Command %r failed while running; terminating process group", cmd_str
                 )
                 await self._terminate_process_group(proc, cmd_str)
-                raise
+                return CommandResult(
+                    success=False,
+                    return_code=-1,
+                    stdout="\n".join(stdout_lines),
+                    stderr="\n".join([*stderr_lines, f"Run aborted: {e}"]),
+                    command=cmd_str,
+                    working_dir=str(working_dir),
+                )
 
         except Exception as e:
             return CommandResult(
@@ -316,15 +333,16 @@ class ShyfemWrapper:
         (so proc.pid is itself the process group id) -- otherwise this would
         signal the server's own process group.
         """
-        try:
-            pgid = os.getpgid(proc.pid)
-        except ProcessLookupError:
-            return  # already gone
-
+        # start_new_session=True made proc.pid the group id. Signal the group
+        # by that id, not by getpgid(proc.pid): once the leader has exited
+        # (asyncio reaps it at once) the lookup fails while other members
+        # may still run, and a reused pid would name some unrelated group. A
+        # group id is not reused while any member of the group is alive.
+        pgid = proc.pid
         try:
             os.killpg(pgid, signal.SIGTERM)
         except ProcessLookupError:
-            return  # exited between getpgid() and killpg()
+            return  # the whole group is gone
 
         try:
             await asyncio.wait_for(proc.wait(), timeout=self.PROCESS_GROUP_KILL_GRACE_SECONDS)
