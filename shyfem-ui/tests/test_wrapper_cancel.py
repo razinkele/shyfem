@@ -136,3 +136,139 @@ class TestRunShyfemOptionsNotMutated:
         assert opts == ["-noconsole"]
         assert captured[1].count("run1.str") == 0
         assert captured[1][-1].endswith("run2.str")
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+@pytest.fixture
+def reap_groups():
+    """Process groups a test started; any still alive at teardown (a failed
+    assertion) are SIGKILLed instead of lingering for their sleep 60."""
+    import signal
+
+    pgids: list[int] = []
+    yield pgids
+    for pgid in pgids:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+
+class TestUnexpectedErrorKillsProcessGroup:
+    """Only a timeout and a cancellation used to terminate the child. Any
+    other error while reading its output (a failing output_callback -- the
+    local queue's log write on a full disk -- or a line over asyncio's 64 KiB
+    readline limit) fell through to the outer handler, which reported the job
+    failed and left the whole shyfem/mpirun group running unsupervised."""
+
+    @pytest.mark.asyncio
+    async def test_failing_output_callback_kills_the_group(self, wrapper, tmp_path, reap_groups):
+        pidfile = tmp_path / "child.pid"
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text(
+            f"#!/bin/bash\nsleep 60 &\necho $! > '{pidfile}'\n"
+            "while true; do echo working; sleep 0.1; done\n"
+        )
+        exe.chmod(0o755)
+
+        def _disk_full(_line):
+            raise OSError(28, "No space left on device")
+
+        result = await asyncio.wait_for(
+            wrapper.run_command("shyfem", [], tmp_path, output_callback=_disk_full), timeout=10
+        )
+        assert result.success is False
+        assert "No space left on device" in result.stderr
+        grandchild = int(pidfile.read_text().strip())
+        reap_groups.append(os.getpgid(grandchild) if _alive(grandchild) else grandchild)
+        deadline = time.monotonic() + 2
+        while _alive(grandchild) and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        assert not _alive(grandchild), "process group left running after the error"
+
+    @pytest.mark.asyncio
+    async def test_over_long_output_line_kills_the_group(self, wrapper, tmp_path, reap_groups):
+        pidfile = tmp_path / "child.pid"
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text(
+            f"#!/bin/bash\nsleep 60 &\necho $! > '{pidfile}'\n"
+            "head -c 200000 /dev/zero | tr '\\0' x\necho\nwait\n"
+        )
+        exe.chmod(0o755)
+
+        result = await asyncio.wait_for(wrapper.run_command("shyfem", [], tmp_path), timeout=10)
+        assert result.success is False
+        grandchild = int(pidfile.read_text().strip())
+        reap_groups.append(os.getpgid(grandchild) if _alive(grandchild) else grandchild)
+        deadline = time.monotonic() + 2
+        while _alive(grandchild) and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        assert not _alive(grandchild), "process group left running after the error"
+
+    @pytest.mark.asyncio
+    async def test_failing_progress_callback_does_not_stop_the_run(self, wrapper, tmp_path, caplog):
+        """Progress is advisory: a failing progress write (e.g. a Redis blip
+        under Celery) must not fail -- or orphan -- a long simulation."""
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text('#!/bin/bash\nfor i in 1 2 3; do echo "time = $i of 3"; done\n')
+        exe.chmod(0o755)
+        calls = []
+
+        def _flaky(progress, _line):
+            calls.append(progress)
+            raise ConnectionError("redis blip")
+
+        result = await wrapper.run_command("shyfem", [], tmp_path, progress_callback=_flaky)
+        assert result.success is True
+        assert len(calls) == 3
+        assert caplog.text.count("Progress update failed") == 1  # logged once, not per line
+
+    @pytest.mark.asyncio
+    async def test_group_is_killed_after_its_leader_already_exited(
+        self, wrapper, tmp_path, reap_groups
+    ):
+        """The leader exits at once; a group member keeps the pipe and later
+        prints an over-long line. getpgid(leader) then fails, which made the
+        old kill return 'already gone' and leave the member running."""
+        pidfile = tmp_path / "member.pid"
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text(
+            "#!/bin/bash\n"
+            "( sleep 0.5; head -c 200000 /dev/zero | tr '\\0' x; echo; sleep 60 ) &\n"
+            f"echo $! > '{pidfile}'\nexit 0\n"
+        )
+        exe.chmod(0o755)
+
+        result = await asyncio.wait_for(wrapper.run_command("shyfem", [], tmp_path), timeout=10)
+        member = int(pidfile.read_text().strip())
+        reap_groups.append(os.getpgid(member) if _alive(member) else member)
+        assert result.success is False
+        deadline = time.monotonic() + 2
+        while _alive(member) and time.monotonic() < deadline:
+            await asyncio.sleep(0.05)
+        assert not _alive(member), "group member outlived its exited leader"
+
+    @pytest.mark.asyncio
+    async def test_failure_keeps_the_tools_own_stderr(self, wrapper, tmp_path):
+        exe = wrapper.bin_dir / "shyfem"
+        exe.write_text(
+            "#!/bin/bash\necho 'error in STR: bad dt' >&2\nsleep 0.3\necho line\nsleep 5\n"
+        )
+        exe.chmod(0o755)
+
+        def _disk_full(_line):
+            raise OSError(28, "No space left on device")
+
+        result = await asyncio.wait_for(
+            wrapper.run_command("shyfem", [], tmp_path, output_callback=_disk_full), timeout=10
+        )
+        assert result.success is False
+        assert "error in STR: bad dt" in result.stderr
+        assert "Run aborted:" in result.stderr and "No space left on device" in result.stderr
