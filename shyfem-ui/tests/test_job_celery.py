@@ -1406,3 +1406,64 @@ class TestCeleryActiveJobCount:
         kw = fake.from_url.call_args.kwargs
         assert kw["socket_connect_timeout"] == jc.REDIS_CONNECT_TIMEOUT_S > 0
         assert kw["socket_timeout"] == jc.REDIS_SOCKET_TIMEOUT_S > 0
+
+    async def test_a_flood_of_probes_runs_one_scan(self, queue):
+        """/health is unauthenticated: 50 concurrent probes while Redis is
+        slow must share one thread, not take 50 from the to_thread pool."""
+        import asyncio
+        import threading
+
+        calls = []
+        gate = threading.Event()
+
+        def _slow_count():
+            calls.append(1)
+            gate.wait(5)
+            return 4
+
+        queue._count_active_jobs = _slow_count
+        probes = [asyncio.ensure_future(queue.active_job_count_async()) for _ in range(50)]
+        await asyncio.sleep(0.1)
+        gate.set()
+        assert await asyncio.gather(*probes) == [4] * 50
+        assert len(calls) == 1
+
+    async def test_a_probe_timing_out_does_not_cancel_the_scan(self, queue):
+        import asyncio
+        import threading
+
+        gate = threading.Event()
+        calls = []
+
+        def _slow_count():
+            calls.append(1)
+            gate.wait(5)
+            return 2
+
+        queue._count_active_jobs = _slow_count
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(queue.active_job_count_async(), timeout=0.05)
+        late = asyncio.ensure_future(queue.active_job_count_async())
+        await asyncio.sleep(0.05)
+        gate.set()
+        assert await late == 2
+        assert len(calls) == 1
+
+    async def test_count_is_cached_briefly_and_errors_are_not(self, queue, monkeypatch):
+        import shyfem_ui.services.job_celery as jc
+
+        results = [ConnectionError("blip"), 5, 6]
+
+        def _count():
+            r = results.pop(0)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        queue._count_active_jobs = _count
+        with pytest.raises(ConnectionError):
+            await queue.active_job_count_async()
+        assert await queue.active_job_count_async() == 5  # error was not cached
+        assert await queue.active_job_count_async() == 5  # cached
+        monkeypatch.setattr(jc, "ACTIVE_COUNT_CACHE_S", 0.0)
+        assert await queue.active_job_count_async() == 6

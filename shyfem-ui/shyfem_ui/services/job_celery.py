@@ -23,6 +23,7 @@ import asyncio
 import json
 import logging
 import threading
+import time
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -61,6 +62,9 @@ INSPECT_TIMEOUT_S = 5.0
 # Redis client timeouts (s): connecting, and any single command.
 REDIS_CONNECT_TIMEOUT_S = 5.0
 REDIS_SOCKET_TIMEOUT_S = 10.0
+
+# Seconds an active-job count is reused by /health probes.
+ACTIVE_COUNT_CACHE_S = 2.0
 
 _ACTIVE_STATUS_VALUES = frozenset(
     s.value for s in (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
@@ -517,6 +521,10 @@ class CeleryJobQueue(JobQueue):
         self._missing_last_pass: set[str] = set()
         # The reconcile reaches the Celery app from cleanup's worker thread.
         self._celery_app_lock = threading.Lock()
+        # /health's active-job count: one Redis scan in flight, shared by
+        # every concurrent probe, and its result reused briefly.
+        self._count_task: asyncio.Future | None = None
+        self._count_cache: tuple[float, int] | None = None
 
         # Publish to module-level globals so Celery task callbacks
         # (running in the same process) can reach these services.
@@ -599,8 +607,26 @@ class CeleryJobQueue(JobQueue):
 
     async def active_job_count_async(self) -> int:
         """Number of PENDING/QUEUED/RUNNING jobs in the Redis job store, for
-        /health. Counted in a worker thread: it is a Redis round trip."""
-        return await asyncio.to_thread(self._count_active_jobs)
+        /health. Counted in a worker thread: it is a Redis round trip.
+
+        /health is unauthenticated and ahead of rate limiting, so a flood of
+        probes must not each take a thread from the shared to_thread pool
+        (with Redis blackholed, each would hold one for the connect timeout):
+        at most one scan runs at a time, every concurrent caller awaits that
+        one, and a successful count is reused for ``ACTIVE_COUNT_CACHE_S``.
+        The scan is shielded, so a caller giving up (``wait_for`` timeout)
+        does not cancel it for the others; an error is never cached.
+        """
+        cached = self._count_cache
+        if cached is not None and time.monotonic() - cached[0] < ACTIVE_COUNT_CACHE_S:
+            return cached[1]
+        loop = asyncio.get_running_loop()
+        task = self._count_task
+        if task is None or task.done() or task.get_loop() is not loop:
+            task = self._count_task = loop.create_task(asyncio.to_thread(self._count_active_jobs))
+        count = await asyncio.shield(task)
+        self._count_cache = (time.monotonic(), count)
+        return count
 
     def _count_active_jobs(self) -> int:
         count = 0
