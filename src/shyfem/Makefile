@@ -1120,7 +1120,6 @@ ww3.o: ../../lib/mod/basin.mod ../../lib/mod/evgeom.mod \
 		../../lib/mod/mod_roughness.mod \
 		../../lib/mod/mod_waves.mod \
 		../../lib/mod/pkonst.mod ../../lib/mod/shympi.mod \
-		../../lib/mod/shympi_aux.mod \
 		../../lib/mod/w3cplshyfem.mod \
 		../../lib/mod/w3gdatmd.mod \
 		../../lib/mod/w3idatmd.mod \
