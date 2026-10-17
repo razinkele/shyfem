@@ -247,8 +247,8 @@ class TestApplyFormSerializationFailure:
     """StrParser.generate raises ValueError on a value carrying both quote
     characters. In a Shiny effect an unhandled exception closes the
     session (shiny/session/_session.py _unhandled_error -> close), so the
-    Apply Form handler must catch it — and must not leave the _form_syncing
-    latch stuck, which it sets immediately before serializing."""
+    Apply Form handler must catch it — and must not push anything when it
+    does."""
 
     def _handler_source(self):
         import inspect
@@ -270,9 +270,39 @@ class TestApplyFormSerializationFailure:
         assert "notification_show" in tail, "a failed apply must tell the user"
         assert "logger.exception" in tail, "a failed apply must be diagnosable"
 
-    def test_sync_latch_is_released_on_failure(self):
+    def test_failure_pushes_nothing(self):
         body = self._handler_source()
-        assert "finally:" in body, "_form_syncing must be released even when serializing raises"
+        tail = body[body.index("except ValueError") :]
+        assert tail.index("return") < tail.index("_push_edit("), "a failed apply must not push text"
+
+
+class TestRawPaneSurvivesReparse:
+    """The textarea used to be built inside the render that read parsed_file:
+    every re-parse -- including the one triggered by Apply's own echo --
+    replaced it with an empty one, and a loaded file never reached it."""
+
+    def _src(self):
+        import inspect
+
+        from shyfem_ui.components import str_editor
+
+        return inspect.getsource(str_editor)
+
+    def test_layout_render_does_not_depend_on_the_parse(self):
+        src = self._src()
+        body = src[src.index("def editor_view") : src.index("def form_view")]
+        assert "parsed_file" not in body, "re-parsing must not rebuild the textarea"
+        assert "value=current_text" in body, "a re-render must keep the current text"
+
+    def test_echo_of_a_push_is_a_no_op(self):
+        src = self._src()
+        body = src[src.index("def _track_changes") : src.index("def _apply_form_changes")]
+        assert body.index("== content.get()") < body.index("is_modified.set(True)")
+
+    def test_loading_a_file_fills_the_raw_pane(self):
+        src = self._src()
+        body = src[src.index("def _load_file") : src.index("def _track_changes")]
+        assert "_push_text(text)" in body
 
 
 class TestListValuedFieldsInTheFormView:

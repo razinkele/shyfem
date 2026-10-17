@@ -93,6 +93,8 @@ class TestStrEditorFileFieldSelectize:
         pw_page.wait_for_timeout(800)
         area = pw_page.locator("#simulation-str_editor-editor_content")
         area.wait_for(state="attached", timeout=10000)
+        # Loading a file must fill the raw pane, not only the form.
+        expect(area).to_have_value(re.compile(r"\$title"), timeout=10000)
         # The sample STR has a $name section with file params; pick the first
         # selectize-backed form field whose id names a known file param.
         field = pw_page.locator("select[id^='simulation-str_editor-form_name_']").first
@@ -125,6 +127,11 @@ class TestStrEditorFileFieldSelectize:
         pw_page.locator("#simulation-str_editor-apply_form_btn").click(force=True)
         try:
             expect(area).to_have_value(re.compile("typed_by_test"), timeout=10000)
+            # The applied text must stay: the textarea used to live in a
+            # render that re-ran on every re-parse, so Apply's own echo
+            # replaced it with an empty one ~40 ms later.
+            pw_page.wait_for_timeout(1500)
+            expect(area).to_have_value(re.compile("typed_by_test"), timeout=100)
         except AssertionError:
             # Diagnostics: what did the field hold, and what is the textarea now?
             val = pw_page.evaluate(
