@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from shyfem_ui.services.job_celery import (
+    CELERY_LOST_ERROR,
     CeleryJobQueue,
     _load_job_info,
     _store_job_info,
@@ -805,3 +806,272 @@ class TestCeleryTaskIdPersisted:
         dbb._engine = None
         dbb._SessionLocal = None
         cfg._config = None
+
+
+# ---------------------------------------------------------------------------
+# TestCeleryPhantomReconcile
+# ---------------------------------------------------------------------------
+
+
+class _DictRedis:
+    """The few Redis calls the job store makes, backed by real dicts, so a
+    test reads back the state the queue actually wrote."""
+
+    def __init__(self):
+        self.jobs: dict[str, str] = {}
+        self.by_time: dict[str, float] = {}
+
+    def hset(self, key, field, value):
+        self.jobs[field] = value
+
+    def hget(self, key, field):
+        return self.jobs.get(field)
+
+    def hdel(self, key, field):
+        self.jobs.pop(field, None)
+
+    def zadd(self, key, mapping):
+        self.by_time.update(mapping)
+
+    def zrem(self, key, member):
+        self.by_time.pop(member, None)
+
+    def zrange(self, key, start, end):
+        return [k.encode() for k, _ in sorted(self.by_time.items(), key=lambda kv: kv[1])]
+
+    def zrangebyscore(self, key, lo, hi):
+        return [
+            k.encode()
+            for k, s in sorted(self.by_time.items(), key=lambda kv: kv[1])
+            if lo == "-inf" or s >= lo
+            if s <= hi
+        ]
+
+
+class TestCeleryPhantomReconcile:
+    """A worker killed mid-job (OOM, reboot, kill -9) never runs the task's
+    ``finally``: the job stays RUNNING in Redis forever, is shown as running,
+    and cleanup_old_jobs skips it as active. The web process restarting proves
+    nothing under Celery (workers are separate daemons), so liveness comes
+    from the workers themselves: RUNNING in Redis but in no worker's active
+    list, on two passes in a row."""
+
+    @pytest.fixture
+    def store(self):
+        return _DictRedis()
+
+    @pytest.fixture
+    def rqueue(self, queue, store, mock_celery_app):
+        queue._redis_client = store
+        self.active = {"celery@w1": []}
+        self.active_fn = None
+        mock_celery_app.control.inspect.return_value.active.side_effect = lambda: (
+            self.active_fn() if self.active_fn else self.active
+        )
+        return queue
+
+    def _put(self, store, job_id, status, **kw):
+        kw.setdefault("created_at", datetime.now())
+        if status == JobStatus.RUNNING:
+            kw.setdefault("started_at", datetime.now())
+        _store_job_info(store, _make_job_info(job_id=job_id, status=status, **kw))
+
+    def _status(self, store, job_id):
+        return _load_job_info(store, job_id).status
+
+    def test_running_job_absent_from_workers_fails_on_second_pass(self, rqueue, store):
+        self._put(store, "lost", JobStatus.RUNNING)
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db") as persist:
+            assert rqueue.reconcile_phantom_jobs() == 0
+            assert self._status(store, "lost") == JobStatus.RUNNING  # one miss is not proof
+            assert rqueue.reconcile_phantom_jobs() == 1
+        info = _load_job_info(store, "lost")
+        assert info.status == JobStatus.FAILED
+        assert info.error_message == CELERY_LOST_ERROR
+        assert info.completed_at is not None
+        assert not info.is_active
+        persisted = persist.call_args.args[0]
+        assert persisted.id == "lost" and persisted.status == JobStatus.FAILED
+
+    def test_running_job_a_worker_reports_is_left_alone(self, rqueue, store):
+        self._put(store, "live", JobStatus.RUNNING)
+        self.active = {"celery@w1": [{"id": "other"}], "celery@w2": [{"id": "live"}]}
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db") as persist:
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "live") == JobStatus.RUNNING
+        persist.assert_not_called()
+
+    def test_reappearing_job_resets_its_miss(self, rqueue, store):
+        """A worker that missed one reply window (busy, slow) must not get
+        its job killed: the two misses have to be consecutive."""
+        self._put(store, "slow", JobStatus.RUNNING)
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db"):
+            rqueue.reconcile_phantom_jobs()  # miss
+            self.active = {"celery@w1": [{"id": "slow"}]}
+            rqueue.reconcile_phantom_jobs()  # seen
+            self.active = {"celery@w1": []}
+            assert rqueue.reconcile_phantom_jobs() == 0  # one miss again
+        assert self._status(store, "slow") == JobStatus.RUNNING
+
+    def _put_owned(self, store, job_id, worker):
+        self._put(store, job_id, JobStatus.RUNNING, metadata={"celery_worker": worker})
+
+    def test_owned_job_its_worker_lists_is_left_alone(self, rqueue, store):
+        self._put_owned(store, "live", "celery@w2")
+        self.active = {"celery@w1": [], "celery@w2": [{"id": "live"}]}
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db"):
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "live") == JobStatus.RUNNING
+
+    def test_owned_job_its_worker_no_longer_has_is_lost(self, rqueue, store):
+        """The reboot case: the worker is back under the same node name and
+        replies, without the job its previous incarnation was running."""
+        self._put_owned(store, "lost", "celery@w1")
+        self.active = {"celery@w1": [{"id": "something-new"}]}
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db"):
+            assert rqueue.reconcile_phantom_jobs() == 0
+            assert rqueue.reconcile_phantom_jobs() == 1
+        assert self._status(store, "lost") == JobStatus.FAILED
+
+    def test_owned_job_whose_worker_is_silent_survives_other_replies(self, rqueue, store):
+        """A busy ``--pool=solo`` worker answers no control command while its
+        task runs (seen against a real Celery 5.6 worker). Another worker's
+        reply says nothing about its job."""
+        self._put_owned(store, "busy", "celery@solo")
+        self.active = {"celery@idle": []}
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db") as persist:
+            for _ in range(4):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "busy") == JobStatus.RUNNING
+        persist.assert_not_called()
+
+    @pytest.mark.parametrize("reply", [None, {}])
+    def test_no_worker_reply_touches_nothing(self, rqueue, store, caplog, reply):
+        """No reply cannot tell 'all workers down' from 'broker unreachable';
+        never a wrong FAILED -- the next pass with workers back decides."""
+        self._put(store, "j", JobStatus.RUNNING)
+        self.active = reply
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db") as persist:
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.RUNNING
+        persist.assert_not_called()
+        assert "no Celery worker replied" in caplog.text
+
+    def test_queued_and_terminal_jobs_are_never_touched(self, rqueue, store):
+        """QUEUED may legitimately wait in the broker for hours, and only the
+        broker's own message format could tell it from a lost one."""
+        self._put(store, "q", JobStatus.QUEUED)
+        self._put(store, "p", JobStatus.PENDING)
+        self._put(store, "done", JobStatus.COMPLETED)
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db") as persist:
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "q") == JobStatus.QUEUED
+        assert self._status(store, "p") == JobStatus.PENDING
+        assert self._status(store, "done") == JobStatus.COMPLETED
+        persist.assert_not_called()
+
+    def test_job_finishing_during_the_pass_keeps_its_result(self, rqueue, store):
+        """The job's last write lands after the scan but before the reconcile
+        writes: the status is re-read, so the real result is not replaced."""
+        self._put(store, "j", JobStatus.RUNNING)
+
+        def _finishes_while_asked():
+            self._put(store, "j", JobStatus.COMPLETED, completed_at=datetime.now())
+            return {"celery@w1": []}
+
+        with patch("shyfem_ui.services.job_celery._persist_job_to_db") as persist:
+            rqueue.reconcile_phantom_jobs()  # first miss
+            self._put(store, "j", JobStatus.RUNNING)
+            self.active_fn = _finishes_while_asked
+            assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.COMPLETED
+        persist.assert_not_called()
+
+    def test_no_running_jobs_broadcasts_nothing(self, rqueue, store, mock_celery_app):
+        self._put(store, "done", JobStatus.COMPLETED)
+        rqueue.reconcile_phantom_jobs()
+        mock_celery_app.control.inspect.assert_not_called()
+
+    async def test_cleanup_reconciles_then_prunes_the_phantom(self, rqueue, store):
+        """Maintenance runs cleanup_old_jobs every pass: an old phantom is
+        reconciled there and, now terminal, pruned like any finished job."""
+        old = datetime(2026, 1, 1)
+        self._put(store, "old-lost", JobStatus.RUNNING, created_at=old, started_at=old)
+        with (
+            patch("shyfem_ui.services.job_celery._persist_job_to_db"),
+            patch("shyfem_ui.db.base.db_session"),
+        ):
+            assert await rqueue.cleanup_old_jobs(days=7) == 0
+            assert "old-lost" in store.jobs
+            assert await rqueue.cleanup_old_jobs(days=7) == 1
+        assert "old-lost" not in store.jobs
+
+    async def test_reconcile_failure_does_not_block_cleanup(self, rqueue, store, mock_celery_app):
+        old = datetime(2026, 1, 1)
+        self._put(store, "old-done", JobStatus.COMPLETED, created_at=old, completed_at=old)
+        self._put(store, "r", JobStatus.RUNNING)
+        mock_celery_app.control.inspect.side_effect = RuntimeError("broker down")
+        with patch("shyfem_ui.db.base.db_session"):
+            assert await rqueue.cleanup_old_jobs(days=7) == 1
+        assert self._status(store, "r") == JobStatus.RUNNING
+
+
+class TestCeleryWorkerRecordsItself:
+    """The reconcile pass asks a job's own worker about it, so the worker
+    must record its node name on the job before it marks it RUNNING."""
+
+    def test_running_job_carries_the_worker_hostname(self, tmp_path):
+        from types import SimpleNamespace
+
+        from shyfem_ui.services.job_celery import execute_shyfem_job
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="j", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+        seen: list[tuple[str, str | None]] = []
+        real_hset = store.hset
+
+        def _hset(key, field, value):
+            d = json.loads(value)
+            seen.append((d["status"], d["metadata"].get("celery_worker")))
+            real_hset(key, field, value)
+
+        store.hset = _hset
+
+        async def _run(*_a, **_k):
+            return SimpleNamespace(
+                success=True, return_code=0, output_files=[], stdout="", stderr=""
+            )
+
+        wrapper = MagicMock()
+        wrapper.run_command.side_effect = _run
+        with (
+            patch("shyfem_ui.services.job_celery._get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch("shyfem_ui.services.job_celery._persist_job_to_db"),
+        ):
+            execute_shyfem_job("j", "redis://x", str(tmp_path), hostname="celery@w7")
+
+        assert seen[0] == ("running", "celery@w7")
+        assert all(worker == "celery@w7" for _, worker in seen)
+        assert _load_job_info(store, "j").status == JobStatus.COMPLETED
+
+    def test_registered_task_passes_its_request_hostname(self):
+        from types import SimpleNamespace
+
+        from shyfem_ui.services.job_celery import _register_celery_task
+
+        app = MagicMock()
+        app.task.return_value = lambda fn: fn
+        task = _register_celery_task(app)
+        with patch("shyfem_ui.services.job_celery.execute_shyfem_job") as run:
+            task(SimpleNamespace(request=SimpleNamespace(hostname="celery@w3")), "j", "u", "d")
+        run.assert_called_once_with("j", "u", "d", hostname="celery@w3")

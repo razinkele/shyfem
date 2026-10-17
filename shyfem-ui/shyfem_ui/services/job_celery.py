@@ -8,6 +8,11 @@ Requirements:
 
 Start workers with:
     celery -A shyfem_ui.services.job_celery worker --loglevel=info
+
+The lost-job reconcile (``CeleryJobQueue.reconcile_phantom_jobs``) asks each
+worker for its running tasks, so it needs a pool whose main process answers
+control commands while a task runs: prefork (the default), threads or gevent,
+not ``solo``. A busy solo worker is silent, so its jobs are simply left alone.
 """
 
 from __future__ import annotations
@@ -31,6 +36,13 @@ _queue_session_factory: Callable | None = None
 _queue_notification_service: Any | None = None
 
 logger = logging.getLogger(__name__)
+
+# error_message of a RUNNING job its worker lost (killed, OOM, host reboot):
+# the task's ``finally`` never ran, so the reconcile pass writes this instead.
+CELERY_LOST_ERROR = "lost: its Celery worker stopped while the job ran"
+
+# Seconds a reconcile pass waits for workers to answer the ``active`` query.
+INSPECT_TIMEOUT_S = 5.0
 
 # Module-level Celery app (created lazily, shared across imports)
 _celery_app = None
@@ -144,11 +156,15 @@ def _load_job_info(redis_client, job_id: str) -> JobInfo | None:
 # ---------------------------------------------------------------------------
 
 
-def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str) -> None:
+def execute_shyfem_job(
+    job_id: str, redis_url: str, shyfem_dir: str, hostname: str | None = None
+) -> None:
     """Execute a SHYFEM job (called by Celery worker).
 
     This runs synchronously using asyncio.run() since Celery workers
-    are separate processes with their own event loops.
+    are separate processes with their own event loops. ``hostname`` is the
+    worker's node name, recorded on the job so the reconcile pass can ask
+    that worker whether it still runs it.
     """
     import asyncio
 
@@ -160,6 +176,8 @@ def execute_shyfem_job(job_id: str, redis_url: str, shyfem_dir: str) -> None:
         return
 
     # Mark as running
+    if hostname:
+        job_info.metadata["celery_worker"] = hostname
     job_info.status = JobStatus.RUNNING
     job_info.started_at = datetime.now()
     _store_job_info(rc, job_info)
@@ -368,7 +386,7 @@ def _register_celery_task(app: Any) -> Any:
 
     @app.task(bind=True, name="shyfem_ui.execute_job")
     def _execute_job_task(self, job_id: str, redis_url: str, shyfem_dir: str):
-        execute_shyfem_job(job_id, redis_url, shyfem_dir)
+        execute_shyfem_job(job_id, redis_url, shyfem_dir, hostname=self.request.hostname)
 
     return _execute_job_task
 
@@ -400,6 +418,9 @@ class CeleryJobQueue(JobQueue):
         self._celery_app = None
         self._redis_client = None
         self._task = None
+        # RUNNING jobs found missing on the last reconcile pass; a job is only
+        # declared lost on its second consecutive miss.
+        self._missing_last_pass: set[str] = set()
 
         # Publish to module-level globals so Celery task callbacks
         # (running in the same process) can reach these services.
@@ -561,8 +582,96 @@ class CeleryJobQueue(JobQueue):
         """
         return await asyncio.to_thread(self._cleanup_old_jobs_sync, days)
 
+    def reconcile_phantom_jobs(self) -> int:
+        """Mark RUNNING jobs whose worker is gone as FAILED; return how many.
+
+        A worker killed mid-job (OOM, reboot, ``kill -9``) never runs the
+        task's ``finally``, so the job stays RUNNING in Redis for good: shown
+        as running, and skipped by cleanup as active. Unlike
+        ``LocalJobQueue``'s reconcile, a fresh web process proves nothing
+        here -- workers are separate daemons and keep running jobs across a
+        web restart -- so the evidence is the workers' own ``active`` lists.
+
+        A RUNNING job is missing when the worker that took it (recorded on the
+        job as ``celery_worker``) replied without listing it, and lost after
+        two misses in a row, so a worker that missed one reply window keeps
+        its job. A worker that does not reply is no evidence: it may be dead,
+        unreachable, or a busy ``solo`` worker. A worker killed and restarted
+        under the same node name (the usual reboot) replies and frees its
+        jobs; one that never returns under that name leaves them RUNNING, as
+        before this pass existed. A job with no recorded worker (started
+        before the worker recorded one) is missing when any worker replied
+        and none listed it. No reply at all touches nothing. The status is re-read
+        just before the write, so a job that finished meanwhile keeps its
+        result. The reconciled job gets what the task's ``finally`` would have
+        written (FAILED, ``completed_at``, a SQL row), but no email, as in
+        the local reconcile.
+
+        QUEUED jobs are not reconciled. One whose message a dying worker had
+        already taken is lost too, but telling it from one still waiting in
+        the broker would mean reading kombu's Redis message format.
+        """
+        rc = self._get_redis_client()
+        running = []
+        for job_id in rc.zrange("shyfem:jobs:by_time", 0, -1):
+            if isinstance(job_id, bytes):
+                job_id = job_id.decode()
+            info = _load_job_info(rc, job_id)
+            if info is not None and info.status == JobStatus.RUNNING:
+                running.append(info)
+        if not running:
+            self._missing_last_pass = set()
+            return 0
+
+        replies = self._get_celery_app().control.inspect(timeout=INSPECT_TIMEOUT_S).active()
+        if not isinstance(replies, dict) or not replies:
+            logger.warning(
+                "Job reconcile: no Celery worker replied; %d RUNNING job(s) left as they are",
+                len(running),
+            )
+            return 0
+        live_on = {
+            worker: {task.get("id") for task in (tasks or []) if isinstance(task, dict)}
+            for worker, tasks in replies.items()
+        }
+        live_anywhere = set().union(*live_on.values())
+
+        def _missing(info: JobInfo) -> bool:
+            worker = (info.metadata or {}).get("celery_worker")
+            if worker is None:
+                return info.id not in live_anywhere
+            return worker in live_on and info.id not in live_on[worker]
+
+        missing = {info.id for info in running if _missing(info)}
+        lost = missing & self._missing_last_pass
+        self._missing_last_pass = missing - lost
+
+        count = 0
+        for job_id in sorted(lost):
+            info = _load_job_info(rc, job_id)
+            if info is None or info.status != JobStatus.RUNNING:
+                continue  # finished (or removed) since the scan
+            info.status = JobStatus.FAILED
+            info.error_message = CELERY_LOST_ERROR
+            if info.completed_at is None:
+                info.completed_at = datetime.now()
+            _store_job_info(rc, info)
+            self._persist_job(info)
+            count += 1
+        if count:
+            logger.warning("Reconciled %d lost RUNNING Celery job(s) to FAILED", count)
+        return count
+
     def _cleanup_old_jobs_sync(self, days: int) -> int:
-        """Blocking body of cleanup_old_jobs (run via asyncio.to_thread)."""
+        """Blocking body of cleanup_old_jobs (run via asyncio.to_thread).
+
+        Reconciles lost jobs first, so an old one is pruned in the same pass
+        that finds it lost.
+        """
+        try:
+            self.reconcile_phantom_jobs()
+        except Exception:
+            logger.warning("Job reconcile failed; cleanup continues", exc_info=True)
         rc = self._get_redis_client()
         cutoff = datetime.now() - timedelta(days=days)
         cutoff_timestamp = cutoff.timestamp()
