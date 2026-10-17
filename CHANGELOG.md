@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [shyfem-ui 0.7.2] — 2026-10-18
+
+Server (Celery) mode: a cancelled job now ends cancelled. Tagged
+`shyfem-ui-v0.7.2`. The default local job queue is unchanged.
+
+### Fixed — server (Celery) mode
+- **Cancel:** a cancelled job reappeared as "running" after the cancel, and the lost-job reconcile later labelled it "lost". Cancelling revokes the task, which makes Celery stop the worker process with `SystemExit`. The run itself was stopped, but the task's cleanup wrote the job's old RUNNING status back over the cancel. It now records CANCELLED, in Redis and in the database, and sends no email. (#122)
+- **Cancel vs. a worker stop:** a cancel is now told apart from the worker stopping the run on its own (a shutdown, for example) by a cancel marker written before the revoke. The job record can't be used for this, because the worker rewrites it on every progress line. A run stopped by its worker ends FAILED, "stopped: its Celery worker interrupted the job", and the user gets a failure email. A job cancelled while it is still queued is never started. (#122)
+- **Robustness:** a Redis error while recording the end state no longer leaves the job "running", and the database row and the email still go out when Redis is down. (#122)
+
+---
+
+
 ## [8.5.1] — 2026-10-17
 
 A core fix release. Two fixes change results: k-epsilon (`iturb=2`) runs

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "shyfem-ui"
 # Versioned independently of SHYFEM (the Fortran core); not bumped by
 # bin/bump-version.sh.
-version = "0.7.1"
+version = "0.7.2"
 description = "Python Shiny web interface for SHYFEM hydrodynamic simulation"
 readme = "README.md"
 requires-python = ">=3.10"
