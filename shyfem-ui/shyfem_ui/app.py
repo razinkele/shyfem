@@ -98,6 +98,10 @@ SIDEBAR_GROUPS = [
 # Pages accessible to tutorial (read-only demo) accounts
 _TUTORIAL_ALLOWED_PAGES = {"Tutorial"}
 
+# How often an open session re-checks its live identity for renders that
+# depend on it (three indexed SELECTs per session per poll).
+IDENTITY_POLL_SECONDS = 10
+
 
 def _filter_sidebar_for_role(groups: list[dict], role: str) -> list[dict]:
     """Return a filtered copy of SIDEBAR_GROUPS for the given user role.
@@ -1045,6 +1049,25 @@ def _build_server(
         live = _ws_identity["live"]
         return live.current() if live is not None else None
 
+    # current_user() re-validates at every call, but a render built from it
+    # only re-runs when one of its reactive inputs changes: a user
+    # deactivated or demoted mid-session kept seeing what they saw before.
+    # This poll bumps identity_rev when the live identity's (id, role)
+    # changes, for pages whose output depends on who the user is.
+    identity_rev: reactive.Value[int] = reactive.value(0)
+    _identity_seen: dict = {"fp": None}
+
+    @reactive.effect
+    def _watch_live_identity():
+        from shyfem_ui.services.ws_identity import identity_fingerprint
+
+        reactive.invalidate_later(IDENTITY_POLL_SECONDS)
+        fp = identity_fingerprint(current_user())
+        if fp != _identity_seen["fp"]:
+            _identity_seen["fp"] = fp
+            with reactive.isolate():
+                identity_rev.set(identity_rev.get() + 1)
+
     _ws_ready_marked = {"done": False}
 
     @reactive.effect
@@ -1074,6 +1097,7 @@ def _build_server(
         active_project=active_project,
         nav_callback=nav_to,
         current_user=current_user,
+        identity_rev=identity_rev,
     )
     tutorial.tutorial_server(
         "tutorial",
