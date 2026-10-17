@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from shyfem_ui.services.job_celery import (
+    CELERY_LOST_ERROR,
     CeleryJobQueue,
     _load_job_info,
     _store_job_info,
@@ -805,3 +806,401 @@ class TestCeleryTaskIdPersisted:
         dbb._engine = None
         dbb._SessionLocal = None
         cfg._config = None
+
+
+# ---------------------------------------------------------------------------
+# TestCeleryPhantomReconcile
+# ---------------------------------------------------------------------------
+
+
+class _DictRedis:
+    """The few Redis calls the job store makes, backed by real dicts, so a
+    test reads back the state the queue actually wrote. ``pipeline()`` keeps
+    WATCH semantics: any write to the hash between ``watch`` and ``execute``
+    makes ``execute`` raise; ``before_exec`` lets a test land such a write."""
+
+    def __init__(self):
+        self.jobs: dict[str, str] = {}
+        self.by_time: dict[str, float] = {}
+        self.version = 0
+        self.before_exec = None
+
+    def hset(self, key, field, value):
+        self.jobs[field] = value
+        self.version += 1
+
+    def hget(self, key, field):
+        return self.jobs.get(field)
+
+    def hdel(self, key, field):
+        self.jobs.pop(field, None)
+        self.version += 1
+
+    def zadd(self, key, mapping):
+        self.by_time.update(mapping)
+
+    def zrem(self, key, member):
+        self.by_time.pop(member, None)
+
+    def zrange(self, key, start, end):
+        return [k.encode() for k, _ in sorted(self.by_time.items(), key=lambda kv: kv[1])]
+
+    def zrangebyscore(self, key, lo, hi):
+        return [
+            k.encode()
+            for k, s in sorted(self.by_time.items(), key=lambda kv: kv[1])
+            if lo == "-inf" or s >= lo
+            if s <= hi
+        ]
+
+    def pipeline(self):
+        return _DictPipeline(self)
+
+
+class _DictPipeline:
+    def __init__(self, r):
+        self.r = r
+        self.queued = None
+        self.watched = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def watch(self, key):
+        self.watched = self.r.version
+
+    def hget(self, key, field):
+        return self.r.hget(key, field)
+
+    def multi(self):
+        self.queued = []
+
+    def hset(self, *a):
+        self.queued.append(("hset", a))
+
+    def zadd(self, *a):
+        self.queued.append(("zadd", a))
+
+    def execute(self):
+        from shyfem_ui.services import job_celery as jc
+
+        if self.r.before_exec:
+            hook, self.r.before_exec = self.r.before_exec, None
+            hook()
+        if self.r.version != self.watched:
+            raise jc._WatchError("watched key changed")
+        for name, a in self.queued:
+            getattr(self.r, name)(*a)
+
+
+class TestCeleryPhantomReconcile:
+    """A worker killed mid-job (OOM, reboot, kill -9) never runs the task's
+    ``finally``: the job stays RUNNING in Redis forever, is shown as running,
+    and cleanup_old_jobs skips it as active. The web process restarting proves
+    nothing under Celery (workers are separate daemons), so liveness comes
+    from the job's own worker: it replied without listing the job, on two
+    consecutive passes."""
+
+    PERSIST = "shyfem_ui.services.job_celery.CeleryJobQueue._persist_job"
+
+    @pytest.fixture
+    def store(self):
+        return _DictRedis()
+
+    @pytest.fixture
+    def rqueue(self, queue, store, mock_celery_app):
+        queue._redis_client = store
+        self.active = {"celery@w1": []}  # worker -> task dicts
+        self.raw = None  # a raw broadcast reply list, overriding self.active
+        self.during = None  # runs inside the broadcast, before it returns
+
+        def _broadcast(command, **kw):
+            assert command == "active" and kw.get("reply") is True
+            if self.during:
+                self.during()
+            if self.raw is not None:
+                return self.raw
+            if isinstance(self.active, Exception):
+                raise self.active
+            return [{w: t} for w, t in (self.active or {}).items()]
+
+        mock_celery_app.control.broadcast.side_effect = _broadcast
+        return queue
+
+    def _put(self, store, job_id, status, worker="celery@w1", **kw):
+        kw.setdefault("created_at", datetime.now())
+        if status == JobStatus.RUNNING:
+            kw.setdefault("started_at", datetime.now())
+            kw.setdefault("metadata", {"celery_worker": worker} if worker else {})
+        _store_job_info(store, _make_job_info(job_id=job_id, status=status, **kw))
+
+    def _status(self, store, job_id):
+        return _load_job_info(store, job_id).status
+
+    def test_job_its_worker_no_longer_has_fails_on_second_pass(self, rqueue, store):
+        """The reboot case: the worker is back under the same node name and
+        replies, without the job its previous incarnation was running."""
+        self._put(store, "lost", JobStatus.RUNNING)
+        self.active = {"celery@w1": [{"id": "something-new"}]}
+        with patch(self.PERSIST) as persist:
+            assert rqueue.reconcile_phantom_jobs() == 0
+            assert self._status(store, "lost") == JobStatus.RUNNING  # one miss is not proof
+            assert rqueue.reconcile_phantom_jobs() == 1
+        info = _load_job_info(store, "lost")
+        assert info.status == JobStatus.FAILED
+        assert info.error_message == CELERY_LOST_ERROR
+        assert info.completed_at is not None
+        assert not info.is_active
+        persisted = persist.call_args.args[0]
+        assert persisted.id == "lost" and persisted.status == JobStatus.FAILED
+
+    def test_job_its_worker_lists_is_left_alone(self, rqueue, store):
+        self._put(store, "live", JobStatus.RUNNING, worker="celery@w2")
+        self.active = {"celery@w1": [], "celery@w2": [{"id": "live"}]}
+        with patch(self.PERSIST) as persist:
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "live") == JobStatus.RUNNING
+        persist.assert_not_called()
+
+    def test_liveness_is_matched_on_the_dispatched_task_id(self, rqueue, store):
+        self._put(
+            store,
+            "j",
+            JobStatus.RUNNING,
+            metadata={"celery_worker": "celery@w1", "celery_task_id": "task-9"},
+        )
+        self.active = {"celery@w1": [{"id": "task-9"}]}
+        with patch(self.PERSIST):
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.RUNNING
+
+    def test_reappearing_job_resets_its_miss(self, rqueue, store):
+        """A worker that missed one reply window (busy, slow) must not get
+        its job killed: the two misses have to be consecutive."""
+        self._put(store, "slow", JobStatus.RUNNING)
+        with patch(self.PERSIST):
+            rqueue.reconcile_phantom_jobs()  # miss
+            self.active = {"celery@w1": [{"id": "slow"}]}
+            rqueue.reconcile_phantom_jobs()  # seen
+            self.active = {"celery@w1": []}
+            assert rqueue.reconcile_phantom_jobs() == 0  # one miss again
+        assert self._status(store, "slow") == JobStatus.RUNNING
+
+    @pytest.mark.parametrize(
+        "gap", [None, RuntimeError("broker down")], ids=["no-reply", "broadcast-error"]
+    )
+    def test_a_pass_without_evidence_breaks_the_run_of_misses(self, rqueue, store, gap):
+        """miss, (silence for hours), miss is not two misses in a row."""
+        self._put(store, "j", JobStatus.RUNNING)
+        with patch(self.PERSIST):
+            rqueue.reconcile_phantom_jobs()  # miss
+            self.active = gap
+            try:
+                rqueue.reconcile_phantom_jobs()
+            except RuntimeError:
+                pass  # cleanup catches it; the count must still be reset
+            self.active = {"celery@w1": []}
+            assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.RUNNING
+
+    def test_job_whose_worker_is_silent_survives_other_replies(self, rqueue, store):
+        """A busy ``--pool=solo`` worker answers no control command while its
+        task runs (seen against a real Celery 5.6 worker). Another worker's
+        reply says nothing about its job."""
+        self._put(store, "busy", JobStatus.RUNNING, worker="celery@solo")
+        self.active = {"celery@idle": []}
+        with patch(self.PERSIST) as persist:
+            for _ in range(4):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "busy") == JobStatus.RUNNING
+        persist.assert_not_called()
+
+    def test_job_with_no_recorded_worker_is_never_reconciled(self, rqueue, store):
+        """Started by a worker older than this code: its owner is unknown, so
+        no reply can speak for it (a busy owner may simply be silent)."""
+        self._put(store, "old", JobStatus.RUNNING, worker=None)
+        self.active = {"celery@w1": [], "celery@w2": []}
+        with patch(self.PERSIST) as persist:
+            for _ in range(4):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "old") == JobStatus.RUNNING
+        persist.assert_not_called()
+
+    def test_a_node_name_replying_twice_is_no_evidence(self, rqueue, store, caplog):
+        """Two workers started without distinct -n share 'celery@host'; the
+        idle one's empty list says nothing about the busy one's job. A worker
+        with a unique name is still judged."""
+        self._put(store, "busy", JobStatus.RUNNING, worker="celery@host")
+        self._put(store, "lost", JobStatus.RUNNING, worker="celery@other")
+        self.raw = [
+            {"celery@host": [{"id": "busy"}]},
+            {"celery@host": []},
+            {"celery@other": []},
+        ]
+        with patch(self.PERSIST):
+            for _ in range(3):
+                rqueue.reconcile_phantom_jobs()
+        assert self._status(store, "busy") == JobStatus.RUNNING
+        assert self._status(store, "lost") == JobStatus.FAILED
+        assert "several Celery workers reply as celery@host" in caplog.text
+
+    @pytest.mark.parametrize("reply", [None, {}])
+    def test_no_worker_reply_touches_nothing(self, rqueue, store, caplog, reply):
+        """No reply cannot tell 'all workers down' from 'broker unreachable';
+        never a wrong FAILED -- the next pass with workers back decides."""
+        self._put(store, "j", JobStatus.RUNNING)
+        self.active = reply
+        with patch(self.PERSIST) as persist:
+            for _ in range(3):
+                assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.RUNNING
+        persist.assert_not_called()
+        assert "no usable reply from any Celery worker" in caplog.text
+
+    def test_queued_and_terminal_jobs_are_never_touched(self, rqueue, store):
+        """QUEUED may legitimately wait in the broker for hours, and only the
+        broker's own message format could tell it from a lost one."""
+        self._put(store, "q", JobStatus.QUEUED)
+        self._put(store, "p", JobStatus.PENDING)
+        self._put(store, "done", JobStatus.COMPLETED)
+        self._put(store, "r", JobStatus.RUNNING)  # so the workers are asked
+        with patch(self.PERSIST):
+            for _ in range(3):
+                rqueue.reconcile_phantom_jobs()
+        assert self._status(store, "q") == JobStatus.QUEUED
+        assert self._status(store, "p") == JobStatus.PENDING
+        assert self._status(store, "done") == JobStatus.COMPLETED
+
+    def test_job_finishing_during_the_broadcast_keeps_its_result(self, rqueue, store):
+        self._put(store, "j", JobStatus.RUNNING)
+        with patch(self.PERSIST) as persist:
+            rqueue.reconcile_phantom_jobs()  # first miss
+            self.during = lambda: self._put(
+                store, "j", JobStatus.COMPLETED, completed_at=datetime.now()
+            )
+            assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.COMPLETED
+        persist.assert_not_called()
+
+    def test_job_finishing_between_reread_and_write_keeps_its_result(self, rqueue, store):
+        """The task's finally lands after the CAS re-read: the WATCH aborts
+        the FAILED write instead of replacing the real result."""
+        self._put(store, "j", JobStatus.RUNNING)
+        with patch(self.PERSIST) as persist:
+            rqueue.reconcile_phantom_jobs()  # first miss
+            store.before_exec = lambda: self._put(
+                store, "j", JobStatus.COMPLETED, completed_at=datetime.now()
+            )
+            assert rqueue.reconcile_phantom_jobs() == 0
+        assert self._status(store, "j") == JobStatus.COMPLETED
+        persist.assert_not_called()
+
+    def test_another_jobs_write_only_retries_the_cas(self, rqueue, store):
+        """The WATCH covers the whole hash: a progress write from some other
+        job aborts the write, and the retry (status re-read) still lands."""
+        self._put(store, "lost", JobStatus.RUNNING)
+        self._put(store, "other", JobStatus.COMPLETED)
+        with patch(self.PERSIST):
+            rqueue.reconcile_phantom_jobs()  # first miss
+            store.before_exec = lambda: self._put(store, "other", JobStatus.COMPLETED)
+            assert rqueue.reconcile_phantom_jobs() == 1
+        assert self._status(store, "lost") == JobStatus.FAILED
+
+    def test_a_failed_scan_also_breaks_the_run_of_misses(self, rqueue, store):
+        self._put(store, "j", JobStatus.RUNNING)
+        with patch(self.PERSIST):
+            rqueue.reconcile_phantom_jobs()  # miss
+            real = store.zrange
+            store.zrange = MagicMock(side_effect=ConnectionError("redis blip"))
+            with pytest.raises(ConnectionError):
+                rqueue.reconcile_phantom_jobs()
+            store.zrange = real
+            assert rqueue.reconcile_phantom_jobs() == 0  # one miss again
+        assert self._status(store, "j") == JobStatus.RUNNING
+
+    def test_no_running_jobs_broadcasts_nothing(self, rqueue, store, mock_celery_app):
+        self._put(store, "done", JobStatus.COMPLETED)
+        rqueue.reconcile_phantom_jobs()
+        mock_celery_app.control.broadcast.assert_not_called()
+
+    async def test_cleanup_reconciles_then_prunes_the_phantom(self, rqueue, store):
+        """Maintenance runs cleanup_old_jobs every pass: an old phantom is
+        reconciled there and, now terminal, pruned like any finished job."""
+        old = datetime(2026, 1, 1)
+        self._put(store, "old-lost", JobStatus.RUNNING, created_at=old, started_at=old)
+        with patch(self.PERSIST), patch("shyfem_ui.db.base.db_session"):
+            assert await rqueue.cleanup_old_jobs(days=7) == 0
+            assert "old-lost" in store.jobs
+            assert await rqueue.cleanup_old_jobs(days=7) == 1
+        assert "old-lost" not in store.jobs
+
+    async def test_reconcile_failure_does_not_block_cleanup(self, rqueue, store):
+        old = datetime(2026, 1, 1)
+        self._put(store, "old-done", JobStatus.COMPLETED, created_at=old, completed_at=old)
+        self._put(store, "r", JobStatus.RUNNING)
+        self.active = RuntimeError("broker down")
+        with patch("shyfem_ui.db.base.db_session"):
+            assert await rqueue.cleanup_old_jobs(days=7) == 1
+        assert self._status(store, "r") == JobStatus.RUNNING
+
+
+class TestCeleryWorkerRecordsItself:
+    """The reconcile pass asks a job's own worker about it, so the worker
+    must record its node name on the job before it marks it RUNNING."""
+
+    def test_running_job_carries_the_worker_hostname(self, tmp_path):
+        from types import SimpleNamespace
+
+        from shyfem_ui.services.job_celery import execute_shyfem_job
+
+        store = _DictRedis()
+        _store_job_info(
+            store,
+            _make_job_info(
+                job_id="j", status=JobStatus.QUEUED, tool_name="shybas", working_dir=str(tmp_path)
+            ),
+        )
+        seen: list[tuple[str, str | None]] = []
+        real_hset = store.hset
+
+        def _hset(key, field, value):
+            d = json.loads(value)
+            seen.append((d["status"], d["metadata"].get("celery_worker")))
+            real_hset(key, field, value)
+
+        store.hset = _hset
+
+        async def _run(*_a, **_k):
+            return SimpleNamespace(
+                success=True, return_code=0, output_files=[], stdout="", stderr=""
+            )
+
+        wrapper = MagicMock()
+        wrapper.run_command.side_effect = _run
+        with (
+            patch("shyfem_ui.services.job_celery._get_redis_client", return_value=store),
+            patch("shyfem_ui.services.shyfem_wrapper.ShyfemWrapper", return_value=wrapper),
+            patch("shyfem_ui.services.job_celery._persist_job_to_db"),
+        ):
+            execute_shyfem_job("j", "redis://x", str(tmp_path), hostname="celery@w7")
+
+        assert seen[0] == ("running", "celery@w7")
+        assert all(worker == "celery@w7" for _, worker in seen)
+        assert _load_job_info(store, "j").status == JobStatus.COMPLETED
+
+    def test_registered_task_passes_its_request_hostname(self):
+        from types import SimpleNamespace
+
+        from shyfem_ui.services.job_celery import _register_celery_task
+
+        app = MagicMock()
+        app.task.return_value = lambda fn: fn
+        task = _register_celery_task(app)
+        with patch("shyfem_ui.services.job_celery.execute_shyfem_job") as run:
+            task(SimpleNamespace(request=SimpleNamespace(hostname="celery@w3")), "j", "u", "d")
+        run.assert_called_once_with("j", "u", "d", hostname="celery@w3")

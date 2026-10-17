@@ -87,8 +87,10 @@ SHYFEM_DIR=/path/to/shyfem docker-compose up -d
 ### Starting Celery Workers (server mode)
 
 ```bash
-celery -A shyfem_ui.services.job_celery worker --loglevel=info
+celery -A shyfem_ui.services.job_celery worker --loglevel=info -n worker1@%h
 ```
+
+Give every worker on a host its own node name (`-n worker1@%h`, `-n worker2@%h`, ...) and keep the default prefork pool. A job whose worker is killed mid-run is marked FAILED by the next maintenance passes only if that worker, restarted under the same name, reports it no longer runs the job; workers sharing a name, or a busy `--pool=solo` worker, are never taken as evidence.
 
 ## Configuration
 
@@ -513,7 +515,7 @@ SHYFEM requires OpenMPI (not Intel MPI) when building with gfortran. Prefix comm
 ### Celery Workers Not Starting
 Ensure Redis is running (`redis-cli ping`) and the `SHYFEM_UI_REDIS_URL` matches between the app and workers. Start workers with:
 ```bash
-celery -A shyfem_ui.services.job_celery worker --loglevel=info
+celery -A shyfem_ui.services.job_celery worker --loglevel=info -n worker1@%h
 ```
 
 ### Path Validation Errors

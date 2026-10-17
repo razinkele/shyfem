@@ -30,9 +30,10 @@ async def run_maintenance_once(
     called with ``job_retention_days``: workflows share the job retention
     window (L37). A workflow is kept while any of its step jobs is still
     active in the ``jobs`` table. Phantom active job rows are reconciled by
-    ``LocalJobQueue`` when it first loads its history, not by this pass;
-    under Celery there is no such reconciliation, so a stale active job row
-    can keep its workflow indefinitely (safe direction: never a wrong delete).
+    ``LocalJobQueue`` when it first loads its history; under Celery,
+    ``cleanup_old_jobs`` itself first reconciles RUNNING jobs no worker still
+    has (``CeleryJobQueue.reconcile_phantom_jobs``), in Redis and the
+    ``jobs`` table.
 
     Each cleanup is independent — a failure in one is logged and must not block
     the others or propagate (the scheduling loop must never die).
