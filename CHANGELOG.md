@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [8.5.1] — 2026-10-17
+
+A core fix release. Two fixes change results: k-epsilon (`iturb=2`) runs
+work at all and use the right epsilon boundary condition, and decimal input
+values are parsed exactly (a round-off-level change in every run). The rest
+are clean aborts, restart-reader correctness and build checks. Tagged `v8.5.1`.
+
 ### Fixed
 - **Model, turbulence (changes results):** k-epsilon (`iturb=2`) runs no longer die with SIGFPE at the first time step. `keps_shell` passed the density *anomaly* ρ′ to `keps` as ρ, which divides stress by it: 0/0 with `ibarcl=0`, a negative base under `**1.5` in water lighter than `rowass`. It now passes `rowass + rhov`, as `model3d_util` and `substress` already do. (#97)
 - **Model, turbulence (changes results):** the k-epsilon epsilon boundary condition had the wrong units (`u*³·dh/κ` instead of `u*³/(κ·dh)`), because `dzk` already holds `1/dh`. Plus behaviour-neutral fixes on the same path: `n2` boundaries read uninitialised, an out-of-bounds `dzr(lmax+1)` write, `intent`s and bare `stop`s. (#98)

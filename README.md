@@ -3,7 +3,7 @@
 **System of HydrodYnamic Finite Element Modules**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![SHYFEM core](https://img.shields.io/badge/SHYFEM%20core-8.4.1-green)](https://github.com/razinkele/shyfem/releases/tag/v8.4.1)
+[![SHYFEM core](https://img.shields.io/badge/SHYFEM%20core-8.5.1-green)](https://github.com/razinkele/shyfem/releases/tag/v8.5.1)
 [![shyfem-ui](https://img.shields.io/badge/shyfem--ui-0.7.1-blue)](https://github.com/razinkele/shyfem/releases/tag/shyfem-ui-v0.7.1)
 ![Fortran](https://img.shields.io/badge/Fortran-90%2F95%2B-purple)
 
@@ -123,16 +123,16 @@ bin/            Executables and helper scripts
 
 SHYFEM uses [Semantic Versioning](https://semver.org/). The Fortran **core** and the Python **UI** are versioned **independently**.
 
-**Core** --- currently `8.4.1`, tag `v8.4.1`:
+**Core** --- currently `8.5.1`, tag `v8.5.1`:
 
 - `VERSION` --- primary version record
 - `src/utils/shyutil/version.f90` --- compiled into the binary
 
 ```bash
 # Bumps VERSION + version.f90, commits, and tags vX.Y.Z (UI untouched):
-make bump-patch   # 8.4.1 -> 8.4.2
-make bump-minor   # 8.4.1 -> 8.5.0
-make bump-major   # 8.4.0 -> 9.0.0
+make bump-patch   # 8.5.1 -> 8.5.2
+make bump-minor   # 8.5.1 -> 8.6.0
+make bump-major   # 8.5.1 -> 9.0.0
 ```
 
 **UI** --- currently `0.7.1`, tag `shyfem-ui-v0.7.1`:
