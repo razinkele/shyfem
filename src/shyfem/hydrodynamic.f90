@@ -1746,6 +1746,7 @@
 ! wlnv (dvol)   aux array for volume difference
 ! vv            aux array for area
 
+	use mod_bndo, only : itynod
 	use mod_bound_geom
 	use mod_geom_dynamic
 	use mod_bound_dynamic
@@ -1909,9 +1910,13 @@
 	end do
 
 ! set w to zero at external boundary nodes (ibtyp=1,2)
+! iopbnd(k) > 0 marks a node of ANY boundary (bndo_admin), point sources
+! (ibtyp=3) included: there w must stay, or the vertical mass balance of
+! the discharge node breaks (mm_hyd_41..43 ran away at the river node)
 
 	do k=1,nkn
-          if( iopbnd(k) > 0 ) then	!external boundary (ibtyp=1,2)
+	  if( iopbnd(k) <= 0 ) cycle
+          if( itynod(iopbnd(k)) == 1 .or. itynod(iopbnd(k)) == 2 ) then
 	    wlnv(:,k) = 0.
 	    dzeta(k) = 0.
           end if
