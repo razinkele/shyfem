@@ -10,11 +10,16 @@ and which closure is closer to a known answer.
 ## Short answer
 
 1. **The Venice comparison was not k-epsilon against k-epsilon.** The GOTM
-   namelist shipped with the test cases (`venice_lagoon/INPUT/gotmturb.nml`,
-   the same in `mar_menor`) runs a *second-order* model (`turb_method=3`,
-   Cheng–Canuto–Howard 2002 coefficients, `scnd_coeff=7`) with the *generic
-   length scale* (`len_scale_method=10`, GLS "gen"). `stab_method=3` in that
-   file is ignored by second-order models.
+   namelist shipped with that case (`venice_lagoon/INPUT/gotmturb.nml`) runs
+   a *second-order* model (`turb_method=3`, Cheng–Canuto–Howard 2002
+   coefficients, `scnd_coeff=7`) with the *generic length scale*
+   (`len_scale_method=10`, GLS "gen"). `stab_method=3` in that file is
+   ignored by second-order models. The `mar_menor` namelist is also
+   second-order CCH02, but with the k-epsilon dissipation equation
+   (`len_scale_method=8`, this benchmark's "GOTM k-eps with CCH02
+   stability"). The distribution default (`src/external/gotm/gotmturb.nml`)
+   is second-order with Canuto A coefficients and the dissipation
+   equation. None is the standard first-order k-epsilon model.
 2. **The closure family explains only about a fifth of the gap.** In a
    neutral channel, the three GOTM variants (as shipped; standard
    k-epsilon; k-epsilon with CCH02 stability functions) agree with each
@@ -201,9 +206,10 @@ What the measurements support:
    the bed, GOTM is 0.8–0.85x the log law and SHYFEM k-epsilon is 1.5x.
    Over the full depth, GOTM is within 6% of the log-wake profile and
    SHYFEM k-epsilon is 32–37% high.
-3. Whether the test-case namelists should keep the second-order GLS-gen
-   configuration, or say in the file what they run, so that "GOTM" is not
-   read as "k-epsilon".
+3. Whether the test-case namelists should keep their second-order
+   configurations, or say in the file what they run, so that "GOTM" is not
+   read as "k-epsilon". (Decided 2026-10-18: keep them, and add a header
+   to each namelist saying what it configures.)
 4. Whether `gotm_shell` should take its bottom z0 from `czdef` under
    `ireib=6`. That is consistent, and negligible in effect here.
 

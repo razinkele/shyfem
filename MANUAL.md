@@ -993,7 +993,7 @@ $end
 |---------|-------|-------------|
 | 0 | None | Constant vertical viscosity/diffusivity (`vistur`, `diftur`) |
 | 1 | GOTM | General Ocean Turbulence Model (recommended) |
-| 2 | k-epsilon | Built-in k-epsilon closure |
+| 2 | k-epsilon | Built-in k-epsilon closure (not recommended for 3D; see below) |
 | 3 | Munk-Anderson | Empirical stability-dependent mixing |
 
 **GOTM setup** (recommended for 3D):
@@ -1007,7 +1007,18 @@ $name
 $end
 ```
 
-A default `gotmturb.nml` file is provided with the SHYFEM distribution.
+A default `gotmturb.nml` file is provided with the SHYFEM distribution. It
+configures a second-order model (Canuto A coefficients) with the k-epsilon
+dissipation equation, not the standard first-order k-epsilon model; the
+header of each `gotmturb.nml` says what it configures.
+
+**Why GOTM rather than `iturb = 2` for 3D runs.** In a neutral open-channel
+benchmark (`testcases/examples/channel_turb`, report
+`docs/reviews/2026-10-18-keps-vs-gotm-benchmark.md`) the built-in k-epsilon
+gives 1.5 times the log-law eddy viscosity near the bed, and 32-37% more
+than the experiment-based log-wake profile over the depth; every GOTM
+configuration tested is within about 20% near the bed and 6% over the depth.
+The cause is its epsilon wall condition (backlog issue #125).
 
 **Constant vertical mixing** (simple alternative):
 

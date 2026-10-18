@@ -1,3 +1,13 @@
+!-------------------------------------------------------------------------------
+! WHAT THIS FILE CONFIGURES (read before comparing against other closures):
+!   second-order model (turb_method=3), Cheng-Canuto-Howard 2002 coefficients
+!   (scnd_coeff=7), quasi-equilibrium (scnd_method=1), generic length scale
+!   GLS "gen" (len_scale_method=10). stab_method is ignored by second-order models.
+! This is NOT the standard first-order k-epsilon model. For that, set
+!   turb_method=2, len_scale_method=8, stab_method=1 (constant, cm0_fix=0.5477).
+! See docs/reviews/2026-10-18-keps-vs-gotm-benchmark.md for how the GOTM
+! configurations compare in a neutral open-channel benchmark.
+!-------------------------------------------------------------------------------
 
 !--------------------------------------------------------------------------
 !

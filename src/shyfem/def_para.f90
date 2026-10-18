@@ -1006,7 +1006,10 @@
 ! routines for turbulence. In order to use this value |SHYFEM| has to be
 ! compiled with GOTM support. |iturb=2| uses a k-epsilon module, and a value
 ! of 3 uses the Munk-Anderson model. The recommended value for |iturb| 
-! is 1 (GOTM module). (Default 0)
+! is 1 (GOTM module), in particular for 3D runs: in a neutral open-channel
+! benchmark (docs/reviews/2026-10-18-keps-vs-gotm-benchmark.md) the
+! built-in k-epsilon (|iturb=2|) gave 1.5 times the log-law eddy viscosity
+! near the bed, while GOTM stayed within about 20\% of it. (Default 0)
 
 	call addpar('iturb',0.)		!use turbulence closure scheme
 
