@@ -85,7 +85,6 @@
 
 	use para
 	use shympi
-	use levels, only : nlv
 	implicit none
 
 	logical boff
@@ -102,7 +101,7 @@
 	  if( iturb .le. 0 ) iturb = -1
 	  if( iturb .lt. 0 ) return
 	  write(*,*) 'starting turbulence model: iturb = ',iturb
-	  if( iturb == 2 .and. nlv > 1 ) then
+	  if( iturb == 2 .and. nlv_global > 1 .and. shympi_is_master() ) then
 	    write(6,*) 'WARNING: iturb=2 (built-in k-epsilon) in a 3D run:'
 	    write(6,*) '  near-bed eddy viscosity ~1.5x the log law in a'
 	    write(6,*) '  neutral channel benchmark; iturb=1 (GOTM) is'
