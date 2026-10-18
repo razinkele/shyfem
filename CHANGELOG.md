@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Model, GOTM turbulence (changes results for `ireib=6` runs with `iturb=1`):** GOTM's bottom roughness length is now the `czdef` that the momentum friction uses under `ireib=6`. It used to be `z0bk`, which only the fluid-mud option (`ireib=9`) sets, so it stayed at the initial 0.9 mm whatever `czdef` said. The effect is negligible with GOTM's default Neumann wall conditions: no measurable change in the `channel_turb` benchmark. No shipped test case uses `ireib=6`; `venlag_smoke` and `mm_hyd_00` are byte-identical. (k-ε vs GOTM benchmark, decision 4)
+
 ---
 
 ## [shyfem-ui 0.7.2] — 2026-10-18

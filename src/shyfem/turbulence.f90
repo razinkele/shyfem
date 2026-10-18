@@ -288,6 +288,7 @@
 	integer nlev,flev,numOfLev
 	real g
 	real, save :: czdef
+	integer, save :: ireib = -1
 
 	real h(nlvdi)
 	double precision depth		!total depth [m]
@@ -350,6 +351,7 @@
 	  end if
 
 	  czdef = getpar('czdef')
+	  ireib = nint(getpar('ireib'))
 	  bwave = has_waves()
           levdbg = nint(getpar('levdbg'))
 
@@ -492,6 +494,10 @@
 !           ------------------------------------------------------
 
 	    z0b = z0bk(k)
+	    ! ireib=6: czdef is the bottom roughness length the momentum
+	    ! friction uses; z0bk stays at its initial z0bini unless the
+	    ! fluid-mud option (ireib=9) sets it
+	    if( ireib == 6 ) z0b = czdef
 	    z0b = max(z0bmin,z0b)			!GGUZ0
 	    u_taub = sqrt( taub(k) )
 
