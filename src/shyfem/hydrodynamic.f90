@@ -1778,6 +1778,7 @@
 	real, allocatable, save :: va(:,:)
 ! statement functions
 
+	logical is_zeta_bound
 	integer ipint
 	real volnode
 
@@ -1908,10 +1909,15 @@
 	  end do
 	end do
 
-! set w to zero at external boundary nodes (ibtyp=1,2)
+! set w to zero at level (zeta, ibtyp=1) boundary nodes only, as upstream
+! does (bug fix 10.03.2010 for ibtyp=2). Flux (ibtyp=2) and point-source
+! (ibtyp=3) boundaries enter as nodal volume sources (rqpsv) that must
+! close through w and dzeta: zeroing them there breaks the vertical mass
+! balance (mm_hyd_41..43 ran away at the river node from 4ae5c575, which
+! used iopbnd(k) > 0 -- true for a node of any boundary, see bndo_init)
 
 	do k=1,nkn
-          if( iopbnd(k) > 0 ) then	!external boundary (ibtyp=1,2)
+          if( is_zeta_bound(k) ) then
 	    wlnv(:,k) = 0.
 	    dzeta(k) = 0.
           end if

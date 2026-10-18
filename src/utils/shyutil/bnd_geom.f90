@@ -42,9 +42,12 @@
 !==================================================================
 
 !----------------------------------------------------------------------
-! iopbnd(k) = 0         no open BC
-! iopbnd(k) > 0         external open BC (ibtyp=1,2)
-! iopbnd(k) < 0         internal open BC (ibtyp=3)
+! iopbnd(k) = 0         node is on no boundary
+! iopbnd(k) > 0         node is on a boundary of ANY type (bndo_init sets
+!                       it for ibtyp 0,1,2,3,4,5,31,32,...; the type is
+!                       itynod(iopbnd(k)), see is_zeta_bound)
+! iopbnd(k) < 0         not set by bndo_init (is_internal_boundary is
+!                       therefore always false)
 !----------------------------------------------------------------------
 
         implicit none
