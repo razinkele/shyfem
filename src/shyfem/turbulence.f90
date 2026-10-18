@@ -295,6 +295,8 @@
 	integer nlev,flev,numOfLev
 	real g
 	real, save :: czdef
+	integer, save :: ireib = -1
+	real z0n(nkn)		!nodal roughness length of the momentum friction
 
 	real h(nlvdi)
 	double precision depth		!total depth [m]
@@ -357,6 +359,7 @@
 	  end if
 
 	  czdef = getpar('czdef')
+	  ireib = nint(getpar('ireib'))
 	  bwave = has_waves()
           levdbg = nint(getpar('levdbg'))
 
@@ -391,6 +394,7 @@
 !------------------------------------------------------
 
 	call bnstress(czdef,taub)
+	if( ireib == 6 ) call model_bottom_z0(z0n)
 
 	!call shympi_comment('exchanging taub')
 
@@ -499,6 +503,10 @@
 !           ------------------------------------------------------
 
 	    z0b = z0bk(k)
+	    ! ireib=6: the momentum friction uses czv (the roughness length
+	    ! of each element, from $area, czdef by default); z0bk stays at
+	    ! its initial z0bini unless the fluid-mud option (ireib=9) sets it
+	    if( ireib == 6 ) z0b = z0n(k)
 	    z0b = max(z0bmin,z0b)			!GGUZ0
 	    u_taub = sqrt( taub(k) )
 
@@ -1100,6 +1108,43 @@
 	!end if
 	array = (/n2max,nfreq,nperiod/)
 	call info_output('n2max',' ',3,array,.false.)
+
+	end
+
+!**************************************************************
+
+	subroutine model_bottom_z0(z0n)
+
+! roughness length of the momentum friction (czv, ireib=6) on nodes:
+! area-weighted mean over the elements around each node, as bnstress does
+
+	use mod_diff_visc_fric, only : czv
+	use evgeom
+	use basin
+	use shympi
+
+	implicit none
+
+	real, intent(out) :: z0n(nkn)
+
+	integer k,ie,ii,ie_mpi
+	real aj
+	real wsum(nkn)
+
+	z0n = 0.
+	wsum = 0.
+	do ie_mpi=1,nel
+	  ie = ip_sort_elem(ie_mpi)
+	  aj = 4. * ev(10,ie)
+	  do ii=1,3
+	    k = nen3v(ii,ie)
+	    z0n(k) = z0n(k) + czv(ie) * aj
+	    wsum(k) = wsum(k) + aj
+	  end do
+	end do
+	call shympi_exchange_and_sum_2d_nodes(z0n)
+	call shympi_exchange_and_sum_2d_nodes(wsum)
+	where( wsum > 0. ) z0n = z0n / wsum
 
 	end
 
