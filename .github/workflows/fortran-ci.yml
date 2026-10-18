@@ -72,6 +72,20 @@ jobs:
             echo "$t: OK"
           done
 
+      # The only 3D case with a point source (river, ibtyp=3). From
+      # 2026-02-11 (4ae5c575) to #128, w was zeroed at source nodes and
+      # this ran away at the river node at 03:45 of day 1 (ts_dia stop)
+      # while every other test stayed green. 6 h of model time.
+      - name: Run 3D point-source smoke (mm_hyd_41, 6 h)
+        run: |
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/mar_menor
+          sed "s/itend = '2009-01-31'/itend = '2009-01-01::06:00'/" mm_hyd_41.str > mm_hyd_41_6h.str
+          grep -q "itend = '2009-01-01::06:00'" mm_hyd_41_6h.str || { echo "itend edit did not apply"; exit 1; }
+          shyfem mm_hyd_41_6h.str > mm_hyd_41_6h.out 2>&1 || { tail -40 mm_hyd_41_6h.out; exit 1; }
+          grep -q "simulation end" mm_hyd_41_6h.out || { echo "no simulation end"; tail -40 mm_hyd_41_6h.out; exit 1; }
+          echo "mm_hyd_41 (6 h): OK"
+
       # The venice smoke is the ONLY test covering the 3d baroclinic +
       # GOTM + wet/dry + heat-forcing path - the ssurface sentinel bug
       # (PR #58) blew this up for five months while every mar_menor
