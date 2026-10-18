@@ -8,10 +8,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+---
+
+## [8.5.2] — 2026-10-18
+
+A core fix release. The main fix changes results for every 3D run with a
+flux (`ibtyp=2`) or point-source (`ibtyp=3`) boundary, such as a river,
+made since 2026-02-11. The vertical velocity had been zeroed at those
+nodes, which broke their vertical mass balance; some runs blew up at the
+source. GOTM also takes its bottom roughness from `czdef` under
+`ireib=6`. Tagged `v8.5.2`.
+
 ### Fixed
 - **Model, 3D flux and point-source boundaries (changes results for 3D runs with `ibtyp=2` or `ibtyp=3` boundaries since 2026-02-11):** the vertical velocity is zeroed only at level boundaries (`ibtyp=1`) again, as upstream does after its 2010 fix for `ibtyp=2`. Commit `4ae5c575` (shipped in #5) zeroed it wherever `iopbnd(k) > 0`, which is every boundary node, flux and point-source nodes included. Those boundaries enter as nodal volume sources that have to close through w, so the change broke the vertical mass balance there. In `mar_menor`, `mm_hyd_41`, `42` and `43` ran away at the river node within 4–5 hours (salinity 88, temperature 100 °C) on every version since. They run their full period again, and the CI battery is unchanged. Found by bisecting from v8.1.1, where the case ran.
 - **Model, GOTM turbulence (changes results for `ireib=6` runs with `iturb=1`):** GOTM's bottom roughness length is now the one the momentum friction uses under `ireib=6`: an area-weighted node average of each element's roughness (`czv`, from `$area`, `czdef` by default). It used to be `z0bk`, which only the fluid-mud option (`ireib=9`) sets, so it stayed at the initial 0.9 mm whatever `czdef` said. The effect is negligible with GOTM's default Neumann wall conditions: no measurable change in the `channel_turb` benchmark. No shipped test case uses `ireib=6`; `venlag_smoke` and `mm_hyd_00` are byte-identical. (k-ε vs GOTM benchmark, decision 4)
 
+
+### Changed
+- **Turbulence, documentation:** GOTM (`iturb=1`) is recommended over the built-in k-epsilon (`iturb=2`) for 3D runs. In the `channel_turb` benchmark, `iturb=2` gives 1.5x the log-law eddy viscosity near the bed, against GOTM's roughly 0.8x (`docs/reviews/2026-10-18-keps-vs-gotm-benchmark.md`; redesign tracked in #125). A 3D run with `iturb=2` prints a start-up warning saying so, and each shipped `gotmturb.nml` now has a header saying which closure it configures. (#124, #126)
 ---
 
 ## [shyfem-ui 0.7.2] — 2026-10-18
