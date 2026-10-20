@@ -497,7 +497,7 @@ class TestPhysicsPanels:
         from shyfem_ui.pages import physics
 
         src = inspect.getsource(physics)
-        collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
+        collect = src[src.index("def _collect_panel_values") : src.index("def _read_edit")]
         assert "_assimil_apply(" in collect
         assert "_purge_nduge(" in collect
         assert '_read_input(inputs, f"assim_{prefix}_on"' in collect
@@ -821,7 +821,7 @@ class TestNdugePurgeReporting:
 
         src = inspect.getsource(physics)
         notice = "Removed dead $nduge"
-        collect = src[src.index("def _collect_panel_values") : src.index("def _read_input_and_set")]
+        collect = src[src.index("def _collect_panel_values") : src.index("def _read_edit")]
         assert notice not in collect, "collect must not notify — it writes nothing"
         preview = src[src.index("def preview_str") : src.index("def module_badges")]
         assert notice not in preview, "Preview writes nothing — it must not announce a purge"
@@ -971,9 +971,9 @@ class TestPhysicsIntegration:
         czdef = 2.5e-3
         iturb = 1
         ibarcl = 1
-        ilagr = 2
 $end
 $lagrg
+        ilagr = 2
         nbdy = 100
 $end
 """
@@ -983,7 +983,7 @@ $end
         assert friction["ireib"] == 5
 
         lagr = build_panel_params(parsed, "lagrangian")
-        # ilagr is mapped to "para" section in PHYSICS_PANELS
+        # ilagr lives in $lagrg, the panel's dedicated section
         assert lagr["ilagr"] == 2
         # nbdy comes from the dedicated "lagrg" section
         assert lagr["nbdy"] == 100
@@ -1626,19 +1626,31 @@ class TestListValuedParamRoundTrip:
         assert "'" not in out, out
         assert out == self._CONTENT, out
 
-    def test_an_edited_node_list_field_saves_a_valid_run_of_numbers(self):
-        sf = StrParser.parse(self._CONTENT)
-        errors = collect_errors(FakeInputs({"kbound": "1855 1856 9001"}), sf)
+    # The Boundary panel refuses to save (an unnumbered $bound stops the
+    # core), so an edited value run is exercised on $sedtr sedgrs.
+    _SEDTR = "$sedtr\n        sedgrs = 0.1 0.2 0.3\n$end\n"
+
+    def test_an_edited_value_run_field_saves_a_valid_run_of_numbers(self):
+        sf = StrParser.parse(self._SEDTR)
+        errors = collect_errors(FakeInputs({"sedgrs": "0.1 0.2 0.4"}), sf)
         assert errors == []
         out = StrParser.generate(sf)
-        assert "kbound = 1855 1856 9001" in out
+        assert "sedgrs = 0.1 0.2 0.4" in out
         assert "'" not in out and "[" not in out
-        assert StrParser.parse(out).get_param("bound", "kbound") == [1855, 1856, 9001]
+        assert StrParser.parse(out).get_param("sedtr", "sedgrs") == [0.1, 0.2, 0.4]
 
-    def test_a_single_node_field_still_saves_as_a_scalar(self):
-        sf = StrParser.parse("$bound\n        kbound = 1855\n$end\n")
-        assert collect_errors(FakeInputs({"kbound": "1856"}), sf) == []
-        assert StrParser.parse(StrParser.generate(sf)).get_param("bound", "kbound") == 1856
+    def test_a_single_value_field_still_saves_as_a_scalar(self):
+        sf = StrParser.parse("$sedtr\n        sedgrs = 0.1\n$end\n")
+        assert collect_errors(FakeInputs({"sedgrs": "0.2"}), sf) == []
+        assert StrParser.parse(StrParser.generate(sf)).get_param("sedtr", "sedgrs") == 0.2
+
+    def test_text_fields_render_through_the_shared_formatter(self):
+        """`str()` shows a value run as `[0.1, 0.2]`, which a save writes back."""
+        import inspect
+
+        from shyfem_ui.pages import physics
+
+        assert "str(_shown(" not in inspect.getsource(physics)
 
     def test_a_non_numeric_multi_token_field_stays_a_quoted_string(self):
         """The list conversion must not swallow a genuine character value:

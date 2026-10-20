@@ -819,7 +819,7 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "ityrst": _p(
             "Restart mode",
             "int",
-            1,
+            0,
             "",
             "0=strict match, 1=cold-start if missing, 2=closest time",
         ),
@@ -888,7 +888,13 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
             "4=momentum, 5=fixed scalar, 31=radiation/zero-gradient",
         ),
         "boundn": _p("Boundary time series file", "string", "", "", ""),
-        "intpol": _p("Interpolation method", "int", 1, "", "1=linear, 2=spline"),
+        "intpol": _p(
+            "Interpolation method",
+            "int",
+            0,
+            "",
+            "0=auto (2, or 4 for water level), 1=stepwise, 2=linear, 4=cubic",
+        ),
         "zfact": _p("Scaling factor for boundary values", "float", 1.0, "", ""),
         "ztilt": _p("Tilt for water level gradient", "float", 0.0, "m", ""),
     },

@@ -827,6 +827,11 @@ def validate_str_content(
 
     # --- Boundary section checks ---
 
+    if "bound" in parsed.sections:
+        errors.append(
+            "$bound must be numbered ($bound1, $bound2, …): the core stops on an "
+            "unnumbered boundary section"
+        )
     for section_name, section in parsed.sections.items():
         if section_name.startswith("bound") and section_name != "bound":
             params = section.parameters
@@ -886,8 +891,12 @@ $end"""
         wind = 'INPUT/wind.txt'
 $end"""
     elif section_name == "bound":
-        return """$bound
-        1  0  1  0.0
+        # Numbered: the core stops on an unnumbered $bound
+        # ("bnd: ibc out of bounds").
+        return """$bound1
+        kbound = 1 2 3
+        ibtyp = 1
+        boundn = 'INPUT/boundary.dat'
 $end"""
     else:
         return f"""${section_name}
