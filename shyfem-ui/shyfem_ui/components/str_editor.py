@@ -886,8 +886,12 @@ $end"""
         wind = 'INPUT/wind.txt'
 $end"""
     elif section_name == "bound":
-        return """$bound
-        1  0  1  0.0
+        # Numbered: the core stops on an unnumbered $bound
+        # ("bnd: ibc out of bounds").
+        return """$bound1
+        kbound = 1 2 3
+        ibtyp = 1
+        boundn = 'INPUT/boundary.dat'
 $end"""
     else:
         return f"""${section_name}

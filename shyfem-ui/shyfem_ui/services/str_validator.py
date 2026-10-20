@@ -96,6 +96,17 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
     sections, present = _normalize_sections(sections)
     para = sections.get("para", {})
 
+    # --- Boundaries are numbered: the core stops on a bare $bound
+    # ("bnd: ibc out of bounds") ---
+    if "bound" in raw_sections:
+        msgs.append(
+            ValidationMessage(
+                "error",
+                "$bound must be numbered ($bound1, $bound2, …): the core stops on an "
+                "unnumbered boundary section",
+            )
+        )
+
     # --- Required timing params ---
     if "itend" not in para or para["itend"] is None:
         msgs.append(ValidationMessage("error", "itend (end time) is required", "itend"))
