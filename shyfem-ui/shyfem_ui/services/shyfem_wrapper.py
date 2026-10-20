@@ -1,6 +1,7 @@
 """Wrapper for SHYFEM Fortran CLI tools."""
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -389,25 +390,37 @@ class ShyfemWrapper:
         }
         for stale in (files.pid, files.exit):
             stale.unlink(missing_ok=True)
+        # A copy for a later worker. Only the output snapshot is ever read
+        # back from it: the user can write this directory, so the copy the
+        # supervisor acts on comes over stdin.
         write_json_atomic(files.spec, spec)
 
         with open(files.stderr, "ab") as err:
-            # Own session, no pipes back to this process: when the worker
-            # exits, nothing reaches the supervisor (no signal, no SIGPIPE).
-            # cwd stays this process's, so the supervisor reads the same .env.
+            # Own session, and no pipe left open back to this process once
+            # the record is sent: when the worker exits, nothing reaches the
+            # supervisor (no signal, no SIGPIPE). cwd stays this process's,
+            # so the supervisor reads the same .env.
             runner = await asyncio.create_subprocess_exec(
                 sys.executable,
                 "-m",
                 "shyfem_ui.job_runner",
-                str(files.spec),
-                stdin=asyncio.subprocess.DEVNULL,
+                detached.job_id,
+                stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.DEVNULL,
                 stderr=err,
                 cwd=os.getcwd(),
                 start_new_session=True,
             )
+        runner.stdin.write(json.dumps(spec).encode())
+        await runner.stdin.drain()
+        runner.stdin.close()
         return await self.watch_detached(
-            tool_name, files.stdout, detached, progress_callback, runner=runner
+            tool_name,
+            files.stdout,
+            detached,
+            progress_callback,
+            runner=runner,
+            working_dir=working_dir,
         )
 
     async def watch_detached(
@@ -417,13 +430,17 @@ class ShyfemWrapper:
         detached: DetachedRun,
         progress_callback: Callable[[float, str], None] | None = None,
         runner: asyncio.subprocess.Process | None = None,
+        working_dir: str | Path | None = None,
     ) -> CommandResult:
         """Follow a detached job until its exit record appears.
 
         ``runner`` is the supervisor's handle when this process started it;
         a worker that re-attaches after a restart passes None and checks the
-        supervisor's pid instead. Cancelling the watch kills the tool only if
-        ``detached.kill_on_cancel()`` says so.
+        supervisor's pid instead. Cancelling the watch stops the tool only if
+        ``detached.kill_on_cancel()`` says so, and does it by asking the
+        supervisor (SIGTERM), which kills the process group it started.
+        ``working_dir`` is where output files are looked for; it comes from
+        the job, never from the files in that directory.
         """
         from shyfem_ui.services.job_detached import (
             JobFiles,
@@ -478,14 +495,12 @@ class ShyfemWrapper:
                 await asyncio.sleep(self.DETACHED_POLL_SECONDS)
         except asyncio.CancelledError:
             if detached.kill_on_cancel():
-                pgid = (read_json(files.pid) or {}).get("pgid")
-                if pgid:
-                    await self._kill_group_by_id(int(pgid))
+                await self._stop_supervisor(files, detached.job_id, runner)
             raise
         follow_output()
 
         spec = read_json(files.spec) or {}
-        cwd = Path(spec.get("cwd") or files.stdout.parent)
+        cwd = Path(working_dir) if working_dir is not None else files.stdout.parent
         if exit_record is None:
             return CommandResult(
                 success=False,
@@ -512,24 +527,38 @@ class ShyfemWrapper:
             output_files=self._find_output_files(tool_name, cwd, spec.get("before_snapshot") or {}),
         )
 
-    async def _kill_group_by_id(self, pgid: int) -> None:
-        """SIGTERM a process group by id, wait a grace period, then SIGKILL."""
+    async def _stop_supervisor(
+        self, files, job_id: str, runner: asyncio.subprocess.Process | None
+    ) -> None:
+        """Ask a job's supervisor to kill its tool, and wait until it has.
+
+        The supervisor's pid comes from this process's handle when it started
+        the job. After a restart it is read from ``<job>.pid`` and accepted
+        only if that process's command line is this job's supervisor, so an
+        edited pid file cannot aim the signal at any other process.
+        """
+        from shyfem_ui.services.job_detached import read_json, supervisor_alive
+
+        if runner is not None:
+            pid = runner.pid if runner.returncode is None else None
+        else:
+            pid = (read_json(files.pid) or {}).get("runner_pid")
+            if not isinstance(pid, int) or not supervisor_alive(pid, job_id):
+                pid = None
+        if not pid:
+            return
         try:
-            os.killpg(pgid, signal.SIGTERM)
+            os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             return
+        # The supervisor needs its own kill grace plus one poll to finish.
         loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.PROCESS_GROUP_KILL_GRACE_SECONDS
+        deadline = loop.time() + self.PROCESS_GROUP_KILL_GRACE_SECONDS + 3.0
         while loop.time() < deadline:
-            try:
-                os.killpg(pgid, 0)
-            except ProcessLookupError:
+            if read_json(files.exit) is not None or not supervisor_alive(pid, job_id):
                 return
             await asyncio.sleep(0.05)
-        try:
-            os.killpg(pgid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        logger.warning("The supervisor of job %s did not stop after SIGTERM", job_id)
 
     async def _terminate_process_group(
         self, proc: asyncio.subprocess.Process, cmd_str: str

@@ -1,18 +1,27 @@
 """Supervisor for one detached local job (J-01).
 
-Started by the web worker as ``python -m shyfem_ui.job_runner <job>.job`` in a
+Started by the web worker as ``python -m shyfem_ui.job_runner <job_id>`` in a
 session of its own, with the worker's working directory as cwd so that
-``get_config()`` reads the same ``.env``. It outlives the worker: nothing
-connects the two once it has started.
+``get_config()`` reads the same ``.env``. The launch record (command, cwd,
+timeout) arrives on stdin, not from a file: the job's directory is writable
+by its user, so nothing that decides what runs is read back from it. The
+supervisor outlives the worker: nothing connects the two once it has
+started.
 
 It runs the tool with stdout and stderr going to the job's files, enforces
 the optional wall-clock timeout, writes ``<job>.exit``, then ends the job's DB
 row (only if the row is still active) and, if it did, sends the completion
 email. See :mod:`shyfem_ui.services.job_detached`.
+
+SIGTERM is a cancel: the supervisor kills the tool's process group, which it
+started and knows from memory, and leaves the row to the worker that
+recorded the cancel. So the worker never needs a process-group id read from
+a file the user could edit.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -25,7 +34,6 @@ from pathlib import Path
 from shyfem_ui.services.job_detached import (
     JobFiles,
     finalize_job_row,
-    read_json,
     read_tail,
     write_json_atomic,
 )
@@ -35,6 +43,13 @@ logger = logging.getLogger("shyfem_ui.job_runner")
 
 POLL_SECONDS = 0.5
 KILL_GRACE_SECONDS = 1.5
+
+_cancel_requested = False
+
+
+def _on_sigterm(signum, frame) -> None:
+    global _cancel_requested
+    _cancel_requested = True
 
 
 def _kill_group(pgid: int) -> None:
@@ -58,6 +73,7 @@ def _kill_group(pgid: int) -> None:
 
 def run(spec: dict) -> int:
     """Run the job described by ``spec`` to completion. Returns its exit code."""
+    signal.signal(signal.SIGTERM, _on_sigterm)
     files = JobFiles.for_stdout(spec["stdout_file"])
     env = os.environ.copy()
     env.update(spec.get("env") or {})
@@ -71,10 +87,12 @@ def run(spec: dict) -> int:
             stdout=out,
             stderr=err,
             env=env,
-            # The tool leads its own group, so a cancel can signal the whole
-            # tool tree (mpirun and its ranks) without touching this process.
+            # The tool leads its own group, so the whole tool tree (mpirun
+            # and its ranks) can be signalled without touching this process.
             start_new_session=True,
         )
+    # For a later worker's liveness check and for the record. Nothing is
+    # killed on the strength of this file.
     write_json_atomic(
         files.pid,
         {"runner_pid": os.getpid(), "pgid": child.pid, "started_at": time.time()},
@@ -88,6 +106,10 @@ def run(spec: dict) -> int:
             break
         except subprocess.TimeoutExpired:
             pass
+        if _cancel_requested:
+            _kill_group(child.pid)
+            child.wait()
+            break
         if timeout and time.monotonic() - started > timeout:
             timed_out = True
             _kill_group(child.pid)
@@ -97,9 +119,15 @@ def run(spec: dict) -> int:
     return_code = child.returncode
     write_json_atomic(
         files.exit,
-        {"return_code": return_code, "timed_out": timed_out, "finished_at": time.time()},
+        {
+            "return_code": return_code,
+            "timed_out": timed_out,
+            "cancelled": _cancel_requested,
+            "finished_at": time.time(),
+        },
     )
-    _finalize(spec, files, return_code, timed_out)
+    if not _cancel_requested:  # a cancel is recorded by the worker that asked
+        _finalize(spec, files, return_code, timed_out)
     return return_code
 
 
@@ -107,7 +135,9 @@ def result_fields(spec: dict, files: JobFiles, return_code: int | None, timed_ou
     """The terminal fields of a job from its exit record and files.
 
     Shared by the supervisor and by a worker that finds an exit record left
-    by a supervisor which died before it could end the row.
+    by a supervisor which died before it could end the row. ``spec`` must
+    come from a trusted source (the launch record on stdin, or the DB row):
+    its ``cwd`` is where output files are looked for.
     """
     from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
@@ -155,14 +185,21 @@ def _finalize(spec: dict, files: JobFiles, return_code: int | None, timed_out: b
 
 def main(argv: list[str]) -> int:
     if len(argv) != 2:
-        print("usage: python -m shyfem_ui.job_runner <job>.job", file=sys.stderr)
+        print(
+            "usage: python -m shyfem_ui.job_runner <job_id>  (launch record on stdin)",
+            file=sys.stderr,
+        )
         return 2
     # This process's stderr is the job's stderr file: problems here show up
     # in the job log, where the user and the admin look.
     logging.basicConfig(level=logging.WARNING, format="[job runner] %(levelname)s %(message)s")
-    spec = read_json(Path(argv[1]))
-    if spec is None:
-        logger.error("Cannot read the launch record %s", argv[1])
+    try:
+        spec = json.loads(sys.stdin.read())
+    except ValueError:
+        spec = None
+    sys.stdin.close()
+    if not isinstance(spec, dict) or spec.get("job_id") != argv[1]:
+        logger.error("No valid launch record on stdin for job %s", argv[1])
         return 2
     try:
         rc = run(spec)

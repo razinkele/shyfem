@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import re
 import stat as _stat
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -11,6 +12,13 @@ from sqlalchemy.exc import IntegrityError
 from shyfem_ui.config import get_config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Project, ProjectFile
+
+# <job uuid>.<suffix>: the files a job keeps next to its working directory.
+_JOB_FILE_NAME = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"\.(stdout|stderr|job|pid|exit)$",
+    re.IGNORECASE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +54,9 @@ class FileService:
         safe_name = PurePosixPath(filename).name
         if safe_name != filename or not filename or ".." in filename:
             raise ValueError(f"Invalid filename: {filename!r}")
+        if _JOB_FILE_NAME.match(filename):
+            # A job's log and bookkeeping files (J-01) belong to the server.
+            raise ValueError(f"Reserved filename: {filename!r}")
 
         config = get_config()
         size = len(file_data)

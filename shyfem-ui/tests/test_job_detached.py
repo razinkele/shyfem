@@ -308,3 +308,39 @@ async def test_cancel_after_a_restart_kills_the_tool(db, shyfem_dir, tmp_path, g
 
     await _until(lambda: not _alive(pid), timeout=5)
     assert _row(job_id)["status"] == JobStatus.CANCELLED
+
+
+def test_job_file_names_cannot_be_uploaded():
+    """A user must not plant or replace a job's log or bookkeeping files."""
+    from shyfem_ui.services.file_service import _JOB_FILE_NAME
+
+    job_id = "3b4a2e1a-1494-4d4c-b387-29ecfade0502"
+    for suffix in ("stdout", "stderr", "job", "pid", "exit"):
+        assert _JOB_FILE_NAME.match(f"{job_id}.{suffix}")
+    for ok in ("run.pid", "results.job", f"{job_id}.str", "wind.fem"):
+        assert not _JOB_FILE_NAME.match(ok)
+
+
+@pytest.mark.asyncio
+async def test_cancel_ignores_an_edited_pid_file(db, shyfem_dir, tmp_path, groups):
+    """The pid file sits in a directory the user can write. Pointing it at
+    another process must not make a cancel signal that process."""
+    import subprocess
+
+    bystander = subprocess.Popen(["sleep", "60"], start_new_session=True)
+    groups.append(bystander.pid)
+    pidfile = tmp_path / "tool.pid"
+    _tool(shyfem_dir, f"echo $$ > '{pidfile}'\nsleep 60\n")
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work"))
+    pid = await _until(lambda: _read_pid(pidfile))
+    groups.append(os.getpgid(pid))
+    files = JobFiles.for_stdout(queue._jobs[job_id].stdout_file)
+    await _until(lambda: files.pid.exists())
+    write_json_atomic(files.pid, {"runner_pid": bystander.pid, "pgid": bystander.pid})
+
+    assert await queue.cancel(job_id) is True
+
+    await _until(lambda: not _alive(pid), timeout=5)
+    assert bystander.poll() is None, "a cancel must not signal a process named in the file"
+    bystander.kill()

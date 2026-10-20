@@ -241,8 +241,16 @@ class LocalJobQueue(JobQueue):
             if exit_record is not None:
                 from shyfem_ui.job_runner import result_fields
 
+                # Only the output snapshot comes from the file: where to look
+                # and which tool ran come from the row, because the user can
+                # write the job's directory.
+                trusted = {
+                    "cwd": row.working_dir,
+                    "tool_name": row.job_type,
+                    "before_snapshot": spec.get("before_snapshot") or {},
+                }
                 fields = result_fields(
-                    spec,
+                    trusted,
                     files,
                     exit_record.get("return_code"),
                     bool(exit_record.get("timed_out")),
@@ -567,6 +575,7 @@ class LocalJobQueue(JobQueue):
                 job.stdout_file,
                 self._detached(job),
                 self._progress_callback(job),
+                working_dir=job.working_dir,
             )
 
         await self._run_to_end(job, run)
