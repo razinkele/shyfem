@@ -325,7 +325,13 @@ class TestLocalJobQueue:
 
         # Simulate wrapper calling progress_callback
         async def mock_run(
-            tool, args, wd, progress_callback=None, output_callback=None, capture_stdout=True
+            tool,
+            args,
+            wd,
+            progress_callback=None,
+            output_callback=None,
+            capture_stdout=True,
+            detached=None,
         ):
             if progress_callback:
                 progress_callback(0.5, "halfway")
@@ -655,21 +661,17 @@ class TestCompletionNotificationUserLookup:
 
 
 class TestStdoutOpenFailureNoLeak:
-    """If opening the stdout log fails, the job must end FAILED and the
-    running-count must be released. Previously touch()/open() ran OUTSIDE the
-    try/finally, so a failure left the job stuck RUNNING and leaked
-    _running_count (eventually wedging the queue)."""
+    """If the run cannot be set up (the job's log files cannot be opened: disk
+    full, permissions), the job must end FAILED and the running-count must be
+    released. Previously touch()/open() ran OUTSIDE the try/finally, so a
+    failure left the job stuck RUNNING and leaked _running_count (eventually
+    wedging the queue). Since J-01 the files are opened while the supervisor
+    is launched, inside the wrapper call, so the failure arrives as an
+    exception from that call."""
 
     @pytest.mark.asyncio
-    async def test_stdout_open_failure_marks_failed_and_releases_count(
-        self, queue, job_spec, monkeypatch
-    ):
-        from pathlib import Path as _P
-
-        def _boom(self):
-            raise OSError("disk full")
-
-        monkeypatch.setattr(_P, "touch", _boom)
+    async def test_stdout_open_failure_marks_failed_and_releases_count(self, queue, job_spec):
+        queue.wrapper.run_command = AsyncMock(side_effect=OSError("disk full"))
 
         job_id = await queue.submit(job_spec)
         for _ in range(50):
@@ -680,6 +682,7 @@ class TestStdoutOpenFailureNoLeak:
 
         status = await queue.get_status(job_id)
         assert status.status == JobStatus.FAILED
+        assert "disk full" in status.error_message
         assert queue._running_count == 0
 
 

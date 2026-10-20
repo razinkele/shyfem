@@ -107,6 +107,9 @@ def _isolate_env(tmp_path_factory):
     os.environ["SHYFEM_UI_DEPLOYMENT_MODE"] = "local"
     _db = tmp_path_factory.mktemp("global_db") / "session.db"
     os.environ["SHYFEM_UI_DATABASE_URL"] = f"sqlite:///{_db}"
+    # Job supervisor records (J-01) default to shyfem-ui/.job_state beside the
+    # production DB; keep tests out of it.
+    os.environ["SHYFEM_UI_JOB_STATE_DIR"] = str(tmp_path_factory.mktemp("job_state"))
     # Disable the "what's new" modal in tests: a fresh Playwright browser has
     # empty localStorage, so the modal would appear and its backdrop blocks the
     # shared E2E session page (mass timeouts). Subprocess app fixtures inherit
@@ -124,6 +127,7 @@ def _isolate_env(tmp_path_factory):
     os.environ.pop("SHYFEM_UI_DEPLOYMENT_MODE", None)
     os.environ.pop("SHYFEM_UI_DATABASE_URL", None)
     os.environ.pop("SHYFEM_UI_WHATS_NEW_ENABLED", None)
+    os.environ.pop("SHYFEM_UI_JOB_STATE_DIR", None)
     os.environ.update(saved)
     _cfg._config = None
     _db_base._engine = None

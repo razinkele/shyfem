@@ -7,6 +7,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from shyfem_ui.config import get_config
+from shyfem_ui.services.job_detached import (
+    ACTIVE_STATUSES,
+    JobFiles,
+    finalize_job_row,
+    read_json,
+    supervisor_alive,
+)
 from shyfem_ui.services.job_queue import (
     ORPHANED_ERROR,
     JobInfo,
@@ -31,6 +38,63 @@ def write_output_line(stdout_fh, line: str) -> None:
     if stdout_fh:
         stdout_fh.write(line + "\n")
         stdout_fh.flush()
+
+
+def load_job_info(job_id: str) -> "JobInfo | None":
+    """The job as its DB row currently records it, or None if it has no row."""
+    from shyfem_ui.db.base import db_session
+    from shyfem_ui.models.project import Job
+
+    with db_session() as db:
+        row = db.query(Job).filter(Job.job_uuid == job_id).first()
+        return LocalJobQueue._db_row_to_job_info(row) if row is not None else None
+
+
+def send_completion_notification(notification_service, job: "JobInfo") -> None:
+    """Email the job's owner that it ended. Best-effort, never raises.
+
+    Used by the queue and by the detached job supervisor, so a job that ends
+    while no web worker runs still sends its email (J-01).
+    """
+    if notification_service is None:
+        return
+    try:
+        if job.status == JobStatus.CANCELLED:
+            # A user-cancelled job is not a failure — sending a
+            # "simulation failed" email on a deliberate cancel is wrong.
+            return
+        user_id = job.metadata.get("user_id")
+        user_dict: dict = {}
+        if user_id:
+            try:
+                from shyfem_ui.db.base import db_session
+                from shyfem_ui.models.user import User
+
+                with db_session() as db:
+                    user = db.query(User).filter_by(id=user_id).first()
+                    # Read scalar fields INSIDE the session — after the block
+                    # the instance is expired (expire_on_commit) and attribute
+                    # access raises DetachedInstanceError, dropping the email.
+                    if user:
+                        user_dict = {"username": user.username, "email": user.email}
+            except Exception:
+                logger.debug("Could not look up user %s for notification", user_id, exc_info=True)
+
+        duration = None
+        if job.started_at and job.completed_at:
+            duration = (job.completed_at - job.started_at).total_seconds()
+        job_dict = {
+            "name": job.name,
+            "duration": duration,
+            "working_dir": job.working_dir,
+            "stderr": job.error_message or "",
+        }
+        if job.status == JobStatus.COMPLETED:
+            notification_service.notify_job_success(user_dict, job_dict)
+        else:
+            notification_service.notify_job_failed(user_dict, job_dict)
+    except Exception:
+        logger.warning("Failed to send completion notification for job %s", job.id, exc_info=True)
 
 
 class LocalJobQueue(JobQueue):
@@ -68,6 +132,13 @@ class LocalJobQueue(JobQueue):
         # Job storage (in-memory for active jobs, DB for history)
         self._jobs: OrderedDict[str, JobInfo] = OrderedDict()
         self._tasks: dict[str, asyncio.Task] = {}
+        # Jobs a user asked to cancel. A cancelled task whose job is not in
+        # here was cancelled by a worker shutdown: its tool keeps running
+        # under its supervisor and must not be killed or marked ended (J-01).
+        self._user_cancelled: set[str] = set()
+        # Jobs found still running under a live supervisor at startup; the
+        # first history load starts a watcher for each.
+        self._reattach_ids: list[str] = []
 
         # Concurrency control (semaphore created lazily)
         self._semaphore: asyncio.Semaphore | None = None
@@ -115,29 +186,95 @@ class LocalJobQueue(JobQueue):
             from shyfem_ui.db.base import db_session
             from shyfem_ui.models.project import Job
 
-            active_statuses = (JobStatus.PENDING, JobStatus.QUEUED, JobStatus.RUNNING)
             reconciled = 0
+            finished: list[str] = []
+            reattach: list[str] = []
             with db_session() as db:
                 rows = (
                     db.query(Job).order_by(Job.created_at.desc()).limit(self.MAX_STORED_JOBS).all()
                 )
                 for row in rows:
-                    if row.status in active_statuses:
-                        row.status = JobStatus.FAILED
-                        row.error_message = self.ORPHANED_ERROR
-                        if row.completed_at is None:
-                            row.completed_at = datetime.now()
+                    if row.status not in ACTIVE_STATUSES:
+                        continue
+                    outcome, ending = self._reconcile_active_row(row)
+                    if outcome == "running":
+                        reattach.append(row.job_uuid)
+                    elif outcome == "finished":
+                        finished.append((row.job_uuid, ending))
+                    else:
                         reconciled += 1
                 for row in reversed(rows):  # oldest first so OrderedDict order is correct
                     loaded.append(self._db_row_to_job_info(row))
+            self._reattach_ids = reattach
             if reconciled:
                 logger.warning(
                     "Reconciled %d phantom active job row(s) to FAILED at startup", reconciled
                 )
+            if reattach:
+                logger.info(
+                    "Watching %d job(s) still running from a previous worker", len(reattach)
+                )
+            for job_id, (status, fields) in finished:
+                # It ended while no worker watched. Its supervisor may still
+                # be recording the end (it writes the exit record first), so
+                # record it through the same guard and email only on a win.
+                if not finalize_job_row(job_id, status, **fields):
+                    continue
+                fresh = load_job_info(job_id)
+                if fresh is None:
+                    continue
+                loaded = [fresh if info.id == job_id else info for info in loaded]
+                self._send_completion_notification(fresh)
         except Exception:
             # DB may not be initialised yet at import time — that's fine
             logger.warning("Could not load job history from DB", exc_info=True)
         return loaded
+
+    def _reconcile_active_row(self, row) -> tuple[str, tuple | None]:
+        """Decide what an active row left by an earlier process really is.
+
+        Returns ("running", None) when its supervisor is still alive (the row
+        stays active and gets a watcher); ("finished", (status, fields)) when
+        the supervisor left an exit record, for the caller to record through
+        :func:`finalize_job_row`; and ("orphaned", None) otherwise, with the
+        row marked FAILED. Before J-01 every active row was orphaned,
+        including jobs still running under another worker during a
+        restart.txt deploy (J-08).
+        """
+        files = JobFiles.for_stdout(row.stdout_file) if row.stdout_file else None
+        spec = read_json(files.spec) if files else None
+        if files and spec:
+            exit_record = read_json(files.exit)
+            if exit_record is not None:
+                from shyfem_ui.job_runner import result_fields
+
+                # Only the output snapshot comes from the file: where to look
+                # and which tool ran come from the row, because the user can
+                # write the job's directory.
+                trusted = {
+                    "cwd": row.working_dir,
+                    "tool_name": row.job_type,
+                    "before_snapshot": spec.get("before_snapshot") or {},
+                }
+                fields = result_fields(
+                    trusted,
+                    files,
+                    exit_record.get("return_code"),
+                    bool(exit_record.get("timed_out")),
+                )
+                if exit_record.get("cancelled"):
+                    # Stopped by a cancel whose own record never landed.
+                    fields["error_message"] = "Job was cancelled"
+                    fields["status"] = JobStatus.CANCELLED
+                return "finished", (fields.pop("status"), fields)
+            pid_record = read_json(files.pid) or {}
+            if supervisor_alive(pid_record.get("runner_pid"), row.job_uuid):
+                return "running", None
+        row.status = JobStatus.FAILED
+        row.error_message = self.ORPHANED_ERROR
+        if row.completed_at is None:
+            row.completed_at = datetime.now()
+        return "orphaned", None
 
     async def _ensure_history_loaded(self) -> None:
         """Load job history from the DB on first use (F51).
@@ -172,6 +309,10 @@ class LocalJobQueue(JobQueue):
             for info in loaded:
                 self._jobs.setdefault(info.id, info)
             self._history_loaded = True
+            reattach, self._reattach_ids = self._reattach_ids, []
+            for job_id in reattach:
+                if job_id in self._jobs and job_id not in self._tasks:
+                    self._tasks[job_id] = asyncio.create_task(self._watch_job(job_id))
 
     @staticmethod
     def _db_row_to_job_info(row) -> JobInfo:
@@ -242,51 +383,85 @@ class LocalJobQueue(JobQueue):
 
     def _send_completion_notification(self, job: "JobInfo") -> None:
         """Send email notification for job completion. Skips if not configured."""
-        if self.notification_service is None:
-            return
+        send_completion_notification(self.notification_service, job)
+
+    def _finalize_row(self, job: JobInfo) -> bool:
+        """End the job's row unless something else already ended it.
+
+        Returns True if this call recorded the end (and so owns the email).
+        A detached job's supervisor usually gets there first; then the row
+        already holds the result and the caller reloads it (J-01).
+        """
         try:
-            from shyfem_ui.services.job_queue import JobStatus
-
-            user_id = job.metadata.get("user_id")
-            user_dict: dict = {}
-            if user_id:
-                try:
-                    from shyfem_ui.db.base import db_session
-                    from shyfem_ui.models.user import User
-
-                    with db_session() as db:
-                        user = db.query(User).filter_by(id=user_id).first()
-                        # Read scalar fields INSIDE the session — after the block
-                        # the instance is expired (expire_on_commit) and attribute
-                        # access raises DetachedInstanceError, dropping the email.
-                        if user:
-                            user_dict = {"username": user.username, "email": user.email}
-                except Exception:
-                    logger.debug(
-                        "Could not look up user %s for notification", user_id, exc_info=True
-                    )
-
-            duration = None
-            if job.started_at and job.completed_at:
-                duration = (job.completed_at - job.started_at).total_seconds()
-            job_dict = {
-                "name": job.name,
-                "duration": duration,
-                "working_dir": job.working_dir,
-                "stderr": job.error_message or "",
-            }
-            if job.status == JobStatus.CANCELLED:
-                # A user-cancelled job is not a failure — sending a
-                # "simulation failed" email on a deliberate cancel is wrong.
-                return
-            if job.status == JobStatus.COMPLETED:
-                self.notification_service.notify_job_success(user_dict, job_dict)
-            else:
-                self.notification_service.notify_job_failed(user_dict, job_dict)
+            if finalize_job_row(
+                job.id,
+                job.status,
+                return_code=job.return_code,
+                error_message=job.error_message,
+                output_files=list(job.output_files or []),
+                progress=job.progress,
+                completed_at=job.completed_at,
+            ):
+                return True
+            if load_job_info(job.id) is None:
+                # No row at all (its first write failed): write one now.
+                self._persist_job(job)
+                return True
+            return False
         except Exception:
-            logger.warning(
-                "Failed to send completion notification for job %s", job.id, exc_info=True
-            )
+            logger.error("Could not record the end of job %s", job.id, exc_info=True)
+            # If a supervisor ran this job it will record the end (and email)
+            # itself, so claiming the end here could send a second email.
+            # With no supervisor, nobody else will: keep the email.
+            if job.stdout_file and JobFiles.for_stdout(job.stdout_file).pid.exists():
+                return False
+            return True
+
+    def _advance_row(self, job: JobInfo) -> bool:
+        """Write the job's QUEUED/RUNNING state unless the row already ended.
+
+        A blind write here used to put RUNNING back over a cancel recorded a
+        moment earlier. Returns False if the row had already ended.
+        """
+        try:
+            from shyfem_ui.db.base import db_session
+            from shyfem_ui.models.project import Job
+
+            with db_session() as db:
+                changed = (
+                    db.query(Job)
+                    .filter(Job.job_uuid == job.id, Job.status.in_(ACTIVE_STATUSES))
+                    .update(
+                        {
+                            Job.status: job.status,
+                            Job.queued_at: job.queued_at,
+                            Job.started_at: job.started_at,
+                        },
+                        synchronize_session=False,
+                    )
+                )
+            if changed:
+                return True
+            if load_job_info(job.id) is None:
+                self._persist_job(job)  # its first write failed; try again
+                return True
+            return False
+        except Exception:
+            logger.error("Could not record the state of job %s", job.id, exc_info=True)
+            return True  # the run itself is fine; the end is recorded by CAS
+
+    def _adopt_row(self, job: JobInfo) -> None:
+        """Copy the DB row's terminal fields onto the in-memory job."""
+        try:
+            stored = load_job_info(job.id)
+        except Exception:
+            logger.warning("Could not read back the end of job %s", job.id, exc_info=True)
+            return
+        if stored is None:
+            return
+        for name in ("status", "return_code", "error_message", "output_files", "completed_at"):
+            setattr(job, name, getattr(stored, name))
+        job.progress = stored.progress or job.progress
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -360,45 +535,66 @@ class LocalJobQueue(JobQueue):
 
         return job_id
 
+    def _detached(self, job: JobInfo):
+        """How a job's tool is handed to its supervisor (J-01)."""
+        from shyfem_ui.services.shyfem_wrapper import DetachedRun
+
+        job_id = job.id
+        return DetachedRun(
+            job_id=job_id,
+            stdout_file=job.stdout_file or "",
+            kill_on_cancel=lambda: job_id in self._user_cancelled,
+        )
+
+    def _progress_callback(self, job: JobInfo):
+        def progress_callback(progress: float, message: str):
+            job.progress = progress
+            job.progress_message = message
+            self._notify_progress(job.id, progress, message)
+
+        return progress_callback
+
     async def _execute_job(self, job_id: str, spec: JobSpec) -> None:
         """Execute a job with concurrency control."""
         job = self._jobs.get(job_id)
         if not job:
             return
 
+        def cancelled_before_start() -> bool:
+            if job_id in self._user_cancelled or not job.is_active:
+                self._tasks.pop(job_id, None)
+                return True
+            return False
+
+        if cancelled_before_start():
+            return
         # Wait for available slot
         job.status = JobStatus.QUEUED
         job.queued_at = datetime.now()
-        await asyncio.to_thread(self._persist_job, job)
+        await asyncio.to_thread(self._advance_row, job)
+        if cancelled_before_start():
+            return
 
         async with self._get_semaphore():
+            if cancelled_before_start():
+                return
+            # No await between the check above and here, so a cancel cannot
+            # slip in: from now on _run_to_end owns the count and the task.
             self._running_count += 1
             job.status = JobStatus.RUNNING
             job.started_at = datetime.now()
-            await asyncio.to_thread(self._persist_job, job)
 
-            stdout_fh = None
-
-            def progress_callback(progress: float, message: str):
-                job.progress = progress
-                job.progress_message = message
-                self._notify_progress(job_id, progress, message)
-
-            def output_callback(line: str):
-                write_output_line(stdout_fh, line)
-
-            try:
-                # Open the stdout log INSIDE the try so a touch/open failure
-                # (disk full, permissions) marks the job FAILED and releases
-                # _running_count via the finally — instead of leaking both.
-                if job.stdout_file:
-                    Path(job.stdout_file).touch()
-                    stdout_fh = open(job.stdout_file, "a")
-
+            async def run():
+                if not await asyncio.to_thread(self._advance_row, job):
+                    return None  # a cancel recorded the end first; launch nothing
+                # The supervisor writes the job's stdout and stderr files
+                # itself, so there is no output_callback and nothing is
+                # buffered here; the log viewer reads the files.
                 solver = spec.metadata.get("solver", "sparskit")
+                detached = self._detached(job)
+                progress_callback = self._progress_callback(job)
                 if spec.tool_name == "shyfem" and spec.mpi_enabled and spec.mpi_np > 1:
-                    # MPI execution
-                    result = await self.wrapper.run_shyfem(
+                    return await self.wrapper.run_shyfem(
                         spec.args[-1] if spec.args else "",
                         spec.working_dir,
                         mpi_enabled=True,
@@ -407,66 +603,94 @@ class LocalJobQueue(JobQueue):
                         options=spec.args[:-1] if len(spec.args) > 1 else None,
                         solver=solver,
                         progress_callback=progress_callback,
-                        output_callback=output_callback,
-                        # Stdout is streamed to the job log file via
-                        # output_callback; don't also buffer it all in RAM.
                         capture_stdout=False,
+                        detached=detached,
                     )
-                elif spec.tool_name == "shyfem":
+                if spec.tool_name == "shyfem":
                     # Serial shyfem (may use petsc solver)
-                    result = await self.wrapper.run_shyfem(
+                    return await self.wrapper.run_shyfem(
                         spec.args[-1] if spec.args else "",
                         spec.working_dir,
                         solver=solver,
                         progress_callback=progress_callback,
-                        output_callback=output_callback,
                         capture_stdout=False,
+                        detached=detached,
                     )
-                else:
-                    result = await self.wrapper.run_command(
-                        spec.tool_name,
-                        spec.args,
-                        spec.working_dir,
-                        progress_callback,
-                        output_callback,
-                        capture_stdout=False,
-                    )
+                return await self.wrapper.run_command(
+                    spec.tool_name,
+                    spec.args,
+                    spec.working_dir,
+                    progress_callback,
+                    None,
+                    capture_stdout=False,
+                    detached=detached,
+                )
 
-                # Update job with result
-                job.return_code = result.return_code
-                job.output_files = result.output_files
-                job.progress = 1.0
+            await self._run_to_end(job, run)
 
-                if result.success:
-                    job.status = JobStatus.COMPLETED
-                else:
-                    job.status = JobStatus.FAILED
-                    job.error_message = result.stderr[:1000] if result.stderr else "Unknown error"
+    async def _watch_job(self, job_id: str) -> None:
+        """Follow a job that was already running when this process started."""
+        job = self._jobs.get(job_id)
+        if not job or not job.stdout_file:
+            return
+        self._running_count += 1
 
-                # Write stderr (small, captured at end by wrapper)
-                if job.stderr_file and result.stderr:
-                    Path(job.stderr_file).write_text(result.stderr)
+        async def run():
+            return await self.wrapper.watch_detached(
+                job.tool_name,
+                job.stdout_file,
+                self._detached(job),
+                self._progress_callback(job),
+                working_dir=job.working_dir,
+            )
 
-            except asyncio.CancelledError:
+        await self._run_to_end(job, run)
+
+    async def _run_to_end(self, job: JobInfo, run) -> None:
+        """Await ``run()``, then record how the job ended.
+
+        A cancel the user asked for ends the job CANCELLED. Any other
+        cancel means this process is stopping: the tool keeps running under
+        its supervisor, so the job is neither killed nor marked ended here.
+        """
+        job_id = job.id
+        stopping = False
+        try:
+            result = await run()
+            if result is None:
+                raise asyncio.CancelledError
+            job.return_code = result.return_code
+            job.output_files = result.output_files
+            job.progress = 1.0
+            if result.success:
+                job.status = JobStatus.COMPLETED
+            else:
+                job.status = JobStatus.FAILED
+                job.error_message = result.stderr[-1000:] if result.stderr else "Unknown error"
+        except asyncio.CancelledError:
+            if job_id in self._user_cancelled:
                 job.status = JobStatus.CANCELLED
                 job.error_message = "Job was cancelled"
-            except Exception as e:
-                job.status = JobStatus.FAILED
-                job.error_message = str(e)
-            finally:
-                if stdout_fh:
-                    stdout_fh.close()
-                job.completed_at = datetime.now()
-                self._running_count -= 1
-                # Clean up task reference
-                self._tasks.pop(job_id, None)
-                # Persist final state to DB
-                await asyncio.to_thread(self._persist_job, job)
-                # Send completion notification (best-effort, never raises).
-                # Offload to a worker thread: it does blocking SMTP I/O (now
-                # bounded by smtp_timeout_seconds) which must not block the
-                # asyncio event loop / other sessions on job completion.
-                await asyncio.to_thread(self._send_completion_notification, job)
+            else:
+                stopping = True
+                raise
+        except Exception as e:
+            job.status = JobStatus.FAILED
+            job.error_message = str(e)
+        finally:
+            self._running_count -= 1
+            self._tasks.pop(job_id, None)
+            if not stopping:
+                job.completed_at = job.completed_at or datetime.now()
+                if await asyncio.to_thread(self._finalize_row, job):
+                    # Send completion notification (best-effort, never
+                    # raises). Offloaded: blocking SMTP I/O, bounded by
+                    # smtp_timeout_seconds, must not block the event loop.
+                    await asyncio.to_thread(self._send_completion_notification, job)
+                else:
+                    # The supervisor (or a cancel) recorded the end first.
+                    await asyncio.to_thread(self._adopt_row, job)
+                self._user_cancelled.discard(job_id)
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a running job."""
@@ -478,6 +702,14 @@ class LocalJobQueue(JobQueue):
         if not job.is_active:
             return False
 
+        # Record the cancel before the tool is killed: once it dies, its
+        # supervisor tries to record a failure, and the first record wins.
+        self._user_cancelled.add(job_id)
+        job.status = JobStatus.CANCELLED
+        job.error_message = "Job was cancelled"
+        job.completed_at = datetime.now()
+        recorded = await asyncio.to_thread(self._finalize_row, job)
+
         task = self._tasks.get(job_id)
         if task:
             task.cancel()
@@ -485,10 +717,12 @@ class LocalJobQueue(JobQueue):
                 await task
             except asyncio.CancelledError:
                 pass
+        self._user_cancelled.discard(job_id)
 
-        job.status = JobStatus.CANCELLED
-        job.completed_at = datetime.now()
-        await asyncio.to_thread(self._persist_job, job)
+        if not recorded:
+            # It ended on its own just before the cancel landed.
+            await asyncio.to_thread(self._adopt_row, job)
+            return False
         return True
 
     async def get_status(self, job_id: str) -> JobInfo | None:
@@ -566,19 +800,14 @@ class LocalJobQueue(JobQueue):
         for job_id in to_remove:
             job = self._jobs.pop(job_id, None)
             if job:
-                # Clean up output files
-                for file_path in [job.stdout_file, job.stderr_file]:
-                    if file_path:
-                        path = Path(file_path)
-                        if path.exists():
-                            try:
-                                path.unlink()
-                            except Exception:
-                                # Best-effort cleanup — never fail eviction if a
-                                # stale output file can't be removed, but log it.
-                                logger.debug(
-                                    "Could not remove job output file %s", path, exc_info=True
-                                )
+                # Clean up the job's log and bookkeeping files
+                for path in self._job_file_paths(job.stdout_file, job.stderr_file):
+                    try:
+                        path.unlink(missing_ok=True)
+                    except Exception:
+                        # Best-effort cleanup — never fail eviction if a
+                        # stale output file can't be removed, but log it.
+                        logger.debug("Could not remove job output file %s", path, exc_info=True)
 
         # Also delete the persisted rows, else the jobs table grows unbounded
         # (eviction from the in-memory dict alone left thousands of stale rows).
@@ -594,6 +823,16 @@ class LocalJobQueue(JobQueue):
         db_purged = await asyncio.to_thread(self._delete_old_db_rows, cutoff, utc_cutoff, to_remove)
 
         return len(to_remove) + db_purged
+
+    @staticmethod
+    def _job_file_paths(stdout_file: str | None, stderr_file: str | None) -> list[Path]:
+        """Every file a job leaves in its working directory: its two logs and,
+        for a detached job, the launch, pid and exit records (J-01)."""
+        paths = [Path(p) for p in (stdout_file, stderr_file) if p]
+        if stdout_file:
+            files = JobFiles.for_stdout(stdout_file)
+            paths += [files.spec, files.pid, files.exit]
+        return paths
 
     def _delete_old_db_rows(
         self, cutoff: datetime, utc_cutoff: datetime, exclude: list[str]
@@ -624,18 +863,11 @@ class LocalJobQueue(JobQueue):
                     query = query.filter(Job.job_uuid.notin_(exclude))
                 rows = query.all()
                 for row in rows:
-                    for file_path in (row.stdout_file, row.stderr_file):
-                        if file_path:
-                            path = Path(file_path)
-                            if path.exists():
-                                try:
-                                    path.unlink()
-                                except Exception:
-                                    logger.debug(
-                                        "Could not remove job output file %s",
-                                        path,
-                                        exc_info=True,
-                                    )
+                    for path in self._job_file_paths(row.stdout_file, row.stderr_file):
+                        try:
+                            path.unlink(missing_ok=True)
+                        except Exception:
+                            logger.debug("Could not remove job output file %s", path, exc_info=True)
                 count = len(rows)
                 if count:
                     query.delete(synchronize_session=False)
