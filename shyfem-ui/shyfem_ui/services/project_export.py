@@ -13,7 +13,8 @@ from shyfem_ui.config import get_config
 MANIFEST_VERSION = "1.0"
 
 # File extensions to exclude from export (job logs)
-_EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr"})
+# Job logs and the detached-job bookkeeping files (J-01) are not project data.
+_EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr", ".job", ".pid", ".exit"})
 # Directory names excluded from export, with everything below them (spec §9).
 # ``.boxmodel_cache`` is a derived Parquet cache that is rebuilt from the run
 # output on demand, so shipping it only inflates the archive (and the export

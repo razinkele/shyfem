@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import signal
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -26,6 +27,22 @@ class CommandResult:
     working_dir: str
     duration: float = 0.0
     output_files: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DetachedRun:
+    """Run a command under a supervisor that outlives this process (J-01).
+
+    ``stdout_file`` names the job's log; the other job files sit beside it
+    (see :class:`shyfem_ui.services.job_detached.JobFiles`).
+    ``kill_on_cancel`` is asked when the watching task is cancelled: True for
+    a user's cancel (the tool is killed), False for a worker shutdown (the
+    tool keeps running and a later worker reports its end).
+    """
+
+    job_id: str
+    stdout_file: str
+    kill_on_cancel: Callable[[], bool]
 
 
 class ShyfemWrapper:
@@ -126,6 +143,7 @@ class ShyfemWrapper:
         env: dict[str, str] | None = None,
         command_prefix: list[str] | None = None,
         capture_stdout: bool = True,
+        detached: DetachedRun | None = None,
     ) -> CommandResult:
         """Run a SHYFEM command asynchronously.
 
@@ -143,6 +161,10 @@ class ShyfemWrapper:
                 in RAM for the whole run and grows unbounded. stderr is always
                 retained (needed for error messages) and output_callback still
                 fires per line regardless.
+            detached: Hand the run to a supervisor process that writes the
+                tool's output to the job's files and outlives this process.
+                output_callback and capture_stdout do not apply: the log file
+                is written by the supervisor. See :class:`DetachedRun`.
 
         Returns:
             CommandResult with execution details
@@ -170,6 +192,18 @@ class ShyfemWrapper:
         else:
             cmd = [str(exe)] + args
         cmd_str = " ".join(cmd)
+
+        if detached is not None:
+            overrides = {"SHYFEMDIR": str(self.shyfem_dir), **(env or {})}
+            return await self._run_detached(
+                tool_name,
+                cmd,
+                working_dir,
+                overrides,
+                before_snapshot,
+                detached,
+                progress_callback,
+            )
 
         start_time = datetime.now()
         stdout_lines = []
@@ -320,6 +354,182 @@ class ShyfemWrapper:
             duration=duration,
             output_files=output_files,
         )
+
+    # How often a watcher looks at a detached job's files.
+    DETACHED_POLL_SECONDS = 0.5
+
+    async def _run_detached(
+        self,
+        tool_name: str,
+        cmd: list[str],
+        working_dir: Path,
+        env_overrides: dict[str, str],
+        before_snapshot: dict[str, int],
+        detached: DetachedRun,
+        progress_callback: Callable[[float, str], None] | None,
+    ) -> CommandResult:
+        """Start the supervisor for ``cmd`` and watch it until the tool ends."""
+        from shyfem_ui.config import get_config
+        from shyfem_ui.services.job_detached import JobFiles, write_json_atomic
+
+        files = JobFiles.for_stdout(detached.stdout_file)
+        spec = {
+            "job_id": detached.job_id,
+            "cmd": cmd,
+            "cwd": str(working_dir),
+            # Only the variables this run adds: the supervisor inherits the
+            # rest from this process, and the launch record sits in a
+            # user-visible directory, so it must not hold the environment.
+            "env": env_overrides,
+            "stdout_file": str(files.stdout),
+            "tool_name": tool_name,
+            "shyfem_dir": str(self.shyfem_dir),
+            "timeout": get_config().command_timeout_seconds,
+            "before_snapshot": before_snapshot,
+        }
+        for stale in (files.pid, files.exit):
+            stale.unlink(missing_ok=True)
+        write_json_atomic(files.spec, spec)
+
+        with open(files.stderr, "ab") as err:
+            # Own session, no pipes back to this process: when the worker
+            # exits, nothing reaches the supervisor (no signal, no SIGPIPE).
+            # cwd stays this process's, so the supervisor reads the same .env.
+            runner = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "shyfem_ui.job_runner",
+                str(files.spec),
+                stdin=asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=err,
+                cwd=os.getcwd(),
+                start_new_session=True,
+            )
+        return await self.watch_detached(
+            tool_name, files.stdout, detached, progress_callback, runner=runner
+        )
+
+    async def watch_detached(
+        self,
+        tool_name: str,
+        stdout_file: str | Path,
+        detached: DetachedRun,
+        progress_callback: Callable[[float, str], None] | None = None,
+        runner: asyncio.subprocess.Process | None = None,
+    ) -> CommandResult:
+        """Follow a detached job until its exit record appears.
+
+        ``runner`` is the supervisor's handle when this process started it;
+        a worker that re-attaches after a restart passes None and checks the
+        supervisor's pid instead. Cancelling the watch kills the tool only if
+        ``detached.kill_on_cancel()`` says so.
+        """
+        from shyfem_ui.services.job_detached import (
+            JobFiles,
+            read_json,
+            read_tail,
+            supervisor_alive,
+        )
+
+        files = JobFiles.for_stdout(stdout_file)
+        offset = 0
+        pending = b""
+        start = datetime.now()
+
+        def follow_output() -> None:
+            nonlocal offset, pending
+            if progress_callback is None:
+                return
+            try:
+                with open(files.stdout, "rb") as fh:
+                    fh.seek(offset)
+                    chunk = fh.read()
+            except OSError:
+                return
+            offset += len(chunk)
+            *lines, pending = (pending + chunk).split(b"\n")
+            for raw in lines:
+                line = raw.decode("utf-8", errors="replace").rstrip()
+                progress = self._parse_progress(tool_name, line)
+                if progress is not None:
+                    try:
+                        progress_callback(progress, line)
+                    except Exception:
+                        logger.debug("Progress update failed", exc_info=True)
+
+        def supervisor_gone() -> bool:
+            if runner is not None:
+                return runner.returncode is not None
+            pid_record = read_json(files.pid) or {}
+            return not supervisor_alive(pid_record.get("runner_pid"), detached.job_id)
+
+        exit_record = None
+        try:
+            while True:
+                follow_output()
+                exit_record = read_json(files.exit)
+                if exit_record is not None:
+                    break
+                if supervisor_gone():
+                    # It may have written the record just before exiting.
+                    exit_record = read_json(files.exit)
+                    break
+                await asyncio.sleep(self.DETACHED_POLL_SECONDS)
+        except asyncio.CancelledError:
+            if detached.kill_on_cancel():
+                pgid = (read_json(files.pid) or {}).get("pgid")
+                if pgid:
+                    await self._kill_group_by_id(int(pgid))
+            raise
+        follow_output()
+
+        spec = read_json(files.spec) or {}
+        cwd = Path(spec.get("cwd") or files.stdout.parent)
+        if exit_record is None:
+            return CommandResult(
+                success=False,
+                return_code=-1,
+                stdout="",
+                stderr=read_tail(files.stderr) or "The job supervisor stopped without a result",
+                command=" ".join(spec.get("cmd") or []),
+                working_dir=str(cwd),
+            )
+        return_code = exit_record.get("return_code")
+        timed_out = bool(exit_record.get("timed_out"))
+        if timed_out:
+            stderr = f"Command timed out after {spec.get('timeout')}s and was terminated"
+        else:
+            stderr = read_tail(files.stderr)
+        return CommandResult(
+            success=return_code == 0 and not timed_out,
+            return_code=return_code if return_code is not None else -1,
+            stdout="",
+            stderr=stderr,
+            command=" ".join(spec.get("cmd") or []),
+            working_dir=str(cwd),
+            duration=(datetime.now() - start).total_seconds(),
+            output_files=self._find_output_files(tool_name, cwd, spec.get("before_snapshot") or {}),
+        )
+
+    async def _kill_group_by_id(self, pgid: int) -> None:
+        """SIGTERM a process group by id, wait a grace period, then SIGKILL."""
+        try:
+            os.killpg(pgid, signal.SIGTERM)
+        except ProcessLookupError:
+            return
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.PROCESS_GROUP_KILL_GRACE_SECONDS
+        while loop.time() < deadline:
+            try:
+                os.killpg(pgid, 0)
+            except ProcessLookupError:
+                return
+            await asyncio.sleep(0.05)
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
     async def _terminate_process_group(
         self, proc: asyncio.subprocess.Process, cmd_str: str
@@ -511,6 +721,7 @@ class ShyfemWrapper:
         progress_callback: Callable[[float, str], None] | None = None,
         output_callback: Callable[[str], None] | None = None,
         capture_stdout: bool = True,
+        detached: DetachedRun | None = None,
     ) -> CommandResult:
         """Run shyfem simulation.
 
@@ -541,6 +752,7 @@ class ShyfemWrapper:
             output_callback,
             command_prefix=prefix,
             capture_stdout=capture_stdout,
+            detached=detached,
         )
 
     async def run_shyelab(

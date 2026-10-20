@@ -341,7 +341,7 @@ class FileService:
         return warnings
 
     # Extensions to skip when seeding tutorial files
-    _SKIP_EXTENSIONS = frozenset({".sh", ".stdout", ".stderr"})
+    _SKIP_EXTENSIONS = frozenset({".sh", ".stdout", ".stderr", ".job", ".pid", ".exit"})
     _SKIP_FILENAMES = frozenset({"Makefile", "README", "util.sh", "run_all.sh"})
 
     @staticmethod
