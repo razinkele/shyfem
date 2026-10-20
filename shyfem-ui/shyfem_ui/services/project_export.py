@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import posixpath
 import shutil
 import zipfile
 from datetime import datetime, timezone
@@ -213,11 +214,14 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
                 continue
             if member.endswith("/"):
                 continue
-            if not is_project_file(PurePosixPath(member)):
+            # Normalised once, so the filter judges the path that is written:
+            # "x/../.project_summary.json" lands in the root as that file.
+            rel = PurePosixPath(posixpath.normpath(member))
+            if not is_project_file(rel):
                 # Job files, cache and bookkeeping get no file row, so they
                 # would sit on disk uncounted by the storage limit (F-01).
                 continue
-            target = project_dir / member
+            target = project_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst, length=1024 * 1024)

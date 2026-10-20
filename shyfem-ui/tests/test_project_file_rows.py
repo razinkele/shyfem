@@ -302,6 +302,8 @@ async def test_import_does_not_extract_files_it_would_not_count(tmp_path):
         zf.writestr("big.stdout", "x" * 1000)
         zf.writestr("sub/data.exit", "0")
         zf.writestr(".project_summary.json", "{}")
+        zf.writestr("sub/../.project_summary.json", "x" * 1000)  # normalises to the root file
+        zf.writestr("./run.pid", "1")
         zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "j"}}))
     buf.seek(0)
     result = await import_project(buf, tmp_path / "projects")
