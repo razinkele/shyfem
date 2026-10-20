@@ -971,9 +971,9 @@ class TestPhysicsIntegration:
         czdef = 2.5e-3
         iturb = 1
         ibarcl = 1
-        ilagr = 2
 $end
 $lagrg
+        ilagr = 2
         nbdy = 100
 $end
 """
@@ -983,7 +983,7 @@ $end
         assert friction["ireib"] == 5
 
         lagr = build_panel_params(parsed, "lagrangian")
-        # ilagr is mapped to "para" section in PHYSICS_PANELS
+        # ilagr lives in $lagrg, the panel's dedicated section
         assert lagr["ilagr"] == 2
         # nbdy comes from the dedicated "lagrg" section
         assert lagr["nbdy"] == 100

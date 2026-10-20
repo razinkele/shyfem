@@ -10,6 +10,7 @@ the core stops on (``bnd: ibc out of bounds``).
 
 import ast
 import inspect
+import re
 from pathlib import Path
 
 import pytest
@@ -49,7 +50,33 @@ def _untouched_inputs(sf) -> FakeInputs:
         value = physics._baseline(sf, section, param)
         if value is not None:
             values[input_id] = format_param_display(value)
+    for stream, on in physics._imetout_decode(sf.get_param("para", "imetout")).items():
+        values[f"imetout_{stream}"] = on
+    for prefix, ivar in (("t", 12), ("s", 11)):
+        values.update(_rendered_assimil_inputs(sf, prefix, ivar))
     return FakeInputs(values)
+
+
+def _rendered_assimil_inputs(sf, prefix: str, ivar: int) -> dict:
+    """The input values the real _assimil_block HTML carries."""
+    html = str(physics._assimil_block(sf, "Block", prefix, ivar))
+    values: dict = {}
+    for tag in re.findall(r"<input[^>]*>", html):
+        input_id = re.search(r'id="assim_(\w+)"', tag)
+        if not input_id:
+            continue
+        key = f"assim_{input_id.group(1)}"
+        if 'type="checkbox"' in tag:
+            values[key] = "checked" in tag
+        else:
+            value = re.search(r'value="([^"]*)"', tag)
+            values[key] = float(value.group(1)) if value else None
+    for select_id, body in re.findall(
+        r'<select[^>]*id="(assim_\w+)"[^>]*>(.*?)</select>', html, re.S
+    ):
+        chosen = re.search(r'<option value="([^"]*)" selected', body)
+        values[select_id] = chosen.group(1) if chosen else ""
+    return values
 
 
 def _save(text: str, values: dict | None = None):
@@ -81,10 +108,9 @@ def test_no_edit_save_round_trips_every_shipped_str(path):
         sf = StrParser.parse_file(path)
     except Exception as exc:  # not every testcase file is a valid STR
         pytest.skip(f"does not parse: {exc}")
-    before = StrParser.generate(sf)
     working, errors, _purged = _collect_into_copy(_untouched_inputs(sf), sf)
     assert errors == []
-    assert StrParser.generate(working) == before
+    assert StrParser.generate(working) == path.read_text()
 
 
 def test_explicit_zero_is_kept_with_its_spelling():
@@ -172,3 +198,70 @@ def test_bound_template_is_numbered():
     template = generate_section_template("bound")
     assert template.startswith("$bound1\n")
     assert "kbound" in template
+
+
+def test_every_panel_param_has_a_core_section_and_default():
+    """A param registered in a section COMMON_PARAMS does not list for it has no
+    baseline, so an untouched input writes -- `ilagr` in $para made the core
+    stop with "nls_insert_variable: wrong section"."""
+    wrong = [
+        (panel_id, param, section)
+        for panel_id, panel in PHYSICS_PANELS.items()
+        for param, section in panel["params"].items()
+        if param not in COMMON_PARAMS.get(section, {})
+    ]
+    wrong += [
+        (input_id, param, section)
+        for input_id, (section, param) in _INPUT_ID_REMAP.items()
+        if param not in COMMON_PARAMS.get(section, {})
+    ]
+    assert wrong == []
+
+
+def test_untouched_lagrangian_panel_writes_nothing_to_para():
+    working, errors = _save(_KEPS)
+    assert errors == []
+    assert working.get_param("para", "ilagr") is None
+    assert "lagrg" not in working.sections
+
+
+@pytest.mark.parametrize("stored", [None, 0, 2])
+def test_untouched_meteo_output_checkboxes_write_nothing(stored):
+    text = (
+        _KEPS
+        if stored is None
+        else _KEPS.replace(
+            "        idtcon = 600\n", f"        idtcon = 600\n        imetout = {stored}\n"
+        )
+    )
+    sf = StrParser.parse(text)
+    flags = physics._imetout_decode(sf.get_param("para", "imetout"))
+    inputs = {f"imetout_{f}": on for f, on in flags.items()}
+    working, errors = _save(text, inputs)
+    assert errors == []
+    assert StrParser.generate(working) == text
+
+
+def test_an_edited_meteo_output_checkbox_is_written():
+    working, errors = _save(_KEPS, {f"imetout_{f}": f == "wind" for f in physics._IMETOUT_FIELDS})
+    assert errors == []
+    assert working.get_param("para", "imetout") == 1
+
+
+def test_editor_validate_button_rejects_unnumbered_bound():
+    from shyfem_ui.components.str_editor import validate_str_content
+
+    errors = validate_str_content(
+        "$para\n        itend = 10  idt = 1\n$end\n$bound\n        ibtyp = 1\n$end\n"
+    )
+    assert any("$bound1" in e for e in errors), errors
+
+
+@pytest.mark.parametrize(
+    "stored, shown",
+    [("1", "1"), ("1.0", "1"), ("4", "4"), ("2.5", "2.5")],
+)
+def test_select_shows_the_stored_value(stored, shown):
+    """A value outside the choices rendered the first choice, which a save wrote."""
+    html = str(physics._select("x", "X", choices={"0": "off", "1": "on"}, selected=stored))
+    assert f'<option value="{shown}" selected="">' in html, html

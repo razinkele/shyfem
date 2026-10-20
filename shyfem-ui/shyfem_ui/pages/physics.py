@@ -184,9 +184,10 @@ PHYSICS_PANELS = {
     "lagrangian": {
         "label": "Lagrangian / IBM",
         "icon": "bi-pin-map",
+        # ilagr belongs to $lagrg (def_para.f90 nlsinh_lagrg): the core stops
+        # on it in $para ("nls_insert_variable: wrong section")
         "section": "lagrg",
         "params": {
-            "ilagr": "para",
             "icnn": "connec",
             "radcnn": "connec",
             "ppscnn": "connec",
@@ -295,6 +296,27 @@ def _baseline(str_file: StrFile, section: str, param: str) -> object:
         info = COMMON_PARAMS.get(section, {}).get(param)
         value = info[2] if info else None
     return value
+
+
+def _select(input_id: str, label: str, *, choices, selected: str, **kwargs) -> ui.Tag:
+    """``ui.input_select`` that always shows the stored value.
+
+    A select whose value is not one of its choices renders the first
+    choice, and a save reads that back as an edit: ``ilin = 1.`` (shown as
+    "1.0") or ``iturb = 4`` became the first option. An integral float
+    selects its integer choice; any other value is added as an option.
+    """
+    choices = dict(choices) if isinstance(choices, dict) else {c: c for c in choices}
+    if selected and selected not in choices:
+        try:
+            number = float(selected)
+        except ValueError:
+            number = None
+        if number is not None and number.is_integer() and str(int(number)) in choices:
+            selected = str(int(number))
+        else:
+            choices[selected] = f"{selected} (from file)"
+    return ui.input_select(input_id, label, choices=choices, selected=selected, **kwargs)
 
 
 def _shown(params: dict, key: str, fallback: object) -> object:
@@ -657,6 +679,36 @@ def _assimil_num_field(
     return ui.input_numeric(f"assim_{prefix}_{param}", label, value=val, **kwargs)
 
 
+def _assimil_unchanged(sf: StrFile, ivar: int, on: bool, values: dict[str, object]) -> bool:
+    """True when the block's inputs still hold what _assimil_block rendered.
+
+    _assimil_apply rewrites every field it is given (``1800.`` as
+    ``1800.0``, an absent ``maxlength`` as ``0.0``), so an untouched block
+    is skipped rather than applied.
+    """
+    name = _assimil_find(sf, ivar)
+    if on != (name is not None and _assimil_nobs(sf, name) > 0):
+        return False
+    for param, value in values.items():
+        raw = sf.get_param(name, param) if name else None
+        if param in _ASSIMIL_FILE_FIELDS:
+            if str(value).strip() != str(raw or ""):
+                return False
+            continue
+        if param == "mode":
+            shown: object = 0 if raw is None else raw
+        else:
+            shown = _scalar_or_none(raw)
+            if shown is None:
+                shown = _ASSIMIL_DEFAULTS[param]
+        try:
+            if float(value) != float(shown):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
 def _assimil_mode_field(prefix: str, raw: object, is_array: bool = False) -> ui.Tag:
     """Application-mode column: the dropdown, or a static note.
 
@@ -854,7 +906,11 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
             break  # heat panel not rendered (or a failed read) -> imetout untouched
         flags[f] = bool(raw)
     else:
-        sf.set_param("para", "imetout", _imetout_encode(flags))
+        # Same rule as the plain fields: an unchanged set of streams writes
+        # nothing, so an absent imetout stays absent and a digit > 1 keeps
+        # its value.
+        if flags != _imetout_decode(sf.get_param("para", "imetout")):
+            sf.set_param("para", "imetout", _imetout_encode(flags))
 
     # --- composite sections: $assimilN <- T/S assimilation blocks ---
     for prefix, ivar, preferred, label in (
@@ -880,6 +936,8 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
             # half-read block — report and leave the sections alone.
             errors.extend(block_errors)
             continue
+        if _assimil_unchanged(sf, ivar, bool(on_raw), values):
+            continue  # untouched block: rewriting it would only respell it
         _, errs = _assimil_apply(sf, ivar, preferred, bool(on_raw), values)
         errors.extend(f"{label} assimilation — {e}" for e in errs)
 
@@ -988,7 +1046,7 @@ def _apply_edits(
         errors.append(
             f"Boundary Conditions: {', '.join(refused_bound)} not applied — the core reads "
             "boundaries only from numbered sections ($bound1, $bound2, …); "
-            "edit those in the STR editor"
+            "edit those in the STR editor, and Load the file again to discard this edit"
         )
 
 
@@ -1266,6 +1324,11 @@ def physics_server(
                 )
         return ui.div(*parts)
 
+    # Every panel renders eagerly and re-renders on each Load and Save,
+    # even while collapsed. A suspended panel kept the inputs it showed
+    # for the previous file state, and the save reads every rendered
+    # input: after one save the hidden copy of idtcon/icon_av held the
+    # old value and the next save wrote it back over the edit.
     @render.ui
     def panels_accordion():
         panels = []
@@ -1289,6 +1352,7 @@ def physics_server(
 
     # --- Panel render functions (one per physics module) ---
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_timing():
         params = build_panel_params(str_data.get(), "timing")
@@ -1347,6 +1411,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_hydrodynamics():
         params = build_panel_params(str_data.get(), "hydrodynamics")
@@ -1354,7 +1419,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ilin",
                         "Advective terms",
                         choices={"0": "0 - Linear", "1": "1 - Nonlinear"},
@@ -1363,7 +1428,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "itlin",
                         "Advection scheme",
                         choices={"0": "0 - Finite Element", "1": "1 - Semi-Lagrangian"},
@@ -1372,7 +1437,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iclin",
                         "Linearize continuity",
                         choices={"0": "0 - Nonlinear", "1": "1 - Linear"},
@@ -1383,7 +1448,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "itsplt",
                         "Time step mode",
                         choices={
@@ -1418,7 +1483,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "icor",
                         "Coriolis force",
                         choices={
@@ -1440,7 +1505,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "isphe",
                         "Coordinate system",
                         choices={
@@ -1497,6 +1562,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_vertical():
         params = build_panel_params(str_data.get(), "vertical")
@@ -1514,7 +1580,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ilytyp",
                         "Bottom layer treatment",
                         choices={
@@ -1541,7 +1607,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "nzadapt",
                         "Moving surface layers (z-star)",
                         choices={"0": "0 - Z-layers only", "1": "1 - Enabled"},
@@ -1570,6 +1636,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_friction():
         params = build_panel_params(str_data.get(), "friction")
@@ -1577,7 +1644,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ireib",
                         "Bottom friction type",
                         choices={
@@ -1617,6 +1684,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_turbulence():
         params = build_panel_params(str_data.get(), "turbulence")
@@ -1624,7 +1692,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iturb",
                         "Turbulence closure",
                         choices={
@@ -1680,7 +1748,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "idhtyp",
                         "Horizontal diffusion type",
                         choices={
@@ -1715,7 +1783,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "noslip",
                         "Boundary condition",
                         choices={
@@ -1729,7 +1797,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "itvd",
                         "Horizontal advection (scalars)",
                         choices={
@@ -1742,7 +1810,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "itvdv",
                         "Vertical advection (scalars)",
                         choices={
@@ -1755,6 +1823,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_heat():
         params = build_panel_params(str_data.get(), "heat")
@@ -1793,7 +1862,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iheat",
                         "Heat flux algorithm",
                         choices={
@@ -1812,7 +1881,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ihtype",
                         "Water vapor input type",
                         choices={
@@ -1849,7 +1918,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ievap",
                         "Evaporation mass flux",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -1858,7 +1927,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "irain",
                         "Precipitation mass flux",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -1868,6 +1937,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_temperature_salinity():
         params = build_panel_params(str_data.get(), "temperature_salinity")
@@ -1875,7 +1945,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ibarcl",
                         "Baroclinic mode",
                         choices={
@@ -1891,7 +1961,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "itemp",
                         "Compute temperature",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -1900,7 +1970,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "isalt",
                         "Compute salinity",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -1950,7 +2020,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "icon_av",
                         "Scalar output averaging",
                         choices={
@@ -1974,6 +2044,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_ecology():
         params = build_panel_params(str_data.get(), "ecology")
@@ -1981,7 +2052,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ibio",
                         "Biological module",
                         choices={
@@ -1994,7 +2065,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "imerc",
                         "Mercury contamination",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2007,7 +2078,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ibfm",
                         "BFM model",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2051,6 +2122,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_sediment():
         params = build_panel_params(str_data.get(), "sediment")
@@ -2058,7 +2130,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "issedi",
                         "Sediment module (para)",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2067,7 +2139,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "isedi",
                         "Full sediment transport",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2152,6 +2224,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_lagrangian():
         params = build_panel_params(str_data.get(), "lagrangian")
@@ -2159,7 +2232,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ilagr",
                         "Lagrangian mode",
                         choices={
@@ -2241,7 +2314,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ioil",
                         "Oil spill simulation",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2252,7 +2325,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ilarv",
                         "Larval behavior",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2346,6 +2419,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_ice():
         params = build_panel_params(str_data.get(), "ice")
@@ -2353,7 +2427,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     6,
-                    ui.input_select(
+                    _select(
                         "icemod",
                         "Ice model",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2363,6 +2437,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_waves():
         params = build_panel_params(str_data.get(), "waves")
@@ -2370,7 +2445,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iwave",
                         "Wave coupling mode",
                         choices={
@@ -2405,6 +2480,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_assimilation():
         sf = str_data.get()
@@ -2437,6 +2513,7 @@ def physics_server(
         children.append(_assimil_block(sf, "Salinity", "s", 11, choices))
         return ui.div(*children)
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_output():
         params = build_panel_params(str_data.get(), "output")
@@ -2525,7 +2602,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "netcdf",
                         "Output format",
                         choices={"0": "0 - Fortran", "1": "1 - NetCDF"},
@@ -2534,7 +2611,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iout_av",
                         "Hydro output averaging",
                         choices={
@@ -2546,7 +2623,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "icon_av_out",
                         "Scalar output averaging",
                         choices={
@@ -2587,7 +2664,7 @@ def physics_server(
                 ),
                 ui.column(
                     3,
-                    ui.input_select(
+                    _select(
                         "ityrst",
                         "Restart mode",
                         choices={
@@ -2604,7 +2681,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "idtoff",
                         "Offline mode",
                         choices={
@@ -2630,6 +2707,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_tracers():
         params = build_panel_params(str_data.get(), "tracers")
@@ -2637,7 +2715,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iconz",
                         "Number of tracers",
                         choices={str(i): str(i) for i in range(6)},
@@ -2646,7 +2724,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iage",
                         "Water age tracer",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -2655,7 +2733,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "idecay",
                         "Tracer decay type",
                         choices={
@@ -2670,7 +2748,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ibeach",
                         "Tracer beaching/burial",
                         choices={
@@ -2731,6 +2809,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_wind():
         params = build_panel_params(str_data.get(), "wind")
@@ -2738,7 +2817,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iwtype",
                         "Wind input type",
                         choices={
@@ -2786,6 +2865,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_input_files():
         params = build_panel_params(str_data.get(), "input_files")
@@ -2827,6 +2907,7 @@ def physics_server(
                 elements.append(ui.row(*row_cols))
         return ui.div(*elements)
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_advanced_hydro():
         params = build_panel_params(str_data.get(), "advanced_hydro")
@@ -2968,6 +3049,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_renewal_time():
         params = build_panel_params(str_data.get(), "renewal_time")
@@ -3013,7 +3095,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "iret",
                         "Return flow",
                         choices={"0": "0 - Explicit zero", "1": "1 - Return"},
@@ -3023,6 +3105,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_nonhydrostatic():
         params = build_panel_params(str_data.get(), "nonhydrostatic")
@@ -3030,7 +3113,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "inohyd",
                         "Non-hydrostatic mode",
                         choices={
@@ -3063,7 +3146,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ivwadv",
                         "Vert. advection of vert. momentum",
                         choices={"0": "0 - Off", "1": "1 - On"},
@@ -3073,6 +3156,7 @@ def physics_server(
             ),
         )
 
+    @output(suspend_when_hidden=False)
     @render.ui
     def panel_boundary():
         params = build_panel_params(str_data.get(), "boundary")
@@ -3086,7 +3170,7 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "ibtyp",
                         "Boundary type",
                         choices={
@@ -3102,7 +3186,7 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_select(
+                    _select(
                         "intpol",
                         "Interpolation",
                         choices={

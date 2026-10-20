@@ -827,6 +827,11 @@ def validate_str_content(
 
     # --- Boundary section checks ---
 
+    if "bound" in parsed.sections:
+        errors.append(
+            "$bound must be numbered ($bound1, $bound2, …): the core stops on an "
+            "unnumbered boundary section"
+        )
     for section_name, section in parsed.sections.items():
         if section_name.startswith("bound") and section_name != "bound":
             params = section.parameters
