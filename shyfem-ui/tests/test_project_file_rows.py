@@ -302,7 +302,6 @@ async def test_import_does_not_extract_files_it_would_not_count(tmp_path):
         zf.writestr("big.stdout", "x" * 1000)
         zf.writestr("sub/data.exit", "0")
         zf.writestr(".project_summary.json", "{}")
-        zf.writestr("sub/../.project_summary.json", "x" * 1000)  # normalises to the root file
         zf.writestr("./run.pid", "1")
         zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "j"}}))
     buf.seek(0)
@@ -344,3 +343,21 @@ def test_a_symlinked_directory_is_not_walked(tmp_path):
     (work / "linked").symlink_to(outside, target_is_directory=True)
     assert not FileService.has_project_files(pid)
     assert FileService.register_existing_files(pid) == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "member", [".boxmodel_cache/../big.str", "sub/../.project_summary.json", "a/../b.str"]
+)
+async def test_an_import_member_with_a_parent_component_is_refused(tmp_path, member):
+    """A cache-looking name was exempt from the size limits yet extracted as a project file."""
+    from shyfem_ui.services.project_export import import_project
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(member, "x")
+        zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "t"}}))
+    buf.seek(0)
+    with pytest.raises(ValueError, match="path traversal"):
+        await import_project(buf, tmp_path / "projects")
+    assert not (tmp_path / "projects" / "t").exists()

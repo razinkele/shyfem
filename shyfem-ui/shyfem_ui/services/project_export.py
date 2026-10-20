@@ -165,6 +165,13 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
             raise ValueError(f"archive contains too many entries (max {MAX_IMPORT_ENTRIES})")
         if "manifest.json" not in names:
             raise ValueError("Invalid archive: missing manifest.json")
+        # Our exports never write a ".." component. Refused before any check
+        # reads a name, so every check sees the path that would be written:
+        # ".boxmodel_cache/../big.str" passed as a cache member (exempt from
+        # the limits below) yet normalises to a project file.
+        for member in names:
+            if ".." in member.split("/"):
+                raise ValueError(f"path traversal in archive: {member!r}")
         # Cache members are dropped before the limits are computed, so a stale
         # cache cannot push a legitimate archive over the file-count or size
         # budget (spec §9). The traversal check below still runs over EVERY
@@ -214,8 +221,8 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
                 continue
             if member.endswith("/"):
                 continue
-            # Normalised once, so the filter judges the path that is written:
-            # "x/../.project_summary.json" lands in the root as that file.
+            # Without ".." (refused above) this is the path written; "./x" and
+            # "a//x" are the forms it still collapses.
             rel = PurePosixPath(posixpath.normpath(member))
             if not is_project_file(rel):
                 # Job files, cache and bookkeeping get no file row, so they
