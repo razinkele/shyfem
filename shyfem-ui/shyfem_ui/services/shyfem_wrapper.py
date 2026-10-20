@@ -358,6 +358,10 @@ class ShyfemWrapper:
 
     # How often a watcher looks at a detached job's files.
     DETACHED_POLL_SECONDS = 0.5
+    # Most log bytes a watcher parses per poll, and how much of an existing
+    # log a re-attaching watcher reads back.
+    DETACHED_READ_BYTES = 1 << 20
+    DETACHED_TAIL_BYTES = 64 << 10
 
     async def _run_detached(
         self,
@@ -453,6 +457,14 @@ class ShyfemWrapper:
         offset = 0
         pending = b""
         start = datetime.now()
+        if runner is None:
+            # Re-attaching to a run already in progress: its log may be
+            # hundreds of MB. Only the latest progress line matters, so start
+            # near the end instead of parsing the whole log on the loop.
+            try:
+                offset = max(0, files.stdout.stat().st_size - self.DETACHED_TAIL_BYTES)
+            except OSError:
+                offset = 0
 
         def follow_output() -> None:
             nonlocal offset, pending
@@ -461,7 +473,8 @@ class ShyfemWrapper:
             try:
                 with open(files.stdout, "rb") as fh:
                     fh.seek(offset)
-                    chunk = fh.read()
+                    # Bounded per poll: what is left is read next time.
+                    chunk = fh.read(self.DETACHED_READ_BYTES)
             except OSError:
                 return
             offset += len(chunk)

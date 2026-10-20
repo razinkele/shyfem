@@ -19,6 +19,7 @@ import os
 import signal
 import time
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -380,3 +381,110 @@ def test_liveness_needs_the_exact_supervisor_command_line(tmp_path):
     finally:
         impostor.kill()
         impostor.wait()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delay", [0, 0.001, 0.003, 0.01, 0.05])
+async def test_cancel_right_after_submit_is_clean(db, shyfem_dir, tmp_path, groups, delay):
+    """A cancel landing while the queued/running state is being written must
+    end the job CANCELLED everywhere and leave no slot or task behind."""
+    pidfile = tmp_path / "tool.pid"
+    _tool(shyfem_dir, f"echo $$ > '{pidfile}'\nsleep 60\n")
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work"))
+    if delay:
+        await asyncio.sleep(delay)
+    assert await queue.cancel(job_id) is True
+    await asyncio.sleep(1.0)
+    if pidfile.exists():
+        pid = _read_pid(pidfile)
+        groups.append(pid)
+        await _until(lambda: not _alive(pid), timeout=5)
+
+    assert queue._jobs[job_id].status == JobStatus.CANCELLED
+    assert _row(job_id)["status"] == JobStatus.CANCELLED
+    assert queue._running_count == 0
+    assert job_id not in queue._tasks
+
+
+def _active_row_with_exit(tmp_path, exit_record):
+    from shyfem_ui.db.base import db_session
+    from shyfem_ui.models.project import Job
+
+    work = tmp_path / "work"
+    work.mkdir()
+    job_id = "21111111-2222-3333-4444-555555555555"
+    files = JobFiles.for_stdout(work / f"{job_id}.stdout")
+    files.stdout.write_text("x\n")
+    write_json_atomic(files.spec, {"job_id": job_id, "before_snapshot": {}})
+    write_json_atomic(files.exit, exit_record)
+    with db_session() as s:
+        s.add(
+            Job(
+                job_uuid=job_id,
+                name="j",
+                job_type="shypre",
+                working_dir=str(work),
+                status=JobStatus.RUNNING,
+                stdout_file=str(files.stdout),
+            )
+        )
+    return job_id, files
+
+
+@pytest.mark.asyncio
+async def test_new_worker_records_a_cancel_the_supervisor_saw(db, tmp_path):
+    """The supervisor was cancelled but the cancel's own record never landed:
+    the job is CANCELLED, not FAILED with a failure email."""
+    job_id, _ = _active_row_with_exit(
+        tmp_path, {"return_code": -15, "timed_out": False, "cancelled": True}
+    )
+    notifier = MagicMock()
+    queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2, notification_service=notifier)
+    job = await queue.get_status(job_id)
+    assert job.status == JobStatus.CANCELLED
+    assert _row(job_id)["status"] == JobStatus.CANCELLED
+    notifier.notify_job_failed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_new_worker_does_not_email_when_the_supervisor_recorded_first(db, tmp_path):
+    """Exit record present, but the supervisor ended the row in the meantime:
+    the new worker must not record it again or email."""
+    from shyfem_ui.services.job_detached import finalize_job_row
+
+    job_id, _ = _active_row_with_exit(tmp_path, {"return_code": 0, "timed_out": False})
+    real_reconcile = LocalJobQueue._reconcile_active_row
+
+    def reconcile_then_supervisor_wins(self, row):
+        outcome = real_reconcile(self, row)
+        assert finalize_job_row(row.job_uuid, JobStatus.COMPLETED, return_code=0)
+        return outcome
+
+    notifier = MagicMock()
+    queue = LocalJobQueue(shyfem_dir=tmp_path, max_workers=2, notification_service=notifier)
+    queue._reconcile_active_row = reconcile_then_supervisor_wins.__get__(queue)
+    await queue.get_status(job_id)
+    notifier.notify_job_success.assert_not_called()
+    notifier.notify_job_failed.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_reattach_reads_only_the_end_of_a_big_log(db, tmp_path):
+    """Re-attaching must not parse a whole long log on the event loop."""
+    from shyfem_ui.services.shyfem_wrapper import DetachedRun, ShyfemWrapper
+
+    job_id, files = _active_row_with_exit(tmp_path, {"return_code": 0, "timed_out": False})
+    line = b" 2009-01-01::00:05:00  300.00  300  1 /  1152  0.087 %\n"
+    files.stdout.write_bytes(line * 400_000)  # ~22 MB
+    seen = []
+    wrapper = ShyfemWrapper(tmp_path)
+    start = time.monotonic()
+    await wrapper.watch_detached(
+        "shyfem",
+        files.stdout,
+        DetachedRun(job_id=job_id, stdout_file=str(files.stdout), kill_on_cancel=lambda: False),
+        lambda p, m: seen.append(m),
+        working_dir=files.stdout.parent,
+    )
+    assert time.monotonic() - start < 1.0
