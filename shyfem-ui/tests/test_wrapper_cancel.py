@@ -53,7 +53,7 @@ class TestProcessGroupCleanup:
         server process tree instead of just the job."""
         pidfile = tmp_path / "pid.txt"
         exe = wrapper.bin_dir / "shyfem"
-        exe.write_text(f"#!/bin/bash\necho $$ > '{pidfile}'\nsleep 1\n")
+        exe.write_text(f"#!/bin/bash\necho $$ > '{pidfile}'\nsleep 1\necho ' simulation end: x'\n")
         exe.chmod(0o755)
 
         task = asyncio.create_task(wrapper.run_command("shyfem", [], tmp_path))
@@ -217,7 +217,10 @@ class TestUnexpectedErrorKillsProcessGroup:
         """Progress is advisory: a failing progress write (e.g. a Redis blip
         under Celery) must not fail -- or orphan -- a long simulation."""
         exe = wrapper.bin_dir / "shyfem"
-        exe.write_text('#!/bin/bash\nfor i in 1 2 3; do echo "time = $i of 3"; done\n')
+        exe.write_text(
+            '#!/bin/bash\nfor i in 1 2 3; do echo "time = $i of 3"; done\n'
+            "echo ' simulation end: x'\n"
+        )
         exe.chmod(0o755)
         calls = []
 

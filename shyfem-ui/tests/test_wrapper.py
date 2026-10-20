@@ -53,7 +53,8 @@ class TestShyfemWrapper:
         """Test running a command successfully."""
         # Create a fake executable (shell script)
         exe = wrapper.bin_dir / "shyfem"
-        exe.write_text("#!/bin/bash\necho 'Hello World'")
+        # A real shyfem run that reached its end prints this footer (X-01).
+        exe.write_text("#!/bin/bash\necho 'Hello World'\necho ' simulation end: x'")
         exe.chmod(0o755)
 
         result = await wrapper.run_command(

@@ -1,6 +1,7 @@
 """Wrapper for SHYFEM Fortran CLI tools."""
 
 import asyncio
+import collections
 import json
 import logging
 import os
@@ -28,6 +29,41 @@ class CommandResult:
     working_dir: str
     duration: float = 0.0
     output_files: list[str] = field(default_factory=list)
+
+
+# gfortran's ``stop 'text'`` exits with status 0, so a SHYFEM run or tool that
+# stopped on an error looks like a success to anything that only reads the
+# exit status (X-01). These are the lines such a stop leaves behind.
+_FATAL_LINE = re.compile(
+    r"^\s*(?:STOP\s+error stop\b.*|STOP\s+clo_usage\b.*|ERROR STOP\b.*|\*\*\* no such option.*)$",
+    re.MULTILINE,
+)
+# A shyfem run that reached its end prints this in its last lines.
+_SHYFEM_FOOTER = re.compile(r"^\s*simulation end:", re.MULTILINE)
+# How much of a run's output is enough to judge how it ended.
+TAIL_CHARS = 16_000
+
+
+def tool_failure(tool_name: str, return_code: int | None, stdout_tail: str, stderr_tail: str):
+    """Why a run that exited 0 actually failed, or None if it did not.
+
+    ``stdout_tail``/``stderr_tail`` are the last few KB of the run's output.
+    A non-zero exit is already a failure and is not looked at here.
+    """
+    if return_code != 0:
+        return None
+    lines = [
+        m.group(0).strip()
+        for text in (stderr_tail, stdout_tail)
+        for m in _FATAL_LINE.finditer(text or "")
+    ]
+    if lines:
+        # "no such option: x" says more than the usage stop that follows it.
+        specific = [line for line in lines if "clo_usage" not in line]
+        return f"Stopped on an error (exit status 0): {(specific or lines)[0]}"
+    if tool_name.startswith("shyfem") and not _SHYFEM_FOOTER.search(stdout_tail or ""):
+        return "shyfem stopped before the end of the simulation (no 'simulation end' line)"
+    return None
 
 
 @dataclass
@@ -208,6 +244,7 @@ class ShyfemWrapper:
 
         start_time = datetime.now()
         stdout_lines = []
+        stdout_tail: collections.deque[str] = collections.deque(maxlen=200)
         stderr_lines = []
 
         # Optional wall-clock timeout (None = disabled; preserves long sims).
@@ -246,6 +283,8 @@ class ShyfemWrapper:
                     # still fires per line regardless, so streaming is unaffected.
                     if is_stderr or capture_stdout:
                         lines_list.append(decoded)
+                    if not is_stderr:
+                        stdout_tail.append(decoded)
 
                     if output_callback:
                         output_callback(decoded)
@@ -345,11 +384,20 @@ class ShyfemWrapper:
         # Find output files: only ones new or modified since before_snapshot.
         output_files = self._find_output_files(tool_name, working_dir, before_snapshot)
 
+        stderr_text = "\n".join(stderr_lines)
+        failure = tool_failure(
+            tool_name,
+            return_code,
+            "\n".join(stdout_tail)[-TAIL_CHARS:],
+            stderr_text[-TAIL_CHARS:],
+        )
+        if failure:
+            stderr_text = f"{stderr_text}\n{failure}".lstrip("\n")
         return CommandResult(
-            success=return_code == 0,
+            success=return_code == 0 and failure is None,
             return_code=return_code,
             stdout="\n".join(stdout_lines),
-            stderr="\n".join(stderr_lines),
+            stderr=stderr_text,
             command=cmd_str,
             working_dir=str(working_dir),
             duration=duration,
@@ -525,12 +573,22 @@ class ShyfemWrapper:
             )
         return_code = exit_record.get("return_code")
         timed_out = bool(exit_record.get("timed_out"))
+        failure = None
         if timed_out:
             stderr = f"Command timed out after {spec.get('timeout')}s and was terminated"
         else:
-            stderr = read_tail(files.stderr)
+            stderr = read_tail(files.stderr, TAIL_CHARS)
+            failure = tool_failure(
+                spec.get("tool_name") or tool_name,
+                return_code,
+                read_tail(files.stdout, TAIL_CHARS),
+                stderr,
+            )
+            if failure:
+                stderr = f"{stderr}\n{failure}".lstrip("\n")
+            stderr = stderr[-1000:]
         return CommandResult(
-            success=return_code == 0 and not timed_out,
+            success=return_code == 0 and not timed_out and failure is None,
             return_code=return_code if return_code is not None else -1,
             stdout="",
             stderr=stderr,
