@@ -6,7 +6,7 @@ import shutil
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from shyfem_ui.config import get_config
 
@@ -23,6 +23,9 @@ _EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr", ".job", ".pid", ".exit"})
 # pulling that module (and pandas) into every export; ``file_service.py`` sets
 # the same precedent for ``boxmodel_cache.CACHE_DIRNAME``.
 _EXCLUDE_DIRNAMES = frozenset({".boxmodel_cache"})
+# App bookkeeping kept in the work-dir root (services/project_summary.py
+# SUMMARY_NAME); rewritten whenever the project is opened, so not user data.
+_EXCLUDE_ROOT_FILES = frozenset({".project_summary.json"})
 MAX_IMPORT_FILES = 10000
 # A hard ceiling on the number of archive ENTRIES, checked before any per-member
 # work. MAX_IMPORT_FILES counts only the members that survive filtering (bare
@@ -210,7 +213,9 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
                 continue
             if member.endswith("/"):
                 continue
-            if member in cache_members:
+            if not is_project_file(PurePosixPath(member)):
+                # Job files, cache and bookkeeping get no file row, so they
+                # would sit on disk uncounted by the storage limit (F-01).
                 continue
             target = project_dir / member
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -247,6 +252,14 @@ def _validate_archive_limits(infos: list[zipfile.ZipInfo]) -> None:
         ratio = info.file_size / compressed_size
         if ratio > MAX_IMPORT_COMPRESSION_RATIO:
             raise ValueError(f"archive member {info.filename!r} has suspicious compression ratio")
+
+
+def is_project_file(rel: PurePosixPath) -> bool:
+    """True for a work-dir file that is project data: one that gets a file row
+    and counts against the storage limit. ``rel`` is relative to the work dir."""
+    if rel.suffix in _EXCLUDE_EXTENSIONS or _EXCLUDE_DIRNAMES.intersection(rel.parts):
+        return False
+    return str(rel) not in _EXCLUDE_ROOT_FILES
 
 
 def _is_cache_member(name: str) -> bool:

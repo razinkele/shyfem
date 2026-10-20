@@ -274,3 +274,71 @@ def test_the_seed_button_follows_the_seed_guard():
     src = inspect.getsource(files)
     assert "has_project_files(" in src
     assert 'summary["file_count"] == 0 and' not in src
+
+
+def test_opening_a_project_does_not_make_it_non_empty(tmp_path):
+    """Opening writes .project_summary.json; that must not disable the seed."""
+    from shyfem_ui.services.file_service import FileService
+    from shyfem_ui.services.project_export import _EXCLUDE_ROOT_FILES
+    from shyfem_ui.services.project_summary import SUMMARY_NAME, load_summary
+
+    assert SUMMARY_NAME in _EXCLUDE_ROOT_FILES
+    pid, work = _project(tmp_path)
+    load_summary(str(work))
+    assert (work / SUMMARY_NAME).exists()
+    assert not FileService.has_project_files(pid)
+    FileService.seed_tutorial_files(pid)
+    assert SUMMARY_NAME not in _rel_paths(pid)
+
+
+@pytest.mark.asyncio
+async def test_import_does_not_extract_files_it_would_not_count(tmp_path):
+    """Job files and bookkeeping got no row, so they sat on disk outside the quota."""
+    from shyfem_ui.services.project_export import import_project
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("a.str", "x")
+        zf.writestr("big.stdout", "x" * 1000)
+        zf.writestr("sub/data.exit", "0")
+        zf.writestr(".project_summary.json", "{}")
+        zf.writestr("manifest.json", json.dumps({"version": "1.0", "project": {"name": "j"}}))
+    buf.seek(0)
+    result = await import_project(buf, tmp_path / "projects")
+    on_disk = sorted(
+        p.relative_to(result["work_dir"]).as_posix()
+        for p in result["work_dir"].rglob("*")
+        if p.is_file()
+    )
+    assert on_disk == ["a.str"]
+
+
+def test_an_unlistable_work_dir_refuses_the_seed(tmp_path):
+    import os
+
+    from shyfem_ui.services.file_service import FileService
+
+    if os.geteuid() == 0:
+        pytest.skip("root can list any directory")
+    pid, work = _project(tmp_path)
+    (work / "mm_hyd_00.str").write_text(_EDITED_STR)
+    work.chmod(0o300)
+    try:
+        assert FileService.has_project_files(pid)
+        with pytest.raises(ValueError, match="already has files"):
+            FileService.seed_tutorial_files(pid)
+    finally:
+        work.chmod(0o755)
+    assert (work / "mm_hyd_00.str").read_text() == _EDITED_STR
+
+
+def test_a_symlinked_directory_is_not_walked(tmp_path):
+    from shyfem_ui.services.file_service import FileService
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret.str").write_text("not the project's")
+    pid, work = _project(tmp_path)
+    (work / "linked").symlink_to(outside, target_is_directory=True)
+    assert not FileService.has_project_files(pid)
+    assert FileService.register_existing_files(pid) == 0

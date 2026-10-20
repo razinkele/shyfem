@@ -2,6 +2,7 @@
 
 import hashlib
 import logging
+import os
 import re
 import stat as _stat
 from datetime import UTC, datetime
@@ -42,27 +43,32 @@ FILE_TYPES = frozenset(
 
 
 def _project_files_on_disk(work_dir: str | Path):
-    """Yield (rel_path, size) for each file that belongs to the project.
+    """Yield (rel_path, size) for each project file in the work dir.
 
-    The same files an export ships: no symlinks, nothing outside the work
-    dir, no job logs or bookkeeping, nothing under the box-model cache.
+    Project files are what ``project_export.is_project_file`` accepts:
+    regular files only, symlinks neither listed nor followed. The walk is
+    lazy, so a caller wanting only the first file does not list the whole
+    tree. A directory that cannot be listed raises OSError.
     """
-    from shyfem_ui.services.project_export import _EXCLUDE_DIRNAMES, _EXCLUDE_EXTENSIONS
+    from shyfem_ui.services.project_export import _EXCLUDE_DIRNAMES, is_project_file
 
     root = Path(work_dir).resolve()
     if not root.is_dir():
         return
-    for path in sorted(root.rglob("*")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        rel = path.relative_to(root)
-        if path.suffix in _EXCLUDE_EXTENSIONS or _EXCLUDE_DIRNAMES.intersection(rel.parts):
-            continue
-        try:
-            size = path.stat().st_size
-        except OSError:
-            continue
-        yield rel.as_posix(), size
+
+    def _raise(err: OSError):
+        raise err
+
+    for dirpath, dirnames, filenames in os.walk(root, onerror=_raise):
+        dirnames[:] = sorted(d for d in dirnames if d not in _EXCLUDE_DIRNAMES)
+        for name in sorted(filenames):
+            path = Path(dirpath) / name
+            rel = PurePosixPath(path.relative_to(root).as_posix())
+            if not is_project_file(rel):
+                continue
+            st = path.lstat()
+            if _stat.S_ISREG(st.st_mode):
+                yield str(rel), st.st_size
 
 
 class FileService:
@@ -475,7 +481,12 @@ class FileService:
             if db.query(ProjectFile.id).filter_by(project_id=project_id).first() is not None:
                 return True
             work_dir = project.work_dir
-        return next(iter(_project_files_on_disk(work_dir)), None) is not None
+        try:
+            return next(_project_files_on_disk(work_dir), None) is not None
+        except OSError:
+            # Unlistable: assume files, so the seed cannot copy over them.
+            logger.warning("Cannot list %s; treating the project as non-empty", work_dir)
+            return True
 
     @classmethod
     def seed_tutorial_files(cls, project_id: int) -> None:
