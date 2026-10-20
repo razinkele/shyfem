@@ -64,6 +64,14 @@ class Config(BaseSettings):
         ),
         description="SQLAlchemy database URL",
     )
+    job_state_dir: Path = Field(
+        default_factory=lambda: Path(__file__).resolve().parents[1] / ".job_state",
+        description=(
+            "Server-only directory for the local queue's job supervisor records "
+            "(launch, pid and exit records; J-01). Must not be inside any user's "
+            "data root: the server acts on these files. Created with mode 0700."
+        ),
+    )
     db_pool_size: int = Field(
         default=5, description="SQLAlchemy connection pool size (PostgreSQL only)"
     )

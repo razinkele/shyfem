@@ -344,3 +344,39 @@ async def test_cancel_ignores_an_edited_pid_file(db, shyfem_dir, tmp_path, group
     await _until(lambda: not _alive(pid), timeout=5)
     assert bystander.poll() is None, "a cancel must not signal a process named in the file"
     bystander.kill()
+
+
+@pytest.mark.asyncio
+async def test_records_the_server_acts_on_are_not_in_the_job_dir(db, shyfem_dir, tmp_path):
+    """Only the two logs go where the user can write; the launch, pid and
+    exit records live in the server-only state directory."""
+    from shyfem_ui.config import get_config
+
+    _tool(shyfem_dir, "echo hi\n")
+    queue = _queue(shyfem_dir)
+    work = tmp_path / "work"
+    job_id = await queue.submit(_spec(work))
+    await _until(lambda: not queue._jobs[job_id].is_active)
+
+    assert sorted(p.name for p in work.iterdir()) == [f"{job_id}.stderr", f"{job_id}.stdout"]
+    state = Path(get_config().job_state_dir)
+    assert {p.name for p in state.iterdir()} >= {f"{job_id}.job", f"{job_id}.pid", f"{job_id}.exit"}
+    assert oct(state.stat().st_mode & 0o777) == oct(0o700)
+
+
+def test_liveness_needs_the_exact_supervisor_command_line(tmp_path):
+    """A process that merely mentions the job id and module is not it."""
+    import subprocess
+
+    from shyfem_ui.services.job_detached import supervisor_alive
+
+    job_id = "3b4a2e1a-1494-4d4c-b387-29ecfade0502"
+    impostor = subprocess.Popen(
+        ["sleep", "30", "-m", f"shyfem_ui.job_runner{job_id}"],
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        assert not supervisor_alive(impostor.pid, job_id)
+    finally:
+        impostor.kill()
+        impostor.wait()
