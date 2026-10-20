@@ -268,7 +268,8 @@ def files_server(
 
         # Seed tutorial button
         seed_btn = None
-        if summary["file_count"] == 0 and _has_tutorial_data():
+        # Seeding refuses a project with files (F-01); the button follows that rule.
+        if _has_tutorial_data() and not FileService.has_project_files(proj["id"]):
             seed_btn = ui.div(
                 ui.input_action_button(
                     "seed_tutorial_btn",

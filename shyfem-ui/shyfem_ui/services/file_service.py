@@ -22,6 +22,48 @@ _JOB_FILE_NAME = re.compile(
 
 logger = logging.getLogger(__name__)
 
+# Every file_type a row may carry: the upload picker's choices plus the ones
+# _infer_file_type produces. A type read from an archive must be one of these.
+FILE_TYPES = frozenset(
+    {
+        "grid",
+        "basin",
+        "str",
+        "forcing",
+        "boundary",
+        "initial_condition",
+        "restart",
+        "config",
+        "output",
+        "lagrangian",
+        "other",
+    }
+)
+
+
+def _project_files_on_disk(work_dir: str | Path):
+    """Yield (rel_path, size) for each file that belongs to the project.
+
+    The same files an export ships: no symlinks, nothing outside the work
+    dir, no job logs or bookkeeping, nothing under the box-model cache.
+    """
+    from shyfem_ui.services.project_export import _EXCLUDE_DIRNAMES, _EXCLUDE_EXTENSIONS
+
+    root = Path(work_dir).resolve()
+    if not root.is_dir():
+        return
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        rel = path.relative_to(root)
+        if path.suffix in _EXCLUDE_EXTENSIONS or _EXCLUDE_DIRNAMES.intersection(rel.parts):
+            continue
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        yield rel.as_posix(), size
+
 
 class FileService:
     """Manages project files: upload, delete, list, validate."""
@@ -382,6 +424,60 @@ class FileService:
         return "other"
 
     @classmethod
+    def register_existing_files(
+        cls, project_id: int, *, db=None, type_hints: dict[str, str] | None = None
+    ) -> int:
+        """Add a row for each project file on disk that has none; return how many.
+
+        Import and clone call this so the copied files are listed and counted
+        against the quota. A type in ``type_hints`` (rel_path -> file_type)
+        replaces the inferred one when it is in FILE_TYPES. Sizes come from
+        stat(); no checksum, since a cloned project can be hundreds of MB.
+        """
+        if db is None:
+            with db_session() as db:
+                return cls.register_existing_files(project_id, db=db, type_hints=type_hints)
+        project = db.query(Project).filter_by(id=project_id).first()
+        if project is None:
+            raise ValueError(f"Project {project_id} not found")
+        hints = type_hints or {}
+        known = {rel for (rel,) in db.query(ProjectFile.rel_path).filter_by(project_id=project_id)}
+        rows = []
+        for rel, size in _project_files_on_disk(project.work_dir):
+            if rel in known:
+                continue
+            hint = hints.get(rel)
+            rows.append(
+                ProjectFile(
+                    project_id=project_id,
+                    filename=PurePosixPath(rel).name,
+                    rel_path=rel,
+                    file_type=hint if hint in FILE_TYPES else cls._infer_file_type(rel),
+                    size_bytes=size,
+                )
+            )
+        db.add_all(rows)
+        db.flush()
+        return len(rows)
+
+    @staticmethod
+    def has_project_files(project_id: int) -> bool:
+        """True when the project has a file row or a project file on disk.
+
+        Seeding is only safe into a project for which this is False: the
+        seed copies over same-named files, and projects made before rows
+        were registered on import and clone have files but no rows.
+        """
+        with db_session() as db:
+            project = db.query(Project).filter_by(id=project_id).first()
+            if project is None:
+                return False
+            if db.query(ProjectFile.id).filter_by(project_id=project_id).first() is not None:
+                return True
+            work_dir = project.work_dir
+        return next(iter(_project_files_on_disk(work_dir)), None) is not None
+
+    @classmethod
     def seed_tutorial_files(cls, project_id: int) -> None:
         """Copy Mar Menor tutorial files into a project.
 
@@ -392,7 +488,8 @@ class FileService:
             project_id: Target project.
 
         Raises:
-            ValueError: If project not found or tutorial data missing.
+            ValueError: If project not found, tutorial data missing, or the
+                project already has files (the copy would overwrite them).
         """
         import shutil
 
@@ -406,6 +503,12 @@ class FileService:
             if project is None:
                 raise ValueError(f"Project {project_id} not found")
             work_dir = Path(project.work_dir)
+
+        if cls.has_project_files(project_id):
+            raise ValueError(
+                "This project already has files; tutorial files are only seeded "
+                "into an empty project. Create a new project for the tutorial."
+            )
 
         # Walk tutorial directory and copy relevant files. Accumulate row dicts
         # and insert in a single transaction at the end so we don't pay one

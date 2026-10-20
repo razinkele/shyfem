@@ -551,7 +551,10 @@ def test_create_handler_requires_identity(handler):
     fn = _find_function_def(ast.parse(path.read_text()), handler)
     assert fn is not None, f"{handler!r} not found in {path}"
     gidx = _call_index(fn.body, "identity_denied_reason")
+    # Import and clone create the Project inside create_project_records.
     sidx = _call_index(fn.body, "Project")
+    if sidx is None:
+        sidx = _call_index(fn.body, "create_project_records")
     assert gidx is not None, (
         f"home.py::{handler} (line {fn.lineno}) creates a Project without "
         f"identity_denied_reason — in server mode an unresolved identity would "
@@ -563,7 +566,7 @@ def test_create_handler_requires_identity(handler):
     )
     assert (
         sidx is not None and gidx < sidx
-    ), f"home.py::{handler}: identity_denied_reason must precede Project(...)"
+    ), f"home.py::{handler}: identity_denied_reason must precede the Project creation"
 
 
 def test_submit_job_stamps_ws_resolved_owner():

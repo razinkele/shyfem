@@ -912,6 +912,10 @@ def home_server(
                         )
                         db.add(sim)
 
+                # List the copied files and count them against the quota (F-01).
+                from shyfem_ui.services.file_service import FileService
+
+                FileService.register_existing_files(project.id, db=db)
                 project_id = project.id
 
             # Activate project so target pages can auto-fill fields
@@ -1304,7 +1308,7 @@ def home_server(
         import base64
 
         from shyfem_ui.services.project_context import load_project_context
-        from shyfem_ui.services.project_export import export_project
+        from shyfem_ui.services.project_export import export_meta, export_project
 
         logger.info("User exporting project %s %r", project_id, project_name)
 
@@ -1318,12 +1322,7 @@ def home_server(
             ui.notification_show("Project directory not found", type="error", duration=6)
             return
 
-        meta = {
-            "name": ctx["name"],
-            "description": ctx.get("description"),
-            "grids": ctx.get("grids", []),
-            "simulations": ctx.get("simulations", []),
-        }
+        meta = export_meta(ctx)
 
         try:
             zip_buf = await export_project(work_dir, meta)
@@ -1358,7 +1357,11 @@ def home_server(
     def _do_clone(project_id: int, project_name: str):
         """Clone a project."""
         from shyfem_ui.services.project_context import load_project_context
-        from shyfem_ui.services.project_export import clone_project
+        from shyfem_ui.services.project_export import (
+            clone_project,
+            create_project_records,
+            export_meta,
+        )
 
         logger.info("User cloning project %s %r", project_id, project_name)
 
@@ -1382,12 +1385,7 @@ def home_server(
             ui.notification_show("Project directory not found", type="error", duration=6)
             return
 
-        meta = {
-            "name": ctx["name"],
-            "description": ctx.get("description"),
-            "grids": ctx.get("grids", []),
-            "simulations": ctx.get("simulations", []),
-        }
+        meta = export_meta(ctx)
 
         try:
             result = clone_project(work_dir, meta, config.work_dir)
@@ -1397,39 +1395,8 @@ def home_server(
             return
 
         try:
-            with db_session() as db:
-                user = _user()
-                project = Project(
-                    name=result["name"],
-                    description=result.get("description"),
-                    work_dir=str(result["work_dir"]),
-                    owner_id=user["id"] if user else None,
-                )
-                db.add(project)
-                db.flush()
-
-                grid_name_to_id = {}
-                for g in result.get("grids", []):
-                    grid = Grid(
-                        project_id=project.id,
-                        name=g["name"],
-                        description=g.get("description"),
-                        grd_file=g.get("grd_file"),
-                        bas_file=g.get("bas_file"),
-                    )
-                    db.add(grid)
-                    db.flush()
-                    grid_name_to_id[g["name"]] = grid.id
-
-                for s in result.get("simulations", []):
-                    sim = Simulation(
-                        project_id=project.id,
-                        grid_id=grid_name_to_id.get(s.get("grid_name")),
-                        name=s["name"],
-                        description=s.get("description"),
-                        str_file=s.get("str_file"),
-                    )
-                    db.add(sim)
+            user = _user()
+            create_project_records(result, owner_id=user["id"] if user else None)
 
             ui.notification_show(
                 f"Cloned '{project_name}' as '{result['name']}'", type="message", duration=4
@@ -1505,7 +1472,7 @@ def home_server(
             )
             return
 
-        from shyfem_ui.services.project_export import import_project
+        from shyfem_ui.services.project_export import create_project_records, import_project
 
         # In server mode, extract under the owner's home sandbox so the imported
         # project is reachable once confine_path is enforced; local mode keeps
@@ -1530,48 +1497,7 @@ def home_server(
             return
 
         try:
-            with db_session() as db:
-                project = Project(
-                    name=result["name"],
-                    description=result.get("description"),
-                    work_dir=str(result["work_dir"]),
-                    owner_id=user["id"] if user else None,
-                )
-                db.add(project)
-                db.flush()
-
-                grid_name_to_id = {}
-                for g in result.get("grids", []):
-                    grid = Grid(
-                        project_id=project.id,
-                        name=g["name"],
-                        description=g.get("description"),
-                        grd_file=g.get("grd_file"),
-                        bas_file=g.get("bas_file"),
-                        num_nodes=g.get("num_nodes"),
-                        num_elements=g.get("num_elements"),
-                        num_layers=g.get("num_layers"),
-                        min_depth=g.get("min_depth"),
-                        max_depth=g.get("max_depth"),
-                    )
-                    db.add(grid)
-                    db.flush()
-                    grid_name_to_id[g["name"]] = grid.id
-
-                for s in result.get("simulations", []):
-                    sim = Simulation(
-                        project_id=project.id,
-                        grid_id=grid_name_to_id.get(s.get("grid_name")),
-                        name=s["name"],
-                        description=s.get("description"),
-                        str_file=s.get("str_file"),
-                        start_time=s.get("start_time"),
-                        end_time=s.get("end_time"),
-                        time_step=s.get("time_step"),
-                        mpi_enabled=s.get("mpi_enabled", False),
-                        mpi_np=s.get("mpi_np", 1),
-                    )
-                    db.add(sim)
+            create_project_records(result, owner_id=user["id"] if user else None)
 
             ui.notification_show(f"Imported project '{result['name']}'", type="message", duration=4)
             ui.modal_remove()
