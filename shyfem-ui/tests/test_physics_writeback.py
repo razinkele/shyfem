@@ -265,3 +265,18 @@ def test_select_shows_the_stored_value(stored, shown):
     """A value outside the choices rendered the first choice, which a save wrote."""
     html = str(physics._select("x", "X", choices={"0": "off", "1": "on"}, selected=stored))
     assert f'<option value="{shown}" selected="">' in html, html
+
+
+def test_a_failed_panel_skips_only_the_inputs_it_renders():
+    """Output shows idtcon as idtcon_out; T&S renders the plain idtcon input."""
+    ids = physics._panel_input_ids(frozenset({"output"}))
+    assert {"idtcon_out", "icon_av_out", "idtout"} <= ids
+    assert "idtcon" not in ids
+    working, errors = _save(_KEPS, {"ilin": "1"})
+    sf = StrParser.parse(_KEPS)
+    inputs = _untouched_inputs(sf)
+    inputs._values["ilin"] = "1"
+    skipped, errors, _ = _collect_into_copy(inputs, sf, frozenset({"hydrodynamics"}))
+    assert errors == []
+    assert skipped.get_param("para", "ilin") == 0
+    assert working.get_param("para", "ilin") == 1

@@ -6,13 +6,14 @@ STR files.
 """
 
 import copy
+import functools
 import logging
 import math
 import re
 from collections.abc import Sequence
 
 from shiny import module, reactive, render, ui
-from shiny.types import SilentException
+from shiny.types import SilentCancelOutputException, SilentException
 
 from shyfem_ui.components.project_select import (
     default_project_file,
@@ -837,6 +838,28 @@ _INPUT_ID_REMAP: dict[str, tuple[str, str]] = {
 # Add name_ prefixed input IDs for $name section params
 for _np in COMMON_PARAMS.get("name", {}):
     _INPUT_ID_REMAP[f"name_{_np}"] = ("name", _np)
+# The panel that renders each remapped input id.
+_REMAP_PANEL = {
+    input_id: "input_files" if input_id.startswith("name_") else "output"
+    for input_id in _INPUT_ID_REMAP
+}
+
+
+def _panel_input_ids(panel_ids: frozenset[str]) -> set[str]:
+    """Input ids rendered by *panel_ids*, for skipping a panel that failed to render."""
+    ids: set[str] = set()
+    for panel_id in panel_ids:
+        panel = PHYSICS_PANELS[panel_id]
+        own = set(panel["params"])
+        dedicated = panel.get("section")
+        if dedicated in COMMON_PARAMS:
+            own |= set(COMMON_PARAMS[dedicated])
+        for input_id, (_section, param) in _INPUT_ID_REMAP.items():
+            if _REMAP_PANEL[input_id] == panel_id:
+                own.discard(param)  # this panel shows it under the remapped id
+                own.add(input_id)
+        ids |= own
+    return ids
 
 
 _INPUT_ABSENT = object()
@@ -845,8 +868,9 @@ _INPUT_ABSENT = object()
 def _read_input(inputs, input_id: str, errors: list[str]) -> object:
     """Read one panel input, or _INPUT_ABSENT when it was never rendered.
 
-    SilentException is Shiny's "value not set" signal — raised for every
-    input of a panel the user has not opened — and KeyError covers a
+    SilentException is Shiny's "value not set" signal — raised for an
+    input that was never created (panels render eagerly, so that is an
+    array field shown as a note) — and KeyError covers a
     lookup that never resolves; both are normal here and stay silent.
     Anything else is a defect (input-id drift after a rename, module
     namespace bug) that would otherwise turn Save into a silent no-op:
@@ -863,7 +887,9 @@ def _read_input(inputs, input_id: str, errors: list[str]) -> object:
         return _INPUT_ABSENT
 
 
-def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
+def _collect_panel_values(
+    inputs, sf: StrFile, skip_panels: frozenset[str] = frozenset()
+) -> tuple[list[str], bool]:
     """Read all panel input values and update *sf* before saving.
 
     Returns (field errors, $nduge purged). On any error the offending
@@ -877,22 +903,27 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
     # the second input of a param shown in two panels sees the file's
     # value, not the first input's edit.
     edits: dict[tuple[str, str], dict[str, object]] = {}
+    skipped = _panel_input_ids(skip_panels)
+
+    def read(input_id: str, section: str, param: str) -> None:
+        if input_id not in skipped:
+            _read_edit(inputs, sf, input_id, section, param, edits, errors)
 
     for panel in PHYSICS_PANELS.values():
         # --- params explicitly listed in the panel definition ---
         for param, section in panel["params"].items():
-            _read_edit(inputs, sf, param, section, param, edits, errors)
+            read(param, section, param)
 
         # --- params from a dedicated section (sedtr, lagrg, nduge) ---
         dedicated = panel.get("section")
         if dedicated and dedicated in COMMON_PARAMS:
             for param in COMMON_PARAMS[dedicated]:
                 if param not in panel["params"]:
-                    _read_edit(inputs, sf, param, dedicated, param, edits, errors)
+                    read(param, dedicated, param)
 
     # --- handle remapped input IDs (duplicates across panels) ---
     for input_id, (section, param) in _INPUT_ID_REMAP.items():
-        _read_edit(inputs, sf, input_id, section, param, edits, errors)
+        read(input_id, section, param)
 
     _apply_edits(sf, edits, errors)
 
@@ -909,7 +940,7 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
         # Same rule as the plain fields: an unchanged set of streams writes
         # nothing, so an absent imetout stays absent and a digit > 1 keeps
         # its value.
-        if flags != _imetout_decode(sf.get_param("para", "imetout")):
+        if "heat" not in skip_panels and flags != _imetout_decode(sf.get_param("para", "imetout")):
             sf.set_param("para", "imetout", _imetout_encode(flags))
 
     # --- composite sections: $assimilN <- T/S assimilation blocks ---
@@ -917,6 +948,8 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
         ("t", 12, 1, "Temperature"),
         ("s", 11, 2, "Salinity"),
     ):
+        if "assimilation" in skip_panels:
+            break
         block_errors: list[str] = []
         on_raw = _read_input(inputs, f"assim_{prefix}_on", block_errors)
         if on_raw is _INPUT_ABSENT:
@@ -946,7 +979,9 @@ def _collect_panel_values(inputs, sf: StrFile) -> tuple[list[str], bool]:
     return errors, _purge_nduge(sf)
 
 
-def _collect_into_copy(inputs, sf: StrFile) -> tuple[StrFile, list[str], bool]:
+def _collect_into_copy(
+    inputs, sf: StrFile, skip_panels: frozenset[str] = frozenset()
+) -> tuple[StrFile, list[str], bool]:
     """Apply the panel values to a copy of *sf*; returns it with the collect result.
 
     Preview writes nothing and an aborted save writes nothing, so neither
@@ -954,7 +989,7 @@ def _collect_into_copy(inputs, sf: StrFile) -> tuple[StrFile, list[str], bool]:
     would persist that partial state without the user ever seeing it.
     """
     working = copy.deepcopy(sf)
-    errors, purged = _collect_panel_values(inputs, working)
+    errors, purged = _collect_panel_values(inputs, working, skip_panels)
     return working, errors, purged
 
 
@@ -1172,7 +1207,9 @@ def physics_server(
             return
         working: StrFile | None = None
         try:
-            working, panel_errors, nduge_purged = _collect_into_copy(input, str_data.get())
+            working, panel_errors, nduge_purged = _collect_into_copy(
+                input, str_data.get(), frozenset(failed_panels)
+            )
             if panel_errors:
                 for e in panel_errors:
                     ui.notification_show(e, type="error", duration=8)
@@ -1224,7 +1261,9 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
-        working, panel_errors, _purged = _collect_into_copy(input, str_data.get())
+        working, panel_errors, _purged = _collect_into_copy(
+            input, str_data.get(), frozenset(failed_panels)
+        )
         for e in panel_errors:
             # Rejected assimilation fields were NOT applied: the preview
             # shows the last valid state for those, so say why.
@@ -1324,6 +1363,33 @@ def physics_server(
                 )
         return ui.div(*parts)
 
+    # Panels whose last render raised. Their inputs still hold the values
+    # of the file state they last rendered, so the save must skip them.
+    failed_panels: set[str] = set()
+
+    def _guarded(panel_id: str):
+        def wrap(render_fn):
+            @functools.wraps(render_fn)
+            def guarded():
+                try:
+                    tag = render_fn()
+                except (SilentException, SilentCancelOutputException):
+                    raise
+                except Exception as exc:
+                    logger.exception("Physics panel %r failed to render", panel_id)
+                    failed_panels.add(panel_id)
+                    return ui.div(
+                        f"This panel cannot show the loaded file ({type(exc).__name__}: "
+                        f"{exc}). Its fields are not saved; edit them in the STR editor.",
+                        class_="alert alert-warning small",
+                    )
+                failed_panels.discard(panel_id)
+                return tag
+
+            return guarded
+
+        return wrap
+
     # Every panel renders eagerly and re-renders on each Load and Save,
     # even while collapsed. A suspended panel kept the inputs it showed
     # for the previous file state, and the save reads every rendered
@@ -1354,6 +1420,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("timing")
     def panel_timing():
         params = build_panel_params(str_data.get(), "timing")
         return ui.div(
@@ -1413,6 +1480,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("hydrodynamics")
     def panel_hydrodynamics():
         params = build_panel_params(str_data.get(), "hydrodynamics")
         return ui.div(
@@ -1472,11 +1540,11 @@ def physics_server(
                 ),
                 ui.column(
                     4,
-                    ui.input_numeric(
+                    # an interval string ('1h') is as common as seconds here
+                    ui.input_text(
                         "idtsyn",
-                        "Sync interval (s)",
-                        value=int(_shown(params, "idtsyn", 0)),
-                        min=0,
+                        "Sync interval (s or e.g. 1h)",
+                        value=format_param_display(_shown(params, "idtsyn", 0)),
                     ),
                 ),
             ),
@@ -1564,6 +1632,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("vertical")
     def panel_vertical():
         params = build_panel_params(str_data.get(), "vertical")
         return ui.div(
@@ -1638,6 +1707,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("friction")
     def panel_friction():
         params = build_panel_params(str_data.get(), "friction")
         return ui.div(
@@ -1686,6 +1756,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("turbulence")
     def panel_turbulence():
         params = build_panel_params(str_data.get(), "turbulence")
         return ui.div(
@@ -1825,6 +1896,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("heat")
     def panel_heat():
         params = build_panel_params(str_data.get(), "heat")
         # imetout is a composite param (not in the panel registry), so read it
@@ -1939,6 +2011,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("temperature_salinity")
     def panel_temperature_salinity():
         params = build_panel_params(str_data.get(), "temperature_salinity")
         return ui.div(
@@ -2046,6 +2119,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("ecology")
     def panel_ecology():
         params = build_panel_params(str_data.get(), "ecology")
         return ui.div(
@@ -2124,6 +2198,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("sediment")
     def panel_sediment():
         params = build_panel_params(str_data.get(), "sediment")
         return ui.div(
@@ -2226,6 +2301,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("lagrangian")
     def panel_lagrangian():
         params = build_panel_params(str_data.get(), "lagrangian")
         return ui.div(
@@ -2355,11 +2431,11 @@ def physics_server(
             ui.row(
                 ui.column(
                     4,
-                    ui.input_numeric(
+                    # an interval string ('1h') is as common as seconds here
+                    ui.input_text(
                         "idtlgr",
-                        "Lagrangian output interval (s)",
-                        value=int(_shown(params, "idtlgr", 0)),
-                        min=0,
+                        "Lagrangian output interval (s or e.g. 1h)",
+                        value=format_param_display(_shown(params, "idtlgr", 0)),
                     ),
                 ),
             ),
@@ -2421,6 +2497,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("ice")
     def panel_ice():
         params = build_panel_params(str_data.get(), "ice")
         return ui.div(
@@ -2439,6 +2516,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("waves")
     def panel_waves():
         params = build_panel_params(str_data.get(), "waves")
         return ui.div(
@@ -2482,6 +2560,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("assimilation")
     def panel_assimilation():
         sf = str_data.get()
         adopted = {_assimil_find(sf, 12), _assimil_find(sf, 11)}
@@ -2515,6 +2594,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("output")
     def panel_output():
         params = build_panel_params(str_data.get(), "output")
         return ui.div(
@@ -2709,6 +2789,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("tracers")
     def panel_tracers():
         params = build_panel_params(str_data.get(), "tracers")
         return ui.div(
@@ -2811,6 +2892,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("wind")
     def panel_wind():
         params = build_panel_params(str_data.get(), "wind")
         return ui.div(
@@ -2867,6 +2949,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("input_files")
     def panel_input_files():
         params = build_panel_params(str_data.get(), "input_files")
         groups = {
@@ -2909,6 +2992,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("advanced_hydro")
     def panel_advanced_hydro():
         params = build_panel_params(str_data.get(), "advanced_hydro")
         return ui.div(
@@ -3051,6 +3135,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("renewal_time")
     def panel_renewal_time():
         params = build_panel_params(str_data.get(), "renewal_time")
         return ui.div(
@@ -3107,6 +3192,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("nonhydrostatic")
     def panel_nonhydrostatic():
         params = build_panel_params(str_data.get(), "nonhydrostatic")
         return ui.div(
@@ -3158,6 +3244,7 @@ def physics_server(
 
     @output(suspend_when_hidden=False)
     @render.ui
+    @_guarded("boundary")
     def panel_boundary():
         params = build_panel_params(str_data.get(), "boundary")
         return ui.div(

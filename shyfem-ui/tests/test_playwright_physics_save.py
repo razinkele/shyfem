@@ -29,6 +29,10 @@ $end
 """
 
 _B = _A.replace("sim_a", "sim_b").replace("ilin = 0", "ilin = 1")
+# vismol with a Fortran d exponent: the Turbulence panel cannot render it
+_D = _A.replace("sim_a", "sim_d").replace("ilin = 0", "ilin = 0\n        vismol = 1.d-6")
+# idtsyn as an interval string, as in mm_hyd_22a.str and venlag.str
+_C = _A.replace("sim_a", "sim_c").replace("ilin = 0", "ilin = 1\n        idtsyn = '1h'")
 
 
 @pytest.mark.e2e
@@ -39,6 +43,8 @@ class TestPhysicsSave:
         wd.mkdir(exist_ok=True)
         (wd / "a.str").write_text(_A)
         (wd / "b.str").write_text(_B)
+        (wd / "c.str").write_text(_C)
+        (wd / "d.str").write_text(_D)
         result = pw_page.evaluate(
             """(wd) => {
                 if (typeof window.__test_set_active_project !== 'function') return 'no-hook';
@@ -110,3 +116,30 @@ class TestPhysicsSave:
         assert "idtcon = 1200\n" in (project / "a.str").read_text()
         assert self._save(pw_page, project, "a.str"), "second save did not write"
         assert "idtcon = 1200\n" in (project / "a.str").read_text()
+
+    def test_a_file_with_interval_strings_takes_no_values_from_the_previous_one(
+        self, pw_page, project
+    ):
+        self._load(pw_page, project, "a.str")
+        self._set_open(pw_page, "Hydrodynamics", True)
+        self._load(pw_page, project, "c.str")
+        assert self._save(pw_page, project, "c.str"), "save did not write"
+        assert (project / "c.str").read_text() == _C
+
+    def test_every_panel_renders_its_inputs(self, pw_page, project):
+        for name in ("a.str", "c.str"):
+            self._load(pw_page, project, name)
+            for panel_id in PHYSICS_PANELS:
+                out = pw_page.locator(f"#physics-panel_{panel_id}")
+                assert out.locator(".shiny-output-error").count() == 0, (name, panel_id)
+                assert out.locator("input, select").count() > 0, (name, panel_id)
+
+    def test_a_panel_that_cannot_render_saves_none_of_its_stale_inputs(self, pw_page, project):
+        self._load(pw_page, project, "a.str")
+        self._set_open(pw_page, "Turbulence & Mixing", True)
+        self._load(pw_page, project, "d.str")
+        assert "cannot show the loaded file" in pw_page.locator(
+            "#physics-panel_turbulence"
+        ).inner_text()
+        assert self._save(pw_page, project, "d.str"), "save did not write"
+        assert (project / "d.str").read_text() == _D
