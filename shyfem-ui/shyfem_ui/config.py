@@ -1,6 +1,7 @@
 """Configuration management using Pydantic settings."""
 
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -657,14 +658,16 @@ class Config(BaseSettings):
 
         ``name`` is typed by the user, so it must be one plain folder name:
         no separator, no leading dot (which also refuses ``.`` and ``..``),
-        no NUL. It is refused
-        rather than rewritten, so ``'../x'`` never quietly becomes a legal
-        name. Server mode roots the folder in the owner's home and confines
-        it there (a symlink out of the home is refused); local mode roots it
-        in ``work_dir``.
+        no NUL, at most 255 bytes. It is refused rather than rewritten, so
+        ``'../x'`` never quietly becomes a legal name. Anything already
+        there under that name, a dangling symlink included, is refused
+        rather than followed. Server mode roots the folder in the owner's
+        home and confines it there; local mode roots it in ``work_dir``.
+        Messages never contain a host path.
 
         Raises:
-            ValueError: If the name is unsafe or the folder escapes its root.
+            ValueError: If the name is unsafe, taken, or the folder escapes
+                its root.
         """
         name = name.strip()
         if (
@@ -678,6 +681,8 @@ class Config(BaseSettings):
                 f"Invalid project name {name!r}: use a plain folder name "
                 "without '/', '\\' or a leading '.'"
             )
+        if len(name.encode("utf-8", "surrogatepass")) > 255:
+            raise ValueError("Project name is too long (at most 255 bytes)")
         if self.deployment_mode == "server":
             if user is None:
                 raise ValueError(
@@ -685,8 +690,18 @@ class Config(BaseSettings):
                     "Please reload the page and sign in again."
                 )
             candidate = self.user_data_root / str(user.get("username")) / name
-            return self.confine_path(candidate, user, for_write=True)
-        return self.validate_save_path(self.work_dir / name)
+        else:
+            candidate = self.work_dir / name
+        if os.path.lexists(candidate):
+            raise ValueError(f"A file or folder named {name!r} already exists")
+        try:
+            if self.deployment_mode == "server":
+                return self.confine_path(candidate, user, for_write=True)
+            return self.validate_save_path(candidate)
+        except (ValueError, OSError) as e:
+            # confine_path/validate_save_path messages name host paths.
+            logger.warning("Refused new project folder %s: %s", candidate, e)
+            raise ValueError(f"A project named {name!r} cannot be created here") from e
 
 
 # Global configuration instance

@@ -111,6 +111,61 @@ def test_local_mode_roots_the_project_in_work_dir(tmp_path):
     assert cfg.new_project_path("mm", None) == (cfg.work_dir / "mm").resolve()
 
 
+def test_dangling_link_inside_the_home_is_refused_not_followed(tmp_path):
+    """A link to another (missing) folder in the same home would put the copy
+    at the link's target, under a different name than the one typed."""
+    cfg = _server_config(tmp_path)
+    alice = cfg.user_data_root / "alice"
+    alice.mkdir()
+    (alice / "proj").symlink_to(alice / "elsewhere")
+    with pytest.raises(ValueError, match="already exists"):
+        cfg.new_project_path("proj", ALICE)
+
+
+@pytest.mark.parametrize("mode", ["server", "local"])
+def test_an_existing_folder_is_refused(tmp_path, mode):
+    cfg = _server_config(tmp_path) if mode == "server" else _local_config(tmp_path)
+    root = cfg.user_data_root / "alice" if mode == "server" else cfg.work_dir
+    (root / "proj").mkdir(parents=True)
+    with pytest.raises(ValueError, match="already exists"):
+        cfg.new_project_path("proj", ALICE if mode == "server" else None)
+
+
+def test_an_unsafe_username_is_refused_without_showing_host_paths(tmp_path):
+    """confine_path re-validates the username, so a bad session value cannot
+    widen the root; the refusal must not show the host layout."""
+    cfg = _server_config(tmp_path)
+    (cfg.user_data_root / "bob").mkdir()
+    with pytest.raises(ValueError) as exc:
+        cfg.new_project_path("proj", {"id": 9, "username": "../bob", "role": "user"})
+    assert str(tmp_path) not in str(exc.value), "the message must not show host paths"
+
+
+@pytest.mark.parametrize("exc", [ValueError("Path '/srv/x' is outside /srv/y"), OSError(36, "x")])
+def test_a_confinement_refusal_becomes_a_path_free_valueerror(tmp_path, monkeypatch, exc):
+    cfg = _server_config(tmp_path)
+
+    def refuse(self, *a, **k):
+        raise exc
+
+    monkeypatch.setattr(Config, "confine_path", refuse)
+    with pytest.raises(ValueError) as got:
+        cfg.new_project_path("proj", ALICE)
+    assert "/srv" not in str(got.value) and "proj" in str(got.value)
+
+
+@pytest.mark.parametrize("mode", ["server", "local"])
+def test_an_over_long_name_is_a_valueerror_not_an_oserror(tmp_path, mode):
+    """An OSError (ENAMETOOLONG) escaping the reactive effect closes the session."""
+    cfg = _server_config(tmp_path) if mode == "server" else _local_config(tmp_path)
+    user = ALICE if mode == "server" else None
+    with pytest.raises(ValueError, match="too long"):
+        cfg.new_project_path("x" * 256, user)
+    with pytest.raises(ValueError, match="too long"):
+        cfg.new_project_path("é" * 128, user)  # 256 bytes in UTF-8
+    assert cfg.new_project_path("x" * 255, user).name == "x" * 255
+
+
 def _handler():
     tree = ast.parse(_HOME_PY.read_text())
     return next(
@@ -127,11 +182,33 @@ def test_tutorial_handler_derives_its_folder_from_new_project_path():
     assert "work_dir / name" not in src, "the typed name must not be joined to work_dir"
     calls = [n for n in ast.walk(fn) if isinstance(n, ast.Call)]
 
-    def first_line(attr):
+    def first_line(name):
         lines = [
-            c.lineno for c in calls if isinstance(c.func, ast.Attribute) and c.func.attr == attr
+            c.lineno
+            for c in calls
+            if getattr(c.func, "attr", None) == name or getattr(c.func, "id", None) == name
         ]
-        assert lines, f"{attr} not called"
+        assert lines, f"{name} not called"
         return min(lines)
 
-    assert first_line("new_project_path") < first_line("copytree")
+    # Identity, then confinement, then the first filesystem change.
+    assert (
+        first_line("identity_denied_reason")
+        < first_line("new_project_path")
+        < first_line("mkdir")
+        < first_line("copytree")
+    )
+
+
+def test_tutorial_handler_keeps_oserror_inside_the_effect():
+    """new_project_path stats the path; an OSError escaping a reactive effect
+    closes the user's session, so the handler must catch it."""
+    fn = _handler()
+    guarded = [
+        t
+        for t in ast.walk(fn)
+        if isinstance(t, ast.Try) and any("new_project_path(" in ast.unparse(s) for s in t.body)
+    ]
+    assert guarded, "new_project_path must be called inside a try"
+    caught = {ast.unparse(h.type) for t in guarded for h in t.handlers if h.type is not None}
+    assert any("OSError" in c or c == "Exception" for c in caught), caught

@@ -1,7 +1,6 @@
 """Home/Dashboard page for SHYFEM UI."""
 
 import logging
-import os
 import shutil
 from datetime import datetime
 from io import BytesIO
@@ -869,20 +868,26 @@ def home_server(
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
+        except OSError:
+            logger.exception("Could not check the tutorial project folder for %r", name)
+            ui.notification_show(
+                "Could not create a project with that name", type="error", duration=6
+            )
+            return
 
         try:
             project_path.parent.mkdir(parents=True, exist_ok=True)
-            if os.path.lexists(project_path):
-                ui.notification_show(
-                    f"Directory already exists: {config.display_path(project_path, user)}",
-                    type="error",
-                    duration=6,
-                )
-                return
+            # copytree refuses an existing destination, so a folder made since
+            # new_project_path checked is not written into.
             shutil.copytree(mar_menor_src, project_path)
-        except Exception as e:
+        except Exception:
+            # The OSError text names host paths; keep it in the log.
             logger.exception("Failed to copy tutorial files to %s", project_path)
-            ui.notification_show(f"Failed to copy tutorial files: {e}", type="error", duration=6)
+            ui.notification_show(
+                "Failed to copy the tutorial files (a folder with that name may " "already exist)",
+                type="error",
+                duration=6,
+            )
             return
 
         # Create database records
