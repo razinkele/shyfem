@@ -2,11 +2,12 @@
 
 import asyncio
 import json
+import posixpath
 import shutil
 import zipfile
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from shyfem_ui.config import get_config
 
@@ -23,6 +24,9 @@ _EXCLUDE_EXTENSIONS = frozenset({".stdout", ".stderr", ".job", ".pid", ".exit"})
 # pulling that module (and pandas) into every export; ``file_service.py`` sets
 # the same precedent for ``boxmodel_cache.CACHE_DIRNAME``.
 _EXCLUDE_DIRNAMES = frozenset({".boxmodel_cache"})
+# App bookkeeping kept in the work-dir root (services/project_summary.py
+# SUMMARY_NAME); rewritten whenever the project is opened, so not user data.
+_EXCLUDE_ROOT_FILES = frozenset({".project_summary.json"})
 MAX_IMPORT_FILES = 10000
 # A hard ceiling on the number of archive ENTRIES, checked before any per-member
 # work. MAX_IMPORT_FILES counts only the members that survive filtering (bare
@@ -52,7 +56,7 @@ async def export_project(
 
     Args:
         work_dir: Absolute path to the project's work directory.
-        project_meta: Dict with keys: name, description, grids, simulations.
+        project_meta: Dict with keys: name, description, grids, simulations, files.
         max_export_bytes: Cap on total uncompressed size of exported files.
             Defaults to config.max_export_bytes when not given.
 
@@ -139,7 +143,8 @@ async def import_project(zip_data: BytesIO, base_dir: Path) -> dict:
         base_dir: Base directory where the project will be extracted.
 
     Returns:
-        Dict with keys: name, description, work_dir (Path), grids, simulations.
+        Dict with keys: name, description, work_dir (Path), grids, simulations,
+        files (each {rel_path, file_type}; feed it to create_project_records).
 
     Raises:
         ValueError: If the archive is invalid.
@@ -160,6 +165,13 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
             raise ValueError(f"archive contains too many entries (max {MAX_IMPORT_ENTRIES})")
         if "manifest.json" not in names:
             raise ValueError("Invalid archive: missing manifest.json")
+        # Our exports never write a ".." component. Refused before any check
+        # reads a name, so every check sees the path that would be written:
+        # ".boxmodel_cache/../big.str" passed as a cache member (exempt from
+        # the limits below) yet normalises to a project file.
+        for member in names:
+            if ".." in member.split("/"):
+                raise ValueError(f"path traversal in archive: {member!r}")
         # Cache members are dropped before the limits are computed, so a stale
         # cache cannot push a legitimate archive over the file-count or size
         # budget (spec §9). The traversal check below still runs over EVERY
@@ -209,9 +221,14 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
                 continue
             if member.endswith("/"):
                 continue
-            if member in cache_members:
+            # Without ".." (refused above) this is the path written; "./x" and
+            # "a//x" are the forms it still collapses.
+            rel = PurePosixPath(posixpath.normpath(member))
+            if not is_project_file(rel):
+                # Job files, cache and bookkeeping get no file row, so they
+                # would sit on disk uncounted by the storage limit (F-01).
                 continue
-            target = project_dir / member
+            target = project_dir / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             with zf.open(member) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst, length=1024 * 1024)
@@ -222,6 +239,7 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
         "work_dir": project_dir,
         "grids": manifest.get("grids", []),
         "simulations": manifest.get("simulations", []),
+        "files": manifest.get("files", []),
     }
 
 
@@ -245,6 +263,14 @@ def _validate_archive_limits(infos: list[zipfile.ZipInfo]) -> None:
         ratio = info.file_size / compressed_size
         if ratio > MAX_IMPORT_COMPRESSION_RATIO:
             raise ValueError(f"archive member {info.filename!r} has suspicious compression ratio")
+
+
+def is_project_file(rel: PurePosixPath) -> bool:
+    """True for a work-dir file that is project data: one that gets a file row
+    and counts against the storage limit. ``rel`` is relative to the work dir."""
+    if rel.suffix in _EXCLUDE_EXTENSIONS or _EXCLUDE_DIRNAMES.intersection(rel.parts):
+        return False
+    return str(rel) not in _EXCLUDE_ROOT_FILES
 
 
 def _is_cache_member(name: str) -> bool:
@@ -274,12 +300,13 @@ def clone_project(
 
     Args:
         work_dir: Source project's work directory.
-        project_meta: Dict with keys: name, description, grids, simulations.
+        project_meta: Dict with keys: name, description, grids, simulations, files.
         base_dir: Base directory where the clone will be created.
         new_name: Optional name for the clone. Defaults to "Original (Copy)".
 
     Returns:
-        Dict with keys: name, description, work_dir (Path), grids, simulations.
+        Dict with keys: name, description, work_dir (Path), grids, simulations,
+        files (each {rel_path, file_type}; feed it to create_project_records).
     """
     import shutil
 
@@ -304,4 +331,103 @@ def clone_project(
         "work_dir": clone_dir,
         "grids": project_meta.get("grids", []),
         "simulations": project_meta.get("simulations", []),
+        "files": project_meta.get("files", []),
     }
+
+
+def export_meta(ctx: dict) -> dict:
+    """The project_meta that export and clone take, from load_project_context.
+
+    Each file row is reduced to its rel_path and file_type: the type the
+    user chose is what a new project cannot infer, and a row id means
+    nothing in another database.
+    """
+    return {
+        "name": ctx["name"],
+        "description": ctx.get("description"),
+        "grids": ctx.get("grids", []),
+        "simulations": ctx.get("simulations", []),
+        "files": [
+            {"rel_path": f["rel_path"], "file_type": f["file_type"]} for f in ctx.get("files", [])
+        ],
+    }
+
+
+def _type_hints(files) -> dict[str, str]:
+    """rel_path -> file_type from a manifest's (untrusted) file list."""
+    hints = {}
+    for f in files if isinstance(files, list) else []:
+        if isinstance(f, dict):
+            rel, file_type = f.get("rel_path"), f.get("file_type")
+            if isinstance(rel, str) and isinstance(file_type, str):
+                hints[rel] = file_type
+    return hints
+
+
+def create_project_records(result: dict, owner_id: int | None) -> int:
+    """Create the Project, Grid, Simulation and file rows for an import or clone.
+
+    ``result`` is what import_project or clone_project returned; its files are
+    already in ``result["work_dir"]``. All rows go in one transaction, which
+    is rolled back (and ValueError raised) when the files exceed the project
+    storage limit. Returns the new project id.
+    """
+    from shyfem_ui.db.base import db_session
+    from shyfem_ui.models.project import Grid, Project, Simulation
+    from shyfem_ui.services.file_service import FileService, _sum_project_bytes
+
+    config = get_config()
+    with db_session() as db:
+        project = Project(
+            name=result["name"],
+            description=result.get("description"),
+            work_dir=str(result["work_dir"]),
+            owner_id=owner_id,
+        )
+        db.add(project)
+        db.flush()
+
+        grid_name_to_id = {}
+        for g in result.get("grids", []):
+            grid = Grid(
+                project_id=project.id,
+                name=g["name"],
+                description=g.get("description"),
+                grd_file=g.get("grd_file"),
+                bas_file=g.get("bas_file"),
+                num_nodes=g.get("num_nodes"),
+                num_elements=g.get("num_elements"),
+                num_layers=g.get("num_layers"),
+                min_depth=g.get("min_depth"),
+                max_depth=g.get("max_depth"),
+            )
+            db.add(grid)
+            db.flush()
+            grid_name_to_id[g["name"]] = grid.id
+
+        for s in result.get("simulations", []):
+            db.add(
+                Simulation(
+                    project_id=project.id,
+                    grid_id=grid_name_to_id.get(s.get("grid_name")),
+                    name=s["name"],
+                    description=s.get("description"),
+                    str_file=s.get("str_file"),
+                    start_time=s.get("start_time"),
+                    end_time=s.get("end_time"),
+                    time_step=s.get("time_step"),
+                    mpi_enabled=s.get("mpi_enabled", False),
+                    mpi_np=s.get("mpi_np", 1),
+                )
+            )
+
+        FileService.register_existing_files(
+            project.id, db=db, type_hints=_type_hints(result.get("files"))
+        )
+        used = _sum_project_bytes(db, project.id, work_dir=project.work_dir)
+        if used > config.max_project_storage_mb * 1024 * 1024:
+            raise ValueError(
+                f"the project's files ({used // (1024 * 1024)} MB) exceed the project "
+                f"storage limit ({config.max_project_storage_mb} MB)"
+            )
+        return project.id
