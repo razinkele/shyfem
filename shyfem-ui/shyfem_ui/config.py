@@ -652,6 +652,42 @@ class Config(BaseSettings):
 
         return resolved
 
+    def new_project_path(self, name: str, user: dict | None) -> Path:
+        """Return the folder for a new project called ``name`` (H-03).
+
+        ``name`` is typed by the user, so it must be one plain folder name:
+        no separator, no leading dot (which also refuses ``.`` and ``..``),
+        no NUL. It is refused
+        rather than rewritten, so ``'../x'`` never quietly becomes a legal
+        name. Server mode roots the folder in the owner's home and confines
+        it there (a symlink out of the home is refused); local mode roots it
+        in ``work_dir``.
+
+        Raises:
+            ValueError: If the name is unsafe or the folder escapes its root.
+        """
+        name = name.strip()
+        if (
+            not name
+            or name.startswith(".")
+            or name != Path(name).name
+            or "\\" in name
+            or "\x00" in name
+        ):
+            raise ValueError(
+                f"Invalid project name {name!r}: use a plain folder name "
+                "without '/', '\\' or a leading '.'"
+            )
+        if self.deployment_mode == "server":
+            if user is None:
+                raise ValueError(
+                    "Session identity could not be verified. "
+                    "Please reload the page and sign in again."
+                )
+            candidate = self.user_data_root / str(user.get("username")) / name
+            return self.confine_path(candidate, user, for_write=True)
+        return self.validate_save_path(self.work_dir / name)
+
 
 # Global configuration instance
 _config: Config | None = None

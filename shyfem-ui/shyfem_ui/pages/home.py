@@ -1,6 +1,7 @@
 """Home/Dashboard page for SHYFEM UI."""
 
 import logging
+import os
 import shutil
 from datetime import datetime
 from io import BytesIO
@@ -861,13 +862,21 @@ def home_server(
             )
             return
 
-        # Create project directory
-        project_path = config.work_dir / name
+        # The typed name picks only the folder's name, never its location
+        # (H-03): server mode puts it in the owner's home, local in work_dir.
         try:
-            config.ensure_work_dir()
-            if project_path.exists():
+            project_path = config.new_project_path(name, user)
+        except ValueError as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
+
+        try:
+            project_path.parent.mkdir(parents=True, exist_ok=True)
+            if os.path.lexists(project_path):
                 ui.notification_show(
-                    f"Directory already exists: {project_path}", type="error", duration=6
+                    f"Directory already exists: {config.display_path(project_path, user)}",
+                    type="error",
+                    duration=6,
                 )
                 return
             shutil.copytree(mar_menor_src, project_path)
