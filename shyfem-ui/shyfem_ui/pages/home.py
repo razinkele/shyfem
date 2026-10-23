@@ -861,19 +861,33 @@ def home_server(
             )
             return
 
-        # Create project directory
-        project_path = config.work_dir / name
+        # The typed name picks only the folder's name, never its location
+        # (H-03): server mode puts it in the owner's home, local in work_dir.
         try:
-            config.ensure_work_dir()
-            if project_path.exists():
-                ui.notification_show(
-                    f"Directory already exists: {project_path}", type="error", duration=6
-                )
-                return
+            project_path = config.new_project_path(name, user)
+        except ValueError as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
+        except OSError:
+            logger.exception("Could not check the tutorial project folder for %r", name)
+            ui.notification_show(
+                "Could not create a project with that name", type="error", duration=6
+            )
+            return
+
+        try:
+            project_path.parent.mkdir(parents=True, exist_ok=True)
+            # copytree refuses an existing destination, so a folder made since
+            # new_project_path checked is not written into.
             shutil.copytree(mar_menor_src, project_path)
-        except Exception as e:
+        except Exception:
+            # The OSError text names host paths; keep it in the log.
             logger.exception("Failed to copy tutorial files to %s", project_path)
-            ui.notification_show(f"Failed to copy tutorial files: {e}", type="error", duration=6)
+            ui.notification_show(
+                "Failed to copy the tutorial files (a folder with that name may " "already exist)",
+                type="error",
+                duration=6,
+            )
             return
 
         # Create database records
