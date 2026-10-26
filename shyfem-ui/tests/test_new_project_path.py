@@ -212,3 +212,55 @@ def test_tutorial_handler_keeps_oserror_inside_the_effect():
     assert guarded, "new_project_path must be called inside a try"
     caught = {ast.unparse(h.type) for t in guarded for h in t.handlers if h.type is not None}
     assert any("OSError" in c or c == "Exception" for c in caught), caught
+
+
+# H-08: the Create Project folder picker reuses an existing folder by design,
+# but '/' (Path('/').name == '') made the whole home the project's work_dir,
+# and sharing that project shared every other project in it.
+
+
+@pytest.mark.parametrize("name", ["/", "", "..", "../bob", "/tmp/x", "a/b", ".hidden"])
+def test_create_project_names_that_are_not_one_folder_are_refused(tmp_path, name):
+    cfg = _server_config(tmp_path)
+    with pytest.raises(ValueError):
+        cfg.new_project_path(name, ALICE, allow_existing=True)
+
+
+def test_an_existing_folder_may_be_reused_when_allowed(tmp_path):
+    cfg = _server_config(tmp_path)
+    existing = cfg.user_data_root / "alice" / "old_proj"
+    existing.mkdir(parents=True)
+    assert cfg.new_project_path("old_proj", ALICE, allow_existing=True) == existing.resolve()
+
+
+def test_reuse_never_accepts_a_link_or_a_file(tmp_path):
+    cfg = _server_config(tmp_path)
+    alice = cfg.user_data_root / "alice"
+    (alice / "inner").mkdir(parents=True)
+    (alice / "link").symlink_to(alice / "inner")
+    (alice / "afile").write_text("x")
+    for name in ("link", "afile"):
+        with pytest.raises(ValueError):
+            cfg.new_project_path(name, ALICE, allow_existing=True)
+
+
+def _fn(name):
+    tree = ast.parse(_HOME_PY.read_text())
+    return next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == name)
+
+
+def test_create_project_derives_its_server_folder_from_new_project_path():
+    fn = _fn("_create_project")
+    src = ast.unparse(fn)
+    assert "new_project_path(" in src and "allow_existing=True" in src
+    assert (
+        ".name" not in src.split("new_project_path(")[1].split(")")[0]
+    ), "pass the name as typed: taking .name turns '/' into '' and '../x' into 'x'"
+    guarded = [
+        t
+        for t in ast.walk(fn)
+        if isinstance(t, ast.Try) and any("new_project_path(" in ast.unparse(s) for s in t.body)
+    ]
+    assert guarded, "new_project_path must be called inside a try"
+    caught = {ast.unparse(h.type) for t in guarded for h in t.handlers if h.type is not None}
+    assert any("OSError" in c or c == "Exception" for c in caught), caught

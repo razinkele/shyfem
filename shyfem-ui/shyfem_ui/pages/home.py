@@ -747,25 +747,33 @@ def home_server(
             ui.notification_show(_denied, type="error", duration=6)
             return
 
-        # Validate and create directory. In server mode, root the project under
-        # the owner's home sandbox (user_data_root/{username}/<name>), deriving the
-        # folder from the chosen basename so a typed absolute/`..` path cannot
-        # escape into the shared work_dir or another user's data.
+        # Validate and create directory. In server mode the folder is one plain
+        # name in the owner's home sandbox, taken as typed: '/' must not become
+        # the whole home (H-08), nor '../x' quietly 'x'. A picked existing
+        # folder is reused.
         try:
             if config.deployment_mode == "server" and user is not None:
-                candidate = config.user_data_root / user["username"] / Path(work_dir).name
-                project_path = config.confine_path(candidate, user, for_write=True)
+                project_path = config.new_project_path(
+                    input.project_dir(), user, allow_existing=True
+                )
             else:
                 project_path = config.validate_save_path(work_dir)
         except ValueError as e:
             ui.notification_show(str(e), type="error", duration=6)
             return
+        except OSError:
+            logger.exception("Could not check the project folder %r", work_dir)
+            ui.notification_show(
+                "Could not create a project in that folder", type="error", duration=6
+            )
+            return
 
         try:
             project_path.mkdir(parents=True, exist_ok=True)
-        except Exception as e:
+        except Exception:
+            # The OSError text names host paths; keep it in the log.
             logger.exception("Failed to create project directory %s", project_path)
-            ui.notification_show(f"Failed to create directory: {e}", type="error", duration=6)
+            ui.notification_show("Failed to create the project folder", type="error", duration=6)
             return
 
         # Create project in database

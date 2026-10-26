@@ -162,6 +162,9 @@ class AuthService:
 
         Returns:
             Updated user dict, or None if not found.
+
+        Raises:
+            ValueError: If the change would leave no active admin (SEC-01).
         """
         allowed = {"display_name", "email", "role", "is_active"}
         session = self._session_factory()
@@ -169,9 +172,16 @@ class AuthService:
             user = session.query(User).filter_by(id=user_id).first()
             if user is None:
                 return None
+            was_active_admin = user.role == ROLE_ADMIN and user.is_active
             for key, value in kwargs.items():
                 if key in allowed:
                     setattr(user, key, value)
+            if was_active_admin and not (user.role == ROLE_ADMIN and user.is_active):
+                if self._other_active_admins(session, user_id) == 0:
+                    raise ValueError(
+                        "Cannot demote or deactivate the last active admin; "
+                        "make another user an admin first"
+                    )
             session.commit()
             return self._user_to_dict(user)
         except Exception:
@@ -200,10 +210,10 @@ class AuthService:
             user = session.query(User).filter_by(id=user_id).first()
             if user is None:
                 return False
-            # Prevent deleting the last admin
-            if user.role == ROLE_ADMIN:
-                admin_count = session.query(User).filter_by(role=ROLE_ADMIN).count()
-                if admin_count <= 1:
+            # Prevent deleting the last active admin (an inactive one cannot
+            # sign in, so it does not count).
+            if user.role == ROLE_ADMIN and user.is_active:
+                if self._other_active_admins(session, user_id) == 0:
                     raise ValueError("Cannot delete the last admin user")
             from shyfem_ui.models.project import Job, Project
             from shyfem_ui.models.workflow import Workflow
@@ -554,9 +564,23 @@ class AuthService:
         """
         session = self._session_factory()
         try:
-            admin = session.query(User).filter_by(role=ROLE_ADMIN).first()
+            admin = session.query(User).filter_by(role=ROLE_ADMIN, is_active=True).first()
             if admin is not None:
                 return self._user_to_dict(admin)
+            # No active admin, but the configured account exists (demoted or
+            # deactivated before the last-admin guard): restore it rather than
+            # fail every worker start on "Username already exists" (SEC-01).
+            # Its password is left as it is.
+            existing = session.query(User).filter_by(username=username).first()
+            if existing is not None:
+                logger.warning("No active admin: restoring %r to an active admin account", username)
+                existing.role = ROLE_ADMIN
+                existing.is_active = True
+                session.commit()
+                return self._user_to_dict(existing)
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()
 
@@ -571,6 +595,15 @@ class AuthService:
     # ------------------------------------------------------------------
     # Helper
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _other_active_admins(session, user_id: int) -> int:
+        """Active admins other than ``user_id``, seen inside ``session``."""
+        return (
+            session.query(User)
+            .filter(User.role == ROLE_ADMIN, User.is_active.is_(True), User.id != user_id)
+            .count()
+        )
 
     @staticmethod
     def _user_to_dict(user: User) -> dict:
