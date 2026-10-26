@@ -1151,11 +1151,18 @@ def _deduplicate_points(
         return xy, z
     extent = float(np.max(np.ptp(xy, axis=0)))
     tol = max(extent * rel_tol, np.finfo(float).tiny)
-    # Pairs closer than tol (a KD-tree, so two points either side of a
-    # rounding boundary are still caught); the later point of each is dropped.
-    drop = {j for i, j in cKDTree(xy).query_pairs(tol)}
-    keep = np.array([i for i in range(len(xy)) if i not in drop], dtype=int)
-    return xy[keep], z[keep]
+    # 1. One point per tol-sized cell (O(n log n), whatever the number of
+    #    copies of a point: a pair search alone is quadratic in that number).
+    keys = np.floor((xy - xy.min(axis=0)) / tol).astype(np.int64)
+    _, first = np.unique(keys, axis=0, return_index=True)
+    first.sort()  # preserve original order
+    # 2. Merge the pairs a cell boundary split. With one point per cell each
+    #    point has only a few neighbours within tol, so this stays O(n).
+    pairs = cKDTree(xy[first]).query_pairs(tol, output_type="ndarray")
+    keep = np.ones(len(first), dtype=bool)
+    keep[pairs[:, 1]] = False  # i < j: drop the later point of each pair
+    idx = first[keep]
+    return xy[idx], z[idx]
 
 
 def _rbf_interpolate(

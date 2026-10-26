@@ -51,3 +51,15 @@ def test_two_points_straddling_a_rounding_boundary_are_still_merged():
     xy = np.array([[21.0, 55.0], [21.5, 55.5], [21.25 - 1e-12, 55.25], [21.25 + 1e-12, 55.25]])
     out_xy, _ = _deduplicate_points(xy, np.zeros(4))
     assert len(out_xy) == 3
+
+
+def test_many_copies_of_one_point_stay_cheap():
+    """Security review: a pair search alone is quadratic in the number of
+    copies of a point (100k copies -> ~5e9 pairs). Must stay near-linear."""
+    import time
+
+    xy = np.vstack([np.tile([[21.0, 55.0]], (200_000, 1)), [[21.5, 55.5]]])
+    t = time.perf_counter()
+    out_xy, _ = _deduplicate_points(xy, np.zeros(len(xy)))
+    assert len(out_xy) == 2
+    assert time.perf_counter() - t < 5.0
