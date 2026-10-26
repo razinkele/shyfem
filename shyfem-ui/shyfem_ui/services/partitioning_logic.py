@@ -10,62 +10,83 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def parse_par_file(path: Path) -> list[int]:
-    """Parse a shyparts .par file and return the list of element IDs.
+def analyze_partitions(elem_grd: Path) -> tuple[dict, dict]:
+    """Partition stats and the element-to-partition map from shyparts' output.
 
-    Each non-empty line is expected to start with an integer element ID.
-    Malformed lines are silently skipped (consistent with the original
-    page-handler behavior).
-
-    Args:
-        path: Path to the .par file. If it does not exist, returns [].
+    shyparts writes ``<grd>.<np>.elem.grd``: the input grid with each
+    element's type set to its partition (1..np). It writes no ``.par``
+    files, which this used to look for (M-01).
 
     Returns:
-        List of int element IDs in file order.
+        (stats, partition_map): stats has num_partitions, partition_files and
+        elements_per_partition (partition 1 first); partition_map maps an
+        element id to its 0-based partition index.
     """
-    if not path.exists():
-        return []
-    ids: list[int] = []
-    with open(path) as f:
+    elem_grd = Path(elem_grd)
+    stats: dict = {"num_partitions": 0, "partition_files": [], "elements_per_partition": []}
+    pmap: dict[int, int] = {}
+    if not elem_grd.is_file():
+        return stats, pmap
+    counts: dict[int, int] = {}
+    with open(elem_grd) as f:
         for line in f:
-            line = line.strip()
-            if not line:
+            parts = line.split()
+            if len(parts) < 3 or parts[0] != "2":
                 continue
             try:
-                ids.append(int(line.split()[0]))
-            except (ValueError, IndexError):
+                elem_id, part = int(parts[1]), int(parts[2])
+            except ValueError:
                 continue
-    return ids
-
-
-def analyze_partitions(output_dir: Path, np_val: int) -> tuple[dict, dict]:
-    """Walk partition.NNNN.par files and build stats + element-to-partition map.
-
-    Args:
-        output_dir: Directory containing partition.NNNN.par files.
-        np_val: Number of partitions expected (loop bound).
-
-    Returns:
-        (stats, partition_map) where:
-        - stats: dict with keys num_partitions, partition_files (list[str]),
-          elements_per_partition (list[int])
-        - partition_map: dict mapping element_id -> partition_index
-    """
-    stats: dict = {
-        "num_partitions": np_val,
-        "partition_files": [],
-        "elements_per_partition": [],
-    }
-    pmap: dict[int, int] = {}
-    for i in range(np_val):
-        par_file = output_dir / f"partition.{i:04d}.par"
-        if par_file.exists():
-            stats["partition_files"].append(str(par_file))
-            ids = parse_par_file(par_file)
-            stats["elements_per_partition"].append(len(ids))
-            for elem_id in ids:
-                pmap[elem_id] = i
+            pmap[elem_id] = part - 1
+            counts[part] = counts.get(part, 0) + 1
+    if counts:
+        n = max(counts)
+        stats["num_partitions"] = n
+        stats["partition_files"] = [str(elem_grd)]
+        stats["elements_per_partition"] = [counts.get(k, 0) for k in range(1, n + 1)]
     return stats, pmap
+
+
+def stage_grid(grd_file: Path, output_dir: Path) -> tuple[Path, bool]:
+    """The grid shyparts should run on, inside ``output_dir``; (path, created).
+
+    shyparts writes ``<grd>.<np>.node.grd``/``.elem.grd`` next to its INPUT.
+    The input is only read-checked (a shared project, a bundled sample), so
+    it must never be partitioned in place: when it is not already in the
+    write-checked ``output_dir`` it is copied there, and the caller removes
+    the copy afterwards (``created`` is True).
+
+    Raises:
+        ValueError: ``output_dir`` already holds a different file of that name.
+    """
+    import filecmp
+    import shutil
+
+    grd_file, output_dir = Path(grd_file), Path(output_dir)
+    if grd_file.parent.resolve() == output_dir.resolve():
+        return grd_file, False
+    staged = output_dir / grd_file.name
+    if staged.exists():
+        if staged.is_file() and filecmp.cmp(staged, grd_file, shallow=False):
+            return staged, False
+        raise ValueError(
+            f"The output folder already has a different {grd_file.name}; "
+            "choose another output folder"
+        )
+    shutil.copy2(grd_file, staged)
+    return staged, True
+
+
+def collect_shyparts_outputs(grd_file: Path, output_dir: Path, np_val: int) -> list[str]:
+    """shyparts' output files in ``output_dir`` for the staged ``grd_file``.
+
+    ``<grd>.<np>.node.grd``, ``<grd>.<np>.elem.grd`` and
+    ``partition.<np>.txt``; only listed, never moved (see stage_grid).
+    """
+    grd_file, output_dir = Path(grd_file), Path(output_dir)
+    stem = grd_file.name[: -len(grd_file.suffix)] if grd_file.suffix else grd_file.name
+    names = [f"{stem}.{np_val}.node.grd", f"{stem}.{np_val}.elem.grd", f"partition.{np_val}.txt"]
+    return [str(output_dir / n) for n in names if (output_dir / n).is_file()]
 
 
 def compute_load_balance(elements: list[int]) -> dict:

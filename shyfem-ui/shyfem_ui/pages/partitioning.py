@@ -20,7 +20,9 @@ from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.parser_grd import GrdParser
 from shyfem_ui.services.partitioning_logic import (
     analyze_partitions,
+    collect_shyparts_outputs,
     compute_load_balance,
+    stage_grid,
     validate_partition_files,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -37,8 +39,7 @@ def partitioning_ui() -> ui.Tag:
         ui.layout_sidebar(
             ui.sidebar(
                 # Input file
-                ui.h5("Input Basin"),
-                ui.output_ui("bas_path_picker"),
+                ui.h5("Input Grid"),
                 ui.output_ui("grd_path_picker"),
                 ui.input_action_button(
                     "load_grid_btn",
@@ -59,11 +60,6 @@ def partitioning_ui() -> ui.Tag:
                 ui.div(
                     ui.tags.label("Partitioning Method", class_="form-label"),
                     ui.tags.div("METIS", class_="form-control-plaintext"),
-                ),
-                ui.input_checkbox(
-                    "weighted",
-                    "Use weighted partitioning",
-                    value=True,
                 ),
                 ui.output_ui("output_dir_picker"),
                 ui.hr(),
@@ -126,19 +122,6 @@ def partitioning_server(
         return proj, usr
 
     @render.ui
-    def bas_path_picker():
-        proj, usr = _ctx()
-        return project_file_select(
-            "bas_path",
-            "Basin File (.bas)",
-            (".bas",),
-            proj=proj,
-            user=usr,
-            config=config,
-            selected=default_project_file(proj, "bas"),
-        )
-
-    @render.ui
     def grd_path_picker():
         proj, usr = _ctx()
         return project_file_select(
@@ -160,7 +143,7 @@ def partitioning_server(
             proj=proj,
             user=usr,
             config=config,
-            default_label="— same directory as the basin file —",
+            default_label="— same directory as the grid file —",
         )
 
     # State
@@ -205,7 +188,7 @@ def partitioning_server(
         _usr = current_user() if current_user is not None else None
         logger.info(
             "User running shyparts on %r with %s partitions",
-            input.bas_path(),
+            input.grd_path(),
             input.num_partitions(),
         )
         _proj = active_project.get() if active_project is not None else None
@@ -216,20 +199,21 @@ def partitioning_server(
             ui.notification_show(_denied, type="error", duration=6)
             return
 
-        bas_path = input.bas_path()
-        if not bas_path:
-            log_content.set("Error: No basin file specified")
+        # shyparts partitions a grid: `shyparts -np N grd-file` (M-01).
+        grd_path = input.grd_path()
+        if not grd_path:
+            log_content.set("Error: No grid file specified")
             return
 
         try:
-            bas_file = config.confine_path(bas_path, _usr, must_exist=True)
+            grd_file = config.confine_path(grd_path, _usr, must_exist=True)
         except (ValueError, FileNotFoundError) as e:
-            logger.exception("Invalid basin file path for shyparts: %r", bas_path)
+            logger.exception("Invalid grid file path for shyparts: %r", grd_path)
             log_content.set(f"Error: {e}")
             return
 
         # Determine output directory
-        output_dir = input.output_dir() or str(bas_file.parent)
+        output_dir = input.output_dir() or str(grd_file.parent)
         try:
             output_path = config.confine_path(output_dir, _usr, for_write=True)
         except ValueError as e:
@@ -241,32 +225,38 @@ def partitioning_server(
         np_val = input.num_partitions()
 
         log_content.set(f"Running shyparts with {np_val} partitions...\n")
-        log_content.set(log_content.get() + f"Input: {bas_file}\n")
+        log_content.set(log_content.get() + f"Input: {grd_file}\n")
         log_content.set(log_content.get() + f"Output: {output_path}\n\n")
 
         def update_log(line):
             current = log_content.get()
             log_content.set(current + line + "\n")
 
-        weighted = input.weighted()
-        options = ["-weighted"] if weighted else None
+        # The input is only read-checked; shyparts writes next to its input,
+        # so it runs on a copy inside the write-checked output folder.
+        try:
+            staged, created = stage_grid(grd_file, output_path)
+        except (ValueError, OSError) as e:
+            log_content.set(log_content.get() + f"Error: {e}\n")
+            return
 
         try:
             result = await wrapper.run_shyparts(
-                bas_file,
+                staged,
                 output_path,
                 np=np_val,
-                options=options,
                 output_callback=update_log,
             )
 
             if result.success:
+                files = collect_shyparts_outputs(staged, output_path, np_val)
                 log_content.set(
                     log_content.get() + f"\n*** shyparts completed successfully ***\n"
-                    f"Output files: {', '.join(result.output_files)}\n"
+                    f"Output files: {', '.join(files)}\n"
                 )
-                partition_files.set(result.output_files)
-                _analyze_partitions(output_path, np_val)
+                partition_files.set(files)
+                stem = staged.name[: -len(staged.suffix)]
+                _analyze_partitions(output_path / f"{stem}.{np_val}.elem.grd")
             else:
                 log_content.set(
                     log_content.get() + f"\n*** shyparts failed (code {result.return_code}) ***\n"
@@ -274,12 +264,15 @@ def partitioning_server(
                 )
 
         except Exception as e:
-            logger.exception("Unexpected error running shyparts on %s", bas_path)
+            logger.exception("Unexpected error running shyparts on %s", grd_path)
             log_content.set(log_content.get() + f"\nError: {e}\n")
+        finally:
+            if created:
+                staged.unlink(missing_ok=True)
 
-    def _analyze_partitions(output_dir: Path, np_val: int):
-        """Analyze partition files and update reactive state."""
-        stats, pmap = analyze_partitions(output_dir, np_val)
+    def _analyze_partitions(elem_grd: Path):
+        """Read shyparts' <grd>.<np>.elem.grd into the stats and the map."""
+        stats, pmap = analyze_partitions(elem_grd)
         partition_stats_data.set(stats)
         if pmap:
             partition_map_data.set(pmap)

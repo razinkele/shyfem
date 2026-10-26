@@ -1,74 +1,11 @@
 """Tests for pure helpers extracted from pages/partitioning.py."""
+
 import pytest
 
 from shyfem_ui.services.partitioning_logic import (
-    analyze_partitions,
     compute_load_balance,
-    parse_par_file,
     validate_partition_files,
 )
-
-
-class TestParseParFile:
-
-    def test_returns_empty_for_missing_file(self, tmp_path):
-        assert parse_par_file(tmp_path / "missing.par") == []
-
-    def test_parses_one_id_per_line(self, tmp_path):
-        f = tmp_path / "p.par"
-        f.write_text("1\n42\n7\n")
-        assert parse_par_file(f) == [1, 42, 7]
-
-    def test_takes_first_token_per_line(self, tmp_path):
-        f = tmp_path / "p.par"
-        f.write_text("1 some_metadata\n2  more\n3\n")
-        assert parse_par_file(f) == [1, 2, 3]
-
-    def test_skips_blank_lines(self, tmp_path):
-        f = tmp_path / "p.par"
-        f.write_text("1\n\n\n2\n")
-        assert parse_par_file(f) == [1, 2]
-
-    def test_skips_malformed_lines(self, tmp_path):
-        f = tmp_path / "p.par"
-        f.write_text("1\nfoo\n2\n# comment\n3\n")
-        assert parse_par_file(f) == [1, 2, 3]
-
-
-class TestAnalyzePartitions:
-
-    def test_happy_path_4_parts(self, tmp_path):
-        # Create 4 partition files
-        # Partition i gets element IDs: 10*i .. 10*i+4  (5 elements each)
-        # P0: [0..4], P1: [10..14], P2: [20..24], P3: [30..34]
-        for i in range(4):
-            (tmp_path / f"partition.{i:04d}.par").write_text(
-                "\n".join(str(j) for j in range(10 * i, 10 * i + 5)) + "\n"
-            )
-        stats, pmap = analyze_partitions(tmp_path, 4)
-        assert stats["num_partitions"] == 4
-        assert len(stats["partition_files"]) == 4
-        assert stats["elements_per_partition"] == [5, 5, 5, 5]
-        assert pmap[0] == 0
-        assert pmap[14] == 1
-        assert pmap[34] == 3
-
-    def test_missing_files_skipped(self, tmp_path):
-        # Only 2 of 4 files exist
-        (tmp_path / "partition.0000.par").write_text("1\n2\n")
-        (tmp_path / "partition.0002.par").write_text("3\n4\n")
-        stats, pmap = analyze_partitions(tmp_path, 4)
-        assert stats["num_partitions"] == 4
-        assert len(stats["partition_files"]) == 2
-        assert stats["elements_per_partition"] == [2, 2]
-        assert pmap == {1: 0, 2: 0, 3: 2, 4: 2}
-
-    def test_empty_dir_returns_empty_stats(self, tmp_path):
-        stats, pmap = analyze_partitions(tmp_path, 4)
-        assert stats["num_partitions"] == 4
-        assert stats["partition_files"] == []
-        assert stats["elements_per_partition"] == []
-        assert pmap == {}
 
 
 class TestComputeLoadBalance:
