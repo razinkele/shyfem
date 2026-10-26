@@ -660,15 +660,19 @@ class Config(BaseSettings):
 
         return resolved
 
-    def new_project_path(self, name: str, user: dict | None) -> Path:
-        """Return the folder for a new project called ``name`` (H-03).
+    def new_project_path(
+        self, name: str, user: dict | None, *, allow_existing: bool = False
+    ) -> Path:
+        """Return the folder for a new project called ``name`` (H-03, H-08).
 
         ``name`` is typed by the user, so it must be one plain folder name:
         no separator, no leading dot (which also refuses ``.`` and ``..``),
         no NUL, at most 255 bytes. It is refused rather than rewritten, so
         ``'../x'`` never quietly becomes a legal name. Anything already
         there under that name, a dangling symlink included, is refused
-        rather than followed. Server mode roots the folder in the owner's
+        rather than followed; with ``allow_existing`` an existing real
+        folder is reused (the Create Project picker offers them), never a
+        symlink or a file. Server mode roots the folder in the owner's
         home and confines it there; local mode roots it in ``work_dir``.
         Messages never contain a host path.
 
@@ -700,7 +704,10 @@ class Config(BaseSettings):
         else:
             candidate = self.work_dir / name
         if os.path.lexists(candidate):
-            raise ValueError(f"A file or folder named {name!r} already exists")
+            if not allow_existing:
+                raise ValueError(f"A file or folder named {name!r} already exists")
+            if os.path.islink(candidate) or not os.path.isdir(candidate):
+                raise ValueError(f"{name!r} is not a folder that can hold a project")
         try:
             if self.deployment_mode == "server":
                 return self.confine_path(candidate, user, for_write=True)

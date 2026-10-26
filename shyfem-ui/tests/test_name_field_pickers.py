@@ -31,8 +31,9 @@ class TestHomeProjectFolder:
         create = src[src.index("def _create_project(") :]
         norm = create.index("if not Path(work_dir).is_absolute():")
         assert "work_dir = str(Path(config.work_dir) / work_dir)" in create[norm : norm + 200]
-        assert norm < create.index("config.confine_path(candidate")
         assert norm < create.index("config.validate_save_path(work_dir)")
+        # Server mode takes the name as typed (H-08), not the rooted path.
+        assert "new_project_path(\n                    input.project_dir()," in create
 
 
 class TestFilesUploadSubdir:
