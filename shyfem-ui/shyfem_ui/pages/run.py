@@ -492,7 +492,14 @@ def run_server(
         # follow-up) -- sharing it means the dropdown and the allowlist can
         # never silently drift apart.
         choices: dict[str, str] = {"": "Fresh start (no restart)"}
-        choices.update(compute_restart_choices(all_jobs_data.get()))
+        choices.update(restart_choices.get())
+        # A rebuilt select would fall back to its first option; keep the pick.
+        with reactive.isolate():
+            try:
+                current = input.restart_from()
+            except Exception:
+                current = ""
+        selected = current if current in choices else ""
 
         return ui.div(
             ui.hr(),
@@ -501,6 +508,7 @@ def run_server(
                 "restart_from",
                 "Continue from job",
                 choices=choices,
+                selected=selected,
             ),
             ui.output_ui("restart_info"),
         )
@@ -536,6 +544,10 @@ def run_server(
     # State
     active_jobs_data = reactive.value([])
     all_jobs_data = reactive.value([])
+    # The restart choices alone, set only when they change, so the restart
+    # select is not rebuilt on every progress update (J-07).
+    restart_choices: reactive.Value[dict[str, str]] = reactive.value({})
+    _restart_key: list[tuple | None] = [None]
     selected_job_id = reactive.value(None)
     selected_job = reactive.value(None)
     log_content = reactive.value("")
@@ -674,9 +686,22 @@ def run_server(
             prev_all = all_jobs_data.get()
             prev_active = active_jobs_data.get()
             prev_selected = selected_job.get()
+            prev_restart = restart_choices.get()
 
         if jobs != prev_all:
             all_jobs_data.set(jobs)
+        # compute_restart_choices lists each job's folder, so only redo it
+        # when the set of finished shyfem runs changes, not on every poll.
+        key = tuple(
+            (j.id, j.working_dir)
+            for j in jobs
+            if j.tool_name == "shyfem" and j.status == JobStatus.COMPLETED
+        )
+        if key != _restart_key[0]:
+            _restart_key[0] = key
+            restart = compute_restart_choices(jobs)
+            if restart != prev_restart:
+                restart_choices.set(restart)
         active = [j for j in jobs if j.is_active]
         if active != prev_active:
             active_jobs_data.set(active)

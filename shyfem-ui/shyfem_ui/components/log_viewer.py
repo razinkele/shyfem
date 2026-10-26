@@ -225,12 +225,16 @@ def log_viewer_server(
         if not lines:
             return ui.pre(
                 "No log output available",
-                style="color: #808080; margin: 0;",
+                style="color: #808080; background: transparent; margin: 0;",
             )
         formatted = [format_log_line(line) for line in lines]
         return ui.pre(
             ui.HTML("<br>".join(formatted)),
-            style="margin: 0; white-space: pre-wrap; word-wrap: break-word;",
+            # Bootstrap colours <pre> with the page's emphasis colour (black in
+            # the light theme) and tints its background; inherit the viewer's
+            # light-on-dark instead, or plain lines are black on #1e1e1e.
+            style="color: inherit; background: transparent; margin: 0; "
+            "white-space: pre-wrap; word-wrap: break-word;",
         )
 
     @render.ui
@@ -252,7 +256,9 @@ def log_viewer_server(
         _, stderr = _split_streams(content)
         lines = _filter_and_tail(stderr)
         if not lines and not stderr:
-            return ui.pre("No stderr output", style="color: #808080; margin: 0;")
+            return ui.pre(
+                "No stderr output", style="color: #808080; background: transparent; margin: 0;"
+            )
         return _render_lines(lines)
 
     @render.ui
