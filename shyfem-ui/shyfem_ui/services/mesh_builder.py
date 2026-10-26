@@ -1136,17 +1136,26 @@ def _idw_interpolate(
 
 
 def _deduplicate_points(
-    xy: np.ndarray, z: np.ndarray, decimals: int = 2
+    xy: np.ndarray, z: np.ndarray, rel_tol: float = 1e-7
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Remove near-duplicate XY points by rounding, keeping the first occurrence.
+    """Drop near-identical XY points, keeping the first occurrence.
 
-    Dense isobath data often has many points within centimetres of each other,
-    which causes singular-matrix errors in RBF/CloughTocher.
+    Dense isobath data can repeat a point (or put two within millimetres),
+    which makes RBF / Clough-Tocher singular. "Near-identical" is relative to
+    the data's extent (``rel_tol`` of it: millimetres for a lagoon in degrees
+    or in metres). It used to round to 2 decimals, which for the degree
+    coordinates Step 4 always uses is a ~1 km lattice that thinned a dense
+    isobath to a handful of points (M-04).
     """
-    rounded = np.round(xy, decimals=decimals)
-    _, unique_idx = np.unique(rounded, axis=0, return_index=True)
-    unique_idx.sort()  # preserve original order
-    return xy[unique_idx], z[unique_idx]
+    if len(xy) == 0:
+        return xy, z
+    extent = float(np.max(np.ptp(xy, axis=0)))
+    tol = max(extent * rel_tol, np.finfo(float).tiny)
+    # Pairs closer than tol (a KD-tree, so two points either side of a
+    # rounding boundary are still caught); the later point of each is dropped.
+    drop = {j for i, j in cKDTree(xy).query_pairs(tol)}
+    keep = np.array([i for i in range(len(xy)) if i not in drop], dtype=int)
+    return xy[keep], z[keep]
 
 
 def _rbf_interpolate(
