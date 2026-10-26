@@ -113,7 +113,9 @@ class ShyfemWrapper:
         "shybas": [".grd", ".xyz", ".png"],
         "shyparts": [".par"],
         "shyfem": [".shy", ".ext", ".flx", ".ts"],
-        "shyelab": [".nc", ".txt", ".dat"],
+        # out.shy/out.nc/out.fem (-out, -outformat), <var>.shy (-split),
+        # <var>.0d.0 (-averbas), <var>.2d.<n>/.3d.<n> per node (-node).
+        "shyelab": [".nc", ".txt", ".dat", ".shy", ".fem", ".0d.0", ".2d.[0-9]*", ".3d.[0-9]*"],
         "shyplot": [".png", ".pdf", ".eps"],
     }
 
@@ -875,7 +877,12 @@ class ShyfemWrapper:
             options: Additional options like ["-split", "-tmin", "0", "-tmax", "100"]
         """
         args = list(options) if options else []  # copy: never mutate caller's list
-        args.append(str(shy_file))
+        # shyelab truncates a long file name ("file not existing"), so pass
+        # the input relative to its working folder when that is shorter --
+        # usually just the name, since outputs go next to the input.
+        absolute = str(Path(shy_file).resolve())
+        relative = os.path.relpath(absolute, Path(working_dir).resolve())
+        args.append(relative if len(relative) < len(absolute) else absolute)
         return await self.run_command(
             "shyelab", args, working_dir, progress_callback, output_callback
         )

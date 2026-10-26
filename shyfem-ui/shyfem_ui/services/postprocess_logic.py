@@ -167,6 +167,9 @@ def discover_shy_files(directory: str | Path) -> list[dict]:
     return result
 
 
+_NODE_LIST = re.compile(r"^\d+(,\d+)*$")
+
+
 def build_shyelab_options(
     *,
     operation: str,
@@ -174,42 +177,63 @@ def build_shyelab_options(
     custom_options: str = "",
     tmin: str | None = None,
     tmax: str | None = None,
-    selected_vars: list[str] | None = None,
-    scanned_vars_count: int = 0,
-    selected_layer: str = "all",
+    nodes: str = "",
 ) -> list[str]:
-    """Build shyelab CLI option list from page-input values.
+    """Build the shyelab CLI option list from page-input values.
+
+    Only real shyelab options are produced (V-02): there is no per-variable
+    or per-layer selection in shyelab, so none is built. "extract_ts" uses
+    ``-node`` and needs ``nodes``, a comma-separated list of external node
+    numbers.
 
     Args:
-        operation: One of "avg", "custom", etc. — the chosen operation key.
-        op_flags: The flags list for the operation (from SHYELAB_OPERATIONS[op]["flags"]).
-        custom_options: Free-text custom options (used only when operation == "custom").
-        tmin, tmax: Optional time-range strings (passed through verbatim if non-empty).
-        selected_vars: Variable filter list. If a strict subset of all scanned variables,
-            each is added as ``-<var>``. Otherwise the filter is omitted (interpreted as
-            "all").
-        scanned_vars_count: Total number of scanned variables; used to detect "all
-            selected".
-        selected_layer: Layer selection ("all" or a specific layer string).
+        operation: The chosen operation key (a SHYELAB_OPERATIONS key).
+        op_flags: That operation's flags.
+        custom_options: Free-text options (used only when operation == "custom").
+        tmin, tmax: Optional time-range strings, passed through verbatim.
+        nodes: External node numbers for "extract_ts", e.g. "1823,1657".
 
-    Returns:
-        List of CLI option strings ready to hand to shyelab.
+    Raises:
+        ValueError: "extract_ts" without a valid node list.
     """
     if operation == "custom":
         return custom_options.split() if custom_options else []
 
     options = list(op_flags)
+    if operation == "extract_ts":
+        node_list = (nodes or "").replace(" ", "")
+        if not _NODE_LIST.match(node_list):
+            raise ValueError(
+                "Extract Time Series needs node numbers, e.g. 1823 or 1823,1657 "
+                "(the grid's external node numbers)"
+            )
+        options = ["-node", node_list]
 
     if tmin:
         options.extend(["-tmin", tmin])
     if tmax:
         options.extend(["-tmax", tmax])
-
-    if selected_vars and 0 < len(selected_vars) < scanned_vars_count:
-        for var in selected_vars:
-            options.append(f"-{var}")
-
-    if selected_layer != "all":
-        options.extend(["-layer", selected_layer])
-
     return options
+
+
+def name_outputs(files: list[str], input_path: str | Path, operation: str) -> list[str]:
+    """Give shyelab's ``out.<ext>`` results the input's and the operation's name.
+
+    shyelab writes every -out / -outformat result as ``out.shy``,
+    ``out.nc`` or ``out.fem``, so successive operations, or one operation
+    over several files, overwrote each other. ``out.shy`` from
+    ``curonian29.ts.shy`` with "temporal_avg" becomes
+    ``curonian29.ts.temporal_avg.shy``. Other files keep their names.
+    """
+    stem = Path(input_path).name
+    stem = stem[: -len(Path(stem).suffix)] if Path(stem).suffix else stem
+    named = []
+    for f in files:
+        p = Path(f)
+        if p.stem == "out" and p.exists():
+            target = p.with_name(f"{stem}.{operation}{p.suffix}")
+            p.replace(target)
+            named.append(str(target))
+        else:
+            named.append(f)
+    return named

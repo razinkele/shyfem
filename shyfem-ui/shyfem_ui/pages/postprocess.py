@@ -25,6 +25,7 @@ from shyfem_ui.services.postprocess_logic import (
     build_shyelab_options,
     discover_shy_files,
     format_size,
+    name_outputs,
     parse_shyelab_info,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -33,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 # Shyelab operation modes and their CLI flags
 SHYELAB_OPERATIONS = {
+    # Real shyelab options only (elabutil.f90 clo_add_option; `shyelab -h`).
+    # -aver/-min/-max/-2d write a file only with -out, always named out.shy;
+    # name_outputs() renames it after the input and the operation.
     "info": {
         "label": "File Info",
         "flags": ["-info"],
@@ -40,8 +44,8 @@ SHYELAB_OPERATIONS = {
     },
     "extract_ts": {
         "label": "Extract Time Series",
-        "flags": ["-ts", "-split"],
-        "description": "Extract time series at extra nodes as separate files",
+        "flags": ["-node"],
+        "description": "Time series at the given nodes (one text file per variable and node)",
     },
     "extract_nc": {
         "label": "Convert to NetCDF",
@@ -54,24 +58,29 @@ SHYELAB_OPERATIONS = {
         "description": "Split output into separate files per variable",
     },
     "spatial_avg": {
-        "label": "Spatial Average",
-        "flags": ["-aver"],
-        "description": "Compute spatial averages over the domain",
+        "label": "Basin Average",
+        "flags": ["-averbas"],
+        "description": "Average over the whole basin: one time series per variable",
     },
     "temporal_avg": {
         "label": "Time Average",
-        "flags": ["-taver"],
-        "description": "Compute time-averaged fields",
+        "flags": ["-aver", "-out"],
+        "description": "Average over all records at each node",
     },
-    "minmax": {
-        "label": "Min/Max",
-        "flags": ["-minmax"],
-        "description": "Compute min/max over time for each node",
+    "time_min": {
+        "label": "Minimum over Time",
+        "flags": ["-min", "-out"],
+        "description": "Minimum over all records at each node",
+    },
+    "time_max": {
+        "label": "Maximum over Time",
+        "flags": ["-max", "-out"],
+        "description": "Maximum over all records at each node",
     },
     "residual": {
         "label": "Residual Currents",
-        "flags": ["-res"],
-        "description": "Extract residual (time-averaged) current fields",
+        "flags": ["-aver", "-out"],
+        "description": "Time-averaged currents: run on a .hydro.shy file",
     },
     "custom": {
         "label": "Custom Options",
@@ -89,8 +98,8 @@ PRESETS = {
     },
     "full_analysis": {
         "name": "Full Analysis",
-        "description": "Info, split by variable, time average, min/max",
-        "operations": ["info", "split_vars", "temporal_avg", "minmax"],
+        "description": "Info, split by variable, time average, min and max over time",
+        "operations": ["info", "split_vars", "temporal_avg", "time_min", "time_max"],
     },
     "netcdf_split": {
         "name": "NetCDF + Split",
@@ -132,8 +141,11 @@ def postprocess_ui() -> ui.Tag:
                 ui.hr(),
                 # Variable/layer selection (populated after scan)
                 ui.h5("Filters"),
-                ui.output_ui("variable_selector"),
-                ui.output_ui("layer_selector"),
+                ui.input_text(
+                    "ts_nodes",
+                    "Nodes (Extract Time Series)",
+                    placeholder="e.g. 1823,1657 (external node numbers)",
+                ),
                 # Time range
                 ui.input_text("tmin", "Start Time", placeholder="0 or 2020-01-01"),
                 ui.input_text("tmax", "End Time", placeholder="86400 or 2020-01-02"),
@@ -375,32 +387,6 @@ def postprocess_server(
         )
 
     @render.ui
-    def variable_selector():
-        variables = scanned_variables.get()
-        if not variables:
-            return None
-        choices = {v: v for v in variables}
-        return ui.input_checkbox_group(
-            "selected_vars",
-            "Variables",
-            choices=choices,
-            selected=list(choices.keys()),
-        )
-
-    @render.ui
-    def layer_selector():
-        layers = scanned_layers.get()
-        if not layers:
-            return None
-        choices = {str(i): f"Layer {i}: {d}" for i, d in enumerate(layers)}
-        return ui.input_select(
-            "selected_layer",
-            "Layer",
-            choices={"all": "All layers", **choices},
-            selected="all",
-        )
-
-    @render.ui
     def preset_buttons():
         return ui.div(
             *[
@@ -475,30 +461,17 @@ def postprocess_server(
     def _build_options() -> list[str]:
         """Build shyelab CLI options from current UI state."""
         op = input.operation()
-        op_info = SHYELAB_OPERATIONS.get(op, {})
-        custom = input.custom_options() if op == "custom" else ""
+        return _options_for(op, input.custom_options() if op == "custom" else "")
 
-        try:
-            sel_vars = list(input.selected_vars()) if input.selected_vars() else None
-        except Exception:
-            logger.debug("Variable selection input unavailable")
-            sel_vars = None
-
-        try:
-            layer = input.selected_layer()
-        except Exception:
-            logger.debug("Layer selection input unavailable")
-            layer = "all"
-
+    def _options_for(op: str, custom: str = "") -> list[str]:
+        """shyelab options for operation ``op`` (ValueError: missing nodes)."""
         return build_shyelab_options(
             operation=op,
-            op_flags=op_info.get("flags", []),
+            op_flags=SHYELAB_OPERATIONS.get(op, {}).get("flags", []),
             custom_options=custom,
             tmin=input.tmin(),
             tmax=input.tmax(),
-            selected_vars=sel_vars,
-            scanned_vars_count=len(scanned_variables.get()),
-            selected_layer=layer,
+            nodes=input.ts_nodes(),
         )
 
     @reactive.effect
@@ -532,7 +505,11 @@ def postprocess_server(
             return
         output_path.mkdir(parents=True, exist_ok=True)
 
-        options = _build_options()
+        try:
+            options = _build_options()
+        except ValueError as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
 
         log_content.set(f"Running shyelab on {path.name}...\n" f"Options: {' '.join(options)}\n\n")
 
@@ -542,6 +519,7 @@ def postprocess_server(
                 output_path,
                 options,
             )
+            result.output_files = name_outputs(result.output_files, path, input.operation())
 
             stdout_section = f"=== STDOUT ===\n{result.stdout}" if result.stdout else ""
             stderr_section = f"\n\n=== STDERR ===\n{result.stderr}" if result.stderr else ""
@@ -623,7 +601,11 @@ def postprocess_server(
             ui.notification_show("No batch files specified", type="warning")
             return
 
-        options = _build_options()
+        try:
+            options = _build_options()
+        except ValueError as e:
+            ui.notification_show(str(e), type="error", duration=6)
+            return
         results = []
 
         log_content.set(f"Batch processing {len(paths)} files...\n\n")
@@ -660,6 +642,8 @@ def postprocess_server(
 
             try:
                 result = await wrapper.run_shyelab(path, output_path, options)
+                # Several inputs into one folder: each out.* gets its input's name.
+                result.output_files = name_outputs(result.output_files, path, input.operation())
 
                 results.append(
                     {
@@ -825,6 +809,7 @@ def postprocess_server(
                     output_path,
                     ["-outformat", "nc"],
                 )
+                result.output_files = name_outputs(result.output_files, path, "extract_nc")
 
                 results.append(
                     {
@@ -1170,14 +1155,27 @@ def _register_preset(
         all_output = []
         for op_key in ops:
             op = SHYELAB_OPERATIONS.get(op_key, {})
-            flags = list(op.get("flags", []))
 
             current = log_content.get()
             log_content.set(current + f"--- {op.get('label', op_key)} ---\n")
 
             try:
+                flags = build_shyelab_options(
+                    operation=op_key,
+                    op_flags=op.get("flags", []),
+                    tmin=input.tmin(),
+                    tmax=input.tmax(),
+                    nodes=input.ts_nodes(),
+                )
+            except ValueError as e:
+                log_content.set(log_content.get() + f"  Skipped: {e}\n")
+                continue
+
+            try:
                 result = await wrapper.run_shyelab(path, output_path, flags)
-                all_output.extend(result.output_files)
+                # Each step's out.shy gets its own name instead of the next
+                # step overwriting it.
+                all_output.extend(name_outputs(result.output_files, path, op_key))
 
                 status = "OK" if result.success else f"FAILED (code {result.return_code})"
                 current = log_content.get()
