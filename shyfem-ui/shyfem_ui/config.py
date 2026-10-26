@@ -576,7 +576,7 @@ class Config(BaseSettings):
         # module load time, so a top-level import here would be circular.
         # By the time confine_path() actually runs, this module is fully
         # loaded, so the import below is safe.
-        from shyfem_ui.models.user import validate_username
+        from shyfem_ui.models.user import ROLE_ADMIN, validate_username
 
         username = user.get("username") if isinstance(user, dict) else None
         if not isinstance(username, str):
@@ -596,6 +596,12 @@ class Config(BaseSettings):
             # plus the admin-declared analysis roots (box-model run outputs).
             allowed_roots += [self.testcases_dir.resolve(), self.bin_dir.resolve()]
             allowed_roots += self.resolved_analysis_roots()
+            # An admin's Dashboard lists every project, so an admin may READ
+            # every project folder: both project-storage roots, never beyond
+            # them. ``role`` is re-read from the DB on every current_user()
+            # call. Writes stay home-only.
+            if user.get("role") == ROLE_ADMIN:
+                allowed_roots += [self.user_data_root.resolve(), self.work_dir.resolve()]
 
         resolved = Path(path).expanduser().resolve()
         if resolved.exists():

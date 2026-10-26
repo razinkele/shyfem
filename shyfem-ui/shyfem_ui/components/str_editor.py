@@ -249,6 +249,22 @@ def str_editor_server(
             validation_errors.set([_denied])
             return
 
+        # Load only read-checked the path, and the gate above is the ACTIVE
+        # project's role. A file readable through a viewer grant, or through
+        # an admin's read reach, must not become writable here: writes go
+        # only into the user's own home, as on Save As and the physics Save.
+        from shyfem_ui.config import get_config
+
+        try:
+            path = get_config().confine_path(path, _usr, for_write=True)
+        except (ValueError, OSError) as e:
+            # The message names host paths; keep it in the log.
+            logger.warning("Inline STR save refused for %s: %s", path, e)
+            validation_errors.set(
+                ["This file is outside your home folder and cannot be saved here; use Save As."]
+            )
+            return
+
         # content, not input.editor_content: in Form view there is no
         # textarea, so the input still holds the text from before an Apply.
         text = content.get()
