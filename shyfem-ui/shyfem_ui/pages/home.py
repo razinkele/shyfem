@@ -41,21 +41,19 @@ def _safe_filename(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_ " else "_" for c in name).strip()
 
 
-def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
+def get_visible_projects(db, user_id: int, role: str, limit: int | None = None) -> list:
     """Return projects visible to a user based on ownership and permissions.
 
     Admins see all projects. Regular users see their own projects
-    plus projects shared with them.
+    plus projects shared with them. No limit by default: the Dashboard is
+    the only place a project can be opened, so a project it leaves out
+    cannot be opened at all (H-01).
     """
     if role == ROLE_ADMIN:
-        return (
-            db.query(Project)
-            .order_by(Project.updated_at.desc(), Project.id.desc())
-            .limit(limit)
-            .all()
-        )
+        q = db.query(Project).order_by(Project.updated_at.desc(), Project.id.desc())
+        return (q.limit(limit) if limit else q).all()
 
-    return (
+    q = (
         db.query(Project)
         .filter(
             or_(
@@ -68,9 +66,8 @@ def get_visible_projects(db, user_id: int, role: str, limit: int = 10) -> list:
             )
         )
         .order_by(Project.updated_at.desc(), Project.id.desc())
-        .limit(limit)
-        .all()
     )
+    return (q.limit(limit) if limit else q).all()
 
 
 def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
@@ -87,7 +84,7 @@ def _dashboard_projects(db, user: dict | None, is_server_mode: bool) -> list:
         return []
     if user and user.get("role") != ROLE_ADMIN:
         return get_visible_projects(db, user["id"], user["role"])
-    return db.query(Project).order_by(Project.updated_at.desc(), Project.id.desc()).limit(10).all()
+    return db.query(Project).order_by(Project.updated_at.desc(), Project.id.desc()).all()
 
 
 def _should_show_share_button(project: dict, user: dict | None) -> bool:
