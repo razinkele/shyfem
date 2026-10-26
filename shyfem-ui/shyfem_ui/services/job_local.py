@@ -1,6 +1,7 @@
 """Local multiprocessing job queue implementation."""
 
 import asyncio
+import dataclasses
 import logging
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -38,6 +39,20 @@ def write_output_line(stdout_fh, line: str) -> None:
     if stdout_fh:
         stdout_fh.write(line + "\n")
         stdout_fh.flush()
+
+
+def _snapshot(job: "JobInfo") -> "JobInfo":
+    """A copy of ``job`` for callers (R-04).
+
+    The runner updates the queue's own ``JobInfo`` in place. Handing that
+    object out made every later read return the same instance, so the Run
+    page's compare-before-set compared a job with itself and never showed a
+    status or progress change. Callers only read jobs; the copy owns its
+    lists and metadata, so a later in-place change cannot reach it.
+    """
+    return dataclasses.replace(
+        job, args=list(job.args), output_files=list(job.output_files), metadata=dict(job.metadata)
+    )
 
 
 def load_job_info(job_id: str) -> "JobInfo | None":
@@ -726,9 +741,10 @@ class LocalJobQueue(JobQueue):
         return True
 
     async def get_status(self, job_id: str) -> JobInfo | None:
-        """Get current status of a job."""
+        """Get current status of a job (a snapshot; see :func:`_snapshot`)."""
         await self._ensure_history_loaded()
-        return self._jobs.get(job_id)
+        job = self._jobs.get(job_id)
+        return _snapshot(job) if job is not None else None
 
     async def list_jobs(
         self,
@@ -761,7 +777,7 @@ class LocalJobQueue(JobQueue):
         # Sort by creation time (newest first)
         jobs.sort(key=lambda j: j.created_at, reverse=True)
 
-        return jobs[:limit]
+        return [_snapshot(j) for j in jobs[:limit]]
 
     async def get_output(self, job_id: str, stream: str = "stdout", tail: int = 100) -> str:
         """Get job output."""

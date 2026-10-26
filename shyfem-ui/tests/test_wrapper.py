@@ -125,7 +125,7 @@ class TestShyfemWrapper:
 
     def test_parse_progress_shyfem(self, wrapper):
         """Test parsing progress from shyfem output."""
-        line = "time = 1000.0 of 10000.0"
+        line = " 1993-01-01::23:20:00   84000.00   300   280 /   2800    10.000 %"
         progress = wrapper._parse_progress("shyfem", line)
 
         assert progress == pytest.approx(0.1)
@@ -286,12 +286,11 @@ class TestShyfemWrapperExtended:
 
     def test_parse_progress_shyfem_various_formats(self, wrapper):
         """Test shyfem progress parsing with different output formats."""
-        # Standard format
-        assert wrapper._parse_progress("shyfem", "time = 5000.0 of 10000.0") == pytest.approx(0.5)
-        # Full progress
-        assert wrapper._parse_progress("shyfem", "time = 10000.0 of 10000.0") == pytest.approx(1.0)
-        # Start
-        assert wrapper._parse_progress("shyfem", "time = 0.0 of 10000.0") == pytest.approx(0.0)
+        # The real per-step line: "<date> <seconds> <dt> <it> / <nits> <pct> %"
+        step = " 2020-01-01::00:00:00   {s:.2f}   300   {i} /   100   {p:.3f} %"
+        assert wrapper._parse_progress("shyfem", step.format(s=15000, i=50, p=50)) == 0.5
+        assert wrapper._parse_progress("shyfem", step.format(s=30000, i=100, p=100)) == 1.0
+        assert wrapper._parse_progress("shyfem", step.format(s=0, i=0, p=0)) == 0.0
 
     def test_parse_progress_shyelab_various(self, wrapper):
         """Test shyelab progress with various record counts."""

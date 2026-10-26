@@ -218,7 +218,7 @@ class TestUnexpectedErrorKillsProcessGroup:
         under Celery) must not fail -- or orphan -- a long simulation."""
         exe = wrapper.bin_dir / "shyfem"
         exe.write_text(
-            '#!/bin/bash\nfor i in 1 2 3; do echo "time = $i of 3"; done\n'
+            '#!/bin/bash\nfor i in 1 2 3; do echo " 2020-01-01::00:00:00  0.00  300  $i /  3  0.0 %"; done\n'
             "echo ' simulation end: x'\n"
         )
         exe.chmod(0o755)

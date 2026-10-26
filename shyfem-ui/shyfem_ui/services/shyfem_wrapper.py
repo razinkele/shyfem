@@ -120,7 +120,8 @@ class ShyfemWrapper:
 
     # Progress patterns for different tools
     PROGRESS_PATTERNS = {
-        "shyfem": re.compile(r"time\s*=\s*([\d.]+).*(?:of|to)\s*([\d.]+)", re.IGNORECASE),
+        # One line per time step: "<date> <seconds> <dt> <it> / <nits> <pct> %"
+        "shyfem": re.compile(r"(\d+)\s*/\s*(\d+)\s+[\d.]+\s*%\s*$"),
         "shyelab": re.compile(r"processing\s+record\s+(\d+)\s+of\s+(\d+)", re.IGNORECASE),
     }
 
