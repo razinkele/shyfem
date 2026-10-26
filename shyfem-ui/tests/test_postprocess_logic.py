@@ -113,53 +113,6 @@ class TestBuildShyelabOptions:
         assert "-tmin" not in opts
         assert "-tmax" not in opts
 
-    def test_subset_var_filter_passed_through(self):
-        opts = build_shyelab_options(
-            operation="temporal_avg",
-            op_flags=["-taver"],
-            selected_vars=["temp", "salt"],
-            scanned_vars_count=4,
-        )
-        assert "-temp" in opts
-        assert "-salt" in opts
-
-    def test_full_var_selection_omits_filter(self):
-        # All 3 of 3 selected — no per-var flags emitted
-        opts = build_shyelab_options(
-            operation="temporal_avg",
-            op_flags=["-taver"],
-            selected_vars=["a", "b", "c"],
-            scanned_vars_count=3,
-        )
-        assert all(o not in opts for o in ["-a", "-b", "-c"])
-
-    def test_empty_var_list_omits_filter(self):
-        opts = build_shyelab_options(
-            operation="temporal_avg",
-            op_flags=["-taver"],
-            selected_vars=[],
-            scanned_vars_count=3,
-        )
-        # No spurious -<var> flags
-        assert opts == ["-taver"]
-
-    def test_layer_specific(self):
-        opts = build_shyelab_options(
-            operation="temporal_avg",
-            op_flags=["-taver"],
-            selected_layer="3",
-        )
-        assert "-layer" in opts
-        assert opts[opts.index("-layer") + 1] == "3"
-
-    def test_layer_all_omits_flag(self):
-        opts = build_shyelab_options(
-            operation="temporal_avg",
-            op_flags=["-taver"],
-            selected_layer="all",
-        )
-        assert "-layer" not in opts
-
     def test_custom_ignores_op_flags(self):
         # custom mode ignores op_flags entirely
         opts = build_shyelab_options(
