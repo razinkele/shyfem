@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from shyfem_ui.services.timeseries_loader import (
     _load_whitespace,
     _looks_numeric,
@@ -48,14 +50,19 @@ class TestLoadTimeseries:
         assert "time" in result["columns"]
         assert len(result["data"]) >= 2
 
-    def test_whitespace_delimited_no_header(self, tmp_path: Path):
+    @pytest.mark.parametrize(
+        "text",
+        ["1 10.5 35.0\n2 11.0 34.8\n", "1,10.5,35.0\n2,11.0,34.8\n", "1;10.5;35.0\n2;11.0;34.8\n"],
+    )
+    def test_no_header_keeps_the_first_row(self, tmp_path: Path, text):
+        """V-04: a numeric first line is data, not a header. pandas took it as
+        the header, so the first record vanished and the columns were named
+        "1", "10.5", "35.0"."""
         f = tmp_path / "data.txt"
-        f.write_text("1 10.5 35.0\n2 11.0 34.8\n")
+        f.write_text(text)
         result = load_timeseries(f)
-        # Pandas treats first row as header by default; columns will be from row 1
-        assert len(result["columns"]) == 3
-        # Only the second row remains as data
-        assert len(result["data"]) >= 1
+        assert result["columns"] == ["col0", "col1", "col2"]
+        assert [list(map(float, r)) for r in result["data"]] == [[1, 10.5, 35.0], [2, 11.0, 34.8]]
 
     def test_missing_file(self, tmp_path: Path):
         result = load_timeseries(tmp_path / "missing.csv")

@@ -235,9 +235,9 @@ class TestLoadObsFile:
         f = tmp_path / "data.txt"
         f.write_text("1.0 2.0 3.0\n4.0 5.0 6.0\n")
         result = self._load(f)
-        # pandas uses first row as header; data has 1 row remaining
-        assert len(result["columns"]) == 3
-        assert len(result["data"]) == 1
+        # A numeric first line is data, not a header (V-04): both rows kept.
+        assert result["columns"] == ["col0", "col1", "col2"]
+        assert len(result["data"]) == 2
 
     def test_empty_file(self, tmp_path):
         f = tmp_path / "empty.csv"

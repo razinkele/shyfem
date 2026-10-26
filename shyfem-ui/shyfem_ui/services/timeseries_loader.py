@@ -138,7 +138,13 @@ def load_timeseries(path: Path | str) -> dict:
     try:
         import pandas as _pd
 
-        df: pd.DataFrame = _pd.read_csv(path, sep=None, engine="python")
+        if _first_row_is_numeric(path):
+            # A numeric first line is data, not a header (V-04): pandas would
+            # drop the first record and name the columns after its values.
+            df = _pd.read_csv(path, sep=None, engine="python", header=None)
+            df.columns = [f"col{j}" for j in range(df.shape[1])]
+        else:
+            df = _pd.read_csv(path, sep=None, engine="python")
         if {str(c).lower() for c in df.columns} == _OBS_COLUMNS:
             return _pivot_observations(df)
         return {
@@ -154,6 +160,19 @@ def load_timeseries(path: Path | str) -> dict:
 
     # ---- attempt 2: manual whitespace-delimited ----
     return _load_whitespace(path)
+
+
+def _first_row_is_numeric(path: Path) -> bool:
+    """True when the first non-blank line is all numbers (so no header)."""
+    try:
+        with open(path) as fh:
+            for line in fh:
+                parts = [t for t in re.split(r"[,;\s]+", line.strip()) if t]
+                if parts:
+                    return all(_looks_numeric(t) for t in parts)
+    except OSError:
+        return False
+    return False
 
 
 def _load_whitespace(path: Path) -> dict:
