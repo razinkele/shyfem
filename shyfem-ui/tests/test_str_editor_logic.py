@@ -431,3 +431,49 @@ class TestApplyFormValuesWorksOnACopy:
         )
         assert edited.sections["name"].parameters["rain"] == "r.dat"
         assert edited.sections["name"].parameters["wind"] == "new.win"
+
+
+class TestInlineSaveIsWriteConfined:
+    """Load only read-checks the path (confine_path without for_write), and the
+    Save gate is the *active* project's editor role. A file reachable for
+    reading -- a viewer grant's project, or any project for an admin -- must
+    not become writable through the inline Save; writes go only into the
+    user's own home, as on Save As and the physics Save."""
+
+    def _body(self):
+        import inspect
+
+        from shyfem_ui.components import str_editor
+
+        src = inspect.getsource(str_editor)
+        return src[src.index("def _handle_save") : src.index("def _handle_validate")]
+
+    def test_the_path_is_write_confined_before_the_write(self):
+        body = self._body()
+        assert "for_write=True" in body, "the save must confine the path for writing"
+        assert body.index("confine_path(") < body.index(".write_text(")
+
+    def test_a_refused_path_writes_nothing(self):
+        import ast
+        import inspect
+
+        from shyfem_ui.components import str_editor
+
+        fn = next(
+            n
+            for n in ast.walk(ast.parse(inspect.getsource(str_editor)))
+            if isinstance(n, ast.FunctionDef) and n.name == "_handle_save"
+        )
+        tries = [
+            t
+            for t in ast.walk(fn)
+            if isinstance(t, ast.Try) and any("confine_path(" in ast.unparse(s) for s in t.body)
+        ]
+        assert tries, "confine_path must be called inside a try"
+        for h in tries[0].handlers:
+            assert isinstance(h.body[-1], ast.Return), "a refusal must return before the write"
+
+    def test_the_refusal_shows_no_host_path(self):
+        body = self._body()
+        tail = body[body.index("confine_path(") : body.index(".write_text(")]
+        assert "str(e)" not in tail, "confine_path's message names host paths"
