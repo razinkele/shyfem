@@ -15,7 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from shyfem_ui.services.partitioning_logic import analyze_partitions, collect_shyparts_outputs
+from shyfem_ui.services.partitioning_logic import (
+    analyze_partitions,
+    collect_shyparts_outputs,
+    stage_grid,
+)
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 REPO = Path(__file__).resolve().parents[2]
@@ -36,23 +40,42 @@ def test_a_missing_elem_grd_gives_empty_stats(tmp_path):
     assert stats["elements_per_partition"] == [] and pmap == {}
 
 
-def test_outputs_are_collected_into_the_output_folder(tmp_path):
+def test_a_grid_elsewhere_is_copied_into_the_output_folder(tmp_path):
+    """The input is only read-checked (shared project, bundled sample), and
+    shyparts writes next to its input: it must run on a copy in the
+    write-checked output folder, never in place."""
     src, out = tmp_path / "in", tmp_path / "out"
     src.mkdir()
     out.mkdir()
     grd = src / "basin.grd"
-    grd.write_text("")
-    for kind in ("node", "elem"):
-        (src / f"basin.3.{kind}.grd").write_text(kind)
-    (out / "partition.3.txt").write_text("table")
-    files = collect_shyparts_outputs(grd, out, 3)
+    grd.write_text("grid")
+    staged, created = stage_grid(grd, out)
+    assert staged == out / "basin.grd" and created and staged.read_text() == "grid"
+    assert stage_grid(out / "basin.grd", out) == (out / "basin.grd", False)
+
+
+def test_a_different_grid_of_the_same_name_is_not_overwritten(tmp_path):
+    src, out = tmp_path / "in", tmp_path / "out"
+    src.mkdir()
+    out.mkdir()
+    (src / "basin.grd").write_text("new")
+    (out / "basin.grd").write_text("someone's own")
+    with pytest.raises(ValueError):
+        stage_grid(src / "basin.grd", out)
+    assert (out / "basin.grd").read_text() == "someone's own"
+
+
+def test_outputs_are_only_listed_from_the_output_folder(tmp_path):
+    out = tmp_path / "out"
+    out.mkdir()
+    for n in ("basin.3.node.grd", "basin.3.elem.grd", "partition.3.txt"):
+        (out / n).write_text("x")
+    files = collect_shyparts_outputs(out / "basin.grd", out, 3)
     assert sorted(Path(f).name for f in files) == [
         "basin.3.elem.grd",
         "basin.3.node.grd",
         "partition.3.txt",
     ]
-    assert all(Path(f).parent == out for f in files)
-    assert not (src / "basin.3.elem.grd").exists(), "moved, not copied"
 
 
 def _fake(tmp_path, tool, rc, text):
@@ -85,19 +108,29 @@ def test_the_page_runs_shyparts_on_the_grd_without_invented_options():
     assert "bas_path" not in src, "shyparts takes a .grd, not the basin"
     run = src[src.index("async def _run_shyparts") : src.index("def _analyze_partitions")]
     assert "input.grd_path()" in run and "collect_shyparts_outputs(" in run
+    assert run.index("stage_grid(") < run.index("wrapper.run_shyparts("), "never partition in place"
+    assert "staged.unlink(" in run
 
 
 @pytest.mark.skipif(not SHYPARTS.exists(), reason="needs the built shyparts")
 def test_the_real_binary_partitions_and_the_page_reads_it(tmp_path):
+    """With the input folder read-only, everything still lands in the output
+    folder: nothing is written next to the input."""
     src, out = tmp_path / "grid", tmp_path / "out"
     src.mkdir()
     out.mkdir()
     grd = src / "MM_coarse.grd"
     shutil.copy(MM / "MM_coarse.grd", grd)
-    w = ShyfemWrapper(SHYPARTS.parent.parent)
-    r = asyncio.run(w.run_shyparts(grd, out, np=2))
-    assert r.success, r.stdout[-400:]
-    files = collect_shyparts_outputs(grd, out, 2)
+    src.chmod(0o555)
+    try:
+        staged, created = stage_grid(grd, out)
+        w = ShyfemWrapper(SHYPARTS.parent.parent)
+        r = asyncio.run(w.run_shyparts(staged, out, np=2))
+        assert r.success, r.stdout[-400:]
+        assert sorted(p.name for p in src.iterdir()) == ["MM_coarse.grd"]
+    finally:
+        src.chmod(0o755)
+    files = collect_shyparts_outputs(staged, out, 2)
     assert any(f.endswith("MM_coarse.2.elem.grd") for f in files)
     stats, pmap = analyze_partitions(out / "MM_coarse.2.elem.grd")
     assert sum(stats["elements_per_partition"]) == 2545 == len(pmap)

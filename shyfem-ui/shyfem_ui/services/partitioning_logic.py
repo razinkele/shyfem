@@ -47,27 +47,46 @@ def analyze_partitions(elem_grd: Path) -> tuple[dict, dict]:
     return stats, pmap
 
 
-def collect_shyparts_outputs(grd_file: Path, output_dir: Path, np_val: int) -> list[str]:
-    """shyparts' output files, all in ``output_dir``.
+def stage_grid(grd_file: Path, output_dir: Path) -> tuple[Path, bool]:
+    """The grid shyparts should run on, inside ``output_dir``; (path, created).
 
-    It writes ``<grd>.<np>.node.grd`` and ``<grd>.<np>.elem.grd`` next to the
-    INPUT grid and ``partition.<np>.txt`` in its working folder; the two
-    grids are moved into ``output_dir`` when that is elsewhere.
+    shyparts writes ``<grd>.<np>.node.grd``/``.elem.grd`` next to its INPUT.
+    The input is only read-checked (a shared project, a bundled sample), so
+    it must never be partitioned in place: when it is not already in the
+    write-checked ``output_dir`` it is copied there, and the caller removes
+    the copy afterwards (``created`` is True).
+
+    Raises:
+        ValueError: ``output_dir`` already holds a different file of that name.
+    """
+    import filecmp
+    import shutil
+
+    grd_file, output_dir = Path(grd_file), Path(output_dir)
+    if grd_file.parent.resolve() == output_dir.resolve():
+        return grd_file, False
+    staged = output_dir / grd_file.name
+    if staged.exists():
+        if staged.is_file() and filecmp.cmp(staged, grd_file, shallow=False):
+            return staged, False
+        raise ValueError(
+            f"The output folder already has a different {grd_file.name}; "
+            "choose another output folder"
+        )
+    shutil.copy2(grd_file, staged)
+    return staged, True
+
+
+def collect_shyparts_outputs(grd_file: Path, output_dir: Path, np_val: int) -> list[str]:
+    """shyparts' output files in ``output_dir`` for the staged ``grd_file``.
+
+    ``<grd>.<np>.node.grd``, ``<grd>.<np>.elem.grd`` and
+    ``partition.<np>.txt``; only listed, never moved (see stage_grid).
     """
     grd_file, output_dir = Path(grd_file), Path(output_dir)
     stem = grd_file.name[: -len(grd_file.suffix)] if grd_file.suffix else grd_file.name
-    files = []
-    for kind in ("node", "elem"):
-        made = grd_file.parent / f"{stem}.{np_val}.{kind}.grd"
-        target = output_dir / made.name
-        if made.is_file() and made.resolve() != target.resolve():
-            made.replace(target)
-        if target.is_file():
-            files.append(str(target))
-    table = output_dir / f"partition.{np_val}.txt"
-    if table.is_file():
-        files.append(str(table))
-    return files
+    names = [f"{stem}.{np_val}.node.grd", f"{stem}.{np_val}.elem.grd", f"partition.{np_val}.txt"]
+    return [str(output_dir / n) for n in names if (output_dir / n).is_file()]
 
 
 def compute_load_balance(elements: list[int]) -> dict:

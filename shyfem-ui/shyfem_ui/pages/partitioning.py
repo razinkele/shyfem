@@ -22,6 +22,7 @@ from shyfem_ui.services.partitioning_logic import (
     analyze_partitions,
     collect_shyparts_outputs,
     compute_load_balance,
+    stage_grid,
     validate_partition_files,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
@@ -231,22 +232,30 @@ def partitioning_server(
             current = log_content.get()
             log_content.set(current + line + "\n")
 
+        # The input is only read-checked; shyparts writes next to its input,
+        # so it runs on a copy inside the write-checked output folder.
+        try:
+            staged, created = stage_grid(grd_file, output_path)
+        except (ValueError, OSError) as e:
+            log_content.set(log_content.get() + f"Error: {e}\n")
+            return
+
         try:
             result = await wrapper.run_shyparts(
-                grd_file,
+                staged,
                 output_path,
                 np=np_val,
                 output_callback=update_log,
             )
 
             if result.success:
-                files = collect_shyparts_outputs(grd_file, output_path, np_val)
+                files = collect_shyparts_outputs(staged, output_path, np_val)
                 log_content.set(
                     log_content.get() + f"\n*** shyparts completed successfully ***\n"
                     f"Output files: {', '.join(files)}\n"
                 )
                 partition_files.set(files)
-                stem = grd_file.name[: -len(grd_file.suffix)]
+                stem = staged.name[: -len(staged.suffix)]
                 _analyze_partitions(output_path / f"{stem}.{np_val}.elem.grd")
             else:
                 log_content.set(
@@ -257,6 +266,9 @@ def partitioning_server(
         except Exception as e:
             logger.exception("Unexpected error running shyparts on %s", grd_path)
             log_content.set(log_content.get() + f"\nError: {e}\n")
+        finally:
+            if created:
+                staged.unlink(missing_ok=True)
 
     def _analyze_partitions(elem_grd: Path):
         """Read shyparts' <grd>.<np>.elem.grd into the stats and the map."""
