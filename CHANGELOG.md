@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Run page: the job log is readable.** Bootstrap colours `<pre>` text black in the light theme, so every plain log line was black on the log's dark background; only the coloured warning, error and step lines showed. The log text now uses the viewer's light colour.
 - **Post-process and Visualize: a finished run's output files appear in the file pickers without a reload.** The pickers were built once per project, so one opened before a run ended kept showing no files. They now relist whenever a job finishes, and keep the file you had picked.
 - **Post-process: "Convert to NetCDF" no longer reports success when nothing was written.** A SHYFEM build without NetCDF support prints "NETCDF support has not been enabled" for `shyelab -outformat nc`, writes no file, and exits 0; that now counts as a failure, with that line as the reason.
+- **Clone: in server mode a cloned project goes in its owner's home,** like new and imported projects. It went in the shared work folder, where the owner's own runs, saves and tool outputs were then refused as "outside your home directory". Existing clones stay where they are. (F-02, 2026-10-19 UI review)
 - **Jobs, failure message:** a failed job's message and its email now show the end of stderr, where the tool prints its fatal error, instead of the first 1000 characters (J-10).
 
 ---

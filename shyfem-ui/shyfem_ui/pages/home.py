@@ -1402,7 +1402,8 @@ def home_server(
         meta = export_meta(ctx)
 
         try:
-            result = clone_project(work_dir, meta, config.work_dir)
+            # The owner's home in server mode, so they can write in the clone (F-02).
+            result = clone_project(work_dir, meta, config.user_projects_root(_user()))
         except Exception as e:
             logger.exception("Failed to clone project %s %r", project_id, project_name)
             ui.notification_show(f"Clone failed: {e}", type="error", duration=6)
@@ -1491,11 +1492,11 @@ def home_server(
         # In server mode, extract under the owner's home sandbox so the imported
         # project is reachable once confine_path is enforced; local mode keeps
         # the shared work_dir.
-        if config.deployment_mode == "server" and user is not None:
-            import_root = config.user_data_root / user["username"]
-            import_root.mkdir(parents=True, exist_ok=True)
-        else:
-            import_root = config.work_dir
+        try:
+            import_root = config.user_projects_root(user)
+        except (ValueError, OSError) as e:
+            ui.notification_show(f"Import failed: {e}", type="error", duration=6)
+            return
 
         try:
             with open(file_path, "rb") as f:

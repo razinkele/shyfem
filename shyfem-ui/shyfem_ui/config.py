@@ -660,6 +660,30 @@ class Config(BaseSettings):
 
         return resolved
 
+    def user_projects_root(self, user: dict | None) -> Path:
+        """The folder new copies of a project go under (clone, import).
+
+        Server mode: the owner's home, ``user_data_root/<username>``, confined
+        and created on demand, so the owner can write in the copy (F-02).
+        Local mode: ``work_dir``.
+
+        Raises:
+            ValueError: In server mode, for an unresolved or unsafe identity.
+        """
+        if self.deployment_mode != "server":
+            self.ensure_work_dir()
+            return self.work_dir.resolve()
+        if user is None:
+            raise ValueError(
+                "Session identity could not be verified. "
+                "Please reload the page and sign in again."
+            )
+        home = self.confine_path(
+            self.user_data_root / str(user.get("username")), user, for_write=True
+        )
+        home.mkdir(parents=True, exist_ok=True)
+        return home
+
     def new_project_path(self, name: str, user: dict | None) -> Path:
         """Return the folder for a new project called ``name`` (H-03).
 
