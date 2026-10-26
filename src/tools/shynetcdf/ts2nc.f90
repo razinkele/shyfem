@@ -96,7 +96,7 @@
 	character*256 units
 	character*160 std
 	character*256, save :: sncglobal = ' '	!not yet supported
-	integer iu,ierr
+	integer iu
 
 ! 	integer rdous,rfous
 	integer iapini,ideffi
@@ -107,7 +107,7 @@
 
 	call get_date_and_time(date0,time0)
 
-	open(newunit=iu,file='datats.dat',status='old',form='formatted'
+	open(newunit=iu,file='datats.dat',status='old',form='formatted' &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: datats.dat'
@@ -198,7 +198,7 @@
 
 	integer date0,time0,iu,ierr
 
-	open(newunit=iu,file='date0',status='old',form='formatted'
+	open(newunit=iu,file='date0',status='old',form='formatted' &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: date0'
@@ -206,7 +206,7 @@
 	end if
 	read(iu,*) date0
 	close(iu)
-	open(newunit=iu,file='time0',status='old',form='formatted'
+	open(newunit=iu,file='time0',status='old',form='formatted' &
      &			,iostat=ierr)
 	if( ierr /= 0 ) then
 	  write(6,*) 'error opening file: time0'
