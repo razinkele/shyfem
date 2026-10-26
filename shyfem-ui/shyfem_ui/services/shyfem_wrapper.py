@@ -111,13 +111,20 @@ class ShyfemWrapper:
     OUTPUT_EXTENSIONS = {
         "shypre": [".bas"],
         "shybas": [".grd", ".xyz", ".png"],
-        "shyparts": [".par"],
+        # partition.<np>.txt here; the .grd results go next to the input grid
+        # (collected by partitioning_logic.collect_shyparts_outputs).
+        "shyparts": [".txt", ".grd"],
         "shyfem": [".shy", ".ext", ".flx", ".ts"],
         # out.shy/out.nc/out.fem (-out, -outformat), <var>.shy (-split),
         # <var>.0d.0 (-averbas), <var>.2d.<n>/.3d.<n> per node (-node).
         "shyelab": [".nc", ".txt", ".dat", ".shy", ".fem", ".0d.0", ".2d.[0-9]*", ".3d.[0-9]*"],
         "shyplot": [".png", ".pdf", ".eps"],
     }
+
+    # Exit codes that mean success. shyparts exits 9 when it partitioned the
+    # grid but found connectivity warnings it prints as "(errors can be
+    # ignored)" (shyparts.f90 final message).
+    OK_EXIT_CODES = {"shyparts": (0, 9)}
 
     # Grace period between SIGTERM and SIGKILL when tearing down a process
     # group (cancellation or timeout).
@@ -391,16 +398,17 @@ class ShyfemWrapper:
         output_files = self._find_output_files(tool_name, working_dir, before_snapshot)
 
         stderr_text = "\n".join(stderr_lines)
+        exit_ok = return_code in self.OK_EXIT_CODES.get(tool_name, (0,))
         failure = tool_failure(
             tool_name,
-            return_code,
+            0 if exit_ok else return_code,
             "\n".join(stdout_tail)[-TAIL_CHARS:],
             stderr_text[-TAIL_CHARS:],
         )
         if failure:
             stderr_text = f"{stderr_text}\n{failure}".lstrip("\n")
         return CommandResult(
-            success=return_code == 0 and failure is None,
+            success=exit_ok and failure is None,
             return_code=return_code,
             stdout="\n".join(stdout_lines),
             stderr=stderr_text,
@@ -803,7 +811,7 @@ class ShyfemWrapper:
         """Run shyparts to partition mesh for MPI.
 
         Args:
-            bas_file: Path to input .bas file
+            bas_file: Path to the input .grd file (shyparts reads a grid)
             working_dir: Working directory
             np: Number of partitions
             options: Additional options
