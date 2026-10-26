@@ -328,6 +328,7 @@ def visualize_server(
     active_project=None,
     tutorial_context=None,
     current_user=None,
+    project_files_rev=None,
 ) -> None:
     """Visualization page server logic."""
 
@@ -342,6 +343,8 @@ def visualize_server(
         if not _DATA_TYPE_EXTS.get(input.data_type()):
             return None
         usr = current_user() if current_user is not None else None
+        if project_files_rev is not None:
+            project_files_rev.get()  # relist when a run finishes
         try:
             root = Path(config.confine_path(proj["work_dir"], usr, must_exist=True))
         except (ValueError, OSError):
@@ -349,7 +352,15 @@ def visualize_server(
         choices = _project_file_choices(root, input.data_type())
         if len(choices) == 1:
             return ui.p("No matching files in this project.", class_="text-muted small mb-2")
-        return ui.input_select(select_id, label, choices=choices, selected="")
+        # A relist must not drop the user's pick.
+        with reactive.isolate():
+            try:
+                current = getattr(input, select_id)()
+            except Exception:
+                current = ""
+        return ui.input_select(
+            select_id, label, choices=choices, selected=current if current in choices else ""
+        )
 
     def _resolve_selection(rel: str) -> Path | None:
         """Confined absolute path for a picker selection, or None (+notify)."""

@@ -242,6 +242,7 @@ def run_server(
     tutorial_context=None,
     user_role=None,
     current_user=None,
+    project_files_rev=None,
 ) -> None:
     """Job execution page server logic."""
     # Initialize job queue if not provided
@@ -705,6 +706,13 @@ def run_server(
         active = [j for j in jobs if j.is_active]
         if active != prev_active:
             active_jobs_data.set(active)
+        # A job that left the active set has written its outputs: tell the
+        # file pickers on other pages (Post-process, Visualize) to relist.
+        finished = {j.id for j in prev_active} - {j.id for j in active}
+        if finished and project_files_rev is not None:
+            with reactive.isolate():
+                rev = project_files_rev.get()
+            project_files_rev.set(rev + 1)
 
         # Update selected job if exists
         if selected_job_id.get():

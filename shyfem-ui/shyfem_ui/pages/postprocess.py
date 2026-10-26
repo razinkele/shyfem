@@ -209,6 +209,7 @@ def postprocess_server(
     active_project=None,
     tutorial_context=None,
     current_user=None,
+    project_files_rev=None,
 ) -> None:
     """Post-processing page server logic."""
     wrapper = ShyfemWrapper(config.shyfem_dir)
@@ -234,11 +235,24 @@ def postprocess_server(
         usr = current_user() if current_user is not None else None
         return proj, usr
 
+    def _files_rev():
+        """Depend on finished runs so a picker lists the files they wrote."""
+        return project_files_rev.get() if project_files_rev is not None else 0
+
+    def _kept(input_id: str):
+        """The picker's current value, kept across a rebuild."""
+        with reactive.isolate():
+            try:
+                return getattr(input, input_id)()
+            except Exception:
+                return None
+
     @render.ui
     def shy_path_picker():
         """Dropdown of ``.shy``/``.nc`` output files from the project directory
         and every box-model run directory — no free-text path box."""
         proj, usr = _ctx()
+        _files_rev()
         return project_file_select(
             "shy_path",
             "Output File (.shy/.nc)",
@@ -246,6 +260,7 @@ def postprocess_server(
             proj=proj,
             user=usr,
             config=config,
+            selected=_kept("shy_path"),
             include_runs=True,
         )
 
@@ -254,6 +269,7 @@ def postprocess_server(
         """Multi-select of ``.shy``/``.nc`` files (project + run dirs) for
         batch processing; ``input.batch_paths()`` is a tuple of paths."""
         proj, usr = _ctx()
+        _files_rev()
         return project_file_select(
             "batch_paths",
             "Files to process",
@@ -261,6 +277,7 @@ def postprocess_server(
             proj=proj,
             user=usr,
             config=config,
+            selected=_kept("batch_paths"),
             include_runs=True,
             multiple=True,
         )
