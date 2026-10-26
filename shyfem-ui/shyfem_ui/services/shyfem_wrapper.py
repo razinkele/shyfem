@@ -35,7 +35,10 @@ class CommandResult:
 # stopped on an error looks like a success to anything that only reads the
 # exit status (X-01). These are the lines such a stop leaves behind.
 _FATAL_LINE = re.compile(
-    r"^\s*(?:STOP\s+error stop\b.*|STOP\s+clo_usage\b.*|ERROR STOP\b.*|\*\*\* no such option.*)$",
+    r"^\s*(?:STOP\s+error stop\b.*|STOP\s+clo_usage\b.*|ERROR STOP\b.*|\*\*\* no such option.*"
+    # shyelab -outformat nc on a build without NetCDF: prints this, writes
+    # nothing, exits 0.
+    r"|NETCDF support has not been enabled.*)$",
     re.MULTILINE,
 )
 # A shyfem run that reached its end prints this in its last lines.

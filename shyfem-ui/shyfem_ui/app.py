@@ -893,6 +893,9 @@ def _build_server(
     """Build the application server logic."""
     active_project = reactive.value(None)
     tutorial_context = reactive.value(None)
+    # Bumped by the Run page when a job finishes, so file pickers on other
+    # pages list the outputs it wrote without a page reload.
+    project_files_rev = reactive.value(0)
 
     @render.ui
     def active_project_badge():
@@ -1139,6 +1142,7 @@ def _build_server(
         config,
         job_queue,
         active_project=active_project,
+        project_files_rev=project_files_rev,
         tutorial_context=tutorial_context,
         user_role=_current_role,
         current_user=current_user,
@@ -1154,6 +1158,7 @@ def _build_server(
         "postprocess",
         config,
         active_project=active_project,
+        project_files_rev=project_files_rev,
         tutorial_context=tutorial_context,
         current_user=current_user,
     )
@@ -1161,6 +1166,7 @@ def _build_server(
         "visualize",
         config,
         active_project=active_project,
+        project_files_rev=project_files_rev,
         tutorial_context=tutorial_context,
         current_user=current_user,
     )
