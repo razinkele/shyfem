@@ -250,9 +250,10 @@ def str_editor_server(
             return
 
         # Load only read-checked the path, and the gate above is the ACTIVE
-        # project's role. A file readable through a viewer grant, or through
-        # an admin's read reach, must not become writable here: writes go
-        # only into the user's own home, as on Save As and the physics Save.
+        # project's role. A file readable through a viewer grant or as a
+        # bundled sample must not become writable here: confine the write
+        # as Save As and the physics Save do (home only; admins may also
+        # write in any project folder).
         from shyfem_ui.config import get_config
 
         try:
