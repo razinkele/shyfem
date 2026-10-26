@@ -596,12 +596,13 @@ class Config(BaseSettings):
             # plus the admin-declared analysis roots (box-model run outputs).
             allowed_roots += [self.testcases_dir.resolve(), self.bin_dir.resolve()]
             allowed_roots += self.resolved_analysis_roots()
-            # An admin's Dashboard lists every project, so an admin may READ
-            # every project folder: both project-storage roots, never beyond
-            # them. ``role`` is re-read from the DB on every current_user()
-            # call. Writes stay home-only.
-            if user.get("role") == ROLE_ADMIN:
-                allowed_roots += [self.user_data_root.resolve(), self.work_dir.resolve()]
+        # An admin's Dashboard lists every project, so an admin may read and
+        # write (e.g. run a model in) every project folder: both
+        # project-storage roots, never beyond them, and never the bundled
+        # assets above. ``role`` is re-read from the DB on every
+        # current_user() call.
+        if user.get("role") == ROLE_ADMIN:
+            allowed_roots += [self.user_data_root.resolve(), self.work_dir.resolve()]
 
         resolved = Path(path).expanduser().resolve()
         if resolved.exists():

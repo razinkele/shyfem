@@ -1,4 +1,4 @@
-"""Admins can READ every project folder; writes stay in their own home.
+"""Admins can read and write every project folder (never beyond them).
 
 An admin's Dashboard lists every project (access_control grants admins all
 roles), but ``confine_path`` gave admins no read reach beyond their own home
@@ -87,13 +87,40 @@ def test_admin_read_cannot_leave_the_roots_through_a_symlink(tree):
         _confine(cfg, proj / "link", GEORG, must_exist=True)
 
 
-def test_admin_writes_stay_in_their_own_home(tree):
+def test_admin_writes_into_any_project_folder(tree):
+    """Owner decision 2026-10-26: an admin runs models in other users'
+    projects (the Run working dir is write-confined), so admin writes reach
+    both project-storage roots too."""
+    cfg, proj, legacy, _ = tree
+    for target in (proj / "GRID" / "out.grd", legacy / "out.grd", proj):
+        assert _confine(cfg, target, GEORG, for_write=True) == target.resolve()
+    own = cfg.user_data_root / "georg" / "p" / "out.grd"
+    assert _confine(cfg, own, GEORG, for_write=True) == own.resolve()
+
+
+def test_admin_write_reach_stops_at_the_storage_roots(tree):
+    cfg, proj, _, outside = tree
+    with pytest.raises(ValueError):
+        _confine(cfg, outside / "new.txt", GEORG, for_write=True)
+    (proj / "wlink").symlink_to(outside / "new.txt")
+    with pytest.raises(ValueError):
+        _confine(cfg, proj / "wlink", GEORG, for_write=True)
+
+
+def test_admin_cannot_write_into_the_bundled_assets(tree):
+    cfg, _, _, _ = tree
+    sample = cfg.testcases_dir / "mar_menor" / "mm_hyd_00.str"
+    for target in (sample, cfg.bin_dir / "shyfem"):
+        with pytest.raises(ValueError):
+            _confine(cfg, target, GEORG, for_write=True)
+
+
+@pytest.mark.parametrize("user", [ALICE, TUTOR], ids=["user", "tutorial"])
+def test_other_roles_still_write_only_in_their_own_home(tree, user):
     cfg, proj, legacy, _ = tree
     for target in (proj / "GRID" / "out.grd", legacy / "out.grd"):
         with pytest.raises(ValueError):
-            _confine(cfg, target, GEORG, for_write=True)
-    own = cfg.user_data_root / "georg" / "p" / "out.grd"
-    assert _confine(cfg, own, GEORG, for_write=True) == own.resolve()
+            _confine(cfg, target, user, for_write=True)
 
 
 @pytest.mark.parametrize("user", [ALICE, TUTOR], ids=["user", "tutorial"])
