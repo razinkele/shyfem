@@ -9,6 +9,8 @@ Features:
 
 import itertools
 import logging
+import os
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -622,6 +624,26 @@ def ensemble_server(
             run_dir = work_dir_path / run_label
             run_dir.mkdir(parents=True, exist_ok=True)
 
+            # The member runs in run_dir, so its relative paths must point
+            # back at the base folder; then check the STR as it will be run
+            # (a relocated path can push a line past the core's 80 chars).
+            _relocate_member_paths(modified_str, base_file.parent, run_dir)
+            _copy_fixed_inputs(base_file.parent, run_dir)
+            try:
+                member_msgs = validate_str(
+                    StrParser.parse(StrParser.generate(modified_str)).sections
+                )
+            except ValueError:
+                member_msgs = []  # serialization fails below and is reported there
+            member_errors = [m.message for m in member_msgs if m.level == "error"]
+            if member_errors:
+                ui.notification_show(
+                    f"Skipped run {run_label}: {'; '.join(member_errors)}",
+                    type="error",
+                    duration=8,
+                )
+                continue
+
             # Save modified STR file. A variation value the STR reader
             # cannot express (it has no escape for either quote
             # delimiter) makes serialization fail for this combo only —
@@ -983,6 +1005,70 @@ def ensemble_server(
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _relocate_member_paths(str_file: StrFile, base_dir: Path, run_dir: Path) -> None:
+    """Point a member STR's relative paths back at the base STR's folder (R-02).
+
+    Members run in ``<base>/<ensemble>/<run>/`` so their outputs stay apart,
+    and the core resolves a relative path against that folder: the basin
+    (``$title`` line 3, ``.bas`` implied) and every file value -- forcing,
+    boundary, restart -- stopped resolving and every member aborted. Each
+    value that is a relative path existing next to the base STR is rewritten
+    relative to ``run_dir``; absolute paths, missing files and non-path
+    values are left exactly as they are.
+    """
+    base_dir = Path(base_dir).resolve()
+    run_dir = Path(run_dir).resolve()
+
+    def moved(value: str, *suffixes: str) -> str | None:
+        v = value.strip().strip("'\"")
+        if not v or Path(v).is_absolute():
+            return None
+        for sfx in ("", *suffixes):
+            if (base_dir / (v + sfx)).exists():
+                # The suffix is written out: the core takes the basin's type
+                # from the text after the LAST dot, which in "../../name" is
+                # inside "../" ("unknown extension").
+                return os.path.relpath(base_dir / (v + sfx), run_dir)
+        return None
+
+    title = str_file.sections.get("title")
+    if title is not None:
+        lines = [i for i, line in enumerate(title.raw_lines) if line.strip()]
+        if len(lines) >= 3:
+            k = lines[2]
+            old = title.raw_lines[k]
+            new = moved(old, ".bas")
+            if new is not None:
+                title.raw_lines[k] = old[: len(old) - len(old.lstrip())] + new
+
+    for name, section in str_file.sections.items():
+        if name == "title":
+            continue
+        for key, value in list(section.parameters.items()):
+            if isinstance(value, str):
+                new = moved(value)
+                if new is not None:
+                    # Pre-quoted: emitted verbatim, stripped again on read.
+                    str_file.set_param(name, key, f"'{new}'")
+
+
+# Inputs the core opens from the working folder under a fixed name, with no
+# STR parameter to point elsewhere (boxes.f90: boxfile = 'boxes.txt').
+_FIXED_NAME_INPUTS = ("boxes.txt",)
+
+
+def _copy_fixed_inputs(base_dir: Path, run_dir: Path) -> None:
+    """Copy fixed-name inputs next to a member's STR (R-02).
+
+    A copy, not a link: a link could let a run write through into the base
+    folder's file.
+    """
+    for name in _FIXED_NAME_INPUTS:
+        src = Path(base_dir) / name
+        if src.is_file():
+            shutil.copy2(src, Path(run_dir) / name)
 
 
 def _apply_param_combo(base_str: StrFile, combo: dict) -> StrFile:
