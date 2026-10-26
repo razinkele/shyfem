@@ -150,7 +150,7 @@ class TestWriteRestartStr:
             "        MM_coarse\n"
             "$end\n"
             "$para\n"
-            "        itend = 3600\n"
+            "        itanf = 0  itend = 3600  idt = 300\n"
             "$end\n"
         )
         return str_path
@@ -159,26 +159,28 @@ class TestWriteRestartStr:
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         text = result_path.read_text()
         assert "restrt" in text
-        assert str(restart_file) in text
+        # Relative to the run folder it sits in (an absolute path can break
+        # the core's 80-character line cap, R-03).
+        assert "'prior_run.rst'" in text
 
     def test_restrt_lands_in_name_section(self, tmp_path):
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         parsed = StrParser.parse_file(result_path)
-        assert parsed.get_param("name", "restrt") == str(restart_file)
+        assert parsed.get_param("name", "restrt") == "prior_run.rst"
 
     def test_itrst_is_set_to_minus_one(self, tmp_path):
         """Final security review, Finding 1 (correctness): restrt alone
@@ -196,10 +198,10 @@ class TestWriteRestartStr:
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         parsed = StrParser.parse_file(result_path)
         assert parsed.get_param("para", "itrst") == -1
@@ -212,10 +214,10 @@ class TestWriteRestartStr:
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         text = result_path.read_text()
         assert "itrst = -1" in text
@@ -226,10 +228,10 @@ class TestWriteRestartStr:
         original_text = str_path.read_text()
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        write_restart_str(str_path, str(restart_file), dest_dir)
+        write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         assert str_path.read_text() == original_text
 
@@ -237,10 +239,10 @@ class TestWriteRestartStr:
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         assert result_path.parent == dest_dir
         assert result_path != str_path
@@ -259,7 +261,7 @@ class TestWriteRestartStr:
         restart_file = "/data/shyfem/proj/out.rst"  # deliberately no '-' or ' '
         monkeypatch.setattr(Path, "exists", lambda self: True)
 
-        result_path = write_restart_str(str_path, restart_file, dest_dir)
+        result_path = write_restart_str(str_path, restart_file, dest_dir, "2001-01-02")
 
         text = result_path.read_text()
         assert f"restrt = '{restart_file}'" in text
@@ -267,18 +269,20 @@ class TestWriteRestartStr:
         assert parsed.get_param("name", "restrt") == restart_file
 
     def test_other_params_survive_unchanged(self, tmp_path):
-        """The rest of the STR (e.g. $para/itend) must round-trip intact --
-        applying restart must not clobber unrelated sections."""
+        """Applying a restart must not clobber unrelated content: the title
+        and basin lines stay, and the source's end becomes the start."""
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        result_path = write_restart_str(str_path, str(restart_file), dest_dir)
+        result_path = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         parsed = StrParser.parse_file(result_path)
-        assert parsed.get_param("para", "itend") == 3600
+        assert parsed.get_param("para", "itanf") == 3600
+        title = [line.strip() for line in parsed.sections["title"].raw_lines]
+        assert title[0] == "Test simulation" and title[2] == "MM_coarse"
 
     def test_missing_restart_file_raises(self, tmp_path):
         """A stale selection (the .rst was deleted/moved) must abort loudly
@@ -291,7 +295,7 @@ class TestWriteRestartStr:
         missing_restart = tmp_path / "does_not_exist.rst"
 
         with pytest.raises(FileNotFoundError):
-            write_restart_str(str_path, str(missing_restart), dest_dir)
+            write_restart_str(str_path, str(missing_restart), dest_dir, "2001-01-02")
 
     def test_two_calls_do_not_collide(self, tmp_path):
         """Two restart-enabled submissions against the same STR/workdir must
@@ -299,11 +303,11 @@ class TestWriteRestartStr:
         str_path = self._write_str(tmp_path)
         dest_dir = tmp_path / "work"
         dest_dir.mkdir()
-        restart_file = tmp_path / "prior_run.rst"
+        restart_file = dest_dir / "prior_run.rst"
         restart_file.write_text("")
 
-        first = write_restart_str(str_path, str(restart_file), dest_dir)
-        second = write_restart_str(str_path, str(restart_file), dest_dir)
+        first = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
+        second = write_restart_str(str_path, str(restart_file), dest_dir, "2001-01-02")
 
         assert first != second
         assert first.exists()

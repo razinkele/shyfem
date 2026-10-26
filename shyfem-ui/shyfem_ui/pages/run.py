@@ -500,6 +500,10 @@ def run_server(
                 current = input.restart_from()
             except Exception:
                 current = ""
+            try:
+                until = input.restart_until()
+            except Exception:
+                until = ""
         selected = current if current in choices else ""
 
         return ui.div(
@@ -510,6 +514,12 @@ def run_server(
                 "Continue from job",
                 choices=choices,
                 selected=selected,
+            ),
+            ui.input_text(
+                "restart_until",
+                "Continue until",
+                value=until,
+                placeholder="e.g. 2002-01-01 (needed when continuing)",
             ),
             ui.output_ui("restart_info"),
         )
@@ -833,7 +843,7 @@ def run_server(
         if restart_from and validated_input.suffix == ".str":
             try:
                 validated_input = write_restart_str(
-                    validated_input, restart_from, validated_workdir
+                    validated_input, restart_from, validated_workdir, input.restart_until()
                 )
             except (FileNotFoundError, OSError, ValueError) as e:
                 ui.notification_show(

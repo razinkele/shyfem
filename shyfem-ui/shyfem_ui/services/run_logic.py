@@ -9,6 +9,7 @@ test_pages_helpers) continue to work without modification.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -324,81 +325,110 @@ def build_job_spec(
     )
 
 
-def write_restart_str(str_path: Path, restart_file: str, dest_dir: Path) -> Path:
-    """Apply a 'Continue from job' restart selection to a STR file (N42).
+# SHYFEM date strings as the STR writes them: '1993-02-01' or '1993-02-01::12:00:00'.
+_STR_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})(?:::(\d{2}):(\d{2}):(\d{2}))?$")
 
-    Previously restart_from was recorded only in build_job_spec's metadata;
-    nothing ever wrote it into the STR SHYFEM actually reads, so a selected
-    restart was silently ignored and every run started cold. SHYFEM reads
-    the restart file via the ``$name`` section's ``restrt`` parameter (see
-    services/parser_str.py PARAM_DOCS['name']['restrt']), so this parses
-    str_path, sets that parameter, and writes the result to a NEW file under
-    dest_dir via StrParser.save() -- the user's original STR is only ever
-    read, never mutated.
 
-    restrt alone is NOT sufficient for SHYFEM to actually continue: the
-    ``$para`` section's ``itrst`` parameter (default 0, per
-    src/shyfem/def_para.f90's ``addpar('itrst',0.)``) selects WHICH time
-    record in the restart file to use. With the default itrst=0/ityrst=0,
-    src/shyfem/restart.f90's rst_perform_restart looks for a record whose
-    time exactly equals 0 and, failing to find one (the normal case --
-    restart records are at real simulation times), hard-aborts with
-    ``stop 'error stop rst_perform_restart: Cannot find time record'``
-    before the simulation ever starts. Setting itrst=-1 sets
-    ``blast=.true.``/``atrst=-1.``, which reads the LAST record in the file
-    unconditionally, regardless of ityrst -- this is the "normal case"
-    continuation and is exactly what both shipped, working restart
-    testcases do: testcases/examples/weutro_box/eco_rst_part2.str:14 and
-    merc_rst_part2.str:13 both set ``itrst = -1`` in ``$para`` (NOT
-    ``$name`` -- confirmed against those two files; itanf/itend are left
-    untouched here deliberately, that's a separate, deferred enhancement).
+def _str_date(value) -> datetime | None:
+    """A STR date string as a datetime, or None when it is not one."""
+    m = _STR_DATE.match(str(value).strip().strip("'\""))
+    if not m:
+        return None
+    y, mo, d, hh, mm, ss = (int(g) if g else 0 for g in m.groups())
+    try:
+        return datetime(y, mo, d, hh, mm, ss)
+    except ValueError:
+        return None
 
-    Args:
-        str_path: The source (already validated) STR file to continue from.
-        restart_file: Path to the .rst restart file. Must already exist --
-            a stale selection (e.g. the source job's .rst was deleted) must
-            abort loudly rather than silently emit an STR referencing a
-            missing file, which would otherwise fail deep in SHYFEM's
-            Fortran I/O with an opaque error instead of a clear UI message.
-        dest_dir: Directory to write the derived STR into. The caller is
-            responsible for validating this directory is safe to write to
-            (e.g. via Config.confine_path) BEFORE calling this function --
-            it performs the actual disk write.
 
-    Returns:
-        Path to the newly written STR file. Pass this (not the original
-        str_path) as validated_input to build_job_spec so the submitted job
-        actually continues from restart_file.
+def _continuation_name(runnam: str, dest_dir: Path) -> str:
+    """``<runnam>_c<n>`` with the first n no output in ``dest_dir`` uses."""
+    n = 1
+    while any(dest_dir.glob(f"{runnam}_c{n}.*")):
+        n += 1
+    return f"{runnam}_c{n}"
+
+
+def write_restart_str(
+    str_path: Path, restart_file: str, dest_dir: Path, continue_until: str
+) -> Path:
+    """Write the STR that continues a finished run from its restart file.
+
+    It follows the shipped working pair
+    ``testcases/examples/weutro_box/eco_rst_part{1,2}.str``:
+
+    * a NEW run name (``$title`` line 2, ``<runnam>_c<n>``): every output is
+      ``<runnam>.<ext>`` in the working folder, so keeping the name truncated
+      the source run's own ``.rst``/``.shy`` -- including the file this run
+      restarts from (J-02);
+    * ``itanf`` = the source's ``itend`` (the restart time) and ``itend`` =
+      ``continue_until``; the unchanged ``itend`` gave a zero-step run (R-03);
+    * ``restrt`` relative to the working folder when the file is inside it
+      (an absolute path can break the core's 80-character line cap), and
+      ``itrst = -1`` (read the last record; without it the core stops on
+      "Cannot find time record");
+    * the derived STR is validated like any submitted STR and refused, with
+      nothing written, if the core would reject it.
+
+    ``str_path`` is only read. ``dest_dir`` must already be confined by the
+    caller (this writes into it).
 
     Raises:
         FileNotFoundError: restart_file does not exist.
+        ValueError: continue_until missing/invalid/not after the restart
+            time, the source has no run name, or the derived STR is invalid.
     """
+    from shyfem_ui.services.str_validator import validate_str
+
     if not Path(restart_file).exists():
         raise FileNotFoundError(f"Restart file not found: {restart_file}")
+    until = (continue_until or "").strip()
+    until_dt = _str_date(until)
+    if until_dt is None:
+        raise ValueError(
+            "Enter 'Continue until' as a date, e.g. 2002-01-01 or 2002-01-01::12:00:00"
+        )
 
-    # A fresh parse of str_path -- unlike ensemble.py's _apply_param_combo
-    # (which regenerates+reparses to protect a base_str shared across many
-    # combos from mutation), nothing else holds a reference to this object,
-    # so set_param can act on it directly; no extra generate()->parse()
-    # round-trip needed.
     base_str = StrParser.parse_file(str_path)
-    # _format_value now quotes every non-numeric bare string itself, but
-    # pre-quoting remains the documented idiom for values that must stay
-    # verbatim ("Already quoted ... emit as-is" skips re-wrapping), and
-    # StrParser.parse() strips the quotes back off on read.
-    base_str.set_param("name", "restrt", f"'{restart_file}'")
-    # itrst is a real/numeric parameter (addpar('itrst',0.)) -- pass a bare
-    # int so _format_value emits `itrst = -1` unquoted, matching both
-    # testcases exactly (neither quotes it).
-    base_str.set_param("para", "itrst", -1)
+    restart_at = base_str.get_param("para", "itend")
+    restart_dt = _str_date(restart_at) if restart_at is not None else None
+    if restart_dt is not None and until_dt <= restart_dt:
+        raise ValueError(
+            f"'Continue until' ({until}) must be after the end of the run it continues "
+            f"({str(restart_at).strip(chr(39))})"
+        )
 
+    title = base_str.sections.get("title")
+    lines = [i for i, line in enumerate(title.raw_lines) if line.strip()] if title else []
+    if len(lines) < 2:
+        raise ValueError("The STR has no run name ($title line 2) to continue from")
+    k = lines[1]
+    old = title.raw_lines[k]
+    runnam = old.strip()
     dest_dir = Path(dest_dir)
-    # A uuid suffix avoids two restart-enabled submissions against the same
-    # STR/working directory colliding and clobbering each other's derived
-    # file mid-run (the same working dir can host concurrent jobs).
+    title.raw_lines[k] = old[: len(old) - len(old.lstrip())] + _continuation_name(runnam, dest_dir)
+
+    try:
+        restrt = str(Path(restart_file).resolve().relative_to(dest_dir.resolve()))
+    except ValueError:
+        restrt = str(restart_file)
+    # Pre-quoting keeps the value verbatim; StrParser strips the quotes on read.
+    base_str.set_param("name", "restrt", f"'{restrt}'")
+    base_str.set_param("para", "itrst", -1)
+    if restart_at is not None:
+        base_str.set_param("para", "itanf", restart_at)
+    base_str.set_param("para", "itend", f"'{until}'")
+
+    text = StrParser.generate(base_str)
+    derived = StrParser.parse(text)
+    errors = [m.message for m in validate_str(derived.sections) if m.level == "error"]
+    if errors:
+        raise ValueError("The continuation STR would not run: " + "; ".join(errors))
+
+    # A uuid suffix keeps two continuations of one STR from colliding.
     derived_name = f"{str_path.stem}_restart_{uuid4().hex[:8]}{str_path.suffix}"
     derived_path = dest_dir / derived_name
-    StrParser.save(base_str, derived_path)
+    derived_path.write_text(text)
     return derived_path
 
 
