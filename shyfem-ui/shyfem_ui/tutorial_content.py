@@ -1003,24 +1003,27 @@ TUTORIAL_CONTENT: list[dict] = [
                         "content": (
                             "The new parameter **idtcon = '3h'** writes "
                             "salinity fields at the same interval as "
-                            "hydrodynamic output. You can now create "
-                            "contour plots of the salinity distribution "
-                            "to see how freshwater spreads from the river."
+                            "hydrodynamic output. You can now map the "
+                            "salinity distribution to see how freshwater "
+                            "spreads from the river."
                         ),
                         "actions": [
-                            "In **Post-Process**, extract salinity fields " "to NetCDF format.",
-                            "Navigate to the **Visualize** tab.",
-                            "Load the salinity NetCDF file.",
-                            "Select **Contour** plot type to see the "
-                            "spatial salinity distribution.",
+                            "Navigate to the **Visualize** tab and choose "
+                            "Data Type **SHYFEM results**.",
+                            "Pick the run's `.ts.shy` file (or a `.nc` "
+                            "from Post-Process) and press **Load Data**; a "
+                            "`.shy` is converted once and cached.",
+                            "Choose the variable **Salinity**.",
+                            "Move the **Record** slider or press **Play** "
+                            "to follow the salinity over time.",
                         ],
                         "expected": (
-                            "The contour map shows salinity ~35 psu in "
+                            "The map shows salinity ~35 psu in "
                             "most of the lagoon, with a freshwater plume "
                             "near the river boundary (node 218)."
                         ),
                         "screenshot": "visualize_netcdf.png",
-                        "nav_target": "Post-Process",
+                        "nav_target": "Visualize",
                     },
                 ],
             },
@@ -1150,18 +1153,19 @@ TUTORIAL_CONTENT: list[dict] = [
                             "temperature and salinity fields."
                         ),
                         "actions": [
-                            "In **Post-Process**, extract temperature and "
-                            "salinity fields to NetCDF.",
-                            "Navigate to the **Visualize** tab.",
-                            "Load the temperature NetCDF and create a " "contour plot.",
-                            "Switch to the salinity NetCDF and compare.",
+                            "In **Visualize**, choose Data Type **SHYFEM "
+                            "results**, pick the run's `.ts.shy` file and "
+                            "press **Load Data**.",
+                            "Choose the variable **Temperature** and use the "
+                            "**Record** slider or **Play**.",
+                            "Switch the variable to **Salinity** and compare.",
                         ],
                         "expected": (
-                            "Temperature contours show ~9 degrees C with "
+                            "Temperature shows ~9 degrees C with "
                             "slight warming from heat fluxes. Salinity "
                             "shows the freshwater plume near the river."
                         ),
-                        "nav_target": "Post-Process",
+                        "nav_target": "Visualize",
                     },
                 ],
             },
@@ -1356,11 +1360,13 @@ TUTORIAL_CONTENT: list[dict] = [
                             "wall-clock time."
                         ),
                         "actions": [
-                            "In **Post-Process**, extract all available "
-                            "fields (water level, velocity, salinity, "
-                            "temperature) to NetCDF.",
-                            "Navigate to the **Visualize** tab.",
-                            "Create contour plots for each variable.",
+                            "In **Visualize**, choose Data Type **SHYFEM "
+                            "results** and load the run's `.hydro.shy` "
+                            "(water level, currents) and `.ts.shy` "
+                            "(salinity, temperature) files.",
+                            "Map each variable with the **Record** slider or "
+                            "**Play**; tick **Current arrows** for the "
+                            "hydro file.",
                             "Use time-series plots at monitor nodes for "
                             "validation against observations.",
                         ],
@@ -1370,7 +1376,7 @@ TUTORIAL_CONTENT: list[dict] = [
                             "exchange, river plume, and temperature/salinity "
                             "stratification."
                         ),
-                        "nav_target": "Post-Process",
+                        "nav_target": "Visualize",
                     },
                 ],
             },

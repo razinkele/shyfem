@@ -2,16 +2,15 @@
 
 Headless chromium on some machines has no WebGL: MapLibre then fails to
 initialise, ``window.__deckgl_instances[...]`` is never created, and the
-layer assertions (``lastLayers``) cannot run. Those assertions are skipped
-with a warning when WebGL is missing (the test still passes); everything
-driven by the server (time label, Play button, notifications) is checked.
+layer assertions (``lastLayers``) cannot run. Without WebGL each test runs
+every server-driven check (time label, Play button, notifications) first and
+then skips with "no WebGL: layer assertions not run", visible under ``-rs``.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
-import warnings
 from pathlib import Path
 
 import pytest
@@ -142,9 +141,7 @@ def _wait_layer(page, layer_id: str, pred: str = "true"):
     return _layer(page, layer_id)
 
 
-def _warn_no_webgl() -> None:
-    """Without WebGL only the layer checks are skipped; the test still passes."""
-    warnings.warn("no WebGL in this browser: layer (lastLayers) assertions skipped", stacklevel=2)
+_NO_WEBGL = "no WebGL: layer assertions not run"
 
 
 def _no_output_errors(page) -> None:
@@ -245,8 +242,7 @@ def test_results_map_load_step_play_switch_and_clear(pw_page, live_server, app_w
         ]
         assert deck_errors == [], deck_errors
         if not webgl:
-            _warn_no_webgl()
-            return
+            pytest.skip(_NO_WEBGL)
     finally:
         _reset_data_type(page)
 
@@ -280,8 +276,7 @@ def test_results_map_ts_file_first_on_a_fresh_page(fresh_page, app_work_dir):
         expect(page.locator(LABEL)).to_contain_text("record 1 / 3", timeout=_T)
         _no_output_errors(page)
         if not _has_webgl(page):
-            _warn_no_webgl()
-            return
+            pytest.skip(_NO_WEBGL)
         layer = _wait_layer(page, "results-mesh", "!!l._meshColors")
         assert layer["colors"]
         assert _layer(page, "results-arrows") is None, "no currents: no arrows layer"
@@ -333,8 +328,7 @@ def test_results_map_real_shy_converts_once(fresh_page, app_work_dir):
         assert mine[0].stat().st_mtime_ns == mtime, "no conversion, no cache touch"
         _no_output_errors(page)
         if not webgl:
-            _warn_no_webgl()
-            return
+            pytest.skip(_NO_WEBGL)
         assert _layer(page, "results-mesh")["positions"] == positions
     finally:
         _reset_data_type(page)

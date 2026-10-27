@@ -113,6 +113,7 @@ def _clamp(i: int, n: int) -> int:
 
 def _read(rf: ResultsFile, var: str, sel: slice | int, level: int) -> np.ndarray:
     """float64 values of ``var`` for time selection ``sel`` at ``level``."""
+    _check_open(rf)  # a closed file must raise, not be reopened by xarray
     da = rf.ds[var]
     if "level" in da.dims:
         da = da.isel(level=_clamp(level, rf.n_levels))

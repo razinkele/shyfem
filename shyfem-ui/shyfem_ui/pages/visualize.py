@@ -156,7 +156,6 @@ def visualize_ui() -> ui.Tag:
                         "Colormap",
                         choices=COLORMAPS,
                     ),
-                    ui.input_checkbox("show_colorbar", "Show Colorbar", value=True),
                     ui.input_checkbox("show_grid_lines", "Show Grid Lines", value=False),
                     ui.input_checkbox("equal_aspect", "Equal Aspect Ratio", value=True),
                     ui.hr(),
@@ -368,12 +367,14 @@ def visualize_server(
         ui.notification_show(message, type="error", duration=8)
 
     @reactive.extended_task
-    async def _convert(source: Path, user):
+    async def _convert(stamp: tuple, user):
+        # ``stamp`` is the picked file's (resolved path, st_size, st_mtime_ns):
+        # the result is matched against the pending stamp, not the path alone
         try:
-            nc = await netcdf_for(source, user, config, wrapper)
+            nc = await netcdf_for(stamp[0], user, config, wrapper)
         except Exception as exc:
-            raise _LoadFailed(source, str(exc)) from exc
-        return source, nc
+            raise _LoadFailed(stamp, str(exc)) from exc
+        return stamp, nc
 
     def _start_results_load(path: Path) -> None:
         """Load (results): a no-op for what is open, else convert in the task."""
@@ -395,37 +396,37 @@ def visualize_server(
         usr = current_user() if current_user is not None else None
         _convert.cancel()
         pending_source[0] = src
-        _convert.invoke(src[0], usr)
+        _convert.invoke(src, usr)
 
     @reactive.effect
     def _convert_done():
         try:
             try:
-                source, nc = _convert.result()
+                stamp, nc = _convert.result()
             except SilentException:
                 raise
             except Exception as exc:
                 # the conversion failed; ignore it unless it is the one waited for
                 src = pending_source[0]
-                if src is not None and getattr(exc, "source", None) == src[0]:
+                if src is not None and getattr(exc, "source", None) == src:
                     _results_failed(str(exc))
                 return
             with reactive.isolate():
                 is_results = input.data_type() == "netcdf"
                 prev = results_val.get()
             src = pending_source[0]
-            if not is_results or src is None or source != src[0]:
-                return  # stale: a newer Load or a Data Type switch
+            if not is_results or src is None or stamp != src:
+                return  # stale: a newer Load, a changed file or a Data Type switch
             pending_source[0] = None
             rf = open_results(nc)
-            # the new file first, the previous one closed after
+            # the new file first, the previous one closed after (this flush)
             results_val.set(rf)
+            if prev is not None and prev is not rf:
+                _close_after_flush(prev)
             open_source[0] = src
             _set_value(loaded_data, None)
             _set_value(data_type, "netcdf")
             data_info_val.set(_results_data_info(rf, src[0]))
-            if prev is not None and prev is not rf:
-                _close_after_flush(prev)
             ui.notification_show(
                 f"Loaded {src[0].name}: {len(rf.times)} records", type="message", duration=4
             )
@@ -1106,9 +1107,9 @@ def _plotly_timeseries(data: dict, plot_type: str, show_grid: bool) -> go.Figure
 
 
 class _LoadFailed(Exception):
-    """A results conversion failed; ``source`` is the file it was for."""
+    """A results conversion failed; ``source`` is the stamp it was for."""
 
-    def __init__(self, source: Path, message: str):
+    def __init__(self, source: tuple, message: str):
         super().__init__(message)
         self.source = source
 

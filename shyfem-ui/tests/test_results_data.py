@@ -139,3 +139,26 @@ def test_close_releases_the_file(tmp_path):
         assert rd.frame(rf2, "salinity", 0)[0] == 2.0
     finally:
         rf2.close()
+
+
+def test_value_range_raises_when_closed_between_chunks(tmp_path, monkeypatch):
+    """A file closed mid-range must raise, not be reopened by xarray."""
+    from shyfem_ui.services import results_data
+    from tests._ugrid_fixture import write_ugrid
+
+    rf = results_data.open_results(write_ugrid(tmp_path / "r.nc", n_time=6))
+    monkeypatch.setattr(results_data, "_CHUNK", 2)
+    real_read = results_data._read
+    calls = []
+
+    def _read_then_close(*a, **kw):
+        out = real_read(*a, **kw)
+        calls.append(1)
+        if len(calls) == 1:
+            rf.close()
+        return out
+
+    monkeypatch.setattr(results_data, "_read", _read_then_close)
+    with pytest.raises(ValueError, match="closed"):
+        results_data.value_range(rf, "water_level")
+    assert len(calls) == 1, "the second chunk was not read"

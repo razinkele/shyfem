@@ -8,6 +8,7 @@ import ast
 import inspect
 import re
 import textwrap
+from pathlib import Path
 
 import plotly.graph_objects as go
 import pytest
@@ -119,7 +120,6 @@ def test_sidebar_holds_results_controls_only_for_results():
     for control in (
         "visualize-plot_type_select",
         "visualize-colormap",
-        "visualize-show_colorbar",
         "visualize-show_grid_lines",
         "visualize-equal_aspect",
         "visualize-main_plot",
@@ -161,7 +161,7 @@ def test_conversion_is_an_extended_task_awaiting_netcdf_for():
     assert isinstance(conv, ast.AsyncFunctionDef)
     body = _src(conv)
     assert "await netcdf_for(" in body
-    assert "return (source, nc)" in body or "return source, nc" in body
+    assert "return (stamp, nc)" in body or "return stamp, nc" in body
     assert "ShyfemWrapper(config.shyfem_dir)" in _src(_server())
 
 
@@ -203,15 +203,16 @@ def test_result_effect_opens_sets_first_closes_after():
     # set the new file first, close the previous one after (after the flush)
     i_set = body.index("results_val.set(rf)")
     i_close = body.index("_close_after_flush(prev)")
-    assert i_set < i_close
+    assert i_set < i_close < body.index("_results_data_info(")
     assert "open_source[0] = src" in body
     assert "pending_source[0] = None" in body
     close_after = _src(_fn("_close_after_flush"))
     assert "session.on_flushed(" in close_after
     # errors clear the map, but only a failure of the conversion waited for
     assert "_results_failed(" in body
-    assert "getattr(exc, 'source', None) == src[0]" in body
-    assert "raise _LoadFailed(source, str(exc))" in _src(_fn("_convert"))
+    assert "getattr(exc, 'source', None) == src" in body
+    assert "stamp != src" in body, "staleness is the full source stamp"
+    assert "raise _LoadFailed(stamp, str(exc))" in _src(_fn("_convert"))
 
 
 def test_clear_resets_both_stamps_cancels_and_closes():
@@ -372,6 +373,7 @@ class _Page:
         from shyfem_ui.config import Config
         from shyfem_ui.services import results_cache
 
+        self.project_dir = Path(project_dir)
         self.sent: list[dict] = []
         self.converted: list = []
         self.opened: list = []
@@ -620,3 +622,65 @@ async def test_page_a_newer_load_wins_over_a_running_conversion(make_page, monke
     await p.settle(lambda: len(p.opened) == 2)
     assert not any("A failed late" in n for n in p.notes[n_notes:])
     assert p.load_labels()[-1] == "Load Data"
+
+
+async def test_page_closes_the_previous_file_when_a_later_step_fails(make_page, monkeypatch):
+    p = make_page()
+    p.set("data_type", "netcdf")
+    await p.flush()
+    await _load(p, "hydro.nc")
+    await p.settle(lambda: len(p.opened) == 1)
+    hydro = p.opened[0]
+
+    def _boom(rf, source):
+        raise RuntimeError("info failed")
+
+    monkeypatch.setattr(visualize, "_results_data_info", _boom)
+    await _load(p, "ts.nc")
+    await p.settle(lambda: any("info failed" in n for n in p.notes))
+    await p.idle()
+    assert len(p.opened) == 2
+    assert hydro._closed, "the previous file is closed even though a later step raised"
+    assert p.opened[1]._closed, "the failed new file is closed too"
+
+
+async def test_page_drops_a_result_for_a_file_changed_during_conversion(make_page, monkeypatch):
+    """Staleness is the full source stamp: the same path, rewritten while it
+    converts and loaded again, drops the old result and converts again."""
+    import asyncio
+    import os
+
+    p = make_page()
+    gates: list[asyncio.Event] = []
+
+    async def _gated(path, user, config, wrapper):
+        p.converted.append(path)
+        gate = asyncio.Event()
+        gates.append(gate)
+        try:
+            await gate.wait()
+        except asyncio.CancelledError:
+            pass  # finish anyway: the stale result must be dropped by its stamp
+        return path
+
+    monkeypatch.setattr(visualize, "netcdf_for", _gated)
+    p.set("data_type", "netcdf")
+    await p.flush()
+    await _load(p, "hydro.nc")
+    await p.settle(lambda: len(gates) == 1)
+
+    src = p.project_dir / "hydro.nc"
+    st = src.stat()
+    os.utime(src, ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+    await _load(p, "hydro.nc")
+    await p.idle()
+    assert p.opened == [], "the result of the old stamp is not opened"
+    await p.settle(lambda: len(gates) == 2)
+    gates[1].set()
+    await p.settle(lambda: len(p.opened) == 1)
+    assert len(p.converted) == 2, "the changed file was converted again"
+
+    # and the new stamp is what is open: Load again is a no-op
+    await _load(p, "hydro.nc")
+    await p.idle()
+    assert len(p.converted) == 2 and len(p.opened) == 1
