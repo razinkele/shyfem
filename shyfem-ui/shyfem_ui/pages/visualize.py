@@ -1158,7 +1158,9 @@ def _results_statistics(rf, on_screen: dict | None) -> ui.Tag:
     if on_screen is not None:
         units = on_screen.get("units") or ""
         lo, hi = on_screen.get("vmin"), on_screen.get("vmax")
-        if lo is None or hi is None:
+        if on_screen.get("no_values"):
+            rng = "no valid values"
+        elif lo is None or hi is None:
             rng = "computing\u2026"
         else:
             rng = f"{lo:.4g} \u2013 {hi:.4g} {units}".strip()

@@ -760,6 +760,7 @@ async def test_server_says_so_when_a_variable_has_no_valid_values(ugrid):
     await h.settle(lambda: "No valid values" in str(h.values("map_message")[-1:]))
     await h.flush()
     assert (h.screen() or {}).get("vmin") is None
+    assert (h.screen() or {}).get("no_values") is True
     assert h.values("legend")[-1] is None
     assert "nan" not in str(h.values("map_message")[-1]).lower()
     patches = [lyr for p in h.custom("deck_partial_update") for lyr in p["layers"]]

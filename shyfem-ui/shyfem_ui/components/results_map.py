@@ -635,6 +635,7 @@ def results_map_server(input, output, session, results: reactive.Value):
             "units": info.units,
             "vmin": rng[0] if rng and _usable(rng) else None,
             "vmax": rng[1] if rng and _usable(rng) else None,
+            "no_values": bool(rng) and not _usable(rng),
         }
 
     def _close() -> None:

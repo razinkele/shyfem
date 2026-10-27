@@ -337,6 +337,20 @@ def test_results_statistics_shows_the_range_on_screen_and_all_units():
         )
     )
     assert "computing" in computing
+    empty = str(
+        visualize._results_statistics(
+            _RF(),
+            {
+                "var": "salinity",
+                "label": "Salinity",
+                "units": "psu",
+                "vmin": None,
+                "vmax": None,
+                "no_values": True,
+            },
+        )
+    )
+    assert "no valid values" in empty and "computing" not in empty
     assert "Load a SHYFEM results file" in str(visualize._results_statistics(None, None))
 
 
