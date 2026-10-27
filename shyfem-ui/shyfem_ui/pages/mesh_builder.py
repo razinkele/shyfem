@@ -1215,10 +1215,7 @@ def mesh_builder_server(
         await asyncio.sleep(0)  # yield so Shiny flushes the spinner to the browser
         try:
             if method == "shybas":
-                work_dir = Path(config.work_dir) / "mesh_builder"
-                result_grd = await interpolate_bathymetry_shybas(
-                    grd, Path("bathy_temp.xyz"), work_dir, wrapper
-                )
+                result_grd = await interpolate_bathymetry_shybas(grd, data, wrapper)
             else:
                 n_bathy = len(data)
                 n_nodes = len(grd.nodes)

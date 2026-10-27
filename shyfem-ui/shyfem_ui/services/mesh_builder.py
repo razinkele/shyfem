@@ -1207,46 +1207,69 @@ def _cloughtocher_interpolate(
     return depths
 
 
-async def interpolate_bathymetry_shybas(
-    grd: GrdFile,
-    bathy_path: Path,
-    work_dir: Path,
-    wrapper,
-) -> GrdFile:
-    """Interpolate bathymetry using shybas -bfile.
+async def interpolate_bathymetry_shybas(grd: GrdFile, points: np.ndarray, wrapper) -> GrdFile:
+    """Interpolate node depths with ``shybas -bfile`` (M-03).
+
+    shybas's contract, checked on the real binary:
+
+    * the bathymetry must be a GRD of depth points (``1 id 0 x y z``); a
+      plain xyz file, or any comment line, is a "Read error" reported with
+      exit 0 and no output;
+    * ``-node`` interpolates on nodes, and refuses a mesh whose elements
+      carry depths ("depth values on elements not allowed", exit 0);
+    * the result is always ``basbathy.grd`` in the working folder.
+
+    It runs in a private temporary folder (the old shared work folder let
+    users overwrite each other's files) and raises instead of returning the
+    mesh unchanged when shybas wrote nothing.
 
     Args:
-        grd: Mesh grid (from triangulation step).
-        bathy_path: Path to bathymetry xyz file.
-        work_dir: Working directory for temp files.
+        grd: The mesh to give depths to.
+        points: ``(N, 3)`` array of x, y, depth.
         wrapper: ShyfemWrapper instance.
 
     Returns:
-        GrdFile with interpolated depths.
+        A copy of ``grd`` with node depths from shybas.
+
+    Raises:
+        RuntimeError: shybas failed or wrote no result.
     """
-    work_dir = Path(work_dir)
-    work_dir.mkdir(parents=True, exist_ok=True)
+    import tempfile
 
-    # Save grid to temp file
-    temp_grd = work_dir / "_mesh_temp.grd"
-    GrdParser.save(grd, temp_grd)
+    pts = np.asarray(points, dtype=float)
+    with tempfile.TemporaryDirectory(prefix="shybas_") as tmp:
+        work = Path(tmp)
+        mesh = GrdFile(
+            nodes={k: _dc_replace(n, depth=None) for k, n in grd.nodes.items()},
+            elements={k: _dc_replace(e, depth=None) for k, e in grd.elements.items()},
+            lines=dict(grd.lines),
+        )
+        GrdParser.save(mesh, work / "mesh.grd")
+        with open(work / "bathy.grd", "w") as fh:
+            for i, (x, y, z) in enumerate(pts[:, :3].tolist(), start=1):
+                fh.write(f"1 {i} 0 {x!r} {y!r} {z!r}\n")  # plain floats, full precision
 
-    # Run shybas with bathymetry file
-    result = await wrapper.run_command(
-        "shybas",
-        ["-bfile", str(bathy_path), str(temp_grd)],
-        work_dir,
+        result = await wrapper.run_command(
+            "shybas", ["-bfile", "bathy.grd", "-node", "mesh.grd"], work
+        )
+        out = work / "basbathy.grd"
+        if not result.success or not out.is_file():
+            said = [
+                line.strip()
+                for line in (result.stdout or "").splitlines() + (result.stderr or "").splitlines()
+                if line.strip()
+            ]
+            raise RuntimeError(
+                "shybas did not interpolate the bathymetry" + (f": {said[-1]}" if said else "")
+            )
+        interpolated = GrdParser.parse_file(out)
+
+    depth = {k: n.depth for k, n in interpolated.nodes.items()}
+    return GrdFile(
+        nodes={k: _dc_replace(n, depth=depth.get(k)) for k, n in grd.nodes.items()},
+        elements=dict(grd.elements),
+        lines=dict(grd.lines),
     )
-
-    if not result.success:
-        raise RuntimeError(f"shybas failed: {result.stderr}")
-
-    # shybas writes output to the same filename or with .bas extension
-    output_path = temp_grd
-    if not output_path.exists():
-        output_path = work_dir / "_mesh_temp.bas"
-
-    return GrdParser.parse_file(output_path)
 
 
 # ---------------------------------------------------------------------------
