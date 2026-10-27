@@ -366,6 +366,19 @@ def visualize_server(
         _clear_results()
         ui.notification_show(message, type="error", duration=8)
 
+    def _load_failed(message: str) -> None:
+        """A Load failed before anything changed: keep what is open, if anything."""
+        _convert.cancel()
+        pending_source[0] = None
+        with reactive.isolate():
+            is_open = results_val.get() is not None
+        if not is_open or open_source[0] is None:
+            _results_failed(message)
+            return
+        ui.notification_show(
+            f"{message} (still showing {open_source[0][0].name})", type="error", duration=8
+        )
+
     @reactive.extended_task
     async def _convert(stamp: tuple, user):
         # ``stamp`` is the picked file's (resolved path, st_size, st_mtime_ns):
@@ -381,7 +394,7 @@ def visualize_server(
         try:
             src = _source_stamp(path)
         except OSError as exc:
-            _results_failed(f"Cannot read {Path(path).name}: {exc}")
+            _load_failed(f"Cannot read {Path(path).name}: {exc}")
             return
         with reactive.isolate():
             is_open = results_val.get() is not None
@@ -409,7 +422,7 @@ def visualize_server(
                 # the conversion failed; ignore it unless it is the one waited for
                 src = pending_source[0]
                 if src is not None and getattr(exc, "source", None) == src:
-                    _results_failed(str(exc))
+                    _load_failed(str(exc))
                 return
             with reactive.isolate():
                 is_results = input.data_type() == "netcdf"
@@ -418,7 +431,13 @@ def visualize_server(
             if not is_results or src is None or stamp != src:
                 return  # stale: a newer Load, a changed file or a Data Type switch
             pending_source[0] = None
-            rf = open_results(nc)
+            try:
+                rf = open_results(nc)
+            except Exception as exc:
+                logger.warning("visualize: opening results failed: %s", exc, exc_info=True)
+                _load_failed(f"Could not open the results file: {exc}")
+                return
+            # from here on the previous file is replaced: a failure clears the map
             # the new file first, the previous one closed after (this flush)
             results_val.set(rf)
             if prev is not None and prev is not rf:
