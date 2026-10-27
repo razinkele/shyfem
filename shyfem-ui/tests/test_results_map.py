@@ -633,3 +633,94 @@ async def test_server_ignores_late_echoes_of_quick_steps(ugrid):
     h.set_input("t_index", 2)
     await h.flush()
     assert h.values("time_label")[-1].endswith("record 3 / 4")
+
+
+def _message_html(h):
+    shown = h.values("map_message")[-1]
+    return shown["html"] if shown else ""
+
+
+def _is_playing_label(h):
+    return [m["label"]["html"] for m in h.input_messages("play")][-1]
+
+
+async def _broken_load_is_torn_down(h, bad, caplog, ugrid):
+    good = ugrid(n_time=4)
+    h.results.set(good)
+    await h.settle(lambda: (h.screen() or {}).get("vmin") is not None)
+    h.set_input("play", 1)
+    await h.flush()
+    assert _is_playing_label(h) == "Pause"
+
+    h.results.set(bad)
+    await h.flush()
+    assert h.screen() is None, "the previous scene is not left on screen"
+    assert f"Could not show {bad.path.name}" in _message_html(h)
+    assert _is_playing_label(h) == "Play", "playback stopped"
+    assert h.custom("deck_update")[-1]["layers"] == [], "basemap only"
+    assert h.values("time_label")[-1] == ""
+    assert h.values("legend")[-1] is None
+    assert h.slider_pushes()[-1]["value"] == 0
+    assert any("scene update failed" in r.getMessage() for r in caplog.records)
+    caplog.clear()
+
+    again = ugrid(n_time=3)
+    h.results.set(again)
+    await h.settle(lambda: (h.screen() or {}).get("vmin") is not None)
+    assert _message_html(h) == ""
+    assert h.values("time_label")[-1].endswith("record 1 / 3")
+
+
+async def test_server_tears_down_a_file_with_no_variables(ugrid, caplog):
+    h = _Harness()
+    bad = ugrid(n_time=2)
+    bad.variables = {}  # pick_variable raises
+    bad.has_currents = False
+    await _broken_load_is_torn_down(h, bad, caplog, ugrid)
+
+
+async def test_server_tears_down_when_the_geometry_fails(ugrid, caplog, monkeypatch):
+    h = _Harness()
+    real = results_map.mesh_geometry
+    bad = ugrid(n_time=2)
+
+    def geometry(lonlat, faces):
+        if h.results.get() is bad:
+            raise RuntimeError("broken mesh")
+        return real(lonlat, faces)
+
+    monkeypatch.setattr(results_map, "mesh_geometry", geometry)
+    await _broken_load_is_torn_down(h, bad, caplog, ugrid)
+
+
+async def test_server_clears_the_old_legend_and_label_while_the_range_computes(ugrid, monkeypatch):
+    import threading
+
+    h = _Harness()
+    h.results.set(ugrid(n_time=4))
+    await h.settle(lambda: (h.screen() or {}).get("vmin") is not None)
+    assert h.values("legend")[-1] is not None
+
+    release = threading.Event()
+    real = results_map.value_range
+
+    def slow(rf, var, level=0):
+        release.wait(5)
+        return real(rf, var, level)
+
+    monkeypatch.setattr(results_map, "value_range", slow)
+    h.results.set(ugrid(n_time=2))
+    await h.flush()
+    try:
+        assert (h.screen() or {}).get("vmin") is None, "range still computing"
+        assert h.values("legend")[-1] is None, "the old legend is gone"
+        assert h.values("time_label")[-1].endswith("record 1 / 2"), "the new file's count"
+    finally:
+        release.set()
+    await h.settle(lambda: (h.screen() or {}).get("vmin") is not None)
+    assert h.values("legend")[-1] is not None
+
+
+def test_push_slider_survives_a_missing_controls_ui():
+    body = _src(_fn("_push_slider"))
+    assert "_opt(input, 't_index', 0)" in body and "input.t_index()" not in body

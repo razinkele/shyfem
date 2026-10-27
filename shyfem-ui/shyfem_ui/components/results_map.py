@@ -237,7 +237,8 @@ def results_map_server(input, output, session, results: reactive.Value):
 
     def _push_slider(v: int, max_: int | None = None) -> None:
         with reactive.isolate():
-            current = int(input.t_index())
+            # through _opt: a map UI mounted without the controls must not stop (a)
+            current = int(_opt(input, "t_index", 0))
         note_push(pending, v, current)
         if max_ is None:
             ui.update_slider("t_index", value=v, step=1)
@@ -254,6 +255,20 @@ def results_map_server(input, output, session, results: reactive.Value):
                 screenshot_widget(placement="top-right"),
             ],
         )
+
+    async def _teardown(message: str, n: int) -> None:
+        """No scene: basemap only, playback stopped, slider at 0, ``message`` shown."""
+        _ranges.cancel()
+        pending_key[0] = None
+        _clear_scene()
+        _set(playing, False)
+        _set(label_v, "")
+        _set(legend_v, "")
+        _set(range_message, "")
+        await _full_update([])
+        _set(t, 0)
+        _push_slider(0, max_=max(n - 1, 0))
+        _set(proj_message, message)
 
     @reactive.extended_task
     async def _ranges(key, rf, var, level):
@@ -288,6 +303,7 @@ def results_map_server(input, output, session, results: reactive.Value):
     # (a) scene: file, variable, level, projection -> full update
     @reactive.effect
     async def _scene():
+        rf = None
         try:
             rf = results.get()
             if rf is None:
@@ -301,6 +317,7 @@ def results_map_server(input, output, session, results: reactive.Value):
                 _set(proj_message, "")
                 _set(label_v, "")
                 _set(legend_v, "")
+                _set(range_message, "")
                 return
             var = pick_variable(_opt(input, "variable", None), rf)
             level = int(_opt(input, "level", 0))
@@ -315,16 +332,7 @@ def results_map_server(input, output, session, results: reactive.Value):
             except NeedsProjection as exc:
                 detected = _detect_epsg(rf) if epsg is None else None
                 if detected is None:
-                    _ranges.cancel()
-                    pending_key[0] = None
-                    await _full_update([])
-                    _set(proj_message, f"{exc} (Projection, in the controls).")
-                    _clear_scene()
-                    _set(playing, False)
-                    _set(label_v, "")
-                    _set(legend_v, "")
-                    _set(t, 0)
-                    _push_slider(0, max_=max(n - 1, 0))
+                    await _teardown(f"{exc} (Projection, in the controls).", n)
                     return
                 lonlat = mesh_lonlat(rf, detected)
             _set(proj_message, "")
@@ -355,6 +363,9 @@ def results_map_server(input, output, session, results: reactive.Value):
                     "speed_max": None,
                 }
             )
+            # the previous file's legend and label must not linger while the range computes
+            _set(legend_v, "")
+            _set(label_v, f"{format_time(rf.times[t0])} \u2014 record {t0 + 1} / {n}" if n else "")
             _set(t, t0)
             _push_slider(t0, max_=max(n - 1, 0))
             _ranges.cancel()
@@ -363,6 +374,15 @@ def results_map_server(input, output, session, results: reactive.Value):
             raise
         except Exception as exc:
             _log.warning("results map: scene update failed: %s", exc, exc_info=True)
+            name = rf.path.name if rf is not None else "the results file"
+            try:
+                await _teardown(
+                    f"Could not show {name}: {exc}", len(rf.times) if rf is not None else 0
+                )
+            except SilentException:
+                raise
+            except Exception as exc2:
+                _log.warning("results map: clearing the map failed: %s", exc2, exc_info=True)
 
     # (a2) the colour range (and arrow scale) of the current scene
     @reactive.effect
@@ -379,7 +399,7 @@ def results_map_server(input, output, session, results: reactive.Value):
         except SilentException:
             raise
         except Exception as exc:
-            _log.warning("results map: colour range failed: %s", exc)
+            _log.warning("results map: colour range failed: %s", exc, exc_info=True)
             _set(range_message, f"Could not compute the colour range: {exc}")
 
     # (b) the user moved the slider
