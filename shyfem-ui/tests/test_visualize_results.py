@@ -545,19 +545,23 @@ async def test_page_loads_noops_swaps_and_clears(make_page):
     await p.settle(lambda: len(p.opened) == 3)
     assert len(p.converted) == 3, "a cleared map reloads the file"
 
-    # a file that is not a results file: an error, the open file is closed
+    # a file that is not a results file: an error, the open file stays open
     current = p.opened[2]
     await _load(p, "bad.nc")
-    await p.settle(lambda: current._closed)
-    assert len(p.opened) == 3
-    assert any("Could not open" in n for n in p.notes)
+    await p.settle(lambda: any("Could not open" in n for n in p.notes))
+    await p.idle()
+    assert len(p.opened) == 3 and not current._closed
+    assert any("still showing ts.nc" in n for n in p.notes)
 
-    # and afterwards the same file loads again
+    # and the open file is still what is open: loading it again is a no-op
+    n_notes = len(p.notes)
     await _load(p, "ts.nc")
-    await p.settle(lambda: len(p.opened) == 4)
+    await p.idle()
+    assert len(p.opened) == 3
+    assert any("already open" in n for n in p.notes[n_notes:])
 
     await p.session._on_ended_callbacks.invoke()
-    assert p.opened[3]._closed
+    assert current._closed
 
 
 async def test_page_drops_a_result_after_a_data_type_switch(make_page):
@@ -586,6 +590,33 @@ async def test_page_reports_a_failed_conversion(make_page, monkeypatch):
     await p.settle(lambda: any("Cannot convert hydro.nc: boom" in n for n in p.notes))
     assert p.opened == []
     assert p.load_labels()[-1] == "Load Data", "a failed conversion restores the button"
+
+
+async def test_page_keeps_the_open_file_when_a_conversion_fails(make_page, monkeypatch):
+    from shyfem_ui.services.results_cache import ConversionError
+
+    p = make_page()
+    p.set("data_type", "netcdf")
+    await p.flush()
+    await _load(p, "hydro.nc")
+    await p.settle(lambda: len(p.opened) == 1)
+    hydro = p.opened[0]
+
+    async def _fail(path, user, config, wrapper):
+        raise ConversionError(f"Cannot convert {path.name}: boom")
+
+    monkeypatch.setattr(visualize, "netcdf_for", _fail)
+    await _load(p, "ts.nc")
+    await p.settle(lambda: any("Cannot convert ts.nc: boom" in n for n in p.notes))
+    await p.idle()
+    assert not hydro._closed, "a failed Load keeps the file on the map"
+    assert any("still showing hydro.nc" in n for n in p.notes)
+    assert p.load_labels()[-1] == "Load Data"
+
+    # what is open is still known: the same file again is a no-op
+    await _load(p, "hydro.nc")
+    await p.idle()
+    assert len(p.opened) == 1 and any("already open" in n for n in p.notes)
 
 
 async def test_page_a_newer_load_wins_over_a_running_conversion(make_page, monkeypatch):
