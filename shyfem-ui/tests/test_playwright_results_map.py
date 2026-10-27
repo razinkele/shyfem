@@ -3,14 +3,15 @@
 Headless chromium on some machines has no WebGL: MapLibre then fails to
 initialise, ``window.__deckgl_instances[...]`` is never created, and the
 layer assertions (``lastLayers``) cannot run. Those assertions are skipped
-when WebGL is missing; everything driven by the server (time label, Play
-button, notifications) is still checked.
+with a warning when WebGL is missing (the test still passes); everything
+driven by the server (time label, Play button, notifications) is checked.
 """
 
 from __future__ import annotations
 
 import os
 import shutil
+import warnings
 from pathlib import Path
 
 import pytest
@@ -141,6 +142,11 @@ def _wait_layer(page, layer_id: str, pred: str = "true"):
     return _layer(page, layer_id)
 
 
+def _warn_no_webgl() -> None:
+    """Without WebGL only the layer checks are skipped; the test still passes."""
+    warnings.warn("no WebGL in this browser: layer (lastLayers) assertions skipped", stacklevel=2)
+
+
 def _no_output_errors(page) -> None:
     errors = page.locator(".shiny-output-error:visible")
     assert errors.count() == 0, errors.all_inner_texts()
@@ -168,10 +174,26 @@ def test_results_map_load_step_play_switch_and_clear(pw_page, live_server, app_w
     write_ugrid(proj / "ts.nc", n_time=3, kind="ts")
     _open_project(page, proj)
     try:
+        console_errors: list[str] = []
+        page.on(
+            "console",
+            lambda m: console_errors.append(m.text) if m.type == "error" else None,
+        )
         _choose_results(page)
         _load(page, "hydro.nc")
         expect(page.locator(LABEL)).to_contain_text("record 1 / 6", timeout=_T)
         webgl = _has_webgl(page)
+        if webgl:
+            # the map was built inside a hidden panel: it must have grown when shown
+            page.wait_for_function(
+                """(id) => {
+                    const c = document.querySelector('#' + id + ' canvas');
+                    return !!c && c.getBoundingClientRect().width > 100
+                        && c.getBoundingClientRect().height > 100;
+                }""",
+                arg=MAP_ID,
+                timeout=_T,
+            )
 
         # Load again: a no-op (nothing reopened, the record keeps advancing below)
         page.locator("#visualize-load_data_btn").click()
@@ -218,8 +240,13 @@ def test_results_map_load_step_play_switch_and_clear(pw_page, live_server, app_w
         page.wait_for_timeout(1000)
         assert "record 1 / 6" in _label(page), "not playing"
         _no_output_errors(page)
+        deck_errors = [
+            e for e in console_errors if "deckgl" in e.lower() or "maplibre" in e.lower()
+        ]
+        assert deck_errors == [], deck_errors
         if not webgl:
-            pytest.skip("no WebGL in this browser: layer (lastLayers) assertions skipped")
+            _warn_no_webgl()
+            return
     finally:
         _reset_data_type(page)
 
@@ -253,7 +280,8 @@ def test_results_map_ts_file_first_on_a_fresh_page(fresh_page, app_work_dir):
         expect(page.locator(LABEL)).to_contain_text("record 1 / 3", timeout=_T)
         _no_output_errors(page)
         if not _has_webgl(page):
-            pytest.skip("no WebGL in this browser: layer (lastLayers) assertions skipped")
+            _warn_no_webgl()
+            return
         layer = _wait_layer(page, "results-mesh", "!!l._meshColors")
         assert layer["colors"]
         assert _layer(page, "results-arrows") is None, "no currents: no arrows layer"
@@ -305,7 +333,8 @@ def test_results_map_real_shy_converts_once(fresh_page, app_work_dir):
         assert mine[0].stat().st_mtime_ns == mtime, "no conversion, no cache touch"
         _no_output_errors(page)
         if not webgl:
-            pytest.skip("no WebGL in this browser: layer (lastLayers) assertions skipped")
+            _warn_no_webgl()
+            return
         assert _layer(page, "results-mesh")["positions"] == positions
     finally:
         _reset_data_type(page)

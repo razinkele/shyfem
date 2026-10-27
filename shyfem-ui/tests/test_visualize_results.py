@@ -566,3 +566,57 @@ async def test_page_reports_a_failed_conversion(make_page, monkeypatch):
     await p.settle(lambda: any("Cannot convert hydro.nc: boom" in n for n in p.notes))
     assert p.opened == []
     assert p.load_labels()[-1] == "Load Data", "a failed conversion restores the button"
+
+
+async def test_page_a_newer_load_wins_over_a_running_conversion(make_page, monkeypatch):
+    """Load A, then B while A converts: only B opens; A's late error is ignored."""
+    import asyncio
+
+    p = make_page()
+    gates = {"hydro.nc": asyncio.Event(), "ts.nc": asyncio.Event()}
+    fail_a = {"on": False}
+
+    async def _gated(path, user, config, wrapper):
+        p.converted.append(path)
+        try:
+            await gates[path.name].wait()
+        except asyncio.CancelledError:
+            if fail_a["on"] and path.name == "hydro.nc":
+                raise RuntimeError("A failed late") from None
+            raise
+        return path
+
+    monkeypatch.setattr(visualize, "netcdf_for", _gated)
+    p.set("data_type", "netcdf")
+    await p.flush()
+
+    # A then B: A is cancelled, B runs, only B is opened
+    await _load(p, "hydro.nc")
+    await p.idle()
+    await _load(p, "ts.nc")
+    await p.idle()
+    gates["hydro.nc"].set()
+    await p.idle()
+    assert p.opened == [], "A's result is not opened"
+    gates["ts.nc"].set()
+    await p.settle(lambda: len(p.opened) == 1)
+    assert len(p.opened[0].times) == 3, "B (ts) is what opened"
+    assert [c.name for c in p.converted] == ["hydro.nc", "ts.nc"]
+
+    # A fails while B is pending: no error, B still opens
+    for g in gates.values():
+        g.clear()
+    fail_a["on"] = True
+    p.set("data_type", "grid")  # forget what is open
+    await p.idle()
+    p.set("data_type", "netcdf")
+    await p.flush()
+    n_notes = len(p.notes)
+    await _load(p, "hydro.nc")
+    await p.idle()
+    await _load(p, "ts.nc")
+    await p.idle()
+    gates["ts.nc"].set()
+    await p.settle(lambda: len(p.opened) == 2)
+    assert not any("A failed late" in n for n in p.notes[n_notes:])
+    assert p.load_labels()[-1] == "Load Data"
