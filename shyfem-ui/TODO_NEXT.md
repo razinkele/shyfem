@@ -233,18 +233,10 @@
 > Scoped to metadata visibility. Variable dropdown and dimension sliders
 > already existed. Added info table, coordinate labels, and metadata panel.
 
-- [x] **27.1** Add variable info table to Data Info tab
-  - `build_variable_table(ds)` — name, dims, dtype, units, long_name, min/max
-  - 5 tests. Displayed in Data Info tab when NetCDF loaded.
-
-- [x] **27.2** ~~Add dimension slicing controls~~ — Already existed
-  - Enhanced: coordinate labels under each slider via `get_dim_label()`
-  - Shows timestamps for time dims, depth values for vertical dims
-  - 5 tests for label formatting
-
-- [x] **27.3** Add variable metadata display
-  - `get_variable_attrs(ds, var)` — long_name, standard_name, units,
-    valid_range, _FillValue. 4 tests. Displayed below variable selector.
+- [x] **27.1-27.3** ~~Variable info table, dimension labels, variable metadata~~
+  - Superseded (V-01): `build_variable_table`, `get_dim_label` and
+    `get_variable_attrs` were removed with the broken NetCDF plot; the
+    "SHYFEM results" map on the Visualize page replaces them.
 
 ---
 

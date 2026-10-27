@@ -32,6 +32,13 @@ class NeedsProjection(ValueError):
     """The mesh is in projected coordinates and no EPSG code was given."""
 
 
+def is_geographic(rf) -> bool:
+    """True when every node lies within |x| <= 180, |y| <= 90 (lon/lat)."""
+    x = np.asarray(rf.node_x, dtype=np.float64)
+    y = np.asarray(rf.node_y, dtype=np.float64)
+    return bool(np.all(np.abs(x) <= 180) and np.all(np.abs(y) <= 90))
+
+
 def mesh_lonlat(rf, epsg: int | None) -> np.ndarray:
     """``(n_node, 2)`` lon/lat of the mesh nodes.
 
@@ -40,15 +47,24 @@ def mesh_lonlat(rf, epsg: int | None) -> np.ndarray:
     """
     x = np.asarray(rf.node_x, dtype=np.float64)
     y = np.asarray(rf.node_y, dtype=np.float64)
-    geographic = bool(np.all(np.abs(x) <= 180) and np.all(np.abs(y) <= 90))
-    if geographic:
+    if is_geographic(rf):
         return np.column_stack([x, y])
     if epsg is None:
         raise NeedsProjection("Choose the mesh projection (EPSG) to place it on the map")
     from pyproj import Transformer
 
     lon, lat = Transformer.from_crs(int(epsg), 4326, always_xy=True).transform(x, y)
-    return np.column_stack([np.asarray(lon), np.asarray(lat)])
+    lon, lat = np.asarray(lon), np.asarray(lat)
+    if not (
+        np.all(np.isfinite(lon))
+        and np.all(np.isfinite(lat))
+        and np.all(np.abs(lon) <= 180)
+        and np.all(np.abs(lat) <= 90)
+    ):
+        raise NeedsProjection(
+            "The chosen projection does not place the mesh on Earth; choose another EPSG"
+        )
+    return np.column_stack([lon, lat])
 
 
 def _centre(lonlat: np.ndarray) -> tuple[float, float]:

@@ -32,6 +32,7 @@ from shyfem_ui.components.results_map_layers import (
     arrow_paths,
     arrows_layer,
     color_patch,
+    is_geographic,
     legend_html,
     mesh_geometry,
     mesh_layer,
@@ -52,9 +53,9 @@ _EPSG_CHOICES = {
     "32634": "UTM 34N",
     "3003": "Gauss-Boaga W",
     "3004": "Gauss-Boaga E",
-    "4326": "WGS84",
 }
 _MANUAL_RANGE_MSG = "Manual range needs min < max; using auto"
+_NO_VALUES_MSG = "No valid values in this variable"
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +70,11 @@ def _opt(input, name: str, default):
     when the input appears.
     """
     return input[name]() if name in input else default
+
+
+def _usable(auto) -> bool:
+    """False for an auto range that is finished but has no finite bound."""
+    return auto is None or (math.isfinite(auto[0]) and math.isfinite(auto[1]))
 
 
 def clamp_index(t: int, n: int) -> int:
@@ -219,6 +225,8 @@ def results_map_server(input, output, session, results: reactive.Value):
     range_message = reactive.value("")
     pending_key: list = [None]
     last_path: list = [None]
+    last_fit: list = [None]  # (path, epsg) the map was last fitted to
+    failed_frames: set = set()
     pending: list[int] = []
     warned: set = set()
 
@@ -265,6 +273,7 @@ def results_map_server(input, output, session, results: reactive.Value):
         _set(label_v, "")
         _set(legend_v, "")
         _set(range_message, "")
+        last_fit[0] = None
         await _full_update([])
         _set(t, 0)
         _push_slider(0, max_=max(n - 1, 0))
@@ -281,6 +290,8 @@ def results_map_server(input, output, session, results: reactive.Value):
 
     @reactive.calc
     def effective_range():
+        # A calc that also writes ``range_message``. Loop-free: nothing it reads
+        # (scene, range inputs) depends on that value, and ``_set`` compares first.
         sc = scene.get()
         if sc is None:
             return None
@@ -295,9 +306,9 @@ def results_map_server(input, output, session, results: reactive.Value):
             ):
                 _set(range_message, "")
                 return (float(lo), float(hi))
-            _set(range_message, _MANUAL_RANGE_MSG)
+            _set(range_message, _MANUAL_RANGE_MSG if _usable(sc["auto"]) else _NO_VALUES_MSG)
             return sc["auto"]
-        _set(range_message, "")
+        _set(range_message, "" if _usable(sc["auto"]) else _NO_VALUES_MSG)
         return sc["auto"]
 
     # (a) scene: file, variable, level, projection -> full update
@@ -311,6 +322,7 @@ def results_map_server(input, output, session, results: reactive.Value):
                 pending_key[0] = None
                 _set(playing, False)
                 _clear_scene()
+                last_fit[0] = None
                 _set(t, 0)
                 _push_slider(0)
                 await _full_update([])
@@ -323,6 +335,8 @@ def results_map_server(input, output, session, results: reactive.Value):
             level = int(_opt(input, "level", 0))
             level = min(max(level, 0), rf.n_levels - 1)
             epsg = int(input.epsg()) if input.epsg() else None
+            if is_geographic(rf):
+                epsg = None  # lon/lat meshes ignore the projection
             key = (id(rf), rf.path, rf.stamp, var, level, epsg)
             if key == pending_key[0]:
                 return
@@ -343,12 +357,15 @@ def results_map_server(input, output, session, results: reactive.Value):
                 palette = input.palette()
             t0 = 0 if rf.path != last_path[0] else clamp_index(t_now, n)
             last_path[0] = rf.path
+            fit = last_fit[0] != (rf.path, epsg)
+            last_fit[0] = (rf.path, epsg)
             grey = node_colors(np.full(len(lonlat), np.nan), 0.0, 1.0, palette)
             layers = [mesh_layer(geometry, grey)]
             if rf.has_currents:
                 layers.append({**arrows_layer([]), "visible": False})
             await _full_update(layers)
-            await _map.fit_bounds(session, bounds=_bounds(lonlat), max_zoom=18, duration=800)
+            if fit:  # a variable or level change keeps the user's zoom
+                await _map.fit_bounds(session, bounds=_bounds(lonlat), max_zoom=18, duration=800)
             # interim scene (range still computing): never None while playing
             scene.set(
                 {
@@ -457,6 +474,7 @@ def results_map_server(input, output, session, results: reactive.Value):
     # (e) draw the current record: colour patches only
     @reactive.effect
     async def _frame():
+        cur = sc = None
         try:
             cur = t.get()
             sc = scene.get()
@@ -473,7 +491,10 @@ def results_map_server(input, output, session, results: reactive.Value):
                 return
             tc = clamp_index(cur, n)
             vmin, vmax = rng
-            colors = node_colors(frame(rf, sc["var"], tc, sc["level"]), vmin, vmax, palette)
+            values = frame(rf, sc["var"], tc, sc["level"])
+            if not (math.isfinite(vmin) and math.isfinite(vmax)):
+                values = np.full(len(values), np.nan)  # no valid values: all grey
+            colors = node_colors(values, vmin, vmax, palette)
             if len(colors) != len(sc["lonlat"]):
                 if sc["key"] not in warned:
                     warned.add(sc["key"])
@@ -492,11 +513,17 @@ def results_map_server(input, output, session, results: reactive.Value):
                 await _map.patch_layer(session, ARROWS_LAYER_ID, data=data, visible=arrows)
             info = rf.variables[sc["var"]]
             _set(label_v, f"{format_time(rf.times[tc])} — record {tc + 1} / {n}")
-            _set(legend_v, legend_html(palette, vmin, vmax, info.units, info.label))
+            if math.isfinite(vmin) and math.isfinite(vmax):
+                _set(legend_v, legend_html(palette, vmin, vmax, info.units, info.label))
+            else:
+                _set(legend_v, "")
         except SilentException:
             raise
         except Exception as exc:
             _log.warning("results map: frame failed: %s", exc)
+            if sc is not None and sc["key"] not in failed_frames:
+                failed_frames.add(sc["key"])
+                _set(range_message, f"Could not read record {int(cur or 0) + 1}: {exc}")
 
     # (f) step back / forward
     def _step(delta: int) -> None:
@@ -606,8 +633,8 @@ def results_map_server(input, output, session, results: reactive.Value):
             "var": sc["var"],
             "label": info.label,
             "units": info.units,
-            "vmin": rng[0] if rng else None,
-            "vmax": rng[1] if rng else None,
+            "vmin": rng[0] if rng and _usable(rng) else None,
+            "vmax": rng[1] if rng and _usable(rng) else None,
         }
 
     def _close() -> None:

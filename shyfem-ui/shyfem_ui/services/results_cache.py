@@ -37,6 +37,14 @@ def _reason(stdout: str, stderr: str) -> str:
     return lines[-1] if lines else "no output"
 
 
+def _size(nc: Path) -> int:
+    """Size of ``nc``; 0 when another session evicted it meanwhile."""
+    try:
+        return nc.stat().st_size
+    except OSError:
+        return 0
+
+
 def _evict(cache: Path, keep: Path, source: str, cap: int) -> None:
     """Drop stale entries of ``source``, then the oldest until under ``cap``.
 
@@ -60,7 +68,9 @@ def _evict(cache: Path, keep: Path, source: str, cap: int) -> None:
             entries.append((nc.stat().st_mtime, nc, src))
         except OSError:
             continue
-    total = keep.stat().st_size + sum(nc.stat().st_size for _, nc, _ in entries if nc.exists())
+    total = _size(keep)
+    for _, nc, _ in entries:
+        total += _size(nc)
     for _, nc, src in sorted(entries):
         if total <= cap:
             break
@@ -91,8 +101,11 @@ async def netcdf_for(path: Path, user: dict | None, config: Config, wrapper) -> 
     cache = viewer_cache_dir(user, config)
     entry = cache / f"{key}.nc"
     if entry.exists():
-        os.utime(entry)
-        return entry
+        try:
+            os.utime(entry)
+            return entry
+        except FileNotFoundError:
+            pass  # evicted by another session just now: convert afresh
 
     tmp = Path(tempfile.mkdtemp(dir=cache, prefix="tmp-"))
     try:

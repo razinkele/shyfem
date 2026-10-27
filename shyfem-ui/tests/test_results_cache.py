@@ -267,3 +267,43 @@ def test_real_shyelab_failure_is_a_conversion_error(tmp_path):
     shutil.copy(_LGR, src)
     with pytest.raises(ConversionError, match="mm_lgr.lgr.shy"):
         _go(src, _cfg(tmp_path), _real(tmp_path))
+
+
+def test_a_hit_evicted_before_utime_converts_again(tmp_path, monkeypatch):
+    cfg, w = _cfg(tmp_path), FakeShyelab()
+    src = _src(tmp_path)
+    first = _go(src, cfg, w)
+    real = os.utime
+
+    def racing(path, *a, **k):
+        if Path(path) == first:  # another session evicts it after our exists()
+            first.unlink()
+            monkeypatch.setattr(os, "utime", real)
+        return real(path, *a, **k)
+
+    monkeypatch.setattr(os, "utime", racing)
+    out = _go(src, cfg, w)
+    assert out.exists() and len(w.calls) == 2
+
+
+def test_evict_tolerates_an_entry_vanishing_mid_scan(tmp_path, monkeypatch):
+    from shyfem_ui.services import results_cache
+
+    cache = tmp_path / "c"
+    cache.mkdir()
+    keep, gone = cache / "k.nc", cache / "g.nc"
+    keep.write_bytes(b"\0" * 10)
+    gone.write_bytes(b"\0" * 10)
+    real = Path.stat
+    seen = {"n": 0}
+
+    def flaky(self, *a, **k):
+        if self == gone:
+            seen["n"] += 1
+            if seen["n"] > 1:  # present for the scan, gone for the size total
+                raise FileNotFoundError(str(self))
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(Path, "stat", flaky)
+    results_cache._evict(cache, keep, "src", 1)
+    assert keep.exists()

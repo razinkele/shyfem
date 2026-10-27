@@ -42,6 +42,18 @@ def test_utm_with_epsg_is_transformed():
     assert np.all((out[:, 1] > 37) & (out[:, 1] < 38.5))
 
 
+def test_utm_mesh_with_wgs84_is_not_on_earth():
+    rf = _rf([688589.0, 710073.0], [4150000.0, 4160000.0])
+    with pytest.raises(rml.NeedsProjection, match="does not place the mesh on Earth"):
+        rml.mesh_lonlat(rf, 4326)
+
+
+def test_a_projection_that_cannot_hold_the_mesh_is_rejected():
+    rf = _rf([5e9, 6e9], [4150000.0, 4160000.0])  # pyproj returns inf for UTM 30N
+    with pytest.raises(rml.NeedsProjection, match="does not place the mesh on Earth"):
+        rml.mesh_lonlat(rf, 32630)
+
+
 def test_geometry_is_indexed_one_vertex_per_node():
     lonlat = np.array([[20.0, 55.0], [20.1, 55.0], [20.0, 55.1], [20.1, 55.1]])
     faces = np.array([[0, 1, 2], [1, 3, 2]])

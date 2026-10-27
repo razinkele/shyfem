@@ -1,6 +1,10 @@
 """Visualize page: the "SHYFEM results" Data Type (the results map replaces
 the broken NetCDF plot, V-01). Pure helpers, the UI layout and source guards
-that pin how ``visualize_server`` loads, converts, swaps and clears results."""
+that pin how ``visualize_server`` loads, converts, swaps and clears results.
+
+Any server harness here uses Shiny internals (``AppSession``,
+``MockConnection``, ``bookmark._restore_context_value``, the ``clientdata``
+hidden flags) and is pinned to shiny ``>=1.8,<1.9``."""
 
 from __future__ import annotations
 

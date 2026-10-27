@@ -1,5 +1,9 @@
 """Results map component: pure helpers, UI build, and source guards that pin
-the reactive dependency matrix of ``results_map_server`` (Task 4)."""
+the reactive dependency matrix of ``results_map_server`` (Task 4).
+
+The server harness below uses Shiny internals (``AppSession``,
+``MockConnection``, ``bookmark._restore_context_value``, the ``clientdata``
+hidden flags) and is pinned to shiny ``>=1.8,<1.9``."""
 
 from __future__ import annotations
 
@@ -724,3 +728,55 @@ async def test_server_clears_the_old_legend_and_label_while_the_range_computes(u
 def test_push_slider_survives_a_missing_controls_ui():
     body = _src(_fn("_push_slider"))
     assert "_opt(input, 't_index', 0)" in body and "input.t_index()" not in body
+
+
+async def test_server_keeps_the_zoom_on_a_variable_change(ugrid):
+    h = _Harness()
+    h.results.set(ugrid(n_time=3))
+    await h.settle(lambda: (h.screen() or {}).get("vmin") is not None)
+    await h.flush()  # var_controls rendered
+    fits, updates = len(h.custom("deck_fit_bounds")), len(h.custom("deck_update"))
+    assert fits == 1
+
+    h.set_input("variable", "u_velocity")
+    await h.settle(lambda: (h.screen() or {}).get("var") == "u_velocity")
+    await h.settle(lambda: (h.screen() or {}).get("vmin") is not None)
+    assert len(h.custom("deck_update")) == updates + 1, "the layers are rebuilt"
+    assert len(h.custom("deck_fit_bounds")) == fits, "but the user's zoom is kept"
+
+    # a lon/lat mesh ignores the projection: touching it is a no-op
+    h.set_input("epsg", "32630")
+    await h.flush()
+    assert len(h.custom("deck_update")) == updates + 1
+    assert len(h.custom("deck_fit_bounds")) == fits
+
+    h.results.set(ugrid(n_time=2))
+    await h.settle(lambda: len(h.custom("deck_fit_bounds")) == fits + 1)
+
+
+async def test_server_says_so_when_a_variable_has_no_valid_values(ugrid):
+    h = _Harness()
+    h.results.set(ugrid(n_time=3, const=-999.0))  # every value is the fill value
+    await h.settle(lambda: "No valid values" in str(h.values("map_message")[-1:]))
+    await h.flush()
+    assert (h.screen() or {}).get("vmin") is None
+    assert h.values("legend")[-1] is None
+    assert "nan" not in str(h.values("map_message")[-1]).lower()
+    patches = [lyr for p in h.custom("deck_partial_update") for lyr in p["layers"]]
+    assert any(lyr["id"] == "results-mesh" and "_meshColors" in lyr for lyr in patches)
+
+
+async def test_server_shows_a_frame_that_cannot_be_read(ugrid, monkeypatch, caplog):
+    def broken(rf, var, t, level=0):
+        raise RuntimeError("disk gone")
+
+    monkeypatch.setattr(results_map, "frame", broken)
+    h = _Harness()
+    h.results.set(ugrid(n_time=3))
+    await h.settle(lambda: "Could not read record 1" in str(h.values("map_message")[-1:]))
+    assert "disk gone" in h.values("map_message")[-1]["html"]
+    n = len(h.values("map_message"))
+    h.set_input("step_fwd", 1)
+    await h.flush()
+    assert len(h.values("map_message")) == n, "shown once per scene, not on every tick"
+    caplog.clear()
