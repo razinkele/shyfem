@@ -1136,17 +1136,33 @@ def _idw_interpolate(
 
 
 def _deduplicate_points(
-    xy: np.ndarray, z: np.ndarray, decimals: int = 2
+    xy: np.ndarray, z: np.ndarray, rel_tol: float = 1e-7
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Remove near-duplicate XY points by rounding, keeping the first occurrence.
+    """Drop near-identical XY points, keeping the first occurrence.
 
-    Dense isobath data often has many points within centimetres of each other,
-    which causes singular-matrix errors in RBF/CloughTocher.
+    Dense isobath data can repeat a point (or put two within millimetres),
+    which makes RBF / Clough-Tocher singular. "Near-identical" is relative to
+    the data's extent (``rel_tol`` of it: millimetres for a lagoon in degrees
+    or in metres). It used to round to 2 decimals, which for the degree
+    coordinates Step 4 always uses is a ~1 km lattice that thinned a dense
+    isobath to a handful of points (M-04).
     """
-    rounded = np.round(xy, decimals=decimals)
-    _, unique_idx = np.unique(rounded, axis=0, return_index=True)
-    unique_idx.sort()  # preserve original order
-    return xy[unique_idx], z[unique_idx]
+    if len(xy) == 0:
+        return xy, z
+    extent = float(np.max(np.ptp(xy, axis=0)))
+    tol = max(extent * rel_tol, np.finfo(float).tiny)
+    # 1. One point per tol-sized cell (O(n log n), whatever the number of
+    #    copies of a point: a pair search alone is quadratic in that number).
+    keys = np.floor((xy - xy.min(axis=0)) / tol).astype(np.int64)
+    _, first = np.unique(keys, axis=0, return_index=True)
+    first.sort()  # preserve original order
+    # 2. Merge the pairs a cell boundary split. With one point per cell each
+    #    point has only a few neighbours within tol, so this stays O(n).
+    pairs = cKDTree(xy[first]).query_pairs(tol, output_type="ndarray")
+    keep = np.ones(len(first), dtype=bool)
+    keep[pairs[:, 1]] = False  # i < j: drop the later point of each pair
+    idx = first[keep]
+    return xy[idx], z[idx]
 
 
 def _rbf_interpolate(
