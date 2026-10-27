@@ -210,6 +210,10 @@ class Config(BaseSettings):
         default=5, description="Log viewer refresh interval in seconds"
     )
 
+    viewer_cache_max_mb: int = Field(
+        default=2000, description="Size cap of each user's results-map NetCDF cache"
+    )
+
     # Report settings
     report_plotly_mode: Literal["cdn", "inline"] = Field(
         default="cdn",
