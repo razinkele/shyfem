@@ -38,14 +38,22 @@ def _reason(stdout: str, stderr: str) -> str:
 
 
 def _evict(cache: Path, keep: Path, source: str, cap: int) -> None:
-    """Drop stale entries of ``source``, then the oldest until under ``cap``."""
+    """Drop stale entries of ``source``, then the oldest until under ``cap``.
+
+    An entry with no readable ``.src`` sidecar belongs to no source but still
+    counts toward the cap and can be evicted.
+    """
     entries = []
     for nc in cache.glob("*.nc"):
         if nc == keep:
             continue
         src = nc.with_suffix(".src")
         try:
-            if src.read_text() == source:
+            try:
+                owner = src.read_text()
+            except OSError:
+                owner = None
+            if owner == source:
                 nc.unlink(missing_ok=True)
                 src.unlink(missing_ok=True)
                 continue
@@ -75,7 +83,10 @@ async def netcdf_for(path: Path, user: dict | None, config: Config, wrapper) -> 
     if path.suffix.lower() == ".nc":
         return path
     real = path.resolve()
-    st = real.stat()
+    try:
+        st = real.stat()
+    except OSError as e:
+        raise ConversionError(f"{path.name}: file not found") from e
     key = hashlib.sha1(f"{real}|{st.st_size}|{st.st_mtime_ns}".encode()).hexdigest()
     cache = viewer_cache_dir(user, config)
     entry = cache / f"{key}.nc"
@@ -92,13 +103,14 @@ async def netcdf_for(path: Path, user: dict | None, config: Config, wrapper) -> 
         except FileNotFoundError as e:
             raise ConversionError(f"Cannot convert {path.name}: shyelab not found ({e})") from e
         out = tmp / "out.nc"
-        if not out.is_file() or out.stat().st_size == 0:
-            raise ConversionError(f"Cannot convert {path.name}: {_reason(res.stdout, res.stderr)}")
-        (cache / f"{key}.src").write_text(str(real))
+        # A killed or timed-out shyelab can leave a partial out.nc behind.
+        if res.return_code != 0 or not out.is_file() or out.stat().st_size == 0:
+            reason = _reason(res.stdout, res.stderr)
+            if res.return_code != 0 and reason == "no output":
+                reason = f"shyelab exited with code {res.return_code}"
+            raise ConversionError(f"Cannot convert {path.name}: {reason}")
         os.replace(out, entry)
-    except BaseException:
-        (cache / f"{key}.src").unlink(missing_ok=True)
-        raise
+        (cache / f"{key}.src").write_text(str(real))
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 

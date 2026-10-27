@@ -146,6 +146,50 @@ def test_failed_conversion_raises_and_leaves_no_entry(tmp_path, kw, quoted):
     assert list(viewer_cache_dir(None, cfg).iterdir()) == []
 
 
+def test_killed_shyelab_with_partial_out_nc_is_a_failure(tmp_path):
+    cfg = _cfg(tmp_path)
+
+    class Killed(FakeShyelab):
+        async def run_command(self, tool_name, args, cwd, *a, **k):
+            write_ugrid(Path(cwd) / "out.nc")
+            return CommandResult(False, -15, "", "", "shyelab", str(cwd))
+
+    with pytest.raises(ConversionError, match="code -15"):
+        _go(_src(tmp_path), cfg, Killed())
+    assert list(viewer_cache_dir(None, cfg).iterdir()) == []
+
+
+def test_missing_source_is_a_conversion_error(tmp_path):
+    with pytest.raises(ConversionError, match="gone.shy: file not found"):
+        _go(tmp_path / "gone.shy", _cfg(tmp_path), FakeShyelab())
+
+
+def test_cancelled_conversion_leaves_nothing(tmp_path):
+    cfg = _cfg(tmp_path)
+
+    class Hang(FakeShyelab):
+        async def run_command(self, tool_name, args, cwd, *a, **k):
+            await asyncio.Event().wait()
+
+    async def go():
+        t = asyncio.create_task(netcdf_for(_src(tmp_path), None, cfg, Hang()))
+        await asyncio.sleep(0.05)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    asyncio.run(go())
+    assert list(viewer_cache_dir(None, cfg).iterdir()) == []
+
+
+def test_an_orphan_entry_without_src_is_counted_and_evictable(tmp_path):
+    cfg = _cfg(tmp_path, viewer_cache_max_mb=1)
+    orphan = viewer_cache_dir(None, cfg) / "deadbeef.nc"
+    orphan.write_bytes(b"\0" * 900_000)
+    out = _go(_src(tmp_path), cfg, FakeShyelab(pad=600_000))
+    assert out.exists() and not orphan.exists()
+
+
 def test_empty_out_nc_is_a_failure(tmp_path):
     cfg = _cfg(tmp_path)
 
