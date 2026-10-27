@@ -39,7 +39,9 @@ Measured* tab and is **not** part of this work.
   currents (water level, current speed): **one view reads one file**. No
   pairing of hydro and ts files.
 - **Files:** the viewer opens **any SHYFEM mesh output** -- a `.shy` or a UGRID
-  `.nc` (hydro, ts, conz, fvl, eco, and Post-process averages/min/max) -- with
+  `.nc` that shyelab can convert (hydro, ts, conz, eco, Post-process
+  averages/min/max; checked 2026-10-27: `.lgr.shy` and the sample `.fvl.shy`
+  do not convert and get a clear error) -- with
   the variables discovered from the file (names, units, fill values). Anything
   else (e.g. ERA5 forcing NetCDF on a regular grid) is refused with a clear
   message.
