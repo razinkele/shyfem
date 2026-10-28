@@ -576,8 +576,8 @@ class TestNvertFormat:
 
 class TestElementContinuation:
     """Element records whose nodes span continuation lines must be parsed,
-    not dropped (deep-review medium). Continuation uses the same convention as
-    line records: a following line whose first token is > 3 is node data."""
+    not dropped (deep-review medium). Continuation works as for line records:
+    the following rows hold the remaining node ids."""
 
     def test_quad_element_spanning_two_lines(self):
         # quad (nvert=4): two nodes on the header, two on the continuation line
@@ -650,3 +650,49 @@ class TestMalformedFieldsWarn:
         grd = GrdParser.parse(content)
         assert any("Line 1" in w and "bad" in w for w in grd.parse_warnings), grd.parse_warnings
         assert grd.lines[1].nodes == [10, 11, 12]
+
+
+class TestContinuationRowsAreNodeIds:
+    """M-06: after a header with fewer than nvert ids, the next rows hold the
+    rest, whatever their first value (SHYFEM's read_node_list). SHYFEM writes
+    a line as ``3 id type n`` then rows of six ids, so the first row often
+    starts with node 1, 2 or 3; that row was parsed as a node, element or
+    line record, overwriting a real node and dropping the row."""
+
+    @staticmethod
+    def _nodes(n: int) -> str:
+        return "".join(
+            f"1{i:10d}{0:10d}{float(i):16.8e}{float(-i):16.8e}\n" for i in range(1, n + 1)
+        )
+
+    def test_a_shyfem_written_line_starting_with_node_1(self):
+        # format exactly as grd_write_item / grd_write_node_list write it
+        rows = [range(1, 7), (7, 8)]
+        ids = "".join(" " + "".join(f"{i:10d}" for i in row) + "\n" for row in rows)
+        content = self._nodes(8) + f"3{1:10d}{0:10d}{8:10d}\n" + ids
+        grd = GrdParser.parse(content)
+        assert grd.lines[1].nodes == [1, 2, 3, 4, 5, 6, 7, 8]
+        assert len(grd.nodes) == 8
+        assert grd.nodes[4].x == 4.0 and grd.nodes[4].y == -4.0, "node 4 was overwritten"
+        assert grd.parse_warnings == []
+
+    def test_rows_starting_with_2_and_3_are_ids_too(self):
+        content = self._nodes(9) + "3 1 0 9\n 2 3 4 5 6 7\n 3 8 9\n"
+        grd = GrdParser.parse(content)
+        assert grd.lines[1].nodes == [2, 3, 4, 5, 6, 7, 3, 8, 9]
+        assert 2 not in grd.elements and len(grd.lines) == 1
+
+    def test_an_element_continuation_row_starting_with_2(self):
+        grd = GrdParser.parse("2 1 0 4 10 11\n2 3\n")
+        assert grd.elements[1].nodes == [10, 11, 2, 3]
+        assert list(grd.elements) == [1]
+
+    def test_a_continued_element_keeps_its_depth(self):
+        grd = GrdParser.parse("2 1 0 4 10 11\n 12 13  0.55000000E+01\n")
+        assert grd.elements[1].nodes == [10, 11, 12, 13]
+        assert grd.elements[1].depth == 5.5
+
+    def test_the_record_after_a_completed_line_is_read(self):
+        grd = GrdParser.parse(self._nodes(3) + "3 1 0 4\n 1 2 3 1\n1 9 0 9.0 9.0\n")
+        assert grd.lines[1].nodes == [1, 2, 3, 1]
+        assert grd.nodes[9].x == 9.0
