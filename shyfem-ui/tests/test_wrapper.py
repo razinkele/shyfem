@@ -130,13 +130,6 @@ class TestShyfemWrapper:
 
         assert progress == pytest.approx(0.1)
 
-    def test_parse_progress_shyelab(self, wrapper):
-        """Test parsing progress from shyelab output."""
-        line = "processing record 50 of 100"
-        progress = wrapper._parse_progress("shyelab", line)
-
-        assert progress == pytest.approx(0.5)
-
     def test_parse_progress_no_match(self, wrapper):
         """Test parsing progress with no match."""
         line = "some other output"
@@ -291,15 +284,6 @@ class TestShyfemWrapperExtended:
         assert wrapper._parse_progress("shyfem", step.format(s=15000, i=50, p=50)) == 0.5
         assert wrapper._parse_progress("shyfem", step.format(s=30000, i=100, p=100)) == 1.0
         assert wrapper._parse_progress("shyfem", step.format(s=0, i=0, p=0)) == 0.0
-
-    def test_parse_progress_shyelab_various(self, wrapper):
-        """Test shyelab progress with various record counts."""
-        assert wrapper._parse_progress("shyelab", "processing record 1 of 100") == pytest.approx(
-            0.01
-        )
-        assert wrapper._parse_progress("shyelab", "processing record 100 of 100") == pytest.approx(
-            1.0
-        )
 
     @pytest.mark.asyncio
     async def test_run_command_with_stderr(self, wrapper, tmp_path):

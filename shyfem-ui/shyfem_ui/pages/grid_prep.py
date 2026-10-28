@@ -35,6 +35,9 @@ from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 
 logger = logging.getLogger(__name__)
 
+# shybas prints the basin info by default; it has no -info option (M-02)
+SHYBAS_INFO_FLAGS = ["-quality"]
+
 #: Sentinel for "no project observed yet" in the preselect-drop effect.
 _UNSET = object()
 
@@ -463,7 +466,7 @@ def grid_prep_server(
             result = await wrapper.run_shybas(
                 bas_path,
                 bas_path.parent,
-                ["-quality", "-info"],
+                SHYBAS_INFO_FLAGS,
                 output_callback=update_log,
             )
 

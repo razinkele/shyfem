@@ -134,7 +134,8 @@ class ShyfemWrapper:
     PROGRESS_PATTERNS = {
         # One line per time step: "<date> <seconds> <dt> <it> / <nits> <pct> %"
         "shyfem": re.compile(r"(\d+)\s*/\s*(\d+)\s+[\d.]+\s*%\s*$"),
-        "shyelab": re.compile(r"processing\s+record\s+(\d+)\s+of\s+(\d+)", re.IGNORECASE),
+        # no "shyelab": it prints no per-record counter (-verbose prints the
+        # record time, never a total), so there is no fraction to show (R-05)
     }
 
     def __init__(self, shyfem_dir: Path | str):

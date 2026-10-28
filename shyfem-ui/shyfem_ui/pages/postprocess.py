@@ -27,8 +27,10 @@ from shyfem_ui.services.postprocess_logic import (
     format_size,
     name_outputs,
     parse_shyelab_info,
+    preview_series_file,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
+from shyfem_ui.services.timeseries_loader import load_timeseries
 
 logger = logging.getLogger(__name__)
 
@@ -1045,53 +1047,17 @@ def postprocess_server(
         if not files:
             return
 
-        ts_files = [f for f in files if f.endswith((".ts", ".ext", ".csv"))]
-        if not ts_files:
+        ts_file = preview_series_file(files)
+        if ts_file is None:
             return
-
-        # Load the first time series file found
-        ts_path = Path(ts_files[0])
+        ts_path = Path(ts_file)
         if not ts_path.exists():
             return
 
         try:
-            data = []
-            columns = []
-            with open(ts_path) as fh:
-                for i, line in enumerate(fh):
-                    parts = line.strip().split()
-                    if not parts:
-                        continue
-                    # Check if first line is a header
-                    if (
-                        i == 0
-                        and not parts[0]
-                        .replace(".", "")
-                        .replace("-", "")
-                        .replace("+", "")
-                        .replace("e", "")
-                        .replace("E", "")
-                        .isdigit()
-                    ):
-                        columns = parts
-                        continue
-                    try:
-                        data.append([float(p) for p in parts])
-                    except ValueError:
-                        logger.debug("Skipping non-numeric line in time series file")
-                        continue
-
-            if data:
-                if not columns:
-                    columns = [f"col{j}" for j in range(len(data[0]))]
-                    if columns:
-                        columns[0] = "time"
-                ts_preview_data.set(
-                    {
-                        "columns": columns,
-                        "data": data,
-                    }
-                )
+            loaded = load_timeseries(ts_path)
+            if loaded["data"]:
+                ts_preview_data.set(loaded)
         except Exception:
             logger.warning("Failed to load time series preview", exc_info=True)
 
