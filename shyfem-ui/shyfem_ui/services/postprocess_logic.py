@@ -237,3 +237,25 @@ def name_outputs(files: list[str], input_path: str | Path, operation: str) -> li
         else:
             named.append(f)
     return named
+
+
+# shyelab's series outputs: <var>.0d.0 (Basin Average) and <var>.2d.<n>
+# (Extract Time Series, one per node); <var>.3d.<n> are profiles (V-07)
+_SERIES_RE = re.compile(r"\.(?:0d|2d)\.\d+$")
+_SERIES_FIRST = ("zeta", "salt", "temp")
+
+
+def preview_series_file(files: list[str]) -> str | None:
+    """The generated file the Time Series Preview shows: water level first,
+    then salinity, temperature and the rest by name; None if there is none."""
+    series = [f for f in files if _SERIES_RE.search(f) or f.endswith((".ts", ".ext", ".csv"))]
+    if not series:
+        return None
+
+    def _rank(f: str) -> tuple[int, str]:
+        name = Path(f).name
+        stem = name.split(".")[0]
+        first = _SERIES_FIRST.index(stem) if stem in _SERIES_FIRST else len(_SERIES_FIRST)
+        return first, name
+
+    return min(series, key=_rank)

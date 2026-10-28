@@ -15,6 +15,7 @@ Two entry-points:
 from __future__ import annotations
 
 import logging
+import math
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -60,9 +61,13 @@ def _load_shyfem_ts(path: Path) -> dict:
 
     times: list[str] = []
     rows: list[list[float]] = []
+    header: str | None = None
     try:
         with open(path) as fh:
             for line in fh:
+                if not rows and line.lstrip().startswith("#"):
+                    header = line  # shyelab's "# date <names>" line
+                    continue
                 parts = line.split()
                 if not parts or not _SHYFEM_TS_RE.match(parts[0]):
                     continue
@@ -71,7 +76,8 @@ def _load_shyfem_ts(path: Path) -> dict:
                 except ValueError:
                     continue
                 times.append(parts[0].replace("::", " "))
-                rows.append(vals)
+                # shyelab writes "Infinity" for an undefined Basin Average
+                rows.append([v if math.isfinite(v) else float("nan") for v in vals])
     except OSError:
         logger.warning("Could not open SHYFEM time-series %s", path, exc_info=True)
         return {"columns": [], "data": [], "df": None}
@@ -81,10 +87,29 @@ def _load_shyfem_ts(path: Path) -> dict:
 
     ncol = max(len(r) for r in rows)
     rows = [r + [float("nan")] * (ncol - len(r)) for r in rows]
-    value_cols = ["value"] if ncol == 1 else [f"value{i + 1}" for i in range(ncol)]
+    value_cols = _header_names(header, ncol) or (
+        ["value"] if ncol == 1 else [f"value{i + 1}" for i in range(ncol)]
+    )
     df: pd.DataFrame = _pd.DataFrame(rows, columns=value_cols)
     df.insert(0, "time", _pd.to_datetime(times, format="%Y-%m-%d %H:%M:%S", errors="coerce"))
     return {"columns": list(df.columns), "data": df.values.tolist(), "df": df}
+
+
+def _header_names(header: str | None, ncol: int) -> list[str] | None:
+    """Column names from a ``# date name ...`` header, when they fit ``ncol``.
+
+    One value column takes the whole text (``salinity (vertically
+    averaged)``); several take one word each (``minimum average maximum``).
+    """
+    words = header.lstrip().lstrip("#").split() if header else []
+    if len(words) < 2 or not words[0].lower().startswith("date"):
+        return None
+    if ncol == 1:
+        return [" ".join(words[1:])]
+    names = words[1:]
+    if len(names) == ncol and len(set(names)) == ncol and "time" not in names:
+        return names
+    return None
 
 
 def _pivot_observations(df: pd.DataFrame) -> dict:
