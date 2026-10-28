@@ -270,7 +270,40 @@ def _utm_to_latlon(
     return (np.degrees(lat), np.degrees(lon))
 
 
-def _finalize_pending(result, pending) -> None:
+def _continue_pending(result, pending, parts: list[str], line_num: int):
+    """Feed one continuation row to ``pending``; return it, or None once complete.
+
+    As in SHYFEM's reader (``read_node_list`` in grd.f90), the rows after a
+    header with fewer than ``nvert`` ids hold the rest, whatever their first
+    value: SHYFEM writes them as rows of six ids, so one often starts with
+    node 1, 2 or 3 (M-06). A token left after the last id is the depth.
+    """
+    kind, rid, _, nvert, nodes, _ = pending
+    i = 0
+    while i < len(parts) and len(nodes) < nvert:
+        token = parts[i]
+        i += 1
+        try:
+            nodes.append(int(float(token)))
+        except ValueError:
+            result.parse_warnings.append(
+                f"Line {line_num}: {kind} {rid}: invalid node ID token {token!r}, skipped"
+            )
+    if len(nodes) < nvert:
+        return pending
+    depth = None
+    if kind == "elem" and i < len(parts):
+        try:
+            depth = float(parts[i])
+        except ValueError:
+            result.parse_warnings.append(
+                f"Line {line_num}: element {rid} invalid depth value {parts[i]!r}, ignoring"
+            )
+    _finalize_pending(result, pending, depth)
+    return None
+
+
+def _finalize_pending(result, pending, depth: float | None = None) -> None:
     """Commit a multi-line continuation record (line OR element) to ``result``.
 
     ``pending`` is ``(kind, rid, rtype, nvert, nodes, start_line)``. A record
@@ -289,8 +322,7 @@ def _finalize_pending(result, pending) -> None:
             )
     else:  # "elem"
         if len(take) >= 3:
-            # depth is not recovered for continued elements (rare); see parse()
-            result.elements[rid] = Element(id=rid, elem_type=rtype, nodes=take, depth=None)
+            result.elements[rid] = Element(id=rid, elem_type=rtype, nodes=take, depth=depth)
         else:
             result.parse_warnings.append(
                 f"Line {start}: element {rid} expected {nvert} nodes, got {len(take)}"
@@ -322,6 +354,10 @@ class GrdParser:
             if not parts:
                 continue
 
+            if pending is not None:
+                pending = _continue_pending(result, pending, parts, line_num)
+                continue
+
             try:
                 record_type = int(parts[0])
             except ValueError:
@@ -329,29 +365,6 @@ class GrdParser:
                     f"Line {line_num}: skipped (invalid record type: {parts[0]!r})"
                 )
                 continue
-
-            # Handle continuation lines for line/element records (record_type > 3
-            # means this isn't a record header — it's continuation node data)
-            if pending is not None:
-                p_kind, p_rid, _, p_nvert, p_nodes, _ = pending
-                if record_type > 3:
-                    # Continuation: all fields are node IDs
-                    for p in parts:
-                        try:
-                            p_nodes.append(int(float(p)))
-                        except ValueError:
-                            result.parse_warnings.append(
-                                f"Line {line_num}: {p_kind} {p_rid}: "
-                                f"invalid node ID token {p!r}, skipped"
-                            )
-                    if len(p_nodes) >= p_nvert:
-                        _finalize_pending(result, pending)
-                        pending = None
-                    continue
-                else:
-                    # New record header encountered — finalize the pending record
-                    _finalize_pending(result, pending)
-                    pending = None
 
             try:
                 if record_type == 0:
