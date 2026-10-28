@@ -88,8 +88,11 @@ SCREENSHOTS = [
     },
     {
         "filename": "visualize_netcdf.png",
-        "description": "Visualize tab with NetCDF contour",
+        "description": "Visualize: SHYFEM results map (Mar Menor salinity)",
         "tab": "Visualize",
+        # needs a results file loaded (mm_hyd_assim.ts.shy, Salinity, 1280x1080);
+        # this script only opens tabs, so it would overwrite it with an empty map
+        "manual": True,
     },
     {
         "filename": "visualize_timeseries.png",
@@ -170,6 +173,9 @@ def main() -> None:
 
         # Capture each tab screenshot
         for shot in SCREENSHOTS:
+            if shot.get("manual"):
+                print(f"  SKIPPED: {shot['filename']} - captured by hand (see SCREENSHOTS)")
+                continue
             try:
                 capture_tab_screenshot(page, shot["tab"], shot["filename"])
                 captured += 1
