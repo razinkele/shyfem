@@ -18,6 +18,7 @@ from shyfem_ui.config import Config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Grid, Project, Simulation
 from shyfem_ui.models.user import ROLE_ADMIN, ProjectPermission
+from shyfem_ui.services.downloads import SessionDownloads
 from shyfem_ui.services.job_queue import JobQueue, JobStatus
 from shyfem_ui.services.run_logic import list_scoped_jobs
 from shyfem_ui.services.ws_identity import IDENTITY_POLL_SECONDS
@@ -459,6 +460,7 @@ def home_server(
     # (load_, open_proj_, project_, details_, export_, clone_, share_, confirm_share_, unshare_)
     # so all per-project handler factories share this one set without collision.
     _registered_handlers: set = set()
+    export_downloads = SessionDownloads(session, "export")
 
     def _user():
         # Server-validated user in the WS scope (None in local mode).
@@ -1324,8 +1326,6 @@ def home_server(
 
     async def _do_export(project_id: int, project_name: str):
         """Export a project as ZIP and trigger browser download."""
-        import base64
-
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import export_meta, export_project
 
@@ -1345,12 +1345,10 @@ def home_server(
 
         try:
             zip_buf = await export_project(work_dir, meta)
-            b64 = base64.b64encode(zip_buf.read()).decode("ascii")
             filename = f"{_safe_filename(project_name)}.zip"
-            await session.send_custom_message(
-                "download_file",
-                {"href": f"data:application/zip;base64,{b64}", "filename": filename},
-            )
+            # The browser fetches the ZIP over HTTP, streamed from a thread.
+            href = export_downloads.offer_buffer(zip_buf, filename, "application/zip")
+            await session.send_custom_message("download_file", {"href": href, "filename": filename})
             ui.notification_show(f"Exported '{project_name}'", type="message", duration=4)
         except Exception as e:
             logger.exception("Failed to export project %s %r", project_id, project_name)
