@@ -129,7 +129,17 @@ def init_db() -> None:
         has_alembic = "alembic_version" in tables
 
         if has_tables and not has_alembic:
-            # Existing DB created by create_all() — stamp current head
+            # Existing DB created by create_all(): stamp head only if it has
+            # head's schema, else every migration it lacks is skipped (D-02)
+            missing = _missing_from_head(inspector)
+            if missing:
+                raise RuntimeError(
+                    "The database has tables but no Alembic version, and it lacks "
+                    f"part of this release's schema ({', '.join(missing)}). Stamping "
+                    "it as current would skip the migrations it needs: find the "
+                    "revision it matches, then run `alembic stamp <revision>` and "
+                    "`alembic upgrade head`."
+                )
             logger.info("Existing database detected, stamping Alembic head")
             command.stamp(alembic_cfg, "head")
         else:
@@ -139,6 +149,19 @@ def init_db() -> None:
     except ImportError:
         logger.debug("Alembic not installed, using create_all()")
         Base.metadata.create_all(bind=engine)
+
+
+def _missing_from_head(inspector) -> list[str]:
+    """The tables and columns of this release's models the database lacks."""
+    present = set(inspector.get_table_names())
+    missing: list[str] = []
+    for table in Base.metadata.sorted_tables:
+        if table.name not in present:
+            missing.append(table.name)
+            continue
+        cols = {c["name"] for c in inspector.get_columns(table.name)}
+        missing += [f"{table.name}.{c.name}" for c in table.columns if c.name not in cols]
+    return missing
 
 
 def get_db() -> Generator[Session, None, None]:
