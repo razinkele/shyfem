@@ -28,7 +28,8 @@ def _loop_body(fn_src: str) -> str:
     start = fn_src.index("for p in project_data:")
     end = fn_src.find("\n        m = ui.modal(", start)
     if end == -1:
-        end = fn_src.index("\n        return ui.tags.table(", start)
+        # The projects table, inside its table-responsive wrapper.
+        end = fn_src.index("\n        return ui.div(\n            ui.tags.table(", start)
     return fn_src[start:end]
 
 
