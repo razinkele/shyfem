@@ -14,7 +14,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.job_status import (
     format_datetime,
@@ -30,6 +30,7 @@ from shyfem_ui.components.project_select import (
     project_file_select,
 )
 from shyfem_ui.components.sample_data import sample_data_card_ui
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser
@@ -97,14 +98,6 @@ def run_ui() -> ui.Tag:
                     ui.output_ui("shyfem_options"),
                     # Restart options (shyfem only)
                     ui.output_ui("restart_section"),
-                    # Job dependency (optional)
-                    ui.hr(),
-                    ui.h6("Dependencies (optional)"),
-                    ui.input_text(
-                        "depends_on",
-                        "Wait for Job ID",
-                        placeholder="job-id-to-wait-for",
-                    ),
                     ui.hr(),
                     ui.input_action_button(
                         "submit_btn",
@@ -810,7 +803,6 @@ def run_server(
         except Exception:
             logger.warning("Could not set restart_from file", exc_info=True)
             restart_from = None
-        depends_on = input.depends_on()
         solver = input.solver_select() if tool == "shyfem" else "sparskit"
 
         # N42 IDOR follow-up: restart_from is a client-controlled input
@@ -867,7 +859,6 @@ def run_server(
             user_id=_usr["id"] if _usr is not None else None,
             project_id=_proj["id"] if _proj is not None else None,
             restart_from=restart_from or None,
-            depends_on=depends_on or None,
         )
 
         try:
@@ -1244,11 +1235,6 @@ def run_server(
 
         if job.return_code is not None:
             details.append(("Return Code", str(job.return_code)))
-
-        # Dependency info
-        depends_on = job.metadata.get("depends_on")
-        if depends_on:
-            details.append(("Depends On", ui.code(depends_on)))
 
         detail_rows = [
             ui.div(

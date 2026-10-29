@@ -524,6 +524,13 @@ document.addEventListener('DOMContentLoaded', function() {
     document.documentElement.setAttribute('data-bs-theme', 'dark');
     var btn = document.getElementById('dark-mode-toggle');
     if (btn) { var icon = btn.querySelector('i'); if (icon) icon.className = 'bi bi-sun'; }
+    // Tell this session, so its plots are drawn dark too (H-05). After
+    // initialization: a send at shiny:connected kills the session.
+    if (window.Shiny && window.Shiny.initializedPromise) {
+      window.Shiny.initializedPromise.then(function() {
+        window.Shiny.setInputValue('_dark_mode', true);
+      });
+    }
   }
   // Sidebar collapse init
   var collapsed = localStorage.getItem('shyfem-sidebar-collapsed');
@@ -939,13 +946,9 @@ def _build_server(
     _current_user = get_current_user()
     _user_id = _current_user["id"] if _current_user else None
 
-    @reactive.effect
-    @reactive.event(input._dark_mode)
-    def _update_plotly_theme():
-        from shyfem_ui.plotly_theme import register_shyfem_template
-
-        is_dark = input._dark_mode()
-        register_shyfem_template(dark=bool(is_dark))
+    # Dark mode is per session: each figure takes its session's template when
+    # it is drawn (components/themed_widget.py). Re-registering Plotly's
+    # default template here changed every session's plots (H-05).
 
     # "What's new" modal: shown once per browser per release. The browser
     # reports its last-seen version via input._whatsnew_seen (top-level, JS-set);

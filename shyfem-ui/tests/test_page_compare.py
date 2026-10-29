@@ -136,23 +136,52 @@ def test_load_ts_valid(tmp_path):
     f = tmp_path / "ts.dat"
     f.write_text("0.0 1.0 2.0\n1.0 3.0 4.0\n")
     result = _load_ts(f)
-    assert len(result) == 2
-    assert result[0] == [0.0, 1.0, 2.0]
+    assert len(result["data"]) == 2
+    assert result["data"][0] == [0.0, 1.0, 2.0]
 
 
-def test_load_ts_skips_non_numeric(tmp_path):
+def test_load_ts_skips_header(tmp_path):
     f = tmp_path / "ts.dat"
     f.write_text("time col1 col2\n0.0 1.0 2.0\n")
     result = _load_ts(f)
-    assert len(result) == 1
-    assert result[0] == [0.0, 1.0, 2.0]
+    assert result["data"] == [[0.0, 1.0, 2.0]]
+    assert result["columns"] == ["time", "col1", "col2"]
 
 
 def test_load_ts_empty_file(tmp_path):
     f = tmp_path / "ts.dat"
     f.write_text("")
+    assert _load_ts(f)["data"] == []
+
+
+def test_load_ts_reads_shyfem_dated_txt(tmp_path):
+    """V-05: a SHYFEM forcing/shyelab .txt (``date::time value``) was offered
+    but the raw loader skipped every line and drew nothing."""
+    f = tmp_path / "river.txt"
+    f.write_text("1990-01-01::00:00:00 12.5\n1990-01-01::06:00:00 13.0\n")
     result = _load_ts(f)
-    assert result == []
+    assert len(result["data"]) == 2
+    assert [row[1] for row in result["data"]] == [12.5, 13.0]
+
+
+def test_load_ts_reads_comma_csv(tmp_path):
+    """V-05: a comma CSV was offered but split on whitespace, so no line
+    parsed and nothing was drawn."""
+    f = tmp_path / "obs.csv"
+    f.write_text("time,level\n0,1.5\n3600,1.7\n")
+    result = _load_ts(f)
+    assert result["data"] == [[0, 1.5], [3600, 1.7]]
+    assert result["columns"] == ["time", "level"]
+
+
+def test_load_ts_binary_file_does_not_raise(tmp_path):
+    """V-05: a binary file raised UnicodeDecodeError out of the Compare
+    handler, which closed the user's session."""
+    f = tmp_path / "out.ts"
+    f.write_bytes(bytes(range(256)) * 8)
+    result = _load_ts(f)
+    assert result["data"] == []
+    assert result["error"]
 
 
 # ── _extract_str_choices ─────────────────────────────────────────

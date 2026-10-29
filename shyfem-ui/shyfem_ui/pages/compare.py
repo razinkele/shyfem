@@ -7,14 +7,16 @@ Features:
 - Output file comparison
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus
@@ -240,7 +242,7 @@ def compare_server(
 
     @reactive.effect
     @reactive.event(input.compare_ts_btn)
-    def _compare_ts_files():
+    async def _compare_ts_files():
         path_a = input.ts_file_a()
         path_b = input.ts_file_b()
         if not path_a or not path_b:
@@ -254,10 +256,25 @@ def compare_server(
             ui.notification_show(str(e), type="error", duration=6)
             return
 
+        # Reading a large series is blocking file work: off the loop.
+        series_a = await asyncio.to_thread(_load_ts, file_a)
+        series_b = await asyncio.to_thread(_load_ts, file_b)
+        unreadable = [
+            f"{path.name} ({series.get('error') or 'no numeric rows'})"
+            for path, series in ((file_a, series_a), (file_b, series_b))
+            if not series["data"]
+        ]
+        if unreadable:
+            ui.notification_show(
+                "Could not read as a time series: " + "; ".join(unreadable),
+                type="error",
+                duration=8,
+            )
+            return
         ts_data.set(
             {
-                "a": _load_ts(file_a),
-                "b": _load_ts(file_b),
+                "a": series_a,
+                "b": series_b,
                 "name_a": file_a.name,
                 "name_b": file_b.name,
             }
@@ -390,22 +407,25 @@ def compare_server(
             return fig
 
         fig = go.Figure()
-        for dataset, label, dash in [
+        for series, label, dash in [
             (data["a"], data["name_a"], None),
             (data["b"], data["name_b"], "dash"),
         ]:
+            dataset = series["data"]
             if not dataset:
                 continue
+            columns = series.get("columns") or []
             x = [row[0] for row in dataset]
-            for col_idx in range(1, len(dataset[0]) if dataset else 0):
+            for col_idx in range(1, len(dataset[0])):
                 y = [row[col_idx] for row in dataset]
+                name = columns[col_idx] if col_idx < len(columns) else f"col{col_idx}"
                 fig.add_trace(
                     go.Scattergl(
                         x=x,
                         y=y,
                         mode="lines",
                         line=dict(dash=dash),
-                        name=f"{label}: col{col_idx}",
+                        name=f"{label}: {name}",
                     )
                 )
 
@@ -502,8 +522,14 @@ def compare_server(
     return {}
 
 
+# Text series the loader reads. Not ``.ext``: that is SHYFEM's binary
+# station output (convert it with shyelab first), and reading it as text
+# raised and closed the session (V-05).
+_TS_SUFFIXES = (".ts", ".txt", ".csv")
+
+
 def _extract_ts_choices(active_project: dict | None) -> dict[str, str]:
-    """Discover time-series files (.ts, .ext, .txt, .csv) in the active
+    """Discover time-series files (.ts, .txt, .csv) in the active
     project's work directory. Returns {abs_path: display_label} suitable for
     ui.input_select(choices=...)."""
     if active_project is None:
@@ -514,7 +540,7 @@ def _extract_ts_choices(active_project: dict | None) -> dict[str, str]:
     from shyfem_ui.services.project_files import list_project_files
 
     choices: dict[str, str] = {}
-    for rel in list_project_files(work_dir, (".ts", ".ext", ".txt", ".csv")):
+    for rel in list_project_files(work_dir, _TS_SUFFIXES):
         choices[str(work_dir / rel)] = f"{active_project['name']} / {rel}"
     return choices
 
@@ -599,8 +625,21 @@ def _compute_param_diff(str_a, str_b, name_a: str, name_b: str) -> dict:
     }
 
 
-def _load_ts(path: Path) -> list[list[float]]:
-    """Load time series data as list of float rows."""
-    from shyfem_ui.services.timeseries_loader import load_timeseries_raw
+def _load_ts(path: Path) -> dict:
+    """Load a time series as ``{"columns", "data"}`` (rows, time first).
 
-    return load_timeseries_raw(path)
+    Uses the shared loader, which reads SHYFEM ``date::time`` text, CSV and
+    whitespace columns (the raw loader split on whitespace only, so a CSV or
+    a dated SHYFEM .txt gave no rows, V-05). Never raises: a file it cannot
+    read (binary, unreadable) comes back with no data and an ``error``.
+    """
+    from shyfem_ui.services.timeseries_loader import load_timeseries
+
+    try:
+        result = load_timeseries(path)
+    except Exception as e:
+        logger.warning("Could not read time series %s", path, exc_info=True)
+        if isinstance(e, UnicodeDecodeError):
+            return {"columns": [], "data": [], "error": "not a text file"}
+        return {"columns": [], "data": [], "error": str(e)}
+    return {"columns": list(result.get("columns") or []), "data": result.get("data") or []}

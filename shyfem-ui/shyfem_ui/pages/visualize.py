@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from shiny import module, reactive, render, ui
 from shiny.types import SilentException
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.grid_map import build_mesh_figure
 from shyfem_ui.components.results_map import (
@@ -26,6 +26,7 @@ from shyfem_ui.components.results_map import (
     results_map_server,
     results_map_ui,
 )
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.components.timeseries import timeseries_server, timeseries_ui
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason

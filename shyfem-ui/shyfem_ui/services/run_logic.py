@@ -277,7 +277,6 @@ def build_job_spec(
     user_id: int | None = None,
     project_id: int | None = None,
     restart_from: str | None = None,
-    depends_on: str | None = None,
 ) -> JobSpec:
     """Build a JobSpec from the validated user inputs.
 
@@ -302,7 +301,6 @@ def build_job_spec(
             it -- the caller must apply it to the STR beforehand (see
             write_restart_str) and pass the derived file as validated_input;
             otherwise the run silently starts fresh (N42).
-        depends_on: Optional parent job ID (recorded in metadata).
 
     Returns:
         JobSpec ready for queue.submit().
@@ -312,8 +310,6 @@ def build_job_spec(
         metadata["solver"] = "petsc"
     if restart_from:
         metadata["restart_file"] = restart_from
-    if depends_on:
-        metadata["depends_on"] = depends_on
     return JobSpec(
         name=name,
         tool_name=tool_name,

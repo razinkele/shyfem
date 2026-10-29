@@ -7,18 +7,16 @@ def test_extract_ts_choices_empty_when_no_project(tmp_path):
     assert _extract_ts_choices(None) == {}
 
 
-def test_extract_ts_choices_finds_ts_and_ext(tmp_path):
+def test_extract_ts_choices_offers_text_series_only(tmp_path):
+    """V-05: a .ext file is SHYFEM binary output; the text loader cannot read
+    it (it raised and closed the session), so it is not offered."""
     from shyfem_ui.pages.compare import _extract_ts_choices
 
-    (tmp_path / "result1.ts").write_text("dummy")
-    (tmp_path / "result2.ext").write_text("dummy")
-    (tmp_path / "binary.shy").write_text("dummy")  # should be ignored
+    for name in ("result1.ts", "river.txt", "obs.csv", "result2.ext", "binary.shy"):
+        (tmp_path / name).write_text("dummy")
     proj = {"name": "test_proj", "work_dir": str(tmp_path)}
-    choices = _extract_ts_choices(proj)
-    paths = list(choices.keys())
-    assert any(p.endswith("result1.ts") for p in paths)
-    assert any(p.endswith("result2.ext") for p in paths)
-    assert not any(p.endswith("binary.shy") for p in paths)
+    names = sorted(p.rsplit("/", 1)[-1] for p in _extract_ts_choices(proj))
+    assert names == ["obs.csv", "result1.ts", "river.txt"]
 
 
 def test_extract_ts_choices_handles_missing_dir(tmp_path):

@@ -77,9 +77,11 @@ class TestBuildJobSpec:
         spec = build_job_spec(**self._base_args(restart_from=None))
         assert "restart_file" not in spec.metadata
 
-    def test_depends_on_recorded(self):
-        spec = build_job_spec(**self._base_args(depends_on="parent_job_id"))
-        assert spec.metadata["depends_on"] == "parent_job_id"
+    def test_no_depends_on_parameter(self):
+        """R-06: no queue backend waits on a parent job, so the spec must not
+        offer a dependency it would silently ignore."""
+        with pytest.raises(TypeError):
+            build_job_spec(**self._base_args(depends_on="parent_job_id"))
 
     def test_mpi_enabled_only_for_shyfem(self):
         # If tool is shyfem AND mpi_enabled=True, mpi flags are honored
@@ -126,9 +128,15 @@ class TestBuildJobSpec:
         spec = build_job_spec(**self._base_args(name="my_run_job"))
         assert spec.name == "my_run_job"
 
-    def test_depends_on_none_omitted(self):
-        spec = build_job_spec(**self._base_args(depends_on=None))
-        assert "depends_on" not in spec.metadata
+
+def test_run_page_offers_no_wait_for_job_control():
+    """R-06: the "Wait for Job ID" field was recorded and never consulted --
+    the job started at once. The Run page must not offer it."""
+    from shyfem_ui.pages.run import run_ui
+
+    html = str(run_ui("run"))
+    assert "depends_on" not in html
+    assert "Wait for Job ID" not in html
 
 
 class TestWriteRestartStr:
