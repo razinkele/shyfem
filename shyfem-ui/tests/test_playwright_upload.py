@@ -114,6 +114,12 @@ def test_files_page_type_and_subdir_hold_across_uploads(
         # Let the post-upload re-render land before the next file.
         pw_page.wait_for_timeout(1500)
 
+    # The new folder is listed and still picked for the next upload.
+    assert pw_page.evaluate("""() => {
+        const s = document.getElementById('files-upload_subdir').selectize;
+        return [s.getValue(), Object.keys(s.options).includes('meteo')];
+    }""") == ["meteo", True]
+    assert pw_page.locator("#files-upload_type").input_value() == "forcing"
     for src in (first, second):
         assert (proj_dir / "meteo" / src.name).is_file(), f"{src.name} not in meteo/"
         assert not (proj_dir / src.name).exists(), f"{src.name} landed in the root"

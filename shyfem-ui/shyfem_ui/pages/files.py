@@ -358,6 +358,13 @@ def files_server(
             else:
                 ui.notification_show(f"Failed to upload: {f['name']}", type="error", duration=6)
 
+        if subdir:
+            # The panel is not redrawn after an upload, so list a folder the
+            # upload just created; it stays picked.
+            dirs = await asyncio.to_thread(project_rel_dir_choices, proj, user, config)
+            choices = {"": ""} | {d: d for d in dirs}
+            choices.setdefault(subdir, subdir)
+            ui.update_selectize("upload_subdir", choices=choices, selected=subdir)
         refresh_trigger.set(refresh_trigger.get() + 1)
 
     file_browser_server("file_upload", on_file_selected=_handle_upload)
