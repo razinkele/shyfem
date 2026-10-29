@@ -1,5 +1,6 @@
 """STR editor fixes from the 2026-10-19 UI review (S-04, S-05, S-06, S-09)."""
 
+import warnings
 from pathlib import Path
 
 import pytest
@@ -311,3 +312,33 @@ class TestBoundaryEditorIntpol:
         assert INTPOL_CHOICES["4"].lower().endswith("cubic")
         assert "auto" in INTPOL_CHOICES["0"].lower()
         assert not any("spline" in v.lower() for v in INTPOL_CHOICES.values())
+
+
+class TestBoundaryCsvImportBadCell:
+    """S-07: a non-numeric cell raised ValueError inside the import effect;
+    an exception escaping an effect closes the user's Shiny session."""
+
+    async def test_a_bad_cell_is_reported_and_imports_nothing(self, monkeypatch):
+        from shiny import reactive
+
+        fake_input, result, notes = _mount_boundary_editor(monkeypatch, None)
+        fake_input.set("csv_input", "1 2 3, 1\n4 5, abc")
+        fake_input.set("do_csv_import_btn", 1)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            await reactive.flush()
+        # With a live session, this warning is the session being closed.
+        assert not [w for w in caught if "Error in Effect" in str(w.message)]
+
+        with reactive.isolate():
+            assert result["boundaries"].get() == []
+        messages = [a[0] for a, _ in notes if a]
+        assert any("line 2" in m and "abc" in m for m in messages), messages
+
+    def test_the_parse_error_names_the_line_column_and_value(self):
+        import pytest
+
+        from shyfem_ui.components.boundary_editor import parse_boundary_csv
+
+        with pytest.raises(ValueError, match=r"line 1.*zfact.*'x'"):
+            parse_boundary_csv("1 2, 1, f.dat, x")

@@ -42,6 +42,22 @@ def _optional_int(value) -> int | None:
     return int(value)
 
 
+def _csv_cell(parts: list[str], lineno: int, index: int, name: str, convert, default):
+    """``convert(parts[index])``, *default* when the column is absent.
+
+    A cell that does not convert raises a ValueError naming the line, the
+    column and the cell, which the import shows to the user.
+    """
+    if len(parts) <= index:
+        return default
+    try:
+        return convert(parts[index])
+    except ValueError:
+        raise ValueError(
+            f"line {lineno}, column {index + 1} ({name}): {parts[index]!r} is not a number"
+        ) from None
+
+
 def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
     """Parse CSV text into boundary definitions.
 
@@ -49,6 +65,10 @@ def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
     A missing or blank intpol leaves it unset (the core default).
     Lines starting with # are comments. Blank lines are skipped.
     Minimum 2 columns required (nodes + ibtyp).
+
+    Raises:
+        ValueError: a numeric cell does not convert; the message names the
+            line, the column and the cell, for the user.
 
     Args:
         csv_text: Raw CSV text
@@ -59,21 +79,22 @@ def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
     """
     imported = []
     bid = start_id
-    for line in csv_text.strip().splitlines():
+    for lineno, line in enumerate(csv_text.splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         parts = [p.strip() for p in line.split(",")]
         if len(parts) < 2:
             continue
+
         entry = {
             "id": bid,
             "label": f"bound{bid}",
             "nodes": parts[0],
-            "ibtyp": int(parts[1]) if len(parts) > 1 else 1,
+            "ibtyp": _csv_cell(parts, lineno, 1, "ibtyp", int, 1),
             "boundn": parts[2] if len(parts) > 2 else "",
-            "zfact": float(parts[3]) if len(parts) > 3 else 1.0,
-            "intpol": _optional_int(parts[4]) if len(parts) > 4 else None,
+            "zfact": _csv_cell(parts, lineno, 3, "zfact", float, 1.0),
+            "intpol": _csv_cell(parts, lineno, 4, "intpol", _optional_int, None),
         }
         imported.append(entry)
         bid += 1
@@ -277,7 +298,12 @@ def boundary_editor_server(
             ui.notification_show("No CSV data provided", type="warning")
             return
 
-        imported = parse_boundary_csv(csv_text, _next_id.get())
+        try:
+            imported = parse_boundary_csv(csv_text, _next_id.get())
+        except ValueError as e:
+            # Raised in this effect, it closed the user's session.
+            ui.notification_show(f"CSV not imported: {e}", type="error", duration=10)
+            return
 
         if imported:
             current = boundaries.get()

@@ -343,7 +343,7 @@ class TestParseBoundaryCSV:
 
     def test_invalid_ibtyp_raises_value_error(self):
         """Non-integer ibtyp string raises ValueError."""
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match=r"line 1, column 2 \(ibtyp\): 'abc'"):
             parse_boundary_csv("1 2, abc")
 
     def test_whitespace_in_values_stripped(self):
