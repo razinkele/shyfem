@@ -16,8 +16,10 @@ from shyfem_ui.services.mesh_builder import (
     _compute_depths_only,
     adjust_depths,
     check_bathy_extent,
+    check_element_ceiling,
     compute_mesh_stats,
     count_below_area,
+    drop_nonfinite_points,
     estimate_element_count,
     export_grd,
     import_boundaries,
@@ -28,6 +30,7 @@ from shyfem_ui.services.mesh_builder import (
     smooth_boundary,
     suggest_max_area_for_limit,
     summarize_depth_stats,
+    tolerance_in_grid_units,
     triangulate,
     validate_boundary,
     warn_if_degenerate_bathy,
@@ -423,16 +426,42 @@ def _import_boundary_upload(files) -> tuple:
     return grd, validate_boundary(grd)
 
 
-def _load_contour_upload(files, depth_attr: str, sample_dist: float | None):
-    """Stage an isobath upload and sample it to points (blocking; run in a thread)."""
+def _load_bathy_upload(path: Path) -> tuple:
+    """Load an uploaded point cloud, without its non-finite rows (blocking).
+
+    Returns ``(points, number_of_rows_dropped)`` so the page can report the
+    rows it left out (M-05).
+    """
+    return drop_nonfinite_points(load_bathymetry_file(path))
+
+
+def _load_contour_upload(
+    files, depth_attr: str, sample_dist: float | None, max_points: int | None = None
+) -> tuple:
+    """Stage an isobath upload and sample it to points (blocking; run in a thread).
+
+    Returns ``(points, number_of_points_dropped)`` like ``_load_bathy_upload``.
+    """
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
-        return load_bathymetry_contours(
+        points = load_bathymetry_contours(
             stage_boundary_upload(files, Path(tmp)),
             depth_attr=depth_attr,
             sample_distance=sample_dist,
+            max_points=max_points,
         )
+    return drop_nonfinite_points(points)
+
+
+def _dropped_points_note(dropped: int) -> str | None:
+    """The load-log line for points left out as non-finite, or None."""
+    if not dropped:
+        return None
+    return (
+        f"Bathymetry warning: {dropped:,} point(s) with a NaN or infinite "
+        "x, y or depth were left out"
+    )
 
 
 @module.server
@@ -465,6 +494,10 @@ def mesh_builder_server(
     busy_message = reactive.value("")  # Non-empty string = busy with that message
     staged_grd = reactive.value(None)  # After interpolation, before Accept
     comparison_runs = reactive.value({})  # {label: GrdFile}, max 3 entries
+    # Flips to True once, at the first interpolation: the post panel renders
+    # on this, not on staged_grd, so its inputs survive every change of the
+    # staged result (M-07).
+    has_staged = reactive.value(False)
     progress_value = reactive.value(0)  # 0-100 = percent; -1 = indeterminate
     progress_label = reactive.value("")  # empty = bar hidden
 
@@ -678,7 +711,7 @@ def mesh_builder_server(
                     6,
                     ui.input_slider(
                         "reduce_tolerance",
-                        "Simplify Tolerance",
+                        "Simplify Tolerance (m)",
                         min=0.0,
                         max=1000.0,
                         value=0.0,
@@ -733,22 +766,24 @@ def mesh_builder_server(
         if grd is None:
             return
         selection = input.refine_line()
-        tolerance = input.reduce_tolerance()
+        tolerance = input.reduce_tolerance()  # metres (M-09)
         line_ids = list(grd.lines.keys()) if selection == "all" else [int(selection)]
         try:
             new_grd = grd
+            # The slider is metres; an imported boundary is lon/lat degrees.
+            grid_tol = tolerance_in_grid_units(grd, tolerance)
             for lid in line_ids:
-                new_grd = reduce_boundary(new_grd, lid, tolerance=tolerance)
+                new_grd = reduce_boundary(new_grd, lid, tolerance=grid_tol)
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
             if selection == "all":
                 _log(
-                    f"Reduced all {len(line_ids)} lines: tolerance={tolerance}, {new_grd.num_nodes} total nodes"
+                    f"Reduced all {len(line_ids)} lines: tolerance={tolerance} m, {new_grd.num_nodes} total nodes"
                 )
             else:
                 lid = line_ids[0]
                 _log(
-                    f"Reduced line {lid}: tolerance={tolerance} -> {len(new_grd.lines[lid].nodes)} nodes"
+                    f"Reduced line {lid}: tolerance={tolerance} m -> {len(new_grd.lines[lid].nodes)} nodes"
                 )
         except Exception as e:
             _log(f"Reduction error: {e}")
@@ -919,6 +954,14 @@ def mesh_builder_server(
         min_area_threshold = _safe_input("min_area")
         max_elements = _safe_input("max_elements")
 
+        # Server ceiling (M-12), whatever the user's own cap: a Max Triangle
+        # Area typed far too small would allocate until the worker dies.
+        too_big = check_element_ceiling(grd, eff_area, config.mesh_max_elements)
+        if too_big:
+            _log(too_big)
+            ui.notification_show(too_big, type="error", duration=10)
+            return
+
         # Pre-flight: hard cap on element count (applies to all methods).
         if max_elements and max_elements > 0:
             estimate_pf = estimate_element_count(grd, eff_area) if eff_area else 0
@@ -958,7 +1001,11 @@ def mesh_builder_server(
         await asyncio.sleep(0)  # yield so Shiny flushes the bar to the browser
         try:
             new_mesh = await asyncio.to_thread(
-                triangulate, grd, max_area=eff_area, min_angle=eff_angle
+                triangulate,
+                grd,
+                max_area=eff_area,
+                min_angle=eff_angle,
+                max_elements=config.mesh_max_elements,
             )
             mesh_grd.set(new_mesh)
             preview_grd.set(new_mesh)
@@ -1151,7 +1198,7 @@ def mesh_builder_server(
         temp_path = Path(file_info["datapath"])
         try:
             # A bathymetry survey can be millions of points: in a thread (M-11).
-            data = await asyncio.to_thread(load_bathymetry_file, temp_path)
+            data, dropped = await asyncio.to_thread(_load_bathy_upload, temp_path)
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)
@@ -1161,6 +1208,10 @@ def mesh_builder_server(
             bathy_data.set(data)
             _log(f"Loaded bathymetry points: {file_info['name']} ({len(data)} points)")
             _log(f"  {summarize_depth_stats(data)}")
+            note = _dropped_points_note(dropped)
+            if note:
+                _log(f"  {note}")
+                ui.notification_show(note, type="warning", duration=8)
             ui.notification_show(
                 f"Loaded {len(data)} bathymetry points", type="message", duration=3
             )
@@ -1183,7 +1234,13 @@ def mesh_builder_server(
             sample_dist = input.contour_sample_dist()
             sample_dist = sample_dist if sample_dist and sample_dist > 0 else None
             # Reading and sampling isobaths can take seconds: in a thread (M-11).
-            data = await asyncio.to_thread(_load_contour_upload, files, depth_attr, sample_dist)
+            data, dropped = await asyncio.to_thread(
+                _load_contour_upload,
+                files,
+                depth_attr,
+                sample_dist,
+                config.mesh_max_bathy_points,
+            )
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)
@@ -1194,6 +1251,10 @@ def mesh_builder_server(
             names = ", ".join(f["name"] for f in files)
             _log(f"Loaded contour isobaths: {names} ({len(data)} points)")
             _log(f"  {summarize_depth_stats(data)}")
+            note = _dropped_points_note(dropped)
+            if note:
+                _log(f"  {note}")
+                ui.notification_show(note, type="warning", duration=8)
             ui.notification_show(
                 f"Extracted {len(data)} points from contour isobaths",
                 type="message",
@@ -1270,6 +1331,8 @@ def mesh_builder_server(
                 result_grd = new_grd
             staged_grd.set(result_grd)
             preview_grd.set(result_grd)
+            if not has_staged.get():
+                has_staged.set(True)
             depths = [n.depth for n in result_grd.nodes.values() if n.depth is not None]
             depth_info = ""
             if depths:
@@ -1279,6 +1342,7 @@ def mesh_builder_server(
             # Store run in comparison_runs (max 3; oldest dropped)
             label = f"{method}{depth_info}"
             runs = dict(comparison_runs.get())
+            runs.pop(label, None)  # a repeated label moves to newest
             runs[label] = result_grd
             if len(runs) > 3:
                 oldest = next(iter(runs))
@@ -1322,29 +1386,17 @@ def mesh_builder_server(
 
     @render.ui
     def bathy_post_panel():
-        """Renders comparison selector, depth adjustments, and Accept button.
+        """Comparison selector, depth adjustments and the Accept button.
 
-        Shown only after a successful interpolation (staged_grd is not None).
+        Rendered once, after the first successful interpolation. It must not
+        read staged_grd: picking a run or applying adjustments changes
+        staged_grd, and a re-render here snapped the radio back to the
+        newest run and emptied the typed adjustments (M-07).
         """
-        if staged_grd.get() is None:
+        if not has_staged.get():
             return ui.div()
 
-        # --- Comparison selector (only when >=2 runs exist) ---
-        runs = comparison_runs.get()
-        comparison_ui = ui.div()
-        if len(runs) >= 2:
-            newest_label = next(reversed(runs))
-            comparison_ui = ui.div(
-                ui.hr(),
-                ui.h6("Compare Runs"),
-                ui.input_radio_buttons(
-                    "comparison_run",
-                    "",
-                    choices={k: k for k in runs},
-                    selected=newest_label,
-                    inline=False,
-                ),
-            )
+        comparison_ui = ui.output_ui("comparison_selector")
 
         # --- Depth adjustments ---
         adjustments_ui = ui.div(
@@ -1398,6 +1450,29 @@ def mesh_builder_server(
         )
 
         return ui.div(comparison_ui, adjustments_ui, accept_ui)
+
+    @render.ui
+    def comparison_selector():
+        """The Compare Runs radio (only with >= 2 runs).
+
+        Re-renders only when a run is added, preselecting the new run (the one
+        just staged); choosing a run does not change comparison_runs, so the
+        choice stays (M-07).
+        """
+        runs = comparison_runs.get()
+        if len(runs) < 2:
+            return ui.div()
+        return ui.div(
+            ui.hr(),
+            ui.h6("Compare Runs"),
+            ui.input_radio_buttons(
+                "comparison_run",
+                "",
+                choices={k: k for k in runs},
+                selected=next(reversed(runs)),
+                inline=False,
+            ),
+        )
 
     @reactive.effect
     @reactive.event(input.comparison_run)

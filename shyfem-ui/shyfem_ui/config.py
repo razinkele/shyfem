@@ -362,6 +362,18 @@ class Config(BaseSettings):
         description="Maximum total uncompressed project size (bytes) allowed for ZIP export",
     )
 
+    # Mesh Builder ceilings (M-12): a tiny Max Triangle Area or contour
+    # resample distance otherwise lets one request allocate until the shared
+    # worker is OOM-killed.
+    mesh_max_elements: int = Field(
+        default=2_000_000,
+        description="Largest mesh (estimated element count) the Mesh Builder will triangulate",
+    )
+    mesh_max_bathy_points: int = Field(
+        default=5_000_000,
+        description="Most bathymetry points the Mesh Builder will sample from contour isobaths",
+    )
+
     # Proxy settings (server mode)
     root_path: str = Field(
         default="", description="ASGI root_path for reverse proxy deployment (e.g., '/shyfem-ui')"

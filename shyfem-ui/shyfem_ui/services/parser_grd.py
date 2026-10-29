@@ -196,6 +196,11 @@ class GrdFile:
         return cs
 
 
+def _finite(value: float | None) -> bool:
+    """True for a real depth: not None, NaN or inf."""
+    return value is not None and bool(np.isfinite(value))
+
+
 def _utm_to_latlon(
     easting: float, northing: float, zone: int, northern: bool
 ) -> tuple[float, float]:
@@ -541,7 +546,11 @@ class GrdParser:
 
         # Nodes
         for node in sorted(grd_file.nodes.values(), key=lambda n: n.id):
-            if node.depth is not None:
+            # A non-finite depth is written as no depth, as SHYFEM's own
+            # writer does for its -999 flag (grd.f90 grd_write_node); the core
+            # reader takes a missing field as "depth not set". A literal "nan"
+            # would otherwise land in the file (M-05).
+            if _finite(node.depth):
                 lines.append(
                     f"1 {node.id} {node.node_type} {node.x:.6f} {node.y:.6f} {node.depth:.6f}"
                 )
@@ -551,7 +560,7 @@ class GrdParser:
         # Elements: 2 id type nvert node1 node2 ... [depth]
         for elem in sorted(grd_file.elements.values(), key=lambda e: e.id):
             nodes_str = " ".join(str(n) for n in elem.nodes)
-            depth_str = f" {elem.depth:.6f}" if elem.depth is not None else ""
+            depth_str = f" {elem.depth:.6f}" if _finite(elem.depth) else ""
             lines.append(f"2 {elem.id} {elem.elem_type} {len(elem.nodes)} {nodes_str}{depth_str}")
 
         # Lines: 3 id type nvert node1 node2 ...
