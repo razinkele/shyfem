@@ -4,6 +4,7 @@ Provides a Shiny module for listing users, creating new users,
 resetting passwords, toggling active status, and promoting/demoting roles.
 """
 
+import asyncio
 import logging
 import re
 
@@ -501,7 +502,7 @@ def admin_server(
 
         @reactive.effect
         @reactive.event(input[f"send_test_email_{user_id}"])
-        def _send_test_email():
+        async def _send_test_email():
             """Send a test notification email to this user."""
             from shyfem_ui.services.notification_service import NotificationService
 
@@ -514,7 +515,9 @@ def admin_server(
             user_dict = {"username": username, "email": email}
             svc = NotificationService(config)
             try:
-                svc.notify_job_success(
+                # SMTP can take seconds (or a timeout): in a thread.
+                await asyncio.to_thread(
+                    svc.notify_job_success,
                     user_dict,
                     {
                         "name": "test notification",
