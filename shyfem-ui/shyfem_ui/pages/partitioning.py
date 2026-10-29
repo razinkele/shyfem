@@ -1,5 +1,6 @@
 """Mesh partitioning page - shyparts interface."""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -159,7 +160,7 @@ def partitioning_server(
 
     @reactive.effect
     @reactive.event(input.load_grid_btn)
-    def _load_grid():
+    async def _load_grid():
         grd_path = input.grd_path()
         if not grd_path:
             log_content.set("Error: No grid file path specified")
@@ -172,7 +173,7 @@ def partitioning_server(
             log_content.set(f"Error: {e}")
             return
         try:
-            grd = GrdParser.parse_file(path)
+            grd = await asyncio.to_thread(GrdParser.parse_file, path)
             current_grd.set(grd)
             log_content.set(
                 f"Loaded grid: {path.name}\n"
