@@ -102,7 +102,12 @@ def init_db() -> None:
             return
 
         alembic_cfg = AlembicConfig(str(ini_path))
-        alembic_cfg.set_main_option("sqlalchemy.url", str(engine.url))
+        # str(engine.url) masks the password as "***" (D-01): hand Alembic the
+        # real URL, with "%" doubled for the ini interpolation. Never log it.
+        alembic_cfg.set_main_option(
+            "sqlalchemy.url",
+            engine.url.render_as_string(hide_password=False).replace("%", "%%"),
+        )
         # set_main_option() above already forced alembic_cfg to read (and
         # memoize) the ini file with `here` resolved from ini_path, so every
         # later get_main_option() call (script_location, etc.) still works
