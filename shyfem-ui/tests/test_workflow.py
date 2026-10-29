@@ -672,3 +672,158 @@ class TestWorkflowTimestampsAreUTC:
         assert not bad, "workflow.py must use utcnow()/datetime.now(tz): " + "; ".join(
             sorted(set(bad))
         )
+
+
+def _recording_queue(output_files: list[str]):
+    """A queue whose jobs complete at once with ``output_files``; it keeps
+    every submitted JobSpec in ``queue.specs``."""
+    queue = MagicMock()
+    jobs: dict[str, JobInfo] = {}
+    queue.specs = []
+
+    async def submit(spec):
+        queue.specs.append(spec)
+        job_id = f"job-{len(queue.specs)}"
+        jobs[job_id] = JobInfo(
+            id=job_id,
+            name=spec.name,
+            tool_name=spec.tool_name,
+            args=spec.args,
+            working_dir=str(spec.working_dir),
+            status=JobStatus.COMPLETED,
+            return_code=0,
+            output_files=list(output_files),
+            metadata=spec.metadata.copy(),
+        )
+        return job_id
+
+    async def get_status(job_id):
+        return jobs.get(job_id)
+
+    queue.submit = submit
+    queue.get_status = get_status
+    return queue
+
+
+async def _drive(engine: WorkflowEngine, wf_id: str) -> asyncio.Task:
+    """Wait (bounded) for the workflow's driver task to end and return it."""
+    task = engine._polling_tasks.get(wf_id)
+    assert task is not None
+    await asyncio.wait([task], timeout=10)
+    assert task.done(), "workflow driver task did not finish"
+    return task
+
+
+class TestUnresolvableStepArgs:
+    """J-03: a step whose arguments cannot be resolved fails the workflow."""
+
+    @pytest.mark.asyncio
+    async def test_unresolved_reference_fails_workflow_and_ends_driver(
+        self, session_factory, tmp_path
+    ):
+        # grid_prep "completes" with no output files, so basin_analysis's
+        # {grid_prep.output_files[0]} cannot be resolved.
+        queue = _recording_queue(output_files=[])
+        engine = WorkflowEngine(queue, session_factory=session_factory)
+        wf_id = await engine.create_workflow(
+            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/t.grd"}
+        )
+        task = await _drive(engine, wf_id)
+
+        assert task.exception() is None  # the error did not escape the driver
+        wf = engine.get_workflow(wf_id)
+        assert wf.status == WorkflowStatus.FAILED
+        assert wf.completed_at is not None
+        assert "basin_analysis" in wf.error_message
+        assert "grid_prep.output_files[0]" in wf.error_message
+        assert wf_id not in engine._polling_tasks  # no leaked driver entry
+        # The unresolvable step was never submitted.
+        assert [s.tool_name for s in queue.specs] == ["shypre"]
+
+
+class TestStepJobsCarryOwner:
+    """J-04: every step job carries the workflow's owner and project."""
+
+    @pytest.mark.asyncio
+    async def test_step_jobs_carry_user_and_project(self, session_factory, tmp_path):
+        queue = _recording_queue(output_files=["/tmp/out.bas"])
+        engine = WorkflowEngine(queue, session_factory=session_factory)
+        wf_id = await engine.create_workflow(
+            "grid_only",
+            working_dir=tmp_path,
+            params={"input_grd": "/tmp/t.grd"},
+            user_id=7,
+            project_id=3,
+        )
+        await _drive(engine, wf_id)
+
+        assert engine.get_workflow(wf_id).status == WorkflowStatus.COMPLETED
+        assert len(queue.specs) == 2
+        for spec in queue.specs:
+            assert spec.metadata["user_id"] == 7
+            assert spec.metadata["project_id"] == 3
+            assert spec.metadata["workflow_id"] == wf_id
+
+    @pytest.mark.asyncio
+    async def test_ownerless_workflow_adds_no_owner_keys(self, session_factory, tmp_path):
+        """Local mode: no owner -> no user_id/project_id keys, like a direct job."""
+        queue = _recording_queue(output_files=["/tmp/out.bas"])
+        engine = WorkflowEngine(queue, session_factory=session_factory)
+        wf_id = await engine.create_workflow(
+            "grid_only", working_dir=tmp_path, params={"input_grd": "/tmp/t.grd"}
+        )
+        await _drive(engine, wf_id)
+        for spec in queue.specs:
+            assert "user_id" not in spec.metadata
+            assert "project_id" not in spec.metadata
+
+    @pytest.mark.asyncio
+    async def test_owner_lists_and_may_cancel_step_jobs_on_local_queue(
+        self, session_factory, tmp_path, monkeypatch
+    ):
+        """End to end on the real LocalJobQueue: the owner's scoped job list
+        holds the step job and the cancel check lets the owner through."""
+        from shyfem_ui.services.access_control import job_cancel_denied_reason
+        from shyfem_ui.services.job_local import LocalJobQueue
+
+        local = LocalJobQueue(shyfem_dir=tmp_path, max_workers=1)
+        submitted: list[str] = []
+        real_submit = local.submit
+
+        async def submit_and_stop(spec):
+            job_id = await real_submit(spec)
+            submitted.append(job_id)
+            return job_id
+
+        async def finished(job_id):
+            return None  # end the workflow's wait at once
+
+        monkeypatch.setattr(local, "submit", submit_and_stop)
+        monkeypatch.setattr(local, "get_status", finished)
+        engine = WorkflowEngine(local, session_factory=session_factory)
+        wf_id = await engine.create_workflow(
+            "grid_only",
+            working_dir=tmp_path,
+            params={"input_grd": "/tmp/t.grd"},
+            user_id=7,
+            project_id=3,
+        )
+        await _drive(engine, wf_id)
+        try:
+            assert submitted
+            mine = await local.list_jobs(user_id=7)
+            assert submitted[0] in {j.id for j in mine}
+            job = next(j for j in mine if j.id == submitted[0])
+            assert (
+                job_cancel_denied_reason(
+                    job_user_id=job.metadata.get("user_id"),
+                    job_project_id=job.metadata.get("project_id"),
+                    user={"id": 7, "role": "user"},
+                    is_server_mode=True,
+                    session_factory=session_factory,
+                )
+                is None
+            )
+        finally:
+            for jid in submitted:
+                await local.cancel(jid)
