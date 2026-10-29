@@ -87,6 +87,10 @@ class WorkflowInstance:
     completed_at: datetime | None = None
     error_message: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Owner and project (DB columns). Every step job carries them so the
+    # owner can list, read and cancel the steps and gets the job emails.
+    user_id: int | None = None
+    project_id: int | None = None
 
     @property
     def is_active(self) -> bool:
@@ -238,6 +242,8 @@ def _row_to_instance(row: Workflow) -> WorkflowInstance:
         completed_at=row.completed_at,
         error_message=meta_entry.get("error_message"),
         metadata=meta_entry.get("metadata", {}),
+        user_id=row.user_id,
+        project_id=row.project_id,
     )
 
 
@@ -644,21 +650,31 @@ class WorkflowEngine:
             wf.current_step_index = i
             self._save_instance(wf)
 
-            # Resolve template arguments
-            args = self._resolve_args(step.args_template, params, wf.step_results)
-
-            # Create job spec
-            spec = JobSpec(
-                name=f"{wf.name}/{step.name}",
-                tool_name=step.tool_name,
-                args=args,
-                working_dir=Path(wf.working_dir) if wf.working_dir else Path("."),
-                mpi_enabled=step.mpi_enabled,
-                mpi_np=step.mpi_np,
-                metadata={"workflow_id": workflow_id, "step": step.name},
-            )
-
             try:
+                # Inside the try: an unresolvable argument (a previous step
+                # produced no output) must fail the step and the workflow,
+                # not escape the driver task and leave the row RUNNING.
+                args = self._resolve_args(step.args_template, params, wf.step_results)
+
+                # The owner and project ride on every step job exactly as on a
+                # directly submitted job (run_logic._get_job_metadata): job
+                # listing, cancel authorization and notifications read them.
+                metadata: dict[str, Any] = {"workflow_id": workflow_id, "step": step.name}
+                if wf.user_id is not None:
+                    metadata["user_id"] = wf.user_id
+                if wf.project_id is not None:
+                    metadata["project_id"] = wf.project_id
+
+                spec = JobSpec(
+                    name=f"{wf.name}/{step.name}",
+                    tool_name=step.tool_name,
+                    args=args,
+                    working_dir=Path(wf.working_dir) if wf.working_dir else Path("."),
+                    mpi_enabled=step.mpi_enabled,
+                    mpi_np=step.mpi_np,
+                    metadata=metadata,
+                )
+
                 job_id = await self._queue.submit(spec)
                 wf.step_job_ids[step.name] = job_id
                 self._save_instance(wf)
