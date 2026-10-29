@@ -213,25 +213,35 @@ def _import_project_sync(zip_data: BytesIO, base_dir: Path) -> dict:
                     f"path traversal in archive: {member!r} resolves outside {project_dir_resolved}"
                 ) from e
 
+        # Not exist_ok: this call must create the directory, because a failed
+        # extraction below removes it.
         project_dir.mkdir(parents=True)
 
-        # Extract files (skip manifest)
-        for member in names:
-            if member == "manifest.json":
-                continue
-            if member.endswith("/"):
-                continue
-            # Without ".." (refused above) this is the path written; "./x" and
-            # "a//x" are the forms it still collapses.
-            rel = PurePosixPath(posixpath.normpath(member))
-            if not is_project_file(rel):
-                # Job files, cache and bookkeeping get no file row, so they
-                # would sit on disk uncounted by the storage limit (F-01).
-                continue
-            target = project_dir / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(member) as src, open(target, "wb") as dst:
-                shutil.copyfileobj(src, dst, length=1024 * 1024)
+        try:
+            # Extract files (skip manifest)
+            for member in names:
+                if member == "manifest.json":
+                    continue
+                if member.endswith("/"):
+                    continue
+                # Without ".." (refused above) this is the path written; "./x" and
+                # "a//x" are the forms it still collapses.
+                rel = PurePosixPath(posixpath.normpath(member))
+                if not is_project_file(rel):
+                    # Job files, cache and bookkeeping get no file row, so they
+                    # would sit on disk uncounted by the storage limit (F-01).
+                    continue
+                target = project_dir / rel
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(member) as src, open(target, "wb") as dst:
+                    shutil.copyfileobj(src, dst, length=1024 * 1024)
+        except BaseException:
+            # A corrupt member (bad CRC), an encrypted one, or a full disk
+            # stops the extraction part-way. No project row will point at the
+            # partial directory, so nothing could delete it later and it would
+            # sit outside the storage limit (F-03): remove it here.
+            shutil.rmtree(project_dir, ignore_errors=True)
+            raise
 
     return {
         "name": name,

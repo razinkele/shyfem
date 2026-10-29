@@ -648,3 +648,40 @@ class TestCloneProject:
         wd = result["work_dir"]
         assert not list(wd.glob("*.stdout"))
         assert not list(wd.glob("*.stderr"))
+
+
+class TestImportFailureCleanup:
+    """F-03: an extraction that fails part-way must not leave a partial
+    project directory on disk (no DB row points at it, so it could never be
+    deleted and it would sit outside the storage limit)."""
+
+    @staticmethod
+    def _zip_with_corrupt_second_member() -> BytesIO:
+        manifest = {"version": MANIFEST_VERSION, "project": {"name": "Broken"}}
+        payload = b"Q" * 200
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("manifest.json", json.dumps(manifest))
+            zf.writestr("a.str", "first file is fine")
+            zf.writestr("b.str", payload)
+        raw = bytearray(buf.getvalue())
+        at = raw.index(payload)
+        raw[at + 100] ^= 0xFF  # damages the data, not the headers: CRC fails on read
+        return BytesIO(bytes(raw))
+
+    async def test_failed_extraction_removes_the_partial_directory(self, tmp_path):
+        base = tmp_path / "projects"
+        base.mkdir()
+        with pytest.raises(zipfile.BadZipFile):
+            await import_project(self._zip_with_corrupt_second_member(), base)
+        assert list(base.iterdir()) == []
+
+    async def test_failed_import_leaves_an_existing_same_name_project_alone(self, tmp_path):
+        base = tmp_path / "projects"
+        existing = base / "Broken"
+        existing.mkdir(parents=True)
+        (existing / "keep.str").write_text("mine")
+        with pytest.raises(zipfile.BadZipFile):
+            await import_project(self._zip_with_corrupt_second_member(), base)
+        assert sorted(p.name for p in base.iterdir()) == ["Broken"]
+        assert (existing / "keep.str").read_text() == "mine"

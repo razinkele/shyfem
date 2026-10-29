@@ -105,7 +105,14 @@ async def run_maintenance_loop(
     feedback_retention_days: int = 180,
     workflow_cleanup=None,
 ) -> None:
-    """Run :func:`run_maintenance_once` every ``interval_s`` seconds, forever.
+    """Run :func:`run_maintenance_once` at startup, then every ``interval_s``
+    seconds, forever.
+
+    The first pass runs immediately: under Shiny Server the worker exits a few
+    seconds after its last session closes, usually long before one interval
+    (an hour by default) has elapsed, so a loop that slept first would almost
+    never prune anything (SEC-04). Every pass is off the event loop (the
+    synchronous cleanups go through ``asyncio.to_thread``).
 
     Intended to be launched as a background task (see MaintenanceMiddleware) and
     cancelled on shutdown. ``run_maintenance_once`` swallows its own errors, so
@@ -120,7 +127,6 @@ async def run_maintenance_loop(
         feedback_retention_days,
     )
     while True:
-        await asyncio.sleep(interval_s)
         await run_maintenance_once(
             job_queue,
             auth_service,
@@ -131,3 +137,4 @@ async def run_maintenance_loop(
             feedback_retention_days=feedback_retention_days,
             workflow_cleanup=workflow_cleanup,
         )
+        await asyncio.sleep(interval_s)
