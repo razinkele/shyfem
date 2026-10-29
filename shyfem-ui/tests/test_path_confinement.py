@@ -241,3 +241,58 @@ class TestConfinePathLocalMode:
 
         result = cfg.confine_path(target, None, must_exist=True)
         assert result == target.resolve()
+
+
+class TestTildePaths:
+    """SEC-08: a user-supplied path starting with ``~name`` used to be expanded
+    on the server. An unknown name raised RuntimeError (not the ValueError
+    every caller catches), and a known one (``~root``) resolved to that host
+    account's home and the rejection message printed it. Both are now the
+    same plain ValueError that names no server path."""
+
+    @pytest.mark.parametrize("raw", ["~nosuchuser_sec08/x", "~root/x", "~root", "~/x", "~"])
+    def test_server_confine_rejects_tilde_cleanly(self, tmp_path, raw):
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError) as exc:
+            cfg.confine_path(raw, _user("alice"))
+        msg = str(exc.value)
+        assert "/root" not in msg
+        assert str(tmp_path) not in msg
+        assert str(Path.home()) not in msg
+
+    @pytest.mark.parametrize("raw", ["~nosuchuser_sec08/x", "~root/x"])
+    @pytest.mark.parametrize("method", ["validate_path", "validate_save_path"])
+    def test_validate_rejects_named_tilde_cleanly(self, tmp_path, raw, method):
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError) as exc:
+            getattr(cfg, method)(raw)
+        msg = str(exc.value)
+        assert "/root" not in msg
+        assert str(tmp_path) not in msg
+
+    def test_named_tilde_gives_same_message_whether_or_not_account_exists(self, tmp_path):
+        """No host-account oracle: an existing and a missing name read alike."""
+        cfg = _server_config(tmp_path)
+        msgs = []
+        for raw in ("~root/x", "~nosuchuser_sec08/x"):
+            with pytest.raises(ValueError) as exc:
+                cfg.confine_path(raw, _user("alice"))
+            msgs.append(str(exc.value).replace(raw, "<p>"))
+        assert msgs[0] == msgs[1]
+
+    def test_local_mode_still_expands_own_home(self, tmp_path, monkeypatch):
+        """Single-user desktop: ``~/...`` still means the desktop user's home."""
+        home = tmp_path / "home"
+        work = home / "work"
+        shyfem = tmp_path / "shyfem"
+        for d in (work, shyfem):
+            d.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setenv("HOME", str(home))
+        cfg = Config(
+            _env_file=None,
+            deployment_mode="local",
+            user_data_root=tmp_path / "users",
+            work_dir=work,
+            shyfem_dir=shyfem,
+        )
+        assert cfg.confine_path("~/work/run.shy", None) == (work / "run.shy").resolve()

@@ -449,7 +449,7 @@ class Config(BaseSettings):
         if "\x00" in path_str:
             raise ValueError("Path contains null bytes")
 
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._expand_user_path(path).resolve()
 
         # Resolve symlinks if the target exists to prevent symlink traversal
         if resolved.exists():
@@ -474,6 +474,30 @@ class Config(BaseSettings):
 
         return resolved
 
+    def _expand_user_path(self, path: Path | str) -> Path:
+        """Expand a leading ``~`` in a user-supplied path, or refuse it.
+
+        ``~name`` is never expanded: on the server it names a host account,
+        so an unknown name raised RuntimeError (escaping every caller that
+        catches ValueError) and a known one (``~root``) resolved to that
+        account's home, which the rejection message then printed. It is
+        refused with one message that names no server path, whether or not
+        the account exists (SEC-08). A bare ``~`` / ``~/...`` is the desktop
+        user's own home and stays usable in local mode; in server mode it
+        would be the service account's home, so it is refused as well.
+        """
+        p = Path(path)
+        path_str = str(path)
+        if not path_str.startswith("~"):
+            return p
+        own_home = path_str == "~" or path_str.startswith("~/")
+        if own_home and self.deployment_mode != "server":
+            try:
+                return p.expanduser()
+            except RuntimeError:
+                pass
+        raise ValueError(f"Path '{path_str}' is not allowed: '~' home shortcuts are not supported")
+
     def validate_save_path(self, path: Path | str) -> Path:
         """Validate that a save path is within the work directory.
 
@@ -492,7 +516,7 @@ class Config(BaseSettings):
         if "\x00" in path_str:
             raise ValueError("Path contains null bytes")
 
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._expand_user_path(path).resolve()
 
         # If path already exists, resolve symlinks strictly
         if resolved.exists():
@@ -620,7 +644,7 @@ class Config(BaseSettings):
         if user.get("role") == ROLE_ADMIN:
             allowed_roots += [self.user_data_root.resolve(), self.work_dir.resolve()]
 
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._expand_user_path(path).resolve()
         if resolved.exists():
             resolved = resolved.resolve(strict=True)
 
