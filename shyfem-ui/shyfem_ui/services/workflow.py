@@ -621,6 +621,12 @@ class WorkflowEngine:
             row = session.query(Workflow).filter(Workflow.id == pk).first()
             if row is None:
                 return
+            if row.status == WorkflowStatus.CANCELLED and wf.status != WorkflowStatus.CANCELLED:
+                # Cancelled meanwhile, possibly by another session's engine,
+                # which cannot stop this driver task (J-05): keep CANCELLED
+                # and let the driver see it, never overwrite it with
+                # RUNNING / FAILED / COMPLETED.
+                wf.status = WorkflowStatus.CANCELLED
             row.status = wf.status
             row.steps = _pack_steps(wf)
             row.updated_at = utcnow()
@@ -692,6 +698,12 @@ class WorkflowEngine:
                 }
                 self._save_instance(wf)
 
+                if wf.status != WorkflowStatus.RUNNING:
+                    break  # the workflow was cancelled while this step ran
+                if job_info and job_info.status == JobStatus.CANCELLED:
+                    wf.status = WorkflowStatus.CANCELLED
+                    wf.error_message = f"Step '{step.name}' was cancelled"
+                    break
                 if job_info and job_info.status != JobStatus.COMPLETED:
                     if not step.continue_on_failure:
                         wf.status = WorkflowStatus.FAILED
