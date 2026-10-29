@@ -1,7 +1,5 @@
 """Project file management page -- upload, browse, download, delete."""
 
-import base64
-import json
 import logging
 from pathlib import Path
 
@@ -9,6 +7,7 @@ from shiny import module, reactive, render, ui
 
 from shyfem_ui.components.project_select import project_rel_dir_choices, str_file_selectize
 from shyfem_ui.config import Config, get_config
+from shyfem_ui.services.downloads import SessionDownloads
 from shyfem_ui.services.file_service import FileService
 
 logger = logging.getLogger(__name__)
@@ -114,6 +113,7 @@ def files_server(
     # causing one user action to fire N times.
     _dl_registered: set[int] = set()
     _rm_registered: set[int] = set()
+    downloads = SessionDownloads(session)
 
     @render.ui
     def files_content():
@@ -375,7 +375,7 @@ def files_server(
 
         @reactive.effect
         @reactive.event(getattr(input, btn_id))
-        def _download():
+        async def _download():
             # Access check: viewer role on the file's *actual* project (not
             # active_project — defense-in-depth against crafted file_ids).
             from shyfem_ui.services.access_control import editor_denied_reason
@@ -391,18 +391,14 @@ def files_server(
                 return
             try:
                 path = FileService.get_file_path(file_id)
-                data = path.read_bytes()
-                b64 = base64.b64encode(data).decode()
-                safe_name = json.dumps(path.name)
-                js = (
-                    "var a = document.createElement('a');"
-                    f"a.href = 'data:application/octet-stream;base64,{b64}';"
-                    f"a.download = {safe_name};"
-                    "document.body.appendChild(a);"
-                    "a.click();"
-                    "document.body.removeChild(a);"
+                if not path.is_file():
+                    ui.notification_show("File not found on disk", type="error", duration=6)
+                    return
+                # The browser fetches the file over HTTP: nothing is read here.
+                await session.send_custom_message(
+                    "download_file",
+                    {"href": downloads.offer_file(path, path.name), "filename": path.name},
                 )
-                ui.insert_ui(ui.tags.script(js), selector="body", where="beforeEnd")
             except Exception as e:
                 ui.notification_show(f"Download error: {e}", type="error", duration=6)
 
