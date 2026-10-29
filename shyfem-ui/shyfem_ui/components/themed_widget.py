@@ -15,6 +15,7 @@ import logging
 
 from shiny import reactive
 from shiny.session import get_current_session
+from shiny.types import SilentException
 from shinywidgets import render_widget as _render_widget
 
 from shyfem_ui.plotly_theme import get_plotly_template
@@ -35,7 +36,7 @@ def session_is_dark() -> bool:
     try:
         with reactive.isolate():
             return bool(session.root_scope().input["_dark_mode"]())
-    except Exception:
+    except SilentException:
         # Not reported yet (the toggle was never used in this browser).
         return False
 

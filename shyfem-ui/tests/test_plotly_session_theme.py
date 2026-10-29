@@ -11,6 +11,7 @@ import pathlib
 import plotly.graph_objects as go
 import plotly.io as pio
 from shiny.session import session_context
+from shiny.types import SilentException
 
 from shyfem_ui.components.themed_widget import apply_session_theme, session_is_dark
 from shyfem_ui.plotly_theme import get_plotly_template, register_shyfem_template
@@ -38,8 +39,12 @@ def _session(dark=None):
 class _Inputs(dict):
     def __getitem__(self, key):
         if key not in self:
-            raise KeyError(key)  # an input the browser never set
+            return _unset  # like shiny: reading an input never set is silent
         return dict.__getitem__(self, key)
+
+
+def _unset():
+    raise SilentException()
 
 
 def _paper_bg(fig) -> str:
