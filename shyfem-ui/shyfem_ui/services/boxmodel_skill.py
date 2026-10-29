@@ -159,6 +159,26 @@ def load_sites(path: Path) -> pd.DataFrame:
         bad_value = raw[bad].iloc[0]
         raise ObservationError(f"sites: box must be an integer, got {bad_value!r}")
     s["box"] = pd.array(numeric.round().where(~blank), dtype="Int64")
+
+    # A coordinate is a number or blank (a site with no position is left off
+    # the map). A spreadsheet's comma decimal ("55,7") used to load as text
+    # and blank the whole Map tab when it was drawn (B-03).
+    for col in ("lat", "lon"):
+        text = s[col].astype("string").str.strip()
+        empty = text.isna() | (text == "")
+        value = pd.to_numeric(text, errors="coerce")
+        bad = ~empty & value.isna()
+        if bad.any():
+            bad_value = s[col][bad].iloc[0]
+            hint = " (use a decimal point)" if "," in str(bad_value) else ""
+            raise ObservationError(f"sites: {col} must be a number, got {bad_value!r}{hint}")
+        s[col] = value.astype(float)
+
+    # One row per site: Compare reshapes by site and failed with a pandas
+    # error on a repeated one (B-03).
+    dup = s["site"].dropna()[s["site"].dropna().duplicated()]
+    if not dup.empty:
+        raise ObservationError(f"sites: site {dup.iloc[0]!r} is listed more than once")
     return s
 
 
