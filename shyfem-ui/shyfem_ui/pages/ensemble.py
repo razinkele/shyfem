@@ -18,7 +18,7 @@ from typing import Any
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
 from shyfem_ui.components.project_select import (
@@ -26,6 +26,7 @@ from shyfem_ui.components.project_select import (
     project_dir_select,
     project_file_select,
 )
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobSpec, JobStatus

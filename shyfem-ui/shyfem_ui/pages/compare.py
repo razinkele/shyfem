@@ -12,9 +12,10 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.job_status import format_datetime, format_duration
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.job_queue import JobQueue, JobQueueFactory, JobStatus

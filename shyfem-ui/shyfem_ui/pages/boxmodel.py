@@ -52,7 +52,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.grid_map import (
     _detect_projected_crs,
@@ -69,6 +69,7 @@ from shyfem_ui.components.project_select import (
     project_file_select,
     project_rel_dir_choices,
 )
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
 from shyfem_ui.services.boxmodel_cache import (

@@ -14,7 +14,7 @@ from pathlib import Path
 
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
 from shyfem_ui.components.job_status import (
     format_datetime,
@@ -30,6 +30,7 @@ from shyfem_ui.components.project_select import (
     project_file_select,
 )
 from shyfem_ui.components.sample_data import sample_data_card_ui
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.config import Config
 from shyfem_ui.services.job_queue import JobInfo, JobQueue, JobQueueFactory, JobStatus
 from shyfem_ui.services.parser_str import StrParser

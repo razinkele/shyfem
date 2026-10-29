@@ -18,8 +18,9 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from shiny import module, reactive, render, ui
-from shinywidgets import output_widget, render_widget
+from shinywidgets import output_widget
 
+from shyfem_ui.components.themed_widget import render_widget
 from shyfem_ui.services.project_files import list_project_files
 
 logger = logging.getLogger(__name__)
