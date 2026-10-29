@@ -1,5 +1,9 @@
 """STR editor fixes from the 2026-10-19 UI review (S-04, S-05, S-06, S-09)."""
 
+from pathlib import Path
+
+import pytest
+
 from shyfem_ui.components.str_editor import validate_str_content
 
 _VALID_PARA = "$title\n    t\n$end\n$para\n    itanf = 0\n    itend = 3600\n    idt = 300\n"
@@ -161,14 +165,15 @@ class TestAnEmptyQuotedValueRoundTrips:
 
 def _rendered_field_values(html: str) -> dict[str, str]:
     """Field id -> the value the browser would send back for it."""
+    import html as html_lib
     import re
 
     values = {}
     for m in re.finditer(r'<select[^>]*id="(form_[^"]+)"[^>]*>(.*?)</select>', html, re.S):
         sel = re.search(r'<option value="([^"]*)" selected', m.group(2))
-        values[m.group(1)] = sel.group(1) if sel else ""
+        values[m.group(1)] = html_lib.unescape(sel.group(1)) if sel else ""
     for m in re.finditer(r'<input id="(form_[^"]+)"[^>]*value="([^"]*)"', html):
-        values[m.group(1)] = m.group(2)
+        values[m.group(1)] = html_lib.unescape(m.group(2))
     return values
 
 
@@ -202,3 +207,54 @@ class TestBoundaryEditorEmptyFile:
         await reactive.flush()
         with reactive.isolate():
             assert "None" not in result["generated_text"].get()
+
+
+class TestApplyReadsEveryRenderedField:
+    """S-05: Apply read only COMMON_PARAMS keys, so an edit in a section
+    without an entry ($bound1, $assimil1, ...) or to a key it does not list
+    (nomp) was silently dropped, though the form rendered the field."""
+
+    STR = (
+        "$para\n        idt = 300\n        nomp = 1\n$end\n"
+        "$bound1\n        kbound = 1 2 3\n        ibtyp = 1\n"
+        "        boundn = 'old.dat'\n$end\n"
+    )
+
+    def _apply(self, edits):
+        from shyfem_ui.components.str_editor import _apply_form_values, _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
+
+        parsed = StrParser.parse(self.STR)
+        shown = _rendered_field_values(str(_build_form_panel(parsed)))
+        assert set(edits) <= set(shown), "edited fields must be ones the form renders"
+        shown.update(edits)
+        return StrParser.generate(_apply_form_values(parsed, shown.get))
+
+    def test_no_edit_is_byte_exact(self):
+        assert self._apply({}) == self.STR
+
+    def test_an_edit_in_a_numbered_bound_section_is_applied(self):
+        text = self._apply({"form_bound1_boundn": "new.dat", "form_bound1_kbound": "4 5"})
+        assert "boundn = 'new.dat'" in text
+        assert "kbound = 4 5" in text
+
+    def test_an_edit_to_a_key_outside_common_params_is_applied(self):
+        assert "nomp = 4" in self._apply({"form_para_nomp": "4"})
+
+
+_TESTCASES = Path(__file__).resolve().parents[2] / "testcases"
+_SHIPPED_STRS = sorted(_TESTCASES.glob("**/*.str"))
+
+
+@pytest.mark.skipif(not _SHIPPED_STRS, reason="testcases/ not checked out")
+@pytest.mark.parametrize("str_path", _SHIPPED_STRS, ids=lambda p: p.name)
+def test_apply_with_no_edit_leaves_every_shipped_str_unchanged(str_path):
+    """Apply now reads every rendered field, so every shipped file must come
+    back unchanged when each field holds what the form put in it."""
+    from shyfem_ui.components.str_editor import _apply_form_values, _build_form_panel
+    from shyfem_ui.services.parser_str import StrParser
+
+    parsed = StrParser.parse(str_path.read_text(errors="replace"))
+    before = StrParser.generate(parsed)
+    shown = _rendered_field_values(str(_build_form_panel(parsed)))
+    assert StrParser.generate(_apply_form_values(parsed, shown.get)) == before

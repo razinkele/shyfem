@@ -445,28 +445,32 @@ def _apply_form_values(
         if search_filter is not None and section_name not in search_filter:
             continue
         shown = search_filter.get(section_name) if search_filter is not None else None
-        section_params = COMMON_PARAMS.get(section_name, {})
-        for param_name in section_params:
+        # Every field _build_form_panel renders: each parameter of the
+        # section, known to COMMON_PARAMS or not. Iterating COMMON_PARAMS
+        # dropped edits in $bound1.., $assimil1.. (no entry) and to keys it
+        # does not list (nomp).
+        for param_name in list(section.parameters):
+            if param_name.startswith("_"):
+                continue
             if shown is not None and param_name not in shown:
                 continue
-            if param_name in section.parameters or param_name.startswith("_"):
-                field_id = f"form_{section_name}_{param_name}"
-                try:
-                    new_val = field_value(field_id)
-                    if new_val is not None and str(new_val).strip():
-                        old_val = section.parameters.get(param_name)
-                        # The inverse of the helper the field was rendered
-                        # with. _convert_value is scalar-only: for a value
-                        # run it returned the field's literal text, which
-                        # differs from the parsed list, so this guard fired
-                        # with no user edit and the save quoted a Python
-                        # repr into the file.
-                        converted = parse_param_display(str(new_val).strip())
-                        if converted != old_val:
-                            edited.set_param(section_name, param_name, converted)
-                except Exception:
-                    logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
-                    continue
+            field_id = f"form_{section_name}_{param_name}"
+            try:
+                new_val = field_value(field_id)
+                if new_val is not None and str(new_val).strip():
+                    old_val = section.parameters.get(param_name)
+                    # The inverse of the helper the field was rendered
+                    # with. _convert_value is scalar-only: for a value
+                    # run it returned the field's literal text, which
+                    # differs from the parsed list, so this guard fired
+                    # with no user edit and the save quoted a Python
+                    # repr into the file.
+                    converted = parse_param_display(str(new_val).strip())
+                    if converted != old_val:
+                        edited.set_param(section_name, param_name, converted)
+            except Exception:
+                logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
+                continue
     return edited
 
 
