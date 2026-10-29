@@ -1646,20 +1646,18 @@ def _check_boundary_gates(grd: GrdFile) -> tuple[bool, str | None]:
 
 
 def _get_triangle_vertices(elem, nodes_dict) -> list[int] | None:
-    """Extract 3 vertex node IDs from an element, handling the parser quirk.
+    """The 3 vertex node ids of a triangle, or None for any other element.
 
-    The .grd format is ``2 id type num_nodes n1 n2 n3 [depth]``, but the
-    parser consumes ``num_nodes`` as a node ID.  Triangles thus arrive with
-    ``nodes=[3, n1, n2, n3]`` (length 4) instead of ``[n1, n2, n3]``.
-
-    Returns:
-        List of 3 node IDs, or None if the element is not a triangle.
+    The grid parser reads exactly ``num_nodes`` ids from
+    ``2 id type num_nodes n1 n2 n3 [depth]``, so a triangle arrives as
+    ``[n1, n2, n3]``. An old parser kept the count as a first "node", and this
+    function then took ``[3, a, b, c]`` as the triangle ``[a, b, c]``; nothing
+    produces that shape any more, and it read a quad whose first node is 3 as
+    a triangle (M-13).
     """
     nids = elem.nodes
     if len(nids) == 3:
         return list(nids)
-    if len(nids) == 4 and nids[0] == 3:
-        return list(nids[1:4])
     return None
 
 
