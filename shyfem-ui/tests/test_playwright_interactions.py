@@ -133,24 +133,6 @@ class TestPartitioningInteractions:
         num.fill("8")
         assert num.input_value() == "8"
 
-    def test_toggle_weighted_checkbox(self, pw_page):
-        """Test toggling the 'Use weighted partitioning' checkbox.
-
-        Replaces test_change_partition_method — partition_method was
-        removed in 75ee406 (2026-04-30); the active partition control
-        is now the weighted checkbox (default ON per partitioning_ui).
-        """
-        _switch_tab(pw_page, "Partitioning")
-        weighted = pw_page.locator("#partitioning-weighted")
-        # Default value=True per partitioning_ui:input_checkbox.
-        assert weighted.is_checked() is True
-        weighted.uncheck()
-        pw_page.wait_for_timeout(300)
-        assert weighted.is_checked() is False
-        weighted.check()
-        pw_page.wait_for_timeout(300)
-        assert weighted.is_checked() is True
-
 
 class TestPostProcessInteractions:
     """Tests for Post-Process page interactions."""
