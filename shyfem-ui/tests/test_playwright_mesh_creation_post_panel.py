@@ -4,6 +4,10 @@ The Compare Runs radio and the Depth Adjustments inputs were rendered by an
 output that read ``staged_grd``. Picking a run or applying an adjustment
 changes ``staged_grd``, so the output re-rendered: the radio snapped back to
 the newest run and the typed values were emptied.
+
+Named to sort after test_playwright_mesh_creation.py: the shared page has no
+way to reset Mesh Builder, and this test leaves it on Step 4 with a mesh,
+which the creation tests (which start from Step 1, no mesh) cannot follow.
 """
 
 from __future__ import annotations
