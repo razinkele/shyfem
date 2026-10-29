@@ -159,3 +159,35 @@ def test_cleanup_old_keeps_all_when_none_stale(svc):
     svc.create(feedback_type="bug", title="t", description="d")
     assert svc.cleanup_old(days=180) == 0
     assert len(svc.list()) == 1
+
+
+def test_cleanup_old_cutoff_is_utc_on_a_non_utc_server(svc, monkeypatch):
+    """D-05: created_at is a UTC server default; a local cutoff on a UTC+3
+    server deleted feedback up to 3 h before it reached the retention age."""
+    import time
+    from datetime import timedelta
+
+    from shyfem_ui.models.feedback import Feedback
+    from shyfem_ui.timeutil import utcnow
+
+    monkeypatch.setenv("TZ", "Asia/Dubai")  # UTC+4 all year, no DST
+    time.tzset()
+    try:
+        session = svc._session_factory()
+        try:
+            session.add(
+                Feedback(
+                    feedback_type="bug",
+                    title="almost old",
+                    description="d",
+                    created_at=utcnow() - timedelta(days=180) + timedelta(hours=1),
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+        assert svc.cleanup_old(days=180) == 0
+        assert [r["title"] for r in svc.list()] == ["almost old"]
+    finally:
+        monkeypatch.undo()
+        time.tzset()
