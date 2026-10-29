@@ -5,6 +5,8 @@ import logging
 import os
 import re
 import stat as _stat
+import threading
+from collections import defaultdict
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
@@ -22,6 +24,18 @@ _JOB_FILE_NAME = re.compile(
 )
 
 logger = logging.getLogger(__name__)
+
+# Uploads run in threads (F-05), so two into the same project could both pass
+# the storage-quota check before either is written. One lock per project, held
+# from the quota check to the commit, keeps them in turn within this process.
+_upload_locks_guard = threading.Lock()
+_upload_locks: defaultdict[int, threading.Lock] = defaultdict(threading.Lock)
+
+
+def _upload_lock(project_id: int) -> threading.Lock:
+    with _upload_locks_guard:
+        return _upload_locks[project_id]
+
 
 # Every file_type a row may carry: the upload picker's choices plus the ones
 # _infer_file_type produces. A type read from an archive must be one of these.
@@ -109,7 +123,7 @@ class FileService:
         config = get_config()
         size = len(file_data)
 
-        with db_session() as db:
+        with _upload_lock(project_id), db_session() as db:
             project = db.query(Project).filter_by(id=project_id).first()
             if project is None:
                 raise ValueError(f"Project {project_id} not found")
