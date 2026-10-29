@@ -10,6 +10,7 @@ Provides zoomable/pannable mesh visualization with:
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import math
@@ -1920,6 +1921,31 @@ def grid_map_ui(height: str = "600px"):
     )
 
 
+def _fit_key(grd: GrdFile, epsg: int | None, is_3d: bool) -> tuple:
+    """What the view is fitted to: the grid object, its EPSG, and 2-D vs 3-D
+    (3-D tilts the camera). Nothing else may move the user's view."""
+    return (grd, epsg, is_3d)
+
+
+def _needs_refit(last: tuple | None, key: tuple) -> bool:
+    """Whether ``key`` differs from the last fit. The grid is compared by
+    identity: the key holds the grid itself, so its id cannot be reused."""
+    return last is None or last[0] is not key[0] or last[1:] != key[1:]
+
+
+def _build_map(grd, mode, colorscale, elevation_scale, partition_map, epsg, is_3d):
+    """Layers and view state for one render (pure; runs in a worker thread)."""
+    layers = build_layers(
+        grd,
+        mode=mode,
+        colorscale=colorscale,
+        elevation_scale=elevation_scale,
+        partition_map=partition_map,
+        epsg=epsg,
+    )
+    return layers, _compute_view_state(grd, is_3d=is_3d, epsg=epsg)
+
+
 @module.server
 def grid_map_server(
     input,
@@ -1971,12 +1997,23 @@ def grid_map_server(
 
     selected_node: reactive.Value[int | None] = reactive.value(None)
     selected_box: reactive.Value[int | None] = reactive.value(None)
+    # The _fit_key the view was last fitted to. A plain cell, not a reactive
+    # value: _update_map reads reactives and must not write one (self-write
+    # loop). A palette, mode or partition change keeps the user's zoom.
+    last_fit: list[tuple | None] = [None]
+
+    @reactive.effect
+    async def _set_basemap():
+        """A basemap change restyles the map; it rebuilds no layers."""
+        basemap_url = BASEMAPS.get(input.map_basemap(), BASEMAPS["positron"])
+        await _map.set_style(session, basemap_url)
 
     @reactive.effect
     async def _update_map():
         """Rebuild layers and push to the map when inputs change."""
         grd = grd_file.get()
         if grd is None:
+            last_fit[0] = None
             # Clear the map, but keep showing extra (e.g. box) layers if present.
             extra = list(extra_layers.get() or []) if extra_layers is not None else []
             await _map.update(
@@ -2001,7 +2038,6 @@ def grid_map_server(
 
         mode = input.map_mode()
         colorscale = input.map_colors()
-        basemap_key = input.map_basemap()
 
         # EPSG for coordinate reprojection:
         # 1. UI dropdown selection takes priority
@@ -2030,24 +2066,25 @@ def grid_map_server(
         if pmap and mode == "mesh":
             actual_mode = "partitions"
 
-        layers = build_layers(
-            grd,
-            mode=actual_mode,
-            colorscale=colorscale,
-            elevation_scale=elev_scale,
-            partition_map=pmap,
-            epsg=epsg_val,
-        )
-        if extra_layers is not None:
-            layers = layers + list(extra_layers.get() or [])
+        extra = list(extra_layers.get() or []) if extra_layers is not None else []
 
-        vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"), epsg=epsg_val)
+        # Every reactive read is above: the build runs in a thread, so a large
+        # grid (seconds of work) never blocks the event loop.
+        layers, vs = await asyncio.to_thread(
+            _build_map, grd, actual_mode, colorscale, elev_scale, pmap, epsg_val, mode == "depth_3d"
+        )
+        layers = layers + extra
+
+        # Re-centre (view state + fit) only for a new grid, EPSG or 2-D/3-D.
+        key = _fit_key(grd, epsg_val, mode == "depth_3d")
+        refit = _needs_refit(last_fit[0], key)
+        last_fit[0] = key
 
         label_map = _build_label_map(layers, mode=actual_mode)
         await _map.update(
             session,
             layers=layers,
-            view_state=vs,
+            view_state=vs if refit else None,
             transition_duration=500,
             widgets=[
                 zoom_widget(),
@@ -2063,13 +2100,8 @@ def grid_map_server(
             ],
         )
 
-        # Set basemap style
-        basemap_url = BASEMAPS.get(basemap_key, BASEMAPS["positron"])
-        await _map.set_style(session, basemap_url)
-
-        # Fit bounds to grid extent
         bounds = vs.get("bounds")
-        if bounds:
+        if refit and bounds:
             await _map.fit_bounds(
                 session,
                 bounds=bounds,
