@@ -1,7 +1,8 @@
 """File browser component for selecting and uploading files."""
 
+import inspect
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from shiny import module, reactive, render, ui
@@ -154,20 +155,23 @@ def file_browser_server(
     input,
     output,
     session,
-    on_file_selected: Callable[[list[FileInfo]], None] | None = None,
+    on_file_selected: Callable[[list[FileInfo]], None | Awaitable[None]] | None = None,
     accept: list[str] | None = None,
 ):
     """File browser component server logic.
 
     Args:
-        on_file_selected: Callback when files are selected
+        on_file_selected: Callback when files are selected. It may be async;
+            a callback that reads, writes or parses the files should be, and
+            do that work in a thread, so a large upload never blocks the
+            event loop (F-05).
         accept: List of accepted file extensions (e.g., [".grd"]). None allows all.
     """
     selected_files = reactive.value([])
 
     @reactive.effect
     @reactive.event(input.file_input)
-    def _handle_file_selection():
+    async def _handle_file_selection():
         from shyfem_ui.config import get_config
 
         files = input.file_input()
@@ -190,7 +194,9 @@ def file_browser_server(
         if valid_files:
             selected_files.set(valid_files)
             if on_file_selected:
-                on_file_selected(valid_files)
+                result = on_file_selected(valid_files)
+                if inspect.isawaitable(result):
+                    await result
 
     @render.ui
     def file_info():
