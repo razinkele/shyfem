@@ -522,3 +522,64 @@ class TestDeleteUserOrphanCleanup:
             assert db.query(User).filter_by(id=uid).first() is None
         finally:
             db.close()
+
+
+# ------------------------------------------------------------------
+# SEC-03: ensure_user's role re-force is kept, but no longer silent
+# ------------------------------------------------------------------
+
+
+class _FakeAudit:
+    def __init__(self):
+        self.rows = []
+
+    def log(self, **kw):
+        self.rows.append(kw)
+
+
+class TestEnsureUserRoleReforce:
+    def test_reforce_still_happens_and_is_logged_and_audited(self, auth_service, caplog):
+        auth_service.create_user("guest", "pw-123456", role="user", email="g@x.org")
+        audit = _FakeAudit()
+        with caplog.at_level("WARNING", logger="shyfem_ui.services.auth_service"):
+            out = auth_service.ensure_user("guest", "pw", role="tutorial", audit_service=audit)
+        assert out["role"] == "tutorial"  # the shim itself is unchanged
+        warn = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warn) == 1
+        assert "guest" in warn[0].getMessage()
+        assert "'user'" in warn[0].getMessage() and "'tutorial'" in warn[0].getMessage()
+        assert audit.rows == [
+            {
+                "username": "system",
+                "action": "role_reforced",
+                "detail": "target=guest, from=user, to=tutorial",
+            }
+        ]
+
+    def test_no_log_or_audit_when_role_already_matches(self, auth_service, caplog):
+        auth_service.create_user("guest", "pw-123456", role="tutorial")
+        audit = _FakeAudit()
+        with caplog.at_level("WARNING", logger="shyfem_ui.services.auth_service"):
+            auth_service.ensure_user("guest", "pw", role="tutorial", audit_service=audit)
+        assert not [r for r in caplog.records if r.levelname == "WARNING"]
+        assert audit.rows == []
+
+    def test_failing_audit_does_not_break_bootstrap(self, auth_service):
+        auth_service.create_user("guest", "pw-123456", role="user", email="g@x.org")
+
+        class Boom:
+            def log(self, **kw):
+                raise RuntimeError("db gone")
+
+        out = auth_service.ensure_user("guest", "pw", role="tutorial", audit_service=Boom())
+        assert out["role"] == "tutorial"
+
+    def test_app_bootstrap_passes_audit_service(self):
+        import inspect
+
+        import shyfem_ui.app as app_mod
+
+        src = inspect.getsource(app_mod)
+        call = src[src.index("auth_service.ensure_user(") :]
+        call = call[: call.index(")")]
+        assert "audit_service=audit_service" in call
