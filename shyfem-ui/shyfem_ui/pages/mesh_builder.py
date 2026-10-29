@@ -18,6 +18,7 @@ from shyfem_ui.services.mesh_builder import (
     check_bathy_extent,
     compute_mesh_stats,
     count_below_area,
+    drop_nonfinite_points,
     estimate_element_count,
     export_grd,
     import_boundaries,
@@ -423,16 +424,39 @@ def _import_boundary_upload(files) -> tuple:
     return grd, validate_boundary(grd)
 
 
-def _load_contour_upload(files, depth_attr: str, sample_dist: float | None):
-    """Stage an isobath upload and sample it to points (blocking; run in a thread)."""
+def _load_bathy_upload(path: Path) -> tuple:
+    """Load an uploaded point cloud, without its non-finite rows (blocking).
+
+    Returns ``(points, number_of_rows_dropped)`` so the page can report the
+    rows it left out (M-05).
+    """
+    return drop_nonfinite_points(load_bathymetry_file(path))
+
+
+def _load_contour_upload(files, depth_attr: str, sample_dist: float | None) -> tuple:
+    """Stage an isobath upload and sample it to points (blocking; run in a thread).
+
+    Returns ``(points, number_of_points_dropped)`` like ``_load_bathy_upload``.
+    """
     import tempfile
 
     with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
-        return load_bathymetry_contours(
+        points = load_bathymetry_contours(
             stage_boundary_upload(files, Path(tmp)),
             depth_attr=depth_attr,
             sample_distance=sample_dist,
         )
+    return drop_nonfinite_points(points)
+
+
+def _dropped_points_note(dropped: int) -> str | None:
+    """The load-log line for points left out as non-finite, or None."""
+    if not dropped:
+        return None
+    return (
+        f"Bathymetry warning: {dropped:,} point(s) with a NaN or infinite "
+        "x, y or depth were left out"
+    )
 
 
 @module.server
@@ -1151,7 +1175,7 @@ def mesh_builder_server(
         temp_path = Path(file_info["datapath"])
         try:
             # A bathymetry survey can be millions of points: in a thread (M-11).
-            data = await asyncio.to_thread(load_bathymetry_file, temp_path)
+            data, dropped = await asyncio.to_thread(_load_bathy_upload, temp_path)
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)
@@ -1161,6 +1185,10 @@ def mesh_builder_server(
             bathy_data.set(data)
             _log(f"Loaded bathymetry points: {file_info['name']} ({len(data)} points)")
             _log(f"  {summarize_depth_stats(data)}")
+            note = _dropped_points_note(dropped)
+            if note:
+                _log(f"  {note}")
+                ui.notification_show(note, type="warning", duration=8)
             ui.notification_show(
                 f"Loaded {len(data)} bathymetry points", type="message", duration=3
             )
@@ -1183,7 +1211,9 @@ def mesh_builder_server(
             sample_dist = input.contour_sample_dist()
             sample_dist = sample_dist if sample_dist and sample_dist > 0 else None
             # Reading and sampling isobaths can take seconds: in a thread (M-11).
-            data = await asyncio.to_thread(_load_contour_upload, files, depth_attr, sample_dist)
+            data, dropped = await asyncio.to_thread(
+                _load_contour_upload, files, depth_attr, sample_dist
+            )
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)
@@ -1194,6 +1224,10 @@ def mesh_builder_server(
             names = ", ".join(f["name"] for f in files)
             _log(f"Loaded contour isobaths: {names} ({len(data)} points)")
             _log(f"  {summarize_depth_stats(data)}")
+            note = _dropped_points_note(dropped)
+            if note:
+                _log(f"  {note}")
+                ui.notification_show(note, type="warning", duration=8)
             ui.notification_show(
                 f"Extracted {len(data)} points from contour isobaths",
                 type="message",

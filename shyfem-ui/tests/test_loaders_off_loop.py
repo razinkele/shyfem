@@ -35,7 +35,12 @@ def _function(path: str, name: str) -> ast.AST:
             "_import_boundary_upload",
             ("import_boundaries", "stage_boundary_upload", "validate_boundary"),
         ),
-        ("pages/mesh_builder.py", "_on_bathy_upload", "load_bathymetry_file", ()),
+        (
+            "pages/mesh_builder.py",
+            "_on_bathy_upload",
+            "_load_bathy_upload",
+            ("load_bathymetry_file", "drop_nonfinite_points"),
+        ),
         (
             "pages/mesh_builder.py",
             "_on_contour_upload",

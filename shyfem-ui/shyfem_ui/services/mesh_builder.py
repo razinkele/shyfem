@@ -981,6 +981,30 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
     return np.column_stack([xs, ys, vals])
 
 
+def drop_nonfinite_points(points: np.ndarray) -> tuple[np.ndarray, int]:
+    """Drop the rows of an ``(N, 3)`` x/y/depth array holding a NaN or inf.
+
+    A single ``nan`` in an XYZ survey (a blank cell exported by a spreadsheet,
+    a "no data" marker) used to travel into the interpolation and come out as
+    a ``nan`` node depth in the exported GRD (M-05). ``float()`` accepts
+    "nan" and "inf", so the text loaders cannot catch it while parsing.
+
+    Returns:
+        ``(finite_points, number_dropped)``.
+
+    Raises:
+        ValueError: no row is finite.
+    """
+    pts = np.asarray(points, dtype=float)
+    if pts.size == 0:
+        return pts, 0
+    keep = np.isfinite(pts[:, :3]).all(axis=1)
+    dropped = int(len(pts) - int(keep.sum()))
+    if not keep.any():
+        raise ValueError("No bathymetry point has a finite x, y and depth")
+    return (pts[keep] if dropped else pts), dropped
+
+
 def extract_boundary_zero_points(grd: GrdFile) -> np.ndarray:
     """Extract boundary line vertices as depth=0 constraint points.
 
@@ -1054,6 +1078,11 @@ def _compute_depths_only(
     """
     if len(bathy_points) == 0:
         raise ValueError("No bathymetry points provided")
+    # Backstop for callers that skipped the load-time filter (M-05): a NaN
+    # survey point poisons every node it reaches (IDW averages it in).
+    bathy_points, dropped = drop_nonfinite_points(bathy_points)
+    if dropped:
+        logger.warning("Ignored %d bathymetry point(s) with a non-finite value", dropped)
 
     if use_boundary_zero:
         zero_pts = extract_boundary_zero_points(grd)
@@ -1236,7 +1265,8 @@ async def interpolate_bathymetry_shybas(grd: GrdFile, points: np.ndarray, wrappe
     """
     import tempfile
 
-    pts = np.asarray(points, dtype=float)
+    # A "nan" in bathy.grd is a shybas "Read error" (M-05).
+    pts, _ = drop_nonfinite_points(np.asarray(points, dtype=float))
     with tempfile.TemporaryDirectory(prefix="shybas_") as tmp:
         work = Path(tmp)
         mesh = GrdFile(
