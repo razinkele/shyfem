@@ -30,6 +30,7 @@ from shyfem_ui.services.mesh_builder import (
     smooth_boundary,
     suggest_max_area_for_limit,
     summarize_depth_stats,
+    tolerance_in_grid_units,
     triangulate,
     validate_boundary,
     warn_if_degenerate_bathy,
@@ -706,7 +707,7 @@ def mesh_builder_server(
                     6,
                     ui.input_slider(
                         "reduce_tolerance",
-                        "Simplify Tolerance",
+                        "Simplify Tolerance (m)",
                         min=0.0,
                         max=1000.0,
                         value=0.0,
@@ -761,22 +762,24 @@ def mesh_builder_server(
         if grd is None:
             return
         selection = input.refine_line()
-        tolerance = input.reduce_tolerance()
+        tolerance = input.reduce_tolerance()  # metres (M-09)
         line_ids = list(grd.lines.keys()) if selection == "all" else [int(selection)]
         try:
             new_grd = grd
+            # The slider is metres; an imported boundary is lon/lat degrees.
+            grid_tol = tolerance_in_grid_units(grd, tolerance)
             for lid in line_ids:
-                new_grd = reduce_boundary(new_grd, lid, tolerance=tolerance)
+                new_grd = reduce_boundary(new_grd, lid, tolerance=grid_tol)
             refined_grd.set(new_grd)
             preview_grd.set(new_grd)
             if selection == "all":
                 _log(
-                    f"Reduced all {len(line_ids)} lines: tolerance={tolerance}, {new_grd.num_nodes} total nodes"
+                    f"Reduced all {len(line_ids)} lines: tolerance={tolerance} m, {new_grd.num_nodes} total nodes"
                 )
             else:
                 lid = line_ids[0]
                 _log(
-                    f"Reduced line {lid}: tolerance={tolerance} -> {len(new_grd.lines[lid].nodes)} nodes"
+                    f"Reduced line {lid}: tolerance={tolerance} m -> {len(new_grd.lines[lid].nodes)} nodes"
                 )
         except Exception as e:
             _log(f"Reduction error: {e}")

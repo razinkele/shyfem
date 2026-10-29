@@ -430,6 +430,30 @@ def _rebuild_grd_with_new_line(grd: GrdFile, line_id: int, new_coords: np.ndarra
 # ---------------------------------------------------------------------------
 
 
+# Metres in one degree of latitude (and of longitude at the equator, the most
+# a degree of longitude ever is).
+METRES_PER_DEGREE = 111_320.0
+
+
+def tolerance_in_grid_units(grd: GrdFile, metres: float) -> float:
+    """Convert a simplification tolerance in metres to ``grd``'s coordinates.
+
+    Imported boundaries are lon/lat degrees (EPSG:4326), where the Step 2
+    slider's 1.0 used to mean ~111 km and every non-zero value collapsed the
+    boundary to 4 nodes (M-09). A grid whose coordinates cannot be lon/lat
+    (an untagged projected source, kept in metres) is used as-is. Degrees
+    are taken as the full 111.32 km, so the tolerance is never more than the
+    metres asked for in any direction.
+    """
+    if metres <= 0 or not grd.nodes:
+        return max(float(metres), 0.0)
+    xs = [n.x for n in grd.nodes.values()]
+    ys = [n.y for n in grd.nodes.values()]
+    if _coords_exceed_wgs84_bounds(xs, ys):
+        return float(metres)
+    return float(metres) / METRES_PER_DEGREE
+
+
 def reduce_boundary(grd: GrdFile, line_id: int, tolerance: float) -> GrdFile:
     """Reduce boundary points using Douglas-Peucker simplification.
 
