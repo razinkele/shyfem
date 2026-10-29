@@ -1100,6 +1100,7 @@ def _build_server(
         nav_callback=nav_to,
         current_user=current_user,
         identity_rev=identity_rev,
+        audit_service=audit_service,
     )
     tutorial.tutorial_server(
         "tutorial",

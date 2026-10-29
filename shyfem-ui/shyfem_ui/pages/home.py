@@ -225,6 +225,31 @@ def _summary_files_block(summary: dict):
     return table
 
 
+def _audit_sharing(
+    audit_service,
+    actor: dict | None,
+    action: str,
+    project_id: int,
+    target_user_id: int,
+    role: str | None = None,
+) -> None:
+    """Write a share/unshare to the audit log (SEC-05). Best effort: a failed
+    audit write is logged and never closes the user's session."""
+    if audit_service is None:
+        return
+    detail = f"project_id={project_id}, target_user_id={target_user_id}"
+    if role is not None:
+        detail += f", role={role}"
+    try:
+        audit_service.log(
+            username=(actor or {}).get("username") or "unknown",
+            action=action,
+            detail=detail,
+        )
+    except Exception:
+        logger.exception("Failed to write %s audit entry", action)
+
+
 def _sharing_denied_reason(project_id: int, user: dict | None, session_factory=None) -> str | None:
     """Return a user-facing error if ``user`` may NOT modify sharing, else None.
 
@@ -444,6 +469,7 @@ def home_server(
     nav_callback=None,
     current_user=None,
     identity_rev=None,
+    audit_service=None,
 ) -> None:
     """Dashboard page server logic.
 
@@ -1606,7 +1632,8 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _do_share():
-            denied = _sharing_denied_reason(pid, _user())
+            actor = _user()
+            denied = _sharing_denied_reason(pid, actor)
             if denied:
                 ui.notification_show(denied, type="error", duration=6)
                 return
@@ -1619,6 +1646,7 @@ def home_server(
                 return
             svc_inner = SharingService()
             svc_inner.share_project(pid, uid, role)
+            _audit_sharing(audit_service, actor, "share_project", pid, uid, role)
             ui.notification_show("User added", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
@@ -1715,12 +1743,14 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _unshare():
-            denied = _sharing_denied_reason(project_id, _user())
+            actor = _user()
+            denied = _sharing_denied_reason(project_id, actor)
             if denied:
                 ui.notification_show(denied, type="error", duration=6)
                 return
             svc = SharingService()
-            svc.unshare_project(project_id, target_user_id)
+            if svc.unshare_project(project_id, target_user_id):
+                _audit_sharing(audit_service, actor, "unshare_project", project_id, target_user_id)
             ui.notification_show("Access removed", type="message", duration=4)
             ui.modal_remove()
             _refresh_projects()
