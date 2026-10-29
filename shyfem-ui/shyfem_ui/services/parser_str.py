@@ -110,6 +110,14 @@ _BARE_STR_VALUE = re.compile(
 )
 
 
+def _is_numeric(value: Any) -> bool:
+    """A number, or a non-empty list of numbers (never a bool)."""
+    items = value if isinstance(value, list) else [value]
+    return bool(items) and all(
+        isinstance(v, (int, float)) and not isinstance(v, bool) for v in items
+    )
+
+
 class StrParser:
     """Parser for SHYFEM .str parameter files."""
 
@@ -140,9 +148,9 @@ class StrParser:
         """Parse .str file content into structured data."""
         result = StrFile()
         current_section: StrSection | None = None
-        # The key of the most recent parameter whose value came out a list; a
-        # following numbers-only line continues it ("kbound = 1547 1548" then
-        # "        1554 1555"). Reset at every section boundary so a
+        # The key of the most recent parameter whose bare value is numeric; a
+        # following numbers-only line continues it ("kbound = 1547 1548" or
+        # "kbound = 1547", then "        1554 1555"). Reset at every section boundary so a
         # continuation can never attach across one.
         last_list_key: str | None = None
         in_header = True
@@ -247,7 +255,10 @@ class StrParser:
                     quoted = match.group(2) if match.group(2) is not None else match.group(3)
                     value = cls._convert_value(quoted)
                 current_section.parameters[key] = value
-                last_list_key = key if isinstance(value, list) else None
+                # A bare number or run of numbers can go on over the next
+                # lines, a one-token "kbound = 1547" too (S-11); a quoted
+                # value cannot.
+                last_list_key = key if match.group(4) is not None and _is_numeric(value) else None
 
             if not matched_any and last_list_key is not None:
                 # A numbers-only line continues the list above it. SHYFEM reads
@@ -256,9 +267,9 @@ class StrParser:
                 # boundaries short of most of their nodes.
                 extra = cls._numeric_tokens(code)
                 if extra is not None:
-                    current_section.parameters[last_list_key] = (
-                        list(current_section.parameters[last_list_key]) + extra
-                    )
+                    head = current_section.parameters[last_list_key]
+                    head = list(head) if isinstance(head, list) else [head]
+                    current_section.parameters[last_list_key] = head + extra
                     current_section._continuation_owner[len(current_section.raw_lines) - 1] = (
                         last_list_key
                     )
