@@ -291,11 +291,31 @@ def ensemble_server(
             ),
         )
 
+    def _typed_rows() -> list[dict]:
+        """The rows as the user sees them: stored rows with each typed value.
+
+        The editor re-renders from ``param_variations``, which only holds what
+        a preset or Add put there. Add and Remove must start from this, or
+        every value typed into an existing row is wiped (R-07).
+        """
+        rows = []
+        for i, var in enumerate(param_variations.get()):
+            row = dict(var)
+            for key in ("section", "param", "values"):
+                try:
+                    typed = input[f"var_{key}_{i}"]()
+                except Exception:
+                    logger.debug("Form field var_%s_%d unavailable, using stored value", key, i)
+                    continue
+                if typed is not None:
+                    row[key] = typed
+            rows.append(row)
+        return rows
+
     @reactive.effect
     @reactive.event(input.add_var_btn)
     def _add_variation():
-        current = param_variations.get()
-        updated = list(current) + [{"section": "para", "param": "", "values": ""}]
+        updated = _typed_rows() + [{"section": "para", "param": "", "values": ""}]
         param_variations.set(updated)
 
     # Dynamic remove handlers for remove_var_{i} buttons
@@ -313,7 +333,7 @@ def ensemble_server(
         @reactive.effect
         @reactive.event(input[f"remove_var_{index}"])
         def _remove():
-            current = list(param_variations.get())
+            current = _typed_rows()
             if index < len(current):
                 current.pop(index)
                 param_variations.set(current)
@@ -348,25 +368,9 @@ def ensemble_server(
 
     def _read_current_variations() -> list[dict]:
         """Read the current variation values from the dynamic inputs."""
-        variations = param_variations.get()
         result = []
-        for i, var in enumerate(variations):
-            try:
-                section = input[f"var_section_{i}"]()
-            except Exception:
-                logger.debug("Form field var_section_%d unavailable, using cached value", i)
-                section = var["section"]
-            try:
-                param = input[f"var_param_{i}"]()
-            except Exception:
-                logger.debug("Form field var_param_%d unavailable, using cached value", i)
-                param = var["param"]
-            try:
-                values_str = input[f"var_values_{i}"]()
-            except Exception:
-                logger.debug("Form field var_values_%d unavailable, using cached value", i)
-                values_str = var["values"]
-
+        for row in _typed_rows():
+            section, param, values_str = row["section"], row["param"], row["values"]
             if param and values_str:
                 values = [v.strip() for v in values_str.split(",") if v.strip()]
                 if values:
