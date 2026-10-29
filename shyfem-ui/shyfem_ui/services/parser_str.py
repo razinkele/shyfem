@@ -240,7 +240,12 @@ class StrParser:
                     # Bare: possibly a run of tokens forming one list value.
                     value = cls._convert_bare_value(match.group(4))
                 else:
-                    value = cls._convert_value(match.group(2) or match.group(3))
+                    # "is not None", not "or": an empty quoted value
+                    # ("wind = ''") is group 2 == "", and "or" fell through
+                    # to group 3 (None). The form then showed "None" and an
+                    # Apply with no edit wrote wind = 'None'.
+                    quoted = match.group(2) if match.group(2) is not None else match.group(3)
+                    value = cls._convert_value(quoted)
                 current_section.parameters[key] = value
                 last_list_key = key if isinstance(value, list) else None
 

@@ -554,7 +554,7 @@ def _build_form_panel(
                                 field_id,
                                 "",
                                 choices=choices,
-                                selected=str(param_val),
+                                selected=format_param_display(param_val),
                                 width="100%",
                             ),
                             class_="mb-2",
@@ -564,7 +564,9 @@ def _build_form_panel(
                     fields.append(
                         ui.div(
                             label,
-                            str_file_selectize(field_id, "", str(param_val), file_choices),
+                            str_file_selectize(
+                                field_id, "", format_param_display(param_val), file_choices
+                            ),
                             class_="mb-2",
                         )
                     )
@@ -586,7 +588,9 @@ def _build_form_panel(
                     fields.append(
                         ui.div(
                             ui.span(param_name, class_="fw-bold small", style=highlight_style),
-                            str_file_selectize(field_id, "", str(param_val), file_choices),
+                            str_file_selectize(
+                                field_id, "", format_param_display(param_val), file_choices
+                            ),
                             class_="mb-2",
                         )
                     )
@@ -678,7 +682,7 @@ def _parse_options_to_choices(options_str: str, current_val: Any) -> dict[str, s
             choices[val] = val
 
     # Ensure current value is in choices
-    val_str = str(current_val)
+    val_str = format_param_display(current_val)
     if val_str not in choices:
         choices[val_str] = f"{val_str} (current)"
 

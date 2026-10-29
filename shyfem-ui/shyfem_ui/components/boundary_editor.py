@@ -170,12 +170,12 @@ def boundary_editor_server(
                 # that repr would ship an .str line the core hard-stops on.
                 "nodes": format_param_display(section.parameters.get("kbound")),
                 "ibtyp": int(section.parameters.get("ibtyp", 1)),
-                "boundn": str(section.parameters.get("boundn", "")),
+                "boundn": format_param_display(section.parameters.get("boundn")),
                 "zfact": float(section.parameters.get("zfact", 1.0)),
                 "intpol": int(section.parameters.get("intpol", 1)),
-                "saltn": str(section.parameters.get("saltn", "")),
-                "tempn": str(section.parameters.get("tempn", "")),
-                "conzn": str(section.parameters.get("conzn", "")),
+                "saltn": format_param_display(section.parameters.get("saltn")),
+                "tempn": format_param_display(section.parameters.get("tempn")),
+                "conzn": format_param_display(section.parameters.get("conzn")),
             }
             loaded.append(entry)
             bid += 1

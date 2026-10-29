@@ -124,3 +124,81 @@ class TestInlineSaveBlocksOnErrorsOnly:
         await reactive.flush()
 
         assert path.read_text() == _WITH_NOMP
+
+
+_EMPTY_WIND = "$name\n        wind = ''\n        rain = 'r.dat'\n$end\n"
+
+
+class TestAnEmptyQuotedValueRoundTrips:
+    """S-06: ``wind = ''`` parsed to None, the form showed it as "None", and
+    Apply with no edit wrote ``wind = 'None'`` (a file the core then tries to
+    open)."""
+
+    def test_the_parser_keeps_an_empty_string(self):
+        from shyfem_ui.services.parser_str import StrParser
+
+        assert StrParser.parse(_EMPTY_WIND).get_param("name", "wind") == ""
+        assert StrParser.parse('$name\n wind = ""\n$end\n').get_param("name", "wind") == ""
+
+    def test_the_form_does_not_show_none(self):
+        from shyfem_ui.components.str_editor import _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
+
+        html = str(_build_form_panel(StrParser.parse(_EMPTY_WIND)))
+        assert "None" not in html
+
+    def test_apply_with_no_edit_is_byte_exact(self):
+        from shyfem_ui.components.str_editor import _apply_form_values, _build_form_panel
+        from shyfem_ui.services.parser_str import StrParser
+
+        parsed = StrParser.parse(_EMPTY_WIND)
+        # Each field echoes the value the form rendered into it.
+        shown = _rendered_field_values(str(_build_form_panel(parsed)))
+        assert set(shown) == {"form_name_wind", "form_name_rain"}
+        edited = _apply_form_values(parsed, shown.get)
+        assert StrParser.generate(edited) == _EMPTY_WIND
+
+
+def _rendered_field_values(html: str) -> dict[str, str]:
+    """Field id -> the value the browser would send back for it."""
+    import re
+
+    values = {}
+    for m in re.finditer(r'<select[^>]*id="(form_[^"]+)"[^>]*>(.*?)</select>', html, re.S):
+        sel = re.search(r'<option value="([^"]*)" selected', m.group(2))
+        values[m.group(1)] = sel.group(1) if sel else ""
+    for m in re.finditer(r'<input id="(form_[^"]+)"[^>]*value="([^"]*)"', html):
+        values[m.group(1)] = m.group(2)
+    return values
+
+
+def _mount_boundary_editor(monkeypatch, str_text):
+    from shiny import reactive
+
+    from shyfem_ui.components import boundary_editor as be
+    from shyfem_ui.services.parser_str import StrParser
+
+    notes = []
+    monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: notes.append((a, k)))
+    inner = be.boundary_editor_server.__closure__[0].cell_contents
+    fake_input = _FakeInputs()
+    parsed = reactive.Value(StrParser.parse(str_text) if str_text else None)
+    result = inner(fake_input, None, None, parsed_str=parsed)
+    return fake_input, result, notes
+
+
+class TestBoundaryEditorEmptyFile:
+    async def test_an_empty_boundn_is_not_generated_as_none(self, monkeypatch):
+        from shiny import reactive
+
+        fake_input, result, _ = _mount_boundary_editor(
+            monkeypatch,
+            "$bound1\n        kbound = 1 2\n        ibtyp = 1\n        boundn = ''\n$end\n",
+        )
+        await reactive.flush()
+        with reactive.isolate():
+            assert result["boundaries"].get()[0]["boundn"] == ""
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            assert "None" not in result["generated_text"].get()
