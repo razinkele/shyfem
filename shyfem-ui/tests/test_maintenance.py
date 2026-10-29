@@ -205,3 +205,23 @@ class TestRunMaintenanceLoop:
             pass
         assert jq.cleanup_old_jobs.await_count >= 1
         assert auth.cleanup_expired_sessions.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_first_pass_runs_at_startup_not_after_one_interval(self):
+        """SEC-04: the worker can exit long before the first interval elapses
+        (it lives ~5 s past the last session), so the first pass must run at
+        startup, not after sleeping ``interval_s``."""
+        from shyfem_ui.services.maintenance import run_maintenance_loop
+
+        jq, auth = _mocks()
+        task = asyncio.ensure_future(
+            run_maintenance_loop(jq, auth, interval_s=3600, job_retention_days=30)
+        )
+        await asyncio.sleep(0.1)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        assert jq.cleanup_old_jobs.await_count == 1
+        assert auth.cleanup_expired_sessions.call_count == 1
