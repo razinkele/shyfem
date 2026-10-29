@@ -90,7 +90,18 @@ def files_ui() -> ui.Tag:
             "Upload, browse, and manage data files for the active project.",
             class_="text-muted",
         ),
-        ui.output_ui("files_content"),
+        # The upload inputs sit outside files_content, which re-renders on
+        # every upload, filter and delete: inside it they were reset after
+        # each upload and the next file went to the root (F-10).
+        ui.layout_sidebar(
+            ui.sidebar(
+                ui.output_ui("storage_ui"),
+                ui.output_ui("upload_panel"),
+                ui.output_ui("seed_ui"),
+                width=350,
+            ),
+            ui.output_ui("files_content"),
+        ),
     )
 
 
@@ -115,31 +126,30 @@ def files_server(
     _dl_registered: set[int] = set()
     _rm_registered: set[int] = set()
     downloads = SessionDownloads(session)
+    # The active project's id, set only when it changes: the upload panel
+    # re-renders (and so resets its inputs) on a project switch, never on a
+    # fresh-but-equal project dict.
+    upload_pid: reactive.Value[int | None] = reactive.value(None)
+
+    def _active():
+        return active_project.get() if active_project is not None else None
+
+    @reactive.effect
+    def _track_upload_project():
+        proj = _active()
+        pid = proj["id"] if proj is not None else None
+        with reactive.isolate():
+            if pid == upload_pid.get():
+                return
+        upload_pid.set(pid)
 
     @render.ui
-    def files_content():
+    def storage_ui():
         _ = refresh_trigger.get()
-        if active_project is None:
-            return ui.div(
-                ui.p(
-                    "No project selected. Go to Dashboard and select or create a project.",
-                    class_="text-muted text-center p-5",
-                ),
-            )
-        proj = active_project.get()
+        proj = _active()
         if proj is None:
-            return ui.div(
-                ui.p(
-                    "No project selected. Go to Dashboard and select or create a project.",
-                    class_="text-muted text-center p-5",
-                ),
-            )
-
-        pid = proj["id"]
-        ft = current_filter.get()
-
-        # Storage summary
-        summary = _storage_summary(pid)
+            return None
+        summary = _storage_summary(proj["id"])
         storage_bar = ui.div(
             ui.div(
                 ui.span(
@@ -165,6 +175,79 @@ def files_server(
             ),
             class_="mb-3",
         )
+        return storage_bar
+
+    @render.ui
+    def upload_panel():
+        if upload_pid.get() is None:
+            return None
+        with reactive.isolate():
+            proj = _active()
+        if proj is None:
+            return None
+        from shyfem_ui.components.file_browser import file_browser_ui
+
+        return ui.div(
+            ui.h5("Upload File"),
+            ui.input_select(
+                "upload_type",
+                "File Type",
+                choices={
+                    "": "Auto-detect",
+                    "grid": "Grid (.grd)",
+                    "basin": "Basin (.bas)",
+                    "str": "STR (.str)",
+                    "forcing": "Forcing",
+                    "boundary": "Boundary",
+                    "initial_condition": "Initial Condition",
+                    "restart": "Restart",
+                    "config": "Config (.nml)",
+                    "other": "Other",
+                },
+            ),
+            str_file_selectize(
+                "upload_subdir",
+                "Subdirectory (optional)",
+                "",
+                project_rel_dir_choices(
+                    proj, current_user() if current_user is not None else None, config
+                ),
+                placeholder="project root; pick a folder or type a new one",
+            ),
+            file_browser_ui("file_upload"),
+            class_="card p-3 mb-3",
+        )
+
+    @render.ui
+    def seed_ui():
+        _ = refresh_trigger.get()
+        proj = _active()
+        # Seeding refuses a project with files (F-01); the button follows that rule.
+        if proj is None or not _has_tutorial_data() or FileService.has_project_files(proj["id"]):
+            return None
+        return ui.div(
+            ui.input_action_button(
+                "seed_tutorial_btn",
+                "Seed Tutorial Files (Mar Menor)",
+                class_="btn-outline-info btn-sm w-100",
+            ),
+            class_="mb-3",
+        )
+
+    @render.ui
+    def files_content():
+        _ = refresh_trigger.get()
+        proj = _active()
+        if proj is None:
+            return ui.div(
+                ui.p(
+                    "No project selected. Go to Dashboard and select or create a project.",
+                    class_="text-muted text-center p-5",
+                ),
+            )
+
+        pid = proj["id"]
+        ft = current_filter.get()
 
         # Type filter buttons
         type_buttons = []
@@ -233,64 +316,9 @@ def files_server(
         else:
             file_table = ui.p("No files found.", class_="text-muted text-center p-4")
 
-        # Upload section
-        from shyfem_ui.components.file_browser import file_browser_ui
-
-        upload_section = ui.div(
-            ui.h5("Upload File"),
-            ui.input_select(
-                "upload_type",
-                "File Type",
-                choices={
-                    "": "Auto-detect",
-                    "grid": "Grid (.grd)",
-                    "basin": "Basin (.bas)",
-                    "str": "STR (.str)",
-                    "forcing": "Forcing",
-                    "boundary": "Boundary",
-                    "initial_condition": "Initial Condition",
-                    "restart": "Restart",
-                    "config": "Config (.nml)",
-                    "other": "Other",
-                },
-            ),
-            str_file_selectize(
-                "upload_subdir",
-                "Subdirectory (optional)",
-                "",
-                project_rel_dir_choices(
-                    proj, current_user() if current_user is not None else None, config
-                ),
-                placeholder="project root; pick a folder or type a new one",
-            ),
-            file_browser_ui("file_upload"),
-            class_="card p-3 mb-3",
-        )
-
-        # Seed tutorial button
-        seed_btn = None
-        # Seeding refuses a project with files (F-01); the button follows that rule.
-        if _has_tutorial_data() and not FileService.has_project_files(proj["id"]):
-            seed_btn = ui.div(
-                ui.input_action_button(
-                    "seed_tutorial_btn",
-                    "Seed Tutorial Files (Mar Menor)",
-                    class_="btn-outline-info btn-sm w-100",
-                ),
-                class_="mb-3",
-            )
-
-        return ui.layout_sidebar(
-            ui.sidebar(
-                storage_bar,
-                upload_section,
-                seed_btn,
-                width=350,
-            ),
-            ui.div(
-                ui.div(*type_buttons, class_="mb-3"),
-                file_table,
-            ),
+        return ui.div(
+            ui.div(*type_buttons, class_="mb-3"),
+            file_table,
         )
 
     # File upload handler
@@ -312,9 +340,10 @@ def files_server(
             ui.notification_show(_denied, type="error", duration=6)
             return
 
+        # Read the inputs once, before the first await.
+        file_type = input.upload_type() or None
+        subdir = input.upload_subdir() or None
         for f in files:
-            file_type = input.upload_type() or None
-            subdir = input.upload_subdir() or None
             # Read, checksum and write in a thread: an upload may be 500 MB.
             result = await asyncio.to_thread(
                 persist_upload,
