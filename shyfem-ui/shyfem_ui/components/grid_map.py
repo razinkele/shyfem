@@ -10,9 +10,12 @@ Provides zoomable/pannable mesh visualization with:
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import math
+
+import numpy as np
 
 try:
     from pyproj import CRS, Transformer
@@ -219,11 +222,15 @@ def _get_lonlat(
         return {nid: [float(node.x), float(node.y)] for nid, node in grd.nodes.items()}
 
     t = Transformer.from_crs(source_epsg, 4326, always_xy=True)
-    result: dict[int, list[float]] = {}
-    for nid, node in grd.nodes.items():
-        lng, lat = t.transform(float(node.x), float(node.y))
-        result[nid] = [lng, lat]
-    return result
+    # One call over arrays: a per-node transform costs ~3 us each (V-06).
+    n = len(grd.nodes)
+    xs = np.fromiter((node.x for node in grd.nodes.values()), dtype=float, count=n)
+    ys = np.fromiter((node.y for node in grd.nodes.values()), dtype=float, count=n)
+    lngs, lats = t.transform(xs, ys)
+    return {
+        nid: [lng, lat]
+        for nid, lng, lat in zip(grd.nodes, lngs.tolist(), lats.tolist(), strict=True)
+    }
 
 
 def node_positions(grd: GrdFile, epsg: int | None = None) -> dict[int, list[float]]:
@@ -245,7 +252,9 @@ def node_positions(grd: GrdFile, epsg: int | None = None) -> dict[int, list[floa
 # ---------------------------------------------------------------------------
 
 
-def _build_edge_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
+def _build_edge_data(
+    grd: GrdFile, epsg: int | None = None, lonlat: dict[int, list[float]] | None = None
+) -> list[dict]:
     """Build deduplicated wireframe edges for all elements.
 
     Shared edges between adjacent elements appear only once.
@@ -258,24 +267,29 @@ def _build_edge_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
     if not grd.elements:
         return []
 
-    lonlat = _get_lonlat(grd, epsg=epsg)
-    seen: set[tuple[int, int]] = set()
-    edges: list[dict] = []
-
-    for elem in grd.elements.values():
-        n = len(elem.nodes)
-        for i in range(n):
-            a = elem.nodes[i]
-            b = elem.nodes[(i + 1) % n]
-            key = (min(a, b), max(a, b))
-            if key in seen:
-                continue
-            seen.add(key)
-            if a not in lonlat or b not in lonlat:
-                continue
-            edges.append({"path": [lonlat[a], lonlat[b]]})
-
-    return edges
+    if lonlat is None:
+        lonlat = _get_lonlat(grd, epsg=epsg)
+    # Each element side (closing back to its first node), as (a, b) in
+    # element order; a shared side is kept where it first appears (V-06:
+    # vectorised, it was a per-side Python loop).
+    elems = [e.nodes for e in grd.elements.values() if e.nodes]
+    if not elems:
+        return []
+    a = np.fromiter((nid for nodes in elems for nid in nodes), dtype=np.int64)
+    counts = np.fromiter((len(nodes) for nodes in elems), dtype=np.int64, count=len(elems))
+    first = np.concatenate(([0], np.cumsum(counts)[:-1]))
+    nxt = np.arange(len(a)) + 1
+    nxt[first + counts - 1] = first
+    b = a[nxt]
+    lo, hi = np.minimum(a, b), np.maximum(a, b)
+    key = (lo - lo.min()) * (int(hi.max()) + 1) + hi  # one int per unordered side
+    _, where = np.unique(key, return_index=True)
+    where.sort()
+    return [
+        {"path": [lonlat[i], lonlat[j]]}
+        for i, j in zip(a[where].tolist(), b[where].tolist(), strict=True)
+        if i in lonlat and j in lonlat
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -867,6 +881,7 @@ def _build_mesh_geometry(
     elevation_scale: float = 1.0,
     partition_map: dict[int, int] | None = None,
     epsg: int | None = None,
+    lonlat: dict[int, list[float]] | None = None,
 ) -> dict:
     """Convert a :class:`GrdFile` into indexed mesh geometry for ``simple_mesh_layer``.
 
@@ -897,13 +912,24 @@ def _build_mesh_geometry(
         ``indices`` (flat int list), ``center`` (``[lon, lat]``),
         ``n_vertices``, ``n_triangles``.
     """
-    lonlat = _get_lonlat(grd, epsg=epsg)
+    if lonlat is None:
+        lonlat = _get_lonlat(grd, epsg=epsg)
+
+    # Node table: one row per node, in lonlat order.
+    row = {nid: i for i, nid in enumerate(lonlat)}
+    node_ll = np.array(list(lonlat.values()), dtype=float).reshape(-1, 2)
+    node_depth = np.array(
+        [
+            node.depth if (node := grd.nodes.get(nid)) and node.depth is not None else 0.0
+            for nid in lonlat
+        ],
+        dtype=float,
+    )
 
     # Compute centre in lon/lat
-    all_lons = [pos[0] for pos in lonlat.values()]
-    all_lats = [pos[1] for pos in lonlat.values()]
-    ctr_lon = (min(all_lons) + max(all_lons)) / 2
-    ctr_lat = (min(all_lats) + max(all_lats)) / 2
+    ctr_lon = (node_ll[:, 0].min() + node_ll[:, 0].max()) / 2 if len(node_ll) else 0.0
+    ctr_lat = (node_ll[:, 1].min() + node_ll[:, 1].max()) / 2 if len(node_ll) else 0.0
+    ctr_lon, ctr_lat = float(ctr_lon), float(ctr_lat)
 
     # Metres-per-degree at centre latitude
     m_per_deg_lon = 111_320 * math.cos(math.radians(ctr_lat))
@@ -911,35 +937,16 @@ def _build_mesh_geometry(
 
     z_scale = elevation_scale if mode == "depth_3d" else 0.0
 
-    # Gather per-element data (same logic as _build_triangle_data)
-    elements_data: list[dict] = []
-    all_depths: list[float] = []
-    all_qualities: list[float] = []
-
-    for elem in grd.elements.values():
-        node_coords: list[list[float]] = []
-        node_depths: list[float] = []
-        for nid in elem.nodes:
-            if nid not in lonlat:
-                break
-            node_coords.append(lonlat[nid])
-            node = grd.nodes.get(nid)
-            d = node.depth if (node and node.depth is not None) else 0.0
-            node_depths.append(d)
-        else:
-            avg_depth = sum(node_depths) / len(node_depths) if node_depths else 0.0
-            quality = _compute_quality(node_coords)
-            elements_data.append(
-                {
-                    "elem": elem,
-                    "coords": node_coords,
-                    "node_depths": node_depths,
-                    "avg_depth": avg_depth,
-                    "quality": quality,
-                }
-            )
-            all_depths.append(avg_depth)
-            all_qualities.append(quality)
+    # Per-element data, vectorised (same rules as _build_triangle_data): an
+    # element with a node that has no position is skipped.
+    elems = [e for e in grd.elements.values() if e.nodes]
+    counts = np.fromiter((len(e.nodes) for e in elems), dtype=np.int64, count=len(elems))
+    flat = np.fromiter(
+        (row.get(nid, -1) for e in elems for nid in e.nodes), dtype=np.int64, count=counts.sum()
+    )
+    elem_of = np.repeat(np.arange(len(elems)), counts)
+    kept = np.ones(len(elems), dtype=bool)
+    kept[elem_of[flat < 0]] = False
 
     empty = {
         "positions": [],
@@ -950,84 +957,77 @@ def _build_mesh_geometry(
         "n_vertices": 0,
         "n_triangles": 0,
     }
-    if not elements_data:
+    if not kept.any():
         return empty
+
+    rows = flat[kept[elem_of]]
+    n_verts = counts[kept]
+    first = np.concatenate(([0], np.cumsum(n_verts)[:-1]))
+    coords = node_ll[rows]
+    depths = node_depth[rows]
+    kept_ids = [elems[i].id for i in np.flatnonzero(kept)]
+
+    avg_depths = np.add.reduceat(depths, first) / n_verts
+    # Quality = shortest side / longest side, sides wrapping to the first node.
+    nxt = np.arange(len(rows)) + 1
+    nxt[first + n_verts - 1] = first
+    sides = np.hypot(*(coords[nxt] - coords).T)
+    longest = np.maximum.reduceat(sides, first)
+    qualities = np.where(
+        longest == 0.0,
+        0.0,
+        np.minimum.reduceat(sides, first) / np.where(longest == 0.0, 1.0, longest),
+    )
 
     # Compute per-element RGBA colors (int 0-255)
     if mode in ("depth", "depth_3d"):
-        elem_colors = _depth_to_colors(all_depths, colorscale)
+        elem_colors = _depth_to_colors(avg_depths.tolist(), colorscale)
     elif mode == "quality":
-        elem_colors = _quality_to_colors(all_qualities)
+        elem_colors = _quality_to_colors(qualities.tolist())
     elif mode == "partitions":
         elem_colors = [
-            PARTITION_COLORS[(partition_map or {}).get(ed["elem"].id, 0) % len(PARTITION_COLORS)]
-            for ed in elements_data
+            PARTITION_COLORS[(partition_map or {}).get(eid, 0) % len(PARTITION_COLORS)]
+            for eid in kept_ids
         ]
     else:  # boundaries
-        elem_colors = [[200, 200, 200, 80]] * len(elements_data)
+        elem_colors = [[200, 200, 200, 80]] * len(kept_ids)
 
-    # Build geometry with duplicated vertices per element
-    positions: list[float] = []
-    colors: list[float] = []
-    indices: list[int] = []
-    vertex_idx = 0
+    # Geometry with duplicated vertices per element, in numpy (V-06: the
+    # per-vertex Python loop and its round() calls took seconds on 50k nodes).
+    pos = np.empty((len(coords), 3))
+    pos[:, 0] = (coords[:, 0] - ctr_lon) * m_per_deg_lon
+    pos[:, 1] = (coords[:, 1] - ctr_lat) * m_per_deg_lat
+    pos[:, 2] = np.abs(depths) * z_scale
 
-    for i, ed in enumerate(elements_data):
-        c = elem_colors[i]
-        r, g, b = c[0] / 255.0, c[1] / 255.0, c[2] / 255.0
+    rgb = np.asarray([c[:3] for c in elem_colors], dtype=float) / 255.0
+    colors = np.round(np.repeat(rgb, n_verts, axis=0), 3)
 
-        coords = ed["coords"]
-        nd = ed["node_depths"]
-        n_verts = len(coords)
+    # Element i's first triangle (0,1,2) if it has 3+ vertices, then (0,2,3)
+    # for a quad, in element order.
+    tris = first[:, None, None] + np.array([[0, 1, 2], [0, 2, 3]])
+    keep = np.stack([n_verts >= 3, n_verts == 4], axis=1)
+    indices = tris[keep].reshape(-1)
 
-        for j in range(n_verts):
-            lon, lat = coords[j]
-            dx = (lon - ctr_lon) * m_per_deg_lon
-            dy = (lat - ctr_lat) * m_per_deg_lat
-            dz = abs(nd[j]) * z_scale
-            positions.extend([dx, dy, dz])
-            colors.extend([round(r, 3), round(g, 3), round(b, 3)])
-
-        if n_verts >= 3:
-            indices.extend([vertex_idx, vertex_idx + 1, vertex_idx + 2])
-            if n_verts == 4:
-                indices.extend([vertex_idx, vertex_idx + 2, vertex_idx + 3])
-        vertex_idx += n_verts
-
-    # Compute per-vertex normals (average of adjacent face normals)
-    normals = [0.0] * len(positions)
-    for fi in range(0, len(indices), 3):
-        i0, i1, i2 = indices[fi], indices[fi + 1], indices[fi + 2]
-        p0 = positions[i0 * 3 : i0 * 3 + 3]
-        p1 = positions[i1 * 3 : i1 * 3 + 3]
-        p2 = positions[i2 * 3 : i2 * 3 + 3]
-        e1 = [p1[k] - p0[k] for k in range(3)]
-        e2 = [p2[k] - p0[k] for k in range(3)]
-        nx = e1[1] * e2[2] - e1[2] * e2[1]
-        ny = e1[2] * e2[0] - e1[0] * e2[2]
-        nz = e1[0] * e2[1] - e1[1] * e2[0]
-        for vi in (i0, i1, i2):
-            normals[vi * 3] += nx
-            normals[vi * 3 + 1] += ny
-            normals[vi * 3 + 2] += nz
-
-    for vi in range(len(positions) // 3):
-        nx, ny, nz = normals[vi * 3], normals[vi * 3 + 1], normals[vi * 3 + 2]
-        length = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
-        normals[vi * 3] = round(nx / length, 4)
-        normals[vi * 3 + 1] = round(ny / length, 4)
-        normals[vi * 3 + 2] = round(nz / length, 4)
-
-    positions = [round(v, 2) for v in positions]
+    # Per-vertex normals: the sum of adjacent face normals, normalised.
+    faces = indices.reshape(-1, 3)
+    face_normals = np.cross(
+        pos[faces[:, 1]] - pos[faces[:, 0]], pos[faces[:, 2]] - pos[faces[:, 0]]
+    )
+    normals = np.zeros_like(pos)
+    for k in range(3):
+        np.add.at(normals, faces[:, k], face_normals)
+    length = np.linalg.norm(normals, axis=1)
+    length[length == 0.0] = 1.0
+    normals = np.round(normals / length[:, None], 4)
 
     return {
-        "positions": positions,
-        "normals": normals,
-        "colors": colors,
-        "indices": indices,
+        "positions": np.round(pos, 2).reshape(-1).tolist(),
+        "normals": normals.reshape(-1).tolist(),
+        "colors": colors.reshape(-1).tolist(),
+        "indices": indices.tolist(),
         "center": [round(ctr_lon, 5), round(ctr_lat, 5)],
-        "n_vertices": len(positions) // 3,
-        "n_triangles": len(indices) // 3,
+        "n_vertices": len(pos),
+        "n_triangles": len(faces),
     }
 
 
@@ -1048,7 +1048,9 @@ def _triangle_tooltip(rec: dict, mode: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _build_boundary_data(grd: GrdFile, epsg: int | None = None) -> dict[int, list[dict]]:
+def _build_boundary_data(
+    grd: GrdFile, epsg: int | None = None, lonlat: dict[int, list[float]] | None = None
+) -> dict[int, list[dict]]:
     """Build boundary line data grouped by line type.
 
     Parameters
@@ -1065,7 +1067,8 @@ def _build_boundary_data(grd: GrdFile, epsg: int | None = None) -> dict[int, lis
     if not grd.lines:
         return {}
 
-    lonlat = _get_lonlat(grd, epsg=epsg)
+    if lonlat is None:
+        lonlat = _get_lonlat(grd, epsg=epsg)
     grouped: dict[int, list[dict]] = {}
 
     for line in grd.lines.values():
@@ -1095,7 +1098,9 @@ def _build_boundary_data(grd: GrdFile, epsg: int | None = None) -> dict[int, lis
     return grouped
 
 
-def _build_node_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
+def _build_node_data(
+    grd: GrdFile, epsg: int | None = None, lonlat: dict[int, list[float]] | None = None
+) -> list[dict]:
     """Build node data for deck.gl ``scatterplot_layer``.
 
     Parameters
@@ -1112,7 +1117,8 @@ def _build_node_data(grd: GrdFile, epsg: int | None = None) -> list[dict]:
     if not grd.nodes:
         return []
 
-    lonlat = _get_lonlat(grd, epsg=epsg)
+    if lonlat is None:
+        lonlat = _get_lonlat(grd, epsg=epsg)
     result: list[dict] = []
 
     for nid, node in grd.nodes.items():
@@ -1181,6 +1187,7 @@ def build_layers(
     elevation_scale: float = 1.0,
     partition_map: dict[int, int] | None = None,
     epsg: int | None = None,
+    lonlat: dict[int, list[float]] | None = None,
 ) -> list[dict]:
     """Assemble deck.gl layers for the given grid and display mode.
 
@@ -1210,6 +1217,9 @@ def build_layers(
     if not grd.nodes:
         return []
 
+    # Reproject once; every builder below reuses it (V-06).
+    if lonlat is None:
+        lonlat = _get_lonlat(grd, epsg=epsg)
     layers: list[dict] = []
 
     # --- EMODnet bathymetry base layer (rendered below everything else) ---
@@ -1218,7 +1228,7 @@ def build_layers(
     has_elements = bool(grd.elements)
 
     # --- Wireframe edge data (reused across modes, only if elements exist) ---
-    edge_data = _build_edge_data(grd, epsg=epsg) if has_elements else []
+    edge_data = _build_edge_data(grd, epsg=epsg, lonlat=lonlat) if has_elements else []
 
     # --- Build layers per mode (element-based modes need elements) ---
 
@@ -1242,6 +1252,7 @@ def build_layers(
             mode=mode,
             colorscale=colorscale,
             epsg=epsg,
+            lonlat=lonlat,
         )
         layers.append(
             simple_mesh_layer(
@@ -1270,6 +1281,7 @@ def build_layers(
             colorscale=colorscale,
             elevation_scale=elevation_scale,
             epsg=epsg,
+            lonlat=lonlat,
         )
         layers.append(
             simple_mesh_layer(
@@ -1288,6 +1300,7 @@ def build_layers(
                 mode="boundaries",
                 colorscale=colorscale,
                 epsg=epsg,
+                lonlat=lonlat,
             )
             layers.append(
                 simple_mesh_layer(
@@ -1308,7 +1321,7 @@ def build_layers(
                 )
             )
         # Add bold boundary path_layers
-        boundary_data = _build_boundary_data(grd, epsg=epsg)
+        boundary_data = _build_boundary_data(grd, epsg=epsg, lonlat=lonlat)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
             layers.append(
@@ -1329,6 +1342,7 @@ def build_layers(
             mode=mode,
             colorscale=colorscale,
             epsg=epsg,
+            lonlat=lonlat,
         )
         layers.append(
             simple_mesh_layer(
@@ -1357,6 +1371,7 @@ def build_layers(
             colorscale=colorscale,
             partition_map=partition_map,
             epsg=epsg,
+            lonlat=lonlat,
         )
         layers.append(
             simple_mesh_layer(
@@ -1369,7 +1384,7 @@ def build_layers(
 
     # --- Optional boundary overlay (not in boundaries mode, already done) ---
     if mode != "boundaries" and has_elements:
-        boundary_data = _build_boundary_data(grd, epsg=epsg)
+        boundary_data = _build_boundary_data(grd, epsg=epsg, lonlat=lonlat)
         for btype, blines in boundary_data.items():
             color = BOUNDARY_COLORS[btype % len(BOUNDARY_COLORS)]
             layers.append(
@@ -1384,7 +1399,7 @@ def build_layers(
             )
 
     # --- Node overlay ---
-    node_data = _build_node_data(grd, epsg=epsg)
+    node_data = _build_node_data(grd, epsg=epsg, lonlat=lonlat)
     layers.append(
         scatterplot_layer(
             "nodes",
@@ -1409,6 +1424,7 @@ def _compute_view_state(
     grd: GrdFile,
     is_3d: bool = False,
     epsg: int | None = None,
+    lonlat: dict[int, list[float]] | None = None,
 ) -> dict:
     """Compute an initial deck.gl view state that fits the grid bounds.
 
@@ -1438,7 +1454,8 @@ def _compute_view_state(
         }
 
     # Use reprojected lon/lat (handles projected grids when EPSG is set)
-    lonlat = _get_lonlat(grd, epsg=epsg)
+    if lonlat is None:
+        lonlat = _get_lonlat(grd, epsg=epsg)
     lons = [pos[0] for pos in lonlat.values()]
     lats = [pos[1] for pos in lonlat.values()]
     xmin, xmax = min(lons), max(lons)
@@ -1920,6 +1937,33 @@ def grid_map_ui(height: str = "600px"):
     )
 
 
+def _fit_key(grd: GrdFile, epsg: int | None, is_3d: bool) -> tuple:
+    """What the view is fitted to: the grid object, its EPSG, and 2-D vs 3-D
+    (3-D tilts the camera). Nothing else may move the user's view."""
+    return (grd, epsg, is_3d)
+
+
+def _needs_refit(last: tuple | None, key: tuple) -> bool:
+    """Whether ``key`` differs from the last fit. The grid is compared by
+    identity: the key holds the grid itself, so its id cannot be reused."""
+    return last is None or last[0] is not key[0] or last[1:] != key[1:]
+
+
+def _build_map(grd, mode, colorscale, elevation_scale, partition_map, epsg, is_3d):
+    """Layers and view state for one render (pure; runs in a worker thread)."""
+    lonlat = _get_lonlat(grd, epsg=epsg)
+    layers = build_layers(
+        grd,
+        mode=mode,
+        colorscale=colorscale,
+        elevation_scale=elevation_scale,
+        partition_map=partition_map,
+        epsg=epsg,
+        lonlat=lonlat,
+    )
+    return layers, _compute_view_state(grd, is_3d=is_3d, epsg=epsg, lonlat=lonlat)
+
+
 @module.server
 def grid_map_server(
     input,
@@ -1971,12 +2015,23 @@ def grid_map_server(
 
     selected_node: reactive.Value[int | None] = reactive.value(None)
     selected_box: reactive.Value[int | None] = reactive.value(None)
+    # The _fit_key the view was last fitted to. A plain cell, not a reactive
+    # value: _update_map reads reactives and must not write one (self-write
+    # loop). A palette, mode or partition change keeps the user's zoom.
+    last_fit: list[tuple | None] = [None]
+
+    @reactive.effect
+    async def _set_basemap():
+        """A basemap change restyles the map; it rebuilds no layers."""
+        basemap_url = BASEMAPS.get(input.map_basemap(), BASEMAPS["positron"])
+        await _map.set_style(session, basemap_url)
 
     @reactive.effect
     async def _update_map():
         """Rebuild layers and push to the map when inputs change."""
         grd = grd_file.get()
         if grd is None:
+            last_fit[0] = None
             # Clear the map, but keep showing extra (e.g. box) layers if present.
             extra = list(extra_layers.get() or []) if extra_layers is not None else []
             await _map.update(
@@ -2001,7 +2056,6 @@ def grid_map_server(
 
         mode = input.map_mode()
         colorscale = input.map_colors()
-        basemap_key = input.map_basemap()
 
         # EPSG for coordinate reprojection:
         # 1. UI dropdown selection takes priority
@@ -2030,24 +2084,25 @@ def grid_map_server(
         if pmap and mode == "mesh":
             actual_mode = "partitions"
 
-        layers = build_layers(
-            grd,
-            mode=actual_mode,
-            colorscale=colorscale,
-            elevation_scale=elev_scale,
-            partition_map=pmap,
-            epsg=epsg_val,
-        )
-        if extra_layers is not None:
-            layers = layers + list(extra_layers.get() or [])
+        extra = list(extra_layers.get() or []) if extra_layers is not None else []
 
-        vs = _compute_view_state(grd, is_3d=(mode == "depth_3d"), epsg=epsg_val)
+        # Every reactive read is above: the build runs in a thread, so a large
+        # grid (seconds of work) never blocks the event loop.
+        layers, vs = await asyncio.to_thread(
+            _build_map, grd, actual_mode, colorscale, elev_scale, pmap, epsg_val, mode == "depth_3d"
+        )
+        layers = layers + extra
+
+        # Re-centre (view state + fit) only for a new grid, EPSG or 2-D/3-D.
+        key = _fit_key(grd, epsg_val, mode == "depth_3d")
+        refit = _needs_refit(last_fit[0], key)
+        last_fit[0] = key
 
         label_map = _build_label_map(layers, mode=actual_mode)
         await _map.update(
             session,
             layers=layers,
-            view_state=vs,
+            view_state=vs if refit else None,
             transition_duration=500,
             widgets=[
                 zoom_widget(),
@@ -2063,13 +2118,8 @@ def grid_map_server(
             ],
         )
 
-        # Set basemap style
-        basemap_url = BASEMAPS.get(basemap_key, BASEMAPS["positron"])
-        await _map.set_style(session, basemap_url)
-
-        # Fit bounds to grid extent
         bounds = vs.get("bounds")
-        if bounds:
+        if refit and bounds:
             await _map.fit_bounds(
                 session,
                 bounds=bounds,
