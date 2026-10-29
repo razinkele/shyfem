@@ -86,7 +86,7 @@ def _project_files_on_disk(work_dir: str | Path):
 
 
 class FileService:
-    """Manages project files: upload, delete, list, validate."""
+    """Manages project files: upload, delete, list."""
 
     @staticmethod
     def upload_file(
@@ -295,123 +295,6 @@ class FileService:
         with db_session() as db:
             pf = db.query(ProjectFile).filter_by(id=file_id).first()
             return pf.project_id if pf else None
-
-    # Parameters in $name that reference files
-    _NAME_FILE_PARAMS = frozenset(
-        {
-            "wind",
-            "rain",
-            "qflux",
-            "ice",
-            "zinit",
-            "tempin",
-            "saltin",
-            "conzin",
-            "restrt",
-            "tempobs",
-            "saltobs",
-            "gotmpa",
-            "basnam",
-            "offlin",
-            "surfvel",
-            "temptau",
-            "salttau",
-        }
-    )
-
-    # Parameters in $bound sections that reference files
-    _BOUND_FILE_PARAMS = frozenset(
-        {
-            "boundn",
-            "tempn",
-            "saltn",
-            "conzn",
-            "vel3dn",
-            "bio2dn",
-            "sed2dn",
-        }
-    )
-
-    @classmethod
-    def validate_simulation_files(cls, simulation_id: int) -> list[str]:
-        """Check that all files referenced in the STR exist on disk.
-
-        Args:
-            simulation_id: Simulation whose STR file to validate.
-
-        Returns:
-            List of warning strings for missing files (empty = all OK).
-
-        Raises:
-            ValueError: If simulation_id does not exist.
-        """
-        from shyfem_ui.models.project import Simulation
-        from shyfem_ui.services.parser_str import StrParser
-
-        with db_session() as db:
-            sim = db.query(Simulation).filter_by(id=simulation_id).first()
-            if sim is None:
-                raise ValueError(f"Simulation {simulation_id} not found")
-
-            project = db.query(Project).filter_by(id=sim.project_id).first()
-            work_dir = Path(project.work_dir)
-            # Capture scalar fields INSIDE the session: after the block the
-            # instance is expired (expire_on_commit) and attribute access
-            # raises DetachedInstanceError. str_file is referenced below.
-            str_file = sim.str_file
-            str_path = work_dir / str_file
-
-        if not str_path.exists():
-            return [f"STR file not found: {str_file}"]
-
-        parsed = StrParser.parse_file(str_path)
-        warnings: list[str] = []
-
-        # Check $name file references
-        cfg = get_config()
-        name_section = parsed.sections.get("name")
-        if name_section:
-            for param, value in name_section.parameters.items():
-                if param in cls._NAME_FILE_PARAMS and isinstance(value, str) and value:
-                    try:
-                        path = cfg.validate_path(work_dir / value, must_exist=False)
-                    except ValueError:
-                        warnings.append(f"Invalid/unsafe file path for $name/{param}: {value}")
-                        continue
-                    if not path.exists():
-                        warnings.append(f"Missing file for $name/{param}: {value}")
-
-        # Check $bound sections
-        for sec_name, section in parsed.sections.items():
-            if not sec_name.startswith("bound"):
-                continue
-            for param, value in section.parameters.items():
-                if param in cls._BOUND_FILE_PARAMS and isinstance(value, str) and value:
-                    try:
-                        path = cfg.validate_path(work_dir / value, must_exist=False)
-                    except ValueError:
-                        warnings.append(
-                            f"Invalid/unsafe file path for ${sec_name}/{param}: {value}"
-                        )
-                        continue
-                    if not path.exists():
-                        warnings.append(f"Missing file for ${sec_name}/{param}: {value}")
-
-        # Check basin file from $title (3rd line = basin name)
-        title_section = parsed.sections.get("title")
-        if title_section and title_section.raw_lines:
-            content_lines = [
-                ln.strip()
-                for ln in title_section.raw_lines
-                if ln.strip() and not ln.strip().startswith(("#", "!"))
-            ]
-            if len(content_lines) >= 3:
-                basin_name = content_lines[2]
-                bas_path = work_dir / (basin_name + ".bas")
-                if not bas_path.exists():
-                    warnings.append(f"Missing basin file: {basin_name}.bas")
-
-        return warnings
 
     # Extensions to skip when seeding tutorial files
     _SKIP_EXTENSIONS = frozenset({".sh", ".stdout", ".stderr", ".job", ".pid", ".exit"})
