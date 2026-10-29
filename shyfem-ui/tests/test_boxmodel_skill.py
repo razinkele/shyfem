@@ -98,6 +98,36 @@ def test_load_sites_rejects_malformed_box(tmp_path):
         sk.load_sites(p)
 
 
+def test_load_sites_rejects_a_comma_decimal(tmp_path):
+    """B-03: '55,7' loaded as text and blanked the Map tab with no message."""
+    p = tmp_path / "sites.csv"
+    p.write_text('site,lat,lon,box\nA,"55,7",21.1,1\n')
+    with pytest.raises(
+        sk.ObservationError, match=r"lat must be a number, got '55,7' \(use a decimal point\)"
+    ):
+        sk.load_sites(p)
+    p.write_text("site,lat,lon,box\nA,55.7,east,1\n")
+    with pytest.raises(sk.ObservationError, match="lon must be a number, got 'east'"):
+        sk.load_sites(p)
+
+
+def test_load_sites_coordinates_are_floats_and_may_be_blank(tmp_path):
+    p = tmp_path / "sites.csv"
+    p.write_text("site,lat,lon,box\nA,55.7,21.1,1\nB,,,2\nC, 55.5 , 21.0 ,\n")
+    s = sk.load_sites(p)
+    assert s["lat"].dtype == float and s["lon"].dtype == float
+    assert s["lat"].tolist()[0] == 55.7 and s["lat"].isna().tolist() == [False, True, False]
+    assert s["lon"].tolist()[2] == 21.0
+
+
+def test_load_sites_rejects_a_repeated_site(tmp_path):
+    """B-03: a duplicate site broke Compare with a pandas reshape error."""
+    p = tmp_path / "sites.csv"
+    p.write_text("site,lat,lon,box\nA,55.7,21.1,1\nB,55.6,21.0,2\nA,55.5,21.2,3\n")
+    with pytest.raises(sk.ObservationError, match="site 'A' is listed more than once"):
+        sk.load_sites(p)
+
+
 def test_load_sites_blank_or_whitespace_box_stays_na(tmp_path):
     p = tmp_path / "sites.csv"
     p.write_text("site,lat,lon,box\nA,55.0,21.0,\nB,55.0,21.0, \nC,55.0,21.0,3\n")
