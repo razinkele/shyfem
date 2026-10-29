@@ -270,15 +270,18 @@ def str_editor_server(
         # textarea, so the input still holds the text from before an Apply.
         text = content.get()
         try:
-            errors = validate_str_content(text)
+            # Only errors refuse the save. Warnings (an unknown key such as
+            # nomp, a value outside its usual range) stay advisory: the core
+            # reads those files, and 20 shipped STRs carry one.
+            errors, warnings = _split_issues(validate_str_content(text))
             if errors:
-                validation_errors.set(errors)
+                validation_errors.set(errors + warnings)
                 return
 
             path.write_text(text)
             content.set(text)
             parsed_file.set(StrParser.parse(text))
-            validation_errors.set([])
+            validation_errors.set(["Saved."] + warnings if warnings else [])
             is_modified.set(False)
 
             if on_save:
@@ -442,28 +445,32 @@ def _apply_form_values(
         if search_filter is not None and section_name not in search_filter:
             continue
         shown = search_filter.get(section_name) if search_filter is not None else None
-        section_params = COMMON_PARAMS.get(section_name, {})
-        for param_name in section_params:
+        # Every field _build_form_panel renders: each parameter of the
+        # section, known to COMMON_PARAMS or not. Iterating COMMON_PARAMS
+        # dropped edits in $bound1.., $assimil1.. (no entry) and to keys it
+        # does not list (nomp).
+        for param_name in list(section.parameters):
+            if param_name.startswith("_"):
+                continue
             if shown is not None and param_name not in shown:
                 continue
-            if param_name in section.parameters or param_name.startswith("_"):
-                field_id = f"form_{section_name}_{param_name}"
-                try:
-                    new_val = field_value(field_id)
-                    if new_val is not None and str(new_val).strip():
-                        old_val = section.parameters.get(param_name)
-                        # The inverse of the helper the field was rendered
-                        # with. _convert_value is scalar-only: for a value
-                        # run it returned the field's literal text, which
-                        # differs from the parsed list, so this guard fired
-                        # with no user edit and the save quoted a Python
-                        # repr into the file.
-                        converted = parse_param_display(str(new_val).strip())
-                        if converted != old_val:
-                            edited.set_param(section_name, param_name, converted)
-                except Exception:
-                    logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
-                    continue
+            field_id = f"form_{section_name}_{param_name}"
+            try:
+                new_val = field_value(field_id)
+                if new_val is not None and str(new_val).strip():
+                    old_val = section.parameters.get(param_name)
+                    # The inverse of the helper the field was rendered
+                    # with. _convert_value is scalar-only: for a value
+                    # run it returned the field's literal text, which
+                    # differs from the parsed list, so this guard fired
+                    # with no user edit and the save quoted a Python
+                    # repr into the file.
+                    converted = parse_param_display(str(new_val).strip())
+                    if converted != old_val:
+                        edited.set_param(section_name, param_name, converted)
+            except Exception:
+                logger.debug("Skipping form field %s conversion", field_id, exc_info=True)
+                continue
     return edited
 
 
@@ -551,7 +558,7 @@ def _build_form_panel(
                                 field_id,
                                 "",
                                 choices=choices,
-                                selected=str(param_val),
+                                selected=format_param_display(param_val),
                                 width="100%",
                             ),
                             class_="mb-2",
@@ -561,7 +568,9 @@ def _build_form_panel(
                     fields.append(
                         ui.div(
                             label,
-                            str_file_selectize(field_id, "", str(param_val), file_choices),
+                            str_file_selectize(
+                                field_id, "", format_param_display(param_val), file_choices
+                            ),
                             class_="mb-2",
                         )
                     )
@@ -583,7 +592,9 @@ def _build_form_panel(
                     fields.append(
                         ui.div(
                             ui.span(param_name, class_="fw-bold small", style=highlight_style),
-                            str_file_selectize(field_id, "", str(param_val), file_choices),
+                            str_file_selectize(
+                                field_id, "", format_param_display(param_val), file_choices
+                            ),
                             class_="mb-2",
                         )
                     )
@@ -675,7 +686,7 @@ def _parse_options_to_choices(options_str: str, current_val: Any) -> dict[str, s
             choices[val] = val
 
     # Ensure current value is in choices
-    val_str = str(current_val)
+    val_str = format_param_display(current_val)
     if val_str not in choices:
         choices[val_str] = f"{val_str} (current)"
 
@@ -731,6 +742,13 @@ def filter_sections(
     return result
 
 
+def _split_issues(issues: list[str]) -> tuple[list[str], list[str]]:
+    """Split validate_str_content's list into (errors, warnings)."""
+    errors = [m for m in issues if not m.startswith("Warning")]
+    warnings = [m for m in issues if m.startswith("Warning")]
+    return errors, warnings
+
+
 def validate_str_content(
     content: str, check_files: bool = False, working_dir: Path | None = None
 ) -> list[str]:
@@ -751,19 +769,24 @@ def validate_str_content(
 
     # --- Structural checks ---
 
+    # The parser's own markers: '&' as well as '$', and a closing line may
+    # carry a comment ("$end  ! done"). A scan of its own that took only
+    # "$" and an exact "$end" reported those sections as never closed, and
+    # that error blocked the inline Save.
     lines = content.splitlines()
     section_stack = []
 
     for i, line in enumerate(lines, 1):
-        stripped = line.strip().lower()
-        if stripped.startswith("$") and not stripped.startswith("$end"):
-            section_name = stripped[1:]
-            section_stack.append((section_name, i))
-        elif stripped == "$end":
+        stripped = line.strip()
+        if StrParser.SECTION_END.match(stripped):
             if not section_stack:
                 errors.append(f"Line {i}: Unexpected $end without matching section start")
             else:
                 section_stack.pop()
+            continue
+        start = StrParser.SECTION_START.match(stripped)
+        if start:
+            section_stack.append((start.group(1).lower(), i))
 
     for section_name, line_num in section_stack:
         errors.append(f"Line {line_num}: Section ${section_name} not closed")
