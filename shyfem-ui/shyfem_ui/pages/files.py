@@ -322,7 +322,11 @@ def files_server(
         )
 
     # File upload handler
-    from shyfem_ui.components.file_browser import file_browser_server, persist_upload
+    from shyfem_ui.components.file_browser import (
+        UploadError,
+        file_browser_server,
+        persist_upload,
+    )
 
     async def _handle_upload(files):
         if not files or active_project is None:
@@ -345,14 +349,19 @@ def files_server(
         subdir = input.upload_subdir() or None
         for f in files:
             # Read, checksum and write in a thread: an upload may be 500 MB.
-            result = await asyncio.to_thread(
-                persist_upload,
-                temp_path=Path(f["datapath"]),
-                filename=f["name"],
-                project_id=proj["id"],
-                file_type=file_type,
-                subdir=subdir,
-            )
+            try:
+                result = await asyncio.to_thread(
+                    persist_upload,
+                    temp_path=Path(f["datapath"]),
+                    filename=f["name"],
+                    project_id=proj["id"],
+                    file_type=file_type,
+                    subdir=subdir,
+                )
+            except UploadError as e:
+                # Say why (F-09): quota, invalid or reserved name, bad folder.
+                ui.notification_show(f"Failed to upload {f['name']}: {e}", type="error", duration=8)
+                continue
             if result:
                 ui.notification_show(f"Uploaded: {result['filename']}", type="message", duration=4)
             else:
