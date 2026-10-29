@@ -646,7 +646,15 @@ def home_server(
                         )
                     ),
                     ui.tags.td(p["description"] or "-"),
-                    ui.tags.td(ui.code(config.display_path(p["work_dir"], user), class_="small")),
+                    # A path has no spaces to wrap at: break it anywhere, or it
+                    # widens the table and pushes Actions under the next card.
+                    ui.tags.td(
+                        ui.code(
+                            config.display_path(p["work_dir"], user),
+                            class_="small",
+                            style="word-break: break-all;",
+                        )
+                    ),
                     ui.tags.td(
                         p["updated_at"].strftime("%Y-%m-%d %H:%M") if p["updated_at"] else "-"
                     ),
@@ -676,18 +684,23 @@ def home_server(
                 )
             )
 
-        return ui.tags.table(
-            ui.tags.thead(
-                ui.tags.tr(
-                    ui.tags.th("Name"),
-                    ui.tags.th("Description"),
-                    ui.tags.th("Directory"),
-                    ui.tags.th("Last Updated"),
-                    ui.tags.th("Actions"),
-                )
+        # table-responsive: anything still too wide scrolls inside the card
+        # instead of spilling under the Quick Start column.
+        return ui.div(
+            ui.tags.table(
+                ui.tags.thead(
+                    ui.tags.tr(
+                        ui.tags.th("Name"),
+                        ui.tags.th("Description"),
+                        ui.tags.th("Directory"),
+                        ui.tags.th("Last Updated"),
+                        ui.tags.th("Actions"),
+                    )
+                ),
+                ui.tags.tbody(*rows),
+                class_="table table-hover",
             ),
-            ui.tags.tbody(*rows),
-            class_="table table-hover",
+            class_="table-responsive",
         )
 
     # Modal handlers
@@ -1354,6 +1367,10 @@ def home_server(
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
+        # The current name: a handler is registered once per project id for
+        # the session, and SQLite reuses a deleted project's id, so the name
+        # captured at registration can belong to another, deleted project.
+        project_name = ctx["name"]
 
         work_dir = Path(ctx["work_dir"])
         if not work_dir.is_dir():
@@ -1405,6 +1422,10 @@ def home_server(
         if ctx is None:
             ui.notification_show("Project not found", type="error", duration=6)
             return
+        # The current name: a handler is registered once per project id for
+        # the session, and SQLite reuses a deleted project's id, so the name
+        # captured at registration can belong to another, deleted project.
+        project_name = ctx["name"]
 
         # Cloning creates a NEW owned project (a write). load_project_context
         # above is only a viewer-level read gate, so also fail closed on an
@@ -1572,7 +1593,9 @@ def home_server(
         @reactive.effect
         @reactive.event(input[key])
         def _share():
-            _show_share_modal(pid, pname)
+            # Current name (see _do_export): the id may have been reused.
+            name = next((p["name"] for p in projects.get() if p["id"] == pid), pname)
+            _show_share_modal(pid, name)
 
     def _make_confirm_share_handler(pid: int):
         key = f"confirm_share_{pid}"
