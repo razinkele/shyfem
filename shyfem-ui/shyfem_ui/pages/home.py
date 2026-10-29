@@ -1,5 +1,6 @@
 """Home/Dashboard page for SHYFEM UI."""
 
+import asyncio
 import logging
 import shutil
 from datetime import datetime
@@ -965,7 +966,7 @@ def home_server(
 
     # --- Active project handlers ---
 
-    def _activate_project(project_id: int):
+    async def _activate_project(project_id: int):
         """Load project context, set active, navigate to Grid Prep."""
         from shyfem_ui.services.project_context import load_project_context
 
@@ -975,17 +976,18 @@ def home_server(
             return
         if active_project is not None:
             active_project.set(ctx)
-        # Every opened project carries its cached summary; build it now if
-        # missing/stale (best-effort — never blocks opening the project).
-        try:
-            from shyfem_ui.services.project_summary import load_summary
-
-            load_summary(ctx["work_dir"])
-        except Exception:
-            logger.debug("project summary build skipped for %s", project_id, exc_info=True)
         ui.notification_show(f"Opened project: {ctx['name']}", type="message", duration=4)
         if nav_callback:
             nav_callback("Grid Prep")
+        # Every opened project carries its cached summary; build it now if
+        # missing/stale (best-effort, after opening, and in a thread: it scans
+        # the whole project).
+        try:
+            from shyfem_ui.services.project_summary import load_summary
+
+            await asyncio.to_thread(load_summary, ctx["work_dir"])
+        except Exception:
+            logger.debug("project summary build skipped for %s", project_id, exc_info=True)
 
     @reactive.effect
     @reactive.event(input.open_project_btn)
@@ -1040,9 +1042,9 @@ def home_server(
 
         @reactive.effect
         @reactive.event(input[key])
-        def _open():
+        async def _open():
             ui.modal_remove()
-            _activate_project(pid)
+            await _activate_project(pid)
 
     @reactive.effect
     def _register_load_handlers():
@@ -1058,8 +1060,8 @@ def home_server(
 
         @reactive.effect
         @reactive.event(input[key])
-        def _load():
-            _activate_project(pid)
+        async def _load():
+            await _activate_project(pid)
 
     @reactive.effect
     def _register_details_handlers():
@@ -1075,7 +1077,7 @@ def home_server(
 
         @reactive.effect
         @reactive.event(input[key])
-        def _show_details():
+        async def _show_details():
             from shyfem_ui.services.project_context import load_project_context
 
             # The viewer-level read gate is THIS call (fail-closed in server
@@ -1118,7 +1120,7 @@ def home_server(
             )
             from shyfem_ui.services.project_summary import load_summary
 
-            summary = load_summary(ctx["work_dir"])
+            summary = await asyncio.to_thread(load_summary, ctx["work_dir"])
 
             sections = [
                 ui.h6("Overview"),
@@ -1166,8 +1168,8 @@ def home_server(
 
         @reactive.effect
         @reactive.event(input[key])
-        def _click():
-            _activate_project(pid)
+        async def _click():
+            await _activate_project(pid)
 
     # --- Import grid handlers ---
 
@@ -1368,10 +1370,10 @@ def home_server(
 
         @reactive.effect
         @reactive.event(input[key])
-        def _clone():
-            _do_clone(pid, pname)
+        async def _clone():
+            await _do_clone(pid, pname)
 
-    def _do_clone(project_id: int, project_name: str):
+    async def _do_clone(project_id: int, project_name: str):
         """Clone a project."""
         from shyfem_ui.services.project_context import load_project_context
         from shyfem_ui.services.project_export import (
@@ -1406,7 +1408,10 @@ def home_server(
 
         try:
             # The owner's home in server mode, so they can write in the clone (F-02).
-            result = clone_project(work_dir, meta, config.user_projects_root(_user()))
+            # Copies the whole project: in a thread, off the event loop.
+            result = await asyncio.to_thread(
+                clone_project, work_dir, meta, config.user_projects_root(_user())
+            )
         except Exception as e:
             logger.exception("Failed to clone project %s %r", project_id, project_name)
             ui.notification_show(f"Clone failed: {e}", type="error", duration=6)
