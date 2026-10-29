@@ -251,28 +251,34 @@ def smooth_boundary(
     if line_id not in grd.lines:
         raise ValueError(f"Line {line_id} not found in grid")
 
-    line = grd.lines[line_id]
-    coords = [(grd.nodes[nid].x, grd.nodes[nid].y) for nid in line.nodes]
-    coords_arr = np.array(coords)
-
     if method == "chaikin":
-        smoothed = _chaikin_smooth(coords_arr, iterations)
+
+        def process(coords: np.ndarray, closed: bool) -> np.ndarray:
+            return _chaikin_smooth(coords, iterations, closed=closed)
+
     elif method == "gaussian":
-        smoothed = _gaussian_smooth(coords_arr, iterations, sigma)
+
+        def process(coords: np.ndarray, closed: bool) -> np.ndarray:
+            return _gaussian_smooth(coords, iterations, sigma, closed=closed)
+
     else:
         raise ValueError(f"Unknown smoothing method: {method}")
 
-    return _rebuild_grd_with_new_line(grd, line_id, smoothed)
+    return _rework_line(grd, line_id, process)
 
 
-def _chaikin_smooth(coords: np.ndarray, iterations: int) -> np.ndarray:
-    """Chaikin corner-cutting subdivision."""
+def _chaikin_smooth(coords: np.ndarray, iterations: int, closed: bool | None = None) -> np.ndarray:
+    """Chaikin corner-cutting subdivision.
+
+    ``closed=None`` treats the curve as a ring when its ends coincide;
+    ``closed=False`` keeps both end points fixed even then.
+    """
     pts = coords.copy()
     for _ in range(iterations):
         if len(pts) < 3:
             break
         new_pts = []
-        is_closed = np.allclose(pts[0], pts[-1])
+        is_closed = np.allclose(pts[0], pts[-1]) if closed is None else closed
         n = len(pts) - 1 if is_closed else len(pts) - 1
         for i in range(n):
             p0 = pts[i]
@@ -288,12 +294,18 @@ def _chaikin_smooth(coords: np.ndarray, iterations: int) -> np.ndarray:
     return pts
 
 
-def _gaussian_smooth(coords: np.ndarray, iterations: int, sigma: float) -> np.ndarray:
-    """1D Gaussian smoothing of boundary coordinates."""
+def _gaussian_smooth(
+    coords: np.ndarray, iterations: int, sigma: float, closed: bool | None = None
+) -> np.ndarray:
+    """1D Gaussian smoothing of boundary coordinates.
+
+    ``closed`` as for :func:`_chaikin_smooth`; an open curve keeps its two
+    end points where they are.
+    """
     from scipy.ndimage import gaussian_filter1d
 
     pts = coords.copy()
-    is_closed = np.allclose(pts[0], pts[-1])
+    is_closed = np.allclose(pts[0], pts[-1]) if closed is None else closed
     for _ in range(iterations):
         if is_closed:
             # Smooth x and y independently, wrap mode for closed ring
@@ -303,7 +315,69 @@ def _gaussian_smooth(coords: np.ndarray, iterations: int, sigma: float) -> np.nd
         else:
             pts[:, 0] = gaussian_filter1d(pts[:, 0], sigma, mode="nearest")
             pts[:, 1] = gaussian_filter1d(pts[:, 1], sigma, mode="nearest")
+            pts[0], pts[-1] = coords[0], coords[-1]
     return pts
+
+
+def _rework_line(grd: GrdFile, line_id: int, process) -> GrdFile:
+    """Apply ``process(coords, closed) -> coords`` to one line of ``grd``.
+
+    A node the line shares with another line (import_boundaries gives
+    adjacent polygons one node where they touch) is pinned: the line is cut
+    into open runs at its shared nodes, each run is processed with its ends
+    held, and the shared nodes keep their ids and positions. The sibling
+    lines are left exactly as they were. Rebuilding the whole line used to
+    delete the shared nodes and silently drop them from the siblings,
+    leaving them shortened and unclosed (M-08).
+    """
+    line = grd.lines[line_id]
+    others: set[int] = set()
+    for lid, other in grd.lines.items():
+        if lid != line_id:
+            others.update(other.nodes)
+    shared = others.intersection(line.nodes)
+
+    def _xy(nids) -> np.ndarray:
+        return np.array([(grd.nodes[n].x, grd.nodes[n].y) for n in nids], dtype=float)
+
+    if not shared:
+        closed = len(line.nodes) >= 3 and line.nodes[0] == line.nodes[-1]
+        return _rebuild_grd_with_new_line(
+            grd, line_id, process(_xy(line.nodes), None if closed else False)
+        )
+
+    seq = list(line.nodes)
+    if len(seq) >= 2 and seq[0] == seq[-1]:
+        # Ring: start it at a shared node, so every run ends on one.
+        body = seq[:-1]
+        start = next(i for i, n in enumerate(body) if n in shared)
+        body = body[start:] + body[:start]
+        seq = body + [body[0]]
+    cuts = sorted({0, len(seq) - 1} | {i for i, n in enumerate(seq) if n in shared})
+
+    new_grd = GrdFile()
+    dropped = set(line.nodes) - others
+    for nid, node in grd.nodes.items():
+        if nid not in dropped:
+            new_grd.nodes[nid] = _dc_replace(node)
+    next_id = max(grd.nodes) + 1
+    new_line = [seq[0]]
+    for a, b in zip(cuts, cuts[1:], strict=False):
+        run = seq[a : b + 1]
+        if len(run) > 2:
+            for x, y in process(_xy(run), False)[1:-1]:
+                new_grd.nodes[next_id] = Node(id=next_id, node_type=0, x=float(x), y=float(y))
+                new_line.append(next_id)
+                next_id += 1
+        new_line.append(seq[b])
+
+    for lid, other in grd.lines.items():
+        if lid == line_id:
+            new_grd.lines[lid] = Line(id=lid, line_type=other.line_type, nodes=new_line)
+        else:
+            new_grd.lines[lid] = Line(id=lid, line_type=other.line_type, nodes=list(other.nodes))
+    new_grd.elements = dict(grd.elements)
+    return new_grd
 
 
 def _rebuild_grd_with_new_line(grd: GrdFile, line_id: int, new_coords: np.ndarray) -> GrdFile:
@@ -370,15 +444,16 @@ def reduce_boundary(grd: GrdFile, line_id: int, tolerance: float) -> GrdFile:
     if line_id not in grd.lines:
         raise ValueError(f"Line {line_id} not found in grid")
 
-    line = grd.lines[line_id]
-    coords = [(grd.nodes[nid].x, grd.nodes[nid].y) for nid in line.nodes]
+    def process(coords: np.ndarray, closed: bool | None) -> np.ndarray:
+        # Shapely keeps the two ends of an open LineString.
+        geom = (
+            shapely.geometry.LineString(coords)
+            if closed is False
+            else shapely.geometry.LinearRing(coords)
+        )
+        return np.array(geom.simplify(tolerance, preserve_topology=True).coords)
 
-    # Use Shapely for simplification
-    ring = shapely.geometry.LinearRing(coords)
-    simplified = ring.simplify(tolerance, preserve_topology=True)
-    new_coords = np.array(simplified.coords)
-
-    return _rebuild_grd_with_new_line(grd, line_id, new_coords)
+    return _rework_line(grd, line_id, process)
 
 
 # ---------------------------------------------------------------------------
