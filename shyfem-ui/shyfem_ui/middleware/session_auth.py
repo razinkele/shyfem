@@ -12,6 +12,7 @@ user is injected into every request.
 import contextvars
 import logging
 import secrets
+import unicodedata
 import urllib.parse
 
 from shyfem_ui.middleware.rate_limit import get_client_ip
@@ -66,6 +67,25 @@ def _parse_cookie(raw: bytes) -> dict[str, str]:
         else:
             cookies[part.strip()] = ""
     return cookies
+
+
+# Longest username written to the audit log. Real usernames are far shorter;
+# the login form is unauthenticated, so the value is attacker-chosen.
+_AUDIT_USERNAME_MAX = 128
+
+
+def _audit_username(raw: str) -> str:
+    """Return ``raw`` made safe for the (365-day) audit table.
+
+    Strips control and format characters (NUL, newlines, ESC, bidi
+    overrides, ...), which can forge or garble log lines, and caps the
+    length. Used only for what is LOGGED; authentication still sees the
+    username exactly as submitted. An empty result logs as ``<empty>``.
+    """
+    cleaned = "".join(ch for ch in raw if unicodedata.category(ch) not in ("Cc", "Cf"))
+    if len(cleaned) > _AUDIT_USERNAME_MAX:
+        cleaned = cleaned[:_AUDIT_USERNAME_MAX] + "\u2026"
+    return cleaned or "<empty>"
 
 
 # ------------------------------------------------------------------
@@ -790,11 +810,32 @@ class SessionAuthMiddleware:
             }
         )
 
+    # Cap the login form body. A real form (username, password, CSRF token) is
+    # well under 1 KiB; the endpoint is unauthenticated, so without a cap a
+    # client could make the server buffer an arbitrarily large body.
+    _MAX_LOGIN_BODY = 16 * 1024
+
     async def _handle_login_post(self, scope, receive, send, root_path: str = ""):
         """Parse POST form data, authenticate, and redirect or re-render."""
-        message = await receive()
-        raw_body = message.get("body", b"")
-        form = urllib.parse.parse_qs(raw_body.decode("utf-8"))
+        # Read every http.request chunk (a client may split the form), stopping
+        # as soon as the body passes the cap.
+        raw_body = b""
+        while True:
+            message = await receive()
+            if message.get("type") == "http.disconnect":
+                return
+            raw_body += message.get("body", b"")
+            if len(raw_body) > self._MAX_LOGIN_BODY:
+                await self._send_json(send, 413, {"error": "payload too large"})
+                return
+            if not message.get("more_body", False):
+                break
+
+        try:
+            form = urllib.parse.parse_qs(raw_body.decode("utf-8"))
+        except UnicodeDecodeError:
+            await self._send_json(send, 400, {"error": "invalid form encoding"})
+            return
 
         # CSRF double-submit cookie validation
         form_csrf = form.get("csrf_token", [""])[0]
@@ -819,7 +860,7 @@ class SessionAuthMiddleware:
         user = self.auth_service.authenticate(username, password)
         if user is None:
             self._audit(
-                username=username or "<empty>",
+                username=_audit_username(username),
                 action="login_failed",
                 ip_address=self._client_ip(scope),
             )

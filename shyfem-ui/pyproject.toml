@@ -45,6 +45,12 @@ dependencies = [
     "scipy>=1.12",
     "triangle>=20220202",
     "argon2-cffi>=21.0",
+    "alembic>=1.18,<2",
+    # Pinned to the git tag the shiny env is installed from (the tested
+    # version). PyPI's "shiny-deckgl" is the same author's package, but only
+    # 1.12.0 is published there. Direct references block a PyPI upload of
+    # shyfem-ui, which is not published there.
+    "shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2",
 ]
 
 [project.optional-dependencies]
