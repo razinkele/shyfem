@@ -538,7 +538,24 @@ def home_server(
                 show_all_fn=_requested_show_all,
                 limit=5,
             )
+            # Compare before set: the poll below lists every tick, and a
+            # fresh-but-equal list would re-render both job cards each time.
+            with reactive.isolate():
+                if jobs == recent_jobs_list.get():
+                    return
             recent_jobs_list.set(jobs)
+
+    # Active Jobs and Recent Activity were listed only on load and identity
+    # change, so a job submitted, started or finished while the Dashboard was
+    # open never showed (H-06). The listing is async (no DB work on the loop).
+    @reactive.effect
+    async def _poll_jobs():
+        reactive.invalidate_later(IDENTITY_POLL_SECONDS)
+        try:
+            await _refresh_jobs()
+        except Exception:
+            # An exception escaping an effect closes the session.
+            logger.warning("Dashboard job re-check failed", exc_info=True)
 
     @render.ui
     def project_count():
