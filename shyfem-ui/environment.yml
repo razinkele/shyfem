@@ -44,7 +44,7 @@ dependencies:
       - shiny>=1.8,<1.9
       - shinyswatch>=0.7.0
       - shinywidgets>=0.3
-      - shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git
+      - shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2
       - sqlalchemy>=2.0
       - pydantic>=2.0
       - pydantic-settings>=2.0

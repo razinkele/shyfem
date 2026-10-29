@@ -1002,3 +1002,132 @@ class TestClientIpTrustedProxies:
         not accidentally trust anything (fail closed)."""
         mw = SessionAuthMiddleware(AsyncMock(), MagicMock())
         assert mw.trusted_proxies == []
+
+
+# ------------------------------------------------------------------
+# SEC-02: the unauthenticated POST /login body is bounded and the
+# username written to the audit table is sanitised
+# ------------------------------------------------------------------
+
+
+class TestLoginPostBody:
+    @staticmethod
+    def _scope():
+        return {
+            "type": "http",
+            "method": "POST",
+            "path": "/login",
+            "headers": [
+                (b"content-type", b"application/x-www-form-urlencoded"),
+                (b"cookie", b"csrf_token=xyz"),
+            ],
+            "client": ("127.0.0.1", 12345),
+        }
+
+    @staticmethod
+    def _status(send):
+        starts = [
+            c.args[0] for c in send.call_args_list if c.args[0]["type"] == "http.response.start"
+        ]
+        assert len(starts) == 1
+        return starts[0]["status"]
+
+    @pytest.mark.asyncio
+    async def test_body_split_across_chunks_is_read_fully(self):
+        """A client may send the form in several http.request messages; the
+        handler must read them all, not only the first."""
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = {"id": 1, "username": "alice"}
+        auth_service.create_session.return_value = "tok"
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+
+        receive = AsyncMock(
+            side_effect=[
+                {"type": "http.request", "body": b"username=alice&pass", "more_body": True},
+                {"type": "http.request", "body": b"word=pw&csrf_token=xyz"},
+            ]
+        )
+        send = AsyncMock()
+        await mw._handle_login_post(self._scope(), receive, send)
+
+        auth_service.authenticate.assert_called_once_with("alice", "pw")
+        assert self._status(send) == 302
+
+    @pytest.mark.asyncio
+    async def test_oversized_body_is_rejected_413(self):
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+        chunk = {"type": "http.request", "body": b"a" * 8192, "more_body": True}
+        receive = AsyncMock(return_value=chunk)  # never ends
+        send = AsyncMock()
+
+        await mw._handle_login_post(self._scope(), receive, send)
+
+        assert self._status(send) == 413
+        auth_service.authenticate.assert_not_called()
+        # It stopped reading at the cap instead of draining the stream.
+        assert receive.await_count <= (SessionAuthMiddleware._MAX_LOGIN_BODY // 8192) + 1
+
+    @pytest.mark.asyncio
+    async def test_body_just_under_cap_is_accepted(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+        body = b"username=alice&password=pw&csrf_token=xyz&pad="
+        body += b"a" * (SessionAuthMiddleware._MAX_LOGIN_BODY - len(body))
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        await mw._handle_login_post(self._scope(), receive, send)
+
+        auth_service.authenticate.assert_called_once_with("alice", "pw")
+        assert self._status(send) == 200
+
+    @pytest.mark.asyncio
+    async def test_invalid_utf8_body_is_400_not_500(self):
+        auth_service = MagicMock()
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service)
+        receive = AsyncMock(
+            return_value={"type": "http.request", "body": b"username=\xff\xfe&csrf_token=xyz"}
+        )
+        send = AsyncMock()
+
+        await mw._handle_login_post(self._scope(), receive, send)
+
+        assert self._status(send) == 400
+        auth_service.authenticate.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_audit_username_is_stripped_and_capped(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        audit_service = MagicMock()
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, audit_service=audit_service)
+        # %00, %0A, %1B (ESC), %7F and U+202E (right-to-left override)
+        name = "al%00i%0Ace%1B%7F%E2%80%AE" + "x" * 5000
+        body = f"username={name}&password=pw&csrf_token=xyz".encode()
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        await mw._handle_login_post(self._scope(), receive, send)
+
+        # The login itself still sees exactly what was typed.
+        assert auth_service.authenticate.call_args.args[0].startswith("al\x00i\nce")
+        logged = audit_service.log.call_args.kwargs["username"]
+        assert logged.startswith("alice")
+        assert len(logged) <= 130
+        assert not any(ord(c) < 32 or ord(c) == 0x7F or c == "‮" for c in logged)
+
+    @pytest.mark.asyncio
+    async def test_audit_username_all_control_chars_logs_empty_marker(self):
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = None
+        audit_service = MagicMock()
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, audit_service=audit_service)
+        body = b"username=%00%0A%0D&password=pw&csrf_token=xyz"
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        send = AsyncMock()
+
+        await mw._handle_login_post(self._scope(), receive, send)
+
+        assert audit_service.log.call_args.kwargs["username"] == "<empty>"

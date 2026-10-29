@@ -251,28 +251,34 @@ def smooth_boundary(
     if line_id not in grd.lines:
         raise ValueError(f"Line {line_id} not found in grid")
 
-    line = grd.lines[line_id]
-    coords = [(grd.nodes[nid].x, grd.nodes[nid].y) for nid in line.nodes]
-    coords_arr = np.array(coords)
-
     if method == "chaikin":
-        smoothed = _chaikin_smooth(coords_arr, iterations)
+
+        def process(coords: np.ndarray, closed: bool) -> np.ndarray:
+            return _chaikin_smooth(coords, iterations, closed=closed)
+
     elif method == "gaussian":
-        smoothed = _gaussian_smooth(coords_arr, iterations, sigma)
+
+        def process(coords: np.ndarray, closed: bool) -> np.ndarray:
+            return _gaussian_smooth(coords, iterations, sigma, closed=closed)
+
     else:
         raise ValueError(f"Unknown smoothing method: {method}")
 
-    return _rebuild_grd_with_new_line(grd, line_id, smoothed)
+    return _rework_line(grd, line_id, process)
 
 
-def _chaikin_smooth(coords: np.ndarray, iterations: int) -> np.ndarray:
-    """Chaikin corner-cutting subdivision."""
+def _chaikin_smooth(coords: np.ndarray, iterations: int, closed: bool | None = None) -> np.ndarray:
+    """Chaikin corner-cutting subdivision.
+
+    ``closed=None`` treats the curve as a ring when its ends coincide;
+    ``closed=False`` keeps both end points fixed even then.
+    """
     pts = coords.copy()
     for _ in range(iterations):
         if len(pts) < 3:
             break
         new_pts = []
-        is_closed = np.allclose(pts[0], pts[-1])
+        is_closed = np.allclose(pts[0], pts[-1]) if closed is None else closed
         n = len(pts) - 1 if is_closed else len(pts) - 1
         for i in range(n):
             p0 = pts[i]
@@ -288,12 +294,18 @@ def _chaikin_smooth(coords: np.ndarray, iterations: int) -> np.ndarray:
     return pts
 
 
-def _gaussian_smooth(coords: np.ndarray, iterations: int, sigma: float) -> np.ndarray:
-    """1D Gaussian smoothing of boundary coordinates."""
+def _gaussian_smooth(
+    coords: np.ndarray, iterations: int, sigma: float, closed: bool | None = None
+) -> np.ndarray:
+    """1D Gaussian smoothing of boundary coordinates.
+
+    ``closed`` as for :func:`_chaikin_smooth`; an open curve keeps its two
+    end points where they are.
+    """
     from scipy.ndimage import gaussian_filter1d
 
     pts = coords.copy()
-    is_closed = np.allclose(pts[0], pts[-1])
+    is_closed = np.allclose(pts[0], pts[-1]) if closed is None else closed
     for _ in range(iterations):
         if is_closed:
             # Smooth x and y independently, wrap mode for closed ring
@@ -303,7 +315,69 @@ def _gaussian_smooth(coords: np.ndarray, iterations: int, sigma: float) -> np.nd
         else:
             pts[:, 0] = gaussian_filter1d(pts[:, 0], sigma, mode="nearest")
             pts[:, 1] = gaussian_filter1d(pts[:, 1], sigma, mode="nearest")
+            pts[0], pts[-1] = coords[0], coords[-1]
     return pts
+
+
+def _rework_line(grd: GrdFile, line_id: int, process) -> GrdFile:
+    """Apply ``process(coords, closed) -> coords`` to one line of ``grd``.
+
+    A node the line shares with another line (import_boundaries gives
+    adjacent polygons one node where they touch) is pinned: the line is cut
+    into open runs at its shared nodes, each run is processed with its ends
+    held, and the shared nodes keep their ids and positions. The sibling
+    lines are left exactly as they were. Rebuilding the whole line used to
+    delete the shared nodes and silently drop them from the siblings,
+    leaving them shortened and unclosed (M-08).
+    """
+    line = grd.lines[line_id]
+    others: set[int] = set()
+    for lid, other in grd.lines.items():
+        if lid != line_id:
+            others.update(other.nodes)
+    shared = others.intersection(line.nodes)
+
+    def _xy(nids) -> np.ndarray:
+        return np.array([(grd.nodes[n].x, grd.nodes[n].y) for n in nids], dtype=float)
+
+    if not shared:
+        closed = len(line.nodes) >= 3 and line.nodes[0] == line.nodes[-1]
+        return _rebuild_grd_with_new_line(
+            grd, line_id, process(_xy(line.nodes), None if closed else False)
+        )
+
+    seq = list(line.nodes)
+    if len(seq) >= 2 and seq[0] == seq[-1]:
+        # Ring: start it at a shared node, so every run ends on one.
+        body = seq[:-1]
+        start = next(i for i, n in enumerate(body) if n in shared)
+        body = body[start:] + body[:start]
+        seq = body + [body[0]]
+    cuts = sorted({0, len(seq) - 1} | {i for i, n in enumerate(seq) if n in shared})
+
+    new_grd = GrdFile()
+    dropped = set(line.nodes) - others
+    for nid, node in grd.nodes.items():
+        if nid not in dropped:
+            new_grd.nodes[nid] = _dc_replace(node)
+    next_id = max(grd.nodes) + 1
+    new_line = [seq[0]]
+    for a, b in zip(cuts, cuts[1:], strict=False):
+        run = seq[a : b + 1]
+        if len(run) > 2:
+            for x, y in process(_xy(run), False)[1:-1]:
+                new_grd.nodes[next_id] = Node(id=next_id, node_type=0, x=float(x), y=float(y))
+                new_line.append(next_id)
+                next_id += 1
+        new_line.append(seq[b])
+
+    for lid, other in grd.lines.items():
+        if lid == line_id:
+            new_grd.lines[lid] = Line(id=lid, line_type=other.line_type, nodes=new_line)
+        else:
+            new_grd.lines[lid] = Line(id=lid, line_type=other.line_type, nodes=list(other.nodes))
+    new_grd.elements = dict(grd.elements)
+    return new_grd
 
 
 def _rebuild_grd_with_new_line(grd: GrdFile, line_id: int, new_coords: np.ndarray) -> GrdFile:
@@ -356,6 +430,30 @@ def _rebuild_grd_with_new_line(grd: GrdFile, line_id: int, new_coords: np.ndarra
 # ---------------------------------------------------------------------------
 
 
+# Metres in one degree of latitude (and of longitude at the equator, the most
+# a degree of longitude ever is).
+METRES_PER_DEGREE = 111_320.0
+
+
+def tolerance_in_grid_units(grd: GrdFile, metres: float) -> float:
+    """Convert a simplification tolerance in metres to ``grd``'s coordinates.
+
+    Imported boundaries are lon/lat degrees (EPSG:4326), where the Step 2
+    slider's 1.0 used to mean ~111 km and every non-zero value collapsed the
+    boundary to 4 nodes (M-09). A grid whose coordinates cannot be lon/lat
+    (an untagged projected source, kept in metres) is used as-is. Degrees
+    are taken as the full 111.32 km, so the tolerance is never more than the
+    metres asked for in any direction.
+    """
+    if metres <= 0 or not grd.nodes:
+        return max(float(metres), 0.0)
+    xs = [n.x for n in grd.nodes.values()]
+    ys = [n.y for n in grd.nodes.values()]
+    if _coords_exceed_wgs84_bounds(xs, ys):
+        return float(metres)
+    return float(metres) / METRES_PER_DEGREE
+
+
 def reduce_boundary(grd: GrdFile, line_id: int, tolerance: float) -> GrdFile:
     """Reduce boundary points using Douglas-Peucker simplification.
 
@@ -370,15 +468,16 @@ def reduce_boundary(grd: GrdFile, line_id: int, tolerance: float) -> GrdFile:
     if line_id not in grd.lines:
         raise ValueError(f"Line {line_id} not found in grid")
 
-    line = grd.lines[line_id]
-    coords = [(grd.nodes[nid].x, grd.nodes[nid].y) for nid in line.nodes]
+    def process(coords: np.ndarray, closed: bool | None) -> np.ndarray:
+        # Shapely keeps the two ends of an open LineString.
+        geom = (
+            shapely.geometry.LineString(coords)
+            if closed is False
+            else shapely.geometry.LinearRing(coords)
+        )
+        return np.array(geom.simplify(tolerance, preserve_topology=True).coords)
 
-    # Use Shapely for simplification
-    ring = shapely.geometry.LinearRing(coords)
-    simplified = ring.simplify(tolerance, preserve_topology=True)
-    new_coords = np.array(simplified.coords)
-
-    return _rebuild_grd_with_new_line(grd, line_id, new_coords)
+    return _rework_line(grd, line_id, process)
 
 
 # ---------------------------------------------------------------------------
@@ -428,11 +527,34 @@ def estimate_element_count(grd: GrdFile, max_area: float) -> int:
     if max_area <= 0:
         return 0
 
-    boundary_poly = _boundary_to_polygon(grd)
-    if boundary_poly is None or boundary_poly.is_empty:
+    area = _meshable_area(grd)
+    if area <= 0:
         return 0
 
-    return max(1, int(boundary_poly.area / max_area))
+    return max(1, int(area / max_area))
+
+
+def _meshable_area(grd: GrdFile) -> float:
+    """An upper bound of the area Triangle will mesh for ``grd``.
+
+    ``_build_pslg`` hands Triangle every line, so this sums every outer
+    (non-hole) ring rather than taking only the first exterior line — a
+    small first polygon used to hide a large second one from the element
+    ceiling (M-12). Holes are not subtracted and overlaps count twice, so
+    the sum can only over-estimate. Without any ring (only open lines), the
+    convex hull of all nodes bounds what Triangle can mesh.
+    """
+    total = 0.0
+    for line in grd.lines.values():
+        if line.line_type == 2:
+            continue
+        coords = [(grd.nodes[n].x, grd.nodes[n].y) for n in line.nodes if n in grd.nodes]
+        if len(coords) >= 3:
+            total += abs(shapely.geometry.Polygon(coords).area)
+    if total > 0 or not grd.nodes:
+        return total
+    pts = [(n.x, n.y) for n in grd.nodes.values()]
+    return float(shapely.geometry.MultiPoint(pts).convex_hull.area)
 
 
 def suggest_max_area_for_limit(
@@ -459,10 +581,10 @@ def suggest_max_area_for_limit(
     """
     if max_elements <= 0:
         return None
-    boundary_poly = _boundary_to_polygon(grd)
-    if boundary_poly is None or boundary_poly.is_empty:
+    area = _meshable_area(grd)
+    if area <= 0:
         return None
-    return safety * boundary_poly.area / max_elements
+    return safety * area / max_elements
 
 
 def count_below_area(grd: GrdFile, threshold: float) -> int:
@@ -527,11 +649,65 @@ def warn_if_minimal_with_cap(method: str, max_elements: int | None) -> str | Non
 # ---------------------------------------------------------------------------
 
 
+def _triangle_number(value: float) -> str:
+    """Format a number for a Triangle switch (``a<area>``, ``q<angle>``).
+
+    Triangle's switch parser reads only digits and ``.``: Python's ``1e-05``
+    or ``1e+16`` reached it as 1 (then ``e`` is a switch of its own), so the
+    mesh was built for a different area than the one checked (M-12).
+    """
+    return np.format_float_positional(float(value), trim="-")
+
+
+def check_element_ceiling(grd: GrdFile, max_area: float | None, ceiling: int | None) -> str | None:
+    """Return why ``max_area`` would give a mesh over ``ceiling``, else None.
+
+    The estimate (boundary area / max area) is a floor — Triangle's angle
+    refinement adds 30-60 % — so this guards against the runaway request
+    (a Max Triangle Area typed far too small) rather than promising the
+    final count (M-12).
+    """
+    if not ceiling or ceiling <= 0 or not max_area or max_area <= 0:
+        return None
+    # Bound by the convex hull of every line node: Triangle never meshes
+    # outside it, whatever the rings look like. A sum of ring areas is not a
+    # bound — a self-intersecting (bowtie) ring's signed areas cancel to ~0
+    # while Triangle meshes its full extent.
+    area = max(_line_hull_area(grd), _meshable_area(grd))
+    if area <= 0:
+        return None
+    # Check the area Triangle will read, not the float typed (see
+    # _triangle_number: "1e+16" used to reach Triangle as 1).
+    estimate = max(1, int(area / float(_triangle_number(max_area))))
+    if estimate <= ceiling:
+        return None
+    msg = (
+        f"Estimated up to {estimate:,} elements is over this server's limit of "
+        f"{ceiling:,} elements per mesh."
+    )
+    msg += f" Use a Max Triangle Area of at least {1.5 * area / ceiling:.4g}."
+    return msg
+
+
+def _line_hull_area(grd: GrdFile) -> float:
+    """Area of the convex hull of every node referenced by a line."""
+    pts = [
+        (grd.nodes[n].x, grd.nodes[n].y)
+        for line in grd.lines.values()
+        for n in line.nodes
+        if n in grd.nodes
+    ]
+    if len(pts) < 3:
+        return 0.0
+    return float(shapely.geometry.MultiPoint(pts).convex_hull.area)
+
+
 def triangulate(
     grd: GrdFile,
     max_area: float | None = None,
     min_angle: float = 20.0,
     refinement_zones: list[dict] | None = None,
+    max_elements: int | None = None,
 ) -> GrdFile:
     """Generate a constrained Delaunay triangulation from boundary lines.
 
@@ -540,6 +716,8 @@ def triangulate(
         max_area: Maximum triangle area constraint.
         min_angle: Minimum interior angle (degrees, default 20).
         refinement_zones: Optional regional area constraints.
+        max_elements: Server ceiling; refuse (``ValueError``) when the
+            estimated element count for ``max_area`` is above it.
 
     Returns:
         New GrdFile with nodes, elements, and preserved boundary lines.
@@ -548,6 +726,9 @@ def triangulate(
         raise ValueError(
             f"max_area must be positive (got {max_area!r}); pass None for no constraint"
         )
+    too_big = check_element_ceiling(grd, max_area, max_elements)
+    if too_big:
+        raise ValueError(too_big)
     if min_angle > 34.0:
         raise ValueError(
             f"min_angle must be <= 34 degrees (got {min_angle!r}); "
@@ -555,11 +736,7 @@ def triangulate(
         )
     pslg = _build_pslg(grd)
 
-    opts = "p"  # PSLG mode
-    if min_angle > 0:
-        opts += f"q{min_angle}"
-    if max_area is not None and max_area > 0:
-        opts += f"a{max_area}"
+    opts = _triangle_opts(max_area, min_angle)
 
     if refinement_zones and "regions" not in pslg:
         regions = []
@@ -574,6 +751,16 @@ def triangulate(
     result = triangle.triangulate(pslg, opts)
 
     return _triangle_result_to_grd(result, grd)
+
+
+def _triangle_opts(max_area: float | None, min_angle: float) -> str:
+    """Triangle's switch string for the quality and area constraints."""
+    opts = "p"  # PSLG mode
+    if min_angle > 0:
+        opts += f"q{_triangle_number(min_angle)}"
+    if max_area is not None and max_area > 0:
+        opts += f"a{_triangle_number(max_area)}"
+    return opts
 
 
 def _build_pslg(grd: GrdFile) -> dict:
@@ -739,6 +926,7 @@ def load_bathymetry_contours(
     file_path: Path,
     depth_attr: str = "depth",
     sample_distance: float | None = None,
+    max_points: int | None = None,
 ) -> np.ndarray:
     """Load bathymetry from contour isobath lines (vector file).
 
@@ -756,6 +944,9 @@ def load_bathymetry_contours(
         sample_distance: If set, resample each line at this interval
             (coordinate units) to add extra points between vertices.
             Useful for sparse contours with long straight segments.
+        max_points: If set, refuse (``ValueError``) before extracting more
+            than this many points, so a tiny ``sample_distance`` cannot
+            exhaust the worker's memory (M-12).
 
     Returns:
         Nx3 numpy array of (x, y, depth).
@@ -877,7 +1068,25 @@ def load_bathymetry_contours(
                 continue
 
             for line in lines:
-                if sample_distance and sample_distance > 0 and line.length > 0:
+                resample = bool(sample_distance and sample_distance > 0 and line.length > 0)
+                if max_points is not None:
+                    # Count before allocating: the resample loop is unbounded.
+                    n_line = (
+                        int(line.length // sample_distance) + 2 if resample else len(line.coords)
+                    )
+                    if len(points) + n_line > max_points:
+                        raise ValueError(
+                            f"Contours in {path.name} would give more than "
+                            f"{max_points:,} bathymetry points"
+                            + (
+                                f" at a resample distance of {sample_distance:g}"
+                                if resample
+                                else ""
+                            )
+                            + ". Use a larger resample distance (or 0 to keep "
+                            "only the contour vertices), or thin the contours."
+                        )
+                if resample:
                     # Resample at regular intervals
                     dist = 0.0
                     while dist <= line.length:
@@ -981,6 +1190,30 @@ def _load_bathymetry_raster(path: Path) -> np.ndarray:
     return np.column_stack([xs, ys, vals])
 
 
+def drop_nonfinite_points(points: np.ndarray) -> tuple[np.ndarray, int]:
+    """Drop the rows of an ``(N, 3)`` x/y/depth array holding a NaN or inf.
+
+    A single ``nan`` in an XYZ survey (a blank cell exported by a spreadsheet,
+    a "no data" marker) used to travel into the interpolation and come out as
+    a ``nan`` node depth in the exported GRD (M-05). ``float()`` accepts
+    "nan" and "inf", so the text loaders cannot catch it while parsing.
+
+    Returns:
+        ``(finite_points, number_dropped)``.
+
+    Raises:
+        ValueError: no row is finite.
+    """
+    pts = np.asarray(points, dtype=float)
+    if pts.size == 0:
+        return pts, 0
+    keep = np.isfinite(pts[:, :3]).all(axis=1)
+    dropped = int(len(pts) - int(keep.sum()))
+    if not keep.any():
+        raise ValueError("No bathymetry point has a finite x, y and depth")
+    return (pts[keep] if dropped else pts), dropped
+
+
 def extract_boundary_zero_points(grd: GrdFile) -> np.ndarray:
     """Extract boundary line vertices as depth=0 constraint points.
 
@@ -1054,6 +1287,11 @@ def _compute_depths_only(
     """
     if len(bathy_points) == 0:
         raise ValueError("No bathymetry points provided")
+    # Backstop for callers that skipped the load-time filter (M-05): a NaN
+    # survey point poisons every node it reaches (IDW averages it in).
+    bathy_points, dropped = drop_nonfinite_points(bathy_points)
+    if dropped:
+        logger.warning("Ignored %d bathymetry point(s) with a non-finite value", dropped)
 
     if use_boundary_zero:
         zero_pts = extract_boundary_zero_points(grd)
@@ -1236,7 +1474,8 @@ async def interpolate_bathymetry_shybas(grd: GrdFile, points: np.ndarray, wrappe
     """
     import tempfile
 
-    pts = np.asarray(points, dtype=float)
+    # A "nan" in bathy.grd is a shybas "Read error" (M-05).
+    pts, _ = drop_nonfinite_points(np.asarray(points, dtype=float))
     with tempfile.TemporaryDirectory(prefix="shybas_") as tmp:
         work = Path(tmp)
         mesh = GrdFile(
