@@ -270,15 +270,18 @@ def str_editor_server(
         # textarea, so the input still holds the text from before an Apply.
         text = content.get()
         try:
-            errors = validate_str_content(text)
+            # Only errors refuse the save. Warnings (an unknown key such as
+            # nomp, a value outside its usual range) stay advisory: the core
+            # reads those files, and 20 shipped STRs carry one.
+            errors, warnings = _split_issues(validate_str_content(text))
             if errors:
-                validation_errors.set(errors)
+                validation_errors.set(errors + warnings)
                 return
 
             path.write_text(text)
             content.set(text)
             parsed_file.set(StrParser.parse(text))
-            validation_errors.set([])
+            validation_errors.set(["Saved."] + warnings if warnings else [])
             is_modified.set(False)
 
             if on_save:
@@ -729,6 +732,13 @@ def filter_sections(
             result[section_name] = matches
 
     return result
+
+
+def _split_issues(issues: list[str]) -> tuple[list[str], list[str]]:
+    """Split validate_str_content's list into (errors, warnings)."""
+    errors = [m for m in issues if not m.startswith("Warning")]
+    warnings = [m for m in issues if m.startswith("Warning")]
+    return errors, warnings
 
 
 def validate_str_content(
