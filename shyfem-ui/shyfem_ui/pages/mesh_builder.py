@@ -494,6 +494,10 @@ def mesh_builder_server(
     busy_message = reactive.value("")  # Non-empty string = busy with that message
     staged_grd = reactive.value(None)  # After interpolation, before Accept
     comparison_runs = reactive.value({})  # {label: GrdFile}, max 3 entries
+    # Flips to True once, at the first interpolation: the post panel renders
+    # on this, not on staged_grd, so its inputs survive every change of the
+    # staged result (M-07).
+    has_staged = reactive.value(False)
     progress_value = reactive.value(0)  # 0-100 = percent; -1 = indeterminate
     progress_label = reactive.value("")  # empty = bar hidden
 
@@ -1327,6 +1331,8 @@ def mesh_builder_server(
                 result_grd = new_grd
             staged_grd.set(result_grd)
             preview_grd.set(result_grd)
+            if not has_staged.get():
+                has_staged.set(True)
             depths = [n.depth for n in result_grd.nodes.values() if n.depth is not None]
             depth_info = ""
             if depths:
@@ -1336,6 +1342,7 @@ def mesh_builder_server(
             # Store run in comparison_runs (max 3; oldest dropped)
             label = f"{method}{depth_info}"
             runs = dict(comparison_runs.get())
+            runs.pop(label, None)  # a repeated label moves to newest
             runs[label] = result_grd
             if len(runs) > 3:
                 oldest = next(iter(runs))
@@ -1379,29 +1386,17 @@ def mesh_builder_server(
 
     @render.ui
     def bathy_post_panel():
-        """Renders comparison selector, depth adjustments, and Accept button.
+        """Comparison selector, depth adjustments and the Accept button.
 
-        Shown only after a successful interpolation (staged_grd is not None).
+        Rendered once, after the first successful interpolation. It must not
+        read staged_grd: picking a run or applying adjustments changes
+        staged_grd, and a re-render here snapped the radio back to the
+        newest run and emptied the typed adjustments (M-07).
         """
-        if staged_grd.get() is None:
+        if not has_staged.get():
             return ui.div()
 
-        # --- Comparison selector (only when >=2 runs exist) ---
-        runs = comparison_runs.get()
-        comparison_ui = ui.div()
-        if len(runs) >= 2:
-            newest_label = next(reversed(runs))
-            comparison_ui = ui.div(
-                ui.hr(),
-                ui.h6("Compare Runs"),
-                ui.input_radio_buttons(
-                    "comparison_run",
-                    "",
-                    choices={k: k for k in runs},
-                    selected=newest_label,
-                    inline=False,
-                ),
-            )
+        comparison_ui = ui.output_ui("comparison_selector")
 
         # --- Depth adjustments ---
         adjustments_ui = ui.div(
@@ -1455,6 +1450,29 @@ def mesh_builder_server(
         )
 
         return ui.div(comparison_ui, adjustments_ui, accept_ui)
+
+    @render.ui
+    def comparison_selector():
+        """The Compare Runs radio (only with >= 2 runs).
+
+        Re-renders only when a run is added, preselecting the new run (the one
+        just staged); choosing a run does not change comparison_runs, so the
+        choice stays (M-07).
+        """
+        runs = comparison_runs.get()
+        if len(runs) < 2:
+            return ui.div()
+        return ui.div(
+            ui.hr(),
+            ui.h6("Compare Runs"),
+            ui.input_radio_buttons(
+                "comparison_run",
+                "",
+                choices={k: k for k in runs},
+                selected=next(reversed(runs)),
+                inline=False,
+            ),
+        )
 
     @reactive.effect
     @reactive.event(input.comparison_run)
