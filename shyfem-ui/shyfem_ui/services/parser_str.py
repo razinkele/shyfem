@@ -223,6 +223,12 @@ class StrParser:
                     current_section.comments.append(stripped)
                 continue
 
+            # $title is three lines of text (title, run name, basin; the core
+            # reads them as text), so "restart (nkn=6 > nel=4)" is not two
+            # parameters. Its lines stay raw and round-trip untouched.
+            if current_section.name == "title":
+                continue
+
             # Try to parse parameters
             code = cls._split_comment(stripped)[0]
 
