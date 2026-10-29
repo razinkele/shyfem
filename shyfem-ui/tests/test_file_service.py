@@ -1,6 +1,5 @@
 """Tests for FileService."""
 
-
 import pytest
 
 
@@ -107,6 +106,46 @@ class TestUploadFile:
                 filename="big.dat",
                 file_type="other",
             )
+
+    def test_concurrent_uploads_cannot_both_pass_the_quota(self, project_with_dir, monkeypatch):
+        """Uploads run in threads (F-05): two 6 MB files into a 10 MB project
+        must not both pass the quota check before either is written."""
+        import threading
+        import time
+
+        import shyfem_ui.services.file_service as fs_mod
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+        real_sum = fs_mod._sum_project_bytes
+
+        def slow_sum(*args, **kwargs):
+            total = real_sum(*args, **kwargs)
+            time.sleep(0.2)  # widen the check-to-write window
+            return total
+
+        monkeypatch.setattr(fs_mod, "_sum_project_bytes", slow_sum)
+        data = b"x" * (6 * 1024 * 1024)
+        outcomes = []
+
+        def upload(name):
+            try:
+                FileService.upload_file(
+                    project_id=pid, file_data=data, filename=name, file_type="other"
+                )
+                outcomes.append("ok")
+            except ValueError as e:
+                outcomes.append(str(e))
+
+        threads = [threading.Thread(target=upload, args=(f"f{i}.dat",)) for i in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert outcomes.count("ok") == 1, outcomes
+        assert sum("storage limit" in o for o in outcomes) == 1, outcomes
+        assert len(list(work.glob("f*.dat"))) == 1
 
     def test_upload_computes_checksum(self, project_with_dir):
         from shyfem_ui.services.file_service import FileService
