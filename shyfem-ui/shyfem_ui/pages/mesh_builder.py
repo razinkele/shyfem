@@ -16,6 +16,7 @@ from shyfem_ui.services.mesh_builder import (
     _compute_depths_only,
     adjust_depths,
     check_bathy_extent,
+    check_element_ceiling,
     compute_mesh_stats,
     count_below_area,
     drop_nonfinite_points,
@@ -433,7 +434,9 @@ def _load_bathy_upload(path: Path) -> tuple:
     return drop_nonfinite_points(load_bathymetry_file(path))
 
 
-def _load_contour_upload(files, depth_attr: str, sample_dist: float | None) -> tuple:
+def _load_contour_upload(
+    files, depth_attr: str, sample_dist: float | None, max_points: int | None = None
+) -> tuple:
     """Stage an isobath upload and sample it to points (blocking; run in a thread).
 
     Returns ``(points, number_of_points_dropped)`` like ``_load_bathy_upload``.
@@ -445,6 +448,7 @@ def _load_contour_upload(files, depth_attr: str, sample_dist: float | None) -> t
             stage_boundary_upload(files, Path(tmp)),
             depth_attr=depth_attr,
             sample_distance=sample_dist,
+            max_points=max_points,
         )
     return drop_nonfinite_points(points)
 
@@ -943,6 +947,14 @@ def mesh_builder_server(
         min_area_threshold = _safe_input("min_area")
         max_elements = _safe_input("max_elements")
 
+        # Server ceiling (M-12), whatever the user's own cap: a Max Triangle
+        # Area typed far too small would allocate until the worker dies.
+        too_big = check_element_ceiling(grd, eff_area, config.mesh_max_elements)
+        if too_big:
+            _log(too_big)
+            ui.notification_show(too_big, type="error", duration=10)
+            return
+
         # Pre-flight: hard cap on element count (applies to all methods).
         if max_elements and max_elements > 0:
             estimate_pf = estimate_element_count(grd, eff_area) if eff_area else 0
@@ -982,7 +994,11 @@ def mesh_builder_server(
         await asyncio.sleep(0)  # yield so Shiny flushes the bar to the browser
         try:
             new_mesh = await asyncio.to_thread(
-                triangulate, grd, max_area=eff_area, min_angle=eff_angle
+                triangulate,
+                grd,
+                max_area=eff_area,
+                min_angle=eff_angle,
+                max_elements=config.mesh_max_elements,
             )
             mesh_grd.set(new_mesh)
             preview_grd.set(new_mesh)
@@ -1212,7 +1228,11 @@ def mesh_builder_server(
             sample_dist = sample_dist if sample_dist and sample_dist > 0 else None
             # Reading and sampling isobaths can take seconds: in a thread (M-11).
             data, dropped = await asyncio.to_thread(
-                _load_contour_upload, files, depth_attr, sample_dist
+                _load_contour_upload,
+                files,
+                depth_attr,
+                sample_dist,
+                config.mesh_max_bathy_points,
             )
             mesh = mesh_grd.get()
             if mesh is not None:

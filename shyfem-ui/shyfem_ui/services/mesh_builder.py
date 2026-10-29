@@ -527,11 +527,35 @@ def warn_if_minimal_with_cap(method: str, max_elements: int | None) -> str | Non
 # ---------------------------------------------------------------------------
 
 
+def check_element_ceiling(grd: GrdFile, max_area: float | None, ceiling: int | None) -> str | None:
+    """Return why ``max_area`` would give a mesh over ``ceiling``, else None.
+
+    The estimate (boundary area / max area) is a floor — Triangle's angle
+    refinement adds 30-60 % — so this guards against the runaway request
+    (a Max Triangle Area typed far too small) rather than promising the
+    final count (M-12).
+    """
+    if not ceiling or ceiling <= 0 or not max_area or max_area <= 0:
+        return None
+    estimate = estimate_element_count(grd, max_area)
+    if estimate <= ceiling:
+        return None
+    msg = (
+        f"Estimated {estimate:,} elements is over this server's limit of "
+        f"{ceiling:,} elements per mesh."
+    )
+    suggested = suggest_max_area_for_limit(grd, ceiling)
+    if suggested is not None:
+        msg += f" Use a Max Triangle Area of at least {suggested:.4g}."
+    return msg
+
+
 def triangulate(
     grd: GrdFile,
     max_area: float | None = None,
     min_angle: float = 20.0,
     refinement_zones: list[dict] | None = None,
+    max_elements: int | None = None,
 ) -> GrdFile:
     """Generate a constrained Delaunay triangulation from boundary lines.
 
@@ -540,6 +564,8 @@ def triangulate(
         max_area: Maximum triangle area constraint.
         min_angle: Minimum interior angle (degrees, default 20).
         refinement_zones: Optional regional area constraints.
+        max_elements: Server ceiling; refuse (``ValueError``) when the
+            estimated element count for ``max_area`` is above it.
 
     Returns:
         New GrdFile with nodes, elements, and preserved boundary lines.
@@ -548,6 +574,9 @@ def triangulate(
         raise ValueError(
             f"max_area must be positive (got {max_area!r}); pass None for no constraint"
         )
+    too_big = check_element_ceiling(grd, max_area, max_elements)
+    if too_big:
+        raise ValueError(too_big)
     if min_angle > 34.0:
         raise ValueError(
             f"min_angle must be <= 34 degrees (got {min_angle!r}); "
@@ -739,6 +768,7 @@ def load_bathymetry_contours(
     file_path: Path,
     depth_attr: str = "depth",
     sample_distance: float | None = None,
+    max_points: int | None = None,
 ) -> np.ndarray:
     """Load bathymetry from contour isobath lines (vector file).
 
@@ -756,6 +786,9 @@ def load_bathymetry_contours(
         sample_distance: If set, resample each line at this interval
             (coordinate units) to add extra points between vertices.
             Useful for sparse contours with long straight segments.
+        max_points: If set, refuse (``ValueError``) before extracting more
+            than this many points, so a tiny ``sample_distance`` cannot
+            exhaust the worker's memory (M-12).
 
     Returns:
         Nx3 numpy array of (x, y, depth).
@@ -877,7 +910,25 @@ def load_bathymetry_contours(
                 continue
 
             for line in lines:
-                if sample_distance and sample_distance > 0 and line.length > 0:
+                resample = bool(sample_distance and sample_distance > 0 and line.length > 0)
+                if max_points is not None:
+                    # Count before allocating: the resample loop is unbounded.
+                    n_line = (
+                        int(line.length // sample_distance) + 2 if resample else len(line.coords)
+                    )
+                    if len(points) + n_line > max_points:
+                        raise ValueError(
+                            f"Contours in {path.name} would give more than "
+                            f"{max_points:,} bathymetry points"
+                            + (
+                                f" at a resample distance of {sample_distance:g}"
+                                if resample
+                                else ""
+                            )
+                            + ". Use a larger resample distance (or 0 to keep "
+                            "only the contour vertices), or thin the contours."
+                        )
+                if resample:
                     # Resample at regular intervals
                     dist = 0.0
                     while dist <= line.length:
