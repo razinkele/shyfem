@@ -121,3 +121,52 @@ def test_contour_handler_passes_the_config_ceiling():
         c for c in ast.walk(fn) if isinstance(c, ast.Call) and _src(c.func) == "asyncio.to_thread"
     ]
     assert "config.mesh_max_bathy_points" in _src(thread[0])
+
+
+def _two_squares(small: float, big: float) -> GrdFile:
+    """Two outer rings: a tiny first one, a big second one."""
+    grd = GrdFile()
+    nid = 1
+    for lid, (x0, size) in enumerate([(0.0, small), (10 * big, big)], start=1):
+        ids = []
+        for x, y in [(x0, 0), (x0 + size, 0), (x0 + size, size), (x0, size)]:
+            grd.nodes[nid] = Node(id=nid, node_type=0, x=float(x), y=float(y))
+            ids.append(nid)
+            nid += 1
+        grd.lines[lid] = Line(id=lid, line_type=1, nodes=ids + ids[:1])
+    return grd
+
+
+def test_ceiling_counts_every_outer_polygon_not_just_the_first():
+    grd = _two_squares(small=1.0, big=1000.0)  # areas 1 and 1e6
+    # Only the first ring would estimate 1 element at max_area=1.
+    msg = check_element_ceiling(grd, 1.0, 2000)
+    assert msg is not None and "1,000,001" in msg
+    with pytest.raises(ValueError, match="limit of 2,000 elements"):
+        triangulate(grd, max_area=1.0, max_elements=2000)
+
+
+def test_only_open_lines_fall_back_to_the_convex_hull():
+    from shyfem_ui.services.mesh_builder import estimate_element_count
+
+    grd = _square()
+    grd.lines[1] = Line(id=1, line_type=0, nodes=[1, 2])  # open, not a ring
+    grd.lines[2] = Line(id=2, line_type=0, nodes=[3, 4])
+    assert estimate_element_count(grd, 1.0) == 1_000_000
+
+
+@pytest.mark.parametrize("area, text", [(1e-5, "a0.00001"), (1e16, "a10000000000000000")])
+def test_triangle_reads_the_area_that_was_checked(area, text):
+    """'a1e-05' / 'a1e+16' reach Triangle as area 1 ('e' is a switch)."""
+    from shyfem_ui.services.mesh_builder import _triangle_opts
+
+    opts = _triangle_opts(area, 20.0)
+    assert opts == f"pq20{text}"
+    assert "e" not in opts
+
+
+def test_huge_area_typed_in_exponent_form_is_meshed_at_that_area():
+    # Area 1e16 boundary, max_area 1e16 -> 1 element; Triangle reading
+    # "a1e+16" as a1 would have tried to build ~1e16 triangles.
+    out = triangulate(_square(1e8), max_area=1e16, min_angle=0, max_elements=2000)
+    assert out.num_elements <= 4

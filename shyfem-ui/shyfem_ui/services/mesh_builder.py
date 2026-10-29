@@ -527,11 +527,34 @@ def estimate_element_count(grd: GrdFile, max_area: float) -> int:
     if max_area <= 0:
         return 0
 
-    boundary_poly = _boundary_to_polygon(grd)
-    if boundary_poly is None or boundary_poly.is_empty:
+    area = _meshable_area(grd)
+    if area <= 0:
         return 0
 
-    return max(1, int(boundary_poly.area / max_area))
+    return max(1, int(area / max_area))
+
+
+def _meshable_area(grd: GrdFile) -> float:
+    """An upper bound of the area Triangle will mesh for ``grd``.
+
+    ``_build_pslg`` hands Triangle every line, so this sums every outer
+    (non-hole) ring rather than taking only the first exterior line — a
+    small first polygon used to hide a large second one from the element
+    ceiling (M-12). Holes are not subtracted and overlaps count twice, so
+    the sum can only over-estimate. Without any ring (only open lines), the
+    convex hull of all nodes bounds what Triangle can mesh.
+    """
+    total = 0.0
+    for line in grd.lines.values():
+        if line.line_type == 2:
+            continue
+        coords = [(grd.nodes[n].x, grd.nodes[n].y) for n in line.nodes if n in grd.nodes]
+        if len(coords) >= 3:
+            total += abs(shapely.geometry.Polygon(coords).area)
+    if total > 0 or not grd.nodes:
+        return total
+    pts = [(n.x, n.y) for n in grd.nodes.values()]
+    return float(shapely.geometry.MultiPoint(pts).convex_hull.area)
 
 
 def suggest_max_area_for_limit(
@@ -558,10 +581,10 @@ def suggest_max_area_for_limit(
     """
     if max_elements <= 0:
         return None
-    boundary_poly = _boundary_to_polygon(grd)
-    if boundary_poly is None or boundary_poly.is_empty:
+    area = _meshable_area(grd)
+    if area <= 0:
         return None
-    return safety * boundary_poly.area / max_elements
+    return safety * area / max_elements
 
 
 def count_below_area(grd: GrdFile, threshold: float) -> int:
@@ -626,6 +649,16 @@ def warn_if_minimal_with_cap(method: str, max_elements: int | None) -> str | Non
 # ---------------------------------------------------------------------------
 
 
+def _triangle_number(value: float) -> str:
+    """Format a number for a Triangle switch (``a<area>``, ``q<angle>``).
+
+    Triangle's switch parser reads only digits and ``.``: Python's ``1e-05``
+    or ``1e+16`` reached it as 1 (then ``e`` is a switch of its own), so the
+    mesh was built for a different area than the one checked (M-12).
+    """
+    return np.format_float_positional(float(value), trim="-")
+
+
 def check_element_ceiling(grd: GrdFile, max_area: float | None, ceiling: int | None) -> str | None:
     """Return why ``max_area`` would give a mesh over ``ceiling``, else None.
 
@@ -636,7 +669,9 @@ def check_element_ceiling(grd: GrdFile, max_area: float | None, ceiling: int | N
     """
     if not ceiling or ceiling <= 0 or not max_area or max_area <= 0:
         return None
-    estimate = estimate_element_count(grd, max_area)
+    # Check the area Triangle will read, not the float typed (see
+    # _triangle_number: "1e+16" used to reach Triangle as 1).
+    estimate = estimate_element_count(grd, float(_triangle_number(max_area)))
     if estimate <= ceiling:
         return None
     msg = (
@@ -683,11 +718,7 @@ def triangulate(
         )
     pslg = _build_pslg(grd)
 
-    opts = "p"  # PSLG mode
-    if min_angle > 0:
-        opts += f"q{min_angle}"
-    if max_area is not None and max_area > 0:
-        opts += f"a{max_area}"
+    opts = _triangle_opts(max_area, min_angle)
 
     if refinement_zones and "regions" not in pslg:
         regions = []
@@ -702,6 +733,16 @@ def triangulate(
     result = triangle.triangulate(pslg, opts)
 
     return _triangle_result_to_grd(result, grd)
+
+
+def _triangle_opts(max_area: float | None, min_angle: float) -> str:
+    """Triangle's switch string for the quality and area constraints."""
+    opts = "p"  # PSLG mode
+    if min_angle > 0:
+        opts += f"q{_triangle_number(min_angle)}"
+    if max_area is not None and max_area > 0:
+        opts += f"a{_triangle_number(max_area)}"
+    return opts
 
 
 def _build_pslg(grd: GrdFile) -> dict:
