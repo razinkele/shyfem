@@ -669,19 +669,37 @@ def check_element_ceiling(grd: GrdFile, max_area: float | None, ceiling: int | N
     """
     if not ceiling or ceiling <= 0 or not max_area or max_area <= 0:
         return None
+    # Bound by the convex hull of every line node: Triangle never meshes
+    # outside it, whatever the rings look like. A sum of ring areas is not a
+    # bound — a self-intersecting (bowtie) ring's signed areas cancel to ~0
+    # while Triangle meshes its full extent.
+    area = max(_line_hull_area(grd), _meshable_area(grd))
+    if area <= 0:
+        return None
     # Check the area Triangle will read, not the float typed (see
     # _triangle_number: "1e+16" used to reach Triangle as 1).
-    estimate = estimate_element_count(grd, float(_triangle_number(max_area)))
+    estimate = max(1, int(area / float(_triangle_number(max_area))))
     if estimate <= ceiling:
         return None
     msg = (
-        f"Estimated {estimate:,} elements is over this server's limit of "
+        f"Estimated up to {estimate:,} elements is over this server's limit of "
         f"{ceiling:,} elements per mesh."
     )
-    suggested = suggest_max_area_for_limit(grd, ceiling)
-    if suggested is not None:
-        msg += f" Use a Max Triangle Area of at least {suggested:.4g}."
+    msg += f" Use a Max Triangle Area of at least {1.5 * area / ceiling:.4g}."
     return msg
+
+
+def _line_hull_area(grd: GrdFile) -> float:
+    """Area of the convex hull of every node referenced by a line."""
+    pts = [
+        (grd.nodes[n].x, grd.nodes[n].y)
+        for line in grd.lines.values()
+        for n in line.nodes
+        if n in grd.nodes
+    ]
+    if len(pts) < 3:
+        return 0.0
+    return float(shapely.geometry.MultiPoint(pts).convex_hull.area)
 
 
 def triangulate(

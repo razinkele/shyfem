@@ -141,7 +141,8 @@ def test_ceiling_counts_every_outer_polygon_not_just_the_first():
     grd = _two_squares(small=1.0, big=1000.0)  # areas 1 and 1e6
     # Only the first ring would estimate 1 element at max_area=1.
     msg = check_element_ceiling(grd, 1.0, 2000)
-    assert msg is not None and "1,000,001" in msg
+    # Bounded by the hull of both rings (>= 1,000,001, the two areas).
+    assert msg is not None and "limit of 2,000" in msg
     with pytest.raises(ValueError, match="limit of 2,000 elements"):
         triangulate(grd, max_area=1.0, max_elements=2000)
 
@@ -170,3 +171,20 @@ def test_huge_area_typed_in_exponent_form_is_meshed_at_that_area():
     # "a1e+16" as a1 would have tried to build ~1e16 triangles.
     out = triangulate(_square(1e8), max_area=1e16, min_angle=0, max_elements=2000)
     assert out.num_elements <= 4
+
+
+def test_a_bowtie_ring_cannot_hide_its_extent():
+    """A self-intersecting outer line: its signed lobes nearly cancel (area
+    500), but Triangle meshes the whole ~1000 x 1000 extent."""
+    from shapely.geometry import Polygon
+
+    corners = [(0, 0), (1000, 1000), (1000, 0), (0, 1001)]
+    grd = GrdFile()
+    for nid, (x, y) in enumerate(corners, start=1):
+        grd.nodes[nid] = Node(id=nid, node_type=0, x=float(x), y=float(y))
+    grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1])
+    assert Polygon(corners).area == pytest.approx(500.0)
+    msg = check_element_ceiling(grd, 1.0, 2000)  # ~1,000,000 elements
+    assert msg is not None and "1,000,500" in msg
+    with pytest.raises(ValueError, match="limit of 2,000 elements"):
+        triangulate(grd, max_area=1.0, max_elements=2000)
