@@ -15,11 +15,38 @@ from shiny import module, reactive, render, ui
 from shyfem_ui.components.project_select import str_file_selectize
 from shyfem_ui.services.parser_str import StrFile, format_param_display
 
+# The core's intpol (bnd_admin.f90 addpar('intpol',0.)): the number of time
+# records interpolated between, 0 = auto (cubic for a water-level boundary,
+# else linear). "" = not in the file, so nothing is written.
+INTPOL_CHOICES = {
+    "": "(not set) - core default",
+    "0": "0 - Auto (cubic for water level, else linear)",
+    "1": "1 - Stepwise",
+    "2": "2 - Linear",
+    "4": "4 - Cubic",
+}
+
+
+def _intpol_choices(current: int | None) -> dict[str, str]:
+    """INTPOL_CHOICES plus the boundary's own value if it is not listed (3)."""
+    key = "" if current is None else str(current)
+    if key in INTPOL_CHOICES:
+        return INTPOL_CHOICES
+    return {**INTPOL_CHOICES, key: f"{key} (from file)"}
+
+
+def _optional_int(value) -> int | None:
+    """An int, or None for an absent parameter."""
+    if value is None or value == "":
+        return None
+    return int(value)
+
 
 def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
     """Parse CSV text into boundary definitions.
 
     CSV format: nodes,ibtyp[,boundn][,zfact][,intpol]
+    A missing or blank intpol leaves it unset (the core default).
     Lines starting with # are comments. Blank lines are skipped.
     Minimum 2 columns required (nodes + ibtyp).
 
@@ -46,7 +73,7 @@ def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
             "ibtyp": int(parts[1]) if len(parts) > 1 else 1,
             "boundn": parts[2] if len(parts) > 2 else "",
             "zfact": float(parts[3]) if len(parts) > 3 else 1.0,
-            "intpol": int(parts[4]) if len(parts) > 4 else 1,
+            "intpol": _optional_int(parts[4]) if len(parts) > 4 else None,
         }
         imported.append(entry)
         bid += 1
@@ -81,7 +108,9 @@ def generate_bound_text(boundaries: list[dict]) -> str:
                 lines.append(f"        {scalar_key} = '{val}'")
         if b.get("zfact", 1.0) != 1.0:
             lines.append(f"        zfact = {b['zfact']}")
-        if b.get("intpol", 1) != 1:
+        # Whenever it is set: 1 (stepwise) is not the core default, and an
+        # explicit value from the file must survive.
+        if b.get("intpol") is not None:
             lines.append(f"        intpol = {b['intpol']}")
         lines.append("$end")
         lines.append("")
@@ -143,7 +172,7 @@ def boundary_editor_server(
             create; any name can still be typed). None -> free text only.
     """
     # Each boundary: {"id": int, "nodes": str, "ibtyp": int, "boundn": str,
-    #                  "zfact": float, "intpol": int, "label": str}
+    #                  "zfact": float, "intpol": int | None, "label": str}
     boundaries = reactive.value([])
     show_csv_import = reactive.value(False)
     generated_text = reactive.value("")
@@ -172,7 +201,7 @@ def boundary_editor_server(
                 "ibtyp": int(section.parameters.get("ibtyp", 1)),
                 "boundn": format_param_display(section.parameters.get("boundn")),
                 "zfact": float(section.parameters.get("zfact", 1.0)),
-                "intpol": int(section.parameters.get("intpol", 1)),
+                "intpol": _optional_int(section.parameters.get("intpol")),
                 "saltn": format_param_display(section.parameters.get("saltn")),
                 "tempn": format_param_display(section.parameters.get("tempn")),
                 "conzn": format_param_display(section.parameters.get("conzn")),
@@ -196,7 +225,7 @@ def boundary_editor_server(
             "ibtyp": 1,
             "boundn": "",
             "zfact": 1.0,
-            "intpol": 1,
+            "intpol": None,
             "saltn": "",
             "tempn": "",
             "conzn": "",
@@ -274,14 +303,18 @@ def boundary_editor_server(
         for b in bounds:
             bid = b["id"]
             try:
+                # None = the card's select has not reported yet; "" = unset.
+                intpol_raw = input[f"bound_intpol_{bid}"]()
+                # {**b}: saltn/tempn/conzn have no card field and were dropped.
                 entry = {
-                    "id": bid,
-                    "label": b["label"],
+                    **b,
                     "nodes": input[f"bound_nodes_{bid}"]() or b["nodes"],
                     "ibtyp": int(input[f"bound_type_{bid}"]() or b["ibtyp"]),
                     "boundn": input[f"bound_file_{bid}"]() or b["boundn"],
                     "zfact": float(input[f"bound_zfact_{bid}"]() or b["zfact"]),
-                    "intpol": int(input[f"bound_intpol_{bid}"]() or b["intpol"]),
+                    "intpol": (
+                        b.get("intpol") if intpol_raw is None else _optional_int(intpol_raw)
+                    ),
                 }
                 updated.append(entry)
             except Exception:
@@ -316,10 +349,6 @@ def boundary_editor_server(
                 "4": "4 - Momentum input",
                 "5": "5 - Fixed scalar (no flux)",
                 "31": "31 - Radiation / zero gradient",
-            }
-            intpol_choices = {
-                "1": "1 - Linear",
-                "2": "2 - Spline",
             }
 
             cards.append(
@@ -388,8 +417,8 @@ def boundary_editor_server(
                                     ui.input_select(
                                         f"bound_intpol_{bid}",
                                         "",
-                                        choices=intpol_choices,
-                                        selected=str(b["intpol"]),
+                                        choices=_intpol_choices(b.get("intpol")),
+                                        selected=format_param_display(b.get("intpol")),
                                     ),
                                 ),
                             ),
@@ -416,7 +445,7 @@ def boundary_editor_server(
             ui.input_text_area(
                 "csv_input",
                 "",
-                placeholder="1 2 3, 1, INPUT/tide.txt, 1.0, 1\n4 5 6, 3, INPUT/river.txt, 1.0, 1",
+                placeholder="1 2 3, 1, INPUT/tide.txt, 1.0, 4\n4 5 6, 3, INPUT/river.txt, 1.0, 2",
                 height="100px",
             ),
             ui.input_action_button(

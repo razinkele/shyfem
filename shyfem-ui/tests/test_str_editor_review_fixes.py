@@ -258,3 +258,56 @@ def test_apply_with_no_edit_leaves_every_shipped_str_unchanged(str_path):
     before = StrParser.generate(parsed)
     shown = _rendered_field_values(str(_build_form_panel(parsed)))
     assert StrParser.generate(_apply_form_values(parsed, shown.get)) == before
+
+
+class TestBoundaryEditorIntpol:
+    """S-03: the core's intpol (bnd_admin.f90) is 0 = auto (default), 1 =
+    stepwise, 2 = linear, 4 = cubic. The editor labelled 1 "Linear" and 2
+    "Spline", and dropped an explicit ``intpol = 1`` from what it generated."""
+
+    BOUND = "$bound1\n        kbound = 1 2\n        ibtyp = 2\n{extra}$end\n"
+
+    async def _generate(self, monkeypatch, extra, selected=None):
+        from shiny import reactive
+
+        fake_input, result, _ = _mount_boundary_editor(monkeypatch, self.BOUND.format(extra=extra))
+        await reactive.flush()
+        if selected is not None:
+            fake_input.set("bound_intpol_1", selected)
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            return result["generated_text"].get()
+
+    async def test_an_explicit_intpol_1_is_kept(self, monkeypatch):
+        text = await self._generate(monkeypatch, "        intpol = 1\n")
+        assert "intpol = 1" in text
+
+    async def test_an_explicit_intpol_0_is_kept(self, monkeypatch):
+        text = await self._generate(monkeypatch, "        intpol = 0\n")
+        assert "intpol = 0" in text
+
+    async def test_an_absent_intpol_stays_absent(self, monkeypatch):
+        text = await self._generate(monkeypatch, "")
+        assert "intpol" not in text
+
+    async def test_an_absent_intpol_left_unset_in_the_form_stays_absent(self, monkeypatch):
+        text = await self._generate(monkeypatch, "", selected="")
+        assert "intpol" not in text
+
+    async def test_choosing_stepwise_writes_1(self, monkeypatch):
+        text = await self._generate(monkeypatch, "", selected="1")
+        assert "intpol = 1" in text
+
+    async def test_other_scalar_files_survive_generate(self, monkeypatch):
+        text = await self._generate(monkeypatch, "        saltn = 'salt.dat'\n")
+        assert "saltn = 'salt.dat'" in text
+
+    def test_the_labels_are_the_core_meanings(self):
+        from shyfem_ui.components.boundary_editor import INTPOL_CHOICES
+
+        assert INTPOL_CHOICES["1"].lower().endswith("stepwise")
+        assert INTPOL_CHOICES["2"].lower().endswith("linear")
+        assert INTPOL_CHOICES["4"].lower().endswith("cubic")
+        assert "auto" in INTPOL_CHOICES["0"].lower()
+        assert not any("spline" in v.lower() for v in INTPOL_CHOICES.values())

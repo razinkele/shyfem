@@ -165,7 +165,7 @@ class TestBoundaryListReactivity:
 # ---------------------------------------------------------------------------
 
 
-def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=1.0, intpol=1, bid=1):
+def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=1.0, intpol=None, bid=1):
     """Create a boundary dict with sensible defaults."""
     return {
         "id": bid,
@@ -219,14 +219,19 @@ class TestGenerateBoundText:
         result = generate_bound_text([_bound(zfact=1.0)])
         assert "zfact" not in result
 
-    def test_intpol_included_when_not_one(self):
-        """intpol line is emitted when value differs from 1."""
+    def test_intpol_included_when_set(self):
+        """intpol line is emitted whenever it is set."""
         result = generate_bound_text([_bound(intpol=2)])
         assert "intpol = 2" in result
 
-    def test_intpol_omitted_when_one(self):
-        """intpol line is suppressed when value equals 1."""
+    def test_intpol_1_is_emitted(self):
+        """1 is stepwise, not the core default (0): it must be written (S-03)."""
         result = generate_bound_text([_bound(intpol=1)])
+        assert "intpol = 1" in result
+
+    def test_intpol_omitted_when_unset(self):
+        """An unset intpol (None) leaves the core default; nothing is written."""
+        result = generate_bound_text([_bound(intpol=None)])
         assert "intpol" not in result
 
     def test_multiple_boundaries(self):
@@ -334,7 +339,7 @@ class TestParseBoundaryCSV:
         entry = result[0]
         assert entry["boundn"] == ""
         assert entry["zfact"] == 1.0
-        assert entry["intpol"] == 1
+        assert entry["intpol"] is None
 
     def test_invalid_ibtyp_raises_value_error(self):
         """Non-integer ibtyp string raises ValueError."""
