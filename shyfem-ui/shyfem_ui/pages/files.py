@@ -1,5 +1,6 @@
 """Project file management page -- upload, browse, download, delete."""
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -295,7 +296,7 @@ def files_server(
     # File upload handler
     from shyfem_ui.components.file_browser import file_browser_server, persist_upload
 
-    def _handle_upload(files):
+    async def _handle_upload(files):
         if not files or active_project is None:
             return
         proj = active_project.get()
@@ -314,7 +315,9 @@ def files_server(
         for f in files:
             file_type = input.upload_type() or None
             subdir = input.upload_subdir() or None
-            result = persist_upload(
+            # Read, checksum and write in a thread: an upload may be 500 MB.
+            result = await asyncio.to_thread(
+                persist_upload,
                 temp_path=Path(f["datapath"]),
                 filename=f["name"],
                 project_id=proj["id"],

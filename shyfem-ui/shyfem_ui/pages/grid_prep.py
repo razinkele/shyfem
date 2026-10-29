@@ -1,5 +1,6 @@
 """Grid preparation page - shypre/shybas interface."""
 
+import asyncio
 import logging
 import shutil
 from pathlib import Path
@@ -206,7 +207,7 @@ def grid_prep_server(
     shypre_running = reactive.value(False)
     shybas_running = reactive.value(False)
 
-    def _handle_file_upload(files):
+    async def _handle_file_upload(files):
         """Handle uploaded .grd file."""
         if not files:
             return
@@ -215,7 +216,7 @@ def grid_prep_server(
         temp_path = Path(file_info["datapath"])
 
         try:
-            grd = GrdParser.parse_file(temp_path)
+            grd = await asyncio.to_thread(GrdParser.parse_file, temp_path)
             current_grd.set(grd)
             current_grd_path.set(temp_path)
             log_content.set(
