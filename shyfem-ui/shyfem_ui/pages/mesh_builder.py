@@ -410,6 +410,31 @@ def stage_boundary_upload(files: list[dict], work: Path) -> Path:
     )
 
 
+def _import_boundary_upload(files) -> tuple:
+    """Stage, import and validate an uploaded boundary (blocking; run in a thread).
+
+    Staged inside a TemporaryDirectory, so the copies (and any extracted
+    archive) are removed once import_boundaries has read the data.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
+        grd = import_boundaries(stage_boundary_upload(files, Path(tmp)))
+    return grd, validate_boundary(grd)
+
+
+def _load_contour_upload(files, depth_attr: str, sample_dist: float | None):
+    """Stage an isobath upload and sample it to points (blocking; run in a thread)."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
+        return load_bathymetry_contours(
+            stage_boundary_upload(files, Path(tmp)),
+            depth_attr=depth_attr,
+            sample_distance=sample_dist,
+        )
+
+
 @module.server
 def mesh_builder_server(
     input,
@@ -561,20 +586,13 @@ def mesh_builder_server(
 
     @reactive.effect
     @reactive.event(input.boundary_file)
-    def _on_boundary_upload():
+    async def _on_boundary_upload():
         files = input.boundary_file()
         if not files:
             return
         try:
-            import tempfile
-
-            # Stage + import inside a TemporaryDirectory so the staged copies
-            # (and any extracted archive) are removed once import_boundaries has
-            # read the data into memory — no leaked mesh_import_* dir per upload.
-            with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
-                open_path = stage_boundary_upload(files, Path(tmp))
-                grd = import_boundaries(open_path)
-            issues = validate_boundary(grd)
+            # Reading a shapefile/GeoPackage can take seconds: in a thread (M-11).
+            grd, issues = await asyncio.to_thread(_import_boundary_upload, files)
             boundary_grd.set(grd)
             refined_grd.set(grd)  # Start refine step with same data
             preview_grd.set(grd)
@@ -1125,14 +1143,15 @@ def mesh_builder_server(
 
     @reactive.effect
     @reactive.event(input.bathy_file)
-    def _on_bathy_upload():
+    async def _on_bathy_upload():
         files = input.bathy_file()
         if not files:
             return
         file_info = files[0]
         temp_path = Path(file_info["datapath"])
         try:
-            data = load_bathymetry_file(temp_path)
+            # A bathymetry survey can be millions of points: in a thread (M-11).
+            data = await asyncio.to_thread(load_bathymetry_file, temp_path)
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)
@@ -1155,23 +1174,16 @@ def mesh_builder_server(
 
     @reactive.effect
     @reactive.event(input.bathy_contour_file)
-    def _on_contour_upload():
+    async def _on_contour_upload():
         files = input.bathy_contour_file()
         if not files:
             return
         try:
-            import tempfile
-
             depth_attr = input.contour_depth_attr() or "depth"
             sample_dist = input.contour_sample_dist()
             sample_dist = sample_dist if sample_dist and sample_dist > 0 else None
-            # Stage + parse inside a TemporaryDirectory so staged copies are
-            # cleaned up once load_bathymetry_contours has read the data.
-            with tempfile.TemporaryDirectory(prefix="mesh_import_") as tmp:
-                open_path = stage_boundary_upload(files, Path(tmp))
-                data = load_bathymetry_contours(
-                    open_path, depth_attr=depth_attr, sample_distance=sample_dist
-                )
+            # Reading and sampling isobaths can take seconds: in a thread (M-11).
+            data = await asyncio.to_thread(_load_contour_upload, files, depth_attr, sample_dist)
             mesh = mesh_grd.get()
             if mesh is not None:
                 msg = check_bathy_extent(mesh, data)

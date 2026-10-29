@@ -117,6 +117,11 @@ def grid_prep_ui() -> ui.Tag:
     )
 
 
+def _inspect_stats(grd) -> tuple[dict, dict, dict]:
+    """Quality, area and minimum-angle statistics (blocking; run in a thread)."""
+    return compute_element_quality(grd), compute_element_areas(grd), compute_min_angles(grd)
+
+
 @module.server
 def grid_prep_server(
     input,
@@ -719,15 +724,17 @@ def grid_prep_server(
         )
 
     @render.ui
-    def grid_inspect():
+    async def grid_inspect():
         grd = current_grd.get()
         if grd is None:
             return ui.p("Load a grid file to see inspection results.", class_="text-muted")
 
         sections = []
 
+        # Per-element statistics over the whole grid: in a thread (M-11).
+        qdata, adata, mdata = await asyncio.to_thread(_inspect_stats, grd)
+
         # --- 1. Quality Summary ---
-        qdata = compute_element_quality(grd)
         if qdata["stats"]:
             qs = qdata["stats"]
             # Text histogram
@@ -784,7 +791,6 @@ def grid_prep_server(
             sections.append(ui.p("No triangles found for quality analysis.", class_="text-muted"))
 
         # --- 2. Element Area Statistics ---
-        adata = compute_element_areas(grd)
         if adata["stats"]:
             a_s = adata["stats"]
             # Detect units
@@ -825,7 +831,6 @@ def grid_prep_server(
             sections.append(ui.p("No triangles found for area analysis.", class_="text-muted"))
 
         # --- 3. Minimum Angle Analysis ---
-        mdata = compute_min_angles(grd)
         if mdata["stats"]:
             ms = mdata["stats"]
             if ms["min"] >= 30:
