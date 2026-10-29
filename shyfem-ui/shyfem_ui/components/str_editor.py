@@ -751,19 +751,24 @@ def validate_str_content(
 
     # --- Structural checks ---
 
+    # The parser's own markers: '&' as well as '$', and a closing line may
+    # carry a comment ("$end  ! done"). A scan of its own that took only
+    # "$" and an exact "$end" reported those sections as never closed, and
+    # that error blocked the inline Save.
     lines = content.splitlines()
     section_stack = []
 
     for i, line in enumerate(lines, 1):
-        stripped = line.strip().lower()
-        if stripped.startswith("$") and not stripped.startswith("$end"):
-            section_name = stripped[1:]
-            section_stack.append((section_name, i))
-        elif stripped == "$end":
+        stripped = line.strip()
+        if StrParser.SECTION_END.match(stripped):
             if not section_stack:
                 errors.append(f"Line {i}: Unexpected $end without matching section start")
             else:
                 section_stack.pop()
+            continue
+        start = StrParser.SECTION_START.match(stripped)
+        if start:
+            section_stack.append((start.group(1).lower(), i))
 
     for section_name, line_num in section_stack:
         errors.append(f"Line {line_num}: Section ${section_name} not closed")
