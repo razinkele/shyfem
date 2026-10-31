@@ -411,7 +411,9 @@ PUBLISH_LOCK_NAME = ".publish.lock"
 
 @contextlib.contextmanager
 def _publish_lock(root: Path):
-    fd = os.open(root / PUBLISH_LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o664)
+    # Read-only is enough for flock, and works on a lock file another account
+    # created without group write (O_RDWR failed every later publish).
+    fd = os.open(root / PUBLISH_LOCK_NAME, os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW, 0o664)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX)
         yield

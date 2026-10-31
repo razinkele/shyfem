@@ -13,6 +13,8 @@ import os
 import threading
 from pathlib import Path
 
+import pytest
+
 from shyfem_ui.services import boxmodel_cache as bc
 from shyfem_ui.services.file_service import _cache_bytes
 
@@ -89,3 +91,22 @@ def test_the_lock_file_is_invisible_to_the_cache_tools(tmp_path):
     names = {p.name for p in root.iterdir()}
     assert names - {"r1"} <= {bc.PUBLISH_LOCK_NAME}
     assert _cache_bytes(work) == len('{"tag": "new"}')
+
+
+@pytest.mark.skipif(
+    hasattr(os, "geteuid") and os.geteuid() == 0,
+    reason="root ignores the 0o444 mode, so the test would pass without the fix",
+)
+def test_a_lock_file_without_write_permission_still_locks(tmp_path):
+    """Another account may create the lock without group write; flock needs
+    only a readable descriptor, and O_RDWR failed every later publish."""
+    from shyfem_ui.services.boxmodel_cache import PUBLISH_LOCK_NAME, _publish_lock
+
+    lock = tmp_path / PUBLISH_LOCK_NAME
+    lock.touch()
+    os.chmod(lock, 0o444)
+    try:
+        with _publish_lock(tmp_path):
+            pass
+    finally:
+        os.chmod(lock, 0o644)

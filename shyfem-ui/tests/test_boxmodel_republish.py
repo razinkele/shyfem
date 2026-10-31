@@ -134,7 +134,7 @@ def _calls(fn) -> set[str]:
 
 def test_the_watch_rearms_and_reloads_on_a_change():
     calls = _calls(_function("_watch_published"))
-    assert {"reactive.invalidate_later", "published_fingerprint", "_published_changed"} <= calls
+    assert {"reactive.invalidate_later", "published_fingerprint", "_watch_decision"} <= calls
     assert "_bump_cache_generation" in calls
     # It must never read a reactive it writes.
     assert "cache_generation.get" not in calls
@@ -143,3 +143,63 @@ def test_the_watch_rearms_and_reloads_on_a_change():
 def test_the_hourly_window_is_checked_against_the_loaded_build():
     calls = _calls(_function("_read_hourly_window_checked"))
     assert "published_fingerprint" in calls
+
+
+# --- _watch_decision: what the watch measures (B-04 review) -----------------
+
+
+def _decide(**kw):
+    from shyfem_ui.pages.boxmodel import _watch_decision
+
+    base = dict(states=[], held_run=None, pending=False, seen={}, since_bump=None)
+    base.update(kw)
+    published = base.pop("published")
+    return _watch_decision(published, **base)
+
+
+def test_the_watch_skips_while_a_read_is_pending():
+    assert _decide(published={"X": "F2"}, held_run=("X", "F1", False), pending=True) == "skip"
+
+
+def test_a_held_published_build_is_measured_against_what_it_holds():
+    assert _decide(published={"X": "F2"}, held_run=("X", "F1", False), seen={"X": "F2"}) == "bump"
+    assert _decide(published={"X": "F1"}, held_run=("X", "F1", False), seen={"X": "F1"}) == "none"
+
+
+def test_the_live_fallback_is_measured_tick_to_tick_only():
+    # Shown during a rebuild, the fallback is by design the previous build:
+    # measured against `published` it would differ for the whole build.
+    assert _decide(published={"X": "F2"}, held_run=("X", "F1", True), seen={"X": "F2"}) == "none"
+    # A publish between two ticks still reloads.
+    assert _decide(published={"X": "F3"}, held_run=("X", "F1", True), seen={"X": "F2"}) == "bump"
+
+
+def test_the_watch_bumps_at_most_once_per_tick_interval():
+    from shyfem_ui.pages.boxmodel import WATCH_SECONDS
+
+    kw = dict(published={"X": "F2"}, held_run=("X", "F1", False), seen={"X": "F2"})
+    assert _decide(since_bump=WATCH_SECONDS / 3, **kw) == "skip"
+    assert _decide(since_bump=WATCH_SECONDS + 1, **kw) == "bump"
+
+
+def test_a_rebuild_over_a_republished_cache_does_not_loop():
+    """The loop the review found: X is held at F1, another session publishes
+    F2, and a new build of X starts before the next tick. The watch bumps;
+    the loader, seeing "building", re-stores the F1 fallback under the new
+    key; the store write re-runs the watch at once (no time passes). It used
+    to bump again on every re-run for the whole build."""
+    seen = {"X": "F1"}
+    published = {"X": "F2"}
+    held = ("X", "F1", False)  # the first tick: X really is the F1 build
+    since_bump = None
+    bumps = 0
+    for _rerun in range(100):
+        decision = _decide(published=published, held_run=held, seen=seen, since_bump=since_bump)
+        if decision == "skip":
+            continue
+        seen = published
+        if decision == "bump":
+            bumps += 1
+            since_bump = 0.0  # re-runs happen within the same flush
+            held = ("X", "F1", True)  # the loader stores the live fallback
+    assert bumps == 1

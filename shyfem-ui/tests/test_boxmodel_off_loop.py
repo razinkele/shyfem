@@ -155,17 +155,32 @@ def test_the_watch_measures_only_settled_loads():
     """While the reload it asked for is still being read, the calcs hand out
     the previous build (a stale-but-consistent fallback). Were the watch to
     measure that against the new fingerprint it would bump again, re-run at
-    once, and spin until the read landed. It reads the settled accessors, and
-    checks their keys without depending on ``cache_generation`` (which it
-    writes)."""
+    once, and spin until the read landed. It reads both stores directly,
+    compares their keys under ``isolate`` (it writes ``cache_generation``,
+    which the keys hold) and leaves the decision to ``_watch_decision``."""
     tree = _server_tree()
     fns = {
         n.name: n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
     }
-    calls = {_name(c.func) for c in ast.walk(fns["_watch_published"]) if isinstance(c, ast.Call)}
-    assert {"_settled_cached", "_settled_run_states"} <= calls
+    watch = fns["_watch_published"]
+    calls = {_name(c.func) for c in ast.walk(watch) if isinstance(c, ast.Call)}
+    assert {"_watch_decision", "_settled_result"} <= calls
     assert not {"cached", "all_run_states", "cached_result", "all_run_states_result"} & calls
-    for name in ("_settled_cached", "_settled_run_states"):
-        src = ast.unparse(fns[name])
-        assert "reactive.isolate()" in src, name
-        assert "_settled_result(" in src, name
+    isolated = [
+        w for w in ast.walk(watch) if isinstance(w, ast.With) and "isolate" in ast.unparse(w)
+    ]
+    assert isolated and all(
+        k in ast.unparse(isolated[0]) for k in ("_cached_key()", "_run_states_key()")
+    )
+
+
+def test_the_map_layer_effects_skip_a_pending_read():
+    """Shiny does not wait for an async effect, so the layer effects ran while
+    the selected run was still being read and pushed a map without its boxes,
+    then a second full mesh build when the read landed (B-06 review)."""
+    tree = _server_tree()
+    fns = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for name in ("_layers", "_setup_layers"):
+        first = fns[name].body[1]  # body[0] is the docstring
+        assert isinstance(first, ast.If), name
+        assert ast.unparse(first.test) == "_header_read_pending()", name

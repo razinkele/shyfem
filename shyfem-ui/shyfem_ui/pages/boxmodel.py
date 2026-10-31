@@ -53,6 +53,7 @@ import io
 import json
 import logging
 import re
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -154,7 +155,10 @@ POLL_SECONDS = 2
 #: ``stat`` of each manifest run's ``meta.json`` per tick (B-04).
 WATCH_SECONDS = 10
 #: Priority of the effects that read the cache off the loop (B-06): above the
-#: outputs' default 0, so a read lands before anything renders from it.
+#: outputs' default 0, so a read STARTS first. Shiny does not wait for an
+#: async effect to finish (priority orders starts, not finishes), so the
+#: consumers do run while a read is pending: they see the calcs' transient
+#: and the map-layer effects skip pushing it (``_header_read_pending``).
 LOADER_PRIORITY = 10
 CACHE_REPUBLISHED_MESSAGE = (
     "Output-step detail: the cache was rebuilt since it was loaded; refreshing."
@@ -876,6 +880,45 @@ def _published_changed(published: dict, loaded: list, seen: dict) -> bool:
     )
 
 
+def _watch_decision(
+    published: dict,
+    *,
+    states: list,
+    held_run,
+    pending: bool,
+    seen: dict,
+    since_bump: float | None,
+) -> str:
+    """What ``_watch_published`` does this tick: ``"skip"`` (measure nothing
+    and keep ``seen``), ``"bump"`` (reload) or ``"none"``.
+
+    ``states`` is ``[(run_id, fingerprint)]`` for the settled Compare runs;
+    ``held_run`` is ``(run_id, fingerprint, is_live_fallback)`` for the
+    settled header run, or None. ``since_bump`` is the seconds since this
+    watch last bumped (None: never).
+
+    * A read pending -> skip: the calcs still hold the previous build, and
+      measuring that against the new fingerprint bumps again; the read
+      landing re-runs the watch.
+    * The header run shown from the live-build fallback is NOT held: the
+      fallback is by design the previous build, so it is measured only
+      tick-to-tick (``seen``), like a run the page holds nothing for.
+      Measured against ``published`` it bumped forever (B-04 review).
+    * A change within ``WATCH_SECONDS`` of the last bump -> skip, so any
+      mis-measure costs one reload per tick, never a spin.
+    """
+    if pending:
+        return "skip"
+    loaded = list(states)
+    if held_run is not None and not held_run[2]:
+        loaded.append((held_run[0], held_run[1]))
+    if not _published_changed(published, loaded, seen):
+        return "none"
+    if since_bump is not None and since_bump < WATCH_SECONDS:
+        return "skip"
+    return "bump"
+
+
 def _settled_result(stored, current_key):
     """The result in a loader's ``(key, result)`` store if it answers
     ``current_key``, else None (nothing stored, or a newer read pending)."""
@@ -1170,6 +1213,11 @@ def boxmodel_server(
         "project": None,
         # {run_id: published_fingerprint} as the watch last saw it (B-04).
         "published": {},
+        # The cached_store key under which the loader stored a live-build
+        # fallback (the previous build, shown during a rebuild), else None.
+        "live_fallback": None,
+        # time.monotonic() of the watch's last cache_generation bump.
+        "watch_bump": None,
         # Remove buttons are watched by one effect, so it needs to remember
         # which clicks it has already acted on.
         "removed": {},
@@ -1401,10 +1449,13 @@ def boxmodel_server(
         runs this re-arms every ``WATCH_SECONDS`` and stats each run's
         ``meta.json`` -- nothing else -- and bumps ``cache_generation`` only
         when a fingerprint differs from what the page holds
-        (``_published_changed``). Measures only what the loaders have
-        settled (``_settled_cached``/``_settled_run_states``, B-06): the
-        reload a bump leads to re-runs this once it lands, finds them equal,
-        and writes nothing; never reads what it writes.
+        (``_published_changed``). What to measure is ``_watch_decision``:
+        nothing while a read is pending (B-06), the live-build fallback only
+        tick-to-tick (it is by design not the published build -- measured
+        against it, this bumped, the loader re-stored the same fallback and
+        this re-ran: a self-write loop for the whole build), and at most one
+        bump per ``WATCH_SECONDS``. The reload a bump leads to re-runs this
+        once it lands, finds them equal, and writes nothing.
         """
         manifest_obj = manifest()
         proj = _project()
@@ -1420,17 +1471,36 @@ def boxmodel_server(
         except ValueError as exc:  # a run id the cache layout refuses
             logger.warning("boxmodel: cache watch skipped: %s", exc)
             return
-        # Settled loads only: while the reload asked for is still being read,
-        # the calcs hand out the previous build, and measuring that against
-        # the new fingerprint would bump again and spin until it landed.
-        loaded = [(r.run_id, r.fingerprint) for r in _settled_run_states().values()]
-        cached_run = _settled_cached()
-        if cached_run is not None:
-            loaded.append((cached_run.run_id, cached_run.fingerprint))
-        seen = last["published"]
+        # Reads both stores (so a read landing re-runs this) but the keys
+        # under isolate: this effect bumps cache_generation, which they hold.
+        stored_run = cached_store.get()
+        stored_states = run_states_store.get()
+        with reactive.isolate():
+            run_settled = _settled_result(stored_run, _cached_key())
+            states_settled = _settled_result(stored_states, _run_states_key())
+        held_run = None
+        if run_settled is not None and run_settled[0] is not None:
+            held_run = (
+                run_settled[0].run_id,
+                run_settled[0].fingerprint,
+                stored_run[0] == last["live_fallback"],
+            )
+        decision = _watch_decision(
+            published,
+            states=[(r.run_id, r.fingerprint) for r in (states_settled or ({}, []))[0].values()],
+            held_run=held_run,
+            pending=run_settled is None or states_settled is None,
+            seen=last["published"],
+            since_bump=(
+                None if last["watch_bump"] is None else time.monotonic() - last["watch_bump"]
+            ),
+        )
+        if decision == "skip":
+            return  # `seen` kept: re-measured when the read lands / next tick
         last["published"] = published
-        if _published_changed(published, loaded, seen):
+        if decision == "bump":
             logger.info("boxmodel: a cache was republished elsewhere; reloading")
+            last["watch_bump"] = time.monotonic()
             _bump_status()
             _bump_cache_generation()
 
@@ -1513,9 +1583,11 @@ def boxmodel_server(
     # stores ``(key, result)``; a thin calc hands the result out while its key
     # is current. The worker's one event loop serves every session, so a read
     # left on it froze everyone else's page for as long as it took. The
-    # loaders run at a higher priority than the outputs, so in one flush the
-    # read lands before anything renders from it and the calc's fallback (a
-    # key from an earlier request) is only ever a transient.
+    # loaders start before the outputs (higher priority), but Shiny does not
+    # wait for their async part, so consumers DO run while a read is pending
+    # and see the calc's fallback (a key from an earlier request) until the
+    # read lands and re-runs them; the map-layer effects skip that transient
+    # rather than push it (``_header_read_pending``).
     cached_store: reactive.Value = reactive.value(None)
 
     def _cached_key() -> tuple:
@@ -1542,6 +1614,7 @@ def boxmodel_server(
         run = _run_entry()
         current = _status_now()
         state = current.state if current is not None else None
+        last["live_fallback"] = None
         if proj is None or run is None:
             last["good"] = None
             cached_store.set((key, (None, None)))
@@ -1554,6 +1627,9 @@ def boxmodel_server(
             # skill table for the whole rebuild. The badge still says
             # building, with progress. Only ever the run that is actually
             # selected: see _pick_live_fallback.
+            # Marked, so the republish watch does not measure it: it is by
+            # design NOT the published build (see _watch_decision).
+            last["live_fallback"] = key
             cached_store.set((key, (_pick_live_fallback(last, proj["id"], run.id), None)))
             return
         if state not in ("ready", "stale"):
@@ -1588,15 +1664,16 @@ def boxmodel_server(
     def cached():
         return cached_result()[0]
 
-    def _settled_cached():
-        """The loaded run, or None while a newer read is pending. Depends on
-        ``cached_store`` only: the key is compared under ``isolate`` so the
-        watch, which bumps ``cache_generation``, does not depend on it."""
+    def _header_read_pending() -> bool:
+        """True while the selected run's cache is still being read (B-06).
+
+        Reactive on ``cached_store`` and the key, so a caller re-runs when
+        the read lands. The map-layer effects return early on it: pushing
+        the transient sent the map a layer set without the boxes and cost a
+        second full mesh build once the read landed.
+        """
         stored = cached_store.get()
-        with reactive.isolate():
-            key = _cached_key()
-        result = _settled_result(stored, key)
-        return result[0] if result is not None else None
+        return stored is None or stored[0] != _cached_key()
 
     @reactive.effect
     def _fill_period_and_boxes():
@@ -2192,6 +2269,8 @@ def boxmodel_server(
         escaping a ``reactive.effect`` ends the session, so any failure here
         has to degrade to empty layers plus a log line.
         """
+        if _header_read_pending():
+            return  # the read landing re-runs this
         try:
             polys = polygons()
             values, label = box_values()
@@ -2477,15 +2556,6 @@ def boxmodel_server(
             return {}, []
         key, result = stored
         return result if key[0] == _run_states_key()[0] else ({}, [])
-
-    def _settled_run_states() -> dict:
-        """``all_run_states()`` as last settled, or ``{}`` while a newer read
-        is pending (see ``_settled_cached``)."""
-        stored = run_states_store.get()
-        with reactive.isolate():
-            key = _run_states_key()
-        result = _settled_result(stored, key)
-        return result[0] if result is not None else {}
 
     def all_run_states() -> dict:
         """``{run_id: CachedRun}`` for the runs that could be read."""
@@ -3088,6 +3158,8 @@ def boxmodel_server(
         boundary nodes. Writes ``setup_layers`` only and reads nothing it
         writes; every upstream call is inside the ``try`` (an exception
         escaping an effect ends the session)."""
+        if _header_read_pending():
+            return  # the read landing re-runs this
         try:
             polys = polygons()
             layers, _bins = build_box_layers(polys, None) if polys else ([], [])
