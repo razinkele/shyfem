@@ -8,13 +8,19 @@ Provides a structured UI for defining $bound sections in .str files:
 - Auto-generate $bound section text
 """
 
+import math
 from collections.abc import Callable, Sequence
 
 from shiny import module, reactive, render, ui
 from shiny.types import SilentException
 
 from shyfem_ui.components.project_select import str_file_selectize
-from shyfem_ui.services.parser_str import StrFile, format_param_display
+from shyfem_ui.services.parser_str import (
+    StrFile,
+    format_param_display,
+    parse_param_display,
+    wrap_str_assignment,
+)
 
 # The core's intpol (bnd_admin.f90 addpar('intpol',0.)): the number of time
 # records interpolated between, 0 = auto (cubic for a water-level boundary,
@@ -53,7 +59,13 @@ def _optional_float(value) -> float | None:
         return None
     if isinstance(value, str):
         value = value.strip().lower().replace("d", "e")
-    return float(value)
+    number = float(value)
+    if not math.isfinite(number):
+        # Python reads "nan", "inf" and an overflowing exponent as floats;
+        # SHYFEM's reader does not, and a nan zfact would be a silent
+        # garbage boundary even if it did.
+        raise ValueError(f"{value!r} is not a number")
+    return number
 
 
 def _csv_cell(parts: list[str], lineno: int, index: int, name: str, convert, default):
@@ -133,7 +145,10 @@ def generate_bound_text(boundaries: list[dict]) -> str:
         section_name = b["label"]
         lines.append(f"${section_name}")
         if b.get("nodes"):
-            lines.append(f"        kbound = {b['nodes']}")
+            # The field holds the list as text ("1547 1548 ..."); read it
+            # back the way the editor wrote it, then let the writer wrap a
+            # long one over several lines (SHYFEM stops at 80 characters).
+            lines.extend(wrap_str_assignment("kbound", parse_param_display(b["nodes"])))
         lines.append(f"        ibtyp = {b['ibtyp']}")
         if b.get("boundn"):
             lines.append(f"        boundn = '{b['boundn']}'")

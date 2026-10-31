@@ -91,3 +91,64 @@ def test_refine_choices_survive_an_apply(pw_page, tmp_path):
     expect(method).to_have_value("chaikin")
 
     pw_page.locator(".sf-nav-item[data-nav='Dashboard']").click(force=True)
+
+
+def test_a_new_import_starts_at_all_lines(pw_page, tmp_path):
+    """A line chosen for the previous boundary must not carry over.
+
+    The select kept the chosen line across Apply and Reset by re-selecting
+    the current input value when it was still among the choices. A new
+    import has its own lines, numbered from 1 again, so the old choice was
+    still "among the choices" and the next Apply changed one line of a
+    boundary the user had never looked at.
+    """
+
+    def square(x0: int) -> list[list[int]]:
+        pts = [[x0, 4180000], [x0 + 30000, 4180000], [x0 + 30000, 4210000], [x0, 4210000]]
+        return pts + pts[:1]
+
+    def write(path, x0s):
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "FeatureCollection",
+                    "features": [
+                        {
+                            "type": "Feature",
+                            "properties": {},
+                            "geometry": {"type": "Polygon", "coordinates": [square(x0)]},
+                        }
+                        for x0 in x0s
+                    ],
+                }
+            )
+        )
+
+    first = tmp_path / "first.geojson"
+    second = tmp_path / "second.geojson"
+    write(first, (700000, 800000))
+    write(second, (700000, 800000, 900000))  # three lines: ids 1, 2, 3 collide with 1, 2
+
+    _dismiss_modals(pw_page)
+    pw_page.locator(".sf-nav-item[data-nav='Mesh Builder']").click(force=True)
+    _step(pw_page, "import")
+    pw_page.locator(f"{_P}boundary_file").set_input_files(str(first))
+    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(" 2 lines", timeout=15000)
+
+    _step(pw_page, "refine")
+    line_select = pw_page.locator(f"{_P}refine_line")
+    expect(line_select.locator("option")).to_have_count(3, timeout=10000)
+    chosen = line_select.locator("option").nth(2).get_attribute("value")
+    line_select.select_option(chosen)
+    pw_page.wait_for_timeout(500)
+    expect(line_select).to_have_value(chosen)
+
+    _step(pw_page, "import")
+    pw_page.locator(f"{_P}boundary_file").set_input_files(str(second))
+    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(" 3 lines", timeout=15000)
+
+    _step(pw_page, "refine")
+    expect(line_select.locator("option")).to_have_count(4, timeout=10000)  # all + 3
+    expect(line_select).to_have_value("all")
+
+    pw_page.locator(".sf-nav-item[data-nav='Dashboard']").click(force=True)

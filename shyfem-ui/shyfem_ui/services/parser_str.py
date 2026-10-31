@@ -480,14 +480,26 @@ class StrParser:
                     parts.append(code[pos:])
                     parts.append(comment)
                     new_line = "".join(parts)
+                    if len(new_line.rstrip()) > STR_MAX_LINE and any(
+                        m.group(1).lower() in section._modified_params
+                        for m in cls.PARAM_PATTERN.finditer(code)
+                    ):
+                        # SHYFEM stops on a line over 80 characters. The
+                        # edited value gets its own line(s), wrapped if it
+                        # is a list, and whatever shared the raw line moves
+                        # to lines of its own after it: a numbers-only line
+                        # continues the LAST name the core read, so nothing
+                        # may sit between a list and its continuations. The
+                        # comment goes first, as a line of its own.
+                        lines.extend(cls._split_long_line(code, comment, section))
+                        continue
                 else:
                     new_line = raw_line
                 lines.append(new_line)
             # Append any new params not found in raw_lines
             for key in section._modified_params - emitted_modified:
                 if key != "_standalone":
-                    formatted_value = cls._format_value(section.parameters[key])
-                    lines.append(f"        {key} = {formatted_value}")
+                    lines.extend(wrap_str_assignment(key, section.parameters[key]))
         elif section.raw_lines:
             # No modifications — emit raw lines as-is (perfect round-trip)
             for raw_line in section.raw_lines:
@@ -501,8 +513,7 @@ class StrParser:
                 elif key.startswith("_"):
                     continue
                 else:
-                    formatted_value = cls._format_value(value)
-                    lines.append(f"        {key} = {formatted_value}")
+                    lines.extend(wrap_str_assignment(key, value))
 
         lines.append(section.end_line if section.end_line is not None else "$end")
         # A parsed file already carries whatever separated its sections (as an
@@ -511,6 +522,30 @@ class StrParser:
         # the separator.
         if section.header_line is None:
             lines.append("")
+
+    @classmethod
+    def _split_long_line(cls, code: str, comment: str, section: StrSection) -> list[str]:
+        """One assignment per line for a raw line that grew past 80 characters.
+
+        ``code`` is the line's code part, ``comment`` its trailing comment.
+        An edited parameter is written by :func:`wrap_str_assignment`
+        (over several lines when it is a list); the other assignments of the
+        line keep their text, one per line, after it. The comment comes
+        first on a line of its own: a comment between a list and its
+        continuation lines would end the list for this parser.
+        """
+        indent = code[: len(code) - len(code.lstrip())] or "        "
+        out: list[str] = []
+        note = comment.strip()
+        if note:
+            out.append(f"{indent}{note if note[0] in '!#' else '! ' + note}")
+        for match in cls.PARAM_PATTERN.finditer(code):
+            key = match.group(1).lower()
+            if key in section._modified_params:
+                out.extend(wrap_str_assignment(key, section.parameters[key], indent))
+            else:
+                out.append(f"{indent}{match.group(0).strip()}")
+        return out
 
     @staticmethod
     def _format_value(value: Any) -> str:
@@ -563,6 +598,39 @@ class StrParser:
         file_path = Path(file_path)
         content = cls.generate(str_file)
         file_path.write_text(content, encoding="utf-8")
+
+
+#: SHYFEM stops on a longer STR line (nls.f90::nls_check_line_length,
+#: ``len_trim(line) > 80``).
+STR_MAX_LINE = 80
+
+_STR_INDENT = "        "
+
+
+def wrap_str_assignment(key: str, value: Any, indent: str = _STR_INDENT) -> list[str]:
+    """``key = value`` as STR lines of at most :data:`STR_MAX_LINE` characters.
+
+    A list is a run of values the core reads as one stream, so it goes on
+    over numbers-only lines, indented like the first (the parser reads them
+    back as the one list, S-11). A text value cannot be continued (nls has
+    no continuation or escape for text), so it is written whole on its one
+    line, and ``validate_str`` reports it as an error when that line is
+    over the limit; the physics save, ensemble and run submits stop on it.
+    """
+    formatted = StrParser._format_value(value)
+    first = f"{indent}{key} = {formatted}"
+    if len(first) <= STR_MAX_LINE or not isinstance(value, (list, tuple)):
+        return [first]
+    lines: list[str] = []
+    current = f"{indent}{key} ="
+    for token in (StrParser._format_value(v) for v in value):
+        if current.endswith("=") or len(current) + 1 + len(token) <= STR_MAX_LINE:
+            current = f"{current} {token}"
+        else:
+            lines.append(current)
+            current = f"{indent}{token}"
+    lines.append(current)
+    return lines
 
 
 def format_param_display(value: Any) -> str:

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from shyfem_ui.services import parser_str as ps
 from shyfem_ui.services.parser_str import StrParser
 
 REPO = Path(__file__).resolve().parents[2]
@@ -69,3 +70,92 @@ def test_every_shipped_str_still_round_trips_byte_exact():
         if not text.endswith("\n"):
             continue
         assert StrParser.generate(StrParser.parse(text)) == text, path
+
+
+# ---------------------------------------------------------------------------
+# A written line never exceeds the 80 characters SHYFEM reads
+# ---------------------------------------------------------------------------
+#
+# nls.f90::nls_check_line_length stops the run on any STR line longer than
+# 80 characters. A list is read as one stream over following numbers-only
+# lines, so a long list is written over several lines; a quoted text cannot
+# be split and is refused.
+
+_IDS = list(range(10000, 10040))  # 40 five-digit nodes: 240 characters on one line
+
+
+def test_a_wrapped_assignment_stays_within_80_chars_and_keeps_every_number():
+    lines = ps.wrap_str_assignment("kbound", _IDS)
+    assert len(lines) > 1
+    assert lines[0].startswith("        kbound = ")
+    assert all(len(line) <= ps.STR_MAX_LINE == 80 for line in lines)
+    tokens = " ".join(lines).split()
+    assert tokens[:2] == ["kbound", "="]
+    assert [int(t) for t in tokens[2:]] == _IDS
+
+
+def test_a_short_assignment_is_one_line():
+    assert ps.wrap_str_assignment("ibtyp", 1) == ["        ibtyp = 1"]
+
+
+def test_an_edited_long_list_is_written_over_several_lines():
+    sf = StrParser.parse("$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n")
+    sf.set_param("bound1", "kbound", _IDS)
+    out = StrParser.generate(sf)
+    assert all(len(line) <= 80 for line in out.splitlines())
+    again = StrParser.parse(out)
+    assert again.get_param("bound1", "kbound") == _IDS
+    assert again.get_param("bound1", "ibtyp") == 1
+    assert StrParser.generate(again) == out  # stable
+    # The wrapped lines are ordinary continuations now: an edit drops them.
+    again.set_param("bound1", "kbound", [7, 8])
+    out2 = StrParser.generate(again)
+    assert StrParser.parse(out2).get_param("bound1", "kbound") == [7, 8]
+    assert "10001" not in out2
+
+
+def test_a_long_list_on_a_multi_assignment_line_moves_the_rest_after_it():
+    # The core reads a numbers-only line as more values of the LAST name,
+    # so the continuation lines must follow the list's own line at once and
+    # ibtyp must come after them, on its own line.
+    sf = StrParser.parse("$bound1\n  kbound = 1 2  ibtyp = 1   ! open sea\n$end\n")
+    sf.set_param("bound1", "kbound", _IDS)
+    out = StrParser.generate(sf)
+    lines = out.splitlines()
+    assert all(len(line) <= 80 for line in lines)
+    again = StrParser.parse(out)
+    assert again.get_param("bound1", "kbound") == _IDS
+    assert again.get_param("bound1", "ibtyp") == 1
+    assert StrParser.generate(again) == out
+    # The comment survives, before the list and never between its lines:
+    # a comment ends a continuation for the UI parser.
+    comment_at = next(i for i, line in enumerate(lines) if "! open sea" in line)
+    kbound_at = next(i for i, line in enumerate(lines) if "kbound" in line)
+    ibtyp_at = next(i for i, line in enumerate(lines) if "ibtyp" in line)
+    assert comment_at < kbound_at < ibtyp_at
+    assert all(
+        "kbound" not in line and "ibtyp" not in line for line in lines[kbound_at + 1 : ibtyp_at]
+    )
+
+
+def test_a_new_section_with_a_long_list_is_wrapped():
+    sf = StrParser.parse("$title\n  run\n  r\n  b\n$end\n")
+    sf.set_param("bound1", "kbound", _IDS)  # a section built in memory
+    sf.set_param("bound1", "ibtyp", 1)
+    out = StrParser.generate(sf)
+    assert all(len(line) <= 80 for line in out.splitlines())
+    assert StrParser.parse(out).get_param("bound1", "kbound") == _IDS
+
+
+def test_a_text_value_over_80_chars_is_written_whole_for_the_validator():
+    # A text cannot be continued on the next line. It is written as it is,
+    # and validate_str reports the line (an error that stops a save or a
+    # submit), as it did before lists were wrapped.
+    from shyfem_ui.services.str_validator import validate_str
+
+    sf = StrParser.parse("$name\n  wind = 'w.fem'\n$end\n")
+    sf.set_param("name", "wind", "w" * 90)
+    out = StrParser.generate(sf)
+    wind_lines = [line for line in out.splitlines() if "wind" in line]
+    assert len(wind_lines) == 1 and len(wind_lines[0]) > 80
+    assert len([m for m in validate_str(sf.sections) if "80" in m.message]) == 1

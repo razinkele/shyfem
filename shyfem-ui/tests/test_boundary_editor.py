@@ -7,6 +7,7 @@ shyfem_ui.components.boundary_editor.
 import pytest
 from shiny import reactive
 
+from shyfem_ui.components import boundary_editor as be
 from shyfem_ui.components.boundary_editor import (
     generate_bound_text,
     parse_boundary_csv,
@@ -228,6 +229,16 @@ class TestGenerateBoundText:
         """1 is stepwise, not the core default (0): it must be written (S-03)."""
         result = generate_bound_text([_bound(intpol=1)])
         assert "intpol = 1" in result
+
+    def test_a_long_node_list_is_written_in_lines_of_at_most_80_chars(self):
+        """SHYFEM stops on a line over 80 characters (nls_check_line_length);
+        a list goes on over numbers-only lines, which the core reads whole."""
+        from shyfem_ui.services.parser_str import StrParser
+
+        ids = list(range(10000, 10040))
+        text = generate_bound_text([_bound(nodes=" ".join(str(i) for i in ids))])
+        assert all(len(line) <= 80 for line in text.splitlines())
+        assert StrParser.parse(text).get_param("bound1", "kbound") == ids
 
     def test_intpol_omitted_when_unset(self):
         """An unset intpol (None) leaves the core default; nothing is written."""
@@ -597,7 +608,8 @@ class TestExplicitZfactOne:
             text = result["generated_text"].get()
         assert "zfact" not in text
 
-    async def test_a_zfact_that_is_not_a_number_is_reported_not_generated(self, monkeypatch):
+    @pytest.mark.parametrize("raw", ["half", "nan", "inf"])
+    async def test_a_zfact_that_is_not_a_number_is_reported_not_generated(self, monkeypatch, raw):
         notes: list = []
         fake_input, result = _load_str(
             monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n", notes
@@ -606,7 +618,7 @@ class TestExplicitZfactOne:
         fake_input.set("bound_nodes_1", "1 2")
         fake_input.set("bound_type_1", "1")
         fake_input.set("bound_file_1", "")
-        fake_input.set("bound_zfact_1", "half")
+        fake_input.set("bound_zfact_1", raw)
         fake_input.set("bound_intpol_1", "")
         fake_input.set("generate_str_btn", 1)
         await reactive.flush()
@@ -614,6 +626,22 @@ class TestExplicitZfactOne:
             text = result["generated_text"].get()
         assert text == ""
         assert any("zfact" in n and "bound1" in n for n in notes)
+
+
+class TestNonFiniteNumbers:
+    """nan and inf are floats to Python and nothing to SHYFEM's reader."""
+
+    @pytest.mark.parametrize("raw", ["nan", "NaN", "inf", "-Infinity", "1d400"])
+    def test_a_non_finite_value_is_not_a_number(self, raw):
+        with pytest.raises(ValueError, match="not a number"):
+            be._optional_float(raw)
+
+    def test_a_finite_d_exponent_still_parses(self):
+        assert be._optional_float("2.d0") == 2.0
+
+    def test_csv_import_refuses_a_nan_zfact(self):
+        with pytest.raises(ValueError, match=r"zfact.*not a number"):
+            be.parse_boundary_csv("1 2 3,1,,nan")
 
 
 class _ShinyLikeInputs(_FakeInputs):
