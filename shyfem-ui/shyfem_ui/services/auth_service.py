@@ -507,17 +507,25 @@ class AuthService:
         password: str,
         email: str | None = None,
         role: str = "user",
+        audit_service=None,
     ) -> dict:
         """Ensure a default (non-admin) user exists.
 
-        If a user with the given username already exists, returns it unchanged.
+        If a user with the given username already exists, its role is forced
+        to ``role`` (a deliberate shim: tutorial accounts created before the
+        tutorial role existed kept role ``user``) and it is returned.
         Otherwise creates a new user with the specified role.
+
+        The re-force rewrites an existing account's role on every start, so
+        it is never silent: it logs a warning and, given ``audit_service``,
+        writes a ``role_reforced`` audit entry (SEC-03).
 
         Args:
             username: Login name.
             password: Plaintext password.
             email: Email address. Required when creating a new non-tutorial user.
             role: Role to assign when creating a new user (default "user").
+            audit_service: Optional AuditService for the re-force entry.
 
         Returns:
             Dict with user fields.
@@ -527,8 +535,10 @@ class AuthService:
             user = session.query(User).filter_by(username=username).first()
             if user is not None:
                 if user.role != role:
+                    old_role = user.role
                     user.role = role
                     session.commit()
+                    self._report_role_reforce(username, old_role, role, audit_service)
                 return self._user_to_dict(user)
         finally:
             session.close()
@@ -545,6 +555,26 @@ class AuthService:
             role=role,
             email=email,
         )
+
+    @staticmethod
+    def _report_role_reforce(username: str, old_role: str, new_role: str, audit_service) -> None:
+        """Log and audit ensure_user's role re-force. Best effort: never raises."""
+        logger.warning(
+            "ensure_user: role of existing user %r forced from %r to %r",
+            username,
+            old_role,
+            new_role,
+        )
+        if audit_service is None:
+            return
+        try:
+            audit_service.log(
+                username="system",
+                action="role_reforced",
+                detail=f"target={username}, from={old_role}, to={new_role}",
+            )
+        except Exception:
+            logger.exception("Failed to write role_reforced audit entry")
 
     def ensure_admin(self, username: str, password: str, email: str | None = None) -> dict:
         """Ensure an admin user exists.
