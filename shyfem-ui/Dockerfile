@@ -6,9 +6,11 @@ FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Install build dependencies (git: pyproject.toml pins shiny-deckgl to a
+# git tag, so pip clones it)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy project metadata and install Python packages
@@ -37,8 +39,11 @@ ENV PATH=/home/appuser/.local/bin:$PATH
 COPY shyfem_ui/ ./shyfem_ui/
 COPY pyproject.toml .
 
-# Install the package (editable, uses already-installed deps)
-RUN pip install --no-cache-dir -e .
+# Install the package (editable). --no-deps: the dependencies are already in
+# /home/appuser/.local from the builder, but pip runs as root here and does
+# not look there, so without it every dependency is installed a second time
+# (and the shiny-deckgl git pin would need git in this image too).
+RUN pip install --no-cache-dir --no-deps -e .
 
 # Create directories and set ownership
 RUN mkdir -p /data/projects /data/db \
