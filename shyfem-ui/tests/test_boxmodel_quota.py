@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -5,6 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from shyfem_ui.db.base import Base
 from shyfem_ui.models.project import Project, ProjectFile
 from shyfem_ui.services.file_service import _sum_project_bytes
+from tests import test_boxmodel_cache_service as _cache_tests
 
 
 @pytest.fixture
@@ -140,3 +143,72 @@ def test_one_run_is_charged_its_largest_copy_not_the_sum(db, tmp_path):
     (pending / "state_daily.parquet").write_bytes(b"y" * 900)
 
     assert _sum_project_bytes(s, p.id, work_dir=p.work_dir) == 100 + 900
+
+
+# --- B-02: a build is refused once the project is at its quota -------------
+
+env = _cache_tests.env  # the cache-service tests' project + config fixture
+
+
+def _over_quota_env(env_tuple, monkeypatch, *, other_bytes: int, own_bytes: int):
+    """A project whose cache holds ``other_bytes`` for another run and
+    ``own_bytes`` for the run being built, with no uploaded files."""
+    import shyfem_ui.services.file_service as fs
+
+    cfg, user, project, run = env_tuple
+    root = Path(project["work_dir"]) / ".boxmodel_cache"
+    for name, size in (("other", other_bytes), ("fix", own_bytes)):
+        if size:
+            (root / name).mkdir(parents=True, exist_ok=True)
+            (root / name / "state_daily.parquet").write_bytes(b"x" * size)
+    cfg.max_project_storage_mb = 1
+    cache = fs._cache_bytes(project["work_dir"])
+    monkeypatch.setattr(
+        fs.FileService,
+        "get_project_storage",
+        staticmethod(lambda pid: {"used_bytes": cache, "cache_bytes": cache, "file_count": 0}),
+    )
+    monkeypatch.setattr(
+        "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
+    )
+    return cfg, user, project, run
+
+
+def test_a_build_is_refused_when_the_project_is_over_its_quota(env, monkeypatch):
+    import asyncio
+
+    from shyfem_ui.services import boxmodel_cache as bc
+
+    cfg, user, project, run = _over_quota_env(
+        env, monkeypatch, other_bytes=2 * 1024 * 1024, own_bytes=0
+    )
+    reg = bc.BuildRegistry()
+    with pytest.raises(RuntimeError, match="storage quota"):
+        asyncio.run(
+            bc.start_build(reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg)
+        )
+    assert reg.handles() == []
+
+
+def test_a_rebuild_is_not_charged_for_the_cache_it_replaces(env, monkeypatch):
+    """The run's own published cache is replaced by the build, so it does not
+    count against the headroom -- or a stale cache that alone fills the quota
+    could never be refreshed (there is no per-run delete)."""
+    from shyfem_ui.services import boxmodel_cache as bc
+
+    cfg, user, project, run = _over_quota_env(
+        env, monkeypatch, other_bytes=0, own_bytes=2 * 1024 * 1024
+    )
+    assert bc.build_quota_refusal(project, "fix", cfg) is None
+    assert bc.build_quota_refusal(project, "other", cfg) is not None
+
+
+def test_cache_bytes_can_leave_one_run_out(tmp_path):
+    from shyfem_ui.services.file_service import _cache_bytes
+
+    root = tmp_path / ".boxmodel_cache"
+    for name, size in (("a", 10), ("a.tmp-1", 30), ("b", 5)):
+        (root / name).mkdir(parents=True)
+        (root / name / "f").write_bytes(b"x" * size)
+    assert _cache_bytes(tmp_path) == 35
+    assert _cache_bytes(tmp_path, exclude_run="a") == 5
