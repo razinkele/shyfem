@@ -102,6 +102,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Mesh Builder, bathymetry (RBF and Clough-Tocher): dense isobaths are no longer thinned to a few points.** Near-duplicate points were removed by rounding coordinates to 2 decimals, which in the degree coordinates these methods always get is about 1 km: a 200-point isobath kept 31 points and a 400-point one 4. Only points within a few millimetres of each other (relative to the data's extent) are now merged. (M-04, 2026-10-19 UI review)
 - **Jobs, failure message:** a failed job's message and its email now show the end of stderr, where the tool prints its fatal error, instead of the first 1000 characters (J-10).
 
+### Fixed — CI
+
+- **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
+
 ---
 
 ## [8.5.2] — 2026-10-18
