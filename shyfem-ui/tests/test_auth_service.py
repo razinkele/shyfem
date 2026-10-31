@@ -297,14 +297,21 @@ class TestWSToken:
     def test_logout_purges_ws_token_rows(self, auth_service):
         """delete_session must remove WS tokens spawned by the session, not
         just rely on validate_ws_token refusing them by inheritance."""
+        import hashlib
+
         from shyfem_ui.models.user import WSAuthToken
         user = auth_service.create_user("alice", "pass", email="alice@example.com")
         sess = auth_service.create_session(user["id"])
         auth_service.create_ws_token(user["id"], sess)
         auth_service.create_ws_token(user["id"], sess)
+        # Rows store sha256(session token) (SEC-06): filter on the hash, and
+        # check the rows exist first so the "0 after" is not vacuous.
+        stored = hashlib.sha256(sess.encode()).hexdigest()
+        with auth_service._session_factory() as db:
+            assert db.query(WSAuthToken).filter_by(session_token=stored).count() == 2
         auth_service.delete_session(sess)
         with auth_service._session_factory() as db:
-            remaining = db.query(WSAuthToken).filter_by(session_token=sess).count()
+            remaining = db.query(WSAuthToken).filter_by(session_token=stored).count()
         assert remaining == 0
 
     def test_cleanup_removes_expired_ws_tokens(self, auth_service):

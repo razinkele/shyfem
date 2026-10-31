@@ -158,7 +158,10 @@ def test_project_permissions_cascade_migration_up_down_up(tmp_path):
         "fk_project_permissions_user_id_users": "CASCADE",
     }
 
-    command.downgrade(alembic_cfg, "-1")
+    # Downgrade to just before 85f9efff4f5e by name: later (data-only)
+    # revisions such as SEC-06's token purge sit above it, so "-1" no longer
+    # reaches it.
+    command.downgrade(alembic_cfg, "ccde037a5855")
     after_downgrade = _project_permissions_ondelete(db)
     assert set(after_downgrade) == set(after_upgrade)
     assert all(action is None for action in after_downgrade.values()), after_downgrade
