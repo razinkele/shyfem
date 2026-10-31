@@ -431,7 +431,12 @@ class _Harness:
         from shiny import reactive
 
         await reactive.flush()
-        await self.session._flush()
+        # Send the session's outputs. Shiny < 1.9 did that in `_flush()`;
+        # 1.9 renamed the step `_output_flush()` and runs it in a task of its
+        # own once the session's effects have finished (so it may send
+        # nothing while an effect is still running; `settle()` flushes again).
+        send = getattr(self.session, "_output_flush", None) or self.session._flush
+        await send()
 
     async def settle(self, cond, timeout=5.0):
         """Flush until ``cond()`` holds (the range task runs in a thread)."""
