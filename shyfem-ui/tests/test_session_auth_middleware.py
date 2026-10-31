@@ -248,6 +248,37 @@ class TestMiddlewareHTTP:
         assert "HttpOnly" in cookie_header
         assert "SameSite=Lax" in cookie_header
 
+    async def _login_cookie(self, **mw_kwargs):
+        user = {"id": 5, "username": "bob", "role": "user", "is_active": True}
+        auth_service = MagicMock()
+        auth_service.authenticate.return_value = user
+        auth_service.create_session.return_value = "new-session-token"
+        mw = SessionAuthMiddleware(AsyncMock(), auth_service, **mw_kwargs)
+        csrf = "test-csrf-token"
+        body = f"username=bob&password=s3cret&csrf_token={csrf}".encode()
+        receive = AsyncMock(return_value={"type": "http.request", "body": body})
+        scope = _make_scope(method="POST", path="/login", cookies=f"csrf_token={csrf}")
+        send = AsyncMock()
+        await mw(scope, receive, send)
+        headers = dict(send.call_args_list[0][0][0]["headers"])
+        cookie = headers[b"set-cookie"].decode()
+        assert cookie.startswith("shyfem_session=new-session-token")
+        return [part.strip() for part in cookie.split(";")]
+
+    @pytest.mark.asyncio
+    async def test_session_cookie_secure_when_use_secure_cookies(self):
+        # SEC-10: Secure was asserted only for the csrf_token cookie, never
+        # for the session cookie that actually carries the login.
+        attrs = await self._login_cookie(use_secure_cookies=True)
+        assert "Secure" in attrs, attrs
+        assert "HttpOnly" in attrs, attrs
+
+    @pytest.mark.asyncio
+    async def test_session_cookie_not_secure_by_default(self):
+        # A plain-HTTP desktop install must still get a cookie it can send back.
+        attrs = await self._login_cookie()
+        assert "Secure" not in attrs, attrs
+
     @pytest.mark.asyncio
     async def test_post_login_invalid_creds_shows_error(self):
         auth_service = MagicMock()

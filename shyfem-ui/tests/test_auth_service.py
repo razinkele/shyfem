@@ -583,3 +583,30 @@ class TestEnsureUserRoleReforce:
         call = src[src.index("auth_service.ensure_user(") :]
         call = call[: call.index(")")]
         assert "audit_service=audit_service" in call
+
+
+# ------------------------------------------------------------------
+# SEC-10: ensure_user's create and existing-user paths had no tests
+# ------------------------------------------------------------------
+
+
+class TestEnsureUserPaths:
+    def test_creates_missing_user_with_role_and_password(self, auth_service):
+        out = auth_service.ensure_user("newbie", "pw-123456", role="user")
+        assert out["username"] == "newbie"
+        assert out["role"] == "user"
+        assert out["email"] == "newbie@localhost"  # placeholder for non-tutorial
+        assert auth_service.authenticate("newbie", "pw-123456")["id"] == out["id"]
+
+    def test_creates_tutorial_user_without_email(self, auth_service):
+        out = auth_service.ensure_user("guest", "pw-123456", role="tutorial")
+        assert out["role"] == "tutorial"
+        assert out["email"] is None
+
+    def test_existing_user_keeps_password_and_is_not_duplicated(self, auth_service):
+        first = auth_service.create_user("guest", "old-pass-1", role="tutorial")
+        out = auth_service.ensure_user("guest", "new-pass-2", role="tutorial")
+        assert out["id"] == first["id"]
+        assert auth_service.authenticate("guest", "old-pass-1") is not None
+        assert auth_service.authenticate("guest", "new-pass-2") is None
+        assert [u["username"] for u in auth_service.list_users()] == ["guest"]
