@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import logging
 import posixpath
 import shutil
 import zipfile
@@ -10,6 +11,8 @@ from io import BytesIO
 from pathlib import Path, PurePosixPath
 
 from shyfem_ui.config import get_config
+
+logger = logging.getLogger(__name__)
 
 MANIFEST_VERSION = "1.0"
 
@@ -441,3 +444,25 @@ def create_project_records(result: dict, owner_id: int | None) -> int:
                 f"storage limit ({config.max_project_storage_mb} MB)"
             )
         return project.id
+
+
+async def import_and_register(zip_data: BytesIO, base_dir: Path, owner_id: int | None) -> dict:
+    """Extract a project ZIP and write its database records, as one unit.
+
+    The two belong together: an extracted folder without records is a
+    project nobody can open, records without a folder one nobody can run. A
+    caller that may be cancelled while it waits (a Shiny effect whose session
+    ends, which Shiny 1.9 cancels at its current ``await``) awaits this
+    through ``asyncio.shield`` so both steps still happen. When the records
+    fail, the folder is removed again and the error is raised.
+    """
+    result = await import_project(zip_data, base_dir)
+    try:
+        create_project_records(result, owner_id=owner_id)
+    except Exception:
+        wd = result.get("work_dir")
+        if wd and Path(wd).exists():
+            shutil.rmtree(wd, ignore_errors=True)
+        logger.exception("Failed to save imported project to database")
+        raise
+    return result

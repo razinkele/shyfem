@@ -9,6 +9,7 @@ Features:
 - Operation presets for common workflows
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -25,9 +26,9 @@ from shyfem_ui.services.postprocess_logic import (
     build_shyelab_options,
     discover_shy_files,
     format_size,
-    name_outputs,
     parse_shyelab_info,
     preview_series_file,
+    run_shyelab_and_name,
 )
 from shyfem_ui.services.shyfem_wrapper import ShyfemWrapper
 from shyfem_ui.services.timeseries_loader import load_timeseries
@@ -516,12 +517,12 @@ def postprocess_server(
         log_content.set(f"Running shyelab on {path.name}...\n" f"Options: {' '.join(options)}\n\n")
 
         try:
-            result = await wrapper.run_shyelab(
-                path,
-                output_path,
-                options,
+            # Shielded: Shiny 1.9 cancels this effect when the tab closes while it
+            # waits, and the wrapper's cancel path kills shyelab half-way; the run
+            # and the renaming of its outputs finish as one unit regardless.
+            result = await asyncio.shield(
+                run_shyelab_and_name(wrapper, path, output_path, options, input.operation())
             )
-            result.output_files = name_outputs(result.output_files, path, input.operation())
 
             stdout_section = f"=== STDOUT ===\n{result.stdout}" if result.stdout else ""
             stderr_section = f"\n\n=== STDERR ===\n{result.stderr}" if result.stderr else ""
@@ -643,9 +644,12 @@ def postprocess_server(
             output_path.mkdir(parents=True, exist_ok=True)
 
             try:
-                result = await wrapper.run_shyelab(path, output_path, options)
                 # Several inputs into one folder: each out.* gets its input's name.
-                result.output_files = name_outputs(result.output_files, path, input.operation())
+                # Shielded (see _run_shyelab): a closed tab finishes this file's
+                # run and renaming, then the loop stops between files.
+                result = await asyncio.shield(
+                    run_shyelab_and_name(wrapper, path, output_path, options, input.operation())
+                )
 
                 results.append(
                     {
@@ -806,12 +810,12 @@ def postprocess_server(
             output_path.mkdir(parents=True, exist_ok=True)
 
             try:
-                result = await wrapper.run_shyelab(
-                    path,
-                    output_path,
-                    ["-outformat", "nc"],
+                # Shielded (see _run_shyelab).
+                result = await asyncio.shield(
+                    run_shyelab_and_name(
+                        wrapper, path, output_path, ["-outformat", "nc"], "extract_nc"
+                    )
                 )
-                result.output_files = name_outputs(result.output_files, path, "extract_nc")
 
                 results.append(
                     {
@@ -1138,10 +1142,12 @@ def _register_preset(
                 continue
 
             try:
-                result = await wrapper.run_shyelab(path, output_path, flags)
                 # Each step's out.shy gets its own name instead of the next
-                # step overwriting it.
-                all_output.extend(name_outputs(result.output_files, path, op_key))
+                # step overwriting it. Shielded (see _run_shyelab).
+                result = await asyncio.shield(
+                    run_shyelab_and_name(wrapper, path, output_path, flags, op_key)
+                )
+                all_output.extend(result.output_files)
 
                 status = "OK" if result.success else f"FAILED (code {result.return_code})"
                 current = log_content.get()

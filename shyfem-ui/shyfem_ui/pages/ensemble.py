@@ -7,6 +7,7 @@ Features:
 - Aggregate results: mean, std, min/max envelope plots
 """
 
+import asyncio
 import itertools
 import logging
 import os
@@ -638,73 +639,83 @@ def ensemble_server(
             return
         work_dir_path.mkdir(parents=True, exist_ok=True)
 
-        for i, combo in enumerate(combos):
-            # Create a modified STR file for this run
-            modified_str = _apply_param_combo(base_str, combo)
+        notes: list[tuple[str, str, int]] = []
 
-            # Create run subdirectory
-            run_label = _combo_label(combo, i)
-            run_dir = work_dir_path / run_label
-            run_dir.mkdir(parents=True, exist_ok=True)
+        async def _submit_all() -> None:
+            # Prepares and submits every member, as one unit: shielded below,
+            # because Shiny 1.9 cancels this effect when the tab closes while
+            # it waits on a submit, which would strand prepared member folders
+            # no job owns and a job the queue persisted but never started.
+            # Messages are collected and shown afterwards, by the session.
+            for i, combo in enumerate(combos):
+                # Create a modified STR file for this run
+                modified_str = _apply_param_combo(base_str, combo)
 
-            # The member runs in run_dir, so its relative paths must point
-            # back at the base folder; then check the STR as it will be run
-            # (a relocated path can push a line past the core's 80 chars).
-            _relocate_member_paths(modified_str, base_file.parent, run_dir)
-            _copy_fixed_inputs(base_file.parent, run_dir)
-            try:
-                member_msgs = validate_str(
-                    StrParser.parse(StrParser.generate(modified_str)).sections
+                # Create run subdirectory
+                run_label = _combo_label(combo, i)
+                run_dir = work_dir_path / run_label
+                run_dir.mkdir(parents=True, exist_ok=True)
+
+                # The member runs in run_dir, so its relative paths must point
+                # back at the base folder; then check the STR as it will be run
+                # (a relocated path can push a line past the core's 80 chars).
+                _relocate_member_paths(modified_str, base_file.parent, run_dir)
+                _copy_fixed_inputs(base_file.parent, run_dir)
+                try:
+                    member_msgs = validate_str(
+                        StrParser.parse(StrParser.generate(modified_str)).sections
+                    )
+                except ValueError:
+                    member_msgs = []  # serialization fails below and is reported there
+                member_errors = [m.message for m in member_msgs if m.level == "error"]
+                if member_errors:
+                    notes.append(
+                        (f"Skipped run {run_label}: {'; '.join(member_errors)}", "error", 8)
+                    )
+                    continue
+
+                # Save modified STR file. A variation value the STR reader
+                # cannot express (it has no escape for either quote
+                # delimiter) makes serialization fail for this combo only —
+                # the runs already submitted must not be stranded.
+                str_filename = base_file.name
+                run_str_path = run_dir / str_filename
+                try:
+                    StrParser.save(modified_str, run_str_path)
+                except ValueError as e:
+                    logger.exception("Writing STR for ensemble run %s failed", run_label)
+                    notes.append((f"Skipped run {run_label}: {e}", "error", 8))
+                    continue
+
+                # Submit job
+                spec = JobSpec(
+                    name=f"{name}/{run_label}",
+                    tool_name=tool,
+                    args=[str(run_str_path)],
+                    working_dir=run_dir,
+                    mpi_enabled=mpi_enabled,
+                    mpi_np=mpi_np,
+                    metadata={
+                        "ensemble_id": ensemble_id,
+                        "ensemble_name": name,
+                        "run_index": i,
+                        "param_combo": {f"{s}.{p}": v for (s, p), v in combo.items()},
+                        # Ownership/project for cancel authorization (owner / admin /
+                        # project-editor); _usr/_proj resolved at the editor gate above.
+                        "user_id": _usr["id"] if _usr else None,
+                        "project_id": _proj["id"] if _proj else None,
+                    },
                 )
-            except ValueError:
-                member_msgs = []  # serialization fails below and is reported there
-            member_errors = [m.message for m in member_msgs if m.level == "error"]
-            if member_errors:
-                ui.notification_show(
-                    f"Skipped run {run_label}: {'; '.join(member_errors)}",
-                    type="error",
-                    duration=8,
-                )
-                continue
 
-            # Save modified STR file. A variation value the STR reader
-            # cannot express (it has no escape for either quote
-            # delimiter) makes serialization fail for this combo only —
-            # the runs already submitted must not be stranded.
-            str_filename = base_file.name
-            run_str_path = run_dir / str_filename
-            try:
-                StrParser.save(modified_str, run_str_path)
-            except ValueError as e:
-                logger.exception("Writing STR for ensemble run %s failed", run_label)
-                ui.notification_show(f"Skipped run {run_label}: {e}", type="error", duration=8)
-                continue
+                try:
+                    job_id = await job_queue.submit(spec)
+                    job_ids.append(job_id)
+                except Exception as e:
+                    notes.append((f"Failed to submit run {i}: {e}", "error", 6))
 
-            # Submit job
-            spec = JobSpec(
-                name=f"{name}/{run_label}",
-                tool_name=tool,
-                args=[str(run_str_path)],
-                working_dir=run_dir,
-                mpi_enabled=mpi_enabled,
-                mpi_np=mpi_np,
-                metadata={
-                    "ensemble_id": ensemble_id,
-                    "ensemble_name": name,
-                    "run_index": i,
-                    "param_combo": {f"{s}.{p}": v for (s, p), v in combo.items()},
-                    # Ownership/project for cancel authorization (owner / admin /
-                    # project-editor); _usr/_proj resolved at the editor gate above.
-                    "user_id": _usr["id"] if _usr else None,
-                    "project_id": _proj["id"] if _proj else None,
-                },
-            )
-
-            try:
-                job_id = await job_queue.submit(spec)
-                job_ids.append(job_id)
-            except Exception as e:
-                ui.notification_show(f"Failed to submit run {i}: {e}", type="error", duration=6)
+        await asyncio.shield(_submit_all())
+        for msg, kind, duration in notes:
+            ui.notification_show(msg, type=kind, duration=duration)
 
         if job_ids:
             ensemble_state.set(

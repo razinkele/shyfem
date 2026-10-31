@@ -259,3 +259,19 @@ def preview_series_file(files: list[str]) -> str | None:
         return first, name
 
     return min(series, key=_rank)
+
+
+async def run_shyelab_and_name(wrapper, path, output_path, options, operation):
+    """Run shyelab on ``path`` into ``output_path`` and name its outputs.
+
+    One unit of work: the run and the renaming of its ``out.*`` files after
+    the input and the operation (:func:`name_outputs`) belong together, or a
+    later run in the same folder picks the un-renamed files up as its own. A
+    caller that may be cancelled while it waits (a Shiny effect whose session
+    ends, which Shiny 1.9 cancels at its current ``await``; the wrapper's
+    cancel path then kills the subprocess half-way) awaits this through
+    ``asyncio.shield`` so the unit runs to completion either way.
+    """
+    result = await wrapper.run_shyelab(path, output_path, options)
+    result.output_files = name_outputs(result.output_files, path, operation)
+    return result

@@ -258,10 +258,17 @@ def test_handlers_use_the_shared_helpers():
     import inspect
 
     from shyfem_ui.pages import home
+    from shyfem_ui.services import project_export
 
     src = inspect.getsource(home)
     assert src.count("export_meta(ctx)") == 2
-    assert src.count("create_project_records(") == 2
+    # clone calls create_project_records() itself; import goes through
+    # import_and_register(), which calls the same helper (one place).
+    assert src.count("create_project_records(") == 1
+    assert src.count("import_and_register(") == 1
+    assert "create_project_records(result, owner_id=owner_id)" in inspect.getsource(
+        project_export.import_and_register
+    )
     # the tutorial project is created from a full copy of mar_menor
     assert src.count("register_existing_files(project.id, db=db)") == 1
 

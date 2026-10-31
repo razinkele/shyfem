@@ -141,10 +141,6 @@ logger = logging.getLogger(__name__)
 # (``get_registry()``): every session on this worker shares the one instance,
 # which is what makes the per-worker/per-user build caps meaningful.
 
-# shiny 1.7 renamed @render.download to @render.download_button and the old
-# name is deprecated; resolve whichever this shiny provides (mesh_builder.py).
-_render_download = getattr(render, "download_button", None) or render.download
-
 #: Fallback wall-clock cap for one cache build. ``Config.command_timeout_seconds``
 #: defaults to ``None`` (unbounded) and ``start_build`` reads the timeout from
 #: the Config it is handed, so the page supplies a bounded one.
@@ -3007,7 +3003,7 @@ def boxmodel_server(
         selected, b = picked
         return _compare_filename(column, next(iter(selected)), b)
 
-    @_render_download(filename=_cmp_download_name)
+    @render.download_button(filename=_cmp_download_name)
     def cmp_download():
         wide, yearly, _error = cmp_skill_frames()
         buffer = io.StringIO()
@@ -3475,7 +3471,7 @@ def boxmodel_server(
             class_="mt-3",
         )
 
-    @_render_download(filename=lambda: _series_filename(series()))
+    @render.download_button(filename=lambda: _series_filename(series()))
     def download_csv():
         data = series()
         if data is None:
