@@ -486,6 +486,11 @@ def mesh_builder_server(
     # --- State ---
     boundary_grd = reactive.value(None)  # After import
     refined_grd = reactive.value(None)  # After smooth/reduce
+    # Counts the imports, so Step 2's line select can tell a new boundary
+    # (start at "All lines") from an Apply or Reset (keep the chosen line).
+    import_serial = reactive.value(0)
+    # The import the current line choice was made for.
+    selection_serial = reactive.value(-1)
     mesh_grd = reactive.value(None)  # After triangulation
     final_grd = reactive.value(None)  # After bathymetry
     preview_grd = reactive.value(None)  # Currently shown in map
@@ -629,6 +634,7 @@ def mesh_builder_server(
             boundary_grd.set(grd)
             refined_grd.set(grd)  # Start refine step with same data
             preview_grd.set(grd)
+            import_serial.set(import_serial.get() + 1)
             names = ", ".join(f["name"] for f in files)
             _log(f"Imported boundary: {names}")
             _log(f"  Nodes: {grd.num_nodes}, Lines: {grd.num_lines}")
@@ -679,21 +685,22 @@ def mesh_builder_server(
 
     @render.ui
     def refine_controls():
-        grd = refined_grd.get()
-        if grd is None:
+        """Step 2 controls, rendered again only on a new import.
+
+        It must not read refined_grd: every Apply and Reset changes it, and a
+        re-render here put the line back to "All lines" (so the next Apply
+        changed every line) and the method, iterations and tolerance back to
+        their defaults. The line select, whose labels carry point counts,
+        lives in its own refine_line_select output.
+        """
+        if boundary_grd.get() is None:
             return ui.div(
                 "Import boundaries first (Step 1).",
                 class_="alert alert-info py-2 px-3 small",
             )
-        line_choices = {
-            str(lid): f"Line {lid} (type={line.line_type}, {len(line.nodes)} pts)"
-            for lid, line in sorted(grd.lines.items())
-        }
-        all_choice = {"all": f"All lines ({len(grd.lines)} lines)"}
-        all_choice.update(line_choices)
         return ui.div(
             ui.p("Smooth or simplify boundary lines.", class_="text-muted"),
-            ui.input_select("refine_line", "Select Line", choices=all_choice),
+            ui.output_ui("refine_line_select"),
             ui.row(
                 ui.column(
                     6,
@@ -731,6 +738,44 @@ def mesh_builder_server(
                 "next_to_mesh", "Next: Generate Mesh", class_="btn-primary mt-2"
             ),
         )
+
+    @render.ui
+    def refine_line_select():
+        """The line select: it keeps the chosen line across Apply and Reset,
+        and a new import starts at "All lines".
+
+        A new boundary numbers its lines from 1 again, so the previous
+        choice is usually still among the choices; it is kept only when it
+        was made for this import (``selection_serial``). Both serials are
+        read under ``isolate``: the select must not re-render on its own
+        value, or it would empty itself on every change.
+        """
+        grd = refined_grd.get()
+        serial = import_serial.get()
+        if grd is None:
+            return ui.div()
+        choices = {"all": f"All lines ({len(grd.lines)} lines)"}
+        choices.update(
+            {
+                str(lid): f"Line {lid} (type={line.line_type}, {len(line.nodes)} pts)"
+                for lid, line in sorted(grd.lines.items())
+            }
+        )
+        with reactive.isolate():
+            current = input.refine_line() if "refine_line" in input else None
+            chosen_for_this_import = selection_serial.get() == serial
+        keep = chosen_for_this_import and current in choices
+        return ui.input_select(
+            "refine_line",
+            "Select Line",
+            choices=choices,
+            selected=current if keep else "all",
+        )
+
+    @reactive.effect
+    @reactive.event(input.refine_line)
+    def _remember_which_import_the_line_was_chosen_for():
+        selection_serial.set(import_serial.get())
 
     @reactive.effect
     @reactive.event(input.apply_smooth)

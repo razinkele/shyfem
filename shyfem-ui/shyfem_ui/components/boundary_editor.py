@@ -8,12 +8,19 @@ Provides a structured UI for defining $bound sections in .str files:
 - Auto-generate $bound section text
 """
 
+import math
 from collections.abc import Callable, Sequence
 
 from shiny import module, reactive, render, ui
+from shiny.types import SilentException
 
 from shyfem_ui.components.project_select import str_file_selectize
-from shyfem_ui.services.parser_str import StrFile, format_param_display
+from shyfem_ui.services.parser_str import (
+    StrFile,
+    format_param_display,
+    parse_param_display,
+    wrap_str_assignment,
+)
 
 # The core's intpol (bnd_admin.f90 addpar('intpol',0.)): the number of time
 # records interpolated between, 0 = auto (cubic for a water-level boundary,
@@ -40,6 +47,25 @@ def _optional_int(value) -> int | None:
     if value is None or value == "":
         return None
     return int(value)
+
+
+def _optional_float(value) -> float | None:
+    """A float, or None for an absent parameter.
+
+    Accepts the Fortran ``d`` exponent (``2.d0``, ``1.5D-1``) the core reads
+    (``convert.f90``) and Python's ``float`` does not.
+    """
+    if value is None or value == "":
+        return None
+    if isinstance(value, str):
+        value = value.strip().lower().replace("d", "e")
+    number = float(value)
+    if not math.isfinite(number):
+        # Python reads "nan", "inf" and an overflowing exponent as floats;
+        # SHYFEM's reader does not, and a nan zfact would be a silent
+        # garbage boundary even if it did.
+        raise ValueError(f"{value!r} is not a number")
+    return number
 
 
 def _csv_cell(parts: list[str], lineno: int, index: int, name: str, convert, default):
@@ -93,7 +119,7 @@ def parse_boundary_csv(csv_text: str, start_id: int = 1) -> list[dict]:
             "nodes": parts[0],
             "ibtyp": _csv_cell(parts, lineno, 1, "ibtyp", int, 1),
             "boundn": parts[2] if len(parts) > 2 else "",
-            "zfact": _csv_cell(parts, lineno, 3, "zfact", float, 1.0),
+            "zfact": _csv_cell(parts, lineno, 3, "zfact", _optional_float, None),
             "intpol": _csv_cell(parts, lineno, 4, "intpol", _optional_int, None),
         }
         imported.append(entry)
@@ -119,7 +145,10 @@ def generate_bound_text(boundaries: list[dict]) -> str:
         section_name = b["label"]
         lines.append(f"${section_name}")
         if b.get("nodes"):
-            lines.append(f"        kbound = {b['nodes']}")
+            # The field holds the list as text ("1547 1548 ..."); read it
+            # back the way the editor wrote it, then let the writer wrap a
+            # long one over several lines (SHYFEM stops at 80 characters).
+            lines.extend(wrap_str_assignment("kbound", parse_param_display(b["nodes"])))
         lines.append(f"        ibtyp = {b['ibtyp']}")
         if b.get("boundn"):
             lines.append(f"        boundn = '{b['boundn']}'")
@@ -127,7 +156,9 @@ def generate_bound_text(boundaries: list[dict]) -> str:
             val = b.get(scalar_key, "")
             if val:
                 lines.append(f"        {scalar_key} = '{val}'")
-        if b.get("zfact", 1.0) != 1.0:
+        # Whenever it is set, as with intpol: an explicit 1.0 from the file
+        # must survive a regenerate.
+        if b.get("zfact") is not None:
             lines.append(f"        zfact = {b['zfact']}")
         # Whenever it is set: 1 (stepwise) is not the core default, and an
         # explicit value from the file must survive.
@@ -198,6 +229,13 @@ def boundary_editor_server(
     show_csv_import = reactive.value(False)
     generated_text = reactive.value("")
     _next_id = reactive.value(1)
+    # Whether the cards on screen came from the last parsed file's $bound
+    # sections. Plain state, not a reactive value: the effect must not
+    # depend on it. parsed_str is re-set on every STR text edit, quick
+    # settings apply and template load, not only on a file load, so "this
+    # file has no $bound" alone cannot clear the cards: that would wipe
+    # cards the user added to such a file before Generating them.
+    _cards_from_file = [False]
 
     # Load existing boundaries from parsed STR file
     @reactive.effect
@@ -211,6 +249,31 @@ def boundary_editor_server(
         for section_name, section in sf.sections.items():
             if not section_name.startswith("bound"):
                 continue
+            params = section.parameters
+            values = {}
+            for name, convert, default in (
+                ("ibtyp", int, 1),
+                ("zfact", _optional_float, None),
+                ("intpol", _optional_int, None),
+            ):
+                raw = params.get(name)
+                try:
+                    values[name] = default if raw is None else convert(raw)
+                except (TypeError, ValueError):
+                    # Raised in this effect, it closed the user's session.
+                    # Show no boundaries rather than some the editor cannot
+                    # write back faithfully.
+                    ui.notification_show(
+                        f"Boundaries not loaded: ${section_name} {name} = "
+                        f"{format_param_display(raw)!r} is not a number",
+                        type="error",
+                        duration=10,
+                    )
+                    # Without this the previous file's cards stayed on
+                    # screen (and in Generate) as if they were this file's.
+                    boundaries.set([])
+                    _cards_from_file[0] = False
+                    return
             entry = {
                 "id": bid,
                 "label": section_name,
@@ -219,10 +282,10 @@ def boundary_editor_server(
                 # generate_bound_text writes this field back verbatim, so
                 # that repr would ship an .str line the core hard-stops on.
                 "nodes": format_param_display(section.parameters.get("kbound")),
-                "ibtyp": int(section.parameters.get("ibtyp", 1)),
+                "ibtyp": values["ibtyp"],
                 "boundn": format_param_display(section.parameters.get("boundn")),
-                "zfact": float(section.parameters.get("zfact", 1.0)),
-                "intpol": _optional_int(section.parameters.get("intpol")),
+                "zfact": values["zfact"],
+                "intpol": values["intpol"],
                 "saltn": format_param_display(section.parameters.get("saltn")),
                 "tempn": format_param_display(section.parameters.get("tempn")),
                 "conzn": format_param_display(section.parameters.get("conzn")),
@@ -230,9 +293,13 @@ def boundary_editor_server(
             loaded.append(entry)
             bid += 1
 
-        if loaded:
+        # A file with no $bound after one with them: its cards were the
+        # previous file's and stayed on screen (and in Generate) as if
+        # they were this file's.
+        if loaded or _cards_from_file[0]:
             boundaries.set(loaded)
             _next_id.set(bid)
+        _cards_from_file[0] = bool(loaded)
 
     @reactive.effect
     @reactive.event(input.add_boundary_btn)
@@ -245,7 +312,7 @@ def boundary_editor_server(
             "nodes": "",
             "ibtyp": 1,
             "boundn": "",
-            "zfact": 1.0,
+            "zfact": None,
             "intpol": None,
             "saltn": "",
             "tempn": "",
@@ -329,7 +396,25 @@ def boundary_editor_server(
         for b in bounds:
             bid = b["id"]
             try:
-                # None = the card's select has not reported yet; "" = unset.
+                zfact_raw = input[f"bound_zfact_{bid}"]()
+            except SilentException:
+                # The card's fields have not reported yet (it was just added,
+                # imported or reloaded): keep its stored values. Uncaught,
+                # this ended the whole Generate silently.
+                updated.append(b)
+                continue
+            try:
+                # "" = the field was cleared.
+                zfact = b.get("zfact") if zfact_raw is None else _optional_float(zfact_raw)
+            except ValueError:
+                # It used to keep the old value silently.
+                ui.notification_show(
+                    f"Not generated: ${b['label']} zfact = {zfact_raw!r} is not a number",
+                    type="error",
+                    duration=10,
+                )
+                return
+            try:
                 intpol_raw = input[f"bound_intpol_{bid}"]()
                 # {**b}: saltn/tempn/conzn have no card field and were dropped.
                 entry = {
@@ -337,7 +422,7 @@ def boundary_editor_server(
                     "nodes": input[f"bound_nodes_{bid}"]() or b["nodes"],
                     "ibtyp": int(input[f"bound_type_{bid}"]() or b["ibtyp"]),
                     "boundn": input[f"bound_file_{bid}"]() or b["boundn"],
-                    "zfact": float(input[f"bound_zfact_{bid}"]() or b["zfact"]),
+                    "zfact": zfact,
                     "intpol": (
                         b.get("intpol") if intpol_raw is None else _optional_int(intpol_raw)
                     ),
@@ -433,7 +518,11 @@ def boundary_editor_server(
                                 3,
                                 ui.div(
                                     ui.span("Scale factor", class_="small fw-bold"),
-                                    ui.input_text(f"bound_zfact_{bid}", "", value=str(b["zfact"])),
+                                    ui.input_text(
+                                        f"bound_zfact_{bid}",
+                                        "",
+                                        value=format_param_display(b.get("zfact")),
+                                    ),
                                 ),
                             ),
                             ui.column(

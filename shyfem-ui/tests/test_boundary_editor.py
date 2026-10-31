@@ -7,6 +7,7 @@ shyfem_ui.components.boundary_editor.
 import pytest
 from shiny import reactive
 
+from shyfem_ui.components import boundary_editor as be
 from shyfem_ui.components.boundary_editor import (
     generate_bound_text,
     parse_boundary_csv,
@@ -165,7 +166,7 @@ class TestBoundaryListReactivity:
 # ---------------------------------------------------------------------------
 
 
-def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=1.0, intpol=None, bid=1):
+def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=None, intpol=None, bid=1):
     """Create a boundary dict with sensible defaults."""
     return {
         "id": bid,
@@ -214,9 +215,9 @@ class TestGenerateBoundText:
         result = generate_bound_text([_bound(zfact=2.5)])
         assert "zfact = 2.5" in result
 
-    def test_zfact_omitted_when_one(self):
-        """zfact line is suppressed when value equals 1.0."""
-        result = generate_bound_text([_bound(zfact=1.0)])
+    def test_zfact_omitted_when_unset(self):
+        """zfact line is suppressed when no value was given (None)."""
+        result = generate_bound_text([_bound(zfact=None)])
         assert "zfact" not in result
 
     def test_intpol_included_when_set(self):
@@ -228,6 +229,16 @@ class TestGenerateBoundText:
         """1 is stepwise, not the core default (0): it must be written (S-03)."""
         result = generate_bound_text([_bound(intpol=1)])
         assert "intpol = 1" in result
+
+    def test_a_long_node_list_is_written_in_lines_of_at_most_80_chars(self):
+        """SHYFEM stops on a line over 80 characters (nls_check_line_length);
+        a list goes on over numbers-only lines, which the core reads whole."""
+        from shyfem_ui.services.parser_str import StrParser
+
+        ids = list(range(10000, 10040))
+        text = generate_bound_text([_bound(nodes=" ".join(str(i) for i in ids))])
+        assert all(len(line) <= 80 for line in text.splitlines())
+        assert StrParser.parse(text).get_param("bound1", "kbound") == ids
 
     def test_intpol_omitted_when_unset(self):
         """An unset intpol (None) leaves the core default; nothing is written."""
@@ -338,7 +349,7 @@ class TestParseBoundaryCSV:
         result = parse_boundary_csv("1 2 3, 1")
         entry = result[0]
         assert entry["boundn"] == ""
-        assert entry["zfact"] == 1.0
+        assert entry["zfact"] is None
         assert entry["intpol"] is None
 
     def test_invalid_ibtyp_raises_value_error(self):
@@ -500,3 +511,239 @@ class TestLoadNodeListFromStr:
         with reactive.isolate():
             bounds = result["boundaries"].get()
         assert bounds[0]["nodes"] == "1855"
+
+
+# ---------------------------------------------------------------------------
+# Loading a $bound with a value that is not a number; an explicit zfact = 1.0
+# ---------------------------------------------------------------------------
+
+
+def _load_str(monkeypatch, text, notes=None):
+    from shyfem_ui.components import boundary_editor as be
+    from shyfem_ui.services.parser_str import StrParser
+
+    def note(msg, *a, **k):
+        if notes is not None:
+            notes.append(msg)
+
+    monkeypatch.setattr(be.ui, "notification_show", note)
+    inner = be.boundary_editor_server.__closure__[0].cell_contents
+    fake_input = _FakeInputs()
+    result = inner(fake_input, None, None, parsed_str=reactive.Value(StrParser.parse(text)))
+    return fake_input, result
+
+
+class TestLoadUnreadableValues:
+    """int()/float() ran on ibtyp, zfact and intpol straight from the file, in
+    a reactive effect: a value that is not a number closed the session."""
+
+    @pytest.mark.parametrize(
+        "line, name",
+        [("ibtyp = level", "ibtyp"), ("zfact = 'half'", "zfact"), ("intpol = cubic", "intpol")],
+    )
+    async def test_a_value_that_is_not_a_number_is_reported(self, monkeypatch, line, name):
+        notes: list = []
+        text = (
+            f"$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n$bound2\n  kbound = 3 4\n  {line}\n$end\n"
+        )
+        _, result = _load_str(monkeypatch, text, notes)
+        await reactive.flush()  # raised here before
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        # The editor shows nothing it cannot write back faithfully.
+        assert bounds == []
+        assert len(notes) == 1 and "bound2" in notes[0] and name in notes[0]
+
+
+class TestExplicitZfactOne:
+    """Generate dropped zfact = 1.0 even when the file had it; an explicit value
+    must round-trip, and an absent one stay absent."""
+
+    async def test_an_explicit_zfact_of_one_is_generated(self, monkeypatch):
+        _, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 1.0\n$end\n"
+        )
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert "zfact = 1.0" in generate_bound_text(bounds)
+
+    async def test_an_absent_zfact_stays_absent(self, monkeypatch):
+        _, result = _load_str(monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n")
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert "zfact" not in generate_bound_text(bounds)
+
+    async def test_generate_keeps_the_explicit_one_through_the_card(self, monkeypatch):
+        fake_input, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 1.\n$end\n"
+        )
+        await reactive.flush()
+        # The card fields as the browser reports them.
+        fake_input.set("bound_nodes_1", "1 2")
+        fake_input.set("bound_type_1", "1")
+        fake_input.set("bound_file_1", "")
+        fake_input.set("bound_zfact_1", "1.0")
+        fake_input.set("bound_intpol_1", "")
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            text = result["generated_text"].get()
+        assert "zfact = 1.0" in text
+
+    async def test_a_cleared_zfact_field_writes_no_zfact(self, monkeypatch):
+        fake_input, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n"
+        )
+        await reactive.flush()
+        fake_input.set("bound_nodes_1", "1 2")
+        fake_input.set("bound_type_1", "1")
+        fake_input.set("bound_file_1", "")
+        fake_input.set("bound_zfact_1", "")
+        fake_input.set("bound_intpol_1", "")
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            text = result["generated_text"].get()
+        assert "zfact" not in text
+
+    @pytest.mark.parametrize("raw", ["half", "nan", "inf"])
+    async def test_a_zfact_that_is_not_a_number_is_reported_not_generated(self, monkeypatch, raw):
+        notes: list = []
+        fake_input, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n", notes
+        )
+        await reactive.flush()
+        fake_input.set("bound_nodes_1", "1 2")
+        fake_input.set("bound_type_1", "1")
+        fake_input.set("bound_file_1", "")
+        fake_input.set("bound_zfact_1", raw)
+        fake_input.set("bound_intpol_1", "")
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            text = result["generated_text"].get()
+        assert text == ""
+        assert any("zfact" in n and "bound1" in n for n in notes)
+
+
+class TestNonFiniteNumbers:
+    """nan and inf are floats to Python and nothing to SHYFEM's reader."""
+
+    @pytest.mark.parametrize("raw", ["nan", "NaN", "inf", "-Infinity", "1d400"])
+    def test_a_non_finite_value_is_not_a_number(self, raw):
+        with pytest.raises(ValueError, match="not a number"):
+            be._optional_float(raw)
+
+    def test_a_finite_d_exponent_still_parses(self):
+        assert be._optional_float("2.d0") == 2.0
+
+    def test_csv_import_refuses_a_nan_zfact(self):
+        with pytest.raises(ValueError, match=r"zfact.*not a number"):
+            be.parse_boundary_csv("1 2 3,1,,nan")
+
+
+class _ShinyLikeInputs(_FakeInputs):
+    """Like real Shiny 1.8: reading an input the browser has not reported yet
+    raises SilentException; it does not return None."""
+
+    def _cell(self, key: str) -> reactive.Value:
+        if key not in self._values:
+            self._values[key] = reactive.Value()
+        return self._values[key]
+
+
+class TestGenerateBeforeACardReports:
+    async def test_an_unreported_card_falls_back_to_its_stored_values(self, monkeypatch):
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        fake_input = _ShinyLikeInputs()
+        text = "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n"
+        result = inner(fake_input, None, None, parsed_str=reactive.Value(StrParser.parse(text)))
+        await reactive.flush()
+        # No card field has reported; Generate silently did nothing.
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            generated = result["generated_text"].get()
+        assert "$bound1" in generated and "zfact = 0.5" in generated
+
+
+class TestLoadReviewFixes:
+    async def test_a_fortran_d_exponent_zfact_loads(self, monkeypatch):
+        """The core reads `zfact = 2.d0` (convert.f90 accepts d/D exponents);
+        it was reported as 'not a number' and blocked every boundary."""
+        notes: list = []
+        _, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 2.d0\n$end\n", notes
+        )
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert notes == []
+        assert bounds[0]["zfact"] == 2.0
+
+    async def test_a_refused_file_clears_the_previous_files_boundaries(self, monkeypatch):
+        """Loading file B with a value that is not a number left file A's
+        cards on screen (and in Generate) as if they were B's."""
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        parsed = reactive.Value(StrParser.parse("$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n"))
+        result = inner(_FakeInputs(), None, None, parsed_str=parsed)
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
+        parsed.set(StrParser.parse("$bound1\n  kbound = 3 4\n  ibtyp = level\n$end\n"))
+        await reactive.flush()
+        with reactive.isolate():
+            assert result["boundaries"].get() == []
+
+    async def test_a_file_without_bound_sections_clears_the_previous_files_boundaries(
+        self, monkeypatch
+    ):
+        """Loading file B with no $bound sections left file A's cards on
+        screen (and in Generate) as if they were B's."""
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        parsed = reactive.Value(StrParser.parse("$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n"))
+        result = inner(_FakeInputs(), None, None, parsed_str=parsed)
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
+        parsed.set(StrParser.parse("$para\n  itanf = 0\n$end\n"))
+        await reactive.flush()
+        with reactive.isolate():
+            assert result["boundaries"].get() == []
+
+    async def test_hand_added_cards_survive_a_resync_of_a_file_without_bounds(self, monkeypatch):
+        """parsed_str is re-set on every STR text edit, quick-setting apply and
+        template load, not only on a file load. Cards the user added to a file
+        that has no $bound (not yet Generated into it) must not be wiped by
+        such a re-sync."""
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        fake_input = _FakeInputs()
+        parsed = reactive.Value(StrParser.parse("$para\n  itanf = 0\n$end\n"))
+        result = inner(fake_input, None, None, parsed_str=parsed)
+        await reactive.flush()
+        fake_input.set("add_boundary_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
+        parsed.set(StrParser.parse("$para\n  itanf = 0\n  itend = 3600\n$end\n"))
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1

@@ -70,7 +70,9 @@ def test_compare_choice_and_adjustments_survive(pw_page, tmp_path):
     pw_page.locator(".sf-nav-item[data-nav='Mesh Builder']").click(force=True)
     _step(pw_page, "import")
     pw_page.locator(f"{_P}boundary_file").set_input_files(str(boundary))
-    expect(pw_page.locator(f"{_P}import_result")).to_contain_text("Loaded:", timeout=15000)
+    # The shared page may still show an earlier test's import (Step 2's
+    # leaves "2 lines"): wait for this one-square boundary's own text.
+    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(" 1 lines", timeout=15000)
 
     _step(pw_page, "mesh")
     pw_page.locator(f"{_P}mesh_method input[value='delaunay_quality']").click(force=True)

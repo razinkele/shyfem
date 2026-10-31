@@ -17,6 +17,7 @@ from shyfem_ui.services.parser_grd import Element, GrdFile, Line, Node
 # Helpers to build test grids
 # ---------------------------------------------------------------------------
 
+
 def _make_grid(nodes_dict, elements_dict, lines_dict=None):
     """Create a GrdFile from dicts."""
     grd = GrdFile()
@@ -57,6 +58,7 @@ def _skinny_triangle_nodes():
 # _get_triangle_vertices
 # ---------------------------------------------------------------------------
 
+
 class TestGetTriangleVertices:
 
     def test_true_triangle(self):
@@ -65,17 +67,31 @@ class TestGetTriangleVertices:
         result = _get_triangle_vertices(elem, {})
         assert result == [10, 20, 30]
 
-    def test_parser_quirk(self):
-        """4 nodes with first=3 → parser quirk, return last 3."""
+    def test_a_quad_whose_first_node_is_3_is_not_a_triangle(self):
+        """M-13: the grid parser reads exactly num_nodes ids, so a [3, a, b, c]
+        element is a quad starting at node 3, not a triangle behind a count."""
         elem = Element(id=1, elem_type=0, nodes=[3, 10, 20, 30])
         result = _get_triangle_vertices(elem, {})
-        assert result == [10, 20, 30]
+        assert result is None
 
     def test_genuine_quad(self):
-        """4 nodes with first≠3 → genuine quad, return None."""
+        """4 nodes → quad, return None."""
         elem = Element(id=1, elem_type=0, nodes=[4, 10, 20, 30])
         result = _get_triangle_vertices(elem, {})
         assert result is None
+
+    def test_parsed_triangle_with_node_3_keeps_its_vertices(self):
+        """A parsed .grd triangle arrives as its 3 node ids, never with the count."""
+        from shyfem_ui.services.parser_grd import GrdParser
+
+        grd = GrdParser.parse(
+            "1 3 0 0.0 0.0\n1 10 0 1.0 0.0\n1 20 0 0.0 1.0\n1 30 0 1.0 1.0\n"
+            "2 1 0 3 3 10 20 5.0\n2 2 0 4 3 10 30 20\n"
+        )
+        assert grd.elements[1].nodes == [3, 10, 20]
+        assert _get_triangle_vertices(grd.elements[1], grd.nodes) == [3, 10, 20]
+        assert grd.elements[2].nodes == [3, 10, 30, 20]
+        assert _get_triangle_vertices(grd.elements[2], grd.nodes) is None
 
     def test_five_nodes(self):
         """5 nodes → polygon, return None."""
@@ -94,6 +110,7 @@ class TestGetTriangleVertices:
 # compute_element_quality
 # ---------------------------------------------------------------------------
 
+
 class TestComputeElementQuality:
 
     def test_equilateral(self):
@@ -111,13 +128,12 @@ class TestComputeElementQuality:
         result = compute_element_quality(grd)
         assert result["qualities"][0] == pytest.approx(1.0 / math.sqrt(2), abs=1e-4)
 
-    def test_parser_quirk_elements(self):
-        """Elements with parser quirk (nodes=[3,n1,n2,n3]) are handled."""
+    def test_a_quad_is_skipped(self):
+        """A 4-node element (here one starting at node 3) is not a triangle (M-13)."""
         nodes = _equilateral_nodes()
         grd = _make_grid(nodes, {1: Element(id=1, elem_type=0, nodes=[3, 1, 2, 3])})
         result = compute_element_quality(grd)
-        assert result["stats"]["count"] == 1
-        assert result["qualities"][0] == pytest.approx(1.0, abs=1e-6)
+        assert result["stats"] is None
 
     def test_empty_grid(self):
         """Empty grid → stats is None."""
@@ -157,6 +173,7 @@ class TestComputeElementQuality:
 # ---------------------------------------------------------------------------
 # compute_element_areas
 # ---------------------------------------------------------------------------
+
 
 class TestComputeElementAreas:
 
@@ -198,17 +215,18 @@ class TestComputeElementAreas:
         result = compute_element_areas(grd)
         assert result["stats"] is None
 
-    def test_parser_quirk_areas(self):
-        """Parser quirk elements are handled for area."""
+    def test_a_quad_is_skipped(self):
+        """A 4-node element is not a triangle (M-13)."""
         nodes = _right_triangle_nodes()
         grd = _make_grid(nodes, {1: Element(id=1, elem_type=0, nodes=[3, 1, 2, 3])})
         result = compute_element_areas(grd)
-        assert result["areas"][0] == pytest.approx(0.5, abs=1e-10)
+        assert result["areas"] == []
 
 
 # ---------------------------------------------------------------------------
 # compute_min_angles
 # ---------------------------------------------------------------------------
+
 
 class TestComputeMinAngles:
 
@@ -240,17 +258,18 @@ class TestComputeMinAngles:
         result = compute_min_angles(grd)
         assert result["stats"] is None
 
-    def test_parser_quirk_angles(self):
-        """Parser quirk elements are handled for angles."""
+    def test_a_quad_is_skipped(self):
+        """A 4-node element is not a triangle (M-13)."""
         nodes = _equilateral_nodes()
         grd = _make_grid(nodes, {1: Element(id=1, elem_type=0, nodes=[3, 1, 2, 3])})
         result = compute_min_angles(grd)
-        assert result["min_angles"][0] == pytest.approx(60.0, abs=0.1)
+        assert result["min_angles"] == []
 
 
 # ---------------------------------------------------------------------------
 # compute_boundary_summary
 # ---------------------------------------------------------------------------
+
 
 class TestComputeBoundarySummary:
 
