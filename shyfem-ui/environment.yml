@@ -22,7 +22,7 @@ dependencies:
   - matplotlib>=3.7
   - pyproj
   - fiona
-  - shapely
+  - shapely>=2
   - rasterio
   
   # Server and Database
