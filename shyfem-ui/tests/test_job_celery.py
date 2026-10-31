@@ -932,6 +932,38 @@ class TestCeleryTaskIdPersisted:
         cfg._config = None
 
 
+class TestCeleryOutputFilesPersisted:
+    """J-12: the worker's SQL row never got the run's output files (the local
+    queue writes them), so once the Redis entry was pruned the job's outputs
+    were gone from the database."""
+
+    def test_persist_writes_output_files_column(self, tmp_path, monkeypatch):
+        import shyfem_ui.config as cfg
+        import shyfem_ui.db.base as dbb
+
+        monkeypatch.setenv("SHYFEM_UI_DATABASE_URL", f"sqlite:///{tmp_path / 'of.db'}")
+        monkeypatch.setattr(cfg, "_config", None)
+        monkeypatch.setattr(dbb, "_engine", None)
+        monkeypatch.setattr(dbb, "_SessionLocal", None)
+        dbb.init_db()
+
+        from shyfem_ui.models.project import Job
+        from shyfem_ui.services.job_celery import _persist_job_to_db
+
+        info = _make_job_info(job_id="of-job-1", status=JobStatus.COMPLETED)
+        info.output_files = ["/w/run1.hydro.shy", "/w/run1.ts.shy"]
+        _persist_job_to_db(info, session_factory=dbb.db_session)
+
+        with dbb.db_session() as db:
+            row = db.query(Job).filter(Job.job_uuid == "of-job-1").first()
+            assert row is not None
+            assert row.output_files == ["/w/run1.hydro.shy", "/w/run1.ts.shy"]
+
+        dbb._engine = None
+        dbb._SessionLocal = None
+        cfg._config = None
+
+
 # ---------------------------------------------------------------------------
 # TestCeleryPhantomReconcile
 # ---------------------------------------------------------------------------

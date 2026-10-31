@@ -413,6 +413,7 @@ def _persist_job_to_db(
             row.started_at = job_info.started_at
             row.completed_at = job_info.completed_at
             row.return_code = job_info.return_code
+            row.output_files = list(job_info.output_files or [])
             row.error_message = job_info.error_message
             row.stdout_file = job_info.stdout_file
             row.stderr_file = job_info.stderr_file
