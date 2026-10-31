@@ -15,7 +15,8 @@ def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
 
     Uses the rightmost-untrusted algorithm: walk X-Forwarded-For from right
     to left, skipping IPs that match a trusted CIDR, and return the first
-    untrusted IP. If all are trusted, return the leftmost.
+    untrusted IP. If all are trusted, return the leftmost. Entries that are
+    not IP addresses are skipped; if none parses, return the direct client.
 
     Args:
         scope: ASGI scope dict (needs 'client' and 'headers').
@@ -60,16 +61,20 @@ def get_client_ip(scope: dict, trusted_proxies: list[str]) -> str:
     if not ips:
         return raw_ip
 
+    leftmost_valid = None
     for ip_str in reversed(ips):
         try:
             addr = ipaddress.ip_address(ip_str)
-            if not any(addr in net for net in networks):
-                return ip_str
         except ValueError:
             continue
+        if not any(addr in net for net in networks):
+            return ip_str
+        leftmost_valid = ip_str
 
-    # All trusted — return leftmost
-    return ips[0]
+    # All parseable entries trusted: return the leftmost of them. An entry
+    # that is not an IP address is never returned, and a header with no
+    # parseable entry at all falls back to the direct client (SEC-10).
+    return leftmost_valid if leftmost_valid is not None else raw_ip
 
 
 class RateLimitMiddleware:

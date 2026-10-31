@@ -1,6 +1,5 @@
 """Tests for file_browser persistence via FileService."""
 
-
 import pytest
 
 
@@ -13,12 +12,15 @@ def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setenv("SHYFEM_UI_MAX_PROJECT_STORAGE_MB", "10")
 
     import shyfem_ui.config as cfg_mod
+
     cfg_mod._config = None
     import shyfem_ui.db.base as db_mod
+
     db_mod._engine = None
     db_mod._SessionLocal = None
 
     from shyfem_ui.db.base import init_db
+
     init_db()
     yield
     db_mod._engine = None
@@ -45,6 +47,7 @@ class TestPersistUpload:
 
     def test_persist_upload_creates_db_record(self, project_with_dir, tmp_path):
         from shyfem_ui.components.file_browser import persist_upload
+
         pid, work = project_with_dir
 
         temp = tmp_path / "upload_tmp" / "wind.fem"
@@ -64,6 +67,7 @@ class TestPersistUpload:
 
     def test_persist_upload_with_subdir(self, project_with_dir, tmp_path):
         from shyfem_ui.components.file_browser import persist_upload
+
         pid, work = project_with_dir
 
         temp = tmp_path / "upload_tmp" / "mesh.grd"
@@ -96,23 +100,53 @@ class TestPersistUpload:
         assert result is None
 
     def test_persist_upload_quota_exceeded(self, project_with_dir, tmp_path):
-        from shyfem_ui.components.file_browser import persist_upload
+        from shyfem_ui.components.file_browser import UploadError, persist_upload
+
         pid, _ = project_with_dir
 
         temp = tmp_path / "upload_tmp" / "big.dat"
         temp.parent.mkdir(parents=True, exist_ok=True)
         temp.write_bytes(b"x" * (11 * 1024 * 1024))
 
-        result = persist_upload(
-            temp_path=temp,
-            filename="big.dat",
-            project_id=pid,
-            file_type="other",
-        )
-        assert result is None
+        with pytest.raises(UploadError, match="exceed project storage limit"):
+            persist_upload(
+                temp_path=temp,
+                filename="big.dat",
+                project_id=pid,
+                file_type="other",
+            )
+
+    @pytest.mark.parametrize(
+        ("filename", "reason"),
+        [
+            ("0f8fad5b-d9cb-469f-a165-70867728950e.stdout", "Reserved filename"),
+            ("..", "Invalid filename"),
+        ],
+    )
+    def test_persist_upload_says_why(self, project_with_dir, tmp_path, filename, reason):
+        """F-09: every refusal used to read only 'Failed to upload: x'."""
+        from shyfem_ui.components.file_browser import UploadError, persist_upload
+
+        pid, _ = project_with_dir
+        temp = tmp_path / "upload_tmp" / "f.dat"
+        temp.parent.mkdir(parents=True, exist_ok=True)
+        temp.write_bytes(b"x")
+        with pytest.raises(UploadError, match=reason):
+            persist_upload(temp_path=temp, filename=filename, project_id=pid)
+
+    def test_unexpected_failure_hides_host_paths(self, project_with_dir, tmp_path):
+        from shyfem_ui.components.file_browser import UploadError, persist_upload
+
+        pid, _ = project_with_dir
+        missing = tmp_path / "secret_host_dir" / "gone.dat"
+        with pytest.raises(UploadError) as err:
+            persist_upload(temp_path=missing, filename="gone.dat", project_id=pid)
+        assert "secret_host_dir" not in str(err.value)
+        assert "could not be saved" in str(err.value)
 
     def test_infer_file_type_from_extension(self):
         from shyfem_ui.components.file_browser import infer_file_type
+
         assert infer_file_type("mesh.grd") == "grid"
         assert infer_file_type("domain.bas") == "basin"
         assert infer_file_type("sim.str") == "str"

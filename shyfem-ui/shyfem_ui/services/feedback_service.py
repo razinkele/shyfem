@@ -2,9 +2,10 @@
 
 import logging
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from shyfem_ui.models.feedback import Feedback
+from shyfem_ui.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -160,7 +161,9 @@ class FeedbackService:
         """Delete feedback rows older than ``days``, returning the count
         removed. Without this the feedbacks table grows unbounded (2026-07-18
         review, F52). Best-effort: a DB failure is logged and returns 0."""
-        cutoff = datetime.now() - timedelta(days=days)
+        # UTC, like created_at (server_default=func.now()): a local cutoff
+        # shifted the window by the server's offset (D-05, L39)
+        cutoff = utcnow() - timedelta(days=days)
         session = self._session_factory()
         try:
             count = (

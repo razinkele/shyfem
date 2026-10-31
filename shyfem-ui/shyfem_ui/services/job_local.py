@@ -23,7 +23,7 @@ from shyfem_ui.services.job_queue import (
     JobStatus,
     job_identity_metadata,
 )
-from shyfem_ui.timeutil import utcnow
+from shyfem_ui.timeutil import utc_to_local, utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -347,7 +347,8 @@ class LocalJobQueue(JobQueue):
             status=row.status,
             progress=row.progress or 0.0,
             progress_message=row.progress_message or "",
-            created_at=row.created_at,
+            # created_at is UTC (server default); the other times are local (J-09)
+            created_at=utc_to_local(row.created_at),
             queued_at=row.queued_at,
             started_at=row.started_at,
             completed_at=row.completed_at,
