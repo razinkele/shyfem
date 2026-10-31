@@ -6,6 +6,8 @@ Nothing here touches reactive state; the page polls ``cache_status``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -376,18 +378,45 @@ def publish(tmp_dir: Path, run_id: str) -> Path:
     rename it away to ``.old-<token>``, find ``tmp_dir`` gone (skipping step
     2), and then delete the ".old" -- destroying the only copy of the
     published cache.
+
+    The whole sequence runs under an exclusive ``flock`` on the cache root's
+    ``PUBLISH_LOCK_NAME`` (B-05), so two publishers of the same build -- in
+    two workers, or two threads of one -- take turns: the second finds
+    ``tmp_dir`` gone and returns. Without it, the second could rename the
+    first's fresh publish away and then have nothing to put in its place.
+    ``flock`` conflicts between separately opened descriptors, so it holds
+    within one process too.
     """
     target = tmp_dir.parent / run_id
-    if not tmp_dir.exists():
-        return target
-    token = tmp_dir.name.split(".tmp-", 1)[-1] or secrets.token_hex(4)
-    old = tmp_dir.parent / f"{run_id}.old-{token}"
-    if target.exists():
-        os.rename(target, old)
-    os.rename(tmp_dir, target)
+    with _publish_lock(tmp_dir.parent):
+        if not tmp_dir.exists():
+            return target
+        token = tmp_dir.name.split(".tmp-", 1)[-1] or secrets.token_hex(4)
+        old = tmp_dir.parent / f"{run_id}.old-{token}"
+        if target.exists():
+            os.rename(target, old)
+        os.rename(tmp_dir, target)
+    # Outside the lock: the old build can be hundreds of MB, and no other
+    # publisher ever touches this token's ``.old-`` directory.
     if old.exists():
         shutil.rmtree(old, ignore_errors=True)
     return target
+
+
+#: Lock file in the cache root serialising ``publish`` (B-05). No ``.tmp-`` /
+#: ``.old-`` in the name, so the reconcile, the status probe and the quota
+#: charge (a zero-byte file) all pass over it.
+PUBLISH_LOCK_NAME = ".publish.lock"
+
+
+@contextlib.contextmanager
+def _publish_lock(root: Path):
+    fd = os.open(root / PUBLISH_LOCK_NAME, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o664)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the lock
 
 
 def reconcile_tmp_dirs(
