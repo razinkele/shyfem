@@ -214,6 +214,13 @@ def boundary_editor_server(
     show_csv_import = reactive.value(False)
     generated_text = reactive.value("")
     _next_id = reactive.value(1)
+    # Whether the cards on screen came from the last parsed file's $bound
+    # sections. Plain state, not a reactive value: the effect must not
+    # depend on it. parsed_str is re-set on every STR text edit, quick
+    # settings apply and template load, not only on a file load, so "this
+    # file has no $bound" alone cannot clear the cards: that would wipe
+    # cards the user added to such a file before Generating them.
+    _cards_from_file = [False]
 
     # Load existing boundaries from parsed STR file
     @reactive.effect
@@ -250,6 +257,7 @@ def boundary_editor_server(
                     # Without this the previous file's cards stayed on
                     # screen (and in Generate) as if they were this file's.
                     boundaries.set([])
+                    _cards_from_file[0] = False
                     return
             entry = {
                 "id": bid,
@@ -270,9 +278,13 @@ def boundary_editor_server(
             loaded.append(entry)
             bid += 1
 
-        if loaded:
+        # A file with no $bound after one with them: its cards were the
+        # previous file's and stayed on screen (and in Generate) as if
+        # they were this file's.
+        if loaded or _cards_from_file[0]:
             boundaries.set(loaded)
             _next_id.set(bid)
+        _cards_from_file[0] = bool(loaded)
 
     @reactive.effect
     @reactive.event(input.add_boundary_btn)

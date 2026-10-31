@@ -676,3 +676,46 @@ class TestLoadReviewFixes:
         await reactive.flush()
         with reactive.isolate():
             assert result["boundaries"].get() == []
+
+    async def test_a_file_without_bound_sections_clears_the_previous_files_boundaries(
+        self, monkeypatch
+    ):
+        """Loading file B with no $bound sections left file A's cards on
+        screen (and in Generate) as if they were B's."""
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        parsed = reactive.Value(StrParser.parse("$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n"))
+        result = inner(_FakeInputs(), None, None, parsed_str=parsed)
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
+        parsed.set(StrParser.parse("$para\n  itanf = 0\n$end\n"))
+        await reactive.flush()
+        with reactive.isolate():
+            assert result["boundaries"].get() == []
+
+    async def test_hand_added_cards_survive_a_resync_of_a_file_without_bounds(self, monkeypatch):
+        """parsed_str is re-set on every STR text edit, quick-setting apply and
+        template load, not only on a file load. Cards the user added to a file
+        that has no $bound (not yet Generated into it) must not be wiped by
+        such a re-sync."""
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        fake_input = _FakeInputs()
+        parsed = reactive.Value(StrParser.parse("$para\n  itanf = 0\n$end\n"))
+        result = inner(fake_input, None, None, parsed_str=parsed)
+        await reactive.flush()
+        fake_input.set("add_boundary_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
+        parsed.set(StrParser.parse("$para\n  itanf = 0\n  itend = 3600\n$end\n"))
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
