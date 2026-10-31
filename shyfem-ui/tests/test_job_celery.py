@@ -514,6 +514,76 @@ class TestCeleryCleanup:
         assert seen["db"] != loop_thread, "SQL row delete ran on the event loop"
 
 
+class TestCeleryCallsRunOffTheEventLoop:
+    """J-11: submit/cancel/get_status/list_jobs/get_output are awaited from
+    Shiny handlers and the Run page's 2 s poll, but made their Redis and
+    broker round trips on the event-loop thread: a slow or stalled Redis
+    (up to the 10 s socket timeout per command) froze every session."""
+
+    @staticmethod
+    def _recording(seen, key, value=None):
+        import threading
+
+        def _fn(*_a, **_k):
+            seen.setdefault(key, set()).add(threading.get_ident())
+            return value
+
+        return _fn
+
+    def _assert_off_loop(self, seen, *keys):
+        import threading
+
+        loop_thread = threading.get_ident()
+        for key in keys:
+            assert key in seen, f"{key} was not called"
+            assert loop_thread not in seen[key], f"{key} ran on the event loop"
+
+    async def test_submit(self, queue, job_spec, mock_redis, mock_task):
+        seen: dict = {}
+        mock_redis.hset.side_effect = self._recording(seen, "redis")
+        mock_task.apply_async.side_effect = self._recording(
+            seen, "broker", MagicMock(id="celery-task-1")
+        )
+        await queue.submit(job_spec)
+        self._assert_off_loop(seen, "redis", "broker")
+
+    async def test_cancel(self, queue, mock_redis, mock_celery_app):
+        seen: dict = {}
+        info = _make_job_info(job_id="c1", status=JobStatus.RUNNING)
+        mock_redis.hget.side_effect = self._recording(seen, "redis", _job_info_to_json(info))
+        mock_celery_app.control.revoke.side_effect = self._recording(seen, "broker")
+        assert await queue.cancel("c1") is True
+        self._assert_off_loop(seen, "redis", "broker")
+
+    async def test_get_status(self, queue, mock_redis):
+        seen: dict = {}
+        info = _make_job_info(job_id="g1")
+        mock_redis.hget.side_effect = self._recording(seen, "redis", _job_info_to_json(info))
+        assert (await queue.get_status("g1")).id == "g1"
+        self._assert_off_loop(seen, "redis")
+
+    async def test_list_jobs(self, queue, mock_redis):
+        seen: dict = {}
+        info = _make_job_info(job_id="l1")
+        mock_redis.zrevrange.side_effect = self._recording(seen, "redis", [b"l1"])
+        mock_redis.hget.return_value = _job_info_to_json(info)
+        assert [j.id for j in await queue.list_jobs()] == ["l1"]
+        self._assert_off_loop(seen, "redis")
+
+    async def test_get_output(self, queue, mock_redis, tmp_path):
+        seen: dict = {}
+        out = tmp_path / "o.log"
+        out.write_text("line\n")
+        info = _make_job_info(job_id="o1", stdout_file=str(out))
+        mock_redis.hget.side_effect = self._recording(seen, "redis", _job_info_to_json(info))
+        with patch(
+            "shyfem_ui.services.file_utils.tail_file",
+            self._recording(seen, "file", "line\n"),
+        ):
+            assert await queue.get_output("o1") == "line\n"
+        self._assert_off_loop(seen, "redis", "file")
+
+
 # ---------------------------------------------------------------------------
 # TestCeleryReadsConfigShyfemDir
 # ---------------------------------------------------------------------------

@@ -623,8 +623,16 @@ class CeleryJobQueue(JobQueue):
             self._redis_client = _get_redis_client(self.redis_url, bounded=True)
         return self._redis_client
 
+    # The async API below is awaited from Shiny handlers and the Run page's
+    # poll. Each method runs its blocking Redis/broker round trips in a worker
+    # thread: on the event loop a slow or stalled Redis (each command may wait
+    # REDIS_SOCKET_TIMEOUT_S) froze every session (J-11).
+
     async def submit(self, spec: JobSpec) -> str:
         """Submit a job to Celery for execution."""
+        return await asyncio.to_thread(self._submit_sync, spec)
+
+    def _submit_sync(self, spec: JobSpec) -> str:
         job_id = self.generate_job_id()
 
         job_info = JobInfo(
@@ -712,6 +720,9 @@ class CeleryJobQueue(JobQueue):
 
     async def cancel(self, job_id: str) -> bool:
         """Cancel a job."""
+        return await asyncio.to_thread(self._cancel_sync, job_id)
+
+    def _cancel_sync(self, job_id: str) -> bool:
         rc = self._get_redis_client()
         job_info = _load_job_info(rc, job_id)
         if not job_info or not job_info.is_active:
@@ -736,6 +747,9 @@ class CeleryJobQueue(JobQueue):
 
     async def get_status(self, job_id: str) -> JobInfo | None:
         """Get current status of a job."""
+        return await asyncio.to_thread(self._get_status_sync, job_id)
+
+    def _get_status_sync(self, job_id: str) -> JobInfo | None:
         return _load_job_info(self._get_redis_client(), job_id)
 
     async def list_jobs(
@@ -747,6 +761,18 @@ class CeleryJobQueue(JobQueue):
         user_id: int | None = None,
     ) -> list[JobInfo]:
         """List jobs with optional filtering."""
+        return await asyncio.to_thread(
+            self._list_jobs_sync, status, simulation_id, limit, session_id, user_id
+        )
+
+    def _list_jobs_sync(
+        self,
+        status: JobStatus | None,
+        simulation_id: int | None,
+        limit: int,
+        session_id: str | None,
+        user_id: int | None,
+    ) -> list[JobInfo]:
         rc = self._get_redis_client()
         job_ids = rc.zrevrange("shyfem:jobs:by_time", 0, -1)
 
@@ -779,6 +805,9 @@ class CeleryJobQueue(JobQueue):
 
     async def get_output(self, job_id: str, stream: str = "stdout", tail: int = 100) -> str:
         """Get job output."""
+        return await asyncio.to_thread(self._get_output_sync, job_id, stream, tail)
+
+    def _get_output_sync(self, job_id: str, stream: str, tail: int) -> str:
         rc = self._get_redis_client()
         job_info = _load_job_info(rc, job_id)
         if not job_info:
