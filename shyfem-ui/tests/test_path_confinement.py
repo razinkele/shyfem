@@ -296,3 +296,58 @@ class TestTildePaths:
             shyfem_dir=shyfem,
         )
         assert cfg.confine_path("~/work/run.shy", None) == (work / "run.shy").resolve()
+
+
+class TestDenialMessagesNameNoServerPath:
+    """SEC-08 (second half): in server mode a refused path that does not start
+    with '~' printed the resolved absolute path and the user's home (or every
+    allowed root), which callers show to the user. The message now names the
+    path the way ``display_path`` does and lists no server folder."""
+
+    @pytest.mark.parametrize("raw", ["/etc/x", "../../x", "/tmp/x"])
+    def test_confine_denial_names_no_server_folder(self, tmp_path, raw):
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError) as exc:
+            cfg.confine_path(raw, _user("alice"), session_factory=_empty_db_factory())
+        msg = str(exc.value)
+        assert str(tmp_path) not in msg
+        assert str(cfg.user_data_root) not in msg
+        assert "/etc" not in msg and "/tmp" not in msg
+        assert "x" in msg  # still says which path was refused (its name)
+
+    def test_confine_missing_file_in_home_shown_relative(self, tmp_path):
+        cfg = _server_config(tmp_path)
+        home = cfg.user_data_root / "alice"
+        home.mkdir(parents=True)
+        with pytest.raises(FileNotFoundError) as exc:
+            cfg.confine_path(home / "proj" / "missing.str", _user("alice"), must_exist=True)
+        msg = str(exc.value)
+        assert str(tmp_path) not in msg
+        assert "~/proj/missing.str" in msg
+
+    @pytest.mark.parametrize("method", ["validate_path", "validate_save_path"])
+    def test_server_validate_denial_lists_no_roots(self, tmp_path, method):
+        cfg = _server_config(tmp_path)
+        with pytest.raises(ValueError) as exc:
+            getattr(cfg, method)("/etc/passwd")
+        msg = str(exc.value)
+        assert str(tmp_path) not in msg
+        assert "/etc" not in msg and "/tmp" not in msg
+        assert "passwd" in msg
+
+    def test_local_mode_messages_keep_absolute_paths(self, tmp_path):
+        """Single-user desktop: the full paths help and expose nothing."""
+        work = tmp_path / "work"
+        shyfem = tmp_path / "shyfem"
+        for d in (work, shyfem):
+            d.mkdir(parents=True)
+        cfg = Config(
+            _env_file=None,
+            deployment_mode="local",
+            user_data_root=tmp_path / "users",
+            work_dir=work,
+            shyfem_dir=shyfem,
+        )
+        with pytest.raises(ValueError, match="outside allowed directories") as exc:
+            cfg.validate_path("/etc/passwd")
+        assert str(work) in str(exc.value)

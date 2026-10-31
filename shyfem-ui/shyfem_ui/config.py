@@ -464,6 +464,9 @@ class Config(BaseSettings):
         if not any(
             resolved == root or str(resolved).startswith(str(root) + "/") for root in allowed_roots
         ):
+            if self.deployment_mode == "server":
+                # The message reaches the user: name no server folder (SEC-08).
+                raise ValueError(f"Path '{resolved.name}' is outside allowed directories")
             raise ValueError(
                 f"Path '{resolved}' is outside allowed directories: "
                 f"{', '.join(str(r) for r in allowed_roots)}"
@@ -525,6 +528,9 @@ class Config(BaseSettings):
         work_root = self.work_dir.resolve()
 
         if resolved != work_root and not str(resolved).startswith(str(work_root) + "/"):
+            if self.deployment_mode == "server":
+                # The message reaches the user: name no server folder (SEC-08).
+                raise ValueError(f"Save path '{resolved.name}' must be within work directory")
             raise ValueError(f"Save path '{resolved}' must be within work directory: {work_root}")
 
         return resolved
@@ -693,10 +699,14 @@ class Config(BaseSettings):
                 ]
                 shared_ok = _within(shared_roots)
             if not shared_ok:
-                raise ValueError(f"Path '{resolved}' is outside your home directory: {home}")
+                # Callers show this text: name the path as display_path does
+                # and print no server folder (SEC-08).
+                raise ValueError(
+                    f"Path '{self.display_path(resolved, user)}' is outside your home directory"
+                )
 
         if must_exist and not resolved.exists():
-            raise FileNotFoundError(f"Path not found: {resolved}")
+            raise FileNotFoundError(f"Path not found: {self.display_path(resolved, user)}")
 
         return resolved
 
