@@ -165,7 +165,7 @@ class TestBoundaryListReactivity:
 # ---------------------------------------------------------------------------
 
 
-def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=1.0, intpol=None, bid=1):
+def _bound(label="bound1", nodes="1 2 3", ibtyp=1, boundn="", zfact=None, intpol=None, bid=1):
     """Create a boundary dict with sensible defaults."""
     return {
         "id": bid,
@@ -214,9 +214,9 @@ class TestGenerateBoundText:
         result = generate_bound_text([_bound(zfact=2.5)])
         assert "zfact = 2.5" in result
 
-    def test_zfact_omitted_when_one(self):
-        """zfact line is suppressed when value equals 1.0."""
-        result = generate_bound_text([_bound(zfact=1.0)])
+    def test_zfact_omitted_when_unset(self):
+        """zfact line is suppressed when no value was given (None)."""
+        result = generate_bound_text([_bound(zfact=None)])
         assert "zfact" not in result
 
     def test_intpol_included_when_set(self):
@@ -338,7 +338,7 @@ class TestParseBoundaryCSV:
         result = parse_boundary_csv("1 2 3, 1")
         entry = result[0]
         assert entry["boundn"] == ""
-        assert entry["zfact"] == 1.0
+        assert entry["zfact"] is None
         assert entry["intpol"] is None
 
     def test_invalid_ibtyp_raises_value_error(self):
@@ -500,3 +500,117 @@ class TestLoadNodeListFromStr:
         with reactive.isolate():
             bounds = result["boundaries"].get()
         assert bounds[0]["nodes"] == "1855"
+
+
+# ---------------------------------------------------------------------------
+# Loading a $bound with a value that is not a number; an explicit zfact = 1.0
+# ---------------------------------------------------------------------------
+
+
+def _load_str(monkeypatch, text, notes=None):
+    from shyfem_ui.components import boundary_editor as be
+    from shyfem_ui.services.parser_str import StrParser
+
+    def note(msg, *a, **k):
+        if notes is not None:
+            notes.append(msg)
+
+    monkeypatch.setattr(be.ui, "notification_show", note)
+    inner = be.boundary_editor_server.__closure__[0].cell_contents
+    fake_input = _FakeInputs()
+    result = inner(fake_input, None, None, parsed_str=reactive.Value(StrParser.parse(text)))
+    return fake_input, result
+
+
+class TestLoadUnreadableValues:
+    """int()/float() ran on ibtyp, zfact and intpol straight from the file, in
+    a reactive effect: a value that is not a number closed the session."""
+
+    @pytest.mark.parametrize(
+        "line, name",
+        [("ibtyp = level", "ibtyp"), ("zfact = 'half'", "zfact"), ("intpol = cubic", "intpol")],
+    )
+    async def test_a_value_that_is_not_a_number_is_reported(self, monkeypatch, line, name):
+        notes: list = []
+        text = (
+            f"$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n$bound2\n  kbound = 3 4\n  {line}\n$end\n"
+        )
+        _, result = _load_str(monkeypatch, text, notes)
+        await reactive.flush()  # raised here before
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        # The editor shows nothing it cannot write back faithfully.
+        assert bounds == []
+        assert len(notes) == 1 and "bound2" in notes[0] and name in notes[0]
+
+
+class TestExplicitZfactOne:
+    """Generate dropped zfact = 1.0 even when the file had it; an explicit value
+    must round-trip, and an absent one stay absent."""
+
+    async def test_an_explicit_zfact_of_one_is_generated(self, monkeypatch):
+        _, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 1.0\n$end\n"
+        )
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert "zfact = 1.0" in generate_bound_text(bounds)
+
+    async def test_an_absent_zfact_stays_absent(self, monkeypatch):
+        _, result = _load_str(monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n")
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert "zfact" not in generate_bound_text(bounds)
+
+    async def test_generate_keeps_the_explicit_one_through_the_card(self, monkeypatch):
+        fake_input, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 1.\n$end\n"
+        )
+        await reactive.flush()
+        # The card fields as the browser reports them.
+        fake_input.set("bound_nodes_1", "1 2")
+        fake_input.set("bound_type_1", "1")
+        fake_input.set("bound_file_1", "")
+        fake_input.set("bound_zfact_1", "1.0")
+        fake_input.set("bound_intpol_1", "")
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            text = result["generated_text"].get()
+        assert "zfact = 1.0" in text
+
+    async def test_a_cleared_zfact_field_writes_no_zfact(self, monkeypatch):
+        fake_input, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n"
+        )
+        await reactive.flush()
+        fake_input.set("bound_nodes_1", "1 2")
+        fake_input.set("bound_type_1", "1")
+        fake_input.set("bound_file_1", "")
+        fake_input.set("bound_zfact_1", "")
+        fake_input.set("bound_intpol_1", "")
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            text = result["generated_text"].get()
+        assert "zfact" not in text
+
+    async def test_a_zfact_that_is_not_a_number_is_reported_not_generated(self, monkeypatch):
+        notes: list = []
+        fake_input, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n", notes
+        )
+        await reactive.flush()
+        fake_input.set("bound_nodes_1", "1 2")
+        fake_input.set("bound_type_1", "1")
+        fake_input.set("bound_file_1", "")
+        fake_input.set("bound_zfact_1", "half")
+        fake_input.set("bound_intpol_1", "")
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            text = result["generated_text"].get()
+        assert text == ""
+        assert any("zfact" in n and "bound1" in n for n in notes)
