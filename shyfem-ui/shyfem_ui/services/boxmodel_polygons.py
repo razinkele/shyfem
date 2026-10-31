@@ -271,6 +271,26 @@ def _resolve_grid_epsg(grd: GrdFile, epsg: int | None) -> int | None:
     return None
 
 
+def grid_to_wgs84(
+    grd: GrdFile, epsg: int | None = None
+) -> Callable[[float, float], tuple[float, float]] | None:
+    """An ``(x, y) -> (lon, lat)`` transform for coordinates in ``grd``'s own
+    frame, by the same CRS rule ``dissolve_boxes_from_grid`` uses (see
+    ``_resolve_grid_epsg``), or ``None`` when that CRS cannot be resolved.
+
+    For anything else that carries the grid's native coordinates -- the
+    section nodes SHYFEM writes into its box output, for one -- so it lands
+    where the dissolved box outlines do (B-01).
+    """
+    _require_geospatial_stack()
+    resolved = _resolve_grid_epsg(grd, epsg)
+    if resolved is None:
+        return None
+    if resolved == 4326:
+        return lambda x, y: (x, y)
+    return _to_wgs84(f"EPSG:{resolved}")
+
+
 def dissolve_boxes_from_grid(
     grid: GrdFile | Path | str,
     element_box: list[list[int]],

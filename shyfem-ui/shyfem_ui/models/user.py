@@ -111,7 +111,11 @@ class User(Base):
 
 
 class AuthSession(Base):
-    """An authenticated session tied to a user."""
+    """An authenticated session tied to a user.
+
+    ``token`` holds the sha256 hex digest of the cookie value, never the
+    cookie itself (SEC-06; see ``auth_service._hash_token``).
+    """
 
     __tablename__ = "auth_sessions"
 
@@ -150,6 +154,9 @@ class WSAuthToken(Base):
     Distinct from the session cookie value; a pointer to the owning
     ``AuthSession`` whose validity it inherits (expires no later, dies on
     logout, dies on session expiry).
+
+    ``token`` and ``session_token`` hold sha256 hex digests of the raw WS
+    token and of the owning session's cookie value (SEC-06).
     """
 
     __tablename__ = "ws_auth_tokens"
