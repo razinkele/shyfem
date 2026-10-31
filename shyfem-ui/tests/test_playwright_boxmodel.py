@@ -235,3 +235,59 @@ def test_boxmodel_manifest_tab_saves_an_edit(pw_page, box_project):
     for key in ("forcing", "str", "observations", "boxes"):
         if before.get(key):
             assert after.get(key), f"the save dropped {key!r}"
+
+
+def test_boxmodel_page_notices_a_cache_rebuilt_elsewhere(pw_page, box_project):
+    """A cache republished by a build this session did not start reaches the
+    page without re-selecting the run (B-04).
+
+    The publish is done from the test process, the way another worker's (or
+    another session's) build would land: a finished directory renamed over
+    the published one with ``publish``. Only ``meta.json``'s period changes,
+    so the cache stays "ready" and the period picker is the visible signal.
+    """
+    import json
+    import re
+    import shutil
+
+    from shyfem_ui.services.boxmodel_cache import publish
+
+    pw_page.evaluate("(proj) => window.__test_set_active_project(proj)", box_project)
+    pw_page.wait_for_timeout(300)
+    pw_page.evaluate("shyfemNavTo('Box-model')")
+    pw_page.get_by_role("tab", name="Map").click()
+    run_select = pw_page.locator("#boxmodel-run")
+    expect(run_select).to_have_value("fix", timeout=15000)
+    state = pw_page.locator("#boxmodel-cache_state")
+    cache_dir = Path(box_project["work_dir"]) / ".boxmodel_cache" / "fix"
+    if not (cache_dir / "meta.json").is_file():
+        pw_page.locator("#boxmodel-build").click()
+    # The fixture rewrites the run on every test, so an earlier test's cache
+    # reads "stale" here; both states are loaded and shown.
+    settled = re.compile("ready|stale")
+    expect(state).to_contain_text(settled, timeout=60000)
+
+    meta = json.loads((cache_dir / "meta.json").read_text())
+    original_end = meta["period"]["end"][:10]
+    end_input = pw_page.locator("#boxmodel-period input").nth(1)
+    expect(end_input).to_have_value(original_end, timeout=15000)
+
+    def republish(end: str, token: str) -> None:
+        tmp = cache_dir.parent / f"fix.tmp-{token}"
+        shutil.copytree(cache_dir, tmp)
+        rebuilt = dict(meta, period=dict(meta["period"], end=f"{end}T00:00:00"))
+        (tmp / "meta.json").write_text(json.dumps(rebuilt))
+        publish(tmp, "fix")
+
+    try:
+        republish("2009-01-20", "e2eb04a")
+        # WATCH_SECONDS is 10; one tick plus the reload.
+        expect(end_input).to_have_value("2009-01-20", timeout=30000)
+    finally:
+        republish(original_end, "e2eb04b")
+    expect(end_input).to_have_value(original_end, timeout=30000)
+    expect(state).to_contain_text(settled, timeout=15000)
+
+    _dismiss_modals(pw_page)
+    pw_page.locator(".sf-nav-item[data-nav='Dashboard']").click(force=True)
+    pw_page.wait_for_timeout(300)

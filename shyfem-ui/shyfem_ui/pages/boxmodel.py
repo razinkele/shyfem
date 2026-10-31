@@ -24,7 +24,8 @@ obligations the reviews of those services handed forward:
 * ``reconcile_tmp_dirs`` runs at page load inside a ``try``;
 * the status poller owns its own trigger: it re-arms itself only while a
   build is live and never reads anything it writes, so there is no
-  reactive self-write loop;
+  reactive self-write loop; a separate slow watch (``_watch_published``)
+  notices a cache republished by a build some other session started;
 * the Compare tab (PR 2) works on ONE shared day set: ``cmp_days_result()``
   is the calc that computes it once (``common_days``), ``cmp_days()`` the
   accessor handing it to the difference map, the overlay plot and the
@@ -79,6 +80,7 @@ from shyfem_ui.services.boxmodel_cache import (
     get_registry,
     load_cache,
     load_cache_state,
+    published_fingerprint,
     read_hourly_window,
     reconcile_tmp_dirs,
     start_build,
@@ -140,6 +142,13 @@ _render_download = getattr(render, "download_button", None) or render.download
 #: the Config it is handed, so the page supplies a bounded one.
 BUILD_TIMEOUT_SECONDS = 30 * 60
 POLL_SECONDS = 2
+#: How often a page holding a loaded cache checks whether it was republished
+#: by a build it did not start (another session, or another worker): one
+#: ``stat`` of each manifest run's ``meta.json`` per tick (B-04).
+WATCH_SECONDS = 10
+CACHE_REPUBLISHED_MESSAGE = (
+    "Output-step detail: the cache was rebuilt since it was loaded; refreshing."
+)
 #: States in which no build is running, so the cache on disk is settled.
 _TERMINAL_STATES = ("ready", "stale", "failed", "missing")
 #: States in which a build is queued or running.
@@ -747,6 +756,28 @@ def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=N
     return None
 
 
+def _published_changed(published: dict, loaded: list, seen: dict) -> bool:
+    """Has any run's published cache changed since this page looked? (B-04)
+
+    ``published`` is ``{run_id: published_fingerprint}`` for every manifest
+    run, as it is on disk now. ``loaded`` lists ``(run_id, fingerprint)`` for
+    every frame the page holds -- the header run and each Compare run -- and
+    those are what a change is measured against. A run the page holds nothing
+    for is measured against ``seen`` (the previous tick's ``published``), so a
+    cache that appears, disappears or is rebuilt for it is noticed too; on the
+    first sighting there is nothing to compare with, and a cache that will not
+    load (it is reported once, as a page message) is not re-read every tick.
+    """
+    held = {run_id for run_id, _fp in loaded}
+    for run_id, fingerprint in loaded:
+        if run_id in published and published[run_id] != fingerprint:
+            return True
+    return any(
+        run_id not in held and run_id in seen and seen[run_id] != fingerprint
+        for run_id, fingerprint in published.items()
+    )
+
+
 def _remember_good(last: dict, project_id, run_id: str, cached_run) -> None:
     """Remember a successfully loaded run, KEYED by the run it belongs to."""
     last["good"] = (project_id, run_id, cached_run)
@@ -1031,6 +1062,8 @@ def boxmodel_server(
         "grd": False,
         "good": None,
         "project": None,
+        # {run_id: published_fingerprint} as the watch last saw it (B-04).
+        "published": {},
         # Remove buttons are watched by one effect, so it needs to remember
         # which clicks it has already acted on.
         "removed": {},
@@ -1217,8 +1250,8 @@ def boxmodel_server(
         build starts it; writes ``status_tick`` and ``cache_generation``,
         neither of which it reads, so refreshing the UI cannot refresh the
         poller. Once no build is queued or building, it publishes the
-        terminal state once and stops -- no timer keeps running on an idle
-        page.
+        terminal state once and stops. (The only timer on an idle page is
+        ``_watch_published``'s ``stat`` of each run's ``meta.json``.)
 
         The two writes are deliberately not the same signal. ``status_tick``
         fires on every 2 s tick, because the badge shows live
@@ -1249,6 +1282,47 @@ def boxmodel_server(
         if not changed:
             _bump_status()
         reactive.invalidate_later(POLL_SECONDS)
+
+    @reactive.effect
+    def _watch_published():
+        """Notice a cache republished by a build this session did not start (B-04).
+
+        ``_poll`` runs only after this session's own Build or Cancel, so a
+        rebuild started in another session -- or by another worker -- was
+        invisible until the run was re-selected: the page went on showing the
+        old build, and an hourly window read off disk would have paired the
+        NEW build's records with the OLD build's meta. While the manifest has
+        runs this re-arms every ``WATCH_SECONDS`` and stats each run's
+        ``meta.json`` -- nothing else -- and bumps ``cache_generation`` only
+        when a fingerprint differs from what the page holds
+        (``_published_changed``). Reads ``cached()``/``all_run_states()``
+        (the reload they lead to re-runs this once, finds them equal, and
+        writes nothing); never reads what it writes.
+        """
+        manifest_obj = manifest()
+        proj = _project()
+        if manifest_obj is None or proj is None or not manifest_obj.runs:
+            return
+        reactive.invalidate_later(WATCH_SECONDS)
+        work_dir = Path(proj["work_dir"])
+        try:
+            published = {
+                run.id: published_fingerprint(cache_dir_for(work_dir, run.id))
+                for run in manifest_obj.runs
+            }
+        except ValueError as exc:  # a run id the cache layout refuses
+            logger.warning("boxmodel: cache watch skipped: %s", exc)
+            return
+        loaded = [(r.run_id, r.fingerprint) for r in all_run_states().values()]
+        cached_run = cached()
+        if cached_run is not None:
+            loaded.append((cached_run.run_id, cached_run.fingerprint))
+        seen = last["published"]
+        last["published"] = published
+        if _published_changed(published, loaded, seen):
+            logger.info("boxmodel: a cache was republished elsewhere; reloading")
+            _bump_status()
+            _bump_cache_generation()
 
     @render.ui
     def cache_state():
@@ -1813,12 +1887,21 @@ def boxmodel_server(
             return None, None
         if not _hourly_usable(cached_run.meta, period):
             return None, None
+        cache_dir = cache_dir_for(Path(proj["work_dir"]), run.id)
         try:
+            # The window is read off disk NOW, the meta it is interpreted with
+            # was read at load time: if a build has published over the cache
+            # since (before or during this read), they describe different
+            # builds. Say so; _watch_published reloads the whole run shortly.
+            if published_fingerprint(cache_dir) != cached_run.fingerprint:
+                return None, CACHE_REPUBLISHED_MESSAGE
             frame = read_hourly_window(
-                cache_dir_for(Path(proj["work_dir"]), run.id),
+                cache_dir,
                 pd.Timestamp(period[0]),
                 pd.Timestamp(period[1]) + timedelta(days=1) - timedelta(seconds=1),
             )
+            if published_fingerprint(cache_dir) != cached_run.fingerprint:
+                return None, CACHE_REPUBLISHED_MESSAGE
         except (OSError, ValueError, KeyError, TypeError) as exc:
             # A cache that HAS the file and cannot be read is a broken cache,
             # not a daily one: falling back silently would leave the user with

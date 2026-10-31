@@ -789,6 +789,63 @@ class CachedRun:
     #: session (6.1M rows for the 22-year Curonian run). Read a window with
     #: ``read_hourly_window`` instead. Kept so the dataclass shape is stable.
     state_hourly: pd.DataFrame | None = None
+    #: ``published_fingerprint`` of the directory these frames were read from,
+    #: taken before AND after the read and equal both times. A page compares
+    #: it with the directory's current fingerprint to notice that a build in
+    #: another session (or worker) has published over it since.
+    fingerprint: tuple | None = None
+
+
+#: How many times a loader re-reads a cache that was republished under it.
+LOAD_ATTEMPTS = 3
+LOAD_RETRY_SECONDS = 0.05
+
+
+def published_fingerprint(cache_dir: Path) -> tuple | None:
+    """Identity of the cache currently published at ``cache_dir``, or None.
+
+    ``meta.json``'s device, inode, mtime and size. A publish renames a whole
+    new directory into place, so the file under that path is a different
+    inode after every build -- unlike ``meta["built_at"]``, which is only
+    second-granular. One ``stat``, cheap enough to poll. None when nothing is
+    published (or the path cannot be read).
+    """
+    try:
+        st = (Path(cache_dir) / "meta.json").stat()
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size)
+
+
+def _read_consistent(cache_dir: Path, read):
+    """``(read(), fingerprint)`` with every file from ONE published cache.
+
+    The loaders open ``meta.json`` and several Parquet files one after the
+    other. A publish (``publish``) landing between two of those opens would
+    pair the old build's meta with the new build's frames, or fail on a file
+    renamed away mid-read. So the fingerprint is taken before and after; a
+    read that saw it change -- or that failed while it changed -- is retried
+    a bounded number of times, then refused with ``OSError`` (which every
+    caller already turns into a page message). A failure with the
+    fingerprint unchanged is a genuinely broken (or absent) cache and is
+    raised at once.
+    """
+    error: Exception | None = None
+    for attempt in range(LOAD_ATTEMPTS):
+        if attempt:
+            time.sleep(LOAD_RETRY_SECONDS)
+        before = published_fingerprint(cache_dir)
+        try:
+            result = read()
+        except OSError as exc:
+            if published_fingerprint(cache_dir) == before:
+                raise
+            error = exc
+            continue
+        if before is not None and published_fingerprint(cache_dir) == before:
+            return result, before
+        error = OSError("the cache changed while it was being read")
+    raise OSError(f"the cache kept changing while it was being read ({error})")
 
 
 def _to_ns(series: pd.Series) -> pd.Series:
@@ -805,20 +862,26 @@ def _to_ns(series: pd.Series) -> pd.Series:
 def load_cache(cache_dir: Path, run_id: str) -> CachedRun:
     """Load a *published* cache directory. Never reads a ``.tmp-*``/``.old-*``
     directory -- callers pass the published ``cache_dir_for(...)`` path.
+    Every file comes from the same build (see ``_read_consistent``).
     """
-    meta = json.loads((cache_dir / "meta.json").read_text())
-    sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+
+    def read():
+        meta = json.loads((cache_dir / "meta.json").read_text())
+        sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+        fd = pd.read_parquet(cache_dir / "flux_daily.parquet")
+        md = pd.read_parquet(cache_dir / "meteo_daily.parquet")
+        return meta, sd, fd, md
+
+    (meta, sd, fd, md), fingerprint = _read_consistent(cache_dir, read)
     sd["date"] = _to_ns(sd["date"])
-    fd = pd.read_parquet(cache_dir / "flux_daily.parquet")
     fd["date"] = _to_ns(fd["date"])
-    md = pd.read_parquet(cache_dir / "meteo_daily.parquet")
     md["date"] = _to_ns(md["date"])
     # The hourly frame is deliberately NOT materialised here: it is the raw
     # record stream, 6.1M rows and ~250 MB for the 22-year Curonian run, and
     # this loader sits at the head of the page's expensive chain in the worker
     # that serves every session. Read the visible window instead --
     # ``read_hourly_window`` -- which the day-level row groups make cheap.
-    return CachedRun(run_id, meta, sd, fd, md, None)
+    return CachedRun(run_id, meta, sd, fd, md, None, fingerprint)
 
 
 #: Columns of ``state_hourly.parquet``: the stamp, the box, and every state
@@ -872,8 +935,12 @@ def load_cache_state(cache_dir: Path, run_id: str) -> CachedRun:
     large ``flux``/``meteo``/hourly frames are left empty so loading every run
     at once stays cheap. Callers pass the published ``cache_dir_for(...)`` path.
     """
-    meta = json.loads((cache_dir / "meta.json").read_text())
-    sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+
+    def read():
+        meta = json.loads((cache_dir / "meta.json").read_text())
+        return meta, pd.read_parquet(cache_dir / "state_daily.parquet")
+
+    (meta, sd), fingerprint = _read_consistent(cache_dir, read)
     sd["date"] = _to_ns(sd["date"])
     empty = pd.DataFrame()
-    return CachedRun(run_id, meta, sd, empty, empty, None)
+    return CachedRun(run_id, meta, sd, empty, empty, None, fingerprint)
