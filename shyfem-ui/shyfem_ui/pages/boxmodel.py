@@ -108,6 +108,7 @@ from shyfem_ui.services.boxmodel_manifest import (
 from shyfem_ui.services.boxmodel_polygons import (
     PolygonError,
     dissolve_boxes_from_grid,
+    grid_to_wgs84,
     load_box_polygons,
 )
 from shyfem_ui.services.boxmodel_setup import (
@@ -781,6 +782,31 @@ def _read_hourly_window_checked(cache_dir, fingerprint, period) -> tuple:
     if published_fingerprint(cache_dir) != fingerprint:
         return None, CACHE_REPUBLISHED_MESSAGE
     return (None if frame.empty else frame), None
+
+
+def _interfaces_on_map(interfaces: list[dict], grd) -> list[dict]:
+    """Section interfaces moved into the map's lon/lat frame (B-01).
+
+    SHYFEM writes a section's nodes with the grid's own x/y, and the cache
+    keeps them as written, so on a projected grid they are metres. They are
+    reprojected by the rule the dissolved box outlines use (the EPSG the grid
+    map would use, then ``grid_to_wgs84``'s fallbacks), so each interface
+    lands on the boundary between its two boxes. A geographic grid, or no
+    parsed grid at all, leaves them as they are; a projected grid whose CRS
+    cannot be resolved drops them -- metres drawn as degrees would put the
+    lines somewhere else on the planet.
+    """
+    if grd is None or not interfaces or _is_geographic(grd):
+        return interfaces
+    to_wgs84 = grid_to_wgs84(grd, _detect_projected_crs(grd))
+    if to_wgs84 is None:
+        logger.warning("boxmodel: section interfaces dropped: the grid's CRS is unknown")
+        return []
+    out = []
+    for rec in interfaces:
+        path = [[float(c) for c in to_wgs84(x, y)] for x, y in rec["path"]]
+        out.append({**rec, "path": path})
+    return out
 
 
 def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
@@ -3014,8 +3040,8 @@ def boxmodel_server(
         if cached_run is None:
             return []
         try:
-            return section_interfaces(cached_run.meta)
-        except (TypeError, ValueError, KeyError) as exc:
+            return _interfaces_on_map(section_interfaces(cached_run.meta), grd_file.get())
+        except (TypeError, ValueError, KeyError, PolygonError) as exc:
             logger.warning("boxmodel: section interfaces unavailable: %s", exc)
             return []
 
