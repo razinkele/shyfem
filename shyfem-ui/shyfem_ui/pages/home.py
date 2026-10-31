@@ -1559,7 +1559,7 @@ def home_server(
             )
             return
 
-        from shyfem_ui.services.project_export import create_project_records, import_project
+        from shyfem_ui.services.project_export import import_and_register
 
         # In server mode, extract under the owner's home sandbox so the imported
         # project is reachable once confine_path is enforced; local mode keeps
@@ -1573,29 +1573,25 @@ def home_server(
         try:
             with open(file_path, "rb") as f:
                 zip_data = BytesIO(f.read())
-            result = await import_project(zip_data, import_root)
+            # Shielded: Shiny 1.9 cancels this effect when the tab closes
+            # while it waits. The extraction and the project records land
+            # together or not at all (the unit removes the folder itself when
+            # the records fail), never an extracted folder no project owns.
+            result = await asyncio.shield(
+                import_and_register(zip_data, import_root, owner_id=user["id"] if user else None)
+            )
         except ValueError as e:
             logger.exception("Project ZIP import rejected: %s", file_path)
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)
             return
         except Exception as e:
-            logger.exception("Unexpected error importing project ZIP: %s", file_path)
+            logger.exception("Importing project ZIP failed: %s", file_path)
             ui.notification_show(f"Import failed: {e}", type="error", duration=6)
             return
 
-        try:
-            create_project_records(result, owner_id=user["id"] if user else None)
-
-            ui.notification_show(f"Imported project '{result['name']}'", type="message", duration=4)
-            ui.modal_remove()
-            _refresh_projects()
-
-        except Exception as e:
-            wd = result.get("work_dir")
-            if wd and Path(wd).exists():
-                shutil.rmtree(wd, ignore_errors=True)
-            logger.exception("Failed to save imported project to database")
-            ui.notification_show(f"Import failed: {e}", type="error", duration=6)
+        ui.notification_show(f"Imported project '{result['name']}'", type="message", duration=4)
+        ui.modal_remove()
+        _refresh_projects()
 
     # ------------------------------------------------------------------
     # Share project handlers

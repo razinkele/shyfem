@@ -8,6 +8,7 @@ folder. Nothing else is touched.
 """
 
 import inspect
+import re
 from pathlib import Path
 
 from shyfem_ui.services.parser_str import StrParser
@@ -92,7 +93,11 @@ def test_the_submit_handler_relocates_and_validates_each_member():
     from shyfem_ui.pages import ensemble
 
     src = inspect.getsource(ensemble)
-    body = src[src.index("for i, combo in enumerate(combos):\n            # Create a modified") :]
+    # The loop lives inside the handler's shielded `_submit_all()` unit, so
+    # anchor on the loop head, whatever its indentation.
+    m = re.search(r"for i, combo in enumerate\(combos\):\n\s*# Create a modified", src)
+    assert m, "member loop not found in ensemble.py"
+    body = src[m.start() :]
     body = body[: body.index("spec = JobSpec(")]
     assert "_relocate_member_paths(" in body and "_copy_fixed_inputs(" in body
     assert body.index("_relocate_member_paths(") < body.index("validate_str(")

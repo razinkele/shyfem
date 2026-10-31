@@ -82,7 +82,9 @@ def test_server_wiring_gates_and_polling():
 def test_download_uses_non_deprecated_renderer():
     from shyfem_ui.pages import boxmodel
 
-    assert boxmodel._render_download is not None
+    src = inspect.getsource(boxmodel)
+    assert "@render.download_button(" in src
+    assert 'getattr(render, "download_button"' not in src
 
 
 # --- obligation-driven helpers -------------------------------------------
