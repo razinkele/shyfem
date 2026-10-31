@@ -44,9 +44,15 @@ def _optional_int(value) -> int | None:
 
 
 def _optional_float(value) -> float | None:
-    """A float, or None for an absent parameter."""
+    """A float, or None for an absent parameter.
+
+    Accepts the Fortran ``d`` exponent (``2.d0``, ``1.5D-1``) the core reads
+    (``convert.f90``) and Python's ``float`` does not.
+    """
     if value is None or value == "":
         return None
+    if isinstance(value, str):
+        value = value.strip().lower().replace("d", "e")
     return float(value)
 
 
@@ -241,6 +247,9 @@ def boundary_editor_server(
                         type="error",
                         duration=10,
                     )
+                    # Without this the previous file's cards stayed on
+                    # screen (and in Generate) as if they were this file's.
+                    boundaries.set([])
                     return
             entry = {
                 "id": bid,

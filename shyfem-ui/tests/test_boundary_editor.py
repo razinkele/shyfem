@@ -643,3 +643,36 @@ class TestGenerateBeforeACardReports:
         with reactive.isolate():
             generated = result["generated_text"].get()
         assert "$bound1" in generated and "zfact = 0.5" in generated
+
+
+class TestLoadReviewFixes:
+    async def test_a_fortran_d_exponent_zfact_loads(self, monkeypatch):
+        """The core reads `zfact = 2.d0` (convert.f90 accepts d/D exponents);
+        it was reported as 'not a number' and blocked every boundary."""
+        notes: list = []
+        _, result = _load_str(
+            monkeypatch, "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 2.d0\n$end\n", notes
+        )
+        await reactive.flush()
+        with reactive.isolate():
+            bounds = result["boundaries"].get()
+        assert notes == []
+        assert bounds[0]["zfact"] == 2.0
+
+    async def test_a_refused_file_clears_the_previous_files_boundaries(self, monkeypatch):
+        """Loading file B with a value that is not a number left file A's
+        cards on screen (and in Generate) as if they were B's."""
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        parsed = reactive.Value(StrParser.parse("$bound1\n  kbound = 1 2\n  ibtyp = 1\n$end\n"))
+        result = inner(_FakeInputs(), None, None, parsed_str=parsed)
+        await reactive.flush()
+        with reactive.isolate():
+            assert len(result["boundaries"].get()) == 1
+        parsed.set(StrParser.parse("$bound1\n  kbound = 3 4\n  ibtyp = level\n$end\n"))
+        await reactive.flush()
+        with reactive.isolate():
+            assert result["boundaries"].get() == []

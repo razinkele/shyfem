@@ -57,7 +57,9 @@ def test_refine_choices_survive_an_apply(pw_page, tmp_path):
     pw_page.locator(".sf-nav-item[data-nav='Mesh Builder']").click(force=True)
     _step(pw_page, "import")
     pw_page.locator(f"{_P}boundary_file").set_input_files(str(boundary))
-    expect(pw_page.locator(f"{_P}import_result")).to_contain_text("Loaded:", timeout=15000)
+    # The shared page still shows the previous test's "Loaded: ... 1 lines":
+    # wait for text only THIS import produces.
+    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(" 2 lines", timeout=15000)
 
     _step(pw_page, "refine")
     line_select = pw_page.locator(f"{_P}refine_line")
