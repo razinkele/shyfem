@@ -655,6 +655,8 @@ class WorkflowEngine:
 
             wf.current_step_index = i
             self._save_instance(wf)
+            if wf.status != WorkflowStatus.RUNNING:
+                break  # cancelled elsewhere; the save above picked it up
 
             try:
                 # Inside the try: an unresolvable argument (a previous step
@@ -681,9 +683,15 @@ class WorkflowEngine:
                     metadata=metadata,
                 )
 
-                job_id = await self._queue.submit(spec)
+                job_id = await self._submit_step(spec)
                 wf.step_job_ids[step.name] = job_id
                 self._save_instance(wf)
+                if wf.status != WorkflowStatus.RUNNING:
+                    # Cancelled (by another session's engine) while the job
+                    # was being submitted: the cancel found no job id for this
+                    # step to stop, so stop it here (J-05).
+                    await self._queue.cancel(job_id)
+                    break
 
                 # Poll until job completes
                 job_info = await self._wait_for_job(job_id)
@@ -728,6 +736,25 @@ class WorkflowEngine:
         wf.completed_at = utcnow()
         self._save_instance(wf)
         self._polling_tasks.pop(workflow_id, None)
+
+    async def _submit_step(self, spec: JobSpec) -> str:
+        """Submit a step job; if this driver is cancelled meanwhile, stop it.
+
+        ``submit`` can really yield (the Celery queue does its Redis and
+        broker calls in a thread), and cancelling the await does not stop
+        that thread: the job would still be queued, with its id lost. So the
+        submit is shielded and, on cancellation, the job it produced is
+        cancelled before the CancelledError goes on.
+        """
+        submit = asyncio.ensure_future(self._queue.submit(spec))
+        try:
+            return await asyncio.shield(submit)
+        except asyncio.CancelledError:
+            try:
+                await self._queue.cancel(await submit)
+            except Exception:
+                logger.warning("Could not cancel a step job submitted during a cancel")
+            raise
 
     async def _wait_for_job(self, job_id: str, poll_interval: float = 2.0) -> JobInfo | None:
         """Poll job queue until job completes."""

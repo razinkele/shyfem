@@ -137,3 +137,123 @@ async def test_a_cancel_landing_between_steps_is_kept(
 
     assert launcher.get_workflow(wf_id).status == WorkflowStatus.CANCELLED
     assert list(queue.jobs) == ["job-1"], "a cancelled workflow must not start its next step"
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_landing_while_the_step_is_being_submitted_stops_that_job(
+    queue, session_factory, tmp_path
+):
+    """The cancel lands while the driver is inside ``queue.submit`` (a real
+    await for the Celery queue's Redis/broker round trips): the row has no
+    job id for the step yet, so ``cancel_workflow`` has nothing to cancel and
+    the job it was submitting ran to the end under a Cancelled workflow."""
+    orig_submit = queue.submit
+    in_submit, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_submit(spec):
+        in_submit.set()
+        await release.wait()
+        return await orig_submit(spec)
+
+    queue.submit = slow_submit
+
+    launcher = WorkflowEngine(queue, session_factory=session_factory)
+    other = WorkflowEngine(queue, session_factory=session_factory)
+    wf_id = await launcher.create_workflow(
+        "full_simulation",
+        working_dir=tmp_path,
+        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+    )
+    await asyncio.wait_for(in_submit.wait(), 5)
+
+    assert await other.cancel_workflow(wf_id) is True
+    release.set()
+    await _wait(lambda: "job-1" in queue.jobs)
+    await asyncio.sleep(0.05)  # the driver has the job id in hand
+
+    assert queue.jobs["job-1"].status == JobStatus.CANCELLED, "the step job kept running"
+    await _wait(lambda: wf_id not in launcher._polling_tasks)
+    assert launcher.get_workflow(wf_id).status == WorkflowStatus.CANCELLED
+    assert list(queue.jobs) == ["job-1"], "a cancelled workflow must not start its next step"
+
+
+@pytest.mark.asyncio
+async def test_a_same_session_cancel_during_submit_stops_the_submitted_job(
+    queue, session_factory, tmp_path
+):
+    """The launching session cancels while ``submit`` is in flight: its
+    driver task is cancelled, but a submit done in a thread (Celery) still
+    queues the job. That job must be cancelled, not left running unseen."""
+    orig_submit = queue.submit
+    in_submit, release = asyncio.Event(), asyncio.Event()
+
+    async def thread_like_submit(spec):
+        in_submit.set()
+        await release.wait()
+        return await orig_submit(spec)
+
+    def submit(spec):
+        # Like asyncio.to_thread: cancelling the awaiter does not stop the work.
+        return asyncio.shield(asyncio.ensure_future(thread_like_submit(spec)))
+
+    queue.submit = submit
+
+    launcher = WorkflowEngine(queue, session_factory=session_factory)
+    wf_id = await launcher.create_workflow(
+        "full_simulation",
+        working_dir=tmp_path,
+        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+    )
+    await asyncio.wait_for(in_submit.wait(), 5)
+
+    assert await launcher.cancel_workflow(wf_id) is True
+    release.set()
+    await _wait(lambda: "job-1" in queue.jobs)
+    await asyncio.sleep(0.05)
+
+    assert queue.jobs["job-1"].status == JobStatus.CANCELLED, "the step job kept running"
+    assert launcher.get_workflow(wf_id).status == WorkflowStatus.CANCELLED
+    assert list(queue.jobs) == ["job-1"]
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_seen_by_the_step_start_save_starts_no_job(
+    queue, session_factory, tmp_path, monkeypatch
+):
+    """A cancel written by another process right before the save that opens
+    step 2 (no await in between in this process) must not submit step 2."""
+    from shyfem_ui.models.workflow import Workflow
+
+    orig_wait = WorkflowEngine._wait_for_job
+
+    async def fast_wait(self, job_id, poll_interval=2.0):
+        return await orig_wait(self, job_id, poll_interval=0.01)
+
+    monkeypatch.setattr(WorkflowEngine, "_wait_for_job", fast_wait)
+    orig_save = WorkflowEngine._save_instance
+
+    def save(self, wf):
+        if wf.current_step_index == 1 and not wf.step_job_ids.get(wf.steps[1].name):
+            s = session_factory()
+            s.query(Workflow).filter(Workflow.id == int(wf.id)).update(
+                {"status": WorkflowStatus.CANCELLED}
+            )
+            s.commit()
+        orig_save(self, wf)
+
+    monkeypatch.setattr(WorkflowEngine, "_save_instance", save)
+
+    launcher = WorkflowEngine(queue, session_factory=session_factory)
+    wf_id = await launcher.create_workflow(
+        "full_simulation",
+        working_dir=tmp_path,
+        params={"input_grd": "/tmp/t.grd", "input_str": "/tmp/t.str"},
+    )
+    await _wait(lambda: "job-1" in queue.jobs)
+    queue.jobs["job-1"].status = JobStatus.COMPLETED
+    queue.jobs["job-1"].return_code = 0
+    queue.jobs["job-1"].output_files = ["/tmp/out.bas"]
+    await _wait(lambda: wf_id not in launcher._polling_tasks)
+
+    assert launcher.get_workflow(wf_id).status == WorkflowStatus.CANCELLED
+    assert list(queue.jobs) == ["job-1"], "a cancelled workflow must not start its next step"
