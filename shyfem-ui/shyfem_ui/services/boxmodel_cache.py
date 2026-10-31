@@ -6,6 +6,8 @@ Nothing here touches reactive state; the page polls ``cache_status``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import fcntl
 import json
 import logging
 import os
@@ -376,18 +378,47 @@ def publish(tmp_dir: Path, run_id: str) -> Path:
     rename it away to ``.old-<token>``, find ``tmp_dir`` gone (skipping step
     2), and then delete the ".old" -- destroying the only copy of the
     published cache.
+
+    The whole sequence runs under an exclusive ``flock`` on the cache root's
+    ``PUBLISH_LOCK_NAME`` (B-05), so two publishers of the same build -- in
+    two workers, or two threads of one -- take turns: the second finds
+    ``tmp_dir`` gone and returns. Without it, the second could rename the
+    first's fresh publish away and then have nothing to put in its place.
+    ``flock`` conflicts between separately opened descriptors, so it holds
+    within one process too.
     """
     target = tmp_dir.parent / run_id
-    if not tmp_dir.exists():
-        return target
-    token = tmp_dir.name.split(".tmp-", 1)[-1] or secrets.token_hex(4)
-    old = tmp_dir.parent / f"{run_id}.old-{token}"
-    if target.exists():
-        os.rename(target, old)
-    os.rename(tmp_dir, target)
+    with _publish_lock(tmp_dir.parent):
+        if not tmp_dir.exists():
+            return target
+        token = tmp_dir.name.split(".tmp-", 1)[-1] or secrets.token_hex(4)
+        old = tmp_dir.parent / f"{run_id}.old-{token}"
+        if target.exists():
+            os.rename(target, old)
+        os.rename(tmp_dir, target)
+    # Outside the lock: the old build can be hundreds of MB, and no other
+    # publisher ever touches this token's ``.old-`` directory.
     if old.exists():
         shutil.rmtree(old, ignore_errors=True)
     return target
+
+
+#: Lock file in the cache root serialising ``publish`` (B-05). No ``.tmp-`` /
+#: ``.old-`` in the name, so the reconcile, the status probe and the quota
+#: charge (a zero-byte file) all pass over it.
+PUBLISH_LOCK_NAME = ".publish.lock"
+
+
+@contextlib.contextmanager
+def _publish_lock(root: Path):
+    # Read-only is enough for flock, and works on a lock file another account
+    # created without group write (O_RDWR failed every later publish).
+    fd = os.open(root / PUBLISH_LOCK_NAME, os.O_RDONLY | os.O_CREAT | os.O_NOFOLLOW, 0o664)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)  # closing the descriptor releases the lock
 
 
 def reconcile_tmp_dirs(
@@ -488,6 +519,39 @@ def reconcile_tmp_dirs(
     return msgs
 
 
+def build_quota_refusal(project: dict, run_id: str, config: Config) -> str | None:
+    """Why a cache build of ``run_id`` must not start for lack of space, or None.
+
+    A build cannot know its size in advance, so this only refuses a project
+    that is already AT its storage quota (``max_project_storage_mb``, the
+    figure uploads are refused against), counting everything except this
+    run's own cache -- the build replaces that copy, so a stale cache that
+    alone fills the quota can still be refreshed. Blocking (a DB query and a
+    walk of the cache tree): call it via ``asyncio.to_thread``. A failing
+    storage query is logged and lets the build through: this is a
+    pre-flight check, not the accounting itself.
+    """
+    from shyfem_ui.services.file_service import FileService, _cache_bytes
+
+    try:
+        usage = FileService.get_project_storage(int(project["id"]))
+        others = (
+            usage["used_bytes"]
+            - usage["cache_bytes"]
+            + _cache_bytes(project["work_dir"], exclude_run=run_id)
+        )
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        logger.warning("boxmodel cache: storage check for %s failed: %s", run_id, exc)
+        return None
+    limit_mb = config.max_project_storage_mb
+    if others < limit_mb * 1024 * 1024:
+        return None
+    return (
+        f"This project already uses {others / (1024 * 1024):.0f} MB of its "
+        f"{limit_mb} MB storage quota; free some space before building a cache."
+    )
+
+
 async def start_build(
     registry: BuildRegistry,
     *,
@@ -502,7 +566,9 @@ async def start_build(
 
     Order: ``run_id`` shape -> editor gate -> confine ``run_dir`` (read) ->
     confine the project work dir (write) -> dedupe on ``(project_id,
-    run_id)`` -> per-user cap -> compute the tmp dir's path -> spawn. Both
+    run_id)`` -> per-user cap -> storage quota (``build_quota_refusal``, B-02;
+    dedupe and cap are re-checked after it, since it runs in a thread) ->
+    compute the tmp dir's path -> spawn. Both
     confinements happen before any registry mutation, so a rejected request
     never registers a handle. The tmp dir itself is not created here -- see
     ``_run_build`` -- only its path is decided, so a build still queued
@@ -528,6 +594,18 @@ async def start_build(
         return existing
 
     owner_id = user.get("id") if user else None
+    if registry.active_for_user(owner_id) >= MAX_BUILDS_PER_USER:
+        raise RuntimeError(
+            "Only one build at a time per user; wait for the running build to finish."
+        )
+    refusal = await asyncio.to_thread(build_quota_refusal, project, run_id, config)
+    if refusal:
+        raise RuntimeError(refusal)
+    # The thread let other sessions run: one may have started this build, or
+    # another build for this user, meanwhile.
+    existing = registry.get(key)
+    if existing is not None:
+        return existing
     if registry.active_for_user(owner_id) >= MAX_BUILDS_PER_USER:
         raise RuntimeError(
             "Only one build at a time per user; wait for the running build to finish."
@@ -789,6 +867,63 @@ class CachedRun:
     #: session (6.1M rows for the 22-year Curonian run). Read a window with
     #: ``read_hourly_window`` instead. Kept so the dataclass shape is stable.
     state_hourly: pd.DataFrame | None = None
+    #: ``published_fingerprint`` of the directory these frames were read from,
+    #: taken before AND after the read and equal both times. A page compares
+    #: it with the directory's current fingerprint to notice that a build in
+    #: another session (or worker) has published over it since.
+    fingerprint: tuple | None = None
+
+
+#: How many times a loader re-reads a cache that was republished under it.
+LOAD_ATTEMPTS = 3
+LOAD_RETRY_SECONDS = 0.05
+
+
+def published_fingerprint(cache_dir: Path) -> tuple | None:
+    """Identity of the cache currently published at ``cache_dir``, or None.
+
+    ``meta.json``'s device, inode, mtime and size. A publish renames a whole
+    new directory into place, so the file under that path is a different
+    inode after every build -- unlike ``meta["built_at"]``, which is only
+    second-granular. One ``stat``, cheap enough to poll. None when nothing is
+    published (or the path cannot be read).
+    """
+    try:
+        st = (Path(cache_dir) / "meta.json").stat()
+    except OSError:
+        return None
+    return (st.st_dev, st.st_ino, st.st_mtime_ns, st.st_size)
+
+
+def _read_consistent(cache_dir: Path, read):
+    """``(read(), fingerprint)`` with every file from ONE published cache.
+
+    The loaders open ``meta.json`` and several Parquet files one after the
+    other. A publish (``publish``) landing between two of those opens would
+    pair the old build's meta with the new build's frames, or fail on a file
+    renamed away mid-read. So the fingerprint is taken before and after; a
+    read that saw it change -- or that failed while it changed -- is retried
+    a bounded number of times, then refused with ``OSError`` (which every
+    caller already turns into a page message). A failure with the
+    fingerprint unchanged is a genuinely broken (or absent) cache and is
+    raised at once.
+    """
+    error: Exception | None = None
+    for attempt in range(LOAD_ATTEMPTS):
+        if attempt:
+            time.sleep(LOAD_RETRY_SECONDS)
+        before = published_fingerprint(cache_dir)
+        try:
+            result = read()
+        except OSError as exc:
+            if published_fingerprint(cache_dir) == before:
+                raise
+            error = exc
+            continue
+        if before is not None and published_fingerprint(cache_dir) == before:
+            return result, before
+        error = OSError("the cache changed while it was being read")
+    raise OSError(f"the cache kept changing while it was being read ({error})")
 
 
 def _to_ns(series: pd.Series) -> pd.Series:
@@ -805,20 +940,26 @@ def _to_ns(series: pd.Series) -> pd.Series:
 def load_cache(cache_dir: Path, run_id: str) -> CachedRun:
     """Load a *published* cache directory. Never reads a ``.tmp-*``/``.old-*``
     directory -- callers pass the published ``cache_dir_for(...)`` path.
+    Every file comes from the same build (see ``_read_consistent``).
     """
-    meta = json.loads((cache_dir / "meta.json").read_text())
-    sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+
+    def read():
+        meta = json.loads((cache_dir / "meta.json").read_text())
+        sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+        fd = pd.read_parquet(cache_dir / "flux_daily.parquet")
+        md = pd.read_parquet(cache_dir / "meteo_daily.parquet")
+        return meta, sd, fd, md
+
+    (meta, sd, fd, md), fingerprint = _read_consistent(cache_dir, read)
     sd["date"] = _to_ns(sd["date"])
-    fd = pd.read_parquet(cache_dir / "flux_daily.parquet")
     fd["date"] = _to_ns(fd["date"])
-    md = pd.read_parquet(cache_dir / "meteo_daily.parquet")
     md["date"] = _to_ns(md["date"])
     # The hourly frame is deliberately NOT materialised here: it is the raw
     # record stream, 6.1M rows and ~250 MB for the 22-year Curonian run, and
     # this loader sits at the head of the page's expensive chain in the worker
     # that serves every session. Read the visible window instead --
     # ``read_hourly_window`` -- which the day-level row groups make cheap.
-    return CachedRun(run_id, meta, sd, fd, md, None)
+    return CachedRun(run_id, meta, sd, fd, md, None, fingerprint)
 
 
 #: Columns of ``state_hourly.parquet``: the stamp, the box, and every state
@@ -872,8 +1013,12 @@ def load_cache_state(cache_dir: Path, run_id: str) -> CachedRun:
     large ``flux``/``meteo``/hourly frames are left empty so loading every run
     at once stays cheap. Callers pass the published ``cache_dir_for(...)`` path.
     """
-    meta = json.loads((cache_dir / "meta.json").read_text())
-    sd = pd.read_parquet(cache_dir / "state_daily.parquet")
+
+    def read():
+        meta = json.loads((cache_dir / "meta.json").read_text())
+        return meta, pd.read_parquet(cache_dir / "state_daily.parquet")
+
+    (meta, sd), fingerprint = _read_consistent(cache_dir, read)
     sd["date"] = _to_ns(sd["date"])
     empty = pd.DataFrame()
-    return CachedRun(run_id, meta, sd, empty, empty, None)
+    return CachedRun(run_id, meta, sd, empty, empty, None, fingerprint)
