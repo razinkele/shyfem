@@ -359,7 +359,10 @@ def create_app(config: Config | None = None) -> App:
         # Bootstrap default tutorial user + shared project
         if admin and config.default_user_password:
             tutorial_user = auth_service.ensure_user(
-                config.default_user_username, config.default_user_password, role="tutorial"
+                config.default_user_username,
+                config.default_user_password,
+                role="tutorial",
+                audit_service=audit_service,
             )
             _bootstrap_tutorial_project(admin["id"], tutorial_user["id"], config)
 
@@ -1115,6 +1118,7 @@ def _build_server(
         nav_callback=nav_to,
         current_user=current_user,
         identity_rev=identity_rev,
+        audit_service=audit_service,
     )
     tutorial.tutorial_server(
         "tutorial",

@@ -449,7 +449,7 @@ class Config(BaseSettings):
         if "\x00" in path_str:
             raise ValueError("Path contains null bytes")
 
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._expand_user_path(path).resolve()
 
         # Resolve symlinks if the target exists to prevent symlink traversal
         if resolved.exists():
@@ -464,6 +464,9 @@ class Config(BaseSettings):
         if not any(
             resolved == root or str(resolved).startswith(str(root) + "/") for root in allowed_roots
         ):
+            if self.deployment_mode == "server":
+                # The message reaches the user: name no server folder (SEC-08).
+                raise ValueError(f"Path '{resolved.name}' is outside allowed directories")
             raise ValueError(
                 f"Path '{resolved}' is outside allowed directories: "
                 f"{', '.join(str(r) for r in allowed_roots)}"
@@ -473,6 +476,30 @@ class Config(BaseSettings):
             raise FileNotFoundError(f"Path not found: {resolved}")
 
         return resolved
+
+    def _expand_user_path(self, path: Path | str) -> Path:
+        """Expand a leading ``~`` in a user-supplied path, or refuse it.
+
+        ``~name`` is never expanded: on the server it names a host account,
+        so an unknown name raised RuntimeError (escaping every caller that
+        catches ValueError) and a known one (``~root``) resolved to that
+        account's home, which the rejection message then printed. It is
+        refused with one message that names no server path, whether or not
+        the account exists (SEC-08). A bare ``~`` / ``~/...`` is the desktop
+        user's own home and stays usable in local mode; in server mode it
+        would be the service account's home, so it is refused as well.
+        """
+        p = Path(path)
+        path_str = str(path)
+        if not path_str.startswith("~"):
+            return p
+        own_home = path_str == "~" or path_str.startswith("~/")
+        if own_home and self.deployment_mode != "server":
+            try:
+                return p.expanduser()
+            except RuntimeError:
+                pass
+        raise ValueError(f"Path '{path_str}' is not allowed: '~' home shortcuts are not supported")
 
     def validate_save_path(self, path: Path | str) -> Path:
         """Validate that a save path is within the work directory.
@@ -492,7 +519,7 @@ class Config(BaseSettings):
         if "\x00" in path_str:
             raise ValueError("Path contains null bytes")
 
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._expand_user_path(path).resolve()
 
         # If path already exists, resolve symlinks strictly
         if resolved.exists():
@@ -501,6 +528,9 @@ class Config(BaseSettings):
         work_root = self.work_dir.resolve()
 
         if resolved != work_root and not str(resolved).startswith(str(work_root) + "/"):
+            if self.deployment_mode == "server":
+                # The message reaches the user: name no server folder (SEC-08).
+                raise ValueError(f"Save path '{resolved.name}' must be within work directory")
             raise ValueError(f"Save path '{resolved}' must be within work directory: {work_root}")
 
         return resolved
@@ -620,7 +650,7 @@ class Config(BaseSettings):
         if user.get("role") == ROLE_ADMIN:
             allowed_roots += [self.user_data_root.resolve(), self.work_dir.resolve()]
 
-        resolved = Path(path).expanduser().resolve()
+        resolved = self._expand_user_path(path).resolve()
         if resolved.exists():
             resolved = resolved.resolve(strict=True)
 
@@ -669,10 +699,14 @@ class Config(BaseSettings):
                 ]
                 shared_ok = _within(shared_roots)
             if not shared_ok:
-                raise ValueError(f"Path '{resolved}' is outside your home directory: {home}")
+                # Callers show this text: name the path as display_path does
+                # and print no server folder (SEC-08).
+                raise ValueError(
+                    f"Path '{self.display_path(resolved, user)}' is outside your home directory"
+                )
 
         if must_exist and not resolved.exists():
-            raise FileNotFoundError(f"Path not found: {resolved}")
+            raise FileNotFoundError(f"Path not found: {self.display_path(resolved, user)}")
 
         return resolved
 
