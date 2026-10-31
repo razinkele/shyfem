@@ -12,6 +12,9 @@ SAFETY:
   * Idempotent: re-running skips projects already under their owner's home and
     never clobbers an existing destination directory.
   * Orphan projects (owner_id is NULL) are left in place and flagged.
+  * A project with a job or workflow still pending, queued or running is left
+    in place and flagged; re-run once it has finished. Best run with the app
+    stopped, so that no new job starts between the check and the move.
 
 USAGE:
   python -m scripts.migrations.relocate_projects_to_user_homes            # dry-run
@@ -28,7 +31,11 @@ from shyfem_ui.config import get_config
 from shyfem_ui.db.base import db_session
 from shyfem_ui.models.project import Project
 from shyfem_ui.models.user import User
-from shyfem_ui.services.project_relocation import apply_relocations, plan_relocations
+from shyfem_ui.services.project_relocation import (
+    apply_relocations,
+    busy_project_ids,
+    plan_relocations,
+)
 
 logger = logging.getLogger("relocate_projects")
 
@@ -57,16 +64,21 @@ def main(argv: list[str] | None = None) -> int:
 
     with db_session() as db:
         projects = _load_projects(db)
-        plans = plan_relocations(projects, user_data_root=config.user_data_root)
+        plans = plan_relocations(
+            projects,
+            user_data_root=config.user_data_root,
+            busy_project_ids=busy_project_ids(db, projects),
+        )
 
         moves = [p for p in plans if p["action"] == "move"]
         orphans = [p for p in plans if p["action"] == "skip-orphan"]
         logger.info(
-            "%d projects: %d to move, %d already home, %d orphan",
+            "%d projects: %d to move, %d already home, %d orphan, %d with active jobs",
             len(plans),
             len(moves),
             sum(1 for p in plans if p["action"] == "skip-already-home"),
             len(orphans),
+            sum(1 for p in plans if p["action"] == "skip-active-jobs"),
         )
         for p in orphans:
             logger.warning("ORPHAN (no owner) left in place: project %s at %s", p["id"], p["src"])

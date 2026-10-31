@@ -24,29 +24,6 @@ from shyfem_ui.services.parser_str import StrParser
 logger = logging.getLogger(__name__)
 
 
-def _preflight_validate(simulation_id: int | None) -> list[str]:
-    """Run pre-flight file validation for a simulation.
-
-    Returns list of warning strings. Empty = all OK.
-    Returns empty list for None or invalid simulation IDs (non-blocking).
-    """
-    if simulation_id is None:
-        return []
-    try:
-        from shyfem_ui.services.file_service import FileService
-
-        return FileService.validate_simulation_files(simulation_id)
-    except ValueError:
-        # Simulation not found / invalid id — nothing to validate (non-blocking).
-        return []
-    except Exception:
-        # A real validator failure must NOT look identical to "all clean".
-        logger.warning(
-            "Pre-flight validation failed for simulation %s", simulation_id, exc_info=True
-        )
-        return ["Pre-flight validation could not be completed — see logs."]
-
-
 def _get_job_metadata(
     session_id: str, user_id: int | None = None, project_id: int | None = None
 ) -> dict:

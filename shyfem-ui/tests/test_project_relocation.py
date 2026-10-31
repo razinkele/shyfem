@@ -198,3 +198,179 @@ class TestRelocateLegacyProjects:
         assert src.exists()
         assert summary["moved"] == 0
         assert summary["skipped"] == 1
+
+
+class TestActiveJobsBlockRelocation:
+    """H-10: moving a project folder while a job or workflow of that project is
+    still pending, queued or running pulls the folder out from under the
+    running tool (its outputs and logs go to a path that no longer exists, or
+    recreate a half folder at the old place). Such a project is left in place
+    and reported, by the service driver and by the operator script alike."""
+
+    def _db(self, tmp_path):
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from shyfem_ui.db.base import Base
+
+        engine = create_engine(f"sqlite:///{tmp_path / 'reloc.db'}")
+        Base.metadata.create_all(bind=engine)
+        return sessionmaker(bind=engine)
+
+    def _seed(self, factory, tmp_path, *, job=None, workflow=None):
+        """One alice project under the shared work dir, plus an optional job
+        (dict of overrides) or workflow status. Returns (pid, src)."""
+        from shyfem_ui.models.project import Job, Project
+        from shyfem_ui.models.user import User
+        from shyfem_ui.models.workflow import Workflow
+
+        src = tmp_path / "work" / "lagoon_run"
+        src.mkdir(parents=True)
+        (src / "mm_hyd.str").write_text("control")
+        db = factory()
+        alice = User(username="alice", password_hash="x", role="user")
+        db.add(alice)
+        db.flush()
+        proj = Project(name="P1", work_dir=str(src), owner_id=alice.id)
+        db.add(proj)
+        db.flush()
+        if job is not None:
+            fields = {
+                "job_uuid": "11111111-2222-3333-4444-555555555555",
+                "name": "run",
+                "job_type": "shyfem",
+                "working_dir": str(src),
+                "project_id": proj.id,
+            }
+            fields.update(job)
+            db.add(Job(**fields))
+        if workflow is not None:
+            db.add(Workflow(name="wf", template="t", status=workflow, project_id=proj.id))
+        db.commit()
+        pid = proj.id
+        db.close()
+        return pid, src
+
+    def test_plan_marks_a_busy_project_and_leaves_it_in_place(self, tmp_path):
+        proj = _proj(7, tmp_path / "work" / "busy", "alice")
+        plans = plan_relocations([proj], user_data_root=tmp_path / "users", busy_project_ids={7})
+        assert plans[0]["action"] == "skip-active-jobs"
+        summary = apply_relocations(plans, update_work_dir=lambda *a: None, dry_run=False)
+        assert summary == {"moved": 0, "skipped": 1, "failed": 0}
+
+    def test_running_job_keeps_the_project_in_place(self, tmp_path):
+        from shyfem_ui.services.job_queue import JobStatus
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory = self._db(tmp_path)
+        pid, src = self._seed(factory, tmp_path, job={"status": JobStatus.RUNNING})
+
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory, dry_run=False
+        )
+        assert src.exists(), "a project with a running job was moved"
+        assert summary["moved"] == 0
+        assert summary["skipped"] == 1
+
+    def test_queued_job_without_project_id_matched_by_folder(self, tmp_path):
+        from shyfem_ui.services.job_queue import JobStatus
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory = self._db(tmp_path)
+        _pid, src = self._seed(
+            factory,
+            tmp_path,
+            job={
+                "status": JobStatus.QUEUED,
+                "project_id": None,
+                "working_dir": str(src_sub := tmp_path / "work" / "lagoon_run" / "run1"),
+            },
+        )
+        assert str(src_sub).startswith(str(src))
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory, dry_run=False
+        )
+        assert src.exists()
+        assert summary["moved"] == 0
+
+    def test_running_workflow_keeps_the_project_in_place(self, tmp_path):
+        from shyfem_ui.models.workflow import WorkflowStatus
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory = self._db(tmp_path)
+        _pid, src = self._seed(factory, tmp_path, workflow=WorkflowStatus.RUNNING)
+
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory, dry_run=False
+        )
+        assert src.exists()
+        assert summary["moved"] == 0
+
+    def test_finished_job_does_not_block(self, tmp_path):
+        from shyfem_ui.services.job_queue import JobStatus
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory = self._db(tmp_path)
+        _pid, src = self._seed(factory, tmp_path, job={"status": JobStatus.COMPLETED})
+
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory, dry_run=False
+        )
+        assert not src.exists()
+        assert summary["moved"] == 1
+
+    def test_sibling_folder_job_does_not_block(self, tmp_path):
+        """A job in ``lagoon_run2`` is not inside ``lagoon_run``."""
+        from shyfem_ui.services.job_queue import JobStatus
+        from shyfem_ui.services.project_relocation import relocate_legacy_projects
+
+        factory = self._db(tmp_path)
+        _pid, src = self._seed(
+            factory,
+            tmp_path,
+            job={
+                "status": JobStatus.RUNNING,
+                "project_id": None,
+                "working_dir": str(tmp_path / "work" / "lagoon_run2"),
+            },
+        )
+        summary = relocate_legacy_projects(
+            user_data_root=tmp_path / "users", session_factory=factory, dry_run=False
+        )
+        assert summary["moved"] == 1
+
+    def test_operator_script_also_skips_a_busy_project(self, tmp_path, monkeypatch):
+        import contextlib
+        import importlib.util
+        from types import SimpleNamespace
+
+        from shyfem_ui.services.job_queue import JobStatus
+
+        script = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "migrations"
+            / "relocate_projects_to_user_homes.py"
+        )
+        spec = importlib.util.spec_from_file_location("_reloc_script", script)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        factory = self._db(tmp_path)
+        _pid, src = self._seed(factory, tmp_path, job={"status": JobStatus.PENDING})
+
+        @contextlib.contextmanager
+        def _session():
+            db = factory()
+            try:
+                yield db
+                db.commit()
+            finally:
+                db.close()
+
+        monkeypatch.setattr(mod, "db_session", _session)
+        monkeypatch.setattr(
+            mod, "get_config", lambda: SimpleNamespace(user_data_root=tmp_path / "users")
+        )
+        assert mod.main(["--apply"]) == 0
+        assert src.exists(), "the operator script moved a project with a pending job"

@@ -60,6 +60,7 @@ class TestRequestIdMiddleware:
 
     async def test_sets_context_var(self):
         captured_id = None
+
         async def capturing_app(scope, receive, send):
             nonlocal captured_id
             captured_id = request_id_var.get()
@@ -79,9 +80,11 @@ class TestRequestIdMiddleware:
 
     async def test_websocket_passthrough(self):
         call_count = 0
+
         async def ws_app(scope, receive, send):
             nonlocal call_count
             call_count += 1
+
         mw = RequestIdMiddleware(ws_app)
         await mw(_ws_scope(), _noop_receive, lambda msg: None)
         assert call_count == 1
@@ -104,3 +107,54 @@ class TestRequestIdFilter:
         record = logging.LogRecord("test", logging.INFO, "", 0, "msg", (), None)
         f.filter(record)
         assert record.request_id == "-"
+
+
+class TestRequestIdSanitizing:
+    """SEC-07: a client-supplied X-Request-Id is echoed in the response and
+    written into every log line, so only a short, plain token is accepted.
+    Anything else is replaced by a fresh UUID."""
+
+    async def _run(self, incoming: bytes):
+        seen = {}
+
+        async def capturing_app(scope, receive, send):
+            seen["ctx"] = request_id_var.get()
+            await _echo_app(scope, receive, send)
+
+        mw = RequestIdMiddleware(capturing_app)
+        sent = []
+        await mw(_http_scope(headers=[[b"x-request-id", incoming]]), _noop_receive, sent.append)
+        echoed = dict(sent[0]["headers"])[b"x-request-id"].decode("latin-1")
+        return echoed, seen["ctx"]
+
+    async def test_overlong_id_replaced(self):
+        incoming = b"a" * 10_000
+        echoed, ctx = await self._run(incoming)
+        assert echoed != incoming.decode()
+        uuid.UUID(echoed)
+        assert ctx == echoed
+
+    async def test_128_char_id_still_accepted(self):
+        incoming = b"b" * 128
+        echoed, ctx = await self._run(incoming)
+        assert echoed == ctx == incoming.decode()
+
+    async def test_129_char_id_replaced(self):
+        echoed, _ = await self._run(b"b" * 129)
+        uuid.UUID(echoed)
+
+    async def test_control_characters_replaced(self):
+        echoed, ctx = await self._run(b"abc\r\nX-Injected: 1")
+        assert "\n" not in echoed and "\r" not in echoed
+        uuid.UUID(echoed)
+        uuid.UUID(ctx)
+
+    async def test_log_forging_characters_replaced(self):
+        echoed, ctx = await self._run("id] ERROR: forged \xe9".encode("latin-1"))
+        uuid.UUID(echoed)
+        uuid.UUID(ctx)
+
+    async def test_nginx_style_hex_id_kept(self):
+        incoming = b"0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+        echoed, ctx = await self._run(incoming)
+        assert echoed == ctx == incoming.decode()

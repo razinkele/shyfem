@@ -2,11 +2,19 @@
 
 import contextvars
 import logging
+import re
 import uuid
 
 request_id_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "request_id", default=None
 )
+
+#: An incoming X-Request-Id is echoed in the response and written into every
+#: log line, so only a short plain token is taken from the client (nginx's
+#: ``$request_id`` is 32 hex chars, a UUID is 36). Anything else -- overlong,
+#: control characters, spaces, brackets that could forge a log line -- is
+#: replaced by a fresh UUID (SEC-07).
+_VALID_REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{1,128}")
 
 
 class RequestIdFilter(logging.Filter):
@@ -22,6 +30,7 @@ class RequestIdMiddleware:
 
     - Sets a contextvars.ContextVar for log propagation
     - Adds X-Request-Id response header
+    - Reuses an incoming X-Request-Id only if it is a short plain token
     - Passes through non-HTTP scopes unchanged
     """
 
@@ -36,7 +45,9 @@ class RequestIdMiddleware:
         req_id = None
         for header_name, header_value in scope.get("headers", []):
             if header_name == b"x-request-id":
-                req_id = header_value.decode("latin-1")
+                candidate = header_value.decode("latin-1")
+                if _VALID_REQUEST_ID.fullmatch(candidate):
+                    req_id = candidate
                 break
 
         if not req_id:
