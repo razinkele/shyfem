@@ -65,6 +65,8 @@ class SessionEventFeed:
         self._scheduled = True
         try:
             self._session.run_once_when_idle(self._flush)
+        except (AttributeError, TypeError):
+            raise  # a programming error (e.g. a Shiny without the method), not a hiccup
         except Exception:
             self._scheduled = False
             logger.exception("could not schedule job events for %s", self._key)
@@ -91,6 +93,16 @@ class SessionEventFeed:
                 remove()
             except Exception:
                 logger.debug("unsubscribe failed for %s", self._key, exc_info=True)
+
+
+def push_supported(session, job_queue) -> bool:
+    """Whether this session can follow ``job_queue`` by push.
+
+    Needs a queue that publishes events and a Shiny that has
+    ``session.run_once_when_idle`` (1.9+). Otherwise the pages keep their
+    polls: an older Shiny must fall back to polling, never to stale pages.
+    """
+    return bool(job_queue.supports_events) and hasattr(session, "run_once_when_idle")
 
 
 def subscribe_session_to_job_events(

@@ -219,7 +219,7 @@ def job_completion_toasts(
             continue
         if ev.previous is not None and ev.previous.value in _TERMINAL_STATUSES:
             continue
-        if is_server_mode and (user is None or ev.user_id != user.get("id")):
+        if is_server_mode and (user is None or user.get("id") is None or ev.user_id != user["id"]):
             continue
         status = ev.status.value
         if status == "completed":

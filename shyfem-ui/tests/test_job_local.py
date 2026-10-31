@@ -1247,12 +1247,10 @@ class TestJobEvents:
 
     @staticmethod
     async def _settle(queue, job_id):
-        for _ in range(60):
-            info = await queue.get_status(job_id)
-            if info and not info.is_active:
-                break
-            await asyncio.sleep(0.05)
-        await asyncio.sleep(0.05)
+        """Wait for the job's own task to end (submit stores it before returning)."""
+        task = queue._tasks.get(job_id)
+        if task is not None:
+            await asyncio.wait_for(asyncio.shield(task), timeout=10)
 
     @pytest.mark.asyncio
     async def test_the_local_queue_supports_events(self, queue):
@@ -1329,3 +1327,60 @@ class TestJobEvents:
         await self._settle(queue, job_id)
         progress = [e for e in seen if e.job_id == job_id and e.kind == "progress"]
         assert progress and progress[0].progress == 0.5 and progress[0].message == "halfway"
+
+
+@pytest.mark.asyncio
+async def test_a_cancel_that_lost_the_race_announces_the_status_that_stands(queue, tmp_path):
+    """The supervisor recorded the end first: cancel() adopts it and the one
+    terminal event says what the job ended as, not 'cancelled'."""
+    started = asyncio.Event()
+
+    async def slow_command(*args, **kwargs):
+        started.set()
+        await asyncio.sleep(10)
+
+    queue.wrapper.run_command = slow_command
+    seen = []
+    queue.add_event_callback("s", seen.append)
+    spec = JobSpec(name="race", tool_name="shypre", args=["t.str"], working_dir=tmp_path / "w")
+    job_id = await queue.submit(spec)
+    await asyncio.wait_for(started.wait(), timeout=5.0)
+
+    def adopt_completed(job):
+        job.status = JobStatus.COMPLETED
+
+    queue._finalize_row = lambda job: False
+    queue._adopt_row = adopt_completed
+    assert await queue.cancel(job_id) is False
+    await asyncio.sleep(0.05)
+    ended = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+    terminal = [e.status for e in seen if e.job_id == job_id and e.status in ended]
+    assert terminal == [JobStatus.COMPLETED]
+
+
+def test_a_job_announces_its_end_once_whatever_races_to_announce_it(queue):
+    from shyfem_ui.services.job_queue import JobInfo
+
+    seen = []
+    queue.add_event_callback("s", seen.append)
+    job = JobInfo(
+        id="j", name="n", tool_name="t", args=[], working_dir="/w", status=JobStatus.CANCELLED
+    )
+    queue._emit(job, JobStatus.RUNNING)
+    queue._emit(job, JobStatus.QUEUED)  # a stale transition after an await
+    job.status = JobStatus.COMPLETED
+    queue._emit(job, JobStatus.RUNNING)  # the other side of a race
+    assert [(e.status, e.previous) for e in seen] == [(JobStatus.CANCELLED, JobStatus.RUNNING)]
+
+
+def test_progress_events_are_throttled_per_job(queue):
+    from shyfem_ui.services.job_queue import JobInfo
+
+    seen = []
+    queue.add_event_callback("s", seen.append)
+    job = JobInfo(
+        id="p", name="n", tool_name="t", args=[], working_dir="/w", status=JobStatus.RUNNING
+    )
+    for i in range(50):
+        queue._emit(job, kind="progress", progress=i / 50)
+    assert len(seen) == 1

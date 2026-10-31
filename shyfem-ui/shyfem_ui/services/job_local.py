@@ -3,6 +3,7 @@
 import asyncio
 import dataclasses
 import logging
+import time
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -498,6 +499,7 @@ class LocalJobQueue(JobQueue):
 
         for job_id in to_remove:
             self._jobs.pop(job_id, None)
+            self._announced_end.discard(job_id)
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """Get or create the semaphore (must be called from async context)."""
@@ -573,9 +575,24 @@ class LocalJobQueue(JobQueue):
 
         return progress_callback
 
+    #: At most one progress event per job per this many seconds.
+    PROGRESS_EVENT_SECONDS = 0.5
+
     @property
     def supports_events(self) -> bool:
         return True  # every change happens in this process, on the event loop
+
+    @property
+    def _announced_end(self) -> set[str]:
+        if not hasattr(self, "_announced_end_ids"):
+            self._announced_end_ids: set[str] = set()
+        return self._announced_end_ids
+
+    @property
+    def _last_progress_emit(self) -> dict[str, float]:
+        if not hasattr(self, "_last_progress_emit_at"):
+            self._last_progress_emit_at: dict[str, float] = {}
+        return self._last_progress_emit_at
 
     def _emit(
         self,
@@ -591,9 +608,23 @@ class LocalJobQueue(JobQueue):
         An event follows the in-memory transition, not the database write
         (a failed write is logged; the pages must still learn the job ended).
         A terminal status is published exactly once: by ``cancel()`` when
-        the user cancels, otherwise by the task's end, after it adopted
-        whatever its supervisor may have recorded first.
+        the user cancels (with the status that stands after the record), and
+        otherwise by the task's end, after it adopted whatever its supervisor
+        may have recorded first.
         """
+        if kind == "progress":
+            now = time.monotonic()
+            if now - self._last_progress_emit.get(job.id, 0.0) < self.PROGRESS_EVENT_SECONDS:
+                return  # shyfem reports every time step; a page needs a few per second at most
+            self._last_progress_emit[job.id] = now
+        elif job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            # One terminal event per job, whatever races to announce it; and a
+            # transition announced after an await, when the job has meanwhile
+            # ended, is not announced again under a stale "previous".
+            if job.id in self._announced_end:
+                return
+            self._announced_end.add(job.id)
+            self._last_progress_emit.pop(job.id, None)
         self._notify_event(
             JobEvent(
                 job_id=job.id,
@@ -740,6 +771,8 @@ class LocalJobQueue(JobQueue):
             if not stopping:
                 job.completed_at = job.completed_at or datetime.now()
                 if await asyncio.to_thread(self._finalize_row, job):
+                    if job_id not in self._user_cancelled:
+                        self._emit(job, prior)  # the pages first, the email after
                     # Send completion notification (best-effort, never
                     # raises). Offloaded: blocking SMTP I/O, bounded by
                     # smtp_timeout_seconds, must not block the event loop.
@@ -747,8 +780,8 @@ class LocalJobQueue(JobQueue):
                 else:
                     # The supervisor (or a cancel) recorded the end first.
                     await asyncio.to_thread(self._adopt_row, job)
-                if job_id not in self._user_cancelled:
-                    self._emit(job, prior)  # cancel() announced its own
+                    if job_id not in self._user_cancelled:
+                        self._emit(job, prior)  # cancel() announces its own
                 self._user_cancelled.discard(job_id)
 
     async def cancel(self, job_id: str) -> bool:
@@ -768,7 +801,6 @@ class LocalJobQueue(JobQueue):
         job.status = JobStatus.CANCELLED
         job.error_message = "Job was cancelled"
         job.completed_at = datetime.now()
-        self._emit(job, prior)
         recorded = await asyncio.to_thread(self._finalize_row, job)
 
         task = self._tasks.get(job_id)
@@ -783,8 +815,10 @@ class LocalJobQueue(JobQueue):
         if not recorded:
             # It ended on its own just before the cancel landed.
             await asyncio.to_thread(self._adopt_row, job)
-            return False
-        return True
+        # The one terminal event of this job (its task's end skipped its own),
+        # with the status that stands: CANCELLED, or what it ended as.
+        self._emit(job, prior)
+        return recorded
 
     async def get_status(self, job_id: str) -> JobInfo | None:
         """Get current status of a job (a snapshot; see :func:`_snapshot`)."""

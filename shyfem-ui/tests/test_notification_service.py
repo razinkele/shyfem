@@ -310,3 +310,18 @@ class TestJobCompletionToasts:
         ]
         assert job_completion_toasts(quiet, None, False) == []
         assert len(job_completion_toasts([self._ev("completed", previous=None)], None, False)) == 1
+
+
+def test_a_user_without_an_id_gets_no_toast_for_an_ownerless_job():
+    from shyfem_ui.services.job_queue import JobEvent, JobStatus
+    from shyfem_ui.services.notification_service import job_completion_toasts
+
+    ev = JobEvent(
+        job_id="j",
+        name="n",
+        status=JobStatus.COMPLETED,
+        previous=JobStatus.RUNNING,
+        user_id=None,
+        project_id=None,
+    )
+    assert job_completion_toasts([ev], {"role": "user"}, True) == []
