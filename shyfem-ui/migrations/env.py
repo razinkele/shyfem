@@ -41,7 +41,8 @@ if not config.get_main_option("sqlalchemy.url"):
     from shyfem_ui.config import get_config
 
     app_config = get_config()
-    config.set_main_option("sqlalchemy.url", app_config.database_url)
+    # "%" (a percent-encoded password, D-01) must be doubled for the ini interpolation
+    config.set_main_option("sqlalchemy.url", app_config.database_url.replace("%", "%%"))
 
 
 def run_migrations_offline() -> None:

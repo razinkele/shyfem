@@ -38,7 +38,6 @@ from shyfem_ui.services.report import generate_job_report
 from shyfem_ui.services.run_logic import (  # re-exported for backward compat (test_*.py)
     _estimate_eta,
     _get_job_metadata,  # noqa: F401  -- used by tests/test_job_ownership.py
-    _preflight_validate,  # noqa: F401  -- used by tests/test_run_validation.py
     _stat_card,
     build_job_spec,
     compute_restart_choices,

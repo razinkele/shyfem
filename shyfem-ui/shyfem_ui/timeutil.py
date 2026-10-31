@@ -16,3 +16,12 @@ def utcnow() -> datetime:
     on a non-UTC server that shifts every window by the local offset.
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def utc_to_local(value: datetime | None) -> datetime | None:
+    """A naive UTC datetime (a ``server_default=func.now()`` column) as naive
+    LOCAL time, for showing it next to the naive-local job times (J-09).
+    ``None`` passes through."""
+    if value is None:
+        return None
+    return value.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)

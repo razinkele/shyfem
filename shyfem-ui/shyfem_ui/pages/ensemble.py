@@ -618,6 +618,24 @@ def ensemble_server(
         job_ids = []
 
         work_dir_path = Path(work_dir)
+        # Refuse before anything is created, copied or submitted: a member
+        # folder that already holds files is a previous ensemble's (same name
+        # or working directory), whose inputs and results this one would
+        # overwrite -- while it may still be running (R-08).
+        occupied = _occupied_member_dirs(
+            work_dir_path, [_combo_label(c, i) for i, c in enumerate(combos)]
+        )
+        if occupied:
+            shown = ", ".join(d.name for d in occupied[:3])
+            more = f" and {len(occupied) - 3} more" if len(occupied) > 3 else ""
+            ui.notification_show(
+                f"{work_dir_path} already holds runs of a previous ensemble "
+                f"({shown}{more}). Choose another ensemble name or working "
+                "directory, or remove those folders first.",
+                type="error",
+                duration=10,
+            )
+            return
         work_dir_path.mkdir(parents=True, exist_ok=True)
 
         for i, combo in enumerate(combos):
@@ -1103,6 +1121,18 @@ def _try_convert(value: str) -> Any:
     except ValueError:
         logger.debug("Value '%s' is not numeric, keeping as string", value)
     return value
+
+
+def _occupied_member_dirs(work_dir: Path, labels: list[str]) -> list[Path]:
+    """The member folders under ``work_dir`` (one per label) that already
+    exist and hold files. Empty or absent folders are free; other content
+    of ``work_dir`` is not a conflict."""
+    occupied = []
+    for label in labels:
+        run_dir = work_dir / label
+        if run_dir.is_dir() and any(run_dir.iterdir()):
+            occupied.append(run_dir)
+    return occupied
 
 
 def _combo_label(combo: dict, index: int) -> str:

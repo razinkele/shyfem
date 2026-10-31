@@ -93,8 +93,29 @@ class TestGetClientIp:
                 (b"x-forwarded-for", b"not_an_ip, also_bad"),
             ],
         }
-        result = get_client_ip(scope, ["127.0.0.0/8"])
-        assert isinstance(result, str)
+        # SEC-10: this used to assert only ``isinstance(result, str)``, which
+        # passed while the code returned the garbage entry 'not_an_ip'.
+        assert get_client_ip(scope, ["127.0.0.0/8"]) == "127.0.0.1"
+
+    def test_garbage_beside_trusted_returns_leftmost_valid(self):
+        """An unparseable entry is never returned, even when every valid one is trusted."""
+        scope = {
+            "client": ("127.0.0.1", 80),
+            "headers": [
+                (b"x-forwarded-for", b"garbage, 10.0.0.1"),
+            ],
+        }
+        assert get_client_ip(scope, ["10.0.0.0/8", "127.0.0.0/8"]) == "10.0.0.1"
+
+    def test_garbage_from_untrusted_peer_is_ignored(self):
+        """Behind an untrusted peer the header is not consulted at all."""
+        scope = {
+            "client": ("198.51.100.7", 80),
+            "headers": [
+                (b"x-forwarded-for", b"garbage"),
+            ],
+        }
+        assert get_client_ip(scope, ["127.0.0.0/8"]) == "198.51.100.7"
 
     def test_empty_forwarded_header_returns_raw(self):
         """Empty X-Forwarded-For falls back to raw client."""
