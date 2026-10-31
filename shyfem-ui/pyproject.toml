@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "shiny>=1.2.0",
+    "shiny>=1.9",
     "shinyswatch>=0.7.0",
     "sqlalchemy>=2.0",
     "pydantic>=2.0",

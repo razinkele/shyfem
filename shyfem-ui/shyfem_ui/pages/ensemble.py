@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget
 
+from shyfem_ui.components.job_feed import push_supported, subscribe_session_to_job_events
 from shyfem_ui.components.job_status import format_datetime, format_duration, get_status_badge
 from shyfem_ui.components.project_select import (
     default_project_file,
@@ -736,29 +737,68 @@ def ensemble_server(
 
     # ------- Progress Tracking -------
 
-    @reactive.effect
-    async def _poll_ensemble():
-        state = ensemble_state.get()
-        if not state:
-            return
+    _push = push_supported(session, job_queue)
+    if _push:
+        # Push (Shiny 1.9): re-read the members when one of them changes.
+        _ensemble_tick = reactive.value(0)
 
-        try:
-            jobs = []
-            any_active = False
-            for jid in state["job_ids"]:
-                info = await job_queue.get_status(jid)
-                if info:
-                    jobs.append(info)
-                    if info.is_active:
-                        any_active = True
+        _member_ids: set[str] = set()  # plain mirror of ensemble_state's job ids
 
-            ensemble_jobs.set(jobs)
+        @reactive.effect
+        def _mirror_member_ids():
+            state = ensemble_state.get()
+            _member_ids.clear()
+            _member_ids.update(state["job_ids"] if state else ())
 
-            if any_active:
-                reactive.invalidate_later(3)
-        except Exception:
-            logger.debug("Ensemble status poll failed, retrying in 5s", exc_info=True)
-            reactive.invalidate_later(5)
+        def _on_job_events(events) -> None:
+            if any(e.job_id in _member_ids for e in events):
+                with reactive.isolate():
+                    _ensemble_tick.set(_ensemble_tick.get() + 1)
+
+        subscribe_session_to_job_events(session, job_queue, _on_job_events, key="ensemble")
+
+        @reactive.effect
+        async def _load_ensemble_jobs():
+            _ensemble_tick.get()
+            state = ensemble_state.get()
+            if not state:
+                return
+            try:
+                jobs = []
+                for jid in state["job_ids"]:
+                    info = await job_queue.get_status(jid)
+                    if info:
+                        jobs.append(info)
+                ensemble_jobs.set(jobs)
+            except Exception:
+                logger.warning("Ensemble status refresh failed; retrying in 5 s", exc_info=True)
+                reactive.invalidate_later(5)
+
+    if not _push:
+
+        @reactive.effect
+        async def _poll_ensemble():
+            state = ensemble_state.get()
+            if not state:
+                return
+
+            try:
+                jobs = []
+                any_active = False
+                for jid in state["job_ids"]:
+                    info = await job_queue.get_status(jid)
+                    if info:
+                        jobs.append(info)
+                        if info.is_active:
+                            any_active = True
+
+                ensemble_jobs.set(jobs)
+
+                if any_active:
+                    reactive.invalidate_later(3)
+            except Exception:
+                logger.debug("Ensemble status poll failed, retrying in 5s", exc_info=True)
+                reactive.invalidate_later(5)
 
     @reactive.effect
     @reactive.event(input.stop_all_btn)

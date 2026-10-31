@@ -613,8 +613,31 @@ class WorkflowEngine:
         finally:
             session.close()
 
+    def add_status_callback(self, callback_id: str, callback) -> None:
+        """Register a callback for every persisted change of a workflow.
+
+        Called with the :class:`WorkflowInstance` after ``_save_instance``
+        committed it, on the event loop. The Run page re-renders its workflow
+        progress on these instead of polling (multi-session safe: one id per
+        subscriber).
+        """
+        if not hasattr(self, "_status_callbacks"):
+            self._status_callbacks: dict[str, object] = {}
+        self._status_callbacks[callback_id] = callback
+
+    def remove_status_callback(self, callback_id: str) -> None:
+        if hasattr(self, "_status_callbacks"):
+            self._status_callbacks.pop(callback_id, None)
+
+    def _notify_status(self, wf: WorkflowInstance) -> None:
+        for cb in list(getattr(self, "_status_callbacks", {}).values()):
+            try:
+                cb(wf)
+            except Exception:
+                logger.warning("Workflow status callback error", exc_info=True)
+
     def _save_instance(self, wf: WorkflowInstance) -> None:
-        """Persist a WorkflowInstance back to DB."""
+        """Persist a WorkflowInstance back to DB, then tell the subscribers."""
         session = self._get_session()
         try:
             pk = int(wf.id)
@@ -633,6 +656,7 @@ class WorkflowEngine:
             if wf.completed_at:
                 row.completed_at = wf.completed_at
             session.commit()
+            self._notify_status(wf)
         finally:
             session.close()
 
