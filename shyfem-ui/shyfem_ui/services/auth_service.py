@@ -1,5 +1,6 @@
 """Authentication service -- password hashing, sessions, user CRUD."""
 
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,20 @@ _ph = PasswordHasher()
 # this, those branches return early and response timing leaks which
 # usernames exist / are active to an unauthenticated attacker.
 _DUMMY_HASH = _ph.hash("x")
+
+
+def _hash_token(raw: str) -> str:
+    """The value stored in the DB for a session or WS-auth token (SEC-06).
+
+    The browser and WebSocket client keep the raw token; the database keeps
+    only its sha256 hex digest, so a copy of the database file cannot be
+    replayed as a login. A fast hash (not argon2) is right here: the tokens
+    are 256-bit random values, so there is nothing to brute-force, and the
+    lookup stays an indexed equality on the digest. Every read and write of
+    ``AuthSession.token``, ``WSAuthToken.token`` and
+    ``WSAuthToken.session_token`` goes through this helper.
+    """
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class AuthService:
@@ -330,7 +345,7 @@ class AuthService:
             ip_address: Optional IP address of the client.
 
         Returns:
-            64-character hex session token.
+            64-character hex session token (raw: only its sha256 is stored).
         """
         token = secrets.token_hex(32)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
@@ -338,7 +353,7 @@ class AuthService:
         session = self._session_factory()
         try:
             auth_session = AuthSession(
-                token=token,
+                token=_hash_token(token),
                 user_id=user_id,
                 expires_at=expires_at,
                 ip_address=ip_address,
@@ -359,12 +374,20 @@ class AuthService:
         Checks that the session exists, has not expired, and the user is active.
         Deletes the session if it has expired.
 
+        Args:
+            token: The raw token the client holds (the cookie value).
+
         Returns:
             User dict if valid, None otherwise.
         """
+        return self._validate_session_hash(_hash_token(token))
+
+    def _validate_session_hash(self, token_hash: str) -> dict | None:
+        """validate_session() for an already-hashed token (as stored in
+        ``WSAuthToken.session_token``): hashing it again would never match."""
         session = self._session_factory()
         try:
-            auth_session = session.query(AuthSession).filter_by(token=token).first()
+            auth_session = session.query(AuthSession).filter_by(token=token_hash).first()
             if auth_session is None:
                 return None
 
@@ -394,12 +417,13 @@ class AuthService:
         Returns:
             True if the session was found and deleted, False otherwise.
         """
+        token_hash = _hash_token(token)
         session = self._session_factory()
         try:
-            auth_session = session.query(AuthSession).filter_by(token=token).first()
+            auth_session = session.query(AuthSession).filter_by(token=token_hash).first()
             if auth_session is None:
                 return False
-            session.query(WSAuthToken).filter_by(session_token=token).delete()
+            session.query(WSAuthToken).filter_by(session_token=token_hash).delete()
             session.delete(auth_session)
             session.commit()
             return True
@@ -450,6 +474,8 @@ class AuthService:
 
         Distinct from the session cookie value; validity inherits from the
         owning AuthSession (purged on logout, refused once expired).
+        ``session_token`` is the raw cookie value; the row stores the sha256
+        of both it and the new token, and the raw new token is returned.
         """
         token = secrets.token_hex(32)
         expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
@@ -457,8 +483,8 @@ class AuthService:
         try:
             session.add(
                 WSAuthToken(
-                    token=token,
-                    session_token=session_token,
+                    token=_hash_token(token),
+                    session_token=_hash_token(session_token),
                     user_id=user_id,
                     expires_at=expires_at,
                 )
@@ -481,21 +507,21 @@ class AuthService:
         """
         session = self._session_factory()
         try:
-            row = session.query(WSAuthToken).filter_by(token=token).first()
+            row = session.query(WSAuthToken).filter_by(token=_hash_token(token)).first()
             if row is None:
                 return None
             if row.is_expired:
                 session.delete(row)
                 session.commit()
                 return None
-            parent_token = row.session_token
+            parent_hash = row.session_token
         except Exception:
             session.rollback()
             logger.exception("Database error in validate_ws_token")
             raise
         finally:
             session.close()
-        return self.validate_session(parent_token)
+        return self._validate_session_hash(parent_hash)
 
     # ------------------------------------------------------------------
     # Bootstrap
