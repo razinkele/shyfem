@@ -679,21 +679,22 @@ def mesh_builder_server(
 
     @render.ui
     def refine_controls():
-        grd = refined_grd.get()
-        if grd is None:
+        """Step 2 controls, rendered again only on a new import.
+
+        It must not read refined_grd: every Apply and Reset changes it, and a
+        re-render here put the line back to "All lines" (so the next Apply
+        changed every line) and the method, iterations and tolerance back to
+        their defaults. The line select, whose labels carry point counts,
+        lives in its own refine_line_select output.
+        """
+        if boundary_grd.get() is None:
             return ui.div(
                 "Import boundaries first (Step 1).",
                 class_="alert alert-info py-2 px-3 small",
             )
-        line_choices = {
-            str(lid): f"Line {lid} (type={line.line_type}, {len(line.nodes)} pts)"
-            for lid, line in sorted(grd.lines.items())
-        }
-        all_choice = {"all": f"All lines ({len(grd.lines)} lines)"}
-        all_choice.update(line_choices)
         return ui.div(
             ui.p("Smooth or simplify boundary lines.", class_="text-muted"),
-            ui.input_select("refine_line", "Select Line", choices=all_choice),
+            ui.output_ui("refine_line_select"),
             ui.row(
                 ui.column(
                     6,
@@ -730,6 +731,28 @@ def mesh_builder_server(
             ui.input_action_button(
                 "next_to_mesh", "Next: Generate Mesh", class_="btn-primary mt-2"
             ),
+        )
+
+    @render.ui
+    def refine_line_select():
+        """The line select; it keeps the chosen line across Apply and Reset."""
+        grd = refined_grd.get()
+        if grd is None:
+            return ui.div()
+        choices = {"all": f"All lines ({len(grd.lines)} lines)"}
+        choices.update(
+            {
+                str(lid): f"Line {lid} (type={line.line_type}, {len(line.nodes)} pts)"
+                for lid, line in sorted(grd.lines.items())
+            }
+        )
+        with reactive.isolate():
+            current = input.refine_line() if "refine_line" in input else None
+        return ui.input_select(
+            "refine_line",
+            "Select Line",
+            choices=choices,
+            selected=current if current in choices else "all",
         )
 
     @reactive.effect
