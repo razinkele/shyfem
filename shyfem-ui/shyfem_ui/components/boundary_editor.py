@@ -11,6 +11,7 @@ Provides a structured UI for defining $bound sections in .str files:
 from collections.abc import Callable, Sequence
 
 from shiny import module, reactive, render, ui
+from shiny.types import SilentException
 
 from shyfem_ui.components.project_select import str_file_selectize
 from shyfem_ui.services.parser_str import StrFile, format_param_display
@@ -358,9 +359,16 @@ def boundary_editor_server(
         updated = []
         for b in bounds:
             bid = b["id"]
-            # None = the card's field has not reported yet; "" = cleared.
-            zfact_raw = input[f"bound_zfact_{bid}"]()
             try:
+                zfact_raw = input[f"bound_zfact_{bid}"]()
+            except SilentException:
+                # The card's fields have not reported yet (it was just added,
+                # imported or reloaded): keep its stored values. Uncaught,
+                # this ended the whole Generate silently.
+                updated.append(b)
+                continue
+            try:
+                # "" = the field was cleared.
                 zfact = b.get("zfact") if zfact_raw is None else _optional_float(zfact_raw)
             except ValueError:
                 # It used to keep the old value silently.

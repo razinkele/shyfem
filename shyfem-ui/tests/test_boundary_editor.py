@@ -614,3 +614,32 @@ class TestExplicitZfactOne:
             text = result["generated_text"].get()
         assert text == ""
         assert any("zfact" in n and "bound1" in n for n in notes)
+
+
+class _ShinyLikeInputs(_FakeInputs):
+    """Like real Shiny 1.8: reading an input the browser has not reported yet
+    raises SilentException; it does not return None."""
+
+    def _cell(self, key: str) -> reactive.Value:
+        if key not in self._values:
+            self._values[key] = reactive.Value()
+        return self._values[key]
+
+
+class TestGenerateBeforeACardReports:
+    async def test_an_unreported_card_falls_back_to_its_stored_values(self, monkeypatch):
+        from shyfem_ui.components import boundary_editor as be
+        from shyfem_ui.services.parser_str import StrParser
+
+        monkeypatch.setattr(be.ui, "notification_show", lambda *a, **k: None)
+        inner = be.boundary_editor_server.__closure__[0].cell_contents
+        fake_input = _ShinyLikeInputs()
+        text = "$bound1\n  kbound = 1 2\n  ibtyp = 1\n  zfact = 0.5\n$end\n"
+        result = inner(fake_input, None, None, parsed_str=reactive.Value(StrParser.parse(text)))
+        await reactive.flush()
+        # No card field has reported; Generate silently did nothing.
+        fake_input.set("generate_str_btn", 1)
+        await reactive.flush()
+        with reactive.isolate():
+            generated = result["generated_text"].get()
+        assert "$bound1" in generated and "zfact = 0.5" in generated
