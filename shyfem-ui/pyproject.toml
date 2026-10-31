@@ -43,6 +43,7 @@ dependencies = [
     "ipyleaflet>=0.18",
     "shinywidgets>=0.3",
     "scipy>=1.12",
+    "shapely>=2.0",
     "triangle>=20220202",
     "argon2-cffi>=21.0",
     "alembic>=1.18,<2",
@@ -67,6 +68,11 @@ dev = [
     "pytest-rerunfailures>=14.0",
     "black>=23.0",
     "ruff>=0.1.0",
+    # starlette.testclient (tests/test_downloads.py) needs an HTTP client:
+    # current starlette imports httpx2, and plain httpx only as a deprecated
+    # fallback. Nothing else we install brings either one, so without this
+    # line CI's unit job stops while collecting the tests.
+    "httpx2>=2.0",
 ]
 
 [project.scripts]

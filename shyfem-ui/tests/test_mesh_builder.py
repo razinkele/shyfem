@@ -11,6 +11,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from shyfem_ui.services import mesh_builder as mb
 from shyfem_ui.services.mesh_builder import (
     _check_boundary_gates,
     _remove_ring_loops,
@@ -76,6 +77,31 @@ def _make_square_with_hole() -> GrdFile:
     grd.nodes[8] = Node(id=8, node_type=0, x=3.0, y=7.0)
     grd.lines[2] = Line(id=2, line_type=2, nodes=[5, 6, 7, 8, 5])
     return grd
+
+
+def _make_overlapping_squares() -> GrdFile:
+    """Two exterior rings whose edges cross: squares 0..10 and 5..15.
+
+    Their edges meet at (10, 5) and (5, 10), interior to both segments.
+    """
+    grd = _make_square_boundary(size=10.0)
+    for i, (x, y) in enumerate([(5.0, 5.0), (15.0, 5.0), (15.0, 15.0), (5.0, 15.0)], start=5):
+        grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+    grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 6, 7, 8, 5])
+    return grd
+
+
+class _TriangleNeverCalled:
+    """Stand-in for the ``triangle`` module: a gate test must never reach it.
+
+    With crossing lines the real mesher's quality refinement does not
+    terminate (it allocated ~23 GB on the Curonian data before the kernel
+    killed it), so a gate regression must fail here in milliseconds.
+    """
+
+    @staticmethod
+    def triangulate(*_args, **_kwargs):
+        raise AssertionError("Triangle must not see crossing lines")
 
 
 def _make_geojson_polygon(coords, path: Path) -> Path:
@@ -528,6 +554,53 @@ class TestTriangulate:
         grd = _make_square_boundary()
         triangulate(grd, max_area=None, min_angle=20.0)
 
+    def test_crossing_lines_are_refused_before_the_mesher(self, monkeypatch):
+        """Two boundary lines that cross never reach Triangle."""
+        monkeypatch.setattr(mb, "triangle", _TriangleNeverCalled)
+        with pytest.raises(ValueError, match=r"Line 1 crosses line 2 near \("):
+            triangulate(_make_overlapping_squares(), max_area=1.0, min_angle=20.0)
+
+    def test_rings_sharing_a_node_still_mesh(self):
+        """Adjacent rings touching at one shared node (as import_boundaries
+        produces for neighbouring polygons) are not crossing lines."""
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(20.0, 10.0), (20.0, 20.0), (10.0, 20.0)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[3, 5, 6, 7, 3])
+        mesh = triangulate(grd, max_area=5.0, min_angle=20.0)
+        assert mesh.num_elements > 0
+
+    def test_smoothing_the_coast_through_a_near_shore_island_is_refused(self, monkeypatch):
+        """Chaikin cuts the coast's corner through an island that sat in open
+        water: the Curonian mechanism, on a hole ring (line_type 2)."""
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(8.5, 8.5), (9.5, 8.5), (9.5, 9.5), (8.5, 9.5)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=2, nodes=[5, 6, 7, 8, 5])
+        assert mb.find_line_crossings(grd) == []
+        smoothed = smooth_boundary(grd, line_id=1, method="chaikin", iterations=1)
+        monkeypatch.setattr(mb, "triangle", _TriangleNeverCalled)
+        with pytest.raises(ValueError, match=r"Line 1 crosses line 2 near \("):
+            triangulate(smoothed, max_area=1.0, min_angle=20.0)
+
+    def test_simplifying_the_coast_across_a_bay_island_is_refused(self, monkeypatch):
+        """Douglas-Peucker straightens a bay out of the coast, so the island
+        at the bay mouth ends up on the coastline: the reduce mechanism."""
+        grd = GrdFile()
+        coast = [(0, 0), (4, 0), (4, -3), (6, -3), (6, 0), (10, 0), (10, 10), (0, 10)]
+        for i, (x, y) in enumerate(coast, start=1):
+            grd.nodes[i] = Node(id=i, node_type=0, x=float(x), y=float(y))
+        grd.lines[1] = Line(id=1, line_type=1, nodes=[*range(1, 9), 1])
+        for i, (x, y) in enumerate([(4.5, -0.5), (5.5, -0.5), (5.5, 0.5), (4.5, 0.5)], start=9):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=2, nodes=[9, 10, 11, 12, 9])
+        assert mb.find_line_crossings(grd) == []
+        reduced = reduce_boundary(grd, line_id=1, tolerance=3.5)
+        assert len(reduced.lines[1].nodes) < len(grd.lines[1].nodes)
+        monkeypatch.setattr(mb, "triangle", _TriangleNeverCalled)
+        with pytest.raises(ValueError, match=r"Line 1 crosses line 2 near \("):
+            triangulate(reduced, max_area=1.0, min_angle=20.0)
+
 
 # ---------------------------------------------------------------------------
 # TestInterpolateScipy
@@ -959,6 +1032,125 @@ class TestLoadBathymetryContours:
 
 
 # ---------------------------------------------------------------------------
+# TestFindLineCrossings
+# ---------------------------------------------------------------------------
+
+
+class TestFindLineCrossings:
+    """find_line_crossings(): segments of different lines that cross each other."""
+
+    def test_overlapping_squares_are_reported_once_per_pair(self):
+        crossings = mb.find_line_crossings(_make_overlapping_squares())
+        assert [(c.line_a, c.line_b) for c in crossings] == [(1, 2)]
+        assert (crossings[0].x, crossings[0].y) in {(10.0, 5.0), (5.0, 10.0)}
+
+    def test_rings_sharing_a_node_only_touch(self):
+        # import_boundaries gives neighbouring polygons one shared node.
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(20.0, 10.0), (20.0, 20.0), (10.0, 20.0)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[3, 5, 6, 7, 3])
+        assert mb.find_line_crossings(grd) == []
+
+    def test_coincident_rings_do_not_cross(self):
+        # The Curonian import carries every island twice, as a hole of the
+        # lagoon and as its own polygon: two rings on top of each other.
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=2, nodes=[5, 6, 7, 8, 5])
+        assert mb.find_line_crossings(grd) == []
+
+    def test_a_hairline_past_an_edge_reaches_triangle_and_is_a_crossing(self):
+        # _build_pslg merges nodes whose coordinates round to the same 6
+        # decimals, but every vertex keeps a node's own position. This apex
+        # 3e-7 inside the square has no node to merge with, so Triangle
+        # receives the crossing unrounded, and the gate must see it too.
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(5.0, -1.0), (6.0, -1.0), (5.0, 3e-7)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 6, 7, 5])
+        assert [(c.line_a, c.line_b) for c in mb.find_line_crossings(grd)] == [(1, 2)]
+
+    def test_a_jittered_shared_node_is_merged_as_the_pslg_merges_it(self):
+        # Import jitter: node 5 sits 3e-7 inside the square's corner, so its
+        # first segment crosses the right edge as drawn. _build_pslg merges
+        # it onto node 3 (7 vertices from 8 nodes) and Triangle sees a touch.
+        grd = _make_square_boundary(size=10.0)
+        corner = (10.0 - 3e-7, 10.0 - 3e-7)
+        for i, (x, y) in enumerate([corner, (20.0, 10.0), (20.0, 20.0), (10.0, 20.0)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 6, 7, 8, 5])
+        assert len(mb._build_pslg(grd)["vertices"]) == 7
+        assert mb.find_line_crossings(grd) == []
+
+    def test_a_self_crossing_line_is_left_to_the_simplicity_check(self):
+        grd = GrdFile()
+        for i, (x, y) in enumerate([(0, 0), (1, 1), (1, 0), (0, 1), (0, 0)], start=1):
+            grd.nodes[i] = Node(id=i, node_type=0, x=float(x), y=float(y))
+        grd.lines[1] = Line(id=1, line_type=1, nodes=[1, 2, 3, 4, 1])
+        assert mb.find_line_crossings(grd) == []
+
+    def test_a_segment_at_a_missing_node_is_dropped_not_bridged(self):
+        # Bridging 5 -> 6 across the missing node 99 would cross the square's
+        # right edge; _build_pslg drops both segments, and so must the gate.
+        grd = _make_square_boundary(size=10.0)
+        grd.nodes[5] = Node(id=5, node_type=0, x=5.0, y=5.0)
+        grd.nodes[6] = Node(id=6, node_type=0, x=15.0, y=5.0)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 99, 6])
+        assert mb.find_line_crossings(grd) == []
+
+    def test_a_segment_with_a_non_finite_coordinate_is_skipped(self):
+        # GEOS predicates on NaN raise on older GEOS and answer nonsense on
+        # newer; neither may reach the gate. Bridging 5 -> 7 would cross.
+        grd = _make_square_boundary(size=10.0)
+        grd.nodes[5] = Node(id=5, node_type=0, x=5.0, y=5.0)
+        grd.nodes[6] = Node(id=6, node_type=0, x=float("nan"), y=5.0)
+        grd.nodes[7] = Node(id=7, node_type=0, x=15.0, y=5.0)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 6, 7])
+        assert mb.find_line_crossings(grd) == []
+
+    def test_a_vertex_on_the_other_lines_edge_is_a_touch(self):
+        # A T-junction: Triangle splits the edge at the vertex, no crossing.
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(5.0, 0.0), (6.0, -1.0), (4.0, -1.0)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 6, 7, 5])
+        assert mb.find_line_crossings(grd) == []
+
+    def test_a_partial_collinear_overlap_is_not_a_crossing(self):
+        # A ring sharing part of the square's bottom edge with its own
+        # vertices: Triangle splits the edge at them, no crossing.
+        grd = _make_square_boundary(size=10.0)
+        for i, (x, y) in enumerate([(2.0, 0.0), (8.0, 0.0), (8.0, -2.0), (2.0, -2.0)], start=5):
+            grd.nodes[i] = Node(id=i, node_type=0, x=x, y=y)
+        grd.lines[2] = Line(id=2, line_type=1, nodes=[5, 6, 7, 8, 5])
+        assert mb.find_line_crossings(grd) == []
+
+
+class TestCrossingsRefusalMessage:
+    """_crossings_refusal(): the ValueError text of triangulate()."""
+
+    @staticmethod
+    def _pairs(*others):
+        return [mb.LineCrossing(1, k, float(k), 0.0) for k in others]
+
+    def test_three_pairs_are_all_named(self):
+        msg = mb._crossings_refusal(self._pairs(2, 3, 4))
+        assert "Line 1 crosses line 4 near (4, 0)" in msg
+        assert "more pair" not in msg
+
+    def test_a_fourth_pair_is_counted_not_named(self):
+        msg = mb._crossings_refusal(self._pairs(2, 3, 4, 5))
+        assert "Line 1 crosses line 4 near (4, 0)" in msg
+        assert "line 5" not in msg
+        assert "(+1 more pair)" in msg
+
+    def test_more_than_one_extra_pair_is_plural(self):
+        assert "(+2 more pairs)" in mb._crossings_refusal(self._pairs(2, 3, 4, 5, 6))
+
+
+# ---------------------------------------------------------------------------
 # TestValidateBoundary
 # ---------------------------------------------------------------------------
 
@@ -988,6 +1180,29 @@ class TestValidateBoundary:
         grd = GrdFile()
         issues = validate_boundary(grd)
         assert any("No boundary" in i for i in issues)
+
+    def test_lines_crossing_each_other_is_an_error(self):
+        issues = validate_boundary(_make_overlapping_squares())
+        assert any(i.startswith("ERROR") and "Line 1 crosses line 2 near (" in i for i in issues)
+
+    def test_many_crossing_pairs_are_listed_ten_at_most_then_counted(self):
+        # Twelve small rings straddling the square's bottom edge.
+        grd = _make_square_boundary(size=10.0)
+        nid = 5
+        for k in range(12):
+            x0 = 0.2 + 0.8 * k
+            ring = [(x0, -0.3), (x0 + 0.5, -0.3), (x0 + 0.5, 0.3), (x0, 0.3)]
+            ids = []
+            for x, y in ring:
+                grd.nodes[nid] = Node(id=nid, node_type=0, x=x, y=y)
+                ids.append(nid)
+                nid += 1
+            grd.lines[k + 2] = Line(id=k + 2, line_type=2, nodes=[*ids, ids[0]])
+        issues = validate_boundary(grd)
+        listed = [i for i in issues if "crosses line" in i]
+        assert len(listed) == 10
+        assert all(i.startswith("ERROR") for i in listed)
+        assert any(i.startswith("ERROR") and "2 more pairs of lines cross" in i for i in issues)
 
 
 # ---------------------------------------------------------------------------
@@ -1042,6 +1257,11 @@ class TestCheckBoundaryGates:
         grd.lines[1].nodes = [1, 2, 3, 4]
         ok, reason = _check_boundary_gates(grd)
         assert ok
+
+    def test_crossing_lines_block(self):
+        ok, reason = _check_boundary_gates(_make_overlapping_squares())
+        assert not ok
+        assert "line 1 crosses line 2" in reason.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -1529,6 +1749,19 @@ def test_curonian_data_dir_path_is_spelled_correctly():
     )
 
 
+def _curonian_coastline_reduced(tolerance: float = 0.0005) -> GrdFile:
+    """The Curonian boundary with only its coastline simplified.
+
+    Douglas-Peucker on every ring independently (``test_reduce_all_lines``)
+    cuts the simplified coast through near-shore islands at any tolerance
+    down to 50 m, and lines that cross are refused by the mesher. 50 m on
+    the coastline alone keeps every ring apart on this data.
+    """
+    grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+    main_lid = max(grd.lines, key=lambda lid: len(grd.lines[lid].nodes))
+    return reduce_boundary(grd, line_id=main_lid, tolerance=tolerance)
+
+
 @pytest.mark.skipif(not _HAS_CURONIAN, reason="Curonian lagoon sample data not found")
 class TestCuronianIntegration:
     """Full pipeline integration tests with real Curonian Lagoon GPKG data.
@@ -1537,6 +1770,27 @@ class TestCuronianIntegration:
     with 21 interior holes (islands), 5136-point coastline, and 435 isobath
     contours with 251k points spanning depths 0–95m.
     """
+
+    @pytest.fixture(autouse=True, scope="class")
+    def _cap_address_space(self):
+        """Triangle allocates until killed on a crossing input (2026-10-31:
+        ~23 GB, and the kernel's OOM kill took the test runner's tmux pane
+        with it). A gate false negative must fail this class, not the
+        machine: cap the virtual address space while the real mesher runs.
+        """
+        try:
+            import resource
+        except ImportError:  # not POSIX
+            yield
+            return
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        cap = 8 * 1024**3
+        for limit in (soft, hard):
+            if limit != resource.RLIM_INFINITY:
+                cap = min(cap, limit)
+        resource.setrlimit(resource.RLIMIT_AS, (cap, hard))
+        yield
+        resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
 
     def test_import_boundary(self):
         """Import GPKG MultiPolygon with exterior + interior rings."""
@@ -1565,9 +1819,7 @@ class TestCuronianIntegration:
 
     def test_reduce_and_triangulate(self):
         """Reduced boundary with holes triangulates cleanly."""
-        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
-        for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        grd = _curonian_coastline_reduced()
         mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         assert mesh.num_elements > 100
         assert mesh.num_nodes > 100
@@ -1576,21 +1828,19 @@ class TestCuronianIntegration:
 
     def test_all_triangulation_methods(self):
         """Quality, conforming, and minimal triangulation all succeed."""
-        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
-        # Tolerance in degrees (~0.005° ≈ 500m)
-        for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        grd = _curonian_coastline_reduced()
 
-        # Quality: area + angle constraints → most elements
-        # Area in sq-degrees (~0.001 sq-deg ≈ 10 km²)
-        quality = triangulate(grd, max_area=0.001, min_angle=20.0)
+        # Quality: area + angle constraints → most elements. The 50 m
+        # coastline alone packs ~5300 elements at q20, so the area cap must
+        # be tight (1e-4 sq-deg ≈ 1 km²) to demand clearly more than that.
+        quality = triangulate(grd, max_area=1e-4, min_angle=20.0)
         assert quality.num_elements > 1000
         assert quality.num_nodes > 500
 
         # Conforming: angle constraint only, no area limit → fewer elements
         conforming = triangulate(grd, max_area=None, min_angle=20.0)
         assert conforming.num_elements > 100
-        assert conforming.num_elements < quality.num_elements
+        assert quality.num_elements > 1.3 * conforming.num_elements
 
         # Minimal: no constraints → fewest triangles
         minimal = triangulate(grd, max_area=None, min_angle=0.0)
@@ -1599,15 +1849,31 @@ class TestCuronianIntegration:
 
     def test_smooth_main_coastline_and_triangulate(self):
         """Chaikin-smoothed main coastline triangulates without segfault."""
-        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
-        # Reduce first (5136 pts too many for smoothing)
-        for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        grd = _curonian_coastline_reduced()
         # Find the main coastline (largest line)
         main_lid = max(grd.lines, key=lambda lid: len(grd.lines[lid].nodes))
         smoothed = smooth_boundary(grd, line_id=main_lid, method="chaikin", iterations=1)
         mesh = triangulate(smoothed, max_area=0.001, min_angle=20.0)
         assert mesh.num_elements > 100
+
+    def test_rings_reduced_one_by_one_cross_and_are_refused_unmeshed(self, monkeypatch):
+        """A 500 m simplification of every ring already makes the coastline
+        cross near-shore islands (six pairs; Chaikin on the coast adds two).
+        The mesher must refuse that before Triangle sees it: on this very
+        input Triangle's quality refinement allocated ~23 GB and was killed
+        by the kernel (2026-10-31).
+        """
+        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
+        for lid in list(grd.lines.keys()):
+            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        main_lid = max(grd.lines, key=lambda lid: len(grd.lines[lid].nodes))
+        smoothed = smooth_boundary(grd, line_id=main_lid, method="chaikin", iterations=1)
+        pairs = [(c.line_a, c.line_b) for c in mb.find_line_crossings(smoothed)]
+        assert any(main_lid in pair for pair in pairs), pairs
+        monkeypatch.setattr(mb, "triangle", _TriangleNeverCalled)
+        refusal = r"Boundary lines cross each other: .*\(\+\d+ more pairs\)"
+        with pytest.raises(ValueError, match=refusal):
+            triangulate(smoothed, max_area=0.001, min_angle=20.0)
 
     def test_load_isobath_contours(self):
         """Load 435 isobath contours from GPKG with depth attribute.
@@ -1628,9 +1894,7 @@ class TestCuronianIntegration:
 
     def test_interpolate_isobaths_all_methods(self):
         """All scipy methods produce valid depths from Curonian isobaths."""
-        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
-        for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        grd = _curonian_coastline_reduced()
         mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
         # Subsample for speed (251k points is too many for test)
@@ -1643,9 +1907,7 @@ class TestCuronianIntegration:
 
     def test_export_round_trip(self, tmp_path):
         """Full pipeline: import -> reduce -> mesh -> bathy -> export -> reload."""
-        grd = import_boundaries(_CURONIAN_DIR / "curonian_boundary.gpkg")
-        for lid in list(grd.lines.keys()):
-            grd = reduce_boundary(grd, line_id=lid, tolerance=0.005)
+        grd = _curonian_coastline_reduced()
         mesh = triangulate(grd, max_area=0.001, min_angle=20.0)
         data = load_bathymetry_contours(_CURONIAN_DIR / "depth_isobates.gpkg")
         sub = data[::20]

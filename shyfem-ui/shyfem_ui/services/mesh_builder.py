@@ -7,6 +7,7 @@ bathymetry interpolation via scipy or shybas.
 
 import logging
 import math
+from dataclasses import dataclass
 from dataclasses import replace as _dc_replace
 from pathlib import Path
 
@@ -721,7 +722,15 @@ def triangulate(
 
     Returns:
         New GrdFile with nodes, elements, and preserved boundary lines.
+
+    Raises:
+        ValueError: when two boundary lines cross each other (see
+            :func:`find_line_crossings`); Triangle is not called, because its
+            quality refinement does not terminate on crossing segments.
     """
+    crossings = find_line_crossings(grd)
+    if crossings:
+        raise ValueError(_crossings_refusal(crossings))
     if max_area is not None and max_area <= 0:
         raise ValueError(
             f"max_area must be positive (got {max_area!r}); pass None for no constraint"
@@ -763,15 +772,16 @@ def _triangle_opts(max_area: float | None, min_angle: float) -> str:
     return opts
 
 
-def _build_pslg(grd: GrdFile) -> dict:
-    """Convert GrdFile boundary lines into Triangle PSLG format.
+def _pslg_vertices(grd: GrdFile) -> tuple[list[list[float]], dict[int, int]]:
+    """The vertex table Triangle receives, and each node's index in it.
 
-    Returns dict with 'vertices', 'segments', and optionally 'holes'.
-    Deduplicates near-coincident vertices to prevent Triangle segfaults.
+    Nodes whose coordinates round to the same 6 decimals share one vertex,
+    placed at the first (lowest id) node's own position; nothing is moved
+    otherwise. :func:`_build_pslg` and :func:`find_line_crossings` both
+    build their segments from this table, so the gate judges exactly the
+    geometry the mesher gets.
     """
-    vertices = []
-    segments = []
-    holes = []
+    vertices: list[list[float]] = []
     node_map: dict[int, int] = {}  # grd node ID → vertex index
     coord_to_idx: dict[tuple[float, float], int] = {}  # dedup by coords
 
@@ -786,6 +796,18 @@ def _build_pslg(grd: GrdFile) -> dict:
             node_map[nid] = idx
             coord_to_idx[key] = idx
             vertices.append([node.x, node.y])
+    return vertices, node_map
+
+
+def _build_pslg(grd: GrdFile) -> dict:
+    """Convert GrdFile boundary lines into Triangle PSLG format.
+
+    Returns dict with 'vertices', 'segments', and optionally 'holes'.
+    Deduplicates near-coincident vertices to prevent Triangle segfaults.
+    """
+    segments = []
+    holes = []
+    vertices, node_map = _pslg_vertices(grd)
 
     for line in grd.lines.values():
         nids = line.nodes
@@ -1566,6 +1588,96 @@ def export_grd(grd: GrdFile, output_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class LineCrossing:
+    """A segment of boundary line ``line_a`` crosses one of ``line_b`` at (x, y)."""
+
+    line_a: int
+    line_b: int
+    x: float
+    y: float
+
+
+_MAX_LISTED_CROSSINGS = 10  # validate_boundary lists this many pairs, then counts
+
+
+def _crossing_issue(crossing: LineCrossing) -> str:
+    # .9g keeps projected coordinates (UTM metres) out of exponent form.
+    return (
+        f"Line {crossing.line_a} crosses line {crossing.line_b} "
+        f"near ({crossing.x:.9g}, {crossing.y:.9g})"
+    )
+
+
+def _crossings_refusal(crossings: list[LineCrossing]) -> str:
+    shown = "; ".join(_crossing_issue(c) for c in crossings[:3])
+    extra = len(crossings) - 3
+    more = f" (+{extra} more pair{'s' if extra > 1 else ''})" if extra > 0 else ""
+    return (
+        f"Boundary lines cross each other: {shown}{more}. Triangle cannot mesh "
+        "lines that cross (its quality refinement does not terminate on them): "
+        "undo the smoothing, or simplify with a smaller tolerance, so that the "
+        "lines stay apart."
+    )
+
+
+def find_line_crossings(grd: GrdFile) -> list[LineCrossing]:
+    """Pairs of boundary lines whose segments cross each other.
+
+    A crossing is a segment of one line and a segment of another line that
+    meet at a single point interior to both, judged on exactly the geometry
+    Triangle receives: the segments of :func:`_build_pslg`, between the
+    vertices of :func:`_pslg_vertices` (nodes whose coordinates round to the
+    same 6 decimals share one vertex; segments at a missing node, of zero
+    length, or with a non-finite coordinate are dropped). Not crossings, as
+    Triangle copes with them: segments that touch at a shared node
+    (neighbouring polygons share one), a vertex of one line lying on a
+    segment of another (Triangle splits the segment there), and segments
+    lying on top of each other (the Curonian import carries every island
+    both as a hole and as its own polygon). A line crossing itself is a
+    self-intersection, reported by :func:`validate_boundary`.
+
+    Returns one entry per pair of lines, sorted by the two line ids, with the
+    location of one of their crossings. Needs shapely >= 2.
+    """
+    if shapely is None:
+        raise RuntimeError("shapely is required to check boundary lines for crossings")
+    vertices, node_map = _pslg_vertices(grd)
+    starts: list[list[float]] = []
+    ends: list[list[float]] = []
+    owners: list[int] = []
+    for lid, line in grd.lines.items():
+        for a, b in zip(line.nodes[:-1], line.nodes[1:], strict=True):
+            va = node_map.get(a)
+            vb = node_map.get(b)
+            if va is None or vb is None or va == vb:
+                continue
+            pa, pb = vertices[va], vertices[vb]
+            if not all(math.isfinite(v) for v in (*pa, *pb)):
+                continue
+            starts.append(pa)
+            ends.append(pb)
+            owners.append(lid)
+    if len(set(owners)) < 2:
+        return []
+    segments = shapely.linestrings(np.stack([np.array(starts), np.array(ends)], axis=1))
+    owner_of = np.array(owners)
+    # Bounding-box candidates first; the GEOS predicate only runs on pairs
+    # from different lines (a segment's box touches its own neighbours').
+    left, right = shapely.STRtree(segments).query(segments)
+    keep = (left < right) & (owner_of[left] != owner_of[right])
+    left, right = left[keep], right[keep]
+    crossing = shapely.crosses(segments[left], segments[right])
+    found: dict[tuple[int, int], LineCrossing] = {}
+    for i, j in zip(left[crossing], right[crossing], strict=True):
+        pair = (int(min(owner_of[i], owner_of[j])), int(max(owner_of[i], owner_of[j])))
+        if pair in found:
+            continue
+        x, y = shapely.get_coordinates(shapely.intersection(segments[i], segments[j]))[0]
+        found[pair] = LineCrossing(pair[0], pair[1], float(x), float(y))
+    return [found[pair] for pair in sorted(found)]
+
+
 def validate_boundary(grd: GrdFile) -> list[str]:
     """Validate boundary geometry.
 
@@ -1606,6 +1718,13 @@ def validate_boundary(grd: GrdFile) -> list[str]:
         if line.line_type == 1:
             has_exterior = True
 
+    crossings = find_line_crossings(grd)
+    for crossing in crossings[:_MAX_LISTED_CROSSINGS]:
+        issues.append(f"ERROR: {_crossing_issue(crossing)}")
+    if len(crossings) > _MAX_LISTED_CROSSINGS:
+        unlisted = len(crossings) - _MAX_LISTED_CROSSINGS
+        issues.append(f"ERROR: ... and {unlisted} more pairs of lines cross")
+
     if not has_exterior:
         issues.append("WARNING: No exterior boundary found (line_type=1)")
 
@@ -1619,7 +1738,10 @@ def _check_boundary_gates(grd: GrdFile) -> tuple[bool, str | None]:
     ``(False, reason)`` where ``reason`` is a human-readable explanation.
 
     Blocks on:
-    - any ERROR-prefixed issue from :func:`validate_boundary`
+    - any ERROR-prefixed issue from :func:`validate_boundary`, which includes
+      two lines crossing each other (Triangle's quality refinement does not
+      terminate on crossing segments: it allocated ~23 GB on the Curonian
+      coastline before the kernel killed it)
     - self-intersecting lines (Triangle can hang or segfault)
     - missing exterior boundary (line_type=1)
 
