@@ -483,7 +483,7 @@ def compare_server(
 
     @reactive.effect
     @reactive.event(input.generate_report_btn)
-    def _generate_comparison_report():
+    async def _generate_comparison_report():
         _usr = current_user() if current_user is not None else None
         _proj = active_project.get() if active_project is not None else None
         _denied = editor_denied_reason(
@@ -501,25 +501,44 @@ def compare_server(
             )
             return
 
-        try:
-            output_dir = Path(config.work_dir)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = output_dir / f"comparison_{jobs[0].id[:8]}_{jobs[1].id[:8]}.html"
+        # The active project's folder, not the shared work dir: in server mode
+        # that is outside every user's home, so the owner could not reach the
+        # report and every user's reports landed together (V-08).
+        output_dir = _comparison_report_dir(_proj, config.work_dir)
+        output_path = output_dir / f"comparison_{jobs[0].id[:8]}_{jobs[1].id[:8]}.html"
+        title = f"Comparison: {jobs[0].name} vs {jobs[1].name}"
 
-            report_path = generate_comparison_report(
-                jobs=jobs,
-                title=f"Comparison: {jobs[0].name} vs {jobs[1].name}",
-                output_path=output_path,
-            )
+        def _write() -> Path:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            return generate_comparison_report(jobs=jobs, title=title, output_path=output_path)
+
+        try:
+            report_path = await asyncio.to_thread(_write)
+        except Exception:
+            logger.exception("Comparison report failed (%s)", output_path)
             ui.notification_show(
-                f"Report generated: {report_path}",
-                type="message",
-                duration=8,
+                "Report generation failed: the report could not be written.",
+                type="error",
+                duration=6,
             )
-        except Exception as e:
-            ui.notification_show(f"Report generation failed: {e}", type="error", duration=6)
+            return
+        where = "the project folder" if _proj is not None else "the work folder"
+        ui.notification_show(
+            f"Report generated: {Path(report_path).name} in {where}",
+            type="message",
+            duration=8,
+        )
 
     return {}
+
+
+def _comparison_report_dir(active_project: dict | None, work_dir) -> Path:
+    """Folder a comparison report is written to: the active project's folder,
+    or ``work_dir`` when no project is active (local mode only; server mode
+    refuses the report without one)."""
+    if active_project is not None:
+        return Path(active_project["work_dir"])
+    return Path(work_dir)
 
 
 # Text series the loader reads. Not ``.ext``: that is SHYFEM's binary

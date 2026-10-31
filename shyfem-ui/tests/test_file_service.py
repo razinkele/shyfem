@@ -371,3 +371,118 @@ class TestUploadSandboxEscape:
         )
         assert result["rel_path"] == "GRID/sub/m.grd"
         assert (work / "GRID" / "sub" / "m.grd").exists()
+
+
+class TestUploadSubdirDot:
+    """F-08: subdir "." stored ``./x`` beside ``x`` -- two rows, one file."""
+
+    @pytest.mark.parametrize("subdir", [".", "./", "", None])
+    def test_dot_subdir_is_the_project_root(self, project_with_dir, subdir):
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import ProjectFile
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+        FileService.upload_file(pid, b"a", "x.dat", "other")
+        result = FileService.upload_file(pid, b"bb", "x.dat", "other", subdir=subdir)
+
+        assert result["rel_path"] == "x.dat"
+        with db_session() as db:
+            rows = db.query(ProjectFile).filter_by(project_id=pid).all()
+            assert [(r.rel_path, r.size_bytes) for r in rows] == [("x.dat", 2)]
+        assert (work / "x.dat").read_bytes() == b"bb"
+
+    def test_dot_inside_subdir_is_dropped(self, project_with_dir):
+        from shyfem_ui.services.file_service import FileService
+
+        pid, _ = project_with_dir
+        result = FileService.upload_file(pid, b"a", "x.dat", "other", subdir="./GRID/.")
+        assert result["rel_path"] == "GRID/x.dat"
+
+
+class TestUploadDiskAndRowStayInStep:
+    """F-04: the file was written before its row; a failed row left the file."""
+
+    @staticmethod
+    def _fail_flush(monkeypatch):
+        from sqlalchemy.orm import Session
+
+        def _boom(self, *a, **k):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr(Session, "flush", _boom)
+
+    def test_failed_row_removes_a_new_file(self, project_with_dir, monkeypatch):
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+        self._fail_flush(monkeypatch)
+        with pytest.raises(RuntimeError):
+            FileService.upload_file(pid, b"new", "y.dat", "other", subdir="INPUT")
+        assert sorted(p.name for p in work.rglob("*") if p.is_file()) == []
+
+    def test_failed_row_keeps_the_previous_bytes(self, project_with_dir, monkeypatch):
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import ProjectFile
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+        FileService.upload_file(pid, b"old", "y.dat", "other")
+        self._fail_flush(monkeypatch)
+        with pytest.raises(RuntimeError):
+            FileService.upload_file(pid, b"newer", "y.dat", "other")
+        monkeypatch.undo()
+        assert (work / "y.dat").read_bytes() == b"old"
+        assert sorted(p.name for p in work.iterdir()) == ["y.dat"]
+        with db_session() as db:
+            (row,) = db.query(ProjectFile).filter_by(project_id=pid).all()
+            assert row.size_bytes == 3
+
+    def test_failed_commit_removes_a_new_file(self, project_with_dir, monkeypatch):
+        from sqlalchemy.orm import Session
+
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+
+        def _boom(self):
+            raise RuntimeError("commit failed")
+
+        monkeypatch.setattr(Session, "commit", _boom)
+        with pytest.raises(RuntimeError):
+            FileService.upload_file(pid, b"new", "z.dat", "other")
+        assert list(work.iterdir()) == []
+
+    def test_failed_delete_commit_keeps_the_file(self, project_with_dir, monkeypatch):
+        """The reverse drift: delete unlinked the file before the row went."""
+        from sqlalchemy.orm import Session
+
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import ProjectFile
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+        fid = FileService.upload_file(pid, b"keep", "k.dat", "other")["id"]
+
+        def _boom(self):
+            raise RuntimeError("commit failed")
+
+        monkeypatch.setattr(Session, "commit", _boom)
+        with pytest.raises(RuntimeError):
+            FileService.delete_file(fid)
+        monkeypatch.undo()
+        assert (work / "k.dat").read_bytes() == b"keep"
+        with db_session() as db:
+            assert db.query(ProjectFile).filter_by(id=fid).count() == 1
+
+    def test_delete_still_removes_file_and_row(self, project_with_dir):
+        from shyfem_ui.db.base import db_session
+        from shyfem_ui.models.project import ProjectFile
+        from shyfem_ui.services.file_service import FileService
+
+        pid, work = project_with_dir
+        fid = FileService.upload_file(pid, b"x", "d.dat", "other")["id"]
+        FileService.delete_file(fid)
+        assert not (work / "d.dat").exists()
+        with db_session() as db:
+            assert db.query(ProjectFile).filter_by(id=fid).count() == 0

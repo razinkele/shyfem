@@ -25,20 +25,26 @@ def plan_relocations(
     projects: Iterable[dict],
     *,
     user_data_root: Path | str,
+    busy_project_ids: Iterable[int] = (),
 ) -> list[dict]:
     """Compute relocation plans for a set of projects.
 
     Args:
         projects: dicts with keys ``id``, ``work_dir``, ``owner_username``.
         user_data_root: configured per-user data root.
+        busy_project_ids: projects with a job or workflow still pending,
+            queued or running (see :func:`busy_project_ids`); a move for one
+            of them becomes ``"skip-active-jobs"`` (H-10).
 
     Returns:
         One plan dict per project: ``{id, src, dst, action}`` where ``action``
         is ``"move"`` (relocate src -> dst), ``"skip-already-home"`` (already in
-        the owner's sandbox), or ``"skip-orphan"`` (no owner username — left in
-        place and flagged for manual handling).
+        the owner's sandbox), ``"skip-orphan"`` (no owner username — left in
+        place and flagged for manual handling), or ``"skip-active-jobs"``
+        (a job or workflow is still using the folder — re-run once it ends).
     """
     root = Path(user_data_root).resolve()
+    busy = set(busy_project_ids)
     plans: list[dict] = []
 
     for proj in projects:
@@ -60,9 +66,54 @@ def plan_relocations(
         # Use only the basename so a pathological stored path cannot relocate
         # outside the owner's home.
         dst = (home / src.name).resolve()
-        plans.append({"id": pid, "src": str(src), "dst": str(dst), "action": "move"})
+        action = "skip-active-jobs" if pid in busy else "move"
+        plans.append({"id": pid, "src": str(src), "dst": str(dst), "action": action})
 
     return plans
+
+
+def busy_project_ids(db, projects: Iterable[dict]) -> set[int]:
+    """Ids of the projects whose folder a job or workflow is still using.
+
+    A job counts while it is pending, queued or running, matched by its
+    ``project_id`` or, for a row without one, by a ``working_dir`` inside the
+    project's folder; a workflow counts while it is pending or running.
+    Moving such a folder pulls it out from under the running tool (H-10).
+
+    Args:
+        db: an open SQLAlchemy session.
+        projects: dicts with keys ``id`` and ``work_dir``.
+    """
+    from shyfem_ui.models.project import Job
+    from shyfem_ui.models.workflow import Workflow, WorkflowStatus
+    from shyfem_ui.services.job_detached import ACTIVE_STATUSES
+
+    projects = list(projects)
+    ids = {p["id"] for p in projects}
+    busy: set[int] = set()
+
+    job_rows = (
+        db.query(Job.project_id, Job.working_dir).filter(Job.status.in_(ACTIVE_STATUSES)).all()
+    )
+    folders = [(p["id"], Path(p["work_dir"]).resolve()) for p in projects]
+    for project_id, working_dir in job_rows:
+        if project_id in ids:
+            busy.add(project_id)
+            continue
+        if not working_dir:
+            continue
+        wd = Path(working_dir).resolve()
+        for pid, folder in folders:
+            if wd == folder or folder in wd.parents:
+                busy.add(pid)
+
+    wf_rows = (
+        db.query(Workflow.project_id)
+        .filter(Workflow.status.in_((WorkflowStatus.PENDING, WorkflowStatus.RUNNING)))
+        .all()
+    )
+    busy.update(pid for (pid,) in wf_rows if pid in ids)
+    return busy
 
 
 def apply_relocations(
@@ -88,6 +139,15 @@ def apply_relocations(
 
     for plan in plans:
         pid, action = plan["id"], plan["action"]
+        if action == "skip-active-jobs":
+            logger.warning(
+                "project %s: a job or workflow is still active in %s — left in place; "
+                "re-run once it has finished",
+                pid,
+                plan["src"],
+            )
+            summary["skipped"] += 1
+            continue
         if action != "move":
             logger.info("project %s: %s (%s)", pid, action, plan["src"])
             summary["skipped"] += 1
@@ -179,10 +239,11 @@ def relocate_legacy_projects(
             {"id": pid, "work_dir": work_dir, "owner_username": owner}
             for (pid, work_dir, owner) in rows
         ]
+        busy = busy_project_ids(db, projects)
     finally:
         db.close()
 
-    plans = plan_relocations(projects, user_data_root=user_data_root)
+    plans = plan_relocations(projects, user_data_root=user_data_root, busy_project_ids=busy)
 
     def _update_work_dir(project_id: int, new_work_dir: str) -> None:
         session = session_factory()

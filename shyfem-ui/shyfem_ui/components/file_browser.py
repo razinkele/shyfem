@@ -74,6 +74,10 @@ def infer_file_type(filename: str) -> str:
     return "other"
 
 
+class UploadError(Exception):
+    """An upload was refused or failed; the message is safe to show the user."""
+
+
 def persist_upload(
     temp_path: Path,
     filename: str,
@@ -91,7 +95,13 @@ def persist_upload(
         subdir: Optional subdirectory within project work_dir.
 
     Returns:
-        ProjectFile dict on success, None if project_id is None or on error.
+        ProjectFile dict on success, None if project_id is None.
+
+    Raises:
+        UploadError: The upload was not saved. Its message says why (F-09):
+            FileService's own refusal (quota, invalid or reserved name, bad
+            subdirectory), or a generic line for anything else, whose detail
+            (it may name host paths) goes only to the log.
     """
     if project_id is None:
         return None
@@ -99,9 +109,9 @@ def persist_upload(
     if file_type is None:
         file_type = infer_file_type(filename)
 
-    try:
-        from shyfem_ui.services.file_service import FileService
+    from shyfem_ui.services.file_service import FileService
 
+    try:
         file_data = temp_path.read_bytes()
         return FileService.upload_file(
             project_id=project_id,
@@ -110,14 +120,17 @@ def persist_upload(
             file_type=file_type,
             subdir=subdir,
         )
-    except Exception:
+    except ValueError as e:
+        logger.info("Upload %s to project %s refused: %s", filename, project_id, e)
+        raise UploadError(str(e)) from e
+    except Exception as e:
         logger.warning(
             "Failed to persist upload %s to project %s",
             filename,
             project_id,
             exc_info=True,
         )
-        return None
+        raise UploadError("the file could not be saved (see the server log)") from e
 
 
 @module.ui

@@ -129,3 +129,36 @@ def test_files_page_type_and_subdir_hold_across_uploads(
             ("wind_a.dat", "forcing"),
             ("wind_b.dat", "forcing"),
         ]
+
+
+@pytest.mark.e2e
+def test_files_page_upload_failure_says_why(pw_page, live_server, upload_project, tmp_path):
+    """F-09: a refused upload read only 'Failed to upload: x', whatever the reason."""
+    pid, proj_dir, engine = upload_project
+    reserved = tmp_path / "0f8fad5b-d9cb-469f-a165-70867728950e.stdout"
+    reserved.write_bytes(b"not a job log\n")
+    pw_page.evaluate(
+        """([pid, wd]) => window.__test_set_active_project({
+            id: pid, name: 'upload_project', work_dir: wd, description: null,
+            grids: [], simulations: [], files: [],
+        })""",
+        [pid, str(proj_dir)],
+    )
+    pw_page.locator(".sf-nav-item[data-nav='Files']").click(force=True)
+    expect(pw_page.locator("#files-upload_type")).to_be_attached(timeout=15000)
+    # Leave the type and folder as a fresh page has them (the test above sets both).
+    pw_page.locator("#files-upload_type").select_option("")
+    pw_page.evaluate("""() => {
+        const el = document.getElementById('files-upload_subdir');
+        if (el && el.selectize) el.selectize.setValue('');
+    }""")
+    pw_page.wait_for_timeout(500)
+    pw_page.locator("#files-file_upload-file_input").set_input_files(str(reserved))
+
+    expect(
+        pw_page.locator(".shiny-notification").filter(has_text="Reserved filename")
+    ).to_be_visible(timeout=15000)
+    assert not list(proj_dir.rglob(reserved.name))
+    with Session(engine) as db:
+        assert db.query(ProjectFile).filter_by(project_id=pid).count() == 0
+    pw_page.locator(".sf-nav-item[data-nav='Dashboard']").click(force=True)

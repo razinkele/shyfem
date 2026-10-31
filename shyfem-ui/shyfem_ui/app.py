@@ -149,11 +149,27 @@ def _bootstrap_tutorial_project(admin_id: int, user_id: int, config: Config) -> 
     from shyfem_ui.tutorial_content import TUTORIAL_CONTENT
 
     project_name = "Mar Menor Tutorial"
+    project_path = config.work_dir / project_name
 
-    # Check if project already exists
+    # Find the project this bootstrap made: the admin's, at its folder (it may
+    # have been renamed since). A lookup by name alone also took any user's
+    # project called that and shared it, as editor, with the tutorial account
+    # (H-09). Names are unique, so such a project also blocks a new one.
     with db_session() as db:
-        existing = db.query(Project).filter_by(name=project_name).first()
+        existing = (
+            db.query(Project).filter_by(work_dir=str(project_path)).first()
+            or db.query(Project).filter_by(name=project_name).first()
+        )
         if existing is not None:
+            if existing.owner_id != admin_id:
+                logger.warning(
+                    "Project %d (%r at %s) is not the admin's tutorial project;"
+                    " not sharing it and not bootstrapping",
+                    existing.id,
+                    existing.name,
+                    existing.work_dir,
+                )
+                return
             # Ensure sharing is still in place
             SharingService().share_project(existing.id, user_id, role="editor")
             logger.debug("Tutorial project already exists (id=%d)", existing.id)
@@ -165,7 +181,6 @@ def _bootstrap_tutorial_project(admin_id: int, user_id: int, config: Config) -> 
         logger.warning("Tutorial source not found: %s — skipping bootstrap", mar_menor_src)
         return
 
-    project_path = config.work_dir / project_name
     if not project_path.exists():
         config.ensure_work_dir()
         try:
