@@ -97,6 +97,35 @@ def job_identity_metadata(row) -> dict[str, Any]:
     return meta
 
 
+_TERMINAL_STATUSES = frozenset({JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED})
+
+
+@dataclass(frozen=True)
+class JobEvent:
+    """One change of a job, as the queue publishes it to its subscribers.
+
+    ``kind`` is ``"status"`` for a status change (``previous`` is the status
+    before it, None for a job's first event) or ``"progress"`` for a progress
+    update of a running job. ``user_id`` and ``project_id`` are the job's
+    owner and project from its metadata, so a subscriber can scope what it
+    shows the way :func:`~shyfem_ui.services.run_logic.list_scoped_jobs` does.
+    """
+
+    job_id: str
+    name: str
+    status: JobStatus
+    previous: JobStatus | None
+    user_id: int | None
+    project_id: int | None
+    kind: str = "status"
+    progress: float = 0.0
+    message: str = ""
+
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in _TERMINAL_STATUSES
+
+
 class JobQueue(ABC):
     """Abstract base class for job queues."""
 
@@ -164,6 +193,37 @@ class JobQueue(ABC):
                     cb(job_id, progress, message)
                 except Exception:
                     logging.getLogger(__name__).warning("Progress callback error", exc_info=True)
+
+    @property
+    def supports_events(self) -> bool:
+        """Whether this queue publishes a :class:`JobEvent` for every change.
+
+        A session then subscribes (``add_event_callback``) and is woken
+        through ``session.run_once_when_idle`` instead of polling. A queue
+        whose jobs change in other processes (Celery) does not publish, and
+        its pages keep their polls.
+        """
+        return False
+
+    def add_event_callback(self, callback_id: str, callback: Callable[[JobEvent], None]) -> None:
+        """Register a named job-event callback (multi-session safe)."""
+        if not hasattr(self, "_event_callbacks"):
+            self._event_callbacks: dict[str, Callable[[JobEvent], None]] = {}
+        self._event_callbacks[callback_id] = callback
+
+    def remove_event_callback(self, callback_id: str) -> None:
+        """Remove a previously registered job-event callback."""
+        if hasattr(self, "_event_callbacks"):
+            self._event_callbacks.pop(callback_id, None)
+
+    def _notify_event(self, event: JobEvent) -> None:
+        """Invoke all registered job-event callbacks; one failing does not stop the rest."""
+        if hasattr(self, "_event_callbacks"):
+            for cb in list(self._event_callbacks.values()):
+                try:
+                    cb(event)
+                except Exception:
+                    logging.getLogger(__name__).warning("Job event callback error", exc_info=True)
 
     @abstractmethod
     async def cleanup_old_jobs(self, days: int = 7) -> int:

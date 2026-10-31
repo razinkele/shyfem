@@ -16,6 +16,7 @@ import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget
 
+from shyfem_ui.components.job_feed import SessionEventFeed, subscribe_session_to_job_events
 from shyfem_ui.components.job_status import (
     format_datetime,
     format_duration,
@@ -598,25 +599,50 @@ def run_server(
     # session before the first flush ever completes. _update_job_lists
     # therefore skips set() when content is unchanged, and the tick bump below
     # isolates its own read.
-    @reactive.effect
-    async def _auto_refresh():
-        try:
-            active = active_jobs_data.get()
-            wf_id = active_workflow_id.get()
-            wf_active = False
-            if wf_id:
-                wf = workflow_engine.get_workflow(wf_id)
-                wf_active = wf.is_active if wf else False
+    if job_queue.supports_events:
+        # Push (Shiny 1.9): the queue publishes every job change; this
+        # session is woken once idle with the batch. The handler only bumps
+        # reactive values (an idle run is synchronous and has no reactive
+        # context); the effect below does the async listing. The log tail is
+        # the log viewer's own refresh, at log_refresh_interval.
+        _job_event_tick = reactive.value(0)
 
-            if active or wf_active:
-                reactive.invalidate_later(2)
-                with reactive.isolate():
-                    _refresh_tick.set(_refresh_tick.get() + 1)
-            await _refresh_jobs()
-            await _refresh_log()
-        except Exception:
-            logger.debug("Auto-refresh poll failed, retrying in 5s", exc_info=True)
-            reactive.invalidate_later(5)
+        def _on_job_events(events) -> None:
+            with reactive.isolate():
+                _job_event_tick.set(_job_event_tick.get() + 1)
+                _refresh_tick.set(_refresh_tick.get() + 1)  # wf_progress shows job progress too
+
+        subscribe_session_to_job_events(session, job_queue, _on_job_events, key="run")
+
+        @reactive.effect
+        async def _refresh_on_job_events():
+            _job_event_tick.get()  # once at start, then on every batch
+            try:
+                await _refresh_jobs()
+            except Exception:
+                logger.debug("Job refresh after events failed", exc_info=True)
+
+    if not job_queue.supports_events:
+
+        @reactive.effect
+        async def _auto_refresh():
+            try:
+                active = active_jobs_data.get()
+                wf_id = active_workflow_id.get()
+                wf_active = False
+                if wf_id:
+                    wf = workflow_engine.get_workflow(wf_id)
+                    wf_active = wf.is_active if wf else False
+
+                if active or wf_active:
+                    reactive.invalidate_later(2)
+                    with reactive.isolate():
+                        _refresh_tick.set(_refresh_tick.get() + 1)
+                await _refresh_jobs()
+                await _refresh_log()
+            except Exception:
+                logger.debug("Auto-refresh poll failed, retrying in 5s", exc_info=True)
+                reactive.invalidate_later(5)
 
     @reactive.effect
     @reactive.event(input.refresh_btn)
@@ -1385,7 +1411,20 @@ def run_server(
 
     workflow_engine = WorkflowEngine(job_queue)
     active_workflow_id = reactive.value(None)
-    _refresh_tick = reactive.value(0)  # bumped by _auto_refresh to trigger wf_progress re-render
+    # Bumped on every job/workflow event (push) or by the _auto_refresh poll
+    # (fallback) to re-render wf_progress.
+    _refresh_tick = reactive.value(0)
+
+    if job_queue.supports_events:
+        # This session's engine persists each workflow change on the loop;
+        # the feed turns that into a re-render once the session is idle.
+        def _on_workflow_events(events) -> None:
+            with reactive.isolate():
+                _refresh_tick.set(_refresh_tick.get() + 1)
+
+        SessionEventFeed(session, _on_workflow_events, key=f"run-workflows:{session.id}").attach(
+            workflow_engine.add_status_callback, workflow_engine.remove_status_callback
+        )
 
     @render.ui
     def wf_template_info():

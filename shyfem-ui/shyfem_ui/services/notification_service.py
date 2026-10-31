@@ -200,3 +200,32 @@ class JobTransitionDetector:
             del self._seen[job_id]
 
         return events
+
+
+def job_completion_toasts(
+    events, user: dict | None, is_server_mode: bool
+) -> list[tuple[str, str, int]]:
+    """The in-browser toasts for a batch of job events: (message, type, seconds).
+
+    One toast per job that just ended, scoped the way ``list_scoped_jobs``
+    scopes the cross-page notification poll: every job in local mode, only
+    the user's own in server mode, and none at all when the identity is
+    unresolved (fail-closed). A job first seen already ended, or a progress
+    event, is nothing to announce.
+    """
+    toasts: list[tuple[str, str, int]] = []
+    for ev in events:
+        if ev.kind != "status" or not ev.is_terminal:
+            continue
+        if ev.previous is not None and ev.previous.value in _TERMINAL_STATUSES:
+            continue
+        if is_server_mode and (user is None or ev.user_id != user.get("id")):
+            continue
+        status = ev.status.value
+        if status == "completed":
+            toasts.append((f"Job '{ev.name}' completed successfully.", "message", 8))
+        elif status == "failed":
+            toasts.append((f"Job '{ev.name}' failed.", "error", 10))
+        elif status == "cancelled":
+            toasts.append((f"Job '{ev.name}' was cancelled.", "warning", 5))
+    return toasts

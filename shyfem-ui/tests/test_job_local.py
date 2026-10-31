@@ -1237,3 +1237,95 @@ class TestAsyncHygieneF22F51:
         dbb._engine = None
         dbb._SessionLocal = None
         cfg._config = None
+
+
+class TestJobEvents:
+    """The local queue publishes every status change, so sessions push
+    instead of polling (Shiny 1.9)."""
+
+    _TERMINAL = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+
+    @staticmethod
+    async def _settle(queue, job_id):
+        for _ in range(60):
+            info = await queue.get_status(job_id)
+            if info and not info.is_active:
+                break
+            await asyncio.sleep(0.05)
+        await asyncio.sleep(0.05)
+
+    @pytest.mark.asyncio
+    async def test_the_local_queue_supports_events(self, queue):
+        assert queue.supports_events is True
+
+    @pytest.mark.asyncio
+    async def test_a_job_reports_queued_running_and_exactly_one_terminal_event(
+        self, queue, job_spec
+    ):
+        seen = []
+        queue.add_event_callback("s", seen.append)
+        job_spec.metadata = {"user_id": 7, "project_id": 3}
+        job_id = await queue.submit(job_spec)
+        await self._settle(queue, job_id)
+        mine = [e for e in seen if e.job_id == job_id and e.kind == "status"]
+        statuses = [e.status for e in mine]
+        assert statuses.index(JobStatus.QUEUED) < statuses.index(JobStatus.RUNNING)
+        assert statuses.index(JobStatus.RUNNING) < statuses.index(JobStatus.COMPLETED)
+        terminal = [e for e in mine if e.status in self._TERMINAL]
+        assert len(terminal) == 1
+        ev = terminal[0]
+        assert ev.status == JobStatus.COMPLETED and ev.previous == JobStatus.RUNNING
+        assert (ev.name, ev.user_id, ev.project_id) == ("test_job", 7, 3)
+
+    @pytest.mark.asyncio
+    async def test_a_cancel_reports_exactly_one_cancelled_event(self, queue, tmp_path):
+        started = asyncio.Event()
+
+        async def slow_command(*args, **kwargs):
+            started.set()
+            await asyncio.sleep(10)
+            return CommandResult(
+                success=True,
+                return_code=0,
+                stdout="",
+                stderr="",
+                command="t",
+                working_dir=str(tmp_path),
+            )
+
+        queue.wrapper.run_command = slow_command
+        seen = []
+        queue.add_event_callback("s", seen.append)
+        spec = JobSpec(name="slow", tool_name="shypre", args=["t.str"], working_dir=tmp_path / "w")
+        job_id = await queue.submit(spec)
+        await asyncio.wait_for(started.wait(), timeout=5.0)
+        assert await queue.cancel(job_id) is True
+        await self._settle(queue, job_id)
+        terminal = [e for e in seen if e.job_id == job_id and e.status in self._TERMINAL]
+        assert [e.status for e in terminal] == [JobStatus.CANCELLED]
+
+    @pytest.mark.asyncio
+    async def test_progress_is_an_event_too(self, queue, tmp_path):
+        async def mock_run(
+            tool,
+            args,
+            wd,
+            progress_callback=None,
+            output_callback=None,
+            capture_stdout=True,
+            detached=None,
+        ):
+            if progress_callback:
+                progress_callback(0.5, "halfway")
+            return CommandResult(
+                success=True, return_code=0, stdout="", stderr="", command="t", working_dir=str(wd)
+            )
+
+        queue.wrapper.run_command = mock_run
+        seen = []
+        queue.add_event_callback("s", seen.append)
+        spec = JobSpec(name="p", tool_name="shypre", args=["t.str"], working_dir=tmp_path / "w")
+        job_id = await queue.submit(spec)
+        await self._settle(queue, job_id)
+        progress = [e for e in seen if e.job_id == job_id and e.kind == "progress"]
+        assert progress and progress[0].progress == 0.5 and progress[0].message == "halfway"

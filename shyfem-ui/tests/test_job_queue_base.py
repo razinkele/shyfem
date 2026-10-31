@@ -1,4 +1,5 @@
 """Tests for the JobQueue abstract base class and factory."""
+
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -54,7 +55,9 @@ class TestJobInfo:
         start = datetime.now() - timedelta(seconds=10)
         end = datetime.now()
         info = _make_job_info(
-            status=JobStatus.COMPLETED, started_at=start, completed_at=end,
+            status=JobStatus.COMPLETED,
+            started_at=start,
+            completed_at=end,
         )
         assert info.duration is not None
         assert abs(info.duration - 10.0) < 0.5
@@ -93,7 +96,10 @@ class _StubQueue(JobQueue):
         return []
 
     async def get_output(
-        self, job_id: str, stream: str = "stdout", tail: int = 100,
+        self,
+        job_id: str,
+        stream: str = "stdout",
+        tail: int = 100,
     ) -> str:
         return ""
 
@@ -158,6 +164,7 @@ class TestJobQueueFactory:
         """Factory dispatches to LocalJobQueue for mode='local'."""
         q = JobQueueFactory.create(mode="local", shyfem_dir=tmp_path)
         from shyfem_ui.services.job_local import LocalJobQueue
+
         assert isinstance(q, LocalJobQueue)
 
     def test_create_celery(self, tmp_path):
@@ -169,9 +176,65 @@ class TestJobQueueFactory:
                 redis_url="redis://localhost:6379/0",
             )
         from shyfem_ui.services.job_celery import CeleryJobQueue
+
         assert isinstance(q, CeleryJobQueue)
 
     def test_create_unknown_mode_raises(self):
         """Unknown mode raises ValueError."""
         with pytest.raises(ValueError, match="mode"):
             JobQueueFactory.create(mode="quantum-tunnel")
+
+
+class TestEventCallbacks:
+    """Job events: the push counterpart of the progress callbacks (Shiny 1.9
+    sessions subscribe instead of polling)."""
+
+    @staticmethod
+    def _event(**overrides):
+        from shyfem_ui.services import job_queue as jq
+
+        fields = dict(
+            job_id="job1",
+            name="sim",
+            status=JobStatus.RUNNING,
+            previous=JobStatus.QUEUED,
+            user_id=None,
+            project_id=None,
+        )
+        fields.update(overrides)
+        return jq.JobEvent(**fields)
+
+    def test_supports_events_is_off_by_default(self):
+        assert _StubQueue().supports_events is False
+
+    def test_add_and_notify(self):
+        q = _StubQueue()
+        cb = MagicMock()
+        q.add_event_callback("session-1", cb)
+        ev = self._event()
+        q._notify_event(ev)
+        cb.assert_called_once_with(ev)
+
+    def test_remove_callback(self):
+        q = _StubQueue()
+        cb = MagicMock()
+        q.add_event_callback("session-1", cb)
+        q.remove_event_callback("session-1")
+        q._notify_event(self._event())
+        cb.assert_not_called()
+
+    def test_remove_unknown_id_is_noop(self):
+        _StubQueue().remove_event_callback("never-added")
+
+    def test_a_failing_callback_does_not_stop_the_others(self):
+        q = _StubQueue()
+        cb_a = MagicMock(side_effect=RuntimeError("boom"))
+        cb_b = MagicMock()
+        q.add_event_callback("a", cb_a)
+        q.add_event_callback("b", cb_b)
+        q._notify_event(self._event())
+        cb_b.assert_called_once()
+
+    def test_an_event_knows_whether_it_is_terminal(self):
+        assert self._event(status=JobStatus.COMPLETED).is_terminal
+        assert not self._event(status=JobStatus.RUNNING).is_terminal

@@ -353,3 +353,31 @@ def test_malformed_row_does_not_block_pruning(session_factory):
     assert n == 1
     assert _get(session_factory, good) is None
     assert _get(session_factory, bad) is not None  # unreadable: kept, not guessed at
+
+
+class TestStatusCallbacks:
+    """The engine tells its subscribers after every persisted status change,
+    so the Run page re-renders on push instead of a 2 s poll."""
+
+    def test_save_instance_notifies_after_the_commit(self, session_factory):
+        from unittest.mock import MagicMock
+
+        engine = WorkflowEngine(job_queue=None, session_factory=session_factory)
+        pk = _add_workflow(session_factory, WorkflowStatus.RUNNING, completed=False)
+        wf = engine.get_workflow(str(pk))
+        assert wf is not None
+        seen = []
+
+        def cb(instance):
+            seen.append((instance.id, instance.status, _get(session_factory, pk).status))
+
+        engine.add_status_callback("s", cb)
+        wf.status = WorkflowStatus.COMPLETED
+        engine._save_instance(wf)
+        assert seen == [(str(pk), WorkflowStatus.COMPLETED, WorkflowStatus.COMPLETED)]
+        engine.remove_status_callback("s")
+        engine._save_instance(wf)
+        assert len(seen) == 1
+        failing = MagicMock(side_effect=RuntimeError("boom"))
+        engine.add_status_callback("f", failing)
+        engine._save_instance(wf)  # a failing subscriber must not break the save

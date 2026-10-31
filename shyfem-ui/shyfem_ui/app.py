@@ -1234,10 +1234,27 @@ def _build_server(
         )
 
     # --- Cross-page job notifications ---
+    if job_queue.supports_events:
+        # Push (Shiny 1.9): the queue publishes every job change; this
+        # session is woken once it is idle, with the batch, and toasts the
+        # jobs that just ended for this user. No per-session poll.
+        from shyfem_ui.components.job_feed import subscribe_session_to_job_events
+        from shyfem_ui.services.notification_service import job_completion_toasts
+
+        def _toast_job_events(events) -> None:
+            # No reactive context inside an idle run: read the identity in isolation.
+            with reactive.isolate():
+                usr = current_user() if current_user is not None else None
+            for message, kind, duration in job_completion_toasts(events, usr, _is_server):
+                ui.notification_show(message, type=kind, duration=duration)
+
+        subscribe_session_to_job_events(session, job_queue, _toast_job_events, key="notifications")
     _notification_svc = JobTransitionDetector()
 
     @reactive.effect
     def _poll_job_notifications():
+        if job_queue.supports_events:
+            return  # the events above wake the session; no poll
         reactive.invalidate_later(5)  # Poll every 5 seconds
 
         import asyncio

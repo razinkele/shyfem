@@ -23,7 +23,9 @@ def _make_user(email="alice@example.com"):
     return {"username": "alice", "email": email}
 
 
-def _make_job(success=True, name="test_sim", duration=42.0, working_dir="/data/shyfem/alice/projects/p1"):
+def _make_job(
+    success=True, name="test_sim", duration=42.0, working_dir="/data/shyfem/alice/projects/p1"
+):
     return {
         "name": name,
         "success": success,
@@ -38,6 +40,7 @@ class TestNotificationServiceNoSmtp:
     def test_no_smtp_host_skips_silently(self, caplog):
         """No smtp_host configured → no exception, logs warning."""
         import logging
+
         with caplog.at_level(logging.WARNING, logger="shyfem_ui.services.notification_service"):
             svc = NotificationService(Config(smtp_host=""))
             svc.notify_job_success(_make_user(), _make_job())
@@ -46,6 +49,7 @@ class TestNotificationServiceNoSmtp:
     def test_no_smtp_host_notify_failed_skips(self, caplog):
         """No smtp_host → notify_job_failed skips silently and logs warning."""
         import logging
+
         with caplog.at_level(logging.WARNING, logger="shyfem_ui.services.notification_service"):
             svc = NotificationService(Config(smtp_host=""))
             svc.notify_job_failed(_make_user(), _make_job(success=False))
@@ -107,6 +111,7 @@ class TestNotificationServiceSmtp:
     def test_smtp_failure_does_not_raise(self, caplog):
         """SMTP error is caught and logged, not re-raised."""
         import logging
+
         svc = NotificationService(_make_config())
         with patch("smtplib.SMTP", side_effect=smtplib.SMTPConnectError(421, "unavailable")):
             with caplog.at_level(logging.WARNING):
@@ -136,6 +141,7 @@ class TestJobTransitionDetector:
 
     def setup_method(self):
         from shyfem_ui.services.notification_service import JobTransitionDetector
+
         self.svc = JobTransitionDetector()
 
     def test_no_jobs_no_events(self):
@@ -178,14 +184,18 @@ class TestJobTransitionDetector:
         assert events == []
 
     def test_multiple_jobs_mixed_transitions(self):
-        self.svc.check_transitions([
-            {"id": "j1", "name": "a", "status": "running"},
-            {"id": "j2", "name": "b", "status": "running"},
-        ])
-        events = self.svc.check_transitions([
-            {"id": "j1", "name": "a", "status": "completed"},
-            {"id": "j2", "name": "b", "status": "running"},
-        ])
+        self.svc.check_transitions(
+            [
+                {"id": "j1", "name": "a", "status": "running"},
+                {"id": "j2", "name": "b", "status": "running"},
+            ]
+        )
+        events = self.svc.check_transitions(
+            [
+                {"id": "j1", "name": "a", "status": "completed"},
+                {"id": "j2", "name": "b", "status": "running"},
+            ]
+        )
         assert len(events) == 1
         assert events[0]["job_id"] == "j1"
 
@@ -246,5 +256,57 @@ class TestSmtpTimeout:
         assert Config().smtp_timeout_seconds > 0
         import pytest
         from pydantic import ValidationError
+
         with pytest.raises(ValidationError):
             Config(smtp_timeout_seconds=0)
+
+
+class TestJobCompletionToasts:
+    """job_completion_toasts(): the push counterpart of JobTransitionDetector."""
+
+    @staticmethod
+    def _ev(status="completed", previous="running", user_id=1, kind="status", name="sim"):
+        from shyfem_ui.services.job_queue import JobEvent, JobStatus
+
+        return JobEvent(
+            job_id="j1",
+            name=name,
+            status=JobStatus(status),
+            previous=JobStatus(previous) if previous else None,
+            user_id=user_id,
+            project_id=None,
+            kind=kind,
+        )
+
+    def test_local_mode_toasts_every_ended_job(self):
+        from shyfem_ui.services.notification_service import job_completion_toasts
+
+        toasts = job_completion_toasts(
+            [
+                self._ev("completed"),
+                self._ev("failed", user_id=2),
+                self._ev("cancelled", user_id=None),
+            ],
+            user=None,
+            is_server_mode=False,
+        )
+        assert [t[1] for t in toasts] == ["message", "error", "warning"]
+        assert toasts[0][0] == "Job 'sim' completed successfully."
+
+    def test_server_mode_toasts_only_the_users_own_jobs_and_none_without_identity(self):
+        from shyfem_ui.services.notification_service import job_completion_toasts
+
+        events = [self._ev(user_id=1), self._ev(user_id=2)]
+        assert len(job_completion_toasts(events, {"id": 1}, True)) == 1
+        assert job_completion_toasts(events, None, True) == []
+
+    def test_only_a_transition_into_a_terminal_status_is_announced(self):
+        from shyfem_ui.services.notification_service import job_completion_toasts
+
+        quiet = [
+            self._ev("running", previous="queued"),
+            self._ev("completed", previous="failed"),
+            self._ev("running", kind="progress"),
+        ]
+        assert job_completion_toasts(quiet, None, False) == []
+        assert len(job_completion_toasts([self._ev("completed", previous=None)], None, False)) == 1

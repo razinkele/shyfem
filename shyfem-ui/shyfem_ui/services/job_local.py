@@ -17,6 +17,7 @@ from shyfem_ui.services.job_detached import (
 )
 from shyfem_ui.services.job_queue import (
     ORPHANED_ERROR,
+    JobEvent,
     JobInfo,
     JobQueue,
     JobSpec,
@@ -544,6 +545,7 @@ class LocalJobQueue(JobQueue):
         # synchronous DB write and must not block the event loop, F22).
         self._jobs[job_id] = job_info
         await asyncio.to_thread(self._persist_job, job_info)
+        self._emit(job_info)
 
         # Start execution task
         task = asyncio.create_task(self._execute_job(job_id, spec))
@@ -567,8 +569,44 @@ class LocalJobQueue(JobQueue):
             job.progress = progress
             job.progress_message = message
             self._notify_progress(job.id, progress, message)
+            self._emit(job, kind="progress", progress=progress, message=message)
 
         return progress_callback
+
+    @property
+    def supports_events(self) -> bool:
+        return True  # every change happens in this process, on the event loop
+
+    def _emit(
+        self,
+        job: JobInfo,
+        previous: JobStatus | None = None,
+        *,
+        kind: str = "status",
+        progress: float = 0.0,
+        message: str = "",
+    ) -> None:
+        """Publish one change of ``job`` to the sessions subscribed to this queue.
+
+        An event follows the in-memory transition, not the database write
+        (a failed write is logged; the pages must still learn the job ended).
+        A terminal status is published exactly once: by ``cancel()`` when
+        the user cancels, otherwise by the task's end, after it adopted
+        whatever its supervisor may have recorded first.
+        """
+        self._notify_event(
+            JobEvent(
+                job_id=job.id,
+                name=job.name,
+                status=job.status,
+                previous=previous,
+                user_id=job.metadata.get("user_id"),
+                project_id=job.metadata.get("project_id"),
+                kind=kind,
+                progress=progress,
+                message=message,
+            )
+        )
 
     async def _execute_job(self, job_id: str, spec: JobSpec) -> None:
         """Execute a job with concurrency control."""
@@ -588,6 +626,7 @@ class LocalJobQueue(JobQueue):
         job.status = JobStatus.QUEUED
         job.queued_at = datetime.now()
         await asyncio.to_thread(self._advance_row, job)
+        self._emit(job, JobStatus.PENDING)
         if cancelled_before_start():
             return
 
@@ -603,6 +642,7 @@ class LocalJobQueue(JobQueue):
             async def run():
                 if not await asyncio.to_thread(self._advance_row, job):
                     return None  # a cancel recorded the end first; launch nothing
+                self._emit(job, JobStatus.QUEUED)
                 # The supervisor writes the job's stdout and stderr files
                 # itself, so there is no output_callback and nothing is
                 # buffered here; the log viewer reads the files.
@@ -671,6 +711,7 @@ class LocalJobQueue(JobQueue):
         """
         job_id = job.id
         stopping = False
+        prior = job.status
         try:
             result = await run()
             if result is None:
@@ -706,6 +747,8 @@ class LocalJobQueue(JobQueue):
                 else:
                     # The supervisor (or a cancel) recorded the end first.
                     await asyncio.to_thread(self._adopt_row, job)
+                if job_id not in self._user_cancelled:
+                    self._emit(job, prior)  # cancel() announced its own
                 self._user_cancelled.discard(job_id)
 
     async def cancel(self, job_id: str) -> bool:
@@ -721,9 +764,11 @@ class LocalJobQueue(JobQueue):
         # Record the cancel before the tool is killed: once it dies, its
         # supervisor tries to record a failure, and the first record wins.
         self._user_cancelled.add(job_id)
+        prior = job.status
         job.status = JobStatus.CANCELLED
         job.error_message = "Job was cancelled"
         job.completed_at = datetime.now()
+        self._emit(job, prior)
         recorded = await asyncio.to_thread(self._finalize_row, job)
 
         task = self._tasks.get(job_id)
