@@ -517,6 +517,39 @@ def reconcile_tmp_dirs(
     return msgs
 
 
+def build_quota_refusal(project: dict, run_id: str, config: Config) -> str | None:
+    """Why a cache build of ``run_id`` must not start for lack of space, or None.
+
+    A build cannot know its size in advance, so this only refuses a project
+    that is already AT its storage quota (``max_project_storage_mb``, the
+    figure uploads are refused against), counting everything except this
+    run's own cache -- the build replaces that copy, so a stale cache that
+    alone fills the quota can still be refreshed. Blocking (a DB query and a
+    walk of the cache tree): call it via ``asyncio.to_thread``. A failing
+    storage query is logged and lets the build through: this is a
+    pre-flight check, not the accounting itself.
+    """
+    from shyfem_ui.services.file_service import FileService, _cache_bytes
+
+    try:
+        usage = FileService.get_project_storage(int(project["id"]))
+        others = (
+            usage["used_bytes"]
+            - usage["cache_bytes"]
+            + _cache_bytes(project["work_dir"], exclude_run=run_id)
+        )
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        logger.warning("boxmodel cache: storage check for %s failed: %s", run_id, exc)
+        return None
+    limit_mb = config.max_project_storage_mb
+    if others < limit_mb * 1024 * 1024:
+        return None
+    return (
+        f"This project already uses {others / (1024 * 1024):.0f} MB of its "
+        f"{limit_mb} MB storage quota; free some space before building a cache."
+    )
+
+
 async def start_build(
     registry: BuildRegistry,
     *,
@@ -531,7 +564,9 @@ async def start_build(
 
     Order: ``run_id`` shape -> editor gate -> confine ``run_dir`` (read) ->
     confine the project work dir (write) -> dedupe on ``(project_id,
-    run_id)`` -> per-user cap -> compute the tmp dir's path -> spawn. Both
+    run_id)`` -> per-user cap -> storage quota (``build_quota_refusal``, B-02;
+    dedupe and cap are re-checked after it, since it runs in a thread) ->
+    compute the tmp dir's path -> spawn. Both
     confinements happen before any registry mutation, so a rejected request
     never registers a handle. The tmp dir itself is not created here -- see
     ``_run_build`` -- only its path is decided, so a build still queued
@@ -557,6 +592,18 @@ async def start_build(
         return existing
 
     owner_id = user.get("id") if user else None
+    if registry.active_for_user(owner_id) >= MAX_BUILDS_PER_USER:
+        raise RuntimeError(
+            "Only one build at a time per user; wait for the running build to finish."
+        )
+    refusal = await asyncio.to_thread(build_quota_refusal, project, run_id, config)
+    if refusal:
+        raise RuntimeError(refusal)
+    # The thread let other sessions run: one may have started this build, or
+    # another build for this user, meanwhile.
+    existing = registry.get(key)
+    if existing is not None:
+        return existing
     if registry.active_for_user(owner_id) >= MAX_BUILDS_PER_USER:
         raise RuntimeError(
             "Only one build at a time per user; wait for the running build to finish."

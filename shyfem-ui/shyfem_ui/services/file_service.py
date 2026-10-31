@@ -608,7 +608,7 @@ class FileService:
         return {"used_bytes": db_bytes + cache, "cache_bytes": cache, "file_count": count}
 
 
-def _cache_bytes(work_dir: str | Path | None) -> int:
+def _cache_bytes(work_dir: str | Path | None, exclude_run: str | None = None) -> int:
     """Total size of the regular files under the project's box-model cache,
     charging each cache run ONCE.
 
@@ -637,6 +637,9 @@ def _cache_bytes(work_dir: str | Path | None) -> int:
     the project's own tree is not double-counted and one pointing outside it
     cannot inflate the figure. A file that disappears mid-walk (a build
     publishing underneath us) is skipped rather than raising.
+
+    ``exclude_run`` leaves that run's group out: what the REST of the cache
+    costs, for a build of that run that will replace its own copy (B-02).
     """
     if not work_dir:
         return 0
@@ -656,6 +659,8 @@ def _cache_bytes(work_dir: str | Path | None) -> int:
             if marker in run_id:
                 run_id = run_id.split(marker, 1)[0]
                 break
+        if exclude_run is not None and run_id == exclude_run:
+            continue
         paths = entry.rglob("*") if (entry.is_dir() and not entry.is_symlink()) else [entry]
         size = 0
         for p in paths:
