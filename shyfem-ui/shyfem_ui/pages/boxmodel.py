@@ -26,6 +26,11 @@ obligations the reviews of those services handed forward:
   build is live and never reads anything it writes, so there is no
   reactive self-write loop; a separate slow watch (``_watch_published``)
   notices a cache republished by a build some other session started;
+* the Parquet cache is read off the event loop (B-06): ``_load_cached_run``,
+  ``_load_run_states`` and ``_load_hourly_window`` are async effects that
+  hand the read to ``asyncio.to_thread`` and store the result, and the calcs
+  the tabs read (``cached_result``, ``all_run_states_result``,
+  ``hourly_window_result``) only look it up;
 * the Compare tab (PR 2) works on ONE shared day set: ``cmp_days_result()``
   is the calc that computes it once (``common_days``), ``cmp_days()`` the
   accessor handing it to the difference map, the overlay plot and the
@@ -42,6 +47,7 @@ obligations the reviews of those services handed forward:
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import io
 import json
@@ -146,6 +152,9 @@ POLL_SECONDS = 2
 #: by a build it did not start (another session, or another worker): one
 #: ``stat`` of each manifest run's ``meta.json`` per tick (B-04).
 WATCH_SECONDS = 10
+#: Priority of the effects that read the cache off the loop (B-06): above the
+#: outputs' default 0, so a read lands before anything renders from it.
+LOADER_PRIORITY = 10
 CACHE_REPUBLISHED_MESSAGE = (
     "Output-step detail: the cache was rebuilt since it was loaded; refreshing."
 )
@@ -711,6 +720,69 @@ def _load_compare_state(cache_dir, run_id: str, err):
         return None, f"{run_id}: {err(exc)}"
 
 
+def _read_cached_run(cache_dir, run_id: str):
+    """Load the selected run's cache and validate what every consumer assumes.
+
+    Blocking (several Parquet files): the page runs it via
+    ``asyncio.to_thread`` (B-06). ``cache_status()`` reports "ready" for any
+    ``meta.json`` that merely parses as JSON, so a hand-edited or foreign cache
+    dir can reach this point without a period or a box column. Touching both
+    here turns that into a page message instead of a ``KeyError`` raised later
+    from inside an effect (which kills the session) or from inside a render.
+    Raises ``OSError``/``ValueError``/``KeyError``/``TypeError``.
+    """
+    cached_run = load_cache(cache_dir, run_id)
+    _cache_period(cached_run)
+    if "box" not in cached_run.state_daily.columns:
+        raise KeyError("state_daily has no 'box' column")
+    return cached_run
+
+
+def _read_run_states(work_dir, runs, registry, tmp_age_cap, err) -> tuple[dict, list[str]]:
+    """``({run_id: CachedRun}, [messages])`` for every run whose cache is
+    ready/stale -- the Compare tab's input. Blocking (one Parquet per run, and
+    a ``stat`` walk per run for its status): run via ``asyncio.to_thread``
+    (B-06). ``err`` turns an exception into a sanitised page message."""
+    work_dir = Path(work_dir)
+    states: dict = {}
+    problems: list[str] = []
+    for run in runs:
+        try:
+            st = cache_status(work_dir, run.id, run.dir, registry, tmp_age_cap)
+        except (ValueError, OSError):
+            continue
+        if st.state not in ("ready", "stale"):
+            continue
+        state, problem = _load_compare_state(cache_dir_for(work_dir, run.id), run.id, err)
+        if state is None:
+            problems.append(problem)
+        else:
+            states[run.id] = state
+    return states, problems
+
+
+def _read_hourly_window_checked(cache_dir, fingerprint, period) -> tuple:
+    """``(frame | None, message | None)``: the raw records of ``period`` from
+    the build the page holds (``fingerprint``), or nothing.
+
+    The window is read off disk NOW, the meta it is interpreted with was read
+    at load time: if a build has published over the cache since (before or
+    during this read), they describe different builds -- say so, and
+    ``_watch_published`` reloads the whole run shortly. Blocking: run via
+    ``asyncio.to_thread`` (B-06). Raises what ``read_hourly_window`` raises.
+    """
+    if published_fingerprint(cache_dir) != fingerprint:
+        return None, CACHE_REPUBLISHED_MESSAGE
+    frame = read_hourly_window(
+        cache_dir,
+        pd.Timestamp(period[0]),
+        pd.Timestamp(period[1]) + timedelta(days=1) - timedelta(seconds=1),
+    )
+    if published_fingerprint(cache_dir) != fingerprint:
+        return None, CACHE_REPUBLISHED_MESSAGE
+    return (None if frame.empty else frame), None
+
+
 def _reconcile_cache_dir(config, user, work_dir, project_name=None, project_id=None) -> str | None:
     """Publish finished builds and clear dead tmp dirs -- if the caller may write.
 
@@ -776,6 +848,14 @@ def _published_changed(published: dict, loaded: list, seen: dict) -> bool:
         run_id not in held and run_id in seen and seen[run_id] != fingerprint
         for run_id, fingerprint in published.items()
     )
+
+
+def _settled_result(stored, current_key):
+    """The result in a loader's ``(key, result)`` store if it answers
+    ``current_key``, else None (nothing stored, or a newer read pending)."""
+    if stored is None or stored[0] != current_key:
+        return None
+    return stored[1]
 
 
 def _remember_good(last: dict, project_id, run_id: str, cached_run) -> None:
@@ -1295,9 +1375,10 @@ def boxmodel_server(
         runs this re-arms every ``WATCH_SECONDS`` and stats each run's
         ``meta.json`` -- nothing else -- and bumps ``cache_generation`` only
         when a fingerprint differs from what the page holds
-        (``_published_changed``). Reads ``cached()``/``all_run_states()``
-        (the reload they lead to re-runs this once, finds them equal, and
-        writes nothing); never reads what it writes.
+        (``_published_changed``). Measures only what the loaders have
+        settled (``_settled_cached``/``_settled_run_states``, B-06): the
+        reload a bump leads to re-runs this once it lands, finds them equal,
+        and writes nothing; never reads what it writes.
         """
         manifest_obj = manifest()
         proj = _project()
@@ -1313,8 +1394,11 @@ def boxmodel_server(
         except ValueError as exc:  # a run id the cache layout refuses
             logger.warning("boxmodel: cache watch skipped: %s", exc)
             return
-        loaded = [(r.run_id, r.fingerprint) for r in all_run_states().values()]
-        cached_run = cached()
+        # Settled loads only: while the reload asked for is still being read,
+        # the calcs hand out the previous build, and measuring that against
+        # the new fingerprint would bump again and spin until it landed.
+        loaded = [(r.run_id, r.fingerprint) for r in _settled_run_states().values()]
+        cached_run = _settled_cached()
         if cached_run is not None:
             loaded.append((cached_run.run_id, cached_run.fingerprint))
         seen = last["published"]
@@ -1398,24 +1482,44 @@ def boxmodel_server(
 
     # --- cached run -------------------------------------------------------
 
-    @reactive.calc
-    def cached_result() -> tuple:
-        """The loaded cache, and a page message if it could not be read.
+    # Every cache read below runs in a thread (B-06): an async effect reads
+    # what it needs on the loop, hands the read to ``asyncio.to_thread``, and
+    # stores ``(key, result)``; a thin calc hands the result out while its key
+    # is current. The worker's one event loop serves every session, so a read
+    # left on it froze everyone else's page for as long as it took. The
+    # loaders run at a higher priority than the outputs, so in one flush the
+    # read lands before anything renders from it and the calc's fallback (a
+    # key from an earlier request) is only ever a transient.
+    cached_store: reactive.Value = reactive.value(None)
+
+    def _cached_key() -> tuple:
+        proj = _project()
+        run = _run_entry()
+        return (
+            proj["id"] if proj is not None else None,
+            run.id if run is not None else None,
+            cache_generation.get(),
+        )
+
+    @reactive.effect(priority=LOADER_PRIORITY)
+    async def _load_cached_run():
+        """Read the selected run's cache off the loop into ``cached_store``.
 
         Depends on ``cache_generation`` and NOT on ``status_tick``: this is
         the head of the expensive chain (parquet read -> polygons -> layers
         -> series -> skill), so it must not re-run on the poller's 2 s badge
         tick. ``_status_now()`` is the non-reactive status probe for the same
-        reason.
+        reason. Writes ``cached_store`` and never reads it.
         """
-        cache_generation.get()
+        key = _cached_key()
         proj = _project()
         run = _run_entry()
         current = _status_now()
         state = current.state if current is not None else None
         if proj is None or run is None:
             last["good"] = None
-            return None, None
+            cached_store.set((key, (None, None)))
+            return
         if state in _LIVE_STATES:
             # A rebuild is running. cache_status() reports the registry
             # handle before the published cache, so the state is "building"
@@ -1424,31 +1528,49 @@ def boxmodel_server(
             # skill table for the whole rebuild. The badge still says
             # building, with progress. Only ever the run that is actually
             # selected: see _pick_live_fallback.
-            return _pick_live_fallback(last, proj["id"], run.id), None
+            cached_store.set((key, (_pick_live_fallback(last, proj["id"], run.id), None)))
+            return
         if state not in ("ready", "stale"):
             last["good"] = None
-            return None, None
+            cached_store.set((key, (None, None)))
+            return
+        cache_dir = cache_dir_for(Path(proj["work_dir"]), run.id)
         try:
-            cached_run = load_cache(cache_dir_for(Path(proj["work_dir"]), run.id), run.id)
-            # Validate here, inside the try, what every consumer downstream
-            # assumes: cache_status() reports "ready" for any meta.json that
-            # merely parses as JSON, so a hand-edited or foreign cache dir can
-            # reach this point without a period or a box column. Touching both
-            # now turns that into this page message instead of a KeyError
-            # raised later from inside an effect (which kills the session) or
-            # from inside a render.
-            _cache_period(cached_run)
-            if "box" not in cached_run.state_daily.columns:
-                raise KeyError("state_daily has no 'box' column")
-            _remember_good(last, proj["id"], run.id, cached_run)
-            return cached_run, None
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+            cached_run = await asyncio.to_thread(_read_cached_run, cache_dir, run.id)
+        except Exception as exc:  # noqa: BLE001 - an escaping exception ends the session
             logger.warning("boxmodel: cache could not be loaded: %s", exc)
             last["good"] = None
-            return None, f"Cache: {_err(exc)}"
+            cached_store.set((key, (None, f"Cache: {_err(exc)}")))
+            return
+        _remember_good(last, proj["id"], run.id, cached_run)
+        cached_store.set((key, (cached_run, None)))
+
+    @reactive.calc
+    def cached_result() -> tuple:
+        """The loaded cache, and a page message if it could not be read.
+
+        Read by ``_load_cached_run`` off the loop. While a newer request is
+        still being read, the previous result is kept if it is for the same
+        project and run (a reload of the same run), and nothing otherwise.
+        """
+        stored = cached_store.get()
+        if stored is None:
+            return None, None
+        key, result = stored
+        return result if key[:2] == _cached_key()[:2] else (None, None)
 
     def cached():
         return cached_result()[0]
+
+    def _settled_cached():
+        """The loaded run, or None while a newer read is pending. Depends on
+        ``cached_store`` only: the key is compared under ``isolate`` so the
+        watch, which bumps ``cache_generation``, does not depend on it."""
+        stored = cached_store.get()
+        with reactive.isolate():
+            key = _cached_key()
+        result = _settled_result(stored, key)
+        return result[0] if result is not None else None
 
     @reactive.effect
     def _fill_period_and_boxes():
@@ -1869,46 +1991,61 @@ def boxmodel_server(
 
     # --- map --------------------------------------------------------------
 
-    @reactive.calc
-    def hourly_window_result() -> tuple:
-        """The raw output-step records for the visible window, or None.
+    hourly_store: reactive.Value = reactive.value(None)
 
-        None means "use the daily frames", which is the ordinary case: the run
-        may have no hourly cache, or the window may be wider than
-        ``HOURLY_WINDOW_DAYS``. Reading happens here, once per (run, period),
-        so a slider tick is a lookup rather than a disk read -- and only the
-        window is read, never the whole frame (see ``read_hourly_window``).
-        """
+    def _hourly_request():
+        """``(key, cache_dir)`` of the window the page shows now; ``cache_dir``
+        is None when the daily frames are used (no run, no hourly cache, or a
+        window wider than ``HOURLY_WINDOW_DAYS``)."""
         cached_run = cached()
         period = _period()
         proj = _project()
         run = _run_entry()
         if cached_run is None or period is None or proj is None or run is None:
             return None, None
+        key = (proj["id"], run.id, cached_run.fingerprint, tuple(period))
         if not _hourly_usable(cached_run.meta, period):
-            return None, None
-        cache_dir = cache_dir_for(Path(proj["work_dir"]), run.id)
+            return key, None
+        return key, cache_dir_for(Path(proj["work_dir"]), run.id)
+
+    @reactive.effect(priority=LOADER_PRIORITY)
+    async def _load_hourly_window():
+        """Read the visible window's raw records off the loop (B-06).
+
+        Reading happens here, once per (run, build, period), so a slider tick
+        is a lookup rather than a disk read -- and only the window is read,
+        never the whole frame (see ``read_hourly_window``). Writes
+        ``hourly_store`` and never reads it.
+        """
+        key, cache_dir = _hourly_request()
+        if cache_dir is None:
+            hourly_store.set((key, (None, None)))
+            return
         try:
-            # The window is read off disk NOW, the meta it is interpreted with
-            # was read at load time: if a build has published over the cache
-            # since (before or during this read), they describe different
-            # builds. Say so; _watch_published reloads the whole run shortly.
-            if published_fingerprint(cache_dir) != cached_run.fingerprint:
-                return None, CACHE_REPUBLISHED_MESSAGE
-            frame = read_hourly_window(
-                cache_dir,
-                pd.Timestamp(period[0]),
-                pd.Timestamp(period[1]) + timedelta(days=1) - timedelta(seconds=1),
-            )
-            if published_fingerprint(cache_dir) != cached_run.fingerprint:
-                return None, CACHE_REPUBLISHED_MESSAGE
-        except (OSError, ValueError, KeyError, TypeError) as exc:
+            result = await asyncio.to_thread(_read_hourly_window_checked, cache_dir, key[2], key[3])
+        except Exception as exc:  # noqa: BLE001 - an escaping exception ends the session
             # A cache that HAS the file and cannot be read is a broken cache,
             # not a daily one: falling back silently would leave the user with
             # a "Day" slider they did not ask for and no idea why.
             logger.warning("boxmodel: hourly window unreadable: %s", exc)
-            return None, f"Output-step detail: {_err(exc)}"
-        return (None if frame.empty else frame), None
+            result = (None, f"Output-step detail: {_err(exc)}")
+        hourly_store.set((key, result))
+
+    @reactive.calc
+    def hourly_window_result() -> tuple:
+        """The raw output-step records for the visible window, or None.
+
+        None means "use the daily frames", which is the ordinary case: the run
+        may have no hourly cache, or the window may be wider than
+        ``HOURLY_WINDOW_DAYS``. Read by ``_load_hourly_window`` off the loop
+        and checked there against the build the page holds; a window still
+        being read shows as daily, never as another window's records.
+        """
+        stored = hourly_store.get()
+        if stored is None:
+            return None, None
+        key, result = stored
+        return result if key == _hourly_request()[0] else (None, None)
 
     def hourly_window():
         """The raw records for the visible window, or None for the daily path."""
@@ -2254,36 +2391,75 @@ def boxmodel_server(
             ),
         )
 
+    run_states_store: reactive.Value = reactive.value(None)
+
+    def _run_states_key() -> tuple:
+        manifest_obj = manifest()
+        proj = _project()
+        return (
+            proj["id"] if proj is not None else None,
+            tuple(r.id for r in manifest_obj.runs) if manifest_obj is not None else (),
+            cache_generation.get(),
+        )
+
+    @reactive.effect(priority=LOADER_PRIORITY)
+    async def _load_run_states():
+        """Read every ready run's ``state_daily`` off the loop (B-06).
+
+        Depends on ``cache_generation`` (so a finished rebuild refreshes it)
+        but reads only ``state_daily``, so loading every run stays cheap.
+        Writes ``run_states_store`` and never reads it.
+        """
+        key = _run_states_key()
+        manifest_obj = manifest()
+        proj = _project()
+        if manifest_obj is None or proj is None:
+            run_states_store.set((key, ({}, [])))
+            return
+        usr = _user()
+
+        def err(exc: BaseException) -> str:
+            # Runs in the reader's thread: plain arguments, no reactive reads.
+            return _safe_error(exc, config, usr)
+
+        try:
+            result = await asyncio.to_thread(
+                _read_run_states,
+                Path(proj["work_dir"]),
+                list(manifest_obj.runs),
+                get_registry(),
+                _tmp_age_cap(),
+                err,
+            )
+        except Exception as exc:  # noqa: BLE001 - an escaping exception ends the session
+            logger.warning("boxmodel: run states could not be read: %s", exc)
+            result = ({}, [f"Compare: {_err(exc)}"])
+        run_states_store.set((key, result))
+
     @reactive.calc
     def all_run_states_result() -> tuple[dict, list[str]]:
         """``({run_id: CachedRun}, [messages])`` for every manifest run whose
         cache is ready/stale -- the multi-run skill comparison input, plus one
         message per run that could not be read (see ``_load_compare_state``).
 
-        Depends on ``cache_generation`` (so a finished rebuild refreshes it)
-        but reads only ``state_daily``, so loading every run stays cheap.
+        Read by ``_load_run_states`` off the loop; while a newer request is
+        being read the project's previous result is kept (each run in it is
+        still one consistent build).
         """
-        cache_generation.get()
-        manifest_obj = manifest()
-        proj = _project()
-        if manifest_obj is None or proj is None:
+        stored = run_states_store.get()
+        if stored is None:
             return {}, []
-        work_dir = Path(proj["work_dir"])
-        states: dict = {}
-        problems: list[str] = []
-        for run in manifest_obj.runs:
-            try:
-                st = cache_status(work_dir, run.id, run.dir, get_registry(), _tmp_age_cap())
-            except (ValueError, OSError):
-                continue
-            if st.state not in ("ready", "stale"):
-                continue
-            state, problem = _load_compare_state(cache_dir_for(work_dir, run.id), run.id, _err)
-            if state is None:
-                problems.append(problem)
-            else:
-                states[run.id] = state
-        return states, problems
+        key, result = stored
+        return result if key[0] == _run_states_key()[0] else ({}, [])
+
+    def _settled_run_states() -> dict:
+        """``all_run_states()`` as last settled, or ``{}`` while a newer read
+        is pending (see ``_settled_cached``)."""
+        stored = run_states_store.get()
+        with reactive.isolate():
+            key = _run_states_key()
+        result = _settled_result(stored, key)
+        return result[0] if result is not None else {}
 
     def all_run_states() -> dict:
         """``{run_id: CachedRun}`` for the runs that could be read."""

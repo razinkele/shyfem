@@ -141,5 +141,5 @@ def test_the_watch_rearms_and_reloads_on_a_change():
 
 
 def test_the_hourly_window_is_checked_against_the_loaded_build():
-    calls = _calls(_function("hourly_window_result"))
+    calls = _calls(_function("_read_hourly_window_checked"))
     assert "published_fingerprint" in calls

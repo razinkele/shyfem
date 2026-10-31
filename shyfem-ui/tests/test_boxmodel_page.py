@@ -302,10 +302,14 @@ def test_expensive_chain_hangs_off_cache_generation_not_the_poll_tick():
     assert "status_tick.get()" in code("status")
     assert "status()" in code("cache_state")
     # the head of the expensive chain reads the generation, never the tick
-    cached_body = code("cached_result")
-    assert "cache_generation.get()" in cached_body
-    assert "status_tick" not in cached_body
-    assert "status()" not in cached_body
+    # (B-06: the read runs in _load_cached_run, off the loop; cached_result
+    # hands out what it stored, keyed by _cached_key.)
+    cached_body = code("_load_cached_run")
+    assert "_cached_key()" in cached_body
+    assert "cache_generation.get()" in code("_cached_key")
+    for name in ("_load_cached_run", "_cached_key", "cached_result"):
+        assert "status_tick" not in code(name), name
+        assert "status()" not in code(name).replace("_status_now()", ""), name
     # ... and it probes status non-reactively instead
     assert "_status_now()" in cached_body
     # the poller writes both and reads neither (no self-write loop)
@@ -902,7 +906,9 @@ def test_compare_chain_guards_every_off_disk_frame_read():
     message = code("_cmp_message")
     assert "cmp_days_result()" in message
     assert message.index("cmp_days_result()") < message.index("CMP_NO_COMMON_DAYS_MESSAGE")
-    assert "_load_compare_state(" in code("all_run_states_result")
+    assert "_read_run_states" in code("_load_run_states")
+    assert "_load_compare_state(" in inspect.getsource(boxmodel._read_run_states)
+    assert "run_states_store.get()" in code("all_run_states_result")
     assert "all_run_states_result()" in code("all_run_states")
     # A run dropped for an unreadable cache must not be reported as "pick two
     # runs", which blames the user for it.
@@ -1380,7 +1386,9 @@ def test_the_map_and_the_series_share_one_hourly_window():
     assert "hourly_window()" in code("box_values")
     assert "hourly_window()" in code("series")
     assert "hourly_window()" in code("day_slider")
-    assert "read_hourly_window(" in code("hourly_window_result")
+    assert "_read_hourly_window_checked" in code("_load_hourly_window")
+    assert "read_hourly_window(" in inspect.getsource(boxmodel._read_hourly_window_checked)
+    assert "hourly_store.get()" in code("hourly_window_result")
     # A cache that HAS the file and cannot be read is a broken cache, not a
     # daily one: it must reach the page's message block, not vanish.
     assert "hourly_window_result()[1]" in code("manifest_error")
