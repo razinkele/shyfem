@@ -27,7 +27,10 @@ MIN_N_YEAR = 60
 MIN_OBS_DAYS = 3
 MAX_OBS_ROWS = 2_000_000
 MAX_OBS_BYTES = 50 * 1024 * 1024
-BANDS = ((2, 4), (4, 10), (10, 30), (30, 400))
+#: Period bands (days) of ``band_amplitude_ratios``. 30-90 and 90-400 are kept
+#: apart: lumped, the seasonal cycle dominates the power and hides a 30-90 d
+#: error (Curonian Vente 2005-08: 1.04 lumped = 1.30 at 30-90 d + 0.80 at 90-400 d).
+BANDS = ((2, 4), (4, 10), (10, 30), (30, 90), (90, 400))
 
 
 class ObservationError(ValueError):

@@ -167,7 +167,7 @@ _LIVE_STATES = ("queued", "building")
 VARIABLES = {"salt": "Salinity (psu)", "temp": "Temperature (°C)", "act_eta": "Water level (m)"}
 #: Column order of the band-amplitude table, matching ``BANDS`` in
 #: ``boxmodel_skill`` and the keys ``band_amplitude_ratios`` returns.
-BAND_COLUMNS = ("2-4 d", "4-10 d", "10-30 d", "30-400 d")
+BAND_COLUMNS = ("2-4 d", "4-10 d", "10-30 d", "30-90 d", "90-400 d")
 BAND_NEEDS_DAYS = "needs \u2265 120 gap-free days"
 NO_POLYGONS_MESSAGE = (
     "No box outlines: add boxes.polygons to the manifest or run the model "

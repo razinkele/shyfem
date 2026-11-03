@@ -276,6 +276,25 @@ def test_band_amplitude_ratios_on_sine():
     assert sk.band_amplitude_ratios(obs.head(100), mod.head(100)) is None  # < 120 days
 
 
+def test_band_split_separates_a_30_90_day_error_from_a_seasonal_one():
+    """A 60-day signal the model doubles and a 200-day one it halves must read
+    2.0 at 30-90 d and 0.5 at 90-400 d. A single 30-400 d band reported the
+    power-weighted blend of the two and looked nearly right -- the
+    compensating error seen at Curonian Vente 2005-08 (1.04 lumped vs 1.30 and
+    0.80 split)."""
+    n = 730
+    t = np.arange(n)
+    idx = pd.date_range("2009-01-01", periods=n, freq="D")
+    s60, s200 = np.sin(2 * np.pi * t / 60.0), np.sin(2 * np.pi * t / 200.0)
+    got = sk.band_amplitude_ratios(
+        pd.Series(s60 + s200, index=idx), pd.Series(2.0 * s60 + 0.5 * s200, index=idx)
+    )
+    assert got is not None
+    assert got["30-90 d"] == pytest.approx(2.0, rel=0.02)
+    assert got["90-400 d"] == pytest.approx(0.5, rel=0.02)
+    assert "30-400 d" not in got
+
+
 def test_band_amplitude_ratios_matches_reference_formula():
     """Non-scalar-multiple case (peaked obs, broadband mod): every band
     ratio is checked against the reference formula
