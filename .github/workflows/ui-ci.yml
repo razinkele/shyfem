@@ -6,6 +6,9 @@ on:
     paths:
       - "shyfem-ui/**"
       - ".github/workflows/ui-ci.yml"
+      # the UI tests read meshes, STR files and outputs from here (mar_menor,
+      # weutro_box, venice_lagoon, the Curonian .gpkg), so a change there can break them
+      - "testcases/examples/**"
       # docs-only changes (markdown anywhere) don't affect the build — skip CI.
       # Order matters: this exclusion must come after the includes (last match wins).
       - "!**/*.md"
@@ -13,6 +16,7 @@ on:
     paths:
       - "shyfem-ui/**"
       - ".github/workflows/ui-ci.yml"
+      - "testcases/examples/**"
       - "!**/*.md"
 
 defaults:
