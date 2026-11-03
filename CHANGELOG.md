@@ -8,14 +8,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed — CI
+- **CI tests Shiny 1.9, the version laguna runs.** The worker environment moved to Shiny 1.9.0 on 2026-10-31, so the CI pin follows (`shiny>=1.9,<1.10`). The two reactive test harnesses that drive a session directly (Results map, Visualize Results) sent its outputs through a private step that 1.9 renamed; they now use whichever the installed Shiny has, so the same tests run under 1.8 and 1.9.
+
+### Fixed — CI
+
+- **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
+
+---
+
+## [shyfem-ui 0.8.0] — 2026-11-03
+
+Closes the 2026-10-19 UI review: every one of its findings is fixed, including
+session and WebSocket tokens stored hashed (SEC-06; users signed in once more
+after the upgrade). Also: Shiny 1.9 (CI and laguna), job status pushed to the
+pages instead of polled, work in progress finished cleanly when a tab closes,
+boundary lines that cross refused before meshing, STR lists wrapped at SHYFEM's
+80-character line limit, and the Curonian Lagoon sample data. Tagged
+`shyfem-ui-v0.8.0`.
+
 ### Added — shyfem-ui
 - **The Curonian Lagoon boundary and isobaths ship as test data.** `testcases/examples/curonian/` holds the lagoon boundary (three polygons with 21 island holes, a 5136-point coastline) and 435 isobath contours (251k points, 0–95 m), both EPSG:3346, 4.5 MB together. The Mesh Builder integration tests that read them (`TestCuronianIntegration`) only ran on a machine that happened to have the files, so the coastline that made Triangle allocate until the kernel killed it had never been meshed in CI; the class now runs there, including the regression test for the line-crossing gate on that coastline. (M-14, 2026-10-19 UI review)
 
 ### Changed — shyfem-ui
 - **Job status reaches the pages by push, not by polling.** The job queue now publishes every change of a job (queued, running, progress, ended) and each open session is woken once it is idle (Shiny 1.9's `run_once_when_idle`). The Run page's job list, the Ensemble page's member table and the cross-page "job completed / failed / cancelled" notices update the moment a job changes, instead of up to 2 to 5 seconds later, and an idle session no longer lists the jobs from the database every few seconds. The Run page's workflow progress re-renders on the workflow's own changes the same way. A running job's log tail is refreshed with each of its progress batches. A queue whose jobs change in other processes (the Celery queue of server mode) keeps the previous polls.
-
-### Changed — CI
-- **CI tests Shiny 1.9, the version laguna runs.** The worker environment moved to Shiny 1.9.0 on 2026-10-31, so the CI pin follows (`shiny>=1.9,<1.10`). The two reactive test harnesses that drive a session directly (Results map, Visualize Results) sent its outputs through a private step that 1.9 renamed; they now use whichever the installed Shiny has, so the same tests run under 1.8 and 1.9.
 
 ### Fixed — shyfem-ui
 - **A failed run's error message ends with the tool's own last line again.** The job supervisor wrote its own stderr into the job's error log, so a warning it printed while recording the end (a Python `ResourceWarning` at its exit) could land after SHYFEM's `STOP error stop ...` line, and the error shown for the job sometimes lost that line, which names the cause. The supervisor now writes to its own log in the job state folder; it is read only when the supervisor stopped without a result.
@@ -119,10 +135,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Mesh Builder, "shybas" bathymetry method: it now interpolates.** The loaded bathymetry was never given to shybas (the page passed a file name that did not exist), and the result was looked for under a name shybas does not write, so the mesh came back unchanged while the page said "Bathymetry interpolated". The points are now written in the form shybas reads (a GRD of depth points, without comment lines), shybas interpolates on the mesh nodes, and its result (`basbathy.grd`) is read back. It runs in a private temporary folder instead of a folder shared by all users, and if shybas produces nothing the page shows shybas's own message instead of claiming success. (M-03, 2026-10-19 UI review)
 - **Mesh Builder, bathymetry (RBF and Clough-Tocher): dense isobaths are no longer thinned to a few points.** Near-duplicate points were removed by rounding coordinates to 2 decimals, which in the degree coordinates these methods always get is about 1 km: a 200-point isobath kept 31 points and a 400-point one 4. Only points within a few millimetres of each other (relative to the data's extent) are now merged. (M-04, 2026-10-19 UI review)
 - **Jobs, failure message:** a failed job's message and its email now show the end of stderr, where the tool prints its fatal error, instead of the first 1000 characters (J-10).
-
-### Fixed — CI
-
-- **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
 
 ---
 
