@@ -2,6 +2,8 @@
 
 import pytest
 
+from tests.conftest import expect_option
+
 
 @pytest.mark.e2e
 class TestPostprocessOutputDropdown:
@@ -54,7 +56,7 @@ class TestPostprocessOutputDropdown:
         pw_page.wait_for_timeout(1000)
         select = pw_page.locator("#postprocess-shy_path")
         select.wait_for(state="attached", timeout=5000)
-        assert any("output.shy" in t for t in select.locator("option").all_inner_texts())
+        expect_option(select, "output.shy")
         # Batch mode is a multi-select over the same files ...
         batch = pw_page.locator("select#postprocess-batch_paths")
         batch.wait_for(state="attached", timeout=5000)

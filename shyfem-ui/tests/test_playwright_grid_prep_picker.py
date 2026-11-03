@@ -1,8 +1,12 @@
 """Playwright tests for the grid_prep project-file dropdowns."""
 
+import re
 from pathlib import Path
 
 import pytest
+from playwright.sync_api import expect
+
+from tests.conftest import expect_option
 
 # The bundled sample the "Load Sample Data" card points at, resolved the same
 # way the live app subprocess does (config.testcases_dir = shyfem_dir/testcases/examples).
@@ -64,16 +68,15 @@ class TestGridPrepDropdowns:
         pw_page.wait_for_timeout(1000)
         grd = pw_page.locator("select#grid_prep-grd_path")
         grd.wait_for(state="attached", timeout=5000)
-        assert any("mesh.grd" in t for t in grd.locator("option").all_inner_texts())
+        expect_option(grd, "mesh.grd")
         out = pw_page.locator("select#grid_prep-output_dir")
         out.wait_for(state="attached", timeout=5000)
-        texts = out.locator("option").all_inner_texts()
         # Empty default keeps the handlers' "same directory as the grid" fallback ...
-        assert any("same directory as the grid file" in t for t in texts)
-        assert out.input_value() == ""
+        expect_option(out, "same directory as the grid file")
+        expect(out).to_have_value("")
         # ... and the project root + subdirectories are offered.
-        assert any(t == "p/" for t in texts)
-        assert any(t == "out/" for t in texts)
+        expect_option(out, re.compile(r"^p/$"))
+        expect_option(out, re.compile(r"^out/$"))
 
     def test_load_sample_injects_and_preselects_sample_grid(self, pw_page, live_server, tmp_path):
         """The bundled Mar Menor grid lives outside the project, so the sample
@@ -89,6 +92,9 @@ class TestGridPrepDropdowns:
         pw_page.wait_for_timeout(1000)
         grd = pw_page.locator("select#grid_prep-grd_path")
         grd.wait_for(state="attached", timeout=5000)
+        # Wait for THIS project's listing first, so the negative check below
+        # judges the current render, not a stale or placeholder one.
+        expect_option(grd, "mesh.grd")
         assert not any("Sample:" in t for t in grd.locator("option").all_inner_texts())
 
         pw_page.locator("#grid_prep-load_sample_btn").click(force=True)
@@ -96,8 +102,7 @@ class TestGridPrepDropdowns:
 
         grd = pw_page.locator("select#grid_prep-grd_path")
         grd.wait_for(state="attached", timeout=5000)
-        texts = grd.locator("option").all_inner_texts()
-        assert any("Sample: MM_coarse.grd" in t for t in texts), texts
+        expect_option(grd, "Sample: MM_coarse.grd")
         # The project's own grid is still listed alongside the injected sample.
-        assert any("mesh.grd" in t for t in texts), texts
-        assert grd.input_value() == str(_SAMPLE_GRD)
+        expect_option(grd, "mesh.grd")
+        expect(grd).to_have_value(str(_SAMPLE_GRD))

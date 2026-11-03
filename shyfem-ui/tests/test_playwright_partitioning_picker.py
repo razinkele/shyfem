@@ -1,7 +1,11 @@
 """Playwright tests for the partitioning project-file dropdowns."""
 
+import re
+
 import pytest
 from playwright.sync_api import expect
+
+from tests.conftest import expect_option
 
 
 @pytest.mark.e2e
@@ -49,10 +53,9 @@ class TestPartitioningDropdownsNoProject:
         pw_page.wait_for_timeout(1000)
         grd = pw_page.locator("select#partitioning-grd_path")
         grd.wait_for(state="attached", timeout=15000)
-        assert any("mesh.grd" in t for t in grd.locator("option").all_inner_texts())
+        expect_option(grd, "mesh.grd")
         out = pw_page.locator("select#partitioning-output_dir")
         out.wait_for(state="attached", timeout=15000)
-        texts = out.locator("option").all_inner_texts()
-        assert any("same directory" in t for t in texts)
-        assert any(t == "p/" for t in texts)
-        assert out.input_value() == ""
+        expect_option(out, "same directory")
+        expect_option(out, re.compile(r"^p/$"))
+        expect(out).to_have_value("")

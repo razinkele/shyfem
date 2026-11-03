@@ -9,8 +9,12 @@ injects it as an extra, preselected option (working dir falls back to the
 project root -- project_dir_select has no ``extra``).
 """
 
+import re
+
 import pytest
 from playwright.sync_api import expect
+
+from tests.conftest import expect_option
 
 _PICKERS = ("input_file", "working_dir")
 _WF_PICKERS = ("wf_input_str", "wf_input_grd", "wf_working_dir")
@@ -97,15 +101,14 @@ class TestRunDropdownsWithProject:
 
         sel = pw_page.locator("select#run-input_file")
         expect(sel).to_be_attached(timeout=10000)
-        assert any("sim.str" in t for t in sel.locator("option").all_inner_texts())
+        expect_option(sel, "sim.str")
 
         wd = pw_page.locator("select#run-working_dir")
         expect(wd).to_be_attached(timeout=10000)
-        labels = wd.locator("option").all_inner_texts()
-        assert any(t.strip() == "p/" for t in labels), labels
-        assert any(t.strip() == "runs/" for t in labels), labels
+        expect_option(wd, re.compile(r"^\s*p/\s*$"))
+        expect_option(wd, re.compile(r"^\s*runs/\s*$"))
         # Project root preselected (no "same as input" fallback option).
-        assert wd.input_value() == str(tmp_path)
+        expect(wd).to_have_value(str(tmp_path))
 
     def test_workflow_pickers_list_project_files(self, pw_page, live_server, tmp_path):
         (tmp_path / "sim.str").write_text("x")
@@ -116,11 +119,11 @@ class TestRunDropdownsWithProject:
 
         s = pw_page.locator("select#run-wf_input_str")
         expect(s).to_be_attached(timeout=10000)
-        assert any("sim.str" in t for t in s.locator("option").all_inner_texts())
+        expect_option(s, "sim.str")
         g = pw_page.locator("select#run-wf_input_grd")
-        assert any("mesh.grd" in t for t in g.locator("option").all_inner_texts())
+        expect_option(g, "mesh.grd")
         w = pw_page.locator("select#run-wf_working_dir")
-        assert w.input_value() == str(tmp_path)
+        expect(w).to_have_value(str(tmp_path))
 
 
 @pytest.mark.e2e
@@ -174,13 +177,13 @@ class TestRunSamplePreselect:
         expect(sel.locator("option:checked")).to_have_text("Sample: mm_hyd_03.str", timeout=10000)
         assert sel.input_value().endswith("/mar_menor/mm_hyd_03.str")
         # The project's own STR is still offered alongside the sample.
-        assert any("sim.str" in t for t in sel.locator("option").all_inner_texts())
+        expect_option(sel, "sim.str")
 
         wd = pw_page.locator("select#run-working_dir")
         expect(wd.locator("option:checked")).to_have_text("Sample: mar_menor/", timeout=10000)
         assert wd.input_value().endswith("/mar_menor")
         # The project root is still offered alongside the sample directory.
-        assert any(t == "p/" for t in wd.locator("option").all_inner_texts())
+        expect_option(wd, re.compile(r"^p/$"))
         assert pw_page.locator("#run-tool_select").input_value() == "shyfem"
 
 

@@ -1,6 +1,11 @@
 """Playwright tests for the Physics page's project-file STR dropdown."""
 
+import re
+
 import pytest
+from playwright.sync_api import expect
+
+from tests.conftest import expect_option
 
 
 @pytest.mark.e2e
@@ -47,8 +52,7 @@ class TestPhysicsStrDropdown:
         pw_page.wait_for_timeout(1000)
         select = pw_page.locator("select#physics-str_path")
         select.wait_for(state="attached", timeout=5000)
-        texts = select.locator("option").all_inner_texts()
-        assert any("sim.str" in t for t in texts)
-        assert any("other.str" in t for t in texts)
+        expect_option(select, "sim.str")
+        expect_option(select, "other.str")
         # Parity with the old auto-fill: the first simulation's STR is preselected.
-        assert select.input_value().endswith("sim.str")
+        expect(select).to_have_value(re.compile(r".*sim\.str$"))
