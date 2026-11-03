@@ -923,11 +923,12 @@ class LocalJobQueue(JobQueue):
     @staticmethod
     def _job_file_paths(stdout_file: str | None, stderr_file: str | None) -> list[Path]:
         """Every file a job leaves in its working directory: its two logs and,
-        for a detached job, the launch, pid and exit records (J-01)."""
+        for a detached job, the launch, pid and exit records and the supervisor's
+        own log (J-01)."""
         paths = [Path(p) for p in (stdout_file, stderr_file) if p]
         if stdout_file:
             files = JobFiles.for_stdout(stdout_file)
-            paths += [files.spec, files.pid, files.exit]
+            paths += [files.spec, files.pid, files.exit, files.runner_log]
         return paths
 
     def _delete_old_db_rows(

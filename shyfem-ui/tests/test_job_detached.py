@@ -488,3 +488,27 @@ async def test_reattach_reads_only_the_end_of_a_big_log(db, tmp_path):
         working_dir=files.stdout.parent,
     )
     assert time.monotonic() - start < 1.0
+
+
+@pytest.mark.asyncio
+async def test_the_supervisors_own_output_stays_out_of_the_jobs_stderr(
+    db, shyfem_dir, tmp_path, monkeypatch
+):
+    """The job's .stderr is the tool's alone. The supervisor used to write
+    its own stderr there too, so a warning it printed while recording the
+    end (here a ResourceWarning at interpreter exit) landed after the tool's
+    fatal line, and the error message lost that line whenever the queue read
+    the tail late (the flaky test_failure_keeps_the_end_of_stderr on CI)."""
+    monkeypatch.setenv("PYTHONWARNINGS", "always")  # the supervisor inherits it
+    _tool(shyfem_dir, "echo 'STOP error stop handle_basin_read: no bas or grd file' >&2\nexit 2\n")
+    queue = _queue(shyfem_dir)
+    job_id = await queue.submit(_spec(tmp_path / "work"))
+    job = await _until(lambda: (j := queue._jobs[job_id]) and not j.is_active and j)
+    files = JobFiles.for_stdout(job.stdout_file)
+    runner = (read_json(files.pid) or {}).get("runner_pid")
+    if runner:
+        await _until(lambda: not _alive(runner), timeout=10)
+    text = files.stderr.read_text()
+    assert text.rstrip().endswith("no bas or grd file"), text[-300:]
+    assert "Warning" not in text, text[-300:]
+    assert files.runner_log.exists()  # the supervisor writes there instead

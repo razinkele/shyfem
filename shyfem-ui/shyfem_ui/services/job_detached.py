@@ -54,6 +54,10 @@ class JobFiles:
     spec: Path
     pid: Path
     exit: Path
+    #: The supervisor's own stderr. Never the job's ``stderr``: whatever the
+    #: supervisor prints after the tool exits (a warning while it records
+    #: the end) would land after the tool's fatal line there.
+    runner_log: Path
 
     @classmethod
     def for_stdout(cls, stdout_file: str | Path) -> JobFiles:
@@ -67,10 +71,11 @@ class JobFiles:
             spec=state.with_suffix(".job"),
             pid=state.with_suffix(".pid"),
             exit=state.with_suffix(".exit"),
+            runner_log=state.with_suffix(".runner.log"),
         )
 
     def all(self) -> tuple[Path, ...]:
-        return (self.stdout, self.stderr, self.spec, self.pid, self.exit)
+        return (self.stdout, self.stderr, self.spec, self.pid, self.exit, self.runner_log)
 
 
 def state_dir() -> Path:
