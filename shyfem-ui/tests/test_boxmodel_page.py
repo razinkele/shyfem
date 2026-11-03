@@ -547,8 +547,8 @@ def test_layers_effect_wraps_its_upstream_calls():
 def _level_run(days=130, gain=2.0):
     """A CachedRun whose act_eta is ``gain`` x a multi-band synthetic signal.
 
-    The signal sums periods of ~3, 7, 20 and 100 days so every one of the
-    2-4 / 4-10 / 10-30 / 30-400 d bands carries real power (a band whose
+    The signal sums periods of ~3, 7, 20, 50 and 100 days so every one of the
+    2-4 / 4-10 / 10-30 / 30-90 / 90-400 d bands carries real power (a band whose
     observed power is zero is dropped by ``band_amplitude_ratios``), and the
     model is an exact scalar multiple of the observations so every band ratio
     must come out at ``gain``.
@@ -564,6 +564,7 @@ def _level_run(days=130, gain=2.0):
         np.sin(2 * np.pi * t / 3.0)
         + np.sin(2 * np.pi * t / 7.0)
         + np.sin(2 * np.pi * t / 20.0)
+        + np.sin(2 * np.pi * t / 50.0)
         + np.sin(2 * np.pi * t / 100.0)
     )
     rows = [
@@ -616,14 +617,25 @@ def test_band_ratio_rows_reports_every_band_for_a_level_target():
         assert value == pytest.approx(2.0, rel=1e-6), column
 
 
-def test_band_ratio_rows_returns_none_below_the_gap_free_minimum():
-    """120 gap-free common days is a much stronger requirement than the skill
-    table's 30 matched days, so a run can have a skill row and no ratios."""
+def test_band_ratio_rows_returns_none_below_the_common_day_minimum():
+    """120 common days is a much stronger requirement than the skill table's
+    30 matched days, so a run can have a skill row and no ratios."""
     from shyfem_ui.pages import boxmodel
 
     run, obs, sites, start, end = _level_run(days=119)
     rows = boxmodel._band_ratio_rows(run, obs, sites, start, end)
     assert rows and rows[0]["ratios"] is None
+
+
+def test_band_ratio_rows_disclose_interpolated_observation_days():
+    from shyfem_ui.pages import boxmodel
+
+    run, obs, sites, start, end = _level_run(days=200)
+    rows = boxmodel._band_ratio_rows(run, obs.drop(index=[60, 61, 62]), sites, start, end)
+    assert rows[0]["ratios"] is not None
+    assert rows[0]["filled"] == 3 and rows[0]["days"] == 200
+    complete = boxmodel._band_ratio_rows(run, obs, sites, start, end)
+    assert complete[0]["filled"] == 0
 
 
 def test_band_ratio_rows_skips_sites_without_a_box_or_level_observations():

@@ -218,7 +218,7 @@ repo, transcribed here so the two cannot drift:
   `sd_mod/sd_obs` with ddof = 0. Minimum `n`: 30 for the skill table, 60 for the per-year and
   grid tables; a target with fewer than 3 observation days in the common window is skipped.
 - Band amplitude (level only): Hann-windowed FFT amplitude ratio model/observed in the 2–4, 4–10,
-  10–30 and 30–400 day bands over a gap-free daily window of at least 120 days; shown beside the
+  10–30, 30–90 and 90–400 day bands over a gap-free daily window of at least 120 days; shown beside the
   table because matching total variance can be a compensating error.
 - Presentation: amplitude is judged by `sd_mod/sd_obs` (1.00 is right) and phase by `r`; R² is
   shown with a caption that it is not the headline.

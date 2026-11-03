@@ -27,7 +27,10 @@ MIN_N_YEAR = 60
 MIN_OBS_DAYS = 3
 MAX_OBS_ROWS = 2_000_000
 MAX_OBS_BYTES = 50 * 1024 * 1024
-BANDS = ((2, 4), (4, 10), (10, 30), (30, 400))
+#: Period bands (days) of ``band_amplitude_ratios``. 30-90 and 90-400 are kept
+#: apart: lumped, the seasonal cycle dominates the power and hides a 30-90 d
+#: error (Curonian Vente 2005-08: 1.04 lumped = 1.30 at 30-90 d + 0.80 at 90-400 d).
+BANDS = ((2, 4), (4, 10), (10, 30), (30, 90), (90, 400))
 
 
 class ObservationError(ValueError):
@@ -321,9 +324,22 @@ def per_year_table(
     return pd.concat(frames, ignore_index=True)
 
 
-def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[str, float] | None:
-    """Hann-windowed FFT amplitude ratio (model / observed) per period band.
+#: Largest share of a band window's days that may be missing from the
+#: observations and filled by linear interpolation (a gap in the model is
+#: never filled). One missing month in 14 years is 0.6 %.
+MAX_BAND_FILL = 0.02
+#: Longest single run of missing observation days that may be bridged. The
+#: 2 % share alone would let one ~100-day gap in a 14-year window be filled
+#: by a straight line, which biases every band ratio upward by a few percent.
+MAX_BAND_GAP = 31
 
+
+def band_amplitude_detail(
+    obs_daily: pd.Series, mod_daily: pd.Series
+) -> tuple[dict[str, float], int, int] | None:
+    """Band amplitude ratios, observation days filled, and window length in days.
+
+    Hann-windowed FFT amplitude ratio (model / observed) per period band.
     Per band, the amplitude of a series is
     ``sqrt(sum(|rfft((x - xbar) * hanning(n))|**2))`` over that band's
     frequency bins, and the ratio is the model's amplitude divided by the
@@ -335,26 +351,41 @@ def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[st
     membership is the half-open ``1/hi <= f < 1/lo``, so the shared edge
     between adjacent bands belongs to the *higher-frequency* -- i.e.
     shorter-period -- band only: ``f = 1/4`` (a 4-day period) falls in
-    ``2-4 d``, not in ``4-10 d``. Requires at
-    least 120 gap-free (one-per-calendar-day) common days; returns ``None``
-    when that cannot be satisfied, or when a band's observed power is zero
-    (nothing to compare against).
+    ``2-4 d``, not in ``4-10 d``.
+
+    The window is every calendar day from the first to the last day the two
+    series share; it needs at least 120 shared days. The model must cover
+    every day of it. Observation days that are missing (or NaN) are filled
+    by linear interpolation when they are at most ``MAX_BAND_FILL`` of the
+    window and no single run of them is longer than ``MAX_BAND_GAP`` days;
+    the count and the window length are returned so the caller can say so.
+    Returns ``None`` when any of that fails, or when no band has observed
+    power.
     """
-    idx = obs_daily.index.intersection(mod_daily.index).sort_values()
+    obs_daily = obs_daily.dropna()
+    idx = obs_daily.index.intersection(mod_daily.dropna().index).sort_values()
     if len(idx) < 120:
         return None
-    gaps = np.diff(idx.values).astype("timedelta64[D]").astype(int)
-    if (gaps != 1).any():
+    span = pd.date_range(idx[0], idx[-1], freq="D")
+    m = mod_daily.reindex(span).to_numpy(dtype=float)
+    if np.isnan(m).any():
         return None
-    o = obs_daily.reindex(idx).to_numpy(dtype=float)
-    m = mod_daily.reindex(idx).to_numpy(dtype=float)
-    if np.isnan(o).any() or np.isnan(m).any():
+    o_series = obs_daily[~obs_daily.index.duplicated()].reindex(span)
+    missing = o_series.isna().to_numpy()
+    filled = int(missing.sum())
+    if filled > MAX_BAND_FILL * len(span):
         return None
+    if filled:
+        # longest run of consecutive missing days
+        edges = np.diff(np.concatenate(([0], missing.astype(int), [0])))
+        if (np.flatnonzero(edges == -1) - np.flatnonzero(edges == 1)).max() > MAX_BAND_GAP:
+            return None
+    o = o_series.interpolate(method="linear").to_numpy(dtype=float)
 
-    w = np.hanning(len(idx))
+    w = np.hanning(len(span))
     fo = np.abs(np.fft.rfft((o - o.mean()) * w))
     fm = np.abs(np.fft.rfft((m - m.mean()) * w))
-    freqs = np.fft.rfftfreq(len(idx), d=1.0)
+    freqs = np.fft.rfftfreq(len(span), d=1.0)
 
     out: dict[str, float] = {}
     for lo, hi in BANDS:
@@ -363,4 +394,10 @@ def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[st
         if sel.any() and obs_power > 0:
             mod_power = float((fm[sel] ** 2).sum())
             out[f"{lo}-{hi} d"] = math.sqrt(mod_power) / math.sqrt(obs_power)
-    return out or None
+    return (out, filled, len(span)) if out else None
+
+
+def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[str, float] | None:
+    """The ratios of :func:`band_amplitude_detail`, without the fill count."""
+    detail = band_amplitude_detail(obs_daily, mod_daily)
+    return detail[0] if detail else None
