@@ -328,12 +328,16 @@ def per_year_table(
 #: observations and filled by linear interpolation (a gap in the model is
 #: never filled). One missing month in 14 years is 0.6 %.
 MAX_BAND_FILL = 0.02
+#: Longest single run of missing observation days that may be bridged. The
+#: 2 % share alone would let one ~100-day gap in a 14-year window be filled
+#: by a straight line, which biases every band ratio upward by a few percent.
+MAX_BAND_GAP = 31
 
 
 def band_amplitude_detail(
     obs_daily: pd.Series, mod_daily: pd.Series
-) -> tuple[dict[str, float], int] | None:
-    """Band amplitude ratios plus the number of observation days filled.
+) -> tuple[dict[str, float], int, int] | None:
+    """Band amplitude ratios, observation days filled, and window length in days.
 
     Hann-windowed FFT amplitude ratio (model / observed) per period band.
     Per band, the amplitude of a series is
@@ -353,8 +357,10 @@ def band_amplitude_detail(
     series share; it needs at least 120 shared days. The model must cover
     every day of it. Observation days that are missing (or NaN) are filled
     by linear interpolation when they are at most ``MAX_BAND_FILL`` of the
-    window, and the count is returned so the caller can say so. Returns
-    ``None`` when any of that fails, or when no band has observed power.
+    window and no single run of them is longer than ``MAX_BAND_GAP`` days;
+    the count and the window length are returned so the caller can say so.
+    Returns ``None`` when any of that fails, or when no band has observed
+    power.
     """
     obs_daily = obs_daily.dropna()
     idx = obs_daily.index.intersection(mod_daily.dropna().index).sort_values()
@@ -365,9 +371,15 @@ def band_amplitude_detail(
     if np.isnan(m).any():
         return None
     o_series = obs_daily[~obs_daily.index.duplicated()].reindex(span)
-    filled = int(o_series.isna().sum())
+    missing = o_series.isna().to_numpy()
+    filled = int(missing.sum())
     if filled > MAX_BAND_FILL * len(span):
         return None
+    if filled:
+        # longest run of consecutive missing days
+        edges = np.diff(np.concatenate(([0], missing.astype(int), [0])))
+        if (np.flatnonzero(edges == -1) - np.flatnonzero(edges == 1)).max() > MAX_BAND_GAP:
+            return None
     o = o_series.interpolate(method="linear").to_numpy(dtype=float)
 
     w = np.hanning(len(span))
@@ -382,7 +394,7 @@ def band_amplitude_detail(
         if sel.any() and obs_power > 0:
             mod_power = float((fm[sel] ** 2).sum())
             out[f"{lo}-{hi} d"] = math.sqrt(mod_power) / math.sqrt(obs_power)
-    return (out, filled) if out else None
+    return (out, filled, len(span)) if out else None
 
 
 def band_amplitude_ratios(obs_daily: pd.Series, mod_daily: pd.Series) -> dict[str, float] | None:

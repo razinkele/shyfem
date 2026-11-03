@@ -125,6 +125,7 @@ from shyfem_ui.services.boxmodel_setup import (
 )
 from shyfem_ui.services.boxmodel_skill import (
     MAX_BAND_FILL,
+    MAX_BAND_GAP,
     VARIABLE_COLUMNS,
     ObservationError,
     band_amplitude_detail,
@@ -169,7 +170,10 @@ VARIABLES = {"salt": "Salinity (psu)", "temp": "Temperature (°C)", "act_eta": "
 #: Column order of the band-amplitude table, matching ``BANDS`` in
 #: ``boxmodel_skill`` and the keys ``band_amplitude_ratios`` returns.
 BAND_COLUMNS = ("2-4 d", "4-10 d", "10-30 d", "30-90 d", "90-400 d")
-BAND_NEEDS_DAYS = f"needs \u2265 120 common days, \u2264 {MAX_BAND_FILL:.0%} of them missing"
+BAND_NEEDS_DAYS = (
+    f"needs \u2265 120 common days, the model on every day, and observations with "
+    f"\u2264 {MAX_BAND_FILL:.0%} missing and no gap over {MAX_BAND_GAP} days"
+)
 NO_POLYGONS_MESSAGE = (
     "No box outlines: add boxes.polygons to the manifest or run the model "
     "with boxes_geom.txt output."
@@ -562,9 +566,7 @@ def _band_ratio_rows(cached_run, obs, sites, start, end) -> list[dict]:
         if detail is None:
             rows.append({"site": str(site["site"]), "ratios": None, "filled": 0, "days": 0})
             continue
-        ratios, filled = detail
-        shared = observed.dropna().index.intersection(model.dropna().index)
-        days = (shared.max() - shared.min()).days + 1
+        ratios, filled, days = detail
         rows.append(
             {"site": str(site["site"]), "ratios": ratios, "filled": filled, "days": int(days)}
         )
@@ -3483,7 +3485,8 @@ def boxmodel_server(
                 "1.00 means the model reproduces that period band's amplitude; matching the "
                 "total variance can still hide compensating errors between bands. Needs at "
                 "least 120 common days; missing observation days are filled by linear "
-                f"interpolation when they are at most {MAX_BAND_FILL:.0%} of the window.",
+                f"interpolation when they are at most {MAX_BAND_FILL:.0%} of the window "
+                f"and no gap is longer than {MAX_BAND_GAP} days.",
                 class_="text-muted small",
             ),
             *(

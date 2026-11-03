@@ -313,9 +313,18 @@ def test_band_fill_threshold_is_decided_at_max_band_fill():
     at_limit = obs.drop(obs.index[100 : 100 + limit])
     over = obs.drop(obs.index[100 : 100 + limit + 1])
     detail = sk.band_amplitude_detail(at_limit, mod)
-    assert detail is not None and detail[1] == limit
+    assert detail is not None and detail[1] == limit and detail[2] == 500
     assert sk.band_amplitude_detail(over, mod) is None
     assert sk.band_amplitude_ratios(over, mod) is None
+
+
+def test_band_fill_refuses_one_gap_longer_than_max_band_gap():
+    """The share cap alone would bridge one long gap with a straight line; a
+    single run longer than MAX_BAND_GAP is refused even under the share cap."""
+    obs, mod = _band_pair(n=3000)  # 2 % = 60 days
+    gap = sk.MAX_BAND_GAP
+    assert sk.band_amplitude_detail(obs.drop(obs.index[1000 : 1000 + gap]), mod) is not None
+    assert sk.band_amplitude_detail(obs.drop(obs.index[1000 : 1000 + gap + 1]), mod) is None
 
 
 def test_band_window_never_fills_a_model_gap():
@@ -327,8 +336,8 @@ def test_band_fill_interpolates_and_stays_close_to_the_full_record():
     """A filled window reports the fill and lands near the complete one; a
     complete window reports zero filled days and the unchanged ratios."""
     obs, mod = _band_pair()
-    full, n_full = sk.band_amplitude_detail(obs, mod)
-    gappy, n_gappy = sk.band_amplitude_detail(obs.drop(obs.index[[50, 51, 52, 300, 301]]), mod)
+    full, n_full, _ = sk.band_amplitude_detail(obs, mod)
+    gappy, n_gappy, _ = sk.band_amplitude_detail(obs.drop(obs.index[[50, 51, 52, 300, 301]]), mod)
     assert n_full == 0 and n_gappy == 5
     assert full == sk.band_amplitude_ratios(obs, mod)
     for band in ("10-30 d", "30-90 d"):
