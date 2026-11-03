@@ -617,14 +617,25 @@ def test_band_ratio_rows_reports_every_band_for_a_level_target():
         assert value == pytest.approx(2.0, rel=1e-6), column
 
 
-def test_band_ratio_rows_returns_none_below_the_gap_free_minimum():
-    """120 gap-free common days is a much stronger requirement than the skill
-    table's 30 matched days, so a run can have a skill row and no ratios."""
+def test_band_ratio_rows_returns_none_below_the_common_day_minimum():
+    """120 common days is a much stronger requirement than the skill table's
+    30 matched days, so a run can have a skill row and no ratios."""
     from shyfem_ui.pages import boxmodel
 
     run, obs, sites, start, end = _level_run(days=119)
     rows = boxmodel._band_ratio_rows(run, obs, sites, start, end)
     assert rows and rows[0]["ratios"] is None
+
+
+def test_band_ratio_rows_disclose_interpolated_observation_days():
+    from shyfem_ui.pages import boxmodel
+
+    run, obs, sites, start, end = _level_run(days=200)
+    rows = boxmodel._band_ratio_rows(run, obs.drop(index=[60, 61, 62]), sites, start, end)
+    assert rows[0]["ratios"] is not None
+    assert rows[0]["filled"] == 3 and rows[0]["days"] == 200
+    complete = boxmodel._band_ratio_rows(run, obs, sites, start, end)
+    assert complete[0]["filled"] == 0
 
 
 def test_band_ratio_rows_skips_sites_without_a_box_or_level_observations():

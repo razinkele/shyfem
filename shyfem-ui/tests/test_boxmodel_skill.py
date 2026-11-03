@@ -295,6 +295,46 @@ def test_band_split_separates_a_30_90_day_error_from_a_seasonal_one():
     assert "30-400 d" not in got
 
 
+def _band_pair(n=500, seed=7):
+    t = np.arange(n)
+    rng = np.random.default_rng(seed)
+    idx = pd.date_range("2009-01-01", periods=n, freq="D")
+    obs = (
+        np.sin(2 * np.pi * t / 20.0) + np.sin(2 * np.pi * t / 60.0) + rng.normal(scale=0.1, size=n)
+    )
+    mod = 1.3 * np.sin(2 * np.pi * t / 20.0) + 0.9 * np.sin(2 * np.pi * t / 60.0)
+    return pd.Series(obs, index=idx), pd.Series(mod, index=idx)
+
+
+def test_band_fill_threshold_is_decided_at_max_band_fill():
+    """Exactly MAX_BAND_FILL of the window missing is filled; one more day is not."""
+    obs, mod = _band_pair(n=500)
+    limit = int(sk.MAX_BAND_FILL * 500)  # 10 days
+    at_limit = obs.drop(obs.index[100 : 100 + limit])
+    over = obs.drop(obs.index[100 : 100 + limit + 1])
+    detail = sk.band_amplitude_detail(at_limit, mod)
+    assert detail is not None and detail[1] == limit
+    assert sk.band_amplitude_detail(over, mod) is None
+    assert sk.band_amplitude_ratios(over, mod) is None
+
+
+def test_band_window_never_fills_a_model_gap():
+    obs, mod = _band_pair()
+    assert sk.band_amplitude_detail(obs, mod.drop(mod.index[200])) is None
+
+
+def test_band_fill_interpolates_and_stays_close_to_the_full_record():
+    """A filled window reports the fill and lands near the complete one; a
+    complete window reports zero filled days and the unchanged ratios."""
+    obs, mod = _band_pair()
+    full, n_full = sk.band_amplitude_detail(obs, mod)
+    gappy, n_gappy = sk.band_amplitude_detail(obs.drop(obs.index[[50, 51, 52, 300, 301]]), mod)
+    assert n_full == 0 and n_gappy == 5
+    assert full == sk.band_amplitude_ratios(obs, mod)
+    for band in ("10-30 d", "30-90 d"):
+        assert gappy[band] == pytest.approx(full[band], rel=0.03), band
+
+
 def test_band_amplitude_ratios_matches_reference_formula():
     """Non-scalar-multiple case (peaked obs, broadband mod): every band
     ratio is checked against the reference formula

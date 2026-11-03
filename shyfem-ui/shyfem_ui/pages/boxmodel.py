@@ -124,9 +124,10 @@ from shyfem_ui.services.boxmodel_setup import (
     str_summary,
 )
 from shyfem_ui.services.boxmodel_skill import (
+    MAX_BAND_FILL,
     VARIABLE_COLUMNS,
     ObservationError,
-    band_amplitude_ratios,
+    band_amplitude_detail,
     load_observations,
     load_sites,
     model_series,
@@ -168,7 +169,7 @@ VARIABLES = {"salt": "Salinity (psu)", "temp": "Temperature (°C)", "act_eta": "
 #: Column order of the band-amplitude table, matching ``BANDS`` in
 #: ``boxmodel_skill`` and the keys ``band_amplitude_ratios`` returns.
 BAND_COLUMNS = ("2-4 d", "4-10 d", "10-30 d", "30-90 d", "90-400 d")
-BAND_NEEDS_DAYS = "needs \u2265 120 gap-free days"
+BAND_NEEDS_DAYS = f"needs \u2265 120 common days, \u2264 {MAX_BAND_FILL:.0%} of them missing"
 NO_POLYGONS_MESSAGE = (
     "No box outlines: add boxes.polygons to the manifest or run the model "
     "with boxes_geom.txt output."
@@ -533,11 +534,13 @@ def _band_ratio_rows(cached_run, obs, sites, start, end) -> list[dict]:
     observations) with its band amplitude ratios, for the table beside the
     skill table (spec sec7).
 
-    ``{"site": str, "ratios": dict | None}``; ``ratios`` is ``None`` when
-    :func:`band_amplitude_ratios` cannot be computed -- it needs at least 120
-    gap-free (one-per-calendar-day) common days, which is a much stronger
-    requirement than the skill table's 30 matched days, so a run can have a
-    full skill row and no band ratios at all.
+    ``{"site": str, "ratios": dict | None, "filled": int, "days": int}``;
+    ``ratios`` is ``None`` when :func:`band_amplitude_detail` cannot be
+    computed -- it needs at least 120 common days with at most
+    ``MAX_BAND_FILL`` of the window missing, a much stronger requirement than
+    the skill table's 30 matched days, so a run can have a full skill row and
+    no band ratios at all. ``filled`` counts the observation days filled by
+    interpolation, so the table can disclose them.
 
     Module-level and reactive-free so it can be tested without a session.
     """
@@ -555,7 +558,16 @@ def _band_ratio_rows(cached_run, obs, sites, start, end) -> list[dict]:
             picked["value"].to_numpy(), index=pd.Index(picked["date"])
         ).sort_index()
         model = model_series(cached_run, box, VARIABLE_COLUMNS["level"], start, end)
-        rows.append({"site": str(site["site"]), "ratios": band_amplitude_ratios(observed, model)})
+        detail = band_amplitude_detail(observed, model)
+        if detail is None:
+            rows.append({"site": str(site["site"]), "ratios": None, "filled": 0, "days": 0})
+            continue
+        ratios, filled = detail
+        shared = observed.dropna().index.intersection(model.dropna().index)
+        days = (shared.max() - shared.min()).days + 1
+        rows.append(
+            {"site": str(site["site"]), "ratios": ratios, "filled": filled, "days": int(days)}
+        )
     return rows
 
 
@@ -3448,7 +3460,7 @@ def boxmodel_server(
 
         def _cells(ratios):
             """One row's band cells -- or a single spanning cell saying why
-            there are none (the 120-gap-free-day rule)."""
+            there are none (the 120-common-day, 2 %-missing rule)."""
             if not ratios:
                 return [ui.tags.td(BAND_NEEDS_DAYS, colspan=str(len(BAND_COLUMNS)))]
             return [ui.tags.td(_fmt(ratios.get(column), 2)) for column in BAND_COLUMNS]
@@ -3459,14 +3471,25 @@ def boxmodel_server(
             body = [ui.tags.tr(ui.tags.td("—"), *_cells(None))]
         else:
             body = [ui.tags.tr(ui.tags.td(row["site"]), *_cells(row["ratios"])) for row in rows]
+        filled_notes = [
+            f"{row['site']}: {row['filled']} of {row['days']} days interpolated"
+            for row in rows
+            if row["ratios"] and row["filled"]
+        ]
         return ui.tags.div(
             ui.tags.strong("Band amplitude (model / observed), water level"),
             ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
             ui.tags.p(
                 "1.00 means the model reproduces that period band's amplitude; matching the "
                 "total variance can still hide compensating errors between bands. Needs at "
-                "least 120 gap-free common days.",
+                "least 120 common days; missing observation days are filled by linear "
+                f"interpolation when they are at most {MAX_BAND_FILL:.0%} of the window.",
                 class_="text-muted small",
+            ),
+            *(
+                [ui.tags.p("Filled: " + "; ".join(filled_notes) + ".", class_="text-muted small")]
+                if filled_notes
+                else []
             ),
             class_="mt-3",
         )
