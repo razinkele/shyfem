@@ -30,6 +30,29 @@ def _step(pw_page, value: str) -> None:
     pw_page.wait_for_timeout(400)
 
 
+def _upload_and_open_refine(pw_page, path, lines: int) -> None:
+    """Upload a boundary and open Step 2 only once THIS import has reached it.
+
+    The page is shared across tests, so the previous test's import result
+    and line select are still on screen. "N lines" in the import result can
+    match the previous import, and a line picked before the server has
+    processed the new import is (correctly) reset by it to "All lines" --
+    that is how the first CI run of #187 failed. The select is re-rendered
+    by every import, so wait until the pre-upload select has been replaced.
+    """
+    old = (
+        pw_page.locator(f"{_P}refine_line").element_handle(timeout=1000)
+        if (pw_page.locator(f"{_P}refine_line").count())
+        else None
+    )
+    _step(pw_page, "import")
+    pw_page.locator(f"{_P}boundary_file").set_input_files(str(path))
+    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(f" {lines} lines", timeout=15000)
+    _step(pw_page, "refine")
+    if old is not None:
+        pw_page.wait_for_function("el => !el.isConnected", arg=old, timeout=15000)
+
+
 def test_refine_choices_survive_an_apply(pw_page, tmp_path):
     # Two squares (untagged UTM-like metres) -> two boundary lines.
     def square(x0: int) -> list[list[int]]:
@@ -131,11 +154,7 @@ def test_a_new_import_starts_at_all_lines(pw_page, tmp_path):
 
     _dismiss_modals(pw_page)
     pw_page.locator(".sf-nav-item[data-nav='Mesh Builder']").click(force=True)
-    _step(pw_page, "import")
-    pw_page.locator(f"{_P}boundary_file").set_input_files(str(first))
-    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(" 2 lines", timeout=15000)
-
-    _step(pw_page, "refine")
+    _upload_and_open_refine(pw_page, first, 2)
     line_select = pw_page.locator(f"{_P}refine_line")
     expect(line_select.locator("option")).to_have_count(3, timeout=10000)
     chosen = line_select.locator("option").nth(2).get_attribute("value")
@@ -143,11 +162,7 @@ def test_a_new_import_starts_at_all_lines(pw_page, tmp_path):
     pw_page.wait_for_timeout(500)
     expect(line_select).to_have_value(chosen)
 
-    _step(pw_page, "import")
-    pw_page.locator(f"{_P}boundary_file").set_input_files(str(second))
-    expect(pw_page.locator(f"{_P}import_result")).to_contain_text(" 3 lines", timeout=15000)
-
-    _step(pw_page, "refine")
+    _upload_and_open_refine(pw_page, second, 3)
     expect(line_select.locator("option")).to_have_count(4, timeout=10000)  # all + 3
     expect(line_select).to_have_value("all")
 
