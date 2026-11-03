@@ -462,8 +462,10 @@ class ShyfemWrapper:
         # supervisor acts on comes over stdin.
         write_json_atomic(files.spec, spec)
 
-        with open(files.stderr, "ab") as err:
-            # Own session, and no pipe left open back to this process once
+        files.runner_log.parent.mkdir(parents=True, exist_ok=True)
+        with open(files.runner_log, "ab") as err:
+            # The supervisor's own stderr goes to its own log, not the job's
+            # stderr, which must end with the tool's last line. Own session, and no pipe left open back to this process once
             # the record is sent: when the worker exits, nothing reaches the
             # supervisor (no signal, no SIGPIPE). cwd stays this process's,
             # so the supervisor reads the same .env.
@@ -582,7 +584,9 @@ class ShyfemWrapper:
                 success=False,
                 return_code=-1,
                 stdout="",
-                stderr=read_tail(files.stderr) or "The job supervisor stopped without a result",
+                stderr=read_tail(files.stderr)
+                or read_tail(files.runner_log)
+                or "The job supervisor stopped without a result",
                 command=" ".join(spec.get("cmd") or []),
                 working_dir=str(cwd),
             )
