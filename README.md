@@ -4,7 +4,7 @@
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![SHYFEM core](https://img.shields.io/badge/SHYFEM%20core-8.5.2-green)](https://github.com/razinkele/shyfem/releases/tag/v8.5.2)
-[![shyfem-ui](https://img.shields.io/badge/shyfem--ui-0.7.2-blue)](https://github.com/razinkele/shyfem/releases/tag/shyfem-ui-v0.7.2)
+[![shyfem-ui](https://img.shields.io/badge/shyfem--ui-0.8.0-blue)](https://github.com/razinkele/shyfem/releases/tag/shyfem-ui-v0.8.0)
 ![Fortran](https://img.shields.io/badge/Fortran-90%2F95%2B-purple)
 
 A finite element model for hydrodynamic simulation of lagoons, coastal seas, estuaries, and lakes. SHYFEM solves the oceanographic primitive equations in both 2D and 3D using an unstructured triangular mesh with a semi-implicit time-stepping algorithm.
@@ -135,7 +135,7 @@ make bump-minor   # 8.5.2 -> 8.6.0
 make bump-major   # 8.5.2 -> 9.0.0
 ```
 
-**UI** --- currently `0.7.2`, tag `shyfem-ui-v0.7.2`:
+**UI** --- currently `0.8.0`, tag `shyfem-ui-v0.8.0`:
 
 - `shyfem-ui/pyproject.toml` --- single source of truth; `shyfem_ui.__version__` derives from it via package metadata
 
