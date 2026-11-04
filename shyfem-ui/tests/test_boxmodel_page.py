@@ -1456,6 +1456,8 @@ def test_job_history_grid_renders_once_and_updates_in_place():
     effect_body = code("_update_job_history")
     assert "await job_history.update_data(" in effect_body
     assert "all_jobs_data.get()" in effect_body
+    # sent after the flush, so it cannot overtake the grid's first render
+    assert "session.on_flushed(_push, once=True)" in effect_body
 
 
 def test_per_year_grid_sanitises_every_run_label():

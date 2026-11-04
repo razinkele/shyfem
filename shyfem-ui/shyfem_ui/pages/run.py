@@ -1172,12 +1172,25 @@ def run_server(
         return render.DataGrid(frame, filters=True, width="100%", summary=False)
 
     @reactive.effect
-    async def _update_job_history():
-        frame = job_history_frame([j for j in all_jobs_data.get() if not j.is_active])
+    def _update_job_history():
+        try:
+            frame = job_history_frame([j for j in all_jobs_data.get() if not j.is_active])
+        except Exception:  # an effect error would close the session (Shiny 1.9)
+            logger.warning("Job History grid update skipped", exc_info=True)
+            return
         if _history_shown and _history_shown[0].equals(frame):
             return
         _history_shown[:] = [frame]
-        await job_history.update_data(frame)
+
+        async def _push() -> None:
+            await job_history.update_data(frame)
+
+        # After the flush, not now: update_data is a custom message, sent at
+        # once, while output values go out at the END of a flush. Sent now, an
+        # update made in the same flush as the grid's first render would reach
+        # the browser before the grid exists and be dropped (and the dedup
+        # above would then hide it until the next job change).
+        session.on_flushed(_push, once=True)
 
     @render_widget
     def timeline_chart():
