@@ -332,6 +332,11 @@ MAX_BAND_FILL = 0.02
 #: 2 % share alone would let one ~100-day gap in a 14-year window be filled
 #: by a straight line, which biases every band ratio upward by a few percent.
 MAX_BAND_GAP = 31
+#: Fewest FFT bins a band must cover in the window to be reported. With one
+#: bin, the 90-400 d band of a 120-180 d window is a single estimate at the
+#: window length itself, where the Hann window leaks most; it is left out
+#: (shown as a dash) rather than shown beside bands resting on many bins.
+MIN_BAND_BINS = 2
 
 
 def band_amplitude_detail(
@@ -359,8 +364,9 @@ def band_amplitude_detail(
     by linear interpolation when they are at most ``MAX_BAND_FILL`` of the
     window and no single run of them is longer than ``MAX_BAND_GAP`` days;
     the count and the window length are returned so the caller can say so.
-    Returns ``None`` when any of that fails, or when no band has observed
-    power.
+    A band is reported only when the window gives it at least
+    ``MIN_BAND_BINS`` frequency bins, so 90-400 d needs more than 180 days.
+    Returns ``None`` when any of that fails, or when no band qualifies.
     """
     obs_daily = obs_daily.dropna()
     idx = obs_daily.index.intersection(mod_daily.dropna().index).sort_values()
@@ -391,7 +397,7 @@ def band_amplitude_detail(
     for lo, hi in BANDS:
         sel = (freqs >= 1.0 / hi) & (freqs < 1.0 / lo)
         obs_power = float((fo[sel] ** 2).sum())
-        if sel.any() and obs_power > 0:
+        if int(sel.sum()) >= MIN_BAND_BINS and obs_power > 0:
             mod_power = float((fm[sel] ** 2).sum())
             out[f"{lo}-{hi} d"] = math.sqrt(mod_power) / math.sqrt(obs_power)
     return (out, filled, len(span)) if out else None

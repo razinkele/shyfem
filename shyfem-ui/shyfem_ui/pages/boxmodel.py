@@ -126,6 +126,7 @@ from shyfem_ui.services.boxmodel_setup import (
 from shyfem_ui.services.boxmodel_skill import (
     MAX_BAND_FILL,
     MAX_BAND_GAP,
+    MIN_BAND_BINS,
     VARIABLE_COLUMNS,
     ObservationError,
     band_amplitude_detail,
@@ -3486,7 +3487,9 @@ def boxmodel_server(
                 "total variance can still hide compensating errors between bands. Needs at "
                 "least 120 common days; missing observation days are filled by linear "
                 f"interpolation when they are at most {MAX_BAND_FILL:.0%} of the window "
-                f"and no gap is longer than {MAX_BAND_GAP} days.",
+                f"and no gap is longer than {MAX_BAND_GAP} days. A band needs at least "
+                f"{MIN_BAND_BINS} frequency bins in the window (\u2014 otherwise), so "
+                "90-400 d needs more than 180 days.",
                 class_="text-muted small",
             ),
             *(
