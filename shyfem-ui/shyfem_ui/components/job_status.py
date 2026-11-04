@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+import pandas as pd
 from shiny import ui
 
 from shyfem_ui.services.job_queue import JobInfo, JobStatus
@@ -78,3 +79,29 @@ def job_list_table(jobs: list[JobInfo]) -> ui.Tag:
         ui.tags.tbody(*rows),
         class_="table table-striped table-hover",
     )
+
+
+#: Columns of the Job History grid, in display order.
+JOB_HISTORY_COLUMNS = ("Name", "Tool", "Status", "Progress (%)", "Created", "Duration (s)")
+
+
+def job_history_frame(jobs: list[JobInfo]) -> pd.DataFrame:
+    """The Job History grid's data: one row per job, newest first.
+
+    Progress and duration are numbers, not formatted text, so the grid sorts
+    them correctly; "Created" is an ISO-like string, which sorts in time order.
+    An empty list still yields the columns, because ``update_data`` keeps the
+    user's sort and filter only across frames with the same columns.
+    """
+    rows = [
+        {
+            "Name": job.name,
+            "Tool": job.tool_name,
+            "Status": job.status.value,
+            "Progress (%)": int(job.progress * 100),
+            "Created": format_datetime(job.created_at),
+            "Duration (s)": round(job.duration, 1) if job.duration is not None else None,
+        }
+        for job in sorted(jobs, key=lambda j: j.created_at or datetime.min, reverse=True)
+    ]
+    return pd.DataFrame(rows, columns=list(JOB_HISTORY_COLUMNS))

@@ -606,6 +606,30 @@ def _series_filename(data) -> str:
     return f"box{box}_{variable}.csv"
 
 
+def _per_year_frame(yearly: pd.DataFrame, labels: dict) -> pd.DataFrame:
+    """The Per-year skill grid's data: numeric, rounded, sortable columns.
+
+    A level row's bias is computed on anomalies and means nothing, so it is
+    blank (NaN) here, as the HTML table showed a dash.
+    """
+    frame = yearly.sort_values(["year", "site", "variable", "run"])
+    bias = frame["bias"].where(frame["variable"] != "level")
+    return pd.DataFrame(
+        {
+            "year": frame["year"].astype(int).to_numpy(),
+            "run": [labels.get(r, r) for r in frame["run"]],
+            "site": frame["site"].astype(str).to_numpy(),
+            "variable": frame["variable"].astype(str).to_numpy(),
+            "n": frame["n"].astype(int).to_numpy(),
+            "bias": bias.round(3).to_numpy(),
+            "RMSE": frame["rmse"].round(3).to_numpy(),
+            "r": frame["r"].round(2).to_numpy(),
+            "R\u00b2": frame["r2"].round(2).to_numpy(),
+            "sd": frame["sd_ratio"].round(2).to_numpy(),
+        }
+    )
+
+
 def _int_cell(x) -> str:
     """Format a count that ``side_by_side`` pivoted into a float column
     (``n`` is NaN where a run has no row)."""
@@ -1112,6 +1136,7 @@ def boxmodel_ui() -> ui.Tag:
                 output_widget("cmp_plot"),
                 ui.output_ui("cmp_skill"),
                 ui.output_ui("cmp_per_year"),
+                ui.output_data_frame("cmp_per_year_grid"),
                 ui.download_button(
                     "cmp_download",
                     "Download comparison CSV",
@@ -2958,6 +2983,8 @@ def boxmodel_server(
 
     @render.ui
     def cmp_per_year():
+        """Heading, caption and every message of the per-year table; the rows
+        are the cmp_per_year_grid below (sortable and filterable)."""
         gate = _cmp_table_gate()
         if gate:
             return None  # cmp_skill already says it
@@ -2966,48 +2993,32 @@ def boxmodel_server(
             return None
         if yearly is None or yearly.empty:
             return ui.tags.p(CMP_PER_YEAR_EMPTY_MESSAGE, class_="text-muted")
-        labels = _run_labels()
-        yearly = yearly.sort_values(["year", "site", "variable", "run"])
-        head = ui.tags.tr(
-            *[
-                ui.tags.th(c)
-                for c in (
-                    "year",
-                    "run",
-                    "site",
-                    "variable",
-                    "n",
-                    "bias",
-                    "RMSE",
-                    "r",
-                    "R\u00b2",
-                    "sd",
-                )
-            ]
-        )
-        body = [
-            ui.tags.tr(
-                ui.tags.td(str(row.year)),
-                ui.tags.td(_text(labels.get(row.run, row.run))),
-                ui.tags.td(str(row.site)),
-                ui.tags.td(str(row.variable)),
-                ui.tags.td(str(row.n)),
-                ui.tags.td(_bias_cell(row.variable, row.bias)),
-                ui.tags.td(_fmt(row.rmse)),
-                ui.tags.td(_fmt(row.r, 2)),
-                ui.tags.td(_fmt(row.r2, 2)),
-                ui.tags.td(_fmt(row.sd_ratio, 2)),
-            )
-            for row in yearly.itertuples()
-        ]
         return ui.tags.div(
             ui.tags.strong("Per-year skill"),
-            ui.tags.table(ui.tags.thead(head), ui.tags.tbody(*body), class_="table table-sm"),
             ui.tags.p(
-                "One row per calendar year with at least 60 matched days; sd is sd_mod/sd_obs.",
-                class_="text-muted small",
+                "One row per calendar year with at least 60 matched days; sd is sd_mod/sd_obs. "
+                "Click a column to sort; type in the boxes under the headers to filter. A level "
+                "row has no meaningful bias (blank).",
+                class_="text-muted small mb-1",
             ),
             class_="mt-3",
+        )
+
+    @render.data_frame
+    def cmp_per_year_grid():
+        """The per-year rows. Re-rendered only when the runs or the period
+        change (a user action), so resetting the sort then is expected."""
+        if _cmp_table_gate():
+            return None
+        _wide, yearly, error = cmp_skill_frames()
+        if error or yearly is None or yearly.empty:
+            return None
+        # Every label the grid shows goes through _text (no absolute host path
+        # may reach the browser), including the fallback to a bare run id.
+        labels = _run_labels()
+        safe = {r: _text(labels.get(r, r)) for r in yearly["run"].unique()}
+        return render.DataGrid(
+            _per_year_frame(yearly, safe), filters=True, width="100%", summary=False
         )
 
     def _cmp_download_name() -> str:

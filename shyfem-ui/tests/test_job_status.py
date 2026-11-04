@@ -104,3 +104,23 @@ def test_job_list_table_multiple():
     table = str(job_list_table(jobs))
     assert "A" in table
     assert "B" in table
+
+
+# ── job_history_frame (the Job History grid) ─────────────────────
+
+
+def test_job_history_frame_is_numeric_newest_first_and_keeps_columns_when_empty():
+    from shyfem_ui.components.job_status import JOB_HISTORY_COLUMNS, job_history_frame
+
+    old = _make_job(name="old")
+    new = _make_job(name="new", status=JobStatus.FAILED, progress=0.5)
+    new.created_at = datetime(2026, 2, 15, 9, 0, 0)
+    frame = job_history_frame([old, new])
+    assert list(frame.columns) == list(JOB_HISTORY_COLUMNS)
+    assert list(frame["Name"]) == ["new", "old"]  # newest first
+    assert list(frame["Status"]) == ["failed", "completed"]
+    # numbers, not formatted text, so the grid sorts them correctly
+    assert frame["Progress (%)"].tolist() == [50, 100]
+    assert frame["Created"].tolist()[0] == "2026-02-15 09:00:00"
+    empty = job_history_frame([])
+    assert empty.empty and list(empty.columns) == list(JOB_HISTORY_COLUMNS)
