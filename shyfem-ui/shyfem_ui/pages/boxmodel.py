@@ -3013,8 +3013,12 @@ def boxmodel_server(
         _wide, yearly, error = cmp_skill_frames()
         if error or yearly is None or yearly.empty:
             return None
+        # Every label the grid shows goes through _text (no absolute host path
+        # may reach the browser), including the fallback to a bare run id.
+        labels = _run_labels()
+        safe = {r: _text(labels.get(r, r)) for r in yearly["run"].unique()}
         return render.DataGrid(
-            _per_year_frame(yearly, _run_labels()), filters=True, width="100%", summary=False
+            _per_year_frame(yearly, safe), filters=True, width="100%", summary=False
         )
 
     def _cmp_download_name() -> str:
