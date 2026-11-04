@@ -144,6 +144,9 @@ def simulation_ui() -> ui.Tag:
                 ),
                 ui.output_ui("template_preview"),
                 width=300,
+                # A form landmark: these controls drive the page's main output.
+                role="form",
+                aria_label="Parameter file and quick settings",
             ),
             # Main content
             ui.navset_card_tab(

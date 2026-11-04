@@ -69,3 +69,45 @@ def test_sidebar_backdrop_present():
     config = Config()
     html = str(_build_ui(config))
     assert "sf-sidebar-backdrop" in html
+
+
+class TestLandmarksAndKeyboard:
+    """Accessibility: landmarks screen readers list, and a keyboard-usable menu."""
+
+    def test_menu_is_a_labelled_navigation_landmark(self):
+        html = str(_build_sidebar_nav())
+        assert 'id="sf-sidebar" role="navigation" aria-label="Main"' in html
+
+    def test_every_menu_item_is_a_focusable_button_with_key_activation(self):
+        import re
+
+        html = str(_build_sidebar_nav())
+        items = re.findall(r'<div class="sf-nav-item(?: [^"]*)?"[^>]*>', html)
+        assert items
+        for tag in items:
+            assert 'role="button"' in tag and 'tabindex="0"' in tag, tag
+            assert "onkeydown=" in tag and "Enter" in tag, tag
+        dashboard = [t for t in items if 'data-nav="Dashboard"' in t]
+        assert dashboard and 'aria-current="page"' in dashboard[0]
+        assert sum('aria-current="page"' in t for t in items) == 1
+
+    def test_page_sidebars_are_named_form_landmarks(self):
+        import re
+
+        from shyfem_ui.pages import ibm, simulation
+
+        for ui_fn, ns, label in (
+            (ibm.ibm_ui, "ibm", "Trajectory controls"),
+            (simulation.simulation_ui, "simulation", "Parameter file and quick settings"),
+        ):
+            html = ui_fn(ns).tagify().get_html_string()
+            sidebar = re.findall(r'<div[^>]*class="sidebar"[^>]*>', html)
+            assert len(sidebar) == 1, ns
+            assert 'role="form"' in sidebar[0] and f'aria-label="{label}"' in sidebar[0], sidebar
+
+    def test_empty_job_history_hides_the_grid_behind_the_note(self):
+        from shyfem_ui.pages import run
+
+        html = run.run_ui("run").tagify().get_html_string()
+        assert ".sf-job-history:has(.sf-no-completed-jobs) .sf-job-history-grid" in html
+        assert '<div class="sf-job-history-grid">' in html.replace("\n", "")

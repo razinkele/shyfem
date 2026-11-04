@@ -128,8 +128,21 @@ def run_ui() -> ui.Tag:
                     ),
                     ui.nav_panel(
                         "Job History",
-                        ui.output_ui("job_history_note"),
-                        ui.output_data_frame("job_history"),
+                        ui.div(
+                            # While the note says there is nothing yet, the
+                            # empty grid (headers + filter boxes) is hidden;
+                            # hidden, Shiny also defers its one render until
+                            # the first job finishes.
+                            ui.tags.style(
+                                ".sf-job-history:has(.sf-no-completed-jobs)"
+                                " .sf-job-history-grid { display: none; }"
+                            ),
+                            ui.output_ui("job_history_note"),
+                            ui.div(
+                                ui.output_data_frame("job_history"), class_="sf-job-history-grid"
+                            ),
+                            class_="sf-job-history",
+                        ),
                     ),
                     ui.nav_panel(
                         "Job Timeline",
@@ -1154,7 +1167,7 @@ def run_server(
     @render.ui
     def job_history_note():
         if not any(not j.is_active for j in all_jobs_data.get()):
-            return ui.p("No completed jobs", class_="text-muted text-center")
+            return ui.p("No completed jobs", class_="text-muted text-center sf-no-completed-jobs")
         return None
 
     # Job History is a sortable, filterable grid. It renders ONCE (the job list

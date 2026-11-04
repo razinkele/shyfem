@@ -457,6 +457,10 @@ def create_app(config: Config | None = None) -> App:
 _ADMIN_ONLY_ITEMS = {"Admin"}
 
 
+#: Inline keydown handler that makes a role="button" div act like a button.
+_KEY_ACTIVATE = "if(event.key==='Enter'||event.key===' '){{event.preventDefault();{call};}}"
+
+
 def _build_sidebar_nav() -> ui.Tag:
     """Build the sidebar navigation HTML."""
     nav_items = []
@@ -474,13 +478,20 @@ def _build_sidebar_nav() -> ui.Tag:
                 extra_attrs["data_admin_only"] = "1"
             if item["value"] not in {"Tutorial"}:
                 extra_attrs["data_hidden_for_tutorial"] = "1"
+            if active_class:
+                extra_attrs["aria_current"] = "page"
             nav_items.append(
                 ui.div(
-                    ui.tags.i(class_=f"bi {item['icon']} sf-nav-icon"),
+                    ui.tags.i(class_=f"bi {item['icon']} sf-nav-icon", aria_hidden="true"),
                     ui.span(item["label"], class_="sf-nav-label"),
                     class_=f"sf-nav-item{active_class}",
                     data_nav=item["value"],
+                    # A focusable button that Enter/Space activates: a bare
+                    # div with onclick is unreachable from the keyboard.
+                    role="button",
+                    tabindex="0",
                     onclick=f"shyfemNavTo('{item['value']}')",
+                    onkeydown=_KEY_ACTIVATE.format(call=f"shyfemNavTo('{item['value']}')"),
                     **extra_attrs,
                 )
             )
@@ -488,13 +499,19 @@ def _build_sidebar_nav() -> ui.Tag:
     return ui.div(
         ui.div(*nav_items, class_="sf-nav-items"),
         ui.div(
-            ui.tags.i(class_="bi bi-chevron-bar-left sf-nav-icon"),
+            ui.tags.i(class_="bi bi-chevron-bar-left sf-nav-icon", aria_hidden="true"),
             ui.span("Collapse", class_="sf-nav-label"),
             class_="sf-nav-item sf-collapse-btn",
+            role="button",
+            tabindex="0",
             onclick="shyfemToggleSidebar()",
+            onkeydown=_KEY_ACTIVATE.format(call="shyfemToggleSidebar()"),
         ),
         class_="sf-sidebar",
         id="sf-sidebar",
+        # The app's main navigation landmark (screen-reader "landmarks" list).
+        role="navigation",
+        aria_label="Main",
     )
 
 
@@ -652,9 +669,10 @@ function shyfemNavTo(name) {
   // Update active sidebar item
   document.querySelectorAll('.sf-nav-item').forEach(function(el) {
     el.classList.remove('active');
+    el.removeAttribute('aria-current');
   });
   var clicked = document.querySelector('.sf-nav-item[data-nav="' + name + '"]');
-  if (clicked) clicked.classList.add('active');
+  if (clicked) { clicked.classList.add('active'); clicked.setAttribute('aria-current', 'page'); }
 
   // Show/hide pages (IDs use hyphens instead of spaces)
   document.querySelectorAll('.sf-page').forEach(function(el) {
@@ -854,6 +872,7 @@ def _build_ui(config: Config) -> ui.Tag:
         ui.div(files.files_ui("files"), id="sf-page-Files", class_="sf-page"),
         ui.div(admin.admin_ui("admin"), id="sf-page-Admin", class_="sf-page"),
         class_="sf-content",
+        role="main",
     )
 
     return ui.page_fillable(

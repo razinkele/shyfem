@@ -264,6 +264,9 @@ def ibm_ui() -> ui.Tag:
                     class_="small text-muted p-2 bg-light rounded",
                 ),
                 width=280,
+                # A form landmark: these controls drive the page's main output.
+                role="form",
+                aria_label="Trajectory controls",
             ),
             ui.div(
                 _map.ui(width="100%", height="700px"),
