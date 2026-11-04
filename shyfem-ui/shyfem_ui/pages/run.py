@@ -12,6 +12,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+import pandas as pd
 import plotly.graph_objects as go
 from shiny import module, reactive, render, ui
 from shinywidgets import output_widget
@@ -25,7 +26,7 @@ from shyfem_ui.components.job_status import (
     format_datetime,
     format_duration,
     get_status_badge,
-    job_list_table,
+    job_history_frame,
 )
 from shyfem_ui.components.log_viewer import log_viewer_server, log_viewer_ui
 from shyfem_ui.components.next_step_card import NextStepLink, next_step_card
@@ -127,7 +128,8 @@ def run_ui() -> ui.Tag:
                     ),
                     ui.nav_panel(
                         "Job History",
-                        ui.output_ui("job_history"),
+                        ui.output_ui("job_history_note"),
+                        ui.output_data_frame("job_history"),
                     ),
                     ui.nav_panel(
                         "Job Timeline",
@@ -1150,14 +1152,32 @@ def run_server(
             ui.notification_show(f"Error: {e}", type="error", duration=6)
 
     @render.ui
-    def job_history():
-        jobs = all_jobs_data.get()
-        completed = [j for j in jobs if not j.is_active]
-
-        if not completed:
+    def job_history_note():
+        if not any(not j.is_active for j in all_jobs_data.get()):
             return ui.p("No completed jobs", class_="text-muted text-center")
+        return None
 
-        return job_list_table(completed)
+    # Job History is a sortable, filterable grid. It renders ONCE (the job list
+    # is read under isolate) and later changes go in through update_data, which
+    # keeps the user's sort and filter; re-rendering on every job event would
+    # reset them each time a job finished.
+    _history_shown: list[pd.DataFrame] = []
+
+    @render.data_frame
+    def job_history():
+        with reactive.isolate():
+            jobs = all_jobs_data.get()
+        frame = job_history_frame([j for j in jobs if not j.is_active])
+        _history_shown[:] = [frame]
+        return render.DataGrid(frame, filters=True, width="100%", summary=False)
+
+    @reactive.effect
+    async def _update_job_history():
+        frame = job_history_frame([j for j in all_jobs_data.get() if not j.is_active])
+        if _history_shown and _history_shown[0].equals(frame):
+            return
+        _history_shown[:] = [frame]
+        await job_history.update_data(frame)
 
     @render_widget
     def timeline_chart():

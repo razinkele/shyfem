@@ -214,6 +214,7 @@ def test_ui_builds_without_a_session():
         "boxmodel-cmp_plot",
         "boxmodel-cmp_skill",
         "boxmodel-cmp_per_year",
+        "boxmodel-cmp_per_year_grid",
         "boxmodel-cmp_download",
         # PR 3: the Setup tab
         "boxmodel-setup_message",
@@ -1410,3 +1411,48 @@ def test_the_map_and_the_series_share_one_hourly_window():
     # meaning over raw records: the hourly branch must not draw one.
     body = code("series")
     assert "low = high = None" in body
+
+
+def test_per_year_frame_is_numeric_sorted_and_blanks_level_bias():
+    import math
+
+    import pandas as pd
+
+    from shyfem_ui.pages import boxmodel
+
+    yearly = pd.DataFrame(
+        {
+            "year": [2010, 2009, 2009],
+            "run": ["b", "a", "a"],
+            "site": ["Nida", "Nida", "Nida"],
+            "variable": ["salinity", "level", "salinity"],
+            "n": [365, 360, 365],
+            "bias": [0.123456, 1e-17, -0.5],
+            "rmse": [0.2, 0.1, 0.3],
+            "r": [0.81234, 0.9, 0.7],
+            "r2": [0.6, 0.8, 0.4],
+            "sd_ratio": [1.04, 1.1, 0.9],
+        }
+    )
+    frame = boxmodel._per_year_frame(yearly, {"a": "run A", "b": "run B"})
+    assert list(frame["year"]) == [2009, 2009, 2010]
+    assert list(frame["variable"]) == ["level", "salinity", "salinity"]
+    assert list(frame["run"]) == ["run A", "run A", "run B"]
+    assert math.isnan(frame["bias"].iloc[0])  # level bias means nothing: blank
+    assert frame["bias"].iloc[2] == 0.123
+    assert frame["r"].iloc[2] == 0.81
+
+
+def test_job_history_grid_renders_once_and_updates_in_place():
+    """Re-rendering the grid on every job event would reset the user's sort
+    and filter each time a job finished: the render reads the job list under
+    isolate, and an effect pushes changes with update_data."""
+    from shyfem_ui.pages import run
+
+    code = _code_of(run, "run_server")
+    render_body = code("job_history")
+    assert "reactive.isolate()" in render_body
+    assert "render.DataGrid(" in render_body and "filters=True" in render_body
+    effect_body = code("_update_job_history")
+    assert "await job_history.update_data(" in effect_body
+    assert "all_jobs_data.get()" in effect_body

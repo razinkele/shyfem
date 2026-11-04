@@ -61,3 +61,41 @@ def test_a_finished_job_reaches_the_history_without_refresh(pw_page, tmp_path):
     history = pw_page.locator("#run-job_history")
     expect(history).to_contain_text("push_probe_job", timeout=30000)
     expect(history).to_contain_text("failed", ignore_case=True)
+
+
+def _submit_probe(pw_page, tmp_path, name: str) -> None:
+    sel = pw_page.locator("select#run-input_file")
+    expect(sel.locator("option", has_text="sort_probe.str")).to_have_count(1, timeout=10000)
+    sel.select_option(str(tmp_path / "sort_probe.str"))
+    pw_page.locator("select#run-tool_select").select_option("shypre")
+    pw_page.locator("input#run-job_name").fill(name)
+    pw_page.locator("#run-submit_btn").click()
+
+
+def test_a_sorted_history_keeps_its_sort_when_a_job_finishes(pw_page, tmp_path):
+    """Job History is a grid that renders once and takes later jobs through
+    update_data. Re-rendering it on every job event would drop the user's sort
+    each time a job finished. Default order is newest first, so after sorting
+    by Name a newer "zulu" job must still land below the older "alpha" one."""
+    (tmp_path / "sort_probe.str").write_text(
+        "$title\n  sort probe\n  sort_probe\n  nobasin\n$end\n"
+    )
+    _set_project(pw_page, tmp_path)
+    pw_page.locator(".sf-nav-item[data-nav='Run']").click(force=True)
+    _submit_probe(pw_page, tmp_path, "alpha_sort_job")
+    pw_page.locator("a[role='tab']:has-text('Job History')").click()
+    grid = pw_page.locator("#run-job_history")
+    expect(grid).to_contain_text("alpha_sort_job", timeout=30000)
+
+    name_header = grid.locator("thead th", has_text="Name").first
+    name_header.click()
+    expect(name_header.locator("svg.sort-arrow")).to_have_count(1, timeout=5000)
+
+    _submit_probe(pw_page, tmp_path, "zulu_sort_job")
+    expect(grid).to_contain_text("zulu_sort_job", timeout=30000)
+    # The sort survived the update ...
+    expect(name_header.locator("svg.sort-arrow")).to_have_count(1)
+    # ... and is applied to the new row: ascending Name, not newest first.
+    names = [r.split("\t")[0] for r in grid.locator("tbody tr").all_inner_texts()]
+    ours = [n for n in names if n.endswith("_sort_job")]
+    assert ours == ["alpha_sort_job", "zulu_sort_job"], names
