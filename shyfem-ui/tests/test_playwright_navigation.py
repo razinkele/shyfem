@@ -1,6 +1,9 @@
 """Playwright tests for page navigation and tab switching."""
 
+import re
+
 import pytest
+from playwright.sync_api import expect
 
 from tests.conftest import _dismiss_modals
 
@@ -87,3 +90,21 @@ class TestNavigation:
             pw_page.wait_for_timeout(300)
 
         assert errors == [], f"JS errors during navigation: {errors}"
+
+
+def test_the_menu_works_from_the_keyboard(pw_page):
+    """Menu items are role="button" with tabindex 0; Enter on a focused item
+    opens its page and moves aria-current to it."""
+    _dismiss_modals(pw_page)
+    item = pw_page.locator(_TAB.format(name="Files"))
+    item.focus()
+    pw_page.keyboard.press("Enter")
+    expect(pw_page.locator("#sf-page-Files")).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
+    expect(item).to_have_attribute("aria-current", "page")
+    expect(pw_page.locator(_TAB.format(name="Dashboard"))).not_to_have_attribute(
+        "aria-current", "page"
+    )
+    back = pw_page.locator(_TAB.format(name="Dashboard"))
+    back.focus()
+    pw_page.keyboard.press(" ")
+    expect(pw_page.locator("#sf-page-Dashboard")).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
