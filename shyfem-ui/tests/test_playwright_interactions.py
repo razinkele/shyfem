@@ -3,7 +3,7 @@
 import pytest
 from playwright.sync_api import expect
 
-from tests.conftest import _dismiss_modals
+from tests.conftest import _dismiss_modals, expect_option
 
 pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
@@ -171,8 +171,7 @@ class TestCompareInteractions:
             sel = pw_page.locator(f"select#compare-{name}")
             expect(sel).to_be_attached(timeout=10000)
             assert pw_page.locator(f"input#compare-{name}").count() == 0, name
-            labels = sel.locator("option").all_inner_texts()
-            assert any("no .str files" in t for t in labels), labels
+            expect_option(sel, "no .str files")
 
     def test_ts_file_dropdowns(self, pw_page):
         """Time-series files A/B are dropdowns (no free-text paths); with no
@@ -182,8 +181,7 @@ class TestCompareInteractions:
             sel = pw_page.locator(f"select#compare-{name}")
             expect(sel).to_be_attached(timeout=10000)
             assert pw_page.locator(f"input#compare-{name}").count() == 0, name
-            labels = sel.locator("option").all_inner_texts()
-            assert any("no time-series files" in t for t in labels), labels
+            expect_option(sel, "no time-series files")
 
     def test_switch_compare_subtabs(self, pw_page):
         """Test switching between visible compare sub-tabs."""

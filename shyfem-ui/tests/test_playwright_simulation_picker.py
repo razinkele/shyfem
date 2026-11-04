@@ -5,6 +5,8 @@ import re
 import pytest
 from playwright.sync_api import expect
 
+from tests.conftest import expect_option
+
 
 @pytest.mark.e2e
 class TestSimulationStrDropdown:
@@ -48,8 +50,8 @@ class TestSimulationStrDropdown:
         pw_page.wait_for_timeout(1000)
         select = pw_page.locator("select#simulation-str_path")
         select.wait_for(state="attached", timeout=5000)
-        assert any("sim.str" in t for t in select.locator("option").all_inner_texts())
-        assert select.input_value().endswith("sim.str")
+        expect_option(select, "sim.str")
+        expect(select).to_have_value(re.compile(r".*sim\.str$"))
 
     def test_sample_load_injects_and_preselects_sample_option(self, pw_page, live_server):
         """The bundled Mar Menor sample lives outside any project; loading it
@@ -63,9 +65,8 @@ class TestSimulationStrDropdown:
         pw_page.wait_for_timeout(1500)
         select = pw_page.locator("select#simulation-str_path")
         select.wait_for(state="attached", timeout=5000)
-        texts = select.locator("option").all_inner_texts()
-        assert any(t.startswith("Sample:") for t in texts), texts
-        assert select.input_value().endswith(".str")
+        expect_option(select, re.compile(r"^Sample:"))
+        expect(select).to_have_value(re.compile(r".*\.str$"))
 
 
 @pytest.mark.e2e

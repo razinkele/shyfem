@@ -420,6 +420,21 @@ def pw_page(pw_browser, live_server):
     ctx.close()
 
 
+def expect_option(select, text, timeout: int = 15000) -> None:
+    """Wait until ``select`` has an option whose text matches ``text``.
+
+    ``text`` is a substring, or a compiled regex for an exact label (e.g.
+    ``re.compile(r"^p/$")``). Never read a picker's options once after a fixed
+    wait: with no project the picker is a disabled placeholder select with the
+    SAME id, and the page is shared across tests, so the element is "attached"
+    long before the project's listing renders into it (the IBM picker failure
+    on #187, fixed in #189).
+    """
+    from playwright.sync_api import expect
+
+    expect(select.locator("option", has_text=text).first).to_be_attached(timeout=timeout)
+
+
 def _dismiss_modals(page):
     """Remove any lingering modal / backdrop via JS.
 
