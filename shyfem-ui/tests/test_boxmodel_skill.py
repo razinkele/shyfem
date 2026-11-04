@@ -327,6 +327,21 @@ def test_band_fill_refuses_one_gap_longer_than_max_band_gap():
     assert sk.band_amplitude_detail(obs.drop(obs.index[1000 : 1000 + gap + 1]), mod) is None
 
 
+def test_a_band_with_one_fft_bin_is_left_out():
+    """A 150-day window gives the 90-400 d band a single bin (period = the
+    window length); it is dropped while the other bands stay. 181 days give it
+    two bins and it is reported."""
+    t = np.arange(400)
+    idx = pd.date_range("2009-01-01", periods=400, freq="D")
+    sig = np.sin(2 * np.pi * t / 7.0) + np.sin(2 * np.pi * t / 20.0) + np.sin(2 * np.pi * t / 200.0)
+    obs, mod = pd.Series(sig, index=idx), pd.Series(1.5 * sig, index=idx)
+    short = sk.band_amplitude_ratios(obs.iloc[:150], mod.iloc[:150])
+    assert short is not None
+    assert "90-400 d" not in short
+    assert {"4-10 d", "10-30 d", "30-90 d"} <= set(short)
+    assert "90-400 d" in sk.band_amplitude_ratios(obs.iloc[:181], mod.iloc[:181])
+
+
 def test_band_window_never_fills_a_model_gap():
     obs, mod = _band_pair()
     assert sk.band_amplitude_detail(obs, mod.drop(mod.index[200])) is None

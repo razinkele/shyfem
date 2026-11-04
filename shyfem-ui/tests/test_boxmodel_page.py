@@ -544,7 +544,7 @@ def test_layers_effect_wraps_its_upstream_calls():
 # --- band amplitude ratios (spec §7, shown beside the skill table) --------
 
 
-def _level_run(days=130, gain=2.0):
+def _level_run(days=200, gain=2.0):  # > 180 d: the 90-400 d band needs 2 FFT bins
     """A CachedRun whose act_eta is ``gain`` x a multi-band synthetic signal.
 
     The signal sums periods of ~3, 7, 20, 50 and 100 days so every one of the
