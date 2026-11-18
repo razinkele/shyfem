@@ -77,12 +77,15 @@ export SHYFEM_UI_AUTH_PASSWORD=changeme
 shyfem-ui
 ```
 
-### Docker Deployment
+### Docker (unsupported)
 
-```bash
-# Build and start with Docker Compose
-SHYFEM_DIR=/path/to/shyfem docker-compose up -d
-```
+`Dockerfile` and `docker-compose.yml` are kept for reference only. They are not maintained, have never been run in production, and do not start a usable app as written:
+
+- server mode refuses to start without an admin password (`SHYFEM_UI_DEFAULT_ADMIN_PASSWORD` or `SHYFEM_UI_AUTH_PASSWORD`), and the compose file sets neither;
+- the image leaves out the database migrations (`migrations/`, `alembic.ini`);
+- the `celery-worker` service has no database volume.
+
+CI builds the image but never starts it. The supported deployment is the one laguna uses: Shiny Server with the local job queue.
 
 ### Starting Celery Workers (server mode)
 

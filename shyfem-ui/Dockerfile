@@ -1,4 +1,11 @@
 # SHYFEM UI Docker Image
+#
+# UNSUPPORTED (2026-11-18). This image is not maintained and has never been run
+# in production; laguna serves the app through Shiny Server. CI only checks that
+# it builds. As written the container does not start a usable app: server mode
+# refuses to start without an admin password, and the image leaves out the
+# database migrations (migrations/, alembic.ini). See "Docker (unsupported)" in README.md.
+#
 # Multi-stage build for optimized image size
 
 # Stage 1: Python dependencies
