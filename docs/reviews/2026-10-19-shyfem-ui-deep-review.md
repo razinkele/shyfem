@@ -439,7 +439,7 @@ Low items confirmed: the manifest picker offers `.shp`, which the loader refuses
 ## 7. Open decisions for the owner
 
 - `app_idle_timeout` for `/shyfem-ui`: this is a Shiny Server config change on laguna.
-- Docker deployment: fix it (D-03) or declare it unsupported.
+- Docker deployment: fix it (D-03) or declare it unsupported. **Decided 2026-11-18: unsupported.** The files stay with a notice; see `shyfem-ui/README.md`.
 - PostgreSQL: is it a supported path? This sets D-01's urgency.
 - Whether to clean up the existing `.bak` database copies and tighten file modes (SEC-06).
 - The open what's-new popup question from the 2026-10-18 handoff: should it show core releases or only UI releases?

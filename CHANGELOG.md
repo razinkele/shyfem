@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed — Docs
+- **UI: the Docker deployment is declared unsupported.** `shyfem-ui/Dockerfile` and `docker-compose.yml` cannot start a usable app as written (server mode needs an admin password the compose file does not set, the image leaves out the database migrations, and the Celery worker has no database volume), and no deployment uses them: laguna runs Shiny Server with the local job queue. Both files and the README now say so. The files stay, and CI still checks that the image builds. This closes D-03, the last open item of the 2026-10-19 UI review.
+
 ### Changed — CI
 - **CI tests Shiny 1.9, the version laguna runs.** The worker environment moved to Shiny 1.9.0 on 2026-10-31, so the CI pin follows (`shiny>=1.9,<1.10`). The two reactive test harnesses that drive a session directly (Results map, Visualize Results) sent its outputs through a private step that 1.9 renamed; they now use whichever the installed Shiny has, so the same tests run under 1.8 and 1.9.
 

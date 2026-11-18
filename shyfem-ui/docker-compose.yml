@@ -1,3 +1,10 @@
+# UNSUPPORTED (2026-11-18). This stack is not maintained and has never been run
+# in production; laguna serves the app through Shiny Server with the local job
+# queue. It does not start a usable app as written: server mode needs an
+# admin password, the image leaves out the database migrations, and the
+# celery-worker service has no database volume. See "Docker (unsupported)" in
+# README.md.
+
 services:
   # SHYFEM UI Web Application
   shyfem-ui:
