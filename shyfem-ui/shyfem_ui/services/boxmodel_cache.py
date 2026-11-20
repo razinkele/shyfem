@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -257,8 +257,8 @@ def _started_age(prog: dict | None) -> float | None:
     except ValueError:
         return None
     if begin.tzinfo is None:
-        begin = begin.replace(tzinfo=timezone.utc)
-    return (datetime.now(timezone.utc) - begin).total_seconds()
+        begin = begin.replace(tzinfo=UTC)
+    return (datetime.now(UTC) - begin).total_seconds()
 
 
 def _tmp_dir_is_live(tmp: Path, prog: dict | None, max_tmp_age: float | None) -> bool:
@@ -698,7 +698,7 @@ async def _run_build(
                     return
                 try:
                     rc = await asyncio.wait_for(proc.wait(), timeout=timeout)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     logger.warning("boxmodel cache build %s timed out after %ss", h.key, timeout)
                     await _terminate(proc)  # waits for the child to actually exit
                     rc = -1
@@ -788,7 +788,7 @@ def _write_error_progress(tmp_dir: Path, message: str, *, exit_code: int = -1) -
             "expected": prev.get("expected", 0),
             "error": message,
             "exit": exit_code,
-            "updated": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "updated": datetime.now(UTC).isoformat(timespec="seconds"),
         },
     )
 
@@ -822,7 +822,7 @@ async def _terminate(proc: asyncio.subprocess.Process) -> None:
     try:
         await asyncio.wait_for(proc.wait(), timeout=KILL_GRACE_SECONDS)
         return
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
     try:
         os.killpg(pgid, signal.SIGKILL)

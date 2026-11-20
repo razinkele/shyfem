@@ -10,7 +10,7 @@ importing the service helper) so these tests pin the storage format itself.
 
 import hashlib
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -80,7 +80,7 @@ class TestSessionTokenStorage:
                 AuthSession(
                     token=legacy,
                     user_id=user["id"],
-                    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
                 )
             )
             db.commit()
@@ -128,7 +128,7 @@ class TestWSTokenStorage:
                     token=legacy,
                     session_token=parent_stored,
                     user_id=user["id"],
-                    expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                    expires_at=datetime.now(UTC) + timedelta(hours=1),
                 )
             )
             db.commit()
@@ -176,7 +176,7 @@ def _seed_plaintext_rows(db: Path) -> None:
             )
             uid = conn.execute("SELECT id FROM users WHERE username = 'mig'").fetchone()
         uid = uid[0]
-        exp = (datetime.now(timezone.utc) + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        exp = (datetime.now(UTC) + timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "INSERT INTO auth_sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             ("c" * 64, uid, exp),

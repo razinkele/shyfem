@@ -344,7 +344,7 @@ class ShyfemWrapper:
                     await _drain_and_wait()
                 return_code = proc.returncode
 
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # A hung tool would otherwise wedge the job (and queue) forever.
                 logger.warning("Command %r exceeded %ss timeout; terminating", cmd_str, timeout)
                 await self._terminate_process_group(proc, cmd_str)
@@ -676,7 +676,7 @@ class ShyfemWrapper:
         try:
             await asyncio.wait_for(proc.wait(), timeout=self.PROCESS_GROUP_KILL_GRACE_SECONDS)
             return
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "Command %r did not exit %ss after SIGTERM; sending SIGKILL",
                 cmd_str,

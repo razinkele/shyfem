@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def utcnow() -> datetime:
@@ -15,7 +15,7 @@ def utcnow() -> datetime:
     cutoffs and timestamps with this, never with ``datetime.now()`` (local) --
     on a non-UTC server that shifts every window by the local offset.
     """
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def utc_to_local(value: datetime | None) -> datetime | None:
@@ -24,4 +24,4 @@ def utc_to_local(value: datetime | None) -> datetime | None:
     ``None`` passes through."""
     if value is None:
         return None
-    return value.replace(tzinfo=timezone.utc).astimezone().replace(tzinfo=None)
+    return value.replace(tzinfo=UTC).astimezone().replace(tzinfo=None)

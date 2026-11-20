@@ -1,7 +1,7 @@
 """Audit logging service -- records user actions to the database."""
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from shyfem_ui.models.audit_log import AuditLog
 from shyfem_ui.timeutil import utcnow
@@ -73,7 +73,7 @@ class AuditService:
                 q = q.filter(AuditLog.action == action)
             if since:
                 if since.tzinfo is not None:
-                    since = since.astimezone(timezone.utc).replace(tzinfo=None)
+                    since = since.astimezone(UTC).replace(tzinfo=None)
                 q = q.filter(AuditLog.timestamp >= since)
             rows = q.offset(offset).limit(limit).all()
             return [

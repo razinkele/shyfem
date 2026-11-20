@@ -9,7 +9,7 @@ summer), and the elapsed time of a reloaded pending job was off by as much.
 
 import os
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -81,7 +81,7 @@ def test_utc_server_unchanged():
     os.environ["TZ"] = "UTC"
     time.tzset()
     try:
-        created = datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+        created = datetime.now(UTC).replace(tzinfo=None, microsecond=0)
         info = LocalJobQueue._db_row_to_job_info(_row(created, created))
         assert info.created_at == created
     finally:

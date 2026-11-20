@@ -6,7 +6,7 @@ import logging
 import posixpath
 import shutil
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path, PurePosixPath
 
@@ -120,7 +120,7 @@ def _export_project_sync(work_dir: Path, project_meta: dict, max_export_bytes: i
         # Write manifest
         manifest = {
             "version": MANIFEST_VERSION,
-            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "exported_at": datetime.now(UTC).isoformat(),
             "project": {
                 "name": project_meta["name"],
                 "description": project_meta.get("description"),

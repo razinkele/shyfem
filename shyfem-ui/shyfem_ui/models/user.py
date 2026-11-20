@@ -1,7 +1,7 @@
 """Database models for user management, sessions, and project permissions."""
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint, func
@@ -137,10 +137,10 @@ class AuthSession(Base):
 
         Handles timezone-naive datetimes by assuming UTC.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = self.expires_at
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
+            expires = expires.replace(tzinfo=UTC)
         return now >= expires
 
     def __repr__(self) -> str:
@@ -172,10 +172,10 @@ class WSAuthToken(Base):
 
     @property
     def is_expired(self) -> bool:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         expires = self.expires_at
         if expires.tzinfo is None:
-            expires = expires.replace(tzinfo=timezone.utc)
+            expires = expires.replace(tzinfo=UTC)
         return now >= expires
 
     def __repr__(self) -> str:

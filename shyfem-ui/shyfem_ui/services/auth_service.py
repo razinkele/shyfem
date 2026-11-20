@@ -3,7 +3,7 @@
 import hashlib
 import logging
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from argon2 import PasswordHasher
@@ -348,7 +348,7 @@ class AuthService:
             64-character hex session token (raw: only its sha256 is stored).
         """
         token = secrets.token_hex(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+        expires_at = datetime.now(UTC) + timedelta(hours=ttl_hours)
 
         session = self._session_factory()
         try:
@@ -440,7 +440,7 @@ class AuthService:
         Returns:
             Combined count of rows removed (sessions + WS tokens).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         session = self._session_factory()
         try:
             expired = session.query(AuthSession).filter(AuthSession.expires_at <= now).all()
@@ -478,7 +478,7 @@ class AuthService:
         of both it and the new token, and the raw new token is returned.
         """
         token = secrets.token_hex(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=ttl_hours)
+        expires_at = datetime.now(UTC) + timedelta(hours=ttl_hours)
         session = self._session_factory()
         try:
             session.add(

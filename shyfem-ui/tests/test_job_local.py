@@ -1,7 +1,7 @@
 """Tests for local job queue implementation."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -227,7 +227,7 @@ class TestLocalJobQueue:
         # Wait deterministically for the mock to start; bound at 5s.
         try:
             await asyncio.wait_for(started_event.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("Mock command did not start within 5s")
 
         result = await queue.cancel(job_id)
@@ -386,7 +386,7 @@ class TestLocalJobQueue:
         # Wait deterministically for the mock to start; bound at 5s.
         try:
             await asyncio.wait_for(started_event.wait(), timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("Mock command did not start within 5s")
 
         assert queue.active_job_count >= 1
@@ -813,7 +813,7 @@ class TestCleanupDeletesDbRows:
 
         from shyfem_ui.models.project import Job
 
-        real_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        real_utc = datetime.now(UTC).replace(tzinfo=None)
 
         class _SkewedDateTime(datetime):
             @classmethod
