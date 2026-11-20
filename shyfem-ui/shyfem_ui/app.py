@@ -991,6 +991,8 @@ def _build_server(
     # reports its last-seen version via input._whatsnew_seen (top-level, JS-set);
     # the server compares against the latest CHANGELOG release and shows the
     # modal if they differ. Dismissal persists the latest label to localStorage.
+    # UI releases only: the changelog is shared with the SHYFEM core, whose
+    # releases are listed under Changelog in the top bar but do not open this.
     _whatsnew_label: reactive.Value[str | None] = reactive.value(None)
 
     @reactive.effect
@@ -1000,7 +1002,7 @@ def _build_server(
             return  # disabled (e.g. in E2E, where an undismissed modal blocks tests)
         from shyfem_ui.changelog import parse_latest_release, read_repo_markdown
 
-        parsed = parse_latest_release(read_repo_markdown("CHANGELOG.md"))
+        parsed = parse_latest_release(read_repo_markdown("CHANGELOG.md"), package="ui")
         if not parsed:
             return
         label, section = parsed
