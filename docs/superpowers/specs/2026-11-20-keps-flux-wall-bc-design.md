@@ -1,7 +1,7 @@
 # k-epsilon flux (Neumann) wall conditions — design (2026-11-20)
 
 Closes issue #125. Owner decision 2026-11-20: do it now, with GOTM-style
-flux conditions (option 1 below).
+flux conditions (option 1 below). **Design approved by the owner 2026-11-20.**
 
 ## Intent and why
 
@@ -189,6 +189,11 @@ those columns and must say what it did).
 4. **OpenMP:** one k-eps run with `nomp = -1` and the "used OMP threads: N"
    line checked (memory: `nomp` defaults to 1 thread).
 5. CI (`fortran-ci.yml`) green.
+6. **Venice comparison (reported, not a gate; owner-approved 2026-11-20):** run
+   `venlag_keps_smoke` and its GOTM twin `venlag_smoke` before and after, and
+   report k-eps eddy viscosity relative to GOTM's (surface, bottom, column
+   mean of `visv`). It was about 2x on 2026-10-18; this shows whether the fix
+   carries over from the idealised channel to a realistic 3D run.
 
 ### 6. The `iturb=2` start-up warning
 
