@@ -665,6 +665,12 @@
 !		term in the momentum equations. (Default 0.5)
 ! |avpar|	Weighting of the new time level of the non-linear
 !		advective terms in the momentum equations. (Default 0.0)
+!
+! Setting one of |azpar| and |ampar| to 0 and the other to 1 selects
+! the explicit scheme for the water level. It cannot handle wetting and
+! drying: with the default solver (Sparskit) a run stops at the first
+! dry element, often at the first time step. Use semi-implicit weights
+! in basins that dry.
 
 	call addpar('azpar',0.5)
 	call addpar('ampar',0.5)

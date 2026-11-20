@@ -1733,6 +1733,12 @@ This metadata is used for both the UI forms and parameter validation.
 | `adpar` | float | 1.0 | Vertical diffusion weighting [0,1] |
 | `aapar` | float | 1.0 | Vertical advection weighting [0,1] |
 
+Setting one of `azpar` and `ampar` to 0 and the other to 1 selects the
+explicit scheme for the water level. It cannot handle wetting and drying:
+with the default solver (Sparskit) a run stops at the first dry element,
+often at the first time step, with `explicit scheme cannot dry`. Use
+semi-implicit weights (for example `azpar = ampar = 0.5`) in basins that dry.
+
 ### 12.5 Section `$para` — Coriolis and Coordinates
 
 | Parameter | Type | Default | Description |
