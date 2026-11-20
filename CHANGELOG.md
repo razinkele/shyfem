@@ -12,11 +12,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **UI: the Docker deployment is declared unsupported.** `shyfem-ui/Dockerfile` and `docker-compose.yml` cannot start a usable app as written (server mode needs an admin password the compose file does not set, the image leaves out the database migrations, and the Celery worker has no database volume), and no deployment uses them: laguna runs Shiny Server with the local job queue. Both files and the README now say so. The files stay, and CI still checks that the image builds. This closes D-03, the last open item of the 2026-10-19 UI review.
 
 ### Changed — CI
+- **The UI CI also runs when `testcases/examples/` changes.** The shyfem-ui tests read meshes, STR files and outputs from that folder (mar_menor, weutro_box, venice_lagoon, the Curonian `.gpkg`), so a change there was first tested on the next unrelated shyfem-ui PR. Markdown-only changes still skip CI.
+- **Browser tests: the cross-page "job ended" toast is tested on the real app, and the picker tests no longer race.** A new E2E test submits a job on the server-mode app and waits for the toast; the local E2E app bypasses the code that raises it, so nothing covered it before. Sixteen picker checks read a select's options once after a fixed wait and could judge a placeholder or a previous render; they now poll until the expected option is there (`expect_option` in `tests/conftest.py`). One Mesh Builder check waited on text the previous test had left behind and now waits for the import it started.
 - **CI tests Shiny 1.9, the version laguna runs.** The worker environment moved to Shiny 1.9.0 on 2026-10-31, so the CI pin follows (`shiny>=1.9,<1.10`). The two reactive test harnesses that drive a session directly (Results map, Visualize Results) sent its outputs through a private step that 1.9 renamed; they now use whichever the installed Shiny has, so the same tests run under 1.8 and 1.9.
 
 ### Fixed — CI
 
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
+
+---
+
+## [shyfem-ui 0.8.1] — 2026-11-20
+
+Sortable, filterable grids for Job History and the box-model per-year skill
+table; a main menu that works from the keyboard, with landmarks for screen
+readers; and a more honest band-amplitude table in the box-model tool (the
+30–400 day band is split, short observation gaps no longer blank a window, and
+a band resting on a single frequency is left out). These changes have been live
+on laguna since 2026-11-04. Tagged `shyfem-ui-v0.8.1`.
+
+### Added — shyfem-ui
+- **Job History and the per-year skill table are grids you can sort and filter.** Job History (Run page) and the per-year skill table (Box model, Compare tab) now have column sorting and a filter box per column. Progress and duration sort as numbers, and Job History starts newest first. A job that finishes is added to the grid in place, so the sort and filters you chose stay; redrawing the table on every job event would have reset them each time.
+- **The main menu works from the keyboard, and the pages have landmarks.** The menu items and the Collapse control were plain `div`s that only a mouse could reach. They are now buttons in the tab order, activated with Enter or Space, and the current page is marked with `aria-current`. The menu is a navigation landmark ("Main"), the page area is the main landmark, and the IBM and Simulation sidebars are named form landmarks, so a screen reader can jump between them.
+
+### Changed — shyfem-ui
+- **Box model: the 30–400 day band is split into 30–90 and 90–400 days.** The seasonal cycle dominates the old band's power, so one number could hide two errors that cancel. On the Curonian run, Ventė 2005–08 read 1.04 in the single band; split, it is 1.30 at 30–90 days and 0.80 at 90–400 days.
+- **Box model: a few missing observation days no longer blank a whole window.** The band-amplitude table needed every day of the window, so one missing day left the longest and most informative windows without ratios (Nida and Ventė had none for 2001–2014 because of one missing month). Missing observation days are now filled by linear interpolation when they are at most 2 % of the window and no single gap is longer than 31 days. A gap in the model is never filled. The table states what was filled, for example "Nida: 31 of 5113 days interpolated", and the caption gives the rule.
+- **Box model: a band that rests on a single frequency is left out.** In a 120–180 day window the 90–400 day band covers one FFT bin, at a period equal to the window length, where the estimate is least reliable. Such a band now shows as a dash; the 90–400 day band needs a window longer than 180 days. The caption explains it.
+- **Run page: the empty Job History grid is hidden.** While "No completed jobs" is showing, the empty grid with its headers and filter boxes is not drawn.
 
 ---
 
