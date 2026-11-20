@@ -16,6 +16,7 @@ import logging
 import math
 
 import numpy as np
+from shiny.types import SilentException
 
 try:
     from pyproj import CRS, Transformer
@@ -117,6 +118,46 @@ BASEMAPS: dict[str, str] = {
     "dark": CARTO_DARK,
     "osm": OSM_LIBERTY,
 }
+
+
+def basemap_style(choice: str | None, dark: bool) -> str | None:
+    """Basemap style URL for a basemap picker choice and the app's theme.
+
+    ``"positron"`` (shown as "Auto", the default; the key is kept so stored
+    inputs and tests still match) follows the theme: CARTO Positron in the
+    light theme, Dark Matter in the dark one. ``"dark"`` and ``"osm"`` are the
+    same in both themes. ``None`` (a map without a picker) is "Auto".
+    """
+    if choice in ("dark", "osm"):
+        return BASEMAPS[choice]
+    return CARTO_DARK if dark else CARTO_POSITRON
+
+
+def session_dark_mode(session) -> bool:
+    """The session's theme, read reactively: True while the app is dark.
+
+    The browser reports the toggle as the top-level ``_dark_mode`` input (the
+    same one the Plotly figures use); a page module reads it from the root
+    scope. Not reported yet means light, the app's default.
+    """
+    try:
+        return bool(session.root_scope().input["_dark_mode"]())
+    except SilentException:
+        return False
+
+
+async def apply_map_theme(map_widget, session, choice: str | None, dark: bool) -> None:
+    """Restyle a map for the theme: dark widgets and legend, and the basemap.
+
+    Both calls go in one effect, so the basemap never arrives before the
+    widgets' theme. The maps are built without a ``dark_style``, so the server
+    alone chooses the basemap and ``set_style`` always sets the one shown.
+    """
+    await map_widget.set_dark_mode(session, dark)
+    style = basemap_style(choice, dark)
+    if style:
+        await map_widget.set_style(session, style)
+
 
 # RdYlGn-like palette for quality coloring (red=bad, green=good)
 _QUALITY_PALETTE: list[list[int]] = [
@@ -1809,9 +1850,10 @@ _PALETTE_CHOICES: dict[str, str] = {
     "chlorophyll": "Chlorophyll",
 }
 
-# User-facing basemap names (keys of BASEMAPS dict defined above)
+# User-facing basemap names (keys of BASEMAPS dict defined above).
+# "Auto" follows the app's light/dark theme (see basemap_style).
 _BASEMAP_CHOICES: dict[str, str] = {
-    "positron": "Positron",
+    "positron": "Auto",
     "dark": "Dark",
     "osm": "OSM",
 }
@@ -2022,9 +2064,8 @@ def grid_map_server(
 
     @reactive.effect
     async def _set_basemap():
-        """A basemap change restyles the map; it rebuilds no layers."""
-        basemap_url = BASEMAPS.get(input.map_basemap(), BASEMAPS["positron"])
-        await _map.set_style(session, basemap_url)
+        """A basemap or theme change restyles the map; it rebuilds no layers."""
+        await apply_map_theme(_map, session, input.map_basemap(), session_dark_mode(session))
 
     @reactive.effect
     async def _update_map():

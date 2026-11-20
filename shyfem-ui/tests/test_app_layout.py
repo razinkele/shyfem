@@ -94,11 +94,32 @@ class TestLandmarksAndKeyboard:
     def test_page_sidebars_are_named_form_landmarks(self):
         import re
 
-        from shyfem_ui.pages import ibm, simulation
+        from shyfem_ui.pages import (
+            compare,
+            ensemble,
+            files,
+            grid_prep,
+            ibm,
+            partitioning,
+            physics,
+            postprocess,
+            simulation,
+            visualize,
+        )
 
+        # Shiny 1.9 renders a sidebar as a plain <div> unless it is given a
+        # role, so every page's sidebar names its landmark.
         for ui_fn, ns, label in (
             (ibm.ibm_ui, "ibm", "Trajectory controls"),
             (simulation.simulation_ui, "simulation", "Parameter file and quick settings"),
+            (files.files_ui, "files", "Storage and upload"),
+            (grid_prep.grid_prep_ui, "grid_prep", "Input grid and shypre options"),
+            (compare.compare_ui, "compare", "Jobs to compare and report"),
+            (ensemble.ensemble_ui, "ensemble", "Ensemble configuration"),
+            (postprocess.postprocess_ui, "postprocess", "shyelab input, operation and output"),
+            (partitioning.partitioning_ui, "partitioning", "Input grid and partitioning options"),
+            (visualize.visualize_ui, "visualize", "Data source and plot settings"),
+            (physics.physics_ui, "physics", "Parameter file and active modules"),
         ):
             html = ui_fn(ns).tagify().get_html_string()
             sidebar = re.findall(r'<div[^>]*class="sidebar"[^>]*>', html)

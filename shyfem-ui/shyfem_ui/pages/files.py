@@ -99,6 +99,9 @@ def files_ui() -> ui.Tag:
                 ui.output_ui("upload_panel"),
                 ui.output_ui("seed_ui"),
                 width=350,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Storage and upload",
             ),
             ui.output_ui("files_content"),
         ),

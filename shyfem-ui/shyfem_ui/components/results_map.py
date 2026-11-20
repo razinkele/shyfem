@@ -24,7 +24,12 @@ from shiny import module, reactive, render, ui
 from shiny.types import SilentException
 from shiny_deckgl import MapWidget, fullscreen_widget, screenshot_widget, zoom_widget
 
-from shyfem_ui.components.grid_map import PALETTES, _detect_projected_crs
+from shyfem_ui.components.grid_map import (
+    PALETTES,
+    _detect_projected_crs,
+    apply_map_theme,
+    session_dark_mode,
+)
 from shyfem_ui.components.results_map_layers import (
     ARROWS_LAYER_ID,
     RESULTS_LAYER_ID,
@@ -310,6 +315,16 @@ def results_map_server(input, output, session, results: reactive.Value):
             return sc["auto"]
         _set(range_message, "" if _usable(sc["auto"]) else _NO_VALUES_MSG)
         return sc["auto"]
+
+    @reactive.effect
+    async def _theme():
+        """The app's light/dark theme restyles the map (no basemap picker: Auto)."""
+        try:
+            await apply_map_theme(_map, session, None, session_dark_mode(session))
+        except SilentException:
+            raise
+        except Exception as exc:
+            _log.warning("results map: theme change failed: %s", exc, exc_info=True)
 
     # (a) scene: file, variable, level, projection -> full update
     @reactive.effect

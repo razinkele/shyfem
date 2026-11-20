@@ -47,9 +47,10 @@ def test_basemap_change_does_not_rebuild_layers():
     assert "map_basemap" not in ast.unparse(update)
     assert "set_style" not in [_name(c) for c in _calls(update)]
     basemap = _inner("_set_basemap")
-    assert [_name(c) for c in _calls(basemap) if _name(c) in ("set_style", "update")] == [
-        "set_style"
-    ]
+    # The basemap effect restyles through apply_map_theme (which also follows
+    # the light/dark theme); it never sends layers.
+    picked = ("set_style", "update", "apply_map_theme")
+    assert [_name(c) for c in _calls(basemap) if _name(c) in picked] == ["apply_map_theme"]
 
 
 def test_view_is_refitted_only_for_a_new_grid_epsg_or_3d():

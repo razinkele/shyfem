@@ -95,6 +95,9 @@ def ensemble_ui() -> ui.Tag:
                     class_="btn-primary w-100",
                 ),
                 width=320,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Ensemble configuration",
             ),
             ui.navset_card_tab(
                 ui.nav_panel(
