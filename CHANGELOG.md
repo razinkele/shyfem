@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
 ### Changed — shyfem-ui
+- **Physics: Save asks before writing into a file the panels do not show.** Save wrote the loaded settings into whatever file the picker showed, so picking `c.str` to load it and pressing Save instead replaced `c.str` with the loaded file's settings without a word (and before any Load, with default settings). Save now writes straight away only into the file that was loaded (or last saved); for any other file it asks "The panels show the settings of a.str. Save them into c.str, replacing it?" and writes only on the yes (owner decision, 2026-11-21).
 - **shiny-deckgl 1.16.1, the version laguna runs.** The laguna worker environment got the conda package shiny-deckgl 1.16.1 on 2026-11-20 while the UI pinned v1.16.0, so CI tested an older version than production and `test_pyproject_deps` failed locally. The pin follows (`pyproject.toml`, `environment.yml`). 1.16.1 only fixes the map draw buttons under MapLibre, which shyfem-ui does not use.
 ---
 

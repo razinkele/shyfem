@@ -344,6 +344,38 @@ class TestPhysicsSave:
         ):
             assert want in text, (want, text)
 
+    def test_saving_into_a_file_other_than_the_loaded_one_asks_first(self, pw_page, project):
+        # Load a.str, pick c.str (as if to load it) and press Save: c.str
+        # used to be replaced by a.str's settings without a word.
+        self._load(pw_page, project, "a.str")
+        before = (project / "c.str").stat().st_mtime_ns
+        pw_page.locator("select#physics-str_path").select_option(str(project / "c.str"))
+        pw_page.locator("#physics-save_btn").click()
+        dialog = pw_page.locator(".modal.show")
+        expect(dialog).to_contain_text(
+            "The panels show the settings of a.str. Save them into c.str, replacing it?"
+        )
+        wait_modal_shown(pw_page)
+        dialog.get_by_role("button", name="Cancel").click()
+        expect(pw_page.locator(".modal-dialog")).to_have_count(0, timeout=5000)
+        assert (project / "c.str").stat().st_mtime_ns == before, "Cancel wrote"
+
+        stamps = self._stamps(pw_page)
+        pw_page.locator("#physics-save_btn").click()
+        wait_modal_shown(pw_page)
+        pw_page.locator("#physics-save_other_confirm").click()
+        expect(pw_page.locator(".modal-dialog")).to_have_count(0, timeout=5000)
+        for _ in range(100):  # up to 10 s
+            if (project / "c.str").stat().st_mtime_ns != before:
+                break
+            pw_page.wait_for_timeout(100)
+        self._wait_rendered(pw_page, stamps)
+        assert (project / "c.str").read_text() == _A, "the yes did not write a.str's settings"
+
+        # c.str is now the file the panels show: Save writes it without asking.
+        assert self._save(pw_page, project, "c.str"), "save did not write"
+        assert pw_page.locator(".modal.show").count() == 0
+
     def test_every_panel_renders_its_inputs(self, pw_page, project):
         for name in ("a.str", "c.str"):
             self._load(pw_page, project, name)

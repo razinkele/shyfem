@@ -386,9 +386,13 @@ def _call_index(stmts: "list[ast.stmt]", callee_attr: str) -> "int | None":
 # write outside their sandbox via an absolute path or '..' segments, or into
 # another user's data (cross-user write IDOR; review H1/H2).
 # (page, handler, write_call_name)
+# Physics: both handlers that write (Save, and the yes in its "save into
+# another file?" dialog) hand the confined path to _write_panels_to, which
+# holds the StrParser.save call.
 PATH_SAVE_HANDLERS = [
     ("simulation", "_confirm_save", "save"),
-    ("physics", "save_file", "save"),
+    ("physics", "save_file", "_write_panels_to"),
+    ("physics", "save_into_other_file", "_write_panels_to"),
     ("mesh_builder", "_on_save", "export_grd"),
 ]
 
