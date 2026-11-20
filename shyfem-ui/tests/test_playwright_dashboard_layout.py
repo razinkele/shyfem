@@ -61,6 +61,9 @@ def test_actions_stay_inside_the_projects_card(pw_page, live_server, long_path_p
     expect(pw_page.locator(".modal-dialog")).to_contain_text(f"Project: {_NAME}", timeout=15000)
     wait_modal_shown(pw_page)  # a Close during the show transition is ignored
     pw_page.locator(".modal-dialog button:has-text('Close')").click()
+    # The backdrop goes only after the hide transition; the next test's forced
+    # click must not land on it.
+    expect(pw_page.locator(".modal-dialog")).to_have_count(0, timeout=5000)
 
 
 @pytest.mark.e2e

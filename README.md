@@ -131,8 +131,9 @@ SHYFEM uses [Semantic Versioning](https://semver.org/). The Fortran **core** and
 ```bash
 # Bumps VERSION + version.f90 and moves CHANGELOG.md's [Unreleased] into a
 # dated section; it does NOT commit or tag (the targets pass --no-commit --no-tag).
-# Set UI-only [Unreleased] entries aside first, then commit, and tag vX.Y.Z on
-# the release PR's merge commit (UI untouched):
+# Set UI-only [Unreleased] entries aside first and put them back under the new
+# [Unreleased] heading before committing; tag vX.Y.Z on the release PR's merge
+# commit (UI untouched):
 make bump-patch   # 8.5.3 -> 8.5.4
 make bump-minor   # 8.5.3 -> 8.6.0
 make bump-major   # 8.5.3 -> 9.0.0
