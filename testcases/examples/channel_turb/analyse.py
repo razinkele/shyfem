@@ -134,11 +134,14 @@ np.save("profiles.npy", {f"{k[0]}_{k[1]}": v for k, v in results.items()}, allow
 # Note: flip is a proxy on the domain-integrated energies printed with 5
 # digits (one last-digit step is ~3e-5..8e-5 relative), so it detects
 # 2-time-step modes of that size or larger.
-gate_ok = True
+# Every run whose name starts with "keps" is gated (also explicit pairs such
+# as keps_20:20); no gated run at all is a failure, not a silent pass.
+gate_ok, gated = True, 0
 for (run, nl), p in results.items():
-    if run != "keps":
+    if not run.startswith("keps"):
         print(f"FLIP {p['stem']} flip={p['flip']:.1e}")
         continue
+    gated += 1
     inner = p["zb"] > 0
     lower = (p["zb"] > 0) & (p["zb"] < 0.2 * p["H"])
     near = p["nut"][lower].mean() / p["ana"][lower].mean()
@@ -146,6 +149,9 @@ for (run, nl), p in results.items():
     ok = (0.8 <= near <= 1.1 and abs(logwake - 1) <= 0.10 and p["drift"] < 0.02
           and p["flip"] < 1e-4 and p["finite"])
     gate_ok = gate_ok and ok
-    print(f"GATE keps_{nl} near={near:.2f} logwake={logwake:.2f} drift={p['drift']:.1e} "
+    print(f"GATE {p['stem']} near={near:.2f} logwake={logwake:.2f} drift={p['drift']:.1e} "
           f"flip={p['flip']:.1e} finite={p['finite']}")
+if gated == 0:
+    print("GATE FAIL: no k-epsilon run analysed (a run name starting with 'keps')")
+    gate_ok = False
 sys.exit(0 if gate_ok else 1)
