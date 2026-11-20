@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from shyfem_ui.models.project import Project
+from tests.conftest import wait_modal_shown
 
 _NAME = "layout_project"
 
@@ -58,6 +59,7 @@ def test_actions_stay_inside_the_projects_card(pw_page, live_server, long_path_p
     # A real click (no force): nothing may sit on top of the button.
     details.click(timeout=5000)
     expect(pw_page.locator(".modal-dialog")).to_contain_text(f"Project: {_NAME}", timeout=15000)
+    wait_modal_shown(pw_page)  # a Close during the show transition is ignored
     pw_page.locator(".modal-dialog button:has-text('Close')").click()
 
 

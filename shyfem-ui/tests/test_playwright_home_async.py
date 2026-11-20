@@ -12,6 +12,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from shyfem_ui.models.project import Project
+from tests.conftest import wait_modal_shown
 
 _NAME = "h07_project"
 
@@ -52,6 +53,7 @@ def test_details_clone_and_open(pw_page, live_server, dash_project):
     modal = pw_page.locator(".modal-dialog")
     expect(modal).to_contain_text(f"Project: {_NAME}", timeout=15000)
     expect(modal).to_contain_text("notes.txt")
+    wait_modal_shown(pw_page)  # a Close during the show transition is ignored
     modal.locator("button:has-text('Close')").click()
     expect(modal).to_have_count(0, timeout=5000)
 

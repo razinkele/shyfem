@@ -435,6 +435,25 @@ def expect_option(select, text, timeout: int = 15000) -> None:
     expect(select.locator("option", has_text=text).first).to_be_attached(timeout=timeout)
 
 
+def wait_modal_shown(page, timeout: int = 5000) -> None:
+    """Wait until Bootstrap has finished showing the open modal.
+
+    Bootstrap 5 ignores ``hide()`` -- including a click on a
+    ``data-bs-dismiss`` button such as ``ui.modal_button("Close")`` -- while
+    the modal is still transitioning in. A Close clicked as soon as the
+    content is in the DOM can therefore leave the modal open, and its
+    backdrop then takes every later click on the shared page: on #203 and
+    #205 the Dashboard Details modal stayed open and the next test's menu
+    click (IBM picker) hit it, leaving the IBM page unopened.
+    """
+    page.wait_for_function(
+        "() => { const m = document.querySelector('.modal.show');"
+        " const i = m && window.bootstrap && bootstrap.Modal.getInstance(m);"
+        " return !!i && !i._isTransitioning; }",
+        timeout=timeout,
+    )
+
+
 def _dismiss_modals(page):
     """Remove any lingering modal / backdrop via JS.
 
