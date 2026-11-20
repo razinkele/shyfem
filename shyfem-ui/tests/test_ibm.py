@@ -1,6 +1,5 @@
 """Tests for IBM page module."""
 
-
 import pytest
 from shiny.ui import Tag
 
@@ -104,3 +103,36 @@ class TestComputeTrackStats:
         stats = compute_track_stats([self._make_track()])
         assert "→" in stats[0]["duration"]
         assert "2026-01-01" in stats[0]["duration"]
+
+
+# --- shiny_deckgl 1.16 alignment: the legend is a deck.gl widget ------------------
+
+_ENTRIES = [
+    {"layer_id": "emodnet", "label": "EMODnet Bathy", "color": [0, 100, 180], "shape": "rect"},
+    {"layer_id": "particle-trips", "label": "Tracks", "color": [230, 25, 75], "shape": "line"},
+]
+
+
+def test_map_widgets_carry_the_layer_legend():
+    pytest.importorskip("shiny_deckgl")
+    widgets = ibm._map_widgets(_ENTRIES)
+    legends = [w for w in widgets if w.get("@@widgetClass") == "_DeckLayerLegendWidget"]
+    assert len(legends) == 1, [w.get("@@widgetClass") for w in widgets]
+    legend = legends[0]
+    assert [e["layer_id"] for e in legend["entries"]] == ["emodnet", "particle-trips"]
+    assert legend["placement"] == "bottom-right" and legend["title"] == "Layers"
+
+
+def test_map_widgets_without_entries_have_no_legend():
+    pytest.importorskip("shiny_deckgl")
+    classes = [w.get("@@widgetClass") for w in ibm._map_widgets([])]
+    assert "_DeckLayerLegendWidget" not in classes
+    assert len(classes) == 5
+
+
+def test_ibm_map_no_longer_sends_deckgl_entries_to_the_maplibre_legend():
+    from pathlib import Path
+
+    src = Path(ibm.__file__).read_text(encoding="utf-8")
+    assert "legend_control(" not in src
+    assert "widgets=_map_widgets(legend_entries)" in src

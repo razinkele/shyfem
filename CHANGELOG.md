@@ -9,7 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed — shyfem-ui
+- **shiny-deckgl 1.16, the version laguna runs, and Python 3.11 or newer.** The laguna worker has run shiny-deckgl 1.16.0 (a conda package) since 2026-11-18, while `pyproject.toml` and the CI environment still pinned 1.9.2, so CI's browser tests checked a version production did not run. Both pins now name v1.16.0. Version 1.16 requires Python 3.11, so shyfem-ui does too (CI uses 3.12, laguna 3.13), and the code uses the 3.11 forms `datetime.UTC` and the builtin `TimeoutError`. What the newer shiny-deckgl brings to the maps: a map whose WebGL canvas the browser drops is rebuilt instead of going blank, map updates of 2 MB or more (large result meshes) travel over HTTP instead of the websocket, and the maps run on deck.gl 9.4 and MapLibre 6.
 - **The what's-new popup announces UI releases only.** The changelog is shared with the SHYFEM core, and the popup showed the newest dated section of either package, so a core release cut after a UI release opened it with core notes (as 8.5.2 did). It now shows the newest `shyfem-ui` release. Core releases are still listed under Changelog in the top bar.
+
+### Fixed — shyfem-ui
+- **IBM page: the layer legend lists the particle tracks and the other map layers.** The page handed its legend entries (deck.gl layers: tracks, positions, the EMODnet bathymetry) to a MapLibre legend control, which lists only native MapLibre layers and expects a `{layer id: label}` map, so these layers never appeared in it. They now go to the deck.gl layer legend the grid maps already use, with a checkbox per layer.
 
 ### Fixed
 - **Tools, NetCDF builds (`NETCDF=true`):** `ts2nc.f90` compiles again. An earlier cleanup had written three `open(...)` statements with fixed-form continuation lines (a leading `&`) into this free-form file and declared `ierr` twice in the main program, so a NetCDF build stopped there. The file is compiled only with NetCDF, which is why the default build never showed it. Fixed on 2026-10-26, when NetCDF was enabled on laguna so that `shyelab -outformat nc` works for the UI; it is in the tree since then but in no tagged core release yet. No effect on results.

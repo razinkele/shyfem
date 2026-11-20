@@ -16,7 +16,7 @@ try:
         context_menu_widget,
         fullscreen_widget,
         info_widget,
-        legend_control,
+        layer_legend_widget,
         scatterplot_layer,
         screenshot_widget,
         tile_layer,
@@ -30,7 +30,7 @@ try:
     )
 except ImportError:
     MapWidget = context_menu_widget = fullscreen_widget = None
-    info_widget = legend_control = screenshot_widget = None
+    info_widget = layer_legend_widget = screenshot_widget = None
     scatterplot_layer = tile_layer = trips_layer = zoom_widget = None
     format_trips = trips_animation_ui = trips_animation_server = None
 
@@ -277,6 +277,31 @@ def ibm_ui() -> ui.Tag:
         ),
         class_="ibm-page p-3",
     )
+
+
+def _map_widgets(legend_entries: list[dict]) -> list[dict]:
+    """deck.gl widgets of the IBM map, with the layer legend when there is one.
+
+    The legend entries describe deck.gl layers (``layer_id``, ``label``,
+    ``color``, ``shape``), so they go to ``layer_legend_widget``. They used to
+    go to ``legend_control``, a MapLibre control that lists native MapLibre
+    layers only and takes a ``{layer id: label}`` dict, so the legend never
+    showed these layers.
+    """
+    widgets = [
+        zoom_widget(),
+        fullscreen_widget(placement="top-right"),
+        screenshot_widget(placement="top-right"),
+        info_widget(placement="top-left"),
+        context_menu_widget(),
+    ]
+    if legend_entries:
+        widgets.append(
+            layer_legend_widget(
+                legend_entries, placement="bottom-right", show_checkbox=True, title="Layers"
+            )
+        )
+    return widgets
 
 
 @module.server
@@ -549,20 +574,10 @@ def ibm_server(
             layers=layers,
             view_state={"longitude": lon, "latitude": lat, "zoom": zoom, "pitch": 0, "bearing": 0},
             transition_duration=300,
-            widgets=[
-                zoom_widget(),
-                fullscreen_widget(placement="top-right"),
-                screenshot_widget(placement="top-right"),
-                info_widget(placement="top-left"),
-                context_menu_widget(),
-            ],
+            widgets=_map_widgets(legend_entries),
         )
-        controls = (
-            [legend_control(legend_entries, position="bottom-right", title="Layers")]
-            if legend_entries
-            else []
-        )
-        await _map.set_controls(session, controls)
+        # No MapLibre controls, as before; the legend is one of the widgets.
+        await _map.set_controls(session, [])
         await _map.set_style(session, BASEMAPS.get(basemap_key, BASEMAPS["positron"]))
 
     @render.ui
