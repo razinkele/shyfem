@@ -8,17 +8,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added — shyfem-ui
-- **The maps follow the dark theme.** The theme toggle turned the pages dark but left every map on a light basemap with light map controls. The grid maps (Grid Prep, Mesh Builder, Partitioning, Box model), the results map (Visualize) and the IBM map now switch to CARTO Dark Matter, with dark zoom, fullscreen and legend widgets, when the app is dark, and back when it is light. The basemap picker's default is now called "Auto" and does this; "Dark" and "OSM" stay the same in both themes. On the IBM page a basemap change now only restyles the map instead of rebuilding every layer.
-- **Every page's sidebar is a named landmark.** Shiny 1.9 renders a sidebar as a plain block unless it is given a role, so screen readers had no way to jump to the controls of eight pages. Files, Grid Prep, Compare, Ensemble, Post-process, Partitioning, Visualize and Physics now mark their sidebars as form landmarks with a name, as IBM and Simulation already did.
-
-### Changed — shyfem-ui
-- **shiny-deckgl 1.16, the version laguna runs, and Python 3.11 or newer.** The laguna worker has run shiny-deckgl 1.16.0 (a conda package) since 2026-11-18, while `pyproject.toml` and the CI environment still pinned 1.9.2, so CI's browser tests checked a version production did not run. Both pins now name v1.16.0. Version 1.16 requires Python 3.11, so shyfem-ui does too (CI uses 3.12, laguna 3.13), and the code uses the 3.11 forms `datetime.UTC` and the builtin `TimeoutError`. The full browser test suite passes against 1.16. The newer shiny-deckgl runs the maps on deck.gl 9.4 and MapLibre 6, and rebuilds a map whose WebGL canvas the browser drops instead of leaving it blank.
-- **The what's-new popup announces UI releases only.** The changelog is shared with the SHYFEM core, and the popup showed the newest dated section of either package, so a core release cut after a UI release opened it with core notes (as 8.5.2 did). It now shows the newest `shyfem-ui` release. Core releases are still listed under Changelog in the top bar.
-
-### Fixed — shyfem-ui
-- **IBM page: the layer legend lists the particle tracks and the other map layers.** The page handed its legend entries (deck.gl layers: tracks, positions, the EMODnet bathymetry) to a MapLibre legend control, which lists only native MapLibre layers and expects a `{layer id: label}` map, so these layers never appeared in it. They now go to the deck.gl layer legend the grid maps already use, as a key; the sidebar's switches still decide which layers are shown.
-
 ### Fixed
 - **Tools, NetCDF builds (`NETCDF=true`):** `ts2nc.f90` compiles again. An earlier cleanup had written three `open(...)` statements with fixed-form continuation lines (a leading `&`) into this free-form file and declared `ierr` twice in the main program, so a NetCDF build stopped there. The file is compiled only with NetCDF, which is why the default build never showed it. Fixed on 2026-10-26, when NetCDF was enabled on laguna so that `shyelab -outformat nc` works for the UI; it is in the tree since then but in no tagged core release yet. No effect on results.
 
@@ -33,6 +22,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed — CI
 
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
+
+---
+
+## [shyfem-ui 0.8.2] — 2026-11-20
+
+The maps follow the dark theme (an "Auto" basemap, dark map widgets), every
+page's sidebar is a named landmark for screen readers, and the what's-new
+popup announces UI releases only. The UI now pins shiny-deckgl 1.16, the
+version laguna runs, and **requires Python 3.11 or newer**. Also fixed: the
+IBM page's layer legend. Tagged `shyfem-ui-v0.8.2`.
+
+### Added — shyfem-ui
+- **The maps follow the dark theme.** The theme toggle turned the pages dark but left every map on a light basemap with light map controls. The grid maps (Grid Prep, Mesh Builder, Partitioning, Box model), the results map (Visualize) and the IBM map now switch to CARTO Dark Matter, with dark zoom, fullscreen and legend widgets, when the app is dark, and back when it is light. The basemap picker's default is now called "Auto" and does this; "Dark" and "OSM" stay the same in both themes. On the IBM page a basemap change now only restyles the map instead of rebuilding every layer.
+- **Every page's sidebar is a named landmark.** Shiny 1.9 renders a sidebar as a plain block unless it is given a role, so screen readers had no way to jump to the controls of eight pages. Files, Grid Prep, Compare, Ensemble, Post-process, Partitioning, Visualize and Physics now mark their sidebars as form landmarks with a name, as IBM and Simulation already did.
+
+### Changed — shyfem-ui
+- **shiny-deckgl 1.16, the version laguna runs, and Python 3.11 or newer.** The laguna worker has run shiny-deckgl 1.16.0 (a conda package) since 2026-11-18, while `pyproject.toml` and the CI environment still pinned 1.9.2, so CI's browser tests checked a version production did not run. Both pins now name v1.16.0. Version 1.16 requires Python 3.11, so shyfem-ui does too (CI uses 3.12, laguna 3.13), and the code uses the 3.11 forms `datetime.UTC` and the builtin `TimeoutError`. The full browser test suite passes against 1.16. The newer shiny-deckgl runs the maps on deck.gl 9.4 and MapLibre 6, and rebuilds a map whose WebGL canvas the browser drops instead of leaving it blank.
+- **The what's-new popup announces UI releases only.** The changelog is shared with the SHYFEM core, and the popup showed the newest dated section of either package, so a core release cut after a UI release opened it with core notes (as 8.5.2 did). It now shows the newest `shyfem-ui` release. Core releases are still listed under Changelog in the top bar.
+
+### Fixed — shyfem-ui
+- **IBM page: the layer legend lists the particle tracks and the other map layers.** The page handed its legend entries (deck.gl layers: tracks, positions, the EMODnet bathymetry) to a MapLibre legend control, which lists only native MapLibre layers and expects a `{layer id: label}` map, so these layers never appeared in it. They now go to the deck.gl layer legend the grid maps already use, as a key; the sidebar's switches still decide which layers are shown.
 
 ---
 
