@@ -7,13 +7,15 @@ STR files.
 
 import copy
 import functools
+import itertools
 import logging
 import math
 import re
 from collections.abc import Sequence
+from typing import NamedTuple
 
 from shiny import module, reactive, render, ui
-from shiny.types import SilentCancelOutputException, SilentException
+from shiny.types import SilentException
 
 from shyfem_ui.components.project_select import (
     default_project_file,
@@ -864,6 +866,113 @@ def _panel_input_ids(panel_ids: frozenset[str]) -> set[str]:
 
 _INPUT_ABSENT = object()
 
+# What the browser shows is not what the server holds right after a panel
+# renders, and the save reads the server's input values:
+#
+# - After a Load or a Save every panel renders again, but until the
+#   browser has bound the new panels the server still holds the values
+#   the old ones showed. A Save in that window took those leftovers for
+#   edits and wrote them (CI 2026-11-20: c.str saved with a.str's ilin).
+# - Shiny never clears an input's value on the server when the browser
+#   removes the input. A field drawn for one file and replaced by a note
+#   for the next (a per-area beachrate array) kept the old scalar, and
+#   the save wrote it over the array.
+#
+# So each panel render records a stamp and the input ids it drew, and
+# carries the stamp in a hidden input. A Save or Preview reads only
+# through _current_panel_inputs: every panel that rendered must show its
+# latest stamp, from the current file state, and only the ids that render
+# drew are read; any other id reads as never set. The browser sends a
+# newly bound input's first value immediately, in the same batch as the
+# other inputs bound with it, so a current stamp means that panel's drawn
+# inputs hold what it shows.
+_STAMP_PREFIX = "render_stamp_"
+
+# id="..." and data-input-id="..." are what Shiny's input bindings read
+# an input's id from (InputBinding.getId). Extra ids (divs, labels) only
+# widen the set, which is harmless; a missed id would drop a real edit.
+_RENDERED_ID = re.compile(r'\s(?:id|data-input-id)="([^"]+)"')
+
+
+class _PanelRender(NamedTuple):
+    stamp: str  # "<file stamp>.<render number>"
+    input_ids: frozenset[str]
+
+
+def _stamp_input(panel_id: str, stamp: str) -> ui.Tag:
+    """The hidden input that tells the server which render a panel shows."""
+    return ui.div(
+        ui.input_text(f"{_STAMP_PREFIX}{panel_id}", None, value=stamp),
+        class_="d-none",
+        aria_hidden="true",
+    )
+
+
+def _rendered_input_ids(tag, ns_prefix: str) -> frozenset[str]:
+    """The (module-relative) ids of every element *tag* renders."""
+    ids = _RENDERED_ID.findall(str(tag))
+    return frozenset(i[len(ns_prefix) :] for i in ids if i.startswith(ns_prefix))
+
+
+def _never_set():
+    raise SilentException()
+
+
+class _PanelInputs:
+    """Panel inputs as the browser shows the panels' current renders.
+
+    Built only by _current_panel_inputs. An id the current renders did not
+    draw reads as never set, like an input that was never created, so a
+    value left on the server by an earlier render is not saved.
+    """
+
+    def __init__(self, inputs, input_ids: frozenset[str]):
+        self._inputs = inputs
+        self._input_ids = input_ids
+
+    def __getitem__(self, input_id: str):
+        if input_id in self._input_ids:
+            return self._inputs[input_id]
+        return _never_set
+
+
+def _current_panel_inputs(
+    inputs,
+    renders: dict[str, _PanelRender],
+    file_stamp: str,
+    skip: frozenset[str],
+) -> tuple[_PanelInputs | None, list[str]]:
+    """(the inputs to save from, []) or (None, the panels not yet showing their render).
+
+    A panel in *skip* (its last render failed, so the save ignores its
+    inputs) is not checked. A panel is stale when it has not rendered for
+    the current file state yet (a Save that runs before the panels
+    re-render), or when the browser has not sent its latest stamp back
+    (a stamp never received counts too).
+    """
+    stale: list[str] = []
+    ids: set[str] = set()
+    for panel_id in PHYSICS_PANELS:
+        if panel_id in skip:
+            continue
+        render = renders.get(panel_id)
+        shown = _read_input(inputs, f"{_STAMP_PREFIX}{panel_id}", [])
+        if (
+            render is None
+            or not render.stamp.startswith(f"{file_stamp}.")
+            or shown is _INPUT_ABSENT
+            or str(shown) != render.stamp
+        ):
+            stale.append(panel_id)
+            continue
+        ids |= render.input_ids
+    if stale:
+        return None, stale
+    return _PanelInputs(inputs, frozenset(ids)), []
+
+
+_STALE_PANELS_MESSAGE = "The physics panels are still updating. Wait a moment, then try again."
+
 
 def _read_input(inputs, input_id: str, errors: list[str]) -> object:
     """Read one panel input, or _INPUT_ABSENT when it was never rendered.
@@ -980,14 +1089,18 @@ def _collect_panel_values(
 
 
 def _collect_into_copy(
-    inputs, sf: StrFile, skip_panels: frozenset[str] = frozenset()
+    inputs: _PanelInputs, sf: StrFile, skip_panels: frozenset[str] = frozenset()
 ) -> tuple[StrFile, list[str], bool]:
     """Apply the panel values to a copy of *sf*; returns it with the collect result.
 
     Preview writes nothing and an aborted save writes nothing, so neither
     may leave the shared StrFile half-updated — the next successful save
     would persist that partial state without the user ever seeing it.
+    *inputs* must come from _current_panel_inputs, which checks that the
+    browser shows the current renders and hides leftover inputs.
     """
+    if not isinstance(inputs, _PanelInputs):
+        raise TypeError("_collect_into_copy needs the _PanelInputs of _current_panel_inputs")
     working = copy.deepcopy(sf)
     errors, purged = _collect_panel_values(inputs, working, skip_panels)
     return working, errors, purged
@@ -1085,6 +1198,27 @@ def _apply_edits(
         )
 
 
+# A keystroke waits 250 ms (Shiny's text-input debounce) before it is
+# sent, and so does a key that changes nothing (an arrow key). If its
+# panel is drawn again inside that wait, the pending send still fires,
+# after the new panel's values, and the server then holds the old text
+# while the browser shows the new value (a Save after typing into itend
+# wrote "36007" with "3600" on screen; an arrow key in idtsyn before a
+# Load wrote a.str's 0 over c.str's '1h'). Leaving the field does not
+# help when the value did not change. So just before a panel's new
+# content arrives, send every text and numeric field in it right away:
+# "change" sends with no debounce and cancels the pending send.
+_FLUSH_TYPING_JS = """
+$(document).on("shiny:value", function (event) {
+    var out = event.target;
+    if (!out || !out.id || out.id.indexOf("__PANEL_PREFIX__") !== 0) return;
+    $(out)
+        .find("input.shiny-bound-input[type=text], input.shiny-bound-input[type=number]")
+        .trigger("change");
+});
+"""
+
+
 @module.ui
 def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
@@ -1129,6 +1263,7 @@ def physics_ui() -> ui.Tag:
             ),
             ui.output_ui("panels_accordion"),
         ),
+        ui.tags.script(_FLUSH_TYPING_JS.replace("__PANEL_PREFIX__", module.resolve_id("panel_"))),
     )
 
 
@@ -1162,6 +1297,29 @@ def physics_server(
         )
 
     str_data: reactive.Value[StrFile] = reactive.value(StrFile())
+
+    # A new file stamp for every file state the panels are rendered from
+    # (each Load and Save sets a new StrFile), and the latest render of
+    # each panel. See _current_panel_inputs.
+    _file_stamps = itertools.count(1)
+    _render_numbers = itertools.count(1)
+    panel_renders: dict[str, _PanelRender] = {}
+    ns_prefix = str(session.ns("x"))[: -len("x")]
+
+    @reactive.calc
+    def file_stamp() -> str:
+        str_data.get()
+        return str(next(_file_stamps))
+
+    def panel_inputs_or_warn():
+        """The inputs to collect from, or None after telling the user to wait."""
+        current, stale = _current_panel_inputs(
+            input, panel_renders, file_stamp(), frozenset(failed_panels)
+        )
+        if stale:
+            logger.info("Physics save/preview refused: panels not yet updated: %s", stale)
+            ui.notification_show(_STALE_PANELS_MESSAGE, type="warning", duration=6)
+        return current
 
     @reactive.effect
     @reactive.event(input.load_btn)
@@ -1208,10 +1366,13 @@ def physics_server(
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
+        panel_inputs = panel_inputs_or_warn()
+        if panel_inputs is None:
+            return
         working: StrFile | None = None
         try:
             working, panel_errors, nduge_purged = _collect_into_copy(
-                input, str_data.get(), frozenset(failed_panels)
+                panel_inputs, str_data.get(), frozenset(failed_panels)
             )
             if panel_errors:
                 for e in panel_errors:
@@ -1264,8 +1425,11 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
+        panel_inputs = panel_inputs_or_warn()
+        if panel_inputs is None:
+            return
         working, panel_errors, _purged = _collect_into_copy(
-            input, str_data.get(), frozenset(failed_panels)
+            panel_inputs, str_data.get(), frozenset(failed_panels)
         )
         for e in panel_errors:
             # Rejected assimilation fields were NOT applied: the preview
@@ -1376,18 +1540,28 @@ def physics_server(
             def guarded():
                 try:
                     tag = render_fn()
-                except (SilentException, SilentCancelOutputException):
-                    raise
                 except Exception as exc:
+                    # Includes SilentException (req) and
+                    # SilentCancelOutputException, which no panel raises
+                    # today: re-raised, they would leave the previous
+                    # panel on screen while the save skips its fields, so
+                    # an edit there would be lost behind "Saved". Show the
+                    # alert instead.
                     logger.exception("Physics panel %r failed to render", panel_id)
                     failed_panels.add(panel_id)
+                    panel_renders.pop(panel_id, None)
                     return ui.div(
                         f"This panel cannot show the loaded file ({type(exc).__name__}: "
                         f"{exc}). Its fields are not saved; edit them in the STR editor.",
-                        class_="alert alert-warning small",
+                        class_="alert alert-warning small physics-panel-failed",
                     )
                 failed_panels.discard(panel_id)
-                return tag
+                # Only a panel that rendered carries a stamp: a failed one
+                # is skipped by the save, and its alert must not count as
+                # a rendered input (test_every_panel_renders_its_inputs).
+                stamp = f"{file_stamp()}.{next(_render_numbers)}"
+                panel_renders[panel_id] = _PanelRender(stamp, _rendered_input_ids(tag, ns_prefix))
+                return ui.TagList(tag, _stamp_input(panel_id, stamp))
 
             return guarded
 

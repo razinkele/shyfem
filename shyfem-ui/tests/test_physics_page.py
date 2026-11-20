@@ -1389,7 +1389,8 @@ class TestSaveIsolatesPartialState:
         helper = getattr(physics, "_collect_into_copy", None)
         assert helper is not None, "save/preview must collect into a copy"
         sf = StrParser.parse("$para\n        idt = 300\n$end\n\n$nduge\n        nvars = 3\n$end\n")
-        working, errors, purged = helper(FakeInputs(values={"idt": 600}), sf)
+        drawn = physics._PanelInputs(FakeInputs(values={"idt": 600}), frozenset({"idt"}))
+        working, errors, purged = helper(drawn, sf)
         assert errors == []
         assert purged is True
         assert working.get_param("para", "idt") == 600
