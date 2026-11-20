@@ -38,8 +38,9 @@ values the panels do not show. Before, a field the loaded file shows as a
 note could keep the previous file's value (a per-area `beachrate` array was
 flattened to one number), a Save right after a Load could write the
 previous file's values, and a keystroke during a redraw could arrive late.
-Save and Preview now read only the fields the panels show, and wait until
-every panel has been redrawn. Tagged `shyfem-ui-v0.8.3`.
+Save and Preview now read only the fields the panels show. While a panel
+is still being redrawn they refuse with a "still updating" message and write
+nothing; click again once the panels have updated. Tagged `shyfem-ui-v0.8.3`.
 
 ### Fixed — shyfem-ui
 - **Physics: a Save no longer writes values the panels do not show.** Three ways a Save (or Preview) on the Physics page could write something other than what was on screen, the first live on laguna:
