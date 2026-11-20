@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed — shyfem-ui
+- **The what's-new popup announces UI releases only.** The changelog is shared with the SHYFEM core, and the popup showed the newest dated section of either package, so a core release cut after a UI release opened it with core notes (as 8.5.2 did). It now shows the newest `shyfem-ui` release. Core releases are still listed under Changelog in the top bar.
+
 ### Fixed
 - **Tools, NetCDF builds (`NETCDF=true`):** `ts2nc.f90` compiles again. An earlier cleanup had written three `open(...)` statements with fixed-form continuation lines (a leading `&`) into this free-form file and declared `ierr` twice in the main program, so a NetCDF build stopped there. The file is compiled only with NetCDF, which is why the default build never showed it. Fixed on 2026-10-26, when NetCDF was enabled on laguna so that `shyelab -outformat nc` works for the UI; it is in the tree since then but in no tagged core release yet. No effect on results.
 

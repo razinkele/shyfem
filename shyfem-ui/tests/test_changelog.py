@@ -44,6 +44,49 @@ def test_parse_no_release_returns_none():
     assert parse_latest_release("") is None
 
 
+# A core release cut after the last UI release: the newest dated section is core's.
+CORE_NEWEST = SAMPLE.replace(
+    "## [shyfem-ui 0.2.0]",
+    "## [8.3.0] — 2026-07-01\n\n### Fixed\n- solver thing\n\n## [shyfem-ui 0.2.0]",
+)
+
+
+def test_parse_can_be_limited_to_one_package():
+    assert parse_latest_release(CORE_NEWEST)[0] == "8.3.0"  # no filter: newest of either
+    label, section = parse_latest_release(CORE_NEWEST, package="ui")
+    assert label == "shyfem-ui 0.2.0"
+    assert "trips feature" in section
+    assert "solver thing" not in section and "core stuff" not in section
+    assert parse_latest_release(CORE_NEWEST, package="core")[0] == "8.3.0"
+    assert parse_latest_release(SAMPLE, package="core")[0] == "8.2.0"
+    assert latest_release_version(CORE_NEWEST, package="ui") == "shyfem-ui 0.2.0"
+
+
+def test_parse_limited_to_a_package_without_releases_returns_none():
+    core_only = "# Changelog\n\n## [Unreleased]\n\n## [8.2.0] — 2026-06-13\n\n- core stuff\n"
+    assert parse_latest_release(core_only, package="ui") is None
+    assert parse_latest_release(core_only, package="core")[0] == "8.2.0"
+
+
+def test_parse_rejects_an_unknown_package():
+    import pytest
+
+    with pytest.raises(ValueError):
+        parse_latest_release(SAMPLE, package="gui")
+
+
+def test_whats_new_popup_announces_ui_releases_only():
+    """The popup is the UI's: a core release must not open it (owner decision 2026-11-20)."""
+    from pathlib import Path
+
+    import shyfem_ui.app as app_module
+
+    src = Path(app_module.__file__).read_text(encoding="utf-8")
+    body = src[src.index("def _maybe_show_whats_new():") : src.index("def _dismiss_whats_new():")]
+    assert 'parse_latest_release(read_repo_markdown("CHANGELOG.md"), package="ui")' in body
+    assert body.count("parse_latest_release(") == 1
+
+
 def test_read_repo_markdown_real_files():
     assert read_repo_markdown("README.md").startswith("# SHYFEM")
     assert "Changelog" in read_repo_markdown("CHANGELOG.md")

@@ -68,6 +68,16 @@ def core_version() -> str | None:
     return None
 
 
+def _is_ui_label(label: str) -> bool:
+    """True for a UI release label (``shyfem-ui X.Y.Z``); core labels are bare versions."""
+    return label.strip().lower().startswith("shyfem-ui")
+
+
+def _check_package(package: str) -> None:
+    if package not in ("core", "ui"):
+        raise ValueError(f"package must be 'core' or 'ui', got {package!r}")
+
+
 def filter_changelog(text: str, package: str) -> str:
     """Return only one package's sections of the shared CHANGELOG.
 
@@ -77,15 +87,14 @@ def filter_changelog(text: str, package: str) -> str:
     before the first section header and the ``[Unreleased]`` section are kept
     for both views.
     """
-    if package not in ("core", "ui"):
-        raise ValueError(f"package must be 'core' or 'ui', got {package!r}")
+    _check_package(package)
     matches = list(_HEADER.finditer(text or ""))
     if not matches:
         return text or ""
     parts = [text[: matches[0].start()]]
     for i, m in enumerate(matches):
         label = m.group(1).strip().lower()
-        is_ui = label.startswith("shyfem-ui")
+        is_ui = _is_ui_label(label)
         keep = (
             label == "unreleased"
             or (package == "ui" and is_ui)
@@ -97,17 +106,26 @@ def filter_changelog(text: str, package: str) -> str:
     return "".join(parts).strip()
 
 
-def parse_latest_release(text: str) -> tuple[str, str] | None:
+def parse_latest_release(text: str, package: str | None = None) -> tuple[str, str] | None:
     """Return ``(version_label, section_markdown)`` of the first dated release.
 
     The CHANGELOG's first ``## [...]`` section is literally ``[Unreleased]``;
     this skips it (case-insensitive) and returns the first real release section,
     so the modal keys off a version label that changes on each release.
+
+    ``package`` (``"ui"`` or ``"core"``) limits the search to that package's
+    releases, as in ``filter_changelog``; None takes the newest of either. The
+    what's-new modal passes ``"ui"``: the changelog is shared, and a core
+    release cut after a UI one would otherwise be what the modal announces.
     """
+    if package is not None:
+        _check_package(package)
     matches = list(_HEADER.finditer(text or ""))
     for i, m in enumerate(matches):
         label = m.group(1).strip()
         if label.lower() == "unreleased":
+            continue
+        if package is not None and _is_ui_label(label) != (package == "ui"):
             continue
         start = m.start()
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
@@ -115,9 +133,9 @@ def parse_latest_release(text: str) -> tuple[str, str] | None:
     return None
 
 
-def latest_release_version(text: str | None = None) -> str | None:
+def latest_release_version(text: str | None = None, package: str | None = None) -> str | None:
     """Return just the latest release label (e.g. ``'shyfem-ui 0.2.0'``), or None."""
     if text is None:
         text = read_repo_markdown("CHANGELOG.md")
-    parsed = parse_latest_release(text)
+    parsed = parse_latest_release(text, package)
     return parsed[0] if parsed else None
