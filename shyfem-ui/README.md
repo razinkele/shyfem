@@ -62,7 +62,7 @@ Then open http://127.0.0.1:8000 in your browser.
 # Configure for server deployment
 export SHYFEM_UI_DEPLOYMENT_MODE=server
 export SHYFEM_UI_HOST=0.0.0.0
-export SHYFEM_UI_DATABASE_URL=postgresql://user:pass@localhost/shyfem_ui
+export SHYFEM_UI_DATABASE_URL=sqlite:////srv/shyfem-ui/shyfem_ui.db   # absolute path
 
 # Optional: enable Celery for distributed job execution
 export SHYFEM_UI_USE_CELERY=true
@@ -123,6 +123,8 @@ All variables use the `SHYFEM_UI_` prefix and can also be set in a `.env` file.
 | `SHYFEM_UI_DB_POOL_SIZE` | `5` | SQLAlchemy connection pool size (PostgreSQL only) |
 | `SHYFEM_UI_DB_POOL_OVERFLOW` | `10` | Max overflow connections beyond pool_size (PostgreSQL only) |
 | `SHYFEM_UI_DB_POOL_RECYCLE` | `3600` | Seconds before recycling idle connections (PostgreSQL only) |
+
+**PostgreSQL is not supported.** SQLite is the supported database; laguna uses it. The app still accepts a `postgresql://` URL and `psycopg2-binary` stays installed, but no deployment uses PostgreSQL and no test runs against a real PostgreSQL server: a setup bug that kept the app from starting with PostgreSQL went unnoticed until a code review found it (fixed in 0.8.0, D-01). Use it at your own risk; supporting it again would start with a CI job that runs the tests against a PostgreSQL service.
 
 #### Job Queue
 

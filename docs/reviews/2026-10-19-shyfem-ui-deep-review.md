@@ -438,9 +438,9 @@ Low items confirmed: the manifest picker offers `.shp`, which the loader refuses
 
 ## 7. Open decisions for the owner
 
-- `app_idle_timeout` for `/shyfem-ui`: this is a Shiny Server config change on laguna.
+- `app_idle_timeout` for `/shyfem-ui`: this is a Shiny Server config change on laguna. **Done 2026-10-31: `app_idle_timeout 1800`.**
 - Docker deployment: fix it (D-03) or declare it unsupported. **Decided 2026-11-18: unsupported.** The files stay with a notice; see `shyfem-ui/README.md`.
-- PostgreSQL: is it a supported path? This sets D-01's urgency.
-- Whether to clean up the existing `.bak` database copies and tighten file modes (SEC-06).
-- The open what's-new popup question from the 2026-10-18 handoff: should it show core releases or only UI releases?
+- PostgreSQL: is it a supported path? This sets D-01's urgency. **Decided 2026-11-20: not supported; SQLite is.** D-01 was fixed anyway; the driver stays installed. See `shyfem-ui/README.md`.
+- Whether to clean up the existing `.bak` database copies and tighten file modes (SEC-06). **Done in #174: the copies are owner-only and the live database is group-only.**
+- The open what's-new popup question from the 2026-10-18 handoff: should it show core releases or only UI releases? **Decided 2026-11-20: UI releases only (#197).**
 - 3D runs with river/flux boundaries since 2026-02-11 need re-running after core 8.5.2 (from the previous session, still open).
