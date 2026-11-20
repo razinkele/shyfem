@@ -25,7 +25,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed — CI
 
+- **Browser tests no longer wait on third-party map imagery.** Every deck.gl map is built at page load and fetches EMODnet bathymetry and Carto tiles; on 2026-11-20 the EMODnet server took 30-40 s per tile, so every fresh page load (`wait_until="networkidle"`) timed out. The E2E browser now fails those two imagery hosts at once (the JS libraries and the basemap style still load), and the Run-page MPI tests retry instead of reading the page once after a fixed 500 ms (#209).
+- **Three flaky tests made deterministic.** The box-model timeout test raced a real 2-second build against a 1-second timeout (#201); the queued-job exit-status test read the job's database row before the detached supervisor had written it (#202); and two browser tests failed in pairs because a modal's Close was clicked while Bootstrap was still showing it, which it ignores, leaving a backdrop over the next test (#205: `conftest.wait_modal_shown`).
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
+
+---
+
+## [shyfem-ui 0.8.3] — 2026-11-21
+
+A fix release for the Physics page: a Save (or Preview) no longer writes
+values the panels do not show. Before, a field the loaded file shows as a
+note could keep the previous file's value (a per-area `beachrate` array was
+flattened to one number), a Save right after a Load could write the
+previous file's values, and a keystroke during a redraw could arrive late.
+Save and Preview now read only the fields the panels show, and wait until
+every panel has been redrawn. Tagged `shyfem-ui-v0.8.3`.
 
 ### Fixed — shyfem-ui
 - **Physics: a Save no longer writes values the panels do not show.** Three ways a Save (or Preview) on the Physics page could write something other than what was on screen, the first live on laguna:
