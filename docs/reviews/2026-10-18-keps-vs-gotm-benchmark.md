@@ -200,13 +200,17 @@ What the measurements support:
 ## 2026-11-20: flux wall conditions (#125)
 
 SHYFEM k-epsilon (`iturb=2`) now uses GOTM-style flux (Neumann) wall
-conditions for k and epsilon, with roughness lengths from the model's own
-friction and wind stress, and GOTM's time treatment in the interior (k
+conditions for k and epsilon, with the same roughness lengths as the GOTM
+path (the momentum-friction z0 under `ireib=6`, otherwise the default 0.9 mm
+(`z0bini`); at the surface, Charnock from the model's wind stress with a 2 cm
+floor (`z0smin`)), and GOTM's time treatment in the interior (k
 before epsilon, sink always implicit, production on the right-hand side,
 wall flux from the new k). Spec:
 `docs/superpowers/specs/2026-11-20-keps-flux-wall-bc-design.md` (with
 Amendment A); plan: `docs/superpowers/plans/2026-11-20-keps-flux-wall-bc.md`.
-The start-up warning from #126 is removed.
+The start-up warning from #126 is removed. Columns with 1 or 2 layers keep the
+old wall treatment; in the Venice test the 2-layer columns stay about 2.9x
+GOTM (2.915 before, 2.879 after, 437 nodes).
 
 ### Channel (`testcases/examples/channel_turb`, `analyse.py`)
 
@@ -244,8 +248,9 @@ Median of keps/GOTM `visv` at the last record
 
 With 4 MPI ranks the column ratio is 1.05 (same). Columns with 2 layers or
 fewer use the unchanged old code; their values shift only through the flow
-(median about 1%). The surface roughness was at its floor `z0smin = 0.02 m`
-everywhere, so the Charnock and wave branches were not exercised.
+(median about 1%). The Venice test ran with `ireib=2`, so its bed z0 was the
+0.9 mm default, and its surface z0 was the 2 cm floor `z0smin` everywhere,
+so the Charnock and wave branches were not exercised.
 
 ### Battery, MPI, OpenMP
 
@@ -257,16 +262,17 @@ everywhere, so the Charnock and wave branches were not exercised.
 ### Not covered
 
 - 3D k-epsilon restart: restart files store no k-epsilon state (known gap).
-- The epsilon `prod+buoy<=0` branch is unreachable by construction (N^2 is
-  clamped to >= 0 and `ceps3p` < 0).
+- The epsilon `prod+buoy<=0` branch is taken only when P and B are both 0
+  (fluid at rest), where both branches give the same arithmetic (N^2 is
+  clamped >= 0 and `ceps3p` < 0).
 - The Charnock and wave-enhanced surface roughness branches (see above).
 
 ## Decisions for the owner (no code changed)
 
-1. Whether to make `keps_shell` take its wall stresses from the model's
+1. (superseded 2026-11-20 — see the section above) Whether to make `keps_shell` take its wall stresses from the model's
    actual friction and wind stress instead of the hard-coded `cb`/`cd`.
    This needs a different epsilon wall condition to stay stable.
-2. Whether to recommend GOTM over `iturb=2` for 3D runs until then. Near
+2. (superseded 2026-11-20 — see the section above) Whether to recommend GOTM over `iturb=2` for 3D runs until then. Near
    the bed, GOTM is 0.8–0.85x the log law and SHYFEM k-epsilon is 1.5x.
    Over the full depth, GOTM is within 6% of the log-wake profile and
    SHYFEM k-epsilon is 32–37% high.

@@ -299,7 +299,6 @@
 	logical bwrite
 
 	double precision, parameter :: dz0min = 1.1	!min value for dz0=d/z0
-	real, parameter :: charnock_val=1400.	!emp. Charnock constant
 
 	real ubot,vbot,rr
 

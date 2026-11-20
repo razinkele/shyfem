@@ -131,6 +131,9 @@ np.save("profiles.npy", {f"{k[0]}_{k[1]}": v for k, v in results.items()}, allow
 # (successive hourly dumps differ by < 2%, and the .inf energy lines of the
 # last 120 time steps change by < 1e-4 from step to step) and finite;
 # exit 1 if any fails. The other runs' flip is printed for comparison.
+# Note: flip is a proxy on the domain-integrated energies printed with 5
+# digits (one last-digit step is ~3e-5..8e-5 relative), so it detects
+# 2-time-step modes of that size or larger.
 gate_ok = True
 for (run, nl), p in results.items():
     if run != "keps":
