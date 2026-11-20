@@ -105,14 +105,41 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "_config", None)
 
 
-async def _finished(queue, job_id, timeout=15.0):
+def _record_job_ends(queue) -> set[str]:
+    """Ids of the jobs whose end ``queue`` has announced (register before submit).
+
+    The queue announces a job's end only after the row records it, whether
+    the job's supervisor wrote it or the queue did, so this, not the
+    in-memory status, is when the row can be read.
+    """
+    from shyfem_ui.services.job_queue import JobStatus
+
+    ended: set[str] = set()
+    terminal = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+
+    def on_event(event) -> None:
+        if event.kind == "status" and event.status in terminal:
+            ended.add(event.job_id)
+
+    queue.add_event_callback("test-job-ends", on_event)
+    return ended
+
+
+async def _finished(queue, job_id, ended: set[str], timeout=15.0):
+    """The job once the queue has announced its end.
+
+    This used to return as soon as the in-memory status left the active
+    states. That status changes when the tool exits, while the supervisor
+    writes the row a moment later (after scanning for output files), so the
+    row read right after was sometimes still "running" (flaky, about 1 run in
+    15; every time with that write delayed by 0.5 s).
+    """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        job = queue._jobs[job_id]
-        if not job.is_active:
-            return job
+        if job_id in ended:
+            return queue._jobs[job_id]
         await asyncio.sleep(0.05)
-    raise AssertionError("job did not finish")
+    raise AssertionError("the queue never announced the end of the job")
 
 
 def _row_status(job_id):
@@ -146,10 +173,11 @@ async def test_queued_shyfem_job_status(db, tmp_path, body, expected):
     exe.chmod(0o755)
     queue = LocalJobQueue(shyfem_dir=shyfem_dir, max_workers=2)
     queue._history_loaded = True
+    ended = _record_job_ends(queue)
     job_id = await queue.submit(
         JobSpec(name="x01", tool_name="shyfem", args=["a.str"], working_dir=tmp_path / "work")
     )
-    job = await _finished(queue, job_id)
+    job = await _finished(queue, job_id, ended)
 
     assert job.status.value == expected
     assert _row_status(job_id).value == expected
