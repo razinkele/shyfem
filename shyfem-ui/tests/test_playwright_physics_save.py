@@ -260,6 +260,30 @@ class TestPhysicsSave:
         written = re.search(r"itend = (\S+)", (project / "a.str").read_text())
         assert written and written.group(1) == shown, (shown, written and written.group(1))
 
+    def test_a_key_in_a_field_left_before_a_load_does_not_resend_its_old_value(
+        self, pw_page, project
+    ):
+        # An arrow key starts the 250 ms send without changing the value,
+        # and leaving the field fires no "change" then. Load inside that
+        # wait used to let the old value (idtsyn 0, a.str has none) arrive
+        # after c.str's redrawn panel ('1h'), so the next save wrote 0.
+        self._load(pw_page, project, "a.str")
+        self._set_open(pw_page, "Simulation Timing", True)
+        stamps = self._stamps(pw_page)
+        pw_page.locator("select#physics-str_path").select_option(str(project / "c.str"))
+        pw_page.evaluate("""() => {
+                const el = document.querySelector('#physics-idtsyn');
+                el.focus();
+                el.dispatchEvent(new KeyboardEvent('keyup', {key: 'ArrowLeft', bubbles: true}));
+                el.blur();
+                document.querySelector('#physics-load_btn').click();
+            }""")
+        self._wait_rendered(pw_page, stamps)
+        pw_page.wait_for_timeout(600)  # past the 250 ms debounce
+        assert pw_page.locator("#physics-idtsyn").input_value() == "1h"
+        assert self._save(pw_page, project, "c.str"), "save did not write"
+        assert (project / "c.str").read_text() == _C
+
     def test_an_edit_of_each_kind_of_field_is_saved(self, pw_page, project):
         # The save reads only the ids the current renders drew; one edit of
         # each widget kind proves none of them is filtered out.

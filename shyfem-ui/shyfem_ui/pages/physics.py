@@ -1199,18 +1199,22 @@ def _apply_edits(
 
 
 # A keystroke waits 250 ms (Shiny's text-input debounce) before it is
-# sent. If its panel is drawn again inside that wait, the pending send
-# still fires, after the new panel's values, and the server then holds the
-# old panel's text while the browser shows the new value (a Save after
-# typing into itend wrote "36007" with "3600" on screen). Just before a
-# panel's new content arrives, send the focused field's text right away:
-# "change" sends a text input with no debounce and cancels the pending one.
+# sent, and so does a key that changes nothing (an arrow key). If its
+# panel is drawn again inside that wait, the pending send still fires,
+# after the new panel's values, and the server then holds the old text
+# while the browser shows the new value (a Save after typing into itend
+# wrote "36007" with "3600" on screen; an arrow key in idtsyn before a
+# Load wrote a.str's 0 over c.str's '1h'). Leaving the field does not
+# help when the value did not change. So just before a panel's new
+# content arrives, send every text and numeric field in it right away:
+# "change" sends with no debounce and cancels the pending send.
 _FLUSH_TYPING_JS = """
 $(document).on("shiny:value", function (event) {
     var out = event.target;
     if (!out || !out.id || out.id.indexOf("__PANEL_PREFIX__") !== 0) return;
-    var focused = document.activeElement;
-    if (focused && out.contains(focused)) $(focused).trigger("change");
+    $(out)
+        .find("input.shiny-bound-input[type=text], input.shiny-bound-input[type=number]")
+        .trigger("change");
 });
 """
 
