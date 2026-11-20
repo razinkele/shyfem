@@ -1233,7 +1233,24 @@ $bound1
 $end
 ```
 
-Simulates 11 state variables: dissolved oxygen, CBOD, phytoplankton, ammonia, nitrate, organic N/P, orthophosphate, zooplankton, and sediment N/P.
+Simulates 9 water-column state variables: dissolved oxygen, CBOD, phytoplankton, ammonia, nitrate, organic N/P, orthophosphate, and zooplankton. The code also has a sediment compartment (sediment organic N and P), but it is switched off (see the limitations below).
+
+EUTRO needs a build with `ECOLOGICAL = EUTRO` in `Rules.make`; without it a
+run with `ibio = 1` stops with "No ecological module has been linked". Its
+rate parameters default to the Venice lagoon calibration (`iwcal = 1`;
+0 = generic defaults, 2 = Taranto, 3 = read `michol.dat`). Known limitations:
+
+- phytoplankton does not settle unless `wsphyt` (m/s) is set (default 0, off);
+- detritus (particulate organic N, P and CBOD) does not settle: there is no
+  settling velocity in the water column, and the sediment compartment
+  (`weutro_sedim.f90`, which would deposit organic N and P) is switched off
+  in the code (`bsedim = .false.` in `bio3d.f90`);
+- the air temperature used for wind-driven reaeration is fixed at 22 °C;
+- there is no input for pelagic loadings.
+
+These are kept as they are until EUTRO is set up for a real site, which can
+supply the settling velocities, partition fractions, loadings and air
+temperature.
 
 #### AQUABC
 
@@ -1718,6 +1735,12 @@ This metadata is used for both the UI forms and parameter validation.
 | `atpar` | float | 1.0 | Vertical viscosity weighting [0,1] |
 | `adpar` | float | 1.0 | Vertical diffusion weighting [0,1] |
 | `aapar` | float | 1.0 | Vertical advection weighting [0,1] |
+
+Setting one of `azpar` and `ampar` to 0 and the other to 1 selects the
+explicit scheme for the water level. It cannot handle wetting and drying:
+with the default solver (Sparskit) a run stops at the first dry element,
+often at the first time step, with `explicit scheme cannot dry`. Use
+semi-implicit weights (for example `azpar = ampar = 0.5`) in basins that dry.
 
 ### 12.5 Section `$para` — Coriolis and Coordinates
 

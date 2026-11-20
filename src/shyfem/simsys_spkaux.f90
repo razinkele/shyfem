@@ -610,8 +610,13 @@
 !	        (iwegv/=0), which lands here. Use a collective-safe abort so
 !	        an MPI run terminates all ranks instead of deadlocking with
 !	        the other ranks blocked in shympi_exchange_and_sum_2d_nodes.
+	        write(6,*) 'explicit time weights (azpar/ampar = 0 and 1)'
+	        write(6,*) 'cannot handle wetting and drying: a dry element'
+	        write(6,*) 'needs off-diagonal matrix terms that the explicit'
+	        write(6,*) 'solve does not store. Use semi-implicit weights'
+	        write(6,*) '(e.g. azpar = ampar = 0.5) in basins that dry.'
 	        call shympi_abort_internal &
-     &			('error stop system_assemble: non diag elems /= 0')
+     &		('error stop system_assemble: explicit scheme cannot dry')
 	      end if
 	    end do
 	  end do
@@ -670,8 +675,13 @@
 	        write(6,*) 'i,j: ',i,j
 !	        the explicit direct solve cannot dry (see system_assemble):
 !	        collective-safe abort avoids an MPI deadlock here
+	        write(6,*) 'explicit time weights (azpar/ampar = 0 and 1)'
+	        write(6,*) 'cannot handle wetting and drying: a dry element'
+	        write(6,*) 'needs off-diagonal matrix terms that the explicit'
+	        write(6,*) 'solve does not store. Use semi-implicit weights'
+	        write(6,*) '(e.g. azpar = ampar = 0.5) in basins that dry.'
 	        call shympi_abort_internal &
-     &		('error stop system_assemble_omp: non diag elems /= 0')
+     &	('error stop system_assemble_omp: explicit scheme cannot dry')
 	      end if
 	    end do
 	  end do

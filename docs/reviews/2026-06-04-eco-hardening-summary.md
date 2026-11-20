@@ -55,7 +55,9 @@ All four ecological models characterized: **weutro** (hardened), **mercury** (ha
 - **ECO-05 (`IS2` units): not a bug** — the active path (`param_venezia` → `IS2=200`) is W/m²-consistent with `iinst=qrad`; the lux/day value is overridden.
 - **NUTLIM** → Liebig minimum (owner-decided, merged).
 
-## Owner decisions still open (weutro) — need a concrete value
-- `wsphyt` default velocity (settling wired but opt-in; give a value to enable by default).
-- `eload` loading spec (TR-06): which states/nodes/rates.
-- ECO-04 air temp (low value); detritus particulate settling (needs partition fractions).
+## weutro decisions — closed 2026-11-20 (delegated by the owner)
+All four stay as they are; nothing changes results. They are listed as known limitations in `MANUAL.md` (EUTRO section). Reopen when EUTRO is set up for a real site, which can supply the values.
+- `wsphyt` stays 0 (phytoplankton settling opt-in). No calibration backs a default value; same reasoning as keeping `iwcal = 1` to preserve legacy results.
+- `eload` (TR-06): no user parameter exists. It is an internal array filled from `elinit`, all zeros, so there is no pelagic loading input. Adding one needs the states, nodes and rates of a real application.
+- ECO-04: the air temperature for wind-driven reaeration stays fixed at 22 °C (wind itself comes from the model per node). Passing the real air temperature is the fix when a site needs it.
+- Detritus settling stays off: it needs particulate/dissolved partition fractions for ON, OP and CBOD. Note the sediment compartment (`weutro_sedim.f90`: deposition of ON/OP at a fixed 10 m/day x particulate fraction, resuspension) is switched off in the code too (`bsedim = .false.` in `bio3d.f90`, never set), so only the 9 water-column states run; MANUAL.md now says so.
