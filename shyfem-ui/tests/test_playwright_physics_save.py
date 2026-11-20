@@ -376,6 +376,29 @@ class TestPhysicsSave:
         assert self._save(pw_page, project, "c.str"), "save did not write"
         assert pw_page.locator(".modal.show").count() == 0
 
+    def test_a_confirmed_target_that_changes_before_the_yes_is_not_written(self, pw_page, project):
+        # c.str becomes a symlink to b.str while the dialog is open: the yes
+        # was for c.str, so nothing may be written (b.str least of all).
+        self._load(pw_page, project, "a.str")
+        pw_page.locator("select#physics-str_path").select_option(str(project / "c.str"))
+        pw_page.locator("#physics-save_btn").click()
+        wait_modal_shown(pw_page)
+        (project / "c.str").unlink()
+        (project / "c.str").symlink_to(project / "b.str")
+        try:
+            pw_page.locator("#physics-save_other_confirm").click()
+            expect(pw_page.get_by_text("now points to another file").first).to_be_visible(
+                timeout=10000
+            )
+            assert (project / "b.str").read_text() == _B, "the write followed the new symlink"
+            assert (project / "c.str").is_symlink()
+        finally:
+            # The fixture writes through a left-over link (into b.str), and
+            # later tests load c.str by name.
+            (project / "c.str").unlink()
+            (project / "c.str").write_text(_C)
+            (project / "b.str").write_text(_B)
+
     def test_every_panel_renders_its_inputs(self, pw_page, project):
         for name in ("a.str", "c.str"):
             self._load(pw_page, project, name)

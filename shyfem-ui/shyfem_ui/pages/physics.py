@@ -975,27 +975,42 @@ def _current_panel_inputs(
 _STALE_PANELS_MESSAGE = "The physics panels are still updating. Wait a moment, then try again."
 
 
-def _save_into_other_file_modal(shown: Path | None, target: Path) -> ui.Tag:
+def _shown_as(path: Path, base: Path | None) -> str:
+    """*path* as the user knows it: relative to the project folder when inside it.
+
+    Two files can share a name (baseline/run.str, scenario/run.str), so
+    the dialog never shows a bare file name.
+    """
+    if base is not None:
+        try:
+            return str(path.relative_to(base))
+        except ValueError:
+            pass
+    return str(path)
+
+
+def _save_into_other_file_modal(
+    shown: Path | None, target: Path, base: Path | None = None
+) -> ui.Tag:
     """The question Save asks before writing the panels into a file they do not show.
 
     The picker may show a file the user meant to Load; Save used to write
     the panels into it without a word, replacing it.
     """
+    name = _shown_as(target, base)
     what = (
-        f"the settings of {shown.name}"
+        f"the settings of {_shown_as(shown, base)}"
         if shown is not None
         else "default settings (no file is loaded)"
     )
     action = "replacing it" if target.exists() else "creating it"
     return ui.modal(
-        ui.p(f"The panels show {what}. Save them into {target.name}, {action}?"),
-        ui.p(f"To edit {target.name} instead, cancel and click Load.", class_="text-muted small"),
+        ui.p(f"The panels show {what}. Save them into {name}, {action}?"),
+        ui.p(f"To edit {name} instead, cancel and click Load.", class_="text-muted small"),
         title="Save into another file?",
         easy_close=True,
         footer=ui.div(
-            ui.input_action_button(
-                "save_other_confirm", f"Save into {target.name}", class_="btn-warning"
-            ),
+            ui.input_action_button("save_other_confirm", f"Save into {name}", class_="btn-warning"),
             ui.modal_button("Cancel"),
         ),
     )
@@ -1401,7 +1416,11 @@ def physics_server(
             return
         if path != shown_file["path"]:
             pending_target["path"] = path
-            ui.modal_show(_save_into_other_file_modal(shown_file["path"], path))
+            try:
+                base = Path(config.confine_path(_proj["work_dir"], _usr, must_exist=True))
+            except (TypeError, KeyError, ValueError, OSError):
+                base = None  # no project: the dialog shows full paths
+            ui.modal_show(_save_into_other_file_modal(shown_file["path"], path, base))
             return
         _write_panels_to(path)
 
@@ -1481,12 +1500,23 @@ def physics_server(
         # The target was confined when the dialog opened; confine it again
         # for the user as they are now (same rule as every save handler).
         try:
-            target = config.confine_path(str(target), _usr, for_write=True)
+            resolved = config.confine_path(str(target), _usr, for_write=True)
         except ValueError as e:
             logger.exception("Invalid save path %r for STR file", target)
             ui.notification_show(str(e), type="error", duration=6)
             return
-        _write_panels_to(target)
+        if resolved != target:
+            # The confirmed file now resolves elsewhere (e.g. it became a
+            # symlink while the dialog was open): the yes was not for that.
+            logger.warning("Physics save target changed: %s -> %s", target, resolved)
+            ui.notification_show(
+                f"{target.name} now points to another file; nothing was saved. "
+                "Click Save again to confirm the new target.",
+                type="error",
+                duration=8,
+            )
+            return
+        _write_panels_to(resolved)
 
     @reactive.effect
     @reactive.event(input.preview_btn)
