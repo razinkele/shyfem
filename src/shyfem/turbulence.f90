@@ -101,13 +101,6 @@
 	  if( iturb .le. 0 ) iturb = -1
 	  if( iturb .lt. 0 ) return
 	  write(*,*) 'starting turbulence model: iturb = ',iturb
-	  if( iturb == 2 .and. nlv_global > 1 .and. shympi_is_master() ) then
-	    write(6,*) 'WARNING: iturb=2 (built-in k-epsilon) in a 3D run:'
-	    write(6,*) '  near-bed eddy viscosity ~1.5x the log law in a'
-	    write(6,*) '  neutral channel benchmark; iturb=1 (GOTM) is'
-	    write(6,*) '  recommended. See docs/reviews/'
-	    write(6,*) '  2026-10-18-keps-vs-gotm-benchmark.md, issue #125'
-	  end if
 	end if
 
 	if( iturb .eq. 1 ) then		!Gotm
@@ -306,15 +299,13 @@
 	logical bwrite
 
 	double precision, parameter :: dz0min = 1.1	!min value for dz0=d/z0
-	real, parameter :: charnock_val=1400.	!emp. Charnock constant
 
 	real ubot,vbot,rr
 
 	real dtreal
 	integer ipext
 
-	logical, save :: bwave
-	logical has_waves,bgotm,bdeb
+	logical bgotm,bdeb
 
 	character*256 fn
 	integer, save :: icall = 0
@@ -360,7 +351,6 @@
 
 	  czdef = getpar('czdef')
 	  ireib = nint(getpar('ireib'))
-	  bwave = has_waves()
           levdbg = nint(getpar('levdbg'))
 
 !         --------------------------------------------------------
@@ -491,23 +481,8 @@
 
 	    u_taus = sqrt( sqrt( tauxnv(k)**2 + tauynv(k)**2 ) )
 
-	    if ( bwave ) then
-	      z0s = z0sk(k)
-	    else
-	      z0s = charnock_val*u_taus**2/g
-	    end if
-	    z0s = max(z0s,z0smin)			!GGUZ0
+	    call turb_wall_roughness(k,u_taus,z0n(k),z0s,z0b)
 
-!           ------------------------------------------------------
-!           compute bottom friction velocity (m/s)
-!           ------------------------------------------------------
-
-	    z0b = z0bk(k)
-	    ! ireib=6: the momentum friction uses czv (the roughness length
-	    ! of each element, from $area, czdef by default); z0bk stays at
-	    ! its initial z0bini unless the fluid-mud option (ireib=9) sets it
-	    if( ireib == 6 ) z0b = z0n(k)
-	    z0b = max(z0bmin,z0b)			!GGUZ0
 	    u_taub = sqrt( taub(k) )
 
 	    ubot = uprv(nlev,k)
@@ -1113,6 +1088,58 @@
 
 !**************************************************************
 
+	subroutine turb_wall_roughness(k,u_taus,z0nk,z0s,z0b)
+
+! surface and bottom roughness lengths at node k, shared by the wall
+! boundary conditions of the turbulence closures
+!
+! surface: wave-derived z0sk if waves are on, else Charnock
+! bottom : z0bk, or the nodal momentum-friction roughness z0nk if ireib=6
+
+	use mod_roughness
+	use pkonst
+	use para
+
+	implicit none
+
+	integer, intent(in) :: k
+	double precision, intent(in) :: u_taus	!surface friction velocity [m/s]
+	real, intent(in) :: z0nk			!nodal bed roughness (ireib=6)
+	double precision, intent(out) :: z0s,z0b	!roughness lengths [m]
+
+	real, parameter :: charnock_val=1400.	!emp. Charnock constant
+	real g
+	integer, save :: ireib = -1
+	logical, save :: bwave = .false.
+	logical has_waves
+	integer, save :: icall = 0
+
+	if( icall == 0 ) then
+	  ireib = nint(getpar('ireib'))
+	  bwave = has_waves()
+	  icall = 1
+	end if
+
+	g = grav
+
+	if ( bwave ) then
+	  z0s = z0sk(k)
+	else
+	  z0s = charnock_val*u_taus**2/g
+	end if
+	z0s = max(z0s,z0smin)			!GGUZ0
+
+	z0b = z0bk(k)
+	! ireib=6: the momentum friction uses czv (the roughness length
+	! of each element, from $area, czdef by default); z0bk stays at
+	! its initial z0bini unless the fluid-mud option (ireib=9) sets it
+	if( ireib == 6 ) z0b = z0nk
+	z0b = max(z0bmin,z0b)			!GGUZ0
+
+	end
+
+!**************************************************************
+
 	subroutine model_bottom_z0(z0n)
 
 ! roughness length of the momentum friction (czv, ireib=6) on nodes:
@@ -1316,6 +1343,8 @@
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
 	use pkonst, only : rowass
+	use mod_meteo, only : tauxnv,tauynv
+	use para
 
 	implicit none
 
@@ -1327,11 +1356,16 @@
 	real ubot,vbot
 	real dtreal,dt
 	real taus,taub
+	double precision u_taus		!surface friction velocity [m/s]
+	double precision z0s,z0b	!surface/bottom roughness length [m]
+	real z0n(nkn)		!nodal roughness length of the momentum friction
 
+	integer, save :: ireib = -1
 	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  call keps_init
+	  ireib = nint(getpar('ireib'))
 	  icall = 1
 	end if
 
@@ -1339,8 +1373,9 @@
 	dt = dtreal
 	rho0 = rowass		!rhov is relative to rowass (see baroclinic)
 	rhoair = 1.225
-	cd = 2.5e-3
+	cd = 2.5e-3		!taus/taub: Dirichlet walls of lmax <= 2 only
 	cb = 2.5e-3
+	if( ireib == 6 ) call model_bottom_z0(z0n)
 
 	do k=1,nkn
 
@@ -1357,11 +1392,17 @@
 	  ! in fresh water); keps needs absolute density for u*^2 = tau/rho
 	  rhoabs(1:numOfLev) = rho0 + rhov(lmin:lmax,k)
 
+	  ! wall roughness lengths for the flux wall conditions, as in
+	  ! gotm_shell: u_taus from the model's wind stress (not from cd)
+	  u_taus = sqrt( sqrt( tauxnv(k)**2 + tauynv(k)**2 ) )
+	  call turb_wall_roughness(k,u_taus,z0n(k),z0s,z0b)
+
           call keps(numOfLev,dt,rho0 &
      &		,taus,taub &
      &		,hdknv(lmin,k),uprv(lmin,k),vprv(lmin,k) &
      &		,rhoabs,visv(lmin-1,k),difv(lmin-1,k) &
-     &		,tken(lmin-1,k),eps(lmin-1,k))
+     &		,tken(lmin-1,k),eps(lmin-1,k) &
+     &		,real(z0s),real(z0b))
 
 	end do
 

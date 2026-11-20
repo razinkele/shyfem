@@ -197,12 +197,82 @@ What the measurements support:
 - **GOTM is 15–20% low against the log law near the bed**, improving
   slightly with resolution (0.81 → 0.84 from 20 to 40 layers).
 
+## 2026-11-20: flux wall conditions (#125)
+
+SHYFEM k-epsilon (`iturb=2`) now uses GOTM-style flux (Neumann) wall
+conditions for k and epsilon, with the same roughness lengths as the GOTM
+path (the momentum-friction z0 under `ireib=6`, otherwise the default 0.9 mm
+(`z0bini`); at the surface, Charnock from the model's wind stress with a 2 cm
+floor (`z0smin`)), and GOTM's time treatment in the interior (k
+before epsilon, sink always implicit, production on the right-hand side,
+wall flux from the new k). Spec:
+`docs/superpowers/specs/2026-11-20-keps-flux-wall-bc-design.md` (with
+Amendment A); plan: `docs/superpowers/plans/2026-11-20-keps-flux-wall-bc.md`.
+The start-up warning from #126 is removed. Columns with 1 or 2 layers keep the
+old wall treatment; in the Venice test the 2-layer columns stay about 2.9x
+GOTM (2.915 before, 2.879 after, 437 nodes).
+
+### Channel (`testcases/examples/channel_turb`, `analyse.py`)
+
+| Case | near-bed nut/ana | mean/logwake | steady |
+|---|---|---|---|
+| keps 20 layers, before | 1.51 | 1.37 | yes |
+| keps 20 layers, after | 0.82 | 0.99 | yes (drift 7.0e-7, flip 0) |
+| gotm_ke1 20 layers | 0.82 | 0.99 | yes |
+| keps 40 layers, before | 1.52 | 1.32 | yes |
+| keps 40 layers, after | 0.84 | 1.02 | yes (drift 5.6e-6, flip 0) |
+| gotm_ke1 40 layers | 0.84 | 1.02 | yes |
+
+k-epsilon equals `gotm_ke1` (GOTM standard k-epsilon with the same flux
+conditions) to two decimals at both resolutions.
+
+### First attempt and Amendment A
+
+The first attempt (spec sections 1-5 only, commit 128bcdea) was faithful to
+GOTM's wall conditions but showed a two-time-step oscillation, bounded at
+20 layers and growing at 40. It was traced to SHYFEM's source-sign switch
+(sink implicit only where the source is negative) and to the lagged k in the
+wall flux. Amendment A (owner-approved) added GOTM's time treatment and a
+2-step `flip` gate in the analysis; the oscillation is gone (flip 0).
+
+### Venice (`venlag_keps_smoke` vs GOTM `venlag_smoke`)
+
+Median of keps/GOTM `visv` at the last record
+(`testcases/examples/venice_lagoon/visv_ratio.py`):
+
+| | before | after |
+|---|---|---|
+| top | 2.11 | 1.14 |
+| bottom | 2.20 | 1.07 |
+| column | 2.00 | 1.05 |
+
+With 4 MPI ranks the column ratio is 1.05 (same). Columns with 2 layers or
+fewer use the unchanged old code; their values shift only through the flow
+(median about 1%). The Venice test ran with `ireib=2`, so its bed z0 was the
+0.9 mm default, and its surface z0 was the 2 cm floor `z0smin` everywhere,
+so the Charnock and wave branches were not exercised.
+
+### Battery, MPI, OpenMP
+
+- The fortran-ci serial set plus `mm_rst_keps_write` all reach simulation
+  end; GOTM and all Mar Menor outputs are byte-identical; only
+  `venlag_keps_smoke` outputs change (expected).
+- OpenMP with 4 threads is bit-identical to 1 thread.
+
+### Not covered
+
+- 3D k-epsilon restart: restart files store no k-epsilon state (known gap).
+- The epsilon `prod+buoy<=0` branch is taken only when P and B are both 0
+  (fluid at rest), where both branches give the same arithmetic (N^2 is
+  clamped >= 0 and `ceps3p` < 0).
+- The Charnock and wave-enhanced surface roughness branches (see above).
+
 ## Decisions for the owner (no code changed)
 
-1. Whether to make `keps_shell` take its wall stresses from the model's
+1. (superseded 2026-11-20 — see the section above) Whether to make `keps_shell` take its wall stresses from the model's
    actual friction and wind stress instead of the hard-coded `cb`/`cd`.
    This needs a different epsilon wall condition to stay stable.
-2. Whether to recommend GOTM over `iturb=2` for 3D runs until then. Near
+2. (superseded 2026-11-20 — see the section above) Whether to recommend GOTM over `iturb=2` for 3D runs until then. Near
    the bed, GOTM is 0.8–0.85x the log law and SHYFEM k-epsilon is 1.5x.
    Over the full depth, GOTM is within 6% of the log-wake profile and
    SHYFEM k-epsilon is 32–37% high.
