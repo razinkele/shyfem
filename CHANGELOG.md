@@ -29,6 +29,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Three flaky tests made deterministic.** The box-model timeout test raced a real 2-second build against a 1-second timeout (#201); the queued-job exit-status test read the job's database row before the detached supervisor had written it (#202); and two browser tests failed in pairs because a modal's Close was clicked while Bootstrap was still showing it, which it ignores, leaving a backdrop over the next test (#205: `conftest.wait_modal_shown`).
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
 
+
+### Changed — shyfem-ui
+- **shiny-deckgl 1.16.1, the version laguna runs.** The laguna worker environment got the conda package shiny-deckgl 1.16.1 on 2026-11-20 while the UI pinned v1.16.0, so CI tested an older version than production and `test_pyproject_deps` failed locally. The pin follows (`pyproject.toml`, `environment.yml`). 1.16.1 only fixes the map draw buttons under MapLibre, which shyfem-ui does not use.
 ---
 
 ## [shyfem-ui 0.8.3] — 2026-11-21
