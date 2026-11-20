@@ -1233,7 +1233,7 @@ $bound1
 $end
 ```
 
-Simulates 11 state variables: dissolved oxygen, CBOD, phytoplankton, ammonia, nitrate, organic N/P, orthophosphate, zooplankton, and sediment N/P.
+Simulates 9 water-column state variables: dissolved oxygen, CBOD, phytoplankton, ammonia, nitrate, organic N/P, orthophosphate, and zooplankton. The code also has a sediment compartment (sediment organic N and P), but it is switched off (see the limitations below).
 
 EUTRO needs a build with `ECOLOGICAL = EUTRO` in `Rules.make`; without it a
 run with `ibio = 1` stops with "No ecological module has been linked". Its
@@ -1241,7 +1241,10 @@ rate parameters default to the Venice lagoon calibration (`iwcal = 1`;
 0 = generic defaults, 2 = Taranto, 3 = read `michol.dat`). Known limitations:
 
 - phytoplankton does not settle unless `wsphyt` (m/s) is set (default 0, off);
-- detritus (particulate organic N, P and CBOD) does not settle;
+- detritus (particulate organic N, P and CBOD) does not settle: there is no
+  settling velocity in the water column, and the sediment compartment
+  (`weutro_sedim.f90`, which would deposit organic N and P) is switched off
+  in the code (`bsedim = .false.` in `bio3d.f90`);
 - the air temperature used for wind-driven reaeration is fixed at 22 °C;
 - there is no input for pelagic loadings.
 

@@ -60,4 +60,4 @@ All four stay as they are; nothing changes results. They are listed as known lim
 - `wsphyt` stays 0 (phytoplankton settling opt-in). No calibration backs a default value; same reasoning as keeping `iwcal = 1` to preserve legacy results.
 - `eload` (TR-06): no user parameter exists. It is an internal array filled from `elinit`, all zeros, so there is no pelagic loading input. Adding one needs the states, nodes and rates of a real application.
 - ECO-04: the air temperature for wind-driven reaeration stays fixed at 22 °C (wind itself comes from the model per node). Passing the real air temperature is the fix when a site needs it.
-- Detritus settling stays off: it needs particulate/dissolved partition fractions for ON, OP and CBOD.
+- Detritus settling stays off: it needs particulate/dissolved partition fractions for ON, OP and CBOD. Note the sediment compartment (`weutro_sedim.f90`: deposition of ON/OP at a fixed 10 m/day x particulate fraction, resuspension) is switched off in the code too (`bsedim = .false.` in `bio3d.f90`, never set), so only the 9 water-column states run; MANUAL.md now says so.

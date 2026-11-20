@@ -416,7 +416,7 @@ The UI includes several security measures for server deployments:
 ```mermaid
 graph TD
     A[app.py<br>ASGI + Middleware] --> P[pages/]
-    A --> DB[(SQLite / PostgreSQL)]
+    A --> DB[(SQLite)]
     P --> C[components/]
     P --> S[services/]
     C --> S
