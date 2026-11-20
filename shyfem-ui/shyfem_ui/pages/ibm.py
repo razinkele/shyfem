@@ -297,9 +297,12 @@ def _map_widgets(legend_entries: list[dict]) -> list[dict]:
         context_menu_widget(),
     ]
     if legend_entries:
+        # A key, without checkboxes: the sidebar's Show ... switches decide
+        # which layers are drawn, and every layer rebuild would undo a legend
+        # toggle the server never sees.
         widgets.append(
             layer_legend_widget(
-                legend_entries, placement="bottom-right", show_checkbox=True, title="Layers"
+                legend_entries, placement="bottom-right", show_checkbox=False, title="Layers"
             )
         )
     return widgets
