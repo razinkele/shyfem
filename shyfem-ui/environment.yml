@@ -45,7 +45,7 @@ dependencies:
       - shinyswatch>=0.7.0
       - shinywidgets>=0.3
       # Same pin as pyproject.toml: the version the laguna worker runs.
-      - shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.16.0
+      - shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.16.1
       - sqlalchemy>=2.0
       - pydantic>=2.0
       - pydantic-settings>=2.0
