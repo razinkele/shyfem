@@ -121,6 +121,9 @@ def test_map_widgets_carry_the_layer_legend():
     legend = legends[0]
     assert [e["layer_id"] for e in legend["entries"]] == ["emodnet", "particle-trips"]
     assert legend["placement"] == "bottom-right" and legend["title"] == "Layers"
+    # The sidebar switches own layer visibility; a legend checkbox would be
+    # undone by the next layer rebuild.
+    assert legend["showCheckbox"] is False
 
 
 def test_map_widgets_without_entries_have_no_legend():
