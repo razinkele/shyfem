@@ -1,6 +1,6 @@
 """Tests for user management database models."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -35,7 +35,7 @@ class TestUserModel:
 
 class TestAuthSessionModel:
     def test_session_creation(self):
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         sess = AuthSession(
             token="abc123",
             user_id=1,
@@ -46,8 +46,8 @@ class TestAuthSessionModel:
         assert sess.user_id == 1
 
     def test_session_is_expired(self):
-        past = datetime.now(timezone.utc) - timedelta(hours=1)
-        future = datetime.now(timezone.utc) + timedelta(hours=1)
+        past = datetime.now(UTC) - timedelta(hours=1)
+        future = datetime.now(UTC) + timedelta(hours=1)
         expired = AuthSession(token="a", user_id=1, expires_at=past)
         valid = AuthSession(token="b", user_id=1, expires_at=future)
         assert expired.is_expired is True

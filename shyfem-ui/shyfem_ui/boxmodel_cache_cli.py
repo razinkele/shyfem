@@ -47,7 +47,7 @@ import sys
 import threading
 import traceback
 from collections import defaultdict
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -106,7 +106,7 @@ METEO_DAILY_SCHEMA = pa.schema(
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 class _Progress:

@@ -6,7 +6,7 @@ and a parent can be deleted out from under its children, leaving dangling
 references. These tests pin that enforcement is active on the production engine.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -57,7 +57,7 @@ def test_deleting_parent_with_children_rejected(tmp_path, monkeypatch):
             AuthSession(
                 token="tok-fk",
                 user_id=user.id,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+                expires_at=datetime.now(UTC) + timedelta(hours=1),
             )
         )
 

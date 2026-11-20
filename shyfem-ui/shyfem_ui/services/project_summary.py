@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -248,7 +248,7 @@ def build_summary(work_dir: str | Path) -> dict:
 
     return {
         "schema": SCHEMA,
-        "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "built_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "files": files,
         "files_truncated": truncated,
         "grids": grids,

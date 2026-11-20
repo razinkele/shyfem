@@ -1,6 +1,6 @@
 """Tests for AuditService -- round-trip, filters, and rollback."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -61,13 +61,13 @@ class TestAuditFilters:
     def test_since_accepts_naive_datetime(self, svc):
         """Regression test: naive `since` must not raise on SQLite-native DateTime columns."""
         svc.log(username="alice", action="login")
-        one_hour_ago = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(hours=1)
+        one_hour_ago = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
         rows = svc.query(since=one_hour_ago)
         assert len(rows) == 1
 
     def test_since_accepts_aware_datetime(self, svc):
         svc.log(username="alice", action="login")
-        one_hour_ago = datetime.now(timezone.utc) - timedelta(hours=1)
+        one_hour_ago = datetime.now(UTC) - timedelta(hours=1)
         rows = svc.query(since=one_hour_ago)
         assert len(rows) == 1
 
@@ -139,7 +139,7 @@ class TestCleanupOldLogs:
         import shyfem_ui.services.audit_service as audit_mod
         from shyfem_ui.models.audit_log import AuditLog
 
-        real_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+        real_utc = datetime.now(UTC).replace(tzinfo=None)
 
         class _SkewedDateTime(datetime):
             @classmethod

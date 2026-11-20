@@ -26,7 +26,7 @@ import json
 import os
 import signal
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -771,7 +771,7 @@ def _beating_tmp(root: Path, name: str, *, age_seconds: float, started: bool = T
     tmp.mkdir(parents=True, exist_ok=True)
     payload = {"phase": "state", "records": 10, "exit": None, "pid": 4242}
     if started:
-        begin = datetime.now(timezone.utc) - timedelta(seconds=age_seconds)
+        begin = datetime.now(UTC) - timedelta(seconds=age_seconds)
         payload["started"] = begin.isoformat(timespec="seconds")
     (tmp / "progress.json").write_text(json.dumps(payload))
     return tmp
