@@ -12,7 +12,7 @@ SHYFEM UI entries; each entry opens its own modal.
 import pytest
 from playwright.sync_api import expect
 
-from tests.conftest import _dismiss_modals
+from tests.conftest import _dismiss_modals, wait_modal_shown
 
 pytestmark = [pytest.mark.e2e, pytest.mark.usefixtures("live_server")]
 
@@ -38,6 +38,7 @@ def _open_modal(pw_page, button_id):
 
 
 def _close_modal(pw_page):
+    wait_modal_shown(pw_page)  # a click during the show transition is ignored
     pw_page.locator(".modal.show .modal-footer button").click()
     pw_page.locator(".modal.show").wait_for(state="hidden", timeout=5000)
 
