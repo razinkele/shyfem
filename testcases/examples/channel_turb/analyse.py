@@ -66,8 +66,9 @@ def profile(path):
     # velocity-derived nu_t at the inner interfaces: stress u*^2 (1 - z/H) over shear
     shear = (u[:-1] - u[1:]) / dz
     nut_u = ustar**2 * (1 - zb[:-1] / H) / np.where(shear > 0, shear, np.nan)
+    finite = bool(np.isfinite(r["visv"]).all())   # every node and interface, last record
     return dict(nl=nl, H=H, S=S, ustar=ustar, U=u.mean(), zb=zb, nut=nut, ana=ana, wake=wake,
-                nut_u=nut_u, drift=drift, u=u)
+                nut_u=nut_u, drift=drift, u=u, finite=finite)
 
 
 # arguments: run names (each read at 20 and 40 layers) or explicit "stem:nl" pairs
@@ -96,3 +97,21 @@ for run, nl in pairs:
               f"{p['nut'][inner].mean() / p['wake'][inner].mean():>14.2f}{ratio_u:>16.2f}")
 
 np.save("profiles.npy", {f"{k[0]}_{k[1]}": v for k, v in results.items()}, allow_pickle=True)
+
+# gate for the k-eps flux wall conditions (#125), on every keps run read
+# (both keps_20 and keps_40 by default): GOTM parity near the bed (GOTM is
+# 0.75-0.84), within 10% of the log-wake profile over the depth, steady
+# (successive hourly dumps differ by < 2%) and finite; exit 1 if any fails
+gate_ok = True
+for (run, nl), p in results.items():
+    if run != "keps":
+        continue
+    inner = p["zb"] > 0
+    lower = (p["zb"] > 0) & (p["zb"] < 0.2 * p["H"])
+    near = p["nut"][lower].mean() / p["ana"][lower].mean()
+    logwake = p["nut"][inner].mean() / p["wake"][inner].mean()
+    ok = 0.8 <= near <= 1.1 and abs(logwake - 1) <= 0.10 and p["drift"] < 0.02 and p["finite"]
+    gate_ok = gate_ok and ok
+    print(f"GATE keps_{nl} near={near:.2f} logwake={logwake:.2f} drift={p['drift']:.1e} "
+          f"finite={p['finite']}")
+sys.exit(0 if gate_ok else 1)

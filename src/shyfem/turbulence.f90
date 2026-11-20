@@ -1351,6 +1351,8 @@
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
 	use pkonst, only : rowass
+	use mod_meteo, only : tauxnv,tauynv
+	use para
 
 	implicit none
 
@@ -1362,11 +1364,16 @@
 	real ubot,vbot
 	real dtreal,dt
 	real taus,taub
+	double precision u_taus		!surface friction velocity [m/s]
+	double precision z0s,z0b	!surface/bottom roughness length [m]
+	real z0n(nkn)		!nodal roughness length of the momentum friction
 
+	integer, save :: ireib = -1
 	integer, save :: icall = 0
 
 	if( icall .eq. 0 ) then
 	  call keps_init
+	  ireib = nint(getpar('ireib'))
 	  icall = 1
 	end if
 
@@ -1374,8 +1381,9 @@
 	dt = dtreal
 	rho0 = rowass		!rhov is relative to rowass (see baroclinic)
 	rhoair = 1.225
-	cd = 2.5e-3
+	cd = 2.5e-3		!taus/taub: Dirichlet walls of lmax <= 2 only
 	cb = 2.5e-3
+	if( ireib == 6 ) call model_bottom_z0(z0n)
 
 	do k=1,nkn
 
@@ -1392,11 +1400,17 @@
 	  ! in fresh water); keps needs absolute density for u*^2 = tau/rho
 	  rhoabs(1:numOfLev) = rho0 + rhov(lmin:lmax,k)
 
+	  ! wall roughness lengths for the flux wall conditions, as in
+	  ! gotm_shell: u_taus from the model's wind stress (not from cd)
+	  u_taus = sqrt( sqrt( tauxnv(k)**2 + tauynv(k)**2 ) )
+	  call turb_wall_roughness(k,u_taus,z0n(k),z0s,z0b)
+
           call keps(numOfLev,dt,rho0 &
      &		,taus,taub &
      &		,hdknv(lmin,k),uprv(lmin,k),vprv(lmin,k) &
      &		,rhoabs,visv(lmin-1,k),difv(lmin-1,k) &
-     &		,tken(lmin-1,k),eps(lmin-1,k))
+     &		,tken(lmin-1,k),eps(lmin-1,k) &
+     &		,real(z0s),real(z0b))
 
 	end do
 
