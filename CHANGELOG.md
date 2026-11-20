@@ -22,10 +22,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
 
----
-
 ### Fixed — shyfem-ui
-- **Physics: a Save right after a Load no longer writes the previous file's values.** After a Load or a Save every physics panel is drawn again, but until the browser had the new panels the server still held the values the old ones showed. A Save (or Preview) in that moment, often under a second, took those leftovers for edits and wrote them into the newly loaded file: in CI, `c.str` was saved with the `ilin` and `idtsyn` of the file loaded before it. Each panel now carries a hidden render stamp; Save and Preview check that every panel shows the current file and otherwise say "The physics panels are still showing the previous file" and write nothing.
+- **Physics: a Save no longer writes values the panels do not show.** Two ways a Save (or Preview) on the Physics page could write something other than what was on screen, the first live on laguna:
+  - **A field the loaded file shows as a note kept the previous file's value.** Shiny never clears an input's server value when the browser removes it, so after loading a file with one `beachrate` and then one with a per-area `beachrate = 0.3, 0.25, 0.1`, a Save flattened the array to `0.3` and reported success. The same held for the assimilation per-station fields.
+  - **A Save right after a Load (or another Save) wrote the previous file's values.** Until the browser had the redrawn panels, the server still held the old ones' values; in CI, `c.str` was saved with the `ilin` and `idtsyn` of the file loaded before it.
+
+  Each panel render now records a stamp and the fields it drew. Save and Preview read only those fields, and only once every panel shows its latest render for the current file; until then they say "The physics panels are still updating" and write nothing.
+
+---
 
 ## [8.5.3] — 2026-11-20
 

@@ -8,13 +8,15 @@ file's value (S-01) and inputs left over from a panel rendered earlier.
 import re
 
 import pytest
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import expect
 
-from shyfem_ui.pages.physics import PHYSICS_PANELS
+from shyfem_ui.pages.physics import _IMETOUT_FIELDS, PHYSICS_PANELS, _imetout_encode
+from tests.conftest import wait_modal_shown
 
-# The render stamp of every panel the browser has bound (a panel that failed
-# to render has no stamp). Bound = its value has reached the server.
+# The render stamp of every panel the browser has bound, or null for a panel
+# whose stamp input is not bound yet (a panel that failed to render has no
+# stamp and is left out). Bound = its value is queued for the server, and
+# the next event the page sends carries it.
 _STAMPS_JS = """() => [...document.querySelectorAll("[id^='physics-panel_']")]
     .filter(o => !o.querySelector('.physics-panel-failed'))
     .map(o => {
@@ -44,6 +46,13 @@ _B = _A.replace("sim_a", "sim_b").replace("ilin = 0", "ilin = 1")
 _D = _A.replace("sim_a", "sim_d").replace("ilin = 0", "ilin = 0\n        vismol = 1.d-6")
 # idtsyn as an interval string, as in mm_hyd_22a.str and venlag.str
 _C = _A.replace("sim_a", "sim_c").replace("ilin = 0", "ilin = 1\n        idtsyn = '1h'")
+# beachrate as one value, and per area code (shown as a note, not an input)
+_SCALAR = _A.replace("sim_a", "sim_s").replace(
+    "ilin = 0", "ilin = 0\n        ibeach = 3\n        beachrate = 0.3"
+)
+_ARRAY = _A.replace("sim_a", "sim_arr").replace(
+    "ilin = 0", "ilin = 0\n        ibeach = 3\n        beachrate = 0.3, 0.25, 0.1"
+)
 
 
 @pytest.mark.e2e
@@ -56,6 +65,8 @@ class TestPhysicsSave:
         (wd / "b.str").write_text(_B)
         (wd / "c.str").write_text(_C)
         (wd / "d.str").write_text(_D)
+        (wd / "scalar.str").write_text(_SCALAR)
+        (wd / "array.str").write_text(_ARRAY)
         result = pw_page.evaluate(
             """(wd) => {
                 if (typeof window.__test_set_active_project !== 'function') return 'no-hook';
@@ -79,15 +90,20 @@ class TestPhysicsSave:
         """)
 
     def _stamps(self, page):
+        """The current stamps, once every panel has one bound (never an empty list)."""
+        page.wait_for_function(
+            f"() => {{ const v = ({_STAMPS_JS})(); return v.length > 0 && !v.includes(null); }}",
+            timeout=15000,
+        )
         return page.evaluate(_STAMPS_JS)
 
     def _wait_rendered(self, page, before, timeout=15000):
-        """Wait until every panel shows one new render (the notice comes earlier)."""
+        """Wait until every panel has bound a render newer than *before* (each
+        render has its own stamp; the Load notice comes before the panels)."""
         page.wait_for_function(
             f"""(before) => {{
                 const v = ({_STAMPS_JS})();
-                return v.length > 0 && v.every(x => x !== null && x === v[0])
-                    && !before.includes(v[0]);
+                return v.length > 0 && v.every(x => x !== null && !before.includes(x));
             }}""",
             arg=before,
             timeout=timeout,
@@ -110,16 +126,20 @@ class TestPhysicsSave:
             page.wait_for_timeout(600)
 
     def _save(self, page, wd, name):
+        """Click Save; True once the file was written and the panels show the saved state."""
         before = (wd / name).stat().st_mtime_ns
         stamps = self._stamps(page)
         page.locator("#physics-save_btn").click()
-        try:
-            # A save sets a new file state, so the panels render again; the
-            # next action must not land before they have.
-            self._wait_rendered(page, stamps, timeout=10000)
-        except PlaywrightTimeoutError:
-            pass  # nothing was saved; the mtime check below says so
-        return (wd / name).stat().st_mtime_ns != before
+        for _ in range(100):  # up to 10 s
+            if (wd / name).stat().st_mtime_ns != before:
+                break
+            page.wait_for_timeout(100)
+        else:
+            return False
+        # A save sets a new file state, so the panels render again; the next
+        # action must not land before they have.
+        self._wait_rendered(page, stamps)
+        return True
 
     def test_every_panel_opened_and_no_edit_leaves_the_file_unchanged(self, pw_page, project):
         self._load(pw_page, project, "a.str")
@@ -175,9 +195,7 @@ class TestPhysicsSave:
                 document.querySelector('#physics-load_btn').click();
                 document.querySelector('#physics-save_btn').click();
             }""")
-        expect(pw_page.get_by_text("still showing the previous file").first).to_be_visible(
-            timeout=10000
-        )
+        expect(pw_page.get_by_text("panels are still updating").first).to_be_visible(timeout=10000)
         self._wait_rendered(pw_page, stamps)
         assert (project / "c.str").stat().st_mtime_ns == before, "the early save wrote"
         assert (project / "c.str").read_text() == _C
@@ -185,13 +203,65 @@ class TestPhysicsSave:
         assert self._save(pw_page, project, "c.str"), "save did not write"
         assert (project / "c.str").read_text() == _C
 
+    def test_a_preview_sent_before_the_panels_show_the_loaded_file_is_refused(
+        self, pw_page, project
+    ):
+        self._load(pw_page, project, "a.str")
+        stamps = self._stamps(pw_page)
+        pw_page.locator("select#physics-str_path").select_option(str(project / "c.str"))
+        pw_page.evaluate("""() => {
+                document.querySelector('#physics-load_btn').click();
+                document.querySelector('#physics-preview_btn').click();
+            }""")
+        expect(pw_page.get_by_text("panels are still updating").first).to_be_visible(timeout=10000)
+        self._wait_rendered(pw_page, stamps)
+        assert pw_page.locator(".modal.show").count() == 0, "the early preview opened"
+        pw_page.locator("#physics-preview_btn").click()
+        expect(pw_page.locator(".modal.show pre")).to_contain_text("idtsyn = '1h'", timeout=10000)
+        wait_modal_shown(pw_page)
+        pw_page.locator(".modal.show").get_by_role("button", name="Close").click()
+        expect(pw_page.locator(".modal-dialog")).to_have_count(0, timeout=5000)
+
+    def test_a_field_the_loaded_file_shows_as_a_note_keeps_its_value(self, pw_page, project):
+        # The scalar beachrate input drawn for scalar.str is gone for
+        # array.str (a per-area note instead), but Shiny keeps its value on
+        # the server; a save wrote it over the array (live before #208).
+        self._load(pw_page, project, "scalar.str")
+        expect(pw_page.locator("#physics-beachrate")).to_have_count(1)
+        self._load(pw_page, project, "array.str")
+        expect(pw_page.locator("#physics-beachrate")).to_have_count(0)
+        assert self._save(pw_page, project, "array.str"), "save did not write"
+        assert (project / "array.str").read_text() == _ARRAY
+
+    def test_an_edit_of_each_kind_of_field_is_saved(self, pw_page, project):
+        # The save reads only the ids the current renders drew; one edit of
+        # each widget kind proves none of them is filtered out.
+        self._load(pw_page, project, "a.str")
+        self._set_open(pw_page, "Hydrodynamics", True)
+        self._set_open(pw_page, "Simulation Timing", True)
+        self._set_open(pw_page, "Heat Flux", True)
+        pw_page.locator("select#physics-ilin").select_option("1")  # select
+        pw_page.locator("#physics-itend").fill("7200")  # text
+        pw_page.locator("#physics-itend").blur()
+        pw_page.locator("#physics-idt").fill("30")  # numeric
+        pw_page.locator("#physics-idt").blur()
+        pw_page.locator("#physics-imetout_wind").check()  # checkbox
+        pw_page.wait_for_timeout(500)
+        assert self._save(pw_page, project, "a.str"), "save did not write"
+        text = (project / "a.str").read_text()
+        flags = {f: f == "wind" for f in _IMETOUT_FIELDS}
+        for want in ("ilin = 1", "itend = 7200", "idt = 30", f"imetout = {_imetout_encode(flags)}"):
+            assert re.search(rf"\b{re.escape(want)}\b", text), (want, text)
+
     def test_every_panel_renders_its_inputs(self, pw_page, project):
         for name in ("a.str", "c.str"):
             self._load(pw_page, project, name)
             for panel_id in PHYSICS_PANELS:
                 out = pw_page.locator(f"#physics-panel_{panel_id}")
                 assert out.locator(".shiny-output-error").count() == 0, (name, panel_id)
-                assert out.locator("input, select").count() > 0, (name, panel_id)
+                # The hidden render stamp does not count as a rendered input.
+                fields = out.locator("input:not([id^='physics-render_stamp_']), select")
+                assert fields.count() > 0, (name, panel_id)
 
     def test_a_panel_that_cannot_render_saves_none_of_its_stale_inputs(self, pw_page, project):
         self._load(pw_page, project, "a.str")

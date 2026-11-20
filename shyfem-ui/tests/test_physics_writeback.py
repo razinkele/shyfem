@@ -31,6 +31,21 @@ from shyfem_ui.services.parser_str import (
 from shyfem_ui.services.str_validator import validate_str
 from tests.test_physics_page import FakeInputs
 
+
+class _EveryId:
+    def __contains__(self, input_id):
+        return True
+
+
+def _drawn(inputs):
+    """*inputs* as if every one was drawn by the panels' current renders.
+
+    The stamp check and the leftover filter are tested in
+    test_physics_stale_render.py; these tests check the collect logic.
+    """
+    return physics._PanelInputs(inputs, _EveryId())
+
+
 _TESTCASES = Path(__file__).resolve().parent.parent.parent / "testcases"
 _SHIPPED_STRS = sorted(_TESTCASES.glob("**/*.str")) if _TESTCASES.is_dir() else []
 
@@ -83,7 +98,7 @@ def _save(text: str, values: dict | None = None):
     sf = StrParser.parse(text)
     inputs = _untouched_inputs(sf)
     inputs._values.update(values or {})
-    working, errors, _purged = _collect_into_copy(inputs, sf)
+    working, errors, _purged = _collect_into_copy(_drawn(inputs), sf)
     return working, errors
 
 
@@ -108,7 +123,7 @@ def test_no_edit_save_round_trips_every_shipped_str(path):
         sf = StrParser.parse_file(path)
     except Exception as exc:  # not every testcase file is a valid STR
         pytest.skip(f"does not parse: {exc}")
-    working, errors, _purged = _collect_into_copy(_untouched_inputs(sf), sf)
+    working, errors, _purged = _collect_into_copy(_drawn(_untouched_inputs(sf)), sf)
     assert errors == []
     assert StrParser.generate(working) == path.read_text()
 
@@ -276,7 +291,7 @@ def test_a_failed_panel_skips_only_the_inputs_it_renders():
     sf = StrParser.parse(_KEPS)
     inputs = _untouched_inputs(sf)
     inputs._values["ilin"] = "1"
-    skipped, errors, _ = _collect_into_copy(inputs, sf, frozenset({"hydrodynamics"}))
+    skipped, errors, _ = _collect_into_copy(_drawn(inputs), sf, frozenset({"hydrodynamics"}))
     assert errors == []
     assert skipped.get_param("para", "ilin") == 0
     assert working.get_param("para", "ilin") == 1
