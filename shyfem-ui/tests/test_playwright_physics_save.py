@@ -233,6 +233,27 @@ class TestPhysicsSave:
         assert self._save(pw_page, project, "array.str"), "save did not write"
         assert (project / "array.str").read_text() == _ARRAY
 
+    def test_typing_while_a_panel_is_redrawn_saves_what_the_panel_shows(self, pw_page, project):
+        # A keystroke waits 250 ms before Shiny sends it. Typed into itend
+        # just after Save, it used to be sent after the redrawn panel's
+        # values: the panel showed 3600 and the next save wrote 36007.
+        self._load(pw_page, project, "a.str")
+        self._set_open(pw_page, "Simulation Timing", True)
+        stamps = self._stamps(pw_page)
+        pw_page.evaluate("""() => {
+                document.querySelector('#physics-save_btn').click();
+                const el = document.querySelector('#physics-itend');
+                el.focus();
+                el.value = el.value + '7';
+                el.dispatchEvent(new Event('input', {bubbles: true}));
+            }""")
+        self._wait_rendered(pw_page, stamps)
+        pw_page.wait_for_timeout(600)  # past the 250 ms debounce
+        shown = pw_page.locator("#physics-itend").input_value()
+        assert self._save(pw_page, project, "a.str"), "save did not write"
+        written = re.search(r"itend = (\S+)", (project / "a.str").read_text())
+        assert written and written.group(1) == shown, (shown, written and written.group(1))
+
     def test_an_edit_of_each_kind_of_field_is_saved(self, pw_page, project):
         # The save reads only the ids the current renders drew; one edit of
         # each widget kind proves none of them is filtered out.

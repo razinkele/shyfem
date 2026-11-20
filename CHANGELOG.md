@@ -23,11 +23,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
 
 ### Fixed — shyfem-ui
-- **Physics: a Save no longer writes values the panels do not show.** Two ways a Save (or Preview) on the Physics page could write something other than what was on screen, the first live on laguna:
+- **Physics: a Save no longer writes values the panels do not show.** Three ways a Save (or Preview) on the Physics page could write something other than what was on screen, the first live on laguna:
   - **A field the loaded file shows as a note kept the previous file's value.** Shiny never clears an input's server value when the browser removes it, so after loading a file with one `beachrate` and then one with a per-area `beachrate = 0.3, 0.25, 0.1`, a Save flattened the array to `0.3` and reported success. The same held for the assimilation per-station fields.
   - **A Save right after a Load (or another Save) wrote the previous file's values.** Until the browser had the redrawn panels, the server still held the old ones' values; in CI, `c.str` was saved with the `ilin` and `idtsyn` of the file loaded before it.
+  - **Typing while a panel was redrawn** sent the keystroke after the new panel's values, so the file got `itend = 36007` while the panel showed `3600`.
 
-  Each panel render now records a stamp and the fields it drew. Save and Preview read only those fields, and only once every panel shows its latest render for the current file; until then they say "The physics panels are still updating" and write nothing.
+  Each panel render now records a stamp and the fields it drew. Save and Preview read only those fields, and only once every panel shows its latest render for the current file; until then they say "The physics panels are still updating" and write nothing. The field being typed in is sent just before its panel is redrawn.
 
 ---
 

@@ -1198,6 +1198,23 @@ def _apply_edits(
         )
 
 
+# A keystroke waits 250 ms (Shiny's text-input debounce) before it is
+# sent. If its panel is drawn again inside that wait, the pending send
+# still fires, after the new panel's values, and the server then holds the
+# old panel's text while the browser shows the new value (a Save after
+# typing into itend wrote "36007" with "3600" on screen). Just before a
+# panel's new content arrives, send the focused field's text right away:
+# "change" sends a text input with no debounce and cancels the pending one.
+_FLUSH_TYPING_JS = """
+$(document).on("shiny:value", function (event) {
+    var out = event.target;
+    if (!out || !out.id || out.id.indexOf("__PANEL_PREFIX__") !== 0) return;
+    var focused = document.activeElement;
+    if (focused && out.contains(focused)) $(focused).trigger("change");
+});
+"""
+
+
 @module.ui
 def physics_ui() -> ui.Tag:
     """Physics configuration page UI."""
@@ -1242,6 +1259,7 @@ def physics_ui() -> ui.Tag:
             ),
             ui.output_ui("panels_accordion"),
         ),
+        ui.tags.script(_FLUSH_TYPING_JS.replace("__PANEL_PREFIX__", module.resolve_id("panel_"))),
     )
 
 
