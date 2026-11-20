@@ -80,3 +80,34 @@ def test_every_map_turns_dark_with_the_theme_unopened_pages_too(new_session_page
     # Which maps this covered (shown with -rP): the results map is one of them
     # only when the Visualize page builds it at load.
     print("maps:", sorted(ids), "results map included:", RESULTS_MAP in ids)
+
+
+MESH_MAP = "mesh_builder-mesh_preview-deckgl_map"
+
+
+@pytest.mark.e2e
+def test_a_map_first_shown_after_the_theme_is_set_starts_dark(new_session_page):
+    """Mesh Builder's map lives in its Preview tab and is built when the tab is
+    first shown, after the server sent the theme: it must still come up dark."""
+    page = new_session_page
+    if not page.evaluate("() => !!document.createElement('canvas').getContext('webgl2')"):
+        pytest.skip("no WebGL: map instances not created")
+    page.wait_for_function(
+        "(mid) => !!(window.__deckgl_instances || {})[mid]", arg=IBM_MAP, timeout=_T
+    )
+    assert not page.evaluate(
+        "(mid) => !!(window.__deckgl_instances || {})[mid]", MESH_MAP
+    ), "the Mesh Builder map must not exist before its tab is shown"
+    _set_theme(page, True)
+    _wait_all(page, [IBM_MAP], "dark-matter")  # the server has sent the theme
+    try:
+        page.locator(".sf-nav-item[data-nav='Mesh Builder']").click(force=True)
+        page.locator("#sf-page-Mesh-Builder a[role='tab']:has-text('Preview')").click()
+        page.wait_for_function(
+            "(mid) => !!(window.__deckgl_instances || {})[mid]", arg=MESH_MAP, timeout=_T
+        )
+        _wait_all(page, [MESH_MAP], "dark-matter")
+        assert "deckgl-dark" in (page.get_attribute(f"#{MESH_MAP}", "class") or "")
+    finally:
+        _set_theme(page, False)
+    _wait_all(page, [MESH_MAP], "positron")
