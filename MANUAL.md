@@ -992,7 +992,7 @@ $end
 | `iturb` | Model | Description |
 |---------|-------|-------------|
 | 0 | None | Constant vertical viscosity/diffusivity (`vistur`, `diftur`) |
-| 1 | GOTM | General Ocean Turbulence Model |
+| 1 | GOTM | General Ocean Turbulence Model (recommended for 3D runs, see below) |
 | 2 | k-epsilon | Built-in k-epsilon closure (see below) |
 | 3 | Munk-Anderson | Empirical stability-dependent mixing |
 
@@ -1020,7 +1020,9 @@ and 0.84 of the log law with 20 and 40 layers, and over the depth it is within
 2% of the log-wake profile. Columns with 1 or 2 layers keep the older wall
 treatment, which gives about 2.9 times GOTM's eddy viscosity in the Venice
 lagoon test. GOTM also offers other closures (for example second-order
-models) that the built-in k-epsilon does not.
+models) that the built-in k-epsilon does not. GOTM (`iturb = 1`) therefore
+stays the recommended closure for 3D runs, in particular when part of the grid
+has only 1 or 2 layers.
 
 **Constant vertical mixing** (simple alternative):
 

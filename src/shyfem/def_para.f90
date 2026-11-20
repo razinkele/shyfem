@@ -1011,7 +1011,9 @@
 ! 20 and 40 layers, over the depth within 2\% of the log-wake profile),
 ! except in columns with 1 or 2 layers, which keep the old wall treatment
 ! (about 2.9 times GOTM in the Venice test). GOTM also offers other
-! closures, e.g. second-order models. (Default 0)
+! closures, e.g. second-order models. The recommended value for 3D runs
+! is therefore 1 (GOTM), in particular when part of the grid has only 1 or
+! 2 layers. (Default 0)
 
 	call addpar('iturb',0.)		!use turbulence closure scheme
 
