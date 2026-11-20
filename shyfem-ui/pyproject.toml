@@ -9,7 +9,7 @@ name = "shyfem-ui"
 version = "0.8.1"
 description = "Python Shiny web interface for SHYFEM hydrodynamic simulation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "GPL-3.0"}
 authors = [
     {name = "SHYFEM Team"}
@@ -19,7 +19,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -47,11 +46,12 @@ dependencies = [
     "triangle>=20220202",
     "argon2-cffi>=21.0",
     "alembic>=1.18,<2",
-    # Pinned to the git tag the shiny env is installed from (the tested
-    # version). PyPI's "shiny-deckgl" is the same author's package, but only
-    # 1.12.0 is published there. Direct references block a PyPI upload of
-    # shyfem-ui, which is not published there.
-    "shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.9.2",
+    # Pinned to the version the laguna worker runs (the conda package
+    # shiny-deckgl 1.16.0 in the shiny env since 2026-11-18), so CI tests
+    # prod's version. 1.16 requires Python >= 3.11. Installed from the git tag
+    # because PyPI lags (1.12.0 is the newest there). Direct references block a
+    # PyPI upload of shyfem-ui, which is not published there.
+    "shiny-deckgl @ git+https://github.com/razinkele/shiny_deckgl.git@v1.16.0",
 ]
 
 [project.optional-dependencies]
@@ -84,7 +84,7 @@ include = ["shyfem_ui*"]
 
 [tool.black]
 line-length = 100
-target-version = ["py310", "py311", "py312", "py313"]
+target-version = ["py311", "py312", "py313"]
 
 [tool.ruff]
 line-length = 100
