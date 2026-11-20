@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Tools, NetCDF builds (`NETCDF=true`):** `ts2nc.f90` compiles again. An earlier cleanup had written three `open(...)` statements with fixed-form continuation lines (a leading `&`) into this free-form file and declared `ierr` twice in the main program, so a NetCDF build stopped there. The file is compiled only with NetCDF, which is why the default build never showed it. Fixed on 2026-10-26, when NetCDF was enabled on laguna so that `shyelab -outformat nc` works for the UI; it is in the tree since then but in no tagged core release yet. No effect on results.
+
 ### Changed — Docs
 - **UI: the Docker deployment is declared unsupported.** `shyfem-ui/Dockerfile` and `docker-compose.yml` cannot start a usable app as written (server mode needs an admin password the compose file does not set, the image leaves out the database migrations, and the Celery worker has no database volume), and no deployment uses them: laguna runs Shiny Server with the local job queue. Both files and the README now say so. The files stay, and CI still checks that the image builds. This closes D-03, the last open item of the 2026-10-19 UI review.
 
