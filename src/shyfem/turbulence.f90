@@ -313,8 +313,7 @@
 	real dtreal
 	integer ipext
 
-	logical, save :: bwave
-	logical has_waves,bgotm,bdeb
+	logical bgotm,bdeb
 
 	character*256 fn
 	integer, save :: icall = 0
@@ -360,7 +359,6 @@
 
 	  czdef = getpar('czdef')
 	  ireib = nint(getpar('ireib'))
-	  bwave = has_waves()
           levdbg = nint(getpar('levdbg'))
 
 !         --------------------------------------------------------
@@ -491,23 +489,8 @@
 
 	    u_taus = sqrt( sqrt( tauxnv(k)**2 + tauynv(k)**2 ) )
 
-	    if ( bwave ) then
-	      z0s = z0sk(k)
-	    else
-	      z0s = charnock_val*u_taus**2/g
-	    end if
-	    z0s = max(z0s,z0smin)			!GGUZ0
+	    call turb_wall_roughness(k,u_taus,z0n(k),z0s,z0b)
 
-!           ------------------------------------------------------
-!           compute bottom friction velocity (m/s)
-!           ------------------------------------------------------
-
-	    z0b = z0bk(k)
-	    ! ireib=6: the momentum friction uses czv (the roughness length
-	    ! of each element, from $area, czdef by default); z0bk stays at
-	    ! its initial z0bini unless the fluid-mud option (ireib=9) sets it
-	    if( ireib == 6 ) z0b = z0n(k)
-	    z0b = max(z0bmin,z0b)			!GGUZ0
 	    u_taub = sqrt( taub(k) )
 
 	    ubot = uprv(nlev,k)
@@ -1108,6 +1091,58 @@
 	!end if
 	array = (/n2max,nfreq,nperiod/)
 	call info_output('n2max',' ',3,array,.false.)
+
+	end
+
+!**************************************************************
+
+	subroutine turb_wall_roughness(k,u_taus,z0nk,z0s,z0b)
+
+! surface and bottom roughness lengths at node k, shared by the wall
+! boundary conditions of the turbulence closures
+!
+! surface: wave-derived z0sk if waves are on, else Charnock
+! bottom : z0bk, or the nodal momentum-friction roughness z0nk if ireib=6
+
+	use mod_roughness
+	use pkonst
+	use para
+
+	implicit none
+
+	integer, intent(in) :: k
+	double precision, intent(in) :: u_taus	!surface friction velocity [m/s]
+	real, intent(in) :: z0nk			!nodal bed roughness (ireib=6)
+	double precision, intent(out) :: z0s,z0b	!roughness lengths [m]
+
+	real, parameter :: charnock_val=1400.	!emp. Charnock constant
+	real g
+	integer, save :: ireib = -1
+	logical, save :: bwave = .false.
+	logical has_waves
+	integer, save :: icall = 0
+
+	if( icall == 0 ) then
+	  ireib = nint(getpar('ireib'))
+	  bwave = has_waves()
+	  icall = 1
+	end if
+
+	g = grav
+
+	if ( bwave ) then
+	  z0s = z0sk(k)
+	else
+	  z0s = charnock_val*u_taus**2/g
+	end if
+	z0s = max(z0s,z0smin)			!GGUZ0
+
+	z0b = z0bk(k)
+	! ireib=6: the momentum friction uses czv (the roughness length
+	! of each element, from $area, czdef by default); z0bk stays at
+	! its initial z0bini unless the fluid-mud option (ireib=9) sets it
+	if( ireib == 6 ) z0b = z0nk
+	z0b = max(z0bmin,z0b)			!GGUZ0
 
 	end
 
