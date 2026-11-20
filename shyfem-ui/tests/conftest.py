@@ -17,6 +17,7 @@ import tempfile
 import time
 from collections.abc import Iterator
 from pathlib import Path
+from urllib.parse import urlparse
 
 import pytest
 from sqlalchemy import event
@@ -324,9 +325,43 @@ def live_server(_app_server, app_url):
 # ---------------------------------------------------------------------------
 
 
+# Map imagery the app fetches from third-party servers at page load (every
+# deck.gl map is built then, hidden pages included). No E2E test looks at
+# tile pixels, but a slow server keeps "networkidle" from arriving: on
+# 2026-11-20 the EMODnet bathymetry WMS took 30-40 s per tile, and every
+# fresh page load (page.goto(..., wait_until="networkidle")) timed out in
+# CI (#208, twice) and locally on main. The JS libraries (cdn.jsdelivr.net)
+# and the basemap style (basemaps.cartocdn.com) are left alone: the maps
+# need them to build.
+_THIRD_PARTY_IMAGERY = frozenset({"ows.emodnet-bathymetry.eu", "tiles.basemaps.cartocdn.com"})
+
+
+def _is_third_party_imagery(url: str) -> bool:
+    return urlparse(url).hostname in _THIRD_PARTY_IMAGERY
+
+
+class _BrowserWithoutImagery:
+    """The session browser; every context it opens fails map-imagery requests at once."""
+
+    def __init__(self, browser):
+        self._browser = browser
+
+    def new_context(self, *args, **kwargs):
+        ctx = self._browser.new_context(*args, **kwargs)
+        ctx.route(_is_third_party_imagery, lambda route: route.abort())
+        return ctx
+
+    def __getattr__(self, name):
+        return getattr(self._browser, name)
+
+
 @pytest.fixture(scope="session")
 def pw_browser():
-    """Launch a Playwright Chromium browser for the test session."""
+    """Launch a Playwright Chromium browser for the test session.
+
+    Contexts opened from it do not fetch third-party map imagery (see
+    _THIRD_PARTY_IMAGERY).
+    """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -341,7 +376,7 @@ def pw_browser():
             f"Playwright browsers not installed: {exc}\n"
             "Run: python -m playwright install chromium --with-deps"
         )
-    yield browser
+    yield _BrowserWithoutImagery(browser)
     browser.close()
     pw.stop()
 

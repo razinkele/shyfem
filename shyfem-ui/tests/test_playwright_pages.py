@@ -184,17 +184,15 @@ class TestRunPage:
         """Test MPI controls not visible when non-MPI tool is selected."""
         _switch_tab(pw_page, "Run")
         pw_page.locator("#run-tool_select").select_option("shybas")
-        pw_page.wait_for_timeout(500)
-        mpi_checkbox = pw_page.locator("#run-mpi_enabled")
-        assert not mpi_checkbox.is_visible()
+        # Retry: the MPI controls follow the tool choice through a server
+        # round trip, which a fixed 500 ms wait outran on a loaded CI runner.
+        expect(pw_page.locator("#run-mpi_enabled")).to_be_hidden(timeout=10000)
 
     def test_mpi_controls_visible_for_shyfem(self, pw_page):
         """Test MPI controls appear when shyfem is selected."""
         _switch_tab(pw_page, "Run")
         pw_page.locator("#run-tool_select").select_option("shyfem")
-        pw_page.wait_for_timeout(500)
-        mpi_checkbox = pw_page.locator("#run-mpi_enabled")
-        assert mpi_checkbox.is_visible()
+        expect(pw_page.locator("#run-mpi_enabled")).to_be_visible(timeout=10000)
 
 
 class TestPostProcessPage:
