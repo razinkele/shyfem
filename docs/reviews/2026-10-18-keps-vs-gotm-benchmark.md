@@ -197,6 +197,70 @@ What the measurements support:
 - **GOTM is 15–20% low against the log law near the bed**, improving
   slightly with resolution (0.81 → 0.84 from 20 to 40 layers).
 
+## 2026-11-20: flux wall conditions (#125)
+
+SHYFEM k-epsilon (`iturb=2`) now uses GOTM-style flux (Neumann) wall
+conditions for k and epsilon, with roughness lengths from the model's own
+friction and wind stress, and GOTM's time treatment in the interior (k
+before epsilon, sink always implicit, production on the right-hand side,
+wall flux from the new k). Spec:
+`docs/superpowers/specs/2026-11-20-keps-flux-wall-bc-design.md` (with
+Amendment A); plan: `docs/superpowers/plans/2026-11-20-keps-flux-wall-bc.md`.
+The start-up warning from #126 is removed.
+
+### Channel (`testcases/examples/channel_turb`, `analyse.py`)
+
+| Case | near-bed nut/ana | mean/logwake | steady |
+|---|---|---|---|
+| keps 20 layers, before | 1.51 | 1.37 | yes |
+| keps 20 layers, after | 0.82 | 0.99 | yes (drift 7.0e-7, flip 0) |
+| gotm_ke1 20 layers | 0.82 | 0.99 | yes |
+| keps 40 layers, before | 1.52 | 1.32 | yes |
+| keps 40 layers, after | 0.84 | 1.02 | yes (drift 5.6e-6, flip 0) |
+| gotm_ke1 40 layers | 0.84 | 1.02 | yes |
+
+k-epsilon equals `gotm_ke1` (GOTM standard k-epsilon with the same flux
+conditions) to two decimals at both resolutions.
+
+### First attempt and Amendment A
+
+The first attempt (spec sections 1-5 only, commit 128bcdea) was faithful to
+GOTM's wall conditions but showed a two-time-step oscillation, bounded at
+20 layers and growing at 40. It was traced to SHYFEM's source-sign switch
+(sink implicit only where the source is negative) and to the lagged k in the
+wall flux. Amendment A (owner-approved) added GOTM's time treatment and a
+2-step `flip` gate in the analysis; the oscillation is gone (flip 0).
+
+### Venice (`venlag_keps_smoke` vs GOTM `venlag_smoke`)
+
+Median of keps/GOTM `visv` at the last record
+(`testcases/examples/venice_lagoon/visv_ratio.py`):
+
+| | before | after |
+|---|---|---|
+| top | 2.11 | 1.14 |
+| bottom | 2.20 | 1.07 |
+| column | 2.00 | 1.05 |
+
+With 4 MPI ranks the column ratio is 1.05 (same). Columns with 2 layers or
+fewer use the unchanged old code; their values shift only through the flow
+(median about 1%). The surface roughness was at its floor `z0smin = 0.02 m`
+everywhere, so the Charnock and wave branches were not exercised.
+
+### Battery, MPI, OpenMP
+
+- The fortran-ci serial set plus `mm_rst_keps_write` all reach simulation
+  end; GOTM and all Mar Menor outputs are byte-identical; only
+  `venlag_keps_smoke` outputs change (expected).
+- OpenMP with 4 threads is bit-identical to 1 thread.
+
+### Not covered
+
+- 3D k-epsilon restart: restart files store no k-epsilon state (known gap).
+- The epsilon `prod+buoy<=0` branch is unreachable by construction (N^2 is
+  clamped to >= 0 and `ceps3p` < 0).
+- The Charnock and wave-enhanced surface roughness branches (see above).
+
 ## Decisions for the owner (no code changed)
 
 1. Whether to make `keps_shell` take its wall stresses from the model's
