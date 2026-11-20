@@ -26,16 +26,23 @@ value to `dh/2 + z0` removed the excess (0.88) but made the 20-layer run
 unsteady and blew up the 40-layer run; a momentum-consistent `u*` alone left
 the excess and destabilised 40 layers (issue #125 and its comment).
 
-GOTM, which the benchmark shows to be close to the log law, uses **flux
-(Neumann) conditions with a roughness length** for both k and epsilon. Its
+GOTM uses **flux (Neumann) conditions with a roughness length** for both k
+and epsilon. In the benchmark it is 0.81-0.84 of the log law near the bed
+and within 6% of the log-wake profile over the full depth. Its
 code is in the repo (`src/external/gotm/dissipationeq.F90`,
 `turbulence.F90:epsilon_bc/k_bc`, `diff_face.F90`).
 
 ## Goals
 
-1. `channel_turb` near-bed ratio `nut(zb<0.2H)/ana` (from `analyse.py`) within
-   about 10% of the log law (0.9-1.1) **at 20 and at 40 layers**.
-2. Both channel runs **steady** at the end of the run.
+1. **GOTM parity** in `channel_turb` at 20 **and** 40 layers (owner decision
+   2026-11-20, replacing the issue's 0.9-1.1 band): near-bed ratio
+   `nut(zb<0.2H)/ana` (from `analyse.py`) in about 0.8-1.1, and full-depth
+   `mean/logwake` within about 10% of 1. Today: 1.51/1.52 near-bed,
+   1.32-1.37 overall. A faithful port is expected near GOTM's 0.81-0.84.
+2. Both channel runs **steady** at the end of the run. **If the 40-layer run
+   (or the 20-layer one) is not steady, stop and report** what was built and
+   the numbers; do not hunt for stability inside the closure (owner decision
+   2026-11-20).
 3. `venlag_keps_smoke` (3D Venice, in `fortran-ci.yml`) completes, as do the
    other `iturb=2` cases (`mar_menor/mm_rst_keps_write.str`).
 4. MPI and OpenMP behaviour unchanged (a 4-rank run of a k-eps case works).
@@ -56,7 +63,8 @@ code is in the repo (`src/external/gotm/dissipationeq.F90`,
 - Any run that is unsteady or blows up at 40 layers.
 - A switch that silently changes results without a CHANGELOG entry, or a
   hidden STR option that keeps the old behaviour as the default.
-- Breaking restart files (`k`/`eps` arrays and their shape stay as they are).
+- Breaking restart files. (Checked: `restart.f90` writes no k-eps state for
+  `iturb=2`, so there is nothing to break; keep it that way.)
 - New module/`save` state in `keps` (see the allocation-caching OMP hazard;
   `keps` is called per node and must stay re-entrant).
 
@@ -142,18 +150,21 @@ equations see.
 `keps` gains two arguments, `z0s` and `z0b` (metres, `intent(in)`).
 `keps_shell` computes them per node **the way `gotm_shell` already does**
 (same file): `z0s` from `z0sk(k)` or Charnock `charnock_val*u_taus**2/g`,
-clamped by `z0smin`; `z0b` from `model_bottom_z0` under `ireib == 6` (PR
+clamped by `z0smin`, **with `u_taus` from the model's own wind stress**
+(`sqrt(sqrt(tauxnv**2 + tauynv**2))`, as `gotm_shell` line ~492), not from
+`keps_shell`'s hard-coded `cd` (my call, 2026-11-20: consistent with the
+model and with GOTM, and it lets the helper be shared); `z0b` from `model_bottom_z0` under `ireib == 6` (PR
 #127), else `z0bk(k)`, clamped by `z0bmin`. Prefer one shared helper over a
 copy if it stays simple; otherwise replicate the few lines with a comment
 pointing at `gotm_shell`.
 
 ### 4. What happens to the wall stresses
 
-With flux conditions the interior solve no longer uses `taus`/`taub`. They
-remain needed for `u_taus` in the Charnock `z0s` and for the `lmax < 3`
-fallback (below). The hard-coded `cb`/`cd` therefore stop affecting
-`lmax >= 3` columns except through Charnock's `z0s`; replacing them with the
-model's friction/wind stress is out of scope (non-goal) and noted in the PR.
+With flux conditions the interior solve no longer uses `taus`/`taub`, and
+Charnock's `z0s` takes the model's wind stress (section 3). They remain
+needed only for the `lmax < 3` fallback (below). The hard-coded `cb`/`cd`
+therefore no longer affect `lmax >= 3` columns at all; replacing them in the
+fallback is out of scope (non-goal). The PR and CHANGELOG say this.
 
 ### 5. Very shallow columns (`lmax < 3`)
 
@@ -166,8 +177,8 @@ those columns and must say what it did).
 
 1. **Benchmark:** `testcases/examples/channel_turb/run_all.sh` then
    `analyse.py`, before and after. Report the table rows for `keps_20` and
-   `keps_40` (max, mean, near-bed `nut/ana`, `mean/logwake`). Goal 1 holds
-   when near-bed is within 0.9-1.1 at both.
+   `keps_40` (max, mean, near-bed `nut/ana`, `mean/logwake`) next to GOTM's
+   rows. Goal 1 holds at GOTM parity as defined there.
 2. **Steadiness:** compare the last two hourly profiles of each `keps` run
    (the method the 2026-10-18 report used: "successive hourly dumps differ by
    N%"). Steady means they differ by less than 2% (builder may tighten).
@@ -178,6 +189,13 @@ those columns and must say what it did).
 4. **OpenMP:** one k-eps run with `nomp = -1` and the "used OMP threads: N"
    line checked (memory: `nomp` defaults to 1 thread).
 5. CI (`fortran-ci.yml`) green.
+
+### 6. The `iturb=2` start-up warning
+
+`turb_closure` (`src/shyfem/turbulence.f90`, about lines 104-110) warns
+that `iturb=2` is 1.5x the log law near the bed and recommends GOTM (#126).
+Reword it to the new benchmark numbers, or remove it if k-eps now matches
+GOTM; say which in the PR.
 
 ## Documentation
 
