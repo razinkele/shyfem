@@ -281,6 +281,7 @@ def test_every_effect_reraises_silent_then_logs():
         "_step_back",
         "_step_fwd",
         "_play_state",
+        "_theme",
     }
     assert expected <= names
     for eff in effects:

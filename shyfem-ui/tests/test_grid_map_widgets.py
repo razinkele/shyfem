@@ -1,6 +1,6 @@
 """Tests for grid_map deck.gl widget integration (layer_legend_widget, screenshot_widget)."""
 
-
+import pytest
 
 
 def test_screenshot_widget_importable():
@@ -87,3 +87,104 @@ def test_build_layers_no_toggle_params():
     assert "show_emodnet" not in params, "show_emodnet param should be removed"
     assert "show_boundaries" not in params, "show_boundaries param should be removed"
     assert "show_nodes" not in params, "show_nodes param should be removed"
+
+
+# --- Basemaps that follow the app's light/dark theme --------------------------
+
+
+def test_basemap_style_auto_follows_the_theme():
+    from shyfem_ui.components import grid_map as gm
+
+    if gm.CARTO_POSITRON is None:
+        pytest.skip("shiny_deckgl not installed")
+    assert gm.basemap_style("positron", dark=False) == gm.CARTO_POSITRON
+    assert gm.basemap_style("positron", dark=True) == gm.CARTO_DARK
+    assert gm.basemap_style(None, dark=True) == gm.CARTO_DARK  # a map without a picker
+    for dark in (False, True):  # the fixed choices ignore the theme
+        assert gm.basemap_style("dark", dark=dark) == gm.CARTO_DARK
+        assert gm.basemap_style("osm", dark=dark) == gm.OSM_LIBERTY
+    assert gm._BASEMAP_CHOICES["positron"] == "Auto"
+
+
+def test_session_dark_mode_reads_the_root_input():
+    from shiny.types import SilentException
+
+    from shyfem_ui.components.grid_map import session_dark_mode
+
+    class _Input(dict):
+        def __getitem__(self, key):
+            if key not in self.keys():
+                raise SilentException()
+            return lambda: dict.__getitem__(self, key)
+
+    class _Session:
+        def __init__(self, values):
+            self.input = _Input(values)
+
+        def root_scope(self):
+            return self
+
+    assert session_dark_mode(_Session({"_dark_mode": True})) is True
+    assert session_dark_mode(_Session({"_dark_mode": False})) is False
+    assert session_dark_mode(_Session({})) is False  # never reported: light
+
+
+async def test_apply_map_theme_sets_the_widgets_theme_then_the_basemap():
+    from shyfem_ui.components import grid_map as gm
+
+    if gm.CARTO_POSITRON is None:
+        pytest.skip("shiny_deckgl not installed")
+    calls = []
+
+    class _Map:
+        async def set_dark_mode(self, session, dark):
+            calls.append(("dark", dark))
+
+        async def set_style(self, session, style):
+            calls.append(("style", style))
+
+    await gm.apply_map_theme(_Map(), object(), "positron", True)
+    await gm.apply_map_theme(_Map(), object(), "osm", False)
+    assert calls == [
+        ("dark", True),
+        ("style", gm.CARTO_DARK),
+        ("dark", False),
+        ("style", gm.OSM_LIBERTY),
+    ]
+
+
+def test_every_map_restyles_on_the_theme():
+    """The three maps read the theme reactively and restyle through one helper."""
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "shyfem_ui"
+    expected = {
+        "components/grid_map.py": ("_set_basemap", "input.map_basemap()"),
+        "pages/ibm.py": ("_set_basemap", "input.ibm_basemap()"),
+        "components/results_map.py": ("_theme", "None"),
+    }
+    for rel, (name, choice) in expected.items():
+        tree = ast.parse((root / rel).read_text(encoding="utf-8"))
+        fns = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == name]
+        assert len(fns) == 1, rel
+        src = ast.unparse(fns[0])
+        assert f"apply_map_theme(_map, session, {choice}, session_dark_mode(session))" in src, rel
+
+
+def test_ibm_layer_rebuild_does_not_read_the_basemap():
+    """A basemap change restyles the IBM map; it no longer rebuilds every layer."""
+    import ast
+    from pathlib import Path
+
+    src = (Path(__file__).resolve().parent.parent / "shyfem_ui/pages/ibm.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(src)
+    update = next(
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.AsyncFunctionDef) and n.name == "_update_ibm_map"
+    )
+    body = ast.unparse(update)
+    assert "ibm_basemap" not in body and "set_style" not in body

@@ -34,7 +34,7 @@ except ImportError:
     scatterplot_layer = tile_layer = trips_layer = zoom_widget = None
     format_trips = trips_animation_ui = trips_animation_server = None
 
-from shyfem_ui.components.grid_map import BASEMAPS, EMODNET_WMS_URL
+from shyfem_ui.components.grid_map import EMODNET_WMS_URL, apply_map_theme, session_dark_mode
 from shyfem_ui.components.project_select import project_file_select
 from shyfem_ui.config import Config
 from shyfem_ui.services.access_control import editor_denied_reason
@@ -217,8 +217,9 @@ def ibm_ui() -> ui.Tag:
                 ui.input_select(
                     "ibm_basemap",
                     None,
+                    # "Auto" follows the app's light/dark theme.
                     choices={
-                        "positron": "Positron",
+                        "positron": "Auto",
                         "dark": "Dark",
                         "osm": "OSM",
                     },
@@ -442,9 +443,13 @@ def ibm_server(
             ui.notification_show(f"Failed to load: {e}", type="error", duration=6)
 
     @reactive.effect
+    async def _set_basemap():
+        """A basemap or theme change restyles the map; it rebuilds no layers."""
+        await apply_map_theme(_map, session, input.ibm_basemap(), session_dark_mode(session))
+
+    @reactive.effect
     async def _update_ibm_map():
         """Rebuild map layers whenever inputs or track data change."""
-        basemap_key = input.ibm_basemap()
         show_emod = input.show_emodnet()
         show_trk = input.show_tracks()
         show_starts = input.show_starts()
@@ -578,7 +583,6 @@ def ibm_server(
         )
         # No MapLibre controls, as before; the legend is one of the widgets.
         await _map.set_controls(session, [])
-        await _map.set_style(session, BASEMAPS.get(basemap_key, BASEMAPS["positron"]))
 
     @render.ui
     def ibm_status():
