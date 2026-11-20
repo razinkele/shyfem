@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from typing import NamedTuple
 
 from shiny import module, reactive, render, ui
-from shiny.types import SilentCancelOutputException, SilentException
+from shiny.types import SilentException
 
 from shyfem_ui.components.project_select import (
     default_project_file,
@@ -1536,13 +1536,13 @@ def physics_server(
             def guarded():
                 try:
                     tag = render_fn()
-                except (SilentException, SilentCancelOutputException):
-                    # No panel raises these today. If one did, it would not
-                    # show its current inputs, so the save must skip it.
-                    failed_panels.add(panel_id)
-                    panel_renders.pop(panel_id, None)
-                    raise
                 except Exception as exc:
+                    # Includes SilentException (req) and
+                    # SilentCancelOutputException, which no panel raises
+                    # today: re-raised, they would leave the previous
+                    # panel on screen while the save skips its fields, so
+                    # an edit there would be lost behind "Saved". Show the
+                    # alert instead.
                     logger.exception("Physics panel %r failed to render", panel_id)
                     failed_panels.add(panel_id)
                     panel_renders.pop(panel_id, None)

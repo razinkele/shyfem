@@ -50,6 +50,11 @@ _C = _A.replace("sim_a", "sim_c").replace("ilin = 0", "ilin = 1\n        idtsyn 
 _SCALAR = _A.replace("sim_a", "sim_s").replace(
     "ilin = 0", "ilin = 0\n        ibeach = 3\n        beachrate = 0.3"
 )
+# assimilation needs a baroclinic run; $name carries a remapped input (name_wind)
+_E = (
+    _A.replace("sim_a", "sim_e").replace("ilin = 0", "ilin = 0\n        ibarcl = 3")
+    + "$name\n        wind = 'w.dat'\n$end\n"
+)
 _ARRAY = _A.replace("sim_a", "sim_arr").replace(
     "ilin = 0", "ilin = 0\n        ibeach = 3\n        beachrate = 0.3, 0.25, 0.1"
 )
@@ -67,6 +72,7 @@ class TestPhysicsSave:
         (wd / "d.str").write_text(_D)
         (wd / "scalar.str").write_text(_SCALAR)
         (wd / "array.str").write_text(_ARRAY)
+        (wd / "e.str").write_text(_E)
         result = pw_page.evaluate(
             """(wd) => {
                 if (typeof window.__test_set_active_project !== 'function') return 'no-hook';
@@ -273,6 +279,46 @@ class TestPhysicsSave:
         flags = {f: f == "wind" for f in _IMETOUT_FIELDS}
         for want in ("ilin = 1", "itend = 7200", "idt = 30", f"imetout = {_imetout_encode(flags)}"):
             assert re.search(rf"\b{re.escape(want)}\b", text), (want, text)
+
+    def test_an_edit_of_each_remapped_selectize_and_assimilation_field_is_saved(
+        self, pw_page, project
+    ):
+        # The ids the save reads come from the rendered HTML; one edit each
+        # of a remapped id (name_wind, idtcon_out), a selectize and the
+        # assimilation fields proves none of them is filtered out.
+        self._load(pw_page, project, "e.str")
+        for label in ("Input Files", "Output & Restart", "Data Assimilation"):
+            self._set_open(pw_page, label, True)
+        pw_page.locator("#physics-name_wind").fill("neww.dat")
+        pw_page.locator("#physics-name_wind").blur()
+        pw_page.locator("#physics-idtcon_out").fill("900")
+        pw_page.locator("#physics-idtcon_out").blur()
+        pw_page.locator("#physics-assim_t_on").check()
+        pw_page.evaluate("""() => {
+                for (const [id, v] of [['assim_t_fileobs', 'obs.dat'],
+                                       ['assim_t_filecoords', 'coords.dat']]) {
+                    const s = document.querySelector('#physics-' + id).selectize;
+                    s.addOption({value: v, text: v});
+                    s.setValue(v);
+                }
+            }""")
+        for field, value in (("nobs", "2"), ("sigobs", "0.5"), ("sigback", "0.5")):
+            pw_page.locator(f"#physics-assim_t_{field}").fill(value)
+            pw_page.locator(f"#physics-assim_t_{field}").blur()
+        pw_page.wait_for_timeout(500)
+        assert self._save(pw_page, project, "e.str"), "save did not write"
+        text = (project / "e.str").read_text()
+        assert "wind = 'neww.dat'" in text
+        assert re.search(r"\bidtcon = 900\b", text)
+        assert "$assimil1" in text
+        for want in (
+            "nobs = 2",
+            "sigobs = 0.5",
+            "sigback = 0.5",
+            "fileobs = 'obs.dat'",
+            "filecoords = 'coords.dat'",
+        ):
+            assert want in text, (want, text)
 
     def test_every_panel_renders_its_inputs(self, pw_page, project):
         for name in ("a.str", "c.str"):
