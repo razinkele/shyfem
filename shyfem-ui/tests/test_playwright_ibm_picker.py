@@ -20,10 +20,10 @@ class TestIbmDropdownNoProject:
 
     def test_prompts_to_open_project_and_no_free_text_box(self, pw_page, live_server):
         pw_page.locator(".sf-nav-item[data-nav='IBM']").click(force=True)
-        pw_page.wait_for_timeout(1000)
         picker = pw_page.locator("#ibm-lgr_path_picker")
-        picker.wait_for(state="attached", timeout=5000)
-        assert "Open a project" in picker.inner_text()
+        # Poll: the picker is a render.ui output, and one read after a fixed
+        # wait raced its render on CI ('Open a project' in '', PR #203).
+        expect(picker).to_contain_text("Open a project", timeout=15000)
         # The old free-text path box and FileService picker are gone.
         assert pw_page.locator("input#ibm-lgr_path").count() == 0
         assert pw_page.locator("#ibm-fp_lgr-file_select").count() == 0
