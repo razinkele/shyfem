@@ -77,6 +77,9 @@ def partitioning_ui() -> ui.Tag:
                     class_="btn-outline-secondary w-100",
                 ),
                 width=300,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Input grid and partitioning options",
             ),
             # Main content
             ui.navset_card_tab(

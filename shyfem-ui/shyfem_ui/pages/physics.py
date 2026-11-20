@@ -1123,6 +1123,9 @@ def physics_ui() -> ui.Tag:
                 ui.h5("Validation"),
                 ui.output_ui("validation_status"),
                 width=280,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Parameter file and active modules",
             ),
             ui.output_ui("panels_accordion"),
         ),

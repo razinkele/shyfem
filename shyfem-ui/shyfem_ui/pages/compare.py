@@ -73,6 +73,9 @@ def compare_ui() -> ui.Tag:
                     class_="btn-outline-success btn-sm w-100",
                 ),
                 width=300,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Jobs to compare and report",
             ),
             ui.navset_card_tab(
                 ui.nav_panel(

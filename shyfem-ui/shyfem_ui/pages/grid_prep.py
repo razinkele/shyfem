@@ -80,6 +80,9 @@ def grid_prep_ui() -> ui.Tag:
                 ui.output_ui("shypre_action_area"),
                 ui.output_ui("shybas_action_area"),
                 width=300,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Input grid and shypre options",
             ),
             # Main content
             ui.navset_card_tab(

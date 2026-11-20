@@ -187,6 +187,9 @@ def postprocess_ui() -> ui.Tag:
                     class_="btn-outline-primary w-100 mt-2",
                 ),
                 width=320,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="shyelab input, operation and output",
             ),
             # Main content
             ui.navset_card_tab(

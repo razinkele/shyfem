@@ -177,6 +177,9 @@ def visualize_ui() -> ui.Tag:
                     class_="btn-outline-secondary btn-sm w-100",
                 ),
                 width=300,
+                # A form landmark (Shiny 1.9 sidebars have none by default).
+                role="form",
+                aria_label="Data source and plot settings",
             ),
             # Main content
             ui.navset_card_tab(
