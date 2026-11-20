@@ -8,8 +8,19 @@ file's value (S-01) and inputs left over from a panel rendered earlier.
 import re
 
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import expect
 
 from shyfem_ui.pages.physics import PHYSICS_PANELS
+
+# The render stamp of every panel the browser has bound (a panel that failed
+# to render has no stamp). Bound = its value has reached the server.
+_STAMPS_JS = """() => [...document.querySelectorAll("[id^='physics-panel_']")]
+    .filter(o => !o.querySelector('.physics-panel-failed'))
+    .map(o => {
+        const s = o.querySelector("input[id^='physics-render_stamp_']");
+        return s && s.classList.contains('shiny-bound-input') ? s.value : null;
+    })"""
 
 _A = """$title
         save test
@@ -67,10 +78,27 @@ class TestPhysicsSave:
             }
         """)
 
+    def _stamps(self, page):
+        return page.evaluate(_STAMPS_JS)
+
+    def _wait_rendered(self, page, before, timeout=15000):
+        """Wait until every panel shows one new render (the notice comes earlier)."""
+        page.wait_for_function(
+            f"""(before) => {{
+                const v = ({_STAMPS_JS})();
+                return v.length > 0 && v.every(x => x !== null && x === v[0])
+                    && !before.includes(v[0]);
+            }}""",
+            arg=before,
+            timeout=timeout,
+        )
+
     def _load(self, page, wd, name):
+        before = self._stamps(page)
         page.locator("select#physics-str_path").select_option(str(wd / name))
         page.locator("#physics-load_btn").click()
         page.get_by_text(f"Loaded {name}").first.wait_for(timeout=5000)
+        self._wait_rendered(page, before)
 
     def _set_open(self, page, label, want_open):
         """Open or collapse a panel; the shared page keeps earlier tests' state."""
@@ -83,8 +111,14 @@ class TestPhysicsSave:
 
     def _save(self, page, wd, name):
         before = (wd / name).stat().st_mtime_ns
+        stamps = self._stamps(page)
         page.locator("#physics-save_btn").click()
-        page.wait_for_timeout(1500)
+        try:
+            # A save sets a new file state, so the panels render again; the
+            # next action must not land before they have.
+            self._wait_rendered(page, stamps, timeout=10000)
+        except PlaywrightTimeoutError:
+            pass  # nothing was saved; the mtime check below says so
         return (wd / name).stat().st_mtime_ns != before
 
     def test_every_panel_opened_and_no_edit_leaves_the_file_unchanged(self, pw_page, project):
@@ -126,6 +160,31 @@ class TestPhysicsSave:
         assert self._save(pw_page, project, "c.str"), "save did not write"
         assert (project / "c.str").read_text() == _C
 
+    def test_a_save_sent_before_the_panels_show_the_loaded_file_writes_nothing(
+        self, pw_page, project
+    ):
+        self._load(pw_page, project, "a.str")
+        self._set_open(pw_page, "Hydrodynamics", True)
+        before = (project / "c.str").stat().st_mtime_ns
+        stamps = self._stamps(pw_page)
+        pw_page.locator("select#physics-str_path").select_option(str(project / "c.str"))
+        # Load and Save in one browser task: the Save reaches the server
+        # before the browser can have bound the panels rendered for c.str,
+        # so the server still holds a.str's input values (ilin = 0).
+        pw_page.evaluate("""() => {
+                document.querySelector('#physics-load_btn').click();
+                document.querySelector('#physics-save_btn').click();
+            }""")
+        expect(pw_page.get_by_text("still showing the previous file").first).to_be_visible(
+            timeout=10000
+        )
+        self._wait_rendered(pw_page, stamps)
+        assert (project / "c.str").stat().st_mtime_ns == before, "the early save wrote"
+        assert (project / "c.str").read_text() == _C
+        # Once the panels show c.str, the save writes it unchanged.
+        assert self._save(pw_page, project, "c.str"), "save did not write"
+        assert (project / "c.str").read_text() == _C
+
     def test_every_panel_renders_its_inputs(self, pw_page, project):
         for name in ("a.str", "c.str"):
             self._load(pw_page, project, name)
@@ -138,8 +197,9 @@ class TestPhysicsSave:
         self._load(pw_page, project, "a.str")
         self._set_open(pw_page, "Turbulence & Mixing", True)
         self._load(pw_page, project, "d.str")
-        assert "cannot show the loaded file" in pw_page.locator(
-            "#physics-panel_turbulence"
-        ).inner_text()
+        assert (
+            "cannot show the loaded file"
+            in pw_page.locator("#physics-panel_turbulence").inner_text()
+        )
         assert self._save(pw_page, project, "d.str"), "save did not write"
         assert (project / "d.str").read_text() == _D

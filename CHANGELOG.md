@@ -24,6 +24,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+### Fixed — shyfem-ui
+- **Physics: a Save right after a Load no longer writes the previous file's values.** After a Load or a Save every physics panel is drawn again, but until the browser had the new panels the server still held the values the old ones showed. A Save (or Preview) in that moment, often under a second, took those leftovers for edits and wrote them into the newly loaded file: in CI, `c.str` was saved with the `ilin` and `idtsyn` of the file loaded before it. Each panel now carries a hidden render stamp; Save and Preview check that every panel shows the current file and otherwise say "The physics panels are still showing the previous file" and write nothing.
+
 ## [8.5.3] — 2026-11-20
 
 The built-in k-epsilon closure (`iturb=2`) now matches GOTM's standard k-epsilon (issue #125;

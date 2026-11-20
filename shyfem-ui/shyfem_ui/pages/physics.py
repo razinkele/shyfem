@@ -7,6 +7,7 @@ STR files.
 
 import copy
 import functools
+import itertools
 import logging
 import math
 import re
@@ -864,6 +865,50 @@ def _panel_input_ids(panel_ids: frozenset[str]) -> set[str]:
 
 _INPUT_ABSENT = object()
 
+# Each panel render carries a hidden input holding the render stamp of the
+# file state it was built from. After a Load or a Save the server
+# re-renders every panel, but until the browser has bound the new panels
+# and sent their values back, the server still holds the previous file
+# state's input values. A Save handled in that window compared those
+# leftovers with the new file, took them for edits and wrote them (CI
+# 2026-11-20: b.str/c.str saved with a.str's ilin and idtsyn). The
+# browser sends a newly bound input's first value immediately and in the
+# same batch as the other inputs bound with it, so a panel whose stamp is
+# current is showing the current file.
+_STAMP_PREFIX = "render_stamp_"
+
+
+def _stamp_input(panel_id: str, stamp: str) -> ui.Tag:
+    """The hidden input that tells the server which render a panel shows."""
+    return ui.div(
+        ui.input_text(f"{_STAMP_PREFIX}{panel_id}", None, value=stamp),
+        class_="d-none",
+        aria_hidden="true",
+    )
+
+
+def _stale_panels(inputs, stamp: str, skip: frozenset[str]) -> list[str]:
+    """Panels whose inputs the browser has not yet replaced with *stamp*'s render.
+
+    A panel in *skip* (its last render failed, so the save ignores its
+    inputs) is not checked. A stamp that was never received counts as
+    stale: those inputs are not the current file's either.
+    """
+    stale = []
+    for panel_id in PHYSICS_PANELS:
+        if panel_id in skip:
+            continue
+        shown = _read_input(inputs, f"{_STAMP_PREFIX}{panel_id}", [])
+        if shown is _INPUT_ABSENT or str(shown) != stamp:
+            stale.append(panel_id)
+    return stale
+
+
+_STALE_PANELS_MESSAGE = (
+    "The physics panels are still showing the previous file. "
+    "Wait until they have updated, then try again."
+)
+
 
 def _read_input(inputs, input_id: str, errors: list[str]) -> object:
     """Read one panel input, or _INPUT_ABSENT when it was never rendered.
@@ -1163,6 +1208,15 @@ def physics_server(
 
     str_data: reactive.Value[StrFile] = reactive.value(StrFile())
 
+    # A new stamp for every file state the panels are rendered from (each
+    # Load and Save sets a new StrFile). See _stale_panels.
+    _stamps = itertools.count(1)
+
+    @reactive.calc
+    def render_stamp() -> str:
+        str_data.get()
+        return str(next(_stamps))
+
     @reactive.effect
     @reactive.event(input.load_btn)
     def load_file():
@@ -1207,6 +1261,9 @@ def physics_server(
         except ValueError as e:
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
+            return
+        if _stale_panels(input, render_stamp(), frozenset(failed_panels)):
+            ui.notification_show(_STALE_PANELS_MESSAGE, type="warning", duration=6)
             return
         working: StrFile | None = None
         try:
@@ -1264,6 +1321,9 @@ def physics_server(
         # Read-only: render the STR that the current panel values would generate,
         # without writing to disk (so no editor permission gate). Mirrors what
         # save_file serializes via StrParser.generate.
+        if _stale_panels(input, render_stamp(), frozenset(failed_panels)):
+            ui.notification_show(_STALE_PANELS_MESSAGE, type="warning", duration=6)
+            return
         working, panel_errors, _purged = _collect_into_copy(
             input, str_data.get(), frozenset(failed_panels)
         )
@@ -1384,10 +1444,13 @@ def physics_server(
                     return ui.div(
                         f"This panel cannot show the loaded file ({type(exc).__name__}: "
                         f"{exc}). Its fields are not saved; edit them in the STR editor.",
-                        class_="alert alert-warning small",
+                        class_="alert alert-warning small physics-panel-failed",
                     )
                 failed_panels.discard(panel_id)
-                return tag
+                # Only a panel that rendered carries a stamp: a failed one
+                # is skipped by the save, and its alert must not count as
+                # a rendered input (test_every_panel_renders_its_inputs).
+                return ui.TagList(tag, _stamp_input(panel_id, render_stamp()))
 
             return guarded
 
