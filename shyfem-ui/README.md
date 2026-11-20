@@ -20,7 +20,7 @@ A modern Python Shiny web application providing a unified interface for the SHYF
 
 ### Prerequisites
 
-- Python 3.10 or later
+- Python 3.11 or later
 - SHYFEM installation (for running simulations)
 
 ### Install from source
