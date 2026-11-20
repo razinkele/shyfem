@@ -43,6 +43,32 @@ def read_dbg(path):
     return out
 
 
+def flip(path, nsteps=120):
+    """Max relative step-to-step change of every numeric field of the last
+    nsteps 'energy:' lines of a .inf file (one line per time step). The hourly
+    drift cannot see a mode that flips every step; NaN if there is no data."""
+    try:
+        lines = [ln.split()[1:] for ln in Path(path).read_text().splitlines()
+                 if ln.split()[:1] == ["energy:"]]
+    except OSError:
+        return float("nan")
+    rows = []
+    for fields in lines[-nsteps:]:
+        nums = []
+        for f in fields:
+            try:
+                nums.append(float(f))
+            except ValueError:
+                pass                             # the time stamp
+        rows.append(nums)
+    if len(rows) < 2 or len({len(r) for r in rows}) != 1:
+        return float("nan")
+    a = np.array(rows)
+    den = np.maximum(np.abs(a[1:]), np.abs(a[:-1]))
+    rel = np.where(den > 0, np.abs(a[1:] - a[:-1]) / np.where(den > 0, den, 1), 0.0)
+    return float(rel.max())
+
+
 def profile(path):
     steps = read_dbg(path)
     _, r = steps[-1]
@@ -86,6 +112,7 @@ for run in runs:
 for run, nl in pairs:
         stem = run if ":" in str(run) or run.endswith(f"_{nl}") or "_d" in run else f"{run}_{nl}"
         p = profile(f"{stem}.dbg")
+        p["stem"], p["flip"] = stem, flip(f"{stem}.inf")
         results[(run, nl)] = p
         inner = p["zb"] > 0
         lower = (p["zb"] > 0) & (p["zb"] < 0.2 * p["H"])
@@ -101,17 +128,21 @@ np.save("profiles.npy", {f"{k[0]}_{k[1]}": v for k, v in results.items()}, allow
 # gate for the k-eps flux wall conditions (#125), on every keps run read
 # (both keps_20 and keps_40 by default): GOTM parity near the bed (GOTM is
 # 0.75-0.84), within 10% of the log-wake profile over the depth, steady
-# (successive hourly dumps differ by < 2%) and finite; exit 1 if any fails
+# (successive hourly dumps differ by < 2%, and the .inf energy lines of the
+# last 120 time steps change by < 1e-4 from step to step) and finite;
+# exit 1 if any fails. The other runs' flip is printed for comparison.
 gate_ok = True
 for (run, nl), p in results.items():
     if run != "keps":
+        print(f"FLIP {p['stem']} flip={p['flip']:.1e}")
         continue
     inner = p["zb"] > 0
     lower = (p["zb"] > 0) & (p["zb"] < 0.2 * p["H"])
     near = p["nut"][lower].mean() / p["ana"][lower].mean()
     logwake = p["nut"][inner].mean() / p["wake"][inner].mean()
-    ok = 0.8 <= near <= 1.1 and abs(logwake - 1) <= 0.10 and p["drift"] < 0.02 and p["finite"]
+    ok = (0.8 <= near <= 1.1 and abs(logwake - 1) <= 0.10 and p["drift"] < 0.02
+          and p["flip"] < 1e-4 and p["finite"])
     gate_ok = gate_ok and ok
     print(f"GATE keps_{nl} near={near:.2f} logwake={logwake:.2f} drift={p['drift']:.1e} "
-          f"finite={p['finite']}")
+          f"flip={p['flip']:.1e} finite={p['finite']}")
 sys.exit(0 if gate_ok else 1)

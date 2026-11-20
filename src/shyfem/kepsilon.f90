@@ -317,8 +317,11 @@
 ! roughness lengths z0s, z0b. Only the interior interfaces 1..lmax-1 are
 ! solved; k has zero wall flux, eps the log-law flux at the centre of the
 ! wall layer (GOTM epsilon_bc, Neumann, logarithmic). The wall interfaces
-! 0 and lmax are filled afterwards (output and limiter only).
-! For lmax <= 2 the Dirichlet wall values from taus, taub are kept.
+! 0 and lmax are filled afterwards (output and limiter only). These
+! columns also use GOTM's time treatment: k is solved before eps, and
+! the sources are split as in GOTM tkeeq/dissipationeq.
+! For lmax <= 2 the original Dirichlet path (walls from taus, taub,
+! eps before k, split on the sign of the net source) is kept unchanged.
 
 	use mod_physical_constants, only : g => grav_sp, &
      &			karman => vonkarman_sp
@@ -384,6 +387,7 @@
 	real a,su,sb,k2,reps
 	real ceps3
 	real fs,fb			!eps wall fluxes into the column
+	real prod,buoy,diss,epsk	!GOTM source split (lmax >= 3)
 
 	real b(nlevdi)			!buoyancy
 	real n2(0:nlevdi)		!Brunt-V. frequency
@@ -392,6 +396,7 @@
 	real dzr(0:nlevdi)		!z difference between rho (u,v) levels
 	real rke(nlevdi)		!eddy coefficient for epsilon
 	real rkk(nlevdi)		!eddy coefficient for kinetic energy
+	real kold(nlevdi)		!k before the k solve (lmax >= 3)
 
 	real*8 aa(0:nlevdi)		!arrays for tri-diagonal algorithm
 	real*8 bb(0:nlevdi)		!...
@@ -480,6 +485,8 @@
 	  m2(l) = ud*ud + vd*vd
 	end do
 
+	if( lmax <= 2 ) then	!no room for flux rows: Dirichlet walls
+
 !---------------------------------------------------------------------
 ! turbulent dissipation (eps)
 !---------------------------------------------------------------------
@@ -512,8 +519,6 @@
 	end do
 	if( bdebug ) write(6,*) 'keps 17'
 
-	if( lmax <= 2 ) then	!no room for flux rows: Dirichlet walls
-
 !	---------------------------------
 !	impose boundary conditions
 !	---------------------------------
@@ -539,32 +544,6 @@
 	!eps(0) = eps(1)
 	!eps(lmax) = eps(lmax1)
 
-	else
-
-!	  ---------------------------------
-!	  flux (Neumann) wall conditions (GOTM diff_face, epsilon_bc):
-!	  rows 1 and lmax-1 lose their link to the wall interface and
-!	  get the log-law eps flux at the centre of the wall layer,
-!	  computed with k of the previous time step (k is solved below)
-!	  ---------------------------------
-
-	  fs = cmu0**4 * k(1)**2 / ( sigmae * (0.5*dh(1)+z0s) )
-	  fb = cmu0**4 * k(lmax1)**2 / ( sigmae * (0.5*dh(lmax)+z0b) )
-
-	  aux = dt*dzr(1)
-	  aa(1) = 0.
-	  bb(1) = bb(1) - aux*rke(1)*dzk(1)
-	  rr(1) = rr(1) + aux*fs
-	  aux = dt*dzr(lmax1)
-	  bb(lmax1) = bb(lmax1) - aux*rke(lmax)*dzk(lmax)
-	  cc(lmax1) = 0.
-	  rr(lmax1) = rr(lmax1) + aux*fb
-
-!	  solve the interior interfaces 1..lmax-1
-	  call tridagd(aa(1),bb(1),cc(1),rr(1),eps(1),gam1(1),gam(1),lmax1)
-
-	end if
-
 !---------------------------------------------------------------------
 ! turbulent kinetic energy (k)
 !---------------------------------------------------------------------
@@ -588,8 +567,6 @@
 
 	end do
 
-	if( lmax <= 2 ) then	!no room for flux rows: Dirichlet walls
-
 !	---------------------------------
 !	impose boundary conditions
 !	---------------------------------
@@ -610,12 +587,42 @@
 !	call tridag(aa,bb,cc,rr,k,gam,lmax+1)
 	call tridagd(aa,bb,cc,rr,k,gam1,gam,lmax+1)
 
-	else
+	else	!lmax >= 3: flux wall conditions, GOTM time treatment
+
+!	  ===============================================================
+!	  only the interior interfaces 1..lmax-1 are solved, k first and
+!	  then eps (GOTM do_turbulence: tkeeq, dissipationeq). Sources
+!	  are split as in GOTM tkeeq/dissipationeq: sinks always on the
+!	  diagonal, production (plus positive buoyancy) on the rhs.
+!	  ===============================================================
+
+	  do l = 1,lmax1
+	    kold(l) = k(l)		!k before this step's k solve
+	  end do
 
 !	  ---------------------------------
-!	  zero k flux at the walls: rows 1 and lmax-1 lose their link
-!	  to the wall interface; solve the interior interfaces 1..lmax-1
+!	  turbulent kinetic energy (k)
 !	  ---------------------------------
+
+	  do l = 1,lmax1
+	    prod = rkm(l) * m2(l)	!shear production P
+	    buoy = - rkt(l) * n2(l)	!buoyancy production B
+	    diss = eps(l)
+	    aux = dt*dzr(l)
+	    aa(l) = - aux * (rkk(l)*dzk(l))
+	    bb(l) = 1. + aux * ( rkk(l)*dzk(l) + rkk(l+1)*dzk(l+1) )
+	    cc(l) = - aux * (rkk(l+1)*dzk(l+1))
+	    if( prod + buoy > 0. ) then
+	      rr(l) = k(l) + dt * ( prod + buoy )
+	      bb(l) = bb(l) + dt * diss / k(l)
+	    else
+	      rr(l) = k(l) + dt * prod
+	      bb(l) = bb(l) + dt * ( diss - buoy ) / k(l)
+	    end if
+	  end do
+
+!	  zero k flux at the walls: rows 1 and lmax-1 lose their link
+!	  to the wall interface (GOTM diff_face, Neumann)
 
 	  aux = dt*dzr(1)
 	  aa(1) = 0.
@@ -625,6 +632,54 @@
 	  cc(lmax1) = 0.
 
 	  call tridagd(aa(1),bb(1),cc(1),rr(1),k(1),gam1(1),gam(1),lmax1)
+
+!	  ---------------------------------
+!	  turbulent dissipation (eps), with EpsOverTke = eps/kold
+!	  ---------------------------------
+
+	  do l = 1,lmax1
+	    ps = rkm(l) * m2(l)
+	    gg = - rkt(l) * n2(l)
+	    if( n2(l) .gt. 0. ) then
+	      ceps3 = ceps3f * ceps3p
+	    else
+	      ceps3 = ceps3f * ceps3n
+	    end if
+	    epsk = eps(l) / kold(l)
+	    prod = ceps1 * epsk * ps
+	    buoy = ceps3 * epsk * gg
+	    diss = ceps2 * epsk * eps(l)
+	    aux = dt*dzr(l)
+	    aa(l) = - aux * (rke(l)*dzk(l))
+	    bb(l) = 1. + aux * ( rke(l)*dzk(l) + rke(l+1)*dzk(l+1) )
+	    cc(l) = - aux * (rke(l+1)*dzk(l+1))
+	    if( prod + buoy > 0. ) then
+	      rr(l) = eps(l) + dt * ( prod + buoy )
+	      bb(l) = bb(l) + dt * diss / eps(l)
+	    else
+	      rr(l) = eps(l) + dt * prod
+	      bb(l) = bb(l) + dt * ( diss - buoy ) / eps(l)
+	    end if
+	  end do
+
+!	  flux (Neumann) wall conditions (GOTM diff_face, epsilon_bc):
+!	  rows 1 and lmax-1 lose their link to the wall interface and
+!	  get the log-law eps flux at the centre of the wall layer,
+!	  computed with this step's k (GOTM dissipationeq uses tke)
+
+	  fs = cmu0**4 * k(1)**2 / ( sigmae * (0.5*dh(1)+z0s) )
+	  fb = cmu0**4 * k(lmax1)**2 / ( sigmae * (0.5*dh(lmax)+z0b) )
+
+	  aux = dt*dzr(1)
+	  aa(1) = 0.
+	  bb(1) = bb(1) - aux*rke(1)*dzk(1)
+	  rr(1) = rr(1) + aux*fs
+	  aux = dt*dzr(lmax1)
+	  bb(lmax1) = bb(lmax1) - aux*rke(lmax)*dzk(lmax)
+	  cc(lmax1) = 0.
+	  rr(lmax1) = rr(lmax1) + aux*fb
+
+	  call tridagd(aa(1),bb(1),cc(1),rr(1),eps(1),gam1(1),gam(1),lmax1)
 
 !	  ---------------------------------
 !	  wall interfaces (output and limiter only, GOTM-style):
