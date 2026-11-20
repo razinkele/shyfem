@@ -173,6 +173,43 @@ on. Keep today's Dirichlet formulation for `lmax <= 2` unchanged (the
 builder may choose a cleaner equivalent, but must not change results for
 those columns and must say what it did).
 
+## Amendment A (owner, 2026-11-20, after the first attempt)
+
+The first implementation (commit 128bcdea) followed sections 1-5 exactly and
+was reviewed as faithful, but the channel gate failed: a 2-time-step
+oscillation (bounded at 20 layers, growing at 40). The review traced it to
+two time-stepping differences from GOTM, not to the wall formula. The owner
+approved **one bounded retry** that also adopts GOTM's time treatment; if it
+fails, stop for good and close #125 as won't-fix.
+
+1. **Solve order:** the k equation first, then epsilon (GOTM `do_turbulence`:
+   `tkeeq` then `dissipationeq`).
+2. **Source split, every interior row (GOTM `tkeeq.F90:164-170`,
+   `dissipationeq.F90:190-201`), replacing SHYFEM's switch on the sign of the
+   net source:**
+   - k: `prod = P`, `buoyan = B` (`B = -rkt*N^2`), `diss = eps`. If
+     `prod + buoyan > 0`: source `prod + buoyan` on the right-hand side,
+     `diss/k` on the diagonal; else source `prod` on the right-hand side,
+     `(diss - buoyan)/k` on the diagonal.
+   - epsilon: `EpsOverTke = eps/k_old` (k before this step's k solve),
+     `prod = ceps1*EpsOverTke*P`, `buoyan = ceps3*EpsOverTke*B`,
+     `diss = ceps2*EpsOverTke*eps`. If `prod + buoyan > 0`: source
+     `prod + buoyan`, diagonal `diss/eps`; else source `prod`, diagonal
+     `(diss - buoyan)/eps`.
+   - `ceps3` keeps SHYFEM's choice by the sign of `N^2`.
+3. **Wall flux uses the new k:** `F_s`, `F_b` take k(1), k(lmax-1) from this
+   step's k solve (GOTM `dissipationeq.F90:219,238` uses `tke`, the new value).
+4. **Gate gains a 2-time-step test:** the hourly `drift` cannot see a mode
+   that flips every step (each dump falls on the same phase). A run is steady
+   only if, over the last 120 time steps, every numeric field of its `.inf`
+   `energy:` lines changes by less than 1e-4 (relative) from one step to the
+   next. GOTM's runs are constant to the printed 5 digits; the first attempt's
+   keps_20 flips by about 1.7e-4.
+
+Sections 1-5 otherwise stand (boundary rows, wall fill, roughness, the
+`lmax <= 2` path unchanged). The interior source change alters results for
+every `iturb=2` column of 3 or more layers; the CHANGELOG says so.
+
 ## Verification
 
 1. **Benchmark:** `testcases/examples/channel_turb/run_all.sh` then

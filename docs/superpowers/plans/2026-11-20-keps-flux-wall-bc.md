@@ -78,6 +78,21 @@
 - [ ] **Step 7: Build and run the gate:** `bash run_all.sh` in `channel_turb`. Expected: exit 0 and both GATE lines pass. **If `drift >= 0.02` for either run: STOP, commit nothing further, report the GATE lines and what was built (owner's stop rule).** If steady but outside the near/logwake bands: STOP and report the numbers.
 - [ ] **Step 8: Commit** (`fix(keps): flux (Neumann) wall conditions with roughness lengths (#125)`), with the before/after GATE lines in the message.
 
+### Task 3A: GOTM time treatment (owner-approved bounded retry, spec Amendment A)
+
+**Files:**
+- Modify: `src/shyfem/kepsilon.f90` (`keps`: solve order, interior source split, flux k)
+- Modify: `testcases/examples/channel_turb/analyse.py` (2-step test in the GATE)
+
+**Interfaces:**
+- Consumes: Task 3's `keps(...,z0s,z0b)` and boundary rows (commit 128bcdea), unchanged in signature.
+
+- [ ] **Step 1: Extend the GATE** (spec Amendment A item 4): per `keps_NN` run read `keps_NN.inf`, take the `energy:` lines of the last 120 time steps, and add `flip=<max relative step-to-step change over all numeric fields>`; a run passes only with `flip < 1e-4` in addition to Task 3's conditions. Print `flip` on the GATE line.
+- [ ] **Step 2: Run the gate on 128bcdea's build.** Expected: FAIL, keps_20 `flip` about 1.7e-4 (RED), GOTM runs `flip` 0 if you also print them.
+- [ ] **Step 3: Implement Amendment A items 1-3** in `keps`, interior rows `1..lmax-1` of both equations, for `lmax >= 3` only (the `lmax <= 2` path stays textually unchanged).
+- [ ] **Step 4: Build and run the gate.** Expected: exit 0. **If it fails in any way, STOP for good** (owner): commit WIP only if it builds, report BLOCKED with the GATE lines; the controller then closes #125 as won't-fix.
+- [ ] **Step 5: Commit** (`fix(keps): flux wall conditions with GOTM time treatment (#125)`), squash-free, with before/after GATE lines in the message.
+
 ### Task 4: Regression gates, MPI/OMP and the Venice comparison
 
 **Files:**
