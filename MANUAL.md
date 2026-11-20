@@ -1235,6 +1235,20 @@ $end
 
 Simulates 11 state variables: dissolved oxygen, CBOD, phytoplankton, ammonia, nitrate, organic N/P, orthophosphate, zooplankton, and sediment N/P.
 
+EUTRO needs a build with `ECOLOGICAL = EUTRO` in `Rules.make`; without it a
+run with `ibio = 1` stops with "No ecological module has been linked". Its
+rate parameters default to the Venice lagoon calibration (`iwcal = 1`;
+0 = generic defaults, 2 = Taranto, 3 = read `michol.dat`). Known limitations:
+
+- phytoplankton does not settle unless `wsphyt` (m/s) is set (default 0, off);
+- detritus (particulate organic N, P and CBOD) does not settle;
+- the air temperature used for wind-driven reaeration is fixed at 22 °C;
+- there is no input for pelagic loadings.
+
+These are kept as they are until EUTRO is set up for a real site, which can
+supply the settling velocities, partition fractions, loadings and air
+temperature.
+
 #### AQUABC
 
 Focuses on cyanobacteria and nitrogen fixation with 23 state variables including multiple phytoplankton groups, zooplankton, nutrients (C, N, P, Si), dissolved organic matter, and sediment diagenesis.
