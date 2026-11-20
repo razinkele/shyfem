@@ -25,6 +25,7 @@ import asyncio
 import json
 import os
 import signal
+import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -613,19 +614,39 @@ def test_cancel_mid_run_kills_real_child(env, monkeypatch):
 
 
 def test_timeout_marks_failed_with_timeout_message(env, monkeypatch):
+    """A build that outlives ``command_timeout_seconds`` is killed and marked failed.
+
+    The child is a stand-in that cannot finish. This test used to race a real
+    400-day build (about 2.3 s on laguna) against the 1 s timeout, and a faster
+    CI runner sometimes finished the build first: the state was "done" (twice
+    on 2026-11-20). What is under test is ``_run_build``'s timeout path, not
+    the CLI; killing a real CLI child is covered by
+    ``test_cancel_mid_run_kills_real_child``.
+    """
     cfg, user, project, run = env
-    big = run.parent / "big2"
-    make_box_run(big, days=_BIG_DAYS)
     monkeypatch.setattr(
         "shyfem_ui.services.access_control.editor_denied_reason", lambda *a, **k: None
     )
     cfg.command_timeout_seconds = 1
+    real_exec = asyncio.create_subprocess_exec
+    spawned: list[tuple] = []
+
+    async def never_finishes(*cmd, **kwargs):
+        spawned.append(cmd)
+        # Same pipes, working dir (the build's tmp dir) and new session as the
+        # real build, so the process-group kill and build.log are the real
+        # ones. It writes meta.json and then hangs: only the timeout may stop
+        # it from being published, never a missing output file.
+        script = "import pathlib, time; pathlib.Path('meta.json').write_text('{}'); time.sleep(120)"
+        return await real_exec(sys.executable, "-c", script, **kwargs)
+
+    monkeypatch.setattr(bc.asyncio, "create_subprocess_exec", never_finishes)
     reg = bc.BuildRegistry()
     h_box: list = [None]
 
     async def go():
         h = await bc.start_build(
-            reg, project=project, run_id="big2", run_dir=big, user=user, config=cfg
+            reg, project=project, run_id="fix", run_dir=run, user=user, config=cfg
         )
         h_box[0] = h
         await _wait(h, timeout=15)
@@ -637,6 +658,8 @@ def test_timeout_marks_failed_with_timeout_message(env, monkeypatch):
         if h_box[0] is not None:
             _kill_process_group_if_alive(h_box[0].pid)
 
+    # It would have run the real build CLI; the stand-in replaced only that process.
+    assert len(spawned) == 1 and spawned[0][1:3] == ("-m", "shyfem_ui.boxmodel_cache_cli")
     assert h.state == "failed"
     # Design choice: on a timeout the tmp dir is kept (not deleted) and its
     # progress.json is overwritten to an error phase naming the timeout --
@@ -649,7 +672,7 @@ def test_timeout_marks_failed_with_timeout_message(env, monkeypatch):
     prog = bc._read_json(h.tmp_dir / "progress.json")
     assert prog is not None and prog.get("phase") == "error"
     assert "timed out" in (prog.get("error") or "").lower()
-    st = bc.cache_status(Path(project["work_dir"]), "big2", big, None)
+    st = bc.cache_status(Path(project["work_dir"]), "fix", run, None)
     assert st.state == "failed" and "timed out" in st.message.lower()
     with pytest.raises(ProcessLookupError):
         os.kill(h.pid, 0)
