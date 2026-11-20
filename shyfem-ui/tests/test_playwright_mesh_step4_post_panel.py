@@ -27,7 +27,12 @@ _P = "#mesh_builder-"
 
 def _step(pw_page, value: str) -> None:
     pw_page.locator(f"{_P}wizard_step input[value='{value}']").click(force=True)
-    pw_page.wait_for_timeout(400)
+    # The server switches the panel (wizard_step -> update_navset), so wait
+    # for it to show; a fixed 400 ms wait raced a slow CI runner and the next
+    # click hit a still-hidden panel ("Element is not visible").
+    expect(
+        pw_page.locator(f".tab-pane[data-value='{value}'][id^='tab-mesh_builder-wizard_panels-']")
+    ).to_be_visible(timeout=15000)
 
 
 def _interpolate(pw_page, method: str, runs: int) -> None:
