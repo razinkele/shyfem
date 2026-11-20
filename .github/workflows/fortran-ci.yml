@@ -38,7 +38,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gfortran openmpi-bin libopenmpi-dev libmetis-dev \
-            libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev
+            libnetcdf-dev libnetcdff-dev libx11-dev libxt-dev python3-numpy
 
       - name: Build (NODE) and capture warnings
         run: |
@@ -102,6 +102,17 @@ jobs:
           shyfem venlag_keps_smoke.str > venlag_keps_smoke.out 2>&1 || { tail -40 venlag_keps_smoke.out; exit 1; }
           grep -q "simulation end" venlag_keps_smoke.out || { echo "no simulation end (keps)"; tail -40 venlag_keps_smoke.out; exit 1; }
           echo "venlag_keps_smoke: OK"
+
+      # The k-epsilon closure's benchmark (#125): neutral open channel at 20
+      # and 40 layers against the log law and GOTM's standard k-epsilon. The
+      # Venice k-eps smoke above only checks that the run ends; analyse.py
+      # exits 1 unless k-eps is at GOTM parity near the bed and over the depth,
+      # steady, and free of 2-time-step flips (about 2 min).
+      - name: Run k-epsilon channel benchmark gate (channel_turb)
+        run: |
+          export PATH="$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/channel_turb
+          bash run_all.sh
 
   fortran-lint:
     runs-on: ubuntu-latest
