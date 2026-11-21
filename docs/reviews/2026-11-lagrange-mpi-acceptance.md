@@ -10,9 +10,8 @@ meets a criterion adds its section here.
 values: the difference is at most 1e-5 of the array's largest serial
 magnitude.
 
-**Measured** 2026-11-21 16:16 EET (from `date`). Source: the commit that
-adds this section, whose parent is `2d9c839b`. Built with OpenMPI
-(`libmpi.so.40`).
+**Measured** 2026-11-21 16:16 EET (from `date`). Source: commit
+`ac03c934`. Built with OpenMPI (`libmpi.so.40`).
 
 **Method.** `./check_lgr_mpi.sh CASE NP flux` in
 `testcases/examples/mar_menor`. The driver runs the case serially and on NP
@@ -60,10 +59,19 @@ flux3d layer 1):
 | B | 4 | 209 / 315 | 308 / 318 |
 | C | 4 | 207 / 315 (bottom 205) | 305 / 318 (bottom 297) |
 
-The worst values that remain (at most 1.0e-06) match the all-own class and
-come from the order of summation. Serial adds the node contributions in node
-order. Under MPI each rank adds those of its own nodes, and the partial sums
-are then added.
+The controller measured these rows on the stage-1 head (`7a819806`) on
+2026-11-21.
+
+The differences that remain in the mixed classes are no larger than in the
+all-own class. In every run and array of the table, the worst mixed value is
+at most the worst all-own value. Over all runs, the worst mixed value is
+1.0e-06 and the worst all-own value is 1.0e-06 (both case A on 2 processes,
+flux3d layer 1). Their cause was not separated. Two causes are candidates:
+
+- the order of summation: serial adds the node contributions in node order,
+  while under MPI each rank adds those of its own nodes and the partial sums
+  are then added;
+- the small differences of the MPI hydrodynamic solution.
 
 **Other checks**
 

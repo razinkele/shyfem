@@ -131,6 +131,10 @@
 	! count, then fill
 	!-----------------------------------------------
 
+	! the filter on r below (0 <= r < nproc, r /= my_id) is repeated in
+	! lgr_mpi_flux_sum (lowest other holder rmin): keep the two in step,
+	! or the own value there is added 0 or 2 times
+
 	lgr_nshare = 0
 	do ie = 1, nel
 	  do j = 1, id_elem(0,ie)
@@ -484,6 +488,9 @@
 	  if( r == my_id ) then
 	    ! own values, once per element: from the stretch of the
 	    ! lowest other holder rmin (the same rule that built the lists)
+	    ! the filter on ir repeats the one in lgr_mpi_topology_init
+	    ! (count and fill loops): keep the two in step, or the own
+	    ! value is added 0 or 2 times
 	    do q = 0, nproc-1
 	      ip = noff(q)
 	      do j = lgr_share_ptr(q)+1, lgr_share_ptr(q+1)

@@ -411,6 +411,7 @@ cleanlinks:
 ../../lib/mod/mod_gotm_aux.mod: gotm_aux.o
 ../../lib/mod/mod_keps.mod: turbulence_util.o
 ../../lib/mod/mod_lagrange.mod: lagrange_data.o
+../../lib/mod/mod_lagrange_mpi.mod: lagrange_mpi.o
 ../../lib/mod/mod_nudge.mod: nudge.o
 ../../lib/mod/mod_parwaves.mod: waves_admin.o
 ../../lib/mod/mod_renewal_time.mod: water_ren_time.o
@@ -771,6 +772,7 @@ lagrange_main.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/mod_depth.mod \
 		../../lib/mod/mod_geom_dynamic.mod \
 		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod \
 		../../lib/mod/shyfile.mod ../../lib/mod/shympi.mod 
 lagrange_sedim.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_bstress.mod \
