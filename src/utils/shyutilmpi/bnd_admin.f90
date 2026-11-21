@@ -489,6 +489,9 @@
 ! tilted around |ktilt|, e.g., $-|ztilt|$ at the first boundary node,
 ! 0 at |ktilt|, and $+|ztilt|$ at the last boundary node.
 !
+! Tilting is not supported with MPI: a run on more than one process
+! that sets |ktilt| or |ztilt| stops at start-up.
+!
 ! |ktilt|		Node of boundary around which tilting should
 !			take place. (Default 0, i.e., no tilting)
 ! |ztilt|		Explicit value for tilting (unit meters).
@@ -709,7 +712,23 @@
 	 end if
 
          call get_bnd_ipar(ibc,'ktilt',ktilt)
-	 if( ktilt .gt. 0 ) then
+         call get_bnd_par(ibc,'ztilt',ztilt)
+	 if( shympi_is_parallel() .and. &
+     &		( ktilt .gt. 0 .or. ztilt .ne. 0. ) ) then
+	   ! z_tilt and c_tilt walk the whole boundary node list, which
+	   ! MPI splits across domains; ktilt is also not found on the
+	   ! domains that do not hold it. Every domain reads the same
+	   ! STR file, so all of them stop here.
+	   if( shympi_is_master() ) then
+		write(6,'(a,i2,a)') 'Section BOUND ',i,' :'
+		write(6,*) '   boundary tilting (ktilt/ztilt) is not' &
+     &			,' supported with MPI'
+		write(6,*) '   run this simulation on one process' &
+     &			,' (serially), or remove ktilt and ztilt'
+		write(6,*) '   ktilt = ',ktilt,'   ztilt = ',ztilt
+	   end if
+	   bstop=.true.
+	 else if( ktilt .gt. 0 ) then
 	   knode=ipint(ktilt)		!$$EXTINW
 	   if(knode.le.0) then
 		write(6,'(a,i2,a)') 'Section BOUND ',i,' :'
