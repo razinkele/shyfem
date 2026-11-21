@@ -141,8 +141,11 @@
 
 !******************************************************************
 ! Intersect coordinate with sides of element. Only called when
-! find_elem_from_old return ie=0. Return new coordinates 
+! find_elem_from_old return ie=0. Return new coordinates
 ! on the element side and if is an open boundary set ie=-ie
+! (sides from the side table lgr_ieltv: a cut-off side to another MPI
+! process, lgr_ieltv <= -1000, is treated like an open boundary, so the
+! particle leaves this process's domain with ie=-ie)
 
         subroutine particle_on_side(ie,xo,yo,xn,yn)
 
@@ -176,7 +179,7 @@
             if( lgr_ieltv(ii,ie) == 0 ) then    !material boundary
               xn = xi
               yn = yi
-            else if ( lgr_ieltv(ii,ie) < 0 ) then !open boundary
+            else if ( lgr_ieltv(ii,ie) < 0 ) then !open or cut-off side
               ie = -ie                          !particle exits
               xn = xi
               yn = yi

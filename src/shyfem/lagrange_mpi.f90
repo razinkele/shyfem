@@ -78,14 +78,17 @@
 	integer, save, allocatable :: lgr_share_ptr(:)     !(0:nproc)
 	integer, save, allocatable :: lgr_share_elem(:)    !local element numbers
 
-	! side table of the tracker (lgr_mpi_side_table), in every run; read
-	! only after start-up. lgr_ieltv(ii,ie): > 0 local neighbour, 0 wall,
-	! -1 ... -999 open boundary, <= -1000 cut-off side with destination
-	! rank -lgr_ieltv-1000 (equal to ieltv in a serial run).
-	! lgr_side_lmax(ii,ie): layers (ilhv) of the element across a cut-off
-	! side, 0 for every other side
+	! side table of the tracker (lgr_mpi_side_table), in every particle
+	! run (ilagr /= 0); read only after start-up. lgr_ieltv(ii,ie): > 0
+	! local neighbour, 0 wall, -1 ... -999 open boundary, <= -1000 cut-off
+	! side with destination rank -lgr_ieltv-1000 (equal to ieltv in a
+	! serial run). lgr_side_lmax(ii,ie): layers (ilhv) of the element
+	! across a cut-off side, 0 for every other side
 	integer, save, allocatable :: lgr_ieltv(:,:)       !(3,nel)
 	integer, save, allocatable :: lgr_side_lmax(:,:)   !(3,nel)
+
+	! length of an error record of the side table (lgr_mpi_side_record)
+	integer, parameter :: lgr_side_nfo = 14
 
 	contains
 
@@ -139,10 +142,16 @@
 
 	subroutine lgr_mpi_topology_init
 
-! builds the side table of the tracker (lgr_mpi_side_table, in every run,
-! serial too) and, for every other rank r, the list of local elements
-! shared with r (r is among id_elem(1:id_elem(0,ie),ie)), sorted by
-! ip_int_elem
+! builds the side table of the tracker (lgr_mpi_side_table) in a particle
+! run (ilagr /= 0, serial too) and, for every other rank r, the list of
+! local elements shared with r (r is among id_elem(1:id_elem(0,ie),ie)),
+! sorted by ip_int_elem
+!
+! The particle module calls this routine at its start-up, before the
+! first particle step. lgr_mpi_flux_sum calls it on demand, also in a run
+! without particles (semi-Lagrangian advection, itlin = 1, through
+! back_trace): there only the lists are built, no side table (the old
+! tracker of that path does not read it).
 !
 ! at levdbg >= 3 the lists are checked: the length and the sum of
 ! ip_int_elem of the list of q for r must equal those of r for q
@@ -164,7 +173,8 @@
 
 	nproc = n_threads
 
-	call lgr_mpi_side_table
+	! particle run: the test of lagrange (ilagr = 0 switches it off)
+	if( nint(getpar('ilagr')) /= 0 ) call lgr_mpi_side_table
 
 	if( nproc <= 1 ) return
 
@@ -326,7 +336,7 @@
 
 ! side table of the tracker: lgr_ieltv(3,nel) and lgr_side_lmax(3,nel)
 ! (meaning: see the module data); called by lgr_mpi_topology_init in
-! every run, before the first particle step
+! every particle run, before the first particle step
 !
 ! serial run: lgr_ieltv = ieltv and lgr_side_lmax = 0
 !
@@ -343,15 +353,19 @@
 ! the global numbers of the two end nodes and of the element on this
 ! side, and answers with the global number and the layers (ilhv) of its
 ! local element that has both nodes and is not that element. The answer
-! must be the element across the side in the global mesh, or rank 0
-! writes the side and every rank aborts; lgr_side_lmax takes the layers.
-! Every rank takes part in every collective call once, whatever the
-! number of its cut-off sides (zero included): the pairs that exchange
-! messages are known from an exchange of counts, empty pairs are skipped
-! on both sides.
+! must be the element across the side in the global mesh, and that
+! element must not be held here, or rank 0 writes the side and every
+! rank aborts; lgr_side_lmax takes the layers. Every rank takes part in
+! every collective call once, whatever the number of its cut-off sides
+! (zero included): the pairs that exchange messages are known from an
+! exchange of counts, empty pairs are skipped on both sides.
 !
-! at levdbg >= 3 rank 0 writes the global totals (a cut-off side counted
-! once per rank that has it)
+! at levdbg >= 3 lgr_side_lmax is also compared with the layers of the
+! element across in a global array that does not go through the side
+! exchange: ilhv gathered once from the main owner of every element
+! (lgr_mpi_gather_global, keyed by ip_int_elem, every element exactly
+! once) and broadcast; a mismatch aborts as above. Rank 0 then writes the
+! global totals (a cut-off side counted once per rank that has it)
 
 	use shympi
 	use basin, only : nkn, nel, nen3v
@@ -365,14 +379,14 @@
 
 	integer, parameter :: itagq = 21704	!message tag of the queries
 	integer, parameter :: itaga = 21705	!message tag of the answers
-	integer, parameter :: nfo = 13		!length of an error record
 
 	integer :: nproc, ierr, ie, ii, iv, j, jj, r, n, nget, k
 	integer :: k1, k2, kg1, kg2, ieg, ieo, nf, iex, o1, o2
 	integer :: ga, la, ncut, nqtot, nrtot, nreq, nrecv
 	integer :: lmin, lmax, lming, lmaxg
 	integer :: ival(6), ivalg(6)
-	integer :: info(nfo)
+	integer :: info(lgr_side_nfo)
+	logical :: bdbg				!levdbg >= 3
 	integer :: nq(0:n_threads-1), nr(0:n_threads-1)
 	integer :: qoff(0:n_threads), roff(0:n_threads)
 	integer :: ifill(0:n_threads-1)
@@ -388,6 +402,9 @@
 	integer, allocatable :: cdest(:), cgx(:) !destination, element across
 	integer, allocatable :: iord(:)		!cut-off side of each query
 	integer, allocatable :: sbuf(:), rbuf(:), abuf(:), qans(:)
+	integer, allocatable :: iglob(:)	!main owner's elements: global
+	double precision, allocatable :: vloc(:), vglob(:) !their ilhv
+	integer, allocatable :: ilhvg(:)	!ilhv of every global element
 
 	! ival: 1 cut-off sides, 2 added, 3 added between two boundary
 	! nodes, 4 open boundary sides with an element across not held
@@ -541,6 +558,11 @@
 	    end if
 	    if( r < 0 .or. r >= nproc .or. r == my_id ) then
 	      call lgr_mpi_side_record(info,5,ie,ii,lgr_ieltv(ii,ie),r	&
+     &			,0,0,0,ieo,nf)
+	      cycle
+	    end if
+	    if( kel(ieo) /= 0 ) then		!element across is held here
+	      call lgr_mpi_side_record(info,9,ie,ii,lgr_ieltv(ii,ie),r	&
      &			,0,0,0,ieo,nf)
 	      cycle
 	    end if
@@ -734,13 +756,68 @@
 
 	call lgr_mpi_side_fail(info)
 
+	dt = MPI_Wtime() - t0		!the table, without the check below
+
+	bdbg = nint(getpar('levdbg')) >= 3
+
+	!-----------------------------------------------
+	! levdbg >= 3: lgr_side_lmax against the layers of the element across
+	! (global number returned by the exchange) in a global array that does
+	! not go through the side exchange: ilhv of every element from its
+	! main owner, gathered on rank 0 by global number (every element
+	! exactly once, else abort) and broadcast
+	!-----------------------------------------------
+
+	if( bdbg ) then
+	  allocate(iglob(max(nel,1)), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: allocation')
+	  allocate(vloc(max(nel,1)), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: allocation')
+	  allocate(vglob(nel_global), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: allocation')
+	  allocate(ilhvg(nel_global), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: allocation')
+
+	  n = 0
+	  do ie = 1, nel
+	    if( id_elem(1,ie) /= my_id ) cycle	!main owner only
+	    n = n + 1
+	    iglob(n) = ip_int_elem(ie)
+	    vloc(n) = dble(ilhv(ie))
+	  end do
+	  call lgr_mpi_gather_global(n,iglob,vloc,nel_global,vglob,'ilhv')
+	  ilhvg = 0
+	  if( my_id == 0 ) ilhvg = nint(vglob)
+	  call MPI_Bcast(ilhvg,nel_global,MPI_INTEGER,0,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Bcast')
+
+	  do jj = 1, nqtot
+	    j = iord(jj)
+	    ie = cie(j)
+	    ii = cii(j)
+	    ga = qans(3*jj-2)		!element across (checked: = cgx(j))
+	    if( lgr_side_lmax(ii,ie) /= ilhvg(ga) ) then
+	      call lgr_mpi_side_record(info,8,ie,ii,lgr_ieltv(ii,ie)	&
+     &		,cdest(j),ga,lgr_side_lmax(ii,ie),qans(3*jj),cgx(j),1	&
+     &		,lg=ilhvg(ga))
+	    end if
+	  end do
+
+	  call lgr_mpi_side_fail(info)
+
+	  deallocate(iglob,vloc,vglob,ilhvg)
+	end if
+
 	deallocate(igptr,iglist,ilptr,illist,kgl,kel)
 	deallocate(cie,cii,cdest,cgx)
 	deallocate(iord,sbuf,qans,rbuf,abuf)
 
-	dt = MPI_Wtime() - t0
-
-	if( nint(getpar('levdbg')) < 3 ) return
+	if( .not. bdbg ) return
 
 	!-----------------------------------------------
 	! global totals, written by rank 0 (from the finished table)
@@ -783,6 +860,8 @@
      &		,', open boundary sides with an element across held'	&
      &		//' elsewhere: ',ivalg(4),', sides looked up: ',ivalg(5)	&
      &		,', time: ',dtmax,' s'
+	  write(6,'(a)') ' lgr side table: layer counts across cut-off'	&
+     &		//' sides agree with the global layer counts'
 	end if
 
 	end subroutine lgr_mpi_side_table
@@ -790,7 +869,7 @@
 !*******************************************************************
 
 	subroutine lgr_mpi_side_record(info,icode,ie,ii,iv,r,ga,la,nfa	&
-     &					,gx,nfx)
+     &					,gx,nfx,lg)
 
 ! keeps the first error of the side table found on this rank in info
 ! (later errors are not recorded); info(1) = 0 means no error
@@ -800,13 +879,14 @@
 
 	implicit none
 
-	integer, intent(inout) :: info(13)	!error record
+	integer, intent(inout) :: info(lgr_side_nfo)	!error record
 	integer, intent(in) :: icode		!error code (> 0)
 	integer, intent(in) :: ie, ii		!local element, side
 	integer, intent(in) :: iv		!mark of the side
 	integer, intent(in) :: r		!destination rank
 	integer, intent(in) :: ga, la, nfa	!answer: element, layers, found
 	integer, intent(in) :: gx, nfx		!element across, found (global)
+	integer, intent(in), optional :: lg	!layers of ga, global array
 
 	if( info(1) /= 0 ) return
 
@@ -823,6 +903,8 @@
 	info(11) = nfa
 	info(12) = gx
 	info(13) = nfx
+	info(14) = 0
+	if( present(lg) ) info(14) = lg
 
 	end subroutine lgr_mpi_side_record
 
@@ -840,10 +922,10 @@
 
 	include 'mpif.h'
 
-	integer, intent(in) :: info(13)		!error record of this rank
+	integer, intent(in) :: info(lgr_side_nfo)	!error record of this rank
 
 	integer :: ic, irmin, ierr
-	integer :: iall(13)
+	integer :: iall(lgr_side_nfo)
 	integer :: iexte, iext1, iext2
 	character(len=80) :: text
 
@@ -854,7 +936,8 @@
 	if( irmin >= n_threads ) return
 
 	iall = info
-	call MPI_Bcast(iall,13,MPI_INTEGER,irmin,MPI_COMM_WORLD,ierr)
+	call MPI_Bcast(iall,lgr_side_nfo,MPI_INTEGER,irmin,MPI_COMM_WORLD	&
+     &			,ierr)
 
 	select case( iall(1) )
 	case( 1 )
@@ -871,6 +954,11 @@
 	  text = 'cut-off side not seen from both sides (not found)'
 	case( 7 )
 	  text = 'cut-off side not seen from both sides (other element)'
+	case( 8 )
+	  text = 'layer count across a cut-off side differs from the'	&
+     &		//' global layer count'
+	case( 9 )
+	  text = 'element across a cut-off side is held by this rank'
 	case default
 	  text = 'unknown error'
 	end select
@@ -895,6 +983,10 @@
      &		,iall(9),iall(10),iall(11)
 	  write(6,*) 'lgr side table: element across in the global mesh'	&
      &		,', found: ',iall(12),iall(13)
+	  if( iall(1) == 8 ) then
+	    write(6,*) 'lgr side table: layer counts, exchange and global:'	&
+     &		,iall(10),iall(14)
+	  end if
 	  flush(6)
 	end if
 	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
