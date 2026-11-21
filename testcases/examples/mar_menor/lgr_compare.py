@@ -2,8 +2,14 @@
 """Compare two SHYFEM Lagrangian particle files (NAME.lgr.shy) by particle id.
 
 usage: lgr_compare.py A.lgr.shy B.lgr.shy --mode {pos|ids} [--tol FLOAT]
-                      [--same-counts] [--nel N --nlv N]
+                      [--tol-hl FLOAT] [--same-counts] [--nel N --nlv N]
        lgr_compare.py FILE.lgr.shy --summary
+
+--mode pos compares, for every id present in both files and the same block:
+x, y within --tol; z within 1e-5; lb, type (ints) exact; tt (float64), s and
+the custom values c(1:ncust) (float32) exact; hl within --tol-hl (default
+1e-4).  NaN in any compared field is a failure.  The element number ie is not
+gated; the number of particles whose ie differs is printed per block.
 
 Exit status: 0 = files agree, 1 = they differ, 2 = a file cannot be read.
 
@@ -17,6 +23,7 @@ followed by n particles of three records each:
   (c f4 * ncust)
 """
 import argparse
+import math
 import struct
 import sys
 
@@ -131,15 +138,17 @@ def read_file(path):
                 raise FormatError("%s: truncated block at record %d" % (path, i))
             parts = {}
             for _ in range(n):
-                pid, _typ, _tt, _s, ie = REC1.unpack_from(data, recs[i][0])
-                x, y, z, lb, _hl = REC2.unpack_from(data, recs[i + 1][0])
                 if recs[i][1] != REC1.size or recs[i + 1][1] != REC2.size or \
                         recs[i + 2][1] != 4 * ncust:
                     raise FormatError("%s: bad particle record sizes at record %d"
                                       % (path, i))
+                pid, typ, tt, sink, ie = REC1.unpack_from(data, recs[i][0])
+                x, y, z, lb, hl = REC2.unpack_from(data, recs[i + 1][0])
+                cust = struct.unpack_from("<%df" % ncust, data, recs[i + 2][0])
                 if pid in parts:
                     dups.append((BLOCK_NAME[iwhat], pid))
-                parts[pid] = {"x": x, "y": y, "z": z, "lb": lb, "ie": ie}
+                parts[pid] = {"x": x, "y": y, "z": z, "lb": lb, "ie": ie, "type": typ,
+                              "tt": tt, "s": sink, "hl": hl, "c": cust}
                 i += 3
             blocks[iwhat] = parts
         times.append((dtime0, blocks, dups))
@@ -150,31 +159,54 @@ def fmt_ids(ids):
     return ",".join(str(k) for k in sorted(ids)) if ids else "-"
 
 
-def compare_pos(pa, pb, tol):
-    """Return (ok, onlyA, onlyB, max_dx, max_dy, lb_ok, z_ok, detail lines)."""
+def exceeds(a, b, tol):
+    """True if |a-b| > tol or either value is NaN."""
+    return not abs(a - b) <= tol
+
+
+def compare_pos(pa, pb, tol, tol_hl):
+    """Return (ok, onlyA, onlyB, max_dx, max_dy, lb_ok, z_ok, n_ie, detail)."""
     only_a = set(pa) - set(pb)
     only_b = set(pb) - set(pa)
     max_dx = max_dy = 0.0
     lb_ok = z_ok = True
+    n_ie = 0
     detail = []
     for pid in sorted(set(pa) & set(pb)):
         a, b = pa[pid], pb[pid]
         dx, dy, dz = abs(a["x"] - b["x"]), abs(a["y"] - b["y"]), abs(a["z"] - b["z"])
-        max_dx, max_dy = max(max_dx, dx), max(max_dy, dy)
+        for d in (dx, dy):
+            if math.isnan(d):
+                max_dx = max_dy = float("nan")
+        if not math.isnan(max_dx):
+            max_dx, max_dy = max(max_dx, dx), max(max_dy, dy)
         bad = []
-        if dx > tol or dy > tol:
+        if exceeds(a["x"], b["x"], tol) or exceeds(a["y"], b["y"], tol):
             bad.append("position")
         if a["lb"] != b["lb"]:
             lb_ok = False
             bad.append("lb")
-        if dz > Z_TOL:
+        if exceeds(a["z"], b["z"], Z_TOL):
             z_ok = False
             bad.append("z")
+        if a["type"] != b["type"]:
+            bad.append("type %d/%d" % (a["type"], b["type"]))
+        if exceeds(a["tt"], b["tt"], 0.0):
+            bad.append("tt %r/%r" % (a["tt"], b["tt"]))
+        if exceeds(a["s"], b["s"], 0.0):
+            bad.append("s %.9g/%.9g" % (a["s"], b["s"]))
+        if exceeds(a["hl"], b["hl"], tol_hl):
+            bad.append("hl %.9g/%.9g" % (a["hl"], b["hl"]))
+        for k, (ca, cb) in enumerate(zip(a["c"], b["c"]), 1):
+            if exceeds(ca, cb, 0.0):
+                bad.append("c(%d) %.9g/%.9g" % (k, ca, cb))
+        if a["ie"] != b["ie"]:
+            n_ie += 1
         if bad:
             detail.append("    id %d differs (%s): dx=%.4e dy=%.4e dz=%.4e lb=%d/%d"
-                          % (pid, ",".join(bad), dx, dy, dz, a["lb"], b["lb"]))
+                          % (pid, "; ".join(bad), dx, dy, dz, a["lb"], b["lb"]))
     ok = not (only_a or only_b or detail)
-    return ok, only_a, only_b, max_dx, max_dy, lb_ok, z_ok, detail
+    return ok, only_a, only_b, max_dx, max_dy, lb_ok, z_ok, n_ie, detail
 
 
 def check_ranges(label, parts, nel, nlv):
@@ -236,10 +268,13 @@ def run(args):
             ids_b |= set(pb)
             head = "t=%r %-8s nA=%d nB=%d" % (dtime, name, len(pa), len(pb))
             if args.mode == "pos":
-                good, oa, ob, mdx, mdy, lbok, zok, detail = compare_pos(pa, pb, args.tol)
-                print("%s only in A: %s only in B: %s max|dx|=%.4e max|dy|=%.4e lb %s z %s"
+                good, oa, ob, mdx, mdy, lbok, zok, n_ie, detail = compare_pos(
+                    pa, pb, args.tol, args.tol_hl)
+                print("%s only in A: %s only in B: %s max|dx|=%.4e max|dy|=%.4e "
+                      "lb %s z %s ie differs (info): %d"
                       % (head, fmt_ids(oa), fmt_ids(ob), mdx, mdy,
-                         "match" if lbok else "DIFFER", "match" if zok else "DIFFER"))
+                         "match" if lbok else "DIFFER", "match" if zok else "DIFFER",
+                         n_ie))
                 for line in detail:
                     print(line)
                 ok = ok and good
@@ -274,7 +309,9 @@ def main():
     ap.add_argument("--summary", action="store_true",
                     help="print counts of the single file A and exit")
     ap.add_argument("--tol", type=float, default=0.0,
-                    help="position tolerance for --mode pos (default 0)")
+                    help="x/y tolerance for --mode pos (default 0); also compares type, tt, s, c exactly")
+    ap.add_argument("--tol-hl", type=float, default=1e-4,
+                    help="layer-depth (hl) tolerance for --mode pos (default 1e-4)")
     ap.add_argument("--same-counts", action="store_true",
                     help="--mode ids: also require equal counts per block")
     ap.add_argument("--nel", type=int, help="--mode ids: check 1 <= ie <= nel")
