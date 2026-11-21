@@ -11,8 +11,12 @@
 #      "not supported with MPI" message and a non-zero exit
 #   3. mm_rst_write, then mm_rst_read: a restart written and read on NP
 #      processes ends normally
+#   4. ../restart_strip (a 6-node mesh), when NP >= 3: stops with the
+#      "use fewer MPI processes" message and a non-zero exit, with no
+#      floating-point exception
 #
-# Needs shyfem and python3 on PATH, an MPI build, and `make init` done.
+# Needs shyfem, shypre and python3 on PATH, an MPI build, and `make init`
+# done.
 # Usage:  ./check_mpi.sh [NP]
 #------------------------------------------------------------------------
 set -u
@@ -72,6 +76,24 @@ for sim in mm_rst_write mm_rst_read; do
     tail -5 "$sim.mpi.log"; fail "$sim did not end on $NP processes"
   fi
 done
+
+echo "=== 4. a 6-node mesh on $NP processes must stop with a clear message"
+if [ "$NP" -lt 3 ]; then
+  echo "skipped: the 6-node mesh can be split into $NP domains"
+elif ! ( cd ../restart_strip && shypre -silent strip.grd > shypre.mpi.log 2>&1 ); then
+  fail "shypre failed on ../restart_strip/strip.grd"
+else
+  log=../restart_strip/strip_rst.mpi.log
+  if ( cd ../restart_strip && mpirun --oversubscribe -np "$NP" shyfem strip_rst.str > strip_rst.mpi.log 2>&1 ); then
+    fail "strip_rst ran on $NP processes: a 6-node mesh cannot fill $NP domains"
+  elif [ "$(grep -c 'use fewer MPI processes' "$log")" != 1 ]; then
+    tail -5 "$log"; fail "strip_rst stopped without the 'use fewer MPI processes' message (or printed it more than once)"
+  elif grep -q 'SIGFPE' "$log"; then
+    fail "strip_rst: a process died with a floating-point exception"
+  else
+    echo "stopped as expected:$(grep -B3 'use fewer MPI processes' "$log" | tr -s ' ' | tr '\n' ';')"
+  fi
+fi
 
 if [ "$rc" = 0 ]; then echo "MPI GATE: PASS"; else echo "MPI GATE: FAIL"; fi
 exit "$rc"

@@ -160,8 +160,9 @@ jobs:
         # A run that ends on several processes is not yet a correct run.
         # check_mpi.sh compares a 4-process run with the serial one
         # (energy lines), checks that a serial-only feature (boundary
-        # tilting) stops with its clear message, and writes and reads a
-        # restart on 4 processes. The 4-process sweep of 2026-11-21 found
+        # tilting) and a mesh too small for 4 domains each stop with their
+        # clear message, and writes and reads a restart on 4 processes.
+        # The 4-process sweep of 2026-11-21 found
         # every one of these classes only by accident, because nothing
         # here ran a case other than mm_hyd_00.
         run: |
