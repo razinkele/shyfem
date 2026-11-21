@@ -151,7 +151,7 @@ python3 lgr_compare.py t1.lgr.shy t4_reordered.lgr.shy --mode pos --tol 0 # exit
 - [ ] **Step 1:** Write both scripts. `set -u`, no `cd … && rm`, absolute or script-relative paths only.
 - [ ] **Step 2:** Run `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`. Expected: `SERIAL GUARD: PASS`.
 - [ ] **Step 3:** Run `./check_lgr_mpi.sh mm_lgr_a 4 flux`. Expected: `LGR GATE: FAIL` (Task 1.3, step 3).
-- [ ] **Step 4:** Mutation check of the guard: point `REF_BIN_DIR` at the live v8.5.3 binary (`/home/razinka/shyfem/bin`). Expected: PASS as well (no Lagrangian change since then); then alter one byte of a copied output and confirm FAIL.
+- [ ] **Step 4:** Mutation check of the guard: point `REF_BIN_DIR` at the live v8.5.3 binary (`/home/razinka/shyfem/bin`). Expected (amended 2026-11-21): FAIL on the `.lgr.shy` of cases C and E, because that binary still picks at random at a vertex; cases A and B and every `.hydro.shy` and `.inf` are identical.
 - [ ] **Step 5:** Commit: `test(lagrange): MPI and serial test drivers (#217)`.
 
 ### Task 1.5: A vertex pick that does not depend on a random stream (added 2026-11-21)
