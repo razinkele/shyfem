@@ -191,6 +191,7 @@
 	  icall = 1
 
           call lgr_mpi_init
+          call lgr_mpi_topology_init
 
           call get_first_dtime(dtanf)
           call get_last_dtime(dtend)
