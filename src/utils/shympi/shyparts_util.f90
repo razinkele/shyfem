@@ -57,6 +57,7 @@
 	integer netot,neint
 	integer iareas
 	integer min,max
+	real pghost
 	character*256 name
 
 	integer ierr,ios,iu
@@ -119,9 +120,12 @@
         do ic=min,max
 	  ia = ic
 	  if( min == 0 ) ia = ic + 1
+	  ! a domain can hold nodes but no element (tiny mesh)
+	  pghost = 0.
+	  if( ne(ic) > 0 ) pghost = (100.*(ne(ic)-ni(ic)))/ne(ic)
           write(6,'(3i10,f10.2,2i10,f10.2,i8)')  &
      &		 ia-1,ia,nc(ic),(100.*nc(ic))/nkn &
-     &		,ne(ic),ne(ic)-ni(ic),(100.*(ne(ic)-ni(ic)))/ne(ic),na(ic)
+     &		,ne(ic),ne(ic)-ni(ic),pghost,na(ic)
         end do
         write(6,*) 
 
@@ -139,9 +143,11 @@
         do ic=min,max
 	  ia = ic
 	  if( min == 0 ) ia = ic + 1
+	  pghost = 0.
+	  if( ne(ic) > 0 ) pghost = (100.*(ne(ic)-ni(ic)))/ne(ic)
           write(iu,'(3i10,f10.2,2i10,f10.2)')  &
      &		 ia-1,ia,nc(ic),(100.*nc(ic))/nkn &
-     &		,ne(ic),ne(ic)-ni(ic),(100.*(ne(ic)-ni(ic)))/ne(ic)
+     &		,ne(ic),ne(ic)-ni(ic),pghost
         end do
 	close(iu)
 
@@ -235,6 +241,13 @@
 	  g = (ne(ic)-ni(ic))/real(ne(ic))
 	  gmax = max(gmax,g)
 	end do
+
+	! the quality measure needs at least one node and one element per
+	! domain (integer division) and more than one domain: otherwise
+	! gtheo is 0 or the division by nel/np traps. report 0 then.
+
+	pquality = 0.
+	if( np < 2 .or. nkn/np == 0 .or. nel/np == 0 ) return
 
         base = 2
         logfact = log(real(np))/log(real(base))
