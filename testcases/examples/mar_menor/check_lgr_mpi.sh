@@ -10,6 +10,10 @@
 #   NP    number of MPI processes of the second run
 #   MODE  flux   debug dump of the element fluxes, serial vs MPI
 #         part   debug dump of the particles (per output time), serial vs MPI
+#         handover  debug dump of the particles (as part), then the hand-over
+#                fidelity check of lgr_dbg_compare.py: --by key --handover,
+#                the particles that changed process against those that did
+#                not (--step 6e-8, case B 0.25: one single-precision step)
 #         pos    final particle file: positions, layers, types, times
 #         ids    final particle file: the ids, the counts, valid cells
 #         perturb  two MPI runs (no serial run) with the debug dump, one
@@ -33,6 +37,12 @@
 # command line and so replace the defaults, for example
 #   ./check_lgr_mpi.sh mm_lgr_a 4 part --by id --tol 1e-3
 #
+# handover: the particles of the two runs are paired by their key (the last
+# six columns of the dump); the statistic and the rule are described in the
+# docstring of lgr_dbg_compare.py.  The distances above the limit of the
+# part mode are printed, not gated.  Arguments after MODE come last, so
+# --step, --allow and --factor can be replaced.
+#
 # perturb: the dumps of the second run go to CASE.npN.perturb.dbg/ and its log
 # is CASE.npN.perturb.log.  A PASS is weak evidence: the perturbation only
 # shows a dependence on memory that malloc hands out, and case A on 4
@@ -51,7 +61,7 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|pos|ids|perturb)"
+  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|handover|pos|ids|perturb)"
   exit 2
 }
 
@@ -64,8 +74,8 @@ case "$CASE" in
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
-case "$MODE" in flux|part|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
-if [ "$CASE" = mm_lgr_b ]; then TOL=2; else TOL=1e-5; fi
+case "$MODE" in flux|part|handover|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 
 #--- preconditions -------------------------------------------------------
 command -v shyfem  > /dev/null 2>&1 || { echo "LGR GATE FAIL: shyfem is not on PATH"; exit 1; }
@@ -93,7 +103,7 @@ trap 'cleanup; exit 130' INT TERM
 
 STR="$CASE.str"
 DUMP=0
-if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = perturb ]; then
+if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = handover ] || [ "$MODE" = perturb ]; then
   DUMP=1
   if grep -q '^[[:space:]]*levdbg' "$HERE/$CASE.str"; then
     echo "LGR GATE FAIL: $CASE.str already sets levdbg; refusing to add a second one"
@@ -263,6 +273,11 @@ case "$MODE" in
   part)
     python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
         --tol "$TOL" --by nearest "$@"
+    crc=$?
+    ;;
+  handover)
+    python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
+        --tol "$TOL" --by key --handover --step "$STEP" "$@"
     crc=$?
     ;;
   pos|ids)

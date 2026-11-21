@@ -74,6 +74,97 @@ write_part(d, 2, 3, [])
 d = os.path.join(root, 'noheader')
 write_part(d, 0, 1, [p(1, 0., 0.), p(2, 0., 0.), p(3, 5., 5.)], header=False)
 
+# ---- dumps with the six key columns, two time blocks (hand-over tests)
+TK = (3600.0, 7200.0)
+
+def kkey(id):
+    return (100 + id, 0.25, 0.5 + 0.001 * id, 1, 0.5, -300.0)
+
+def kbase(id, b):
+    return (float(id) + 0.5 * b, 2.0 * b)
+
+def write_k(d, n, lines, key=True):
+    """lines = [(block, rank, cls, id, x, y, ncross, key)]"""
+    os.makedirs(d, exist_ok=True)
+    for r in range(n):
+        with open('%s/lgrdbg.part.%02d.txt' % (d, r), 'w') as f:
+            f.write('# rank %d of %d\n' % (r, n))
+            for b, rank, c, id, x, y, nc, k in lines:
+                if rank != r:
+                    continue
+                f.write('%s %14.1f %10d %.16E %.16E %16.8E %5d %10d %5d %5d'
+                        % (c, TK[b], id, x, y, 0.5, 1, 7, rank, nc))
+                if key:
+                    f.write(' %10d %24.16E %24.16E %5d %16.8E %24.16E' % k)
+                f.write('\n')
+
+def krun(name, n, ids, changed=(), off=None, cls=None, nc=None, key=True,
+         drop=(), extra=()):
+    """Particles `ids` in both blocks.  An MPI run (n > 1) has particle i on
+    rank 0 in block 0 and, if i is in `changed`, on rank n-1 in block 1 (else
+    on rank 0).  off(i, b) -> (dx, dy) added to the position, cls(i, b) the
+    class, nc(i, b) the crossing count; drop = [(i, b)] entries left out,
+    extra = lines added."""
+    lines = []
+    for i in ids:
+        for b in (0, 1):
+            if (i, b) in drop:
+                continue
+            x, y = kbase(i, b)
+            dx, dy = off(i, b) if off else (0.0, 0.0)
+            rank = (n - 1) if (b == 1 and i in changed) else 0
+            lines.append((b, rank, cls(i, b) if cls else 'P', i, x + dx,
+                          y + dy, nc(i, b) if nc else 1, kkey(i)))
+    write_k(os.path.join(root, name), n, lines + list(extra), key)
+
+I10 = range(1, 11)
+krun('kser', 1, I10)
+krun('kser_old', 1, I10, key=False)
+krun('kok', 2, I10, changed=range(1, 6))
+krun('kok_old', 2, I10, changed=range(1, 6), key=False)
+# every changed particle jumps by 1e-3 in block 1, those that stay do not
+krun('kjump', 2, I10, changed=range(1, 6),
+     off=lambda i, b: (1e-3, 0.0) if (b == 1 and i <= 5) else (0.0, 0.0))
+# both groups diverge in half of their particles (20 particles)
+I20 = range(1, 21)
+krun('kser20', 1, I20)
+krun('krate', 2, I20, changed=range(1, 11),
+     off=lambda i, b: (1e-3, 0.0) if (b == 1 and i % 2 == 0) else (0.0, 0.0))
+# a single changed particle beyond the step
+krun('kone', 2, I10, changed=range(1, 6),
+     off=lambda i, b: (1e-3, 0.0) if (b == 1 and i == 3) else (0.0, 0.0))
+# three changed particles: at 0, within the step (3e-8), beyond (1e-7)
+krun('kwithin', 2, I10, changed=range(1, 4),
+     off=lambda i, b: ({2: (3e-8, 0.0), 3: (1e-7, 0.0)}.get(i, (0.0, 0.0))
+                       if b == 1 else (0.0, 0.0)))
+# a particle not at distance 0 in block 0 is not in the statistic
+krun('kfirst', 2, I10, changed=range(1, 6),
+     off=lambda i, b: (1e-3, 0.0) if i <= 5 else (0.0, 0.0))
+# particle 4 has left the basin in both runs in block 1 (x = y = 0, class D)
+krun('kser_left', 1, I10, cls=lambda i, b: 'D' if (i == 4 and b == 1) else 'P')
+krun('kleft', 2, I10, changed=range(1, 6),
+     cls=lambda i, b: 'D' if (i == 4 and b == 1) else 'P')
+# particle 4 has left in the MPI run only
+krun('kleft_mpi', 2, I10, changed=range(1, 6),
+     cls=lambda i, b: 'D' if (i == 4 and b == 1) else 'P')
+# a duplicate key: the MPI run has particle 5 twice (on two ranks) in block 0
+krun('kdup', 2, I10, changed=range(1, 6), extra=[(0, 1, 'P', 5, *kbase(5, 0),
+     1, kkey(5))])
+# serial run with a key twice: particle 2 listed again in block 0
+krun('kser_dup', 1, I10, extra=[(0, 0, 'P', 2, *kbase(2, 0), 1, kkey(2))])
+# a key that occurs in the MPI run only (particle 11)
+krun('kextra', 2, I10, changed=range(1, 6),
+     extra=[(0, 0, 'P', 11, 9.0, 9.0, 1, kkey(11)),
+            (1, 0, 'P', 11, 9.5, 9.0, 1, kkey(11))])
+# crossing count differs at distance 0 (particle 2), and at a non-zero
+# distance (particle 3, 1e-3 away in block 1)
+krun('kncr0', 2, I10, changed=range(1, 6), nc=lambda i, b: 2 if (b == 1 and i == 2) else 1)
+krun('kncrd', 2, I10, changed=range(1, 6), nc=lambda i, b: 2 if (b == 1 and i == 3) else 1,
+     off=lambda i, b: (1e-3, 0.0) if (b == 1 and i == 3) else (0.0, 0.0))
+# the two ids differ in the MPI run (ids repeat across ranks at this stage)
+# while the keys are right: pairing by key does not look at the id
+krun('kid', 2, I10, changed=range(1, 6))
+
 # flux files: serial elements 1, 2; element 2 is mixed (rank 1 main owner)
 def write_flux(d, rank, n, rows):
     os.makedirs(d, exist_ok=True)
@@ -157,6 +248,59 @@ check "flux equal" 0 "all-own nodes +3 +0 .*mixed, main owner +3 +0 .*mixed, own
     flux "$t/fser" "$t/fok"
 check "flux off in the main owner's copy" 1 "mixed, main owner +3 +2 " flux "$t/fser" "$t/foff"
 check "flux file without data rows" 2 "no data rows" flux "$t/fser" "$t/fempty"
+
+# ---- particle key: --by key and the hand-over check
+# table columns: time n_ser n_mpi D_ser D_mpi dupid unmat nan max_dist >tol lb!= z!= ncr!= ncr-1 ie!=
+check "by key, matching runs" 0 "3600.0 +10 +10 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +0[^ 0-9].*ncross differs at distance 0: 0 \(not gated\); at a non-zero distance: 0" \
+    part "$t/kser" "$t/kok" --tol 0 --by key
+check "by key, a changed particle is far away" 1 "7200.0 +10 +10 +0 +0 +0 +0 +0 +1.000e-03 +5 " \
+    part "$t/kser" "$t/kjump" --tol 1e-5 --by key
+check "by key, serial dump of the old format" 2 "without the six key columns" \
+    part "$t/kser_old" "$t/kok" --tol 0 --by key
+check "by key, MPI dump of the old format" 2 "without the six key columns" \
+    part "$t/kser" "$t/kok_old" --tol 0 --by key
+check "old format still read, by id" 0 "" part "$t/kser_old" "$t/kok_old" --tol 0 --by id
+check "old format still read, nearest" 0 "" part "$t/kser_old" "$t/kok_old" --tol 0
+check "a key twice in the MPI run" 1 "3600.0 +10 +11 .* +1 +0 " \
+    part "$t/kser" "$t/kdup" --tol 0 --by key
+check "a key twice in the serial run" 1 "serial dup keys 1" \
+    part "$t/kser_dup" "$t/kok" --tol 0 --by key
+check "a key in the MPI run only" 1 "3600.0 +10 +11 +0 +0 +0 +1 " \
+    part "$t/kser" "$t/kextra" --tol 0 --by key
+check "key left in one run, alive in the other" 1 "7200.0 +9 +10 +1 +0 +0 +1 " \
+    part "$t/kser_left" "$t/kok" --tol 0 --by key
+check "ncross differs at distance 0, gated" 1 "ncross differs at distance 0: 1; at a non-zero distance: 0" \
+    part "$t/kser" "$t/kncr0" --tol 0 --by key --ncross
+check "ncross differs at distance 0, not gated" 0 "distance 0: 1 \(not gated\)" \
+    part "$t/kser" "$t/kncr0" --tol 0 --by key
+check "ncross differs at a non-zero distance, no failure" 0 "distance 0: 0; at a non-zero distance: 1" \
+    part "$t/kser" "$t/kncrd" --tol 1 --by key --ncross
+check "by nearest still gates every differing ncross" 1 "ncross differs 1," \
+    part "$t/kser" "$t/kncr0" --tol 0 --ncross
+check "hand-over, changed and stayed at 0" 0 "changed process +5 +5 +0 +0 .*stayed +5 +5 +0 +0 .*left out.*: 0[^ 0-9].*: ok" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover
+check "hand-over, changed jump, stayed do not" 1 "changed process +5 +0 +0 +5 +1.0000e-03 .*stayed +5 +5 +0 +0 .*: FAIL[^ 0-9]" \
+    part "$t/kser" "$t/kjump" --tol 1 --by key --handover
+check "hand-over, both groups diverge at the same rate" 0 "changed process +10 +5 +0 +5 .*stayed +10 +5 +0 +5 .*: ok" \
+    part "$t/kser20" "$t/krate" --tol 1 --by key --handover
+check "hand-over, one changed pair beyond the step: allowed" 0 "changed process +5 +4 +0 +1 .*: ok" \
+    part "$t/kser" "$t/kone" --tol 1 --by key --handover
+check "hand-over, one changed pair beyond the step, --allow 0" 1 "changed process +5 +4 +0 +1 .*: FAIL[^ 0-9]" \
+    part "$t/kser" "$t/kone" --tol 1 --by key --handover --allow 0
+check "hand-over, at 0 / within / beyond the step" 0 "changed process +3 +1 +1 +1 +1.0000e-07 " \
+    part "$t/kser" "$t/kwithin" --tol 1 --by key --handover --allow 1
+check "hand-over, the step is a parameter" 0 "changed process +3 +1 +2 +0 +1.0000e-07 .*: ok" \
+    part "$t/kser" "$t/kwithin" --tol 1 --by key --handover --step 1e-6
+check "hand-over, particles off at the first block are not counted" 0 "changed process +0 +0 +0 +0 .*stayed +5 +5 +0 +0 " \
+    part "$t/kser" "$t/kfirst" --tol 1 --by key --handover
+check "hand-over, a particle that left in both runs is left out" 0 "changed process +4 +4 +0 +0 .*stayed +5 +5 +0 +0 .*left out.*: 1[^ 0-9]" \
+    part "$t/kser_left" "$t/kleft" --tol 0 --by key --handover
+check "hand-over, a particle that left in one run is a failure" 1 "7200.0 +10 +9 +0 +1 +0 +1 " \
+    part "$t/kser" "$t/kleft_mpi" --tol 0 --by key --handover
+check "hand-over, distances above --tol are not gated" 0 "" \
+    part "$t/kser" "$t/kone" --tol 0 --by key --handover
+check "hand-over needs --by key" 2 "needs --by key" \
+    part "$t/kser" "$t/kok" --tol 0 --handover
 
 if [ "$fail" -eq 0 ]; then echo "LGR DBG COMPARE TEST: PASS"; exit 0; fi
 echo "LGR DBG COMPARE TEST: FAIL"; exit 1

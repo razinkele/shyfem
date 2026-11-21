@@ -4,8 +4,10 @@
 usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py node SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py part SERIAL_DIR MPI_DIR --tol FLOAT
-                          [--by {id|nearest}] [--first-only]
+                          [--by {id|nearest|key}] [--first-only]
                           [--ranks-empty-ok] [--ncross] [--elem]
+                          [--handover [--step LENGTH] [--allow K]
+                                      [--factor F]]
 
 Each directory holds the files lgrdbg.KIND.NN.txt of one run (NN = rank),
 written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  Every file
@@ -28,7 +30,8 @@ flux  compares lgrdbg.flux (flux3d of layer 1 and flux2d) and, if present,
 node  compares lgrdbg.node (wlnv, mfluxv, difv, wxv, wyv) the same way, with
       the classes "own" and "ghost" node; every serial node must be own on
       exactly one rank.
-part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross)
+part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
+      [key_ie key_xi1 key_xi2 key_l key_z key_time])
       per time (every particle output, and the release blocks written right
       after a release).  Alive particles (classes P, M, G) are compared; D
       entries are only counted.  Per time it reports the counts, ids that
@@ -45,7 +48,51 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross)
                     distance (at equal distance: same layer, then with
                     --elem the same element, then closest z) and every
                     particle is used at most once.
-      --ncross      a differing crossing count is a failure.
+      --by key      match by the particle's key, the last six columns of a
+                    particle line (global release element, first two release
+                    coordinates, release layer, release depth, release time;
+                    equal if all six are equal as numbers).  The key is the
+                    same in a serial and in an MPI run, and unique (several
+                    particles can start at one position, in different
+                    layers).  A key that occurs twice in one time block of one
+                    run, or that has an alive entry in one run and none in the
+                    other (absent, or class D = left the basin), is reported
+                    and is a failure, as with --by id.  In an MPI run a
+                    particle is on exactly one process at a time; all process
+                    files of a time block are read together.  A dump with
+                    only the ten old columns still serves every other mode;
+                    with --by key it is an input error (exit 2).
+      --ncross      a differing crossing count is a failure.  With --by key
+                    only for a pair at distance exactly 0 (a particle that
+                    moved differently can have crossed a different number of
+                    elements); both counts are printed.
+      --handover    (with --by key) the hand-over fidelity check.  For every
+                    particle and every two consecutive time blocks, in which
+                    the particle is in the domain (class P, M or G) in both
+                    runs at both blocks: if its serial and MPI positions are
+                    equal (distance exactly 0) at the first block, the pair
+                    goes to one of two groups: "changed process" (its rank
+                    column in the MPI run differs between the two blocks) or
+                    "stayed" (the control group).  Per group the tool prints
+                    the pairs, how many are still at distance 0 at the second
+                    block, how many are within --step (a length in the
+                    dump's unit: degrees for cases A, C, E, metres for B) and
+                    how many are beyond it, and the largest distance.  A
+                    particle that changes process and comes back between two
+                    outputs cannot be seen in the dump: its pair counts as
+                    "stayed".  Pairs of blocks where the particle is not in
+                    the domain in both runs at both blocks are left out; the
+                    number is printed.  The distance is the one of the part
+                    table (max(|dx|, |dy|)).  The mode fails if "changed
+                    process" is worse than "stayed": more than --allow K pairs
+                    beyond the step (default 1) and a rate (beyond / pairs)
+                    more than --factor F times the rate of "stayed" (default
+                    2; a "stayed" group without pairs or without any pair
+                    beyond the step has rate 0).  In this mode only the
+                    structure fails the run (times, counts, duplicate and
+                    unmatched keys, NaN positions) together with the rule;
+                    distances above --tol, layers, z, elements and crossing
+                    counts are printed but not gated.
       --elem        a differing global element is a failure.
       --first-only  look at the first time in the files only (the block
                     written right after the first release, before any
@@ -148,7 +195,9 @@ def kind_files(kinds, dirname, kind):
 
 
 def read_lines(path, nfields):
-    """Yield (line number, fields) for every data line ('#' lines skipped)."""
+    """Yield (line number, fields) for every data line ('#' lines skipped);
+    nfields is a number or a tuple of allowed numbers."""
+    allowed = nfields if isinstance(nfields, tuple) else (nfields,)
     try:
         with open(path) as f:
             for n, line in enumerate(f, 1):
@@ -157,9 +206,10 @@ def read_lines(path, nfields):
                 fields = line.split()
                 if not fields:
                     continue
-                if len(fields) != nfields:
-                    raise DumpError("%s:%d: %d fields, expected %d"
-                                    % (path, n, len(fields), nfields))
+                if len(fields) not in allowed:
+                    raise DumpError("%s:%d: %d fields, expected %s"
+                                    % (path, n, len(fields),
+                                       " or ".join(str(a) for a in allowed)))
                 yield n, fields
     except OSError as e:
         raise DumpError("%s: %s" % (path, e))
@@ -203,22 +253,29 @@ def read_node(path, rank):
     return rows
 
 
-# part entry: (class, id, x, y, z, lb, ie_global, ncross)
-CLS, ID, X, Y, Z, LB, IEG, NCROSS = range(8)
+# part entry: (class, id, x, y, z, lb, ie_global, ncross, key, rank); key is
+# (ie, xi1, xi2, l, z, time) of the six key columns, None in a dump with the
+# ten old columns only
+CLS, ID, X, Y, Z, LB, IEG, NCROSS, KEY, RANK = range(10)
 
 
 def read_part(path, rank):
     """{time: [entry]} of one rank."""
     out = {}
-    for n, f in read_lines(path, 10):
+    for n, f in read_lines(path, (10, 16)):
         if f[0] not in ("P", "M", "G", "D"):
             raise DumpError("%s:%d: unknown class %r" % (path, n, f[0]))
         check_rank(path, n, rank, f[8])
         t = round(to_num(path, n, float, f[1]), 1)
+        key = None
+        if len(f) == 16:
+            key = (to_num(path, n, int, f[10]), to_num(path, n, float, f[11]),
+                   to_num(path, n, float, f[12]), to_num(path, n, int, f[13]),
+                   to_num(path, n, float, f[14]), to_num(path, n, float, f[15]))
         entry = (f[0], to_num(path, n, int, f[2]), to_num(path, n, float, f[3]),
                  to_num(path, n, float, f[4]), to_num(path, n, float, f[5]),
                  to_num(path, n, int, f[6]), to_num(path, n, int, f[7]),
-                 to_num(path, n, int, f[9]))
+                 to_num(path, n, int, f[9]), key, rank)
         out.setdefault(t, []).append(entry)
     return out
 
@@ -508,6 +565,33 @@ def match_id(ser, mpi):
     return pairs, len(ser) - len(pairs), len(mpi) - len(pairs)
 
 
+def match_key(ser, mpi):
+    """Pairs by key (first entry of each key); returns pairs and the numbers
+    of entries of each run left without a partner."""
+    mk = {}
+    for e in mpi:
+        mk.setdefault(e[KEY], e)
+    pairs = []
+    seen = set()
+    for e in ser:
+        if e[KEY] in seen:
+            continue
+        seen.add(e[KEY])
+        if e[KEY] in mk:
+            m = mk[e[KEY]]
+            pairs.append((e, m, distance(e, m)))
+    return pairs, len(seen) - len(pairs), len(mk) - len(pairs)
+
+
+def dup_keys(entries):
+    seen, dups = set(), set()
+    for e in entries:
+        if e[KEY] in seen:
+            dups.add(e[KEY])
+        seen.add(e[KEY])
+    return len(dups)
+
+
 def dup_ids(entries):
     seen, dups = set(), set()
     for e in entries:
@@ -539,12 +623,88 @@ def nan_max(values):
     return out
 
 
+def require_keys(ser, mpi, args):
+    """--by key needs the six key columns in every particle line."""
+    for name, run, d in (("serial", ser, args.serial_dir),
+                         ("mpi", mpi, args.mpi_dir)):
+        for entries in run.values():
+            if any(e[KEY] is None for e in entries):
+                raise DumpError("%s: the %s dump has particle lines without "
+                                "the six key columns (a dump of an older "
+                                "version): --by key needs them"
+                                % (d, name))
+
+
+def handover_stats(times, pairs_at, state_at, step):
+    """Hand-over statistic over consecutive blocks.  pairs_at[t] = {key:
+    (serial entry, mpi entry, distance)} of the pairs in the domain in both
+    runs, state_at[t] = {key: all four classes present} -- see cmd_part.
+    Returns {"changed": [...], "stayed": [...]} with [pairs, at 0, within,
+    beyond, largest], the number of pairs left out and the pairs beyond the
+    step of each group (key, time 1, time 2, rank 1, rank 2, distance)."""
+    groups = {"changed": [0, 0, 0, 0, 0.0], "stayed": [0, 0, 0, 0, 0.0]}
+    left_out = 0
+    beyond = {"changed": [], "stayed": []}
+    for t1, t2 in zip(times, times[1:]):
+        for key in set(state_at[t1]) & set(state_at[t2]):
+            if key not in pairs_at[t1] or key not in pairs_at[t2]:
+                left_out += 1
+                continue
+            s1, m1, d1 = pairs_at[t1][key]
+            s2, m2, d2 = pairs_at[t2][key]
+            if not d1 == 0:
+                continue
+            key_name = "changed" if m1[RANK] != m2[RANK] else "stayed"
+            g = groups[key_name]
+            g[0] += 1
+            if d2 == 0:
+                g[1] += 1
+            elif d2 <= step:
+                g[2] += 1
+            else:
+                g[3] += 1
+                beyond[key_name].append((key, t1, t2, m1[RANK], m2[RANK], d2))
+            g[4] = worse(g[4], d2)
+    return groups, left_out, beyond
+
+
+def handover_report(groups, left_out, beyond_list, args):
+    """Print the two groups; return the number of failures (0 or 1)."""
+    print("  hand-over check (pairs of consecutive blocks, particle in the "
+          "domain in both runs at both blocks and at distance 0 at the "
+          "first), step %g" % args.step)
+    print("  %-16s %7s %7s %7s %7s %12s %9s"
+          % ("group", "pairs", "at 0", "within", "beyond", "largest", "rate"))
+    rate = {}
+    for name, label in (("changed", "changed process"), ("stayed", "stayed")):
+        n, z, w, b, big = groups[name]
+        rate[name] = b / n if n else 0.0
+        print("  %-16s %7d %7d %7d %7d %12.4e %9.3e"
+              % (label, n, z, w, b, big, rate[name]))
+    print("  pairs left out (the particle is not in the domain in both runs "
+          "at both blocks): %d" % left_out)
+    for key, t1, t2, r1, r2, d in beyond_list["changed"][:100]:
+        print("  changed process, beyond the step: key %s, times %.1f -> %.1f,"
+              " ranks %d -> %d, distance %.4e"
+              % (" ".join("%.17g" % v for v in key), t1, t2, r1, r2, d))
+    beyond = groups["changed"][3]
+    bad = beyond > args.allow and rate["changed"] > args.factor * rate["stayed"]
+    print("  rule: FAIL if changed-process pairs beyond the step > %d and "
+          "their rate > %g * the rate of the stayed group: %s"
+          % (args.allow, args.factor, "FAIL" if bad else "ok"))
+    return 1 if bad else 0
+
+
 def cmd_part(args):
     ser, _ = load_part(dump_dir(args.serial_dir, True), args.serial_dir)
     mpi, mentries = load_part(dump_dir(args.mpi_dir, False), args.mpi_dir)
+    if args.by == "key":
+        require_keys(ser, mpi, args)
     print("part: serial %s, mpi %s, ranks %d, match by %s, tol %g"
           % (args.serial_dir, args.mpi_dir, len(mentries), args.by, args.tol))
     nfail = 0
+    pairs_at, state_at = {}, {}
+    nlisted = 0              # unmatched keys printed (at most 10)
 
     empty = [r for r, n in sorted(mentries.items()) if n == 0]
     if empty:
@@ -569,22 +729,42 @@ def cmd_part(args):
              "ie!="))
     worst = (0.0, None)
     tot = dict.fromkeys(("unmat", "nan", "over", "lb", "z", "ncr", "unk",
-                         "ie"), 0)
+                         "ie", "ncr0", "ncrn"), 0)
     for t in times:
         sa = [e for e in ser.get(t, []) if e[CLS] in ALIVE]
         ma = [e for e in mpi.get(t, []) if e[CLS] in ALIVE]
         nd_s = len(ser.get(t, [])) - len(sa)
         nd_m = len(mpi.get(t, [])) - len(ma)
-        ndup = dup_ids(ma)
-        ndup_s = dup_ids(sa)
+        if args.by == "key":
+            ndup = dup_keys(ma)
+            ndup_s = dup_keys(sa)
+        else:
+            ndup = dup_ids(ma)
+            ndup_s = dup_ids(sa)
         nnan = sum(1 for e in sa + ma if not finite(e))
-        if args.by == "id":
+        if args.by == "key":
+            pairs, un_s, un_m = match_key(sa, ma)
+        elif args.by == "id":
             pairs, un_s, un_m = match_id(sa, ma)
         else:
             pairs, un_s, un_m = match_nearest([e for e in sa if finite(e)],
                                               [e for e in ma if finite(e)],
                                               args.elem)
         unmat = un_s + un_m
+        if args.by == "key" and unmat:
+            ks = {e[KEY]: e for e in sa}
+            km = {e[KEY]: e for e in ma}
+            for k in sorted(set(ks) ^ set(km))[:5]:
+                nlisted += 1
+                if nlisted > 10:
+                    break
+                print("  unmatched key at time %.1f: %s only in %s run, "
+                      "class %s, other run: %s"
+                      % (t, " ".join("%.17g" % v for v in k),
+                         "the serial" if k in ks else "the MPI",
+                         (ks.get(k) or km.get(k))[CLS],
+                         next((e[CLS] for e in (mpi if k in ks else ser)
+                               .get(t, []) if e[KEY] == k), "absent")))
         dmax = nan_max(p[2] for p in pairs)
         nover = sum(1 for p in pairs if not p[2] <= args.tol)
         nlb = sum(1 for p in pairs if p[0][LB] != p[1][LB])
@@ -593,19 +773,28 @@ def cmd_part(args):
         nx = sum(1 for p in pairs if p[0][NCROSS] != -1 and p[1][NCROSS] != -1
                  and p[0][NCROSS] != p[1][NCROSS])
         nie = sum(1 for p in pairs if p[0][IEG] != p[1][IEG])
+        nx0 = sum(1 for p in pairs if p[0][NCROSS] != -1 and p[1][NCROSS] != -1
+                  and p[0][NCROSS] != p[1][NCROSS] and p[2] == 0)
+        nxn = nx - nx0
         note = ""
-        bad = unmat + nnan + nover + nlb + nz
+        bad = unmat + nnan
+        if not args.handover:
+            bad += nover + nlb + nz
         if len(sa) != len(ma):
             bad += 1
             note += " COUNT"
         if ndup_s:
             bad += ndup_s
-            note += " serial dup ids %d" % ndup_s
-        if args.by == "id":
+            note += " serial dup %s %d" % ("keys" if args.by == "key"
+                                           else "ids", ndup_s)
+        if args.by in ("id", "key"):
             bad += ndup
-        if args.ncross:
-            bad += nx
-        if args.elem:
+        if args.by == "key":
+            tot["ncr0"] += nx0
+            tot["ncrn"] += nxn
+        if args.ncross and not args.handover:
+            bad += nx0 if args.by == "key" else nx
+        if args.elem and not args.handover:
             bad += nie
         nfail += bad
         for key, v in (("unmat", unmat), ("nan", nnan), ("over", nover),
@@ -614,6 +803,11 @@ def cmd_part(args):
             tot[key] += v
         if not math.isnan(worst[0]) and (math.isnan(dmax) or dmax > worst[0]):
             worst = (dmax, t)
+        if args.handover:
+            pairs_at[t] = {p[0][KEY]: p for p in reversed(pairs)}
+            sk = {e[KEY]: e[CLS] for e in ser.get(t, [])}
+            mk = {e[KEY]: e[CLS] for e in mpi.get(t, [])}
+            state_at[t] = {k: 1 for k in set(sk) & set(mk)}
         print("  %9.1f %5d %5d %5d %5d %5d %5d %3d %10.3e %4d %4d %4d %5d %5d"
               " %4d%s"
               % (t, len(sa), len(ma), nd_s, nd_m, ndup, unmat, nnan, dmax,
@@ -626,6 +820,15 @@ def cmd_part(args):
           % (len(times), tot["unmat"], tot["nan"], tot["over"], tot["lb"],
              tot["z"], tot["ncr"], "" if args.ncross else " (not gated)",
              tot["unk"], tot["ie"], "" if args.elem else " (not gated)"))
+    if args.by == "key":
+        print("  ncross differs at distance 0: %d%s; at a non-zero distance:"
+              " %d (never gated)"
+              % (tot["ncr0"], "" if args.ncross else " (not gated)",
+                 tot["ncrn"]))
+    if args.handover:
+        groups, left_out, beyond_list = handover_stats(times, pairs_at, state_at,
+                                          args.step)
+        nfail += handover_report(groups, left_out, beyond_list, args)
     return nfail
 
 
@@ -649,7 +852,7 @@ def main(argv=None):
     p.add_argument("mpi_dir")
     p.add_argument("--tol", type=float, required=True,
                    help="largest allowed distance max(|dx|,|dy|)")
-    p.add_argument("--by", choices=("id", "nearest"), default="nearest")
+    p.add_argument("--by", choices=("id", "nearest", "key"), default="nearest")
     p.add_argument("--first-only", action="store_true",
                    help="compare the first time in the files only (the"
                         " release block)")
@@ -659,10 +862,27 @@ def main(argv=None):
                    help="fail if a matched particle's crossing count differs")
     p.add_argument("--elem", action="store_true",
                    help="fail if a matched particle's global element differs")
+    p.add_argument("--handover", action="store_true",
+                   help="with --by key: compare the particles that changed"
+                        " process with those that stayed")
+    p.add_argument("--step", type=float, default=6e-8,
+                   help="--handover: one single-precision step, a length in"
+                        " the dump's unit (default 6e-8, degrees)")
+    p.add_argument("--allow", type=int, default=1,
+                   help="--handover: pairs beyond the step allowed in the"
+                        " changed group (default 1)")
+    p.add_argument("--factor", type=float, default=2.0,
+                   help="--handover: allowed ratio of the rates of the two"
+                        " groups (default 2)")
     p.set_defaults(func=cmd_part)
     args = ap.parse_args(argv)
     if not args.tol >= 0:
         ap.error("--tol must be >= 0")
+    if args.mode == "part":
+        if args.handover and args.by != "key":
+            ap.error("--handover needs --by key")
+        if not args.step >= 0 or args.allow < 0 or not args.factor >= 0:
+            ap.error("--step, --allow and --factor must be >= 0")
     try:
         nfail = args.func(args)
     except DumpError as e:

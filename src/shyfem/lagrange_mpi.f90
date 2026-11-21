@@ -2936,6 +2936,7 @@
 ! lgrdbg.part.NN.txt: at every particle output and right after every
 ! release, one line per array entry
 !	class time id x y z lb ie_global rank ncross
+!	key_ie key_xi1 key_xi2 key_l key_z key_time
 !   class P: element with only own nodes, M: mixed element (a vertex owned
 !   by another rank) this rank is the main owner of, G: mixed element
 !   owned elsewhere, D: entry with ie < 0, a particle that has left the
@@ -2944,6 +2945,13 @@
 !   makes one); lb = layer; ncross = lgr_ncross(i)
 !   (crossings of the last time step; for a particle handed over in that
 !   step the count of the whole step)
+!   The last six columns are the particle's key, the same in a serial run
+!   and on several processes, all with their full digits: init%ie_global,
+!   init%xi(1), init%xi(2), init%l, init%z, init%time (the release
+!   element, the first two release coordinates, the release layer, the
+!   release depth in the layer and the release time; several particles
+!   can start at one position, in different layers). Used by
+!   lgr_dbg_compare.py to pair the particles of two runs.
 !
 ! once, at the first output at or after 10 h of the run:
 ! lgrdbg.flux.NN.txt: one line per element and side ii (opposite vertex ii)
@@ -3027,7 +3035,10 @@
 	  end if
 	  write(iupart,1000) what,dtime,lgr_ar(i)%id,x,y		&
      &		,lgr_ar(i)%actual%z,lgr_ar(i)%actual%l,ieg,my_id	&
-     &		,lgr_ncross(i)
+     &		,lgr_ncross(i)					&
+     &		,lgr_ar(i)%init%ie_global,lgr_ar(i)%init%xi(1)		&
+     &		,lgr_ar(i)%init%xi(2),lgr_ar(i)%init%l			&
+     &		,lgr_ar(i)%init%z,lgr_ar(i)%init%time
 	end do
 	flush(iupart)
 
@@ -3071,7 +3082,8 @@
 
 	write(6,*) 'lgr_mpi_debug_dump: flux and node files written ',dtime
 
- 1000	format(a1,f14.1,i11,2es25.16e3,es17.8e2,i6,i11,i6,i6)
+ 1000	format(a1,f14.1,i11,2es25.16e3,es17.8e2,i6,i11,i6,i6		&
+     &		,i11,2es25.16e3,i6,es17.8e2,es25.16e3)
  2000	format(2i11,i6,i6,i3,2es17.8e2)
  3000	format(i11,i6,i6,5es17.8e2)
 	end subroutine lgr_mpi_debug_dump
