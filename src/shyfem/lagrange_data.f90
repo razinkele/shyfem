@@ -84,7 +84,9 @@
         type(lagr_entry), save, allocatable :: lgr_ar(:)
 
 	!element crossings used in the last time step, one per slot of lgr_ar
-	!(written by track_body_xi, read by the debug dump)
+	!(set to 0 by track_single and to the count by track_body_xi; -1 =
+	!unknown, set by lgr_mpi_exchange for a received particle; read by
+	!the debug dump)
         integer, save, allocatable :: lgr_ncross(:)
 
 	!---------------------------------------------

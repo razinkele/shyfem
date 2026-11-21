@@ -300,6 +300,7 @@
 	  ie_global = lgr_ar(nbdy)%actual%ie_global
 	  call lgr_mpi_global_to_local_elem(ie_global, ie_local)
 	  lgr_ar(nbdy)%actual%ie = ie_local
+	  lgr_ncross(nbdy) = -1		!unknown: the count is not sent yet
 	end do
 
 	!-----------------------------------------------
@@ -502,14 +503,21 @@
 
 ! debug dump of particles, side fluxes and node arrays (levdbg >= 3)
 !
-! NN = rank (my_id); every file is replaced at the first call of a run.
+! NN = rank (my_id). Every file starts with the line "# rank R of N"
+! (R = my_id, N = number of processes). At the first call of a run all
+! files are replaced, so that none is left from an older run: part, flux
+! and node always, flux3 in a 3D run; in a 2D run an old flux3 file is
+! deleted. Flux, flux3 and node keep only their header if the run ends
+! before 10 h.
 !
 ! lgrdbg.part.NN.txt: at every particle output, one line per array entry
-!	class time id x y z ie_global rank ncross
+!	class time id x y z lb ie_global rank ncross
 !   class P: element with only own nodes, M: mixed element (a vertex owned
 !   by another rank) this rank is the main owner of, G: mixed element
 !   owned elsewhere, D: entry with ie <= 0 (x = y = 0, ie_global = 0 for
-!   ie = 0, -global element for ie < 0); ncross = lgr_ncross(i)
+!   ie = 0, -global element for ie < 0); lb = layer; ncross = lgr_ncross(i)
+!   (-1 = unknown, for a particle received from another rank in the
+!   last time step)
 !
 ! once, at the first output at or after 10 h of the run:
 ! lgrdbg.flux.NN.txt: one line per element and side ii (opposite vertex ii)
@@ -540,9 +548,12 @@
 
 	integer, save :: icall = 0		!0 first call, 1 on, -1 off
 	integer, save :: iupart = 0		!unit of lgrdbg.part.NN.txt
+	integer, save :: iuflux = 0		!unit of lgrdbg.flux.NN.txt
+	integer, save :: iuflux3 = 0		!unit of lgrdbg.flux3.NN.txt
+	integer, save :: iunode = 0		!unit of lgrdbg.node.NN.txt
 	logical, save :: bflux = .false.	!flux and node files written
 
-	integer :: i,ie,ii,k,ieg,ng,iu
+	integer :: i,ie,ii,k,ieg,ng
 	double precision :: x,y,xi(3)
 	character(len=1) :: what
 
@@ -553,6 +564,13 @@
 	  if( nint(getpar('levdbg')) < 3 ) return
 	  icall = 1
 	  call lgr_mpi_debug_open('part',iupart)
+	  call lgr_mpi_debug_open('flux',iuflux)
+	  call lgr_mpi_debug_open('node',iunode)
+	  call lgr_mpi_debug_open('flux3',iuflux3)
+	  if( nlv <= 1 ) then			!2D run: no flux3 file
+	    close(iuflux3,status='delete')
+	    iuflux3 = 0
+	  end if
 	end if
 
 !	--------------------------------------------
@@ -581,51 +599,49 @@
 	    what = 'D'
 	  end if
 	  write(iupart,1000) what,dtime,lgr_ar(i)%id,x,y		&
-     &		,lgr_ar(i)%actual%z,ieg,my_id,lgr_ncross(i)
+     &		,lgr_ar(i)%actual%z,lgr_ar(i)%actual%l,ieg,my_id	&
+     &		,lgr_ncross(i)
 	end do
 	flush(iupart)
 
 !	--------------------------------------------
-!	fluxes and node arrays, once
+!	fluxes and node arrays, once (files opened at the first call)
 !	--------------------------------------------
 
 	if( bflux .or. dtime - dtanf < dtflux ) return
 	bflux = .true.
 
-	call lgr_mpi_debug_open('flux',iu)
 	do ie=1,nel
 	  ng = lgr_mpi_ghost_nodes(ie)
 	  do ii=1,3
 	    k = nen3v(ii,ie)
-	    write(iu,2000) ip_int_elem(ie),ip_int_node(k),my_id	&
+	    write(iuflux,2000) ip_int_elem(ie),ip_int_node(k),my_id	&
      &		,id_elem(1,ie),ng,flux3d(1,ii,ie),flux2d(ii,ie)
 	  end do
 	end do
-	close(iu)
+	close(iuflux)
 
 	if( nlv > 1 ) then
-	  call lgr_mpi_debug_open('flux3',iu)
 	  do ie=1,nel
 	    ng = lgr_mpi_ghost_nodes(ie)
 	    do ii=1,3
 	      k = nen3v(ii,ie)
-	      write(iu,2000) ip_int_elem(ie),ip_int_node(k),my_id	&
+	      write(iuflux3,2000) ip_int_elem(ie),ip_int_node(k),my_id	&
      &		,id_elem(1,ie),ng,flux3d(ilhv(ie),ii,ie),flux2d(ii,ie)
 	    end do
 	  end do
-	  close(iu)
+	  close(iuflux3)
 	end if
 
-	call lgr_mpi_debug_open('node',iu)
 	do k=1,nkn
-	  write(iu,3000) ip_int_node(k),my_id,id_node(k)		&
+	  write(iunode,3000) ip_int_node(k),my_id,id_node(k)		&
      &		,wlnv(1,k),mfluxv(1,k),difv(1,k),wxv(k),wyv(k)
 	end do
-	close(iu)
+	close(iunode)
 
 	write(6,*) 'lgr_mpi_debug_dump: flux and node files written ',dtime
 
- 1000	format(a1,f14.1,i11,2es25.16e3,es17.8e2,i11,i6,i6)
+ 1000	format(a1,f14.1,i11,2es25.16e3,es17.8e2,i6,i11,i6,i6)
  2000	format(2i11,i6,i6,i3,2es17.8e2)
  3000	format(i11,i6,i6,5es17.8e2)
 	end subroutine lgr_mpi_debug_dump
@@ -635,8 +651,9 @@
 	subroutine lgr_mpi_debug_open(what,iu)
 
 ! opens lgrdbg.WHAT.NN.txt fresh (replacing an old file); NN = rank
+! and writes the header line "# rank R of N"
 
-	use shympi, only : my_id
+	use shympi, only : my_id,n_threads
 
 	implicit none
 
@@ -653,6 +670,8 @@
 	  call shympi_abort_internal('lgr_mpi_debug_open: cannot open '	&
      &		//trim(name))
 	end if
+	write(iu,'(a,i0,a,i0)') '# rank ',my_id,' of ',n_threads
+	flush(iu)
 
 	end subroutine lgr_mpi_debug_open
 

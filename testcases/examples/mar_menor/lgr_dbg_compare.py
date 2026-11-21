@@ -8,8 +8,11 @@ usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
                           [--ranks-empty-ok] [--ncross]
 
 Each directory holds the files lgrdbg.KIND.NN.txt of one run (NN = rank),
-written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  SERIAL_DIR must
-hold rank 00 only; MPI_DIR must hold ranks 00 .. N-1 without a gap.
+written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  Every file
+starts with the line "# rank R of N".  In each directory all files must agree
+on N, R must equal NN, and every kind of file present must exist for exactly
+the ranks 0 .. N-1 (otherwise exit 2: a missing rank, an extra rank, or files
+left from another run).  SERIAL_DIR must have N = 1.
 
 flux  compares lgrdbg.flux (flux3d of layer 1 and flux2d) and, if present,
       lgrdbg.flux3 (flux3d of the bottom layer).  One row is one line of one
@@ -18,47 +21,61 @@ flux  compares lgrdbg.flux (flux3d of layer 1 and flux2d) and, if present,
       by another rank), "mixed, main owner" (this rank is the element's main
       owner), "mixed, owned elsewhere".  A row is off if |mpi - serial| >
       tol * scale, scale = max |serial| of that array (if the scale is 0, any
-      non-zero difference is off).  Also checked: every MPI row exists in
-      serial, and every serial row is covered exactly once by a main-owner row.
+      non-zero difference is off; NaN is off).  Also checked: every MPI row
+      exists in serial, and every serial row is covered exactly once by a
+      main-owner row.  A flux file without data rows (run ended before 10 h)
+      is an error.
 node  compares lgrdbg.node (wlnv, mfluxv, difv, wxv, wyv) the same way, with
       the classes "own" and "ghost" node; every serial node must be own on
       exactly one rank.
-part  compares lgrdbg.part per output time: the number of particles alive
-      (classes P, M, G; D entries are listed, not compared), the times, ids
-      that occur twice, and the largest distance between matched particles,
-      distance = max(|dx|, |dy|) as in lgr_compare.py.
+part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross)
+      per output time.  Alive particles (classes P, M, G) are compared; D
+      entries are only counted.  Per time it reports the counts, ids that
+      occur twice in the MPI run, particles left unmatched, particles with a
+      NaN position, the largest distance between matched particles (distance
+      = max(|dx|, |dy|) as in lgr_compare.py; NaN propagates), the number of
+      pairs beyond --tol, pairs whose layer lb differs, pairs whose z differs
+      by more than 1e-5, and pairs whose crossing count differs (a pair with
+      ncross = -1 on either side, "unknown", is counted apart and is never a
+      mismatch).
       --by id       match by id; an id that occurs twice, or in one run only,
                     is a failure (ids repeat across ranks until stage 4).
-      --by nearest  (default) largest nearest-neighbour distance, taken in
-                    both directions (serial -> MPI and MPI -> serial).
-      --ncross      also compare the crossing count of matched particles (by
-                    nearest: the MPI particle nearest to each serial one).
+      --by nearest  (default) one-to-one match: pairs are taken by increasing
+                    distance (at equal distance: same layer, then closest z)
+                    and every particle is used at most once.
+      --ncross      a differing crossing count is a failure.
       --first-only  look at the first output time only.
       --ranks-empty-ok  mark MPI ranks whose part file has no entry at all
                     as expected.  Such a rank never fails the comparison (in
                     case A on 4 ranks rank 0 holds no particle in the whole
                     run, also when the tracks equal serial); without the flag
-                    it is listed as a note.  A missing part file is an error.
+                    it is listed as a note.
 
 Every mode exits 1 if the comparison fails (flux, node: any row off; part: a
-count or time mismatch, a distance above --tol, a duplicate id with --by id,
-a differing crossing count with --ncross).
+count or time mismatch, an unmatched particle, a NaN position, a distance
+above --tol, a differing layer or z, a duplicate id with --by id, a differing
+crossing count with --ncross).
 
 Exit status: 0 = runs agree, 1 = they differ, 2 = a dump cannot be read.
 """
 import argparse
 import bisect
 import glob
+import heapq
 import math
 import os
 import re
 import sys
 
 FILE_RE = re.compile(r"^lgrdbg\.([a-z0-9]+)\.(\d+)\.txt$")
+HEADER_RE = re.compile(r"^# rank (\d+) of (\d+)\s*$")
 FLUX_CLASSES = ("all-own nodes", "mixed, main owner", "mixed, owned elsewhere")
 NODE_ARRAYS = ("wlnv", "mfluxv", "difv", "wxv", "wyv")
 NODE_CLASSES = ("own", "ghost")
 ALIVE = ("P", "M", "G")
+Z_TOL = 1e-5
+K_NEAREST = 8           # candidate partners per particle in a nearest round
+FULL_EDGES = 250000     # below this many pairs, use every pair
 
 
 class DumpError(Exception):
@@ -68,40 +85,70 @@ class DumpError(Exception):
 # ---------------------------------------------------------------- reading
 
 
-def dump_files(dirname, kind):
-    """Return {rank: path} of the lgrdbg.KIND.NN.txt files in dirname."""
+def read_header(path):
+    """(rank, nprocs) from the first line '# rank R of N'."""
+    try:
+        with open(path) as f:
+            first = f.readline()
+    except OSError as e:
+        raise DumpError("%s: %s" % (path, e))
+    m = HEADER_RE.match(first)
+    if not m:
+        raise DumpError("%s: first line is not '# rank R of N' (old dump?)"
+                        % path)
+    return int(m.group(1)), int(m.group(2))
+
+
+def dump_dir(dirname, serial):
+    """Check all lgrdbg files of one run; return {kind: {rank: path}}."""
     if not os.path.isdir(dirname):
         raise DumpError("%s: not a directory" % dirname)
-    files = {}
-    for path in glob.glob(os.path.join(dirname, "lgrdbg.%s.*.txt" % kind)):
+    kinds = {}
+    nprocs = {}
+    for path in sorted(glob.glob(os.path.join(dirname, "lgrdbg.*.txt"))):
         m = FILE_RE.match(os.path.basename(path))
-        if m and m.group(1) == kind:
-            files[int(m.group(2))] = path
-    return files
+        if not m:
+            continue
+        kind, nn = m.group(1), int(m.group(2))
+        rank, n = read_header(path)
+        if rank != nn:
+            raise DumpError("%s: header says rank %d" % (path, rank))
+        nprocs.setdefault(n, []).append(os.path.basename(path))
+        kinds.setdefault(kind, {})[nn] = path
+    if not kinds:
+        raise DumpError("%s: no lgrdbg.KIND.NN.txt files" % dirname)
+    if len(nprocs) > 1:
+        raise DumpError("%s: files disagree on the number of processes: %s"
+                        % (dirname, ", ".join("%d in %s" % (n, f[0])
+                                              for n, f in sorted(nprocs.items()))))
+    (n,) = nprocs
+    if serial and n != 1:
+        raise DumpError("%s: serial run must have 1 process, files say %d"
+                        % (dirname, n))
+    for kind, files in sorted(kinds.items()):
+        want = set(range(n))
+        have = set(files)
+        if have != want:
+            raise DumpError("%s: lgrdbg.%s for %d processes: missing ranks %s,"
+                            " extra ranks %s" % (dirname, kind, n,
+                                                 sorted(want - have),
+                                                 sorted(have - want)))
+    return kinds
 
 
-def rank_files(dirname, kind, serial, required=True):
-    """Dump files of one run, checked: serial = rank 0 only, MPI = 0..N-1."""
-    files = dump_files(dirname, kind)
-    if not files:
-        if required:
-            raise DumpError("%s: no lgrdbg.%s.NN.txt files" % (dirname, kind))
-        return files
-    ranks = sorted(files)
-    if serial and ranks != [0]:
-        raise DumpError("%s: serial run must hold rank 00 only, found ranks %s"
-                        % (dirname, ranks))
-    if ranks != list(range(len(ranks))):
-        raise DumpError("%s: lgrdbg.%s files for ranks %s: a rank is missing"
-                        % (dirname, kind, ranks))
-    return files
+def kind_files(kinds, dirname, kind):
+    if kind not in kinds:
+        raise DumpError("%s: no lgrdbg.%s.NN.txt files" % (dirname, kind))
+    return kinds[kind]
 
 
 def read_lines(path, nfields):
-    """Yield (line number, fields) for every non-empty line."""
+    """Yield (line number, fields) for every data line ('#' lines skipped)."""
     try:
         with open(path) as f:
             for n, line in enumerate(f, 1):
+                if line.startswith("#"):
+                    continue
                 fields = line.split()
                 if not fields:
                     continue
@@ -134,6 +181,8 @@ def read_flux(path, rank):
         rows.append((to_num(path, n, int, f[0]), to_num(path, n, int, f[1]),
                      to_num(path, n, int, f[3]), to_num(path, n, int, f[4]),
                      to_num(path, n, float, f[5]), to_num(path, n, float, f[6])))
+    if not rows:
+        raise DumpError("%s: no data rows (did the run reach 10 h?)" % path)
     return rows
 
 
@@ -144,20 +193,27 @@ def read_node(path, rank):
         check_rank(path, n, rank, f[1])
         vals = tuple(to_num(path, n, float, v) for v in f[3:8])
         rows.append((to_num(path, n, int, f[0]), to_num(path, n, int, f[2]), vals))
+    if not rows:
+        raise DumpError("%s: no data rows (did the run reach 10 h?)" % path)
     return rows
 
 
+# part entry: (class, id, x, y, z, lb, ie_global, ncross)
+CLS, ID, X, Y, Z, LB, IEG, NCROSS = range(8)
+
+
 def read_part(path, rank):
-    """{time: [(class, id, x, y, z, ie_global, ncross)]} of one rank."""
+    """{time: [entry]} of one rank."""
     out = {}
-    for n, f in read_lines(path, 9):
+    for n, f in read_lines(path, 10):
         if f[0] not in ("P", "M", "G", "D"):
             raise DumpError("%s:%d: unknown class %r" % (path, n, f[0]))
-        check_rank(path, n, rank, f[7])
+        check_rank(path, n, rank, f[8])
         t = round(to_num(path, n, float, f[1]), 1)
         entry = (f[0], to_num(path, n, int, f[2]), to_num(path, n, float, f[3]),
                  to_num(path, n, float, f[4]), to_num(path, n, float, f[5]),
-                 to_num(path, n, int, f[6]), to_num(path, n, int, f[8]))
+                 to_num(path, n, int, f[6]), to_num(path, n, int, f[7]),
+                 to_num(path, n, int, f[9]))
         out.setdefault(t, []).append(entry)
     return out
 
@@ -205,9 +261,8 @@ def worse(a, b):
 # ---------------------------------------------------------------- flux
 
 
-def compare_flux_kind(serial_dir, mpi_dir, kind, label3, tol):
+def compare_flux_kind(sfile, mfiles, label3, tol):
     """Compare one flux file kind; return number of failures."""
-    sfile = rank_files(serial_dir, kind, True)[0]
     serial = {}
     for ieg, nodeg, owner, ng, f3, f2 in read_flux(sfile, 0):
         key = (ieg, nodeg)
@@ -221,7 +276,6 @@ def compare_flux_kind(serial_dir, mpi_dir, kind, label3, tol):
     unknown = 0
     bad_class = 0
     main_count = dict.fromkeys(serial, 0)
-    mfiles = rank_files(mpi_dir, kind, False)
     for rank in sorted(mfiles):
         for ieg, nodeg, owner, ng, f3, f2 in read_flux(mfiles[rank], rank):
             key = (ieg, nodeg)
@@ -242,8 +296,7 @@ def compare_flux_kind(serial_dir, mpi_dir, kind, label3, tol):
                 d = abs(v - serial[key][j])
                 st = stats[j][cls]
                 st[0] += 1
-                limit = tol * scales[j]
-                if is_off(d, limit):
+                if is_off(d, tol * scales[j]):
                     st[1] += 1
                 st[2] = worse(st[2], d)
 
@@ -263,15 +316,16 @@ def compare_flux_kind(serial_dir, mpi_dir, kind, label3, tol):
 
 
 def cmd_flux(args):
+    skinds = dump_dir(args.serial_dir, True)
+    mkinds = dump_dir(args.mpi_dir, False)
+    mfiles = kind_files(mkinds, args.mpi_dir, "flux")
     print("flux: serial %s, mpi %s, ranks %d"
-          % (args.serial_dir, args.mpi_dir,
-             len(rank_files(args.mpi_dir, "flux", False))))
-    nfail = compare_flux_kind(args.serial_dir, args.mpi_dir, "flux",
-                              "flux3d (layer 1)", args.tol)
-    has3 = (bool(dump_files(args.serial_dir, "flux3")),
-            bool(dump_files(args.mpi_dir, "flux3")))
+          % (args.serial_dir, args.mpi_dir, len(mfiles)))
+    nfail = compare_flux_kind(kind_files(skinds, args.serial_dir, "flux")[0],
+                              mfiles, "flux3d (layer 1)", args.tol)
+    has3 = ("flux3" in skinds, "flux3" in mkinds)
     if has3 == (True, True):
-        nfail += compare_flux_kind(args.serial_dir, args.mpi_dir, "flux3",
+        nfail += compare_flux_kind(skinds["flux3"][0], mkinds["flux3"],
                                    "flux3d (bottom layer)", args.tol)
     elif has3 == (False, False):
         print("flux3: no files (2D run)")
@@ -284,7 +338,9 @@ def cmd_flux(args):
 
 
 def cmd_node(args):
-    sfile = rank_files(args.serial_dir, "node", True)[0]
+    sfile = kind_files(dump_dir(args.serial_dir, True), args.serial_dir,
+                       "node")[0]
+    mfiles = kind_files(dump_dir(args.mpi_dir, False), args.mpi_dir, "node")
     serial = {}
     for nodeg, owner, vals in read_node(sfile, 0):
         if nodeg in serial:
@@ -296,7 +352,6 @@ def cmd_node(args):
     stats = [{c: [0, 0, 0.0] for c in NODE_CLASSES} for _ in range(na)]
     unknown = 0
     own_count = dict.fromkeys(serial, 0)
-    mfiles = rank_files(args.mpi_dir, "node", False)
     print("node: serial %s, mpi %s, ranks %d"
           % (args.serial_dir, args.mpi_dir, len(mfiles)))
     for rank in sorted(mfiles):
@@ -330,83 +385,124 @@ def cmd_node(args):
 # ---------------------------------------------------------------- part
 
 
-def nearest(sorted_pts, xs, x, y):
-    """(distance, index) of the point of sorted_pts nearest to (x, y), with
-    distance = max(|dx|, |dy|); sorted_pts sorted by x, xs their x values."""
-    best, ibest = math.inf, -1
-    n = len(sorted_pts)
-    i = bisect.bisect_left(xs, x)
-    lo, hi = i - 1, i
-    while lo >= 0 or hi < n:
-        if hi < n:
-            dx = abs(xs[hi] - x)
-            if dx > best:
-                hi = n
-            else:
-                d = max(dx, abs(sorted_pts[hi][3] - y))
-                if d < best:
-                    best, ibest = d, hi
-                hi += 1
-        if lo >= 0:
-            dx = abs(xs[lo] - x)
-            if dx > best:
-                lo = -1
-            else:
-                d = max(dx, abs(sorted_pts[lo][3] - y))
-                if d < best:
-                    best, ibest = d, lo
-                lo -= 1
-    return best, ibest
+def distance(a, b):
+    """max(|dx|, |dy|); NaN if either position has a NaN."""
+    dx = abs(a[X] - b[X])
+    dy = abs(a[Y] - b[Y])
+    if math.isnan(dx) or math.isnan(dy):
+        return math.nan
+    return max(dx, dy)
+
+
+def finite(e):
+    return math.isfinite(e[X]) and math.isfinite(e[Y])
+
+
+def tie_break(a, b):
+    """(layer differs, |dz|) for equal distances: same layer and closest z
+    first (several particles can share a position in different layers)."""
+    dz = abs(a[Z] - b[Z])
+    return (0 if a[LB] == b[LB] else 1, dz if dz == dz else math.inf)
+
+
+def candidate_edges(ser, mpi, free_s, free_m, k):
+    """(distance, layer differs, |dz|, i, j) to the k nearest free MPI
+    particles of every free serial particle (all positions finite)."""
+    ms = sorted(free_m, key=lambda j: mpi[j][X])
+    xs = [mpi[j][X] for j in ms]
+    n = len(ms)
+    edges = []
+    for i in free_s:
+        x, y = ser[i][X], ser[i][Y]
+        heap = []                # (-distance, -tie..., -j): k nearest so far
+        hi = bisect.bisect_left(xs, x)
+        lo = hi - 1
+        while lo >= 0 or hi < n:
+            for side in (0, 1):
+                p = hi if side == 0 else lo
+                if p < 0 or p >= n:
+                    continue
+                bound = -heap[0][0] if len(heap) == k else math.inf
+                dx = abs(xs[p] - x)
+                if dx > bound:
+                    if side == 0:
+                        hi = n
+                    else:
+                        lo = -1
+                    continue
+                d = max(dx, abs(mpi[ms[p]][Y] - y))
+                lbd, dz = tie_break(ser[i], mpi[ms[p]])
+                item = (-d, -lbd, -dz, -ms[p])
+                if len(heap) < k:
+                    heapq.heappush(heap, item)
+                elif item > heap[0]:
+                    heapq.heapreplace(heap, item)
+                if side == 0:
+                    hi += 1
+                else:
+                    lo -= 1
+        edges.extend((-nd, -nl, -nz, i, -nj) for nd, nl, nz, nj in heap)
+    return edges
 
 
 def match_nearest(ser, mpi):
-    """Pairs (serial, mpi, distance) of each serial particle with its nearest
-    MPI particle, and the largest nearest distance MPI -> serial."""
+    """One-to-one match by increasing distance (greedy).  Returns the pairs
+    [(serial, mpi, distance)] and the numbers of unmatched entries of each
+    run.  Entries must have finite positions."""
+    free_s = list(range(len(ser)))
+    free_m = list(range(len(mpi)))
     pairs = []
-    if not ser or not mpi:
-        return pairs, 0.0
-    ms = sorted(mpi, key=lambda e: e[2])
-    mxs = [e[2] for e in ms]
-    for e in ser:
-        d, i = nearest(ms, mxs, e[2], e[3])
-        pairs.append((e, ms[i], d))
-    ss = sorted(ser, key=lambda e: e[2])
-    sxs = [e[2] for e in ss]
-    back = 0.0
-    for e in mpi:
-        d, i = nearest(ss, sxs, e[2], e[3])
-        back = max(back, d)
-    return pairs, back
+    while free_s and free_m:
+        full = len(free_s) * len(free_m) <= FULL_EDGES
+        if full:
+            edges = [(distance(ser[i], mpi[j]),) + tie_break(ser[i], mpi[j])
+                     + (i, j) for i in free_s for j in free_m]
+        else:
+            edges = candidate_edges(ser, mpi, free_s, free_m, K_NEAREST)
+        edges.sort()
+        used_s, used_m = set(), set()
+        for d, lbd, dz, i, j in edges:
+            if i in used_s or j in used_m:
+                continue
+            used_s.add(i)
+            used_m.add(j)
+            pairs.append((ser[i], mpi[j], d))
+        free_s = [i for i in free_s if i not in used_s]
+        free_m = [j for j in free_m if j not in used_m]
+        if full:
+            break
+    return pairs, len(free_s), len(free_m)
 
 
 def match_id(ser, mpi):
-    """Pairs (serial, mpi, distance) by id, and the ids in one run only."""
-    sid = {}
-    for e in ser:
-        sid.setdefault(e[1], e)
+    """Pairs by id (first entry of each id); returns pairs and the numbers
+    of entries of each run left without a partner."""
     mid = {}
     for e in mpi:
-        mid.setdefault(e[1], e)
+        mid.setdefault(e[ID], e)
     pairs = []
-    for i, e in sid.items():
-        if i in mid:
-            m = mid[i]
-            pairs.append((e, m, max(abs(e[2] - m[2]), abs(e[3] - m[3]))))
-    only = len(set(sid) ^ set(mid))
-    return pairs, only
+    seen = set()
+    for e in ser:
+        if e[ID] in seen:
+            continue
+        seen.add(e[ID])
+        if e[ID] in mid:
+            m = mid[e[ID]]
+            pairs.append((e, m, distance(e, m)))
+    return pairs, len(ser) - len(pairs), len(mpi) - len(pairs)
 
 
 def dup_ids(entries):
     seen, dups = set(), set()
     for e in entries:
-        if e[1] in seen:
-            dups.add(e[1])
-        seen.add(e[1])
+        if e[ID] in seen:
+            dups.add(e[ID])
+        seen.add(e[ID])
     return len(dups)
 
 
-def load_part(dirname, serial):
-    files = rank_files(dirname, "part", serial)
+def load_part(kinds, dirname):
+    files = kind_files(kinds, dirname, "part")
     by_time = {}
     nentries = {}
     for rank in sorted(files):
@@ -417,9 +513,19 @@ def load_part(dirname, serial):
     return by_time, nentries
 
 
+def nan_max(values):
+    """Largest value; NaN if any value is NaN; 0 for no values."""
+    out = 0.0
+    for v in values:
+        if math.isnan(v):
+            return math.nan
+        out = max(out, v)
+    return out
+
+
 def cmd_part(args):
-    ser, _ = load_part(args.serial_dir, True)
-    mpi, mentries = load_part(args.mpi_dir, False)
+    ser, _ = load_part(dump_dir(args.serial_dir, True), args.serial_dir)
+    mpi, mentries = load_part(dump_dir(args.mpi_dir, False), args.mpi_dir)
     print("part: serial %s, mpi %s, ranks %d, match by %s, tol %g"
           % (args.serial_dir, args.mpi_dir, len(mentries), args.by, args.tol))
     nfail = 0
@@ -441,48 +547,61 @@ def cmd_part(args):
               % (len(only_s), len(only_m)))
         nfail += len(only_s) + len(only_m)
 
-    print("  %10s %6s %6s %5s %5s %5s %12s %5s %6s"
-          % ("time", "n_ser", "n_mpi", "D_ser", "D_mpi", "dupid", "max dist",
-             ">tol", "ncross"))
+    print("  %9s %5s %5s %5s %5s %5s %5s %3s %10s %4s %4s %4s %5s %5s"
+          % ("time", "n_ser", "n_mpi", "D_ser", "D_mpi", "dupid", "unmat",
+             "nan", "max dist", ">tol", "lb!=", "z!=", "ncr!=", "ncr-1"))
     worst = (0.0, None)
+    tot = dict.fromkeys(("unmat", "nan", "over", "lb", "z", "ncr", "unk"), 0)
     for t in times:
-        sa = [e for e in ser.get(t, []) if e[0] in ALIVE]
-        ma = [e for e in mpi.get(t, []) if e[0] in ALIVE]
+        sa = [e for e in ser.get(t, []) if e[CLS] in ALIVE]
+        ma = [e for e in mpi.get(t, []) if e[CLS] in ALIVE]
         nd_s = len(ser.get(t, [])) - len(sa)
         nd_m = len(mpi.get(t, [])) - len(ma)
         ndup = dup_ids(ma)
         ndup_s = dup_ids(sa)
+        nnan = sum(1 for e in sa + ma if not finite(e))
         if args.by == "id":
-            pairs, only = match_id(sa, ma)
-            dists = [p[2] for p in pairs]
-            nfail += only + ndup
-            note = " ids in one run only %d" % only if only else ""
+            pairs, un_s, un_m = match_id(sa, ma)
         else:
-            pairs, back = match_nearest(sa, ma)
-            dists = [p[2] for p in pairs] + ([back] if ma and sa else [])
-            note = ""
-        dmax = max(dists, default=0.0)
+            pairs, un_s, un_m = match_nearest([e for e in sa if finite(e)],
+                                              [e for e in ma if finite(e)])
+        unmat = un_s + un_m
+        dmax = nan_max(p[2] for p in pairs)
         nover = sum(1 for p in pairs if not p[2] <= args.tol)
-        if args.by == "nearest" and not back <= args.tol:
-            nover = max(nover, 1)
-        nx = sum(1 for p in pairs if p[0][6] != p[1][6])
+        nlb = sum(1 for p in pairs if p[0][LB] != p[1][LB])
+        nz = sum(1 for p in pairs if not abs(p[0][Z] - p[1][Z]) <= Z_TOL)
+        nunk = sum(1 for p in pairs if p[0][NCROSS] == -1 or p[1][NCROSS] == -1)
+        nx = sum(1 for p in pairs if p[0][NCROSS] != -1 and p[1][NCROSS] != -1
+                 and p[0][NCROSS] != p[1][NCROSS])
+        note = ""
+        bad = unmat + nnan + nover + nlb + nz
         if len(sa) != len(ma):
-            nfail += 1
+            bad += 1
             note += " COUNT"
         if ndup_s:
-            nfail += ndup_s
+            bad += ndup_s
             note += " serial dup ids %d" % ndup_s
-        if not dmax <= args.tol:
-            nfail += 1
+        if args.by == "id":
+            bad += ndup
         if args.ncross:
-            nfail += nx
-        if dmax > worst[0] or math.isnan(dmax):
+            bad += nx
+        nfail += bad
+        for key, v in (("unmat", unmat), ("nan", nnan), ("over", nover),
+                       ("lb", nlb), ("z", nz), ("ncr", nx), ("unk", nunk)):
+            tot[key] += v
+        if not math.isnan(worst[0]) and (math.isnan(dmax) or dmax > worst[0]):
             worst = (dmax, t)
-        print("  %10.1f %6d %6d %5d %5d %5d %12.4e %5d %6s%s"
-              % (t, len(sa), len(ma), nd_s, nd_m, ndup, dmax, nover,
-                 nx if args.ncross else "-", note))
+        print("  %9.1f %5d %5d %5d %5d %5d %5d %3d %10.3e %4d %4d %4d %5d %5d%s"
+              % (t, len(sa), len(ma), nd_s, nd_m, ndup, unmat, nnan, dmax,
+                 nover, nlb, nz, nx, nunk, note))
     if worst[1] is not None:
         print("  largest distance %.4e at time %.1f" % worst)
+    print("  totals over %d outputs: unmatched %d, nan %d, beyond tol %d,"
+          " layer differs %d, z differs %d, ncross differs %d%s,"
+          " ncross unknown (-1) %d"
+          % (len(times), tot["unmat"], tot["nan"], tot["over"], tot["lb"],
+             tot["z"], tot["ncr"], "" if args.ncross else " (not gated)",
+             tot["unk"]))
     return nfail
 
 
