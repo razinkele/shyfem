@@ -750,7 +750,9 @@ lagrange_flux.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_layer_thickness.mod \
 		../../lib/mod/shympi.mod
 lagrange_init.o: ../../lib/mod/basin.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/shympi.mod 
 lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/femtime.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_lagrange.mod \
@@ -758,7 +760,8 @@ lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/shyfile.mod 
 lagrange_larve.o: ../../lib/mod/mod_lagrange.mod
 lagrange_mpi.o: ../../lib/mod/basin.mod \
-		../../lib/mod/connectivity.mod ../../lib/mod/femtime.mod \
+		../../lib/mod/connectivity.mod ../../lib/mod/evgeom.mod \
+		../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/mod_bound_dynamic.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \

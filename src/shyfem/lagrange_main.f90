@@ -291,6 +291,7 @@
           call get_timeline(dtime,aline)
 	  write(6,*) 'release of particles for lagrangian model'
 	  call lgr_init_shell
+	  call lgr_mpi_debug_dump(dtime,bpart_only=.true.) !levdbg >= 3
 	  dtrnext = dtrnext + ddtl
 	  if( dtrnext == dtend ) dtrnext = dtend + 1
 	  write(6,*) 'new particles released: ',nbdy,'at time: ',aline

@@ -5,7 +5,7 @@ usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py node SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py part SERIAL_DIR MPI_DIR --tol FLOAT
                           [--by {id|nearest}] [--first-only]
-                          [--ranks-empty-ok] [--ncross]
+                          [--ranks-empty-ok] [--ncross] [--elem]
 
 Each directory holds the files lgrdbg.KIND.NN.txt of one run (NN = rank),
 written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  Every file
@@ -29,22 +29,27 @@ node  compares lgrdbg.node (wlnv, mfluxv, difv, wxv, wyv) the same way, with
       the classes "own" and "ghost" node; every serial node must be own on
       exactly one rank.
 part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross)
-      per output time.  Alive particles (classes P, M, G) are compared; D
+      per time (every particle output, and the release blocks written right
+      after a release).  Alive particles (classes P, M, G) are compared; D
       entries are only counted.  Per time it reports the counts, ids that
       occur twice in the MPI run, particles left unmatched, particles with a
       NaN position, the largest distance between matched particles (distance
       = max(|dx|, |dy|) as in lgr_compare.py; NaN propagates), the number of
       pairs beyond --tol, pairs whose layer lb differs, pairs whose z differs
-      by more than 1e-5, and pairs whose crossing count differs (a pair with
+      by more than 1e-5, pairs whose crossing count differs (a pair with
       ncross = -1 on either side, "unknown", is counted apart and is never a
-      mismatch).
+      mismatch), and pairs whose global element ie_global differs.
       --by id       match by id; an id that occurs twice, or in one run only,
                     is a failure (ids repeat across ranks until stage 4).
       --by nearest  (default) one-to-one match: pairs are taken by increasing
-                    distance (at equal distance: same layer, then closest z)
-                    and every particle is used at most once.
+                    distance (at equal distance: same layer, then with
+                    --elem the same element, then closest z) and every
+                    particle is used at most once.
       --ncross      a differing crossing count is a failure.
-      --first-only  look at the first output time only.
+      --elem        a differing global element is a failure.
+      --first-only  look at the first time in the files only (the block
+                    written right after the first release, before any
+                    tracking, when the run releases particles).
       --ranks-empty-ok  mark MPI ranks whose part file has no entry at all
                     as expected.  Such a rank never fails the comparison (in
                     case A on 4 ranks rank 0 holds no particle in the whole
@@ -54,7 +59,7 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross)
 Every mode exits 1 if the comparison fails (flux, node: any row off; part: a
 count or time mismatch, an unmatched particle, a NaN position, a distance
 above --tol, a differing layer or z, a duplicate id with --by id, a differing
-crossing count with --ncross).
+crossing count with --ncross, a differing element with --elem).
 
 Exit status: 0 = runs agree, 1 = they differ, 2 = a dump cannot be read.
 """
@@ -398,23 +403,31 @@ def finite(e):
     return math.isfinite(e[X]) and math.isfinite(e[Y])
 
 
-def tie_break(a, b):
+def tie_break(a, b, elem=False):
     """(layer differs, |dz|) for equal distances: same layer and closest z
-    first (several particles can share a position in different layers)."""
+    first (several particles can share a position in different layers).
+    With elem: (layer differs, element differs, |dz|), so that two particles
+    at one point in two elements (a point on a shared side) pair with the
+    partner in the same element."""
     dz = abs(a[Z] - b[Z])
-    return (0 if a[LB] == b[LB] else 1, dz if dz == dz else math.inf)
+    lbd = 0 if a[LB] == b[LB] else 1
+    dz = dz if dz == dz else math.inf
+    if elem:
+        return (lbd, 0 if a[IEG] == b[IEG] else 1, dz)
+    return (lbd, dz)
 
 
-def candidate_edges(ser, mpi, free_s, free_m, k):
-    """(distance, layer differs, |dz|, i, j) to the k nearest free MPI
-    particles of every free serial particle (all positions finite)."""
+def candidate_edges(ser, mpi, free_s, free_m, k, elem=False):
+    """(distance, tie key, i, j) to the k nearest free MPI particles of
+    every free serial particle (all positions finite); tie key as in
+    tie_break."""
     ms = sorted(free_m, key=lambda j: mpi[j][X])
     xs = [mpi[j][X] for j in ms]
     n = len(ms)
     edges = []
     for i in free_s:
         x, y = ser[i][X], ser[i][Y]
-        heap = []                # (-distance, -tie..., -j): k nearest so far
+        heap = []                # (-distance, -tie key, -j): k nearest so far
         hi = bisect.bisect_left(xs, x)
         lo = hi - 1
         while lo >= 0 or hi < n:
@@ -431,8 +444,8 @@ def candidate_edges(ser, mpi, free_s, free_m, k):
                         lo = -1
                     continue
                 d = max(dx, abs(mpi[ms[p]][Y] - y))
-                lbd, dz = tie_break(ser[i], mpi[ms[p]])
-                item = (-d, -lbd, -dz, -ms[p])
+                key = tie_break(ser[i], mpi[ms[p]], elem)
+                item = (-d, tuple(-v for v in key), -ms[p])
                 if len(heap) < k:
                     heapq.heappush(heap, item)
                 elif item > heap[0]:
@@ -441,27 +454,30 @@ def candidate_edges(ser, mpi, free_s, free_m, k):
                     hi += 1
                 else:
                     lo -= 1
-        edges.extend((-nd, -nl, -nz, i, -nj) for nd, nl, nz, nj in heap)
+        edges.extend((-nd, tuple(-v for v in nkey), i, -nj)
+                     for nd, nkey, nj in heap)
     return edges
 
 
-def match_nearest(ser, mpi):
+def match_nearest(ser, mpi, elem=False):
     """One-to-one match by increasing distance (greedy).  Returns the pairs
     [(serial, mpi, distance)] and the numbers of unmatched entries of each
-    run.  Entries must have finite positions."""
+    run.  Entries must have finite positions.  With elem, equal distances
+    prefer the partner in the same element (after the same layer)."""
     free_s = list(range(len(ser)))
     free_m = list(range(len(mpi)))
     pairs = []
     while free_s and free_m:
         full = len(free_s) * len(free_m) <= FULL_EDGES
         if full:
-            edges = [(distance(ser[i], mpi[j]),) + tie_break(ser[i], mpi[j])
-                     + (i, j) for i in free_s for j in free_m]
+            edges = [(distance(ser[i], mpi[j]),
+                      tie_break(ser[i], mpi[j], elem), i, j)
+                     for i in free_s for j in free_m]
         else:
-            edges = candidate_edges(ser, mpi, free_s, free_m, K_NEAREST)
+            edges = candidate_edges(ser, mpi, free_s, free_m, K_NEAREST, elem)
         edges.sort()
         used_s, used_m = set(), set()
-        for d, lbd, dz, i, j in edges:
+        for d, key, i, j in edges:
             if i in used_s or j in used_m:
                 continue
             used_s.add(i)
@@ -547,11 +563,13 @@ def cmd_part(args):
               % (len(only_s), len(only_m)))
         nfail += len(only_s) + len(only_m)
 
-    print("  %9s %5s %5s %5s %5s %5s %5s %3s %10s %4s %4s %4s %5s %5s"
+    print("  %9s %5s %5s %5s %5s %5s %5s %3s %10s %4s %4s %4s %5s %5s %4s"
           % ("time", "n_ser", "n_mpi", "D_ser", "D_mpi", "dupid", "unmat",
-             "nan", "max dist", ">tol", "lb!=", "z!=", "ncr!=", "ncr-1"))
+             "nan", "max dist", ">tol", "lb!=", "z!=", "ncr!=", "ncr-1",
+             "ie!="))
     worst = (0.0, None)
-    tot = dict.fromkeys(("unmat", "nan", "over", "lb", "z", "ncr", "unk"), 0)
+    tot = dict.fromkeys(("unmat", "nan", "over", "lb", "z", "ncr", "unk",
+                         "ie"), 0)
     for t in times:
         sa = [e for e in ser.get(t, []) if e[CLS] in ALIVE]
         ma = [e for e in mpi.get(t, []) if e[CLS] in ALIVE]
@@ -564,7 +582,8 @@ def cmd_part(args):
             pairs, un_s, un_m = match_id(sa, ma)
         else:
             pairs, un_s, un_m = match_nearest([e for e in sa if finite(e)],
-                                              [e for e in ma if finite(e)])
+                                              [e for e in ma if finite(e)],
+                                              args.elem)
         unmat = un_s + un_m
         dmax = nan_max(p[2] for p in pairs)
         nover = sum(1 for p in pairs if not p[2] <= args.tol)
@@ -573,6 +592,7 @@ def cmd_part(args):
         nunk = sum(1 for p in pairs if p[0][NCROSS] == -1 or p[1][NCROSS] == -1)
         nx = sum(1 for p in pairs if p[0][NCROSS] != -1 and p[1][NCROSS] != -1
                  and p[0][NCROSS] != p[1][NCROSS])
+        nie = sum(1 for p in pairs if p[0][IEG] != p[1][IEG])
         note = ""
         bad = unmat + nnan + nover + nlb + nz
         if len(sa) != len(ma):
@@ -585,23 +605,27 @@ def cmd_part(args):
             bad += ndup
         if args.ncross:
             bad += nx
+        if args.elem:
+            bad += nie
         nfail += bad
         for key, v in (("unmat", unmat), ("nan", nnan), ("over", nover),
-                       ("lb", nlb), ("z", nz), ("ncr", nx), ("unk", nunk)):
+                       ("lb", nlb), ("z", nz), ("ncr", nx), ("unk", nunk),
+                       ("ie", nie)):
             tot[key] += v
         if not math.isnan(worst[0]) and (math.isnan(dmax) or dmax > worst[0]):
             worst = (dmax, t)
-        print("  %9.1f %5d %5d %5d %5d %5d %5d %3d %10.3e %4d %4d %4d %5d %5d%s"
+        print("  %9.1f %5d %5d %5d %5d %5d %5d %3d %10.3e %4d %4d %4d %5d %5d"
+              " %4d%s"
               % (t, len(sa), len(ma), nd_s, nd_m, ndup, unmat, nnan, dmax,
-                 nover, nlb, nz, nx, nunk, note))
+                 nover, nlb, nz, nx, nunk, nie, note))
     if worst[1] is not None:
         print("  largest distance %.4e at time %.1f" % worst)
     print("  totals over %d outputs: unmatched %d, nan %d, beyond tol %d,"
           " layer differs %d, z differs %d, ncross differs %d%s,"
-          " ncross unknown (-1) %d"
+          " ncross unknown (-1) %d, element differs %d%s"
           % (len(times), tot["unmat"], tot["nan"], tot["over"], tot["lb"],
              tot["z"], tot["ncr"], "" if args.ncross else " (not gated)",
-             tot["unk"]))
+             tot["unk"], tot["ie"], "" if args.elem else " (not gated)"))
     return nfail
 
 
@@ -627,11 +651,14 @@ def main(argv=None):
                    help="largest allowed distance max(|dx|,|dy|)")
     p.add_argument("--by", choices=("id", "nearest"), default="nearest")
     p.add_argument("--first-only", action="store_true",
-                   help="compare the first output time only")
+                   help="compare the first time in the files only (the"
+                        " release block)")
     p.add_argument("--ranks-empty-ok", action="store_true",
                    help="ranks without any entry are expected (never a failure)")
     p.add_argument("--ncross", action="store_true",
                    help="fail if a matched particle's crossing count differs")
+    p.add_argument("--elem", action="store_true",
+                   help="fail if a matched particle's global element differs")
     p.set_defaults(func=cmd_part)
     args = ap.parse_args(argv)
     if not args.tol >= 0:

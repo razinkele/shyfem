@@ -51,6 +51,17 @@ run('zdiff', [[p(1, 0., 0.), p(2, 0., 0.)], [p(3, 5., 5., z=0.5001)]])
 run('ncr_unknown', [[p(1, 0., 0.), p(2, 0., 0.)], [p(3, 5., 5., ncross=-1)]])
 run('ncr_diff', [[p(1, 0., 0.), p(2, 0., 0.)], [p(3, 5., 5., ncross=2)]])
 run('empty_rank', [[p(1, 0., 0.), p(2, 0., 0.), p(3, 5., 5.)], []])
+# global element: particle 3 sits in element 8 instead of 7
+run('elem_diff', [[p(1, 0., 0.), p(2, 0., 0.)], [p(3, 5., 5., ieg=8)]])
+# two particles at one point in two elements (a point on a shared side),
+# listed in the opposite order in the two runs
+run('ser_side', [[p(1, 0., 0., ieg=7), p(2, 0., 0., ieg=8), p(3, 5., 5.)]])
+run('side', [[p(1, 0., 0., ieg=8), p(2, 0., 0., ieg=7)], [p(3, 5., 5.)]])
+# the same with 520 particles: 520*520 pairs > FULL_EDGES, so the nearest
+# match takes its candidate path
+row = [p(i, float(i), 0.) for i in range(3, 521)]
+run('ser_side_big', [[p(1, 0., 0., ieg=7), p(2, 0., 0., ieg=8)] + row])
+run('side_big', [[p(1, 0., 0., ieg=8), p(2, 0., 0., ieg=7)], row])
 # rank 2 is missing: headers say 3 processes, files exist for ranks 0, 1
 run('miss_high', [[p(1, 0., 0.), p(2, 0., 0.)], [p(3, 5., 5.)]], n=3)
 # extra rank: a third file, all headers say 2 processes
@@ -119,6 +130,19 @@ check "ncross -1 is unknown, not a mismatch" 0 "ncross differs 0, ncross unknown
 check "ncross differs, gated with --ncross" 1 "ncross differs 1," part "$t/ser" "$t/ncr_diff" --tol 1e-5 --ncross
 check "ncross differs, not gated without --ncross" 0 "ncross differs 1 \(not gated\)" \
     part "$t/ser" "$t/ncr_diff" --tol 1e-5
+# (grep -z splits a pattern at a newline: "[^ 0-9]" stands for the end of a line)
+check "same element, gated with --elem" 0 "3600.0 +3 +3 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +0[^ 0-9].*element differs 0[^ 0-9]" \
+    part "$t/ser" "$t/ok" --tol 0 --elem
+check "element differs, gated with --elem" 1 "3600.0 +3 +3 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +1[^ 0-9].*element differs 1[^ 0-9]" \
+    part "$t/ser" "$t/elem_diff" --tol 0 --elem
+check "element differs, by id, gated with --elem" 1 "element differs 1[^ 0-9]" \
+    part "$t/ser" "$t/elem_diff" --tol 0 --by id --elem
+check "element differs, not gated without --elem" 0 "element differs 1 \(not gated\)" \
+    part "$t/ser" "$t/elem_diff" --tol 0
+check "two elements at one point pair by element with --elem" 0 "element differs 0[^ 0-9]" \
+    part "$t/ser_side" "$t/side" --tol 0 --elem
+check "the same in the candidate path (520 particles)" 0 "3600.0 +520 +520 .*element differs 0[^ 0-9]" \
+    part "$t/ser_side_big" "$t/side_big" --tol 0 --elem
 check "empty rank is a note, not a failure" 0 "note: ranks without any entry in the whole run: \[1\]" \
     part "$t/ser" "$t/empty_rank" --tol 1e-5
 check "empty rank with --ranks-empty-ok" 0 "expected: ranks without" \

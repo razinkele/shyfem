@@ -32,6 +32,9 @@
 ! lgr_mpi_global_to_local_elem	convert global element to local
 ! lgr_mpi_gather_output		gather particles to rank 0 for output
 ! lgr_mpi_reduce_connect	reduce connectivity matrices
+! lgr_mpi_gather_global		global array on rank 0 from the owned entries
+! lgr_mpi_global_area		total basin area as in a serial run
+! lgr_mpi_global_center		basin centre as in a serial run
 ! lgr_mpi_reset_export		reset export buffers
 ! lgr_mpi_debug_dump		text dump of particles, fluxes, node arrays
 ! lgr_mpi_debug_open		open one debug dump file
@@ -1360,7 +1363,216 @@
 
 !*******************************************************************
 
-	subroutine lgr_mpi_debug_dump(dtime)
+	subroutine lgr_mpi_gather_global(n,iglob,vloc,nglob,vglob,what)
+
+! assembles on rank 0 the global array vglob(nglob) from the entries the
+! ranks own: on every rank vloc(1:n) with the global numbers iglob(1:n).
+! Every global number 1..nglob must come exactly once from all ranks
+! together, otherwise the run is aborted (what names the array in the
+! message). vglob is defined on rank 0 only (0 on the other ranks).
+
+	use shympi, only : my_id,n_threads,shympi_max,shympi_gather
+
+	implicit none
+
+	integer, intent(in) :: n
+	integer, intent(in) :: iglob(n)
+	double precision, intent(in) :: vloc(n)
+	integer, intent(in) :: nglob
+	double precision, intent(out) :: vglob(nglob)
+	character(len=*), intent(in) :: what
+
+	integer :: nmax, ia, i, ip, ierr, nbad, nloc
+	integer, allocatable :: counts(:), ibuf(:), idom(:,:), nset(:)
+	double precision, allocatable :: vbuf(:), vdom(:,:)
+
+	nloc = n
+	nmax = max(shympi_max(nloc),1)	!same buffer length on every rank
+
+	allocate(counts(n_threads), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_gather_global: allocation')
+	allocate(ibuf(nmax), vbuf(nmax), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_gather_global: allocation')
+	allocate(idom(nmax,n_threads), vdom(nmax,n_threads), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_gather_global: allocation')
+
+	ibuf = 0
+	vbuf = 0.d0
+	ibuf(1:n) = iglob(1:n)
+	vbuf(1:n) = vloc(1:n)
+	call shympi_gather(nloc,counts)
+	call shympi_gather(ibuf,idom)
+	call shympi_gather(vbuf,vdom)
+
+	vglob = 0.d0
+	if( my_id == 0 ) then
+	  allocate(nset(nglob), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_gather_global: allocation')
+	  nset = 0
+	  nbad = 0
+	  do ia=1,n_threads
+	    do i=1,counts(ia)
+	      ip = idom(i,ia)
+	      if( ip < 1 .or. ip > nglob ) then
+	        nbad = nbad + 1
+	        cycle
+	      end if
+	      nset(ip) = nset(ip) + 1
+	      vglob(ip) = vdom(i,ia)
+	    end do
+	  end do
+	  nbad = nbad + count( nset /= 1 )
+	  if( nbad > 0 ) then
+	    write(6,*) 'lgr_mpi_gather_global: ',trim(what)		&
+     &		,': entries out of range or not exactly once: ',nbad
+	    call shympi_abort_internal('lgr_mpi_gather_global: '	&
+     &		//trim(what))
+	  end if
+	  deallocate(nset)
+	end if
+
+	deallocate(counts,ibuf,vbuf,idom,vdom)
+
+	end subroutine lgr_mpi_gather_global
+
+!*******************************************************************
+
+	subroutine lgr_mpi_global_area(area)
+
+! total area of the basin, bit for bit as compute_total_area gives it in
+! a serial run: the terms ev(10,ie) of the elements this rank is the
+! main owner of are gathered to rank 0 and added there in the order of
+! the global element numbers, with the kinds of compute_total_area
+! (double precision sum, real result 12*sum); the result is broadcast.
+! In a serial run it calls compute_total_area.
+
+	use shympi, only : shympi_is_parallel,my_id,id_elem,ip_int_elem	&
+     &			,nel_global,shympi_bcast
+	use basin, only : nel
+	use evgeom, only : ev
+
+	implicit none
+
+	real, intent(out) :: area
+
+	integer :: ie, n, ierr
+	integer, allocatable :: iglob(:)
+	double precision, allocatable :: vloc(:), vglob(:)
+	double precision :: a, tot_area
+	real :: rbuf(1)
+
+	if( .not. shympi_is_parallel() ) then
+	  call compute_total_area(area)
+	  return
+	end if
+
+	allocate(iglob(nel), vloc(nel), vglob(nel_global), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_global_area: allocation')
+
+	n = 0
+	do ie=1,nel
+	  if( id_elem(1,ie) /= my_id ) cycle	!main owner only
+	  n = n + 1
+	  iglob(n) = ip_int_elem(ie)
+	  vloc(n) = ev(10,ie)
+	end do
+
+	call lgr_mpi_gather_global(n,iglob,vloc,nel_global,vglob,'area')
+
+	rbuf = 0.
+	if( my_id == 0 ) then		!the loop of compute_total_area
+	  tot_area = 0.
+	  do ie=1,nel_global
+	    a = vglob(ie)
+	    tot_area = tot_area + a
+	  end do
+	  rbuf(1) = 12. * tot_area
+	end if
+	call shympi_bcast(rbuf)
+	area = rbuf(1)
+
+	deallocate(iglob,vloc,vglob)
+
+	end subroutine lgr_mpi_global_area
+
+!*******************************************************************
+
+	subroutine lgr_mpi_global_center(x0,y0)
+
+! centre of the basin, bit for bit as basin_center gives it in a serial
+! run (xy_center over all nodes): the coordinates of the nodes this rank
+! owns are gathered to rank 0, put in the order of the global node
+! numbers and passed to xy_center there; the result is broadcast. The
+! coordinates travel as double precision (real to double and back is
+! exact). In a serial run it calls basin_center.
+
+	use shympi, only : shympi_is_parallel,my_id,id_node,ip_int_node	&
+     &			,nkn_global,shympi_bcast
+	use basin, only : nkn,xgv,ygv
+
+	implicit none
+
+	real, intent(out) :: x0,y0
+
+	integer :: k, n, ierr
+	integer, allocatable :: iglob(:)
+	double precision, allocatable :: xloc(:), yloc(:)
+	double precision, allocatable :: xglob(:), yglob(:)
+	real, allocatable :: xg(:), yg(:)
+	real :: rbuf(2)
+
+	if( .not. shympi_is_parallel() ) then
+	  call basin_center(x0,y0)
+	  return
+	end if
+
+	allocate(iglob(nkn), xloc(nkn), yloc(nkn), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_global_center: allocation')
+	allocate(xglob(nkn_global), yglob(nkn_global), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_global_center: allocation')
+
+	n = 0
+	do k=1,nkn
+	  if( id_node(k) /= my_id ) cycle	!own nodes only
+	  n = n + 1
+	  iglob(n) = ip_int_node(k)
+	  xloc(n) = xgv(k)
+	  yloc(n) = ygv(k)
+	end do
+
+	call lgr_mpi_gather_global(n,iglob,xloc,nkn_global,xglob	&
+     &		,'center x')
+	call lgr_mpi_gather_global(n,iglob,yloc,nkn_global,yglob	&
+     &		,'center y')
+
+	rbuf = 0.
+	if( my_id == 0 ) then		!as basin_center
+	  allocate(xg(nkn_global), yg(nkn_global), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_global_center: allocation')
+	  xg = real(xglob)
+	  yg = real(yglob)
+	  call xy_center(nkn_global,xg,yg,rbuf(1),rbuf(2))
+	  deallocate(xg,yg)
+	end if
+	call shympi_bcast(rbuf)
+	x0 = rbuf(1)
+	y0 = rbuf(2)
+
+	deallocate(iglob,xloc,yloc,xglob,yglob)
+
+	end subroutine lgr_mpi_global_center
+
+!*******************************************************************
+
+	subroutine lgr_mpi_debug_dump(dtime,bpart_only)
 
 ! debug dump of particles, side fluxes and node arrays (levdbg >= 3)
 !
@@ -1369,9 +1581,14 @@
 ! files are replaced, so that none is left from an older run: part, flux
 ! and node always, flux3 in a 3D run; in a 2D run an old flux3 file is
 ! deleted. Flux, flux3 and node keep only their header if the run ends
-! before 10 h.
+! before 10 h. A rank without particles keeps only the header in part.
 !
-! lgrdbg.part.NN.txt: at every particle output, one line per array entry
+! bpart_only (optional, default false): true for the call right after a
+! release (before any tracking); it writes the particles only, never the
+! flux, flux3 and node files
+!
+! lgrdbg.part.NN.txt: at every particle output and right after every
+! release, one line per array entry
 !	class time id x y z lb ie_global rank ncross
 !   class P: element with only own nodes, M: mixed element (a vertex owned
 !   by another rank) this rank is the main owner of, G: mixed element
@@ -1404,6 +1621,7 @@
 	implicit none
 
 	double precision, intent(in) :: dtime
+	logical, intent(in), optional :: bpart_only
 
 	double precision, parameter :: dtflux = 36000.d0 !fluxes after 10 h
 
@@ -1469,6 +1687,9 @@
 !	fluxes and node arrays, once (files opened at the first call)
 !	--------------------------------------------
 
+	if( present(bpart_only) ) then
+	  if( bpart_only ) return		!call after a release
+	end if
 	if( bflux .or. dtime - dtanf < dtflux ) return
 	bflux = .true.
 
