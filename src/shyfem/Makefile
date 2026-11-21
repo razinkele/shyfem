@@ -745,7 +745,9 @@ lagrange_flux.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/mod_layer_thickness.mod 
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/mod_layer_thickness.mod \
+		../../lib/mod/shympi.mod
 lagrange_init.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_lagrange.mod 
 lagrange_inout.o: ../../lib/mod/basin.mod \

@@ -18,6 +18,9 @@
 !
 ! lgr_mpi_init			initialize MPI buffers
 ! lgr_mpi_topology_init	lists of elements shared with other ranks
+! lgr_mpi_flux_sum_3d		sum of partial side fluxes flux3d across ranks
+! lgr_mpi_flux_sum_2d		sum of partial side fluxes flux2d across ranks
+! lgr_mpi_flux_sum		common part of the two flux sums
 ! lgr_mpi_mark_export		mark particle for export to remote rank
 ! lgr_mpi_pack_particle		serialize particle to double buffer
 ! lgr_mpi_unpack_particle	deserialize particle from double buffer
@@ -291,6 +294,238 @@
 	end do
 
 	end subroutine lgr_mpi_sort_by_key
+
+!*******************************************************************
+
+	subroutine lgr_mpi_flux_sum_3d(flux)
+
+! adds the partial side fluxes of the ranks that hold an element
+! (layers 1..ilhv(ie)); returns at once in a serial run
+
+	use levels, only : nlvdi
+	use basin, only : nel
+
+	implicit none
+
+	real, intent(inout) :: flux(nlvdi,3,nel)
+
+	call lgr_mpi_flux_sum(nlvdi,.true.,flux)
+
+	end subroutine lgr_mpi_flux_sum_3d
+
+!*******************************************************************
+
+	subroutine lgr_mpi_flux_sum_2d(flux)
+
+! adds the partial side fluxes of the ranks that hold an element (2D);
+! returns at once in a serial run
+
+	use basin, only : nel
+
+	implicit none
+
+	real, intent(inout) :: flux(3,nel)
+
+	call lgr_mpi_flux_sum(1,.false.,flux)
+
+	end subroutine lgr_mpi_flux_sum_2d
+
+!*******************************************************************
+
+	subroutine lgr_mpi_flux_sum(nlvd,b3d,flux)
+
+! sum of the partial side fluxes across the ranks that hold an element
+!
+! In the node loop every rank adds only the contributions of its own
+! nodes, so a shared element holds a partial value on each of its holders.
+! To every rank r it shares elements with (lgr_share_elem), a rank sends
+! its own partial values and receives those of r. Message: the shared
+! elements in list order, for each ii = 1..3, l = 1..nl with nl = ilhv(ie)
+! in 3D and nl = 1 in 2D. ilhv(ie) depends only on the element (hm3v, hlv),
+! so both ranks of a pair know the length; nlvdi may differ between ranks.
+! The received length is checked. Every send is packed before anything is
+! added. The partial values are then added in increasing rank order
+! starting from zero, so all holders of an element get the same sum.
+
+	use shympi
+	use levels, only : ilhv
+	use basin, only : nel
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, intent(in) :: nlvd		!first dimension of flux
+	logical, intent(in) :: b3d		!true: layers 1..ilhv(ie), else 1
+	real, intent(inout) :: flux(nlvd,3,nel)
+
+	integer, parameter :: itag3 = 21703	!message tag in 3D
+	integer, parameter :: itag2 = 21702	!message tag in 2D
+
+	integer :: nproc, r, q, ir, j, jj, ie, ii, l, nl, ip, n, ierr
+	integer :: itag, nreq, nrecv, ntot, nget, rmin
+	integer :: noff(0:n_threads)		!offset of rank r in the buffers
+	integer :: ireq(2*n_threads)
+	integer :: istat(MPI_STATUS_SIZE,2*n_threads)
+	real, allocatable :: sbuf(:), rbuf(:)
+
+	nproc = n_threads
+
+	if( nproc <= 1 ) return
+
+	if( .not. allocated(lgr_nshare) ) call lgr_mpi_topology_init
+
+	itag = itag2
+	if( b3d ) itag = itag3
+
+	!-----------------------------------------------
+	! offsets and buffers
+	!-----------------------------------------------
+
+	noff(0) = 0
+	do r = 0, nproc-1
+	  n = 0
+	  do j = lgr_share_ptr(r)+1, lgr_share_ptr(r+1)
+	    ie = lgr_share_elem(j)
+	    nl = 1
+	    if( b3d ) nl = ilhv(ie)
+	    if( nl < 1 .or. nl > nlvd ) then
+	      write(6,*) 'lgr_mpi_flux_sum: ie,nl,nlvd: ',ie,nl,nlvd
+	      call shympi_abort_internal('lgr_mpi_flux_sum: layers')
+	    end if
+	    n = n + 3*nl
+	  end do
+	  noff(r+1) = noff(r) + n
+	end do
+	ntot = noff(nproc)
+
+	allocate(sbuf(max(ntot,1)), rbuf(max(ntot,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_flux_sum: allocation')
+
+	!-----------------------------------------------
+	! pack own partial values (before anything is added)
+	!-----------------------------------------------
+
+	ip = 0
+	do j = 1, lgr_share_ptr(nproc)
+	  ie = lgr_share_elem(j)
+	  nl = 1
+	  if( b3d ) nl = ilhv(ie)
+	  do ii = 1, 3
+	    do l = 1, nl
+	      ip = ip + 1
+	      sbuf(ip) = flux(l,ii,ie)
+	    end do
+	  end do
+	end do
+
+	!-----------------------------------------------
+	! exchange: all receives, all sends, one wait
+	!-----------------------------------------------
+
+	nreq = 0
+	do r = 0, nproc-1
+	  n = noff(r+1) - noff(r)
+	  if( n == 0 ) cycle
+	  nreq = nreq + 1
+	  call MPI_Irecv(rbuf(noff(r)+1),n,MPI_REAL,r,itag		&
+     &		,MPI_COMM_WORLD,ireq(nreq),ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_flux_sum: MPI_Irecv')
+	end do
+	nrecv = nreq
+
+	do r = 0, nproc-1
+	  n = noff(r+1) - noff(r)
+	  if( n == 0 ) cycle
+	  nreq = nreq + 1
+	  call MPI_Isend(sbuf(noff(r)+1),n,MPI_REAL,r,itag		&
+     &		,MPI_COMM_WORLD,ireq(nreq),ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_flux_sum: MPI_Isend')
+	end do
+
+	if( nreq > 0 ) then
+	  call MPI_Waitall(nreq,ireq,istat,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_flux_sum: MPI_Waitall')
+	end if
+
+	! the receives are requests 1..nrecv, in increasing rank order
+	jj = 0
+	do r = 0, nproc-1
+	  n = noff(r+1) - noff(r)
+	  if( n == 0 ) cycle
+	  jj = jj + 1
+	  call MPI_Get_count(istat(:,jj),MPI_REAL,nget,ierr)
+	  if( ierr /= MPI_SUCCESS .or. nget /= n ) then
+	    write(6,*) 'lgr_mpi_flux_sum: rank ',my_id,' from rank ',r	&
+     &		,' expected ',n,' values, received ',nget
+	    call shympi_abort_internal					&
+     &		('lgr_mpi_flux_sum: message length')
+	  end if
+	end do
+	if( jj /= nrecv ) call shympi_abort_internal			&
+     &		('lgr_mpi_flux_sum: internal error (receives)')
+
+	!-----------------------------------------------
+	! sum in increasing rank order, starting from zero
+	!-----------------------------------------------
+
+	do j = 1, lgr_share_ptr(nproc)
+	  ie = lgr_share_elem(j)
+	  nl = 1
+	  if( b3d ) nl = ilhv(ie)
+	  flux(1:nl,:,ie) = 0.
+	end do
+
+	do r = 0, nproc-1
+	  if( r == my_id ) then
+	    ! own values, once per element: from the stretch of the
+	    ! lowest other holder rmin (the same rule that built the lists)
+	    do q = 0, nproc-1
+	      ip = noff(q)
+	      do j = lgr_share_ptr(q)+1, lgr_share_ptr(q+1)
+	        ie = lgr_share_elem(j)
+	        nl = 1
+	        if( b3d ) nl = ilhv(ie)
+	        rmin = nproc
+	        do jj = 1, id_elem(0,ie)
+	          ir = id_elem(jj,ie)
+	          if( ir >= 0 .and. ir < nproc .and. ir /= my_id ) then
+	            rmin = min(rmin,ir)
+	          end if
+	        end do
+	        if( rmin == q ) then
+	          do ii = 1, 3
+	            do l = 1, nl
+	              flux(l,ii,ie) = flux(l,ii,ie) + sbuf(ip+(ii-1)*nl+l)
+	            end do
+	          end do
+	        end if
+	        ip = ip + 3*nl
+	      end do
+	    end do
+	  else
+	    ip = noff(r)
+	    do j = lgr_share_ptr(r)+1, lgr_share_ptr(r+1)
+	      ie = lgr_share_elem(j)
+	      nl = 1
+	      if( b3d ) nl = ilhv(ie)
+	      do ii = 1, 3
+	        do l = 1, nl
+	          ip = ip + 1
+	          flux(l,ii,ie) = flux(l,ii,ie) + rbuf(ip)
+	        end do
+	      end do
+	    end do
+	  end if
+	end do
+
+	deallocate(sbuf,rbuf)
+
+	end subroutine lgr_mpi_flux_sum
 
 !*******************************************************************
 
