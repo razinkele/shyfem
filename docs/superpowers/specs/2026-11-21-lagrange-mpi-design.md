@@ -262,9 +262,9 @@ option, printed by the master. Each stopped option gets a follow-up issue.
 
 Every option in the "works" rows has a test case and a criterion. An option without a test stops.
 
-This table is a proposal. The owner may move an option from "stops" to "works"; each one moved
-adds a test case, a criterion and work to the plan. Beaching, transit area, decay and the restart
-from a particle file are the small ones: they act on one particle at a time.
+The owner confirmed this split on 2026-11-21. Moving an option from "stops" to "works" later
+adds a test case, a criterion and work. Beaching, transit area, decay and the restart from a
+particle file are the small ones: they act on one particle at a time.
 
 ### 6.10 Random numbers
 
@@ -382,9 +382,17 @@ Each becomes its own issue when this design is approved:
 - The options that stop under MPI in section 6.9.
 - `lgr_mpi_reduce_connect` sums the connectivity matrices in place every step.
 
-## 10. Decisions made here that the owner can change
+## 10. Decisions
 
-1. The works/stops split of sections 6.8 and 6.9.
+Decided by the owner on 2026-11-21:
+
+- The works/stops split of sections 6.8 and 6.9 stands as written: core first, no further option
+  in this project.
+- Delivery through an integration branch (item 6 below).
+
+Made in this document, open to change:
+
+1. The works/stops split of sections 6.8 and 6.9 (confirmed by the owner, see above).
 2. Ids equal to serial, at the cost of one small exchange per release.
 3. Output order by id.
 4. The limits of AC1 and AC3.
@@ -397,9 +405,8 @@ Each becomes its own issue when this design is approved:
    criterion of section 8 holds. Reason: once the output stage is in, an MPI particle run
    finishes, but until stages 6 and 7 are in, a run with an option that is not yet tested or
    stopped would finish with wrong tracks and no message.
-   The alternative is to merge each stage into main and add temporary start-up stops with the
-   output stage; the owner decided against an interim stop on 2026-11-21, so this design uses the
-   integration branch. Until the final merge, MPI particle runs on main crash as they do today.
+   The alternative, merging each stage into main with temporary start-up stops, was offered and
+   not chosen. Until the final merge, MPI particle runs on main crash as they do today.
 
 ## 11. Left to the builder
 
