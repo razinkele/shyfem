@@ -261,6 +261,26 @@ A bounds-checked build (`-fcheck=bounds`) run by the controller found three more
 
 ## Stage 3: particle record, one rank per particle, hand-over
 
+> **Amended 2026-11-21, after stage 2 (controller's rulings; the ledger has the evidence).**
+>
+> **Order of execution.** This stage runs Task 3.1, then **Task 4.1 (release)**, then Tasks 3.2 to 3.6. Task 4.2 (ids) stays after them and is the whole of stage 4. Reason: with the fluxes right, case B on 4 processes holds 3,830 particles against 1,001 in the serial run, because every process releases its own set over its part of the basin. Tasks 3.4, 3.5 and 3.6 gate case B on equal counts, and case B is the only case with an open boundary, so it is the case that has to show that a cut-off side is told apart from an open boundary. Task 4.1 needs nothing from Tasks 3.2 to 3.6. Task 4.2 stays where it is, because ids can be compared cleanly only once every particle is on exactly one process.
+>
+> **Where the code stands when this stage starts.** A particle run on several processes ends. A particle that crosses a cut-off side is counted as lost (`track_xi_next_element` returns a negative element for every side without a local neighbour), and that count is the same in a plain and in a memory-perturbed run. The numbers of `loosing particle adv` lines per case and process count are in the acceptance file (AC1, last table). They are this stage's baseline: after Task 3.4 a closed basin (cases A and C) must print none.
+>
+> **Gates added to every stage end from here on (run by the controller).** One memory-perturbed twin of an MPI run (`./check_lgr_mpi.sh CASE NP perturb`), and a build with `-fcheck=bounds` in a throwaway work tree that runs the serial and MPI cases with and without the debug dump. A count that differs between two sessions is a read of memory that was never set, not noise.
+>
+> **When a position gate of Task 3.4 or 3.5 fails.** First split the failing particles into those that changed process during the run and those that never did. Only the first group is the task's problem. If particles that never changed process exceed the limit, the controller rules on the tolerance; no fix round is spent on it.
+>
+> **Smaller corrections to the tasks below.**
+> - Task 3.1: `lgr_ncross` (the crossing count of the debug dump) moves with its particle wherever an entry of the particle array is moved or removed.
+> - Task 3.4, step 1: the failing test no longer crashes. Expected before the task: the run ends, counts differ from serial, and the log has `loosing particle adv` lines.
+> - Task 3.5, step 4b is void: the vertex pick is deterministic since Task 1.5.
+> - Task 3.6: the guards for the counters that divide by `idbdy` were done in Task 2.3. Its count check compares against the number released, which is why the release (Task 4.1) comes first.
+> - Task 4.1, steps 1 and 3: the gate compares the release itself, not the first output. The first output is an hour after the release, and before Task 3.4 it is already disturbed by particles lost at cut-off sides. The dump is written once right after the particles are seeded, and that block is compared with `--first-only`: equal counts, distance exactly 0, the same layer, and the same global element (the id key of Task 4.2 is the release element). A process that releases nothing writes a file with its header only, and the tool accepts it. Before the change, run the gate on cases A and C as the control: case B must fail on its count; case A shows whether the polygon release is already exact.
+> - Tasks 3.2 and 3.4, layers at a cut-off side (the spec's section 6.4 is silent on it). In a serial run a particle that reaches a side whose neighbour has fewer layers than the particle's own layer is put back into the element it came from (`track_xi`, the layer test after `track_xi_next_element`). Since Task 2.4 that test answers "leave" for a side without a local neighbour. To keep the serial rule on several processes, the side table of Task 3.2 also carries the layer count of the element across every cut-off side: `lgr_side_lmax(3,nel)`, 0 elsewhere. `ilhv` is set once at start-up and is fixed for the whole run, so the value is obtained once, in the same exchange that checks every cut-off side from both sides. In Task 3.4 a particle that reaches a cut-off side whose neighbour has fewer layers than the particle's layer is put back exactly as in a serial run and is not handed over. Case C is the test: after Task 3.4 it prints no lost particle on 4 and on 8 processes, and the task reports how many times a particle was put back at a cut-off side for lack of a layer (if that is 0 in every run, it says so, and the path is then covered by code review only).
+> - Task 3.5: before it starts, the controller runs the particle gate of case E on 4 processes once, so the task starts from a measured count.
+
+
 ### Task 3.1: The full record on the wire, buffers without a fixed size
 
 **Files:**
@@ -339,7 +359,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 - [ ] **Step 2:** Implement. In a serial run the new branch is never taken.
 - [ ] **Step 3:** Run cases A and B on 2 and 4 ranks. Expected: `LGR GATE: PASS` (counts equal, nearest-neighbour distance within the limit). Run case C too: counts must be equal; record its largest distance without gating it. Print and record the number of particles handed over by position at zero displacement (AC11).
 - [ ] **Step 4:** Run case E on 2 and 4 ranks. Expected: the runs end and counts are equal at every output; record the largest distance (its position gate is Task 4.2 step 4). If it fails, run `lgr_dbg_compare.py node` for `wxv`/`wyv`; if they differ from serial at ghost nodes, add `call shympi_exchange_2d_node(wxv)` and the same for `wyv` at the start of `lagr_setup_timestep` and repeat.
-- [ ] **Step 4b:** If a remaining position mismatch in cases A, B, C or E is traced to the random choice of the next element when a particle lands exactly on a vertex (`track_xi_next_element`, `lagrange_vertical.f90` ~618–621), stop and ask the owner (spec, section 6.10). Do not replace that draw without their word.
+- [ ] **Step 4b (void since Task 1.5, kept for the record):** If a remaining position mismatch in cases A, B, C or E is traced to the random choice of the next element when a particle lands exactly on a vertex (`track_xi_next_element`, `lagrange_vertical.f90` ~618–621), stop and ask the owner (spec, section 6.10). Do not replace that draw without their word.
 - [ ] **Step 5:** Serial guard PASS. Commit: `feat(lagrange): hand-over by position when a local element search fails (#217)`.
 
 ### Task 3.6: Built-in check, OpenMP, empty ranks
@@ -360,6 +380,8 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 ---
 
 ## Stage 4: release and ids
+
+> **Amended 2026-11-21:** Task 4.1 runs inside stage 3, right after Task 3.1 (see the note at the head of stage 3). Stage 4 is Task 4.2 alone.
 
 ### Task 4.1: Release only on the main owner, with the serial grid
 

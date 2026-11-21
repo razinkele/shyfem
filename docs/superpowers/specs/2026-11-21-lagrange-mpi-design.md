@@ -429,6 +429,23 @@ Found while running the first task with the reference binary:
   the debug dump the gates of Stages 2 to 4 read. MPI runs write no particle records until the
   output stage.
 
+Found while closing the flux stage (controller's rulings, 2026-11-21; none changes the scope):
+
+- **A read outside an array decided a departed particle's fate (#234).** Right after
+  `track_xi_next_element` the tracker tested `ilhv(iel) >= lb` with a negative `iel` for a
+  particle that had left. On several processes the outcome changed with the contents of memory.
+  Fixed in the flux stage, with two more reads of that kind and three too-small declarations.
+  Serial files of cases A, B, C and E are byte-identical with the fix. The defect is on `main`.
+- **Gates at every stage end.** A memory-perturbed twin of an MPI run, and a build with
+  `-fcheck=bounds` that runs the serial and MPI cases. Both are run by the controller.
+- **Order.** The release on the main owner (section 6.7) is built before the hand-over, because
+  the hand-over is tested on case B, the only case with an open boundary, and case B needs the
+  right number of particles for that. Ids stay after the hand-over.
+- **Layers at a cut-off side** (adds to section 6.4). A serial run puts a particle back when the
+  element across a side has fewer layers than the particle's own layer. On several processes the
+  sender applies the same rule with the layer count of the element across, which the tracker's
+  side table carries; such a particle is not handed over.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.
