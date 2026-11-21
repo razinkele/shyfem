@@ -755,8 +755,13 @@ lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/shyfile.mod 
 lagrange_larve.o: ../../lib/mod/mod_lagrange.mod
 lagrange_mpi.o: ../../lib/mod/basin.mod \
-		../../lib/mod/connectivity.mod \
+		../../lib/mod/connectivity.mod ../../lib/mod/femtime.mod \
+		../../lib/mod/levels.mod \
+		../../lib/mod/mod_bound_dynamic.mod \
+		../../lib/mod/mod_diff_visc_fric.mod \
+		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_meteo.mod ../../lib/mod/para.mod \
 		../../lib/mod/shympi.mod
 lagrange_main.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \

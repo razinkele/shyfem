@@ -6,3 +6,4 @@
 *.flx
 *.rst
 fort.*
+*.dbg/
