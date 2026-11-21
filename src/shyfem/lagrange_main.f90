@@ -744,7 +744,9 @@
 	end if
 
         if( .not. bback ) then
-          if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel
+          if( iel.gt.0 ) then
+            if( iarv(iel).eq.artype ) iel = -iel
+          end if
 	end if
 
 !---------------------------------------------------------------
@@ -914,7 +916,9 @@
 !---------------------------------------------------------------
 
         if( .not. bback ) then
-          if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel
+          if( iel.gt.0 ) then
+            if( iarv(iel).eq.artype ) iel = -iel
+          end if
 	end if
 
 	x = xn

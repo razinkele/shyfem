@@ -288,7 +288,7 @@
         implicit none
 
         integer k,lkmax,n
-	real tflux(nlvdi,ne)      !fluxes across sides of element
+	real tflux(nlvdi,*)       !fluxes across sides of element
         integer ne                !total number of elements in elems
         integer elems(ne)         !elements around k
 
@@ -325,8 +325,8 @@
         implicit none
 
         integer k,n
-        real tflux(ne)
-	real flux2d_loc(3,ne)
+        real tflux(*)
+	real flux2d_loc(3,*)
         integer ne              !total number of elements in elems
         integer elems(ne)       !elements around k
 
