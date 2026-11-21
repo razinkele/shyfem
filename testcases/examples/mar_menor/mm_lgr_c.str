@@ -31,7 +31,7 @@ $para
         date = 20090101
 
         ilin = 1
-        iwtype = 3     dragco = 2.5e-3
+        iwtype = 3     dragco = 1.e-4
         ireib = 5      czdef = 2.5e-3
 $end
 

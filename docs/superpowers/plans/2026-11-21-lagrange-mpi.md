@@ -89,10 +89,10 @@ Names used across tasks (all in module `mod_lagrange_mpi` unless noted):
 |---|---|---|
 | A `mm_lgr_a` | `mm_lgr.str` | `rwhpar = 0` |
 | B `mm_lgr_b` | `mm_hyd_11.str` | remove `ztilt` and `ktilt`; `itend = '2009-01-03'`; add `$lagrg` with `ilagr = 1`, `nbdymax = 20000`, `nbdy = 1000`, `idtl = 0`, `idtlgr = '1h'`, `rwhpar = 0` (no `lgrlin`: whole-basin release) |
-| C `mm_lgr_c` | case A (closed geographic basin) | `itend = '2009-01-03'`; add the `$levels` section of `mm_hyd_41.str` (19 levels); in `$lagrg` `ilagr = 2` and `ipvert = -1` |
+| C `mm_lgr_c` | case A (closed geographic basin) | `itend = '2009-01-03'`; add the `$levels` section of `mm_hyd_41.str` (19 levels); `dragco = 1.e-4`; in `$lagrg` `ilagr = 2` and `ipvert = -1` |
 | E `mm_lgr_e` | case A | `stkpar = 0.016` |
 
-Amended 2026-11-21 (owner decision): the 3D base with an open boundary differs between serial and MPI in its hydrodynamics (#230), and `ilagr = 3` crashes in a serial run (#231). Case C is therefore a closed 3D basin with layer tracking, and there is no case F.
+Amended 2026-11-21 (owner decision): the 3D base with an open boundary differs between serial and MPI in its hydrodynamics (#230), and `ilagr = 3` crashes in a serial run (#231). Case C is therefore a closed 3D basin with layer tracking, and there is no case F. Its wind drag is 25 times weaker than case A's (`dragco = 1.e-4`): with the original drag and no vertical mixing the surface layer reaches 8.9 m/s, and with a turbulence scheme serial and MPI hydrodynamics differ by about 1e-2 m/s (#230). With the weak drag the largest current is 0.6 m/s and serial agrees with 2 and 4 processes to 7e-7 m/s (controller's measurement).
 
 - [ ] **Step 2:** Run each serially with the reference binary. Expected: `simulation end` in each log, and a `.lgr.shy` file with at least one particle (`lgrelab -lgmean` prints records).
 - [ ] **Step 3:** Run cases A, B, C, E twice serially and `cmp` the two `.lgr.shy` files. Expected with the reference binary: A and B identical; C and E may differ, because a particle that lands exactly on a vertex picks its next element with an unseeded random number. Record the result for each case; Task 1.5 removes that draw.
@@ -129,8 +129,8 @@ python3 lgr_compare.py t1.lgr.shy t4_reordered.lgr.shy --mode pos --tol 0 # exit
 - Create: `testcases/examples/mar_menor/lgr_dbg_compare.py`
 
 **Interfaces:**
-- Produces: `subroutine lgr_mpi_debug_dump(dtime)` with `double precision, intent(in) :: dtime`. Active only when `levdbg >= 3`. At every particle output it appends to `lgrdbg.part.NN.txt` (NN = rank): one line per array entry, `P|M|G|D time id x y z ie_global rank` (P own-node element, M mixed element this rank is main owner of, G mixed element owned elsewhere, D entry with `ie <= 0`). At the first output at or after 10 h it writes three files once. `lgrdbg.flux.NN.txt`: one line per element and side, `ie_global node_global rank main_owner n_ghost_nodes flux3d(1,ii,ie) flux2d(ii,ie)`. `lgrdbg.flux3.NN.txt` (3D runs only): the same with `flux3d` of the element's bottom layer. `lgrdbg.node.NN.txt`: one line per local node, `node_global rank owner wlnv(1,k) mfluxv(1,k) difv(1,k) wxv(k) wyv(k)`.
-- Produces: `python3 lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]` (table per element class as in spec M4, for `flux3d` and `flux2d`; exit 1 if any class exceeds the limit); `python3 lgr_dbg_compare.py node SERIAL_DIR MPI_DIR [--tol 1e-5]` (own and ghost nodes, per array); and `python3 lgr_dbg_compare.py part SERIAL_DIR MPI_DIR --tol FLOAT [--by {id|nearest}] [--first-only] [--ranks-empty-ok]` (counts per time, duplicate ids, largest distance; `--first-only` looks at the first output only; exit 1 on a count mismatch or a distance above the limit).
+- Produces: `subroutine lgr_mpi_debug_dump(dtime)` with `double precision, intent(in) :: dtime`. Active only when `levdbg >= 3`. At every particle output it appends to `lgrdbg.part.NN.txt` (NN = rank): one line per array entry, `P|M|G|D time id x y z ie_global rank ncross` (P own-node element, M mixed element this rank is main owner of, G mixed element owned elsewhere, D entry with `ie <= 0`; `ncross` is the number of element crossings the particle used in the last time step, kept in an integer array in `mod_lagrange` with one entry per array slot that `track_body_xi` writes when its loop ends). At the first output at or after 10 h it writes three files once. `lgrdbg.flux.NN.txt`: one line per element and side, `ie_global node_global rank main_owner n_ghost_nodes flux3d(1,ii,ie) flux2d(ii,ie)`. `lgrdbg.flux3.NN.txt` (3D runs only): the same with `flux3d` of the element's bottom layer. `lgrdbg.node.NN.txt`: one line per local node, `node_global rank owner wlnv(1,k) mfluxv(1,k) difv(1,k) wxv(k) wyv(k)`.
+- Produces: `python3 lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]` (table per element class as in spec M4, for `flux3d` and `flux2d`; exit 1 if any class exceeds the limit); `python3 lgr_dbg_compare.py node SERIAL_DIR MPI_DIR [--tol 1e-5]` (own and ghost nodes, per array); and `python3 lgr_dbg_compare.py part SERIAL_DIR MPI_DIR --tol FLOAT [--by {id|nearest}] [--first-only] [--ranks-empty-ok]` (counts per time, duplicate ids, largest distance, and with `--ncross` the number of matched particles whose crossing count differs; `--first-only` looks at the first output only; exit 1 on a count mismatch, a distance above the limit, or with `--ncross` a differing crossing count).
 
 - [ ] **Step 1: Write the failing test.** Run case A with `levdbg = 3` serially and on 4 ranks (by hand in this task, keeping each run's dump files in its own folder; Task 1.4 wraps this as mode `flux` of `check_lgr_mpi.sh`), then `lgr_dbg_compare.py flux`. Expected today: exit 1, with the classes "mixed" far above 1e-5 and the class "all-own nodes" below it (spec M4).
 - [ ] **Step 2:** Implement the dump routine and the tool. The dump only reads model state. The dump files are opened fresh (replacing any old file) at the first call of a run.
@@ -149,7 +149,7 @@ python3 lgr_compare.py t1.lgr.shy t4_reordered.lgr.shy --mode pos --tol 0 # exit
 - Produces: `./check_lgr_serial.sh REF_BIN_DIR` (AC6 and AC7): for cases A, B, C, E compares `.lgr.shy`, `.hydro.shy`, `.inf` from the current binary, from `mpirun -np 1`, and from the reference binary with `cmp`; for `mm_lgr` and `../mar_menor_lagrange/mm_lgr_01` compares `.hydro.shy` and `.inf` only. Prints `SERIAL GUARD: PASS|FAIL`. A second mode, `./check_lgr_serial.sh repro`, runs cases A, B, C, E twice with the current binary and compares the two `.lgr.shy` files of each with `cmp` (`REPRO: PASS|FAIL`).
 
 - [ ] **Step 1:** Write both scripts. `set -u`, no `cd … && rm`, absolute or script-relative paths only.
-- [ ] **Step 2:** Run `./check_lgr_serial.sh /home/razinka/wt-lgr-ref/bin`. Expected: `SERIAL GUARD: PASS`.
+- [ ] **Step 2:** Run `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`. Expected: `SERIAL GUARD: PASS`.
 - [ ] **Step 3:** Run `./check_lgr_mpi.sh mm_lgr_a 4 flux`. Expected: `LGR GATE: FAIL` (Task 1.3, step 3).
 - [ ] **Step 4:** Mutation check of the guard: point `REF_BIN_DIR` at the live v8.5.3 binary (`/home/razinka/shyfem/bin`). Expected: PASS as well (no Lagrangian change since then); then alter one byte of a copied output and confirm FAIL.
 - [ ] **Step 5:** Commit: `test(lagrange): MPI and serial test drivers (#217)`.
@@ -173,7 +173,7 @@ Owner decision 2026-11-21: this draw is replaced, although it changes serial res
 - [ ] **Step 4:** Cases A and B: `.lgr.shy`, `.hydro.shy`, `.inf` byte-identical to the reference binary (they never land on a vertex, so nothing may change). Cases C and E: `.hydro.shy` and `.inf` byte-identical to the reference binary.
 - [ ] **Step 5:** Commit: `fix(lagrange): the next element at a vertex no longer depends on a random stream (#217)`.
 
-After this task the controller rebuilds the reference binary from this commit. From Stage 2 on the serial guard compares cases A, B, C, E against that reference.
+After this task's review is clean the controller builds a second reference binary from this commit in `/home/razinka/wt-lgr-ref2` (the first one, `/home/razinka/wt-lgr-ref`, stays as untouched main). From then on the serial guard compares cases A, B, C, E against `wt-lgr-ref2`.
 
 ---
 
@@ -208,7 +208,7 @@ After this task the controller rebuilds the reference binary from this commit. F
 - [ ] **Step 3:** Run `./check_lgr_mpi.sh mm_lgr_a 4 flux` and `… 2 flux`. Expected: `LGR GATE: PASS`, every class at or below 1e-5.
 - [ ] **Step 3b (amended 2026-11-21):** Run `./check_lgr_mpi.sh mm_lgr_b NP flux` for NP 2 and 4, and `lgr_dbg_compare.py node` on the same dumps. Case B is the only case with an open boundary, so it is the one that exercises the boundary node types of `flxtype` and a non-zero `mfluxv`. Expected: PASS.
 - [ ] **Step 4:** Run `./check_lgr_mpi.sh mm_lgr_c 4 flux` (closed 3D basin: surface and bottom layer). Expected: PASS. If a class fails, run `lgr_dbg_compare.py node` for `wlnv` and `mfluxv` before changing anything, and report what it shows.
-- [ ] **Step 5:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref/bin`. Expected: `SERIAL GUARD: PASS`.
+- [ ] **Step 5:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`. Expected: `SERIAL GUARD: PASS`.
 - [ ] **Step 6:** Mutation check: comment out the call of `lgr_mpi_flux_sum_3d`; the flux gate must FAIL; restore.
 - [ ] **Step 7:** Record the AC1 numbers (2 and 4 ranks, cases A and C) in `docs/reviews/2026-11-lagrange-mpi-acceptance.md`. Commit, push, open the stage PR: `feat(lagrange): side fluxes summed across the ranks that hold an element (#217)`.
 
@@ -260,7 +260,7 @@ Rule: start from `ieltv`. For every local side with `ieltv(ii,ie) <= 0` and not 
 
 - [ ] **Step 1:** The test is the serial guard: this task must not change a serial result.
 - [ ] **Step 2:** Refactor. No behaviour change: same operations in the same order for a particle that stays on its rank.
-- [ ] **Step 3:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref/bin`. Expected: PASS. Also run the shipped `mm_lgr.str` serially and confirm `.hydro.shy` and `.inf` identical to the reference.
+- [ ] **Step 3:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`. Expected: PASS. Also run the shipped `mm_lgr.str` serially and confirm `.hydro.shy` and `.inf` identical to the reference.
 - [ ] **Step 4:** Commit: `refactor(lagrange): track_single as advect plus finish, no change in results (#217)`.
 
 ### Task 3.4: Hand-over at a cut-off side
@@ -278,7 +278,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 
 - [ ] **Step 1: Write the failing test.** `./check_lgr_mpi.sh mm_lgr_a 4 part` with `--by nearest --tol 1e-5` (ids still repeat across ranks until Stage 4). Expected today: FAIL (the run crashes at the first hand-over, spec M2).
 - [ ] **Step 2:** Implement. Replace the `lgr_mpi_exchange` call in `lagrange` by `lgr_mpi_handover(dtime)`; delete the end-of-step hand-over.
-- [ ] **Step 3:** Run the test on 2 and 4 ranks for cases A, B and C. Expected: the runs end; counts equal at every output; no `D` line with `ie = 0`. Positions may still fail where the every-step x,y round trip needs Task 3.5; record the largest distance. (Amended 2026-11-21: in Stage 3 the position limit is a gate for cases A and B only. The vertex pick of Task 1.5 depends on the particle id, and ids repeat across ranks until Stage 4, so cases C and E can differ from serial here; their position gate is Task 4.2 step 4.)
+- [ ] **Step 3:** Run the test on 2 and 4 ranks for cases A, B and C. Expected: the runs end; counts equal at every output; no `D` line with `ie = 0`. Positions may still fail where the every-step x,y round trip needs Task 3.5; record the largest distance. The crossing count must also match: run the `part` comparison with `--ncross` on cases A and B; a particle handed over in mid-step must end the step with the same total count as in the serial run (the count travels as `n_left`). (Amended 2026-11-21: in Stage 3 the position limit is a gate for cases A and B only. The vertex pick of Task 1.5 depends on the particle id, and ids repeat across ranks until Stage 4, so cases C and E can differ from serial here; their position gate is Task 4.2 step 4.)
 - [ ] **Step 4:** Serial guard PASS. Commit: `feat(lagrange): hand-over at a cut-off side with the time left in the step (#217)`.
 
 ### Task 3.5: Hand-over by position
@@ -365,7 +365,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 - [ ] **Step 1: Write the failing test.** `./check_lgr_mpi.sh mm_lgr_a 4 pos`. Expected today: FAIL (the MPI file has all particles in the exited block or the run crashes, spec M1).
 - [ ] **Step 2:** Implement.
 - [ ] **Step 3:** Run `./check_lgr_mpi.sh CASE NP pos` for cases A, B, C and NP 2, 4. Expected: `LGR GATE: PASS` (AC2 exact ids per block, AC3 positions).
-- [ ] **Step 4:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref/bin`. Expected: PASS, including `mpirun -np 1` (AC7).
+- [ ] **Step 4:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`. Expected: PASS, including `mpirun -np 1` (AC7).
 - [ ] **Step 5:** AC8: `lgrelab -lgmean` on the serial and the 4-rank file of case A; the two text outputs agree within 1e-5. Run `lgrelab` in the file's folder with a relative name (it truncates long paths).
 - [ ] **Step 6:** Commit: `feat(lagrange): particle output from all ranks in the serial layout (#217)`.
 
@@ -439,7 +439,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 
 ## Stage PR checklist (every stage)
 
-- [ ] `./check_lgr_serial.sh /home/razinka/wt-lgr-ref/bin` prints `SERIAL GUARD: PASS`.
+- [ ] `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin` prints `SERIAL GUARD: PASS`.
 - [ ] `testcases/examples/mar_menor/check_mpi.sh 4` prints `MPI GATE: PASS`.
 - [ ] The stage's own gate commands and their output are pasted in the PR.
 - [ ] `fortran-reviewer` agent run on the diff; findings fixed or answered.
