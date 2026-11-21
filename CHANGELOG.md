@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Changed
+- **GOTM runs no longer compute a bottom stress they throw away.** Each GOTM (`iturb=1`) time step computed a nodal bottom stress from `czdef` (an element loop plus one exchange between MPI ranks), took its square root as the bed friction velocity, and then overwrote that value before GOTM used it: GOTM's bed friction velocity comes from the bottom current and the bed roughness. The stress is now computed only for the `levdbg >= 2` debug check, which is the one place that reads it. Results are unchanged: all 20 output files are byte-identical in the Venice smoke test (serial and 4 MPI ranks), Mar Menor `mm_hyd_41` (6 hours) and the 8 channel-benchmark runs.
 - **An explicit run that meets a dry element says why it stops.** With explicit water-level weights (`azpar`/`ampar` 0 and 1) a basin with wetting and drying stopped with only `non diag elems /= 0` and matrix indices; in the Venice lagoon test this happens at the first time step. The message now says that the explicit scheme cannot handle drying and to use semi-implicit weights, and stops with `error stop system_assemble: explicit scheme cannot dry`. The `azpar`/`ampar` parameter text and `MANUAL.md` say the same. The scheme itself is unchanged: its direct solve stores only the diagonal, and a dry element needs off-diagonal terms.
 
 ### Changed — Docs

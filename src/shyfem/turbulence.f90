@@ -381,16 +381,20 @@
 
 !------------------------------------------------------
 ! set up bottom stress on nodes
+!
+! only the levdbg >= 2 check (checka) reads taub: the bottom friction
+! velocity u_taub given to GOTM comes from the bottom current and z0b
+! (below), so taub is not computed otherwise. levdbg is the same on
+! every rank, so all ranks take the same branch (bnstress exchanges).
 !------------------------------------------------------
 
-	call bnstress(czdef,taub)
-	if( ireib == 6 ) call model_bottom_z0(z0n)
-
-	!call shympi_comment('exchanging taub')
-
-	if( bextra_exchange ) then
-	  call shympi_exchange_2d_node(taub)
+	if( levdbg >= 2 ) then
+	  call bnstress(czdef,taub)
+	  if( bextra_exchange ) then
+	    call shympi_exchange_2d_node(taub)
+	  end if
 	end if
+	if( ireib == 6 ) call model_bottom_z0(z0n)
 
 	!call shympi_check_2d_node(taub,'taub')
 	!call shympi_check_3d_node(uprv,'uprv')
@@ -482,8 +486,6 @@
 	    u_taus = sqrt( sqrt( tauxnv(k)**2 + tauynv(k)**2 ) )
 
 	    call turb_wall_roughness(k,u_taus,z0n(k),z0s,z0b)
-
-	    u_taub = sqrt( taub(k) )
 
 	    ubot = uprv(nlev,k)
   	    vbot = vprv(nlev,k)
