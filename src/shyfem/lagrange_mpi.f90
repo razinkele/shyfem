@@ -16,6 +16,7 @@
 !
 ! contents :
 !
+! lgr_mpi_check_supported	options not supported on several processes stop
 ! lgr_mpi_init			initialize MPI buffers
 ! lgr_mpi_topology_init	lists of elements shared with other ranks
 ! lgr_mpi_side_table		side table of the tracker (lgr_ieltv, lgr_side_lmax)
@@ -44,7 +45,6 @@
 ! lgr_mpi_gather_global		global array on rank 0 from the owned entries
 ! lgr_mpi_global_area		total basin area as in a serial run
 ! lgr_mpi_global_center		basin centre as in a serial run
-! lgr_mpi_reset_export		reset export buffers
 ! lgr_mpi_debug_dump		text dump of particles, fluxes, node arrays
 ! lgr_mpi_debug_open		open one debug dump file
 ! lgr_mpi_ghost_nodes		number of vertices of an element owned elsewhere
@@ -124,6 +124,65 @@
 	integer, parameter :: lgr_side_nfo = 14
 
 	contains
+
+!*******************************************************************
+
+	subroutine lgr_mpi_check_supported
+
+! on more than one process, the options of the particle module that are
+! not supported there stop the run at start-up, before any particle is
+! tracked (called by lagrange in its first call, after ilagr is read).
+! For each option that is set rank 0 writes which option is not supported
+! on several MPI processes and that the run must be made serially (or
+! without the option); after a barrier every process stops through
+! shympi_abort_internal. The test reads only parameters of the STR file,
+! the same on every process. A serial run is not affected.
+!
+! options tested here: ilagr = 3 (vertical advection and diffusion: the
+! hand-over keeps z only in single precision) and icnn > 0 (connectivity,
+! section $connec: its counts at a hand-over are not made and the release
+! element is not held on every process); a later task adds the others
+
+	use shympi, only : my_id, shympi_is_parallel
+	use para, only : getpar
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer :: nbad, ierr
+
+	if( .not. shympi_is_parallel() ) return
+
+	nbad = 0
+
+	if( nint(getpar('ilagr')) == 3 ) then
+	  nbad = nbad + 1
+	  if( my_id == 0 ) then
+	    write(6,*) 'Lagrangian option ilagr = 3 is not supported on'	&
+     &		//' several MPI processes'
+	    write(6,*) 'run it serially (on one process), or use ilagr'	&
+     &		//' = 1 or 2'
+	  end if
+	end if
+
+	if( nint(getpar('icnn')) > 0 ) then
+	  nbad = nbad + 1
+	  if( my_id == 0 ) then
+	    write(6,*) 'Lagrangian option icnn > 0 (connectivity, section'	&
+     &		//' $connec) is not supported on several MPI processes'
+	    write(6,*) 'run it serially (on one process), or set icnn = 0'
+	  end if
+	end if
+
+	if( nbad == 0 ) return
+
+	if( my_id == 0 ) flush(6)
+	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
+	call shympi_abort_internal('error stop lagrange: option not'	&
+     &		//' supported with MPI')
+
+	end subroutine lgr_mpi_check_supported
 
 !*******************************************************************
 
@@ -1485,9 +1544,11 @@
 ! records that particle i stopped on side iside of local element ie, a
 ! cut-off side, with the time t_left and the crossings n_left still to do;
 ! it goes to rank -lgr_ieltv(iside,ie) - 1000. Sets lgr_marked(i) (the
-! particle's own slot); the shared lists are written inside the critical
-! section lgr_export and grow when full. Called by the tracker, inside the
-! parallel loop of drogue or outside any parallel region.
+! particle's own slot); the shared lists are read and written only inside
+! the critical section lgr_export and grow when full (the test before it
+! reads only values fixed after start-up: lgr_ieltv, bmpi_lagr, which is
+! true exactly when the lists are allocated). Called by the tracker,
+! inside the parallel loop of drogue or outside any parallel region.
 
 	use shympi, only : my_id, n_threads
 
@@ -1503,7 +1564,7 @@
 
 	r = -lgr_ieltv(iside,ie) - 1000
 	if( r < 0 .or. r >= n_threads .or. r == my_id			&
-     &		.or. .not. allocated(export_idx) ) then
+     &		.or. .not. bmpi_lagr ) then
 	  write(6,*) 'lgr_mpi_mark_side: i,ie,iside,mark: ',i,ie,iside	&
      &		,lgr_ieltv(iside,ie)
 	  call shympi_abort_internal('lgr_mpi_mark_side: not a cut-off'	&
@@ -2482,6 +2543,10 @@
 ! step: in round k the particles sent are those marked in drogue (k = 1)
 ! or arrivals of round k-1 marked again, so each of them is handed over
 ! for the k-th time.
+!
+! called by lagrange after the step that reaches the end of the particle
+! run and at the first call after it; only the first call writes (every
+! process makes the same calls, so all take part in the same reduction)
 
 	use shympi, only : my_id, n_threads
 
@@ -2490,8 +2555,11 @@
 	include 'mpif.h'
 
 	integer :: ival(2), ivalg(2), nrmax, ierr
+	logical, save :: bdone = .false.	!totals written
 
 	if( .not. blgr_dbg .or. n_threads <= 1 ) return
+	if( bdone ) return
+	bdone = .true.
 
 	ival(1) = lgr_nhand
 	ival(2) = lgr_nputback
@@ -2870,8 +2938,10 @@
 !	class time id x y z lb ie_global rank ncross
 !   class P: element with only own nodes, M: mixed element (a vertex owned
 !   by another rank) this rank is the main owner of, G: mixed element
-!   owned elsewhere, D: entry with ie <= 0 (x = y = 0, ie_global = 0 for
-!   ie = 0, -global element for ie < 0); lb = layer; ncross = lgr_ncross(i)
+!   owned elsewhere, D: entry with ie < 0, a particle that has left the
+!   basin (x = y = 0, ie_global = -global element; an entry with ie = 0
+!   would show ie_global = 0, but neither the tracker nor the hand-over
+!   makes one); lb = layer; ncross = lgr_ncross(i)
 !   (crossings of the last time step; for a particle handed over in that
 !   step the count of the whole step)
 !

@@ -147,7 +147,9 @@
         end if
 
         if( .not. bback ) then
-          if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel
+          if( iel.gt.0 ) then		!lag_diff_hor may return iel < 0
+            if( iarv(iel).eq.artype ) iel = -iel
+          end if
         end if
 
 !---------------------------------------------------------------

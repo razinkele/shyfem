@@ -190,6 +190,7 @@
           if( icall .eq. -1 ) return
 	  icall = 1
 
+	  call lgr_mpi_check_supported	!stops on several processes
           call lgr_mpi_topology_init
 
           call get_first_dtime(dtanf)
@@ -279,6 +280,9 @@
 
         call get_act_dtime(dtime)
 
+	!totals of the hand-over, if no step ended exactly at dtlend (once)
+	if( bmpi_lagr .and. dtime > dtlend ) call lgr_mpi_handover_stats
+
         if( dtime < dtlanf .or. dtime > dtlend ) return      
 
 	bback = .false.		!do not do backtracking
@@ -345,7 +349,7 @@
 
 	if( bmpi_lagr ) then
 	  call lgr_mpi_handover(dtime)
-	  if( dtime >= dtlend ) call lgr_mpi_handover_stats !levdbg >= 3
+	  if( dtime >= dtlend ) call lgr_mpi_handover_stats !once, levdbg >= 3
 	end if
 
 !---------------------------------------------------------------
@@ -951,6 +955,7 @@
         logical 	:: track_xi_on_material_boundary
 
 	if ( .not. bbeach .or. ty < 0 ) return
+	if ( iel <= 0 ) return		!particle has left: no side to test
 
         if( track_xi_on_material_boundary(iel,xi) ) then
           call random_number(r)

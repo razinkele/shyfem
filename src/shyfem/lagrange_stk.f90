@@ -80,7 +80,7 @@
           icall = 1
         end if
 
-	if( lb > 1 .or. iel < 0 .or. ty < 0) return !not in surface, out, or beached
+	if( lb > 1 .or. iel <= 0 .or. ty < 0) return !not in surface, out, or beached
 	if( stkpar <= 0. ) return !no wind drag
 
         ttime = time
@@ -143,7 +143,7 @@
         !-----------------------------------------------
         xx = x
         yy = y
-        call xy2xi(iel,xx,yy,xi)
+        call xy2xi(abs(iel),xx,yy,xi)	!particle_on_side may set iel < 0
 
 !---------------------------------------------------------------
 ! end of routine
