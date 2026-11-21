@@ -79,6 +79,12 @@ run_in() {
   grep -q "simulation end" "$dir/$log"
 }
 
+# show_failed LOG: last lines of a failed run and a hint
+show_failed() {
+  tail -5 "$1"
+  echo "  hint: if this is an MPI start-up error, check that OpenMPI's mpirun is first on PATH (PATH=/usr/bin:\$PATH)"
+}
+
 ALLCASES="mm_lgr_a mm_lgr_b mm_lgr_c mm_lgr_e"
 
 #=============================== repro =====================================
@@ -88,12 +94,12 @@ if [ "$ARG" = repro ]; then
     echo "=== $c: two runs with the current binary"
     rm -f "$HERE/$c.lgr.shy"
     if ! run_in "$HERE" "$c" "$c.log" shyfem; then
-      tail -5 "$HERE/$c.log"; fail "$c: first run did not end"; continue
+      show_failed "$HERE/$c.log"; fail "$c: first run did not end"; continue
     fi
     cp "$HERE/$c.lgr.shy" "$SCR/$c.run1.lgr.shy" || { fail "$c: no particle file"; continue; }
     rm -f "$HERE/$c.lgr.shy"
     if ! run_in "$HERE" "$c" "$c.log" shyfem; then
-      tail -5 "$HERE/$c.log"; fail "$c: second run did not end"; continue
+      show_failed "$HERE/$c.log"; fail "$c: second run did not end"; continue
     fi
     if cmp -s "$SCR/$c.run1.lgr.shy" "$HERE/$c.lgr.shy"; then
       echo "  $c.lgr.shy: identical"
@@ -118,7 +124,7 @@ done
 
 # check_files LABEL FILE... : cmp file of the current run against the two others
 check_files() {
-  local c="$1" f other name; shift
+  local c="$1" f other name ext; shift
   for ext in "$@"; do
     f="$HERE/$c.$ext"
     if [ ! -f "$f" ]; then echo "  $c.$ext: MISSING in the current run"; fail "$c.$ext missing"; continue; fi
@@ -137,13 +143,13 @@ run_three() {
   local c="$1" ok=1
   rm -f "$HERE/$c.lgr.shy" "$HERE/$c.hydro.shy" "$HERE/$c.inf"
   if ! run_in "$HERE" "$c" "$c.log" shyfem; then
-    tail -5 "$HERE/$c.log"; fail "$c: current serial run did not end"; ok=0
+    show_failed "$HERE/$c.log"; fail "$c: current serial run did not end"; ok=0
   fi
   if ! run_in "$SCR/np1/$FOLDER" "$c" "$c.np1.log" mpirun --oversubscribe -np 1 shyfem; then
-    tail -5 "$SCR/np1/$FOLDER/$c.np1.log"; fail "$c: mpirun -np 1 run did not end"; ok=0
+    show_failed "$SCR/np1/$FOLDER/$c.np1.log"; fail "$c: mpirun -np 1 run did not end"; ok=0
   fi
   if ! PATH="$REF:/usr/bin:$PATH" run_in "$SCR/ref/$FOLDER" "$c" "$c.ref.log" shyfem; then
-    tail -5 "$SCR/ref/$FOLDER/$c.ref.log"; fail "$c: reference run did not end"; ok=0
+    show_failed "$SCR/ref/$FOLDER/$c.ref.log"; fail "$c: reference run did not end"; ok=0
   fi
   return $((1 - ok))
 }
@@ -176,24 +182,29 @@ for v in np1 ref cur; do
 done
 if [ -z "$skip_reason" ]; then
   c=mm_lgr_01
-  lok=1
-  run_in "$SCR/cur/$LGRDIR" "$c" "$c.log" shyfem || { lok=0; skip_reason="current serial run did not end: $(tail -1 "$SCR/cur/$LGRDIR/$c.log")"; }
-  if [ "$lok" = 1 ]; then
-    run_in "$SCR/np1/$LGRDIR" "$c" "$c.np1.log" mpirun --oversubscribe -np 1 shyfem || { lok=0; skip_reason="mpirun -np 1 run did not end: $(tail -1 "$SCR/np1/$LGRDIR/$c.np1.log")"; }
-  fi
-  if [ "$lok" = 1 ]; then
-    PATH="$REF:/usr/bin:$PATH" run_in "$SCR/ref/$LGRDIR" "$c" "$c.ref.log" shyfem || { lok=0; skip_reason="reference run did not end: $(tail -1 "$SCR/ref/$LGRDIR/$c.ref.log")"; }
-  fi
-  if [ "$lok" = 1 ]; then
-    for ext in hydro.shy inf; do
-      for other in np1 ref; do
-        a="$SCR/cur/$LGRDIR/$c.$ext"; b="$SCR/$other/$LGRDIR/$c.$ext"
-        if [ ! -f "$a" ] || [ ! -f "$b" ]; then echo "  $c.$ext vs $other: MISSING"; fail "$c.$ext missing"
-        elif cmp -s "$a" "$b"; then echo "  $c.$ext vs $other: identical"
-        else echo "  $c.$ext vs $other: DIFFERS"; fail "$c.$ext differs from the $other run"
-        fi
+  # the reference run goes first: if only it fails, the check is SKIPPED (no
+  # baseline); a failed current or np1 run is a possible regression: FAIL
+  if ! PATH="$REF:/usr/bin:$PATH" run_in "$SCR/ref/$LGRDIR" "$c" "$c.ref.log" shyfem; then
+    skip_reason="reference run did not end (last log line: $(tail -1 "$SCR/ref/$LGRDIR/$c.ref.log"))"
+  else
+    lok=1
+    if ! run_in "$SCR/cur/$LGRDIR" "$c" "$c.log" shyfem; then
+      show_failed "$SCR/cur/$LGRDIR/$c.log"; fail "$c: current serial run did not end"; lok=0
+    fi
+    if ! run_in "$SCR/np1/$LGRDIR" "$c" "$c.np1.log" mpirun --oversubscribe -np 1 shyfem; then
+      show_failed "$SCR/np1/$LGRDIR/$c.np1.log"; fail "$c: mpirun -np 1 run did not end"; lok=0
+    fi
+    if [ "$lok" = 1 ]; then
+      for ext in hydro.shy inf; do
+        for other in np1 ref; do
+          a="$SCR/cur/$LGRDIR/$c.$ext"; b="$SCR/$other/$LGRDIR/$c.$ext"
+          if [ ! -f "$a" ] || [ ! -f "$b" ]; then echo "  $c.$ext vs $other: MISSING"; fail "$c.$ext missing"
+          elif cmp -s "$a" "$b"; then echo "  $c.$ext vs $other: identical"
+          else echo "  $c.$ext vs $other: DIFFERS"; fail "$c.$ext differs from the $other run"
+          fi
+        done
       done
-    done
+    fi
   fi
 fi
 if [ -n "$skip_reason" ]; then

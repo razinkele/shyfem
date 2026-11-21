@@ -20,6 +20,8 @@
 # the same); the debug files of each run end up in CASE.serial.dbg/ and
 # CASE.npN.dbg/, both made fresh by every call.
 #
+# Note: flux uses the relative default limit of lgr_dbg_compare.py (1e-5) for
+# every case; the per-case --tol below applies to pos and part only.
 # Limits: the geographic cases use --tol 1e-5, the Cartesian case mm_lgr_b
 # --tol 2 (for pos and part).  The flux comparison is relative and keeps
 # the default of lgr_dbg_compare.py.  Part uses --by nearest (the ids repeat
@@ -69,7 +71,12 @@ done
 
 TMPSTR=""
 cleanup() {
+  local f
   if [ -n "$TMPSTR" ] && [ -f "$TMPSTR" ]; then rm -f "$TMPSTR"; fi
+  # debug files of a failed or aborted run (collect_dbg moves those of a good run)
+  for f in "$HERE"/lgrdbg.*.txt; do
+    [ -e "$f" ] && rm -f "$f"
+  done
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
@@ -95,6 +102,19 @@ fi
 #--- helpers ---------------------------------------------------------------
 # remove the model outputs and debug files of earlier runs (explicit names)
 clean_outputs() {
+  local ext f
+  for ext in lgr.shy hydro.shy inf; do
+    rm -f "$HERE/$CASE.$ext" "$HERE/$CASE.serial.$ext"
+  done
+  if [ "$DUMP" = 1 ]; then
+    for f in "$HERE"/lgrdbg.*.txt; do
+      [ -e "$f" ] && rm -f "$f"
+    done
+  fi
+}
+
+# before the MPI run: only the model's own outputs (the CASE.serial.* files stay)
+clean_outputs_mpi() {
   local ext f
   for ext in lgr.shy hydro.shy inf; do rm -f "$HERE/$CASE.$ext"; done
   if [ "$DUMP" = 1 ]; then
@@ -131,6 +151,8 @@ if ! grep -q "simulation end" "$HERE/$CASE.serial.log"; then
 fi
 for ext in lgr.shy hydro.shy inf; do
   if [ -f "$HERE/$CASE.$ext" ]; then mv -f "$HERE/$CASE.$ext" "$HERE/$CASE.serial.$ext"
+  elif [ "$ext" = lgr.shy ] && { [ "$MODE" = pos ] || [ "$MODE" = ids ]; }; then
+    fail "serial run wrote no $CASE.lgr.shy"; echo "LGR GATE: FAIL"; exit 1
   else echo "  note: serial run wrote no $CASE.$ext"; fi
 done
 collect_dbg "$CASE.serial.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
@@ -138,6 +160,7 @@ echo "  serial run ended"
 
 #--- 2. MPI run ------------------------------------------------------------------
 echo "=== 2. $CASE on $NP processes"
+clean_outputs_mpi
 nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$STR" > "$HERE/$CASE.np$NP.log" 2>&1
 mpi_rc=$?
 if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; then
