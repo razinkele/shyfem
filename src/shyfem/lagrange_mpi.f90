@@ -2139,23 +2139,39 @@
 ! The test elements are chosen at run time among the elements a process
 ! holds: the first one, and the first one with a side of each kind of the
 ! side table lgr_ieltv (local neighbour, wall, open boundary, cut-off
-! side) where the process has one. For each test element and each side ii
-! (the side opposite vertex ii) a move from the centre of the element to
-! the point twice as far away as the middle of the side must stop at the
-! middle of the side, with ie unchanged at a neighbour, a wall or a
-! cut-off side (lgr_ieltv <= -1000, treated like a side with a neighbour)
-! and ie = -ie at an open boundary (-999 <= lgr_ieltv <= -1). A move
-! from the centre half way to vertex 1 stays inside and must change
-! nothing. A wall, a neighbour and a cut-off side give the same result,
-! so the kind is told apart only where the process has an open boundary
-! side; a cut-off side is checked to keep ie wherever the process has
-! one (several processes). Moves of zero length are not tested. The
-! limit for the position is 1% of the length of the move to the side
-! plus 8 spacings of the coordinates.
+! side) where the process has one. Side ii is the side opposite vertex ii.
+! At a neighbour, a wall or a cut-off side (lgr_ieltv <= -1000, treated
+! like a side with a neighbour) ie must come back unchanged, at an open
+! boundary (-999 <= lgr_ieltv <= -1) as -ie. For each test element:
+!  1. a move from the centre to the point twice as far away as the
+!     middle of side ii stops at the middle of side ii (kind of side ii)
+!  2. a move from the centre half way to vertex 1 stays inside: the new
+!     point and ie come back unchanged
+!  3. a move of zero length from a point just outside the element, beside
+!     vertex 2 at the same y (vertex 2 is the first end node of side 1)
+!     changes nothing
+!  4. a move from the middle of side ii through the element towards the
+!     middle of side jj and beyond (all six pairs) leaves through side jj:
+!     it stops at the middle of side jj (kind of side jj); the side it
+!     starts on is not the side crossed
+!  5. a move from the middle of side ii straight out (away from the
+!     centre) crosses side ii at its start: the start point comes back
+!     exactly (kind of side ii)
+!  6. a move from the centre through vertex k stops at vertex k; ie is
+!     flipped only if both sides at vertex k are open boundaries
+!  7. a move from the middle of side ii along side ii past its end node
+!     nen3v(i2,ie) stops at that vertex; the side crossed is the other
+!     side at that vertex, side i1 (its kind)
+! The point returned is checked in every case: exactly in 2, 3 and 5,
+! otherwise within 1% of the distance from the start to the expected
+! point plus 8 spacings of the coordinates. A wall, a neighbour and a
+! cut-off side give the same result, so the kind is told apart only where
+! the process has an open boundary side; a cut-off side is checked to
+! keep ie wherever the process has one (several processes).
 ! particle_on_side changes only its arguments: the test leaves no trace.
 ! Rank 0 prints one line when all processes agree; otherwise every
-! process aborts naming the first check that failed. Prints and changes
-! nothing at levdbg < 3.
+! process aborts naming a check that failed. Prints and changes nothing
+! at levdbg < 3.
 
 	use shympi
 	use basin, only : nel, nen3v, xgv, ygv
@@ -2165,18 +2181,35 @@
 
 	include 'mpif.h'
 
-	integer, parameter :: ncheck = 3
-	character(len=40), parameter :: cname(ncheck) = (/		&
-     &		'move through a side: not at its middle  ',		&
-     &		'move through a side: wrong kind (ie)    ',		&
-     &		'move inside the element: changed        ' /)
+	integer, parameter :: ncheck = 14
+	character(len=40), parameter :: cname(ncheck) = [		&
+     &		character(len=40) ::					&
+     &		'move through a side: not at its middle',		&
+     &		'move through a side: wrong kind (ie)',			&
+     &		'move inside the element: point changed',		&
+     &		'move inside the element: ie changed',			&
+     &		'move of zero length: point changed',			&
+     &		'move of zero length: ie changed',			&
+     &		'move across from a side: wrong point',			&
+     &		'move across from a side: wrong kind (ie)',		&
+     &		'move out of its start side: wrong point',		&
+     &		'move out of its start side: wrong kind',		&
+     &		'move through a vertex: wrong point',			&
+     &		'move through a vertex: wrong kind (ie)',		&
+     &		'move along a side: wrong point',			&
+     &		'move along a side: wrong kind (ie)' ]
 
 	integer, parameter :: ntest = 5		!first element, four kinds
 	integer :: ietest(ntest)
-	integer :: ierr, ifail, ifmax, j, ie, ii, i1, i2, k, iv
-	integer :: iet, ieexp
-	real :: xc(3), yc(3)
-	real :: xm, ym, xs, ys, xn, yn, xn0, yn0, tol
+	integer :: ierr, ifail, ifmax, j, ie, ii, jj, i1, i2, k, iv, isg
+	integer :: ilab1, ilab2
+	logical :: bopen(3)
+	real :: xc(3), yc(3), xs(3), ys(3)
+	real :: xm, ym, xp, xq, eps
+	double precision :: area, xil, ximin, xibest
+	! values of the move that failed, for the message
+	integer :: fie, fiet
+	real :: fxa, fya, fxb, fyb, fxe, fye, fxn, fyn
 
 	if( nint(getpar('levdbg')) < 3 ) return
 
@@ -2203,12 +2236,13 @@
 	end do
 
 	!-----------------------------------------------
-	! a move through each side, and one that stays inside
+	! the moves of each test element
 	!-----------------------------------------------
 
 	ifail = 0
-	ii = 0
 	ie = 0
+	ilab1 = 0
+	ilab2 = 0
 
 	do j = 1, ntest
 	  ie = ietest(j)
@@ -2223,55 +2257,96 @@
 	  do ii = 1, 3
 	    i1 = mod(ii,3) + 1			!end nodes of side ii
 	    i2 = mod(i1,3) + 1
-	    xs = 0.5 * (xc(i1) + xc(i2))	!middle of the side
-	    ys = 0.5 * (yc(i1) + yc(i2))
-	    xn0 = 2.*xs - xm			!beyond the side
-	    yn0 = 2.*ys - ym
-	    xn = xn0
-	    yn = yn0
-	    iet = ie
-	    call particle_on_side(iet,xm,ym,xn,yn)
-	    ieexp = ie				!neighbour, wall, cut-off side
-	    if( lgr_ieltv(ii,ie) < 0 .and. lgr_ieltv(ii,ie) > -1000 ) then
-	      ieexp = -ie			!open boundary: particle leaves
-	    end if
-	    tol = 0.01 * sqrt( (xs-xm)**2 + (ys-ym)**2 )		&
-     &		+ 8. * spacing( max(abs(xm),abs(ym),abs(xn0),abs(yn0)) )
-	    if( abs(xn-xs) > tol .or. abs(yn-ys) > tol ) then
-	      ifail = 1
-	    else if( iet /= ieexp ) then
-	      ifail = 2
-	    end if
-	    if( ifail /= 0 ) exit
+	    xs(ii) = 0.5 * (xc(i1) + xc(i2))	!middle of side ii
+	    ys(ii) = 0.5 * (yc(i1) + yc(i2))
+	    iv = lgr_ieltv(ii,ie)
+	    bopen(ii) = ( iv < 0 .and. iv > -1000 )
 	  end do
-	  if( ifail == 0 ) then			!half way to vertex 1
-	    ii = 0
-	    xn0 = 0.5 * (xm + xc(1))
-	    yn0 = 0.5 * (ym + yc(1))
-	    xs = xn0
-	    ys = yn0
-	    xn = xn0
-	    yn = yn0
-	    iet = ie
-	    ieexp = ie
-	    call particle_on_side(iet,xm,ym,xn,yn)
-	    if( xn /= xn0 .or. yn /= yn0 .or. iet /= ie ) ifail = 3
+
+	  ! 1. from the centre through the middle of each side
+	  do ii = 1, 3
+	    call one_move(1,ii,0,xm,ym,2.*xs(ii)-xm,2.*ys(ii)-ym		&
+     &			,xs(ii),ys(ii),kind_ie(bopen(ii)),.false.)
+	  end do
+
+	  ! 2. from the centre half way to vertex 1: stays inside
+	  xp = 0.5 * (xm + xc(1))
+	  xq = 0.5 * (ym + yc(1))
+	  call one_move(3,0,0,xm,ym,xp,xq,xp,xq,ie,.true.)
+
+	  ! 3. zero length, just outside beside vertex 2 at its y: of the
+	  !    points vertex 2 +- (eps,0) the one farther outside is used
+	  eps = 0.01 * sqrt( (xc(2)-xm)**2 + (yc(2)-ym)**2 )
+	  area = (dble(xc(2))-xc(1))*(dble(yc(3))-yc(1))			&
+     &		- (dble(xc(3))-xc(1))*(dble(yc(2))-yc(1))
+	  xibest = 1.d0
+	  xq = xc(2)
+	  do isg = -1, 1, 2
+	    xp = xc(2) + isg*eps
+	    ximin = 1.d0
+	    do ii = 1, 3
+	      i1 = mod(ii,3) + 1
+	      i2 = mod(i1,3) + 1
+	      xil = ( (dble(xc(i1))-xp)*(dble(yc(i2))-yc(2))			&
+     &		- (dble(xc(i2))-xp)*(dble(yc(i1))-yc(2)) ) / area
+	      ximin = min(ximin,xil)
+	    end do
+	    if( ximin < xibest ) then
+	      xibest = ximin
+	      xq = xp
+	    end if
+	  end do
+	  if( xibest < 0.d0 ) then		!outside the element
+	    call one_move(5,0,0,xq,yc(2),xq,yc(2),xq,yc(2),ie,.true.)
 	  end if
+
+	  ! 4. from the middle of side ii across to the middle of side jj
+	  do ii = 1, 3
+	    do jj = 1, 3
+	      if( jj == ii ) cycle
+	      call one_move(7,ii,jj,xs(ii),ys(ii)				&
+     &			,xs(ii)+2.*(xs(jj)-xs(ii)),ys(ii)+2.*(ys(jj)-ys(ii))	&
+     &			,xs(jj),ys(jj),kind_ie(bopen(jj)),.false.)
+	    end do
+	  end do
+
+	  ! 5. from the middle of side ii straight out: the start point
+	  do ii = 1, 3
+	    call one_move(9,ii,0,xs(ii),ys(ii),2.*xs(ii)-xm,2.*ys(ii)-ym	&
+     &			,xs(ii),ys(ii),kind_ie(bopen(ii)),.true.)
+	  end do
+
+	  ! 6. from the centre through vertex k (sides i1, i2 meet there)
+	  do k = 1, 3
+	    i1 = mod(k,3) + 1
+	    i2 = mod(i1,3) + 1
+	    call one_move(11,k,0,xm,ym,2.*xc(k)-xm,2.*yc(k)-ym		&
+     &			,xc(k),yc(k),kind_ie(bopen(i1).and.bopen(i2)),.false.)
+	  end do
+
+	  ! 7. from the middle of side ii along it past vertex i2
+	  do ii = 1, 3
+	    i1 = mod(ii,3) + 1
+	    i2 = mod(i1,3) + 1
+	    call one_move(13,ii,i2,xs(ii),ys(ii)				&
+     &			,2.*xc(i2)-xs(ii),2.*yc(i2)-ys(ii)			&
+     &			,xc(i2),yc(i2),kind_ie(bopen(i1)),.false.)
+	  end do
+
 	  if( ifail /= 0 ) exit
 	end do
 
 	if( ifail /= 0 ) then
 	  write(6,*) 'lgr side fallback self-test: rank ',my_id,	&
      &		' failed: ',trim(cname(ifail))
-	  write(6,*) '  element (local, global), side: ',		&
-     &		ie,ip_int_elem(ie),ii
-	  if( ii > 0 ) write(6,*) '  lgr_ieltv of the side: ',	&
-     &		lgr_ieltv(ii,ie)
+	  write(6,*) '  element (local, global), side/vertex: ',	&
+     &		ie,ip_int_elem(ie),ilab1,ilab2
+	  write(6,*) '  lgr_ieltv of the sides: ',lgr_ieltv(:,ie)
 	  write(6,*) '  corners x: ',xc
 	  write(6,*) '  corners y: ',yc
-	  write(6,*) '  move from: ',xm,ym,' to: ',xn0,yn0
-	  write(6,*) '  expected:  ',xs,ys,ieexp
-	  write(6,*) '  returned:  ',xn,yn,iet
+	  write(6,*) '  move from: ',fxa,fya,' to: ',fxb,fyb
+	  write(6,*) '  expected:  ',fxe,fye,fie
+	  write(6,*) '  returned:  ',fxn,fyn,fiet
 	end if
 
 	!-----------------------------------------------
@@ -2287,6 +2362,82 @@
 	end if
 
 	if( my_id == 0 ) write(6,*) 'lgr side fallback self-test: ok'
+
+	contains
+
+!-----------------------------------------------------------------------
+
+	function kind_ie(bflip)
+
+! ie expected after the call: -ie if the particle leaves, else ie
+
+	integer :: kind_ie
+	logical, intent(in) :: bflip
+
+	kind_ie = ie
+	if( bflip ) kind_ie = -ie
+
+	end function kind_ie
+
+!-----------------------------------------------------------------------
+
+	subroutine one_move(icode,ia,ib,xa,ya,xb,yb,xe,ye,ieexp,bexact)
+
+! one call of particle_on_side for element ie, a move from (xa,ya) to
+! (xb,yb); expected: the point (xe,ye) (exactly if bexact) and ieexp;
+! on failure ifail = icode (point) or icode+1 (ie), with the values of
+! the move kept for the message; nothing is done once ifail is set
+
+	integer, intent(in) :: icode		!check, see cname
+	integer, intent(in) :: ia, ib		!sides or vertex, for the message
+	real, intent(in) :: xa, ya, xb, yb	!the move
+	real, intent(in) :: xe, ye		!the point expected
+	integer, intent(in) :: ieexp		!ie expected
+	logical, intent(in) :: bexact		!the point must be exact
+
+	integer :: iet
+	real :: xn, yn, tol
+	logical :: bbad
+
+	if( ifail /= 0 ) return
+
+	xn = xb
+	yn = yb
+	iet = ie
+	call particle_on_side(iet,xa,ya,xn,yn)
+
+	if( bexact ) then
+	  bbad = ( xn /= xe .or. yn /= ye )
+	else
+	  tol = 0.01 * sqrt( (xe-xa)**2 + (ye-ya)**2 )			&
+     &		+ 8. * spacing( max(abs(xa),abs(ya),abs(xb),abs(yb)) )
+	  bbad = ( abs(xn-xe) > tol .or. abs(yn-ye) > tol )
+	end if
+
+	if( bbad ) then
+	  ifail = icode
+	else if( iet /= ieexp ) then
+	  ifail = icode + 1
+	end if
+
+	if( ifail /= 0 ) then
+	  ilab1 = ia
+	  ilab2 = ib
+	  fxa = xa
+	  fya = ya
+	  fxb = xb
+	  fyb = yb
+	  fxe = xe
+	  fye = ye
+	  fie = ieexp
+	  fxn = xn
+	  fyn = yn
+	  fiet = iet
+	end if
+
+	end subroutine one_move
+
+!-----------------------------------------------------------------------
 
 	end subroutine lgr_mpi_selftest_side
 
