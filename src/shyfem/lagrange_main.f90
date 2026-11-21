@@ -554,8 +554,8 @@
 ! advection of particles: advection, then everything after it
 
 	use mod_lagrange
-	use mod_geom_dynamic, only : iwegv
-	use levels, only : nlv
+        use mod_geom_dynamic, only : iwegv
+        use levels, only : nlv
 
 	implicit none
 	
@@ -563,9 +563,9 @@
 	integer i,ie
 	real dt,ttime,tmax,t_left
 	integer n_left
-	integer lmax                    !maximum layers in element (return)
-	real hl(nlv)
-	real htot,htotz
+        integer lmax                    !maximum layers in element (return)
+        real hl(nlv)
+        real htot,htotz
 
 !       call lagr_func(i) !lcust in str varying the variable typ(i) to check
 !	call lagr_surv(i)
@@ -576,16 +576,16 @@
 ! Get particle properties
 !---------------------------------------------------------------
 
-	ie = lgr_ar(i)%actual%ie
-	if( ie <= 0 ) return            !return if particle out of domain
+        ie = lgr_ar(i)%actual%ie
+        if( ie <= 0 ) return            !return if particle out of domain
 
 !---------------------------------------------------------------
 ! Return if element is dry or negative first layer (offline problem)
 !---------------------------------------------------------------
 
-	if( iwegv(ie) /= 0 ) return	!return if particle on dry element
+        if( iwegv(ie) /= 0 ) return	!return if particle on dry element
 	lmax = nlv
-	call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
+        call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
 	if ( hl(1) .lt. 0. ) return
 
 !---------------------------------------------------------------
@@ -617,6 +617,12 @@
 !
 ! the state of the particle is left in lgr_ar(i) (ie, xi, z, l);
 ! t_left and n_left return what is still to do
+!
+! contracts for a caller that does not come through track_single:
+! - lgr_ncross(i) is not reset here; the caller sets it
+! - the crossing count stored by track_body_xi is 100 - n_left, so the
+!   caller counts down from 100 over the whole step, also when a step is
+!   continued with a smaller budget
 
 	use mod_lagrange
 
@@ -638,8 +644,8 @@
 ! Get particle properties
 !---------------------------------------------------------------
 
-	ie = lgr_ar(i)%actual%ie
-	if( ie <= 0 ) return            !return if particle out of domain
+        ie = lgr_ar(i)%actual%ie
+        if( ie <= 0 ) return            !return if particle out of domain
 	do ii=1,3
 	  xi(ii) = lgr_ar(i)%actual%xi(ii)
 	end do
@@ -684,14 +690,18 @@
 ! the steps after advection: vertical and horizontal diffusion, Stokes
 ! drift, beaching, storing the state of the particle
 !
-! phase 0: all steps; 1: from the Stokes drift on (horizontal diffusion
-! done); 2: from beaching on (Stokes drift done)
+! phase 0: all steps; 1: resumes after the horizontal diffusion step;
+! 2: resumes after the Stokes drift step
 !
 ! the state of the particle is taken from lgr_ar(i)
+!
+! the time of the step is computed from lgr_ar(i)%actual%time, which must
+! still hold its value from the start of the step when this is called
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_check_ghost
 	use shympi, only : ip_int_elem
+	use basin, only : iarv
 
 	implicit none
 
@@ -731,11 +741,23 @@
 ! Compute diffusion, Stokes drift and beaching
 !---------------------------------------------------------------
 
+	! lb is the layer after advection; the old test was on the layer before
+	! it, the same because the tracker never lowers lb below 1
 	if( lb > 0 .and. blgrxi ) then
 	  call xi2xy(abs(ie),xx,yy,xi)
 	  x  = xx
 	  y  = yy
 	  if( phase < 1 ) call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime)
+	  if( phase == 1 .and. ty >= 0 ) then	!as at the end of diff_body
+	    ! same flip as at the end of diff_body (lagrange_dif.f90): the
+	    ! horizontal diffusion step may have moved the particle into an
+	    ! arrival element
+	    if( .not. bback ) then
+	      if( ie > 0 ) then
+	        if( iarv(ie) == artype ) ie = -ie
+	      end if
+	    end if
+	  end if
 	  if( phase < 2 ) call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime)
 	  call lag_beach(i,id,xi,ie,ty)
 	end if
@@ -744,7 +766,7 @@
 ! Assign new coordinatates to particle
 !---------------------------------------------------------------
 
-	lgr_ar(i)%actual%ie = ie
+        lgr_ar(i)%actual%ie = ie
 	if( ie > 0 ) then
 	  lgr_ar(i)%actual%ie_global = ip_int_elem(ie)
 	  call lgr_mpi_check_ghost(i,ie)
