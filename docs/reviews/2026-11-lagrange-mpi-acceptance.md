@@ -43,8 +43,30 @@ tool reports its surface layer and its bottom layer (`ilhv(ie)`).
 | C | 4 | flux3d layer 1 | 7320 / 0 / 8.8e-07 | 315 / 0 / 8.8e-07 | 318 / 0 / 8.8e-07 |
 | C | 4 | flux3d bottom layer | 7320 / 0 / 4.6e-07 | 315 / 0 / 2.5e-07 | 318 / 0 / 2.5e-07 |
 | C | 4 | flux2d | 7320 / 0 / 2.3e-07 | 315 / 0 / 2.0e-07 | 318 / 0 / 2.0e-07 |
+| A | 3 | flux3d layer 1 | 7452 / 0 / 1.8e-06 | 183 / 0 / 1.8e-06 | 183 / 0 / 1.8e-06 |
+| A | 3 | flux2d | 7452 / 0 / 2.2e-07 | 183 / 0 / 8.6e-08 | 183 / 0 / 8.6e-08 |
+| A | 6 | flux3d layer 1 | 7143 / 0 / 1.0e-06 | 492 / 0 / 1.0e-06 | 495 / 0 / 1.0e-06 |
+| A | 6 | flux2d | 7143 / 0 / 2.2e-07 | 492 / 0 / 1.3e-07 | 495 / 0 / 1.3e-07 |
+| A | 8 | flux3d layer 1 | 6996 / 0 / 1.2e-06 | 639 / 0 / 1.3e-06 | 648 / 0 / 1.3e-06 |
+| A | 8 | flux2d | 6996 / 0 / 2.2e-07 | 639 / 0 / 1.7e-07 | 648 / 0 / 1.7e-07 |
+| C | 3 | flux3d layer 1 | 7452 / 0 / 8.8e-07 | 183 / 0 / 8.8e-07 | 183 / 0 / 8.8e-07 |
+| C | 3 | flux3d bottom layer | 7452 / 0 / 3.8e-07 | 183 / 0 / 1.7e-07 | 183 / 0 / 1.7e-07 |
+| C | 3 | flux2d | 7452 / 0 / 2.4e-07 | 183 / 0 / 1.8e-07 | 183 / 0 / 1.8e-07 |
+| C | 8 | flux3d layer 1 | 6996 / 0 / 9.7e-07 | 639 / 0 / 9.7e-07 | 648 / 0 / 9.7e-07 |
+| C | 8 | flux3d bottom layer | 6996 / 0 / 4.2e-07 | 639 / 0 / 4.4e-07 | 648 / 0 / 4.4e-07 |
+| C | 8 | flux2d | 6996 / 0 / 2.3e-07 | 639 / 0 / 1.8e-07 | 648 / 0 / 1.8e-07 |
 
-All six gates print `LGR GATE: PASS`. In every run, coverage is complete:
+The rows for 3, 6 and 8 processes were added after the fix of task 2.3
+(no division by a zero particle count, #217). Case A on 3 and 8 processes and
+case C on 3 processes first stopped with SIGFPE at the division by `idbdy` in
+`track_body_xi` (a process without a release area); all five of these runs end
+and pass after the fix. In these rows the worst mixed value can exceed the
+worst all-own value by a little (A on 8 processes: 1.3e-06 against 1.2e-06),
+and the largest value is 1.8e-06 (A on 3 processes, flux3d layer 1); all stay
+below the 1e-5 limit. The statement below about mixed values not exceeding
+all-own values covers the 2 and 4 process runs only.
+
+All six gates of the first table print `LGR GATE: PASS`. In every run, coverage is complete:
 every serial row has exactly one main-owner row, and no MPI row is missing
 from serial.
 
