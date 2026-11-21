@@ -446,6 +446,30 @@ Found while closing the flux stage (controller's rulings, 2026-11-21; none chang
   sender applies the same rule with the layer count of the element across, which the tracker's
   side table carries; such a particle is not handed over.
 
+Found with the hand-over at a cut-off side (2026-11-21):
+
+- **Positions cannot be gated at 1e-5 degrees or 2 m.** A serial run against a serial run whose
+  wind drag is changed by a relative 1e-7 already exceeds those limits for some particles (case
+  A: 15 of 145, largest 2.3e-4 degrees; case B: 3 of 408, largest 36 m). The hydrodynamics on
+  several processes differs from the serial one by about 1e-6. This replaces the position limits
+  of section 8: conservation is exact; a hand-over must not make a particle worse than the
+  particles that stay on their process (compared through a key that identifies a particle in
+  both runs); crossing counts are compared at identical positions only; positions are held
+  against the tracker's measured response to a relative 1e-5 change of the forcing.
+- **Issue #223, owner decision: fix now.** The fallback for a failed element search intersects
+  the particle's move with the triangle of mesh nodes 1 to 3 instead of its own element. A serial
+  run of the Stokes-drift case reaches it 156,864 times. On several processes those are other
+  nodes on every process. It is corrected for serial and MPI alike; serial results change where
+  it acts, and the serial guard gets a new reference build from that commit.
+- **Order.** The ids (section 6.8) are assigned before the hand-over by position is built, because
+  the vertex pick depends on the id and the Stokes-drift case reaches it.
+- **Stops on several processes** for connectivity and `ilagr = 3` exist since the hand-over at a
+  cut-off side, which carries neither the connectivity counts of a crossing nor a depth in double
+  precision.
+- **Search rule of the hand-over by position** (adds to section 6.5): the element is the one a
+  serial search would find, the element containing the point whose global number is nearest to
+  the old element's, the lower one first at equal distance; not the lowest number.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.
