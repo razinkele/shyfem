@@ -105,6 +105,7 @@
         integer, save :: ilagr                  !type of lagrangian simulation
         integer, save :: nbdy                   !total number of particles
         integer, save :: idbdy                  !max id used
+        integer, save :: lgr_step = 0           !time step number (vertex pick)
 	integer, save :: lunit                  !unit for messages
         integer, save :: ipvert                 !vertical release
         integer, save :: linbot                 !bottom layer for vert release

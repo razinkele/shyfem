@@ -279,7 +279,7 @@
 !
 !************************************************************
 
-	subroutine track_xi(id,iel,lb,sv,xi,z,time)
+	subroutine track_xi(id,iel,lb,sv,xi,z,time,ncross)
 
 	use mod_lagrange
 
@@ -292,6 +292,7 @@
 	double precision, intent(inout) :: xi(3)	!natural coordinates in triangle
 	double precision, intent(inout) :: z	!rel vert pos: 0=top, 1=bottom
 	real, intent(inout) :: time
+	integer, intent(in) :: ncross		!element crossings left in time step
 
 	logical bdebug
 	logical bsurf,bbott
@@ -451,7 +452,7 @@
 	if( th == 0. ) then		!body not moving or laying on side
           if (vel > 0.) then
             xi = xie
-            call track_xi_next_element(iel,xi)    !for particles laying on side
+            call track_xi_next_element(iel,xi,id,ncross)    !for particles laying on side
 	    if( .not. track_xi_has_layer(iel,lb) ) then	!just do vert adv
 	      iel = ieorig
 	      xi = xie
@@ -470,7 +471,7 @@
 	else				!body reaches border of element
 	  xi = xie
 	  call track_xi_check('before advection track_xi 2',id,xi)
-	  call track_xi_next_element(iel,xi)
+	  call track_xi_next_element(iel,xi,id,ncross)
 	  call track_xi_check('after advection track_xi 2',id,xi)
 	  if( .not. track_xi_has_layer(iel,lb) ) then	!just do vert adv
 	    iel = ieorig
@@ -564,7 +565,7 @@
 
 !************************************************************
 
-	subroutine track_xi_next_element(ie,xi)
+	subroutine track_xi_next_element(ie,xi,id,ncross)
 
 ! copies internal coordinates to new element - avoid falling on vertex
 
@@ -575,14 +576,18 @@
 
 	integer, intent(inout) :: ie
 	double precision, intent(inout) :: xi(3)
+	integer, intent(in) :: id		!id of particle
+	integer, intent(in) :: ncross		!element crossings left in time step
 
 	logical bdebug
 	integer ii,in,it
 	integer ia1,ia2,ia3
 	integer ib1,ib2,ib3
 	integer ieb
-	double precision r,eps
+	double precision r,eps,u
 	double precision xiaux(3)
+
+	double precision track_xi_vertex_u
 
 	eps = 1.e-5
 	bdebug = blgrdebug
@@ -614,11 +619,8 @@
 	  ia3 = mod(ia2,3) + 1
 	else if( in == 2 ) then	!particle on vertex - must move
 	  if( bdebug ) write(6,*) 'in==2 ',xi
-	  r = 0.
-	  do while( r == 0. )
-	    call random_number(r)
-	    r = eps*(r-0.5)
-	  end do
+	  u = track_xi_vertex_u(id,lgr_step,ncross)	!never 0.5, so r /= 0
+	  r = eps*(u-0.5)
 	  it = 6 - it
 	  if( r < 0. ) then
 	    ia1 = mod(it+1,3) + 1
@@ -697,6 +699,54 @@
 	!---------------------------------------
 	! end of routine
 	!---------------------------------------
+
+	end
+
+!************************************************************
+
+	function track_xi_vertex_u(id,istep,ncross)
+
+! value in (0,1) that picks the side a particle on a vertex moves to
+!
+! This is not a random number, on purpose. It replaces random_number,
+! whose generator was never seeded, so two runs of the same case
+! picked differently. The value depends only on the particle id, the
+! time step number and the crossings the particle has left in this
+! time step: every run and every number of MPI processes makes the
+! same pick, and two vertex events of one particle in one time step
+! get different values, so the particle cannot cycle.
+!
+! Integer arithmetic modulo the prime m = 2**31-1 in integer*8: all
+! products stay below 2**62, so no overflow and no floating point trap.
+! Each step h -> (a*h+k)**5 mod m is one to one in k (gcd(5,m-1) = 1),
+! so different crossing counts give different values.
+! u = (h+1)/(m+2) with 0 <= h < m: 0 < u < 1, and u /= 0.5 since m+2 is odd.
+
+	implicit none
+
+	double precision track_xi_vertex_u
+	integer, intent(in) :: id		!id of particle
+	integer, intent(in) :: istep		!time step number
+	integer, intent(in) :: ncross		!element crossings left in time step
+
+	integer(kind=8), parameter :: m = 2147483647_8	!prime 2**31-1
+	integer(kind=8), parameter :: a = 48271_8	!multiplier
+	integer(kind=8) h,h2,h4
+	integer(kind=8) k(2)
+	integer i
+
+	k(1) = modulo(int(istep,8),m)
+	k(2) = modulo(int(ncross,8),m)
+
+	h = modulo(int(id,8),m)
+	do i=1,2
+	  h = modulo(a*h+k(i),m)	!one to one in k(i)
+	  h2 = modulo(h*h,m)
+	  h4 = modulo(h2*h2,m)
+	  h = modulo(h4*h,m)		!h**5, one to one, mixes the bits
+	end do
+
+	track_xi_vertex_u = dble(h+1) / dble(m+2)
 
 	end
 

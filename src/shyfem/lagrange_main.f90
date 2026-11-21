@@ -328,6 +328,7 @@
 ! transport of particles 
 !---------------------------------------------------------------
 
+	lgr_step = lgr_step + 1		!set here, only read inside drogue
  	call drogue(dtime)
 
 !---------------------------------------------------------------
@@ -687,7 +688,7 @@
 	do while ( ttime > 0 .and. n > 0 )
 	  torig = ttime 		!time do advect
 	  ie_from = iel 		!start element 
-          call track_xi(id,iel,lb,sv,xi,zz,ttime) !advection 
+          call track_xi(id,iel,lb,sv,xi,zz,ttime,n) !advection 
 	  ie_to = iel 			!new element if advection changed element
 
 	  if ( bconnect ) then		!connectivity
