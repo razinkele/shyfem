@@ -12,6 +12,7 @@ import logging
 import math
 import re
 from collections.abc import Sequence
+from pathlib import Path
 from typing import NamedTuple
 
 from shiny import module, reactive, render, ui
@@ -974,6 +975,47 @@ def _current_panel_inputs(
 _STALE_PANELS_MESSAGE = "The physics panels are still updating. Wait a moment, then try again."
 
 
+def _shown_as(path: Path, base: Path | None) -> str:
+    """*path* as the user knows it: relative to the project folder when inside it.
+
+    Two files can share a name (baseline/run.str, scenario/run.str), so
+    the dialog never shows a bare file name.
+    """
+    if base is not None:
+        try:
+            return str(path.relative_to(base))
+        except ValueError:
+            pass
+    return str(path)
+
+
+def _save_into_other_file_modal(
+    shown: Path | None, target: Path, base: Path | None = None
+) -> ui.Tag:
+    """The question Save asks before writing the panels into a file they do not show.
+
+    The picker may show a file the user meant to Load; Save used to write
+    the panels into it without a word, replacing it.
+    """
+    name = _shown_as(target, base)
+    what = (
+        f"the settings of {_shown_as(shown, base)}"
+        if shown is not None
+        else "default settings (no file is loaded)"
+    )
+    action = "replacing it" if target.exists() else "creating it"
+    return ui.modal(
+        ui.p(f"The panels show {what}. Save them into {name}, {action}?"),
+        ui.p(f"To edit {name} instead, cancel and click Load.", class_="text-muted small"),
+        title="Save into another file?",
+        easy_close=True,
+        footer=ui.div(
+            ui.input_action_button("save_other_confirm", f"Save into {name}", class_="btn-warning"),
+            ui.modal_button("Cancel"),
+        ),
+    )
+
+
 def _read_input(inputs, input_id: str, errors: list[str]) -> object:
     """Read one panel input, or _INPUT_ABSENT when it was never rendered.
 
@@ -1297,6 +1339,11 @@ def physics_server(
         )
 
     str_data: reactive.Value[StrFile] = reactive.value(StrFile())
+    # The file the panels show (set by Load and by a Save into a file), and
+    # the target a Save is asking about. Save writes straight away only into
+    # the shown file; any other target needs a yes in a dialog.
+    shown_file: dict[str, Path | None] = {"path": None}
+    pending_target: dict[str, Path | None] = {"path": None}
 
     # A new file stamp for every file state the panels are rendered from
     # (each Load and Save sets a new StrFile), and the latest render of
@@ -1336,6 +1383,7 @@ def physics_server(
             try:
                 parsed = StrParser.parse_file(path)
                 str_data.set(parsed)
+                shown_file["path"] = path
                 ui.notification_show(f"Loaded {path.name}", type="message", duration=3)
             except Exception as e:
                 ui.notification_show(f"Parse error: {e}", type="error")
@@ -1366,6 +1414,18 @@ def physics_server(
             logger.exception("Invalid save path %r for STR file", path_str)
             ui.notification_show(str(e), type="error", duration=6)
             return
+        if path != shown_file["path"]:
+            pending_target["path"] = path
+            try:
+                base = Path(config.confine_path(_proj["work_dir"], _usr, must_exist=True))
+            except (TypeError, KeyError, ValueError, OSError):
+                base = None  # no project: the dialog shows full paths
+            ui.modal_show(_save_into_other_file_modal(shown_file["path"], path, base))
+            return
+        _write_panels_to(path)
+
+    def _write_panels_to(path: Path) -> None:
+        """Collect the panels, validate, and write them into *path*."""
         panel_inputs = panel_inputs_or_warn()
         if panel_inputs is None:
             return
@@ -1412,12 +1472,51 @@ def physics_server(
                     type="message",
                     duration=6,
                 )
+            shown_file["path"] = path
             ui.notification_show(f"Saved to {path}", type="message", duration=3)
         except Exception as e:
             logger.exception("Saving STR file to %s failed", path)
             fields = _unwritable_fields(working) if working is not None else []
             where = f" — check {', '.join(fields)}" if fields else ""
             ui.notification_show(f"Save error: {e}{where}", type="error", duration=10)
+
+    @reactive.effect
+    @reactive.event(input.save_other_confirm)
+    def save_into_other_file():
+        target, pending_target["path"] = pending_target["path"], None
+        ui.modal_remove()
+        if target is None:
+            return
+        # The dialog was opened by an allowed Save; check again in case the
+        # user or the project changed while it was open.
+        _usr = current_user() if current_user is not None else None
+        _proj = active_project.get() if active_project is not None else None
+        _denied = editor_denied_reason(
+            _proj["id"] if _proj is not None else None, _usr, min_role="editor"
+        )
+        if _denied:
+            ui.notification_show(_denied, type="error", duration=6)
+            return
+        # The target was confined when the dialog opened; confine it again
+        # for the user as they are now (same rule as every save handler).
+        try:
+            resolved = config.confine_path(str(target), _usr, for_write=True)
+        except ValueError as e:
+            logger.exception("Invalid save path %r for STR file", target)
+            ui.notification_show(str(e), type="error", duration=6)
+            return
+        if resolved != target:
+            # The confirmed file now resolves elsewhere (e.g. it became a
+            # symlink while the dialog was open): the yes was not for that.
+            logger.warning("Physics save target changed: %s -> %s", target, resolved)
+            ui.notification_show(
+                f"{target.name} now points to another file; nothing was saved. "
+                "Click Save again to confirm the new target.",
+                type="error",
+                duration=8,
+            )
+            return
+        _write_panels_to(resolved)
 
     @reactive.effect
     @reactive.event(input.preview_btn)
