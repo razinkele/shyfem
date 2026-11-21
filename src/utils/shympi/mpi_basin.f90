@@ -1167,6 +1167,7 @@
 	integer nparts
 	integer nnp,nep
 	integer nmin,nmax
+	integer ia,nempty
 	integer ierr
 	integer, allocatable :: area_elem(:)	!N28: was automatic (nel)
 	integer ierr1,ierr2
@@ -1214,6 +1215,29 @@
 	    write(6,*) 'partitiones required: ',nparts
 	    call shympi_abort_internal('error stop handle_partition: domains not compatible')
 	  end if
+	end if
+
+!	-----------------------------------------------------
+!	a domain without nodes cannot run: the mesh is too small for
+!	this many processes. every process holds the same partition,
+!	so all of them stop here, before the statistics are computed
+!	-----------------------------------------------------
+
+	nempty = 0
+	do ia=0,nparts-1
+	  if( count( area_node == ia ) == 0 ) nempty = nempty + 1
+	end do
+	if( nempty > 0 ) then
+	  if( shympi_is_master() ) then
+	    write(6,*) 'the mesh cannot be split into ',nparts,' domains:'
+	    write(6,*) nempty,' of them would have no nodes'
+	    write(6,*) 'the mesh has ',nkn,' nodes and ',nel,' elements'
+	    write(6,*) 'use fewer MPI processes'
+	    flush(6)
+	  end if
+	  call shympi_syncronize		!lets the master finish writing
+	  call shympi_abort_internal('error stop handle_partition: ' &
+     &			// 'too many MPI processes for this mesh')
 	end if
 
 	if( shympi_is_master() ) then
