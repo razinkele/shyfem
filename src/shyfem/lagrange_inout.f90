@@ -429,6 +429,7 @@
 	if( ifrom .eq. ito ) return
 
         lgr_ar(ito) = lgr_ar(ifrom)
+	lgr_ncross(ito) = lgr_ncross(ifrom)	!moves with its particle
 
 	return
 

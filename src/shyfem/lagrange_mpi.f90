@@ -22,8 +22,12 @@
 ! lgr_mpi_flux_sum_2d		sum of partial side fluxes flux2d across ranks
 ! lgr_mpi_flux_sum		common part of the two flux sums
 ! lgr_mpi_mark_export		mark particle for export to remote rank
-! lgr_mpi_pack_particle		serialize particle to double buffer
-! lgr_mpi_unpack_particle	deserialize particle from double buffer
+! lgr_mpi_grow_export		enlarge the export lists
+! lgr_mpi_pack_particle		serialize the whole particle record to a double buffer
+! lgr_mpi_unpack_particle	deserialize the whole particle record
+! lgr_mpi_remove_particle	remove a particle from the array (last one moves up)
+! lgr_mpi_selftest_pack		self-test of record and removal (levdbg >= 3)
+! lgr_mpi_find_elem		local element of a global element, 0 if not held
 ! lgr_mpi_exchange		exchange particles between MPI ranks
 ! lgr_mpi_global_to_local_elem	convert global element to local
 ! lgr_mpi_gather_output		gather particles to rank 0 for output
@@ -39,10 +43,21 @@
 
 	implicit none
 
-	integer, parameter :: lgr_pack_base = 13  !base fields per particle
+	! record of one particle on the wire, double precision values:
+	!  1- 3 actual%xi    4 actual%time   5 actual%z   6 actual%l
+	!       7 actual%ie_global
+	!  8-10 init%xi     11 init%time    12 init%z    13 init%l
+	!      14 init%ie_global
+	! 15 id   16 type   17 sinking
+	! 18,19 bitmap_in (low, high 32 bits)   20,21 bitmap_out (low, high)
+	! 22 number of custom values (must equal ncust)   23.. custom values
+	! the local element numbers ie do not travel (resolved by the receiver)
+	integer, parameter :: lgr_pack_base = 22  !base fields per particle
 	integer, save :: lgr_pack_size = 0        !total fields (base + ncust)
 
 	integer, save :: n_export = 0
+	integer, save :: n_export_grow = 0     !how often the lists were enlarged
+	logical, save :: blgr_dbg = .false.    !levdbg >= 3
 	integer, save, allocatable :: export_dest(:)    !dest rank per export
 	integer, save, allocatable :: export_idx(:)     !particle index per export
 
@@ -61,18 +76,36 @@
 
 	subroutine lgr_mpi_init
 
+! initializes the MPI buffers of the Lagrangian module; needs nbdymax and
+! ncust and the allocated particle array (called after the first
+! particles are read), runs the self-test of the particle record at
+! levdbg >= 3
+!
+! test hook: if the environment variable LGR_TEST_SMALL_EXPORT is set to 1
+! the export lists start with 2 entries instead of max(nbdymax,1024), so
+! that their growth is exercised by a small run
+
 	use shympi
+	use para, only : getpar
 
 	implicit none
 
-	integer :: ierr, ndim
+	integer :: ierr, ndim, ist
+	character(len=16) :: sval
 
 	lgr_pack_size = lgr_pack_base + ncust
 	bmpi_lagr = shympi_is_parallel()
+	blgr_dbg = nint(getpar('levdbg')) >= 3
+
+	call lgr_mpi_selftest_pack		!only at levdbg >= 3
 
 	if( .not. bmpi_lagr ) return
 
 	ndim = max(nbdymax, 1024)
+	call get_environment_variable('LGR_TEST_SMALL_EXPORT',sval,	&
+     &			status=ist)
+	if( ist == 0 .and. trim(sval) == '1' ) ndim = 2
+
 	allocate(export_dest(ndim), stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_init: allocation')
@@ -81,6 +114,7 @@
      &		('lgr_mpi_init: allocation')
 
 	n_export = 0
+	n_export_grow = 0
 
 	end subroutine lgr_mpi_init
 
@@ -538,17 +572,15 @@
 
 	subroutine lgr_mpi_mark_export(i, dest_rank)
 
-! mark particle i for export to dest_rank
+! mark particle i for export to dest_rank; the lists grow when full
 
 	implicit none
 
 	integer, intent(in) :: i, dest_rank
 
 !$OMP CRITICAL (lgr_export)
+	if( n_export + 1 > size(export_idx) ) call lgr_mpi_grow_export
 	n_export = n_export + 1
-	if( n_export > size(export_idx) ) then
-	  call shympi_abort_internal('lgr_mpi_mark_export: overflow')
-	end if
 	export_idx(n_export) = i
 	export_dest(n_export) = dest_rank
 !$OMP END CRITICAL (lgr_export)
@@ -557,30 +589,79 @@
 
 !*******************************************************************
 
+	subroutine lgr_mpi_grow_export
+
+! doubles the size of the export lists (new lists, copy of the n_export
+! entries in use, move_alloc); called inside the critical section
+! lgr_export of lgr_mpi_mark_export
+
+	use shympi, only : my_id
+
+	implicit none
+
+	integer :: ierr, nnew
+	integer, allocatable :: idest(:), iidx(:)
+
+	nnew = 2*max(size(export_idx), 1)
+
+	allocate(idest(nnew), iidx(nnew), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_grow_export: allocation')
+
+	idest(1:n_export) = export_dest(1:n_export)
+	iidx(1:n_export) = export_idx(1:n_export)
+	call move_alloc(idest,export_dest)
+	call move_alloc(iidx,export_idx)
+
+	n_export_grow = n_export_grow + 1
+	if( blgr_dbg ) write(6,*) 'lgr_mpi_grow_export: rank ',my_id,	&
+     &		' new size ',nnew,' growth number ',n_export_grow
+
+	end subroutine lgr_mpi_grow_export
+
+!*******************************************************************
+
 	subroutine lgr_mpi_pack_particle(p, buf)
 
-! serialize one particle into double precision buffer
+! serialize the whole particle record into a double precision buffer
+! (layout: see the top of the module); the 64 bit bitmaps travel as two
+! 32 bit halves each, which a double holds exactly; the number of custom
+! values is ncust, the same for every particle of a run
 
 	implicit none
 
 	type(lagr_entry), intent(in) :: p
-	double precision, intent(out) :: buf(lgr_pack_size)
+	double precision, intent(out) :: buf(lgr_pack_base+ncust)
 
 	integer :: j
 
-	buf(1)  = p%actual%xi(1)
-	buf(2)  = p%actual%xi(2)
-	buf(3)  = p%actual%xi(3)
+	if( allocated(p%custom) ) then
+	  if( size(p%custom) /= ncust ) then
+	    write(6,*) 'lgr_mpi_pack_particle: custom count,ncust: ',	&
+     &		size(p%custom),ncust
+	    call shympi_abort_internal					&
+     &		('lgr_mpi_pack_particle: custom count')
+	  end if
+	end if
+
+	buf(1:3) = p%actual%xi
 	buf(4)  = p%actual%time
 	buf(5)  = dble(p%actual%z)
-	buf(6)  = dble(p%actual%ie_global)
-	buf(7)  = dble(p%actual%l)
-	buf(8)  = dble(p%id)
-	buf(9)  = dble(p%type)
-	buf(10) = p%sinking
-	buf(11) = dble(p%bitmap_in)
-	buf(12) = dble(p%bitmap_out)
-	buf(13) = dble(ncust)
+	buf(6)  = dble(p%actual%l)
+	buf(7)  = dble(p%actual%ie_global)
+	buf(8:10) = p%init%xi
+	buf(11) = p%init%time
+	buf(12) = dble(p%init%z)
+	buf(13) = dble(p%init%l)
+	buf(14) = dble(p%init%ie_global)
+	buf(15) = dble(p%id)
+	buf(16) = dble(p%type)
+	buf(17) = p%sinking
+	buf(18) = dble(iand(p%bitmap_in,4294967295_8))
+	buf(19) = dble(ishft(p%bitmap_in,-32))
+	buf(20) = dble(iand(p%bitmap_out,4294967295_8))
+	buf(21) = dble(ishft(p%bitmap_out,-32))
+	buf(22) = dble(ncust)
 
 	do j = 1, ncust
 	  if( allocated(p%custom) ) then
@@ -596,42 +677,358 @@
 
 	subroutine lgr_mpi_unpack_particle(buf, p)
 
-! deserialize particle from double precision buffer
+! deserialize a particle record from a double precision buffer
+!
+! the local element numbers do not travel: actual%ie is set to 0 (the
+! caller resolves it from actual%ie_global); init%ie is looked up from
+! init%ie_global and is 0 if this process does not hold that element
+! (init%ie is only valid on a process that holds the element, the global
+! number is always kept); aborts if the number of custom values in the
+! record differs from ncust
 
 	implicit none
 
-	double precision, intent(in) :: buf(lgr_pack_size)
+	double precision, intent(in) :: buf(lgr_pack_base+ncust)
 	type(lagr_entry), intent(out) :: p
 
 	integer :: j, nc, ierr
+	integer(kind(p%bitmap_in)) :: lo, hi
 
-	p%actual%xi(1) = buf(1)
-	p%actual%xi(2) = buf(2)
-	p%actual%xi(3) = buf(3)
+	nc = nint(buf(22))
+	if( nc /= ncust ) then
+	  write(6,*) 'lgr_mpi_unpack_particle: custom count in record,'	&
+     &		//' ncust: ',nc,ncust
+	  call shympi_abort_internal					&
+     &		('lgr_mpi_unpack_particle: custom count')
+	end if
+
+	p%actual%xi    = buf(1:3)
 	p%actual%time  = buf(4)
 	p%actual%z     = real(buf(5))
-	p%actual%ie_global = nint(buf(6))
-	p%actual%l     = nint(buf(7))
-	p%id           = nint(buf(8))
-	p%type         = nint(buf(9))
-	p%sinking      = buf(10)
-	p%bitmap_in    = nint(buf(11))
-	p%bitmap_out   = nint(buf(12))
-	nc             = nint(buf(13))
+	p%actual%l     = nint(buf(6))
+	p%actual%ie_global = nint(buf(7))
+	p%actual%ie    = 0		!resolved by caller
 
-	if( .not. allocated(p%custom) ) then
-	  allocate(p%custom(nc), stat=ierr)
-	  if (ierr /= 0) call shympi_abort_internal			&
+	p%init%xi      = buf(8:10)
+	p%init%time    = buf(11)
+	p%init%z       = real(buf(12))
+	p%init%l       = nint(buf(13))
+	p%init%ie_global = nint(buf(14))
+	p%init%ie      = lgr_mpi_find_elem(p%init%ie_global)
+
+	p%id           = nint(buf(15))
+	p%type         = nint(buf(16))
+	p%sinking      = buf(17)
+
+	lo = nint(buf(18),kind(lo))
+	hi = nint(buf(19),kind(hi))
+	p%bitmap_in    = ior(ishft(hi,32),lo)
+	lo = nint(buf(20),kind(lo))
+	hi = nint(buf(21),kind(hi))
+	p%bitmap_out   = ior(ishft(hi,32),lo)
+
+	allocate(p%custom(nc), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_unpack: allocation')
-	end if
 	do j = 1, nc
 	  p%custom(j) = real(buf(lgr_pack_base + j))
 	end do
 
-	p%actual%ie = 0		!resolved by caller
-	p%init = p%actual
-
 	end subroutine lgr_mpi_unpack_particle
+
+!*******************************************************************
+
+	subroutine lgr_mpi_remove_particle(i)
+
+! removes particle i from the particle array: the last entry (nbdy) is
+! moved into slot i with all its fields (also lgr_ncross), nbdy is
+! reduced by one; the custom values of the vacated last slot are freed
+! (insert allocates them again)
+
+	implicit none
+
+	integer, intent(in) :: i
+
+	if( i < 1 .or. i > nbdy ) then
+	  write(6,*) 'lgr_mpi_remove_particle: i,nbdy: ',i,nbdy
+	  call shympi_abort_internal('lgr_mpi_remove_particle: index')
+	end if
+
+	if( i /= nbdy ) then
+	  lgr_ar(i) = lgr_ar(nbdy)
+	  lgr_ncross(i) = lgr_ncross(nbdy)
+	end if
+
+	if( allocated(lgr_ar(nbdy)%custom) ) deallocate(lgr_ar(nbdy)%custom)
+	lgr_ncross(nbdy) = 0
+	nbdy = nbdy - 1
+
+	end subroutine lgr_mpi_remove_particle
+
+!*******************************************************************
+
+	function lgr_mpi_diff_field(a, b)
+
+! first field of the wire record in which a and b differ (0 = none);
+! the numbers are those of lgr_mpi_field_name
+
+	implicit none
+
+	integer :: lgr_mpi_diff_field
+	type(lagr_entry), intent(in) :: a, b
+
+	integer :: j
+
+	lgr_mpi_diff_field = 0
+
+	if( any(a%actual%xi /= b%actual%xi) ) then
+	  lgr_mpi_diff_field = 1
+	else if( a%actual%time /= b%actual%time ) then
+	  lgr_mpi_diff_field = 2
+	else if( a%actual%z /= b%actual%z ) then
+	  lgr_mpi_diff_field = 3
+	else if( a%actual%l /= b%actual%l ) then
+	  lgr_mpi_diff_field = 4
+	else if( a%actual%ie_global /= b%actual%ie_global ) then
+	  lgr_mpi_diff_field = 5
+	else if( any(a%init%xi /= b%init%xi) ) then
+	  lgr_mpi_diff_field = 6
+	else if( a%init%time /= b%init%time ) then
+	  lgr_mpi_diff_field = 7
+	else if( a%init%z /= b%init%z ) then
+	  lgr_mpi_diff_field = 8
+	else if( a%init%l /= b%init%l ) then
+	  lgr_mpi_diff_field = 9
+	else if( a%init%ie_global /= b%init%ie_global ) then
+	  lgr_mpi_diff_field = 10
+	else if( a%id /= b%id ) then
+	  lgr_mpi_diff_field = 11
+	else if( a%type /= b%type ) then
+	  lgr_mpi_diff_field = 12
+	else if( a%sinking /= b%sinking ) then
+	  lgr_mpi_diff_field = 13
+	else if( a%bitmap_in /= b%bitmap_in ) then
+	  lgr_mpi_diff_field = 14
+	else if( a%bitmap_out /= b%bitmap_out ) then
+	  lgr_mpi_diff_field = 15
+	else if( allocated(a%custom) .neqv. allocated(b%custom) ) then
+	  lgr_mpi_diff_field = 16
+	else if( allocated(a%custom) ) then
+	  if( size(a%custom) /= size(b%custom) ) then
+	    lgr_mpi_diff_field = 16
+	  else
+	    do j = 1, size(a%custom)
+	      if( a%custom(j) /= b%custom(j) ) lgr_mpi_diff_field = 16
+	    end do
+	  end if
+	end if
+
+	end function lgr_mpi_diff_field
+
+!*******************************************************************
+
+	subroutine lgr_mpi_selftest_pack
+
+! self-test of the particle record and of lgr_mpi_remove_particle, run once
+! at levdbg >= 3 (called by lgr_mpi_init), on every process
+!
+! a particle with distinct values in every field (a bitmap above 2**32,
+! init%time, init%ie_global, three custom values) is packed and unpacked
+! and every field is compared; then three particles are put behind the
+! nbdy particles present, the first is removed, and the former last one
+! must sit in its slot with all fields and its lgr_ncross value, nbdy one
+! less. Particle array, nbdy and ncust are restored. Rank 0 prints one
+! line when all processes agree; otherwise every process aborts naming the
+! first field that differs. Prints and changes nothing at levdbg < 3.
+
+	use shympi
+	use para, only : getpar
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, parameter :: nfield = 21
+	character(len=24), parameter :: fname(nfield) = (/		&
+     &		'actual%xi               ',				&
+     &		'actual%time             ',				&
+     &		'actual%z                ',				&
+     &		'actual%l                ',				&
+     &		'actual%ie_global        ',				&
+     &		'init%xi                 ',				&
+     &		'init%time               ',				&
+     &		'init%z                  ',				&
+     &		'init%l                  ',				&
+     &		'init%ie_global          ',				&
+     &		'id                      ',				&
+     &		'type                    ',				&
+     &		'sinking                 ',				&
+     &		'bitmap_in               ',				&
+     &		'bitmap_out              ',				&
+     &		'custom                  ',				&
+     &		'actual%ie (must be 0)   ',				&
+     &		'init%ie                 ',				&
+     &		'remove: particle moved  ',				&
+     &		'remove: lgr_ncross      ',				&
+     &		'remove: nbdy            ' /)
+
+	integer :: ierr, ifield, ifmax, ncust_save, npack_save
+	integer :: n0, j
+	double precision, allocatable :: buf(:)
+	type(lagr_entry) :: p, q
+	type(lagr_entry) :: psave(3), pnew(3)
+	integer :: isave(3)
+
+	if( nint(getpar('levdbg')) < 3 ) return
+
+	ifield = 0
+	n0 = nbdy
+	ncust_save = ncust
+	npack_save = lgr_pack_size
+	ncust = 3
+	lgr_pack_size = lgr_pack_base + ncust
+
+	allocate(buf(lgr_pack_size), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_selftest_pack: allocation')
+
+	!-----------------------------------------------
+	! pack and unpack
+	!-----------------------------------------------
+
+	call lgr_mpi_selftest_fill(p,1)
+	call lgr_mpi_pack_particle(p,buf)
+	call lgr_mpi_unpack_particle(buf,q)
+
+	ifield = lgr_mpi_diff_field(p,q)
+	if( ifield == 0 .and. q%actual%ie /= 0 ) ifield = 17
+	if( ifield == 0 .and.						&
+     &		q%init%ie /= lgr_mpi_find_elem(p%init%ie_global) ) then
+	  ifield = 18
+	end if
+
+	!-----------------------------------------------
+	! removal of a particle (behind the n0 present ones)
+	!-----------------------------------------------
+
+	if( ifield == 0 ) then
+	  if( n0 + 3 > size(lgr_ar) ) call mod_lagrange_handle_alloc(n0+3)
+	  do j = 1, 3
+	    psave(j) = lgr_ar(n0+j)
+	    isave(j) = lgr_ncross(n0+j)
+	    call lgr_mpi_selftest_fill(pnew(j),j)
+	    lgr_ar(n0+j) = pnew(j)
+	    lgr_ncross(n0+j) = 10*j
+	  end do
+	  nbdy = n0 + 3
+	  call lgr_mpi_remove_particle(n0+1)
+	  if( nbdy /= n0 + 2 ) then
+	    ifield = 21
+	  else if( lgr_mpi_diff_field(lgr_ar(n0+1),pnew(3)) /= 0 ) then
+	    ifield = 19
+	  else if( lgr_ar(n0+1)%actual%ie /= pnew(3)%actual%ie		&
+     &		.or. lgr_ar(n0+1)%init%ie /= pnew(3)%init%ie ) then
+	    ifield = 19
+	  else if( lgr_ncross(n0+1) /= 30 ) then
+	    ifield = 20
+	  end if
+	  nbdy = n0
+	  do j = 1, 3
+	    lgr_ar(n0+j) = psave(j)
+	    lgr_ncross(n0+j) = isave(j)
+	  end do
+	end if
+
+	ncust = ncust_save
+	lgr_pack_size = npack_save
+	deallocate(buf)
+
+	!-----------------------------------------------
+	! all processes agree
+	!-----------------------------------------------
+
+	call MPI_Allreduce(ifield,ifmax,1,MPI_INTEGER,MPI_MAX,		&
+     &			MPI_COMM_WORLD,ierr)
+
+	if( ifmax > 0 ) then
+	  if( ifield > 0 ) then
+	    write(6,*) 'lgr pack self-test: rank ',my_id,		&
+     &		' differs in ',trim(fname(ifield))
+	  end if
+	  call shympi_abort_internal('lgr pack self-test failed in '	&
+     &		//trim(fname(ifmax)))
+	end if
+
+	if( my_id == 0 ) write(6,*) 'lgr pack self-test: ok'
+
+	end subroutine lgr_mpi_selftest_pack
+
+!*******************************************************************
+
+	subroutine lgr_mpi_selftest_fill(p, k)
+
+! test particle number k (1..3) with distinct values in every field,
+! three custom values (the caller has set ncust = 3)
+
+	implicit none
+
+	type(lagr_entry), intent(out) :: p
+	integer, intent(in) :: k
+
+	integer :: ierr
+
+	p%actual%xi = (/ 0.125d0*k, 0.3d0, 1.d0 - 0.125d0*k - 0.3d0 /)
+	p%actual%time = 456.25d0 + k
+	p%actual%z = 0.37 + 0.01*k
+	p%actual%ie = 5 + k
+	p%actual%ie_global = 1234 + k
+	p%actual%l = 3 + k
+	p%init%xi = (/ 0.2d0, 0.25d0*k, 0.75d0 - 0.25d0*k /)
+	p%init%time = 123.d0 + k - 1
+	p%init%z = 0.11 + 0.01*k
+	p%init%ie = 2 + k
+	p%init%ie_global = 77 + k - 1
+	p%init%l = 2 + k
+	p%id = 987654 + k
+	p%type = 3 + k
+	p%sinking = -1.5d-3*k
+	p%bitmap_in = 2_8**40 + 5 + k - 1
+	p%bitmap_out = ior(ishft(1_8,63),int(9*k,8))	!sign bit set
+	allocate(p%custom(3), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_selftest_fill: allocation')
+	p%custom = (/ 0.5*k, -2.25, 1.0e6 + k /)
+
+	end subroutine lgr_mpi_selftest_fill
+
+!*******************************************************************
+
+	function lgr_mpi_find_elem(ie_global)
+
+! local element number of global element ie_global, 0 if this process does
+! not hold it (or ie_global <= 0); silent, unlike lgr_mpi_global_to_local_elem
+
+	use shympi, only : ip_int_elem
+	use basin, only : nel
+
+	implicit none
+
+	integer :: lgr_mpi_find_elem
+	integer, intent(in) :: ie_global
+
+	integer :: ie
+
+	lgr_mpi_find_elem = 0
+	if( ie_global <= 0 ) return
+
+	do ie = 1, nel
+	  if( ip_int_elem(ie) == ie_global ) then
+	    lgr_mpi_find_elem = ie
+	    return
+	  end if
+	end do
+
+	end function lgr_mpi_find_elem
 
 !*******************************************************************
 
@@ -667,6 +1064,8 @@
 	myrank = my_id
 
 	if( nproc <= 1 ) return
+
+	lgr_pack_size = lgr_pack_base + ncust
 
 	allocate(send_counts(0:nproc-1), stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal('lgr_mpi_exchange: alloc')
@@ -840,6 +1239,7 @@
 	end if
 
 	nbdy_local = nbdy
+	lgr_pack_size = lgr_pack_base + ncust
 
 	allocate(all_counts(0:nproc-1), stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')

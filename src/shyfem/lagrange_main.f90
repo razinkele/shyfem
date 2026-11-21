@@ -190,7 +190,6 @@
           if( icall .eq. -1 ) return
 	  icall = 1
 
-          call lgr_mpi_init
           call lgr_mpi_topology_init
 
           call get_first_dtime(dtanf)
@@ -254,6 +253,12 @@
 !         ------------------------------------------------------
 
 	  call lgr_input_shell
+
+!         ------------------------------------------------------
+!	  MPI buffers (needs nbdymax, ncust and the allocated array)
+!         ------------------------------------------------------
+
+	  call lgr_mpi_init
 
 !         ------------------------------------------------------
 !	  open output file and write ncust
