@@ -3,6 +3,7 @@
 
 usage: lgr_compare.py A.lgr.shy B.lgr.shy --mode {pos|ids} [--tol FLOAT]
                       [--same-counts] [--nel N --nlv N]
+       lgr_compare.py FILE.lgr.shy --summary
 
 Exit status: 0 = files agree, 1 = they differ, 2 = a file cannot be read.
 
@@ -188,6 +189,21 @@ def check_ranges(label, parts, nel, nlv):
     return msgs
 
 
+def summary(path):
+    """Print output-time count and, for first and last time, block counts."""
+    _ncust, times = read_file(path)
+    print("output times: %d" % len(times))
+    for label, idx in (("first", 0), ("last", -1)):
+        if not times:
+            break
+        dtime, blocks, _dups = times[idx]
+        counts = " ".join("%s=%d" % (BLOCK_NAME[w], len(blocks[w])) for w in IWHAT_ORDER)
+        ids = blocks[0]
+        span = "active ids %d..%d" % (min(ids), max(ids)) if ids else "no active ids"
+        print("%s output t=%r: %s; %s" % (label, dtime, counts, span))
+    return 0
+
+
 def run(args):
     ncust_a, times_a = read_file(args.a)
     ncust_b, times_b = read_file(args.b)
@@ -253,8 +269,10 @@ def run(args):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("a", help="first .lgr.shy file (A)")
-    ap.add_argument("b", help="second .lgr.shy file (B)")
-    ap.add_argument("--mode", choices=("pos", "ids"), required=True)
+    ap.add_argument("b", nargs="?", help="second .lgr.shy file (B)")
+    ap.add_argument("--mode", choices=("pos", "ids"))
+    ap.add_argument("--summary", action="store_true",
+                    help="print counts of the single file A and exit")
     ap.add_argument("--tol", type=float, default=0.0,
                     help="position tolerance for --mode pos (default 0)")
     ap.add_argument("--same-counts", action="store_true",
@@ -262,7 +280,11 @@ def main():
     ap.add_argument("--nel", type=int, help="--mode ids: check 1 <= ie <= nel")
     ap.add_argument("--nlv", type=int, help="--mode ids: check 1 <= lb <= nlv")
     args = ap.parse_args()
+    if not args.summary and (args.b is None or args.mode is None):
+        ap.error("B and --mode are required unless --summary is given")
     try:
+        if args.summary:
+            return summary(args.a)
         return run(args)
     except (FormatError, OSError) as exc:
         print("cannot read file: %s" % exc, file=sys.stderr)
