@@ -155,3 +155,29 @@ jobs:
           cd testcases/examples/mar_menor
           make init
           mpirun --oversubscribe -np 2 shyfem mm_hyd_00.str
+
+      - name: MPI gate (4 processes)
+        # A run that ends on several processes is not yet a correct run.
+        # check_mpi.sh compares a 4-process run with the serial one
+        # (energy lines), checks that a serial-only feature (boundary
+        # tilting) stops with its clear message, and writes and reads a
+        # restart on 4 processes. The 4-process sweep of 2026-11-21 found
+        # every one of these classes only by accident, because nothing
+        # here ran a case other than mm_hyd_00.
+        run: |
+          export PATH="/usr/bin:$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/mar_menor
+          bash check_mpi.sh 4
+
+      - name: MPI 3D run (Venice smoke, 4 processes)
+        # The only shipped case on the 3D baroclinic + GOTM + wet/dry +
+        # heat path. Its results differ from serial on tidal-flat nodes
+        # (wet/dry timing), so this step only checks that it ends.
+        run: |
+          export PATH="/usr/bin:$GITHUB_WORKSPACE/bin:$PATH"
+          cd testcases/examples/venice_lagoon
+          shypre -silent GRID/venlag62.grd
+          mpirun --oversubscribe -np 4 shyfem venlag_smoke.str > venlag_smoke.mpi.log 2>&1 \
+            || { tail -30 venlag_smoke.mpi.log; exit 1; }
+          grep -q "simulation end" venlag_smoke.mpi.log \
+            || { tail -30 venlag_smoke.mpi.log; echo "venlag_smoke did not end on 4 processes"; exit 1; }
