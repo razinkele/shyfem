@@ -154,9 +154,25 @@ summary() { python3 "$HERE/lgr_compare.py" "$1" --summary 2>&1 | sed 's/^/    /'
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
   nlost() { grep -c 'loosing particle adv' "$1"; }
+  PERTURB_VALUE=85
+  # value of MALLOC_PERTURB_ a process launched by mpirun sees, in brackets;
+  # stderr is kept out of the value; $1 = plain | perturbed
+  probe() {
+    if [ "$1" = plain ]; then
+      env -u MALLOC_PERTURB_ nice -n 19 mpirun --oversubscribe -np 1 sh -c 'echo "[${MALLOC_PERTURB_-}]"' 2> /dev/null
+    else
+      MALLOC_PERTURB_=$PERTURB_VALUE nice -n 19 mpirun --oversubscribe -np 1 -x MALLOC_PERTURB_ sh -c 'echo "[${MALLOC_PERTURB_-}]"' 2> /dev/null
+    fi
+  }
   echo "=== 1. $CASE on $NP processes, plain"
+  seen="$(probe plain)"; probe_rc=$?
+  echo "  MALLOC_PERTURB_ seen by a launched process (plain run): $seen"
+  if [ "$probe_rc" != 0 ] || [ "$seen" != "[]" ]; then
+    fail "the plain run would not be unperturbed (probe exit code $probe_rc, seen '$seen', expected '[]')"
+    echo "LGR GATE: FAIL"; exit 1
+  fi
   clean_outputs_mpi
-  nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$STR" > "$HERE/$CASE.np$NP.log" 2>&1
+  env -u MALLOC_PERTURB_ nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$STR" > "$HERE/$CASE.np$NP.log" 2>&1
   mpi_rc=$?
   if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; then
     tail -5 "$HERE/$CASE.np$NP.log"
@@ -167,14 +183,14 @@ if [ "$MODE" = perturb ]; then
   echo "  plain run ended"
 
   echo "=== 2. $CASE on $NP processes, MALLOC_PERTURB_=85"
-  seen="$(MALLOC_PERTURB_=85 mpirun --oversubscribe -np 1 -x MALLOC_PERTURB_ printenv MALLOC_PERTURB_ 2>&1 | tr -d '[:space:]')"
-  echo "  MALLOC_PERTURB_ seen by a launched process: '$seen'"
-  if [ -z "$seen" ]; then
-    fail "MALLOC_PERTURB_ does not reach the processes started by mpirun"
+  seen="$(probe perturbed)"; probe_rc=$?
+  echo "  MALLOC_PERTURB_ seen by a launched process (perturbed run): $seen"
+  if [ "$probe_rc" != 0 ] || [ "$seen" != "[$PERTURB_VALUE]" ]; then
+    fail "MALLOC_PERTURB_ does not reach the processes started by mpirun (probe exit code $probe_rc, seen '$seen', expected '[$PERTURB_VALUE]')"
     echo "LGR GATE: FAIL"; exit 1
   fi
   clean_outputs_mpi
-  MALLOC_PERTURB_=85 nice -n 19 mpirun --oversubscribe -np "$NP" -x MALLOC_PERTURB_ shyfem "$STR" \
+  MALLOC_PERTURB_=$PERTURB_VALUE nice -n 19 mpirun --oversubscribe -np "$NP" -x MALLOC_PERTURB_ shyfem "$STR" \
       > "$HERE/$CASE.np$NP.perturb.log" 2>&1
   mpi_rc=$?
   if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.perturb.log"; then
