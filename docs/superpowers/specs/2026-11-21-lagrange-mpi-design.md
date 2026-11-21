@@ -408,6 +408,27 @@ Made in this document, open to change:
    The alternative, merging each stage into main with temporary start-up stops, was offered and
    not chosen. Until the final merge, MPI particle runs on main crash as they do today.
 
+## 10a. Amendments during execution (2026-11-21, decided by the owner)
+
+Found while running the first task with the reference binary:
+
+- **Vertex pick.** Two serial runs of the Stokes-drift case and of the 3D case differ, because a
+  particle that lands exactly on a vertex picks its next element with an unseeded random number.
+  With that draw fixed both are byte-identical. Decision: the pick becomes a function of the
+  particle id, the time-step number and the particle's remaining crossing count. This replaces
+  the last paragraph of section 6.10. Serial results change for such particles, which were random.
+- **3D.** `ilagr = 3` crashes in a serial run of the 3D test case (#231), and the 3D base with an
+  open boundary differs between serial and MPI in its hydrodynamics (#230; a closed 3D basin
+  agrees to 8e-6). Decision: case C is a closed 3D basin with layer tracking (`ilagr = 2`); there
+  is no case F; `ilagr = 3` joins the options that stop under MPI (section 6.9); AC4 and AC5 apply
+  to case D only.
+- **Serial guard.** The reference binary for AC6 is the build of the commit that makes the
+  vertex pick deterministic; before that commit only cases A and B are reproducible.
+- **Reaching the gates.** The two crash fixes (no call of the old gather on several processes;
+  the `ie <= 0` return before the coordinate lookup) are made in Stage 1, so that MPI runs reach
+  the debug dump the gates of Stages 2 to 4 read. MPI runs write no particle records until the
+  output stage.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.
