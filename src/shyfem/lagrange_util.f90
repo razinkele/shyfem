@@ -143,9 +143,16 @@
 ! Intersect coordinate with sides of element. Only called when
 ! find_elem_from_old return ie=0. Return new coordinates
 ! on the element side and if is an open boundary set ie=-ie
-! (sides from the side table lgr_ieltv: a cut-off side to another MPI
-! process, lgr_ieltv <= -1000, is treated like an open boundary, so the
-! particle leaves this process's domain with ie=-ie)
+! (sides from the side table lgr_ieltv: only an open boundary,
+! -999 <= lgr_ieltv <= -1, lets the particle leave; a cut-off side to
+! another MPI process, lgr_ieltv <= -1000, is treated like a side with a
+! neighbour: the particle stays on the side with ie unchanged, because in
+! a serial run that side has a neighbour element)
+! The sides tested are those of element ie: side ii is the side opposite
+! vertex ii, between the nodes nen3v(i1,ie) and nen3v(i2,ie) with
+! i1 = mod(ii,3)+1, i2 = mod(i1,3)+1, and lgr_ieltv(ii,ie) is its entry
+! in the side table, as in track_xi_next_element (issue #223: the nodes
+! 1, 2, 3 of the mesh were used instead of those of element ie)
 
         subroutine particle_on_side(ie,xo,yo,xn,yn)
 
@@ -158,7 +165,7 @@
         real, intent(in)        :: xo,yo        !original coordinates
         real, intent(inout)     :: xn,yn        !new coordinates
 
-        integer                 :: ii,i1,i2
+        integer                 :: ii,i1,i2,k1,k2
         real                    :: x1,y1,x2,y2
         real                    :: xi,yi
 
@@ -168,10 +175,12 @@
         do ii=1,3
           i1 = mod(ii,3) + 1
           i2 = mod(i1,3) + 1
-          x1 = xgv(i1)
-          y1 = ygv(i1)
-          x2 = xgv(i2)
-          y2 = ygv(i2)
+          k1 = nen3v(i1,ie)
+          k2 = nen3v(i2,ie)
+          x1 = xgv(k1)
+          y1 = ygv(k1)
+          x2 = xgv(k2)
+          y2 = ygv(k2)
 
           iint = segsegint(xo,yo,xn,yn,x1,y1,x2,y2,xi,yi)
 
@@ -179,12 +188,16 @@
             if( lgr_ieltv(ii,ie) == 0 ) then    !material boundary
               xn = xi
               yn = yi
-            else if ( lgr_ieltv(ii,ie) < 0 ) then !open or cut-off side
+            else if ( lgr_ieltv(ii,ie) < 0 .and.			&
+     &			lgr_ieltv(ii,ie) > -1000 ) then !open boundary
               ie = -ie                          !particle exits
               xn = xi
               yn = yi
             else
               !crossing more than 1 element. Stay on the side
+              !(also at a cut-off side, lgr_ieltv <= -1000: in a serial
+              !run that side has a neighbour element and this branch runs
+              !there, so the particle must not leave the domain here)
               xn = xi
               yn = yi
             end if

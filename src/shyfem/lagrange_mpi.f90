@@ -35,6 +35,7 @@
 ! lgr_mpi_remove_particle	remove a particle from the array (last one moves up)
 ! lgr_mpi_remove_list		remove several particles (highest slot first)
 ! lgr_mpi_selftest_pack		self-test of record and removal (levdbg >= 3)
+! lgr_mpi_selftest_side		self-test of particle_on_side (levdbg >= 3)
 ! lgr_mpi_find_elem		local element of a global element, 0 if not held
 ! lgr_mpi_find_node		local node of a global node, 0 if not held
 ! lgr_mpi_handover		hand-over of the marked particles, in rounds
@@ -190,8 +191,8 @@
 
 ! initializes the MPI buffers of the Lagrangian module; needs nbdymax and
 ! ncust and the allocated particle array (called after the first
-! particles are read), runs the self-test of the particle record at
-! levdbg >= 3
+! particles are read), runs the self-tests of the particle record and of
+! the side fallback particle_on_side at levdbg >= 3
 !
 ! test hook: if the environment variable LGR_TEST_SMALL_EXPORT is set to 1
 ! the lists of marks start with 2 entries instead of max(nbdymax,1024),
@@ -210,6 +211,7 @@
 	blgr_dbg = nint(getpar('levdbg')) >= 3
 
 	call lgr_mpi_selftest_pack		!only at levdbg >= 3
+	call lgr_mpi_selftest_side		!only at levdbg >= 3
 
 	if( .not. bmpi_lagr ) return
 
@@ -2124,6 +2126,169 @@
 	p%custom = (/ 0.5*k, -2.25, 1.0e6 + k /)
 
 	end subroutine lgr_mpi_selftest_fill
+
+!*******************************************************************
+
+	subroutine lgr_mpi_selftest_side
+
+! self-test of particle_on_side (lagrange_util.f90), the fallback of the
+! diffusion and Stokes drift steps when no element contains the new
+! position, run once at levdbg >= 3 (called by lgr_mpi_init), on every
+! process
+!
+! The test elements are chosen at run time among the elements a process
+! holds: the first one, and the first one with a side of each kind of the
+! side table lgr_ieltv (local neighbour, wall, open boundary, cut-off
+! side) where the process has one. For each test element and each side ii
+! (the side opposite vertex ii) a move from the centre of the element to
+! the point twice as far away as the middle of the side must stop at the
+! middle of the side, with ie unchanged at a neighbour, a wall or a
+! cut-off side (lgr_ieltv <= -1000, treated like a side with a neighbour)
+! and ie = -ie at an open boundary (-999 <= lgr_ieltv <= -1). A move
+! from the centre half way to vertex 1 stays inside and must change
+! nothing. A wall, a neighbour and a cut-off side give the same result,
+! so the kind is told apart only where the process has an open boundary
+! side; a cut-off side is checked to keep ie wherever the process has
+! one (several processes). Moves of zero length are not tested. The
+! limit for the position is 1% of the length of the move to the side
+! plus 8 spacings of the coordinates.
+! particle_on_side changes only its arguments: the test leaves no trace.
+! Rank 0 prints one line when all processes agree; otherwise every
+! process aborts naming the first check that failed. Prints and changes
+! nothing at levdbg < 3.
+
+	use shympi
+	use basin, only : nel, nen3v, xgv, ygv
+	use para, only : getpar
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, parameter :: ncheck = 3
+	character(len=40), parameter :: cname(ncheck) = (/		&
+     &		'move through a side: not at its middle  ',		&
+     &		'move through a side: wrong kind (ie)    ',		&
+     &		'move inside the element: changed        ' /)
+
+	integer, parameter :: ntest = 5		!first element, four kinds
+	integer :: ietest(ntest)
+	integer :: ierr, ifail, ifmax, j, ie, ii, i1, i2, k, iv
+	integer :: iet, ieexp
+	real :: xc(3), yc(3)
+	real :: xm, ym, xs, ys, xn, yn, xn0, yn0, tol
+
+	if( nint(getpar('levdbg')) < 3 ) return
+
+	!-----------------------------------------------
+	! test elements: the first one, the first with a side of each kind
+	!-----------------------------------------------
+
+	ietest = 0
+	if( nel >= 1 ) ietest(1) = 1
+	do ie = 1, nel
+	  do ii = 1, 3
+	    iv = lgr_ieltv(ii,ie)
+	    if( iv > 0 ) then
+	      k = 2			!local neighbour
+	    else if( iv == 0 ) then
+	      k = 3			!wall
+	    else if( iv > -1000 ) then
+	      k = 4			!open boundary
+	    else
+	      k = 5			!cut-off side
+	    end if
+	    if( ietest(k) == 0 ) ietest(k) = ie
+	  end do
+	end do
+
+	!-----------------------------------------------
+	! a move through each side, and one that stays inside
+	!-----------------------------------------------
+
+	ifail = 0
+	ii = 0
+	ie = 0
+
+	do j = 1, ntest
+	  ie = ietest(j)
+	  if( ie == 0 ) cycle
+	  if( any( ietest(1:j-1) == ie ) ) cycle	!tested already
+	  do ii = 1, 3
+	    xc(ii) = xgv(nen3v(ii,ie))
+	    yc(ii) = ygv(nen3v(ii,ie))
+	  end do
+	  xm = (xc(1) + xc(2) + xc(3)) / 3.	!centre of the element
+	  ym = (yc(1) + yc(2) + yc(3)) / 3.
+	  do ii = 1, 3
+	    i1 = mod(ii,3) + 1			!end nodes of side ii
+	    i2 = mod(i1,3) + 1
+	    xs = 0.5 * (xc(i1) + xc(i2))	!middle of the side
+	    ys = 0.5 * (yc(i1) + yc(i2))
+	    xn0 = 2.*xs - xm			!beyond the side
+	    yn0 = 2.*ys - ym
+	    xn = xn0
+	    yn = yn0
+	    iet = ie
+	    call particle_on_side(iet,xm,ym,xn,yn)
+	    ieexp = ie				!neighbour, wall, cut-off side
+	    if( lgr_ieltv(ii,ie) < 0 .and. lgr_ieltv(ii,ie) > -1000 ) then
+	      ieexp = -ie			!open boundary: particle leaves
+	    end if
+	    tol = 0.01 * sqrt( (xs-xm)**2 + (ys-ym)**2 )		&
+     &		+ 8. * spacing( max(abs(xm),abs(ym),abs(xn0),abs(yn0)) )
+	    if( abs(xn-xs) > tol .or. abs(yn-ys) > tol ) then
+	      ifail = 1
+	    else if( iet /= ieexp ) then
+	      ifail = 2
+	    end if
+	    if( ifail /= 0 ) exit
+	  end do
+	  if( ifail == 0 ) then			!half way to vertex 1
+	    ii = 0
+	    xn0 = 0.5 * (xm + xc(1))
+	    yn0 = 0.5 * (ym + yc(1))
+	    xs = xn0
+	    ys = yn0
+	    xn = xn0
+	    yn = yn0
+	    iet = ie
+	    ieexp = ie
+	    call particle_on_side(iet,xm,ym,xn,yn)
+	    if( xn /= xn0 .or. yn /= yn0 .or. iet /= ie ) ifail = 3
+	  end if
+	  if( ifail /= 0 ) exit
+	end do
+
+	if( ifail /= 0 ) then
+	  write(6,*) 'lgr side fallback self-test: rank ',my_id,	&
+     &		' failed: ',trim(cname(ifail))
+	  write(6,*) '  element (local, global), side: ',		&
+     &		ie,ip_int_elem(ie),ii
+	  if( ii > 0 ) write(6,*) '  lgr_ieltv of the side: ',	&
+     &		lgr_ieltv(ii,ie)
+	  write(6,*) '  corners x: ',xc
+	  write(6,*) '  corners y: ',yc
+	  write(6,*) '  move from: ',xm,ym,' to: ',xn0,yn0
+	  write(6,*) '  expected:  ',xs,ys,ieexp
+	  write(6,*) '  returned:  ',xn,yn,iet
+	end if
+
+	!-----------------------------------------------
+	! all processes agree
+	!-----------------------------------------------
+
+	call MPI_Allreduce(ifail,ifmax,1,MPI_INTEGER,MPI_MAX,		&
+     &			MPI_COMM_WORLD,ierr)
+
+	if( ifmax > 0 ) then
+	  call shympi_abort_internal('lgr side fallback self-test'	&
+     &		//' failed: '//trim(cname(ifmax)))
+	end if
+
+	if( my_id == 0 ) write(6,*) 'lgr side fallback self-test: ok'
+
+	end subroutine lgr_mpi_selftest_side
 
 !*******************************************************************
 
