@@ -18,6 +18,11 @@
 !
 ! lgr_mpi_init			initialize MPI buffers
 ! lgr_mpi_topology_init	lists of elements shared with other ranks
+! lgr_mpi_side_table		side table of the tracker (lgr_ieltv, lgr_side_lmax)
+! lgr_mpi_side_record		first error of the side table on this rank
+! lgr_mpi_side_fail		collective: abort if a rank found an error
+! lgr_mpi_node_elems		node to element lists of a mesh
+! lgr_mpi_side_other		elements other than a given one at a side
 ! lgr_mpi_flux_sum_3d		sum of partial side fluxes flux3d across ranks
 ! lgr_mpi_flux_sum_2d		sum of partial side fluxes flux2d across ranks
 ! lgr_mpi_flux_sum		common part of the two flux sums
@@ -73,6 +78,15 @@
 	integer, save, allocatable :: lgr_share_ptr(:)     !(0:nproc)
 	integer, save, allocatable :: lgr_share_elem(:)    !local element numbers
 
+	! side table of the tracker (lgr_mpi_side_table), in every run; read
+	! only after start-up. lgr_ieltv(ii,ie): > 0 local neighbour, 0 wall,
+	! -1 ... -999 open boundary, <= -1000 cut-off side with destination
+	! rank -lgr_ieltv-1000 (equal to ieltv in a serial run).
+	! lgr_side_lmax(ii,ie): layers (ilhv) of the element across a cut-off
+	! side, 0 for every other side
+	integer, save, allocatable :: lgr_ieltv(:,:)       !(3,nel)
+	integer, save, allocatable :: lgr_side_lmax(:,:)   !(3,nel)
+
 	contains
 
 !*******************************************************************
@@ -125,8 +139,10 @@
 
 	subroutine lgr_mpi_topology_init
 
-! builds, for every other rank r, the list of local elements shared with r
-! (r is among id_elem(1:id_elem(0,ie),ie)), sorted by ip_int_elem
+! builds the side table of the tracker (lgr_mpi_side_table, in every run,
+! serial too) and, for every other rank r, the list of local elements
+! shared with r (r is among id_elem(1:id_elem(0,ie),ie)), sorted by
+! ip_int_elem
 !
 ! at levdbg >= 3 the lists are checked: the length and the sum of
 ! ip_int_elem of the list of q for r must equal those of r for q
@@ -147,6 +163,8 @@
 	integer(kind=8), allocatable :: csum(:), csall(:,:)
 
 	nproc = n_threads
+
+	call lgr_mpi_side_table
 
 	if( nproc <= 1 ) return
 
@@ -301,6 +319,675 @@
 	deallocate(csum,nall,csall)
 
 	end subroutine lgr_mpi_topology_init
+
+!*******************************************************************
+
+	subroutine lgr_mpi_side_table
+
+! side table of the tracker: lgr_ieltv(3,nel) and lgr_side_lmax(3,nel)
+! (meaning: see the module data); called by lgr_mpi_topology_init in
+! every run, before the first particle step
+!
+! serial run: lgr_ieltv = ieltv and lgr_side_lmax = 0
+!
+! several processes: lgr_ieltv starts from ieltv. A wall side (ieltv = 0)
+! whose two end nodes are in another element of the global mesh
+! (nen3v_global) is a cut-off side that set_geom_mpi left unmarked (it
+! does not mark a side between two basin boundary nodes); it is set to
+! -1000 - r, r the owner of one of its end nodes (the lower rank if the
+! two end nodes have different owners). Marks <= -1000 are kept. Open
+! boundary sides (-1 ... -999) are kept as they are: update_ielt sets -1
+! on every side between two open boundary nodes, in a serial run too.
+!
+! Every cut-off side is checked from both sides: the rank r it names gets
+! the global numbers of the two end nodes and of the element on this
+! side, and answers with the global number and the layers (ilhv) of its
+! local element that has both nodes and is not that element. The answer
+! must be the element across the side in the global mesh, or rank 0
+! writes the side and every rank aborts; lgr_side_lmax takes the layers.
+! Every rank takes part in every collective call once, whatever the
+! number of its cut-off sides (zero included): the pairs that exchange
+! messages are known from an exchange of counts, empty pairs are skipped
+! on both sides.
+!
+! at levdbg >= 3 rank 0 writes the global totals (a cut-off side counted
+! once per rank that has it)
+
+	use shympi
+	use basin, only : nkn, nel, nen3v
+	use levels, only : ilhv
+	use mod_geom, only : ieltv, iboundv
+	use para, only : getpar
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, parameter :: itagq = 21704	!message tag of the queries
+	integer, parameter :: itaga = 21705	!message tag of the answers
+	integer, parameter :: nfo = 13		!length of an error record
+
+	integer :: nproc, ierr, ie, ii, iv, j, jj, r, n, nget, k
+	integer :: k1, k2, kg1, kg2, ieg, ieo, nf, iex, o1, o2
+	integer :: ga, la, ncut, nqtot, nrtot, nreq, nrecv
+	integer :: lmin, lmax, lming, lmaxg
+	integer :: ival(6), ivalg(6)
+	integer :: info(nfo)
+	integer :: nq(0:n_threads-1), nr(0:n_threads-1)
+	integer :: qoff(0:n_threads), roff(0:n_threads)
+	integer :: ifill(0:n_threads-1)
+	integer :: ireq(2*n_threads)
+	integer :: istat(MPI_STATUS_SIZE,2*n_threads)
+	integer(kind=8) :: hash, hmin, hmax
+	double precision :: t0, dt, dtmax
+	integer, allocatable :: igptr(:), iglist(:)	!global node -> elems
+	integer, allocatable :: ilptr(:), illist(:)	!local node -> elems
+	integer, allocatable :: kgl(:)		!global node -> local, 0 if none
+	integer, allocatable :: kel(:)		!global elem -> local, 0 if none
+	integer, allocatable :: cie(:), cii(:)	!cut-off sides: element, side
+	integer, allocatable :: cdest(:), cgx(:) !destination, element across
+	integer, allocatable :: iord(:)		!cut-off side of each query
+	integer, allocatable :: sbuf(:), rbuf(:), abuf(:), qans(:)
+
+	! ival: 1 cut-off sides, 2 added, 3 added between two boundary
+	! nodes, 4 open boundary sides with an element across not held
+	! here, 5 sides looked up, 6 cut-off sides with a shallower neighbour
+
+	nproc = n_threads
+
+	!-----------------------------------------------
+	! every run: copy of ieltv
+	!-----------------------------------------------
+
+	if( allocated(lgr_ieltv) ) deallocate(lgr_ieltv)
+	if( allocated(lgr_side_lmax) ) deallocate(lgr_side_lmax)
+	allocate(lgr_ieltv(3,nel), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+	allocate(lgr_side_lmax(3,nel), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+
+	lgr_ieltv = ieltv
+	lgr_side_lmax = 0
+
+	if( nproc <= 1 ) return
+
+	t0 = MPI_Wtime()
+	info = 0
+	ival = 0
+
+	!-----------------------------------------------
+	! nen3v_global: present, the same on every rank (hash of the whole
+	! array), and equal to the local elements, vertex by vertex
+	!-----------------------------------------------
+
+	hash = -1
+	if( allocated(nen3v_global) ) then
+	  if( size(nen3v_global,1) == 3 .and.				&
+     &		size(nen3v_global,2) == nel_global ) then
+	    hash = 0
+	    do ie = 1, nel_global
+	      do ii = 1, 3
+	        hash = modulo(hash*48271_8 + int(nen3v_global(ii,ie),8)	&
+     &			,2147483647_8)
+	      end do
+	    end do
+	  end if
+	end if
+	call MPI_Allreduce(hash,hmin,1,MPI_INTEGER8,MPI_MIN,		&
+     &			MPI_COMM_WORLD,ierr)
+	call MPI_Allreduce(hash,hmax,1,MPI_INTEGER8,MPI_MAX,		&
+     &			MPI_COMM_WORLD,ierr)
+	if( hmin < 0 .or. hmin /= hmax ) then
+	  if( my_id == 0 ) then
+	    write(6,*) 'lgr side table: nen3v_global missing or not the'	&
+     &		,' same on every rank, hash min, max: ',hmin,hmax
+	    flush(6)
+	  end if
+	  call MPI_Barrier(MPI_COMM_WORLD,ierr)
+	  call shympi_abort_internal					&
+     &		('lgr_mpi_side_table: nen3v_global')
+	end if
+
+	do ie = 1, nel
+	  ieg = ip_int_elem(ie)
+	  do ii = 1, 3
+	    if( nen3v_global(ii,ieg) /= ip_int_node(nen3v(ii,ie)) ) then
+	      call lgr_mpi_side_record(info,1,ie,ii,0,0,0,0,0,0,0)
+	    end if
+	  end do
+	end do
+	call lgr_mpi_side_fail(info)
+
+	!-----------------------------------------------
+	! node to element lists of the global and of the local mesh,
+	! global to local node and element numbers
+	!-----------------------------------------------
+
+	call lgr_mpi_node_elems(nkn_global,nel_global,nen3v_global	&
+     &				,igptr,iglist)
+	call lgr_mpi_node_elems(nkn,nel,nen3v,ilptr,illist)
+
+	allocate(kgl(nkn_global), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+	allocate(kel(nel_global), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+	kgl = 0
+	do k = 1, nkn
+	  kgl(ip_int_node(k)) = k
+	end do
+	kel = 0
+	do ie = 1, nel
+	  kel(ip_int_elem(ie)) = ie
+	end do
+
+	!-----------------------------------------------
+	! cut-off sides: marks of set_geom_mpi and walls with an element
+	! across in the global mesh
+	!-----------------------------------------------
+
+	allocate(cie(3*nel), cii(3*nel), cdest(3*nel), cgx(3*nel)	&
+     &		, stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+
+	ncut = 0
+	do ie = 1, nel
+	  ieg = ip_int_elem(ie)
+	  do ii = 1, 3
+	    iv = ieltv(ii,ie)
+	    if( iv > 0 ) cycle			!local neighbour
+	    ival(5) = ival(5) + 1
+	    k1 = nen3v(mod(ii,3)+1,ie)		!end nodes of side ii
+	    k2 = nen3v(mod(ii+1,3)+1,ie)
+	    kg1 = ip_int_node(k1)
+	    kg2 = ip_int_node(k2)
+	    call lgr_mpi_side_other(kg1,kg2,ieg,nkn_global,nel_global	&
+     &			,nen3v_global,igptr,iglist,ieo,nf)
+	    if( nf > 1 ) then		!more than two elements at the side
+	      call lgr_mpi_side_record(info,2,ie,ii,iv,0,0,0,0,ieo,nf)
+	      cycle
+	    end if
+	    if( iv == 0 ) then			!wall in ieltv
+	      if( nf == 0 ) cycle		!wall in the global mesh too
+	      o1 = id_node(k1)
+	      o2 = id_node(k2)
+	      r = min(o1,o2)
+	      if( o1 == my_id .or. o2 == my_id ) then
+	        call lgr_mpi_side_record(info,3,ie,ii,iv,r,0,0,0,ieo,nf)
+	        cycle
+	      end if
+	      lgr_ieltv(ii,ie) = -1000 - r
+	      ival(2) = ival(2) + 1
+	      if( iboundv(k1) > 0 .and. iboundv(k2) > 0 ) then
+	        ival(3) = ival(3) + 1
+	      end if
+	    else if( iv > -1000 ) then		!open boundary: kept
+	      if( nf > 0 ) then
+	        call lgr_mpi_side_other(k1,k2,ie,nkn,nel,nen3v		&
+     &			,ilptr,illist,j,n)
+	        if( n == 0 ) ival(4) = ival(4) + 1
+	      end if
+	      cycle
+	    else				!mark of set_geom_mpi: kept
+	      r = -iv - 1000
+	      if( nf == 0 ) then
+	        call lgr_mpi_side_record(info,4,ie,ii,iv,r,0,0,0,ieo,nf)
+	        cycle
+	      end if
+	    end if
+	    if( r < 0 .or. r >= nproc .or. r == my_id ) then
+	      call lgr_mpi_side_record(info,5,ie,ii,lgr_ieltv(ii,ie),r	&
+     &			,0,0,0,ieo,nf)
+	      cycle
+	    end if
+	    ncut = ncut + 1
+	    cie(ncut) = ie
+	    cii(ncut) = ii
+	    cdest(ncut) = r
+	    cgx(ncut) = ieo
+	  end do
+	end do
+	ival(1) = ncut
+
+	call lgr_mpi_side_fail(info)
+
+	!-----------------------------------------------
+	! counts: queries to every rank, from every rank
+	!-----------------------------------------------
+
+	nq = 0
+	do j = 1, ncut
+	  nq(cdest(j)) = nq(cdest(j)) + 1
+	end do
+	call MPI_Alltoall(nq,1,MPI_INTEGER,nr,1,MPI_INTEGER		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Alltoall')
+
+	qoff(0) = 0
+	roff(0) = 0
+	do r = 0, nproc-1
+	  qoff(r+1) = qoff(r) + nq(r)
+	  roff(r+1) = roff(r) + nr(r)
+	end do
+	nqtot = qoff(nproc)
+	nrtot = roff(nproc)
+
+	allocate(iord(max(nqtot,1)), sbuf(max(3*nqtot,1))		&
+     &		, qans(max(3*nqtot,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+	allocate(rbuf(max(3*nrtot,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+	allocate(abuf(max(3*nrtot,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_side_table: allocation')
+
+	! queries in the order of the destination ranks: global end nodes
+	! and global element on this side
+
+	ifill = 0
+	do j = 1, ncut
+	  r = cdest(j)
+	  ifill(r) = ifill(r) + 1
+	  jj = qoff(r) + ifill(r)
+	  iord(jj) = j
+	  ie = cie(j)
+	  ii = cii(j)
+	  sbuf(3*jj-2) = ip_int_node(nen3v(mod(ii,3)+1,ie))
+	  sbuf(3*jj-1) = ip_int_node(nen3v(mod(ii+1,3)+1,ie))
+	  sbuf(3*jj) = ip_int_elem(ie)
+	end do
+
+	!-----------------------------------------------
+	! queries: all receives, all sends, one wait
+	!-----------------------------------------------
+
+	nreq = 0
+	do r = 0, nproc-1
+	  if( nr(r) == 0 ) cycle
+	  nreq = nreq + 1
+	  call MPI_Irecv(rbuf(3*roff(r)+1),3*nr(r),MPI_INTEGER,r,itagq	&
+     &		,MPI_COMM_WORLD,ireq(nreq),ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Irecv')
+	end do
+	nrecv = nreq
+	do r = 0, nproc-1
+	  if( nq(r) == 0 ) cycle
+	  nreq = nreq + 1
+	  call MPI_Isend(sbuf(3*qoff(r)+1),3*nq(r),MPI_INTEGER,r,itagq	&
+     &		,MPI_COMM_WORLD,ireq(nreq),ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Isend')
+	end do
+	if( nreq > 0 ) then
+	  call MPI_Waitall(nreq,ireq,istat,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Waitall')
+	end if
+	jj = 0
+	do r = 0, nproc-1
+	  if( nr(r) == 0 ) cycle
+	  jj = jj + 1
+	  call MPI_Get_count(istat(:,jj),MPI_INTEGER,nget,ierr)
+	  if( ierr /= MPI_SUCCESS .or. nget /= 3*nr(r) ) then
+	    write(6,*) 'lgr_mpi_side_table: rank ',my_id,' from rank ',r	&
+     &		,' expected ',3*nr(r),' values, received ',nget
+	    call shympi_abort_internal					&
+     &		('lgr_mpi_side_table: message length')
+	  end if
+	end do
+	if( jj /= nrecv ) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: internal error (receives)')
+
+	!-----------------------------------------------
+	! answers: the local element with both end nodes that is not the
+	! element of the asking rank (global number, layers, how many);
+	! zeros if there is none (the asking rank then fails the side)
+	!-----------------------------------------------
+
+	abuf = 0
+	do jj = 1, nrtot
+	  kg1 = rbuf(3*jj-2)
+	  kg2 = rbuf(3*jj-1)
+	  ieg = rbuf(3*jj)
+	  if( kg1 < 1 .or. kg1 > nkn_global ) cycle
+	  if( kg2 < 1 .or. kg2 > nkn_global ) cycle
+	  k1 = kgl(kg1)
+	  k2 = kgl(kg2)
+	  if( k1 == 0 .or. k2 == 0 ) cycle
+	  iex = 0
+	  if( ieg >= 1 .and. ieg <= nel_global ) iex = kel(ieg)
+	  call lgr_mpi_side_other(k1,k2,iex,nkn,nel,nen3v			&
+     &			,ilptr,illist,ieo,nf)
+	  if( nf == 0 ) cycle
+	  abuf(3*jj-2) = ip_int_elem(ieo)
+	  abuf(3*jj-1) = ilhv(ieo)
+	  abuf(3*jj) = nf
+	end do
+
+	nreq = 0
+	do r = 0, nproc-1
+	  if( nq(r) == 0 ) cycle
+	  nreq = nreq + 1
+	  call MPI_Irecv(qans(3*qoff(r)+1),3*nq(r),MPI_INTEGER,r,itaga	&
+     &		,MPI_COMM_WORLD,ireq(nreq),ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Irecv')
+	end do
+	nrecv = nreq
+	do r = 0, nproc-1
+	  if( nr(r) == 0 ) cycle
+	  nreq = nreq + 1
+	  call MPI_Isend(abuf(3*roff(r)+1),3*nr(r),MPI_INTEGER,r,itaga	&
+     &		,MPI_COMM_WORLD,ireq(nreq),ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Isend')
+	end do
+	if( nreq > 0 ) then
+	  call MPI_Waitall(nreq,ireq,istat,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Waitall')
+	end if
+	jj = 0
+	do r = 0, nproc-1
+	  if( nq(r) == 0 ) cycle
+	  jj = jj + 1
+	  call MPI_Get_count(istat(:,jj),MPI_INTEGER,nget,ierr)
+	  if( ierr /= MPI_SUCCESS .or. nget /= 3*nq(r) ) then
+	    write(6,*) 'lgr_mpi_side_table: rank ',my_id,' from rank ',r	&
+     &		,' expected ',3*nq(r),' values, received ',nget
+	    call shympi_abort_internal					&
+     &		('lgr_mpi_side_table: message length')
+	  end if
+	end do
+	if( jj /= nrecv ) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: internal error (receives)')
+
+	!-----------------------------------------------
+	! check: exactly one element across, the one of the global mesh
+	!-----------------------------------------------
+
+	do jj = 1, nqtot
+	  j = iord(jj)
+	  ie = cie(j)
+	  ii = cii(j)
+	  ga = qans(3*jj-2)
+	  la = qans(3*jj-1)
+	  nf = qans(3*jj)
+	  if( nf /= 1 .or. la < 1 ) then
+	    call lgr_mpi_side_record(info,6,ie,ii,lgr_ieltv(ii,ie)		&
+     &			,cdest(j),ga,la,nf,cgx(j),1)
+	  else if( ga /= cgx(j) ) then
+	    call lgr_mpi_side_record(info,7,ie,ii,lgr_ieltv(ii,ie)		&
+     &			,cdest(j),ga,la,nf,cgx(j),1)
+	  else
+	    lgr_side_lmax(ii,ie) = la
+	  end if
+	end do
+
+	call lgr_mpi_side_fail(info)
+
+	deallocate(igptr,iglist,ilptr,illist,kgl,kel)
+	deallocate(cie,cii,cdest,cgx)
+	deallocate(iord,sbuf,qans,rbuf,abuf)
+
+	dt = MPI_Wtime() - t0
+
+	if( nint(getpar('levdbg')) < 3 ) return
+
+	!-----------------------------------------------
+	! global totals, written by rank 0 (from the finished table)
+	!-----------------------------------------------
+
+	lmin = huge(lmin)
+	lmax = 0
+	ncut = 0
+	do ie = 1, nel
+	  do ii = 1, 3
+	    if( lgr_ieltv(ii,ie) > -1000 ) cycle
+	    ncut = ncut + 1
+	    lmin = min(lmin,lgr_side_lmax(ii,ie))
+	    lmax = max(lmax,lgr_side_lmax(ii,ie))
+	    if( lgr_side_lmax(ii,ie) < ilhv(ie) ) ival(6) = ival(6) + 1
+	  end do
+	end do
+	if( ncut /= ival(1) ) call shympi_abort_internal			&
+     &		('lgr_mpi_side_table: internal error (count)')
+
+	call MPI_Allreduce(ival,ivalg,6,MPI_INTEGER,MPI_SUM		&
+     &			,MPI_COMM_WORLD,ierr)
+	call MPI_Allreduce(lmin,lming,1,MPI_INTEGER,MPI_MIN		&
+     &			,MPI_COMM_WORLD,ierr)
+	call MPI_Allreduce(lmax,lmaxg,1,MPI_INTEGER,MPI_MAX		&
+     &			,MPI_COMM_WORLD,ierr)
+	call MPI_Allreduce(dt,dtmax,1,MPI_DOUBLE_PRECISION,MPI_MAX	&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ivalg(1) == 0 ) lming = 0
+
+	if( my_id == 0 ) then
+	  write(6,'(a,i0,a,i0,a)') ' lgr side table: ',ivalg(1)		&
+     &		,' cut-off sides, ',ivalg(2)				&
+     &		,' added to the marks of set_geom_mpi'
+	  write(6,'(a,i0,a,i0,a,i0)') ' lgr side table: layers across'	&
+     &		//' the cut-off sides: min ',lming,' max ',lmaxg		&
+     &		,', sides with a shallower neighbour: ',ivalg(6)
+	  write(6,'(a,i0,a,i0,a,i0,a,f0.4,a)') ' lgr side table: added'	&
+     &		//' between two basin boundary nodes: ',ivalg(3)		&
+     &		,', open boundary sides with an element across held'	&
+     &		//' elsewhere: ',ivalg(4),', sides looked up: ',ivalg(5)	&
+     &		,', time: ',dtmax,' s'
+	end if
+
+	end subroutine lgr_mpi_side_table
+
+!*******************************************************************
+
+	subroutine lgr_mpi_side_record(info,icode,ie,ii,iv,r,ga,la,nfa	&
+     &					,gx,nfx)
+
+! keeps the first error of the side table found on this rank in info
+! (later errors are not recorded); info(1) = 0 means no error
+
+	use shympi, only : my_id, ip_int_node, ip_int_elem
+	use basin, only : nen3v
+
+	implicit none
+
+	integer, intent(inout) :: info(13)	!error record
+	integer, intent(in) :: icode		!error code (> 0)
+	integer, intent(in) :: ie, ii		!local element, side
+	integer, intent(in) :: iv		!mark of the side
+	integer, intent(in) :: r		!destination rank
+	integer, intent(in) :: ga, la, nfa	!answer: element, layers, found
+	integer, intent(in) :: gx, nfx		!element across, found (global)
+
+	if( info(1) /= 0 ) return
+
+	info(1) = icode
+	info(2) = my_id
+	info(3) = ip_int_elem(ie)
+	info(4) = ii
+	info(5) = ip_int_node(nen3v(mod(ii,3)+1,ie))
+	info(6) = ip_int_node(nen3v(mod(ii+1,3)+1,ie))
+	info(7) = iv
+	info(8) = r
+	info(9) = ga
+	info(10) = la
+	info(11) = nfa
+	info(12) = gx
+	info(13) = nfx
+
+	end subroutine lgr_mpi_side_record
+
+!*******************************************************************
+
+	subroutine lgr_mpi_side_fail(info)
+
+! collective, called by every rank: returns if no rank has an error in
+! its record info (lgr_mpi_side_record); otherwise rank 0 writes the
+! record of the lowest rank with an error and every rank aborts
+
+	use shympi
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, intent(in) :: info(13)		!error record of this rank
+
+	integer :: ic, irmin, ierr
+	integer :: iall(13)
+	integer :: iexte, iext1, iext2
+	character(len=80) :: text
+
+	ic = n_threads
+	if( info(1) /= 0 ) ic = my_id
+	call MPI_Allreduce(ic,irmin,1,MPI_INTEGER,MPI_MIN			&
+     &			,MPI_COMM_WORLD,ierr)
+	if( irmin >= n_threads ) return
+
+	iall = info
+	call MPI_Bcast(iall,13,MPI_INTEGER,irmin,MPI_COMM_WORLD,ierr)
+
+	select case( iall(1) )
+	case( 1 )
+	  text = 'nen3v_global differs from a local element'
+	case( 2 )
+	  text = 'more than two elements at a side of the global mesh'
+	case( 3 )
+	  text = 'cut-off side with an end node owned by this rank'
+	case( 4 )
+	  text = 'marked side without an element across in the global mesh'
+	case( 5 )
+	  text = 'destination of a cut-off side is not another rank'
+	case( 6 )
+	  text = 'cut-off side not seen from both sides (not found)'
+	case( 7 )
+	  text = 'cut-off side not seen from both sides (other element)'
+	case default
+	  text = 'unknown error'
+	end select
+
+	if( my_id == 0 ) then
+	  iexte = 0
+	  iext1 = 0
+	  iext2 = 0
+	  if( iall(3) >= 1 .and. iall(3) <= nel_global )			&
+     &		iexte = ip_ext_elem(iall(3))
+	  if( iall(5) >= 1 .and. iall(5) <= nkn_global )			&
+     &		iext1 = ip_ext_node(iall(5))
+	  if( iall(6) >= 1 .and. iall(6) <= nkn_global )			&
+     &		iext2 = ip_ext_node(iall(6))
+	  write(6,*) 'lgr side table: ',trim(text)
+	  write(6,*) 'lgr side table: rank, element (external), side: '	&
+     &		,iall(2),iall(3),iexte,iall(4)
+	  write(6,*) 'lgr side table: end nodes (external): '		&
+     &		,iall(5),iall(6),iext1,iext2
+	  write(6,*) 'lgr side table: mark, destination: ',iall(7),iall(8)
+	  write(6,*) 'lgr side table: answer element, layers, found: '	&
+     &		,iall(9),iall(10),iall(11)
+	  write(6,*) 'lgr side table: element across in the global mesh'	&
+     &		,', found: ',iall(12),iall(13)
+	  flush(6)
+	end if
+	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
+
+	call shympi_abort_internal('lgr_mpi_side_table: '//trim(text))
+
+	end subroutine lgr_mpi_side_fail
+
+!*******************************************************************
+
+	subroutine lgr_mpi_node_elems(nk,ne,nen,iptr,ilist)
+
+! node to element lists of a mesh with nk nodes and ne elements nen(3,ne):
+! the elements of node k are ilist(iptr(k)+1:iptr(k+1)), in increasing
+! element number
+
+	implicit none
+
+	integer, intent(in) :: nk, ne
+	integer, intent(in) :: nen(3,ne)
+	integer, allocatable, intent(out) :: iptr(:)	!(nk+1)
+	integer, allocatable, intent(out) :: ilist(:)	!(3*ne)
+
+	integer :: ie, ii, k, ierr
+	integer, allocatable :: icur(:)
+
+	allocate(iptr(nk+1), ilist(max(3*ne,1)), icur(nk), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal				&
+     &		('lgr_mpi_node_elems: allocation')
+
+	iptr = 0
+	do ie = 1, ne
+	  do ii = 1, 3
+	    k = nen(ii,ie)
+	    if( k < 1 .or. k > nk ) then
+	      write(6,*) 'lgr_mpi_node_elems: ie,ii,k,nk: ',ie,ii,k,nk
+	      call shympi_abort_internal('lgr_mpi_node_elems: node')
+	    end if
+	    iptr(k+1) = iptr(k+1) + 1
+	  end do
+	end do
+	do k = 1, nk
+	  iptr(k+1) = iptr(k+1) + iptr(k)
+	end do
+
+	icur(1:nk) = iptr(1:nk)
+	do ie = 1, ne
+	  do ii = 1, 3
+	    k = nen(ii,ie)
+	    icur(k) = icur(k) + 1
+	    ilist(icur(k)) = ie
+	  end do
+	end do
+
+	deallocate(icur)
+
+	end subroutine lgr_mpi_node_elems
+
+!*******************************************************************
+
+	subroutine lgr_mpi_side_other(ka,kb,iexcl,nk,ne,nen,iptr,ilist	&
+     &					,ieo,nf)
+
+! the elements other than iexcl of a mesh nen(3,ne) that have both nodes
+! ka and kb: nf of them, ieo the first (0 if none); iptr, ilist are the
+! node to element lists of the mesh (lgr_mpi_node_elems)
+
+	implicit none
+
+	integer, intent(in) :: ka, kb		!end nodes of the side
+	integer, intent(in) :: iexcl		!element left out (0: none)
+	integer, intent(in) :: nk, ne
+	integer, intent(in) :: nen(3,ne)
+	integer, intent(in) :: iptr(nk+1)
+	integer, intent(in) :: ilist(*)
+	integer, intent(out) :: ieo		!first element found
+	integer, intent(out) :: nf		!number of elements found
+
+	integer :: j, ie
+
+	ieo = 0
+	nf = 0
+	do j = iptr(ka)+1, iptr(ka+1)
+	  ie = ilist(j)
+	  if( ie == iexcl ) cycle
+	  if( nen(1,ie) == kb .or. nen(2,ie) == kb .or.			&
+     &		nen(3,ie) == kb ) then
+	    nf = nf + 1
+	    if( ieo == 0 ) ieo = ie
+	  end if
+	end do
+
+	end subroutine lgr_mpi_side_other
 
 !*******************************************************************
 

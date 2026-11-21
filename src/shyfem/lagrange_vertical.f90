@@ -568,9 +568,12 @@
 	subroutine track_xi_next_element(ie,xi,id,ncross)
 
 ! copies internal coordinates to new element - avoid falling on vertex
+!
+! neighbours from the side table of the tracker, lgr_ieltv: a cut-off
+! side (<= -1000) is still left like an open boundary (ie = -ie)
 
 	use mod_lagrange
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 
 	implicit none
 
@@ -656,7 +659,7 @@
 	! look for neighboring element
 	!---------------------------------------
 
-	ieb = ieltv(ia1,ie)
+	ieb = lgr_ieltv(ia1,ie)
 	if( ieb < 1 ) then	!no element or open boundary
 	  ie = -ie
 	  return
@@ -671,12 +674,12 @@
 	!---------------------------------------
 
 	do ii=1,3
-	  if( ieltv(ii,ieb) == ie ) exit
+	  if( lgr_ieltv(ii,ieb) == ie ) exit
 	end do
 	if( ii > 3 ) then
 	  write(6,*) ie,in,it,ia1,ieb
 	  write(6,*) xi
-	  write(6,*) (ieltv(ii,ieb),ii=1,3)
+	  write(6,*) (lgr_ieltv(ii,ieb),ii=1,3)
 	  stop 'error stop track_xi_next_element: erroneous ieltv'
 	end if
 
@@ -754,9 +757,9 @@
 
 	function track_xi_on_material_boundary(ie,xi)
 
-! checks if particle is on material boundary
+! checks if particle is on material boundary (side table lgr_ieltv)
 
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 
 	implicit none
 
@@ -769,7 +772,7 @@
 	track_xi_on_material_boundary = .false.
 
 	do ii=1,3
-	  if( xi(ii) == 0. .and. ieltv(ii,ie) == 0 ) then
+	  if( xi(ii) == 0. .and. lgr_ieltv(ii,ie) == 0 ) then
 	    track_xi_on_material_boundary = .true.
 	  end if
 	end do
@@ -950,10 +953,11 @@
 
 	subroutine track_xi_get_flux(iel,lb,iflux,alpha,vel)
 
-! gets flux and vel information for element and layer
+! gets flux and vel information for element and layer (walls from the
+! side table lgr_ieltv)
 
 	use mod_lagrange
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 	use mod_hydro_vel
 
 	implicit none
@@ -978,7 +982,7 @@
 	flux = flux3d(lb,:,iel)		!fluxes over side into element
 
 	do ii=1,3
-	  if( ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
+	  if( lgr_ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
 	    if( flux(ii) .ne. 0. ) then
 	      write(6,*) 'material boundary: ',iel,ii,flux(ii)
 	      flux(ii) = 0.

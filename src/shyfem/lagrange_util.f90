@@ -147,7 +147,7 @@
         subroutine particle_on_side(ie,xo,yo,xn,yn)
 
         use basin
-        use mod_geom
+        use mod_lagrange_mpi, only : lgr_ieltv	!side table of the tracker
 
         implicit none
 
@@ -173,10 +173,10 @@
           iint = segsegint(xo,yo,xn,yn,x1,y1,x2,y2,xi,yi)
 
           if (iint > 0 ) then
-            if( ieltv(ii,ie) == 0 ) then        !material boundary
+            if( lgr_ieltv(ii,ie) == 0 ) then    !material boundary
               xn = xi
               yn = yi
-            else if ( ieltv(ii,ie) < 0 ) then   !open boundary
+            else if ( lgr_ieltv(ii,ie) < 0 ) then !open boundary
               ie = -ie                          !particle exits
               xn = xi
               yn = yi

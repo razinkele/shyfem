@@ -765,6 +765,7 @@ lagrange_mpi.o: ../../lib/mod/basin.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/mod_bound_dynamic.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \
+		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_lagrange.mod \
 		../../lib/mod/mod_meteo.mod ../../lib/mod/para.mod \
@@ -790,7 +791,7 @@ lagrange_track.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_lagrange.mod 
 lagrange_util.o: ../../lib/mod/basin.mod ../../lib/mod/evgeom.mod \
-		../../lib/mod/mod_geom.mod 
+		../../lib/mod/mod_lagrange_mpi.mod
 lagrange_util_tr.o: ../../lib/mod/basin.mod
 lagrange_utils.o: ../../lib/mod/mod_lagrange.mod
 lagrange_vertical.o: ../../lib/mod/basin.mod \
@@ -799,7 +800,8 @@ lagrange_vertical.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro.mod \
 		../../lib/mod/mod_hydro_vel.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod
 line_admin.o: ../../lib/mod/basin.mod ../../lib/mod/mod_geom.mod
 lnkmpi.o: ../../lib/mod/basin.mod ../../lib/mod/mod_connect.mod \
 		../../lib/mod/mod_geom.mod \

@@ -161,3 +161,72 @@ differ in 138 bytes and give slightly different runs of case B.
   (corrected in the release stage). In the five runs of the perturbation
   check these numbers are the same in the plain and in the perturbed run;
   before task 2.4 they depended on memory.
+
+## Task 3.2: the tracker's side table (cut-off sides)
+
+**Measured** 2026-11-21 19:34 to 19:36 EET (from `date`) by the
+implementer, on the source of the commit that adds this section (built on
+its parent `08ce9c8c`, OpenMPI `libmpi.so.40`, the tracked basin files).
+
+**Method.** Each case run on NP processes with `levdbg = 3` (the same
+temporary STR file as `check_lgr_mpi.sh` makes). At start-up rank 0 writes
+the global totals of the side table: N cut-off sides and M of them added
+to the marks of `set_geom_mpi` (a side counted once per process that has
+it), and the smallest and largest layer count of the element across a
+cut-off side (`lgr_side_lmax`) with the number of cut-off sides whose
+neighbour has fewer layers than the element on this side. Every cut-off
+side is confirmed by the process its mark names (the element across, the
+one the global mesh has there); no run aborted.
+
+| Case | Processes | N | M | `lgr_side_lmax` min / max | Sides with a shallower neighbour |
+|---|---|---|---|---|---|
+| A | 2 | 46 | 2 | 1 / 1 | 0 |
+| A | 3 | 61 | 2 | 1 / 1 | 0 |
+| A | 4 | 107 | 4 | 1 / 1 | 0 |
+| A | 5 | 111 | 4 | 1 / 1 | 0 |
+| A | 6 | 165 | 5 | 1 / 1 | 0 |
+| A | 8 | 219 | 1 | 1 / 1 | 0 |
+| B | 2 | 46 | 2 | 1 / 1 | 0 |
+| B | 3 | 61 | 2 | 1 / 1 | 0 |
+| B | 4 | 107 | 4 | 1 / 1 | 0 |
+| B | 5 | 111 | 4 | 1 / 1 | 0 |
+| B | 6 | 165 | 5 | 1 / 1 | 0 |
+| B | 8 | 219 | 1 | 1 / 1 | 0 |
+| C | 4 | 107 | 4 | 1 / 16 | 12 |
+| C | 8 | 219 | 1 | 1 / 17 | 26 |
+
+**Result.** Every run has M > 0, and every added side lies between two
+basin boundary nodes (the side `set_geom_mpi` does not mark). So every
+run above is a test of spec section 7, case 3; the smallest is case A or B
+on 8 processes (one such side). Cases A and B have the same mesh
+topology and the same partition, so they have the same sides. No open
+boundary side has an element across that another process holds, so the
+open boundary marks (-1, kept as in a serial run) never hide a cut-off
+side on this mesh.
+
+The added sides now read as cut-off sides instead of walls: their flux is
+no longer set to zero and a particle can cross them (counted as lost until
+the hand-over of task 3.4). Particle dumps differ where particles reach
+those sides (case A on 2 to 6 processes, case B on 2 to 6 processes); the
+flux and node dumps are unchanged, and so are all dumps of case C and of
+cases A and B on 8 processes. Lost-particle lines before / after:
+
+| Case | 2 processes | 3 processes | 4 processes | 5 processes | 6 processes | 8 processes |
+|---|---|---|---|---|---|---|
+| A | 0 / 0 | 4 / 4 | 6 / 6 | 5 / 5 | 9 / 9 | 13 / 13 |
+| B | 596 / 596 | 608 / 607 | 607 / 605 | 606 / 606 | 618 / 618 | 627 / 627 |
+| C | | | 4 / 4 | | | 8 / 8 |
+
+A control build that does everything except give the added marks to the
+tracker reproduces every dump file of the 14 runs byte for byte (216
+files), so the added sides are the only change.
+
+Start-up cost on this mesh (1,402 nodes, 2,545 elements): 313 to 499 sides
+looked up in the global mesh (summed over the processes), at most 0.0002 s
+on the slowest process.
+
+With the same binary (19:37 to 19:41 EET): `./check_lgr_mpi.sh CASE 4
+perturb` passes for A, B and C (lost-particle lines plain / perturbed 6 / 6,
+605 / 605, 4 / 4); `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`
+prints `SERIAL GUARD: PASS` and `./check_lgr_serial.sh repro` prints
+`REPRO: PASS`.
