@@ -551,27 +551,21 @@
 
 	subroutine track_single(i,dt,dtime)
 
-! advection of particles
+! advection of particles: advection, then everything after it
 
 	use mod_lagrange
-	use mod_lagrange_mpi, only : lgr_mpi_check_ghost
-	use shympi, only : ip_int_elem
-        use mod_geom_dynamic, only : iwegv
-        use levels, only : nlv
+	use mod_geom_dynamic, only : iwegv
+	use levels, only : nlv
 
 	implicit none
 	
 	double precision dtime
-	integer i,id,ie,nf,lb,ii
-	real x,y,z
-	double precision xx,yy
-	double precision sv
-	double precision xi(3)
-	integer ty
-	real dt,ttime,tmax
-        integer lmax                    !maximum layers in element (return)
-        real hl(nlv)
-        real htot,htotz
+	integer i,ie
+	real dt,ttime,tmax,t_left
+	integer n_left
+	integer lmax                    !maximum layers in element (return)
+	real hl(nlv)
+	real htot,htotz
 
 !       call lagr_func(i) !lcust in str varying the variable typ(i) to check
 !	call lagr_surv(i)
@@ -582,8 +576,70 @@
 ! Get particle properties
 !---------------------------------------------------------------
 
-        ie = lgr_ar(i)%actual%ie
-        if( ie <= 0 ) return            !return if particle out of domain
+	ie = lgr_ar(i)%actual%ie
+	if( ie <= 0 ) return            !return if particle out of domain
+
+!---------------------------------------------------------------
+! Return if element is dry or negative first layer (offline problem)
+!---------------------------------------------------------------
+
+	if( iwegv(ie) /= 0 ) return	!return if particle on dry element
+	lmax = nlv
+	call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
+	if ( hl(1) .lt. 0. ) return
+
+!---------------------------------------------------------------
+! Get travel time for particle
+!---------------------------------------------------------------
+
+	tmax = dtime - lgr_ar(i)%actual%time
+	if( tmax .lt. 0. ) stop 'error stop drogue: internal error'
+	ttime = min(tmax,dt) 		!residual time for particle
+
+	t_left = ttime
+	if( blgrxi ) t_left = ttime*dripar	!account for drifter inertia
+	n_left = 100			!maximum number of element crossings
+
+!---------------------------------------------------------------
+! Compute advection, then diffusion, Stokes drift, beaching and store
+!---------------------------------------------------------------
+
+	call track_advect(i,t_left,n_left,dtime)
+	call track_finish(i,0,dtime)
+
+	end	
+
+!**********************************************************************
+
+	subroutine track_advect(i,t_left,n_left,dtime)
+
+! advection of one particle for the time t_left
+!
+! the state of the particle is left in lgr_ar(i) (ie, xi, z, l);
+! t_left and n_left return what is still to do
+
+	use mod_lagrange
+
+	implicit none
+
+	integer, intent(in) :: i			!particle number
+	real, intent(inout) :: t_left		!time still to advect
+	integer, intent(inout) :: n_left		!element crossings still allowed
+	double precision, intent(in) :: dtime
+
+	integer id,ie,lb,ii
+	real x,y,z
+	double precision xx,yy
+	double precision sv
+	double precision xi(3)
+	integer ty
+
+!---------------------------------------------------------------
+! Get particle properties
+!---------------------------------------------------------------
+
+	ie = lgr_ar(i)%actual%ie
+	if( ie <= 0 ) return            !return if particle out of domain
 	do ii=1,3
 	  xi(ii) = lgr_ar(i)%actual%xi(ii)
 	end do
@@ -597,34 +653,14 @@
 	ty = lgr_ar(i)%type
 
 !---------------------------------------------------------------
-! Return if element is dry or negative first layer (offline problem)
-!---------------------------------------------------------------
-
-        if( iwegv(ie) /= 0 ) return	!return if particle on dry element
-	lmax = nlv
-        call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
-	if ( hl(1) .lt. 0. ) return
-
-!---------------------------------------------------------------
-! Get travel time for particle
-!---------------------------------------------------------------
-
-	tmax = dtime - lgr_ar(i)%actual%time
-	if( tmax .lt. 0. ) stop 'error stop drogue: internal error'
-	ttime = min(tmax,dt) 		!residual time for particle
-
-!---------------------------------------------------------------
-! Compute advection and diffusion
+! Compute advection
 !---------------------------------------------------------------
 
 	if( lb > 0 ) then
 	  if( blgrxi ) then		!use internal coordinates
-            call track_body_xi(i,id,ty,x,y,z,sv,xi,ie,lb,ttime) 
-	    call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime)
-	    call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime)
-	    call lag_beach(i,id,xi,ie,ty)
+            call track_body_xi(i,id,ty,x,y,z,sv,xi,ie,lb,t_left,n_left) 
 	  else
-            call track_body(i,id,x,y,z,lb,ie,ttime) 
+            call track_body(i,id,x,y,z,lb,ie,t_left) 
 	  end if
 	end if
 
@@ -632,7 +668,83 @@
 ! Assign new coordinatates to particle
 !---------------------------------------------------------------
 
-        lgr_ar(i)%actual%ie = ie
+	lgr_ar(i)%actual%ie = ie
+	do ii=1,3
+	  lgr_ar(i)%actual%xi(ii) = xi(ii)
+	end do
+	lgr_ar(i)%actual%z  = z
+	lgr_ar(i)%actual%l  = lb
+
+	end	
+
+!**********************************************************************
+
+	subroutine track_finish(i,phase,dtime)
+
+! the steps after advection: vertical and horizontal diffusion, Stokes
+! drift, beaching, storing the state of the particle
+!
+! phase 0: all steps; 1: from the Stokes drift on (horizontal diffusion
+! done); 2: from beaching on (Stokes drift done)
+!
+! the state of the particle is taken from lgr_ar(i)
+
+	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_check_ghost
+	use shympi, only : ip_int_elem
+
+	implicit none
+
+	integer, intent(in) :: i			!particle number
+	integer, intent(in) :: phase		!where to resume
+	double precision, intent(in) :: dtime
+
+	integer id,ie,lb,ii
+	real x,y,z
+	double precision xx,yy
+	double precision xi(3)
+	integer ty
+	real dt,ttime,tmax
+
+!---------------------------------------------------------------
+! Get particle properties
+!---------------------------------------------------------------
+
+	ie = lgr_ar(i)%actual%ie
+	do ii=1,3
+	  xi(ii) = lgr_ar(i)%actual%xi(ii)
+	end do
+	z  = lgr_ar(i)%actual%z
+	lb = lgr_ar(i)%actual%l
+	id = lgr_ar(i)%id 
+	ty = lgr_ar(i)%type
+
+!---------------------------------------------------------------
+! Get travel time for particle (the time is not changed before the end)
+!---------------------------------------------------------------
+
+	call get_timestep(dt)
+	tmax = dtime - lgr_ar(i)%actual%time
+	ttime = min(tmax,dt) 		!residual time for particle
+
+!---------------------------------------------------------------
+! Compute diffusion, Stokes drift and beaching
+!---------------------------------------------------------------
+
+	if( lb > 0 .and. blgrxi ) then
+	  call xi2xy(abs(ie),xx,yy,xi)
+	  x  = xx
+	  y  = yy
+	  if( phase < 1 ) call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime)
+	  if( phase < 2 ) call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime)
+	  call lag_beach(i,id,xi,ie,ty)
+	end if
+
+!---------------------------------------------------------------
+! Assign new coordinatates to particle
+!---------------------------------------------------------------
+
+	lgr_ar(i)%actual%ie = ie
 	if( ie > 0 ) then
 	  lgr_ar(i)%actual%ie_global = ip_int_elem(ie)
 	  call lgr_mpi_check_ghost(i,ie)
@@ -649,7 +761,7 @@
 
 !**********************************************************************
 
-        subroutine track_body_xi(i,id,ty,x,y,z,sv,xi,iel,lb,time)
+        subroutine track_body_xi(i,id,ty,x,y,z,sv,xi,iel,lb,ttime,n)
 
 ! tracks one particle - uses internal coordinates
 
@@ -668,12 +780,12 @@
 	double precision xi(3)	!internal coordinates
 	integer iel		!element number
 	integer lb 		!layer 
-	real time		!time to advect
+	real ttime		!time to advect (inertia included), time left
+	integer n		!element crossings allowed, crossings left
         
-	integer n
 	integer ie_from,ie_to
 	integer iperc
-	real ttime,torig
+	real torig
 	real perc
 	double precision xx,yy,zz
 
@@ -687,9 +799,7 @@
 ! initialize
 !---------------------------------------------------------------
 
-        n = 100		!maximum loop count
 	zz = z
-	ttime = time*dripar	!accout for drifter inertia
 	
 !---------------------------------------------------------------
 ! track particle
