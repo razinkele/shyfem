@@ -83,6 +83,10 @@
 	  
         type(lagr_entry), save, allocatable :: lgr_ar(:)
 
+	!element crossings used in the last time step, one per slot of lgr_ar
+	!(written by track_body_xi, read by the debug dump)
+        integer, save, allocatable :: lgr_ncross(:)
+
 	!---------------------------------------------
 	! parameters
 	!---------------------------------------------
@@ -272,6 +276,7 @@
 	integer ierr
 	real time1,time2
 	type(lagr_entry), allocatable :: paux(:)
+	integer, allocatable :: iaux(:)
 
         if( nbdy == nbdy_lagr ) return
 
@@ -281,14 +286,25 @@
 	  nbdy_lagr = nbdy
 	  allocate(lgr_ar(nbdy),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  allocate(lgr_ncross(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_ncross')
+	  lgr_ncross = 0
         else if( nbdy == 0 ) then		!last time
 	  deallocate(lgr_ar)
+	  deallocate(lgr_ncross)
 	else
           ndim = min(nbdy,nbdy_lagr)
           allocate(paux(nbdy),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
           paux(1:ndim) = lgr_ar(1:ndim)
           call move_alloc(paux,lgr_ar)
+	  allocate(iaux(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_ncross')
+	  iaux = 0
+	  iaux(1:ndim) = lgr_ncross(1:ndim)
+	  call move_alloc(iaux,lgr_ncross)
 	end if
 
 	call cpu_time(time2)

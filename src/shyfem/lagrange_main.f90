@@ -366,9 +366,10 @@
 !---------------------------------------------------------------
 
         if( next_output_d(da_lgr) ) then
-	  if( bmpi_lagr ) then
-	    call lgr_mpi_gather_output(iu,dtime)
-	  else
+	  call lgr_mpi_debug_dump(dtime)	!only at levdbg >= 3
+	  !on more than one process no particle records are written yet
+	  !(lgr_mpi_gather_output is broken, #217); the dump is the output
+	  if( .not. bmpi_lagr ) then
 	    call lgr_output(iu,dtime)
 	  end if
         end if
@@ -568,11 +569,14 @@
 !       call lagr_func(i) !lcust in str varying the variable typ(i) to check
 !	call lagr_surv(i)
 
+	lgr_ncross(i) = 0		!no crossing unless track_body_xi runs
+
 !---------------------------------------------------------------
 ! Get particle properties
 !---------------------------------------------------------------
 
         ie = lgr_ar(i)%actual%ie
+        if( ie <= 0 ) return            !return if particle out of domain
 	do ii=1,3
 	  xi(ii) = lgr_ar(i)%actual%xi(ii)
 	end do
@@ -589,7 +593,6 @@
 ! Return if element is dry or negative first layer (offline problem)
 !---------------------------------------------------------------
 
-        if( ie <= 0 ) return            !return if particle out of domain
         if( iwegv(ie) /= 0 ) return	!return if particle on dry element
 	lmax = nlv
         call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
@@ -701,6 +704,8 @@
 	  if( lb < 1 ) exit
 	  n = n - 1			!decrement loop counter
 	end do
+
+	lgr_ncross(i) = 100 - n		!crossings used (own slot: OMP safe)
 
 	call xi2xy(abs(iel),xx,yy,xi)
 	x = xx
