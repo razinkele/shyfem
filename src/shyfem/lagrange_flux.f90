@@ -114,11 +114,16 @@
 	subroutine setup_fluxes_3d
 
 ! sets up fluxes in 3d - has to be done every time step
+!
+! under MPI only own nodes contribute; the partial values of the ranks
+! that hold an element are then added (lgr_mpi_flux_sum_3d)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_flux_sum_3d
 	use mod_geom
 	use levels
 	use basin, only : nkn,nel,ngr,mbw
+	use shympi, only : shympi_is_inner_node
 
 	implicit none
 
@@ -158,6 +163,7 @@
 !	--------------------------------------------
 
         do k=1,nkn
+	  if( .not. shympi_is_inner_node(k) ) cycle	!own nodes only
           itype=flxtype(k)
 
 	  n = maxlnk
@@ -166,6 +172,12 @@
 	  call make_fluxes_3d(k,itype,lkmax,n,rflux,tflux)
   	  call setup_flux3d(k,lkmax,n,tflux,ne,elems)
         end do
+
+!	--------------------------------------------
+!	add partial fluxes of the ranks holding an element (MPI)
+!	--------------------------------------------
+
+	call lgr_mpi_flux_sum_3d(flux3d)
 
 !	--------------------------------------------
 !	compute velocities
@@ -184,10 +196,15 @@
 	subroutine setup_fluxes_2d
 
 ! sets up fluxes - has to be done every time step
+!
+! under MPI only own nodes contribute; the partial values of the ranks
+! that hold an element are then added (lgr_mpi_flux_sum_2d)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_flux_sum_2d
 	use mod_geom
 	use basin, only : nkn,nel,ngr,mbw
+	use shympi, only : shympi_is_inner_node
 
 	implicit none
 
@@ -217,6 +234,7 @@
 	az = azpar
 
         do k=1,nkn
+	  if( .not. shympi_is_inner_node(k) ) cycle	!own nodes only
           itype=flxtype(k)
 
 !	  --------------------------------------------
@@ -229,6 +247,12 @@
 	  call make_fluxes_2d(k,itype,n,rflux,tflux)
   	  call setup_flux2d(k,n,tflux,flux2d,ne,elems)
         end do
+
+!	--------------------------------------------
+!	add partial fluxes of the ranks holding an element (MPI)
+!	--------------------------------------------
+
+	call lgr_mpi_flux_sum_2d(flux2d)
 
 !	--------------------------------------------
 !	error check ... delete
@@ -264,7 +288,7 @@
         implicit none
 
         integer k,lkmax,n
-	real tflux(nlvdi,ne)      !fluxes across sides of element
+	real tflux(nlvdi,*)       !fluxes across sides of element
         integer ne                !total number of elements in elems
         integer elems(ne)         !elements around k
 
@@ -301,8 +325,8 @@
         implicit none
 
         integer k,n
-        real tflux(ne)
-	real flux2d_loc(3,ne)
+        real tflux(*)
+	real flux2d_loc(3,*)
         integer ne              !total number of elements in elems
         integer elems(ne)       !elements around k
 

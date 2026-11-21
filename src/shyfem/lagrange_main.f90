@@ -191,6 +191,7 @@
 	  icall = 1
 
           call lgr_mpi_init
+          call lgr_mpi_topology_init
 
           call get_first_dtime(dtanf)
           call get_last_dtime(dtend)
@@ -725,22 +726,27 @@
 	if( ttime > 0. ) then 		!not finished advecting
 	  if( n == 0 ) then
 	    nk = nk + 1
-	    perc = (100.*nk)/idbdy
+	    perc = 0.
+	    if( idbdy > 0 ) perc = (100.*nk)/idbdy
 	    write(6,1000) 'warning particle adv',id,iel,n,ttime,perc
 	    !iel = -iel
 	  else if( iel < 1 ) then
 	    nl = nl + 1
-	    perc = (100.*nl)/idbdy
+	    perc = 0.
+	    if( idbdy > 0 ) perc = (100.*nl)/idbdy
 	    write(6,1000) 'loosing particle adv',id,iel,n,ttime,perc
 	  else
 	    nu = nu + 1
-	    perc = (100.*nu)/idbdy
+	    perc = 0.
+	    if( idbdy > 0 ) perc = (100.*nu)/idbdy
 	    write(6,1000) 'unknown error adv',id,iel,n,ttime,perc
 	  end if
 	end if
 
         if( .not. bback ) then
-          if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel
+          if( iel.gt.0 ) then
+            if( iarv(iel).eq.artype ) iel = -iel
+          end if
 	end if
 
 !---------------------------------------------------------------
@@ -910,7 +916,9 @@
 !---------------------------------------------------------------
 
         if( .not. bback ) then
-          if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel
+          if( iel.gt.0 ) then
+            if( iarv(iel).eq.artype ) iel = -iel
+          end if
 	end if
 
 	x = xn

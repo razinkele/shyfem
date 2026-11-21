@@ -787,7 +787,11 @@
 	logical track_xi_has_layer
 	integer, intent(in) :: iel,lb
 
-	track_xi_has_layer = ( ilhv(iel) >= lb )
+	if( iel < 1 ) then	!particle has left the domain: no layer to test
+	  track_xi_has_layer = .true.
+	else
+	  track_xi_has_layer = ( ilhv(iel) >= lb )
+	end if
 
 	end
 

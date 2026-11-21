@@ -212,6 +212,51 @@ After this task's review is clean the controller builds a second reference binar
 - [ ] **Step 6:** Mutation check: comment out the call of `lgr_mpi_flux_sum_3d`; the flux gate must FAIL; restore.
 - [ ] **Step 7:** Record the AC1 numbers (2 and 4 ranks, cases A and C) in `docs/reviews/2026-11-lagrange-mpi-acceptance.md`. Commit, push, open the stage PR: `feat(lagrange): side fluxes summed across the ranks that hold an element (#217)`.
 
+### Task 2.3 (added 2026-11-21 by the controller): no division by a zero particle count
+
+**Why.** Found by the controller at the end of stage 2: `./check_lgr_mpi.sh mm_lgr_a 3 flux`, `… mm_lgr_a 8 flux` and `… mm_lgr_c 3 flux` do not end. The run stops with SIGFPE at `src/shyfem/lagrange_main.f90:734`, `perc = (100.*nl)/idbdy`, in the block of `track_body_xi` that prints `loosing particle adv`. `idbdy` is the number of particle ids given out on this process. On 3 and 8 processes one process releases no particle (none of the three release polygons of case A lies in its domain), so its `idbdy` is 0; when a particle it received from a neighbour is then counted as lost in mid-step, the percentage divides by zero (the build traps it: `-ffpe-trap=zero`). In a serial run the line cannot be reached with `idbdy = 0`. The same division stands in the two neighbouring branches (`warning particle adv`, `unknown error adv`).
+
+**Files:**
+- Modify: `src/shyfem/lagrange_main.f90` (`track_body_xi`, the three `perc = …/idbdy` lines near 729–739), and any other division by `idbdy` on the tracker path that `grep -n '/ *idbdy' src/shyfem/lagrange_*.f90` shows.
+
+**Interfaces:** none change.
+
+- [ ] **Step 1: The failing test.** From `testcases/examples/mar_menor`: `./check_lgr_mpi.sh mm_lgr_a 3 flux`. Expected today: `LGR GATE FAIL: mm_lgr_a did not end on 3 processes (exit code 136)`, and `mm_lgr_a.np3.log` shows the SIGFPE with `lagrange_main.f90:734` in the backtrace. Run it and paste both.
+- [ ] **Step 2: Fix.** Where `idbdy` is 0 the percentage is 0: `perc = 0.` followed by `if( idbdy > 0 ) perc = (100.*n…)/idbdy`, at each of the divisions. Nothing else changes: the messages, the counters and the particle's fate stay as they are. A serial result must not change.
+- [ ] **Step 3:** Rebuild. Run `./check_lgr_mpi.sh CASE NP flux` for `mm_lgr_a` on 3, 6 and 8 processes and for `mm_lgr_c` on 3 and 8 processes. Expected: all five runs end and print `LGR GATE: PASS` (every class 0 rows off). If a run does not end for another reason, stop and report the backtrace; do not patch further.
+- [ ] **Step 4:** `./check_lgr_mpi.sh mm_lgr_a 4 flux` → `LGR GATE: PASS`; `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin` → `SERIAL GUARD: PASS`.
+- [ ] **Step 5:** Add the rows for 3, 6 and 8 processes to the AC1 table of `docs/reviews/2026-11-lagrange-mpi-acceptance.md` (same columns), with one sentence saying that 3 and 8 processes first stopped at this division and pass after the fix. Commit: `fix(lagrange): no division by zero when a process has released no particle (#217)`.
+
+### Task 2.4 (added 2026-11-21 by the controller): no array is read with the element number of a particle that has left the domain
+
+**Why.** Found by the controller at the end of stage 2 (issue #234). In `track_xi` (`src/shyfem/lagrange_vertical.f90`, two calls, near lines 456 and 476) the tracker tests `track_xi_has_layer(iel,lb)`, which is `( ilhv(iel) >= lb )`, right after `call track_xi_next_element(iel,xi,id,ncross)`. When the particle has left the domain, `track_xi_next_element` returns `iel` negative, and `ilhv` is read before its first element. The word found there decides the particle's fate: at least `lb` and the particle leaves; less than `lb` and it is put back on the side of the element it tried to leave (`iel = ieorig; xi = xie`). Measured: valgrind reports `Invalid read of size 4` at both lines for a serial run of case B and for case A on 8 processes; case A on 8 processes gives different particle dumps (`lgrdbg.part.04`–`07`) with `MALLOC_PERTURB_=85` than without, while every flux and node dump is identical. A throwaway build with the guard below gave: serial particle files of cases A, B, C and E byte-identical to the current binary, valgrind 0 errors on serial case B, and identical 8-process dumps with and without the perturbation.
+
+A bounds-checked build (`-fcheck=bounds`) run by the controller found three more places on the same path. With all four corrected in a throwaway build, the serial cases A, B, C and E and the MPI runs (A on 3, 4 and 8 processes, B on 4, C on 4) end with no runtime message:
+- `src/shyfem/lagrange_main.f90:747` and `:917`: `if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel` reads `iarv` with a negative `iel` (Fortran does not short-circuit `.and.`). The value cannot change the outcome, but the read is outside the array.
+- `src/shyfem/lagrange_flux.f90`, `setup_flux2d` (near line 318): the dummies are declared `real tflux(ne)` and `real flux2d_loc(3,ne)`, but `flux2d_loc` is indexed by the element number (the actual argument is `flux2d(3,nel)`), and at a boundary node `tflux` holds `n = ne+1` side fluxes (`j = i+1` reaches `ne+1`). Wrong declarations, not stray accesses, but they stop every bounds-checked run in the first particle step.
+- the same in `setup_flux3d` (near line 286): `real tflux(nlvdi,ne)`.
+
+**Files:**
+- Modify: `src/shyfem/lagrange_vertical.f90` (`track_xi_has_layer`, near line 781)
+- Modify: `src/shyfem/lagrange_main.f90` (the two lines above)
+- Modify: `src/shyfem/lagrange_flux.f90` (the three declarations above)
+- Modify: `testcases/examples/mar_menor/check_lgr_mpi.sh` (new mode `perturb`)
+
+**Interfaces:**
+- `track_xi_has_layer(iel,lb)`: `.true.` when `iel < 1` (the particle has left the domain; there is no layer to test); otherwise `( ilhv(iel) >= lb )` as before.
+- `lagrange_main.f90`, both lines: the test of `iarv(iel)` is nested inside `if( iel > 0 )`, so `iarv` is read only for a real element. Same result as today.
+- `lagrange_flux.f90`: `tflux` and `flux2d_loc` (and `tflux` in `setup_flux3d`) are declared so that every index the loops use is inside the declared bounds: assumed-size in the last dimension (`tflux(*)`, `flux2d_loc(3,*)`, `tflux(nlvdi,*)`, which is what the controller's probe build used), or an explicit extent that you can show to be right for every node type. No statement changes.
+- `./check_lgr_mpi.sh CASE NP perturb`: runs CASE on NP processes twice with the debug dump on (`levdbg = 3`, as the modes `flux` and `part` do), once plainly and once with the environment variable `MALLOC_PERTURB_=85` exported to the run; keeps the two sets of dump files in `CASE.npNP.dbg/` and `CASE.npNP.perturb.dbg/`; compares every dump file of the first set with the file of the same name in the second, byte for byte (`cmp`); prints the names of files that differ or are missing on either side, the number of `loosing particle adv` lines of each run, and `LGR GATE: PASS` only if both runs ended, both sets hold the same file names, at least one file exists, and no file differs. No serial run in this mode. The variable is passed to the processes explicitly (`mpirun -x MALLOC_PERTURB_ …`), and before the perturbed run the mode prints the value seen by a launched process (`mpirun -np 1 -x MALLOC_PERTURB_ printenv MALLOC_PERTURB_`) and ends in `LGR GATE: FAIL` if that is empty, so a PASS can never be two plain runs. The script header says that a PASS is weak evidence: the perturbation only shows a dependence on memory that `malloc` hands out, and case A on 4 processes passed with the defect present.
+
+- [ ] **Step 1: Write the test.** Add the mode `perturb` to `check_lgr_mpi.sh` (house style of the other modes: same early checks, same clean-up of old dump files and of the temporary STR copy, usage text and header comment updated). Run `./check_lgr_mpi.sh mm_lgr_a 8 perturb` once and paste the output. The controller measured `LGR GATE: FAIL` there (`lgrdbg.part.04.txt` … `lgrdbg.part.07.txt` different, 0 against 6 `loosing particle adv` lines), but what the stray word holds depends on the session: in another session the two runs coincided. If the mode passes before the fix, report the two counts and go on. Do not search for a case or a process count that fails; the binding failing test is step 2.
+- [ ] **Step 2: The binding failing test, valgrind.** In a scratch copy of the test folder, a copy of `mm_lgr_b.str` with `itend = '2009-01-01::12:00:00'`, run serially under `valgrind --error-limit=no --num-callers=6 --log-file=…`. Expected today: `Invalid read of size 4` at `track_xi_ (lagrange_vertical.f90:456)` and `(…:476)`. Paste the two reports and the `ERROR SUMMARY` line.
+- [ ] **Step 3: Fix** the four places as in Interfaces. Nothing else changes: no statement is added to or removed from the flux routines, and the two `iarv` lines keep their effect.
+- [ ] **Step 4:** Rebuild. `./check_lgr_mpi.sh mm_lgr_a 8 perturb` → `LGR GATE: PASS`. Run the mode also for `mm_lgr_a` on 3 and 4, `mm_lgr_b` on 4 and `mm_lgr_c` on 4 and 8 processes. Expected: PASS in all. Report the number of `loosing particle adv` lines of each run.
+- [ ] **Step 5:** valgrind again: the serial run of step 2, and case A on 8 processes (`mpirun --oversubscribe -np 8 valgrind -q --error-limit=no --num-callers=12 --log-file=…/vg.%p.log shyfem …` on a copy of `mm_lgr_a.str` with `itend = '2009-01-01::23:00:00'`). Expected: the serial run has `ERROR SUMMARY: 0 errors`; in the 8 logs of the MPI run no report names a frame of the particle code (`grep -c 'lagrange_\|track_\|lgr_\|drogue'` is 0 in every log; reports from inside the MPI library itself are not this task's concern, say how many logs have them).
+- [ ] **Step 6:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin` → `SERIAL GUARD: PASS`; `./check_lgr_serial.sh repro` → `REPRO: PASS`; `./check_lgr_mpi.sh mm_lgr_a 4 flux` → `LGR GATE: PASS`.
+- [ ] **Step 6b:** The controller, not you, then builds your commit with `-fcheck=bounds` in a throwaway work tree and runs the serial and MPI cases there; a runtime message from the particle code comes back to you as a fix round. Do not make a bounds-checked build in the work tree.
+- [ ] **Step 7:** Commit: `fix(lagrange): no array is read with the element number of a particle that has left the domain (#234, #217)`.
+
 ---
 
 ## Stage 3: particle record, one rank per particle, hand-over
@@ -300,7 +345,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 ### Task 3.6: Built-in check, OpenMP, empty ranks
 
 **Files:**
-- Modify: `src/shyfem/lagrange_mpi.f90`, `src/shyfem/lagrange_main.f90` (call after `lgr_mpi_handover`; guards for the counters that divide by `idbdy`, ~721–731 and `lagrange_dif.f90` ~131–141)
+- Modify: `src/shyfem/lagrange_mpi.f90`, `src/shyfem/lagrange_main.f90` (call after `lgr_mpi_handover`). Amended 2026-11-21: the guards for the counters that divide by `idbdy` were brought forward as Task 2.3, because runs on 3 and 8 processes stopped there
 
 **Interfaces:**
 - Produces: `lgr_mpi_check_consistency(dtime)`: active at `levdbg >= 2` on more than one process; aborts with a message if the sum of live and exited particles over ranks differs from the number released, or if any particle sits in an element this rank does not hold.

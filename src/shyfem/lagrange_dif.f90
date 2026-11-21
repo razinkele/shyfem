@@ -129,16 +129,19 @@
         if( bvdiff .and.  dtime > 0. ) then     !not finished diffusing
           if( n == 0 ) then
             nk = nk + 1
-            perc = (100.*nk)/idbdy
+            perc = 0.
+            if( idbdy > 0 ) perc = (100.*nk)/idbdy
             write(6,1000) 'warning particle dif',id,iel,n,dtime,perc
             !iel = -iel
           else if( iel < 1 ) then
             nl = nl + 1
-            perc = (100.*nl)/idbdy
+            perc = 0.
+            if( idbdy > 0 ) perc = (100.*nl)/idbdy
             write(6,1000) 'loosing particle dif',id,iel,n,dtime,perc
           else
             nu = nu + 1
-            perc = (100.*nu)/idbdy
+            perc = 0.
+            if( idbdy > 0 ) perc = (100.*nu)/idbdy
             write(6,1000) 'unknown error dif',id,iel,n,dtime,perc
           end if
         end if

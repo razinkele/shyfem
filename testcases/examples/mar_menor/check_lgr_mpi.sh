@@ -12,6 +12,10 @@
 #         part   debug dump of the particles (per output time), serial vs MPI
 #         pos    final particle file: positions, layers, types, times
 #         ids    final particle file: the ids, the counts, valid cells
+#         perturb  two MPI runs (no serial run) with the debug dump, one
+#                plain and one with MALLOC_PERTURB_=85; every dump file of
+#                the two runs must be byte-identical (dependence of the
+#                result on memory that malloc hands out)
 #
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
@@ -29,6 +33,12 @@
 # command line and so replace the defaults, for example
 #   ./check_lgr_mpi.sh mm_lgr_a 4 part --by id --tol 1e-3
 #
+# perturb: the dumps of the second run go to CASE.npN.perturb.dbg/ and its log
+# is CASE.npN.perturb.log.  A PASS is weak evidence: the perturbation only
+# shows a dependence on memory that malloc hands out, and case A on 4
+# processes passed with the defect of issue #234 present.  The variable is
+# passed with mpirun -x; the mode fails if a launched process does not see it.
+#
 # Needs shyfem, mpirun and python3 on PATH (an OpenMPI build of shyfem), and
 # `make init` done together with
 #   (cd GRID && shypre -noopti MM_geo.grd)
@@ -41,7 +51,7 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|pos|ids)"
+  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|pos|ids|perturb)"
   exit 2
 }
 
@@ -54,7 +64,7 @@ case "$CASE" in
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
-case "$MODE" in flux|part|pos|ids) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+case "$MODE" in flux|part|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
 if [ "$CASE" = mm_lgr_b ]; then TOL=2; else TOL=1e-5; fi
 
 #--- preconditions -------------------------------------------------------
@@ -83,7 +93,7 @@ trap 'cleanup; exit 130' INT TERM
 
 STR="$CASE.str"
 DUMP=0
-if [ "$MODE" = flux ] || [ "$MODE" = part ]; then
+if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = perturb ]; then
   DUMP=1
   if grep -q '^[[:space:]]*levdbg' "$HERE/$CASE.str"; then
     echo "LGR GATE FAIL: $CASE.str already sets levdbg; refusing to add a second one"
@@ -140,6 +150,78 @@ collect_dbg() {
 }
 
 summary() { python3 "$HERE/lgr_compare.py" "$1" --summary 2>&1 | sed 's/^/    /'; }
+
+#--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
+if [ "$MODE" = perturb ]; then
+  nlost() { grep -c 'loosing particle adv' "$1"; }
+  PERTURB_VALUE=85
+  # value of MALLOC_PERTURB_ a process launched by mpirun sees, in brackets;
+  # stderr is kept out of the value; $1 = plain | perturbed
+  probe() {
+    if [ "$1" = plain ]; then
+      env -u MALLOC_PERTURB_ nice -n 19 mpirun --oversubscribe -np 1 sh -c 'echo "[${MALLOC_PERTURB_-}]"' 2> /dev/null
+    else
+      MALLOC_PERTURB_=$PERTURB_VALUE nice -n 19 mpirun --oversubscribe -np 1 -x MALLOC_PERTURB_ sh -c 'echo "[${MALLOC_PERTURB_-}]"' 2> /dev/null
+    fi
+  }
+  echo "=== 1. $CASE on $NP processes, plain"
+  seen="$(probe plain)"; probe_rc=$?
+  echo "  MALLOC_PERTURB_ seen by a launched process (plain run): $seen"
+  if [ "$probe_rc" != 0 ] || [ "$seen" != "[]" ]; then
+    fail "the plain run would not be unperturbed (probe exit code $probe_rc, seen '$seen', expected '[]')"
+    echo "LGR GATE: FAIL"; exit 1
+  fi
+  clean_outputs_mpi
+  env -u MALLOC_PERTURB_ nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$STR" > "$HERE/$CASE.np$NP.log" 2>&1
+  mpi_rc=$?
+  if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; then
+    tail -5 "$HERE/$CASE.np$NP.log"
+    fail "$CASE did not end on $NP processes (exit code $mpi_rc)"
+    echo "LGR GATE: FAIL"; exit 1
+  fi
+  collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
+  echo "  plain run ended"
+
+  echo "=== 2. $CASE on $NP processes, MALLOC_PERTURB_=85"
+  seen="$(probe perturbed)"; probe_rc=$?
+  echo "  MALLOC_PERTURB_ seen by a launched process (perturbed run): $seen"
+  if [ "$probe_rc" != 0 ] || [ "$seen" != "[$PERTURB_VALUE]" ]; then
+    fail "MALLOC_PERTURB_ does not reach the processes started by mpirun (probe exit code $probe_rc, seen '$seen', expected '[$PERTURB_VALUE]')"
+    echo "LGR GATE: FAIL"; exit 1
+  fi
+  clean_outputs_mpi
+  MALLOC_PERTURB_=$PERTURB_VALUE nice -n 19 mpirun --oversubscribe -np "$NP" -x MALLOC_PERTURB_ shyfem "$STR" \
+      > "$HERE/$CASE.np$NP.perturb.log" 2>&1
+  mpi_rc=$?
+  if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.perturb.log"; then
+    tail -5 "$HERE/$CASE.np$NP.perturb.log"
+    fail "$CASE did not end on $NP processes with MALLOC_PERTURB_ (exit code $mpi_rc)"
+    echo "LGR GATE: FAIL"; exit 1
+  fi
+  collect_dbg "$CASE.np$NP.perturb.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
+  echo "  perturbed run ended"
+
+  echo "=== 3. compare the dump files byte for byte"
+  D1="$HERE/$CASE.np$NP.dbg"; D2="$HERE/$CASE.np$NP.perturb.dbg"
+  nfiles=0; ndiff=0
+  for f in "$D1"/lgrdbg.*.txt; do
+    [ -e "$f" ] || continue
+    nfiles=$((nfiles + 1)); b="$(basename "$f")"
+    if [ ! -f "$D2/$b" ]; then echo "  missing in the perturbed run: $b"; ndiff=$((ndiff + 1))
+    elif ! cmp -s "$f" "$D2/$b"; then echo "  differs: $b"; ndiff=$((ndiff + 1)); fi
+  done
+  for f in "$D2"/lgrdbg.*.txt; do
+    [ -e "$f" ] || continue
+    b="$(basename "$f")"
+    if [ ! -f "$D1/$b" ]; then echo "  missing in the plain run: $b"; ndiff=$((ndiff + 1)); fi
+  done
+  echo "  $nfiles dump files compared, $ndiff differing or missing"
+  echo "  'loosing particle adv' lines: plain $(nlost "$HERE/$CASE.np$NP.log"), perturbed $(nlost "$HERE/$CASE.np$NP.perturb.log")"
+  [ "$nfiles" -gt 0 ] || fail "no dump file exists"
+  [ "$ndiff" = 0 ] || fail "the dump files of the plain and the perturbed run differ"
+  if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi
+  exit "$rc"
+fi
 
 #--- 1. serial run -----------------------------------------------------------
 echo "=== 1. $CASE serial (mode $MODE)"
