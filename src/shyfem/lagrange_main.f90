@@ -339,10 +339,14 @@
  	call drogue(dtime)
 
 !---------------------------------------------------------------
-! exchange particles across MPI ranks after advection
+! hand-over of the particles that reached a cut-off side of the MPI
+! domain: they finish the time step on the process across
 !---------------------------------------------------------------
 
-	if( bmpi_lagr ) call lgr_mpi_exchange
+	if( bmpi_lagr ) then
+	  call lgr_mpi_handover(dtime)
+	  if( dtime >= dtlend ) call lgr_mpi_handover_stats !levdbg >= 3
+	end if
 
 !---------------------------------------------------------------
 ! sediment module
@@ -571,6 +575,7 @@
 !	call lagr_surv(i)
 
 	lgr_ncross(i) = 0		!no crossing unless track_body_xi runs
+	lgr_marked(i) = 0		!not handed over unless the tracker marks it
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -602,10 +607,12 @@
 
 !---------------------------------------------------------------
 ! Compute advection, then diffusion, Stokes drift, beaching and store
+! (a particle marked at a cut-off side is finished on the process where
+! its advection ends, by lgr_mpi_handover)
 !---------------------------------------------------------------
 
 	call track_advect(i,t_left,n_left,dtime)
-	call track_finish(i,0,dtime)
+	if( lgr_marked(i) == 0 ) call track_finish(i,0,dtime)
 
 	end	
 
@@ -618,8 +625,14 @@
 ! the state of the particle is left in lgr_ar(i) (ie, xi, z, l);
 ! t_left and n_left return what is still to do
 !
+! a particle that reaches a cut-off side of the MPI domain is marked
+! (lgr_marked(i) = 1, lgr_mpi_mark_side): ie is then the element it is
+! leaving, xi its position on that side, t_left and n_left what the
+! process across continues with; the caller must not finish it
+!
 ! contracts for a caller that does not come through track_single:
-! - lgr_ncross(i) is not reset here; the caller sets it
+! - lgr_ncross(i) and lgr_marked(i) are not reset here; the caller sets
+!   them
 ! - the crossing count stored by track_body_xi is 100 - n_left, so the
 !   caller counts down from 100 over the whole step, also when a step is
 !   continued with a smaller budget
@@ -699,7 +712,6 @@
 ! still hold its value from the start of the step when this is called
 
 	use mod_lagrange
-	use mod_lagrange_mpi, only : lgr_mpi_check_ghost
 	use shympi, only : ip_int_elem
 	use basin, only : iarv
 
@@ -767,10 +779,7 @@
 !---------------------------------------------------------------
 
         lgr_ar(i)%actual%ie = ie
-	if( ie > 0 ) then
-	  lgr_ar(i)%actual%ie_global = ip_int_elem(ie)
-	  call lgr_mpi_check_ghost(i,ie)
-	end if
+	if( ie > 0 ) lgr_ar(i)%actual%ie_global = ip_int_elem(ie)
 	do ii=1,3
 	  lgr_ar(i)%actual%xi(ii) = xi(ii)
 	end do
@@ -786,8 +795,18 @@
         subroutine track_body_xi(i,id,ty,x,y,z,sv,xi,iel,lb,ttime,n)
 
 ! tracks one particle - uses internal coordinates
+!
+! a particle that stops on a cut-off side of the MPI domain (track_xi
+! returns icut > 0) is marked for the hand-over (lgr_mpi_mark_side) and
+! returns at once with iel the element it is leaving, ttime and n what
+! the process across continues with: n is decremented for the crossing
+! here, as the serial run decrements it before its next call of track_xi
+! in the new element. The statements after the loop (crossing count, lost
+! particle message, arrival flip) run on the process where the advection
+! ends, as in a serial run.
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_mark_side
 	use basin
 
 	implicit none
@@ -807,6 +826,8 @@
         
 	integer ie_from,ie_to
 	integer iperc
+	integer icut
+	logical bmark
 	real torig
 	real perc
 	double precision xx,yy,zz
@@ -822,6 +843,7 @@
 !---------------------------------------------------------------
 
 	zz = z
+	bmark = .false.
 	
 !---------------------------------------------------------------
 ! track particle
@@ -830,7 +852,7 @@
 	do while ( ttime > 0 .and. n > 0 )
 	  torig = ttime 		!time do advect
 	  ie_from = iel 		!start element 
-          call track_xi(id,iel,lb,sv,xi,zz,ttime,n) !advection 
+          call track_xi(id,iel,lb,sv,xi,zz,ttime,n,icut) !advection 
 	  ie_to = iel 			!new element if advection changed element
 
 	  if ( bconnect ) then		!connectivity
@@ -839,10 +861,22 @@
 	    call lagr_count(i,ie_to,ie_from,ttime)
 	  endif
 
+	  if( icut > 0 ) then		!cut-off side: goes on elsewhere
+	    iel = ie_from		!element it is leaving, xi on side icut
+	    n = n - 1			!the crossing (lb >= 1 after track_xi)
+	    call lgr_mpi_mark_side(i,iel,icut,ttime,n)
+	    bmark = .true.
+	    exit
+	  end if
 	  if( iel < 1 ) exit
 	  if( lb < 1 ) exit
 	  n = n - 1			!decrement loop counter
 	end do
+
+	if( bmark ) then		!finished by the process across
+	  z = zz
+	  return
+	end if
 
 	lgr_ncross(i) = 100 - n		!crossings used (own slot: OMP safe)
 

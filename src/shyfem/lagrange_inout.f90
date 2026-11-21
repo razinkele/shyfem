@@ -430,6 +430,7 @@
 
         lgr_ar(ito) = lgr_ar(ifrom)
 	lgr_ncross(ito) = lgr_ncross(ifrom)	!moves with its particle
+	lgr_marked(ito) = lgr_marked(ifrom)	!moves with its particle
 
 	return
 

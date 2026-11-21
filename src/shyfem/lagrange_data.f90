@@ -84,10 +84,17 @@
         type(lagr_entry), save, allocatable :: lgr_ar(:)
 
 	!element crossings used in the last time step, one per slot of lgr_ar
-	!(set to 0 by track_single and to the count by track_body_xi; -1 =
-	!unknown, set by lgr_mpi_exchange for a received particle; read by
-	!the debug dump)
+	!(set to 0 by track_single and to the count by track_body_xi, on the
+	!process where the particle ends its step the count of the whole
+	!step; read by the debug dump)
         integer, save, allocatable :: lgr_ncross(:)
+
+	!hand-over mark, one per slot of lgr_ar: 1 if the particle stopped
+	!on a cut-off side in this time step and goes on on another process
+	!(set by lgr_mpi_mark_side, cleared by track_single and for an
+	!arriving particle; written only for the own slot inside the
+	!parallel loop of drogue); 0 otherwise. Moves with its particle.
+        integer, save, allocatable :: lgr_marked(:)
 
 	!---------------------------------------------
 	! parameters
@@ -292,9 +299,14 @@
 	  if( ierr /= 0 ) call shympi_abort_internal(			&
      &		'mod_lagrange_init_body: allocation of lgr_ncross')
 	  lgr_ncross = 0
+	  allocate(lgr_marked(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_marked')
+	  lgr_marked = 0
         else if( nbdy == 0 ) then		!last time
 	  deallocate(lgr_ar)
 	  deallocate(lgr_ncross)
+	  deallocate(lgr_marked)
 	else
           ndim = min(nbdy,nbdy_lagr)
           allocate(paux(nbdy),stat=ierr)
@@ -307,6 +319,12 @@
 	  iaux = 0
 	  iaux(1:ndim) = lgr_ncross(1:ndim)
 	  call move_alloc(iaux,lgr_ncross)
+	  allocate(iaux(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_marked')
+	  iaux = 0
+	  iaux(1:ndim) = lgr_marked(1:ndim)
+	  call move_alloc(iaux,lgr_marked)
 	end if
 
 	call cpu_time(time2)
