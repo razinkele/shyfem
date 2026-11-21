@@ -868,8 +868,8 @@ ASCII boundary files have two columns: time (seconds) and value:
 | Parameter | Description |
 |-----------|-------------|
 | `zfact` | Scaling factor for boundary values (default 1.0) |
-| `ztilt` | Water level tilt across boundary (meters) |
-| `ktilt` | Boundary node around which tilting occurs |
+| `ztilt` | Water level tilt across boundary (meters); serial runs only, not supported with MPI |
+| `ktilt` | Boundary node around which tilting occurs; serial runs only, not supported with MPI |
 | `intpol` | Interpolation order: 1=step, 2=linear, 4=cubic |
 | `tramp` | Ramp-up time for discharge boundaries (seconds) |
 | `levmin`, `levmax` | Restrict discharge to specific vertical layers |
@@ -1916,8 +1916,8 @@ semi-implicit weights (for example `azpar = ampar = 0.5`) in basins that dry.
 | `ibtyp` | int | 1 | Boundary type (1=level, 2=flux, 3=internal, 4=momentum) |
 | `boundn` | string | — | Boundary time series file |
 | `zfact` | float | 1.0 | Scaling factor |
-| `ztilt` | float | 0.0 | Water level tilt (m) |
-| `ktilt` | int | 0 | Tilt reference node |
+| `ztilt` | float | 0.0 | Water level tilt (m); not supported with MPI |
+| `ktilt` | int | 0 | Tilt reference node; not supported with MPI |
 | `intpol` | int | 2/4 | Interpolation (1=step, 2=linear, 4=cubic) |
 | `ampli` | float | 0.0 | Sinusoidal amplitude |
 | `period` | float | 43200 | Sinusoidal period (s) |

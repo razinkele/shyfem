@@ -879,10 +879,13 @@
 	call get_bnd_par(ibc,'ztilt',ztilt)
 	call get_bnd_ipar(ibc,'ktilt',ktilt)
 
+	! ckbnds already stops a parallel run that tilts; this is a second
+	! guard. No barrier here: a domain without this boundary has
+	! ibtyp = 0 and has returned above.
 	if( ztilt /= 0. .or. ktilt > 0 ) then
 	  if( shympi_is_parallel() ) then
-            call shympi_syncronize
-            stop 'error stop init_tilt: tilting not ready for mpi'
+	    call shympi_abort_internal( &
+     &		'error stop init_tilt: tilting not ready for mpi')
 	  end if
 	end if
 
@@ -902,7 +905,8 @@
 	if( berr ) then
 	  write(6,*) 'Node number for tilting not in boundary node list'
 	  write(6,*) 'ktilt :',ipext(ktilt)
-	  stop 'error stop init_tilt: no node'
+	  flush(6)
+	  call shympi_abort_internal('error stop init_tilt: no node')
 	end if
 
 	end
