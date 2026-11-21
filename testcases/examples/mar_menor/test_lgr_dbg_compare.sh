@@ -83,7 +83,7 @@ def kkey(id):
 def kbase(id, b):
     return (float(id) + 0.5 * b, 2.0 * b)
 
-def write_k(d, n, lines, key=True):
+def write_k(d, n, lines, key=True, ieg=lambda i, b: 7):
     """lines = [(block, rank, cls, id, x, y, ncross, key)]"""
     os.makedirs(d, exist_ok=True)
     for r in range(n):
@@ -93,13 +93,13 @@ def write_k(d, n, lines, key=True):
                 if rank != r:
                     continue
                 f.write('%s %14.1f %10d %.16E %.16E %16.8E %5d %10d %5d %5d'
-                        % (c, TK[b], id, x, y, 0.5, 1, 7, rank, nc))
+                        % (c, TK[b], id, x, y, 0.5, 1, ieg(id, b), rank, nc))
                 if key:
                     f.write(' %10d %24.16E %24.16E %5d %16.8E %24.16E' % k)
                 f.write('\n')
 
 def krun(name, n, ids, changed=(), off=None, cls=None, nc=None, key=True,
-         drop=(), extra=()):
+         drop=(), extra=(), ieg=lambda i, b: 7):
     """Particles `ids` in both blocks.  An MPI run (n > 1) has particle i on
     rank 0 in block 0 and, if i is in `changed`, on rank n-1 in block 1 (else
     on rank 0).  off(i, b) -> (dx, dy) added to the position, cls(i, b) the
@@ -115,10 +115,16 @@ def krun(name, n, ids, changed=(), off=None, cls=None, nc=None, key=True,
             rank = (n - 1) if (b == 1 and i in changed) else 0
             lines.append((b, rank, cls(i, b) if cls else 'P', i, x + dx,
                           y + dy, nc(i, b) if nc else 1, kkey(i)))
-    write_k(os.path.join(root, name), n, lines + list(extra), key)
+    write_k(os.path.join(root, name), n, lines + list(extra), key, ieg)
 
 I10 = range(1, 11)
 krun('kser', 1, I10)
+# no particle changes process; no pair at distance 0 in block 0; element
+# differs for particle 2
+krun('knochg', 2, I10)
+krun('koff', 2, I10, changed=range(1, 6), off=lambda i, b: (1e-3, 0.0))
+krun('kelem', 2, I10, changed=range(1, 6),
+     ieg=lambda i, b: 8 if (i == 2 and b == 1) else 7)
 krun('kser_old', 1, I10, key=False)
 krun('kok', 2, I10, changed=range(1, 6))
 krun('kok_old', 2, I10, changed=range(1, 6), key=False)
@@ -301,6 +307,30 @@ check "hand-over, distances above --tol are not gated" 0 "" \
     part "$t/kser" "$t/kone" --tol 0 --by key --handover
 check "hand-over needs --by key" 2 "needs --by key" \
     part "$t/kser" "$t/kok" --tol 0 --handover
+check "hand-over --ncross: differs at distance 0, gated" 1 "ncross differs at distance 0: 1; at a non-zero distance: 0" \
+    part "$t/kser" "$t/kncr0" --tol 1 --by key --handover --ncross
+check "hand-over without --ncross: not gated" 0 "ncross differs 1 \(not gated\).*distance 0: 1 \(not gated\)" \
+    part "$t/kser" "$t/kncr0" --tol 1 --by key --handover
+check "hand-over --ncross: differs at a non-zero distance, no failure" 0 "ncross differs 1 \(gated at distance 0 only\).*distance 0: 0; at a non-zero distance: 1 \(never gated\)" \
+    part "$t/kser" "$t/kncrd" --tol 1 --by key --handover --ncross --allow 1
+check "hand-over --elem: element differs, gated" 1 "element differs 1[^ 0-9]" \
+    part "$t/kser" "$t/kelem" --tol 1 --by key --handover --elem
+check "hand-over without --elem: element differs, not gated" 0 "element differs 1 \(not gated\)" \
+    part "$t/kser" "$t/kelem" --tol 1 --by key --handover
+check "hand-over, counts beyond tol, layer and z are marked not gated" 0 "beyond tol 0 \(not gated\), layer differs 0 \(not gated\), z differs 0 \(not gated\)" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover
+check "hand-over, no changed-process pair says so and passes" 0 "changed process +0 +0 +0 +0 .*stayed +10 +10 +0 +0 .*no changed-process pair: the hand-over was not exercised" \
+    part "$t/kser" "$t/knochg" --tol 0 --by key --handover
+check "hand-over, no changed-process pair, --min-changed 1" 1 "FAIL: 0 changed-process pairs found, 1 required" \
+    part "$t/kser" "$t/knochg" --tol 0 --by key --handover --min-changed 1
+check "hand-over, --min-changed 5 met" 0 "changed process +5 +5 " \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover --min-changed 5
+check "hand-over, --min-changed 6 not met" 1 "FAIL: 5 changed-process pairs found, 6 required" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover --min-changed 6
+check "hand-over, no pair at distance 0 at all" 1 "nothing was compared" \
+    part "$t/kser" "$t/koff" --tol 1 --by key --handover
+check "hand-over with --first-only" 2 "cannot be combined with --first-only" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover --first-only
 
 if [ "$fail" -eq 0 ]; then echo "LGR DBG COMPARE TEST: PASS"; exit 0; fi
 echo "LGR DBG COMPARE TEST: FAIL"; exit 1

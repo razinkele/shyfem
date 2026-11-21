@@ -7,7 +7,7 @@ usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
                           [--by {id|nearest|key}] [--first-only]
                           [--ranks-empty-ok] [--ncross] [--elem]
                           [--handover [--step LENGTH] [--allow K]
-                                      [--factor F]]
+                                      [--factor F] [--min-changed N]]
 
 Each directory holds the files lgrdbg.KIND.NN.txt of one run (NN = rank),
 written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  Every file
@@ -88,11 +88,18 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
                     beyond the step (default 1) and a rate (beyond / pairs)
                     more than --factor F times the rate of "stayed" (default
                     2; a "stayed" group without pairs or without any pair
-                    beyond the step has rate 0).  In this mode only the
-                    structure fails the run (times, counts, duplicate and
-                    unmatched keys, NaN positions) together with the rule;
-                    distances above --tol, layers, z, elements and crossing
-                    counts are printed but not gated.
+                    beyond the step has rate 0).  A run without any
+                    "changed process" pair prints "no changed-process pair:
+                    the hand-over was not exercised" and still passes; with
+                    --min-changed N (default 0) it fails if fewer than N such
+                    pairs exist.  If no pair at distance 0 exists at all
+                    (both groups empty) nothing was compared and the mode
+                    fails.  Besides these and the rule, the structure fails
+                    the run (times, counts, duplicate and unmatched keys, NaN
+                    positions), and --ncross (distance 0 only) and --elem
+                    gate as without --handover; distances above --tol, layers
+                    and z are printed with "(not gated)".  --first-only
+                    cannot be combined with --handover (exit 2).
       --elem        a differing global element is a failure.
       --first-only  look at the first time in the files only (the block
                     written right after the first release, before any
@@ -688,11 +695,22 @@ def handover_report(groups, left_out, beyond_list, args):
               " ranks %d -> %d, distance %.4e"
               % (" ".join("%.17g" % v for v in key), t1, t2, r1, r2, d))
     beyond = groups["changed"][3]
+    nfail = 0
+    if groups["changed"][0] == 0:
+        print("  no changed-process pair: the hand-over was not exercised")
+    if groups["changed"][0] == 0 and groups["stayed"][0] == 0:
+        print("  FAIL: no pair at distance 0 at the first block of any two "
+              "consecutive blocks: nothing was compared")
+        nfail += 1
+    if groups["changed"][0] < args.min_changed:
+        print("  FAIL: %d changed-process pairs found, %d required "
+              "(--min-changed)" % (groups["changed"][0], args.min_changed))
+        nfail += 1
     bad = beyond > args.allow and rate["changed"] > args.factor * rate["stayed"]
     print("  rule: FAIL if changed-process pairs beyond the step > %d and "
           "their rate > %g * the rate of the stayed group: %s"
           % (args.allow, args.factor, "FAIL" if bad else "ok"))
-    return 1 if bad else 0
+    return nfail + (1 if bad else 0)
 
 
 def cmd_part(args):
@@ -792,9 +810,9 @@ def cmd_part(args):
         if args.by == "key":
             tot["ncr0"] += nx0
             tot["ncrn"] += nxn
-        if args.ncross and not args.handover:
+        if args.ncross:
             bad += nx0 if args.by == "key" else nx
-        if args.elem and not args.handover:
+        if args.elem:
             bad += nie
         nfail += bad
         for key, v in (("unmat", unmat), ("nan", nnan), ("over", nover),
@@ -814,11 +832,18 @@ def cmd_part(args):
                  nover, nlb, nz, nx, nunk, nie, note))
     if worst[1] is not None:
         print("  largest distance %.4e at time %.1f" % worst)
-    print("  totals over %d outputs: unmatched %d, nan %d, beyond tol %d,"
-          " layer differs %d, z differs %d, ncross differs %d%s,"
+    ng = " (not gated)" if args.handover else ""
+    if not args.ncross:
+        ncr_note = " (not gated)"
+    elif args.by == "key":
+        ncr_note = " (gated at distance 0 only)"
+    else:
+        ncr_note = ""
+    print("  totals over %d outputs: unmatched %d, nan %d, beyond tol %d%s,"
+          " layer differs %d%s, z differs %d%s, ncross differs %d%s,"
           " ncross unknown (-1) %d, element differs %d%s"
-          % (len(times), tot["unmat"], tot["nan"], tot["over"], tot["lb"],
-             tot["z"], tot["ncr"], "" if args.ncross else " (not gated)",
+          % (len(times), tot["unmat"], tot["nan"], tot["over"], ng, tot["lb"],
+             ng, tot["z"], ng, tot["ncr"], ncr_note,
              tot["unk"], tot["ie"], "" if args.elem else " (not gated)"))
     if args.by == "key":
         print("  ncross differs at distance 0: %d%s; at a non-zero distance:"
@@ -874,6 +899,9 @@ def main(argv=None):
     p.add_argument("--factor", type=float, default=2.0,
                    help="--handover: allowed ratio of the rates of the two"
                         " groups (default 2)")
+    p.add_argument("--min-changed", type=int, default=0,
+                   help="--handover: fail if fewer than N pairs are in the"
+                        " changed-process group (default 0)")
     p.set_defaults(func=cmd_part)
     args = ap.parse_args(argv)
     if not args.tol >= 0:
@@ -881,6 +909,10 @@ def main(argv=None):
     if args.mode == "part":
         if args.handover and args.by != "key":
             ap.error("--handover needs --by key")
+        if args.handover and args.first_only:
+            ap.error("--handover cannot be combined with --first-only")
+        if args.min_changed < 0:
+            ap.error("--min-changed must be >= 0")
         if not args.step >= 0 or args.allow < 0 or not args.factor >= 0:
             ap.error("--step, --allow and --factor must be >= 0")
     try:
