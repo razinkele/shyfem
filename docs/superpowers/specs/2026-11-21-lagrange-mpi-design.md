@@ -1,6 +1,7 @@
 # Lagrangian particles under MPI — design
 
 Date: 2026-11-21. Issue: #217. Status: for the owner's review; nothing is built yet.
+Checked by a fresh reviewer reading it as a builder (2026-11-21); its six points are worked in.
 
 Code map with `file:line` references for everything named here:
 `docs/superpowers/specs/2026-11-21-lagrange-mpi-code-map.md` (read-only research on main `43ff9c30`).
@@ -29,6 +30,8 @@ are comparable.
 | M6 | Every other array the tracker reads is valid on every rank | element arrays `utlnv, vtlnv, utlov, vtlov, ulnv, vlnv, hdenv, hev, zenv, iwegv` and node arrays `znv, areakv, hdknv`: worst difference 3e-6 of scale, in all element classes and at ghost nodes. `wlnv`, `mfluxv`, `difv` are zero in this 2D closed case and so are untested |
 | M7 | Particle ids repeat across ranks | 49 ids occur twice: each rank counts `idbdy` from 1 |
 | M8 | An element's vertex order is the same on every rank | 2,651 of 2,651 elements identical to serial |
+| M9 | A serial run is reproducible only with the random walk off | two serial runs of the same binary: `rwhpar = 0` gives byte-identical `.lgr.shy`; `rwhpar = 0.5` (the shipped `mm_lgr.str`) gives different `.lgr.shy` with identical `.hydro.shy` and `.inf`. The random numbers are never seeded |
+| M10 | Every step converts each particle to single-precision x,y and back, even with `rwhpar = 0` | in the serial run this moved a particle into a neighbouring element 79 times in 167,040 particle-steps, and the element search never failed |
 
 Cause of M4, read from the source (code map, section 1): `setup_fluxes_3d` loops over all local
 nodes and adds each node's contribution to the two sides of each element around it. A node owned
@@ -59,7 +62,9 @@ Defects found by reading, not yet exercised by a run (code map, sections 4–6):
    and the UI's `lgrelab -lgmean` without change.
 3. Particle ids are the same as in a serial run.
 4. No crash and no hang, whatever the number of particles that change rank in a step.
-5. A serial run is byte-identical before and after every stage of this work.
+5. A serial run with the random walk off is byte-identical before and after every stage of this
+   work. With the random walk on, serial runs already differ from each other (M9), so there the
+   hydrodynamic output must stay byte-identical and the particle output is compared statistically.
 6. Every Lagrangian option either works under MPI and has a test, or stops at start-up with one
    clear message that names the option (section 6.9).
 
@@ -74,7 +79,9 @@ Defects found by reading, not yet exercised by a run (code map, sections 4–6):
 
 **Anti-goals** (the work has failed if any of these happens)
 
-- A serial result changes.
+- A reproducible serial result changes.
+- A particle run on several processes finishes on main with wrong tracks at any point of the
+  delivery (section 10, decision 6).
 - A particle exists on two ranks at once, or on none, at the end of a time step.
 - A run finishes with wrong tracks and no message.
 
@@ -156,8 +163,9 @@ sorted by global element number on both sides, built once at start-up.
   must cover one known gap: `set_geom_mpi` leaves a side unmarked when both of its end nodes are
   boundary nodes of the basin (`lnkmpi.f90:144-145`), so an interior side between two boundary
   nodes reads as a wall. The Lagrangian module therefore builds its own table of cut-off sides at
-  start-up from the global mesh (`nen3v_global` and the node owners), and does not rely on the
-  `ieltv` marks alone.
+  start-up and does not rely on the `ieltv` marks alone. `nen3v_global` exists on the ranks;
+  global coordinates and global node owners are not known to, so the table may need one exchange
+  at start-up.
 - **What travels**: the whole particle record (section 6.6), the global number of the element it
   left, the global numbers of the two end nodes of the side with the particle's weight at each,
   the particle's own time at the crossing, and a flag that its advection for this step is not
@@ -167,8 +175,11 @@ sorted by global element number on both sides, built once at start-up.
   vertex), and continues the advection for the time that is left. Lookups from global to local
   numbers use an index built once, not a scan of all elements per particle.
 - **Loop**: track, exchange, track the arrivals, exchange again, until no rank has anything to
-  send. A cap on the number of rounds (the plan sets it) ends the run with a clear message
-  instead of looping forever.
+  send.
+- **Crossing limit**: a serial run lets a particle cross at most 100 elements per time step and
+  then leaves it where it is (`track_body_xi`). The count travels with the particle, so the limit
+  is the same in an MPI run and it also bounds the number of rounds. Reaching it is handled as in
+  a serial run, not as an error.
 - **Once per step**: the steps after advection (horizontal and vertical diffusion, Stokes drift,
   beaching) run exactly once per particle and time step, on the rank where its advection ends.
 - A particle that ends the step inside a mixed element stays with the rank that has it. There is
@@ -186,31 +197,44 @@ does not hold.
   goes to the element with the lowest global number, so exactly one rank answers.
 - If no rank takes it, the point is outside the basin and the particle is treated as in a serial
   run today.
-- This is a second, rarer path. It also serves release by position (section 6.8).
+- With no displacement (`rwhpar = 0`, no drift) the conversion to x,y and back still runs every
+  step (M10), and rounding can put a particle that ended its advection next to a cut-off side
+  into the neighbour element, which this rank may not hold. A serial run moves it to the
+  neighbour. So a failed local search is offered by position in this case too, and cases A, B
+  and C depend on this path. It is built together with the hand-over at cut-off sides.
+- A point exactly on an edge between two elements can end up in either of them in a serial run,
+  depending on local numbering. The position is the same; only the element differs.
 
 ### 6.6 The particle record on the wire
 
 Everything in `lagr_entry` travels: `init` and `actual` (internal coordinates, time, `z`, layer,
 global element number), `id`, `type`, `sinking`, both bitmaps as 64-bit values, and the custom
-values with their own count. Local element numbers are never sent; the receiver derives them.
+values with their own count. Local element numbers are never sent. The receiver derives the local
+number of the current element; the release element stays a global number, because the receiver
+may not hold it and does not need it (section 6.11).
 Buffers grow with the number of particles to send. No fixed limit can abort a run.
 
 ### 6.7 Ids
 
 - Ids equal the serial ones. In a release, each rank creates the particles of the elements it is
-  the main owner of. The particles of one release call are then numbered in the serial order:
-  by global element number, then by the release grid's own order inside the element.
+  the main owner of. They are then numbered in the serial order: polygon by polygon in file
+  order (for a polygon release), inside a polygon by global element number, and inside an element
+  by the release grid's own order.
 - The id counter is one global value kept in step on all ranks.
 - `nbdymax` limits the global number of particles, as in a serial run.
+- Release positions are bit-identical to serial. The whole-basin release takes its grid spacing
+  from the basin area and its origin from the mean node position. Under MPI both are computed
+  from the same per-element and per-node values as in a serial run, added in global order in the
+  same precision; a sum in another order could move a release point across an element edge.
 
 ### 6.8 Release paths
 
 | Path | Selected by | Under MPI |
 |---|---|---|
-| Polygons | `lgrlin` | works: owner filter added |
-| Whole basin | `lgrlin` blank | works: grid origin and spacing from the global basin |
-| Restart from a particle file | `lgrini` | works: each rank takes the particles whose element it is the main owner of |
-| Trajectory file | `lgrtrj` | stops with a message in this project (section 6.9) |
+| Polygons | `lgrlin` | works: owner filter added (case A) |
+| Whole basin | `lgrlin` blank | works: grid origin and spacing as in section 6.7 (case B) |
+| Restart from a particle file | `lgrini` | stops with a message in this project (section 6.9) |
+| Trajectory file | `lgrtrj` | stops with a message in this project |
 | Continuous release at boundaries | `lgrpps` on a boundary | stops with a message in this project |
 | Connectivity stations | `icnn > 0` | stops with a message in this project |
 
@@ -219,29 +243,35 @@ Buffers grow with the number of particles to send. No fixed limit can abort a ru
 "Stops" means: on more than one process the run ends at start-up with one message that names the
 option, printed by the master. Each stopped option gets a follow-up issue.
 
-| Option | Switch | Under MPI in this project |
-|---|---|---|
-| Surface and layer tracking | `ilagr = 1, 2` | works |
-| 3D tracking with vertical diffusion | `ilagr = 3` | works |
-| Horizontal random walk | `rwhpar /= 0` | works (statistically, section 6.10) |
-| Stokes and wind drift | `stkpar > 0` | works |
-| Beaching | `lbeach > 0` | works |
-| Transit area | `artype` | works |
-| Decay | `ldecay > 0` | works. A decayed particle keeps its last element with a negative sign instead of element 0, so its last position can be written |
-| Sediment | `ised > 0` | stops |
-| Larvae | `ilarv > 0` | stops |
-| Connectivity | `icnn > 0` | stops |
-| Continuous boundary release | `lgrpps` | stops |
-| Trajectory release | `lgrtrj` | stops |
+| Option | Switch | Under MPI in this project | Test |
+|---|---|---|---|
+| Surface and layer tracking | `ilagr = 1, 2` | works | cases A, B: positions equal serial |
+| Layer tracking in a 3D basin | `ilagr = 2` | works | case C: positions equal serial |
+| Stokes and wind drift | `stkpar > 0` | works | case E: positions equal serial (it is deterministic and exercises the by-position path) |
+| Horizontal random walk | `rwhpar /= 0` | works, statistically (section 6.10) | case D: no particle lost or duplicated, counts, inside the basin |
+| 3D tracking | `ilagr = 3` | works, statistically: vertical diffusion is always on in this mode and draws random numbers | case F: no particle lost or duplicated, layers valid |
+| Beaching | `lbeach > 0` | stops | AC10 |
+| Transit area | `artype` set | stops | AC10 |
+| Decay | `ldecay > 0` | stops | AC10 |
+| Restart from a particle file | `lgrini` | stops | AC10 |
+| Sediment | `ised > 0` | stops | AC10 |
+| Larvae | `ilarv > 0` | stops | AC10 |
+| Connectivity | `icnn > 0` | stops | AC10 |
+| Continuous boundary release | `lgrpps` | stops | AC10 |
+| Trajectory release | `lgrtrj` | stops | AC10 |
+
+Every option in the "works" rows has a test case and a criterion. An option without a test stops.
 
 This table is a proposal. The owner may move an option from "stops" to "works"; each one moved
-adds a test case and a stage to the plan.
+adds a test case, a criterion and work to the plan. Beaching, transit area, decay and the restart
+from a particle file are the small ones: they act on one particle at a time.
 
 ### 6.10 Random numbers
 
 - Each rank draws from its own stream, so with the random walk on, an MPI run differs from the
   serial run particle by particle.
-- With `rwhpar = 0` the draws in the diffusion step are multiplied by zero and change nothing.
+- With `rwhpar = 0` the draws in the diffusion step are multiplied by zero. The step still
+  converts the position to single-precision x,y and back and searches for the element (M10).
 - One draw remains with the random walk off: a particle that lands exactly on a vertex picks its
   next element at random (`track_xi_next_element`). Such a particle may take a different element
   in serial and MPI. This is accepted and documented. If it shows up in the acceptance tests, the
@@ -251,7 +281,12 @@ adds a test case and a stage to the plan.
 ### 6.11 Output
 
 - Each rank prepares the output records of its own particles: coordinates, layer depth, and the
-  block the particle belongs to (active, inserted, exited). Rank 0 gathers and writes them.
+  block the particle belongs to (active or exited). Rank 0 gathers and writes them.
+- The **inserted** block is written from the release element: its coordinates, and the layer
+  depth of that element at the time of the output. A particle may have changed rank before its
+  first output, and its new rank need not hold the release element. So the rank that released a
+  particle keeps a release record for it until the next output, writes the inserted record from
+  it, and then drops it. A release record is output data, not a second copy of the particle.
 - Rank 0's own particle array is never overwritten by the gather.
 - Order inside each block: by id. A serial run writes in array order, which is id order unless
   the run restarted from a file with other ids; the comparison tool matches by id.
@@ -295,8 +330,14 @@ run with a message if not. This costs one small exchange per step and is off by 
 |---|---|---|
 | A | geographic `MM_geo`, 2D, polygon release, `rwhpar = 0` | the measured case |
 | B | Cartesian `MM_coarse`, 2D, whole-basin release, `rwhpar = 0`, open boundary without tilting | Cartesian geometry, whole-basin release, exits through an open boundary |
-| C | 3D with levels, `ilagr = 3` with vertical diffusion off if the code allows it, else `ilagr = 2` | layers, vertical velocity, `wlnv`/`mfluxv`/`difv` audit |
+| C | 3D with levels and an open boundary, `ilagr = 2` (tracking inside layers, no random numbers) | fluxes and layer thickness below the surface; input audit of `wlnv`, `mfluxv` |
 | D | case A with `rwhpar = 0.5` (today's `mm_lgr.str`) | random walk, hand-over by position |
+| E | case A with `stkpar > 0` and `rwhpar = 0` | Stokes and wind drift, hand-over by position, deterministic; input audit of `wxv`, `wyv` |
+| F | case C with `ilagr = 3` | vertical advection and vertical random walk; input audit of `difv` |
+
+The input audit of M6 is repeated for every array a "works" option reads (code map, section 2),
+on the case that uses it, before the option is relied on. An array that is not valid at ghost
+nodes or in mixed elements gets an exchange, or its option moves to "stops".
 
 **A comparison tool** reads two `.lgr.shy` files and reports, per output time and block, the
 particle counts, any id present in only one file, and the largest position difference between
@@ -307,32 +348,36 @@ particles with the same id. It is used by the tests and by the CI gate.
 | # | Criterion | Limit |
 |---|---|---|
 | AC1 | `flux3d` and `flux2d` in every held element equal serial | relative difference ≤ 1e-5 of the array's maximum (all-own elements measure 9e-7 today) |
-| AC2 | Cases A, B, C: same ids in the same blocks at every output | exact |
-| AC3 | Cases A, B, C: position of every particle against serial | ≤ 1e-5° (geographic) or ≤ 2 m (Cartesian, where single precision resolves 0.5 m), every output; layer and relative depth equal |
-| AC4 | Case D: particle count per block equals serial at every output; every active particle lies inside the basin; no id twice | exact |
-| AC5 | Case D: mean position and spread of each release group against serial | reported, not gated |
-| AC6 | Serial `.lgr.shy`, `.hydro.shy` and `.inf` of `mm_lgr.str` and `mm_lgr_01.str` before and after each stage | byte-identical |
+| AC2 | Cases A, B, C, E: same ids in the same blocks at every output | exact |
+| AC3 | Cases A, B, C, E: position of every particle against serial | ≤ 1e-5° (geographic) or ≤ 2 m (Cartesian, where single precision resolves 0.5 m), every output; layer and relative depth equal |
+| AC4 | Cases D, F: the set of ids over the three blocks equals the serial set at every output (no particle lost, none twice); every active particle lies inside the basin and in a valid layer. Case D (closed basin) also: the count per block equals serial | exact |
+| AC5 | Cases D, F: mean position and spread of each release group against serial | reported, not gated |
+| AC6 | Serial run before and after each stage. Cases A, B, C, E: `.lgr.shy`, `.hydro.shy`, `.inf`. `mm_lgr.str` and `mm_lgr_01.str` as shipped: `.hydro.shy` and `.inf` only (M9) | byte-identical |
 | AC7 | `mpirun -np 1` | byte-identical to serial |
 | AC8 | `lgrelab -lgmean` on the MPI file of case A against the serial file | same particles; values within the AC3 limit |
 | AC9 | The cases of section 7 | each has a test or a recorded run that shows it |
-| AC10 | Each "stops" option of section 6.9 on 4 processes | one message naming the option, non-zero exit, no crash |
+| AC10 | Each "stops" option of section 6.9 on 4 processes | one message naming the option, non-zero exit, no crash; the same STR file still runs serially |
+| AC11 | During stage 3 on cases A, B, C: the number of particles handed over by position at zero displacement | reported; no particle lost or duplicated because of one |
 
 If AC3 cannot be met because the hydrodynamics themselves differ between serial and MPI
 (measured today: up to 1.4e-4 m/s in one 2D case), the builder reports the measured numbers and
 the owner decides on the limit. The limit is not relaxed silently.
 
-**CI**: `testcases/examples/mar_menor/check_mpi.sh` gets a Lagrangian check (case A on 4
-processes against serial with the comparison tool). That is a change to a test script, not to a
-workflow file.
+**CI**: `testcases/examples/mar_menor/check_mpi.sh` (on main since `7eb80897`, run by the Fortran
+CI's MPI job) gets a Lagrangian check: case A on 4 processes against serial with the comparison
+tool. That is a change to a test script, not to a workflow file.
 
 ## 9. Not in this project
 
 Each becomes its own issue when this design is approved:
 
-- `particle_on_side` (`lagrange_util.f90:147-193`) intersects with the segments between mesh
-  nodes 1, 2 and 3 instead of the element's own vertices. Serial code, in use for the random walk
-  and Stokes drift.
-- `lgr_output` calls `xi2xy` with element 0 for deleted particles (serial).
+- #223: `particle_on_side` (`lagrange_util.f90:147-193`) intersects with the segments between
+  mesh nodes 1, 2 and 3 instead of the element's own vertices. Serial code, in use for the random
+  walk and Stokes drift. Cases D and E run through it, so their serial reference carries this
+  defect; fixing it later changes both serial and MPI results in the same way.
+- `lgr_output` calls `xi2xy` with element 0 for deleted or decayed particles (serial).
+- The random numbers are never seeded, so serial runs with the random walk on are not
+  reproducible (M9).
 - `itlin = 1` (semi-Lagrangian momentum advection) under MPI.
 - The options that stop under MPI in section 6.9.
 - `lgr_mpi_reduce_connect` sums the connectivity matrices in place every step.
@@ -340,16 +385,21 @@ Each becomes its own issue when this design is approved:
 ## 10. Decisions made here that the owner can change
 
 1. The works/stops split of sections 6.8 and 6.9.
-2. A decayed particle keeps its last element with a negative sign (changes serial output for
-   runs with decay, which today write garbage coordinates for such particles or crash).
-3. Ids equal to serial, at the cost of one small exchange per release.
-4. Output order by id.
-5. The limits of AC1 and AC3.
-6. Staged delivery, each stage its own PR with serial byte-identical: (1) test cases, comparison
-   tool and serial guards; (2) fluxes across ranks; (3) the particle record, one rank per
-   particle, hand-over at cut-off sides; (4) release and ids; (5) output; (6) hand-over by
-   position and the random-walk case; (7) the start-up stops and the CI check. MPI particle runs
-   stay broken until stage 5 is merged, as they are today.
+2. Ids equal to serial, at the cost of one small exchange per release.
+3. Output order by id.
+4. The limits of AC1 and AC3.
+5. The order of the work: (1) test cases, comparison tool and serial guards; (2) fluxes across
+   ranks; (3) the particle record, one rank per particle, hand-over at cut-off sides and by
+   position; (4) release and ids; (5) output; (6) cases D, E and F; (7) the start-up stops and the
+   CI check.
+6. **Delivery through an integration branch.** Each stage is its own reviewed pull request, but
+   into a branch `feat/lagrange-mpi`, not into main. Main gets one merge at the end, when every
+   criterion of section 8 holds. Reason: once the output stage is in, an MPI particle run
+   finishes, but until stages 6 and 7 are in, a run with an option that is not yet tested or
+   stopped would finish with wrong tracks and no message.
+   The alternative is to merge each stage into main and add temporary start-up stops with the
+   output stage; the owner decided against an interim stop on 2026-11-21, so this design uses the
+   integration branch. Until the final merge, MPI particle runs on main crash as they do today.
 
 ## 11. Left to the builder
 
