@@ -242,6 +242,13 @@
 	  gmax = max(gmax,g)
 	end do
 
+	! the quality measure needs at least one node and one element per
+	! domain (integer division) and more than one domain: otherwise
+	! gtheo is 0 or the division by nel/np traps. report 0 then.
+
+	pquality = 0.
+	if( np < 2 .or. nkn/np == 0 .or. nel/np == 0 ) return
+
         base = 2
         logfact = log(real(np))/log(real(base))
         gtheo = logfact*sqrt(real(nkn/np))/real(nel/np)
