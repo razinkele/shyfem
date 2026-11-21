@@ -53,6 +53,14 @@ $name
         wind='INPUT/wind_scir.txt'
 $end
 
+$bound2    ----LosAlcazares--
+        kbound =  218
+        ibtyp = 3
+        boundn = 'INPUT/river.txt'
+        intpol = 2
+        zfact = 50
+$end
+
 $lagrg
         ilagr = 1
         nbdymax = 20000
