@@ -9,7 +9,8 @@
 #         (a, b, c, e, w are accepted as short names; mm_lgr_w is case A
 #         with one release polygon around the whole basin)
 #   NP    number of MPI processes of the second run
-#   MODE  flux   debug dump of the element fluxes, serial vs MPI
+#   MODE  flux   debug dump of the element fluxes, serial vs MPI, with
+#                --tol 0: every flux equal to the serial one (#238)
 #         part   debug dump of the particles (per output time), serial vs
 #                MPI, paired by key (by position for a dump without keys)
 #         handover  debug dump of the particles (as part), then the hand-over
@@ -90,11 +91,16 @@
 # lgr_mpi_check_consistency: it writes only when a check fails (and then
 # aborts the run).
 #
-# Note: flux uses the relative default limit of lgr_dbg_compare.py (1e-5) for
-# every case; the per-case --tol below applies to pos and part only.
+# Note: flux passes --tol 0 to lgr_dbg_compare.py for every case (since
+# #238; before it the tool's relative default 1e-5 applied): every flux of
+# the run on NP processes must equal the serial one.  This is stricter: the
+# default hid differences of up to 1.4e-6 of the scale, rounding of the
+# node rings that started at another element on several processes
+# (set_geom_rings_mpi in lnkmpi.f90 now starts them where a serial run
+# does).  A --tol among the caller's arguments comes later and replaces it.
+# The per-case --tol below applies to pos and part only.
 # Limits: the geographic cases use --tol 1e-5, the Cartesian case mm_lgr_b
-# --tol 2 (for pos and part).  The flux comparison is relative and keeps
-# the default of lgr_dbg_compare.py.  Part pairs the particles by their key
+# --tol 2 (for pos and part).  Part pairs the particles by their key
 # (--by key) when both dumps carry the six key columns, as every dump since
 # stage 3 does, and by position (--by nearest) for an older dump without
 # them (nearest pairs by position, which can pair a particle with another
@@ -661,7 +667,8 @@ consistency_check "$HERE/$CASE.np$NP.log" "$NP"
 echo "=== 3. compare ($MODE)"
 case "$MODE" in
   flux)
-    python3 "$HERE/lgr_dbg_compare.py" flux "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" "$@"
+    python3 "$HERE/lgr_dbg_compare.py" flux "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
+        --tol 0 "$@"
     crc=$?
     ;;
   part)
