@@ -27,7 +27,10 @@
 #        average of model_bottom_z0 (src/shyfem/turbulence.f90), which
 #        had the same defect (#230)
 # Required: every run ends (exit code 0 and "simulation end" in its log,
-# timeout 1200 s each), and the files CASE.hydro.shy and, for c41,
+# timeout 1200 s each); the log of an NP-process run has the line
+# "shympi initialized: ID NP" once from each rank 0 to NP-1 (so that NP
+# serial runs, from an mpirun that does not match the binary's MPI or a
+# binary without MPI, cannot pass); and the files CASE.hydro.shy and, for c41,
 # mm_hyd_41.ts.shy and the extra-point file mm_hyd_41.ext of the
 # NP-process run are byte-identical to the serial ones.  The .ext file
 # holds the barotropic nodal velocity of uvtop0 (same file), which had the
@@ -35,8 +38,11 @@
 # extra point 'inlet' (node 58) was 0.014 m/s off on 4 processes.  The
 # .inf file is not compared: with the output files byte-identical, its
 # global totals (total_volume and the temp and salt totals, one energy
-# line) still differ in the last printed digits on several processes;
-# that is not traced.  When a file differs the largest
+# line) still differ in the last printed digits on several processes.
+# They are diagnostics only: masscont sums over the own nodes
+# (nkn_inner) of each process, and info_output('total_volume','sum',...)
+# adds the partial totals of the processes, so the additions come in
+# another order than in the serial sum.  When a file differs the largest
 # difference of every variable is printed (needs shyelab, extelab and
 # python3 with netCDF4; without them only the first differing byte).
 #
@@ -101,6 +107,8 @@ n0 = txt.count('$para\n')
 txt = txt.replace('$para\n', '$para\n        iturb = %s\n' % iturb, 1)
 txt = re.sub(r'(\$para.*?\$end\n)', lambda m: m.group(1) + '\n' + levels, txt, count=1, flags=re.S)
 if iturb == '1':
+    if txt.count('$name\n') != 1:
+        sys.exit('cannot make %s: no single $name section in %s for gotmpa' % (dst, src))
     txt = txt.replace('$name\n', "$name\n        gotmpa = 'INPUT/gotmturb.nml'\n", 1)
 if n0 != 1 or '$lagrg' in txt or "itend = '2009-01-02'" not in txt:
     sys.exit('cannot make %s from %s' % (dst, src))
@@ -114,6 +122,13 @@ grep -q 'ireib = 6' "$P/g3d6.str" && grep -q '^        g3d6$' "$P/g3d6.str" \
   || { echo "MPI 3D CHECK: FAIL (cannot make g3d6.str)"; exit 1; }
 
 #--- runs and comparison
+# ranks_ok LOG NP: each of the NP ranks printed once "shympi initialized:
+# ID NP" (shympi_setup, src/utils/shympi/mpi_node.f90; printed only when
+# the run is parallel)
+ranks_ok() {
+  awk -v np="$2" '/shympi initialized:/ { n++; if ($4 == np && $3 >= 0 && $3 < np) seen[$3]++ }
+    END { ok = (n == np); for (i = 0; i < np; i++) if (seen[i] != 1) ok = 0; exit !ok }' "$1"
+}
 run() {  # CASE NP (NP 1: a plain run without mpirun)
   local d="$P/$1.np$2" r
   mkdir "$d" && ln -s ../GRID "$d/GRID" && ln -s "$HERE/INPUT" "$d/INPUT" && cp "$P/$1.str" "$d/" || return 1
@@ -123,8 +138,18 @@ run() {  # CASE NP (NP 1: a plain run without mpirun)
     ( cd "$d" && timeout 1200 nice -n 10 mpirun --oversubscribe -np "$2" shyfem "$1.str" < /dev/null > run.log 2>&1 )
   fi
   r=$?
-  if [ "$r" = 0 ] && grep -q "simulation end" "$d/run.log"; then return 0; fi
-  tail -3 "$d/run.log"; echo "  exit code $r"; return 1
+  if [ "$r" != 0 ] || ! grep -q "simulation end" "$d/run.log"; then
+    tail -3 "$d/run.log"; echo "  exit code $r"; return 1
+  fi
+  # NP > 1: the run must really have NP processes (an mpirun that does
+  # not match the binary's MPI, or a binary without MPI, gives NP serial
+  # runs that write the serial files: a check that cannot fail)
+  if [ "$2" != 1 ] && ! ranks_ok "$d/run.log" "$2"; then
+    echo "  the log does not show $2 MPI processes: $(grep -c 'shympi initialized:' "$d/run.log") 'shympi initialized:' lines,"
+    echo "  expected one from each rank 0 to $(( $2 - 1 )) with $2 processes ($d/run.log)"
+    return 1
+  fi
+  return 0
 }
 diffs() {  # SERIAL_SHY MPI_SHY: largest difference per variable
   local a="$1" b="$2" na nb
@@ -178,12 +203,12 @@ extdiffs() {  # SERIAL_EXT MPI_EXT: the split series that differ, largest differ
 for c in c41 g3d k3d g3d6; do
   echo "=== $c"
   if ! run "$c" 1; then fail "$c: the serial run did not end"; continue; fi
-  if ! run "$c" "$NP"; then fail "$c: the run on $NP processes did not end"; continue; fi
+  if ! run "$c" "$NP"; then fail "$c: the run on $NP processes did not end, or not on $NP processes (above)"; continue; fi
   files="$c.hydro.shy"
   [ "$c" = c41 ] && files="mm_hyd_41.hydro.shy mm_hyd_41.ts.shy mm_hyd_41.ext"
   for f in $files; do
     a="$P/$c.np1/$f"; b="$P/$c.np$NP/$f"
-    if [ ! -f "$a" ] || [ ! -f "$b" ]; then fail "$c: $f missing"; continue; fi
+    if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$c: $f missing or empty"; continue; fi
     if cmp -s "$a" "$b"; then
       echo "  $f: byte-identical"
     elif [ "${f##*.}" = ext ]; then
