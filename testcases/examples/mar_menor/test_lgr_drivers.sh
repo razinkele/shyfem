@@ -17,7 +17,11 @@
 # shyfem copies a small synthetic particle file to NAME.lgr.shy, writes
 # NAME.hydro.shy and NAME.inf, prints "simulation end" and exits with
 # FAKE_RC; the fake mpirun runs its program once with FAKE_RC set to
-# FAKE_MPI_RC; the fake timeout runs its command and then returns 124 (the
+# FAKE_MPI_RC and FAKE_NP to its -np value, and the fake shyfem then
+# prints "shympi initialized: ID NP" once for each rank 0 to NP-1 when NP
+# is above 1, as the ranks of a real parallel run do (not with
+# FAKE_NO_RANKS=1: serial copies); the fake timeout runs its command and
+# then returns 124 (the
 # exit code of GNU timeout at its limit) when FAKE_TIMEOUT names the kind
 # of run (mpi, serial or all).  check_lgr_bounds.sh is run in a throwaway git
 # repository whose Makefile target fem "builds" by copying the fakes (the
@@ -41,6 +45,11 @@ cat > "$tmp/fake/shyfem" <<'EOF'
 #!/bin/bash
 # fake shyfem STR (see test_lgr_drivers.sh)
 name="$(basename "${1%.str}")"; name="${name%%.lgrdbg.*}"
+# under the fake mpirun with -np N > 1: the line every rank of a real
+# parallel run prints (shympi_setup), once per rank, unless FAKE_NO_RANKS=1
+if [ "${FAKE_UNDER_MPI:-0}" = 1 ] && [ "${FAKE_NP:-1}" -gt 1 ] && [ "${FAKE_NO_RANKS:-0}" != 1 ]; then
+  for ((i = 0; i < FAKE_NP; i++)); do echo " shympi initialized:            $i           $FAKE_NP           0"; done
+fi
 if [ "${FAKE_UNDER_MPI:-0}" = 1 ] && [ "${FAKE_STOPS:-0}" = 1 ]; then
   opt="${name#stops_}"; opt="${opt%_*}"
   case "$opt" in
@@ -64,15 +73,18 @@ exit "${FAKE_RC:-0}"
 EOF
 cat > "$tmp/fake/mpirun" <<'EOF'
 #!/bin/bash
-# fake mpirun [options] PROG ARGS: PROG ARGS once, FAKE_RC = FAKE_MPI_RC
+# fake mpirun [options] PROG ARGS: PROG ARGS once, FAKE_RC = FAKE_MPI_RC,
+# FAKE_NP = the -np value
+np=1
 while [ $# -gt 0 ]; do
   case "$1" in
-    -np|-n|-x) shift 2 ;;
+    -np|-n) np="$2"; shift 2 ;;
+    -x) shift 2 ;;
     -*) shift ;;
     *) break ;;
   esac
 done
-export FAKE_UNDER_MPI=1 FAKE_RC="${FAKE_MPI_RC:-0}"
+export FAKE_UNDER_MPI=1 FAKE_RC="${FAKE_MPI_RC:-0}" FAKE_NP="$np"
 exec "$@"
 EOF
 cat > "$tmp/fake/timeout" <<'EOF'
@@ -167,6 +179,17 @@ expect "mpi pos: the serial reference exits 1 after 'simulation end'" 1 "did not
 d=$(newdir m3) || exit 1
 expect "mpi pos: the MPI run exits 1 after 'simulation end'" 1 "LGR GATE: FAIL" \
   env FAKE_MPI_RC=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 1 pos
+# a run on NP > 1 processes must show its NP ranks ("shympi initialized:
+# ID NP" once per rank): NP serial copies would pass pos and ids
+d=$(newdir m8) || exit 1
+expect "mpi pos on 2 processes: every run succeeds, both ranks report" 0 "LGR GATE: PASS" \
+  bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 pos
+d=$(newdir m9) || exit 1
+expect "mpi pos on 2 processes: no rank reports (serial copies)" 1 "does not show 2 MPI processes \(0 'shympi initialized:' lines.*LGR GATE: FAIL" \
+  env FAKE_NO_RANKS=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 pos
+d=$(newdir m10) || exit 1
+expect "mpi ids on 2 processes: no rank reports (serial copies)" 1 "does not show 2 MPI processes.*LGR GATE: FAIL" \
+  env FAKE_NO_RANKS=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 ids
 # the stop on several processes is shympi_abort_internal's MPI_ABORT with
 # code 33, which Open MPI's mpirun returns: only 33 passes
 d=$(newdir m4) || exit 1
@@ -181,6 +204,9 @@ expect "mpi stops: the serial runs time out" 1 "serial: timed out after 600 s.*L
 d=$(newdir m7) || exit 1
 expect "mpi stops: both lines printed, then exit 1 instead of 33" 1 "exit code 1 \(expected 33.*LGR GATE: FAIL" \
   env FAKE_STOPS=1 FAKE_MPI_RC=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
+d=$(newdir m11) || exit 1
+expect "mpi stops: exit 33 and both lines, but no rank reports" 1 "does not show 2 MPI processes.*LGR GATE: FAIL" \
+  env FAKE_STOPS=1 FAKE_MPI_RC=33 FAKE_NO_RANKS=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
 
 #--- check_lgr_bounds.sh in a throwaway repository --------------------------------
 repo="$tmp/repo"

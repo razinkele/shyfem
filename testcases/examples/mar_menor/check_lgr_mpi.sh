@@ -63,6 +63,13 @@
 # MPI runs of perturb) has ended only if its launcher exits with 0 and its
 # log has "simulation end"; otherwise the gate fails.  Mode stops expects
 # a non-zero exit instead (see there).
+# Every run on NP > 1 processes (the MPI run, both runs of perturb, the
+# NP-process run of each row of stops, whose processes print the line
+# before the option's stop) must also show NP processes: its log has the
+# line "shympi initialized: ID NP" once from each rank 0 to NP-1
+# (shympi_setup prints it only in a parallel run).  Otherwise an mpirun
+# that does not match the binary's MPI, or a binary without MPI, runs NP
+# serial copies that write the serial results, and pos and ids pass.
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
 # temporary copy of the STR file with "levdbg = 3" right after the $para
@@ -421,6 +428,15 @@ consistency_check() {
   fi
 }
 
+# ranks_ok LOG NPROC: NPROC = 1, or each of the NPROC ranks printed once
+# "shympi initialized: ID NPROC" (see header)
+ranks_ok() {
+  [ "$2" -gt 1 ] || return 0
+  awk -v np="$2" '/shympi initialized:/ { n++; if ($4 == np && $3 >= 0 && $3 < np) seen[$3]++ }
+    END { ok = (n == np); for (i = 0; i < np; i++) if (seen[i] != 1) ok = 0; exit !ok }' "$1"
+}
+ranks_msg() { echo "$(basename "$1"): the log does not show $2 MPI processes ($(grep -c 'shympi initialized:' "$1") 'shympi initialized:' lines, expected one from each rank 0 to $(( $2 - 1 )))"; }
+
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
   nlost() { grep -c 'loosing particle adv' "$1"; }
@@ -449,6 +465,9 @@ if [ "$MODE" = perturb ]; then
     fail "$CASE did not end on $NP processes (exit code $mpi_rc)"
     echo "LGR GATE: FAIL"; exit 1
   fi
+  if ! ranks_ok "$HERE/$CASE.np$NP.log" "$NP"; then
+    fail "$(ranks_msg "$HERE/$CASE.np$NP.log" "$NP")"; echo "LGR GATE: FAIL"; exit 1
+  fi
   collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  plain run ended"
   selftest_check "$HERE/$CASE.np$NP.log" "$NP"
@@ -470,6 +489,9 @@ if [ "$MODE" = perturb ]; then
     tail -5 "$HERE/$CASE.np$NP.perturb.log"
     fail "$CASE did not end on $NP processes with MALLOC_PERTURB_ (exit code $mpi_rc)"
     echo "LGR GATE: FAIL"; exit 1
+  fi
+  if ! ranks_ok "$HERE/$CASE.np$NP.perturb.log" "$NP"; then
+    fail "$(ranks_msg "$HERE/$CASE.np$NP.perturb.log" "$NP")"; echo "LGR GATE: FAIL"; exit 1
   fi
   collect_dbg "$CASE.np$NP.perturb.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  perturbed run ended"
@@ -560,6 +582,7 @@ if [ "$MODE" = stops ]; then
     [ "$n2" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: 'run on one process' line seen $n2 times (expected once)"; }
     [ "$nbadsig" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: $nbadsig SIGFPE/SIGSEGV/Fortran runtime lines"; }
     [ "$nfile" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: particle file written"; }
+    ranks_ok "$SCR/$opt.np$NP.log" "$NP" || { row_ok=0; echo "  $opt: $(ranks_msg "$SCR/$opt.np$NP.log" "$NP")"; }
     for f in "$HERE/$RUN".*; do [ "$f" = "$HERE/$RUN.str" ] || rm -f "$f"; done
     # --- serial
     timeout 600 nice -n 19 shyfem "$RUN.str" > "$SCR/$opt.serial.log" 2>&1
@@ -622,6 +645,9 @@ if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; the
   grep 'lgr_mpi_check_consistency' "$HERE/$CASE.np$NP.log" | sort -u | head -5 | sed 's/^/    /'
   fail "$CASE did not end on $NP processes (exit code $mpi_rc)"
   echo "LGR GATE: FAIL"; exit 1
+fi
+if ! ranks_ok "$HERE/$CASE.np$NP.log" "$NP"; then
+  fail "$(ranks_msg "$HERE/$CASE.np$NP.log" "$NP")"; echo "LGR GATE: FAIL"; exit 1
 fi
 collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  MPI run ended"
