@@ -50,7 +50,22 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
       --by nearest  (default) one-to-one match: pairs are taken by increasing
                     distance (at equal distance: same layer, then with
                     --elem the same element, then closest z) and every
-                    particle is used at most once.
+                    particle is used at most once.  Limitation: the rule
+                    holds exactly only while a time block has at most
+                    FULL_EDGES (250,000) pairs (serial particles x MPI
+                    particles), where every pair is sorted.  Above it each
+                    round takes only the K_NEAREST (8) nearest free partners
+                    of every serial particle and commits them in one pass, so
+                    a pair can be committed before a shorter pair whose
+                    serial particle lost its candidates to other pairs in
+                    that round: the result can differ from the rule and a
+                    --tol that the rule passes can fail (or the other way
+                    round).  Nearest pairs by position, so it can also pair a
+                    particle with another one's partner.  For a dump with the
+                    key columns (every dump since stage 3) use --by key, as
+                    the gates do (check_lgr_mpi.sh mode part pairs by key
+                    whenever both dumps carry the key); nearest is kept for
+                    older dumps.
       --by key      match by the particle's key, the last six columns of a
                     particle line (global release element, first two release
                     coordinates, release layer, release depth, release time;
@@ -214,6 +229,9 @@ def dump_dir(dirname, serial):
         if rank != nn:
             raise DumpError("%s: header says rank %d" % (path, rank))
         nprocs.setdefault(n, []).append(os.path.basename(path))
+        if nn in kinds.get(kind, {}):
+            raise DumpError("%s: two files for rank %d of lgrdbg.%s: %s, %s"
+                            % (dirname, nn, kind, kinds[kind][nn], path))
         kinds.setdefault(kind, {})[nn] = path
     if not kinds:
         raise DumpError("%s: no lgrdbg.KIND.NN.txt files" % dirname)
@@ -1024,7 +1042,11 @@ def main(argv=None):
     p.add_argument("mpi_dir")
     p.add_argument("--tol", type=float, required=True,
                    help="largest allowed distance max(|dx|,|dy|)")
-    p.add_argument("--by", choices=("id", "nearest", "key"), default="nearest")
+    p.add_argument("--by", choices=("id", "nearest", "key"), default="nearest",
+                   help="pair by id, by key (the dumps since stage 3) or by"
+                        " nearest position (default; exact only up to"
+                        " FULL_EDGES pairs per time block, see the module"
+                        " docstring)")
     p.add_argument("--first-only", action="store_true",
                    help="compare the first time in the files only (the"
                         " release block)")
@@ -1093,7 +1115,7 @@ def main(argv=None):
             ap.error("--max-largest must be >= 0")
     try:
         nfail = args.func(args)
-    except DumpError as e:
+    except (DumpError, UnicodeDecodeError) as e:
         print("lgr_dbg_compare: %s" % e, file=sys.stderr)
         return 2
     print("lgr_dbg_compare %s: %s" % (args.mode, "PASS" if nfail == 0 else "FAIL"))
