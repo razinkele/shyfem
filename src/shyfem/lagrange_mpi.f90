@@ -279,6 +279,8 @@
 	if( nbad == 0 ) return
 
 	if( my_id == 0 ) flush(6)
+	! the MPI_Barrier calls before an abort are not checked: a barrier that
+	! fails right before the abort changes nothing (here and at the others)
 	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
 	call shympi_abort_internal('error stop lagrange: option not'	&
      &		//' supported with MPI')
@@ -531,8 +533,12 @@
 	! column q of nall/csall = what rank q has for every rank
 	call MPI_Allgather(lgr_nshare,nproc,MPI_INTEGER,			&
      &			nall,nproc,MPI_INTEGER,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allgather')
 	call MPI_Allgather(csum,nproc,MPI_INTEGER8,			&
      &			csall,nproc,MPI_INTEGER8,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allgather')
 
 	bbad = .false.
 	do q = 0, nproc-1
@@ -568,8 +574,12 @@
 	end do
 	call MPI_Allreduce(nd2,nd2g,1,MPI_INTEGER,MPI_SUM,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allreduce')
 	call MPI_Allreduce(nd3,nd3g,1,MPI_INTEGER,MPI_SUM,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allreduce')
 
 	if( my_id == 0 ) then
 	  write(6,*) 'lgr topology: shared element lists consistent'
@@ -705,8 +715,12 @@
 	end if
 	call MPI_Allreduce(hash,hmin,1,MPI_INTEGER8,MPI_MIN,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(hash,hmax,1,MPI_INTEGER8,MPI_MAX,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	if( hmin < 0 .or. hmin /= hmax ) then
 	  if( my_id == 0 ) then
 	    write(6,*) 'lgr side table: nen3v_global missing or not the'	&
@@ -1091,12 +1105,20 @@
 
 	call MPI_Allreduce(ival,ivalg,6,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(lmin,lming,1,MPI_INTEGER,MPI_MIN		&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(lmax,lmaxg,1,MPI_INTEGER,MPI_MAX		&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(dt,dtmax,1,MPI_DOUBLE_PRECISION,MPI_MAX	&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	if( ivalg(1) == 0 ) lming = 0
 
 	if( my_id == 0 ) then
@@ -1184,11 +1206,15 @@
 	if( info(1) /= 0 ) ic = my_id
 	call MPI_Allreduce(ic,irmin,1,MPI_INTEGER,MPI_MIN			&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_fail: MPI_Allreduce')
 	if( irmin >= n_threads ) return
 
 	iall = info
 	call MPI_Bcast(iall,lgr_side_nfo,MPI_INTEGER,irmin,MPI_COMM_WORLD	&
      &			,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_fail: MPI_Bcast')
 
 	select case( iall(1) )
 	case( 1 )
@@ -2699,6 +2725,8 @@
 
 	call MPI_Allreduce(ifield,ifmax,1,MPI_INTEGER,MPI_MAX,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_selftest_pack: MPI_Allreduce')
 
 	if( ifmax > 0 ) then
 	  if( ifield > 0 ) then
@@ -2968,6 +2996,8 @@
 	ibuf(7:11) = nskip(0:4)
 	call MPI_Allreduce(ibuf,isum,11,MPI_INTEGER,MPI_SUM,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_selftest_side: MPI_Allreduce')
 
 	if( my_id == 0 ) then
 	  do k = 0, 4
@@ -3286,6 +3316,8 @@
 ! delta = lgr_side_delta of the largest absolute corner coordinate plus
 ! the longest side; amin returns its smallest interior angle (degrees)
 
+	use mod_physical_constants, only : pi_dp
+
 	logical :: wide_element
 	integer, intent(in) :: iel
 	double precision, intent(out) :: amin
@@ -3314,7 +3346,7 @@
 	  e2x = dble(x(k2)) - x(kk)
 	  e2y = dble(y(k2)) - y(kk)
 	  ang = atan2( abs(e1x*e2y-e1y*e2x), e1x*e2x+e1y*e2y )
-	  amin = min( amin, ang * 45.d0 / atan(1.d0) )
+	  amin = min( amin, ang * 180.d0 / pi_dp )
 	end do
 	delta = lgr_side_delta( real(cmax + hmax) )
 	wide_element = .false.
@@ -5490,7 +5522,7 @@
 
 !*******************************************************************
 
-	subroutine lgr_mpi_debug_dump(dtime,bpart_only)
+	subroutine lgr_mpi_debug_dump(dtime,bpart_only,bclose)
 
 ! debug dump of particles, side fluxes and node arrays (levdbg >= 3)
 !
@@ -5504,6 +5536,9 @@
 ! bpart_only (optional, default false): true for the call right after a
 ! release (before any tracking); it writes the particles only, never the
 ! flux, flux3 and node files
+!
+! bclose (optional, default false): true for the call at the end of the
+! particle run: it closes the part file, and later calls write nothing
 !
 ! lgrdbg.part.NN.txt: at every particle output and right after every
 ! release, one line per array entry
@@ -5550,6 +5585,7 @@
 
 	double precision, intent(in) :: dtime
 	logical, intent(in), optional :: bpart_only
+	logical, intent(in), optional :: bclose
 
 	double precision, parameter :: dtflux = 36000.d0 !fluxes after 10 h
 
@@ -5565,6 +5601,14 @@
 	character(len=1) :: what
 
 	if( icall < 0 ) return
+
+	if( present(bclose) ) then
+	  if( bclose ) then			!end of the particle run
+	    if( icall == 1 ) close(iupart)
+	    icall = -1			!no dump line after the close
+	    return
+	  end if
+	end if
 
 	if( icall == 0 ) then
 	  icall = -1

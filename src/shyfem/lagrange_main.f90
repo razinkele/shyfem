@@ -400,6 +400,8 @@
           call lagr_count_out(dtime,dtlend)
         end if
 
+	if( dtime >= dtlend ) call lgr_mpi_debug_dump(dtime,bclose=.true.)
+
 !---------------------------------------------------------------
 ! compress to save space: only in contiunous release mode! 
 ! CCF STILL TO BE CHECKED
@@ -573,9 +575,11 @@
 
 	implicit none
 	
-	double precision dtime
-	integer i,ie
-	real dt,ttime,tmax,t_left
+	integer, intent(in) :: i
+	real, intent(in) :: dt
+	double precision, intent(in) :: dtime
+	integer ie
+	real ttime,tmax,t_left
 	integer n_left
         integer lmax                    !maximum layers in element (return)
         real hl(nlv)
@@ -608,7 +612,8 @@
 !---------------------------------------------------------------
 
 	tmax = dtime - lgr_ar(i)%actual%time
-	if( tmax .lt. 0. ) stop 'error stop drogue: internal error'
+	if( tmax .lt. 0. ) call shympi_abort_internal			&
+     &		('error stop drogue: internal error')
 	ttime = min(tmax,dt) 		!residual time for particle
 
 	t_left = ttime
@@ -842,18 +847,18 @@
 
 	implicit none
 
-	integer i		!particle number
-	integer id		!particle id
-        integer ty		!particle type
-	real x			!x-coordinate
-	real y			!y-coordinate
-	real z 			!relative vertical position
-	double precision sv 	!settling velocity
-	double precision xi(3)	!internal coordinates
-	integer iel		!element number
-	integer lb 		!layer 
-	real ttime		!time to advect (inertia included), time left
-	integer n		!element crossings allowed, crossings left
+	integer, intent(in) :: i		!particle number
+	integer, intent(in) :: id		!particle id
+        integer, intent(in) :: ty	!particle type
+	real, intent(inout) :: x		!x-coordinate
+	real, intent(inout) :: y		!y-coordinate
+	real, intent(inout) :: z 		!relative vertical position
+	double precision, intent(in) :: sv 	!settling velocity
+	double precision, intent(inout) :: xi(3)	!internal coordinates
+	integer, intent(inout) :: iel		!element number
+	integer, intent(inout) :: lb 		!layer 
+	real, intent(inout) :: ttime	!time to advect (inertia included), time left
+	integer, intent(inout) :: n		!element crossings allowed, crossings left
         
 	integer ie_from,ie_to
 	integer iperc
