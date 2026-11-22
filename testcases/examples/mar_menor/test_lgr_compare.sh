@@ -124,6 +124,14 @@ build(d + '/t18_ins_hl.lgr.shy', ins_mod={3600.0: {3: (0.0, 3, 0.25005, 0.0)}})
 build(d + '/t21_ins_hl_big.lgr.shy', ins_mod={3600.0: {3: (0.0, 3, 0.2503, 0.0)}})
 build(d + '/t19_ins_x.lgr.shy', ins_mod={3600.0: {1: (3e-5, 3, 0.25, 0.0)}})
 build(d + '/t20_ins_ie.lgr.shy', ins_mod={3600.0: {2: (0.0, 5, 0.25, 0.0)}})
+# two output times whose three blocks hold no particle: nothing to compare
+# (a file without any output time is a read error: find_particle_start)
+out = header(False)
+for dtime in (0.0, 3600.0):
+    for iwhat in (0, -1, 1):
+        out += block(dtime, iwhat, [])
+with open(d + '/t22_empty.lgr.shy', 'wb') as f:
+    f.write(out)
 with open(d + '/t1.lgr.shy', 'rb') as f:
     whole = f.read()
 with open(d + '/t9_truncated.lgr.shy', 'wb') as f:
@@ -160,6 +168,12 @@ check "type differs for one particle" 1 "id 6 differs \(type 1/2\)" \
 check "output time present in one file only" 1 "t=3600.0 only in A" \
     "$t/t1.lgr.shy" "$t/t6_one_time.lgr.shy" --mode ids
 check "truncated file is a read error" 2 "" "$t/t9_truncated.lgr.shy" "$t/t1.lgr.shy" --mode ids
+check "no particle at any output, ids mode: nothing compared" 1 "nothing compared: 2 output times in both files, no particle in them.*LGR COMPARE: FAIL" \
+    "$t/t22_empty.lgr.shy" "$t/t22_empty.lgr.shy" --mode ids --same-counts
+check "no particle at any output, pos mode: nothing compared" 1 "nothing compared: 2 output times in both files, no particle in them.*LGR COMPARE: FAIL" \
+    "$t/t22_empty.lgr.shy" "$t/t22_empty.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 0 --max-largest 0
+check "particles in one file only: compared, and they differ" 1 "only in A: 1,2,3,4,5,6,7,8" \
+    "$t/t1.lgr.shy" "$t/t22_empty.lgr.shy" --mode ids
 check "summary of one file" 0 "output times: 2.*first output t=0.0: active=8 inserted=3 exited=1; active ids 1..8.*last output t=3600.0: active=8 inserted=3 exited=1" \
     "$t/t1.lgr.shy" --summary
 check "decoy 4-byte record in the header" 0 "nA=8 nB=8" \

@@ -14,7 +14,11 @@
 #         handover  debug dump of the particles (as part), then the hand-over
 #                fidelity check of lgr_dbg_compare.py: --by key --handover,
 #                the particles that changed process against those that did
-#                not (--step 6e-8, case B 0.25: one single-precision step)
+#                not (--step 6e-8, case B 0.25: one single-precision step);
+#                for NP > 1 the driver passes --min-changed 1 (a check in
+#                which no particle changes process fails instead of passing
+#                silently); a --min-changed among the caller's arguments
+#                replaces it
 #         pos    final particle file: positions against the case's floors
 #                (the table below, as floor), layers, types, times
 #         ids    final particle file: the ids, the counts per block
@@ -28,9 +32,11 @@
 #                --max-beyond-last and --max-largest of lgr_dbg_compare.py
 #                (not for mm_lgr: its random walk is never seeded, #225)
 #         stops  (case mm_lgr_a only) the options that are not supported on
-#                several processes: for each of the ten rows (ilagr3, lbeach,
-#                artype, ldecay, lgrini, ised, ilarv, icnn, lgrpps, lgrtrj) a
-#                scratch copy of the STR file with that option set (made by
+#                several processes: for each of the twelve rows (ilagr3,
+#                lbeach, artype, ldecay, lgrini, ised, ilarv, icnn, lgrpps,
+#                lgrtrj, rwhpar = -1 in place of the case's rwhpar = 0,
+#                ipvert = -2) a scratch copy of the STR file with that
+#                option set (made by
 #                sed, in this folder, with a run name of its own, removed at
 #                the end; lgrini and lgrtrj name a file that does not exist,
 #                the MPI run must stop before it is opened) is run on NP
@@ -102,7 +108,11 @@
 # described in the docstring of lgr_dbg_compare.py.  The distances above the
 # limit of the part mode are printed, not gated.  Arguments after MODE come
 # last, so --step, --jump-factor, --jump-floor, --quantile and --min-changed
-# can be given or replaced.
+# can be given or replaced.  For NP > 1 the default is --min-changed 1 (at
+# least one pair of the "changed process" group).  Where a partition makes
+# no particle change process the default fails (case C on 2 processes with
+# the METIS partition of the development machine: no hand-over at all);
+# --min-changed 0 among the caller's arguments replaces it.
 #
 # Side self-test: every mode that runs at levdbg = 3 (flux, part, handover,
 # floor, perturb) requires of each log (serial and MPI; both MPI logs in perturb)
@@ -166,21 +176,24 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # Position floors (mode floor): particles beyond --tol at the last output and
 # the largest distance at any output, each the envelope of six serial runs
 # whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
-# metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
-# section "Task 3.7", table "Position floors on the new reference" (measured
-# on the reference build wt-lgr-ref3, commit 0fddec90; its log is
-# gates/floors_ref3.log in the plan's workspace).  The distances are the
+# metres for B), measured with measure_lgr_floors.sh (this folder).  Source:
+# docs/reviews/2026-11-lagrange-mpi-acceptance.md, section "Task 3.7", table
+# "Position floors on the new reference" (measured on the reference build
+# wt-lgr-ref3, commit 0fddec90; its log is floors_ref3.log in
+# docs/reviews/evidence/2026-11-lagrange-mpi/).  The distances are the
 # measured envelopes rounded UP, never below the measurement: A 2.9734e-3 ->
 # 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E 4.2915e-3 -> 4.3e-3
 # (until Task 5.1 A and C were rounded down, 2.97e-3 and 7.1e-3, so that
 # perturbed serial runs exceeded them).  Never change a value to make a run
 # pass.  Mode pos uses the same floors on the particle file, and FLOOR_T,
 # the tt floor: the most particles whose time tt differs from the base run
-# in one of the six perturbed runs, measured on their particle files
-# (gates/floors_runs/ in the plan's workspace, lgr_compare.py --mode pos):
+# in one of the six perturbed runs, measured on their particle files (the
+# files measure_lgr_floors.sh writes into lgr_runs/ of its scratch folder;
+# lgr_compare.py --mode pos):
 # A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0.
 # mm_lgr_w (Task 6.1, measured the same way on wt-lgr-ref3 with the inputs
-# of commit 6b514083, gates/floors_w.log): 37 / 4.3113e-3 -> 4.32e-3 / tt 1
+# of commit 6b514083, log floors_w.log in the same evidence folder):
+# 37 / 4.3113e-3 -> 4.32e-3 / tt 1
 # (particle 46 comes to rest in the dry element 870 in every run, at a time
 # tt between 327,900 and 329,100 s that differs by a few steps).
 case "$CASE" in
@@ -469,10 +482,14 @@ if [ "$MODE" = stops ]; then
   # one row: NAME, then the sed expression that sets it ("%" is no part of
   # any text below); lines are added after "ilagr = 1" of the $lagrg section
   ADD='s/^\([ \t]*\)ilagr = 1[ \t]*$/&\n\1'
-  STOPS_NAMES="ilagr3 lbeach artype ldecay lgrini ised ilarv icnn lgrpps lgrtrj"
+  STOPS_NAMES="ilagr3 lbeach artype ldecay lgrini ised ilarv icnn lgrpps lgrtrj rwhpar ipvert"
   stops_expr() {
     case "$1" in
       ilagr3) echo 's/^\([ \t]*\)ilagr = 1[ \t]*$/\1ilagr = 3/' ;;
+      # the case sets rwhpar = 0 further down in $lagrg: replace that line
+      # (a line added after ilagr = 1 would be overridden by it)
+      rwhpar) echo 's/^\([ \t]*\)rwhpar = 0[ \t]*$/\1rwhpar = -1/' ;;
+      ipvert) echo "${ADD}ipvert = -2/" ;;
       lbeach) echo "${ADD}lbeach = 0.5/" ;;
       artype) echo "${ADD}artype = 1/" ;;
       ldecay) echo "${ADD}ldecay = 3600/" ;;
@@ -489,6 +506,8 @@ if [ "$MODE" = stops ]; then
     case "$1" in
       ilagr3) echo "ilagr = 3" ;;
       icnn)   echo "icnn" ;;
+      rwhpar) echo "rwhpar < 0" ;;
+      ipvert) echo "ipvert < -1" ;;
       *)      echo "$1" ;;
     esac
   }
@@ -594,8 +613,19 @@ case "$MODE" in
     crc=$?
     ;;
   handover)
+    # on several processes at least one pair must change process (the
+    # caller's --min-changed comes later on the command line and wins)
+    MINCH=""
+    if [ "$NP" -gt 1 ]; then
+      MINCH="--min-changed 1"
+      case " $* " in
+        *" --min-changed "*|*" --min-changed="*)
+          echo "  hand-over check: the caller's --min-changed replaces the default 1" ;;
+        *) echo "  hand-over check: --min-changed 1 (default for $NP processes)" ;;
+      esac
+    fi
     python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
-        --tol "$TOL" --by key --handover --step "$STEP" "$@"
+        --tol "$TOL" --by key --handover --step "$STEP" $MINCH "$@"
     crc=$?
     ;;
   floor)

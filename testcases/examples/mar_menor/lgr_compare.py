@@ -54,6 +54,11 @@ within the floor or not.
 --dims prints "nkn N nel E nlv L" from the model header of the file (its
 third record: nkn, nel, npr, nlv, nvar); used to pass --nel and --nlv.
 
+Nothing compared is a failure, in both modes: if the two files share no
+output time, or no particle is in any block of the output times they share,
+a line "nothing compared: ..." is printed and the comparison fails (a file
+without any output time cannot be read, exit 2).
+
 Exit status: 0 = files agree, 1 = they differ, 2 = a file cannot be read.
 
 File layout (gfortran sequential unformatted, little endian, every record is
@@ -399,6 +404,8 @@ def run(args):
     exact_total = 0          # pairs of the inserted block that differ
     beyond_at = {}           # ids beyond --tol per shared time (floor test)
     worst = (0.0, None)      # largest distance at any output, its time
+    n_shared = 0             # output times in both files
+    n_seen = 0               # particles (either file) at those times, summed
     for dtime in sorted(set(map_a) | set(map_b)):
         if dtime not in map_b:
             print("t=%r only in A (B wrote no output at this time)" % dtime)
@@ -408,6 +415,9 @@ def run(args):
             print("t=%r only in B (A wrote no output at this time)" % dtime)
             ok = False
             continue
+        n_shared += 1
+        n_seen += sum(len(set(map_a[dtime][w]) | set(map_b[dtime][w]))
+                      for w in IWHAT_ORDER)
         ids_a, ids_b = set(), set()
         beyond_at[dtime] = set()
         for iwhat in IWHAT_ORDER:
@@ -486,6 +496,10 @@ def run(args):
               % (len(tt_all), ">" if bad else "<=", args.max_tt_differ,
                  "FAIL" if bad else "ok"))
         ok = ok and not bad
+    if n_shared == 0 or n_seen == 0:
+        print("nothing compared: %d output times in both files, %s"
+              % (n_shared, "no particle in them" if n_shared else "no particle"))
+        ok = False
     print("LGR COMPARE: %s (%d output times in A, %d in B)"
           % ("PASS" if ok else "FAIL", len(times_a), len(times_b)))
     return 0 if ok else 1
