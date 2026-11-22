@@ -632,6 +632,18 @@
 ! TO BE DONE
 	subroutine lgr_input_shell
 
+! initial distribution of particles from a particle file (lgrini): the
+! active particles of the record at time itlgin, with their ids
+!
+! the counter of the ids given out (idbdy) is moved past every id of the
+! file up to that record, of all three blocks (active, inserted, exited:
+! a particle that left the basin had an id too), so that a release after
+! the restart gives the ids the run that went on gives. Before, idbdy
+! stayed 0 and the next release gave the ids 1, 2, ... again, and since the
+! random draws of a particle are keyed on its id (#225) two particles with
+! one id would draw the same numbers. Serial only (lgrini stops on several
+! processes, lgr_mpi_check_supported).
+
 	use mod_lagrange
 	use shympi, only : ip_int_elem
         use shyfile
@@ -655,8 +667,10 @@
 	integer				:: iu
         integer                         :: iwhat
         integer                         :: ierr
+	integer				:: idmax	!largest id of the file
+	integer				:: iwhat2
 	double precision 		:: xi(3)
-	double precision 		:: dtime,ditime
+	double precision 		:: dtime,ditime,ditime2
 	double precision 		:: dtlgin
         character*20                    :: aline
 	character*256 			:: ifile
@@ -694,6 +708,7 @@
         !--------------------------------------------------------------
         ! loop over records
         !--------------------------------------------------------------
+        idmax = 0
         do
           !----------------------------------------------------------------
           ! read lgr data block --> active particles (use only these particles)
@@ -705,25 +720,39 @@
      &          ,ida,tya,tta,sa,iea,xa,ya,za,lba,hla,ca)
           call lgr_get_block(iu,n_act,ncust, &
      &                  ida,tya,tta,sa,iea,xa,ya,za,lba,hla,ca)
-          if( ditime == dtlgin ) exit
+          do i=1,n_act
+            idmax = max(idmax,ida(i))
+          end do
+          if( ditime == dtlgin ) then
+            ! the inserted and exited blocks of this record (ids too)
+            do ic=1,2
+              call lgr_peek_block_header(iu,ditime2,n_aux,iwhat2,ierr)
+              if( ierr /= 0 ) exit
+              if( ditime2 /= dtlgin .or. iwhat2 == 0 ) exit !next record
+              call lgr_block_max_id(iu,idmax)
+            end do
+            exit
+          end if
           !----------------------------------------------------------------
-          ! skip data block --> inserted particles
+          ! data block --> inserted particles (only their ids)
           !----------------------------------------------------------------
           call lgr_peek_block_header(iu,ditime,n_aux,iwhat,ierr)
           if( ierr /= 0 ) exit
-          call lgr_skip_block(iu,n_aux,ncust)
+          call lgr_block_max_id(iu,idmax)
           !----------------------------------------------------------------
-          ! skip data block --> exited particles
+          ! data block --> exited particles (only their ids)
           !----------------------------------------------------------------
           call lgr_peek_block_header(iu,ditime,n_aux,iwhat,ierr)
           if( ierr /= 0 ) exit
-          call lgr_skip_block(iu,n_aux,ncust)
+          call lgr_block_max_id(iu,idmax)
         end do
 
         if( ditime /= dtlgin ) then
 	  write(6,*) 'cannot find time record: ',dtlgin
 	  stop 'error stop lgr_input_shell: no such time record'
         end if
+
+	idbdy = max(idbdy,idmax)	!ids of new particles follow the file's
 
         call get_act_dtime(dtime)
 
@@ -776,6 +805,46 @@
         call shy_close(id)
 
 	write(6,*) 'finished initializing lagrangian from file'
+	write(6,*) 'particles read: ',n_act,'  largest id in the file: '	&
+     &			,idmax
+
+	end
+
+!*******************************************************************
+
+	subroutine lgr_block_max_id(iu,idmax)
+
+! reads the next data block of a particle file (its header and the three
+! records of each particle) and raises idmax to the largest id in it; only
+! the id is taken from each particle (the rest of a record is skipped)
+
+	implicit none
+
+	integer, intent(in) :: iu		!unit of the particle file
+	integer, intent(inout) :: idmax		!largest id so far
+
+	double precision atime
+	integer nn,iwhat,i,idp,ios
+
+	read(iu,iostat=ios) atime,nn,iwhat
+	if( ios /= 0 ) then
+	  write(6,*) 'lgr_block_max_id: iostat ',ios
+	  call shympi_abort_internal('error stop lgr_block_max_id:'	&
+     &		//' cannot read a block header of the particle file')
+	end if
+
+	do i=1,nn
+	  read(iu,iostat=ios) idp		!first value: the id
+	  if( ios == 0 ) read(iu,iostat=ios)	!coordinates
+	  if( ios == 0 ) read(iu,iostat=ios)	!custom values
+	  if( ios /= 0 ) then
+	    write(6,*) 'lgr_block_max_id: particle ',i,' of ',nn		&
+     &			,', iostat ',ios
+	    call shympi_abort_internal('error stop lgr_block_max_id:'	&
+     &		//' cannot read a particle of the particle file')
+	  end if
+	  idmax = max(idmax,idp)
+	end do
 
 	end
 

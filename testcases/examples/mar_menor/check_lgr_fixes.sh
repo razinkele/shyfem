@@ -119,7 +119,23 @@
 #                the record of the same particle in the plain run of part 1
 #                at that output (the time step key of the draws is the
 #                absolute time of the step, so the restarted run draws what
-#                the run that went on drew).
+#                the run that went on drew);
+#             6. a particle restart followed by releases: mm_lgr with a
+#                release every day from 2009-01-01 12:00 (idtl = '1d',
+#                itranf), run to the end; the same run to 2009-01-03 with a
+#                restart file; and a run from 2009-01-03 with that restart
+#                file and particle file (lgrini, itlgin) and the releases
+#                from 2009-01-03 12:00 (nbdy = 150): the restarted run must
+#                release after the restart, no id may repeat in an output of
+#                its particle file (in a block, or active and exited), and
+#                each record must equal that of the run that went on, at
+#                every output (the inserted block of its first output, which
+#                lists the particles read from the file, excepted).  Before
+#                the fix of the ids (#225, review) lgr_input_shell left the
+#                counter of ids at 0: the release after the restart gave the
+#                ids 1 ... 145 again, so two particles drew the same numbers
+#                (the binary of 7e7b1e55: 37 of 48 outputs with repeated ids,
+#                7290 records differ).
 #             Before #225 the draws came from random_number, seeded
 #             differently in every run and per thread, and from ggrand, a
 #             single saved stream: the binary of the commit before fails
@@ -616,6 +632,81 @@ sys.exit(0 if ndiff == 0 and nrec > 0 else 1)
 EOP
   else
     fail "particle file missing (d.t1 or r_rr)"
+  fi
+
+  echo "=== 6. mm_lgr with daily releases, restarted on 2009-01-03, releases after the restart"
+  sed -e "s/^\\([ \t]*\\)idtl = 0[ \t]*$/\\1idtl = '1d'\n\\1itranf = '2009-01-01::12:00:00'/" \
+      "$W/mm_lgr.str" > "$W/q_base.str"
+  setname q_base q_a
+  sed -e "s/itend = '2009-01-05'/itend = '2009-01-03'/" \
+      -e 's/^\$para[ \t]*$/$para\n        idtrst = -1\n        itmrst = -1/' "$W/q_base.str" > "$W/q_w1.str"
+  setname q_w1 q_w
+  sed -e "s/itanf = '2009-01-01'/itanf = '2009-01-03'/" \
+      -e 's/^\$para[ \t]*$/$para\n        itrst = -1\n        ityrst = 1/' \
+      -e "s/itranf = '2009-01-01::12:00:00'/itranf = '2009-01-03::12:00:00'/" \
+      -e "s/^\\([ \t]*\\)nbdy = 150[ \t]*$/&\n\\1lgrini = 'q_w.lgr.shy'\n\\1itlgin = '2009-01-03'/" \
+      -e "s/^\\\$name[ \t]*$/\$name\n        restrt = 'q_w.rst'/" "$W/q_base.str" > "$W/q_r1.str"
+  setname q_r1 q_r
+  for o in "idtl = '1d'" "itranf = '2009-01-01::12:00:00'"; do
+    grep -qF -- "$o" "$W/q_a.str" || fail "no '$o' in q_a.str"
+  done
+  for o in "itend = '2009-01-03'" 'idtrst = -1'; do
+    grep -qF -- "$o" "$W/q_w.str" || fail "no '$o' in q_w.str"
+  done
+  for o in "itanf = '2009-01-03'" 'itrst = -1' 'nbdy = 150' "lgrini = 'q_w.lgr.shy'" "itlgin = '2009-01-03'" "itranf = '2009-01-03::12:00:00'" "restrt = 'q_w.rst'"; do
+    grep -qF -- "$o" "$W/q_r.str" || fail "no '$o' in q_r.str"
+  done
+  for r in q_a q_w q_r; do run $r $r.log shyfem || fail "$r: the run did not end"; done
+  grep -q 'A restart has been performed' "$W/q_r.log" || fail "the restarted run did not read the restart file"
+  if grep -q 'new particles released: .* at time: 2009-01-03::12:00:00' "$W/q_r.log"; then
+    echo "  q_r: $(grep -m1 'largest id in the file' "$W/q_r.log" | sed 's/^ *//')"
+    echo "  q_r: $(grep -m1 'new particles released' "$W/q_r.log" | sed 's/^ *//')"
+  else
+    fail "the restarted run released no particles on 2009-01-03 12:00"
+  fi
+  if [ -s "$W/q_a.lgr.shy" ] && [ -s "$W/q_r.lgr.shy" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/q_a.lgr.shy" "$W/q_r.lgr.shy" <<'EOP' || fail "repeated ids or records that differ from the run that went on"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+def load(path):
+    _, times = lc.read_file(path)
+    return times
+
+full = {t: b for t, b, _ in load(sys.argv[2])}
+rest = load(sys.argv[3])
+nrep = nrec = ndiff = 0
+for k, (t, b, dups) in enumerate(rest):
+    if dups or set(b[0]) & set(b[1]):
+        nrep += 1
+        if nrep <= 3:
+            print("  t=%r: repeated ids %r, active and exited %r"
+                  % (t, dups[:5], sorted(set(b[0]) & set(b[1]))[:5]))
+    if t not in full:
+        print("  output t=%r of the restarted run not in the run that went on" % t)
+        ndiff += 1
+        continue
+    for w in lc.IWHAT_ORDER:
+        if w == -1 and k == 0:
+            continue		# lists the particles read from the file
+        a, r = full[t][w], b[w]
+        if set(a) != set(r):
+            ndiff += 1
+            if ndiff <= 5:
+                print("  t=%r %s: ids differ" % (t, lc.BLOCK_NAME[w]))
+        for pid in set(a) & set(r):
+            nrec += 1
+            if a[pid] != r[pid]:
+                ndiff += 1
+                if ndiff <= 5:
+                    print("  t=%r %s id %d differs" % (t, lc.BLOCK_NAME[w], pid))
+print("  restarted run: %d outputs, %d with a repeated id; %d records compared"
+      " with the run that went on, %d differ" % (len(rest), nrep, nrec, ndiff))
+sys.exit(0 if nrep == 0 and ndiff == 0 and nrec > 0 else 1)
+EOP
+  else
+    fail "particle file missing (q_a or q_r)"
   fi
   finish
 fi

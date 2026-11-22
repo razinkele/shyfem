@@ -97,7 +97,7 @@
 
 	implicit none
 
-	integer id
+	integer, intent(in) :: id	!id of the particle
 	real x,y,z
 	integer ie
 	real rl,r,perc

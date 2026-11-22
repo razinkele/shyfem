@@ -111,8 +111,10 @@
 
 	integer, parameter, public :: lgr_rnd_seed_default = 1 !default of lgrseed
 
-	integer, save, public :: lgr_rnd_seed = lgr_rnd_seed_default
-	integer(kind=8), save, public :: lgr_rnd_step = 0  !step key [ms]
+	! seed and step key: read anywhere, written only by
+	! lgr_random_set_seed and lgr_random_set_step (protected)
+	integer, save, public, protected :: lgr_rnd_seed = lgr_rnd_seed_default
+	integer(kind=8), save, public, protected :: lgr_rnd_step = 0  !step key [ms]
 	integer, save :: lgr_rnd_nrel = 0                  !release draws in step
 
 	integer(kind=8), parameter :: mask32 = 4294967295_8   !2**32-1
