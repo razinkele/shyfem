@@ -123,6 +123,7 @@
 	real htot,htotz
         integer pbdx,gbdx ! numero interno dell'estremo piu vicino e piu lontano dal body
         integer ps,ng,nl,i1,i2
+	integer ieleft	! element the body leaves (for the flag at an open boundary)
 	integer iew	! copy of ie for distp (weights only): distp sets
 			! its element negative when the point is off the
 			! side; the calls that only compute in_d, ou_d (the
@@ -608,6 +609,7 @@
 	 end if
 	 xbdy=nxbdy ! nuove coordinate del body
          ybdy=nybdy ! nuove coordinate del body
+         ieleft=ie
          ie=newie ! individuazione nuovo elemento
          time=deltat
 
@@ -616,7 +618,9 @@
 !            write(lunit,*) 'STOP!! BODY ',bdy,' USCITO '
 !            write(lunit,*) 'ELEMENTO USCITA ',ie
 	  end if
-          ie=-ie ! flag per skip bdy dal calcolo
+          ! flag per skip bdy dal calcolo: minus the element left (ie
+          ! is -1 here, and -ie made it element 1)
+          ie=-ieleft
 	  time=0.
           xbdy=nxbdy ! ultime coordinate del body uscito
           ybdy=nybdy ! ultime coordinate del body uscito
@@ -732,6 +736,7 @@
         real gf !precision along the side
 	real htot,htotz
 	integer iew	! copy of ie for distp (weights only): see track_orig
+	integer ieleft	! element the body leaves (for the flag at an open boundary)
 ! inizializzazione parametri
         integer, save :: idum = 947437
         
@@ -1125,6 +1130,7 @@
 	 end if
          xbdy=nxbdy ! nuove coordinate del body
          ybdy=nybdy ! nuove coordinate del body
+        ieleft=ie
         ie=newie ! individuazione nuovo elemento
         time=deltat
 
@@ -1135,7 +1141,9 @@
 !            write(lunit,*) 'STOP!! BODY ',bdy,' USCITO '
 !            write(lunit,*) 'ELEMENTO USCITA ',ie
 	  end if
-          ie=-ie! flag per skip bdy dal calcolo
+          ! flag per skip bdy dal calcolo: minus the element left (ie
+          ! is -1 here, and -ie made it element 1)
+          ie=-ieleft
           xbdy=nxbdy ! ultime coordinate del body uscito
           ybdy=nybdy ! ultime coordinate del body uscito
 	  time=0.
