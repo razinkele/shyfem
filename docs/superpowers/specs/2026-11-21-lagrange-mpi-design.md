@@ -506,6 +506,21 @@ Found with the hand-over by position (Task 3.5, 2026-11-22):
   the replaced position limits. When the check fails later, the plan's procedure applies:
   trace to the first differing step and quantity before touching the rule.
 
+Found at the end of stage 3 (2026-11-22):
+
+- **"Conservation, exact" as measured.** No particle may be lost or duplicated (a check at every
+  step on several processes aborts otherwise), and the class of each particle (in the domain,
+  left, resting) may differ from the serial run by no more than a class floor measured like the
+  position floors. For the shipped cases the class floor is 0. For a dense copy of the
+  open-boundary case (200,001 particles, used for spec section 7, case 6) it is 4: there a
+  1e-7 difference of the hydrodynamics decides whether a particle stopped on the side of a
+  permanently dry element comes to rest in it.
+- **Spec section 7, case 4** in the form worded here (a particle leaving through the open
+  boundary from an element whose main owner is another process) does not occur with the
+  partitions of the shipped cases on 2 to 16 processes; it needs a partition that cuts through
+  the open-boundary elements (Task 6.1). Case 8 is exercised: the dry elements of the
+  open-boundary case have cut-off sides on 8 processes.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.

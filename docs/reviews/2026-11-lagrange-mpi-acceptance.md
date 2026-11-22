@@ -435,3 +435,38 @@ unmatched particle, no layer or z difference):
   has a cut-off side (shown by a temporary print); on 3, 6 and 8 processes (and 16 in case B)
   the count of dry element-steps with a cut-off side is not 0 either; on 4 processes it is 0
   (both lie inside one process).
+
+## End of stage 3: the class floor, case 6, and the final gates
+
+**Measured** 2026-11-22 08:00 to 08:29 EET (from `date`) by the controller; the dense runs on
+the build of `a4335dfc`'s source (the final gates on a clean build of `a4335dfc`).
+
+**Class floor** (the class of a particle: in the domain, left, resting; paired by key; the base
+serial run against six serial runs with the wind drag changed by a relative +-1e-5, +-7e-6,
++-4e-6): A, B, C and E: no particle changes class at any output in any of the 24 comparisons
+(class floor 0; the gate stays "counts equal at every output"). The dense copy of case B used
+for case 6 above (200,001 particles): at most 4, 2, 3, 2, 1, 1 particles per output (envelope
+4). The run on 8 processes differs by 1 particle at three outputs, within it; the run on 4
+processes by none. The section above recorded case 6 as not met against "counts equal at every
+output"; with the class floor as the gate it is met.
+
+**The cause, traced** (the implementer, temporary instrumentation in a throwaway work tree):
+for each particle that rests in a permanently dry element in one run and not in the other, the
+first quantity that differs between the serial run and 4 processes is a flux or velocity of the
+particle's own element, 1e-7 to 5e-7 relative, while its position, element and time are still
+bit-identical and it has not been parked or handed over. Whether a particle stopped on the
+side of the dry element comes to rest in it depends on where along the side it arrives.
+Particles resting in the dry elements at the end: serial 711; 4 processes 707 (5 missing, 1
+extra); 8 processes 708 (3 missing, 0 extra); serial with drag +-1e-7: 709 and 710 (2 and 1
+missing, 0 extra); serial with drag +-1e-5: 709 and 713 (17 / 15 and 13 / 15). A very small
+disturbance loses such entries one way, in a serial run as on several processes.
+
+**Final gates of stage 3** (clean build of `a4335dfc`, 08:15 to 08:29): tool self-tests PASS;
+serial guard against `wt-lgr-ref3` PASS; repro PASS; MPI hydrodynamics gate PASS; flux A, B, C
+on 2, 3, 4, 6, 8 processes PASS (15); hand-over check A, C on 2, 3, 4, 6, 8 and B on 2, 4, 8
+PASS (13); positions against the floors A, B, C, E on 2, 4, 8 PASS (12); perturbed twins A 4,
+A 8, B 4, C 4, C 8, E 4 PASS; release gate with ids A, C on 6 and 10 processes PASS; the two
+fault runs abort with exit 33 and the particle-count and duplicate-id messages; plain runs of
+D and E on 4 and B on 8 processes at `levdbg = 2` end with the check silent. A build with
+`-fcheck=bounds` (19 runs) and one with `COMPILER_PROFILE=CHECK` (A, B, C, E serially and on 4
+processes) of `a4335dfc` run without a runtime message or a trap.
