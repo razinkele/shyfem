@@ -36,7 +36,9 @@
 #
 # Also required: every run ends (exit code 0 and "simulation end" in its
 # log; timeout 600 s each); every process wrote its file with the three
-# calls; the files of a run together hold every node of the mesh; the log
+# calls and holds the same nodes at each of them (a dump that lacks lines
+# of a call fails); at every call the files of a run together hold every
+# node of the mesh; the log
 # of a run with a hand-written partition says "using these partitiones"
 # (the partition of the basin was used), the log of a METIS run does not.
 #
@@ -165,13 +167,12 @@ while read -r name np basin; do run "$name" "$np" "$basin"; done <<< "$RUNS"
 
 #--- the classification of every process against the serial run
 echo "=== classification against the serial run (calls 1 to 3 of setnod)"
-ARGS=""
+ARGS=()
 while read -r name np basin; do
   [ "$name" = serial ] && continue
-  ARGS="$ARGS $name $np $P/run_$name"
+  ARGS+=("$name" "$np" "$P/run_$name")
 done <<< "$RUNS"
-# shellcheck disable=SC2086
-python3 - "$HERE/GRID/MM_coarse.grd" "$P/run_serial" $ARGS <<'PY' || rc=1
+python3 - "$HERE/GRID/MM_coarse.grd" "$P/run_serial" "${ARGS[@]}" <<'PY' || rc=1
 import os
 import sys
 
@@ -225,7 +226,8 @@ print('  serial: %d nodes, %s' % (len(mesh), ', '.join('%s %d' % kv for kv in so
 
 for i in range(0, len(rest), 3):
     run, np_, d = rest[i], int(rest[i + 1]), rest[i + 2]
-    seen, ncmp, wrong, calls_bad, stops = set(), 0, {}, [], []
+    ncmp, wrong, calls_bad, stops = 0, {}, [], []
+    seen = {c: set() for c in range(1, NCALL + 1)}	# nodes held, per call
     nang, kang, dang = 0, set(), 0.0	# angle sums off by more than ATOL
     for r in range(np_):
         path = os.path.join(d, 'setnod.%d.txt' % r)
@@ -237,9 +239,16 @@ for i in range(0, len(rest), 3):
         calls = sorted({c for (c, k) in val})
         if calls != list(range(1, NCALL + 1)):
             calls_bad.append('rank %d: calls %s' % (r, calls))
+        # a process holds the same nodes at every call: a dump that
+        # lacks lines of a call (truncated) differs from its call 1
+        held = {c: {k for (cc, k) in val if cc == c} for c in range(1, NCALL + 1)}
+        for c in range(2, NCALL + 1):
+            if held[c] != held[1]:
+                calls_bad.append('rank %d: call %d holds %d nodes, call 1 holds %d'
+                                 % (r, c, len(held[c]), len(held[1])))
         for (c, k), (v, a) in sorted(val.items()):
-            if c == 1:
-                seen.add(k)
+            if c in seen:
+                seen[c].add(k)
             if (c, k) not in ser:
                 wrong.setdefault(k, []).append((r, c, v, a, None))
                 continue
@@ -251,18 +260,20 @@ for i in range(0, len(rest), 3):
                 nang += 1
                 kang.add(k)
                 dang = max(dang, abs(a - sa))
-    ok = not wrong and not calls_bad and seen == mesh and nang == 0
-    print('  %-8s %d processes: node copies compared %d, nodes held %d of %d, misclassified nodes %d,'
+    covered = all(seen[c] == mesh for c in seen)
+    ok = not wrong and not calls_bad and covered and nang == 0
+    print('  %-8s %d processes: node copies compared %d, nodes held (calls %s) %s of %d, misclassified nodes %d,'
           ' angle sums off by more than %g deg: %d copies of %d nodes (largest %.4f): %s'
-          % (run, np_, ncmp, len(seen), len(mesh), len(wrong), ATOL, nang, len(kang), dang,
-             'ok' if ok else 'FAIL'))
+          % (run, np_, ncmp, '/'.join(str(c) for c in seen), '/'.join(str(len(seen[c])) for c in seen),
+             len(mesh), len(wrong), ATOL, nang, len(kang), dang, 'ok' if ok else 'FAIL'))
     for s in stops:
         print('      ' + s)
     for s in calls_bad:
         print('      ' + s)
-    if seen != mesh:
-        miss = sorted(mesh - seen)
-        print('      nodes held by no process at call 1: %d (first %s)' % (len(miss), miss[:10]))
+    for c in seen:
+        if seen[c] != mesh:
+            miss = sorted(mesh - seen[c])
+            print('      nodes held by no process at call %d: %d (first %s)' % (c, len(miss), miss[:10]))
     for k in sorted(wrong):
         # the first call that differs, as an example; then all calls
         c0 = min(w[1] for w in wrong[k])
