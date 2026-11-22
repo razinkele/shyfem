@@ -1,7 +1,8 @@
 #!/bin/bash
 #------------------------------------------------------------------------
 # Tests of the exit-status handling of the gate drivers check_lgr_serial.sh,
-# check_lgr_mpi.sh and check_lgr_bounds.sh.  A gate must never print PASS
+# check_lgr_mpi.sh, check_lgr_bounds.sh and check_flux_sections_mpi.sh.  A
+# gate must never print PASS
 # for a run that failed to launch, timed out or exited with an error code,
 # also when the run's log has "simulation end".
 #
@@ -16,7 +17,11 @@
 # (the drivers cd to their own folder and remove outputs there).  The fake
 # shyfem copies a small synthetic particle file to NAME.lgr.shy, writes
 # NAME.hydro.shy and NAME.inf, prints "simulation end" and exits with
-# FAKE_RC; the fake mpirun runs its program once with FAKE_RC set to
+# FAKE_RC (for an STR file with a $flux section it also prints the
+# "nsect,kfluxm" line with the number of sections and writes NAME.flx: 7
+# header records and FAKE_FLX_NDATA data records, default 576, one fewer
+# under the fake mpirun with FAKE_FLX_SHORT=1); the fake mpirun runs its
+# program once with FAKE_RC set to
 # FAKE_MPI_RC and FAKE_NP to its -np value, and the fake shyfem then
 # prints "shympi initialized: ID NP" once for each rank 0 to NP-1 when NP
 # is above 1, as the ranks of a real parallel run do (not with
@@ -59,6 +64,21 @@ if [ "${FAKE_UNDER_MPI:-0}" = 1 ] && [ "${FAKE_STOPS:-0}" = 1 ]; then
   echo " Lagrangian option $lab is not supported with MPI"
   echo " run on one process, or remove $lab"
   exit "${FAKE_RC:-0}"
+fi
+if grep -q '^\$flux' "$1" 2> /dev/null; then
+  ns="$(sed -n '/^\$flux/,/^\$end/p' "$1" | grep -c "'r[0-9]*'")"
+  echo " nsect,kfluxm  $ns  $((2 * ns))"
+  nd="${FAKE_FLX_NDATA:-576}"
+  if [ "${FAKE_UNDER_MPI:-0}" = 1 ] && [ "${FAKE_FLX_SHORT:-0}" = 1 ]; then nd=$((nd - 1)); fi
+  python3 - "$name.flx" "$nd" <<'PY' || exit 99
+import struct, sys
+def rec(p):
+    n = struct.pack('<i', len(p))
+    return n + p + n
+out = b''.join(rec(b'H' * k) for k in (8, 20, 12, 16, 8, 24, 28))
+out += b''.join(rec(struct.pack('<d', 300.0 * (i + 1)) + b'D' * 32) for i in range(int(sys.argv[2])))
+open(sys.argv[1], 'wb').write(out)
+PY
 fi
 cp "$FAKE_LGR" "$name.lgr.shy" || exit 99
 echo "fake hydro" > "$name.hydro.shy"
@@ -207,6 +227,37 @@ expect "mpi stops: both lines printed, then exit 1 instead of 33" 1 "exit code 1
 d=$(newdir m11) || exit 1
 expect "mpi stops: exit 33 and both lines, but no rank reports" 1 "does not show 2 MPI processes.*LGR GATE: FAIL" \
   env FAKE_STOPS=1 FAKE_MPI_RC=33 FAKE_NO_RANKS=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
+
+#--- check_flux_sections_mpi.sh ------------------------------------------------------
+# newdir_flx NAME: a fresh folder with the driver, the real mm_lgr_b.str (the
+# driver edits it into its scratch STR) and a stub basin
+newdir_flx() {
+  local d="$tmp/$1/mar_menor"
+  mkdir -p "$d/GRID" || return 1
+  cp "$src/check_flux_sections_mpi.sh" "$src/mm_lgr_b.str" "$d/" || return 1
+  : > "$d/GRID/MM_coarse.bas"
+  echo "$d"
+}
+d=$(newdir_flx f1) || exit 1
+expect "flux sections on 2 processes: every run succeeds, both ranks report" 0 "FLUX SECTIONS: PASS" \
+  bash "$d/check_flux_sections_mpi.sh" 2
+# a launcher that starts shyfem once (or the mpirun of another MPI): serial
+# copies that write the serial flux file, so cmp alone would pass
+d=$(newdir_flx f2) || exit 1
+expect "flux sections on 2 processes: no rank reports (serial copies)" 1 "does not show 2 MPI processes \(0 'shympi initialized:' lines.*FLUX SECTIONS: FAIL" \
+  env FAKE_NO_RANKS=1 bash "$d/check_flux_sections_mpi.sh" 2
+d=$(newdir_flx f3) || exit 1
+expect "flux sections: the MPI run exits 1 after 'simulation end'" 1 "did not end \(exit code 1\).*FLUX SECTIONS: FAIL" \
+  env FAKE_MPI_RC=1 bash "$d/check_flux_sections_mpi.sh" 2
+d=$(newdir_flx f4) || exit 1
+expect "flux sections: the MPI run times out after 'simulation end'" 1 "timed out after 600 s.*FLUX SECTIONS: FAIL" \
+  env FAKE_TIMEOUT=mpi bash "$d/check_flux_sections_mpi.sh" 2
+d=$(newdir_flx f5) || exit 1
+expect "flux sections: the MPI flux file lacks a record" 1 "has records \(all, data\) '582 575', the serial one 583 576.*FLUX SECTIONS: FAIL" \
+  env FAKE_FLX_SHORT=1 bash "$d/check_flux_sections_mpi.sh" 2
+d=$(newdir_flx f6) || exit 1
+expect "flux sections: the flux files hold a header and no time series" 1 "serial flux file has '1' data records, expected 576.*FLUX SECTIONS: FAIL" \
+  env FAKE_FLX_NDATA=0 bash "$d/check_flux_sections_mpi.sh" 2
 
 #--- check_lgr_bounds.sh in a throwaway repository --------------------------------
 repo="$tmp/repo"

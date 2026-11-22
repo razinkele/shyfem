@@ -23,9 +23,17 @@
 # How: a scratch copy of mm_lgr_b.str in this folder, run name
 # mm_flxsec_PID (outputs carry that name), without its $lagrg section, with
 # idtflx = 300 (one flux record per time step) and the sections, run
-# serially and on each NP; each run must exit with 0 and log "simulation
-# end"; the serial log must report the 129 sections ("nsect,kfluxm" line
-# of prflxa); each NP flux file is compared with cmp to the serial one.
+# serially and on each NP, each under "timeout 600" (a run that times out
+# fails).  Each run must exit with 0 and log "simulation end"; a run on NP
+# processes must also show its NP ranks: the line "shympi initialized: ID
+# NP" once from each rank 0 to NP-1, as in check_lgr_mpi.sh (an mpirun of
+# another MPI, or a launcher that starts shyfem once, runs serial copies
+# that write the serial flux file and would pass the comparison).  The
+# serial log must report the 129 sections ("nsect,kfluxm" line of prflxa)
+# and the serial flux file must hold 576 data records (two days at 300 s;
+# a data record is a record as long as the last one), so that a run that
+# wrote a header and no time series cannot pass; each NP flux file must
+# hold as many records as the serial one, and is then compared with cmp.
 # The scratch STR and the outputs are removed at the end; the logs too
 # when everything passed (otherwise their names are printed).
 #
@@ -34,7 +42,9 @@
 # without exercising a turned ring (it cannot fail there); the section
 # flux of a node off the border is the same before and after the fix.
 #
-# Needs shyfem and mpirun on PATH (an OpenMPI build) and `make init`.
+# Needs shyfem, mpirun (an OpenMPI build), timeout and python3 on PATH and
+# `make init`.  test_lgr_drivers.sh runs this driver with fake programs
+# (exit codes, time-outs, missing ranks, short flux files).
 # Exit code 0 (FLUX SECTIONS: PASS) or 1 (FLUX SECTIONS: FAIL).
 #------------------------------------------------------------------------
 set -u
@@ -53,10 +63,13 @@ done
 
 command -v shyfem > /dev/null 2>&1 || { echo "FLUX SECTIONS FAIL: shyfem is not on PATH"; exit 1; }
 command -v mpirun > /dev/null 2>&1 || { echo "FLUX SECTIONS FAIL: mpirun is not on PATH"; exit 1; }
+command -v timeout > /dev/null 2>&1 || { echo "FLUX SECTIONS FAIL: timeout is not on PATH"; exit 1; }
+command -v python3 > /dev/null 2>&1 || { echo "FLUX SECTIONS FAIL: python3 is not on PATH"; exit 1; }
 [ -f GRID/MM_coarse.bas ] || { echo "FLUX SECTIONS FAIL: GRID/MM_coarse.bas is missing: run 'make init'"; exit 1; }
 
 RUN="mm_flxsec_$$"
 NSECT=129
+NDATA=576		# data records: (itend - itanf) / idtflx = 172800 / 300
 cleanup() {
   local f
   for f in "$HERE/$RUN".*; do
@@ -214,13 +227,45 @@ n="$(sed -n '/^\$flux/,/^\$end/p' "$RUN.str" | grep -c "'r[0-9]*'")"
 [ "$n" = "$NSECT" ] || { echo "FLUX SECTIONS FAIL: $n sections in $RUN.str, expected $NSECT"; exit 1; }
 
 #--- runs ------------------------------------------------------------------
-run_ok() {	# LOG EXITCODE
+# run_ok LOG EXITCODE: exit 0 and "simulation end" in the log
+run_ok() {
   [ "$2" = 0 ] && grep -q "simulation end" "$1"
 }
+# ranks_ok LOG NPROC: each of the NPROC ranks printed once "shympi
+# initialized: ID NPROC" (the same test as in check_lgr_mpi.sh)
+ranks_ok() {
+  awk -v np="$2" '/shympi initialized:/ { n++; if ($4 == np && $3 >= 0 && $3 < np) seen[$3]++ }
+    END { ok = (n == np); for (i = 0; i < np; i++) if (seen[i] != 1) ok = 0; exit !ok }' "$1"
+}
+ranks_msg() { echo "$(basename "$1"): the log does not show $2 MPI processes ($(grep -c 'shympi initialized:' "$1") 'shympi initialized:' lines, expected one from each rank 0 to $(( $2 - 1 )))"; }
+# flx_records FILE: "TOTAL DATA", the number of Fortran records of FILE and
+# of those as long as its last record; "bad" if FILE is not a sequence of
+# records
+flx_records() {
+  python3 - "$1" <<'PY'
+import struct, sys
+try:
+    b = open(sys.argv[1], 'rb').read()
+    lens, i = [], 0
+    while i < len(b):
+        n = struct.unpack('<i', b[i:i+4])[0]
+        if n < 0 or i + 8 + n > len(b) or b[i+4+n:i+8+n] != b[i:i+4]:
+            raise ValueError
+        lens.append(n)
+        i += 8 + n
+    print(len(lens), sum(1 for n in lens if lens and n == lens[-1]))
+except Exception:
+    print("bad")
+PY
+}
+
 echo "=== serial"
 rm -f "$RUN.flx"
-nice -n 19 shyfem "$RUN.str" > "$RUN.serial.log" 2>&1
+timeout 600 nice -n 19 shyfem "$RUN.str" > "$RUN.serial.log" 2>&1
 src=$?
+if [ "$src" = 124 ]; then
+  fail "serial run timed out after 600 s"; echo "FLUX SECTIONS: FAIL"; exit 1
+fi
 if ! run_ok "$RUN.serial.log" "$src"; then
   tail -5 "$RUN.serial.log"; fail "serial run did not end (exit code $src)"
   echo "FLUX SECTIONS: FAIL"; exit 1
@@ -230,19 +275,31 @@ ns="$(echo "$line" | awk '{print $2}')"
 echo "  serial log: $(echo "$line" | sed 's/^ *//')"
 [ "$ns" = "$NSECT" ] || fail "serial run reports '$ns' sections, expected $NSECT"
 [ -s "$RUN.flx" ] || { fail "serial run wrote no $RUN.flx"; echo "FLUX SECTIONS: FAIL"; exit 1; }
+recs="$(flx_records "$RUN.flx")"
+ndata="$(echo "$recs" | awk '{print $2}')"
+echo "  serial flux file: $(wc -c < "$RUN.flx") bytes, records (all, data): $recs"
+if [ "$ndata" != "$NDATA" ]; then
+  fail "serial flux file has '$ndata' data records, expected $NDATA"; echo "FLUX SECTIONS: FAIL"; exit 1
+fi
 mv "$RUN.flx" "$RUN.serial.flxsave"
 
 for np in $NPS; do
   echo "=== $np processes"
   rm -f "$RUN.flx"
-  nice -n 19 mpirun --oversubscribe -np "$np" shyfem "$RUN.str" > "$RUN.np$np.log" 2>&1
+  timeout 600 nice -n 19 mpirun --oversubscribe -np "$np" shyfem "$RUN.str" > "$RUN.np$np.log" 2>&1
   mrc=$?
+  if [ "$mrc" = 124 ]; then fail "run on $np processes timed out after 600 s"; continue; fi
   if ! run_ok "$RUN.np$np.log" "$mrc"; then
     tail -5 "$RUN.np$np.log"; fail "run on $np processes did not end (exit code $mrc)"; continue
   fi
+  if ! ranks_ok "$RUN.np$np.log" "$np"; then fail "$(ranks_msg "$RUN.np$np.log" "$np")"; continue; fi
   if [ ! -s "$RUN.flx" ]; then fail "run on $np processes wrote no $RUN.flx"; continue; fi
+  nrecs="$(flx_records "$RUN.flx")"
+  if [ "$nrecs" != "$recs" ]; then
+    fail "flux file on $np processes has records (all, data) '$nrecs', the serial one $recs"; continue
+  fi
   if cmp -s "$RUN.serial.flxsave" "$RUN.flx"; then
-    echo "  flux file identical to the serial one ($(wc -c < "$RUN.flx") bytes)"
+    echo "  $np ranks reported; flux file identical to the serial one ($(wc -c < "$RUN.flx") bytes, $nrecs records)"
   else
     nb="$(cmp -l "$RUN.serial.flxsave" "$RUN.flx" 2> /dev/null | wc -l)"
     fail "flux file on $np processes differs from the serial one ($nb bytes, first at $(cmp "$RUN.serial.flxsave" "$RUN.flx" 2>&1 | sed 's/.*differ: //'))"
