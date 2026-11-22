@@ -196,7 +196,7 @@
 	    call set_semi_lagrange
 	  else
 	    write(6,*) 'itlin = ',itlin
-	    stop 'error stop set_explicit: no such option'
+	    call shympi_abort_internal('error stop set_explicit: no such option')
 	  end if
 	end if
 

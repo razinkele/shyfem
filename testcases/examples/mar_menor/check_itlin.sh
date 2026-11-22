@@ -44,6 +44,9 @@
 #      2D runs changed layer; a 3D run with itlin = 1, mm_hyd_43 with
 #      "itlin = 1", blows up within three time steps, before any tracer
 #      changes layer).
+#   6. serial, mm_hyd_01 with "ilin = 0  itlin = 2" (no such option):
+#      stops with exit code 33 and "error stop set_explicit: no such
+#      option".  Before #227 a bare stop ended the run with exit code 0.
 #
 # Needs shyfem, shyelab and mpirun on PATH (an OpenMPI build) and
 # `make init` done.  Exit code 0 (ITLIN CHECK: PASS) or 1 (ITLIN CHECK:
@@ -143,6 +146,16 @@ else
   nstop=$(sed -e 's/!.*//' -e 's/^/ /' "$SRC" | grep -ciE "$pat")
   if [ "$nstop" = 0 ]; then echo "  none"
   else sed -e 's/!.*//' -e 's/^/ /' "$SRC" | grep -niE "$pat" | head -10; fail "row 5: $nstop bare stop statements"; fi
+fi
+
+echo "=== 6. serial: mm_hyd_01 with ilin = 0, itlin = 2 (no such option) must stop"
+R6="${TAG}_hyd01opt"
+if mkstr mm_hyd_01 "$R6" -e 's/^\([ \t]*\)ilin = 1[ \t]*$/\1ilin = 0  itlin = 2/'; then
+  grep -q "itlin = 2" "$R6.str" || fail "row 6: the sed expression set no itlin"
+  timeout 600 nice -n 10 shyfem "$R6.str" > "$SCR/6.log" 2>&1; r=$?
+  n1=$(grep -c "error stop set_explicit: no such option" "$SCR/6.log")
+  if [ "$r" = 33 ] && [ "$n1" -ge 1 ]; then echo "  stopped as expected: exit $r"
+  else tail -3 "$SCR/6.log"; fail "row 6: exit $r, message seen $n1 times (expected exit 33 and the message)"; fi
 fi
 
 if [ "$rc" = 0 ]; then rm -rf "$SCR"; echo "ITLIN CHECK: PASS"
