@@ -24,10 +24,15 @@
 #   k3d  the same with k-epsilon (iturb = 2)
 # Required: every run ends (exit code 0 and "simulation end" in its log,
 # timeout 1200 s each), and the files CASE.hydro.shy and, for c41,
-# mm_hyd_41.ts.shy of the NP-process run are byte-identical to the serial
-# ones.  When a file differs the largest difference of every variable is
-# printed (needs shyelab on PATH and python3 with netCDF4; without them
-# only the first differing byte).
+# mm_hyd_41.ts.shy and the extra-point file mm_hyd_41.ext of the
+# NP-process run are byte-identical to the serial ones.  The .ext file
+# holds the barotropic nodal velocity of uvtop0 (same file), which had the
+# same defect (#230): with uvtopr alone fixed, the 2D velocity at the
+# extra point 'inlet' (node 58) was 0.014 m/s off on 4 processes.  The
+# .inf file is not compared: its energy lines are global sums, added in
+# another order on several processes.  When a file differs the largest
+# difference of every variable is printed (needs shyelab, extelab and
+# python3 with netCDF4; without them only the first differing byte).
 #
 # Usage:  ./check_mpi_3d.sh [NP]
 # Needs shyfem, shypre, mpirun and python3 on PATH (an OpenMPI build).
@@ -142,17 +147,38 @@ for v in a.variables:
 PY
 }
 
+extdiffs() {  # SERIAL_EXT MPI_EXT: the split series that differ, largest difference
+  local a="$1" b="$2" s
+  if ! command -v extelab > /dev/null 2>&1; then
+    echo "    first difference: $(cmp "$a" "$b" 2>&1 | head -1)"; return
+  fi
+  # extelab gets a short relative name (it crashed on a long path)
+  rm -rf "$P/ext_a" "$P/ext_b"; mkdir "$P/ext_a" "$P/ext_b" || return
+  cp "$a" "$P/ext_a/x.ext" && cp "$b" "$P/ext_b/x.ext" || return
+  ( cd "$P/ext_a" && extelab -split x.ext > log 2>&1 ) && ( cd "$P/ext_b" && extelab -split x.ext > log 2>&1 ) \
+    || { echo "    extelab failed"; return; }
+  for s in "$P"/ext_a/*.[23]d.*; do
+    case "$(basename "$s")" in all.*) continue ;; esac	# all columns at once
+    cmp -s "$s" "$P/ext_b/$(basename "$s")" && continue
+    paste "$s" "$P/ext_b/$(basename "$s")" | awk -v n="$(basename "$s")" \
+      '!/^#/ { d = $2 - $4; if (d < 0) d = -d; if (d > m) { m = d; t = $1; x = $2; y = $4 } }
+       END { printf "    %-12s largest difference %.4g at %s (serial %s, here %s)\n", n, m, t, x, y }'
+  done
+}
+
 for c in c41 g3d k3d; do
   echo "=== $c"
   if ! run "$c" 1; then fail "$c: the serial run did not end"; continue; fi
   if ! run "$c" "$NP"; then fail "$c: the run on $NP processes did not end"; continue; fi
   files="$c.hydro.shy"
-  [ "$c" = c41 ] && files="mm_hyd_41.hydro.shy mm_hyd_41.ts.shy"
+  [ "$c" = c41 ] && files="mm_hyd_41.hydro.shy mm_hyd_41.ts.shy mm_hyd_41.ext"
   for f in $files; do
     a="$P/$c.np1/$f"; b="$P/$c.np$NP/$f"
     if [ ! -f "$a" ] || [ ! -f "$b" ]; then fail "$c: $f missing"; continue; fi
     if cmp -s "$a" "$b"; then
       echo "  $f: byte-identical"
+    elif [ "${f##*.}" = ext ]; then
+      echo "  $f: DIFFERS"; extdiffs "$a" "$b"; fail "$c: $f differs between serial and $NP processes"
     else
       echo "  $f: DIFFERS"; diffs "$a" "$b"; fail "$c: $f differs between serial and $NP processes"
     fi

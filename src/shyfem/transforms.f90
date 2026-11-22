@@ -93,6 +93,7 @@
 ! 09.05.2023    lrp     introduce top layer index variable
 ! 05.06.2023    lrp     introduce z-star
 ! 22.11.2026	arb	uvtopr: no exchange and sum on a node partition (#230)
+! 22.11.2026	arb	uvtop0: the same (#230)
 !
 !****************************************************************************
 
@@ -194,10 +195,17 @@
 	  end do
 	end do
 
-       !call shympi_comment('shympi_elem: exchange up0v, vp0v')
-        call shympi_exchange_and_sum_2d_nodes(up0v)
-        call shympi_exchange_and_sum_2d_nodes(vp0v)
-        call shympi_exchange_and_sum_2d_nodes(vv)
+	! partition on nodes: the ghost copies take the owner's sums,
+	! as in uvtopr (#230)
+	if( shympi_partition_on_elements() ) then
+          call shympi_exchange_and_sum_2d_nodes(up0v)
+          call shympi_exchange_and_sum_2d_nodes(vp0v)
+          call shympi_exchange_and_sum_2d_nodes(vv)
+	else
+	  call shympi_exchange_2d_node(up0v)
+	  call shympi_exchange_2d_node(vp0v)
+	  call shympi_exchange_2d_node(vv)
+	end if
 
 	where ( vv > 0. ) 
           up0v = up0v / vv
