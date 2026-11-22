@@ -5,7 +5,7 @@
 # Usage:  ./check_lgr_serial.sh REF_BIN_DIR    guard against a reference build
 #         ./check_lgr_serial.sh repro          the current binary against itself
 #
-# Guard (SERIAL GUARD: PASS|FAIL): for the cases mm_lgr_a, _b, _c, _e the
+# Guard (SERIAL GUARD: PASS|FAIL): for the cases mm_lgr_a, _b, _c, _e, _w the
 # files CASE.lgr.shy, CASE.hydro.shy and CASE.inf of
 #   - the current binary (shyfem first on PATH, run in this folder),
 #   - the current binary under "mpirun -np 1" (scratch copy), and
@@ -16,7 +16,7 @@
 # copy); if it cannot be set up or run the check is reported as SKIPPED and
 # the final line reads "SERIAL GUARD: PASS (1 check skipped)".
 #
-# repro (REPRO: PASS|FAIL): the cases a, b, c, e are run twice with the
+# repro (REPRO: PASS|FAIL): the cases a, b, c, e, w are run twice with the
 # current binary and the two CASE.lgr.shy files are compared with cmp.
 #
 # The scratch copies are made with mktemp under ${TMPDIR:-/tmp} and removed
@@ -85,7 +85,7 @@ show_failed() {
   echo "  hint: if this is an MPI start-up error, check that OpenMPI's mpirun is first on PATH (PATH=/usr/bin:\$PATH)"
 }
 
-ALLCASES="mm_lgr_a mm_lgr_b mm_lgr_c mm_lgr_e"
+ALLCASES="mm_lgr_a mm_lgr_b mm_lgr_c mm_lgr_e mm_lgr_w"
 
 #=============================== repro =====================================
 if [ "$ARG" = repro ]; then
