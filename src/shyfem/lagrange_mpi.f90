@@ -36,6 +36,7 @@
 ! lgr_mpi_remove_list		remove several particles (highest slot first)
 ! lgr_mpi_selftest_pack		self-test of record and removal (levdbg >= 3)
 ! lgr_mpi_selftest_side		self-test of particle_on_side (levdbg >= 3)
+! lgr_side_delta		rounding distance of particle_on_side and its self-test
 ! lgr_mpi_find_elem		local element of a global element, 0 if not held
 ! lgr_mpi_find_node		local node of a global node, 0 if not held
 ! lgr_mpi_handover		hand-over of the marked particles, in rounds
@@ -2129,6 +2130,24 @@
 
 !*******************************************************************
 
+	function lgr_side_delta(c)
+
+! rounding distance of the side fallback particle_on_side
+! (lagrange_util.f90) and of its self-test lgr_mpi_selftest_side: two
+! spacings of the single precision value c, the largest absolute
+! coordinate involved (the one expression both use)
+
+	implicit none
+
+	double precision :: lgr_side_delta
+	real, intent(in) :: c
+
+	lgr_side_delta = 2.d0 * spacing(c)
+
+	end function lgr_side_delta
+
+!*******************************************************************
+
 	subroutine lgr_mpi_selftest_side
 
 ! self-test of particle_on_side (lagrange_util.f90), the fallback of the
@@ -2137,12 +2156,19 @@
 ! process
 !
 ! The test elements are chosen at run time among the elements a process
-! holds: the first one, and the first one with a side of each kind of the
-! side table lgr_ieltv (local neighbour, wall, open boundary, cut-off
-! side) where the process has one. Side ii is the side opposite vertex ii.
-! At a neighbour, a wall or a cut-off side (lgr_ieltv <= -1000, treated
-! like a side with a neighbour) ie must come back unchanged, at an open
-! boundary (-999 <= lgr_ieltv <= -1) as -ie. For each test element:
+! holds whose shortest altitude is at least 10 delta, where delta is the
+! rounding distance of particle_on_side, lgr_side_delta, of the largest
+! absolute corner coordinate plus the longest side (no test point lies
+! farther from a corner than the longest side): the first such element,
+! and the first such element with a side of each kind of the side table
+! lgr_ieltv (local neighbour, wall, open boundary, cut-off side). A kind
+! the process holds no such element of is not tested there. Very thin
+! elements are left out because the routine follows its rounding band
+! there and the expectations below do not allow for it.
+! Side ii is the side opposite vertex ii. At a neighbour, a wall or a
+! cut-off side (lgr_ieltv <= -1000, treated like a side with a neighbour)
+! ie must come back unchanged, at an open boundary (-999 <= lgr_ieltv
+! <= -1) as -ie when the particle leaves. For each test element:
 !  1. a move from the centre to the point twice as far away as the
 !     middle of side ii stops at the middle of side ii (kind of side ii)
 !  2. a move from the centre half way to vertex 1 stays inside: the new
@@ -2162,12 +2188,30 @@
 !  7. a move from the middle of side ii along side ii past its end node
 !     nen3v(i2,ie) stops at that vertex; the side crossed is the other
 !     side at that vertex, side i1 (its kind)
-! The point returned is checked in every case: exactly in 2, 3 and 5,
-! otherwise within 1% of the distance from the start to the expected
-! point plus 8 spacings of the coordinates. A wall, a neighbour and a
-! cut-off side give the same result, so the kind is told apart only where
-! the process has an open boundary side; a cut-off side is checked to
-! keep ie wherever the process has one (several processes).
+!  8. a move along side ii over 40% of its length, from about 0.4 delta
+!     inside its line to about 0.85 delta beyond it (outward, both ends
+!     within the band): the point comes back on side ii, and the kind of
+!     side ii applies (the particle leaves through an open boundary)
+!  9. the same from about 0.85 delta beyond the line to about 0.6 delta
+!     beyond it (inward, ends outside within the band): the point comes
+!     back on side ii and ie is unchanged, whatever the kind
+! 10. at an open side only: a move of at most delta/2 from about 0.75
+!     delta beyond its line to more than delta beyond it (outward): the
+!     start point comes back exactly and the particle leaves
+! In 8, 9 and 10 the points are placed on the single precision grid and
+! their distances from the line are measured; a move whose ends do not
+! fall where the check needs them (in units of the routine's delta for
+! that move) is not made. "On side ii" means: within 0.45 delta of its
+! line and within 0.6 delta of the projection of the new point on it in
+! each coordinate (the routine's and the test's projections may differ
+! by one spacing, delta/2, after rounding; the new point itself is at
+! least 0.5 delta from the line). The point returned is checked in every
+! case: exactly in 2, 3, 5 and 10, otherwise within 1% of the distance
+! from the start to the expected point plus 8 spacings of the
+! coordinates. A wall, a neighbour and a cut-off side give the same
+! result, so the kind is told apart only where the process has an open
+! boundary side; a cut-off side is checked to keep ie wherever the
+! process has one (several processes).
 ! particle_on_side changes only its arguments: the test leaves no trace.
 ! Rank 0 prints one line when all processes agree; otherwise every
 ! process aborts naming a check that failed. Prints and changes nothing
@@ -2181,7 +2225,7 @@
 
 	include 'mpif.h'
 
-	integer, parameter :: ncheck = 14
+	integer, parameter :: ncheck = 20
 	character(len=40), parameter :: cname(ncheck) = [		&
      &		character(len=40) ::					&
      &		'move through a side: not at its middle',		&
@@ -2197,40 +2241,42 @@
      &		'move through a vertex: wrong point',			&
      &		'move through a vertex: wrong kind (ie)',		&
      &		'move along a side: wrong point',			&
-     &		'move along a side: wrong kind (ie)' ]
+     &		'move along a side: wrong kind (ie)',			&
+     &		'along a side, out past it: wrong point',		&
+     &		'along a side, out past it: wrong kind',		&
+     &		'along a side, inward, ends out: point',		&
+     &		'along a side, inward, ends out: ie',			&
+     &		'short move out of an open side: point',		&
+     &		'short move out of an open side: ie' ]
 
 	integer, parameter :: ntest = 5		!first element, four kinds
 	integer :: ietest(ntest)
 	integer :: ierr, ifail, ifmax, j, ie, ii, jj, i1, i2, k, iv, isg
-	integer :: ilab1, ilab2
-	logical :: bopen(3)
+	integer :: ilab1, ilab2, mx, my
+	logical :: bopen(3), boka, bokb
 	real :: xc(3), yc(3), xs(3), ys(3)
-	real :: xm, ym, xp, xq, eps
+	real :: xm, ym, xp, yp, xq, eps
+	real :: xa, ya, xb, yb, xbt, ybt
 	double precision :: area, xil, ximin, xibest
+	double precision :: dm, da, db, dlen, dbest
 	! values of the move that failed, for the message
 	integer :: fie, fiet
 	real :: fxa, fya, fxb, fyb, fxe, fye, fxn, fyn
 
 	if( nint(getpar('levdbg')) < 3 ) return
 
+
 	!-----------------------------------------------
-	! test elements: the first one, the first with a side of each kind
+	! test elements: the first one, the first with a side of each kind,
+	! among the elements that are not very thin
 	!-----------------------------------------------
 
 	ietest = 0
-	if( nel >= 1 ) ietest(1) = 1
 	do ie = 1, nel
+	  if( .not. wide_element(ie) ) cycle
+	  if( ietest(1) == 0 ) ietest(1) = ie
 	  do ii = 1, 3
-	    iv = lgr_ieltv(ii,ie)
-	    if( iv > 0 ) then
-	      k = 2			!local neighbour
-	    else if( iv == 0 ) then
-	      k = 3			!wall
-	    else if( iv > -1000 ) then
-	      k = 4			!open boundary
-	    else
-	      k = 5			!cut-off side
-	    end if
+	    k = side_kind(lgr_ieltv(ii,ie))
 	    if( ietest(k) == 0 ) ietest(k) = ie
 	  end do
 	end do
@@ -2252,6 +2298,8 @@
 	    xc(ii) = xgv(nen3v(ii,ie))
 	    yc(ii) = ygv(nen3v(ii,ie))
 	  end do
+	  area = (dble(xc(2))-xc(1))*(dble(yc(3))-yc(1))			&
+     &		- (dble(xc(3))-xc(1))*(dble(yc(2))-yc(1))
 	  xm = (xc(1) + xc(2) + xc(3)) / 3.	!centre of the element
 	  ym = (yc(1) + yc(2) + yc(3)) / 3.
 	  do ii = 1, 3
@@ -2271,14 +2319,12 @@
 
 	  ! 2. from the centre half way to vertex 1: stays inside
 	  xp = 0.5 * (xm + xc(1))
-	  xq = 0.5 * (ym + yc(1))
-	  call one_move(3,0,0,xm,ym,xp,xq,xp,xq,ie,.true.)
+	  yp = 0.5 * (ym + yc(1))
+	  call one_move(3,0,0,xm,ym,xp,yp,xp,yp,ie,.true.)
 
 	  ! 3. zero length, just outside beside vertex 2 at its y: of the
 	  !    points vertex 2 +- (eps,0) the one farther outside is used
 	  eps = 0.01 * sqrt( (xc(2)-xm)**2 + (yc(2)-ym)**2 )
-	  area = (dble(xc(2))-xc(1))*(dble(yc(3))-yc(1))			&
-     &		- (dble(xc(3))-xc(1))*(dble(yc(2))-yc(1))
 	  xibest = 1.d0
 	  xq = xc(2)
 	  do isg = -1, 1, 2
@@ -2333,8 +2379,60 @@
      &			,xc(i2),yc(i2),kind_ie(bopen(i1)),.false.)
 	  end do
 
+	  do ii = 1, 3
+
+	    ! 8. along side ii, outward, ending beyond it within the band
+	    call place(ii,0.3,-0.40,xa,ya,boka)
+	    call place(ii,0.7,0.85,xb,yb,bokb)
+	    dm = lgr_side_delta(max(abs(xa),abs(ya),abs(xb),abs(yb)))
+	    da = sdist(ii,xa,ya) / dm
+	    db = sdist(ii,xb,yb) / dm
+	    if( boka .and. bokb .and. abs(da) <= 0.9d0			&
+     &		.and. db >= 0.6d0 .and. db <= 0.97d0 ) then
+	      call side_move(15,ii,xa,ya,xb,yb,kind_ie(bopen(ii)),dm)
+	    end if
+
+	    ! 9. along side ii, inward, ending beyond it within the band
+	    call place(ii,0.3,0.85,xa,ya,boka)
+	    call place(ii,0.7,0.60,xb,yb,bokb)
+	    dm = lgr_side_delta(max(abs(xa),abs(ya),abs(xb),abs(yb)))
+	    da = sdist(ii,xa,ya) / dm
+	    db = sdist(ii,xb,yb) / dm
+	    if( boka .and. bokb .and. da <= 0.97d0				&
+     &		.and. db >= 0.5d0 .and. da - db >= 0.1d0 ) then
+	      call side_move(17,ii,xa,ya,xb,yb,ie,dm)
+	    end if
+
+	    ! 10. open side: a short move from inside the band out past it
+	    if( bopen(ii) ) then
+	      call place(ii,0.5,0.75,xa,ya,boka)
+	      dbest = huge(1.d0)
+	      do my = -1, 1
+	        do mx = -40, 40
+	          xbt = xa + mx*spacing(xa)
+	          ybt = ya + my*spacing(ya)
+	          dm = lgr_side_delta(max(abs(xa),abs(ya),abs(xbt),abs(ybt)))
+	          dlen = sqrt( (dble(xbt)-xa)**2 + (dble(ybt)-ya)**2 )
+	          da = sdist(ii,xa,ya) / dm
+	          db = sdist(ii,xbt,ybt) / dm
+	          if( dlen > 0.d0 .and. dlen <= 0.5d0*dm .and.		&
+     &		      da > 0.05d0 .and. da <= 0.95d0 .and.		&
+     &		      db > 1.05d0 .and. dlen < dbest ) then
+	            dbest = dlen
+	            xb = xbt
+	            yb = ybt
+	          end if
+	        end do
+	      end do
+	      if( boka .and. dbest < huge(1.d0) ) then
+	        call one_move(19,ii,0,xa,ya,xb,yb,xa,ya,-ie,.true.)
+	      end if
+	    end if
+	  end do
+
 	  if( ifail /= 0 ) exit
 	end do
+
 
 	if( ifail /= 0 ) then
 	  write(6,*) 'lgr side fallback self-test: rank ',my_id,	&
@@ -2378,6 +2476,202 @@
 	if( bflip ) kind_ie = -ie
 
 	end function kind_ie
+
+!-----------------------------------------------------------------------
+
+	function side_kind(ivs)
+
+! kind of a side from its entry in lgr_ieltv: 2 neighbour, 3 wall,
+! 4 open boundary, 5 cut-off side (the slots of ietest)
+
+	integer :: side_kind
+	integer, intent(in) :: ivs
+
+	if( ivs > 0 ) then
+	  side_kind = 2
+	else if( ivs == 0 ) then
+	  side_kind = 3
+	else if( ivs > -1000 ) then
+	  side_kind = 4
+	else
+	  side_kind = 5
+	end if
+
+	end function side_kind
+
+!-----------------------------------------------------------------------
+
+	function wide_element(iel)
+
+! true if the shortest altitude of element iel is at least 10 delta,
+! delta = lgr_side_delta of the largest absolute corner coordinate plus
+! the longest side
+
+	logical :: wide_element
+	integer, intent(in) :: iel
+
+	integer :: kk, k1, k2
+	real :: x(3), y(3), cmax
+	double precision :: ar, hmax, delta
+
+	do kk = 1, 3
+	  x(kk) = xgv(nen3v(kk,iel))
+	  y(kk) = ygv(nen3v(kk,iel))
+	end do
+	ar = abs( (dble(x(2))-x(1))*(dble(y(3))-y(1))			&
+     &		- (dble(x(3))-x(1))*(dble(y(2))-y(1)) )
+	hmax = 0.d0
+	cmax = 0.
+	do kk = 1, 3
+	  k1 = mod(kk,3) + 1
+	  k2 = mod(k1,3) + 1
+	  hmax = max( hmax, sqrt( (dble(x(k2))-x(k1))**2			&
+     &				+ (dble(y(k2))-y(k1))**2 ) )
+	  cmax = max( cmax, abs(x(kk)), abs(y(kk)) )
+	end do
+	delta = lgr_side_delta( real(cmax + hmax) )
+	wide_element = ( hmax > 0.d0 .and. ar / hmax >= 10.d0 * delta )
+
+	end function wide_element
+
+!-----------------------------------------------------------------------
+
+	function sdist(is,xpp,ypp)
+
+! signed distance of the point (xpp,ypp) from the line of side is of the
+! element under test, positive beyond the side (outside)
+
+	double precision :: sdist
+	integer, intent(in) :: is
+	real, intent(in) :: xpp, ypp
+
+	integer :: k1, k2
+	double precision :: cr, hl
+
+	k1 = mod(is,3) + 1
+	k2 = mod(k1,3) + 1
+	cr = (dble(xc(k1))-xpp)*(dble(yc(k2))-ypp)				&
+     &		- (dble(xc(k2))-xpp)*(dble(yc(k1))-ypp)
+	hl = sqrt( (dble(xc(k2))-xc(k1))**2 + (dble(yc(k2))-yc(k1))**2 )
+	sdist = - sign(1.d0,area) * cr / hl
+
+	end function sdist
+
+!-----------------------------------------------------------------------
+
+	subroutine place(is,t,off,xpp,ypp,bok)
+
+! a point at the fraction t along side is, off delta beyond its line
+! (negative: inside), on the single precision grid: of the points near
+! the target the one whose measured distance is nearest to off delta;
+! bok is false if none is within 0.1 delta of it
+
+	integer, intent(in) :: is
+	real, intent(in) :: t, off
+	real, intent(out) :: xpp, ypp
+	logical, intent(out) :: bok
+
+	integer :: k1, k2, kx, ky
+	real :: x0, y0, xt, yt
+	double precision :: ax, ay, bx, by, hl, nx, ny, dc, err, ebest
+
+	k1 = mod(is,3) + 1
+	k2 = mod(k1,3) + 1
+	ax = xc(k1)
+	ay = yc(k1)
+	bx = xc(k2)
+	by = yc(k2)
+	hl = sqrt( (bx-ax)**2 + (by-ay)**2 )
+	nx = (by-ay) / hl			!a normal of side is
+	ny = -(bx-ax) / hl
+	if( nx*(xc(is)-ax) + ny*(yc(is)-ay) > 0.d0 ) then
+	  nx = -nx				!pointing outside
+	  ny = -ny
+	end if
+	x0 = ax + t*(bx-ax)
+	y0 = ay + t*(by-ay)
+	dc = lgr_side_delta( max(abs(x0),abs(y0)) )
+	x0 = ax + t*(bx-ax) + off*dc*nx
+	y0 = ay + t*(by-ay) + off*dc*ny
+	ebest = huge(1.d0)
+	xpp = x0
+	ypp = y0
+	do ky = -1, 1
+	  do kx = -200, 200
+	    xt = x0 + kx*spacing(x0)
+	    yt = y0 + ky*spacing(y0)
+	    err = abs( sdist(is,xt,yt) - off*dc )
+	    if( err < ebest ) then
+	      ebest = err
+	      xpp = xt
+	      ypp = yt
+	    end if
+	  end do
+	end do
+	bok = ( ebest <= 0.1d0 * dc )
+
+	end subroutine place
+
+!-----------------------------------------------------------------------
+
+	subroutine side_move(icode,is,xa,ya,xb,yb,ieexp,dm)
+
+! a move along side is from (xa,ya) to (xb,yb), (xb,yb) beyond the line:
+! the point returned must lie on side is (within 0.45 dm of its line and
+! within 0.6 dm of the projection of (xb,yb) on it in each coordinate),
+! ie must be ieexp; on failure ifail = icode (point) or icode+1 (ie)
+
+	integer, intent(in) :: icode, is
+	real, intent(in) :: xa, ya, xb, yb
+	integer, intent(in) :: ieexp
+	double precision, intent(in) :: dm
+
+	integer :: iet, k1, k2
+	real :: xn, yn, xe, ye
+	double precision :: t
+	logical :: bbad
+
+	if( ifail /= 0 ) return
+
+	k1 = mod(is,3) + 1
+	k2 = mod(k1,3) + 1
+	t = ( (dble(xb)-xc(k1))*(dble(xc(k2))-xc(k1))			&
+     &	    + (dble(yb)-yc(k1))*(dble(yc(k2))-yc(k1)) )			&
+     &	    / ( (dble(xc(k2))-xc(k1))**2 + (dble(yc(k2))-yc(k1))**2 )
+	t = max( 0.d0, min( 1.d0, t ) )
+	xe = xc(k1) + t*(dble(xc(k2))-xc(k1))
+	ye = yc(k1) + t*(dble(yc(k2))-yc(k1))
+
+	xn = xb
+	yn = yb
+	iet = ie
+	call particle_on_side(iet,xa,ya,xn,yn)
+
+	bbad = ( abs(sdist(is,xn,yn)) > 0.45d0*dm			&
+     &	    .or. abs(xn-xe) > 0.6d0*dm .or. abs(yn-ye) > 0.6d0*dm )
+
+	if( bbad ) then
+	  ifail = icode
+	else if( iet /= ieexp ) then
+	  ifail = icode + 1
+	end if
+
+	if( ifail /= 0 ) then
+	  ilab1 = is
+	  ilab2 = 0
+	  fxa = xa
+	  fya = ya
+	  fxb = xb
+	  fyb = yb
+	  fxe = xe
+	  fye = ye
+	  fie = ieexp
+	  fxn = xn
+	  fyn = yn
+	  fiet = iet
+	end if
+
+	end subroutine side_move
 
 !-----------------------------------------------------------------------
 
@@ -2436,6 +2730,7 @@
 	end if
 
 	end subroutine one_move
+
 
 !-----------------------------------------------------------------------
 
