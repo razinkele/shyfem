@@ -429,6 +429,98 @@ Found while running the first task with the reference binary:
   the debug dump the gates of Stages 2 to 4 read. MPI runs write no particle records until the
   output stage.
 
+Found while closing the flux stage (controller's rulings, 2026-11-21; none changes the scope):
+
+- **A read outside an array decided a departed particle's fate (#234).** Right after
+  `track_xi_next_element` the tracker tested `ilhv(iel) >= lb` with a negative `iel` for a
+  particle that had left. On several processes the outcome changed with the contents of memory.
+  Fixed in the flux stage, with two more reads of that kind and three too-small declarations.
+  Serial files of cases A, B, C and E are byte-identical with the fix. The defect is on `main`.
+- **Gates at every stage end.** A memory-perturbed twin of an MPI run, and a build with
+  `-fcheck=bounds` that runs the serial and MPI cases. Both are run by the controller.
+- **Order.** The release on the main owner (section 6.7) is built before the hand-over, because
+  the hand-over is tested on case B, the only case with an open boundary, and case B needs the
+  right number of particles for that. Ids stay after the hand-over.
+- **Layers at a cut-off side** (adds to section 6.4). A serial run puts a particle back when the
+  element across a side has fewer layers than the particle's own layer. On several processes the
+  sender applies the same rule with the layer count of the element across, which the tracker's
+  side table carries; such a particle is not handed over.
+
+Found with the hand-over at a cut-off side (2026-11-21):
+
+- **Positions cannot be gated at 1e-5 degrees or 2 m.** A serial run against a serial run whose
+  wind drag is changed by a relative 1e-7 already exceeds those limits for some particles (case
+  A: 15 of 145, largest 2.3e-4 degrees; case B: 3 of 408, largest 36 m). The hydrodynamics on
+  several processes differs from the serial one by about 1e-6. This replaces the position limits
+  of section 8: conservation is exact; a hand-over must not make a particle worse than the
+  particles that stay on their process (compared through a key that identifies a particle in
+  both runs); crossing counts are compared at identical positions only; positions are held
+  against the tracker's measured response to a relative 1e-5 change of the forcing.
+- **Issue #223, owner decision: fix now.** The fallback for a failed element search intersects
+  the particle's move with the triangle of mesh nodes 1 to 3 instead of its own element. A serial
+  run of the Stokes-drift case reaches it 156,864 times. On several processes those are other
+  nodes on every process. It is corrected for serial and MPI alike; serial results change where
+  it acts, and the serial guard gets a new reference build from that commit.
+- **Order.** The ids (section 6.8) are assigned before the hand-over by position is built, because
+  the vertex pick depends on the id and the Stokes-drift case reaches it.
+- **Stops on several processes** for connectivity and `ilagr = 3` exist since the hand-over at a
+  cut-off side, which carries neither the connectivity counts of a crossing nor a depth in double
+  precision.
+- **Search rule of the hand-over by position** (adds to section 6.5): the element is the one a
+  serial search would find, the element containing the point whose global number is nearest to
+  the old element's, the lower one first at equal distance; not the lowest number.
+
+Found while correcting the fallback (Task 3.7, 2026-11-22):
+
+- **A side cut off by the partition is treated like a side with a neighbour** (controller's
+  ruling). The old fallback let a particle leave at any side with a negative table entry, and on
+  several processes a cut-off side has one; a particle whose step-end search failed at the edge
+  of a process's domain was stored as having left the basin. In a serial run that side has a
+  neighbour, and that branch is what runs there. Only a real open boundary lets a particle leave.
+- **Issue #223, second owner decision: the side selection is corrected too.** The same routine
+  moved a particle that did not move (a move of zero length got a side by coordinate ranges) and
+  returned the side a move starts on whatever the move did next. The fallback now puts the
+  particle where its move leaves its own element, changes nothing for a move of zero length, and
+  lets a particle leave only through an open boundary it actually crosses outward. Serial results
+  of the Stokes-drift and random-walk runs change; the closed-basin and open-boundary cases stay
+  byte-identical. The plan's amendment after Task 3.7 has the full statement, the measured effect,
+  the two rounding-scale behaviours left as they are, and the new reference build.
+- **The fallback's self-test reports instead of aborting.** It verifies the geometry of each of
+  its own moves, reports what it ran per side kind and prints a line for a failure; the MPI test
+  driver fails on a missing `ok`. Two review rounds found false failures of the test's own
+  construction on unusual meshes, and a valid run must not stop because of the test.
+
+Found with the hand-over by position (Task 3.5, 2026-11-22):
+
+- **The hand-over check's rule is set by replay** (it was left to be set after this task). A
+  changed-process pair fails if it is farther than twice the largest distance of the particles
+  that stayed on their process, with a floor of 10 single-precision steps, or if more such pairs
+  are beyond one step than a Poisson count at the stayed particles' rate allows at 99.9 %. It
+  fails the four runs with real defects made before the hand-over by position and passes the 13
+  runs after it. In the closed basin, whose noise reaches 3e-5 degrees, a single smaller lag
+  passes; the open-boundary and 3D cases see one.
+- **The multi-process hydrodynamics differs from the serial one by about 1e-7 relative, also in
+  elements wholly inside one process.** Traced for the one particle that kept failing the
+  earlier rule: its offset starts one step before its hand-over, in an element's flux; the
+  hand-over copies the state bit for bit. Not addressed in this project; it is the premise of
+  the replaced position limits. When the check fails later, the plan's procedure applies:
+  trace to the first differing step and quantity before touching the rule.
+
+Found at the end of stage 3 (2026-11-22):
+
+- **"Conservation, exact" as measured.** No particle may be lost or duplicated (a check at every
+  step on several processes aborts otherwise), and the class of each particle (in the domain,
+  left, resting) may differ from the serial run by no more than a class floor measured like the
+  position floors. For the shipped cases the class floor is 0. For a dense copy of the
+  open-boundary case (200,001 particles, used for spec section 7, case 6) it is 4: there a
+  1e-7 difference of the hydrodynamics decides whether a particle stopped on the side of a
+  permanently dry element comes to rest in it.
+- **Spec section 7, case 4** in the form worded here (a particle leaving through the open
+  boundary from an element whose main owner is another process) does not occur with the
+  partitions of the shipped cases on 2 to 16 processes; it needs a partition that cuts through
+  the open-boundary elements (Task 6.1). Case 8 is exercised: the dry elements of the
+  open-boundary case have cut-off sides on 8 processes.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.

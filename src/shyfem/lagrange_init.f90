@@ -89,21 +89,31 @@
 	subroutine lgr_init_total(npoints)
 
 ! manages release of particles over whole domain
+!
+! the area is that of the whole basin also on more than one process
+! (lgr_mpi_global_area), so that the grid spacing is the serial one; after
+! the release the particles get the ids of a serial run
+! (lgr_mpi_assign_ids, on every process)
+
+	use mod_lagrange, only : nbdy
+	use mod_lagrange_mpi, only : lgr_mpi_global_area,lgr_mpi_assign_ids
 
 	implicit none
 
 	integer, intent(in) :: npoints
 
-	integer n
+	integer n,nbdy_before
 	real tot_area,dxy
 	real x(1),y(1)
 
-	call compute_total_area(tot_area)
+	call lgr_mpi_global_area(tot_area)
 	dxy = sqrt( tot_area / npoints )
 
 	n = -1
+	nbdy_before = nbdy
 	!call lagbound_seed_particles(dxy,n,x,y)	!should be the same
 	call lgr_init_all(dxy)
+	call lgr_mpi_assign_ids(nbdy_before)	!ids as in a serial run
 
 	end
 
@@ -113,6 +123,12 @@
 
 ! manages release of particles inside polygon(s)
 ! particles in different polygons have different types
+!
+! after each polygon the particles get the ids of a serial run
+! (lgr_mpi_assign_ids, on every process: every process reads all polygons)
+
+	use mod_lagrange, only : nbdy
+	use mod_lagrange_mpi, only : lgr_mpi_assign_ids
 
 	implicit none
 
@@ -123,7 +139,7 @@
 
 	real x(ndim),y(ndim)
 
-	integer iunit,n,nline
+	integer iunit,n,nline,nbdy_before
 	real tot_area,dxy
 	logical lagbound_read_next
 
@@ -141,7 +157,9 @@
 	do while( lagbound_read_next(iunit,ndim,n,x,y) )
 	  nline = nline + 1
 	  write(6,*) 'new line read: ',nline,n
+	  nbdy_before = nbdy
 	  call lagbound_seed_particles(dxy,nline,n,x,y)
+	  call lgr_mpi_assign_ids(nbdy_before)	!ids as in a serial run
 	end do
 	call lagbound_close_file(iunit)
 	write(6,*) 'total number of lines read: ',nline
@@ -415,9 +433,15 @@
 	subroutine lagbound_seed_particles(dxy,iln,n,x,y)
 
 ! release in partial area
+!
+! on more than one process only the main owner of an element releases in
+! it, and the centre of the whole domain (n < 0) is that of the whole
+! basin (lgr_mpi_global_center)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_global_center
 	use basin, only : nkn,nel,ngr,mbw
+	use shympi, only : id_elem, my_id
 
 	implicit none
 
@@ -446,7 +470,7 @@
 !-----------------------------------------------------------------
 
 	if( n .lt. 0 ) then	!total domain
-	  call basin_center(x0,y0)
+	  call lgr_mpi_global_center(x0,y0)
 	else
 	  call xy_center(n,x,y,x0,y0)
 	end if
@@ -481,6 +505,8 @@
 
 	np = 0
         do ie=1,nel
+
+	  if( id_elem(1,ie) /= my_id ) cycle  !only release on owned elements
 
 	  ifl = ieflag(ie)
 	  if( ifl .ne. -1 ) then
@@ -524,7 +550,12 @@
 	subroutine lgr_init_all(dxy)
 
 ! release in total area
+!
+! on more than one process only the main owner of an element releases in
+! it, and the grid origin is the centre of the whole basin
+! (lgr_mpi_global_center), so that the grid points are the serial ones
 
+	use mod_lagrange_mpi, only : lgr_mpi_global_center
 	use basin, only : nkn,nel,ngr,mbw
 	use shympi, only : id_elem, my_id
 
@@ -548,7 +579,7 @@
 !------------------------------------------------------------------
 
 	nin = 0
-	call basin_center(x0,y0)
+	call lgr_mpi_global_center(x0,y0)
 
 	do ie=1,nel
 	  if( id_elem(1,ie) /= my_id ) cycle  !only release on owned elements

@@ -84,10 +84,34 @@
         type(lagr_entry), save, allocatable :: lgr_ar(:)
 
 	!element crossings used in the last time step, one per slot of lgr_ar
-	!(set to 0 by track_single and to the count by track_body_xi; -1 =
-	!unknown, set by lgr_mpi_exchange for a received particle; read by
-	!the debug dump)
+	!(set to 0 by track_single and to the count by track_body_xi, on the
+	!process where the particle ends its step the count of the whole
+	!step; read by the debug dump)
         integer, save, allocatable :: lgr_ncross(:)
+
+	!hand-over mark, one per slot of lgr_ar (several processes only):
+	! 0 nothing pending
+	! 1 the particle stopped on a cut-off side in this time step and goes
+	!   on on another process (set by lgr_mpi_mark_side)
+	! 2 parked in the horizontal diffusion step, 3 parked in the Stokes
+	!   drift step: the new point of the step lies in no element this
+	!   process may decide alone (lgr_mpi_park); resolved collectively
+	! 4, 5 parked in the diffusion (4) or Stokes (5) step and resolved
+	!   (lgr_park_ie holds the outcome): resumed in the same round
+	!(cleared by track_single, for an arriving particle and before a
+	!resume; written only for the own slot inside the parallel loop of
+	!drogue). Moves with its particle.
+        integer, save, allocatable :: lgr_marked(:)
+
+	!a parked particle (lgr_marked 2 to 5), one per slot of lgr_ar, moves
+	!with its particle: lgr_park_xy(1:4,i) the old x, y and the new x, y
+	!of the parked move as the single precision values the step had;
+	!lgr_park_ie(i) after the resolution: > 0 the local element the
+	!particle goes on in, 0 no element contains the new point (the
+	!fallback runs), -1 the element found lacks the particle's layer
+	!(diffusion step only: the particle keeps its old position)
+	real, save, allocatable :: lgr_park_xy(:,:)
+        integer, save, allocatable :: lgr_park_ie(:)
 
 	!---------------------------------------------
 	! parameters
@@ -279,6 +303,7 @@
 	real time1,time2
 	type(lagr_entry), allocatable :: paux(:)
 	integer, allocatable :: iaux(:)
+	real, allocatable :: raux(:,:)
 
         if( nbdy == nbdy_lagr ) return
 
@@ -292,9 +317,24 @@
 	  if( ierr /= 0 ) call shympi_abort_internal(			&
      &		'mod_lagrange_init_body: allocation of lgr_ncross')
 	  lgr_ncross = 0
+	  allocate(lgr_marked(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_marked')
+	  lgr_marked = 0
+	  allocate(lgr_park_xy(4,nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_park_xy')
+	  lgr_park_xy = 0.
+	  allocate(lgr_park_ie(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_park_ie')
+	  lgr_park_ie = 0
         else if( nbdy == 0 ) then		!last time
 	  deallocate(lgr_ar)
 	  deallocate(lgr_ncross)
+	  deallocate(lgr_marked)
+	  deallocate(lgr_park_xy)
+	  deallocate(lgr_park_ie)
 	else
           ndim = min(nbdy,nbdy_lagr)
           allocate(paux(nbdy),stat=ierr)
@@ -307,6 +347,24 @@
 	  iaux = 0
 	  iaux(1:ndim) = lgr_ncross(1:ndim)
 	  call move_alloc(iaux,lgr_ncross)
+	  allocate(iaux(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_marked')
+	  iaux = 0
+	  iaux(1:ndim) = lgr_marked(1:ndim)
+	  call move_alloc(iaux,lgr_marked)
+	  allocate(raux(4,nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_park_xy')
+	  raux = 0.
+	  raux(:,1:ndim) = lgr_park_xy(:,1:ndim)
+	  call move_alloc(raux,lgr_park_xy)
+	  allocate(iaux(nbdy),stat=ierr)
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'mod_lagrange_init_body: allocation of lgr_park_ie')
+	  iaux = 0
+	  iaux(1:ndim) = lgr_park_ie(1:ndim)
+	  call move_alloc(iaux,lgr_park_ie)
 	end if
 
 	call cpu_time(time2)

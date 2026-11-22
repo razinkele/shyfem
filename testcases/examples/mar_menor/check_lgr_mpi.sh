@@ -10,12 +10,20 @@
 #   NP    number of MPI processes of the second run
 #   MODE  flux   debug dump of the element fluxes, serial vs MPI
 #         part   debug dump of the particles (per output time), serial vs MPI
+#         handover  debug dump of the particles (as part), then the hand-over
+#                fidelity check of lgr_dbg_compare.py: --by key --handover,
+#                the particles that changed process against those that did
+#                not (--step 6e-8, case B 0.25: one single-precision step)
 #         pos    final particle file: positions, layers, types, times
 #         ids    final particle file: the ids, the counts, valid cells
 #         perturb  two MPI runs (no serial run) with the debug dump, one
 #                plain and one with MALLOC_PERTURB_=85; every dump file of
 #                the two runs must be byte-identical (dependence of the
 #                result on memory that malloc hands out)
+#         floor  debug dump of the particles (as part), compared by key with
+#                the case's --tol and its position floors (the table below):
+#                --max-beyond-last and --max-largest of lgr_dbg_compare.py
+#                (not for mm_lgr: its random walk is never seeded, #225)
 #
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
@@ -28,10 +36,45 @@
 # every case; the per-case --tol below applies to pos and part only.
 # Limits: the geographic cases use --tol 1e-5, the Cartesian case mm_lgr_b
 # --tol 2 (for pos and part).  The flux comparison is relative and keeps
-# the default of lgr_dbg_compare.py.  Part uses --by nearest (the ids repeat
-# across ranks at this stage).  Arguments after MODE come last on the tool
+# the default of lgr_dbg_compare.py.  Part uses --by nearest (pairs by
+# position; since Task 4.2 the ids equal those of the serial run, so --by id
+# or --by key can be given).  Arguments after MODE come last on the tool
 # command line and so replace the defaults, for example
 #   ./check_lgr_mpi.sh mm_lgr_a 4 part --by id --tol 1e-3
+#
+# floor: the positions are held against floors measured on the serial
+# reference instead of the limit pair by pair: the run fails if more pairs
+# are beyond --tol at the last output than the floor's count, or if the
+# largest distance at any output is above the floor's distance.  Arguments
+# after MODE come last, so a floor can be replaced for a trial run.
+#
+# handover: the particles of the two runs are paired by their key (the last
+# six columns of the dump); the statistic and the rule (a jump test against
+# the noise of the particles that stayed, and a Poisson count test) are
+# described in the docstring of lgr_dbg_compare.py.  The distances above the
+# limit of the part mode are printed, not gated.  Arguments after MODE come
+# last, so --step, --jump-factor, --jump-floor, --quantile and --min-changed
+# can be given or replaced.
+#
+# Side self-test: every mode that runs at levdbg = 3 (flux, part, handover,
+# floor, perturb) requires of each log (serial and MPI; both MPI logs in perturb)
+# the summary line "lgr side fallback self-test: ok" and no line with
+# "lgr side fallback self-test: FAILED"; for mm_lgr_b the open-side count
+# of checks run (the "open N/M" field of the summary) must be above 0, and
+# for an MPI run on more than one process the cut-off count likewise.
+#
+# Re-location self-checks (Task 3.5): every mode that runs at levdbg = 3 also
+# requires, of a run on one process (the serial run, and the second run if NP
+# is 1), the line "lgr relocation self-check: compared N, differing D, clear
+# hits in a second element C, points in two or more elements M, key order
+# walks W, wrong K" with D = 0 and C = 0 (the search key against
+# find_elem_from_old, and the premise of the margin); of a run on several
+# processes (the MPI run, both runs in perturb), the line "lgr relocation by
+# position: parked N (...), stayed S, kept for lack of a layer L, went to
+# another process G, nobody answered A, hit within the margin and nobody
+# answered Z, key order walks W, wrong K" with Z = 0 and S + L + G + A = N.
+# In both lines W must be above 0 and K = 0 (the key against the walk of
+# find_elem_from_old, lgr_mpi_selftest_key).  A missing line fails too.
 #
 # perturb: the dumps of the second run go to CASE.npN.perturb.dbg/ and its log
 # is CASE.npN.perturb.log.  A PASS is weak evidence: the perturbation only
@@ -51,7 +94,7 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|pos|ids|perturb)"
+  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb)"
   exit 2
 }
 
@@ -64,8 +107,26 @@ case "$CASE" in
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
-case "$MODE" in flux|part|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
-if [ "$CASE" = mm_lgr_b ]; then TOL=2; else TOL=1e-5; fi
+case "$MODE" in flux|part|handover|floor|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
+
+# Position floors (mode floor): particles beyond --tol at the last output and
+# the largest distance at any output, each the envelope of six serial runs
+# whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
+# metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
+# section "Task 3.7", table "Position floors on the new reference" (measured
+# on /home/razinka/wt-lgr-ref3, commit 0fddec90).  Never change a value to
+# make a run pass.
+case "$CASE" in
+  mm_lgr_a) FLOOR_N=78; FLOOR_D=2.97e-3 ;;
+  mm_lgr_b) FLOOR_N=48; FLOOR_D=182 ;;
+  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.1e-3 ;;
+  mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3 ;;
+  *) FLOOR_N=""; FLOOR_D="" ;;
+esac
+if [ "$MODE" = floor ] && [ -z "$FLOOR_N" ]; then
+  echo "no position floor for $CASE (its random walk is never seeded, #225)"; usage
+fi
 
 #--- preconditions -------------------------------------------------------
 command -v shyfem  > /dev/null 2>&1 || { echo "LGR GATE FAIL: shyfem is not on PATH"; exit 1; }
@@ -93,7 +154,7 @@ trap 'cleanup; exit 130' INT TERM
 
 STR="$CASE.str"
 DUMP=0
-if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = perturb ]; then
+if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = handover ] || [ "$MODE" = floor ] || [ "$MODE" = perturb ]; then
   DUMP=1
   if grep -q '^[[:space:]]*levdbg' "$HERE/$CASE.str"; then
     echo "LGR GATE FAIL: $CASE.str already sets levdbg; refusing to add a second one"
@@ -151,6 +212,83 @@ collect_dbg() {
 
 summary() { python3 "$HERE/lgr_compare.py" "$1" --summary 2>&1 | sed 's/^/    /'; }
 
+# selftest_check LOG NPROC: the side self-test of a levdbg = 3 run (see header)
+selftest_check() {
+  local log="$1" np="$2" line n
+  if grep -q 'lgr side fallback self-test: FAILED' "$log"; then
+    fail "side self-test FAILED in $log"
+    grep 'lgr side fallback self-test: FAILED' "$log" | head -5 | sed 's/^/    /'
+    return
+  fi
+  line="$(grep 'lgr side fallback self-test: ok' "$log" | tail -1)"
+  if [ -z "$line" ]; then
+    fail "no line 'lgr side fallback self-test: ok' in $log"; return
+  fi
+  echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+  if [ "$CASE" = mm_lgr_b ]; then
+    n="$(echo "$line" | sed -n 's/.* open \([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p')"
+    if [ -z "$n" ]; then fail "no open-side count of checks run in the self-test line of $log"
+    elif [ "$n" -eq 0 ]; then fail "open-side count of checks run is 0 in $log"; fi
+  fi
+  if [ "$np" -gt 1 ]; then
+    n="$(echo "$line" | sed -n 's/.* cut-off \([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p')"
+    if [ -z "$n" ]; then fail "no cut-off count of checks run in the self-test line of $log"
+    elif [ "$n" -eq 0 ]; then fail "cut-off count of checks run is 0 in $log"; fi
+  fi
+}
+
+# relocation_check LOG NPROC: the re-location self-checks of a levdbg = 3 run
+# (see header)
+relocation_check() {
+  local log="$1" np="$2" line n d c s l g a z
+  line="$(grep 'lgr relocation classes:' "$log" | tail -1)"
+  [ -n "$line" ] && echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+  if [ "$np" -le 1 ]; then
+    line="$(grep 'lgr relocation self-check:' "$log" | tail -1)"
+    if [ -z "$line" ]; then
+      fail "no line 'lgr relocation self-check' in $log"; return
+    fi
+    echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+    n="$(echo "$line" | sed -n 's/.*compared \([0-9][0-9]*\),.*/\1/p')"
+    d="$(echo "$line" | sed -n 's/.*differing \([0-9][0-9]*\),.*/\1/p')"
+    c="$(echo "$line" | sed -n 's/.*clear hits in a second element \([0-9][0-9]*\).*/\1/p')"
+    if [ -z "$n" ] || [ -z "$d" ] || [ -z "$c" ]; then
+      fail "cannot read the relocation self-check line of $log"; return
+    fi
+    [ "$d" -eq 0 ] || fail "relocation self-check: $d of $n searches differ from the search key in $log"
+    [ "$c" -eq 0 ] || fail "relocation self-check: $c clear hits lie in a second element in $log"
+    key_check "$line" "$log"
+  else
+    line="$(grep 'lgr relocation by position:' "$log" | tail -1)"
+    if [ -z "$line" ]; then
+      fail "no line 'lgr relocation by position' in $log"; return
+    fi
+    echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+    n="$(echo "$line" | sed -n 's/.*position: parked \([0-9][0-9]*\) .*/\1/p')"
+    s="$(echo "$line" | sed -n 's/.*, stayed \([0-9][0-9]*\),.*/\1/p')"
+    l="$(echo "$line" | sed -n 's/.*kept for lack of a layer \([0-9][0-9]*\),.*/\1/p')"
+    g="$(echo "$line" | sed -n 's/.*went to another process \([0-9][0-9]*\),.*/\1/p')"
+    a="$(echo "$line" | sed -n 's/.*, nobody answered \([0-9][0-9]*\),.*/\1/p')"
+    z="$(echo "$line" | sed -n 's/.*hit within the margin and nobody answered \([0-9][0-9]*\).*/\1/p')"
+    if [ -z "$n" ] || [ -z "$s" ] || [ -z "$l" ] || [ -z "$g" ] || [ -z "$a" ] || [ -z "$z" ]; then
+      fail "cannot read the relocation by position line of $log"; return
+    fi
+    [ "$z" -eq 0 ] || fail "relocation by position: $z particles parked with a local hit and no owner answered in $log"
+    [ $((s + l + g + a)) -eq "$n" ] || fail "relocation by position: outcomes $s + $l + $g + $a do not add up to the $n parked in $log"
+    key_check "$line" "$log"
+  fi
+}
+
+# key_check LINE LOG: the "key order walks W, wrong K" part of a line
+key_check() {
+  local w k
+  w="$(echo "$1" | sed -n 's/.*key order walks \([0-9][0-9]*\), wrong [0-9][0-9]*.*/\1/p')"
+  k="$(echo "$1" | sed -n 's/.*key order walks [0-9][0-9]*, wrong \([0-9][0-9]*\).*/\1/p')"
+  if [ -z "$w" ] || [ -z "$k" ]; then fail "no key order count in the relocation line of $2"; return; fi
+  [ "$w" -gt 0 ] || fail "key order self-test ran no walk in $2"
+  [ "$k" -eq 0 ] || fail "key order self-test: $k of $w walks wrong in $2"
+}
+
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
   nlost() { grep -c 'loosing particle adv' "$1"; }
@@ -181,6 +319,8 @@ if [ "$MODE" = perturb ]; then
   fi
   collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  plain run ended"
+  selftest_check "$HERE/$CASE.np$NP.log" "$NP"
+  relocation_check "$HERE/$CASE.np$NP.log" "$NP"
 
   echo "=== 2. $CASE on $NP processes, MALLOC_PERTURB_=85"
   seen="$(probe perturbed)"; probe_rc=$?
@@ -200,6 +340,8 @@ if [ "$MODE" = perturb ]; then
   fi
   collect_dbg "$CASE.np$NP.perturb.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  perturbed run ended"
+  selftest_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
+  relocation_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
 
   echo "=== 3. compare the dump files byte for byte"
   D1="$HERE/$CASE.np$NP.dbg"; D2="$HERE/$CASE.np$NP.perturb.dbg"
@@ -239,6 +381,10 @@ for ext in lgr.shy hydro.shy inf; do
 done
 collect_dbg "$CASE.serial.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  serial run ended"
+if [ "$DUMP" = 1 ]; then
+  selftest_check "$HERE/$CASE.serial.log" 1
+  relocation_check "$HERE/$CASE.serial.log" 1
+fi
 
 #--- 2. MPI run ------------------------------------------------------------------
 echo "=== 2. $CASE on $NP processes"
@@ -252,6 +398,10 @@ if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; the
 fi
 collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  MPI run ended"
+if [ "$DUMP" = 1 ]; then
+  selftest_check "$HERE/$CASE.np$NP.log" "$NP"
+  relocation_check "$HERE/$CASE.np$NP.log" "$NP"
+fi
 
 #--- 3. comparison ---------------------------------------------------------------
 echo "=== 3. compare ($MODE)"
@@ -263,6 +413,17 @@ case "$MODE" in
   part)
     python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
         --tol "$TOL" --by nearest "$@"
+    crc=$?
+    ;;
+  handover)
+    python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
+        --tol "$TOL" --by key --handover --step "$STEP" "$@"
+    crc=$?
+    ;;
+  floor)
+    echo "  floors of $CASE: beyond $TOL at the last output $FLOOR_N, largest distance at any output $FLOOR_D"
+    python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
+        --tol "$TOL" --by key --max-beyond-last "$FLOOR_N" --max-largest "$FLOOR_D" "$@"
     crc=$?
     ;;
   pos|ids)

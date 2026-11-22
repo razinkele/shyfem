@@ -279,7 +279,12 @@
 !
 !************************************************************
 
-	subroutine track_xi(id,iel,lb,sv,xi,z,time,ncross)
+	subroutine track_xi(id,iel,lb,sv,xi,z,time,ncross,icut)
+
+! icut: if the particle stopped on a cut-off side of the MPI domain (side
+! table lgr_ieltv <= -1000) and goes on on another process, the side of
+! the element it started in (iel is then -that element, xi its position on
+! the side, as at an open boundary); 0 otherwise
 
 	use mod_lagrange
 
@@ -293,10 +298,11 @@
 	double precision, intent(inout) :: z	!rel vert pos: 0=top, 1=bottom
 	real, intent(inout) :: time
 	integer, intent(in) :: ncross		!element crossings left in time step
+	integer, intent(out) :: icut		!cut-off side reached (0: none)
 
 	logical bdebug
-	logical bsurf,bbott
-	integer iflux,lmax,ii
+	logical bsurf,bbott,bhas
+	integer iflux,lmax,ii,iside
 	integer ieorig,lborig
 	double precision s,alpha
 	double precision dist,dh,dv,ds
@@ -307,8 +313,8 @@
 	double precision xie(3)
 
 	logical track_xi_on_material_boundary
-	logical track_xi_has_layer
 
+	icut = 0			!before the first return
 	blgrdebug = id == 0
 	bdebug = blgrdebug
 
@@ -452,8 +458,9 @@
 	if( th == 0. ) then		!body not moving or laying on side
           if (vel > 0.) then
             xi = xie
-            call track_xi_next_element(iel,xi,id,ncross)    !for particles laying on side
-	    if( .not. track_xi_has_layer(iel,lb) ) then	!just do vert adv
+            call track_xi_next_element(iel,xi,id,ncross,iside)    !for particles laying on side
+	    call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+	    if( .not. bhas ) then	!just do vert adv
 	      iel = ieorig
 	      xi = xie
             end if
@@ -471,9 +478,10 @@
 	else				!body reaches border of element
 	  xi = xie
 	  call track_xi_check('before advection track_xi 2',id,xi)
-	  call track_xi_next_element(iel,xi,id,ncross)
+	  call track_xi_next_element(iel,xi,id,ncross,iside)
 	  call track_xi_check('after advection track_xi 2',id,xi)
-	  if( .not. track_xi_has_layer(iel,lb) ) then	!just do vert adv
+	  call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+	  if( .not. bhas ) then	!just do vert adv
 	    iel = ieorig
 	    xi = xie
 	    if( th == 0. ) then
@@ -565,12 +573,18 @@
 
 !************************************************************
 
-	subroutine track_xi_next_element(ie,xi,id,ncross)
+	subroutine track_xi_next_element(ie,xi,id,ncross,iside)
 
 ! copies internal coordinates to new element - avoid falling on vertex
+!
+! neighbours from the side table of the tracker, lgr_ieltv: a side without
+! a local neighbour (wall, open boundary, cut-off side <= -1000) is left
+! with ie = -ie and xi on that side of the old element; iside returns the
+! side used (for a particle on a vertex the one of the vertex pick), so
+! that the caller can tell a cut-off side from the others
 
 	use mod_lagrange
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 
 	implicit none
 
@@ -578,6 +592,7 @@
 	double precision, intent(inout) :: xi(3)
 	integer, intent(in) :: id		!id of particle
 	integer, intent(in) :: ncross		!element crossings left in time step
+	integer, intent(out) :: iside		!side of the old element used
 
 	logical bdebug
 	integer ii,in,it
@@ -591,6 +606,7 @@
 
 	eps = 1.e-5
 	bdebug = blgrdebug
+	iside = 0
 
 	!---------------------------------------
 	! check xi - how many zeros
@@ -656,7 +672,8 @@
 	! look for neighboring element
 	!---------------------------------------
 
-	ieb = ieltv(ia1,ie)
+	iside = ia1
+	ieb = lgr_ieltv(ia1,ie)
 	if( ieb < 1 ) then	!no element or open boundary
 	  ie = -ie
 	  return
@@ -671,12 +688,12 @@
 	!---------------------------------------
 
 	do ii=1,3
-	  if( ieltv(ii,ieb) == ie ) exit
+	  if( lgr_ieltv(ii,ieb) == ie ) exit
 	end do
 	if( ii > 3 ) then
 	  write(6,*) ie,in,it,ia1,ieb
 	  write(6,*) xi
-	  write(6,*) (ieltv(ii,ieb),ii=1,3)
+	  write(6,*) (lgr_ieltv(ii,ieb),ii=1,3)
 	  stop 'error stop track_xi_next_element: erroneous ieltv'
 	end if
 
@@ -754,9 +771,9 @@
 
 	function track_xi_on_material_boundary(ie,xi)
 
-! checks if particle is on material boundary
+! checks if particle is on material boundary (side table lgr_ieltv)
 
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 
 	implicit none
 
@@ -769,7 +786,7 @@
 	track_xi_on_material_boundary = .false.
 
 	do ii=1,3
-	  if( xi(ii) == 0. .and. ieltv(ii,ie) == 0 ) then
+	  if( xi(ii) == 0. .and. lgr_ieltv(ii,ie) == 0 ) then
 	    track_xi_on_material_boundary = .true.
 	  end if
 	end do
@@ -792,6 +809,52 @@
 	else
 	  track_xi_has_layer = ( ilhv(iel) >= lb )
 	end if
+
+	end
+
+!************************************************************
+
+	subroutine track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+
+! layer test of track_xi after track_xi_next_element moved a particle
+! from ieorig through side iside to iel; bhas false means the particle is
+! put back into ieorig (the caller does that)
+!
+! iel > 0: the element across has the layer (track_xi_has_layer)
+! iel < 1 at a cut-off side (lgr_ieltv(iside,ieorig) <= -1000): the
+!	element across is held by another process; its layers are
+!	lgr_side_lmax(iside,ieorig). With the layer the particle goes on
+!	there (icut = iside); without it it is put back as in a serial run
+!	(counted in lgr_nputback)
+! iel < 1 at any other side: the particle leaves the basin (bhas true)
+
+	use mod_lagrange_mpi, only : lgr_ieltv, lgr_side_lmax, lgr_nputback
+
+	implicit none
+
+	integer, intent(in) :: ieorig		!element the particle left
+	integer, intent(in) :: iel		!element from next_element
+	integer, intent(in) :: iside		!side of ieorig it used
+	integer, intent(in) :: lb		!layer of the particle
+	logical, intent(out) :: bhas		!false: put the particle back
+	integer, intent(inout) :: icut		!cut-off side (set if handed over)
+
+	logical track_xi_has_layer
+
+	if( iel < 1 .and. iside >= 1 .and. iside <= 3 ) then
+	  if( lgr_ieltv(iside,ieorig) <= -1000 ) then	!cut-off side
+	    bhas = ( lgr_side_lmax(iside,ieorig) >= lb )
+	    if( bhas ) then
+	      icut = iside
+	    else
+!$OMP ATOMIC
+	      lgr_nputback = lgr_nputback + 1
+	    end if
+	    return
+	  end if
+	end if
+
+	bhas = track_xi_has_layer(iel,lb)
 
 	end
 
@@ -950,10 +1013,11 @@
 
 	subroutine track_xi_get_flux(iel,lb,iflux,alpha,vel)
 
-! gets flux and vel information for element and layer
+! gets flux and vel information for element and layer (walls from the
+! side table lgr_ieltv)
 
 	use mod_lagrange
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 	use mod_hydro_vel
 
 	implicit none
@@ -978,7 +1042,7 @@
 	flux = flux3d(lb,:,iel)		!fluxes over side into element
 
 	do ii=1,3
-	  if( ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
+	  if( lgr_ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
 	    if( flux(ii) .ne. 0. ) then
 	      write(6,*) 'material boundary: ',iel,ii,flux(ii)
 	      flux(ii) = 0.
