@@ -393,6 +393,12 @@ if [ "$MODE" = small-export ]; then
     with_line se_${c}_t1x se_${c}_t1n para "levdbg = 2"
     with_line se_${c}_t4x se_${c}_t4d para "levdbg = 3"
     echo "=== $c on $NP processes, LGR_TEST_SMALL_EXPORT=1, levdbg = 2: 4 threads, 1 thread; 1 thread without the hook"
+    for v in t4 t1 t1n t4d; do		# the levdbg line of each run
+      want=2; [ $v = t4d ] && want=3
+      if grep -q "^ *levdbg = $want\s*$" "$W/se_${c}_$v.str"; then echo "  se_${c}_$v.str: levdbg = $want"
+      else fail "$c $v: no 'levdbg = $want' line in se_${c}_$v.str"
+      fi
+    done
     for v in t4 t1 t4d; do
       run se_${c}_$v se_${c}_$v.log env LGR_TEST_SMALL_EXPORT=1 \
         mpirun --oversubscribe -np $NP -x LGR_TEST_SMALL_EXPORT shyfem || fail "$c $v: the run did not end"

@@ -243,7 +243,7 @@
 	if( psurv .le. 0 ) then	!particle is dead
 	  icount = icount+1 
 !	  write(77,*) it,i,icount,deltat
-	  lgr_ar(i)%actual%ie = -lgr_ar(i)%actual%ie
+	  lgr_ar(i)%actual%ie = -abs(lgr_ar(i)%actual%ie)	!stays out (#226)
 	endif
 
 	end 
