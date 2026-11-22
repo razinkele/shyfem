@@ -290,3 +290,53 @@ compared with `lgr_dbg_compare.py part --by key`, limit 1e-5 degrees, case B
 | E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.3e-3 degrees | 33 / 4.3e-3 degrees |
 
 Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on `/home/razinka/wt-lgr-ref3`, 28 runs, all ended; the gate script and its log are in the plan's workspace (`gates/floors.sh`, `gates/floors_ref3.log`).
+
+## Task 3.5: the hand-over by position (AC11) and the hand-over check
+
+**Measured** 2026-11-22 05:00 to 06:45 EET (from `date`) by the implementer and the controller,
+on commits `14124b92`, `ee3ad4bb` and `7080cfef` (the last two change no particle's track),
+MPI runs with OpenMPI `libmpi.so.40`.
+
+**Conservation.** Counts and particles that left equal the serial run at every output in all
+runs: A and C on 2, 3, 4, 6 and 8 processes (no particle lost), B on 2, 4 and 8 (595 left
+through the open boundary in serial and MPI, no unmatched particle), E on 2, 4 and 8, D on 4.
+
+**AC11: particles that went to another process by position** (A, B and C have no random walk:
+every one is at zero displacement):
+
+| Case | 2 processes | 3 | 4 | 6 | 8 |
+|---|---|---|---|---|---|
+| A | 0 | 0 | 0 | 2 | 1 |
+| B | 0 | – | 1 | – | 2 |
+| C | 0 | 1 | 2 | 0 | 2 |
+
+Case E parks about 146,000 particle-steps, nearly all failed searches that no process can
+answer; 39 went to another process on 4 and on 8 processes; the resolution costs 0.70 s of a
+5.4 s run on 4 processes and 0.26 s on 8.
+
+**Positions against the floors** (4 processes; beyond 1e-5 degrees, case B 2 m, at the last
+output / largest distance at any output): A 24 / 4.3e-4 degrees (floor 78 / 2.97e-3); B 5 / 36 m
+(floor 48 / 182 m); C 0 / 9.9e-6 degrees (floor 19 / 7.1e-3); E 16 / 1.2e-3 degrees (floor
+33 / 4.3e-3); on 2 and 8 processes E reaches 1.09e-3 degrees. No pair at distance 0 has a
+different crossing count.
+
+**The hand-over check, by replay** (`./check_lgr_mpi.sh CASE NP handover`; jump test: twice the
+stayed group's largest distance, floor 10 steps; count test: Poisson 99.9 % quantile):
+
+| Run | Largest changed-process distance | Jump threshold | Verdict |
+|---|---|---|---|
+| C, 4 processes, before (`41b114ad`) | 1.13e-4 degrees | 6e-7 | FAIL (jump) |
+| C, 8 processes, before | 1.13e-4 degrees | 6e-7 | FAIL (jump) |
+| A, 8 processes, before | 1.45e-4 degrees | 5.96e-5 | FAIL (jump) |
+| B, 8 processes, before | 80.75 m | 2.5 m | FAIL (jump) |
+| A, C on 2, 3, 4, 6, 8 and B on 2, 4, 8, after (`ee3ad4bb`) | at most 2.98e-7 degrees (A), 0.25 m (B), 5.96e-8 degrees (C) | 6e-7 or more | PASS (both tests, 13 runs) |
+
+Blind spot: in case A a single lag smaller than about 6e-5 degrees passes (the particles that
+stay on their process differ by up to 2.98e-5 degrees, eight spacings of latitude).
+
+**Built-in checks.** The serial walk check found 0 differences in A, B, C, D and E (the key's
+order is tested walk by walk; no point of these meshes lies in two elements); on several
+processes no particle was parked with a local hit that no owner answered. Bounds-checked and
+`COMPILER_PROFILE=CHECK` builds of `7080cfef` run A, B, C and E serially and on 4 processes
+without a runtime message or a trap. With 4 OpenMP threads on 4 processes two runs are
+byte-identical to each other and to the one-thread run.

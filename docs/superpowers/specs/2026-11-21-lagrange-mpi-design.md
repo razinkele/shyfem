@@ -490,6 +490,22 @@ Found while correcting the fallback (Task 3.7, 2026-11-22):
   driver fails on a missing `ok`. Two review rounds found false failures of the test's own
   construction on unusual meshes, and a valid run must not stop because of the test.
 
+Found with the hand-over by position (Task 3.5, 2026-11-22):
+
+- **The hand-over check's rule is set by replay** (it was left to be set after this task). A
+  changed-process pair fails if it is farther than twice the largest distance of the particles
+  that stayed on their process, with a floor of 10 single-precision steps, or if more such pairs
+  are beyond one step than a Poisson count at the stayed particles' rate allows at 99.9 %. It
+  fails the four runs with real defects made before the hand-over by position and passes the 13
+  runs after it. In the closed basin, whose noise reaches 3e-5 degrees, a single smaller lag
+  passes; the open-boundary and 3D cases see one.
+- **The multi-process hydrodynamics differs from the serial one by about 1e-7 relative, also in
+  elements wholly inside one process.** Traced for the one particle that kept failing the
+  earlier rule: its offset starts one step before its hand-over, in an element's flux; the
+  hand-over copies the state bit for bit. Not addressed in this project; it is the premise of
+  the replaced position limits. When the check fails later, the plan's procedure applies:
+  trace to the first differing step and quantity before touching the rule.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.
