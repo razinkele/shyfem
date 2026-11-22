@@ -103,11 +103,16 @@
 !*******************************************************************
 ! assign sediment class, settlign velocity and grainsize to particle
 ! called by subroutine lgr_set_properties
+! the class is the particle's own draw (#225): lgr_random keyed on its id,
+! the time step and the site lgr_rnd_sedclass
 
-        subroutine lgr_set_sedim(sc,sv,sg,nc)
+        subroutine lgr_set_sedim(id,sc,sv,sg,nc)
+
+        use mod_lagrange_random, only : lgr_random, lgr_rnd_sedclass
 
         implicit none
 
+        integer, intent(in)           :: id	!id of the particle
         integer, intent(out)          :: sc	!sediment class
         double precision, intent(out) :: sv	!settling velocity [m/s]
 	real, intent(out)             :: sg	!sediment grainsize
@@ -143,7 +148,7 @@
 ! Get random weighted index from array
 !----------------------------------------------------------------
 
-        call random_number(r)
+        r = lgr_random(id,lgr_rnd_sedclass,0)
 	na = r*nperc + 1
 	na = min(nperc,na)
 	nr = array(na)
@@ -172,6 +177,9 @@
 ! if tau > tce       particle on bottom could be resuspended 
 !
 ! Probablility of deposition/erosion is function of tau
+!
+! the draw of a particle is its own (#225): lgr_random keyed on its id, the
+! time step and the site lgr_rnd_sedim
 
 	subroutine lgr_sediment
 
@@ -182,6 +190,7 @@
 	use levels
 	use mod_bstress, only : taubot
 	use mod_sediment, only : isedi
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_sedim
 
 	implicit none
 
@@ -233,7 +242,7 @@
           xi   = lgr_ar(i)%actual%xi(:)
           ii   = nen3v(:,ie)
           tau  = sum(taubot(ii)*xi)	!bottom stress at particle position
-          call random_number(r)		!random number
+          r = lgr_random(id,lgr_rnd_sedim,0)	!random number
 
 !         -----------------------------------------------------
 !         Deposition of particle 

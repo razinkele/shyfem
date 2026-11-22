@@ -1569,6 +1569,18 @@
 
         call addpar('lbeach',0.)
 
+! |lgrseed|	Seed of the random numbers of the particles (Default 1).
+!		Every random draw of a particle (horizontal and vertical
+!		random walk, beaching, random depth at release, sediment,
+!		decay, larvae, continuous release) is computed from this
+!		seed, the particle's id, the time step and the kind of
+!		draw, so a run gives the same particles every time, on any
+!		number of OpenMP threads and of MPI processes. Another
+!		value gives another realization of the random draws. An
+!		integer from -2147483647 to 2147483647.
+
+        call addpar('lgrseed',1.)
+
 ! |lgrlin|	File name that contains closed lines of the area where
 !		the particles have to be released. If not given, the particles
 !		are released over the whole domain. A line of the file

@@ -137,6 +137,7 @@
 	use shyfile
 	use shympi
 	use femtime
+	use mod_lagrange_random, only : lgr_random_set_step
 
 	use para
 	implicit none
@@ -144,6 +145,7 @@
         double precision, save		:: dtlanf,dtlend
 	double precision, save		:: ddtl,dtranf,dtrend,dtrnext
         double precision		:: dtime
+	double precision		:: atime
 	real, save			:: ldecay
 
         integer				:: ifemop
@@ -289,7 +291,13 @@
 	if( bmpi_lagr .and. dtime > dtlend ) call lgr_mpi_handover_stats
 	if( dtime > dtlend ) call lgr_mpi_relocate_stats !once, levdbg >= 3
 
-        if( dtime < dtlanf .or. dtime > dtlend ) return      
+        if( dtime < dtlanf .or. dtime > dtlend ) return
+
+	! the time step of the random draws of the particles (#225): the
+	! absolute time of the step, set here once per step, before the
+	! release and outside any parallel region; read in the particle loop
+	call get_absolute_act_time(atime)
+	call lgr_random_set_step(atime)
 
 	bback = .false.		!do not do backtracking
 
@@ -431,12 +439,14 @@
 
 	use mod_lagrange
 	use levels
+	use mod_lagrange_random, only : lgr_random_set_seed
 
 	use para
 	implicit none
 
 	integer ifemop
 	integer isphe
+	double precision dseed
 
         artype=getpar('artype')	!store special type in common block
         rwhpar=getpar('rwhpar')	!lagrangian diffusion
@@ -448,6 +458,17 @@
 	! loop of drogue and only read blgr_sphe (#243)
 	call get_coords_ev(isphe)
 	blgr_sphe = isphe == 1
+
+	! seed of every random draw of the particles (#225), an integer read
+	! in double precision (getpar's single precision value is exact only
+	! up to 2**24); every process reads the same STR file
+	dseed = dgetpar('lgrseed')
+	if( dseed /= aint(dseed) .or. abs(dseed) > 2147483647.d0 ) then
+	  write(6,*) 'lgrseed = ',dseed
+	  call shympi_abort_internal('error stop lagr_init_common: lgrseed'	&
+     &		//' must be an integer from -2147483647 to 2147483647')
+	end if
+	call lgr_random_set_seed(nint(dseed))
 
 	!lunit = ifemop('.lgi','form','new') !unit for lagrangian info
 	!if( lunit .le. 0 ) then
@@ -495,13 +516,14 @@
 !   - particle type 
 !   - curstom properties (nc)
 
-        subroutine lgr_set_properties(bsedim,blarvae,boilsim,pt,ps,pc,     &
+        subroutine lgr_set_properties(id,bsedim,blarvae,boilsim,pt,ps,pc,  &
      &                                nc)
 
         use lgr_sedim_module, only : lgr_set_sedim
 
         implicit none
 
+        integer, intent(in)           :: id      !id of the particle (its random draws)
         logical, intent(in)           :: bsedim  !true for sediment lagrangian module
         logical, intent(in)           :: blarvae !true for larvae module
         logical, intent(in)           :: boilsim !true for oil module
@@ -514,7 +536,7 @@
         pc = 0.
         nc = 1
 
-        if ( bsedim ) call lgr_set_sedim(pt,ps,pc,nc)
+        if ( bsedim ) call lgr_set_sedim(id,pt,ps,pc,nc)
         !if ( blarvae ) call lgr_set_larvae(pt,ps,pc)       !pc=length 
         !if ( boilsim ) call lgr_set_boilsim(pt,ps,pc)  !TODO ccf
 
@@ -1011,7 +1033,11 @@
 
         subroutine lag_beach(i,id,xi,iel,ty)
 
+! the draw is the particle's own (#225): lgr_random keyed on its id, the
+! time step and the site lgr_rnd_beach
+
         use mod_lagrange
+        use mod_lagrange_random, only : lgr_random, lgr_rnd_beach
 
         implicit none
 
@@ -1028,7 +1054,7 @@
 	if ( iel <= 0 ) return		!particle has left: no side to test
 
         if( track_xi_on_material_boundary(iel,xi) ) then
-          call random_number(r)
+          r = lgr_random(id,lgr_rnd_beach,0)
 	  if ( lbeach > r ) ty = -ty
 	end if
 

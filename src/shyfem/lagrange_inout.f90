@@ -174,7 +174,9 @@
 	  pt = iarv(ie) !use type of element ie
 	end if 
 
-	call lgr_set_properties(bsedim,blarvae,boilsim,pt,ps,pc,nc)
+	! the sediment class is drawn with the particle's id (#225); on several
+	! processes this id is provisional, but ised stops there at start-up
+	call lgr_set_properties(idbdy,bsedim,blarvae,boilsim,pt,ps,pc,nc)
         allocate( lgr_ar(nbdy)%custom(nc),stat=ierr )
         if( ierr /= 0 ) call shympi_abort_internal(			&
      &		'error stop: allocation failed')
@@ -281,10 +283,15 @@
 ! itype > 0	release n particles regularly
 ! itype < 0	release n particles randomly
 ! itype == -1	release particles in every layer
+!
+! the random depth of a particle (itype < -1) is its own draw (#225),
+! keyed on the id it receives: lgr_release_depth, right after its
+! insertion (a serial run gives the final id there) and again in
+! lgr_mpi_assign_ids once the ids of a serial run are given
 
 	logical b2d,bdebug
 	integer n,lmax,l,i
-	real h,dh,hact,r
+	real h,dh,hact
 	integer itype	!type of vertical distribution
 	integer lb	!layer [1-lmax]
 	integer linf	!bottom layer [1-lmax]
@@ -352,18 +359,104 @@
 	do i=1,n
 	  if( itype > 0 ) then
 	    hact = hact + dh		!regular subdivision
-	  else
-	    call random_number(r)	!randomly seed
-	    hact = r*h
+	    call find_vertical_position(lmax,hl,hact,lb,z)
+	    call insert_particle(ie,ity,lb,rtime,x,y,z)
+	    if( bdebug ) write(6,*) '   ',i,hact,lb,z
+	  else				!random depth, drawn with the id
+	    lb = 1
+	    z = 0.5
+	    call insert_particle(ie,ity,lb,rtime,x,y,z)
+	    call lgr_release_depth(nbdy)
+	    if( bdebug ) write(6,*) '   ',i,lgr_ar(nbdy)%actual%l	&
+     &				,lgr_ar(nbdy)%actual%z
 	  end if
-	  call find_vertical_position(lmax,hl,hact,lb,z)
-	  call insert_particle(ie,ity,lb,rtime,x,y,z)
-	  if( bdebug ) write(6,*) '   ',i,hact,lb,z
 	end do
 	
 	!-------------------------------------------------
 	! end of routine
 	!-------------------------------------------------
+
+	end
+
+!*******************************************************************
+
+	function lgr_random_depth_release()
+
+! true if insert_particle_3d draws a random depth for each particle it
+! releases: ipvert < -1 in a basin with more than one layer and ilagr /= 1
+! (its branches: surface layer for ilagr = 1, a 2D basin or ipvert = 0;
+! every layer for ipvert = -1; regular depths for ipvert > 0)
+
+	use mod_lagrange
+	use levels, only : nlv
+
+	implicit none
+
+	logical lgr_random_depth_release
+
+	lgr_random_depth_release = ipvert < -1 .and. .not. blgrsurf		&
+     &				.and. nlv > 1
+
+	end
+
+!*******************************************************************
+
+	subroutine lgr_release_depth(ip)
+
+! random depth of particle ip at its release (ipvert < -1, see
+! insert_particle_3d): the depth below the surface is r*h, h the depth of
+! its element of release down to the bottom of layer linbot (as
+! insert_particle_3d computes it) and r the particle's draw (#225),
+! lgr_random keyed on its id, the time step and the site lgr_rnd_relz.
+! Sets the layer and the position in the layer of init and actual.
+!
+! called by insert_particle_3d right after the insertion (in a serial run
+! the id is final there) and, on several processes, by lgr_mpi_assign_ids
+! for each new particle once it has the id of a serial run (the id given
+! by insert_particle is provisional there): the depth is a function of the
+! id, so the second call gives the serial depth. Called in the time step
+! of the release, outside any parallel region: the element's layers are
+! those of the insertion. (On several processes ipvert < -1 still stops at
+! start-up, lgr_mpi_check_supported, so that call is not run today.)
+
+	use mod_lagrange
+	use levels
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_relz
+
+	implicit none
+
+	integer, intent(in) :: ip	!slot of the particle
+
+	integer ie,lmax,linf,l,lb
+	real h,hact,r,z
+	real hl(nlv)
+	real htot,htotz
+
+	ie = -lgr_ar(ip)%init%ie	!element of release (positive)
+	if( ie <= 0 ) return
+
+	lmax = ilhv(ie)
+	linf = linbot
+	if( linf .gt. lmax ) then
+	  linf = lmax
+	else if ( linf .eq. 0 ) then
+	  linf = lmax
+	end if
+
+	call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
+	h = 0.
+	do l=1,linf
+	  h = h + hl(l)
+	end do
+
+	r = lgr_random(lgr_ar(ip)%id,lgr_rnd_relz,0)
+	hact = r*h
+	call find_vertical_position(lmax,hl,hact,lb,z)
+
+	lgr_ar(ip)%init%l = lb
+	lgr_ar(ip)%init%z = z
+	lgr_ar(ip)%actual%l = lb
+	lgr_ar(ip)%actual%z = z
 
 	end
 

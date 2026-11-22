@@ -95,6 +95,8 @@
         real 			:: perc
         double precision 	:: xx,yy,zz
 
+        integer			:: ndraw	!vertical draws made (#225)
+
         integer, save 		:: nk = 0
         integer, save 		:: nl = 0
         integer, save 		:: nu = 0
@@ -122,8 +124,13 @@
 
         if( bvdiff ) then
 	  mode = 3
+	  ! the draws of the vertical diffusion of this particle in this step
+	  ! are numbered from 0 (site lgr_rnd_vdiff of lgr_random): all of
+	  ! them are made in this loop (a particle with vertical diffusion is
+	  ! never parked: ilagr = 3 stops on several processes)
+	  ndraw = 0
           do while ( dtime > 0. .and. n > 0 )
-            call lgr_diff_vert(mode,id,iel,lb,zz,dtime)
+            call lgr_diff_vert(mode,id,iel,lb,zz,dtime,ndraw)
             if( lb < 1 ) exit
             n = n - 1                   !decrement loop counter
           end do
@@ -191,9 +198,13 @@
 !       2 diffusive random walk (Visser 1997)
 !       3 Milstein scheme (Grawe 2010)
 
-	subroutine lgr_diff_vert(mode,id,iel,lb,z,time)
+	subroutine lgr_diff_vert(mode,id,iel,lb,z,time,ndraw)
+
+! the random draws are the particle's own (#225): lgr_random keyed on id,
+! the time step and the site lgr_rnd_vdiff, numbered by ndraw
 
 	use mod_lagrange
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_vdiff
 
 	implicit none
 
@@ -203,6 +214,8 @@
 	integer, intent(inout)		:: lb	!level
 	double precision, intent(inout) :: z	!rel vert pos: 0=top, 1=bottom
 	real, intent(inout)		:: time	!travel time of particle
+	integer, intent(inout)		:: ndraw !draws of the particle's
+						 !vertical diffusion in the step
 
 	real              		:: dt	!random walk time step
 	double precision 		:: w	!vertical velocity
@@ -222,7 +235,7 @@
 
 	lborig = lb
 
-        call diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd)
+        call diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd,ndraw)
 	w = wd					!vertical velocity due to diffusion
 
 	!-----------------------------------------------
@@ -286,7 +299,8 @@
 	  z = z - dz
 	else
 	  if ( lmax == 1 ) then		!in case of 1 layer z = random(0,1)
-            call random_number(rr)
+            rr = lgr_random(id,lgr_rnd_vdiff,ndraw)
+	    ndraw = ndraw + 1
 	    z = rr
 	    t = tt
 	  else
@@ -347,11 +361,15 @@
 !       2 diffusive random walk (Visser 1997)
 !       3 Milstein scheme (Grawe 2010)
 
-        subroutine diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd)
+        subroutine diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd,ndraw)
+
+! the random draws are the particle's own (#225): lgr_random keyed on id,
+! the time step and the site lgr_rnd_vdiff, numbered by ndraw
 
         use levels, only : nlvdi,nlv
         use basin
         use mod_lagrange
+        use mod_lagrange_random, only : lgr_random, lgr_rnd_vdiff
 
         implicit none
 
@@ -365,6 +383,8 @@
         integer, intent(out)		:: lmax !maximum layers in element
         double precision, intent(out)	:: hd   !layer thickness
         double precision, intent(out)  	:: wd  	!vertical velocity due to diffusion
+	integer, intent(inout)		:: ndraw !draws of the particle's
+						 !vertical diffusion in the step
 
         real            	:: rnd		!random number
         real			:: hl(nlv)      !layer thickness
@@ -446,7 +466,8 @@
 	! compute vertical velocity due to diffusion
 	! vertical velocity is > 0 if directed upward
 	!-----------------------------------------------
-        call random_number(rnd)
+        rnd = lgr_random(id,lgr_rnd_vdiff,ndraw)
+        ndraw = ndraw + 1
         rnd = (rnd-0.5)/0.5		!normal distribution [-1, 1]
 	wd = rnd*sqrt(6.*wdzp/dt)
 	if ( mode == 2 ) wd = wd - dwd
@@ -455,7 +476,7 @@
 	! Milstein scheme 
 	!-----------------------------------------------
 	if ( mode == 3 ) then
-	  call rgauss(1., rnd)		!gaussian distribution
+	  call rgauss(1.,rnd,id,ndraw)	!gaussian distribution
 	  rs = rnd*sqrt(dt)
 	  wd = -0.5*dwd*(rs*rs)/dt - 0.5*dwd + rs*sqrt(2.*wdzp)/dt
 	end if
@@ -634,7 +655,7 @@
         !-----------------------------------------------
         ! Compute horizontal diffusion
         !-----------------------------------------------
-	call lag_get_dxdy(time,k,dx,dy)
+	call lag_get_dxdy(id,time,k,dx,dy)
         xnew = x + dx
         ynew = y + dy
 
@@ -747,13 +768,21 @@
 
 !******************************************************************
 ! Randow walk with rnd having uniform distribution between -1 and 1
+!
+! the two draws are the particle's own (#225): lgr_random keyed on id, the
+! time step and the site lgr_rnd_hdiff, n = 0 for x and 1 for y; on
+! several processes the particle makes them on the process where its
+! advection ends, and a parked particle does not draw again when it
+! resumes (lag_diff_hor_resume), so they are the serial draws
 
-        subroutine lag_get_dxdy(time,k,dx,dy)
+        subroutine lag_get_dxdy(id,time,k,dx,dy)
 
 	use mod_lagrange
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_hdiff
 
         implicit none
         
+        integer, intent(in)		:: id   !id of particle
         real, intent(in)		:: time !time to diffuse
         real, intent(in)		:: k    !diffusion coefficient
         real, intent(out)		:: dx   !x-displacemnet
@@ -763,11 +792,11 @@
 
         cf = sqrt(6.*k*time)
 
-        call random_number(rnd)
+        rnd = lgr_random(id,lgr_rnd_hdiff,0)
         rnd = (rnd-0.5)/0.5
         dx = cf*rnd
 
-        call random_number(rnd)
+        rnd = lgr_random(id,lgr_rnd_hdiff,1)
         rnd = (rnd-0.5)/0.5
         dy = cf*rnd
 
@@ -776,13 +805,20 @@
 !******************************************************************
 !Generate random distribution with 0 mean and standard deviation SIGMA.
 !Returns one (two) gaussian random number from the same distribution. 
+!The uniform draws are those of particle id (#225): lgr_random keyed on
+!id, the time step and the site lgr_rnd_vdiff, numbered by ndraw.
 
-        subroutine rgauss(sigma, y1)
+        subroutine rgauss(sigma, y1, id, ndraw)
+
+        use mod_lagrange_random, only : lgr_random, lgr_rnd_vdiff
 
         implicit none
 
         real, intent(in)        :: sigma   !standard deviation of distribution
         real, intent(out)       :: y1      !random number
+        integer, intent(in)     :: id      !id of particle
+        integer, intent(inout)  :: ndraw   !draws of the particle's
+                                           !vertical diffusion in the step
         real                    :: y2      !second random number
 
         real                    :: rnd
@@ -793,10 +829,11 @@
 	w  = 0.
 
         do while ( (w .ge. 1.0) .or. (w .eq. 0.0) )
-          call random_number(rnd)
+          rnd = lgr_random(id,lgr_rnd_vdiff,ndraw)
           x1 = 2.0 * rnd - 1.0
-          call random_number(rnd)
+          rnd = lgr_random(id,lgr_rnd_vdiff,ndraw+1)
           x2 = 2.0 * rnd - 1.0
+          ndraw = ndraw + 2
           w = x1 * x1 + x2 * x2
         end do
 

@@ -87,6 +87,47 @@
 #             This is not a red test of #242 (the growth itself was right
 #             before); it checks that the growth inside the loop, which had
 #             only run on one thread, gives the 1-thread result on 4.
+#   seed      (#225) every random draw of a particle comes from its own
+#             stream (seed lgrseed, particle id, time step, kind of draw),
+#             so a run is repeatable on any number of threads and
+#             processes.  Particle files compared byte for byte (cmp):
+#             1. mm_lgr (random walk rwhpar = 0.5) serially: the plain run,
+#                a run with "lgrseed = 1" (the default, set explicitly) and
+#                a run with 4 OpenMP threads (nomp = 4; its log must report
+#                4 threads) must be identical; a run with "lgrseed = 2"
+#                must differ from the plain run (the seed reaches the
+#                draws) and have the same ids and counts per block
+#                (lgr_compare.py --mode ids --same-counts);
+#             2. mm_lgr on 4 MPI processes with 4 threads and with 1
+#                thread: identical;
+#             3. the draws that run only serially: mm_lgr_c (3D, ilagr = 2)
+#                with ipvert = -3 (random depth at release), rwhpar = 0.5,
+#                lbeach = 0.5 (beaching), ldecay = 86400. (decay), ilarv =
+#                1 (larvae), ised = 1 (sediment class and deposition) and a
+#                point release at the river node 218 (lgrpps = 0.002: the
+#                element at the node, the number of particles and their
+#                times): two runs with 1 thread and one with 4 threads
+#                identical, a run with lgrseed = 2 different;
+#             4. the vertical diffusion: mm_hyd_41 without its tilt lines,
+#                one day, with ilagr = 3, rwhpar = 0.5, ipvert = -3 (as in
+#                mode ilagr3 otherwise): 1 thread and 4 threads identical;
+#             5. a particle restart: mm_lgr run to 2009-01-03 with a restart
+#                file (idtrst = -1), then from 2009-01-03 with that restart
+#                file (itrst = -1) and its particle file (lgrini, itlgin =
+#                '2009-01-03', nbdy = 0): at every output of the restarted
+#                run each record (active and exited, every field) must equal
+#                the record of the same particle in the plain run of part 1
+#                at that output (the time step key of the draws is the
+#                absolute time of the step, so the restarted run draws what
+#                the run that went on drew).
+#             Before #225 the draws came from random_number, seeded
+#             differently in every run and per thread, and from ggrand, a
+#             single saved stream: the binary of the commit before fails
+#             the first comparison of each part (and does not know
+#             lgrseed).  The continuous release along an open boundary
+#             (create_parts) is not run: on the only open boundary of the
+#             test meshes it stops with "error stop create_parts: error in
+#             boundary" (also before #225).
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -100,11 +141,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | small-export"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | small-export | seed"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|ilagr3|grow-fail|small-export) ;;
+  stk-omp|decay|ilagr3|grow-fail|small-export|seed) ;;
   *) usage ;;
 esac
 
@@ -425,5 +466,156 @@ if [ "$MODE" = small-export ]; then
     grep 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log" | head -3 | sed 's/^/   /'
     [ "$ng" -gt 0 ] || fail "$c: no growth of the lists at levdbg = 3"
   done
+  finish
+fi
+
+#=============================== seed (#225) ===============================
+if [ "$MODE" = seed ]; then
+  # same NAME A B: cmp of NAME.A.lgr.shy and NAME.B.lgr.shy must be equal
+  same() {
+    local a="$W/$1.$2.lgr.shy" b="$W/$1.$3.lgr.shy"
+    if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$1: particle file missing ($2 or $3)"
+    elif cmp -s "$a" "$b"; then echo "  $1: $2 and $3 identical ($(stat -c %s "$a") bytes)"
+    else fail "$1: $2 and $3 differ"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+    fi
+  }
+  # differ NAME A B: the two particle files must differ
+  differ() {
+    local a="$W/$1.$2.lgr.shy" b="$W/$1.$3.lgr.shy"
+    if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$1: particle file missing ($2 or $3)"
+    elif cmp -s "$a" "$b"; then fail "$1: $2 and $3 are identical (the seed does not reach the draws)"
+    else echo "  $1: $2 and $3 differ, as they must"
+    fi
+  }
+  # srun NAME VARIANT LAUNCHER...: run the STR file NAME_VARIANT.str, keep
+  # its particle file as NAME.VARIANT.lgr.shy
+  srun() {
+    local name="$1" v="$2"; shift 2
+    run "${name}_$v" "${name}_$v.log" "$@" || fail "$name $v: the run did not end"
+    mv "$W/${name}_$v.lgr.shy" "$W/$name.$v.lgr.shy" 2> /dev/null
+  }
+  # setname SRC DST: copy of SRC.str with the run name DST (second line of
+  # $title), nothing else changed
+  setname() {
+    awk -v name="$2" '
+      /^\$title/ { t = 1; nt = 0 }
+      t && !/^\$/ { nt++; if( nt == 2 ) { print "        " name; next } }
+      /^\$end/ { t = 0 }
+      { print }
+    ' "$W/$1.str" > "$W/$2.str"
+  }
+
+  echo "=== 1. mm_lgr serially: plain, lgrseed = 1, 4 threads, lgrseed = 2"
+  setname mm_lgr d_t1
+  with_line mm_lgr d_s1 lagrg "lgrseed = 1"
+  with_para mm_lgr d_t4 "nomp = 4"
+  with_line mm_lgr d_s2 lagrg "lgrseed = 2"
+  grep -q '^ *lgrseed = 1$' "$W/d_s1.str" && grep -q '^ *lgrseed = 2$' "$W/d_s2.str" \
+    || fail "no lgrseed line in d_s1.str or d_s2.str"
+  for v in t1 s1 t4 s2; do srun d $v shyfem; done
+  threads d_t4.log 4
+  threads d_t1.log 1
+  same d t1 s1
+  same d t1 t4
+  differ d t1 s2
+  if [ -s "$W/d.t1.lgr.shy" ] && [ -s "$W/d.s2.lgr.shy" ]; then
+    python3 "$W/lgr_compare.py" "$W/d.t1.lgr.shy" "$W/d.s2.lgr.shy" --mode ids --same-counts \
+      > "$W/d_ids.txt" 2>&1 || { fail "d: lgrseed = 2 changes the ids or counts per block"; tail -5 "$W/d_ids.txt"; }
+    [ "$rc" = 0 ] && echo "  d: lgrseed = 2 has the ids and counts per block of the plain run"
+  fi
+
+  echo "=== 2. mm_lgr on $NP processes: 4 threads and 1 thread"
+  with_para mm_lgr p_t4 "nomp = 4"
+  with_para mm_lgr p_t1 "nomp = 1"
+  srun p t4 mpirun --oversubscribe -np $NP shyfem
+  srun p t1 mpirun --oversubscribe -np $NP shyfem
+  threads p_t4.log 4
+  same p t1 t4
+
+  echo "=== 3. mm_lgr_c with the serial-only draws: twice 1 thread, 4 threads, lgrseed = 2"
+  sed -e 's/^\([ \t]*\)ipvert = -1[ \t]*$/\1ipvert = -3\n\1lbeach = 0.5\n\1ldecay = 86400.\n\1ilarv = 1\n\1ised = 1/' \
+      -e 's/^\([ \t]*\)rwhpar = 0[ \t]*$/\1rwhpar = 0.5/' "$W/mm_lgr_c.str" > "$W/c_base.str"
+  printf '\n$bound1\n        kbound = 218\n        ibtyp = 3\n        boundn = %s\n        lgrpps = 0.002\n$end\n' \
+    "'INPUT/river.txt'" >> "$W/c_base.str"
+  for o in 'ipvert = -3' 'lbeach = 0.5' 'ldecay = 86400.' 'ilarv = 1' 'ised = 1' 'rwhpar = 0.5' 'lgrpps = 0.002'; do
+    grep -q "^ *$o\$" "$W/c_base.str" || fail "no line '$o' in c_base.str"
+  done
+  setname c_base c_r1
+  setname c_base c_r2
+  with_para c_base c_t4 "nomp = 4"
+  with_line c_base c_s2 lagrg "lgrseed = 2"
+  for v in r1 r2 t4 s2; do srun c $v shyfem; done
+  threads c_t4.log 4
+  same c r1 r2
+  same c r1 t4
+  differ c r1 s2
+
+  echo "=== 4. vertical diffusion (ilagr = 3): 1 thread and 4 threads"
+  sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" "$W/mm_hyd_41.str" > "$W/v_base.str"
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 20000\n        nbdy = 300  idtl = 0  idtlgr = %s\n        rwhpar = 0.5  ipvert = -3\n$end\n' \
+    "'1h'" >> "$W/v_base.str"
+  grep -q "tilt" "$W/v_base.str" && fail "tilt lines left in v_base.str"
+  setname v_base v_t1
+  with_para v_base v_t4 "nomp = 4"
+  for v in t1 t4; do srun v $v shyfem; done
+  threads v_t4.log 4
+  same v t1 t4
+
+  echo "=== 5. mm_lgr restarted on 2009-01-03 from its particle and restart files"
+  setname mm_lgr r_w0
+  sed -e "s/itend = '2009-01-05'/itend = '2009-01-03'/" \
+      -e 's/^\$para[ \t]*$/$para\n        idtrst = -1\n        itmrst = -1/' "$W/r_w0.str" > "$W/r_w1.str"
+  setname r_w1 r_wr
+  sed -e "s/itanf = '2009-01-01'/itanf = '2009-01-03'/" \
+      -e 's/^\$para[ \t]*$/$para\n        itrst = -1\n        ityrst = 1/' \
+      -e "s/^\\([ \t]*\\)nbdy = 150[ \t]*$/\\1nbdy = 0\n\\1lgrini = 'r_wr.lgr.shy'\n\\1itlgin = '2009-01-03'/" \
+      -e "s/^\\\$name[ \t]*$/\$name\n        restrt = 'r_wr.rst'/" "$W/r_w0.str" > "$W/r_r1.str"
+  setname r_r1 r_rr
+  for o in "itend = '2009-01-03'" 'idtrst = -1'; do
+    grep -qF -- "$o" "$W/r_wr.str" || fail "no '$o' in r_wr.str"
+  done
+  for o in "itanf = '2009-01-03'" 'itrst = -1' 'nbdy = 0' "lgrini = 'r_wr.lgr.shy'" "itlgin = '2009-01-03'" "restrt = 'r_wr.rst'"; do
+    grep -qF -- "$o" "$W/r_rr.str" || fail "no '$o' in r_rr.str"
+  done
+  run r_wr r_wr.log shyfem || fail "the run to 2009-01-03 did not end"
+  run r_rr r_rr.log shyfem || fail "the restarted run did not end"
+  grep -q 'initializing lagrangian from file' "$W/r_rr.log" || fail "the restarted run did not read the particle file"
+  grep -q 'A restart has been performed' "$W/r_rr.log" || fail "the restarted run did not read the restart file"
+  if [ -s "$W/r_rr.lgr.shy" ] && [ -s "$W/d.t1.lgr.shy" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/d.t1.lgr.shy" "$W/r_rr.lgr.shy" <<'EOP' || fail "the restarted run differs from the run that went on"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+def load(path):
+    _, times = lc.read_file(path)
+    return {t: b for t, b, _ in times}
+
+full, rest = load(sys.argv[2]), load(sys.argv[3])
+nrec = ndiff = 0
+for t in sorted(rest):
+    if t not in full:
+        print("  output t=%r of the restarted run not in the plain run" % t)
+        ndiff += 1
+        continue
+    for w in (0, 1):			# active and exited records
+        a, b = full[t][w], rest[t][w]
+        if set(a) != set(b):
+            print("  t=%r block %d: ids differ" % (t, w))
+            ndiff += 1
+        for pid in set(a) & set(b):
+            nrec += 1
+            if a[pid] != b[pid]:
+                ndiff += 1
+                if ndiff <= 5:
+                    print("  t=%r id %d: %r / %r" % (t, pid, a[pid], b[pid]))
+print("  restarted run: %d outputs, %d records compared with the plain run, %d differ"
+      % (len(rest), nrec, ndiff))
+sys.exit(0 if ndiff == 0 and nrec > 0 else 1)
+EOP
+  else
+    fail "particle file missing (d.t1 or r_rr)"
+  fi
   finish
 fi

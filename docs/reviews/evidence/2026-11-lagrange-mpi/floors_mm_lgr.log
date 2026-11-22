@@ -1,0 +1,53 @@
+2026-11-22 20:58:28  floors: binary /home/razinka/wt-lgr/bin, inputs of b0cd1972, by key, in /tmp/lgrfloors.fJSAzO
+  mm_lgr.r+1e-5: ended
+  mm_lgr.r-1e-5: ended
+  mm_lgr.r0: ended
+  mm_lgr.r+7e-6: ended
+  mm_lgr.r-7e-6: ended
+  mm_lgr.r+4e-6: ended
+  mm_lgr.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr    +1e-5       145       75   5.3505e-02   345600.0
+mm_lgr    -1e-5       145       82   1.4268e-01   338400.0
+mm_lgr    +7e-6       145       62   5.3505e-02   345600.0
+mm_lgr    -7e-6       145       73   1.3094e-01   345600.0
+mm_lgr    +4e-6       145       59   5.3505e-02   345600.0
+mm_lgr    -4e-6       145       56   1.3094e-01   345600.0
+mm_lgr    ENV                   82   1.4268e-01   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-22 20:58:48  comparisons and logs in:
+/tmp/lgrfloors.fJSAzO
+
+# tt floor (#225): lgr_compare.py BASE PERTURBED --mode pos --tol 1e-5 on lgr_runs/ of the folder above, base mm_lgr.r0
+## mm_lgr.r+1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 75 <= 1000: ok
+floor: largest distance at any output (t=345600.0): 0.0535049 <= 1: ok
+tt: particles whose tt differs (any output, any block): 0 <= 1000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr.r-1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 82 <= 1000: ok
+floor: largest distance at any output (t=338400.0): 0.142681 <= 1: ok
+tt: particles whose tt differs (any output, any block): 0 <= 1000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr.r+4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 59 <= 1000: ok
+floor: largest distance at any output (t=345600.0): 0.0535049 <= 1: ok
+tt: particles whose tt differs (any output, any block): 0 <= 1000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr.r-4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 56 <= 1000: ok
+floor: largest distance at any output (t=345600.0): 0.130936 <= 1: ok
+tt: particles whose tt differs (any output, any block): 0 <= 1000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr.r+7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 62 <= 1000: ok
+floor: largest distance at any output (t=345600.0): 0.0535049 <= 1: ok
+tt: particles whose tt differs (any output, any block): 0 <= 1000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr.r-7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 73 <= 1000: ok
+floor: largest distance at any output (t=345600.0): 0.130936 <= 1: ok
+tt: particles whose tt differs (any output, any block): 0 <= 1000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)

@@ -73,7 +73,7 @@
           y   = yy
 	  
 	  if( ie .gt. 0 ) then
-	    call treat_larva(x,y,z,ie,rl)
+	    call treat_larva(lgr_ar(i)%id,x,y,z,ie,rl)
 	  end if
 
 	  lgr_ar(i)%custom(1) = rl
@@ -88,19 +88,23 @@
 
 !*******************************************************************
 
-	subroutine treat_larva(x,y,z,ie,rl)
+	subroutine treat_larva(id,x,y,z,ie,rl)
+
+! the draw is the particle's own (#225): lgr_random keyed on its id, the
+! time step and the site lgr_rnd_larva
+
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_larva
 
 	implicit none
 
+	integer id
 	real x,y,z
 	integer ie
 	real rl,r,perc
 
-	real ggrand
-
 	perc = 0.1
 	perc = 0.
-	r = ggrand(0)
+	r = lgr_random(id,lgr_rnd_larva,0)
 
 	if( r .lt. perc ) z = 1.0
 
