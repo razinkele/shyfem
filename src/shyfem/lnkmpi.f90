@@ -213,7 +213,12 @@
 ! differently from a serial run. In a serial run ip_int_elem(ie) = ie and
 ! a closed ring starts at its smallest element already, so nothing moves.
 ! An open ring (a boundary node, or a ghost node whose ring the domain
-! border cuts) starts at its boundary element and is left as it is.
+! border cuts) starts at its boundary element and is left as it is. A
+! boundary node whose elements form several fans (more than one gap in
+! the ring, "node inconsistency" in sort_ne_lists) keeps the fan order of
+! the local numbering, which can still differ between partitions: a
+! residual dependence on the partition (the Mar Menor mesh has no such
+! node, serially or on 8 processes).
 !
 ! nlist(i,k) is the node after k in elist(i,k) (sort_ne_lists), so both
 ! lists turn by the same offset; the routine checks that afterwards.
