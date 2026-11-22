@@ -1498,6 +1498,8 @@
 !		Its value can be specified in |rwhpar| and the units are 
 !		[m**2/s]. If |rwhpar<0| the diffusion parameter depends on
 !		the local diffusivity (see |idhtyp|) (Default 0)
+!		A value below 0 is not supported on several MPI processes:
+!		the run stops at start-up.
 
 	call addpar('rwhpar',0.)	!diffusion for lagrangian model
 
@@ -1534,6 +1536,9 @@
 !		\item[$>$ 0] release n particles regularly
 !		\item[$<$ 0] release n particles randomly
 !		\end{description}
+!		A value below -1 (the random release; the random depths are
+!		drawn in a 3D run with |ilagr| = 2) is not supported on
+!		several MPI processes: the run stops at start-up.
 
         call addpar('ipvert',0.)
 
@@ -2033,7 +2038,7 @@
         call sctfnm('connec')
 
 ! |icnn|	Number of stations for connectivity (experimental, Default
-!		0, off). A value above 0 is not supported on several MPI
+!		0, off). Any other value is not supported on several MPI
 !		processes: the run stops at start-up.
 
 	call addpar('icnn',0.)	        !number of stations for connectivity

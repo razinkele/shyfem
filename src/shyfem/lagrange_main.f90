@@ -212,7 +212,7 @@
           nbdymax = nint(getpar('nbdymax'))
 	  if( nbdymax < 0 ) then
 	    write(6,*) 'parameter nbdymax is not set'
-	    stop 'error stop lagrange: nbdymax'
+	    call shympi_abort_internal('error stop lagrange: nbdymax')
 	  end if
 	  write(6,*) 
 	  write(6,*)'---------------------------------------------' 
@@ -517,16 +517,15 @@
 	subroutine drogue(dtime)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_global_count
 	use shympi, only : my_id, shympi_is_parallel
 
 	implicit none
 
-	include 'mpif.h'
-
 	double precision dtime	
 	integer nf,i,it,nuse
 	integer chunk
-	integer nbdyg,ierr
+	integer nbdyg
 	real dt
 
 	integer ndim
@@ -555,7 +554,8 @@
 	call get_timestep(dt)		!time to advect
 
 	call openmp_get_num_threads(nuse)
-	if( nuse .gt. ndim ) stop 'error stop drogue: too many processes'
+	if( nuse .gt. ndim ) call shympi_abort_internal(		&
+     &		'error stop drogue: too many processes')
 
         tempo = openmp_get_wtime()
 
@@ -578,10 +578,7 @@
 	if( .not. shympi_is_parallel() ) then
 	  write(iuinfo,*) 'lagrange_nbdy: ',nbdy
 	else
-	  call MPI_Allreduce(nbdy,nbdyg,1,MPI_INTEGER,MPI_SUM,		&
-     &			MPI_COMM_WORLD,ierr)
-	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
-     &		('drogue: MPI_Allreduce')
+	  call lgr_mpi_global_count(nbdy,nbdyg)	!every process takes part
 	  if( my_id .eq. 0 ) then
 	    write(iuinfo,*) 'lagrange_nbdy: ',nbdyg
 	  end if

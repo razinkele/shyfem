@@ -57,6 +57,7 @@
 ! lgr_mpi_gather_records	records of all processes on rank 0
 ! lgr_mpi_keep_release		release records of a seeding call for the output
 ! lgr_mpi_reduce_connect	reduce connectivity matrices
+! lgr_mpi_global_count		sum of an integer over all processes (drogue)
 ! lgr_mpi_gather_global		global array on rank 0 from the owned entries
 ! lgr_mpi_global_area		total basin area as in a serial run
 ! lgr_mpi_global_center		basin centre as in a serial run
@@ -270,17 +271,29 @@
 !   lbeach > 0    getpar('lbeach'), $lagrg (beaching)
 !   artype /= -1  getpar('artype'), $lagrg (transit time of an area)
 !   ldecay > 0    getpar('ldecay'), $lagrg (decay of particles)
-!   lgrini        getfnm('lgrini'), $name, not blank (initial distribution
+!   lgrini        getfnm('lgrini'), $lagrg, not blank (initial distribution
 !                 from a file)
 !   ised > 0      getpar('ised'), $lagrg (sediment module)
 !   ilarv > 0     getpar('ilarv'), $lagrg (larvae module)
-!   icnn > 0      getpar('icnn'), section $connec (connectivity: its counts
-!                 at a hand-over are not made and the release element is not
-!                 held on every process)
+!   icnn /= 0     getpar('icnn'), section $connec (connectivity, switched
+!                 on by any value other than 0: its counts at a hand-over
+!                 are not made and the release element is not held on every
+!                 process)
 !   lgrpps /= 0   get_bnd_par(ibc,'lgrpps') on any of the nbc boundaries
 !                 (continuous release at a boundary)
-!   lgrtrj        getfnm('lgrtrj'), $name, not blank (release along a
+!   lgrtrj        getfnm('lgrtrj'), $lagrg, not blank (release along a
 !                 drifter trajectory)
+!   rwhpar < 0    getpar('rwhpar'), $lagrg (horizontal diffusivity from
+!                 the local diffusivity difhv of the element, lag_diff_hor;
+!                 untested on several processes)
+!   ipvert < -1   nint(getpar('ipvert')), $lagrg, as lagrange reads it
+!                 (random vertical release: insert_particle_3d draws a
+!                 random depth with random_number for each of the
+!                 abs(ipvert) particles of a release point when the basin
+!                 has more than one layer and ilagr = 2 (ilagr = 3 stops
+!                 above); in a 2D basin or with ilagr = 1 nothing is drawn,
+!                 but the value stops the run there too; untested on
+!                 several processes)
 
 	use shympi, only : my_id, shympi_is_parallel
 	use para, only : getpar
@@ -306,7 +319,7 @@
 	if( len_trim(fname) > 0 ) call lgr_mpi_unsupported('lgrini')
 	if( nint(getpar('ised')) > 0 ) call lgr_mpi_unsupported('ised')
 	if( nint(getpar('ilarv')) > 0 ) call lgr_mpi_unsupported('ilarv')
-	if( nint(getpar('icnn')) > 0 ) call lgr_mpi_unsupported('icnn')
+	if( nint(getpar('icnn')) /= 0 ) call lgr_mpi_unsupported('icnn')
 	do ibc = 1, nbc
 	  call get_bnd_par(ibc,'lgrpps',pps)
 	  if( pps /= 0. ) then
@@ -316,6 +329,9 @@
 	end do
 	call getfnm('lgrtrj',fname)
 	if( len_trim(fname) > 0 ) call lgr_mpi_unsupported('lgrtrj')
+	if( getpar('rwhpar') < 0. ) call lgr_mpi_unsupported('rwhpar < 0')
+	if( nint(getpar('ipvert')) < -1 )				&
+     &		call lgr_mpi_unsupported('ipvert < -1')
 
 	if( nbad == 0 ) return
 
@@ -5451,6 +5467,37 @@
 	t_connect = rtmp
 
 	end subroutine lgr_mpi_reduce_connect
+
+!*******************************************************************
+
+	subroutine lgr_mpi_global_count(nloc,nglob)
+
+! the sum of nloc over all processes, returned on every process (drogue:
+! the global number of particles for the info file); on several
+! processes every process must call it; on one process nglob = nloc
+
+	use shympi, only : shympi_is_parallel
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, intent(in) :: nloc
+	integer, intent(out) :: nglob
+
+	integer :: ierr
+
+	if( .not. shympi_is_parallel() ) then
+	  nglob = nloc
+	  return
+	end if
+
+	call MPI_Allreduce(nloc,nglob,1,MPI_INTEGER,MPI_SUM,		&
+     &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_global_count: MPI_Allreduce')
+
+	end subroutine lgr_mpi_global_count
 
 !*******************************************************************
 

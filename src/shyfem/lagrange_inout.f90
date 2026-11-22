@@ -176,7 +176,8 @@
 
 	call lgr_set_properties(bsedim,blarvae,boilsim,pt,ps,pc,nc)
         allocate( lgr_ar(nbdy)%custom(nc),stat=ierr )
-        if( ierr /= 0 ) stop 'error stop: allocation failed'
+        if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
 	ncust = nc
 
 	lgr_ar(nbdy)%type = pt
@@ -201,7 +202,7 @@
 
 	if( ie < 1 ) then
 	  write(6,*) 'ie = ',ie
-	  stop 'error stop xi_init_particle: ie <= 0'
+	  call shympi_abort_internal('error stop xi_init_particle: ie <= 0')
 	end if
 
 	xx = x
@@ -255,7 +256,8 @@
 	    if( i /= is ) xi(i) = xi(i) + eps
 	  end do
 	else
-	  stop 'error stop xi_move_inside: internal error'
+	  call shympi_abort_internal(					&
+     &		'error stop xi_move_inside: internal error')
 	end if
 
 	end
@@ -414,7 +416,8 @@
 	if( l > lmax ) then
 	  write(6,*) 'lmax,hbot,hact: ',lmax,hbot,hact
 	  write(6,*) hl
-	  stop 'error stop find_vertical_position: hact > hbot'
+	  call shympi_abort_internal(					&
+     &		'error stop find_vertical_position: hact > hbot')
 	end if
 
 	lb = l

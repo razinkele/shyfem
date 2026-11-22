@@ -218,7 +218,8 @@
         if( nel > 0 .or. nlv > 0 ) then
           if( nel == 0 .or. nlv == 0 ) then
             write(6,*) 'nel,nlv: ',nel,nlv
-	    stop 'error stop mod_lagrange_init: incompatible parameters'
+	    call shympi_abort_internal(					&
+     &		'error stop mod_lagrange_init: incompatible parameters')
           end if
         end if
 
@@ -247,40 +248,56 @@
         if( nel == 0 ) return
 
         allocate(rwhvar(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(ie_back(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(u_lag(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(v_lag(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(x_back(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(y_back(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(z_back(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
 
         allocate(flux2d(3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(flux3d(nlv,3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(vel_ie(3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(vel3d_ie(nlv,3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(dvert(3,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
 
         allocate(i_count(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(t_count(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
 
         allocate(wde(0:nlv,nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
         allocate(dtvd(nel),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
 
         end subroutine mod_lagrange_init
 
@@ -320,7 +337,8 @@
 	if( nbdy_lagr == 0 ) then		!first time
 	  nbdy_lagr = nbdy
 	  allocate(lgr_ar(nbdy),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
 	  allocate(lgr_ncross(nbdy),stat=ierr)
 	  if( ierr /= 0 ) call shympi_abort_internal(			&
      &		'mod_lagrange_init_body: allocation of lgr_ncross')
@@ -346,7 +364,8 @@
 	else
           ndim = min(nbdy,nbdy_lagr)
           allocate(paux(nbdy),stat=ierr)
-	  if( ierr /= 0 ) stop 'error stop: allocation failed'
+	  if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop: allocation failed')
           paux(1:ndim) = lgr_ar(1:ndim)
           call move_alloc(paux,lgr_ar)
 	  allocate(iaux(nbdy),stat=ierr)
