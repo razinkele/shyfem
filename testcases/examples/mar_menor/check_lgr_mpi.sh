@@ -27,6 +27,20 @@
 #                the case's --tol and its position floors (the table below):
 #                --max-beyond-last and --max-largest of lgr_dbg_compare.py
 #                (not for mm_lgr: its random walk is never seeded, #225)
+#         stops  (case mm_lgr_a only) the options that are not supported on
+#                several processes: for each of the ten rows (ilagr3, lbeach,
+#                artype, ldecay, lgrini, ised, ilarv, icnn, lgrpps, lgrtrj) a
+#                scratch copy of the STR file with that option set (made by
+#                sed, in this folder, with a run name of its own, removed at
+#                the end; lgrini and lgrtrj name a file that does not exist,
+#                the MPI run must stop before it is opened) is run on NP
+#                processes (NP > 1) and serially.  NP processes: a non-zero
+#                exit, the line "Lagrangian option NAME is not supported with
+#                MPI" and the line "run on one process, or remove NAME" once
+#                each, no SIGFPE, SIGSEGV or "Fortran runtime" line, no
+#                particle file.  Serial: the MPI message must never
+#                appear; the outcome (ended, or its own failure) is printed
+#                per row.  Needs no serial reference run.
 #
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
@@ -46,7 +60,7 @@
 # Consistency check: whenever the driver sets levdbg (the dump modes, or
 # LGR_LEVDBG), the log of a run on several processes must hold no line of
 # lgr_mpi_check_consistency: it writes only when a check fails (and then
-# aborts the run) or when it is not active.
+# aborts the run).
 #
 # Note: flux uses the relative default limit of lgr_dbg_compare.py (1e-5) for
 # every case; the per-case --tol below applies to pos and part only.
@@ -122,7 +136,7 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: [LGR_LEVDBG=2|3] $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|w|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb)"
+  echo "usage: [LGR_LEVDBG=2|3] $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|w|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb|stops)"
   exit 2
 }
 
@@ -135,7 +149,7 @@ case "$CASE" in
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
-case "$MODE" in flux|part|handover|floor|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+case "$MODE" in flux|part|handover|floor|pos|ids|perturb|stops) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
 LEVDBG_ENV="${LGR_LEVDBG:-}"
 if [ -n "$LEVDBG_ENV" ]; then
   case "$MODE" in pos|ids) ;; *) echo "LGR_LEVDBG applies to the modes pos and ids only"; usage ;; esac
@@ -195,6 +209,11 @@ cleanup() {
   for f in "$HERE"/lgrdbg.*.txt; do
     [ -e "$f" ] && rm -f "$f"
   done
+  # scratch STR and outputs of mode stops (names carry this process id)
+  for f in "$HERE"/stops_*_$$.*; do
+    [ -e "$f" ] && rm -f "$f"
+  done
+  rm -f "$HERE/no_such_file_stops.lgr" "$HERE/no_such_file_stops.trj"
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
@@ -345,7 +364,7 @@ key_check() {
 
 # consistency_check LOG NPROC: with levdbg set by the driver, a run on several
 # processes has the consistency check active, and the check writes a line
-# only when it fails or is not active (see header); no such line is allowed
+# only when it fails (see header); no such line is allowed
 consistency_check() {
   local log="$1" np="$2" n
   [ -n "$LEVDBG" ] && [ "$np" -gt 1 ] || return 0
@@ -432,6 +451,80 @@ if [ "$MODE" = perturb ]; then
   echo "  'loosing particle adv' lines: plain $(nlost "$HERE/$CASE.np$NP.log"), perturbed $(nlost "$HERE/$CASE.np$NP.perturb.log")"
   [ "$nfiles" -gt 0 ] || fail "no dump file exists"
   [ "$ndiff" = 0 ] || fail "the dump files of the plain and the perturbed run differ"
+  if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi
+  exit "$rc"
+fi
+
+#--- stops mode: options that stop on several processes ---------------------
+if [ "$MODE" = stops ]; then
+  [ "$CASE" = mm_lgr_a ] || { echo "mode stops needs the case mm_lgr_a"; usage; }
+  [ "$NP" -gt 1 ] || { echo "mode stops needs NP > 1"; usage; }
+  [ -z "$LEVDBG_ENV" ] || { echo "LGR_LEVDBG does not apply to mode stops"; usage; }
+  # one row: NAME, then the sed expression that sets it ("%" is no part of
+  # any text below); lines are added after "ilagr = 1" of the $lagrg section
+  ADD='s/^\([ \t]*\)ilagr = 1[ \t]*$/&\n\1'
+  STOPS_NAMES="ilagr3 lbeach artype ldecay lgrini ised ilarv icnn lgrpps lgrtrj"
+  stops_expr() {
+    case "$1" in
+      ilagr3) echo 's/^\([ \t]*\)ilagr = 1[ \t]*$/\1ilagr = 3/' ;;
+      lbeach) echo "${ADD}lbeach = 0.5/" ;;
+      artype) echo "${ADD}artype = 1/" ;;
+      ldecay) echo "${ADD}ldecay = 3600/" ;;
+      lgrini) echo "${ADD}lgrini = 'no_such_file_stops.lgr'/" ;;
+      ised)   echo "${ADD}ised = 1/" ;;
+      ilarv)  echo "${ADD}ilarv = 1/" ;;
+      lgrtrj) echo "${ADD}lgrtrj = 'no_such_file_stops.trj'/" ;;
+      icnn)   echo '$a\\n$connec\n        icnn = 1\n$end' ;;
+      lgrpps) echo '$a\\n$bound1\n        kbound = 218\n        ibtyp = 3\n        boundn = '"'INPUT/river.txt'"'\n        lgrpps = 1\n$end' ;;
+    esac
+  }
+  # the text of the message names the option as written in the STR file
+  stops_label() {
+    case "$1" in
+      ilagr3) echo "ilagr = 3" ;;
+      icnn)   echo "icnn" ;;
+      *)      echo "$1" ;;
+    esac
+  }
+  SCR="$(mktemp -d /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/lgrstops.XXXXXX)" || exit 1
+  [ "$(grep -c "^[[:space:]]*$CASE[[:space:]]*$" "$HERE/$CASE.str")" = 1 ] || { echo "LGR GATE FAIL: cannot find the run name line of $CASE.str"; exit 1; }
+  echo "=== stops: $CASE, $NP processes and serial (logs in $SCR)"
+  for opt in $STOPS_NAMES; do
+    RUN="stops_${opt}_$$"
+    lab="$(stops_label "$opt")"
+    expr="$(stops_expr "$opt")"
+    sed -e "s/^\([ \t]*\)$CASE[ \t]*\$/\1$RUN/" -e "$expr" "$HERE/$CASE.str" > "$HERE/$RUN.str" \
+      || { fail "cannot write $RUN.str"; continue; }
+    if cmp -s "$HERE/$CASE.str" "$HERE/$RUN.str"; then fail "$opt: the sed expression changed nothing"; fi
+    row_ok=1
+    # --- NP processes
+    timeout 600 nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$RUN.str" > "$SCR/$opt.np$NP.log" 2>&1
+    mrc=$?
+    n1="$(grep -c "Lagrangian option $lab is not supported with MPI" "$SCR/$opt.np$NP.log")"
+    n2="$(grep -c "run on one process, or remove $lab" "$SCR/$opt.np$NP.log")"
+    nbadsig="$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$SCR/$opt.np$NP.log")"
+    nfile=0; [ -e "$HERE/$RUN.lgr.shy" ] && nfile=1
+    [ "$mrc" != 0 ] || { row_ok=0; echo "  $opt: $NP processes: exit code 0 (the run must stop)"; }
+    [ "$n1" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: message seen $n1 times (expected once)"; }
+    [ "$n2" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: 'run on one process' line seen $n2 times (expected once)"; }
+    [ "$nbadsig" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: $nbadsig SIGFPE/SIGSEGV/Fortran runtime lines"; }
+    [ "$nfile" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: particle file written"; }
+    for f in "$HERE/$RUN".*; do [ "$f" = "$HERE/$RUN.str" ] || rm -f "$f"; done
+    # --- serial
+    timeout 600 nice -n 19 shyfem "$RUN.str" > "$SCR/$opt.serial.log" 2>&1
+    src=$?
+    if grep -q 'is not supported with MPI' "$SCR/$opt.serial.log"; then
+      row_ok=0; echo "  $opt: serial: the MPI message appears"
+    fi
+    if grep -q 'simulation end' "$SCR/$opt.serial.log"; then sout="ended"
+    elif grep -q 'Program received signal' "$SCR/$opt.serial.log"; then
+      sout="own failure (exit $src): $(grep -m1 'Program received signal' "$SCR/$opt.serial.log" | cut -c1-60)"
+    else sout="own failure (exit $src): $(grep -v '^[[:space:]]*$' "$SCR/$opt.serial.log" | tail -1 | cut -c1-70)"; fi
+    rm -f "$HERE/no_such_file_stops.lgr" "$HERE/no_such_file_stops.trj"	# a serial run may create it
+    for f in "$HERE/$RUN".*; do [ -e "$f" ] && rm -f "$f"; done
+    if [ "$row_ok" = 1 ]; then st=ok; else st=FAIL; rc=1; fi
+    echo "  $opt: $st; $NP processes exit $mrc, message x$n1, advice x$n2, signals $nbadsig, particle file $nfile; serial: $sout"
+  done
   if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi
   exit "$rc"
 fi

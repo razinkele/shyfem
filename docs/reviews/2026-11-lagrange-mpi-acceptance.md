@@ -792,3 +792,35 @@ B, C, E and W on 2, 4 and 8 processes, case D's ids (AC4) on 2, 4 and 8, and cas
 hand-over check and release gate with ids on 2, 3, 4, 6 and 8: 94 gate runs PASS, none FAIL.
 Builds with `-fcheck=bounds` (19 runs) and `COMPILER_PROFILE=CHECK` (A, B, C, E, W serially and on
 4 processes) of `e750fba3` run without a runtime message or a trap.
+
+## Task 7.1: options that stop under MPI (AC10)
+
+**Measured** 2026-11-22 12:34 to 12:40 EET (from `date`) on a build of the working tree on top of
+`0a21dc85` (committed as the commit of this task). `./check_lgr_mpi.sh mm_lgr_a 4 stops`: a scratch
+STR copy of case A with the option set (by `sed`; `lgrini` and `lgrtrj` name a file that does not
+exist; `icnn` adds a `$connec` section, `lgrpps` a boundary at node 218 with `lgrpps = 1`), run
+on 4 processes and serially. Before the change the mode failed for all ten rows (`ilagr = 3` and
+`icnn` stopped, but with the older wording: the message count was 0; `lbeach`, `artype`, `ised`,
+`ilarv` ran to the end and wrote the particle file; `ldecay` died with SIGSEGV, `lgrini` with
+SIGFPE/SIGSEGV on 4 processes; `lgrpps` and `lgrtrj` wrote the particle file before they failed).
+After the change: `LGR GATE: PASS`.
+
+| Option | Message (rank 0, once) | 4 processes: exit | Serial run |
+|---|---|---|---|
+| `ilagr = 3` | `Lagrangian option ilagr = 3 is not supported with MPI` | 33 | SIGFPE in the first release (#231), not the MPI message |
+| `lbeach` (0.5) | `... option lbeach ...` | 33 | ends |
+| `artype` (1) | `... option artype ...` | 33 | ends |
+| `ldecay` (3600) | `... option ldecay ...` | 33 | SIGSEGV (a serial defect of its own, not part of this task) |
+| `lgrini` | `... option lgrini ...` | 33 | stops: the file does not exist (own message) |
+| `ised` (1) | `... option ised ...` | 33 | ends |
+| `ilarv` (1) | `... option ilarv ...` | 33 | ends |
+| `icnn` (1) | `... option icnn ...` | 33 | `connectivity: stations defined but no release` |
+| `lgrpps` (1) | `... option lgrpps ...` | 33 | `Please change nbdymax in STR file` (the river releases more than 5000) |
+| `lgrtrj` | `... option lgrtrj ...` | 33 | `lgrlin and lgrtrj not allowed` (case A has `lgrlin`) |
+
+Every row also prints `run on one process, or remove NAME` once, and no row has a SIGFPE, SIGSEGV
+or `Fortran runtime` line or a particle file on 4 processes; no serial log holds the MPI message.
+Other gates on the same build: `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`
+`SERIAL GUARD: PASS`; `./check_lgr_serial.sh repro` `REPRO: PASS`; `./check_lgr_mpi.sh CASE 4 ids`
+and `pos` PASS for A, B, C, E, W; `LGR_LEVDBG=3 ./check_lgr_mpi.sh mm_lgr 4 ids` PASS (the
+consistency check silent). None of these cases sets an option of the table.

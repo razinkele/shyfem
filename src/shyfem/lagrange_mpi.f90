@@ -183,7 +183,7 @@
 	logical, save :: bmpi_lagr = .false.      !true if MPI active for lagrange
 
 	! lgr_mpi_check_consistency is active (set by lgr_mpi_init: several
-	! processes, levdbg >= 2, no release that gives out no global ids)
+	! processes, levdbg >= 2)
 	logical, save :: blgr_chk = .false.
 
 	! test hooks of lgr_mpi_check_consistency (read once by lgr_mpi_init;
@@ -253,49 +253,69 @@
 
 ! on more than one process, the options of the particle module that are
 ! not supported there stop the run at start-up, before any particle is
-! tracked (called by lagrange in its first call, after ilagr is read).
-! For each option that is set rank 0 writes which option is not supported
-! on several MPI processes and that the run must be made serially (or
-! without the option); after a barrier every process stops through
-! shympi_abort_internal. The test reads only parameters of the STR file,
-! the same on every process. A serial run is not affected.
+! tracked (called by lagrange in its first call, after ilagr is read and
+! before lgr_mpi_topology_init, the first release, lgr_input_shell (file
+! lgrini) and lagr_init_common (file lgrtrj)). For each option that is
+! set rank 0 writes "Lagrangian option NAME is not supported with MPI" and
+! "run on one process, or remove NAME"; after all options are tested, a
+! flush and a barrier, every process stops through shympi_abort_internal.
+! A serial run is not affected (returns at once).
 !
-! options tested here: ilagr = 3 (vertical advection and diffusion: the
-! hand-over keeps z only in single precision) and icnn > 0 (connectivity,
-! section $connec: its counts at a hand-over are not made and the release
-! element is not held on every process); a later task adds the others
+! every value is read as the model reads it, from the STR file that every
+! process parses itself before the first call of lagrange, so that all
+! processes see the same value and make the same decision (no process
+! can be left in the barrier alone):
+!   ilagr = 3     getpar('ilagr'), section $lagrg (vertical advection and
+!                 diffusion: the hand-over keeps z only in single precision)
+!   lbeach > 0    getpar('lbeach'), $lagrg (beaching)
+!   artype /= -1  getpar('artype'), $lagrg (transit time of an area)
+!   ldecay > 0    getpar('ldecay'), $lagrg (decay of particles)
+!   lgrini        getfnm('lgrini'), $name, not blank (initial distribution
+!                 from a file)
+!   ised > 0      getpar('ised'), $lagrg (sediment module)
+!   ilarv > 0     getpar('ilarv'), $lagrg (larvae module)
+!   icnn > 0      getpar('icnn'), section $connec (connectivity: its counts
+!                 at a hand-over are not made and the release element is not
+!                 held on every process)
+!   lgrpps /= 0   get_bnd_par(ibc,'lgrpps') on any of the nbc boundaries
+!                 (continuous release at a boundary)
+!   lgrtrj        getfnm('lgrtrj'), $name, not blank (release along a
+!                 drifter trajectory)
 
 	use shympi, only : my_id, shympi_is_parallel
 	use para, only : getpar
+	use mod_bnd, only : nbc
 
 	implicit none
 
 	include 'mpif.h'
 
-	integer :: nbad, ierr
+	integer :: nbad, ierr, ibc
+	real :: pps
+	character(len=256) :: fname
 
 	if( .not. shympi_is_parallel() ) return
 
 	nbad = 0
 
-	if( nint(getpar('ilagr')) == 3 ) then
-	  nbad = nbad + 1
-	  if( my_id == 0 ) then
-	    write(6,*) 'Lagrangian option ilagr = 3 is not supported on'	&
-     &		//' several MPI processes'
-	    write(6,*) 'run it serially (on one process), or use ilagr'	&
-     &		//' = 1 or 2'
+	if( nint(getpar('ilagr')) == 3 ) call lgr_mpi_unsupported('ilagr = 3')
+	if( getpar('lbeach') > 0. ) call lgr_mpi_unsupported('lbeach')
+	if( int(getpar('artype')) /= -1 ) call lgr_mpi_unsupported('artype')
+	if( getpar('ldecay') > 0. ) call lgr_mpi_unsupported('ldecay')
+	call getfnm('lgrini',fname)
+	if( len_trim(fname) > 0 ) call lgr_mpi_unsupported('lgrini')
+	if( nint(getpar('ised')) > 0 ) call lgr_mpi_unsupported('ised')
+	if( nint(getpar('ilarv')) > 0 ) call lgr_mpi_unsupported('ilarv')
+	if( nint(getpar('icnn')) > 0 ) call lgr_mpi_unsupported('icnn')
+	do ibc = 1, nbc
+	  call get_bnd_par(ibc,'lgrpps',pps)
+	  if( pps /= 0. ) then
+	    call lgr_mpi_unsupported('lgrpps')
+	    exit
 	  end if
-	end if
-
-	if( nint(getpar('icnn')) > 0 ) then
-	  nbad = nbad + 1
-	  if( my_id == 0 ) then
-	    write(6,*) 'Lagrangian option icnn > 0 (connectivity, section'	&
-     &		//' $connec) is not supported on several MPI processes'
-	    write(6,*) 'run it serially (on one process), or set icnn = 0'
-	  end if
-	end if
+	end do
+	call getfnm('lgrtrj',fname)
+	if( len_trim(fname) > 0 ) call lgr_mpi_unsupported('lgrtrj')
 
 	if( nbad == 0 ) return
 
@@ -305,6 +325,25 @@
 	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
 	call shympi_abort_internal('error stop lagrange: option not'	&
      &		//' supported with MPI')
+
+	contains
+
+	subroutine lgr_mpi_unsupported(name)
+
+! counts the option and lets rank 0 name it
+
+	implicit none
+
+	character(len=*), intent(in) :: name
+
+	nbad = nbad + 1
+	if( my_id == 0 ) then
+	  write(6,'(a)') ' Lagrangian option '//trim(name)//' is not'	&
+     &		//' supported with MPI'
+	  write(6,'(a)') ' run on one process, or remove '//trim(name)
+	end if
+
+	end subroutine lgr_mpi_unsupported
 
 	end subroutine lgr_mpi_check_supported
 
@@ -327,23 +366,18 @@
 ! lgr_mpi_check_consistency); every other process ignores them
 !
 ! decides at start-up whether lgr_mpi_check_consistency is active
-! (blgr_chk): several processes and levdbg >= 2, unless a release that
-! gives out no global ids is configured (file lgrini or lgrtrj set, or
-! lgrpps /= 0 on a boundary); then rank 0 writes once
-! " lgr_mpi_check_consistency: not active (release NAME is not supported
-! on several processes)", NAME the first of lgrini, lgrtrj, lgrpps set
+! (blgr_chk): several processes and levdbg >= 2. The releases that give
+! out no global ids (file lgrini or lgrtrj, lgrpps /= 0 on a boundary)
+! never get here on several processes: lgr_mpi_check_supported has
+! stopped the run before
 
 	use shympi
 	use para, only : getpar
-	use mod_bnd, only : nbc
 
 	implicit none
 
-	integer :: ierr, ndim, ist, ios, ir, ibc
-	real :: pps
+	integer :: ierr, ndim, ist, ios, ir
 	character(len=16) :: sval
-	character(len=6) :: crel
-	character(len=256) :: fname
 
 	lgr_pack_size = lgr_pack_base + ncust
 	bmpi_lagr = shympi_is_parallel()
@@ -385,26 +419,6 @@
 	end if
 
 	blgr_chk = nint(getpar('levdbg')) >= 2
-	if( blgr_chk ) then
-	  crel = ' '
-	  call getfnm('lgrini',fname)
-	  if( fname /= ' ' ) crel = 'lgrini'
-	  if( crel == ' ' ) then
-	    call getfnm('lgrtrj',fname)
-	    if( fname /= ' ' ) crel = 'lgrtrj'
-	  end if
-	  do ibc = 1, nbc
-	    if( crel /= ' ' ) exit
-	    call get_bnd_par(ibc,'lgrpps',pps)
-	    if( pps /= 0. ) crel = 'lgrpps'
-	  end do
-	  if( crel /= ' ' ) then
-	    blgr_chk = .false.
-	    if( my_id == 0 ) write(6,'(a)') ' lgr_mpi_check_consistency: not'	&
-     &		//' active (release '//trim(crel)//' is not supported on'	&
-     &		//' several processes)'
-	  end if
-	end if
 
 	end subroutine lgr_mpi_init
 
@@ -4383,8 +4397,8 @@
 ! the first particle it sends at a side; the copy stays in its slot on the
 ! side with its mark cleared ((a) and (c) fail).
 !
-! not active if a release that gives out no global ids is configured
-! (lgrini, lgrtrj, lgrpps on a boundary): lgr_mpi_init writes one line
+! a release that gives out no global ids (lgrini, lgrtrj, lgrpps on a
+! boundary) is stopped at start-up by lgr_mpi_check_supported
 
 	use shympi, only : my_id, n_threads
 	use basin, only : nel

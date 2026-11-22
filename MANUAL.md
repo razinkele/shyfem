@@ -1276,6 +1276,8 @@ $end
 
 Particles can also be released at open boundaries using `lgrpps` in the boundary section.
 
+Lagrangian particle tracking runs on several MPI processes for the core options (see section 9.6): surface and layer tracking (`ilagr` 1 and 2), the horizontal random walk (`rwhpar`), Stokes drift (`stkpar`), release in polygons (`lgrlin`) or over the whole basin, and the particle file. Every other option stops the run at start-up on more than one process, with the message `Lagrangian option NAME is not supported with MPI`; run on one process or remove the option (the example above, with `ilagr = 3`, is a serial run).
+
 ### 7.17 Water Renewal Time
 
 ```
@@ -1535,8 +1537,24 @@ Currently supported in MPI mode:
 - Open boundary conditions across domains
 - Output writing
 
-Not yet supported in MPI:
-- Lagrangian particle tracking (serial only)
+Lagrangian particle tracking (section 7.16) works on several processes for these options only:
+- `ilagr` 1 (surface) and 2 (layers), the horizontal random walk, Stokes drift
+- release in polygons (`lgrlin`) and over the whole basin, the particle file
+
+Every option in the table below stops the run at start-up on more than one process (one message, exit code 33); with one process they work as before:
+
+| Option | Section | Stops when | Meaning |
+|---|---|---|---|
+| `ilagr` | `$lagrg` | `= 3` | vertical advection and diffusion |
+| `lbeach` | `$lagrg` | `> 0` | beaching on the shore |
+| `artype` | `$lagrg` | `/= -1` | transit time out of an area |
+| `ldecay` | `$lagrg` | `> 0` | decay of particles |
+| `lgrini` | `$name` | file name given | initial distribution from a file |
+| `ised` | `$lagrg` | `> 0` | sediment module |
+| `ilarv` | `$lagrg` | `> 0` | larvae module |
+| `icnn` | `$connec` | `> 0` | connectivity |
+| `lgrpps` | `$boundN` | `/= 0` on any boundary | continuous release at a boundary |
+| `lgrtrj` | `$name` | file name given | release along a drifter trajectory |
 
 ### 9.7 MPI Notes
 
