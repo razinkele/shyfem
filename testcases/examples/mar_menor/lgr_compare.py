@@ -11,8 +11,22 @@ usage: lgr_compare.py A.lgr.shy B.lgr.shy --mode {pos|ids} [--tol FLOAT]
 --mode pos compares, for every id present in both files and the same block:
 x, y within --tol; z within 1e-5; lb, type (ints) exact; tt (float64), s and
 the custom values c(1:ncust) (float32) exact; hl within --tol-hl (default
-1e-4).  NaN in any compared field is a failure.  The element number ie is not
-gated; the number of particles whose ie differs is printed per block.
+1e-4).  NaN in any compared field is a failure.  The element number ie of a
+pair whose x and y are equal (distance exactly 0) must be equal too (the
+elements are global numbers, so a pair in the same place is in the same
+element): a pair at distance 0 with another ie is a failure, counted per
+block and in a line "ie: ...".  For a pair at another distance ie is
+information (the number of such pairs is printed per block).
+
+The inserted block (iwhat = -1) holds fixed release data, identical in any two
+runs: in --mode pos every pair of that block must be exactly equal in every
+field (x, y, z, lb, ie, tt, type, s, custom values), whatever --tol, the
+floors and --max-tt-differ allow for the other blocks, except hl: hl is not
+release data but the layer thickness computed at output time, which follows
+the water level and so differs at single-precision rounding between runs
+(serial against serial too, up to 2e-6 relative), so it is compared within
+--tol-hl as in every block.  A difference is a failure, printed with its id
+and counted in a line "inserted block: ...".
 
 --max-beyond-last N, --max-largest D (--mode pos only) hold the positions
 against floors instead of --tol pair by pair, as lgr_dbg_compare.py part does
@@ -32,7 +46,10 @@ two options nothing changes.
 failure by itself; the comparison fails if more than N particles (ids
 matched in the same block, at any output) have a different tt.  The count
 is printed per block and output ("tt differs K") and in a line "tt: ...".
-Without the option tt is compared exactly, as before.
+Without the option tt is compared exactly, as before.  With the option every
+particle whose tt differs is listed with both values ("tt a/b"; at most
+MAX_TT_LINES lines per block and output, the number left out is printed),
+within the floor or not.
 
 --dims prints "nkn N nel E nlv L" from the model header of the file (its
 third record: nkn, nel, npr, nlv, nvar); used to pass --nel and --nlv.
@@ -56,6 +73,7 @@ import sys
 IWHAT_ORDER = (0, -1, 1)
 BLOCK_NAME = {0: "active", -1: "inserted", 1: "exited"}
 Z_TOL = 1e-5
+MAX_TT_LINES = 20
 HEAD = struct.Struct("<dii")
 REC1 = struct.Struct("<iidfi")
 REC2 = struct.Struct("<fffif")
@@ -190,13 +208,17 @@ def exceeds(a, b, tol):
     return not abs(a - b) <= tol
 
 
-def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False):
+def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False, exact=False):
     """Return (ok, onlyA, onlyB, max_dx, max_dy, lb_ok, z_ok, n_ie, detail,
-    dist, n_hl_skip, tt_ids): dist maps every common id to max(|dx|, |dy|)
-    (NaN if either is NaN); with floor a position beyond tol is no failure
-    by itself (NaN still is) and hl is compared only if ie is equal
-    (n_hl_skip pairs are left out); tt_ids are the common ids whose tt
-    differs, with tt_floor no failure by themselves (NaN still is)."""
+    dist, n_hl_skip, tt_ids, n_ie0, n_exact, tt_lines): dist maps every common
+    id to max(|dx|, |dy|) (NaN if either is NaN); with floor a position beyond
+    tol is no failure by itself (NaN still is) and hl is compared only if ie
+    is equal (n_hl_skip pairs are left out); tt_ids are the common ids whose
+    tt differs, with tt_floor no failure by themselves (NaN still is) and
+    listed in tt_lines (all, whether or not they are a failure); n_ie0 counts
+    the pairs at distance 0 whose ie differs (a failure); with exact (the
+    inserted block) no tolerance and no floor applies: every field must be
+    equal, n_exact counts the pairs that differ."""
     only_a = set(pa) - set(pb)
     only_b = set(pb) - set(pa)
     max_dx = max_dy = 0.0
@@ -205,6 +227,9 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False):
     n_hl_skip = 0
     detail = []
     tt_ids = set()
+    tt_lines = []
+    n_ie0 = 0
+    n_exact = 0
     dist = {}
     for pid in sorted(set(pa) & set(pb)):
         a, b = pa[pid], pb[pid]
@@ -216,7 +241,10 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False):
             max_dx, max_dy = max(max_dx, dx), max(max_dy, dy)
         dist[pid] = float("nan") if math.isnan(dx) or math.isnan(dy) else max(dx, dy)
         bad = []
-        if floor:
+        if exact:
+            if exceeds(a["x"], b["x"], 0.0) or exceeds(a["y"], b["y"], 0.0):
+                bad.append("position")
+        elif floor:
             if math.isnan(dist[pid]):
                 bad.append("position NaN")
         elif exceeds(a["x"], b["x"], tol) or exceeds(a["y"], b["y"], tol):
@@ -224,20 +252,29 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False):
         if a["lb"] != b["lb"]:
             lb_ok = False
             bad.append("lb")
-        if exceeds(a["z"], b["z"], Z_TOL):
+        if exceeds(a["z"], b["z"], 0.0 if exact else Z_TOL):
             z_ok = False
             bad.append("z")
         if a["type"] != b["type"]:
             bad.append("type %d/%d" % (a["type"], b["type"]))
         if exceeds(a["tt"], b["tt"], 0.0):
-            tt_ids.add(pid)
-            if not tt_floor:
+            if exact:
                 bad.append("tt %r/%r" % (a["tt"], b["tt"]))
-            elif math.isnan(a["tt"]) or math.isnan(b["tt"]):
-                bad.append("tt NaN")
+            else:
+                tt_ids.add(pid)
+                if not tt_floor:
+                    bad.append("tt %r/%r" % (a["tt"], b["tt"]))
+                else:
+                    tt_lines.append("    id %d: tt %r/%r (counted against the"
+                                    " tt floor)" % (pid, a["tt"], b["tt"]))
+                    if math.isnan(a["tt"]) or math.isnan(b["tt"]):
+                        bad.append("tt NaN")
         if exceeds(a["s"], b["s"], 0.0):
             bad.append("s %.9g/%.9g" % (a["s"], b["s"]))
-        if floor and a["ie"] != b["ie"]:
+        if exact:
+            if exceeds(a["hl"], b["hl"], tol_hl):
+                bad.append("hl %.9g/%.9g" % (a["hl"], b["hl"]))
+        elif floor and a["ie"] != b["ie"]:
             n_hl_skip += 1
         elif exceeds(a["hl"], b["hl"], tol_hl):
             bad.append("hl %.9g/%.9g" % (a["hl"], b["hl"]))
@@ -246,12 +283,19 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False):
                 bad.append("c(%d) %.9g/%.9g" % (k, ca, cb))
         if a["ie"] != b["ie"]:
             n_ie += 1
+            if exact:
+                bad.append("ie %d/%d" % (a["ie"], b["ie"]))
+            elif dx == 0.0 and dy == 0.0:
+                n_ie0 += 1
+                bad.append("ie %d/%d" % (a["ie"], b["ie"]))
+        if exact and bad:
+            n_exact += 1
         if bad:
             detail.append("    id %d differs (%s): dx=%.4e dy=%.4e dz=%.4e lb=%d/%d"
                           % (pid, "; ".join(bad), dx, dy, dz, a["lb"], b["lb"]))
     ok = not (only_a or only_b or detail)
     return (ok, only_a, only_b, max_dx, max_dy, lb_ok, z_ok, n_ie, detail,
-            dist, n_hl_skip, tt_ids)
+            dist, n_hl_skip, tt_ids, n_ie0, n_exact, tt_lines)
 
 
 def floor_report(beyond_at, worst, args):
@@ -307,7 +351,7 @@ def dims(path):
 
 
 def check_ranges(label, parts, nel, nlv):
-    """Messages for active particles outside 1<=ie<=nel or 1<=lb<=nlv."""
+    """Messages for particles of one block outside 1<=ie<=nel or 1<=lb<=nlv."""
     msgs = []
     for pid in sorted(parts):
         p = parts[pid]
@@ -351,6 +395,8 @@ def run(args):
     floor = args.max_beyond_last is not None or args.max_largest is not None
     tt_floor = args.max_tt_differ is not None
     tt_all = set()           # ids whose tt differs at some output (tt floor)
+    ie0_total = 0            # pairs at distance 0 with another ie
+    exact_total = 0          # pairs of the inserted block that differ
     beyond_at = {}           # ids beyond --tol per shared time (floor test)
     worst = (0.0, None)      # largest distance at any output, its time
     for dtime in sorted(set(map_a) | set(map_b)):
@@ -372,8 +418,11 @@ def run(args):
             head = "t=%r %-8s nA=%d nB=%d" % (dtime, name, len(pa), len(pb))
             if args.mode == "pos":
                 (good, oa, ob, mdx, mdy, lbok, zok, n_ie, detail, dist,
-                 n_hl_skip, tt_ids) = compare_pos(pa, pb, args.tol, args.tol_hl,
-                                                  floor, tt_floor)
+                 n_hl_skip, tt_ids, n_ie0, n_exact, tt_lines) = compare_pos(
+                     pa, pb, args.tol, args.tol_hl, floor, tt_floor,
+                     exact=(iwhat == -1))
+                ie0_total += n_ie0
+                exact_total += n_exact
                 tail = ""
                 if floor:
                     over = {pid for pid, d in dist.items() if not d <= args.tol}
@@ -387,6 +436,10 @@ def run(args):
                 if tt_floor:
                     tt_all |= tt_ids
                     tail += ", tt differs %d" % len(tt_ids)
+                if iwhat == -1:
+                    tail += ", exact: differing %d" % n_exact
+                else:
+                    tail += ", ie differs at distance 0 (gated) %d" % n_ie0
                 print("%s only in A: %s only in B: %s max|dx|=%.4e max|dy|=%.4e "
                       "lb %s z %s ie differs (info): %d%s"
                       % (head, fmt_ids(oa), fmt_ids(ob), mdx, mdy,
@@ -394,6 +447,11 @@ def run(args):
                          n_ie, tail))
                 for line in detail:
                     print(line)
+                for line in tt_lines[:MAX_TT_LINES]:
+                    print(line)
+                if len(tt_lines) > MAX_TT_LINES:
+                    print("    ... %d more particles with another tt"
+                          % (len(tt_lines) - MAX_TT_LINES))
                 ok = ok and good
             else:
                 line = head
@@ -409,12 +467,19 @@ def run(args):
             if only_a or only_b:
                 ok = False
             for label, mp in (("A", map_a), ("B", map_b)):
-                msgs = check_ranges(label, mp[dtime][0], args.nel, args.nlv)
-                for m in msgs:
-                    print("t=%r%s" % (dtime, m))
-                    ok = False
+                for iwhat in IWHAT_ORDER:
+                    msgs = check_ranges("%s %s" % (label, BLOCK_NAME[iwhat]),
+                                        mp[dtime][iwhat], args.nel, args.nlv)
+                    for m in msgs:
+                        print("t=%r%s" % (dtime, m))
+                        ok = False
     if args.mode == "pos" and floor:
         ok = floor_report(beyond_at, worst, args) and ok
+    if args.mode == "pos":
+        print("ie: pairs at distance 0 with another ie (any output, any block): "
+              "%d: %s" % (ie0_total, "FAIL" if ie0_total else "ok"))
+        print("inserted block: pairs that differ (any output): %d: %s"
+              % (exact_total, "FAIL" if exact_total else "ok"))
     if args.mode == "pos" and tt_floor:
         bad = len(tt_all) > args.max_tt_differ
         print("tt: particles whose tt differs (any output, any block): %d %s %d: %s"
@@ -448,8 +513,8 @@ def main():
                          " fail if more than N particles have a different tt")
     ap.add_argument("--same-counts", action="store_true",
                     help="--mode ids: also require equal counts per block")
-    ap.add_argument("--nel", type=int, help="--mode ids: check 1 <= ie <= nel")
-    ap.add_argument("--nlv", type=int, help="--mode ids: check 1 <= lb <= nlv")
+    ap.add_argument("--nel", type=int, help="--mode ids: check 1 <= ie <= nel (all three blocks)")
+    ap.add_argument("--nlv", type=int, help="--mode ids: check 1 <= lb <= nlv (all three blocks)")
     ap.add_argument("--dims", action="store_true",
                     help="print nkn, nel, nlv of the model header of file A and exit")
     args = ap.parse_args()

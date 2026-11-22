@@ -2,7 +2,7 @@
 """AC8: compare `lgrelab -lgmean` of a serial and an MPI particle file against
 the spread of serial runs whose wind drag was perturbed.
 
-usage: lgr_lgmean_compare.py SERIAL MPI BASE PERT [PERT ...]
+usage: lgr_lgmean_compare.py [--perturbed N] SERIAL MPI BASE PERT [PERT ...]
        lgr_lgmean_compare.py --selftest
 
 Each argument is a particle file (NAME.lgr.shy), on which the tool runs
@@ -12,6 +12,11 @@ relative name), or a folder that already holds the outputs of such a run:
 the standard output as lgrelab.out and the files lagrange_mean_traj.T (one
 per particle type T: per output time, the time, mean x and y with 5
 decimals, then mean hl, age, sinking and the custom values with 3 decimals).
+
+Exactly N perturbed runs PERT must be given (--perturbed N, default 6, the
+number of the floor runs); any other number fails.  The comparison also fails
+if no lagrange_mean_traj file exists (nothing was compared) and if any value
+of any run is NaN or infinite (a clean message, no traceback).
 
 SERIAL and MPI must hold the same particles: the table "Particle
 distrubution over time" of lgrelab (per record: n_active, n_new, n_exit,
@@ -32,7 +37,7 @@ the values beyond (gated: must be 0); a row "all" sums the counts; then
 "LGMEAN COMPARE: PASS" or "FAIL".
 
 Exit status: 0 = pass, 1 = fail, 2 = an input cannot be read or lgrelab
-failed.
+failed, or the command line is wrong.
 """
 import decimal
 import glob
@@ -44,6 +49,7 @@ import sys
 import tempfile
 
 COLS = ("x", "y", "hl", "age", "sinking")
+NPERT = 6
 COUNT_LINE = re.compile(r"^\s*\d+\s+(\S+::\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$")
 
 
@@ -111,9 +117,17 @@ def same_shape(ref, other):
     return None
 
 
-def compare(serial, mpi, base, perts):
+def compare(serial, mpi, base, perts, nperts=NPERT):
     """Print the table and the verdict; return 0 or 1."""
     ok = True
+    if len(perts) != nperts:
+        print("%d perturbed runs given, %d required" % (len(perts), nperts))
+        print("LGMEAN COMPARE: FAIL")
+        return 1
+    if not serial[1]:
+        print("no lagrange_mean_traj file in the serial run: nothing to compare")
+        print("LGMEAN COMPARE: FAIL")
+        return 1
     if serial[0] != mpi[0]:
         ok = False
         print("particle table differs:")
@@ -130,6 +144,7 @@ def compare(serial, mpi, base, perts):
         msg = same_shape(serial[1], run[1])
         if msg:
             print("structure of %s differs from serial: %s" % (label, msg))
+            print("LGMEAN COMPARE: FAIL")
             return 1
     print("%-5s %-8s %7s %14s %14s %10s %13s %7s"
           % ("type", "column", "values", "max|ser-mpi|", "max envelope",
@@ -142,6 +157,17 @@ def compare(serial, mpi, base, perts):
             nval = nenv = nunit = nbad = 0
             dmax = emax = decimal.Decimal(0)
             for i, (_t, vs) in enumerate(serial[1][typ]):
+                vals = [("serial", vs[col]), ("mpi", mpi[1][typ][i][1][col]),
+                        ("base", base[1][typ][i][1][col])] + \
+                    [("perturbed %d" % (k + 1), p[1][typ][i][1][col])
+                     for k, p in enumerate(perts)]
+                nonfin = [lab for lab, v in vals if not v.is_finite()]
+                if nonfin:
+                    print("type %d column %s time %s: non-finite value in %s"
+                          % (typ, name, _t, ", ".join(nonfin)))
+                    nval += 1
+                    nbad += 1
+                    continue
                 d = abs(vs[col] - mpi[1][typ][i][1][col])
                 env = max(abs(base[1][typ][i][1][col] - p[1][typ][i][1][col])
                           for p in perts)
@@ -162,48 +188,77 @@ def compare(serial, mpi, base, perts):
                 ok = False
     print("%-14s %7d %30s %10d %13d %7d" % ("all", tot[0], "", tot[1], tot[2],
                                            tot[3]))
+    if tot[0] == 0:
+        print("no value was compared")
+        ok = False
     print("LGMEAN COMPARE: %s" % ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
 
 def selftest():
     """Synthetic outputs: values within the envelope and within one printed
-    unit of it pass, values two units beyond it fail."""
+    unit of it pass, values two units beyond it fail; so do a comparison of
+    nothing, a NaN, a wrong number of perturbed runs and unequal particle
+    tables."""
     tmp = tempfile.mkdtemp(prefix="lgmean_selftest.")
     try:
-        def make(name, x, y, hl=2.766):
+        def make(name, x, y, hl=2.766, table_tail="1", traj=True):
             d = os.path.join(tmp, name)
             os.mkdir(d)
             with open(os.path.join(d, "lgrelab.out"), "w") as fh:
                 fh.write("    1  2009-01-01::01:00:00       145       145"
-                         "         0         0         1\n")
-            with open(os.path.join(d, "lagrange_mean_traj.1"), "w") as fh:
-                fh.write("2009-01-01::01:00:00 %13.5f %13.5f %9.3f     0.045"
-                         "     0.000     0.000\n" % (x, y, hl))
+                         "         0         0         %s\n" % table_tail)
+            if traj:
+                with open(os.path.join(d, "lagrange_mean_traj.1"), "w") as fh:
+                    fh.write("2009-01-01::01:00:00 %13s %13.5f %9.3f     0.045"
+                             "     0.000     0.000\n" % (
+                                 x if isinstance(x, str) else "%.5f" % x, y, hl))
             return read_dir(d)
         # envelope: x 2e-5, y 3e-5, hl 0 (all perturbed runs print the base's hl)
         base = make("base", -0.77963, 37.68299)
         perts = [make("p1", -0.77961, 37.68299), make("p2", -0.77963, 37.68302)]
         serial = make("serial", -0.77963, 37.68299)
-        res = [compare(serial, make("within", -0.77965, 37.68296), base, perts),
+        none = make("none", 0.0, 0.0, traj=False)
+        res = [compare(serial, make("within", -0.77965, 37.68296), base, perts, 2),
                compare(serial, make("hl_one_unit", -0.77963, 37.68299, 2.767),
-                       base, perts),
+                       base, perts, 2),
                compare(serial, make("hl_two_units", -0.77963, 37.68299, 2.768),
-                       base, perts),
+                       base, perts, 2),
                compare(serial, make("x_two_units", -0.77967, 37.68299),
-                       base, perts)]
+                       base, perts, 2),
+               compare(none, none, none, [none, none], 2),
+               compare(serial, make("nan", "nan", 37.68299), base, perts, 2),
+               compare(serial, make("inf", "inf", 37.68299), base, perts, 2),
+               compare(serial, make("nan_pert", -0.77963, 37.68299), base,
+                       perts[:1] + [make("p3", "nan", 37.68299)], 2),
+               compare(serial, make("same", -0.77963, 37.68299), base, perts, 3),
+               compare(serial, make("same2", -0.77963, 37.68299), base,
+                       perts, 1),
+               compare(serial, make("table", -0.77963, 37.68299,
+                                    table_tail="0"), base, perts, 2)]
     finally:
         shutil.rmtree(tmp)
-    ok = res == [0, 0, 1, 1]
-    print("LGMEAN SELFTEST: %s (within the envelope %s, one unit off with envelope"
-          " 0 %s, two units off %s and %s; expected 0 0 1 1)"
-          % (("PASS" if ok else "FAIL",) + tuple(res)))
+    want = [0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+    ok = res == want
+    print("LGMEAN SELFTEST: %s (results %s; expected %s: within the envelope,"
+          " one unit off with envelope 0, two units off in hl and in x, nothing"
+          " compared, NaN, infinite, NaN in a perturbed run, too few and too"
+          " many perturbed runs, unequal particle table)"
+          % ("PASS" if ok else "FAIL", " ".join(map(str, res)),
+             " ".join(map(str, want))))
     return 0 if ok else 1
 
 
 def main(argv):
     if argv == ["--selftest"]:
         return selftest()
+    nperts = NPERT
+    if len(argv) >= 2 and argv[0] == "--perturbed":
+        if not argv[1].isdigit() or int(argv[1]) < 1:
+            print("--perturbed needs a positive number", file=sys.stderr)
+            return 2
+        nperts = int(argv[1])
+        argv = argv[2:]
     if len(argv) < 4 or any(a.startswith("-") for a in argv):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 2
@@ -217,7 +272,7 @@ def main(argv):
             else:
                 runs.append(read_dir(run_lgrelab(a, keep)))
                 print("%s: lgrelab -lgmean run" % a)
-        return compare(runs[0], runs[1], runs[2], runs[3:])
+        return compare(runs[0], runs[1], runs[2], runs[3:], nperts)
     except (InputError, OSError) as exc:
         print("cannot compare: %s" % exc, file=sys.stderr)
         return 2
