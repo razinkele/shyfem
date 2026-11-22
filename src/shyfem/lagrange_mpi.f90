@@ -103,8 +103,12 @@
 	real, save, allocatable :: export_tleft(:)      !time left
 
 	! totals of the hand-over on this process (lgr_mpi_handover_stats)
-	integer, save :: lgr_nhand = 0       !particles sent
-	integer, save :: lgr_nround_max = 0  !most rounds with a mark in a step
+	integer, save :: lgr_nhand = 0       !particles sent at a cut-off side
+					     !(by position: lgr_nres_sent)
+	integer, save :: lgr_nround_max = 0  !most hand-overs at a side of one
+					     !particle in a step: the last round
+					     !of a step with a side mark, largest
+					     !over the steps (lgr_mpi_handover)
 	integer, save :: lgr_nputback = 0    !put back at a cut-off side for
 					     !lack of a layer (OMP atomic)
 
@@ -1745,12 +1749,15 @@
 ! self-test of lgr_mpi_search_key at levdbg >= 3 (called by lgr_mpi_init
 ! on every process; prints nothing, the result goes into the lines of
 ! lgr_mpi_relocate_stats): for every mesh size n = 1 .. 30 and every
-! start element, and for n = nel_global with five start elements, the
-! walk of find_elem_from_old (find.f90) is repeated statement for
-! statement (downward and upward counters, wrap-around, loop test) and
-! the order in which it first reaches the elements is compared with the
-! order of their keys: the start element must have key 0, every other
-! element must be reached, and the keys must increase along the walk.
+! start element, and for n = nel_global with five start elements (1, 2,
+! n/2, n-1, n, each put into 1..n, so a mesh of one or two elements has
+! repeated starts), the walk of find_elem_from_old (find.f90) is repeated
+! statement for statement (downward and upward counters, wrap-around,
+! loop test) and the order in which it first reaches the elements is
+! compared with the order of their keys: the start element must have key
+! 0, every other element must be reached, and the keys must increase
+! along the walk. A walk takes at most n-1 steps; it stops after n steps
+! in any case and is then counted as wrong, as is a start outside 1..n.
 ! Counts the walks (lgr_nkey_walk) and those with an error
 ! (lgr_nkey_wrong). The test meshes never have a point in two elements
 ! (lgr_mpi_relocate_check counts them), so the order of the key is tested
@@ -1780,9 +1787,9 @@
 	end do
 
 	n = nel_global
-	istart = (/ 1, 2, max(1,n/2), max(1,n-1), n /)
+	istart = (/ 1, 2, n/2, n-1, n /)
 	do j = 1, 5
-	  call one_walk(n,istart(j))
+	  call one_walk(n,min(n,max(1,istart(j))))	!start in 1..n
 	end do
 
 	deallocate(ifirst,ibyrank)
@@ -1794,7 +1801,13 @@
 	  integer, intent(in) :: n, ieold
 
 	  integer :: iem, iep, irank, ie, kprev, k, jj
-	  logical :: bbad
+	  logical :: bbad, bover
+
+	  lgr_nkey_walk = lgr_nkey_walk + 1
+	  if( n < 1 .or. ieold < 1 .or. ieold > n ) then	!no walk to make
+	    lgr_nkey_wrong = lgr_nkey_wrong + 1
+	    return
+	  end if
 
 	  ifirst(1:n) = 0
 	  irank = 0
@@ -1803,7 +1816,12 @@
 	  if( iem .lt. 1 ) iem = n
 	  iep = ieold+1
 	  if( iep .gt. n ) iep = 1
+	  bover = .false.
 	  do while( iem .ne. ieold .and. iep .ne. ieold )
+	    if( irank >= 2*n ) then		!n-1 steps at most: never here
+	      bover = .true.
+	      exit
+	    end if
 	    irank = irank + 1
 	    if( ifirst(iem) == 0 ) ifirst(iem) = irank
 	    iem = iem - 1
@@ -1814,7 +1832,7 @@
 	    if( iep .gt. n ) iep = 1
 	  end do
 
-	  bbad = ( lgr_mpi_search_key(ieold,ieold,n) /= 0 )
+	  bbad = bover .or. ( lgr_mpi_search_key(ieold,ieold,n) /= 0 )
 	  ibyrank(0:irank) = 0
 	  do ie = 1, n
 	    if( ie == ieold ) cycle
@@ -1833,7 +1851,6 @@
 	    kprev = k
 	  end do
 
-	  lgr_nkey_walk = lgr_nkey_walk + 1
 	  if( bbad ) lgr_nkey_wrong = lgr_nkey_wrong + 1
 
 	  end subroutine one_walk
@@ -4035,13 +4052,17 @@
 	subroutine lgr_mpi_handover_stats
 
 ! at levdbg >= 3, on several processes, collective: rank 0 writes the
-! totals of the hand-over over all processes: particles handed over, the
-! most hand-overs of one particle in one time step, and the particles put
-! back at a cut-off side for lack of a layer (track_xi_side_test).
-! The most hand-overs of one particle in a step is the most rounds of a
-! step: in round k the particles sent are those marked in drogue (k = 1)
-! or arrivals of round k-1 marked again, so each of them is handed over
-! for the k-th time.
+! totals of the hand-over over all processes: particles handed over at a
+! cut-off side (lgr_nhand) and by position (lgr_nres_sent, those that went
+! to another process in lgr_mpi_resolve), the most hand-overs at a side of
+! one particle in one time step, and the particles put back at a cut-off
+! side for lack of a layer (track_xi_side_test).
+! The most hand-overs at a side of one particle in a step is the last
+! round of a step with a side mark (lgr_nround_max): a particle's side
+! marks come before its parkings and a round takes every marked particle
+! one event further, so a particle sent at a side in round k is handed
+! over at a side for the k-th time in that step; rounds that only resolve
+! parked particles do not count.
 !
 ! called by lagrange after the step that reaches the end of the particle
 ! run and at the first call after it; only the first call writes (every
@@ -4053,7 +4074,7 @@
 
 	include 'mpif.h'
 
-	integer :: ival(2), ivalg(2), nrmax, ierr
+	integer :: ival(3), ivalg(3), nrmax, ierr
 	logical, save :: bdone = .false.	!totals written
 
 	if( .not. blgr_dbg .or. n_threads <= 1 ) return
@@ -4062,7 +4083,8 @@
 
 	ival(1) = lgr_nhand
 	ival(2) = lgr_nputback
-	call MPI_Allreduce(ival,ivalg,2,MPI_INTEGER,MPI_SUM		&
+	ival(3) = lgr_nres_sent
+	call MPI_Allreduce(ival,ivalg,3,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_handover_stats: MPI_Allreduce')
@@ -4072,10 +4094,12 @@
      &		('lgr_mpi_handover_stats: MPI_Allreduce')
 
 	if( my_id == 0 ) then
-	  write(6,'(a,i0,a,i0,a,i0)') ' lgr hand-over: particles handed'	&
-     &		//' over: ',ivalg(1),', most hand-overs of one particle in'	&
-     &		//' one step: ',nrmax,', put back at a cut-off side for'	&
-     &		//' lack of a layer: ',ivalg(2)
+	  write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr hand-over: particles'	&
+     &		//' handed over at a cut-off side: ',ivalg(1)		&
+     &		,', by position: ',ivalg(3)				&
+     &		,', most hand-overs at a side of one particle in one step: '	&
+     &		,nrmax,', put back at a cut-off side for lack of a layer: '	&
+     &		,ivalg(2)
 	end if
 
 	end subroutine lgr_mpi_handover_stats
