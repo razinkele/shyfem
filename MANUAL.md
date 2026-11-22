@@ -892,6 +892,8 @@ $para
 $end
 ```
 
+`itlin = 1` (semi-Lagrangian) is meant for 2D runs: only the first layer gets the advective term. It is not supported with MPI: a run on more than one process with `ilin = 0` and `itlin = 1` stops at start-up with `option itlin = 1 (semi-Lagrangian advection of momentum) is not supported with MPI`; run it on one process.
+
 When using nonlinear advection, variable time stepping is recommended:
 
 ```
@@ -1742,7 +1744,7 @@ This metadata is used for both the UI forms and parameter validation.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `ilin` | int | 1 | Advective terms (0=nonlinear, 1=linearized/off) |
-| `itlin` | int | 0 | Advection scheme (0=FE, 1=semi-Lagrangian) |
+| `itlin` | int | 0 | Advection scheme (0=FE, 1=semi-Lagrangian; 1 is for 2D runs, serial only, not supported with MPI) |
 | `iclin` | int | 0 | Continuity linearization (0=nonlinear, 1=linear) |
 | `itsplt` | int | 0 | Time step mode (0=constant, 1=splitting, 2=free, 3=fractional) |
 | `coumax` | float | 1.0 | Maximum Courant number |

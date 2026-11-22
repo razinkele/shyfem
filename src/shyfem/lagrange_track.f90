@@ -123,6 +123,10 @@
 	real htot,htotz
         integer pbdx,gbdx ! numero interno dell'estremo piu vicino e piu lontano dal body
         integer ps,ng,nl,i1,i2
+	integer iew	! copy of ie for distp (weights only): distp sets
+			! its element negative when the point is off the
+			! side; the calls that only compute in_d, ou_d (the
+			! weights of the vertical velocity) must not change ie
 	integer, save :: nnm = 0
         integer, save :: idum = 76342
 
@@ -303,7 +307,8 @@
 
         call interc(fay,fax,db,ocy,ocx,ob,itrx,itry)
 	
-	call distp(itrx,itrx,exio,bdx,pbdx,gbdx,ie)
+	iew = ie
+	call distp(itrx,itry,exio,bdx,pbdx,gbdx,iew)
 
 	ou_d =bdx
         ou_dm=pbdx
@@ -435,7 +440,8 @@
 
         call interc(fay,fax,db,ocy,ocx,ob,xit,yit)
 
-	call distp(xit,yit,exi,bdx,pbdx,gbdx,ie)
+	iew = ie
+	call distp(xit,yit,exi,bdx,pbdx,gbdx,iew)
 
 	in_d=bdx
         in_dm=pbdx
@@ -574,8 +580,8 @@
 	     
 	  elseif(ztime.lt.deltat)then ! change layer keeping the same element 
 	   l1=l0+addl
-           if(l1.le.1)stop 'surface'
-	   if(l1.ge.lb)stop 'bottom'
+           if(l1.le.1) call shympi_abort_internal('surface')
+	   if(l1.ge.lb) call shympi_abort_internal('bottom')
 	   zbdy=zn1
 	   lybdy=l1
 	   nwdist=ztime*v_ent
@@ -591,11 +597,15 @@
 	 
          newie=ieltv(l_out,ie)
 
-	 do i=1,3
-          if(ie.eq.ieltv(i,newie))then
-           ltbdy=i ! individuazione lato di entrata del body
-          endif
-         end do
+	 ! side of entry in newie: only for an element (newie <= 0 is a
+	 ! wall, an open boundary or a cut-off side of the MPI domain)
+	 if( newie > 0 ) then
+	  do i=1,3
+           if(ie.eq.ieltv(i,newie))then
+            ltbdy=i ! individuazione lato di entrata del body
+           endif
+          end do
+	 end if
 	 xbdy=nxbdy ! nuove coordinate del body
          ybdy=nybdy ! nuove coordinate del body
          ie=newie ! individuazione nuovo elemento
@@ -632,8 +642,8 @@
            ybdy=nybdy ! nuove coordinate del body
           elseif(ztime.lt.deltat)then ! change layer keeping the same element 
            l1=l0+addl
-           if(l1.le.1)stop 'surface'
-           if(l1.ge.lb)stop 'bottom'
+           if(l1.le.1) call shympi_abort_internal('surface')
+           if(l1.ge.lb) call shympi_abort_internal('bottom')
            zbdy=zn1
            lybdy=l1
            nwdist=ztime*v_ent
@@ -721,6 +731,7 @@
         integer ps,ng,nl,i1,i2
         real gf !precision along the side
 	real htot,htotz
+	integer iew	! copy of ie for distp (weights only): see track_orig
 ! inizializzazione parametri
         integer, save :: idum = 947437
         
@@ -781,7 +792,8 @@
         v_ent=sqrt((ulnv(1,ie)**2)+(vlnv(1,ie)**2))
         
 
-	call distp(xbdy,ybdy,exi,bdx,pbdx,gbdx,ie)
+	iew = ie
+	call distp(xbdy,ybdy,exi,bdx,pbdx,gbdx,iew)
 
         in_d=bdx
         in_dm=pbdx
@@ -868,7 +880,8 @@
          
         call interc(fay,fax,db,ocy,ocx,ob,itrx,itry)
 
-	call distp(itrx,itry,exio,bdx,pbdx,gbdx,ie)
+	iew = ie
+	call distp(itrx,itry,exio,bdx,pbdx,gbdx,iew)
 
 	ou_d=bdx
         ou_dm=pbdx
@@ -945,7 +958,8 @@
 
          call interc(fay,fax,db,ocy,ocx,ob,itrx,itry)
 
-	call distp(itrx,itry,exio,bdx,pbdx,gbdx,ie)
+	iew = ie
+	call distp(itrx,itry,exio,bdx,pbdx,gbdx,iew)
 
         ou_d=bdx
         ou_dm=pbdx
@@ -1083,8 +1097,8 @@
         
           elseif(ztime.lt.deltat)then ! change layer keeping the same element 
            l1=l0+addl
-           if(l1.lt.1)stop 'error stop track_line: surface'
-           if(l1.gt.lmax)stop 'error stop track_line: bottom'
+           if(l1.lt.1) call shympi_abort_internal('error stop track_line: surface')
+           if(l1.gt.lmax) call shympi_abort_internal('error stop track_line: bottom')
            zbdy=zn1
            lybdy=l1
            nwdist=ztime*v_ent
@@ -1100,11 +1114,15 @@
 
 
          newie=ieltv(l_out,ie) !
-	 do i=1,3
-          if(ie.eq.ieltv(i,newie))then          !3 body su vecchio el
-           ltbdy=i ! individuazione lato di entrata del body
-          endif
-         end do
+	 ! side of entry in newie: only for an element (newie <= 0 is a
+	 ! wall, an open boundary or a cut-off side of the MPI domain)
+	 if( newie > 0 ) then
+	  do i=1,3
+           if(ie.eq.ieltv(i,newie))then          !3 body su vecchio el
+            ltbdy=i ! individuazione lato di entrata del body
+           endif
+          end do
+	 end if
          xbdy=nxbdy ! nuove coordinate del body
          ybdy=nybdy ! nuove coordinate del body
         ie=newie ! individuazione nuovo elemento
@@ -1142,8 +1160,8 @@
            ybdy=nybdy ! nuove coordinate del body
           elseif(ztime.lt.deltat)then ! change layer keeping the same element 
            l1=l0+addl
-           if(l1.le.1)stop 'surface'
-           if(l1.ge.lb)stop 'bottom'
+           if(l1.le.1) call shympi_abort_internal('surface')
+           if(l1.ge.lb) call shympi_abort_internal('bottom')
            zbdy=zn1
            lybdy=l1
            nwdist=ztime*v_ent

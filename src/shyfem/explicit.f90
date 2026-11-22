@@ -1044,6 +1044,46 @@
 
 !******************************************************************
 
+	subroutine semi_lagrange_mpi_check
+
+! on more than one process the semi-Lagrangian advection of momentum
+! (ilin = 0 and itlin = 1) stops the run at start-up, before the first
+! time step (called by cstcheck on every process, after the STR file is
+! read). Its back-tracking follows one tracer per element on the mesh of
+! the process only: a tracer that reaches the edge of the domain of the
+! process stops there and its element gets no advective term, so the
+! result differs from the serial one (#227: on 2 and 4 processes the
+! water level of Mar Menor mm_hyd_22a without its boundary tilt differs
+! from the serial run by 0.05 m with itlin = 1, against 3e-6 m for the
+! same case with ilin = 1). Rank 0 writes the message and the advice once, then every
+! process stops through shympi_abort_internal (exit code 33 under Open
+! MPI). A serial run, and a run with ilin /= 0 (itlin is then not used),
+! are not affected.
+
+	use shympi, only : shympi_is_parallel, shympi_is_master		&
+     &			,shympi_barrier
+	use para, only : getpar
+
+	implicit none
+
+	if( .not. shympi_is_parallel() ) return
+	if( nint(getpar('ilin')) /= 0 ) return
+	if( nint(getpar('itlin')) /= 1 ) return
+
+	if( shympi_is_master() ) then
+	  write(6,'(a)') ' option itlin = 1 (semi-Lagrangian advection of'	&
+     &		//' momentum) is not supported with MPI'
+	  write(6,'(a)') ' run on one process, or set itlin = 0'
+	  flush(6)
+	end if
+	call shympi_barrier		!rank 0 has written
+	call shympi_abort_internal('error stop semi_lagrange_mpi_check:'	&
+     &		//' itlin = 1 needs a run on one process')
+
+	end
+
+!******************************************************************
+
         subroutine set_barocl
 
 	use mod_internal

@@ -579,7 +579,11 @@
 !		approach that is theoretically stable also for
 !		Courant numbers higher than 1. It is however recommended
 !		that the time step is limited using |itsplt| and
-!		|coumax| described below. (Default 0)
+!		|coumax| described below. The value of 1 is meant
+!		for 2D runs (only the first layer gets the term)
+!		and is not supported with MPI: a run on more than
+!		one process with |ilin| = 0 and |itlin| = 1 stops
+!		at start-up. (Default 0)
 ! |iclin|	Linearization of the continuity equation. If |iclin|
 !		is different from 0 the depth term in the continuity
 !		equation is taken to be constant. (Default 0)
