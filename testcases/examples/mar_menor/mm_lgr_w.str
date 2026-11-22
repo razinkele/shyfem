@@ -1,0 +1,54 @@
+# Mar Menor wind-driven 2D run on the GEOGRAPHIC basin + Lagrangian particles:
+# case A (mm_lgr_a.str) with ONE release polygon around the whole basin.
+#
+# INPUT/release_area_whole.txt is a rectangle that holds every node of
+# GRID/MM_geo (lon -0.8603 .. -0.6187, lat 37.6308 .. 37.8616) with a margin
+# of about 0.01 degrees, so the release is the polygon path
+# (lagbound_seed_particles), not the whole-basin path (lgr_init_all, taken
+# when lgrlin is blank, as in mm_lgr_b.str).  Under MPI the polygon's
+# elements lie in every domain, so its particles have more than one owner
+# for any number of processes (Lagrangian MPI test, #217).  The release
+# spacing comes from the polygon's area (larger than the basin), so fewer
+# than nbdy particles are released.  The file lives in INPUT/ so that the
+# scripts that copy GRID/ and INPUT/ of the test folder pick it up.
+#
+# Produces mm_lgr_w.lgr.shy with lon/lat particle positions (hourly over
+# 4 days, one particle type).
+#
+# The geographic basin GRID/MM_geo: see mm_lgr_a.str (needs
+#   (cd GRID && shypre -noopti MM_geo.grd)
+# once in this folder).
+#
+# Run:  PATH=/home/razinka/shyfem/bin:$PATH shyfem mm_lgr_w.str
+
+$title
+        Mar Menor lagrangian test (geographic, whole-basin polygon)
+        mm_lgr_w
+        GRID/MM_geo
+$end
+
+$para
+        itanf = '2009-01-01'    itend = '2009-01-05'
+        idt = '300s'
+        idtout = '3h'
+
+        date = 20090101
+
+        ilin = 1
+        iwtype = 3     dragco = 2.5e-3
+        ireib = 5      czdef = 2.5e-3
+$end
+
+$lagrg
+        ilagr = 1
+        nbdymax = 5000
+        nbdy = 150
+        idtl = 0
+        idtlgr = '1h'
+        rwhpar = 0
+        lgrlin = 'INPUT/release_area_whole.txt'
+$end
+
+$name
+        wind = 'INPUT/wind_scir.txt'
+$end
