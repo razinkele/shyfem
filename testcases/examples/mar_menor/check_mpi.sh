@@ -112,7 +112,7 @@ else
   for mode in pos ids; do
     log="mm_lgr_w.$mode.gate.log"
     if bash check_lgr_mpi.sh mm_lgr_w "$NP" "$mode" > "$log" 2>&1; then
-      grep -E '^(floor|tt):|^LGR COMPARE' "$log" | sed "s/^/mm_lgr_w $mode: /"
+      grep -E '^(floor|tt):|^LGR COMPARE|^lgr inf: (energy|identical|lagrange)' "$log" | sed "s/^/mm_lgr_w $mode: /"
     else
       tail -25 "$log"; fail "mm_lgr_w: mode $mode of check_lgr_mpi.sh failed on $NP processes (log: $log)"
     fi

@@ -91,7 +91,10 @@
 # exact.
 # ids: lgr_compare.py --mode ids --same-counts --nel N --nlv L, with N and L
 # from the model header of the serial particle file (lgr_compare.py --dims:
-# the basin's element count and the number of layers).
+# the basin's element count and the number of layers).  For NP > 1 it also
+# runs lgr_inf_compare.py on the two info files: as many energy lines (same
+# times) and the same lagrange_nbdy value (the global particle count) at
+# every step; for mm_lgr (unseeded random walk) the count must be 145.
 #
 # handover: the particles of the two runs are paired by their key (the last
 # six columns of the dump); the statistic and the rule (a jump test against
@@ -640,6 +643,18 @@ case "$crc" in
   1) fail "$MODE comparison found differences (tool exit code 1)" ;;
   *) fail "$MODE comparison could not be made (tool exit code $crc: unreadable or incomplete input, for example an MPI particle file without output times)" ;;
 esac
+
+# ids: also the info file (only rank 0 writes it, the global particle count)
+if [ "$MODE" = ids ] && [ "$NP" -gt 1 ]; then
+  INFARGS=""
+  [ "$CASE" = mm_lgr ] && INFARGS="--nbdy 145"
+  if [ -f "$HERE/$CASE.serial.inf" ] && [ -f "$HERE/$CASE.inf" ]; then
+    python3 "$HERE/lgr_inf_compare.py" "$HERE/$CASE.serial.inf" "$HERE/$CASE.inf" $INFARGS \
+      || fail "the info file of $NP processes differs from the serial one (lgr_inf_compare.py)"
+  else
+    fail "missing info file: serial $([ -f "$HERE/$CASE.serial.inf" ] && echo yes || echo NO), MPI $([ -f "$HERE/$CASE.inf" ] && echo yes || echo NO)"
+  fi
+fi
 
 if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi
 exit "$rc"

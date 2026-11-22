@@ -46,15 +46,18 @@ runs of D on 2 and 4 and E on 4 at `levdbg = 2` end with the check silent. The 4
 all shipped cases is in the section "Task 7.2" at the end: no case is worse than on 2026-11-21,
 and `mm_lgr` now ends on 4 processes.
 
-**Open finding, outside the criteria (for the owner).** The sweep shows that the `.inf` file of a
-particle run on several processes is wrong at its start: the particle module writes its
-`lagrange_nbdy:` line (`src/shyfem/lagrange_main.f90:566`, on main since the initial commit) on
-every process with that process's own count, and the first hours of the file are missing (case A:
-1,080 energy lines on 4 processes against 1,152 serially, none before 06:05; `lagrange_nbdy` 145 on
-every serial line, per-process values 0, 96, 122, ... on 2,233 lines of the 4-process file). It is
-the symptom of #220; the mechanism (every process opening the `.inf` through `getinfo`) is likely,
-not proven. No criterion reads the `.inf` of a multi-process run, and no Fortran was changed for
-it; the evidence and a draft issue are in the section "Task 7.2" and in `gates/t72/`.
+**Finding, outside the criteria, fixed in Task 7.3.** The sweep showed that the `.inf` file of a
+particle run on several processes was wrong at its start: the particle module wrote its
+`lagrange_nbdy:` line (`drogue` in `src/shyfem/lagrange_main.f90`, on main since the initial commit)
+on every process with that process's own count, and the first hours of the file were missing (case
+A: 1,080 energy lines on 4 processes against 1,152 serially, none before 06:05; `lagrange_nbdy` 145
+on every serial line, per-process values 0, 96, 122, ... on 2,233 lines of the 4-process file). It
+had the symptom of #220 and the mechanism (every process opening the `.inf` through `getinfo`) is
+confirmed by the fix: on several processes only rank 0 now calls `getinfo` and writes the line, with
+the global particle count. After the fix the `.inf` of every particle case on 4 processes has the
+serial number of energy lines at the same times and the serial `lagrange_nbdy` value at every step.
+The detail is in the section "Task 7.2" (the finding) and "Task 7.3" in its report; the check is
+`lgr_inf_compare.py`, run by `check_lgr_mpi.sh CASE NP ids`.
 
 ## AC1: side fluxes equal serial in every held element
 
@@ -1070,7 +1073,8 @@ fewer energy lines on 4 processes than serially: 1,080 against 1,152 for `mm_lgr
 `mm_lgr_e`, `mm_lgr_w` (the first 6 hours, 00:05 to 06:00, are missing) and 540 against 576 for
 `mm_lgr_b` and `mm_lgr_c` (the first 3 hours); the lines both files have agree to 2.0e-5 (B 7.2e-6,
 C 1.7e-5). The `lagrange_nbdy:` line, 145 on every one of the 1,153 lines of the serial `.inf` of
-case A, appears 2,233 times in the 4-process file with per-process values (0 on 1,097 lines, 96 on
+case A (1,152 time steps plus one call of `drogue` at the start time, before the first step, which
+has no energy line), appears 2,233 times in the 4-process file with per-process values (0 on 1,097 lines, 96 on
 147, 122 on 57, 55 on 33, 56 on 31, ...). It is written at `src/shyfem/lagrange_main.f90:566`
 (`write(iuinfo,*) 'lagrange_nbdy: ',nbdy`, the process's own count) on every process, with no
 master guard, and has been on main since the initial commit; on main a particle run on several
@@ -1078,9 +1082,24 @@ processes crashed before, so it never showed. Likely mechanism, not proven: `get
 (`src/shyfem/iostr.f90`) opens the `.inf` on every process that calls it, so the other processes
 write over the start of rank 0's file; the same symptom as #220 (the simple sediment module).
 It changes no criterion above (none reads the `.inf` of a multi-process run; the serial `.inf` is
-byte-identical to the reference, AC6) and no Fortran was changed for it in this task; the owner
-decides whether it is fixed before the merge. A draft issue text and the two `mm_lgr_a.inf` files
-are in `gates/t72/`.
+byte-identical to the reference, AC6) and no Fortran was changed for it in this task. A draft issue
+text and the two `mm_lgr_a.inf` files are in `gates/t72/`.
+
+**Fixed in Task 7.3** (`drogue`): on several processes only rank 0 calls `getinfo` and writes the
+`lagrange_nbdy:` line, and the value is the sum of the counts of all processes (one `MPI_Allreduce`
+per call, every process takes part); on one process the call and the line are unchanged, and the
+serial `.inf` files are still byte-identical (`SERIAL GUARD: PASS`). Nothing else in the particle
+module calls `getinfo` or writes to the info file. Before and after, on 4 processes (energy lines,
+`lagrange_nbdy` lines and values; serial: 1,152 or 576 energy lines, 1,153 or 577 count lines):
+
+| Case | Energy lines before | Energy lines after | `lagrange_nbdy` after |
+|---|---|---|---|
+| A (`mm_lgr_a`) | 1,080 (count lines 2,233, values 0, 96, 122, ...) | 1,152 | 1,153 lines, all 145 |
+| B (`mm_lgr_b`) | 540 | 576 | 577 lines, all 1003 |
+| C (`mm_lgr_c`) | 540 | 576 | 577 lines, all 648 |
+| D (`mm_lgr`) | 1,080 | 1,152 | 1,153 lines, all 145 |
+| E (`mm_lgr_e`) | 1,080 | 1,152 | 1,153 lines, all 145 |
+| W (`mm_lgr_w`) | 1,080 | 1,152 | 1,153 lines, all 80 |
 
 | Build | Case | Serial then | Serial now | 4 processes then | 4 processes now | Energy lines now, serial vs 4 | Verdict |
 |---|---|---|---|---|---|---|---|
@@ -1167,7 +1186,7 @@ are in `gates/t72/`.
 
 ### Follow-up issues (spec section 9, and those found during the work)
 
-States as of 2026-11-22 (`gh issue view`); every issue named here is open unless stated.
+States as of 2026-11-22 (`gh issue view`); every issue in the table is open unless stated (#218, named below the table, is fixed on main in PR #219).
 
 | Issue | What | Where it stands after this work |
 |---|---|---|

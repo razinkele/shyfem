@@ -517,12 +517,16 @@
 	subroutine drogue(dtime)
 
 	use mod_lagrange
+	use shympi, only : my_id, shympi_is_parallel
 
 	implicit none
+
+	include 'mpif.h'
 
 	double precision dtime	
 	integer nf,i,it,nuse
 	integer chunk
+	integer nbdyg,ierr
 	real dt
 
 	integer ndim
@@ -534,8 +538,16 @@
         double precision tempo
         double precision openmp_get_wtime
 
+! on several processes only rank 0 opens and writes the info file (every
+! other process would open NAME.inf again with status new), and it writes
+! the global number of particles
+
         if( iuinfo .eq. 0 ) then
-          call getinfo(iuinfo)  !unit number of info file
+          if( .not. shympi_is_parallel() ) then
+            call getinfo(iuinfo)  !unit number of info file
+          else if( my_id .eq. 0 ) then
+            call getinfo(iuinfo)  !unit number of info file
+          end if
         end if
 
         nf = 0
@@ -563,7 +575,17 @@
 !	write(lunit,*) 'lagrangian: (tot,out,in) ',nbdy,nf,nbdy-nf
 !	write(lunit,'(a,i10,12i5)') 'parallel: ',nbdy,(ic(ii),ii=0,n-1)
 
-	write(iuinfo,*) 'lagrange_nbdy: ',nbdy
+	if( .not. shympi_is_parallel() ) then
+	  write(iuinfo,*) 'lagrange_nbdy: ',nbdy
+	else
+	  call MPI_Allreduce(nbdy,nbdyg,1,MPI_INTEGER,MPI_SUM,		&
+     &			MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('drogue: MPI_Allreduce')
+	  if( my_id .eq. 0 ) then
+	    write(iuinfo,*) 'lagrange_nbdy: ',nbdyg
+	  end if
+	end if
 	!write(6,*) 'lagrange_nbdy: ',nbdy
 
 	end
