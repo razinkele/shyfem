@@ -50,6 +50,19 @@
 # of checks run (the "open N/M" field of the summary) must be above 0, and
 # for an MPI run on more than one process the cut-off count likewise.
 #
+# Re-location self-checks (Task 3.5): every mode that runs at levdbg = 3 also
+# requires, of a run on one process (the serial run, and the second run if NP
+# is 1), the line "lgr relocation self-check: compared N, differing D, clear
+# hits in a second element C, points in two or more elements M, key order
+# walks W, wrong K" with D = 0 and C = 0 (the search key against
+# find_elem_from_old, and the premise of the margin); of a run on several
+# processes (the MPI run, both runs in perturb), the line "lgr relocation by
+# position: parked N (...), stayed S, kept for lack of a layer L, went to
+# another process G, nobody answered A, hit within the margin and nobody
+# answered Z, key order walks W, wrong K" with Z = 0 and S + L + G + A = N.
+# In both lines W must be above 0 and K = 0 (the key against the walk of
+# find_elem_from_old, lgr_mpi_selftest_key).  A missing line fails too.
+#
 # perturb: the dumps of the second run go to CASE.npN.perturb.dbg/ and its log
 # is CASE.npN.perturb.log.  A PASS is weak evidence: the perturbation only
 # shows a dependence on memory that malloc hands out, and case A on 4
@@ -193,6 +206,58 @@ selftest_check() {
   fi
 }
 
+# relocation_check LOG NPROC: the re-location self-checks of a levdbg = 3 run
+# (see header)
+relocation_check() {
+  local log="$1" np="$2" line n d c s l g a z
+  line="$(grep 'lgr relocation classes:' "$log" | tail -1)"
+  [ -n "$line" ] && echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+  if [ "$np" -le 1 ]; then
+    line="$(grep 'lgr relocation self-check:' "$log" | tail -1)"
+    if [ -z "$line" ]; then
+      fail "no line 'lgr relocation self-check' in $log"; return
+    fi
+    echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+    n="$(echo "$line" | sed -n 's/.*compared \([0-9][0-9]*\),.*/\1/p')"
+    d="$(echo "$line" | sed -n 's/.*differing \([0-9][0-9]*\),.*/\1/p')"
+    c="$(echo "$line" | sed -n 's/.*clear hits in a second element \([0-9][0-9]*\).*/\1/p')"
+    if [ -z "$n" ] || [ -z "$d" ] || [ -z "$c" ]; then
+      fail "cannot read the relocation self-check line of $log"; return
+    fi
+    [ "$d" -eq 0 ] || fail "relocation self-check: $d of $n searches differ from the search key in $log"
+    [ "$c" -eq 0 ] || fail "relocation self-check: $c clear hits lie in a second element in $log"
+    key_check "$line" "$log"
+  else
+    line="$(grep 'lgr relocation by position:' "$log" | tail -1)"
+    if [ -z "$line" ]; then
+      fail "no line 'lgr relocation by position' in $log"; return
+    fi
+    echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+    n="$(echo "$line" | sed -n 's/.*position: parked \([0-9][0-9]*\) .*/\1/p')"
+    s="$(echo "$line" | sed -n 's/.*, stayed \([0-9][0-9]*\),.*/\1/p')"
+    l="$(echo "$line" | sed -n 's/.*kept for lack of a layer \([0-9][0-9]*\),.*/\1/p')"
+    g="$(echo "$line" | sed -n 's/.*went to another process \([0-9][0-9]*\),.*/\1/p')"
+    a="$(echo "$line" | sed -n 's/.*, nobody answered \([0-9][0-9]*\),.*/\1/p')"
+    z="$(echo "$line" | sed -n 's/.*hit within the margin and nobody answered \([0-9][0-9]*\).*/\1/p')"
+    if [ -z "$n" ] || [ -z "$s" ] || [ -z "$l" ] || [ -z "$g" ] || [ -z "$a" ] || [ -z "$z" ]; then
+      fail "cannot read the relocation by position line of $log"; return
+    fi
+    [ "$z" -eq 0 ] || fail "relocation by position: $z particles parked with a local hit and no owner answered in $log"
+    [ $((s + l + g + a)) -eq "$n" ] || fail "relocation by position: outcomes $s + $l + $g + $a do not add up to the $n parked in $log"
+    key_check "$line" "$log"
+  fi
+}
+
+# key_check LINE LOG: the "key order walks W, wrong K" part of a line
+key_check() {
+  local w k
+  w="$(echo "$1" | sed -n 's/.*key order walks \([0-9][0-9]*\), wrong [0-9][0-9]*.*/\1/p')"
+  k="$(echo "$1" | sed -n 's/.*key order walks [0-9][0-9]*, wrong \([0-9][0-9]*\).*/\1/p')"
+  if [ -z "$w" ] || [ -z "$k" ]; then fail "no key order count in the relocation line of $2"; return; fi
+  [ "$w" -gt 0 ] || fail "key order self-test ran no walk in $2"
+  [ "$k" -eq 0 ] || fail "key order self-test: $k of $w walks wrong in $2"
+}
+
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
   nlost() { grep -c 'loosing particle adv' "$1"; }
@@ -224,6 +289,7 @@ if [ "$MODE" = perturb ]; then
   collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  plain run ended"
   selftest_check "$HERE/$CASE.np$NP.log" "$NP"
+  relocation_check "$HERE/$CASE.np$NP.log" "$NP"
 
   echo "=== 2. $CASE on $NP processes, MALLOC_PERTURB_=85"
   seen="$(probe perturbed)"; probe_rc=$?
@@ -244,6 +310,7 @@ if [ "$MODE" = perturb ]; then
   collect_dbg "$CASE.np$NP.perturb.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  perturbed run ended"
   selftest_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
+  relocation_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
 
   echo "=== 3. compare the dump files byte for byte"
   D1="$HERE/$CASE.np$NP.dbg"; D2="$HERE/$CASE.np$NP.perturb.dbg"
@@ -283,7 +350,10 @@ for ext in lgr.shy hydro.shy inf; do
 done
 collect_dbg "$CASE.serial.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  serial run ended"
-[ "$DUMP" = 1 ] && selftest_check "$HERE/$CASE.serial.log" 1
+if [ "$DUMP" = 1 ]; then
+  selftest_check "$HERE/$CASE.serial.log" 1
+  relocation_check "$HERE/$CASE.serial.log" 1
+fi
 
 #--- 2. MPI run ------------------------------------------------------------------
 echo "=== 2. $CASE on $NP processes"
@@ -297,7 +367,10 @@ if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; the
 fi
 collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  MPI run ended"
-[ "$DUMP" = 1 ] && selftest_check "$HERE/$CASE.np$NP.log" "$NP"
+if [ "$DUMP" = 1 ]; then
+  selftest_check "$HERE/$CASE.np$NP.log" "$NP"
+  relocation_check "$HERE/$CASE.np$NP.log" "$NP"
+fi
 
 #--- 3. comparison ---------------------------------------------------------------
 echo "=== 3. compare ($MODE)"

@@ -30,6 +30,13 @@
 ! lgr_mpi_lookup_init		sorted global numbers, node to element lists
 ! lgr_mpi_mark_side		mark a particle stopped on a cut-off side
 ! lgr_mpi_grow_export		enlarge the lists of marks
+! lgr_mpi_search_key		place of an element in find_elem_from_old's search
+! lgr_mpi_selftest_key		self-test of the key against that search
+! lgr_mpi_clear_of_sides	point clear of an element's sides by the margin
+! lgr_mpi_locate		element search of the diffusion and Stokes steps
+! lgr_mpi_park			park a particle whose new element is undecided
+! lgr_mpi_grow_park		enlarge the list of parked particles
+! lgr_mpi_relocate_check	serial self-check of the search (levdbg >= 3)
 ! lgr_mpi_pack_particle		serialize the whole particle record to a double buffer
 ! lgr_mpi_unpack_particle	deserialize the whole particle record
 ! lgr_mpi_remove_particle	remove a particle from the array (last one moves up)
@@ -42,6 +49,9 @@
 ! lgr_mpi_handover		hand-over of the marked particles, in rounds
 ! lgr_mpi_handover_round	one round of the hand-over
 ! lgr_mpi_handover_stats	totals of the hand-over (levdbg >= 3)
+! lgr_mpi_resolve		resolution of the parked particles by position
+! lgr_mpi_relocate_step		parkings of a step (levdbg >= 3)
+! lgr_mpi_relocate_stats	counts of the element search (levdbg >= 3)
 ! lgr_mpi_gather_output		gather particles to rank 0 for output
 ! lgr_mpi_reduce_connect	reduce connectivity matrices
 ! lgr_mpi_gather_global		global array on rank 0 from the owned entries
@@ -97,6 +107,56 @@
 	integer, save :: lgr_nround_max = 0  !most rounds with a mark in a step
 	integer, save :: lgr_nputback = 0    !put back at a cut-off side for
 					     !lack of a layer (OMP atomic)
+
+	! hand-over by position (lgr_mpi_locate, lgr_mpi_park, lgr_mpi_resolve):
+	! the end of the horizontal diffusion step and of the Stokes drift step
+	! look for the element of the new point (find_elem_from_old). On
+	! several processes a process decides alone only if the point is in
+	! the old element or in a held element and clear of its three sides by
+	! the margin lgr_park_rel times the longest side of that element
+	! (lgr_mpi_clear_of_sides); every other point is parked and resolved
+	! by all processes together after the particle loop. Parked particles
+	! of this process: n_park, park_idx (slot), park_class (3 local hit
+	! within the margin, 4 failed local search); written only inside the
+	! critical section lgr_export or outside the parallel region
+	double precision, parameter :: lgr_park_rel = 2.d0**(-12)
+	integer, save :: n_park = 0
+	integer, save, allocatable :: park_idx(:)
+	integer, save, allocatable :: park_class(:)
+
+	! particles of this process that go to another process by position
+	! in a round (lgr_mpi_resolve, in slot order): slot, destination rank,
+	! global number of the element found
+	integer, save, allocatable :: pos_idx(:), pos_dest(:), pos_elem(:)
+
+	! behind the record of a particle handed over by position travel
+	! lgr_hand_extra values too (phase 1 or 2 in the last one):
+	!  1 global element found   2, 3 old x, y   4, 5 new x, y
+	!  6 crossings used in the step (lgr_ncross)   7 unused (0)   8 phase
+
+	! counts of the re-location of this process, at levdbg >= 3 (OMP
+	! atomic inside the particle loop): lgr_nreloc(1:4) by class (1 in the
+	! old element, 2 hit clear of the margin, 3 hit within the margin,
+	! 4 failed search); serial self-check (lgr_mpi_relocate_check):
+	! compared, differing, clear hits in a second element, points in two
+	! or more elements (where the order of the search decides);
+	! by position (lgr_mpi_resolve): parked per phase (1, 2) and per class
+	! (3, 4); outcomes: accepted on this process, kept for lack of a
+	! layer, sent, nobody answered, class 3 and nobody answered; offers
+	! outside the bounding box of the mesh; most parked in one step,
+	! rounds with a resolution, time spent in it
+	integer, save :: lgr_nreloc(4) = 0
+	integer, save :: lgr_nchk_comp = 0, lgr_nchk_diff = 0
+	integer, save :: lgr_nchk_clear2 = 0, lgr_nchk_multi = 0
+	integer, save :: lgr_nkey_walk = 0, lgr_nkey_wrong = 0 !key self-test
+	integer, save :: lgr_npark_ph(2) = 0, lgr_npark_cl(3:4) = 0
+	integer, save :: lgr_nres_stay = 0, lgr_nres_layer = 0
+	integer, save :: lgr_nres_sent = 0, lgr_nres_none = 0
+	integer, save :: lgr_nres_hitnone = 0, lgr_nres_outbox = 0
+	integer, save :: lgr_npark_step = 0, lgr_npark_step_max = 0
+	integer, save :: lgr_nreloc34_prev = 0
+	integer, save :: lgr_nres_round = 0
+	double precision, save :: lgr_tres = 0.d0
 
 	logical, save :: bmpi_lagr = .false.      !true if MPI active for lagrange
 
@@ -219,6 +279,7 @@
 
 	call lgr_mpi_selftest_pack		!only at levdbg >= 3
 	call lgr_mpi_selftest_side		!only at levdbg >= 3
+	call lgr_mpi_selftest_key		!only at levdbg >= 3
 
 	if( .not. bmpi_lagr ) return
 
@@ -232,9 +293,13 @@
      &		, stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_init: allocation')
+	allocate(park_idx(ndim), park_class(ndim), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_init: allocation')
 
 	n_export = 0
 	n_export_grow = 0
+	n_park = 0
 
 	end subroutine lgr_mpi_init
 
@@ -1640,6 +1705,438 @@
 
 !*******************************************************************
 
+	pure function lgr_mpi_search_key(ie, ieold, n)
+
+! the place of element ie in the search of find_elem_from_old
+! (src/utils/shyutil/find.f90) from element ieold in a mesh of n elements,
+! as one integer: 0 for ieold, which is tested first; then the search
+! tests in step k = 1 .. n-1 first ieold-k (downward walk) and then
+! ieold+k (upward walk), each walk wrapping around at 1 and at n. Element
+! ie is reached by the downward walk in step d = mod(ieold-ie,n) and by
+! the upward walk in step u = n-d, so its key is min(2*d-1, 2*u). The
+! element that search returns for a point is the one with the smallest
+! key among the elements that contain the point; distinct elements have
+! distinct keys. On several processes all numbers are global
+! (ip_int_elem, n = nel_global). ie, ieold in 1..n.
+
+	implicit none
+
+	integer :: lgr_mpi_search_key
+	integer, intent(in) :: ie		!element tested
+	integer, intent(in) :: ieold		!element the search starts from
+	integer, intent(in) :: n		!number of elements
+
+	integer :: id, iu
+
+	if( ie == ieold ) then
+	  lgr_mpi_search_key = 0
+	else
+	  id = modulo(ieold-ie,n)		!step of the downward walk
+	  iu = n - id				!step of the upward walk
+	  lgr_mpi_search_key = min(2*id-1,2*iu)
+	end if
+
+	end function lgr_mpi_search_key
+
+!*******************************************************************
+
+	subroutine lgr_mpi_selftest_key
+
+! self-test of lgr_mpi_search_key at levdbg >= 3 (called by lgr_mpi_init
+! on every process; prints nothing, the result goes into the lines of
+! lgr_mpi_relocate_stats): for every mesh size n = 1 .. 30 and every
+! start element, and for n = nel_global with five start elements, the
+! walk of find_elem_from_old (find.f90) is repeated statement for
+! statement (downward and upward counters, wrap-around, loop test) and
+! the order in which it first reaches the elements is compared with the
+! order of their keys: the start element must have key 0, every other
+! element must be reached, and the keys must increase along the walk.
+! Counts the walks (lgr_nkey_walk) and those with an error
+! (lgr_nkey_wrong). The test meshes never have a point in two elements
+! (lgr_mpi_relocate_check counts them), so the order of the key is tested
+! here and not by the runs.
+
+	use shympi, only : nel_global
+
+	implicit none
+
+	integer :: n, nn, ieold, j, ierr
+	integer :: istart(5)
+	integer, allocatable :: ifirst(:), ibyrank(:)
+
+	lgr_nkey_walk = 0
+	lgr_nkey_wrong = 0
+	if( .not. blgr_dbg ) return
+
+	nn = max(30,nel_global)
+	allocate(ifirst(nn), ibyrank(0:2*nn), stat=ierr)	!2 visits a step
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_selftest_key: allocation')
+
+	do n = 1, 30
+	  do ieold = 1, n
+	    call one_walk(n,ieold)
+	  end do
+	end do
+
+	n = nel_global
+	istart = (/ 1, 2, max(1,n/2), max(1,n-1), n /)
+	do j = 1, 5
+	  call one_walk(n,istart(j))
+	end do
+
+	deallocate(ifirst,ibyrank)
+
+	contains
+
+	  subroutine one_walk(n,ieold)
+
+	  integer, intent(in) :: n, ieold
+
+	  integer :: iem, iep, irank, ie, kprev, k, jj
+	  logical :: bbad
+
+	  ifirst(1:n) = 0
+	  irank = 0
+	  ifirst(ieold) = -1			!the start: tested first
+	  iem = ieold-1				!the walk of find_elem_from_old
+	  if( iem .lt. 1 ) iem = n
+	  iep = ieold+1
+	  if( iep .gt. n ) iep = 1
+	  do while( iem .ne. ieold .and. iep .ne. ieold )
+	    irank = irank + 1
+	    if( ifirst(iem) == 0 ) ifirst(iem) = irank
+	    iem = iem - 1
+	    if( iem .lt. 1 ) iem = n
+	    irank = irank + 1
+	    if( ifirst(iep) == 0 ) ifirst(iep) = irank
+	    iep = iep + 1
+	    if( iep .gt. n ) iep = 1
+	  end do
+
+	  bbad = ( lgr_mpi_search_key(ieold,ieold,n) /= 0 )
+	  ibyrank(0:irank) = 0
+	  do ie = 1, n
+	    if( ie == ieold ) cycle
+	    if( ifirst(ie) <= 0 ) then		!never reached
+	      bbad = .true.
+	    else
+	      ibyrank(ifirst(ie)) = ie
+	    end if
+	  end do
+	  kprev = 0
+	  do jj = 1, irank
+	    ie = ibyrank(jj)
+	    if( ie == 0 ) cycle			!a second visit
+	    k = lgr_mpi_search_key(ie,ieold,n)
+	    if( k <= kprev ) bbad = .true.
+	    kprev = k
+	  end do
+
+	  lgr_nkey_walk = lgr_nkey_walk + 1
+	  if( bbad ) lgr_nkey_wrong = lgr_nkey_wrong + 1
+
+	  end subroutine one_walk
+
+	end subroutine lgr_mpi_selftest_key
+
+!*******************************************************************
+
+	function lgr_mpi_clear_of_sides(ie, xp, yp)
+
+! true if the point (xp,yp) lies in local element ie at a distance of at
+! least lgr_park_rel (2**-12) times the longest side of ie from each of
+! its three sides; the distances are computed in double precision from
+! the single precision coordinates (their rounding, about 1e-16 of the
+! coordinates, is far below the margin). Decides only whether a process
+! may accept a local hit alone (lgr_mpi_locate), never which element a
+! point is in.
+!
+! Why the margin is safe on both sides. in_element (find.f90) is a test
+! of the bounding box and then intri (regular.f90), which subtracts the
+! coordinates in single precision and forms the products of a side in
+! double precision. Its rounding in the distance of a point p from a side
+! of an element B is at most about 2.9 u |p - v| (u = 2**-24, v the
+! first vertex of the side), so at most about 4 u diam(B) for a point in
+! the bounding box of B (no other point reaches intri). (In the test
+! meshes the two coordinates of every subtraction are within a factor
+! of two of each other, so the subtractions are exact by Sterbenz's
+! lemma, the products exact in double precision, and intri decides
+! exactly.) A point clear of the sides of ie by m has a disc of radius m
+! around it inside ie; no other element B overlaps ie, so the point lies
+! outside B by at least m, and beyond one side line of B by at least
+! m sin(a/2), a the smallest angle of B. Then intri of B answers
+! "outside" if m sin(a/2) > 4 u diam(B): with m = 2**-12 L, L the
+! longest side of ie, if diam(B) < 2**10 sin(a/2) L, for example 89 L at
+! a = 10 degrees. On the other side m is about 2.4e-4 L, far below the
+! size of an element: a fraction of about 2 m / r of the points of an
+! element lies within m of a side (r its inscribed radius; 1.7e-3 for an
+! equilateral triangle). In a serial run at levdbg >= 3
+! lgr_mpi_relocate_check counts the clear hits for which a second element
+! contains the point too (must be 0).
+
+	use basin, only : nen3v, xgv, ygv
+
+	implicit none
+
+	logical :: lgr_mpi_clear_of_sides
+	integer, intent(in) :: ie		!local element
+	real, intent(in) :: xp, yp		!point
+
+	integer :: ii, i2
+	double precision :: xv(3), yv(3), hl(3), hmax, scal
+
+	lgr_mpi_clear_of_sides = .false.
+
+	do ii = 1, 3
+	  xv(ii) = xgv(nen3v(ii,ie))
+	  yv(ii) = ygv(nen3v(ii,ie))
+	end do
+	hmax = 0.d0
+	do ii = 1, 3
+	  i2 = mod(ii,3) + 1
+	  hl(ii) = sqrt( (xv(i2)-xv(ii))**2 + (yv(i2)-yv(ii))**2 )
+	  hmax = max(hmax,hl(ii))
+	end do
+
+	do ii = 1, 3
+	  i2 = mod(ii,3) + 1
+	  ! side ii -> i2 as in intri: scal/hl(ii) is the distance of the
+	  ! point from the side, positive on the inside
+	  scal = (xv(i2)-xv(ii))*(dble(yp)-yv(ii))				&
+     &		- (yv(i2)-yv(ii))*(dble(xp)-xv(ii))
+	  if( scal < lgr_park_rel*hmax*hl(ii) ) return
+	end do
+
+	lgr_mpi_clear_of_sides = ( hmax > 0.d0 )
+
+	end function lgr_mpi_clear_of_sides
+
+!*******************************************************************
+
+	subroutine lgr_mpi_locate(i,phase,ieold,xo,yo,xn,yn,ienew,bpark)
+
+! the element search at the end of the horizontal diffusion step (phase
+! 1, lag_diff_hor) or of the Stokes drift step (phase 2, lag_stk) on
+! several processes, for particle i in local element ieold, with the old
+! point (xo,yo) and the new point (xn,yn) of the step. The local search
+! is the serial one, find_elem_from_old, over the elements this process
+! holds. The process decides alone (bpark false, ienew the result) when
+! the point is in ieold (class 1: tested first, as in a serial run) or in
+! a held element and clear of its three sides by the margin (class 2,
+! lgr_mpi_clear_of_sides: no other element of the mesh contains the point
+! then, so a serial search returns that element). Otherwise, a hit
+! within the margin (class 3) or no held element containing the point
+! (class 4), the particle is parked (lgr_mpi_park): bpark is true and
+! ienew is 0 (not to be used). At levdbg >= 3 the classes are counted.
+! Called inside the parallel loop of drogue or outside any parallel
+! region.
+
+	implicit none
+
+	integer, intent(in) :: i		!particle (slot)
+	integer, intent(in) :: phase		!1 diffusion, 2 Stokes drift
+	integer, intent(in) :: ieold		!local element of the particle
+	real, intent(in) :: xo, yo		!old point
+	real, intent(in) :: xn, yn		!new point
+	integer, intent(out) :: ienew		!element found (if not parked)
+	logical, intent(out) :: bpark		!parked
+
+	integer :: iclass
+
+	if( ieold < 1 ) then
+	  write(6,*) 'lgr_mpi_locate: i,phase,ieold: ',i,phase,ieold
+	  call shympi_abort_internal('lgr_mpi_locate: no old element')
+	end if
+
+	call find_elem_from_old(ieold,xn,yn,ienew)
+
+	if( ienew == ieold ) then
+	  iclass = 1
+	else if( ienew > 0 ) then
+	  if( lgr_mpi_clear_of_sides(ienew,xn,yn) ) then
+	    iclass = 2
+	  else
+	    iclass = 3
+	  end if
+	else
+	  iclass = 4
+	end if
+
+	if( blgr_dbg ) then
+!$OMP ATOMIC
+	  lgr_nreloc(iclass) = lgr_nreloc(iclass) + 1
+	end if
+
+	bpark = ( iclass >= 3 )
+	if( bpark ) then
+	  ienew = 0
+	  call lgr_mpi_park(i,phase,iclass,xo,yo,xn,yn)
+	end if
+
+	end subroutine lgr_mpi_locate
+
+!*******************************************************************
+
+	subroutine lgr_mpi_park(i,phase,iclass,xo,yo,xn,yn)
+
+! parks particle i in the element search of phase 1 (horizontal
+! diffusion step) or 2 (Stokes drift step): both points of the move go
+! into its slot as they are (lgr_park_xy), the mark becomes 1 + phase
+! (lgr_marked: own slot), and the slot with the class (3 hit within the
+! margin, 4 failed local search) goes into the list of parked particles
+! (critical section lgr_export; grown when full). The caller stores the
+! particle's element, xi, depth, layer and type in lgr_ar(i) and skips
+! the rest of track_finish; lgr_mpi_handover resolves it by position
+! (lgr_mpi_resolve) and resumes it. Several processes only.
+
+	use shympi, only : my_id
+
+	implicit none
+
+	integer, intent(in) :: i		!particle (slot)
+	integer, intent(in) :: phase		!1 diffusion, 2 Stokes drift
+	integer, intent(in) :: iclass		!3 or 4
+	real, intent(in) :: xo, yo		!old point
+	real, intent(in) :: xn, yn		!new point
+
+	if( .not. bmpi_lagr .or. phase < 1 .or. phase > 2			&
+     &		.or. iclass < 3 .or. iclass > 4 ) then
+	  write(6,*) 'lgr_mpi_park: rank,i,phase,class: ',my_id,i,phase	&
+     &		,iclass
+	  call shympi_abort_internal('lgr_mpi_park: not a parking of a'	&
+     &		//' parallel run')
+	end if
+
+	lgr_park_xy(1,i) = xo
+	lgr_park_xy(2,i) = yo
+	lgr_park_xy(3,i) = xn
+	lgr_park_xy(4,i) = yn
+	lgr_park_ie(i) = 0
+	lgr_marked(i) = 1 + phase
+
+!$OMP CRITICAL (lgr_export)
+	if( n_park + 1 > size(park_idx) ) call lgr_mpi_grow_park
+	n_park = n_park + 1
+	park_idx(n_park) = i
+	park_class(n_park) = iclass
+!$OMP END CRITICAL (lgr_export)
+
+	end subroutine lgr_mpi_park
+
+!*******************************************************************
+
+	subroutine lgr_mpi_grow_park
+
+! doubles the size of the list of parked particles (new lists, copy of
+! the n_park entries in use, move_alloc); called inside the critical
+! section lgr_export of lgr_mpi_park
+
+	use shympi, only : my_id
+
+	implicit none
+
+	integer :: ierr, nnew
+	integer, allocatable :: iidx(:), icls(:)
+
+	nnew = 2*max(size(park_idx), 1)
+
+	allocate(iidx(nnew), icls(nnew), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_grow_park: allocation')
+
+	iidx(1:n_park) = park_idx(1:n_park)
+	icls(1:n_park) = park_class(1:n_park)
+	call move_alloc(iidx,park_idx)
+	call move_alloc(icls,park_class)
+
+	if( blgr_dbg ) write(6,*) 'lgr_mpi_grow_park: rank ',my_id,	&
+     &		' new size ',nnew
+
+	end subroutine lgr_mpi_grow_park
+
+!*******************************************************************
+
+	subroutine lgr_mpi_relocate_check(ieold,xn,yn,ienew)
+
+! self-check of the element search of the diffusion and Stokes steps in
+! a serial run at levdbg >= 3 (called by lag_diff_hor and lag_stk after
+! find_elem_from_old; changes nothing). It counts the class of the
+! re-location as lgr_mpi_locate would classify it (1 in the old element,
+! 2 a hit clear of the margin, 3 a hit within it, 4 no element). For
+! every re-location that leaves the old element (classes 2, 3, 4) it
+! finds by brute force over all elements the element with the smallest
+! search key (lgr_mpi_search_key) that contains the point, 0 if none, and
+! compares it with ienew, the element find_elem_from_old returned: a
+! difference is a defect of the key or of the search. For class 2 it
+! counts whether a second element contains the point too (the premise of
+! the margin, lgr_mpi_clear_of_sides), and for all of them whether two or
+! more elements contain the point (only there can a wrong key show: with
+! one element the brute force agrees with any order). In a serial run the local element
+! numbers are the global ones. Inside the parallel loop of drogue: the
+! counts are atomic.
+
+	use basin, only : nel
+
+	implicit none
+
+	integer, intent(in) :: ieold		!element before the step
+	real, intent(in) :: xn, yn		!new point
+	integer, intent(in) :: ienew		!result of find_elem_from_old
+
+	integer :: iclass, ie, k, kbest, iebest, nin
+	logical :: in_element
+
+	if( ienew == ieold ) then
+	  iclass = 1
+	else if( ienew > 0 ) then
+	  if( lgr_mpi_clear_of_sides(ienew,xn,yn) ) then
+	    iclass = 2
+	  else
+	    iclass = 3
+	  end if
+	else
+	  iclass = 4
+	end if
+
+!$OMP ATOMIC
+	lgr_nreloc(iclass) = lgr_nreloc(iclass) + 1
+
+	if( iclass == 1 ) return
+
+	kbest = huge(kbest)
+	iebest = 0
+	nin = 0
+	do ie = 1, nel
+	  if( in_element(ie,xn,yn) ) then
+	    nin = nin + 1
+	    k = lgr_mpi_search_key(ie,ieold,nel)
+	    if( k < kbest ) then
+	      kbest = k
+	      iebest = ie
+	    end if
+	  end if
+	end do
+
+!$OMP ATOMIC
+	lgr_nchk_comp = lgr_nchk_comp + 1
+	if( iebest /= ienew ) then
+!$OMP ATOMIC
+	  lgr_nchk_diff = lgr_nchk_diff + 1
+	end if
+	if( iclass == 2 .and. nin > 1 ) then
+!$OMP ATOMIC
+	  lgr_nchk_clear2 = lgr_nchk_clear2 + 1
+	end if
+	if( nin > 1 ) then
+!$OMP ATOMIC
+	  lgr_nchk_multi = lgr_nchk_multi + 1
+	end if
+
+	end subroutine lgr_mpi_relocate_check
+
+!*******************************************************************
+
 	subroutine lgr_mpi_pack_particle(p, buf)
 
 ! serialize the whole particle record into a double precision buffer
@@ -1760,10 +2257,10 @@
 	subroutine lgr_mpi_remove_particle(i)
 
 ! removes particle i from the particle array: the last entry (nbdy) is
-! moved into slot i with all its fields (also lgr_ncross and lgr_marked),
-! nbdy is reduced by one; the custom values of the vacated last slot are
-! freed (insert allocates them again). To remove several particles use
-! lgr_mpi_remove_list.
+! moved into slot i with all its fields (also lgr_ncross, lgr_marked,
+! lgr_park_xy and lgr_park_ie), nbdy is reduced by one; the custom values
+! of the vacated last slot are freed (insert allocates them again). To
+! remove several particles use lgr_mpi_remove_list.
 
 	implicit none
 
@@ -1778,11 +2275,15 @@
 	  lgr_ar(i) = lgr_ar(nbdy)
 	  lgr_ncross(i) = lgr_ncross(nbdy)
 	  lgr_marked(i) = lgr_marked(nbdy)
+	  lgr_park_xy(:,i) = lgr_park_xy(:,nbdy)
+	  lgr_park_ie(i) = lgr_park_ie(nbdy)
 	end if
 
 	if( allocated(lgr_ar(nbdy)%custom) ) deallocate(lgr_ar(nbdy)%custom)
 	lgr_ncross(nbdy) = 0
 	lgr_marked(nbdy) = 0
+	lgr_park_xy(:,nbdy) = 0.
+	lgr_park_ie(nbdy) = 0
 	nbdy = nbdy - 1
 
 	end subroutine lgr_mpi_remove_particle
@@ -1900,12 +2401,13 @@
 ! init%time, init%ie_global, three custom values) is packed and unpacked
 ! and every field is compared; then three particles are put behind the
 ! nbdy particles present, the first is removed, and the former last one
-! must sit in its slot with all fields and its lgr_ncross value, nbdy one
-! less. Then six particles are put behind the nbdy present, three of them
-! are marked (lgr_marked), the last one of the array among them, and
-! removed in one go with lgr_mpi_remove_list (list not sorted): exactly
-! the three unmarked ones must remain, each once, with all its fields, its
-! lgr_ncross value and no mark. Particle array, nbdy and ncust are
+! must sit in its slot with all fields and its lgr_ncross, lgr_park_ie and
+! lgr_park_xy values, nbdy one less. Then six particles are put behind the
+! nbdy present, three of them are marked (lgr_marked), the last one of the
+! array among them, and removed in one go with lgr_mpi_remove_list (list
+! not sorted): exactly the three unmarked ones must remain, each once,
+! with all its fields, its lgr_ncross, lgr_park_ie and lgr_park_xy values
+! and no mark. Particle array, the per-slot values, nbdy and ncust are
 ! restored. Rank 0 prints one line when all processes agree; otherwise
 ! every process aborts naming the first field that differs. Prints and
 ! changes nothing at levdbg < 3.
@@ -1938,10 +2440,10 @@
      &		'actual%ie (must be 0)   ',				&
      &		'init%ie                 ',				&
      &		'remove: particle moved  ',				&
-     &		'remove: lgr_ncross      ',				&
+     &		'remove: ncross, park    ',				&
      &		'remove: nbdy            ',				&
      &		'remove list: particles  ',				&
-     &		'remove list: ncross,mark',				&
+     &		'remove list: ncross etc.',				&
      &		'remove list: nbdy       ' /)
 
 	integer, parameter :: nlist = 6		!particles of the list test
@@ -1951,6 +2453,8 @@
 	type(lagr_entry) :: p, q
 	type(lagr_entry) :: psave(nlist), pnew(nlist)
 	integer :: isave(nlist), msave(nlist), nfound(nlist)
+	integer :: ksave(nlist)
+	real :: xysave(4,nlist)
 	integer :: imark(3)
 	logical :: bmarked
 
@@ -1991,9 +2495,13 @@
 	  do j = 1, 3
 	    psave(j) = lgr_ar(n0+j)
 	    isave(j) = lgr_ncross(n0+j)
+	    ksave(j) = lgr_park_ie(n0+j)
+	    xysave(:,j) = lgr_park_xy(:,n0+j)
 	    call lgr_mpi_selftest_fill(pnew(j),j)
 	    lgr_ar(n0+j) = pnew(j)
 	    lgr_ncross(n0+j) = 10*j
+	    lgr_park_ie(n0+j) = 100*j
+	    lgr_park_xy(:,n0+j) = (/ 1.5*j, 2.5*j, 3.5*j, 4.5*j /)
 	  end do
 	  nbdy = n0 + 3
 	  call lgr_mpi_remove_particle(n0+1)
@@ -2004,13 +2512,17 @@
 	  else if( lgr_ar(n0+1)%actual%ie /= pnew(3)%actual%ie		&
      &		.or. lgr_ar(n0+1)%init%ie /= pnew(3)%init%ie ) then
 	    ifield = 19
-	  else if( lgr_ncross(n0+1) /= 30 ) then
+	  else if( lgr_ncross(n0+1) /= 30 .or. lgr_park_ie(n0+1) /= 300 ) then
+	    ifield = 20
+	  else if( any( lgr_park_xy(:,n0+1) /= (/ 4.5, 7.5, 10.5, 13.5 /) ) ) then
 	    ifield = 20
 	  end if
 	  nbdy = n0
 	  do j = 1, 3
 	    lgr_ar(n0+j) = psave(j)
 	    lgr_ncross(n0+j) = isave(j)
+	    lgr_park_ie(n0+j) = ksave(j)
+	    lgr_park_xy(:,n0+j) = xysave(:,j)
 	  end do
 	end if
 
@@ -2028,10 +2540,14 @@
 	    psave(j) = lgr_ar(n0+j)
 	    isave(j) = lgr_ncross(n0+j)
 	    msave(j) = lgr_marked(n0+j)
+	    ksave(j) = lgr_park_ie(n0+j)
+	    xysave(:,j) = lgr_park_xy(:,n0+j)
 	    call lgr_mpi_selftest_fill(pnew(j),j)
 	    lgr_ar(n0+j) = pnew(j)
 	    lgr_ncross(n0+j) = 10*j
 	    lgr_marked(n0+j) = 0
+	    lgr_park_ie(n0+j) = 100*j
+	    lgr_park_xy(:,n0+j) = (/ 1.5*j, 2.5*j, 3.5*j, 4.5*j /)
 	  end do
 	  imark = (/ n0+3, n0+nlist, n0+1 /)
 	  do j = 1, 3
@@ -2058,6 +2574,11 @@
 	        ifield = 22
 	      else if( lgr_ncross(jj) /= 10*k .or. lgr_marked(jj) /= 0 ) then
 	        ifield = 23
+	      else if( lgr_park_ie(jj) /= 100*k ) then
+	        ifield = 23
+	      else if( any( lgr_park_xy(:,jj) /=				&
+     &		(/ 1.5*k, 2.5*k, 3.5*k, 4.5*k /) ) ) then
+	        ifield = 23
 	      end if
 	      if( ifield /= 0 ) exit
 	      nfound(k) = 1
@@ -2068,6 +2589,8 @@
 	    lgr_ar(n0+j) = psave(j)
 	    lgr_ncross(n0+j) = isave(j)
 	    lgr_marked(n0+j) = msave(j)
+	    lgr_park_ie(n0+j) = ksave(j)
+	    lgr_park_xy(:,n0+j) = xysave(:,j)
 	  end do
 	end if
 
@@ -3039,17 +3562,28 @@
 
 	subroutine lgr_mpi_handover(dtime)
 
-! hand-over of the particles marked at a cut-off side in this time step
-! (lgr_mpi_mark_side): they finish the step on the process across, with
-! the time and the crossings they have left. In rounds
-! (lgr_mpi_handover_round); every process takes part in every round, and
-! a round is made while the global number of marks is not zero (one
-! collective decision per round). A particle that arrives can reach
-! another cut-off side in the same step: it is marked again and goes in
-! the next round. Every hand-over uses one crossing of the particle's
-! budget for the step (100, n_left), so no particle is handed over more
-! than 100 times in a step and the rounds end; more rounds than that is
-! an internal error (the same on every process).
+! hand-over of the particles marked in this time step, in rounds
+! (lgr_mpi_handover_round): those marked at a cut-off side
+! (lgr_mpi_mark_side) finish the step on the process across, with the
+! time and the crossings they have left; those parked in the element
+! search of the diffusion or Stokes step (lgr_mpi_park) are resolved by
+! position and finish the step from where they were parked, in the
+! element a serial search finds, on a process that holds it. Every
+! process takes part in every round, and a round is made while the
+! global number of marks of either kind is not zero (one collective
+! decision per round on both counts). A particle marked in a round goes
+! in the next one: an arrival at a side can reach another cut-off side or
+! park in either step, a particle resumed from the diffusion step can
+! park in the Stokes step, one resumed from the Stokes step finishes.
+!
+! Bound: every hand-over at a side uses one crossing of the particle's
+! budget for the step (100, n_left), so a particle is handed over at a
+! side at most 100 times in a step; it parks at most twice (once in each
+! step, and a resumed particle does no more advection, so no side mark
+! follows a park). A round takes every marked particle one event
+! further, so after 102 rounds nothing is marked; a 103rd round is an
+! internal error, decided alike on every process (the counts are
+! global), and every process aborts.
 !
 ! called after drogue, outside any parallel region, on every process
 
@@ -3061,54 +3595,80 @@
 
 	double precision, intent(in) :: dtime
 
-	integer, parameter :: nround_cap = 101	!crossing budget, plus one
-	integer :: nglob, nround, ierr
+	integer, parameter :: nround_cap = 102	!100 crossings, 2 parks
+	integer :: nloc(2), nglob(2), nround, nround_side, ierr
 
 	if( n_threads <= 1 ) return
 
 	nround = 0
+	nround_side = 0
+	lgr_npark_step = 0
 	do
-	  call MPI_Allreduce(n_export,nglob,1,MPI_INTEGER,MPI_SUM		&
+	  nloc(1) = n_export
+	  nloc(2) = n_park
+	  call MPI_Allreduce(nloc,nglob,2,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_handover: MPI_Allreduce')
-	  if( nglob == 0 ) exit
+	  if( nglob(1) == 0 .and. nglob(2) == 0 ) exit
 	  nround = nround + 1
 	  if( nround > nround_cap ) call shympi_abort_internal		&
-     &		('lgr_mpi_handover: more rounds than crossings allowed')
-	  call lgr_mpi_handover_round(dtime)
+     &		('lgr_mpi_handover: more rounds than a step allows')
+	  if( nglob(1) > 0 ) nround_side = nround
+	  lgr_npark_step = lgr_npark_step + nglob(2)
+	  call lgr_mpi_handover_round(dtime,nglob(2) > 0)
 	end do
 
-	lgr_nround_max = max(lgr_nround_max,nround)
+	! a particle's k-th hand-over at a side is in round k (its side
+	! marks come before its parks): the last round with a side mark
+	lgr_nround_max = max(lgr_nround_max,nround_side)
+	lgr_npark_step_max = max(lgr_npark_step_max,lgr_npark_step)
 
 	end subroutine lgr_mpi_handover
 
 !*******************************************************************
 
-	subroutine lgr_mpi_handover_round(dtime)
+	subroutine lgr_mpi_handover_round(dtime,bres)
 
 ! one round of the hand-over (lgr_mpi_handover), on every process:
-! 1. the marks are sorted by particle slot (the threads fill the list in
-!    the order they arrive) and counted per destination; the counts are
-!    exchanged (MPI_Alltoall), so both sides know every message length
-! 2. each marked particle is packed, per destination in slot order: its
+! 0. if bres (some process has parked particles): the parked particles
+!    are resolved by position (lgr_mpi_resolve); those that stay on this
+!    process get their outcome in lgr_park_ie and the mark 4 or 5, those
+!    that go to another process are listed (pos_idx, pos_dest, pos_elem)
+! 1. the marks at sides are sorted by particle slot (the threads fill the
+!    list in the order they arrive) and merged with the position list (a
+!    slot is in at most one of the two); the particles to send are
+!    counted per destination; the counts are exchanged (MPI_Alltoall), so
+!    both sides know every message length
+! 2. each particle to send is packed, per destination in slot order: its
 !    record and the hand-over fields (layout at the top of the module):
-!    the element it is leaving, the end nodes of the side and its weights
-!    there, t_left, n_left, phase; the messages are sent and received,
-!    their lengths checked
-! 3. the sent particles are removed (lgr_mpi_remove_list), the list of
-!    marks is emptied
+!    at a side the element it is leaving, the end nodes of the side and
+!    its weights there, t_left, n_left, phase 0; by position the element
+!    found, both points of the parked move, the crossings used in the
+!    step and the phase of the parking (1 or 2); the messages are sent and
+!    received, their lengths checked
+! 3. the sent particles of both kinds are removed (one call of
+!    lgr_mpi_remove_list), the lists are emptied; a particle that stays
+!    may move to another slot, with its per-slot values and mark
 ! 4. the arrivals are appended in a fixed order (by sending process, then
-!    in the sender's order). Each is put into the local element across the
-!    side, the one that has both end nodes and is not the element left,
-!    with the weights at the two end nodes and zero at the third vertex:
-!    the values track_xi_next_element copies in a serial run. Then the
-!    layer adjustment that track_xi applies after a crossing
-!    (track_xi_adjust_layer), which the sender did not run
-! 5. each arrival goes on with track_advect, with the time and crossings
-!    that travelled (the start-of-step tests of track_single were applied
-!    where the step began) and, unless it is marked again, track_finish
-!    (phase 0) once. Marks made here go in the next round.
+!    in the sender's order). An arrival at a side is put into the local
+!    element across the side, the one that has both end nodes and is not
+!    the element left, with the weights at the two end nodes and zero at
+!    the third vertex: the values track_xi_next_element copies in a
+!    serial run. Then the layer adjustment that track_xi applies after a
+!    crossing (track_xi_adjust_layer), which the sender did not run. An
+!    arrival by position is put into the element found (this process is
+!    its main owner), with both points of its move, its crossing count
+!    and the mark 4 or 5 (resolved); nothing of its step is made again
+! 5. the particles resolved in this round are resumed: the slots 1..nbdy
+!    are scanned for the marks 4 and 5 (those that stayed, wherever step
+!    3 moved them, and the arrivals by position), and each is finished
+!    from where it was parked (track_finish with phase 1 or 2), in slot
+!    order. Then each arrival at a side goes on with track_advect, with
+!    the time and crossings that travelled (the start-of-step tests of
+!    track_single were applied where the step began) and, unless it is
+!    marked again, track_finish (phase 0) once. Marks made here (at a
+!    side, or a parking) go in the next round.
 !
 ! the record travels whole and unchanged: actual%time still holds the
 ! start of the step, as track_finish needs it
@@ -3121,6 +3681,7 @@
 	include 'mpif.h'
 
 	double precision, intent(in) :: dtime
+	logical, intent(in) :: bres		!resolve parked particles first
 
 	interface
 	  subroutine track_advect(i,t_left,n_left,dtime)
@@ -3146,15 +3707,17 @@
 	  end subroutine track_xi_adjust_layer
 	end interface
 
-	integer :: nproc, lrecp, lrec, nmark, j, jj, i, k, r, ie, iside
-	integer :: ia2, ia3, ip, ierr, nreq, nrecv, nget, nstot, nrtot
-	integer :: iega, kg1, kg2, kl1, kl2, ieb, nf, phase, lb
+	integer :: nproc, lrecp, lrec, nside, npos, nmark, j, jj, i, k, r
+	integer :: ie, iside, ia2, ia3, ip, ierr, nreq, nrecv, nget
+	integer :: nstot, nrtot, nside_in
+	integer :: iega, kg1, kg2, kl1, kl2, ieb, nf, phase, lb, iw
 	integer :: nsend(0:n_threads-1), nrcv(0:n_threads-1)
 	integer :: soff(0:n_threads), roff(0:n_threads)
 	integer :: ifill(0:n_threads-1)
 	integer :: ireq(2*n_threads)
 	integer :: istat(MPI_STATUS_SIZE,2*n_threads)
 	integer, allocatable :: key(:), iord(:), islot(:), inleft(:)
+	integer, allocatable :: ckind(:), cj(:), cdest(:)
 	real, allocatable :: rtleft(:)
 	double precision, allocatable :: sbuf(:), rbuf(:)
 	double precision :: w1, w2, zz
@@ -3163,19 +3726,35 @@
 	nproc = n_threads
 	lrecp = lgr_pack_base + ncust		!record of a particle
 	lrec = lrecp + lgr_hand_extra		!record and hand-over fields
-	nmark = n_export
 
 	!-----------------------------------------------
-	! 1. marks sorted by slot, counted per destination, counts exchanged
+	! 0. resolution by position
 	!-----------------------------------------------
 
-	allocate(key(max(nmark,1)), iord(max(nmark,1)), stat=ierr)
+	npos = 0
+	if( bres ) call lgr_mpi_resolve(npos)
+
+	!-----------------------------------------------
+	! 1. marks sorted by slot and merged, counted per destination,
+	!    counts exchanged
+	!-----------------------------------------------
+
+	nside = n_export
+	nmark = nside + npos
+
+	allocate(key(max(nmark,1)), iord(max(nmark,1))			&
+     &		, ckind(max(nmark,1)), cj(max(nmark,1)), cdest(max(nmark,1))	&
+     &		, stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_handover_round: allocation')
 
-	do j = 1, nmark
+	do j = 1, nside
 	  key(j) = export_idx(j)
 	  iord(j) = j
+	end do
+	do j = 1, npos
+	  key(nside+j) = pos_idx(j)
+	  iord(nside+j) = nside + j
 	end do
 	call lgr_mpi_sort_by_key(nmark,key,iord)
 	do j = 2, nmark
@@ -3185,10 +3764,22 @@
      &		('lgr_mpi_handover_round: slot marked twice')
 	  end if
 	end do
+	do jj = 1, nmark
+	  j = iord(jj)
+	  if( j <= nside ) then			!at a side
+	    ckind(jj) = 0
+	    cj(jj) = j
+	    cdest(jj) = export_dest(j)
+	  else					!by position
+	    ckind(jj) = 1
+	    cj(jj) = j - nside
+	    cdest(jj) = pos_dest(j-nside)
+	  end if
+	end do
 
 	nsend = 0
-	do j = 1, nmark
-	  r = export_dest(j)
+	do jj = 1, nmark
+	  r = cdest(jj)
 	  if( r < 0 .or. r >= nproc .or. r == my_id ) then
 	    write(6,*) 'lgr_mpi_handover_round: destination: ',r
 	    call shympi_abort_internal				&
@@ -3222,33 +3813,51 @@
 
 	ifill = 0
 	do jj = 1, nmark
-	  j = iord(jj)
-	  r = export_dest(j)
-	  i = export_idx(j)
-	  ie = export_elem(j)
-	  iside = export_side(j)
-	  if( lgr_ar(i)%actual%ie /= ie .or. lgr_marked(i) /= 1 		&
-     &		.or. lgr_ar(i)%actual%xi(iside) /= 0.d0 ) then
-	    write(6,*) 'lgr_mpi_handover_round: i,ie,iside,actual ie,'	&
-     &		//'mark,xi: ',i,ie,iside,lgr_ar(i)%actual%ie		&
-     &		,lgr_marked(i),lgr_ar(i)%actual%xi
-	    call shympi_abort_internal				&
-     &		('lgr_mpi_handover_round: marked particle changed')
-	  end if
+	  r = cdest(jj)
+	  i = key(jj)
+	  j = cj(jj)
 	  ip = lrec*(soff(r) + ifill(r))
 	  ifill(r) = ifill(r) + 1
-	  call lgr_mpi_pack_particle(lgr_ar(i),sbuf(ip+1:ip+lrecp))
-	  ia2 = mod(iside,3) + 1		!end nodes of side iside
-	  ia3 = mod(ia2,3) + 1
-	  ip = ip + lrecp
-	  sbuf(ip+1) = dble(ip_int_elem(ie))
-	  sbuf(ip+2) = dble(ip_int_node(nen3v(ia2,ie)))
-	  sbuf(ip+3) = dble(ip_int_node(nen3v(ia3,ie)))
-	  sbuf(ip+4) = lgr_ar(i)%actual%xi(ia2)
-	  sbuf(ip+5) = lgr_ar(i)%actual%xi(ia3)
-	  sbuf(ip+6) = dble(export_tleft(j))
-	  sbuf(ip+7) = dble(export_nleft(j))
-	  sbuf(ip+8) = 0.d0			!phase 0: advection goes on
+	  if( ckind(jj) == 0 ) then		!at a side
+	    ie = export_elem(j)
+	    iside = export_side(j)
+	    if( lgr_ar(i)%actual%ie /= ie .or. lgr_marked(i) /= 1 		&
+     &		.or. lgr_ar(i)%actual%xi(iside) /= 0.d0 ) then
+	      write(6,*) 'lgr_mpi_handover_round: i,ie,iside,actual ie,'	&
+     &		//'mark,xi: ',i,ie,iside,lgr_ar(i)%actual%ie		&
+     &		,lgr_marked(i),lgr_ar(i)%actual%xi
+	      call shympi_abort_internal				&
+     &		('lgr_mpi_handover_round: marked particle changed')
+	    end if
+	    call lgr_mpi_pack_particle(lgr_ar(i),sbuf(ip+1:ip+lrecp))
+	    ia2 = mod(iside,3) + 1		!end nodes of side iside
+	    ia3 = mod(ia2,3) + 1
+	    ip = ip + lrecp
+	    sbuf(ip+1) = dble(ip_int_elem(ie))
+	    sbuf(ip+2) = dble(ip_int_node(nen3v(ia2,ie)))
+	    sbuf(ip+3) = dble(ip_int_node(nen3v(ia3,ie)))
+	    sbuf(ip+4) = lgr_ar(i)%actual%xi(ia2)
+	    sbuf(ip+5) = lgr_ar(i)%actual%xi(ia3)
+	    sbuf(ip+6) = dble(export_tleft(j))
+	    sbuf(ip+7) = dble(export_nleft(j))
+	    sbuf(ip+8) = 0.d0			!phase 0: advection goes on
+	  else					!by position
+	    if( lgr_marked(i) /= 2 .and. lgr_marked(i) /= 3 ) then
+	      write(6,*) 'lgr_mpi_handover_round: i,mark: ',i,lgr_marked(i)
+	      call shympi_abort_internal				&
+     &		('lgr_mpi_handover_round: parked particle changed')
+	    end if
+	    phase = lgr_marked(i) - 1
+	    call lgr_mpi_pack_particle(lgr_ar(i),sbuf(ip+1:ip+lrecp))
+	    ip = ip + lrecp
+	    sbuf(ip+1) = dble(pos_elem(j))	!global element found
+	    do k = 1, 4			!old x, y, new x, y
+	      sbuf(ip+1+k) = dble(lgr_park_xy(k,i))
+	    end do
+	    sbuf(ip+6) = dble(lgr_ncross(i))
+	    sbuf(ip+7) = 0.d0
+	    sbuf(ip+8) = dble(phase)		!1 diffusion, 2 Stokes drift
+	  end if
 	end do
 
 	nreq = 0
@@ -3292,11 +3901,11 @@
      &		('lgr_mpi_handover_round: internal error (receives)')
 
 	!-----------------------------------------------
-	! 3. remove the sent particles, empty the list of marks
+	! 3. remove the sent particles, empty the lists
 	!-----------------------------------------------
 
-	call lgr_mpi_remove_list(nmark,key)	!key: the marked slots
-	lgr_nhand = lgr_nhand + nmark
+	call lgr_mpi_remove_list(nmark,key)	!key: the slots sent
+	lgr_nhand = lgr_nhand + nside
 	n_export = 0
 
 	!-----------------------------------------------
@@ -3312,24 +3921,45 @@
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_handover_round: allocation')
 
+	nside_in = 0
 	do j = 1, nrtot
 	  ip = lrec*(j-1)
 	  nbdy = nbdy + 1
 	  i = nbdy
 	  call lgr_mpi_unpack_particle(rbuf(ip+1:ip+lrecp),lgr_ar(i))
 	  ip = ip + lrecp
-	  iega = nint(rbuf(ip+1))
+	  phase = nint(rbuf(ip+8))
+
+	  if( phase == 1 .or. phase == 2 ) then	!by position
+	    iw = nint(rbuf(ip+1))
+	    ie = lgr_mpi_find_elem(iw)
+	    if( ie <= 0 ) then
+	      write(6,*) 'lgr_mpi_handover_round: rank ',my_id,' id '	&
+     &		,lgr_ar(i)%id,' element found ',iw,' not held'
+	      call shympi_abort_internal				&
+     &		('lgr_mpi_handover_round: element found not held')
+	    end if
+	    lgr_ar(i)%actual%ie = ie
+	    do k = 1, 4			!old x, y, new x, y
+	      lgr_park_xy(k,i) = real(rbuf(ip+1+k))
+	    end do
+	    lgr_ncross(i) = nint(rbuf(ip+6))
+	    lgr_park_ie(i) = ie
+	    lgr_marked(i) = 3 + phase		!resolved: resumed in step 5
+	    cycle
+	  else if( phase /= 0 ) then
+	    write(6,*) 'lgr_mpi_handover_round: phase ',phase
+	    call shympi_abort_internal('lgr_mpi_handover_round: phase')
+	  end if
+
+	  iega = nint(rbuf(ip+1))		!at a side
 	  kg1 = nint(rbuf(ip+2))
 	  kg2 = nint(rbuf(ip+3))
 	  w1 = rbuf(ip+4)
 	  w2 = rbuf(ip+5)
-	  rtleft(j) = real(rbuf(ip+6))
-	  inleft(j) = nint(rbuf(ip+7))
-	  phase = nint(rbuf(ip+8))
-	  if( phase /= 0 ) then
-	    write(6,*) 'lgr_mpi_handover_round: phase ',phase
-	    call shympi_abort_internal('lgr_mpi_handover_round: phase')
-	  end if
+	  nside_in = nside_in + 1
+	  rtleft(nside_in) = real(rbuf(ip+6))
+	  inleft(nside_in) = nint(rbuf(ip+7))
 
 	  ! local element across: both end nodes, not the element left
 	  kl1 = lgr_mpi_find_node(kg1)
@@ -3372,22 +4002,31 @@
 	  call track_xi_adjust_layer(lgr_ar(i)%id,0,ieb,lb,zz)
 	  lgr_ar(i)%actual%l = lb
 	  lgr_ar(i)%actual%z = real(zz)
-	  lgr_ncross(i) = 100 - inleft(j)	!crossings so far in the step
+	  lgr_ncross(i) = 100 - inleft(nside_in)	!crossings so far
 	  lgr_marked(i) = 0
-	  islot(j) = i
+	  islot(nside_in) = i
 	end do
 
 	!-----------------------------------------------
-	! 5. the arrivals go on: advection, then the rest of the step
+	! 5. the resolved particles finish their step from where they were
+	!    parked; the arrivals at a side go on: advection, then the rest
 	!-----------------------------------------------
 
-	do j = 1, nrtot
+	do i = 1, nbdy
+	  if( lgr_marked(i) == 4 .or. lgr_marked(i) == 5 ) then
+	    phase = lgr_marked(i) - 3
+	    lgr_marked(i) = 0
+	    call track_finish(i,phase,dtime)
+	  end if
+	end do
+
+	do j = 1, nside_in
 	  i = islot(j)
 	  call track_advect(i,rtleft(j),inleft(j),dtime)
 	  if( lgr_marked(i) == 0 ) call track_finish(i,0,dtime)
 	end do
 
-	deallocate(key,iord,sbuf,rbuf,islot,inleft,rtleft)
+	deallocate(key,iord,ckind,cj,cdest,sbuf,rbuf,islot,inleft,rtleft)
 
 	end subroutine lgr_mpi_handover_round
 
@@ -3440,6 +4079,450 @@
 	end if
 
 	end subroutine lgr_mpi_handover_stats
+
+!*******************************************************************
+
+	subroutine lgr_mpi_resolve(npos)
+
+! resolution by position of the parked particles (lgr_mpi_park), on every
+! process (collective, also with nothing parked on this process); called
+! by lgr_mpi_handover_round when some process has parked particles:
+! 1. the own list is sorted by slot (the threads fill it in the order
+!    they arrive); each parked particle offers its new point (x, y, the
+!    single precision values of its step), the global number of its old
+!    element (ip_int_elem), its layer and its phase; all offers go to all
+!    processes (MPI_Allgather of the counts, MPI_Allgatherv)
+! 2. every process tests every offered point against the elements it is
+!    the main owner of (id_elem(1,ie) == my_id: every element of the mesh
+!    on exactly one process), with in_element as a serial search does,
+!    and keeps the element with the smallest search key
+!    (lgr_mpi_search_key, global numbers, wrap-around at nel_global) and
+!    its number of layers. A point outside the bounding box of the owned
+!    elements is in none of them (in_element tests the box of an element
+!    first), so those are not tested.
+! 3. the smallest key over all processes and the process that has it
+!    (MPI_MINLOC on the keys), then that process's element and layer
+!    count (MPI_MAX over values only it sets): the element a serial
+!    search returns (find_elem_from_old, P1 of the plan); no key at all:
+!    no element of the mesh contains the point
+! 4. the asking process decides for each own parked particle, in slot
+!    order: nobody answered: it stays, lgr_park_ie = 0 (the fallback runs
+!    when it is resumed); in the diffusion step an element with fewer
+!    layers than the particle's layer: it stays unmoved, lgr_park_ie = -1
+!    (the layer test of lag_diff_hor_end, with the layer count of the
+!    answer); otherwise, if this process holds the element: it stays,
+!    lgr_park_ie = the local element; if not: it goes to the process that
+!    answered (pos_idx, pos_dest, pos_elem; npos of them, in slot order).
+!    Those that stay get the mark 4 or 5 (resolved), those that go keep
+!    2 or 3 until they are sent. The list of parked particles is emptied.
+! Each offer is decided by its own reductions, so the result does not
+! depend on the order of the offers. The counts of lgr_mpi_relocate_stats
+! are kept here.
+
+	use shympi
+	use basin, only : nel, nkn, nen3v, xgv, ygv
+	use levels, only : ilhv
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, intent(out) :: npos		!particles that go elsewhere
+
+	integer, parameter :: noff = 5		!values of an offer
+	integer :: knone			!no element: no key
+	integer :: nproc, nown, ntot, j, jj, i, ie, ii, k, kb, ieb, nlb
+	integer :: io, ierr, iclass, phase, lb, iw, iel, joff, r
+	integer :: ncnt(0:n_threads-1), idsp(0:n_threads-1)
+	integer :: ncntd(0:n_threads-1), idspd(0:n_threads-1)
+	integer, allocatable :: key(:), iord(:), kl(:,:), klg(:,:)
+	integer, allocatable :: ians(:,:), iansg(:,:)
+	double precision, allocatable :: obuf(:), abuf(:)
+	double precision :: t0
+	real :: xp, yp, gloc(2), gglob(2)
+	logical :: in_element
+	logical, save :: binit = .false.
+	logical, save :: bown = .false.		!this process owns an element
+	real, save :: bx(4)			!box of the owned elements
+	real, save :: gx(4)			!box of the mesh
+	! boxes: xmin, xmax, ymin, ymax
+
+	t0 = MPI_Wtime()
+	nproc = n_threads
+	knone = huge(knone)
+
+	!-----------------------------------------------
+	! boxes of the owned elements and of the mesh (once, collective)
+	!-----------------------------------------------
+
+	if( .not. binit ) then
+	  binit = .true.
+	  bx = (/ huge(1.), -huge(1.), huge(1.), -huge(1.) /)
+	  do ie = 1, nel
+	    if( id_elem(1,ie) /= my_id ) cycle
+	    bown = .true.
+	    do ii = 1, 3
+	      k = nen3v(ii,ie)
+	      bx(1) = min(bx(1),xgv(k))
+	      bx(2) = max(bx(2),xgv(k))
+	      bx(3) = min(bx(3),ygv(k))
+	      bx(4) = max(bx(4),ygv(k))
+	    end do
+	  end do
+	  gloc(1) = minval(xgv(1:nkn))
+	  gloc(2) = minval(ygv(1:nkn))
+	  call MPI_Allreduce(gloc,gglob,2,MPI_REAL,MPI_MIN		&
+     &			,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_resolve: MPI_Allreduce')
+	  gx(1) = gglob(1)
+	  gx(3) = gglob(2)
+	  gloc(1) = maxval(xgv(1:nkn))
+	  gloc(2) = maxval(ygv(1:nkn))
+	  call MPI_Allreduce(gloc,gglob,2,MPI_REAL,MPI_MAX		&
+     &			,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_resolve: MPI_Allreduce')
+	  gx(2) = gglob(1)
+	  gx(4) = gglob(2)
+	end if
+
+	!-----------------------------------------------
+	! 1. own offers in slot order, all offers to all processes
+	!-----------------------------------------------
+
+	nown = n_park
+
+	allocate(key(max(nown,1)), iord(max(nown,1))			&
+     &		, obuf(max(noff*nown,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_resolve: allocation')
+
+	do j = 1, nown
+	  key(j) = park_idx(j)
+	  iord(j) = j
+	end do
+	call lgr_mpi_sort_by_key(nown,key,iord)
+	do j = 2, nown
+	  if( key(j) == key(j-1) ) then
+	    write(6,*) 'lgr_mpi_resolve: slot parked twice: ',key(j)
+	    call shympi_abort_internal('lgr_mpi_resolve: slot parked twice')
+	  end if
+	end do
+
+	do jj = 1, nown
+	  i = key(jj)
+	  ie = lgr_ar(i)%actual%ie
+	  if( ie < 1 .or. ie > nel ) then
+	    write(6,*) 'lgr_mpi_resolve: rank,i,ie,mark: ',my_id,i,ie	&
+     &		,lgr_marked(i)
+	    call shympi_abort_internal('lgr_mpi_resolve: old element')
+	  end if
+	  if( lgr_marked(i) /= 2 .and. lgr_marked(i) /= 3 ) then
+	    write(6,*) 'lgr_mpi_resolve: rank,i,mark: ',my_id,i,lgr_marked(i)
+	    call shympi_abort_internal('lgr_mpi_resolve: not parked')
+	  end if
+	  obuf(noff*(jj-1)+1) = dble(lgr_park_xy(3,i))	!new x
+	  obuf(noff*(jj-1)+2) = dble(lgr_park_xy(4,i))	!new y
+	  obuf(noff*(jj-1)+3) = dble(ip_int_elem(ie))	!old element
+	  obuf(noff*(jj-1)+4) = dble(lgr_ar(i)%actual%l)	!layer
+	  obuf(noff*(jj-1)+5) = dble(lgr_marked(i)-1)		!phase
+	end do
+
+	call MPI_Allgather(nown,1,MPI_INTEGER,ncnt,1,MPI_INTEGER		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_resolve: MPI_Allgather')
+	idsp(0) = 0
+	do r = 1, nproc-1
+	  idsp(r) = idsp(r-1) + ncnt(r-1)
+	end do
+	ntot = idsp(nproc-1) + ncnt(nproc-1)
+	ncntd = noff*ncnt
+	idspd = noff*idsp
+
+	allocate(abuf(max(noff*ntot,1)), kl(2,max(ntot,1))		&
+     &		, klg(2,max(ntot,1)), ians(2,max(ntot,1))			&
+     &		, iansg(2,max(ntot,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_resolve: allocation')
+
+	call MPI_Allgatherv(obuf,noff*nown,MPI_DOUBLE_PRECISION		&
+     &		,abuf,ncntd,idspd,MPI_DOUBLE_PRECISION,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_resolve: MPI_Allgatherv')
+
+	!-----------------------------------------------
+	! 2. every offered point against the owned elements
+	!-----------------------------------------------
+
+	do j = 1, ntot
+	  xp = real(abuf(noff*(j-1)+1))
+	  yp = real(abuf(noff*(j-1)+2))
+	  io = nint(abuf(noff*(j-1)+3))
+	  kb = knone
+	  ieb = 0
+	  nlb = 0
+	  if( bown ) then
+	    if( xp >= bx(1) .and. xp <= bx(2) ) then
+	      if( yp >= bx(3) .and. yp <= bx(4) ) then
+	        do ie = 1, nel
+	          if( id_elem(1,ie) /= my_id ) cycle
+	          if( in_element(ie,xp,yp) ) then
+	            k = lgr_mpi_search_key(ip_int_elem(ie),io,nel_global)
+	            if( k < kb ) then
+	              kb = k
+	              ieb = ip_int_elem(ie)
+	              nlb = ilhv(ie)
+	            end if
+	          end if
+	        end do
+	      end if
+	    end if
+	  end if
+	  kl(1,j) = kb
+	  kl(2,j) = my_id
+	  ians(1,j) = ieb
+	  ians(2,j) = nlb
+	end do
+
+	!-----------------------------------------------
+	! 3. the smallest key, then its element and layer count
+	!-----------------------------------------------
+
+	if( ntot > 0 ) then
+	  call MPI_Allreduce(kl,klg,ntot,MPI_2INTEGER,MPI_MINLOC		&
+     &			,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_resolve: MPI_Allreduce')
+	  do j = 1, ntot
+	    if( klg(1,j) == knone .or. klg(2,j) /= my_id ) then
+	      ians(1,j) = 0
+	      ians(2,j) = 0
+	    end if
+	  end do
+	  call MPI_Allreduce(ians,iansg,2*ntot,MPI_INTEGER,MPI_MAX		&
+     &			,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_resolve: MPI_Allreduce')
+	end if
+
+	!-----------------------------------------------
+	! 4. decisions for the own parked particles, in slot order
+	!-----------------------------------------------
+
+	if( allocated(pos_idx) ) deallocate(pos_idx,pos_dest,pos_elem)
+	allocate(pos_idx(max(nown,1)), pos_dest(max(nown,1))		&
+     &		, pos_elem(max(nown,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_resolve: allocation')
+
+	npos = 0
+	do jj = 1, nown
+	  i = key(jj)
+	  iclass = park_class(iord(jj))
+	  joff = idsp(my_id) + jj
+	  phase = lgr_marked(i) - 1
+	  lb = lgr_ar(i)%actual%l
+	  lgr_npark_ph(phase) = lgr_npark_ph(phase) + 1
+	  lgr_npark_cl(iclass) = lgr_npark_cl(iclass) + 1
+	  xp = lgr_park_xy(3,i)
+	  yp = lgr_park_xy(4,i)
+	  if( xp < gx(1) .or. xp > gx(2) .or. yp < gx(3) .or. yp > gx(4) ) then
+	    lgr_nres_outbox = lgr_nres_outbox + 1
+	  end if
+	  if( klg(1,joff) == knone ) then	!no element contains the point
+	    lgr_park_ie(i) = 0
+	    lgr_marked(i) = lgr_marked(i) + 2
+	    lgr_nres_none = lgr_nres_none + 1
+	    if( iclass == 3 ) lgr_nres_hitnone = lgr_nres_hitnone + 1
+	    cycle
+	  end if
+	  iw = iansg(1,joff)
+	  if( iw < 1 .or. iw > nel_global ) then
+	    write(6,*) 'lgr_mpi_resolve: rank,i,element: ',my_id,i,iw
+	    call shympi_abort_internal('lgr_mpi_resolve: element found')
+	  end if
+	  if( phase == 1 .and. iansg(2,joff) < lb ) then  !lacks the layer
+	    lgr_park_ie(i) = -1
+	    lgr_marked(i) = lgr_marked(i) + 2
+	    lgr_nres_layer = lgr_nres_layer + 1
+	    cycle
+	  end if
+	  iel = lgr_mpi_find_elem(iw)
+	  if( iel > 0 ) then			!held here: stays
+	    lgr_park_ie(i) = iel
+	    lgr_marked(i) = lgr_marked(i) + 2
+	    lgr_nres_stay = lgr_nres_stay + 1
+	  else					!goes to the process that answered
+	    npos = npos + 1
+	    pos_idx(npos) = i
+	    pos_dest(npos) = klg(2,joff)
+	    pos_elem(npos) = iw
+	    lgr_nres_sent = lgr_nres_sent + 1
+	  end if
+	end do
+
+	n_park = 0
+	lgr_nres_round = lgr_nres_round + 1
+
+	deallocate(key,iord,obuf,abuf,kl,klg,ians,iansg)
+
+	lgr_tres = lgr_tres + (MPI_Wtime() - t0)
+
+	end subroutine lgr_mpi_resolve
+
+!*******************************************************************
+
+	subroutine lgr_mpi_relocate_step
+
+! at levdbg >= 3, after the hand-over of every particle step (called by
+! lagrange, serial too): in a serial run the re-locations of classes 3
+! and 4 (lgr_mpi_relocate_check) in this step, what one process of
+! several would park, and their largest number in one step so far. On
+! several processes lgr_mpi_handover keeps the largest number of
+! particles parked in one step itself (all processes, all rounds).
+
+	implicit none
+
+	integer :: n
+
+	if( .not. blgr_dbg .or. bmpi_lagr ) return
+
+	n = lgr_nreloc(3) + lgr_nreloc(4)
+	lgr_npark_step_max = max(lgr_npark_step_max,n-lgr_nreloc34_prev)
+	lgr_nreloc34_prev = n
+
+	end subroutine lgr_mpi_relocate_step
+
+!*******************************************************************
+
+	subroutine lgr_mpi_relocate_stats
+
+! at levdbg >= 3, once (the first call; every process makes the same
+! calls, so all take part in the same reductions): rank 0 writes the
+! counts of the element search at the end of the horizontal diffusion
+! step and of the Stokes drift step, summed over all processes:
+!  " lgr relocation classes: in the old element N1, hit clear of the
+!    margin N2, hit within the margin N3, failed search N4, most of
+!    classes 3 and 4 in one step M" (on several processes M is the most
+!    particles parked in one step, and the line goes on with
+!    ", resolution rounds R, resolution time T s, parked outside the
+!    mesh box O": T the largest over the processes, O the parked points
+!    outside the bounding box of the whole mesh)
+!  in a serial run: " lgr relocation self-check: compared N, differing
+!    D, clear hits in a second element C, points in two or more elements
+!    M, key order walks W, wrong K" (lgr_mpi_relocate_check; D and C
+!    must be 0; M says how many of the N tested the order of the key;
+!    W, K: lgr_mpi_selftest_key on rank 0, K must be 0)
+!  on several processes: " lgr relocation by position: parked N
+!    (diffusion Nd, Stokes Ns; hit within the margin Nh, failed search
+!    Nf), stayed S, kept for lack of a layer L, went to another process
+!    G, nobody answered A, hit within the margin and nobody answered Z,
+!    key order walks W, wrong K" (lgr_mpi_resolve; Z must be 0 and
+!    S + L + G + A = N; W, K as in the serial line, K must be 0)
+! check_lgr_mpi.sh reads the last two lines. A self-check never stops
+! the run. Called by lagrange after the step that reaches the end of the
+! particle run and at the first call after it.
+
+	use shympi, only : my_id, n_threads
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, parameter :: nv = 20
+	integer :: ival(nv), ivalg(nv), ierr
+	double precision :: tmax
+	character(len=600) :: line
+	character(len=12) :: tbuf
+	logical, save :: bdone = .false.
+
+	if( .not. blgr_dbg ) return
+	if( bdone ) return
+	bdone = .true.
+
+	ival(1:4) = lgr_nreloc(1:4)
+	ival(5) = lgr_nchk_comp
+	ival(6) = lgr_nchk_diff
+	ival(7) = lgr_nchk_clear2
+	ival(8:9) = lgr_npark_ph(1:2)
+	ival(10:11) = lgr_npark_cl(3:4)
+	ival(12) = lgr_nres_stay
+	ival(13) = lgr_nres_layer
+	ival(14) = lgr_nres_sent
+	ival(15) = lgr_nres_none
+	ival(16) = lgr_nres_hitnone
+	ival(17) = lgr_nres_outbox
+	ival(18) = lgr_nchk_multi
+	ival(19) = lgr_npark_step_max		!the same on every process
+	ival(20) = lgr_nres_round		!the same on every process
+	tmax = lgr_tres
+
+	if( n_threads > 1 ) then
+	  call MPI_Allreduce(ival,ivalg,18,MPI_INTEGER,MPI_SUM		&
+     &			,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_relocate_stats: MPI_Allreduce')
+	  ivalg(19:20) = ival(19:20)
+	  call MPI_Allreduce(lgr_tres,tmax,1,MPI_DOUBLE_PRECISION,MPI_MAX	&
+     &			,MPI_COMM_WORLD,ierr)
+	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_relocate_stats: MPI_Allreduce')
+	else
+	  ivalg = ival
+	end if
+
+	if( my_id /= 0 ) return
+
+	line = ' lgr relocation classes: in the old element '//itoa(ivalg(1))	&
+     &		//', hit clear of the margin '//itoa(ivalg(2))		&
+     &		//', hit within the margin '//itoa(ivalg(3))		&
+     &		//', failed search '//itoa(ivalg(4))			&
+     &		//', most of classes 3 and 4 in one step '//itoa(ivalg(19))
+	if( n_threads > 1 ) then
+	  write(tbuf,'(f12.3)') tmax
+	  write(6,'(a)') trim(line)//', resolution rounds '//itoa(ivalg(20))	&
+     &		//', resolution time '//trim(adjustl(tbuf))			&
+     &		//' s, parked outside the mesh box '//itoa(ivalg(17))
+	  write(6,'(a)') ' lgr relocation by position: parked '		&
+     &		//itoa(ivalg(8)+ivalg(9))					&
+     &		//' (diffusion '//itoa(ivalg(8))//', Stokes '//itoa(ivalg(9))	&
+     &		//'; hit within the margin '//itoa(ivalg(10))		&
+     &		//', failed search '//itoa(ivalg(11))//'), stayed '		&
+     &		//itoa(ivalg(12))//', kept for lack of a layer '		&
+     &		//itoa(ivalg(13))//', went to another process '		&
+     &		//itoa(ivalg(14))//', nobody answered '//itoa(ivalg(15))	&
+     &		//', hit within the margin and nobody answered '		&
+     &		//itoa(ivalg(16))//', key order walks '//itoa(lgr_nkey_walk)	&
+     &		//', wrong '//itoa(lgr_nkey_wrong)
+	else
+	  write(6,'(a)') trim(line)
+	  write(6,'(a)') ' lgr relocation self-check: compared '		&
+     &		//itoa(ivalg(5))//', differing '//itoa(ivalg(6))		&
+     &		//', clear hits in a second element '//itoa(ivalg(7))		&
+     &		//', points in two or more elements '//itoa(ivalg(18))	&
+     &		//', key order walks '//itoa(lgr_nkey_walk)			&
+     &		//', wrong '//itoa(lgr_nkey_wrong)
+	end if
+	flush(6)
+
+	contains
+
+	  function itoa(n) result(s)
+	  integer, intent(in) :: n
+	  character(len=:), allocatable :: s
+	  character(len=12) :: buf
+	  integer :: ierr
+	  write(buf,'(i0)') n
+	  !explicit allocation: the build has -fno-realloc-lhs
+	  allocate(character(len=len_trim(buf)) :: s, stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_relocate_stats: allocation')
+	  s = buf(1:len_trim(buf))
+	  end function itoa
+
+	end subroutine lgr_mpi_relocate_stats
 
 !*******************************************************************
 

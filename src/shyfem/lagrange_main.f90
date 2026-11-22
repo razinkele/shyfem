@@ -282,6 +282,7 @@
 
 	!totals of the hand-over, if no step ended exactly at dtlend (once)
 	if( bmpi_lagr .and. dtime > dtlend ) call lgr_mpi_handover_stats
+	if( dtime > dtlend ) call lgr_mpi_relocate_stats !once, levdbg >= 3
 
         if( dtime < dtlanf .or. dtime > dtlend ) return      
 
@@ -344,13 +345,17 @@
 
 !---------------------------------------------------------------
 ! hand-over of the particles that reached a cut-off side of the MPI
-! domain: they finish the time step on the process across
+! domain (they finish the time step on the process across) and of those
+! parked in the element search of the diffusion or Stokes step (resolved
+! by position, they finish the step where a serial search puts them)
 !---------------------------------------------------------------
 
 	if( bmpi_lagr ) then
 	  call lgr_mpi_handover(dtime)
 	  if( dtime >= dtlend ) call lgr_mpi_handover_stats !once, levdbg >= 3
 	end if
+	call lgr_mpi_relocate_step			!levdbg >= 3
+	if( dtime >= dtlend ) call lgr_mpi_relocate_stats	!once, levdbg >= 3
 
 !---------------------------------------------------------------
 ! sediment module
@@ -707,17 +712,27 @@
 ! the steps after advection: vertical and horizontal diffusion, Stokes
 ! drift, beaching, storing the state of the particle
 !
-! phase 0: all steps; 1: resumes after the horizontal diffusion step;
-! 2: resumes after the Stokes drift step
+! phase 0: all steps; 1: resumes a particle parked in the element search
+! of the horizontal diffusion step, after that search; 2: resumes a
+! particle parked in the element search of the Stokes drift step, after
+! that search (several processes only, called by lgr_mpi_handover_round
+! with the outcome of the resolution in lgr_park_ie(i))
 !
-! the state of the particle is taken from lgr_ar(i)
+! the state of the particle is taken from lgr_ar(i); a resumed particle
+! takes x, y from the old point of its parked move (lgr_park_xy(1:2,i):
+! the single precision values the step had, not rebuilt from xi)
+!
+! on several processes the element search of the diffusion or the Stokes
+! step can park the particle (lgr_mpi_locate, lgr_mpi_park: lgr_marked(i)
+! becomes 2 or 3): its element, xi, depth, layer and type are stored in
+! lgr_ar(i) and the rest of the step is skipped; actual%time and
+! actual%ie_global keep their values from the start of the step
 !
 ! the time of the step is computed from lgr_ar(i)%actual%time, which must
 ! still hold its value from the start of the step when this is called
 
 	use mod_lagrange
 	use shympi, only : ip_int_elem
-	use basin, only : iarv
 
 	implicit none
 
@@ -731,6 +746,7 @@
 	double precision xi(3)
 	integer ty
 	real dt,ttime,tmax
+	logical bpark
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -760,21 +776,31 @@
 	! lb is the layer after advection; the old test was on the layer before
 	! it, the same because the tracker never lowers lb below 1
 	if( lb > 0 .and. blgrxi ) then
-	  call xi2xy(abs(ie),xx,yy,xi)
-	  x  = xx
-	  y  = yy
-	  if( phase < 1 ) call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime)
-	  if( phase == 1 .and. ty >= 0 ) then	!as at the end of diff_body
-	    ! same flip as at the end of diff_body (lagrange_dif.f90): the
-	    ! horizontal diffusion step may have moved the particle into an
-	    ! arrival element
-	    if( .not. bback ) then
-	      if( ie > 0 ) then
-	        if( iarv(ie) == artype ) ie = -ie
-	      end if
-	    end if
+	  if( phase == 0 ) then
+	    call xi2xy(abs(ie),xx,yy,xi)
+	    x  = xx
+	    y  = yy
+	  else				!resumed: the old point of the parked move
+	    x  = lgr_park_xy(1,i)
+	    y  = lgr_park_xy(2,i)
 	  end if
-	  if( phase < 2 ) call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime)
+	  bpark = .false.
+	  if( phase < 2 ) then
+	    call diff_body(i,id,ty,x,y,z,xi,ie,lb,ttime,phase==1,bpark)
+	  end if
+	  if( .not. bpark ) then
+	    call lag_stk(i,id,ty,x,y,xi,ie,lb,ttime,phase==2,bpark)
+	  end if
+	  if( bpark ) then		!parked: lgr_mpi_handover finishes it
+	    lgr_ar(i)%actual%ie = ie
+	    do ii=1,3
+	      lgr_ar(i)%actual%xi(ii) = xi(ii)
+	    end do
+	    lgr_ar(i)%actual%z  = z
+	    lgr_ar(i)%actual%l  = lb
+	    lgr_ar(i)%type      = ty
+	    return
+	  end if
 	  call lag_beach(i,id,xi,ie,ty)
 	end if
 

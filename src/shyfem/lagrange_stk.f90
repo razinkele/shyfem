@@ -39,9 +39,23 @@
 !
 !************************************************************
 
-        subroutine lag_stk(i,id,ty,x,y,xi,iel,lb,time)
+        subroutine lag_stk(i,id,ty,x,y,xi,iel,lb,time,bresume,bpark)
+
+! the Stokes drift step of one particle: displacement by the wind, the
+! element search of the new point, and lag_stk_end. On several processes
+! the search is lgr_mpi_locate, which can park the particle (bpark true:
+! both points are stored in its slot, x, y, iel and xi are unchanged, the
+! caller stops); a serial run searches with find_elem_from_old as always
+! (at levdbg >= 3 lgr_mpi_relocate_check checks the result, changing
+! nothing). A parked particle is resumed with bresume true: nothing before
+! the search is made again (the entry tests passed, the displacement is
+! in the stored new point), lag_stk_end runs with the outcome of the
+! resolution (lgr_mpi_resolve): lgr_park_ie(i) > 0 the local element
+! found, 0 no element (the fallback runs on iel); x, y are the old point
 
         use mod_lagrange
+	use mod_lagrange_mpi, only : bmpi_lagr, blgr_dbg
+	use mod_lagrange_mpi, only : lgr_mpi_locate, lgr_mpi_relocate_check
         use basin
         use mod_meteo
 
@@ -56,6 +70,8 @@
         integer, intent(inout)  :: iel          !element number
         integer, intent(in)     :: lb   	!level
         real, intent(in)        :: time         !time to advect
+        logical, intent(in)     :: bresume      !resume a parked particle
+        logical, intent(out)    :: bpark        !parked in this call
 
         real                    :: ttime
         integer, save           :: icall = 0    !initialization parameter
@@ -63,7 +79,6 @@
         integer                 :: isphe
 	integer			:: k,ii
 	real			:: wx,wy
-        double precision        :: xx,yy
         real                    :: dx,dy
         real                    :: xnew,ynew
         integer                 :: ienew
@@ -74,11 +89,21 @@
 ! initialize
 !---------------------------------------------------------------
 
+	bpark = .false.
+
         if( icall == 0 ) then
           call get_coords_ev(isphe)
           bsphe = isphe .eq. 1
           icall = 1
         end if
+
+	if( bresume ) then		!parked: resumes after the search
+	  xnew = lgr_park_xy(3,i)
+	  ynew = lgr_park_xy(4,i)
+	  ienew = lgr_park_ie(i)
+	  call lag_stk_end(ienew,iel,x,y,xnew,ynew,xi)
+	  return
+	end if
 
 	if( lb > 1 .or. iel <= 0 .or. ty < 0) return !not in surface, out, or beached
 	if( stkpar <= 0. ) return !no wind drag
@@ -124,7 +149,42 @@
            ynew = yc
         end if
 
-        call find_elem_from_old(iel,xnew,ynew,ienew)
+	if( bmpi_lagr ) then
+	  call lgr_mpi_locate(i,2,iel,x,y,xnew,ynew,ienew,bpark)
+	  if( bpark ) return	!parked: resumed with bresume
+	else
+          call find_elem_from_old(iel,xnew,ynew,ienew)
+	  if( blgr_dbg ) call lgr_mpi_relocate_check(iel,xnew,ynew,ienew)
+	end if
+
+	call lag_stk_end(ienew,iel,x,y,xnew,ynew,xi)
+
+!---------------------------------------------------------------
+! end of routine
+!---------------------------------------------------------------
+
+        end subroutine lag_stk
+
+!**********************************************************************
+
+        subroutine lag_stk_end(ienew,iel,x,y,xnew,ynew,xi)
+
+! the end of the Stokes drift step after the element search of the new
+! point (xnew,ynew): ienew is the element found, 0 if none (then the
+! fallback particle_on_side runs on iel, the element before the step);
+! the particle takes the new point and element (no layer test in this
+! step) and its internal coordinates there. Called by lag_stk for a
+! particle that is not parked and for a parked one when it is resumed
+
+        implicit none
+
+        integer, intent(inout)  :: ienew        !element found, 0 none
+        integer, intent(inout)  :: iel          !element (new on return)
+        real, intent(inout)     :: x,y          !old point (new on return)
+        real, intent(inout)     :: xnew,ynew    !new point
+        double precision, intent(inout):: xi(3) !internal coordinates
+
+        double precision        :: xx,yy
 
         if (ienew == 0 ) then
            ienew = iel
@@ -145,11 +205,7 @@
         yy = y
         call xy2xi(abs(iel),xx,yy,xi)	!particle_on_side may set iel < 0
 
-!---------------------------------------------------------------
-! end of routine
-!---------------------------------------------------------------
-
-        end subroutine lag_stk
+        end subroutine lag_stk_end
 
 !**********************************************************************
 

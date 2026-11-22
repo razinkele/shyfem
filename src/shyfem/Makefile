@@ -741,7 +741,8 @@ lagrange_decay.o: ../../lib/mod/femtime.mod \
 lagrange_dif.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod
 lagrange_flux.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro.mod \
@@ -786,7 +787,8 @@ lagrange_sedim.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_sediment.mod 
 lagrange_stk.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/mod_meteo.mod 
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/mod_meteo.mod
 lagrange_track.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro_vel.mod \
