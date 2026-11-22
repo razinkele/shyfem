@@ -780,3 +780,15 @@ and E PASS (A 24 / 78, 4.34e-4; B 5 / 48, 36 m; C 0 / 19, 9.9e-6; no `tt` differ
 The driver's new paths: `LGR_LEVDBG=2 ./check_lgr_mpi.sh mm_lgr_a 4 ids` PASS with the check
 silent; with `LGR_TEST_DROP=2` as well the run aborts with exit 33 and the driver prints the
 check's particle-count lines and fails.
+
+## End of stage 6: the final gates
+
+**Measured** 2026-11-22 11:56 to 12:24 EET (from `date`) by the controller, on a clean build of
+`e750fba3`: everything of the stage-5 final gates (tool self-tests, serial guard against
+`wt-lgr-ref3` with case W, repro, MPI hydrodynamics, flux, hand-over check, positions in the dump
+against the floors, perturbed twins, release gate with ids on 6 and 10 processes, AC8, fault
+runs, plain runs) PASS, plus the particle file (ids exact, positions against the floors) for A,
+B, C, E and W on 2, 4 and 8 processes, case D's ids (AC4) on 2, 4 and 8, and case W's floor,
+hand-over check and release gate with ids on 2, 3, 4, 6 and 8: 94 gate runs PASS, none FAIL.
+Builds with `-fcheck=bounds` (19 runs) and `COMPILER_PROFILE=CHECK` (A, B, C, E, W serially and on
+4 processes) of `e750fba3` run without a runtime message or a trap.
