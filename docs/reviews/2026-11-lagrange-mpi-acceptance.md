@@ -230,3 +230,63 @@ perturb` passes for A, B and C (lost-particle lines plain / perturbed 6 / 6,
 605 / 605, 4 / 4); `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`
 prints `SERIAL GUARD: PASS` and `./check_lgr_serial.sh repro` prints
 `REPRO: PASS`.
+
+## Task 3.7: the fallback for a failed element search (#223), and the new serial reference
+
+**Measured** 2026-11-22 by the controller (times from `date`), on commit
+`0fddec90` built with OpenMPI (`libmpi.so.40`), and on the reference builds
+named below.
+
+**What changed.** `particle_on_side` (`src/shyfem/lagrange_util.f90`) uses
+the particle's own element instead of mesh nodes 1 to 3, changes nothing for
+a move of zero length, puts the particle where its move leaves the element,
+and lets it leave only through an open boundary it crosses outward. A side
+cut off by the partition is treated like a side with a neighbour. The plan's
+amendment after Task 3.7 has the full statement.
+
+**Evidence that ties the test cases back to `main`.** The serial guard of the
+final commit against the previous reference `/home/razinka/wt-lgr-ref2`
+(main plus the deterministic vertex pick, `84f07ac6`), 03:58 EET: the only
+file that differs is `mm_lgr_e.lgr.shy`, by this correction (`SERIAL GUARD:
+FAIL` by design); the closed basin (A), the open-boundary case (B) and the
+closed 3D basin (C) are byte-identical, and so are the hydrodynamic files of
+every case. Against the new reference `/home/razinka/wt-lgr-ref3` (`0fddec90`),
+04:01 EET: `SERIAL GUARD: PASS`. From here on the guard's reference is
+`wt-lgr-ref3`.
+
+**Serial effect on the Stokes-drift case E** (the ref2 binary against a
+build with the routine's final code, measured at 02:5x EET; E's particle file
+is byte-identical between `0bd9f268`, `b723c8e2` and `0fddec90` by the
+implementer's comparisons of the fix rounds; `lgr_compare.py --mode pos --tol
+1e-5`): 140 of its 145 particles are more than 1e-5 degrees from where the old routine put them at the end of the four-day run, the largest distance at any output is 1.17e-2 degrees (about 1 km), the first difference appears at the third output (3 h), and the counts are unchanged (145 in the basin, none left).
+
+**On 4 processes** (the implementer's runs at `0bd9f268`, whose executable
+code of the routine is the final one; the later commits change only the
+self-test and comments, `./check_lgr_mpi.sh CASE 4 part`): every case keeps
+the serial count at the end: A 145 / 145, B 408 / 408 with 595 / 595 lines of
+particles leaving through the open boundary, C 648 / 648, E 145 / 145;
+`perturb` passes for A, B, C and E (again at `b723c8e2` with the driver's new
+self-test requirements in force).
+
+**Built-in check.** At `levdbg >= 3` the side self-test writes one line with
+the checks it ran and skipped per side kind. In a build with
+`COMPILER_PROFILE=CHECK` (no optimisation, floating-point traps on), cases A
+and B run to the end serially and on 4 processes; on 4 processes case B runs
+24 checks at open sides and 28 at cut-off sides, none fails. A build with
+`-fcheck=bounds` runs the 19 serial and MPI runs of the bounds gate without a
+runtime message.
+
+**Position floors on the new reference** (`gates/floors.sh` in the plan's
+workspace: a serial run against six serial runs whose wind drag is changed by
+a relative +-1e-5, +-7e-6 and +-4e-6; the floor is the envelope of the six;
+compared with `lgr_dbg_compare.py part --by key`, limit 1e-5 degrees, case B
+2 m):
+
+| Case | Limit | Particles | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Floor: beyond / largest |
+|---|---|---|---|---|---|
+| A | 1e-5 degrees | 145 | 51 to 78 | 7.2e-4 to 2.97e-3 degrees | 78 / 2.97e-3 degrees |
+| B | 2 m | 408 | 13 to 48 | 59 to 182 m | 48 / 182 m |
+| C | 1e-5 degrees | 648 | 12 to 19 | 7.3e-5 to 7.1e-3 degrees | 19 / 7.1e-3 degrees |
+| E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.3e-3 degrees | 33 / 4.3e-3 degrees |
+
+Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on `/home/razinka/wt-lgr-ref3`, 28 runs, all ended; the gate script and its log are in the plan's workspace (`gates/floors.sh`, `gates/floors_ref3.log`).

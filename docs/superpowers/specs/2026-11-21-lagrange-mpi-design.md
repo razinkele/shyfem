@@ -470,6 +470,26 @@ Found with the hand-over at a cut-off side (2026-11-21):
   serial search would find, the element containing the point whose global number is nearest to
   the old element's, the lower one first at equal distance; not the lowest number.
 
+Found while correcting the fallback (Task 3.7, 2026-11-22):
+
+- **A side cut off by the partition is treated like a side with a neighbour** (controller's
+  ruling). The old fallback let a particle leave at any side with a negative table entry, and on
+  several processes a cut-off side has one; a particle whose step-end search failed at the edge
+  of a process's domain was stored as having left the basin. In a serial run that side has a
+  neighbour, and that branch is what runs there. Only a real open boundary lets a particle leave.
+- **Issue #223, second owner decision: the side selection is corrected too.** The same routine
+  moved a particle that did not move (a move of zero length got a side by coordinate ranges) and
+  returned the side a move starts on whatever the move did next. The fallback now puts the
+  particle where its move leaves its own element, changes nothing for a move of zero length, and
+  lets a particle leave only through an open boundary it actually crosses outward. Serial results
+  of the Stokes-drift and random-walk runs change; the closed-basin and open-boundary cases stay
+  byte-identical. The plan's amendment after Task 3.7 has the full statement, the measured effect,
+  the two rounding-scale behaviours left as they are, and the new reference build.
+- **The fallback's self-test reports instead of aborting.** It verifies the geometry of each of
+  its own moves, reports what it ran per side kind and prints a line for a failure; the MPI test
+  driver fails on a missing `ok`. Two review rounds found false failures of the test's own
+  construction on unusual meshes, and a valid run must not stop because of the test.
+
 ## 11. Left to the builder
 
 - The data structures of the flux exchange and of the hand-over, within the contracts above.

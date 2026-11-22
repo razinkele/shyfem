@@ -398,6 +398,41 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 - [ ] **Step 4:** On 4 processes: cases A, B, C conserve as before (`./check_lgr_mpi.sh CASE 4 part`, counts and lost-particle lines), `handover` and `perturb` pass; case E on 4 processes: report counts and the largest distance (before the fix: 145 / 145, 5.5e-3 degrees).
 - [ ] **Step 5:** Commit: `fix(lagrange): the fallback for a failed element search uses the particle's own element (#223)`. The controller then builds the new reference for the serial guard from this commit.
 
+> **Amended 2026-11-22, Task 3.7 as built (one controller ruling, a second owner decision, three fix rounds after review; the ledger has the evidence).**
+>
+> **Ruling R2: a side cut off by the partition is treated like a side with a neighbour.** The task's first text kept "the behaviour by side kind" of the old routine, which let a particle leave at any side with a negative table entry. On several processes a cut-off side has such an entry (`lgr_ieltv <= -1000`), so a particle whose step-end search failed at the edge of a process's domain was stored as having left the basin (case B on 4 processes lost one particle that way). In a serial run that side has a neighbour element, and the neighbour branch is what runs there: the particle stays on the side. Only a real open boundary (`-999 … -1`) lets a particle leave.
+>
+> **Owner decision (2026-11-22): the side selection is corrected too.** Correcting the corners brought two more defects of the same routine to light: a move of zero length (what the diffusion step passes when there is no random walk) got a side by coordinate ranges alone and was moved to a vertex, and a move that starts on a side returned that side whatever it did next. The owner decided that both are corrected with the corners, knowing that the serial results of the Stokes-drift and the random-walk cases change further.
+>
+> **What the fallback returns since this task** (the header comment of `particle_on_side` in `src/shyfem/lagrange_util.f90` is the full statement; this is its summary). The move from the old to the new point is clipped against the particle's own element in area coordinates, in double precision; a point within a rounding distance delta of a side's line (two spacings of single precision at the size of the coordinates: about 0.5 m in case B, 7.6e-6 degrees in the geographic cases) counts as lying on that side.
+> - A move of zero length changes nothing.
+> - The move leaves the element through a side: the point where it leaves is returned. At a wall, a neighbour or a cut-off side the particle stays there; at an open boundary it leaves.
+> - A move that starts on a side and enters the element does not cross that side. A move that starts on a side and goes straight out crosses it at its start: the old point is returned, and the side's kind applies.
+> - A move that leaves through a vertex: a side that keeps the particle wins over an open boundary; the particle leaves only if both sides are open boundaries.
+> - A move that runs along the side it starts on leaves where it reaches another side. If it ends beyond the side's line without reaching another side, the new point projected onto the side is returned; the particle leaves only if the side is an open boundary and the move goes outward (an exit is the one outcome that cannot be undone).
+> - An old point that lies outside the element by more than delta (not expected from the callers): if the move enters the element it is clipped as above; if it does not, the old point is returned and nothing is crossed.
+> - A point returned lies on the side it is put on within the rounding of single precision; at a vertex, where a move along one side is stopped by the other, it can lie up to about 1.2 delta beyond the line of the side the move runs along (measured: 1.21 delta in case B's coordinates, 1.18 delta in the geographic ones). The new point outside the element is never returned by the branch that keeps a particle in its element. One consequence, by reading: the Stokes step starts from that point; if it lies more than delta outside an open boundary and the Stokes drift pushes it outward, the particle is kept for that step (the move does not meet the element) and leaves in the next one, whose diffusion step starts from coordinates clipped onto the element.
+> - Two behaviours at rounding scale stay as they are and are documented in the header: a move that runs along a side inside the band and reaches another side at the side's end vertex is decided by that other side, not by the rule that a keeping side wins at a vertex (so at a wall/open corner the outcome for one end point can differ between a start in the band and a start further inside); and the point returned jumps at the edge of the band (a start in the band and an end more than delta beyond return the start point, an end just inside the band its projection). Both lie within a few delta of a vertex or a side and do not affect whether a run on several processes equals the serial run.
+>
+> A standing self-test (`lgr_mpi_selftest_side`, once at `levdbg >= 3`, serial and on several processes) asserts the returned point, the side's kind and the sign of the element for each of these on real elements of the mesh, for every side kind a process holds; since Task 3.7's second fix round it verifies the geometry of each of its own moves before it counts it, chooses per side kind the best-shaped element, reports the checks it ran and skipped per side kind in one line, and does not abort a run: a failure prints a line and the test drivers fail on it (`check_lgr_mpi.sh` requires `lgr side fallback self-test: ok`, open-side checks in case B and cut-off checks on several processes).
+>
+> **Serial effect, measured.** Cases A, B and C are byte-identical to the commit before the task. Case E (Stokes drift, 167,000 particle-steps, about 150,000 calls of the fallback) changes: 140 of its 145 particles are more than 1e-5 degrees from where the old routine put them at the end of the four-day run, the largest distance at any output is 1.17e-2 degrees (about 1 km), the first difference appears at the third output (3 h), and the counts are unchanged (145 in the basin, none left). Case D (random walk) changes. Particle counts are unchanged everywhere.
+>
+> **Reference build for the serial guard: `/home/razinka/wt-lgr-ref3`** (commit `0fddec90`, the head of this task). Every later task runs `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin` and expects every file identical. The chain back to main: at that commit the guard against the previous reference `/home/razinka/wt-lgr-ref2` (main plus the deterministic vertex pick) differs in exactly one file, `mm_lgr_e.lgr.shy`, by this task's correction; the 31 other comparisons are identical. Where a task above names `wt-lgr-ref2`, that was the reference when it ran.
+>
+> **Position floors, re-measured on the new reference** (`gates/floors.sh`: a serial run against six serial runs whose wind drag is changed by a relative +-1e-5, +-7e-6, +-4e-6; the floor is the envelope; comparison as in the MPI gates, limit 1e-5 degrees, case B 2 m):
+>
+> | Case | Limit | Particles | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Floor: beyond / largest |
+> |---|---|---|---|---|---|
+> | A | 1e-5 degrees | 145 | 51 to 78 | 7.2e-4 to 2.97e-3 degrees | 78 / 2.97e-3 degrees |
+> | B | 2 m | 408 | 13 to 48 | 59 to 182 m | 48 / 182 m |
+> | C | 1e-5 degrees | 648 | 12 to 19 | 7.3e-5 to 7.1e-3 degrees | 19 / 7.1e-3 degrees |
+> | E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.3e-3 degrees | 33 / 4.3e-3 degrees |
+>
+> Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on `/home/razinka/wt-lgr-ref3`, 28 runs, all ended; the gate script and its log are in the plan's workspace (`gates/floors.sh`, `gates/floors_ref3.log`).
+>
+> The numbers recorded before this task for cases D and E (and the floor of E, which was 0 because the old fallback pinned its particles) are superseded.
+
 ### Task 3.5: Hand-over by position
 
 **Files:**
@@ -484,7 +519,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 - [ ] **Step 1: Write the failing test.** `./check_lgr_mpi.sh mm_lgr_a 4 pos`. Expected today: FAIL (the MPI file has all particles in the exited block or the run crashes, spec M1).
 - [ ] **Step 2:** Implement.
 - [ ] **Step 3:** Run `./check_lgr_mpi.sh CASE NP pos` for cases A, B, C and NP 2, 4. Expected: `LGR GATE: PASS` (AC2 exact ids per block, AC3 positions).
-- [ ] **Step 4:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin`. Expected: PASS, including `mpirun -np 1` (AC7).
+- [ ] **Step 4:** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`. Expected: PASS, including `mpirun -np 1` (AC7).
 - [ ] **Step 5:** AC8: `lgrelab -lgmean` on the serial and the 4-rank file of case A; the two text outputs agree within 1e-5. Run `lgrelab` in the file's folder with a relative name (it truncates long paths).
 - [ ] **Step 6:** Commit: `feat(lagrange): particle output from all ranks in the serial layout (#217)`.
 
@@ -558,7 +593,7 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 
 ## Stage PR checklist (every stage)
 
-- [ ] `./check_lgr_serial.sh /home/razinka/wt-lgr-ref2/bin` prints `SERIAL GUARD: PASS`.
+- [ ] `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin` prints `SERIAL GUARD: PASS`.
 - [ ] `testcases/examples/mar_menor/check_mpi.sh 4` prints `MPI GATE: PASS`.
 - [ ] The stage's own gate commands and their output are pasted in the PR.
 - [ ] `fortran-reviewer` agent run on the diff; findings fixed or answered.
