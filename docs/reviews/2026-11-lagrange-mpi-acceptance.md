@@ -6,7 +6,7 @@ meets a criterion adds its section here.
 
 ## Summary: the final acceptance run (Task 7.2)
 
-**Measured** 2026-11-22 13:02 to 13:33 EET (times from `date` and the scripts' stamps) by the
+**Measured** 2026-11-22 13:02 to 13:40 EET (times from `date` and the scripts' stamps) by the
 implementer of Task 7.2, on a clean build of the head of `lgr/s7-stops`: `make clean`, then
 `PATH=/usr/bin:$PATH make fem NETCDF=true NETCDFDIR=/usr NETCDFFDIR=/usr/local` (12:55 to 13:02),
 built at `ddf46f53`, whose Fortran is that of the head `3b460653` (the commit after it changes
@@ -33,7 +33,7 @@ basin). Commands run in `testcases/examples/mar_menor`; NP is 2 and 4.
 | AC7 | `mpirun -np 1` byte-identical to serial | the same guard (its `vs np1` comparisons) | 19 of 19 files identical | – | byte-identical | PASS |
 | AC8 (limit replaced) | `lgrelab -lgmean` of the MPI file of case A against the serial file: the same particle table; each value within the envelope of the six perturbed serial runs plus one unit of its last printed decimal. Replaces "within the AC3 limit": plan amendment after Task 5.2 | `python3 lgr_lgmean_compare.py SERIAL MPI BASE PERT x6` (`gates/floors_runs/`) | table equal (96 records); 1,721 of 1,728 values within the envelope, 1,728 within it plus one unit, 0 beyond | 1,723 / 1,728 / 0 | as in the column "Criterion" | PASS |
 | AC9 | The cases of spec section 7 | see "Task 7.2", spec section 7 | cases 1 to 9 each shown by a test or a recorded run of this session (case 6 on 8 processes, case 1 on 4 and 8) | | each has a test or a recorded run | PASS |
-| AC10 | Each "stops" option on several processes: one message naming the option, non-zero exit, no crash, no particle file; the same STR file runs serially | `./check_lgr_mpi.sh mm_lgr_a NP stops` | 10 of 10 rows ok (exit 33, message and advice once each, no signal) | 10 of 10 rows ok | as in the column "Criterion" | PASS |
+| AC10 | Each "stops" option on several processes: one message naming the option, non-zero exit, no crash, no particle file. Serially the same STR file starts and the MPI message never appears (the driver's gate; the serial outcome is printed, not gated) | `./check_lgr_mpi.sh mm_lgr_a NP stops` | 10 of 10 rows ok (exit 33, message and advice once each, no signal, no particle file). Serially: 4 end (`lbeach`, `artype`, `ised`, `ilarv`), 6 fail on their own, two of them crashes (`ilagr = 3` SIGFPE, #231; `ldecay` SIGSEGV, #226); no serial log has the MPI message | 10 of 10 rows ok; the same serial outcomes | as in the column "Criterion" | PASS |
 | AC11 | Particles that went to another process by position at zero displacement (A, B, C have no random walk; W added) | the relocation line of the `handover` runs | A 0, B 0, C 0, W 0 | A 0, B 1, C 2, W 1 | reported; no particle lost or duplicated by one (counts equal at every output, the consistency check silent) | reported; PASS |
 
 Also on this build: the tool self-tests (`test_lgr_compare.sh`, `test_lgr_dbg_compare.sh`,
