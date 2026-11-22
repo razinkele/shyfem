@@ -6,8 +6,9 @@ usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py part SERIAL_DIR MPI_DIR --tol FLOAT
                           [--by {id|nearest|key}] [--first-only]
                           [--ranks-empty-ok] [--ncross] [--elem] [--ids]
-                          [--handover [--step LENGTH] [--allow K]
-                                      [--factor F] [--min-changed N]]
+                          [--handover [--step LENGTH] [--jump-factor J]
+                                      [--jump-floor F] [--quantile Q]
+                                      [--min-changed N]]
 
 Each directory holds the files lgrdbg.KIND.NN.txt of one run (NN = rank),
 written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  Every file
@@ -43,7 +44,8 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
       ncross = -1 on either side, "unknown", is counted apart and is never a
       mismatch), and pairs whose global element ie_global differs.
       --by id       match by id; an id that occurs twice, or in one run only,
-                    is a failure (ids repeat across ranks until stage 4).
+                    is a failure (since Task 4.2 a particle has the id of the
+                    serial run on every number of processes).
       --by nearest  (default) one-to-one match: pairs are taken by increasing
                     distance (at equal distance: same layer, then with
                     --elem the same element, then closest z) and every
@@ -90,12 +92,28 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
                     "stayed".  Pairs of blocks where the particle is not in
                     the domain in both runs at both blocks are left out; the
                     number is printed.  The distance is the one of the part
-                    table (max(|dx|, |dy|)).  The mode fails if "changed
-                    process" is worse than "stayed": more than --allow K pairs
-                    beyond the step (default 1) and a rate (beyond / pairs)
-                    more than --factor F times the rate of "stayed" (default
-                    2; a "stayed" group without pairs or without any pair
-                    beyond the step has rate 0).  A run without any
+                    table (max(|dx|, |dy|)).  The rule has two tests; the
+                    mode fails if either fails:
+                    jump test: a "changed process" pair whose distance is
+                    greater than max(J x the largest distance of "stayed",
+                    F x step) fails (--jump-factor J, default 2;
+                    --jump-floor F, in steps, default 10).  A pair that jumps
+                    beyond the noise the particles show without a hand-over
+                    is a defect, whatever the counts.
+                    count test: the number of "changed process" pairs beyond
+                    the step fails if it is greater than the q-quantile of a
+                    Poisson count whose mean is the rate of "stayed" (pairs
+                    beyond the step / pairs; 0 for a group without pairs)
+                    times the number of "changed process" pairs (--quantile
+                    q, default 0.999).  The q-quantile is the smallest k with
+                    P(X <= k) >= q (cumulative sum of the Poisson terms); it
+                    is 0 for a mean of 0, so with a "stayed" group that has
+                    no pair beyond the step any changed pair beyond it fails.
+                    The rule line states both tests with their thresholds and
+                    verdicts; below it every changed pair above the jump
+                    threshold is listed (key, times, ranks, distance), after
+                    the list of the changed pairs beyond the step (at most
+                    100 of them).  A run without any
                     "changed process" pair prints "no changed-process pair:
                     the hand-over was not exercised" and still passes; with
                     --min-changed N (default 0) it fails if fewer than N such
@@ -650,16 +668,45 @@ def require_keys(ser, mpi, args):
                                 % (d, name))
 
 
+def poisson_quantile(mean, q):
+    """Smallest k with P(X <= k) >= q for X Poisson with this mean; 0 for a
+    mean of 0.  The cumulative sum of the Poisson terms, each from the one
+    before (p_0 = exp(-mean), p_k = p_(k-1) * mean / k); for a mean whose
+    exp(-mean) underflows (above 700) the terms come from their logarithms.
+    The sum stops at mean + 40 sqrt(mean) + 100, beyond which the terms are
+    below 1e-300 (only a q within rounding of 1 can get there)."""
+    if not mean > 0:
+        return 0
+    kcap = int(mean + 40.0 * math.sqrt(mean) + 100.0)
+    k = 0
+    if mean < 700.0:
+        term = math.exp(-mean)
+        cdf = term
+        while cdf < q and k < kcap:
+            k += 1
+            term *= mean / k
+            cdf += term
+    else:
+        lmean = math.log(mean)
+        cdf = math.exp(-mean)
+        while cdf < q and k < kcap:
+            k += 1
+            cdf += math.exp(-mean + k * lmean - math.lgamma(k + 1))
+    return k
+
+
 def handover_stats(times, pairs_at, state_at, step):
     """Hand-over statistic over consecutive blocks.  pairs_at[t] = {key:
     (serial entry, mpi entry, distance)} of the pairs in the domain in both
     runs, state_at[t] = {key: all four classes present} -- see cmd_part.
     Returns {"changed": [...], "stayed": [...]} with [pairs, at 0, within,
-    beyond, largest], the number of pairs left out and the pairs beyond the
-    step of each group (key, time 1, time 2, rank 1, rank 2, distance)."""
+    beyond, largest], the number of pairs left out, the pairs beyond the
+    step of each group and the "changed" pairs at a distance other than 0
+    (each as key, time 1, time 2, rank 1, rank 2, distance)."""
     groups = {"changed": [0, 0, 0, 0, 0.0], "stayed": [0, 0, 0, 0, 0.0]}
     left_out = 0
     beyond = {"changed": [], "stayed": []}
+    moved = []
     for t1, t2 in zip(times, times[1:]):
         for key in set(state_at[t1]) & set(state_at[t2]):
             if key not in pairs_at[t1] or key not in pairs_at[t2]:
@@ -679,12 +726,15 @@ def handover_stats(times, pairs_at, state_at, step):
             else:
                 g[3] += 1
                 beyond[key_name].append((key, t1, t2, m1[RANK], m2[RANK], d2))
+            if key_name == "changed" and not d2 == 0:
+                moved.append((key, t1, t2, m1[RANK], m2[RANK], d2))
             g[4] = worse(g[4], d2)
-    return groups, left_out, beyond
+    return groups, left_out, beyond, moved
 
 
-def handover_report(groups, left_out, beyond_list, args):
-    """Print the two groups; return the number of failures (0 or 1)."""
+def handover_report(groups, left_out, beyond_list, moved, args):
+    """Print the two groups and the rule (jump test, count test: see the
+    module docstring); return the number of failures."""
     print("  hand-over check (pairs of consecutive blocks, particle in the "
           "domain in both runs at both blocks and at distance 0 at the "
           "first), step %g" % args.step)
@@ -702,7 +752,6 @@ def handover_report(groups, left_out, beyond_list, args):
         print("  changed process, beyond the step: key %s, times %.1f -> %.1f,"
               " ranks %d -> %d, distance %.4e"
               % (" ".join("%.17g" % v for v in key), t1, t2, r1, r2, d))
-    beyond = groups["changed"][3]
     nfail = 0
     if groups["changed"][0] == 0:
         print("  no changed-process pair: the hand-over was not exercised")
@@ -714,11 +763,34 @@ def handover_report(groups, left_out, beyond_list, args):
         print("  FAIL: %d changed-process pairs found, %d required "
               "(--min-changed)" % (groups["changed"][0], args.min_changed))
         nfail += 1
-    bad = beyond > args.allow and rate["changed"] > args.factor * rate["stayed"]
-    print("  rule: FAIL if changed-process pairs beyond the step > %d and "
-          "their rate > %g * the rate of the stayed group: %s"
-          % (args.allow, args.factor, "FAIL" if bad else "ok"))
-    return nfail + (1 if bad else 0)
+    # jump test: no changed pair beyond the noise of the stayed group
+    big_ch, big_st = groups["changed"][4], groups["stayed"][4]
+    floor = args.jump_floor * args.step
+    jthr = max(args.jump_factor * big_st, floor)
+    if math.isnan(big_st):
+        jthr = float("nan")
+    jump_bad = not big_ch <= jthr
+    # count test: no more changed pairs beyond the step than chance allows
+    nbeyond = groups["changed"][3]
+    mean = rate["stayed"] * groups["changed"][0]
+    qk = poisson_quantile(mean, args.quantile)
+    count_bad = nbeyond > qk
+    print("  rule: jump test: largest changed-process distance %g %s threshold"
+          " %g (%g x stayed largest %g, floor %g steps %g): %s; count test: %d"
+          " beyond the step %s Poisson %g %% quantile %d (mean %g): %s"
+          % (big_ch, ">" if jump_bad else "<=", jthr, args.jump_factor,
+             big_st, args.jump_floor, floor, "FAIL" if jump_bad else "ok",
+             nbeyond, ">" if count_bad else "<=", 100.0 * args.quantile, qk,
+             mean, "FAIL" if count_bad else "ok"))
+    above = [m for m in moved if not m[5] <= jthr]
+    for key, t1, t2, r1, r2, d in above[:100]:
+        print("  changed process, above the jump threshold: key %s, times %.1f"
+              " -> %.1f, ranks %d -> %d, distance %.4e"
+              % (" ".join("%.17g" % v for v in key), t1, t2, r1, r2, d))
+    if len(above) > 100:
+        print("  ... %d more changed-process pairs above the jump threshold"
+              % (len(above) - 100))
+    return nfail + (1 if jump_bad else 0) + (1 if count_bad else 0)
 
 
 def cmd_part(args):
@@ -869,9 +941,9 @@ def cmd_part(args):
               % (tot["ncr0"], "" if args.ncross else " (not gated)",
                  tot["ncrn"]))
     if args.handover:
-        groups, left_out, beyond_list = handover_stats(times, pairs_at, state_at,
-                                          args.step)
-        nfail += handover_report(groups, left_out, beyond_list, args)
+        groups, left_out, beyond_list, moved = handover_stats(
+            times, pairs_at, state_at, args.step)
+        nfail += handover_report(groups, left_out, beyond_list, moved, args)
     return nfail
 
 
@@ -914,12 +986,17 @@ def main(argv=None):
     p.add_argument("--step", type=float, default=6e-8,
                    help="--handover: one single-precision step, a length in"
                         " the dump's unit (default 6e-8, degrees)")
-    p.add_argument("--allow", type=int, default=1,
-                   help="--handover: pairs beyond the step allowed in the"
-                        " changed group (default 1)")
-    p.add_argument("--factor", type=float, default=2.0,
-                   help="--handover: allowed ratio of the rates of the two"
-                        " groups (default 2)")
+    p.add_argument("--jump-factor", type=float, default=2.0,
+                   help="--handover, jump test: a changed-process pair fails"
+                        " above this factor times the stayed group's largest"
+                        " distance (default 2)")
+    p.add_argument("--jump-floor", type=float, default=10.0,
+                   help="--handover, jump test: the threshold is at least"
+                        " this many steps (default 10)")
+    p.add_argument("--quantile", type=float, default=0.999,
+                   help="--handover, count test: the Poisson quantile the"
+                        " changed-process pairs beyond the step may reach"
+                        " (default 0.999)")
     p.add_argument("--min-changed", type=int, default=0,
                    help="--handover: fail if fewer than N pairs are in the"
                         " changed-process group (default 0)")
@@ -936,8 +1013,11 @@ def main(argv=None):
             ap.error("--handover cannot be combined with --first-only")
         if args.min_changed < 0:
             ap.error("--min-changed must be >= 0")
-        if not args.step >= 0 or args.allow < 0 or not args.factor >= 0:
-            ap.error("--step, --allow and --factor must be >= 0")
+        if not args.step >= 0 or not args.jump_factor >= 0 \
+                or not args.jump_floor >= 0:
+            ap.error("--step, --jump-factor and --jump-floor must be >= 0")
+        if not 0 < args.quantile < 1:
+            ap.error("--quantile must lie in (0, 1)")
     try:
         nfail = args.func(args)
     except DumpError as e:

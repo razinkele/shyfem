@@ -177,6 +177,39 @@ krun('kid', 2, I10, changed=range(1, 6),
 krun('kidchg', 2, I10, changed=range(1, 6),
      idf=lambda i, b: 99 if (i == 2 and b == 1) else i)
 
+# crossing count differs at a non-zero distance for a changed particle
+# (3, 1e-3 away) while a particle that stays (8) is off as much: the rule
+# passes (jump 1e-3 <= 2 x 1e-3; count 1 <= quantile 5 of mean 0.2 x 5)
+krun('kncrd2', 2, I10, changed=range(1, 6),
+     nc=lambda i, b: 2 if (b == 1 and i == 3) else 1,
+     off=lambda i, b: (1e-3, 0.0) if (b == 1 and i in (3, 8)) else (0.0, 0.0))
+# jump test: the stayed group's largest distance is 1e-4 (particle 8); one
+# changed particle (3) at 1.9e-4 (below 2 x 1e-4) or at 2.1e-4 (above); the
+# count test passes in both (1 beyond <= quantile 5 of mean 0.2 x 5)
+def kjump_off(dc):
+    return lambda i, b: ({3: (dc, 0.0), 8: (1e-4, 0.0)}.get(i, (0.0, 0.0))
+                         if b == 1 else (0.0, 0.0))
+krun('kjlo', 2, I10, changed=range(1, 6), off=kjump_off(1.9e-4))
+krun('kjhi', 2, I10, changed=range(1, 6), off=kjump_off(2.1e-4))
+# the floor decides: the stayed group's largest is 1e-7 (beyond the step,
+# 2 x 1e-7 below the floor of 10 steps, 6e-7); one changed particle at 4e-7
+krun('kjfloor', 2, I10, changed=range(1, 6),
+     off=lambda i, b: ({3: (4e-7, 0.0), 8: (1e-7, 0.0)}.get(i, (0.0, 0.0))
+                       if b == 1 else (0.0, 0.0)))
+# no stayed pair beyond the step: one changed particle at 4e-7 (beyond the
+# step, below the floor): jump ok, count 1 > quantile 0 of mean 0
+krun('kjnostay', 2, I10, changed=range(1, 6),
+     off=lambda i, b: (4e-7, 0.0) if (b == 1 and i == 3) else (0.0, 0.0))
+# count test, 20 particles, 1..10 change process: one stayed particle (11)
+# beyond the step of 10 (rate 0.1, mean 0.1 x 10 = 1.0, quantile 5); five
+# (kcnt5) or six (kcnt6) changed particles beyond it, all at 1e-3 (the jump
+# test passes: 1e-3 <= 2 x 1e-3)
+def kcnt_off(nch):
+    return lambda i, b: ((1e-3, 0.0) if (b == 1 and (i <= nch or i == 11))
+                         else (0.0, 0.0))
+krun('kcnt5', 2, I20, changed=range(1, 11), off=kcnt_off(5))
+krun('kcnt6', 2, I20, changed=range(1, 11), off=kcnt_off(6))
+
 # flux files: serial elements 1, 2; element 2 is mixed (rank 1 main owner)
 def write_flux(d, rank, n, rows):
     os.makedirs(d, exist_ok=True)
@@ -211,6 +244,16 @@ check() {
         echo "FAIL: $desc: output lacks /$rx/"; sed 's/^/    /' "$tmp/out.txt"; fail=1; return
     fi
     echo "ok: $desc"
+}
+
+# check_quantile MEAN Q EXPECTED: the Poisson quantile of the hand-over rule
+check_quantile() {
+    local got
+    got="$(python3 -B -c "import sys; sys.path.insert(0, '$here'); import lgr_dbg_compare as m; print(m.poisson_quantile($1, $2))" 2>&1)"
+    if [ "$got" != "$3" ]; then
+        echo "FAIL: Poisson $2 quantile of mean $1: got '$got', expected $3"; fail=1; return
+    fi
+    echo "ok: Poisson $2 quantile of mean $1 is $3"
 }
 
 t="$tmp"
@@ -290,18 +333,48 @@ check "ncross differs at a non-zero distance, no failure" 0 "distance 0: 0; at a
     part "$t/kser" "$t/kncrd" --tol 1 --by key --ncross
 check "by nearest still gates every differing ncross" 1 "ncross differs 1," \
     part "$t/kser" "$t/kncr0" --tol 0 --ncross
-check "hand-over, changed and stayed at 0" 0 "changed process +5 +5 +0 +0 .*stayed +5 +5 +0 +0 .*left out.*: 0[^ 0-9].*: ok" \
+check "hand-over, changed and stayed at 0" 0 "changed process +5 +5 +0 +0 .*stayed +5 +5 +0 +0 .*left out.*: 0[^ 0-9].*rule: jump test: largest changed-process distance 0 <= threshold 6e-07 \\(2 x stayed largest 0, floor 10 steps 6e-07\\): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 0 \\(mean 0\\): ok" \
     part "$t/kser" "$t/kok" --tol 0 --by key --handover
-check "hand-over, changed jump, stayed do not" 1 "changed process +5 +0 +0 +5 +1.0000e-03 .*stayed +5 +5 +0 +0 .*: FAIL[^ 0-9]" \
+check "hand-over, changed jump, stayed do not: both tests fail" 1 "changed process +5 +0 +0 +5 +1.0000e-03 .*stayed +5 +5 +0 +0 .*jump test: largest changed-process distance 0.001 > threshold 6e-07 .*: FAIL; count test: 5 beyond the step > Poisson 99.9 % quantile 0 \\(mean 0\\): FAIL" \
     part "$t/kser" "$t/kjump" --tol 1 --by key --handover
-check "hand-over, both groups diverge at the same rate" 0 "changed process +10 +5 +0 +5 .*stayed +10 +5 +0 +5 .*: ok" \
+check "hand-over, both groups diverge at the same rate" 0 "changed process +10 +5 +0 +5 .*stayed +10 +5 +0 +5 .*jump test: largest changed-process distance 0.001 <= threshold 0.002 .*: ok; count test: 5 beyond the step <= Poisson 99.9 % quantile 13 \\(mean 5\\): ok" \
     part "$t/kser20" "$t/krate" --tol 1 --by key --handover
-check "hand-over, one changed pair beyond the step: allowed" 0 "changed process +5 +4 +0 +1 .*: ok" \
+check "hand-over, one changed pair far off, stayed quiet: jump test fails" 1 "changed process +5 +4 +0 +1 .*jump test: largest changed-process distance 0.001 > threshold 6e-07 .*: FAIL.*above the jump threshold: key 103 .*times 3600.0 -> 7200.0, ranks 0 -> 1, distance 1.0000e-03" \
     part "$t/kser" "$t/kone" --tol 1 --by key --handover
-check "hand-over, one changed pair beyond the step, --allow 0" 1 "changed process +5 +4 +0 +1 .*: FAIL[^ 0-9]" \
-    part "$t/kser" "$t/kone" --tol 1 --by key --handover --allow 0
-check "hand-over, at 0 / within / beyond the step" 0 "changed process +3 +1 +1 +1 +1.0000e-07 " \
-    part "$t/kser" "$t/kwithin" --tol 1 --by key --handover --allow 1
+check "hand-over, at 0 / within / beyond the step" 1 "changed process +3 +1 +1 +1 +1.0000e-07 .*jump test: .*: ok; count test: 1 beyond the step > Poisson 99.9 % quantile 0 \\(mean 0\\): FAIL" \
+    part "$t/kser" "$t/kwithin" --tol 1 --by key --handover
+check "hand-over, jump just below the threshold" 0 "changed process +5 +4 +0 +1 +1.9000e-04 .*stayed +5 +4 +0 +1 +1.0000e-04 .*jump test: largest changed-process distance 0.00019 <= threshold 0.0002 \\(2 x stayed largest 0.0001, floor 10 steps 6e-07\\): ok; count test: 1 beyond the step <= Poisson 99.9 % quantile 5 \\(mean 1\\): ok" \
+    part "$t/kser" "$t/kjlo" --tol 1 --by key --handover
+check "hand-over, jump just above the threshold" 1 "changed process +5 +4 +0 +1 +2.1000e-04 .*jump test: largest changed-process distance 0.00021 > threshold 0.0002 .*: FAIL; count test: .*: ok.*above the jump threshold: key 103 " \
+    part "$t/kser" "$t/kjhi" --tol 1 --by key --handover
+check "hand-over, --jump-factor 3 lets the same jump pass" 0 "threshold 0.0003 \\(3 x stayed largest 0.0001" \
+    part "$t/kser" "$t/kjhi" --tol 1 --by key --handover --jump-factor 3
+check "hand-over, the floor decides for a tiny stayed largest" 0 "jump test: largest changed-process distance 4e-07 <= threshold 6e-07 \\(2 x stayed largest 1e-07, floor 10 steps 6e-07\\): ok; count test: 1 beyond .*: ok" \
+    part "$t/kser" "$t/kjfloor" --tol 1 --by key --handover
+check "hand-over, a lower floor (--jump-floor 5) fails the same pair" 1 "jump test: largest changed-process distance 4e-07 > threshold 3e-07 \\(2 x stayed largest 1e-07, floor 5 steps 3e-07\\): FAIL" \
+    part "$t/kser" "$t/kjfloor" --tol 1 --by key --handover --jump-floor 5
+check "hand-over, no stayed pair beyond the step: one changed beyond fails the count" 1 "stayed +5 +5 +0 +0 .*jump test: largest changed-process distance 4e-07 <= threshold 6e-07 .*: ok; count test: 1 beyond the step > Poisson 99.9 % quantile 0 \\(mean 0\\): FAIL" \
+    part "$t/kser" "$t/kjnostay" --tol 1 --by key --handover
+check "hand-over, count at the quantile passes" 0 "changed process +10 +5 +0 +5 .*stayed +10 +9 +0 +1 .*count test: 5 beyond the step <= Poisson 99.9 % quantile 5 \\(mean 1\\): ok" \
+    part "$t/kser20" "$t/kcnt5" --tol 1 --by key --handover
+check "hand-over, count above the quantile fails" 1 "changed process +10 +4 +0 +6 .*jump test: .*: ok; count test: 6 beyond the step > Poisson 99.9 % quantile 5 \\(mean 1\\): FAIL" \
+    part "$t/kser20" "$t/kcnt6" --tol 1 --by key --handover
+check "hand-over, --quantile 0.9999 raises the quantile" 0 "count test: 6 beyond the step <= Poisson 99.99 % quantile 6 \\(mean 1\\): ok" \
+    part "$t/kser20" "$t/kcnt6" --tol 1 --by key --handover --quantile 0.9999
+check "--allow is gone" 2 "unrecognized arguments: --allow" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover --allow 1
+check "--factor is gone" 2 "unrecognized arguments: --factor" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover --factor 2
+check "--quantile must lie in (0, 1)" 2 "--quantile must lie in \\(0, 1\\)" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --handover --quantile 1
+check_quantile 0 0.999 0
+check_quantile 0.77 0.999 5
+check_quantile 0.21 0.999 3
+check_quantile 0.053 0.999 2
+check_quantile 1.0 0.999 5
+check_quantile 5.0 0.999 13
+check_quantile 1e-9 0.999 0
+check_quantile 2000.0 0.999 2140
 check "hand-over, the step is a parameter" 0 "changed process +3 +1 +2 +0 +1.0000e-07 .*: ok" \
     part "$t/kser" "$t/kwithin" --tol 1 --by key --handover --step 1e-6
 check "hand-over, particles off at the first block are not counted" 0 "changed process +0 +0 +0 +0 .*stayed +5 +5 +0 +0 " \
@@ -311,7 +384,7 @@ check "hand-over, a particle that left in both runs is left out" 0 "changed proc
 check "hand-over, a particle that left in one run is a failure" 1 "7200.0 +10 +9 +0 +1 +0 +1 " \
     part "$t/kser" "$t/kleft_mpi" --tol 0 --by key --handover
 check "hand-over, distances above --tol are not gated" 0 "" \
-    part "$t/kser" "$t/kone" --tol 0 --by key --handover
+    part "$t/kser20" "$t/krate" --tol 0 --by key --handover
 check "hand-over needs --by key" 2 "needs --by key" \
     part "$t/kser" "$t/kok" --tol 0 --handover
 check "hand-over --ncross: differs at distance 0, gated" 1 "ncross differs at distance 0: 1; at a non-zero distance: 0" \
@@ -319,7 +392,7 @@ check "hand-over --ncross: differs at distance 0, gated" 1 "ncross differs at di
 check "hand-over without --ncross: not gated" 0 "ncross differs 1 \(not gated\).*distance 0: 1 \(not gated\)" \
     part "$t/kser" "$t/kncr0" --tol 1 --by key --handover
 check "hand-over --ncross: differs at a non-zero distance, no failure" 0 "ncross differs 1 \(gated at distance 0 only\).*distance 0: 0; at a non-zero distance: 1 \(never gated\)" \
-    part "$t/kser" "$t/kncrd" --tol 1 --by key --handover --ncross --allow 1
+    part "$t/kser" "$t/kncrd2" --tol 1 --by key --handover --ncross
 check "hand-over --elem: element differs, gated" 1 "element differs 1[^ 0-9]" \
     part "$t/kser" "$t/kelem" --tol 1 --by key --handover --elem
 check "hand-over without --elem: element differs, not gated" 0 "element differs 1 \(not gated\)" \

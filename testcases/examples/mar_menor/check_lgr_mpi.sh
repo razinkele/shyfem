@@ -32,16 +32,19 @@
 # every case; the per-case --tol below applies to pos and part only.
 # Limits: the geographic cases use --tol 1e-5, the Cartesian case mm_lgr_b
 # --tol 2 (for pos and part).  The flux comparison is relative and keeps
-# the default of lgr_dbg_compare.py.  Part uses --by nearest (the ids repeat
-# across ranks at this stage).  Arguments after MODE come last on the tool
+# the default of lgr_dbg_compare.py.  Part uses --by nearest (pairs by
+# position; since Task 4.2 the ids equal those of the serial run, so --by id
+# or --by key can be given).  Arguments after MODE come last on the tool
 # command line and so replace the defaults, for example
 #   ./check_lgr_mpi.sh mm_lgr_a 4 part --by id --tol 1e-3
 #
 # handover: the particles of the two runs are paired by their key (the last
-# six columns of the dump); the statistic and the rule are described in the
-# docstring of lgr_dbg_compare.py.  The distances above the limit of the
-# part mode are printed, not gated.  Arguments after MODE come last, so
-# --step, --allow and --factor can be replaced.
+# six columns of the dump); the statistic and the rule (a jump test against
+# the noise of the particles that stayed, and a Poisson count test) are
+# described in the docstring of lgr_dbg_compare.py.  The distances above the
+# limit of the part mode are printed, not gated.  Arguments after MODE come
+# last, so --step, --jump-factor, --jump-floor, --quantile and --min-changed
+# can be given or replaced.
 #
 # Side self-test: every mode that runs at levdbg = 3 (flux, part, handover,
 # perturb) requires of each log (serial and MPI; both MPI logs in perturb)
