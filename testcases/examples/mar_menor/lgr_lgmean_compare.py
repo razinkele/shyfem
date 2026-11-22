@@ -36,6 +36,10 @@ the values within the envelope plus one unit (these include the former),
 the values beyond (gated: must be 0); a row "all" sums the counts; then
 "LGMEAN COMPARE: PASS" or "FAIL".
 
+Every row of a lagrange_mean_traj file must have as many columns (the time
+included) as its first row, and the type suffix T must be a number;
+otherwise the input cannot be read (exit 2).
+
 Exit status: 0 = pass, 1 = fail, 2 = an input cannot be read or lgrelab
 failed, or the command line is wrong.
 """
@@ -86,13 +90,20 @@ def read_dir(folder):
                 counts.append(m.groups())
     trajs = {}
     for f in sorted(glob.glob(os.path.join(folder, "lagrange_mean_traj.*"))):
+        if not f.rsplit(".", 1)[1].isdigit():
+            raise InputError("%s: the type suffix is not a number" % f)
         typ = int(f.rsplit(".", 1)[1])
         rows = []
         with open(f) as fh:
-            for line in fh:
+            for nline, line in enumerate(fh, 1):
                 parts = line.split()
                 if not parts:
                     continue
+                if not rows:
+                    width, wline = len(parts), nline
+                elif len(parts) != width:
+                    raise InputError("%s: line %d has %d columns, line %d has %d"
+                                     % (f, nline, len(parts), wline, width))
                 try:
                     rows.append((parts[0], [decimal.Decimal(v) for v in parts[1:]]))
                 except decimal.InvalidOperation:

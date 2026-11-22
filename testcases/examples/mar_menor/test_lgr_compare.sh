@@ -51,7 +51,8 @@ def block(dtime, iwhat, parts):
 
 def build(path, shift_id=None, drop_id=None, reverse=False, decoy=False,
           nan_id=None, type_id=None, times=(0.0, 3600.0), moves=None,
-          real=False, tt_shift=None, ins_mod=None, ins_ie=3, exit_ie=4):
+          real=False, tt_shift=None, ins_mod=None, ins_ie=3, exit_ie=4,
+          exit_id=9):
     # moves: {dtime: {id: (dx, ie, hl)}} shifts x of an active particle by
     # dx at that output and writes its element ie and its depth hl
     # tt_shift: {dtime: {id: dt}} adds dt to the time tt of that particle
@@ -59,13 +60,15 @@ def build(path, shift_id=None, drop_id=None, reverse=False, decoy=False,
     # ins_mod: {dtime: {id: (dx, ie, hl, dtt)}} changes an inserted particle:
     # x by dx, its element, its depth hl, its time tt by dtt
     # ins_ie, exit_ie: the element of every inserted / the exited particle
+    # exit_id: the id of the exited particle (ids 1..9 without it are active)
     global CUR_TT
     out = header(decoy, real)
     for dtime in times:
         CUR_TT = (tt_shift or {}).get(dtime, {})
-        active = [(i, 0.1 * i, 0.2 * i) for i in range(1, 9)]
+        active = [(i, 0.1 * i, 0.2 * i) for i in range(1, 10) if i != exit_id]
         inserted = [(i, 0.1 * i, 0.2 * i, -1.5, 1, ins_ie) for i in (1, 2, 3)]
-        exited = [(9, 0.9, 1.8, -1.5, 1, exit_ie)]
+        exited = [(9, 0.9, 1.8, -1.5, 1, exit_ie)] if exit_id == 9 else \
+            [(exit_id, 0.1 * exit_id, 0.2 * exit_id, -1.5, 1, exit_ie)]
         im = (ins_mod or {}).get(dtime, {})
         inserted = [(i, x + im[i][0], y, -1.5, 1, im[i][1], 1, im[i][2])
                     if i in im else (i, x, y, z, lb, ie)
@@ -136,6 +139,17 @@ with open(d + '/t1.lgr.shy', 'rb') as f:
     whole = f.read()
 with open(d + '/t9_truncated.lgr.shy', 'wb') as f:
     f.write(whole[:-10])
+# id 8 has exited and id 9 is active (t1: the other way round): the counts
+# per block and the set of all ids are those of t1
+build(d + '/t23_block_swap.lgr.shy', exit_id=8)
+# t=3600.0 written twice: first with id 5 moved (t2_shifted's output), then
+# t1's own output; t1 and t2_shifted share the header and the block sizes
+with open(d + '/t2_shifted.lgr.shy', 'rb') as f:
+    shifted = f.read()
+hsize = len(header(False))
+osize = (len(whole) - hsize) // 2
+with open(d + '/t24_time_twice.lgr.shy', 'wb') as f:
+    f.write(whole[:hsize + osize] + shifted[hsize + osize:] + whole[hsize + osize:])
 PY
 python3 "$tmp/gen.py" "$tmp" || { echo "LGR COMPARE TEST: FAIL (generator)"; exit 1; }
 
@@ -251,6 +265,21 @@ check "inserted block: the total is printed" 1 "inserted block: pairs that diffe
 check "inserted block identical: the total is 0" 0 "inserted block: pairs that differ \(any output\): 0: ok" \
     "$t/t1.lgr.shy" "$t/t4_reordered.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 10 --max-largest 1 --max-tt-differ 5
 
+# ids mode compares the ids of each block, not only all ids and the counts
+check "ids mode: an active and an exited particle swap blocks" 1 "t=0.0 active +nA=8 nB=8 only in A: 8 only in B: 9.*t=0.0 exited +nA=1 nB=1 only in A: 9 only in B: 8.*LGR COMPARE: FAIL" \
+    "$t/t1.lgr.shy" "$t/t23_block_swap.lgr.shy" --mode ids --same-counts --nel 6 --nlv 3
+check "ids mode: the same ids in every block" 0 "t=3600.0 exited +nA=1 nB=1.*LGR COMPARE: PASS" \
+    "$t/t1.lgr.shy" "$t/t4_reordered.lgr.shy" --mode ids --same-counts --nel 6 --nlv 3
+
+# an output time written twice in one file is a read error (the format
+# writes each output time once), whichever copy would match
+check "an output time twice in file A, pos mode" 2 "t24_time_twice.lgr.shy: output time 3600.0 is written twice \(outputs 2 and 3\)" \
+    "$t/t24_time_twice.lgr.shy" "$t/t1.lgr.shy" --mode pos --tol 1e-5
+check "an output time twice in file B, ids mode" 2 "output time 3600.0 is written twice" \
+    "$t/t1.lgr.shy" "$t/t24_time_twice.lgr.shy" --mode ids --same-counts
+check "an output time twice, summary" 2 "output time 3600.0 is written twice" \
+    "$t/t24_time_twice.lgr.shy" --summary
+
 # --dims: nel and nlv of the model header
 check "dims of a model header" 0 "nkn 1402 nel 2545 nlv 19" "$t/t12_header.lgr.shy" --dims
 check "dims of a file without a model header" 2 "" "$t/t1.lgr.shy" --dims
@@ -282,8 +311,17 @@ mklg() {
         printf '2009-01-01::01:00:00 %s    37.68299     2.766     0.045     0.000     0.000\n' "$2" > "$d/lagrange_mean_traj.1"
     fi
 }
+# mklg_wide NAME V: as mklg, with a second output whose row has one more
+# column than the first, V its value (every run alike, so the runs agree on
+# the shape)
+mklg_wide() {
+    mklg "$1" -0.77963
+    printf '2009-01-01::02:00:00 -0.77963    37.68299     2.766     0.045     0.000     0.000 %s\n' "$2" >> "$tmp/lg/$1/lagrange_mean_traj.1"
+}
 mkdir -p "$tmp/lg" || exit 1
 for n in serial mpi base p1 p2 p3 p4 p5 p6; do mklg "$n" -0.77963; done
+for n in serial base p1 p2 p3 p4 p5 p6; do mklg_wide "w_$n" 0.000; done
+mklg_wide w_mpi nan
 mklg nofiles none
 mklg nan nan
 mklg inf inf
@@ -309,6 +347,8 @@ lgcheck "lgmean: an infinite value is a clean failure" 1 "non-finite.*LGMEAN COM
     "$g/serial" "$g/inf" "$g/base" "$g/p1" "$g/p2" "$g/p3" "$g/p4" "$g/p5" "$g/p6"
 lgcheck "lgmean: an unequal particle table" 1 "particle table differs.*LGMEAN COMPARE: FAIL" \
     "$g/serial" "$g/other_table" "$g/base" "$g/p1" "$g/p2" "$g/p3" "$g/p4" "$g/p5" "$g/p6"
+lgcheck "lgmean: a row with another number of columns is an input error" 2 "lagrange_mean_traj.1: line 2 has 8 columns, line 1 has 7" \
+    "$g/w_serial" "$g/w_mpi" "$g/w_base" "$g/w_p1" "$g/w_p2" "$g/w_p3" "$g/w_p4" "$g/w_p5" "$g/w_p6"
 python3 "$lgtool" --selftest > "$tmp/out.txt" 2>&1
 if [ $? -eq 0 ] && grep -q "LGMEAN SELFTEST: PASS" "$tmp/out.txt"; then
     echo "ok: lgmean selftest"
