@@ -15,7 +15,7 @@
 # converting cartesian -> geographic, so UTM's 500 km easting must be
 # passed as -500000)
 #
-# Run:  PATH=/home/razinka/shyfem/bin:$PATH shyfem mm_lgr_e.str
+# Run:  PATH=/path/to/shyfem/bin:$PATH shyfem mm_lgr_e.str
 
 $title
         Mar Menor lagrangian test (geographic)

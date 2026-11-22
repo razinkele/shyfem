@@ -40,7 +40,10 @@
 #                each, no SIGFPE, SIGSEGV or "Fortran runtime" line, no
 #                particle file.  Serial: the MPI message must never
 #                appear; the outcome (ended, or its own failure) is printed
-#                per row.  Needs no serial reference run.
+#                per row.  Needs no serial reference run.  The logs go to a
+#                folder made with mktemp under ${TMPDIR:-/tmp}: removed at
+#                the end when every row passed, kept (its path is printed)
+#                when a row failed.
 #
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
@@ -162,7 +165,7 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
 # metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
 # section "Task 3.7", table "Position floors on the new reference" (measured
-# on /home/razinka/wt-lgr-ref3, commit 0fddec90; its log is
+# on the reference build wt-lgr-ref3, commit 0fddec90; its log is
 # gates/floors_ref3.log in the plan's workspace).  The distances are the
 # measured envelopes rounded UP, never below the measurement: A 2.9734e-3 ->
 # 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E 4.2915e-3 -> 4.3e-3
@@ -486,7 +489,7 @@ if [ "$MODE" = stops ]; then
       *)      echo "$1" ;;
     esac
   }
-  SCR="$(mktemp -d /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/lgrstops.XXXXXX)" || exit 1
+  SCR="$(mktemp -d "${TMPDIR:-/tmp}/lgrstops.XXXXXX")" || exit 1
   [ "$(grep -c "^[[:space:]]*$CASE[[:space:]]*$" "$HERE/$CASE.str")" = 1 ] || { echo "LGR GATE FAIL: cannot find the run name line of $CASE.str"; exit 1; }
   echo "=== stops: $CASE, $NP processes and serial (logs in $SCR)"
   for opt in $STOPS_NAMES; do
@@ -525,7 +528,13 @@ if [ "$MODE" = stops ]; then
     if [ "$row_ok" = 1 ]; then st=ok; else st=FAIL; rc=1; fi
     echo "  $opt: $st; $NP processes exit $mrc, message x$n1, advice x$n2, signals $nbadsig, particle file $nfile; serial: $sout"
   done
-  if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi
+  if [ "$rc" = 0 ]; then
+    rm -rf "$SCR"
+    echo "LGR GATE: PASS"
+  else
+    echo "logs of the failed rows kept in $SCR"
+    echo "LGR GATE: FAIL"
+  fi
   exit "$rc"
 fi
 

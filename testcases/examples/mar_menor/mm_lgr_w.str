@@ -19,7 +19,7 @@
 #   (cd GRID && shypre -noopti MM_geo.grd)
 # once in this folder).
 #
-# Run:  PATH=/home/razinka/shyfem/bin:$PATH shyfem mm_lgr_w.str
+# Run:  PATH=/path/to/shyfem/bin:$PATH shyfem mm_lgr_w.str
 
 $title
         Mar Menor lagrangian test (geographic, whole-basin polygon)
