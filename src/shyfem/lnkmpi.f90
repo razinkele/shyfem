@@ -38,6 +38,7 @@
 ! 07.11.2024    ggu     updated to new connection framework
 ! 13.11.2024    ggu     indicate other domain (not yet finished)
 ! 04.02.2025    ggu     new routine check_2id_elements() (not yet finished)
+! 22.11.2026	arb	closed rings start at the smallest global element (#238)
 !
 !*****************************************************************
 
@@ -154,6 +155,12 @@
 	end do
 
 !-------------------------------------------------------------
+! closed rings around a node start where a serial run starts them
+!-------------------------------------------------------------
+
+	call set_geom_rings_mpi
+
+!-------------------------------------------------------------
 ! do sanity checks
 !-------------------------------------------------------------
 
@@ -184,6 +191,70 @@
 !-------------------------------------------------------------
 ! end of routine
 !-------------------------------------------------------------
+
+	end
+
+!*****************************************************************
+
+	subroutine set_geom_rings_mpi
+
+! every closed ring of elements around a node (elist, and nlist with it)
+! starts at the element with the smallest global internal number
+! (ip_int_elem): the element a serial run starts it with
+!
+! The connection framework (sort_ne_lists) builds the rings on the local
+! domain. A closed ring (a node off the boundary, as many nodes as
+! elements around it) starts at its element of smallest local number. On
+! several processes that is not always the element of smallest global
+! number: the local numbering puts the elements with a ghost node after
+! the others. The routines that walk a ring and add or difference along
+! it (make_fluxes_2d for the Lagrangian fluxes, flux_with_bounds and
+! mkweig for the flux sections, the smoothing in sedim_admin) then round
+! differently from a serial run. In a serial run ip_int_elem(ie) = ie and
+! a closed ring starts at its smallest element already, so nothing moves.
+! An open ring (a boundary node, or a ghost node whose ring the domain
+! border cuts) starts at its boundary element and is left as it is.
+!
+! nlist(i,k) is the node after k in elist(i,k) (sort_ne_lists), so both
+! lists turn by the same offset; the routine checks that afterwards.
+
+	use mod_geom
+	use basin, only : nkn,ngr
+	use shympi, only : ip_int_elem
+
+	implicit none
+
+	integer k,ne,i,j,imin
+	integer eaux(ngr),naux(ngr)
+
+	integer knext
+
+	do k=1,nkn
+	  ne = elist(0,k)
+	  if( nlist(0,k) /= ne ) cycle		!open ring: left as it is
+	  imin = 1
+	  do i=2,ne
+	    if( ip_int_elem(elist(i,k)) < ip_int_elem(elist(imin,k)) ) then
+	      imin = i
+	    end if
+	  end do
+	  do i=1,ne
+	    j = 1 + mod(imin-2+i,ne)
+	    eaux(i) = elist(j,k)
+	    naux(i) = nlist(j,k)
+	  end do
+	  elist(1:ne,k) = eaux(1:ne)
+	  nlist(1:ne,k) = naux(1:ne)
+	  do i=1,ne
+	    if( knext(k,elist(i,k)) /= nlist(i,k) ) then
+	      write(6,*) 'set_geom_rings_mpi: node,position: ',k,i
+	      write(6,*) 'elements: ',elist(1:ne,k)
+	      write(6,*) 'nodes:    ',nlist(1:ne,k)
+	      call shympi_abort_internal('set_geom_rings_mpi: node list'	&
+     &			//' out of step with the element list')
+	    end if
+	  end do
+	end do
 
 	end
 
