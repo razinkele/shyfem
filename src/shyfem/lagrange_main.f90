@@ -525,6 +525,7 @@
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_global_count
+	use mod_lagrange_mpi, only : lgr_mpi_list_check
 	use shympi, only : my_id, shympi_is_parallel
 
 	implicit none
@@ -575,6 +576,11 @@
 	end do
 
 !$OMP END PARALLEL DO
+
+	! a failure of the hand-over lists found inside the loop (a worker
+	! thread must not call MPI_ABORT) stops the run here, on the main
+	! thread, before the first collective call (#242); a no-op otherwise
+	call lgr_mpi_list_check('drogue, after the particle loop')
 
         tempo = openmp_get_wtime() - tempo
 !        write(88,*) 'tempo = ',tempo

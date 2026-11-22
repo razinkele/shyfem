@@ -49,6 +49,40 @@
 #             file must hold only finite values,
 #             active particles with an element in 1..nel, a layer in 1..nlv
 #             and a depth z in the layer within 0..1.
+#   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
+#             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
+#             parked particles start with 2 entries, so they grow in the
+#             first steps) and the hook LGR_TEST_GROW_FAIL (the first
+#             enlargement of that list on every process takes the path of a
+#             failed allocate): mm_lgr_a with =export (the list of marks at
+#             sides; it parks nothing) and the Stokes drift case mm_lgr_e
+#             with =park (its list of marks never passes 2 entries on 4
+#             processes, its parkings do).  Each run has a
+#             timeout of 300 s and must stop with exit code 33 (the code
+#             shympi_abort_internal gives MPI_ABORT; Open MPI's mpirun
+#             returns it), with the message "lgr_mpi_grow_export:
+#             allocation" (or _park) and the line of the check made by the
+#             main thread after the particle loop ("lgr_mpi_list_check:"),
+#             with "used OMP threads: 4" in the log and no SIGSEGV, SIGFPE
+#             or "Fortran runtime" line.  Before #242 the grow routine
+#             called the abort itself, from whichever OpenMP thread held
+#             the critical section (MPI is initialised
+#             MPI_THREAD_FUNNELED): no such check line.
+#   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
+#             (its list of parked particles grows) on 4 MPI processes with
+#             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
+#             grow inside the OpenMP particle loop), at levdbg = 2 (the
+#             consistency check of every step is on): with 4 threads and
+#             with 1 thread, and with 1 thread without the hook.  The three
+#             runs must end, the consistency check must write nothing, the
+#             4-thread log must report 4 threads, and the particle file of
+#             4 threads must be byte-identical (cmp) to both 1-thread files.
+#             A fourth run, 4 threads at levdbg = 3, prints a line per
+#             growth with the OpenMP thread that made it: at least one
+#             growth must be counted (its particle file is not compared).
+#             This is not a red test of #242 (the growth itself was right
+#             before); it checks that the growth inside the loop, which had
+#             only run on one thread, gives the 1-thread result on 4.
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -62,11 +96,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | ilagr3"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | small-export"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|ilagr3) ;;
+  stk-omp|decay|ilagr3|grow-fail|small-export) ;;
   *) usage ;;
 esac
 
@@ -307,5 +341,75 @@ if not times or nact == 0:
 sys.exit(0 if ok else 1)
 EOF
   fi
+  finish
+fi
+
+#=============================== grow-fail (#242) ==========================
+if [ "$MODE" = grow-fail ]; then
+  for L in export park; do
+    c=mm_lgr_a
+    [ "$L" = park ] && c=mm_lgr_e
+    with_para $c gf_$L "nomp = 4"
+    echo "=== $c on $NP processes x 4 threads, LGR_TEST_SMALL_EXPORT=1 LGR_TEST_GROW_FAIL=$L"
+    t0=$(date +%s)
+    ( cd "$W" && LGR_TEST_SMALL_EXPORT=1 LGR_TEST_GROW_FAIL=$L timeout 300 nice -n 10 \
+        mpirun --oversubscribe -np $NP -x LGR_TEST_SMALL_EXPORT -x LGR_TEST_GROW_FAIL \
+        shyfem gf_$L.str > gf_$L.log 2>&1 )
+    lrc=$?
+    log="$W/gf_$L.log"
+    echo "  exit code $lrc after $(( $(date +%s) - t0 )) s"
+    [ "$lrc" = 33 ] || fail "$L: exit code $lrc, expected 33"
+    threads gf_$L.log 4
+    grep -q "lgr_mpi_grow_$L: allocation" "$log" || fail "$L: no 'lgr_mpi_grow_$L: allocation' in the log"
+    if grep -q "lgr_mpi_list_check:" "$log"; then
+      grep "lgr_mpi_list_check:" "$log" | sort -u | head -4 | sed 's/^/  /'
+    else
+      fail "$L: no line of the check after the particle loop (lgr_mpi_list_check:)"
+    fi
+    grep -m3 "lgr_mpi_grow_$L: allocation\|REDTMP" "$log" | sed 's/^/  /'
+    if grep -q "SIGSEGV\|SIGFPE\|Fortran runtime" "$log"; then
+      fail "$L: crash line in the log"; grep -m3 "SIGSEGV\|SIGFPE\|Fortran runtime" "$log" | sed 's/^/    /'
+    fi
+    grep -q "simulation end" "$log" && fail "$L: the run ended instead of stopping"
+  done
+  finish
+fi
+
+#=============================== small-export (#242) =======================
+if [ "$MODE" = small-export ]; then
+  for c in mm_lgr_a mm_lgr_e; do
+    # se_${c}_t4 (4 threads, hook), _t1 (1 thread, hook), _t1n (1 thread,
+    # no hook), _t4d (4 threads, hook, levdbg = 3)
+    with_para $c se_${c}_t4x "nomp = 4"; with_line se_${c}_t4x se_${c}_t4 para "levdbg = 2"
+    with_para $c se_${c}_t1x "nomp = 1"; with_line se_${c}_t1x se_${c}_t1 para "levdbg = 2"
+    with_line se_${c}_t1x se_${c}_t1n para "levdbg = 2"
+    with_line se_${c}_t4x se_${c}_t4d para "levdbg = 3"
+    echo "=== $c on $NP processes, LGR_TEST_SMALL_EXPORT=1, levdbg = 2: 4 threads, 1 thread; 1 thread without the hook"
+    for v in t4 t1 t4d; do
+      run se_${c}_$v se_${c}_$v.log env LGR_TEST_SMALL_EXPORT=1 \
+        mpirun --oversubscribe -np $NP -x LGR_TEST_SMALL_EXPORT shyfem || fail "$c $v: the run did not end"
+    done
+    run se_${c}_t1n se_${c}_t1n.log mpirun --oversubscribe -np $NP shyfem || fail "$c t1n: the run did not end"
+    threads se_${c}_t4.log 4
+    threads se_${c}_t1.log 1
+    for v in t4 t1 t1n t4d; do
+      n="$(grep -c 'lgr_mpi_check_consistency' "$W/se_${c}_$v.log")"
+      if [ "$n" -gt 0 ]; then fail "$c $v: consistency check wrote $n lines"
+      else echo "  se_${c}_$v.log: consistency check silent"
+      fi
+    done
+    for v in t1 t1n; do
+      a="$W/se_${c}_t4.lgr.shy"; b="$W/se_${c}_$v.lgr.shy"
+      if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$c: particle file missing (t4 or $v)"
+      elif cmp -s "$a" "$b"; then echo "  $c: particle file of 4 threads (hook) identical to $v ($(stat -c %s "$a") bytes)"
+      else fail "$c: particle file of 4 threads (hook) differs from $v"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+      fi
+    done
+    ng="$(grep -c 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log")"
+    nw="$(grep 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log" | grep -vc 'OpenMP thread *0$')"
+    echo "  $c, 4 threads at levdbg = 3: $ng growths of the lists, $nw of them made by an OpenMP thread other than 0"
+    grep 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log" | head -3 | sed 's/^/   /'
+    [ "$ng" -gt 0 ] || fail "$c: no growth of the lists at levdbg = 3"
+  done
   finish
 fi

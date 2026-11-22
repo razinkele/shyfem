@@ -30,6 +30,8 @@
 ! lgr_mpi_lookup_init		sorted global numbers, node to element lists
 ! lgr_mpi_mark_side		mark a particle stopped on a cut-off side
 ! lgr_mpi_grow_export		enlarge the lists of marks
+! lgr_mpi_list_fail		record a failure of the lists found in the particle loop
+! lgr_mpi_list_check		abort on a recorded failure (main thread, after the loop)
 ! lgr_mpi_search_key		place of an element in find_elem_from_old's search
 ! lgr_mpi_selftest_key		self-test of the key against that search
 ! lgr_mpi_clear_of_sides	point clear of an element's sides by the margin
@@ -195,6 +197,31 @@
 	! in its slot, mark cleared). Each fires once in the whole run.
 	logical, save :: lgr_test_drop = .false.
 	logical, save :: lgr_test_dup = .false.
+
+	! test hook of the error path of the lists (read once by lgr_mpi_init,
+	! several processes only; mpirun passes it with -x NAME):
+	! LGR_TEST_GROW_FAIL=export or =park makes the first enlargement of
+	! that list on every process take the path of a failed allocate,
+	! once (read and cleared inside the critical section lgr_export)
+	logical, save :: lgr_test_grow_export = .false.
+	logical, save :: lgr_test_grow_park = .false.
+
+	! a failure of the lists of marks or of parked particles found where
+	! the list grows or is appended to, which can be inside the OpenMP
+	! particle loop of drogue (#242). MPI is initialised with
+	! MPI_THREAD_FUNNELED, so a worker thread must not call MPI_ABORT: the
+	! routine that finds the failure records it (lgr_mpi_list_fail, inside
+	! the critical section lgr_export; the first failure of the process),
+	! appends nothing and leaves the particle out of the rest of the step;
+	! the main thread aborts with the message in lgr_mpi_list_check, after
+	! the particle loop and before every collective call of the
+	! hand-over. lgr_list_fail: 0 none, 1 allocation in
+	! lgr_mpi_grow_export, 2 allocation in lgr_mpi_grow_park, 3 argument
+	! check of lgr_mpi_mark_side, 4 argument check of lgr_mpi_park;
+	! lgr_list_info: the slot of the particle, four values of the message
+	! and the OpenMP thread that found it
+	integer, save :: lgr_list_fail = 0
+	integer, save :: lgr_list_info(6) = 0
 
 	! limit nbdymax on several processes: insert_particle does not stop
 	! there, it only records that this process passed the limit by itself;
@@ -379,7 +406,10 @@
 !
 ! test hook: if the environment variable LGR_TEST_SMALL_EXPORT is set to 1
 ! the lists start with 2 entries instead of 1024, so that their growth is
-! exercised by a small run
+! exercised by a small run; LGR_TEST_GROW_FAIL=export or =park makes the
+! first growth of that list on every process take the path of a failed
+! allocate once (lgr_mpi_grow_export, lgr_mpi_grow_park: the run stops
+! through lgr_mpi_list_check on the main thread, #242)
 !
 ! test hooks of lgr_mpi_check_consistency, read here once (several
 ! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
@@ -437,6 +467,11 @@
 	if( ist == 0 ) then
 	  read(sval,*,iostat=ios) ir
 	  if( ios == 0 ) lgr_test_dup = ( ir == my_id )
+	end if
+	call get_environment_variable('LGR_TEST_GROW_FAIL',sval,status=ist)
+	if( ist == 0 ) then
+	  lgr_test_grow_export = ( trim(sval) == 'export' )
+	  lgr_test_grow_park = ( trim(sval) == 'park' )
 	end if
 
 	blgr_chk = nint(getpar('levdbg')) >= 2
@@ -1783,10 +1818,14 @@
 ! cut-off side, with the time t_left and the crossings n_left still to do;
 ! it goes to rank -lgr_ieltv(iside,ie) - 1000. Sets lgr_marked(i) (the
 ! particle's own slot); the shared lists are read and written only inside
-! the critical section lgr_export and grow when full (the test before it
+! the critical section lgr_export and grow when full (the argument test
 ! reads only values fixed after start-up: lgr_ieltv, bmpi_lagr, which is
 ! true exactly when the lists are allocated). Called by the tracker,
 ! inside the parallel loop of drogue or outside any parallel region.
+! A failed argument test or a failed growth is recorded
+! (lgr_mpi_list_fail) instead of aborting here, which can be a worker
+! thread: nothing is appended, the particle stays marked (the caller
+! stops its step) and the main thread aborts in lgr_mpi_list_check (#242)
 
 	use shympi, only : my_id, n_threads
 
@@ -1799,54 +1838,74 @@
 	integer, intent(in) :: n_left		!crossings still allowed
 
 	integer :: r
+	logical :: bok
 
 	r = -lgr_ieltv(iside,ie) - 1000
-	if( r < 0 .or. r >= n_threads .or. r == my_id			&
-     &		.or. .not. bmpi_lagr ) then
-	  write(6,*) 'lgr_mpi_mark_side: i,ie,iside,mark: ',i,ie,iside	&
-     &		,lgr_ieltv(iside,ie)
-	  call shympi_abort_internal('lgr_mpi_mark_side: not a cut-off'	&
-     &		//' side of a parallel run')
-	end if
 
-	lgr_marked(i) = 1
+	lgr_marked(i) = 1		!also on a failure: the caller stops
 
 !$OMP CRITICAL (lgr_export)
-	if( n_export + 1 > size(export_idx) ) call lgr_mpi_grow_export
-	n_export = n_export + 1
-	export_idx(n_export) = i
-	export_dest(n_export) = r
-	export_elem(n_export) = ie
-	export_side(n_export) = iside
-	export_nleft(n_export) = n_left
-	export_tleft(n_export) = t_left
+	if( r < 0 .or. r >= n_threads .or. r == my_id			&
+     &		.or. .not. bmpi_lagr ) then
+	  call lgr_mpi_list_fail(3,i,ie,iside,lgr_ieltv(iside,ie),0)
+	else
+	  bok = .true.
+	  if( n_export + 1 > size(export_idx) ) then
+	    call lgr_mpi_grow_export(i,bok)
+	  end if
+	  if( bok ) then
+	    n_export = n_export + 1
+	    export_idx(n_export) = i
+	    export_dest(n_export) = r
+	    export_elem(n_export) = ie
+	    export_side(n_export) = iside
+	    export_nleft(n_export) = n_left
+	    export_tleft(n_export) = t_left
+	  end if
+	end if
 !$OMP END CRITICAL (lgr_export)
 
 	end subroutine lgr_mpi_mark_side
 
 !*******************************************************************
 
-	subroutine lgr_mpi_grow_export
+	subroutine lgr_mpi_grow_export(i,bok)
 
 ! doubles the size of the lists of marks (new lists, copy of the n_export
 ! entries in use, move_alloc); called inside the critical section
-! lgr_export of lgr_mpi_mark_side
+! lgr_export of lgr_mpi_mark_side, possibly by a worker thread. If the
+! allocation fails (or the test hook LGR_TEST_GROW_FAIL=export takes this
+! path once) the lists stay as they are, the failure is recorded
+! (lgr_mpi_list_fail; lgr_mpi_list_check aborts on the main thread with
+! the message 'lgr_mpi_grow_export: allocation') and bok is false: the
+! caller appends nothing
 
 	use shympi, only : my_id
 
 	implicit none
 
-	integer :: ierr, nnew
+	integer, intent(in) :: i		!slot of the particle to append
+	logical, intent(out) :: bok		!the lists have grown
+
+	integer :: ierr, nnew, ith
 	integer, allocatable :: idest(:), iidx(:), ielem(:), iside(:)
 	integer, allocatable :: inleft(:)
 	real, allocatable :: rtleft(:)
 
 	nnew = 2*max(size(export_idx), 1)
 
-	allocate(idest(nnew), iidx(nnew), ielem(nnew), iside(nnew)	&
+	if( lgr_test_grow_export ) then	!test hook: a failed allocate, once
+	  lgr_test_grow_export = .false.
+	  ierr = -1
+	else
+	  allocate(idest(nnew), iidx(nnew), ielem(nnew), iside(nnew)	&
      &		, inleft(nnew), rtleft(nnew), stat=ierr)
-	if (ierr /= 0) call shympi_abort_internal			&
-     &		('lgr_mpi_grow_export: allocation')
+	end if
+	if( ierr /= 0 ) then
+	  call lgr_mpi_list_fail(1,i,nnew,ierr,size(export_idx),0)
+	  bok = .false.
+	  return
+	end if
 
 	idest(1:n_export) = export_dest(1:n_export)
 	iidx(1:n_export) = export_idx(1:n_export)
@@ -1862,10 +1921,111 @@
 	call move_alloc(rtleft,export_tleft)
 
 	n_export_grow = n_export_grow + 1
-	if( blgr_dbg ) write(6,*) 'lgr_mpi_grow_export: rank ',my_id,	&
-     &		' new size ',nnew,' growth number ',n_export_grow
+	if( blgr_dbg ) then
+	  call openmp_get_thread_num(ith)
+	  write(6,*) 'lgr_mpi_grow_export: rank ',my_id,		&
+     &		' new size ',nnew,' growth number ',n_export_grow	&
+     &		,' OpenMP thread ',ith
+	end if
+	bok = .true.
 
 	end subroutine lgr_mpi_grow_export
+
+!*******************************************************************
+
+	subroutine lgr_mpi_list_fail(kind,i,i1,i2,i3,i4)
+
+! records a failure of the lists of marks or of parked particles (kind:
+! see lgr_list_fail at the top of the module) found for the particle in
+! slot i, with four values for the message and the OpenMP thread that
+! found it; only the first failure of this process is kept. Called inside
+! the critical section lgr_export, inside the particle loop of drogue or
+! outside any parallel region; it makes no MPI call (#242: a worker thread
+! must not, MPI_THREAD_FUNNELED). lgr_mpi_list_check reports and aborts
+
+	implicit none
+
+	integer, intent(in) :: kind		!1 to 4
+	integer, intent(in) :: i		!particle (slot)
+	integer, intent(in) :: i1, i2, i3, i4	!values of the message
+
+	integer :: ith
+
+	if( lgr_list_fail /= 0 ) return		!the first one is reported
+	call openmp_get_thread_num(ith)
+	lgr_list_fail = kind
+	lgr_list_info = (/ i, i1, i2, i3, i4, ith /)
+
+	end subroutine lgr_mpi_list_fail
+
+!*******************************************************************
+
+	subroutine lgr_mpi_list_check(where)
+
+! called by the main thread outside any parallel region: by drogue right
+! after its particle loop (before the global count, its first collective
+! call) and by lgr_mpi_handover before the collective call of every
+! round (the marks and parkings of the step 5 of the round before). If a
+! failure of the lists was recorded on this process (lgr_mpi_list_fail),
+! writes what failed and stops every process through
+! shympi_abort_internal with the message of the routine that found it;
+! the other processes wait in their next collective call until MPI_ABORT
+! ends them. Nothing is recorded in a run that works: then it returns at
+! once and changes nothing (#242)
+
+	use shympi, only : my_id
+
+	implicit none
+
+	character(len=*), intent(in) :: where	!caller, for the message
+
+	integer :: k(6)
+
+	if( lgr_list_fail == 0 ) return
+
+	k = lgr_list_info
+	select case( lgr_list_fail )
+	case( 1 )
+	  write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a)') ' lgr_mpi_list_check:'	&
+     &		//' rank ',my_id,' ('//where//'): the list of marks at'	&
+     &		//' cut-off sides could not grow from ',k(4),' to ',k(2)	&
+     &		,' entries (allocate stat ',k(3),'); particle slot ',k(1)	&
+     &		,' was left out of the step (found by OpenMP thread ',k(6)	&
+     &		,')'
+	  flush(6)
+	  call shympi_abort_internal('lgr_mpi_grow_export: allocation')
+	case( 2 )
+	  write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0,a)') ' lgr_mpi_list_check:'	&
+     &		//' rank ',my_id,' ('//where//'): the list of parked'	&
+     &		//' particles could not grow from ',k(4),' to ',k(2)	&
+     &		,' entries (allocate stat ',k(3),'); particle slot ',k(1)	&
+     &		,' was left out of the step (found by OpenMP thread ',k(6)	&
+     &		,')'
+	  flush(6)
+	  call shympi_abort_internal('lgr_mpi_grow_park: allocation')
+	case( 3 )
+	  write(6,'(a,i0,a)') ' lgr_mpi_list_check: rank ',my_id		&
+     &		,' ('//where//'): a mark at a side that is not a cut-off'	&
+     &		//' side of a parallel run'
+	  write(6,*) 'lgr_mpi_mark_side: i,ie,iside,mark: ',k(1:4)
+	  flush(6)
+	  call shympi_abort_internal('lgr_mpi_mark_side: not a cut-off'	&
+     &		//' side of a parallel run')
+	case( 4 )
+	  write(6,'(a,i0,a)') ' lgr_mpi_list_check: rank ',my_id		&
+     &		,' ('//where//'): a parking that is not one of a parallel'	&
+     &		//' run'
+	  write(6,*) 'lgr_mpi_park: rank,i,phase,class: ',my_id,k(1:3)
+	  flush(6)
+	  call shympi_abort_internal('lgr_mpi_park: not a parking of a'	&
+     &		//' parallel run')
+	case default
+	  write(6,*) 'lgr_mpi_list_check: rank ',my_id,' kind '		&
+     &		,lgr_list_fail
+	  call shympi_abort_internal('lgr_mpi_list_check: internal error')
+	end select
+
+	end subroutine lgr_mpi_list_check
 
 !*******************************************************************
 
@@ -2166,6 +2326,11 @@
 ! particle's element, xi, depth, layer and type in lgr_ar(i) and skips
 ! the rest of track_finish; lgr_mpi_handover resolves it by position
 ! (lgr_mpi_resolve) and resumes it. Several processes only.
+! A failed argument test or a failed growth is recorded
+! (lgr_mpi_list_fail) instead of aborting here, which can be a worker
+! thread: nothing is appended, the caller (lgr_mpi_locate, bpark true)
+! stops the particle's step, and the main thread aborts in
+! lgr_mpi_list_check (#242)
 
 	use shympi, only : my_id
 
@@ -2177,12 +2342,14 @@
 	real, intent(in) :: xo, yo		!old point
 	real, intent(in) :: xn, yn		!new point
 
+	logical :: bok
+
 	if( .not. bmpi_lagr .or. phase < 1 .or. phase > 2			&
      &		.or. iclass < 3 .or. iclass > 4 ) then
-	  write(6,*) 'lgr_mpi_park: rank,i,phase,class: ',my_id,i,phase	&
-     &		,iclass
-	  call shympi_abort_internal('lgr_mpi_park: not a parking of a'	&
-     &		//' parallel run')
+!$OMP CRITICAL (lgr_export)
+	  call lgr_mpi_list_fail(4,i,phase,iclass,0,0)
+!$OMP END CRITICAL (lgr_export)
+	  return
 	end if
 
 	lgr_park_xy(1,i) = xo
@@ -2193,42 +2360,65 @@
 	lgr_marked(i) = 1 + phase
 
 !$OMP CRITICAL (lgr_export)
-	if( n_park + 1 > size(park_idx) ) call lgr_mpi_grow_park
-	n_park = n_park + 1
-	park_idx(n_park) = i
-	park_class(n_park) = iclass
+	bok = .true.
+	if( n_park + 1 > size(park_idx) ) call lgr_mpi_grow_park(i,bok)
+	if( bok ) then
+	  n_park = n_park + 1
+	  park_idx(n_park) = i
+	  park_class(n_park) = iclass
+	end if
 !$OMP END CRITICAL (lgr_export)
 
 	end subroutine lgr_mpi_park
 
 !*******************************************************************
 
-	subroutine lgr_mpi_grow_park
+	subroutine lgr_mpi_grow_park(i,bok)
 
 ! doubles the size of the list of parked particles (new lists, copy of
 ! the n_park entries in use, move_alloc); called inside the critical
-! section lgr_export of lgr_mpi_park
+! section lgr_export of lgr_mpi_park, possibly by a worker thread. If the
+! allocation fails (or the test hook LGR_TEST_GROW_FAIL=park takes this
+! path once) the lists stay as they are, the failure is recorded
+! (lgr_mpi_list_fail; lgr_mpi_list_check aborts on the main thread with
+! the message 'lgr_mpi_grow_park: allocation') and bok is false: the
+! caller appends nothing
 
 	use shympi, only : my_id
 
 	implicit none
 
-	integer :: ierr, nnew
+	integer, intent(in) :: i		!slot of the particle to append
+	logical, intent(out) :: bok		!the lists have grown
+
+	integer :: ierr, nnew, ith
 	integer, allocatable :: iidx(:), icls(:)
 
 	nnew = 2*max(size(park_idx), 1)
 
-	allocate(iidx(nnew), icls(nnew), stat=ierr)
-	if (ierr /= 0) call shympi_abort_internal			&
-     &		('lgr_mpi_grow_park: allocation')
+	if( lgr_test_grow_park ) then	!test hook: a failed allocate, once
+	  lgr_test_grow_park = .false.
+	  ierr = -1
+	else
+	  allocate(iidx(nnew), icls(nnew), stat=ierr)
+	end if
+	if( ierr /= 0 ) then
+	  call lgr_mpi_list_fail(2,i,nnew,ierr,size(park_idx),0)
+	  bok = .false.
+	  return
+	end if
 
 	iidx(1:n_park) = park_idx(1:n_park)
 	icls(1:n_park) = park_class(1:n_park)
 	call move_alloc(iidx,park_idx)
 	call move_alloc(icls,park_class)
 
-	if( blgr_dbg ) write(6,*) 'lgr_mpi_grow_park: rank ',my_id,	&
-     &		' new size ',nnew
+	if( blgr_dbg ) then
+	  call openmp_get_thread_num(ith)
+	  write(6,*) 'lgr_mpi_grow_park: rank ',my_id,' new size ',nnew	&
+     &		,' OpenMP thread ',ith
+	end if
+	bok = .true.
 
 	end subroutine lgr_mpi_grow_park
 
@@ -3809,6 +3999,7 @@
 	lgr_npark_step = 0
 	lgr_nsent_round = 0
 	do
+	  call lgr_mpi_list_check('hand-over')	!before the collective call
 	  nloc(1) = n_export
 	  nloc(2) = n_park
 	  nloc(3) = lgr_nsent_round		!sent in the round before
