@@ -88,6 +88,7 @@
 ! 23.05.2023	ggu	in setznv() loop over ie_mpi
 ! 07.06.2023	ggu	new routine compute_dry_elements()
 ! 24.04.2025	ggu	write out dry elements and nodes
+! 22.11.2026	arb	setznv: owner's sums on a node partition (#230)
 !
 !*****************************************************************
 
@@ -703,9 +704,17 @@
 ! compute znv for dry areas
 !-------------------------------------------------------------
 
-        !call shympi_comment('shympi_elem: exchange v1v, v2v')
-        call shympi_exchange_and_sum_2d_nodes(v1v)
-        call shympi_exchange_and_sum_2d_nodes(v2v)
+	! partition on nodes: the owner of a node holds all its elements
+	! and has added them in the serial order (ip_sort_elem), so the
+	! ghost copies take its sums; adding the ghosts' partial sums
+	! (exchange and sum) counted shared elements twice (#230)
+	if( shympi_partition_on_elements() ) then
+          call shympi_exchange_and_sum_2d_nodes(v1v)
+          call shympi_exchange_and_sum_2d_nodes(v2v)
+	else
+	  call shympi_exchange_2d_node(v1v)
+	  call shympi_exchange_2d_node(v2v)
+	end if
 
 	do k=1,nkn
 	  if( znv(k) .eq. flag ) then		!out of system
