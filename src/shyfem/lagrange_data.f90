@@ -139,6 +139,10 @@
         logical, save :: bvdiff = .true.	!compute vertical diffusion
         logical, save :: bhdiff = .true.	!compute horizontal diffusion
         logical, save :: bbeach = .false.	!allow particle to beach on the shore
+	!spherical coordinates (get_coords_ev): set once by lagr_init_common
+	!at start-up, outside any parallel region; only read by the steps
+	!(lag_stk, lag_diff_hor) inside the particle loop of drogue
+        logical, save :: blgr_sphe = .false.
 
         integer, save :: ilagr                  !type of lagrangian simulation
         integer, save :: nbdy                   !total number of particles

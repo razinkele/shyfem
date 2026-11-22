@@ -555,19 +555,14 @@
         real				:: dx,dy !random displacement
 	real				:: xnew,ynew
         integer				:: ieold,ienew
-        integer, save			:: icall = 0	!initialization parameter
-        logical, save 			:: bsphe
-        integer       			:: isphe
         double precision 		:: ddx,ddy,xc,yc
         double precision 		:: dlat0,dlon0  !center of projection
 
-	bpark = .false.
+	! the type of coordinates, blgr_sphe, is set once by lagr_init_common
+	! before the first particle loop: this routine runs inside the OpenMP
+	! loop of drogue and writes no saved variable (#243)
 
-	if( icall == 0 ) then
-          call get_coords_ev(isphe)
-          bsphe = isphe .eq. 1
-	  icall = 1
-	end if
+	bpark = .false.
 
         if( iel <= 0 ) return     !particle out of domain
 
@@ -599,8 +594,8 @@
         xnew = x + dx
         ynew = y + dy
 
-        if ( bsphe ) then
-           ddx = dx 
+        if ( blgr_sphe ) then
+           ddx = dx
 	   ddy = dy
            dlon0 = x
            dlat0 = y

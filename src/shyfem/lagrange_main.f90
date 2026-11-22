@@ -435,11 +435,18 @@
 	implicit none
 
 	integer ifemop
+	integer isphe
 
         artype=getpar('artype')	!store special type in common block
         rwhpar=getpar('rwhpar')	!lagrangian diffusion
         stkpar=getpar('stkpar')	!stokes drift parameter
         dripar=getpar('dripar')	!drifter parameter
+
+	! type of coordinates, read once here (outside any parallel region)
+	! for lag_stk and lag_diff_hor, which run inside the OpenMP particle
+	! loop of drogue and only read blgr_sphe (#243)
+	call get_coords_ev(isphe)
+	blgr_sphe = isphe == 1
 
 	!lunit = ifemop('.lgi','form','new') !unit for lagrangian info
 	!if( lunit .le. 0 ) then
