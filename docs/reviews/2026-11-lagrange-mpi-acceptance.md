@@ -11,12 +11,15 @@ implementer of Task 7.2, on a clean build of the head of `lgr/s7-stops`: `make c
 `PATH=/usr/bin:$PATH make fem NETCDF=true NETCDFDIR=/usr NETCDFFDIR=/usr/local` (12:55 to 13:02),
 built at `ddf46f53`, whose Fortran is that of the head `3b460653` (the commit after it changes
 `check_mpi.sh` only); OpenMPI `libmpi.so.40`, binary sha256 `68a77b58…`, the tracked basin files.
-Every number in the table comes from the logs of this run (scripts and logs: `gates/t72/` in the
-plan's workspace; the details are in the section "Task 7.2" at the end). All gates were run
+Every number in the table comes from the logs of this run (scripts and logs: `docs/reviews/evidence/2026-11-lagrange-mpi/t72/`; the
+details are in the section "Task 7.2" at the end; the evidence folder's README says what each
+file is and how to run it). All gates were run
 again; nothing measured on the branch before is reused. What is reused was measured on the serial
 reference build `wt-lgr-ref3` (commit `0fddec90`) and does not depend on the branch's code since:
 the position and `tt` floors of the driver's table (Tasks 3.7 and 6.1), the six perturbed serial
-particle files that make the AC8 envelope (`gates/floors_runs/`), and the class floor 4 of the
+particle files that make the AC8 envelope (written by
+`testcases/examples/mar_menor/measure_lgr_floors.sh`; 61 MB, not kept in the repository, the
+script makes them again byte for byte), and the class floor 4 of the
 dense copy of case B (serial runs; the serial results of the shipped cases are byte-identical to
 `wt-lgr-ref3`, AC6 below). Cases: A `mm_lgr_a`, B `mm_lgr_b`, C `mm_lgr_c`, D `mm_lgr` (random
 walk), E `mm_lgr_e` (Stokes drift), W `mm_lgr_w` (case A with one release polygon around the whole
@@ -26,15 +29,16 @@ basin). Commands run in `testcases/examples/mar_menor`; NP is 2 and 4.
 |---|---|---|---|---|---|---|
 | AC1 | `flux3d` and `flux2d` in every held element equal serial; A, B, C (C also its bottom layer) | `./check_lgr_mpi.sh CASE NP flux` | rows off 0 (7,635 serial rows each, every one covered by exactly one main-owner row); largest A 1.0e-6, B 8.3e-7, C 8.8e-7 | rows off 0; largest A 9.1e-7, B 9.1e-7, C 8.8e-7 | 1e-5 of the array's largest serial value (spec, unchanged) | PASS |
 | AC2 | A, B, C, E, W: the same ids in the same blocks at every output, the same count per block (class floor 0: conservation exact), valid elements and layers | `./check_lgr_mpi.sh CASE NP ids` | 5 of 5 PASS | 5 of 5 PASS | exact | PASS |
-| AC3 (replaced) | Positions against the floors measured on the serial reference, in the particle file and in the dump; hand-over fidelity by the jump and count tests; in the particle file the inserted block, the layers, z and the element of every pair at distance 0 exact, `tt` within the `tt` floor. Replaces the 1e-5 degrees / 2 m of the spec: spec section 10a ("Positions cannot be gated at 1e-5 degrees or 2 m", "The hand-over check's rule is set by replay") and the plan's amendments after Tasks 3.4, 3.5, 3.7 and 5.2 | `./check_lgr_mpi.sh CASE NP pos` and `... floor` (A, B, C, E, W); `... handover` (A, B, C, W; `--min-changed 1` on 4) | beyond the limit at the last output / largest distance at any output: A 25 / 4.38e-4, B 5 / 103.25 m, C 0 / 2.72e-5, E 18 / 1.09e-3, W 8 / 2.78e-3 degrees (file and dump give the same); `tt` differs for no particle; hand-over check PASS 4 of 4 (largest changed-process distance A 2.4e-7, B 0, C 0, W 0) | A 24 / 4.34e-4, B 5 / 36 m, C 0 / 9.9e-6, E 16 / 1.16e-3, W 8 / 3.26e-4; no `tt` difference; hand-over check PASS 4 of 4 (A 6.0e-8, B 0.25 m, C 6.0e-8, W 6.0e-8) | floors A 78 / 2.98e-3, B 48 / 182 m, C 19 / 7.12e-3, E 33 / 4.3e-3, W 37 / 4.32e-3; `tt` floor B 2, W 1, else 0; jump threshold twice the stayed group's largest distance, at least 10 single-precision steps; count test at the Poisson 99.9 % quantile | PASS |
+| AC3 (replaced) | Positions against the floors measured on the serial reference, in the particle file and in the dump; hand-over fidelity by the jump and count tests; in the particle file the inserted block, the layers, z and the element of every pair at distance 0 exact, `tt` within the `tt` floor. Replaces the 1e-5 degrees / 2 m of the spec: spec section 10a ("Positions cannot be gated at 1e-5 degrees or 2 m", "The hand-over check's rule is set by replay") and the plan's amendments after Tasks 3.4, 3.5, 3.7 and 5.2. **Owner decision 2026-11-22, after the final review: "Accept the replacement"** (spec section 10a; plan, amendment after Task 3.4) | `./check_lgr_mpi.sh CASE NP pos` and `... floor` (A, B, C, E, W); `... handover` (A, B, C, W; `--min-changed 1` on 4) | beyond the limit at the last output / largest distance at any output: A 25 / 4.38e-4, B 5 / 103.25 m, C 0 / 2.72e-5, E 18 / 1.09e-3, W 8 / 2.78e-3 degrees (file and dump give the same); `tt` differs for no particle; hand-over check PASS 4 of 4 (largest changed-process distance A 2.4e-7, B 0, C 0, W 0) | A 24 / 4.34e-4, B 5 / 36 m, C 0 / 9.9e-6, E 16 / 1.16e-3, W 8 / 3.26e-4; no `tt` difference; hand-over check PASS 4 of 4 (A 6.0e-8, B 0.25 m, C 6.0e-8, W 6.0e-8) | floors A 78 / 2.98e-3, B 48 / 182 m, C 19 / 7.12e-3, E 33 / 4.3e-3, W 37 / 4.32e-3; `tt` floor B 2, W 1, else 0; jump threshold twice the stayed group's largest distance, at least 10 single-precision steps; count test at the Poisson 99.9 % quantile | PASS |
 | AC4 | Case D: ids over the three blocks and the count per block equal serial at every output, every active particle in the basin and in a valid layer; the consistency check (`levdbg = 3`) silent. No case F (spec section 10a, "3D") | `LGR_LEVDBG=3 ./check_lgr_mpi.sh mm_lgr NP ids` | PASS (145 active, none left at the end); 0 went to another process by position | PASS; 73 went to another process by position | exact | PASS |
-| AC5 | Case D: mean position and spread of each release group against serial | `gates/ac5_stats.py` on the files of the AC4 runs and a third serial run | 3 types x 4 values: largest difference 2.07 times the largest difference among three serial runs | largest 1.50 times it | reported, not gated | reported: no MPI value differs from the first serial run by more than three times the spread of three serial runs; 7 of 24 by more than three times the difference of the first two |
+| AC5 | Case D: mean position and spread of each release group against serial | `docs/reviews/evidence/2026-11-lagrange-mpi/ac5_stats.py` on the files of the AC4 runs and a third serial run | 3 types x 4 values: largest difference 2.07 times the largest difference among three serial runs | largest 1.50 times it | reported, not gated | reported: no MPI value differs from the first serial run by more than three times the spread of three serial runs; 7 of 24 by more than three times the difference of the first two |
 | AC6 | Serial runs: A, B, C, E, W `.lgr.shy`, `.hydro.shy`, `.inf`; D and `mar_menor_lagrange/mm_lgr_01` `.hydro.shy`, `.inf`, byte-identical to the reference build | `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin` | 19 of 19 files identical (`SERIAL GUARD: PASS`) | – | byte-identical | PASS |
 | AC7 | `mpirun -np 1` byte-identical to serial | the same guard (its `vs np1` comparisons) | 19 of 19 files identical | – | byte-identical | PASS |
-| AC8 (limit replaced) | `lgrelab -lgmean` of the MPI file of case A against the serial file: the same particle table; each value within the envelope of the six perturbed serial runs plus one unit of its last printed decimal. Replaces "within the AC3 limit": plan amendment after Task 5.2 | `python3 lgr_lgmean_compare.py SERIAL MPI BASE PERT x6` (`gates/floors_runs/`) | table equal (96 records); 1,721 of 1,728 values within the envelope, 1,728 within it plus one unit, 0 beyond | 1,723 / 1,728 / 0 | as in the column "Criterion" | PASS |
+| AC8 (limit replaced) | `lgrelab -lgmean` of the MPI file of case A against the serial file: the same particle table; each value within the envelope of the six perturbed serial runs plus one unit of its last printed decimal. Replaces "within the AC3 limit": plan amendment after Task 5.2. **Owner decision 2026-11-22: "Accept the replacement"** (as AC3) | `python3 lgr_lgmean_compare.py SERIAL MPI BASE PERT x6` (the base and the six perturbed particle files of case A from `measure_lgr_floors.sh`, folder `lgr_runs/`) | table equal (96 records); 1,721 of 1,728 values within the envelope, 1,728 within it plus one unit, 0 beyond | 1,723 / 1,728 / 0 | as in the column "Criterion" | PASS |
 | AC9 | The cases of spec section 7 | see "Task 7.2", spec section 7 | cases 1 to 9 each shown by a test or a recorded run of this session (case 6 on 8 processes, case 1 on 4 and 8) | | each has a test or a recorded run | PASS |
-| AC10 | Each "stops" option on several processes: one message naming the option, non-zero exit, no crash, no particle file. Serially the same STR file starts and the MPI message never appears (the driver's gate; the serial outcome is printed, not gated) | `./check_lgr_mpi.sh mm_lgr_a NP stops` | 10 of 10 rows ok (exit 33, message and advice once each, no signal, no particle file). Serially: 4 end (`lbeach`, `artype`, `ised`, `ilarv`), 6 fail on their own, two of them crashes (`ilagr = 3` SIGFPE, #231; `ldecay` SIGSEGV, #226); no serial log has the MPI message | 10 of 10 rows ok; the same serial outcomes | as in the column "Criterion" | PASS |
+| AC10 | Each "stops" option on several processes: one message naming the option, non-zero exit, no crash, no particle file. Serially the same STR file starts and the MPI message never appears (the driver's gate; the serial outcome is printed, not gated) | `./check_lgr_mpi.sh mm_lgr_a NP stops` | 10 of 10 rows ok (exit 33, message and advice once each, no signal, no particle file). Serially: 4 end (`lbeach`, `artype`, `ised`, `ilarv`), 6 fail on their own, two of them crashes (`ilagr = 3` SIGFPE, #231; `ldecay` SIGSEGV, #226); no serial log has the MPI message | 10 of 10 rows ok; the same serial outcomes | as in the column "Criterion" | PASS. Final fix round (2026-11-22): 12 of 12 rows on 2 and on 4 processes with `rwhpar < 0` and `ipvert < -1` added (both end serially); the serial `lgrtrj` stop is now an abort, exit 33 (section "Final fix round") |
 | AC11 | Particles that went to another process by position at zero displacement (A, B, C have no random walk; W added) | the relocation line of the `handover` runs | A 0, B 0, C 0, W 0 | A 0, B 1, C 2, W 1 | reported; no particle lost or duplicated by one (counts equal at every output, the consistency check silent) | reported; PASS |
+| Focus 5 | The global particle limit (plan, Review Focus 5): `nbdymax` exceeded by the sum over the processes, or by one process, stops every process with the serial message, once, and no process hangs | `bash docs/reviews/evidence/2026-11-lagrange-mpi/focus5_nbdymax.sh NP` (case B, 1,003 particles released at the start, with `nbdymax` 500 and 200, on NP processes and serially; timeout 300 s) | 500: exit 33, `Cannot insert more than nbdymax particles` once, the abort line on both processes, not ended, no signal; 200: the same | 500: exit 33, message once, abort line on all 4 processes, not ended, no signal (the release puts 251, 252, 246, 254 particles on the processes: only the global sum passes 500); 200: the same (every process passes 200 by itself) | one message, non-zero exit on several processes, no hang; serially (both values) the message once, `STOP` with exit 0, as before | PASS |
 
 Also on this build: the tool self-tests (`test_lgr_compare.sh`, `test_lgr_dbg_compare.sh`,
 `lgr_lgmean_compare.py --selftest`) PASS; `./check_lgr_serial.sh repro` `REPRO: PASS`; the MPI gate
@@ -300,12 +304,12 @@ cut off by the partition is treated like a side with a neighbour. The plan's
 amendment after Task 3.7 has the full statement.
 
 **Evidence that ties the test cases back to `main`.** The serial guard of the
-final commit against the previous reference `/home/razinka/wt-lgr-ref2`
+final commit against the previous reference build `wt-lgr-ref2`
 (main plus the deterministic vertex pick, `84f07ac6`), 03:58 EET: the only
 file that differs is `mm_lgr_e.lgr.shy`, by this correction (`SERIAL GUARD:
 FAIL` by design); the closed basin (A), the open-boundary case (B) and the
 closed 3D basin (C) are byte-identical, and so are the hydrodynamic files of
-every case. Against the new reference `/home/razinka/wt-lgr-ref3` (`0fddec90`),
+every case. Against the new reference build `wt-lgr-ref3` (`0fddec90`),
 04:01 EET: `SERIAL GUARD: PASS`. From here on the guard's reference is
 `wt-lgr-ref3`.
 
@@ -331,8 +335,9 @@ and B run to the end serially and on 4 processes; on 4 processes case B runs
 `-fcheck=bounds` runs the 19 serial and MPI runs of the bounds gate without a
 runtime message.
 
-**Position floors on the new reference** (`gates/floors.sh` in the plan's
-workspace: a serial run against six serial runs whose wind drag is changed by
+**Position floors on the new reference** (`testcases/examples/mar_menor/measure_lgr_floors.sh`,
+then `floors.sh` in the plan's working folder; log `docs/reviews/evidence/2026-11-lagrange-mpi/floors_ref3.log`:
+a serial run against six serial runs whose wind drag is changed by
 a relative +-1e-5, +-7e-6 and +-4e-6; the floor is the envelope of the six;
 compared with `lgr_dbg_compare.py part --by key`, limit 1e-5 degrees, case B
 2 m):
@@ -346,13 +351,14 @@ compared with `lgr_dbg_compare.py part --by key`, limit 1e-5 degrees, case B
 
 The table values are the measured envelopes rounded up. The `tt` floor (added in Task 5.1, used
 by the `pos` mode as `--max-tt-differ`) is the most particles whose time `tt` differs from the
-base run in one perturbed run, counted on the particle files of `gates/floors_runs/` with
+base run in one perturbed run, counted on the particle files of the floor runs (`lgr_runs/` of
+`measure_lgr_floors.sh`) with
 `lgr_compare.py --mode pos`: in case B two particles leave the basin one time step apart in
 three of the six runs (`+1e-5`, `+7e-6`, `+4e-6`). Until Task 5.1 the driver held A 2.97e-3
 and C 7.1e-3 (rounded down, below the measurement); the gates of stage 3 quoted below ran
 against those values and stay as recorded.
 
-Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on `/home/razinka/wt-lgr-ref3`, 28 runs, all ended; the gate script and its log are in the plan's workspace (`gates/floors.sh`, `gates/floors_ref3.log`).
+Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on the reference build `wt-lgr-ref3`, 28 runs, all ended; the script is `testcases/examples/mar_menor/measure_lgr_floors.sh` and its log `docs/reviews/evidence/2026-11-lagrange-mpi/floors_ref3.log` (the particle files of the runs are made again by the script: for case A the seven files of a rerun on 2026-11-22 are byte-identical to the ones used here, log `floors_a_rerun.log` of the same folder).
 
 ## Task 3.5: the hand-over by position (AC11) and the hand-over check
 
@@ -582,7 +588,7 @@ floor` and `mm_lgr_c 4 floor` with the new table: PASS (24 / 78, 4.34e-4 / 2.98e
 9.9e-6 / 7.12e-3).
 
 Self-check of the table: each of the 24 perturbed serial runs of Task 3.7
-(`gates/floors_runs/`) against its base run with `lgr_compare.py --mode pos` (`--tol 1e-5`,
+(their particle files, `lgr_runs/` of `measure_lgr_floors.sh`) against its base run with `lgr_compare.py --mode pos` (`--tol 1e-5`,
 case B `--tol 2`) and the table's three floors (`--max-beyond-last`, `--max-largest`,
 `--max-tt-differ`): all 24 PASS (largest distances up to 2.97344e-3 in A, 181.75 m in B,
 7.1106e-3 in C, 4.29153e-3 in E, the dump's values; `tt` differing for 2 particles in B
@@ -596,7 +602,7 @@ file identical (lgr.shy, hydro.shy, inf of A, B, C, E; hydro.shy, inf of D and o
 `REPRO: PASS`.
 
 **AC8** (`lgr_lgmean_compare.py`: `lgrelab -lgmean` of the serial file and of the 4-process
-file of case A; the serial file is byte-identical to the base run of `gates/floors_runs/`; the
+file of case A; the serial file is byte-identical to the base run of the floor runs; the
 allowed difference of each value is the envelope of the base against the six perturbed runs,
 value by value). The particle table (per record: active, new, exited, beached, types) is equal
 in all 96 records, the three type files have the same times. Values beyond the envelope:
@@ -623,14 +629,14 @@ serial and the 4-process file; `ids` on 4 PASS. Against case B's floors `pos` on
 particles, and on the time `tt` of 4 particles (one whose serial time stays while the MPI time
 advances, consistent with a particle resting in a dry element in one run only; two whose times
 stay fixed in both runs at different values; one that leaves the basin one step later at the same
-position). The copy's own floors measured the same way on `/home/razinka/wt-lgr-ref3` (base
+position). The copy's own floors measured the same way on the reference build `wt-lgr-ref3` (base
 against six perturbed serial runs, particle file): 577 to 1,258 beyond 2 m at the last output,
 745 to 6,118 m largest distance, `tt` differing for 26 to 75 particles, 0 to 4 particles in
 another block (active in one run, exited in the other) at some output; the 4-process run is
 within all of them (202, 499 m, 4, 0); with `tt` compared exactly the copy fails, as the
 perturbed serial runs do. Ruling (controller): the copy is a one-off configuration gated against its own
-floors (`gates/case_b_idtl30m/` in the plan's workspace: the STR file and the measured
-envelope), `lgr_compare.py --max-tt-differ N` counts the particles whose `tt` differs against a
+floors (`docs/reviews/evidence/2026-11-lagrange-mpi/case_b_idtl30m/`: the STR file, the measured envelope and the script
+that measured it), `lgr_compare.py --max-tt-differ N` counts the particles whose `tt` differs against a
 floor (without it `tt` stays exact; the shipped cases keep it exact). Rerun 09:50 to 09:54:
 `./check_lgr_mpi.sh mm_lgr_b 4 pos --max-beyond-last 1258 --max-largest 6118 --max-tt-differ
 75`: PASS (202, 499 m, 4); `ids` on 4: PASS; the 48 inserted blocks again exactly the ids
@@ -668,8 +674,9 @@ or a trap.
 by the implementer, on the stage-6 branch (`lgr/s6-random`, from `b2f438fd`): the binary of the
 work tree with this task's statistic line (`lagrange_mpi.f90`, committed as `e5357166` with the
 first form of this section; OpenMPI `libmpi.so.40`); the
-floors of the new case on `/home/razinka/wt-lgr-ref3` (`0fddec90`) with the inputs of commit
-`6b514083`. Logs in the plan's workspace (`gates/`) and in the implementer's report.
+floors of the new case on the reference build `wt-lgr-ref3` (`0fddec90`) with the inputs of commit
+`6b514083`. The floor log is `docs/reviews/evidence/2026-11-lagrange-mpi/floors_w.log`; the scripts of spec section 7,
+case 4 are in `docs/reviews/evidence/2026-11-lagrange-mpi/d5/`.
 
 **What was added.** (1) Case `mm_lgr_w.str` (commit `6b514083`): case A with its three release
 polygons replaced by one rectangle around the whole geographic basin,
@@ -752,9 +759,9 @@ release gate `./check_lgr_mpi.sh mm_lgr_w NP part --by key --tol 0 --first-only 
 | 6 | 12, 12, 16, 13, 13, 14 | PASS |
 | 8 | 11, 11, 10, 9, 11, 8, 10, 10 | PASS |
 
-Floors of `mm_lgr_w` (`gates/floors.sh /home/razinka/wt-lgr-ref3/bin 6b514083 key 3 mm_lgr_w`,
-11:20:56 EET, seven runs, all ended; log `gates/floors_w.log`, particle files in
-`gates/floors_runs/`): beyond 1e-5 degrees at the last output 23 to 37, largest distance at any
+Floors of `mm_lgr_w` (`measure_lgr_floors.sh <wt-lgr-ref3>/bin 6b514083 key 3 mm_lgr_w`, then
+`floors.sh` in the plan's working folder, 11:20:56 EET, seven runs, all ended; log
+`docs/reviews/evidence/2026-11-lagrange-mpi/floors_w.log`; the particle files are written again by the script): beyond 1e-5 degrees at the last output 23 to 37, largest distance at any
 output 1.1124e-3 to 4.3113e-3 degrees; `tt` differs for 1 particle in each of the six runs
 (particle 46 comes to rest in the permanently dry element 870 in every run, at a time between
 327,900 and 329,100 s); class floor 0 (no particle unmatched at any output in the six dump
@@ -783,9 +790,9 @@ basin holds none, and stops when the counts differ; a serial run ignores it (a s
 B with the partitioned basin is byte-identical to one with the same basin made without the
 partition). `check_part_basin` (`src/utils/shympi/mpi_node.f90`) has no caller, and the tracked
 `GRID/partition.2.txt`, `GRID/partition.4.txt` are statistics tables of a partition (domain,
-nodes, elements, ghosts), not assignments. The partition files (gates/d5/) are made from the
+nodes, elements, ghosts), not assignments. The partition files (`docs/reviews/evidence/2026-11-lagrange-mpi/d5/part_first.grd`, `part_second.grd`) are made from the
 tracked `GRID/MM_coarse.4.node.grd` (the METIS partition of this mesh on 4 processes) by
-`gates/d5_partition.py`, and the runs are in a scratch copy of the test folder whose
+`d5/d5_partition.py` of the same folder, and the runs are in a scratch copy of the test folder whose
 `GRID/MM_coarse.bas` is rebuilt by `shypre -partition` (this basin differs from the tracked one
 in the 138 bytes `make init` changes, so the serial reference is the serial run of the same
 folder). Where particles leave: in the serial run all 595 leave through open sides between
@@ -802,7 +809,7 @@ elements of rank 2 with METIS (so no leaving is case 4 there: METIS on 4 process
   `shympi_exchange_and_sum_2d_nodes`, although with a node partition the owner already holds
   every element around its own node; the angle of a shared node is counted once per holder, and
   a node whose sum passes 359.99 degrees is classified inner. A replay of that sum from the
-  coordinates (`gates/d5/winkv.py`) names node 158 first for this partition, and 18 boundary
+  coordinates (`docs/reviews/evidence/2026-11-lagrange-mpi/d5/winkv.py`) names node 158 first for this partition, and 18 boundary
   nodes in all (14 open-boundary nodes and the four below); for METIS on 4 processes it
   predicts four material-boundary nodes classified inner (10, 16, 25, 32), which stops nothing
   and so is not shown by a run (code present since the initial commit; a finding outside #217
@@ -817,14 +824,15 @@ elements of rank 2 with METIS (so no leaving is case 4 there: METIS on 4 process
   the consistency check silent); `floor` PASS (6 / 48 beyond 2 m, 36 / 182 m); `handover
   --min-changed 1` PASS (1,194 changed-process pairs, largest 0.25 m against 2.5 m). The new
   line: `lgr left the basin: particles 595, from an element whose main owner is another process:
-  274`; the dump gives the same 274 (`gates/d5_count.py`: particles of class D on each process
+  274`; the dump gives the same 274 (`d5/d5_count.py` of the evidence folder: particles of class D on each process
   against the main owner in the flux dump): rank 2 carried them out of elements 62 (104), 369
   (40), 512 (47), 526 (45), 537 (37) and 168 (1), all with main owner rank 1. The dump reads the
   same particle state as the line, so it checks the counting and the main-owner lookup; the
   premise of both (a particle that has left stays with the process that carried it out) holds in
   the dump: each of the 595 keeps one process and one element over all its 18,904 rows of class
   D. With METIS the same line reads 595 / 0. The whole D5 run from a commit, with the steps
-  above, is `gates/d5/run_d5.sh` (rerun at 11:44 on `e5357166`: PASS, 274).
+  above, is `docs/reviews/evidence/2026-11-lagrange-mpi/d5/run_d5.sh` (rerun at 11:44 on `e5357166`: PASS, 274); the first partition's
+  start-up stop is in `d5/setnod_first.txt`.
 
 **Gates after the change** (same binary): `./check_lgr_mpi.sh CASE 4 ids` and `pos` for A, B, C
 and E PASS (A 24 / 78, 4.34e-4; B 5 / 48, 36 m; C 0 / 19, 9.9e-6; no `tt` difference);
@@ -871,7 +879,9 @@ After the change: `LGR GATE: PASS`.
 | `ilarv` (1) | `... option ilarv ...` | 33 | ends |
 | `icnn` (1) | `... option icnn ...` | 33 | `connectivity: stations defined but no release` |
 | `lgrpps` (1) | `... option lgrpps ...` | 33 | `Please change nbdymax in STR file` (the river releases more than 5000) |
-| `lgrtrj` | `... option lgrtrj ...` | 33 | `lgrlin and lgrtrj not allowed` (case A has `lgrlin`) |
+| `lgrtrj` | `... option lgrtrj ...` | 33 | `lgrlin and lgrtrj not allowed` (case A has `lgrlin`); since the final fix round the serial stop is an abort, exit 33 |
+| `rwhpar < 0` (-1, added in the final fix round) | `... option rwhpar < 0 ...` | 33 | ends |
+| `ipvert < -1` (-2, added in the final fix round) | `... option ipvert < -1 ...` | 33 | ends (case A is 2D: nothing is drawn) |
 
 Every row also prints `run on one process, or remove NAME` once, and no row has a SIGFPE, SIGSEGV
 or `Fortran runtime` line or a particle file on 4 processes; no serial log holds the MPI message.
@@ -883,8 +893,9 @@ consistency check silent). None of these cases sets an option of the table.
 ## Task 7.2: the CI gate, the full acceptance run, the sweep, the follow-up issues
 
 **Measured** 2026-11-22 12:55 to 13:40 EET (from `date`) by the implementer, on the clean build
-described in the summary at the top. Scripts and logs are kept in `gates/t72/` of the plan's
-workspace: `t72_ci.sh` (CI's conditions and the mutation check), `t72_acc.sh` (the criteria),
+described in the summary at the top. Scripts and logs are in `docs/reviews/evidence/2026-11-lagrange-mpi/t72/` (made in the plan's
+working folder and moved there in the final fix round; the paths the logs print are those of the
+run): `t72_ci.sh` (CI's conditions and the mutation check), `t72_acc.sh` (the criteria),
 `t72_acc2.sh`, `t72_acc3.sh`, `t72_c7run.sh` (spec section 7, cases 4, 6, 7, and the third serial
 run of AC5), `t72_sweep.sh` (the sweep), with their logs and the tools they call
 (`t72_extract.py`, `t72_c7find.py`, `t72_c7check.py`, `t72_sweepjoin.py`).
@@ -900,7 +911,7 @@ PARTS=METIS METISDIR=/usr`; step "MPI run smoke" runs `make init` in
 pushes to `main` and on pull requests that touch `testcases/**` (among others), so the new check
 runs on the stage PR itself. The step's comment in the workflow still names four checks.
 
-**Check 5** (`check_mpi.sh`, commit `3b460653`): `bash check_lgr_mpi.sh mm_lgr_w "$NP" pos`, then
+**Check 5** (`check_mpi.sh`, commit `3b460653`; since the final fix round it also runs `ids` with the consistency check on and `handover --min-changed 1`, section "Final fix round" at the end): `bash check_lgr_mpi.sh mm_lgr_w "$NP" pos`, then
 `... ids`, each counted in the gate's result through the gate's `fail` like checks 1 to 4 (exit
 1 and `MPI GATE: FAIL` if either fails; the driver's last 25 lines are printed then). Case W
 releases its particles from one polygon around the whole basin, so the release is split between
@@ -943,7 +954,7 @@ the same 26 s and 17 s, and the same numbers). In the last CI run of a stage bra
 about 15 to 20 s to the job, which took 2 min 24 s. The workflow sets no `timeout-minutes`, so the
 job runs under GitHub's default limit of 360 minutes; the gate fits with a wide margin.
 
-**Mutation check** (`t72_ci.sh /home/razinka/wt-lgr-ref3/bin`, 13:02 EET; an export of the test
+**Mutation check** (`t72_ci.sh <wt-lgr-ref3>/bin`, 13:02 EET; an export of the test
 folders with the reference build `wt-lgr-ref3`, commit `0fddec90`, first on `PATH`; that build
 predates the particle output on several processes): checks 1 to 4 pass (energy lines 5.42e-06;
 the tilt stop; the restart; the 6-node stop), check 5 fails in both modes because the 4-process
@@ -1023,9 +1034,9 @@ on 2 and 4 (10); handover A, B, C, W on 2 and 4 and B on 8 (9); case D ids on 2 
 | 1. A particle crosses two or more cut-off sides in one step | `handover` of B on 4 and 8 (`lgr hand-over` line) | most hand-overs at a side of one particle in one step: 2 on 4 and on 8 processes (1 on 2); both runs PASS |
 | 2. An element held by three processes: fluxes summed over three holders, a particle crossing there | `flux` A, B, C on 4; `handover` B on 4 and 8, W on 4 | one element held by three processes on 4 (three on 8), in the flux comparison with 0 rows off; hand-overs at a side that start in such an element: B 14 on 4, 56 on 8, W 1 on 4 (the dense copy of case 6: 10,672 at a side and 8 by position on 8) |
 | 3. A cut-off side whose two end nodes are basin boundary nodes | the side table at `levdbg = 3`, every dump run | `added between two basin boundary nodes`: 2 on 2 processes, 4 on 4, 1 on 8 (all cases; the same mesh and partition) |
-| 4. A particle leaving through the open boundary from a mixed element held by a process that is not its main owner | `gates/d5/run_d5.sh HEAD` (case B with a partition written into the basin, 13:28) | `LGR_LEVDBG=3 ./check_lgr_mpi.sh mm_lgr_b 4 ids` PASS; `lgr left the basin: particles 595, from an element whose main owner is another process: 274`; the dump count gives 274 (all on rank 2); with METIS 0 of 595 |
+| 4. A particle leaving through the open boundary from a mixed element held by a process that is not its main owner | `docs/reviews/evidence/2026-11-lagrange-mpi/d5/run_d5.sh HEAD` (case B with a partition written into the basin, 13:28) | `LGR_LEVDBG=3 ./check_lgr_mpi.sh mm_lgr_b 4 ids` PASS; `lgr left the basin: particles 595, from an element whose main owner is another process: 274`; the dump count gives 274 (all on rank 2); with METIS 0 of 595 |
 | 5. A process without particles at release and at output | `part --by key --tol 0 --first-only --elem --ranks-empty-ok` A on 4 | release block per process 0, 0, 49, 96; PASS; the ids, pos, floor and handover runs of A on 4 with these two empty processes PASS |
-| 6. More than 1,024 particles changing process in one step | the dense copy of case B (`gates/case6/`, 200,001 particles) on 8 processes, `part --by key` (13:28 to 13:30) | at most 1,236 particles change process in one step (the step ending at 36,900 s); 377,552 hand-overs at a side and 262 by position; the consistency check silent at every step; in the domain plus left = 200,001 at every output. The part mode prints FAIL on COUNT at 129,600, 151,200 and 172,800 s: one particle (key 1295, the same as at the end of stage 3) rests in the dry element in the serial run and has left in the MPI run: 1 against the class floor 4 of this copy, so the criterion as now defined holds. The hand-over check on these dumps: jump 17.25 m <= 112.5 m, count 855 <= 886, both ok (rates 2.77e-3 changed, 2.58e-3 stayed, as at stage 3). On 4 processes this copy peaks at 837 (stage 3), below 1,024, so it was not rerun there |
+| 6. More than 1,024 particles changing process in one step | the dense copy of case B (`docs/reviews/evidence/2026-11-lagrange-mpi/case6/`, 200,001 particles) on 8 processes, `part --by key` (13:28 to 13:30) | at most 1,236 particles change process in one step (the step ending at 36,900 s); 377,552 hand-overs at a side and 262 by position; the consistency check silent at every step; in the domain plus left = 200,001 at every output. The part mode prints FAIL on COUNT at 129,600, 151,200 and 172,800 s: one particle (key 1295, the same as at the end of stage 3) rests in the dry element in the serial run and has left in the MPI run: 1 against the class floor 4 of this copy, so the criterion as now defined holds. The hand-over check on these dumps: jump 17.25 m <= 112.5 m, count 855 <= 886, both ok (rates 2.77e-3 changed, 2.58e-3 stayed, as at stage 3). On 4 processes this copy peaks at 837 (stage 3), below 1,024, so it was not rerun there |
 | 7. A release point on a side between elements of two processes: the serial run inserts it in both elements, the MPI run must give the same particles and ids | a constructed release (no shipped case has such a point, Task 4.2): case A with two square polygons, each centred exactly, in single precision, on the midpoint of a side between elements of two main owners (`t72_c7find.py`: side 515-1083, elements 1336 and 2512, main owners 0 and 1 on 2 processes; side 120-943, elements 446 and 451, main owners 0 and 1 on 4 processes); the polygon release puts its grid point (0, 0) at the centre, and the point lies on the side in `intri`'s arithmetic | serial run: each midpoint inserted twice, ids 13 (element 1336) and 73 (2512), ids 86 (446) and 94 (451); on 2 processes ids 13 and 73 in the same elements on processes 0 and 1; on 4 processes ids 86 and 94 in the same elements on processes 0 and 1; the release gate with ids (`part --by key --tol 0 --first-only --elem --ranks-empty-ok --ids`) and `ids` over the whole run (134 particles, every output) PASS on 2 and 4 (13:32 to 13:33). The first two checks (13:27 with squares of half-size 4e-3 degrees, 13:30 with these) reported one copy per point: the checker matched the dump's x, y exactly, but those come back from each copy's internal coordinates in its own element and differ in the last bits; matched within 1e-5 degrees (the release spacing is 1.4e-3 degrees) the run of record finds both copies |
 | 8. A dry element next to a cut-off side | the `lgr dry elements` line of the dump runs | the permanently dry elements 365 and 870 have cut-off sides on 2 processes: dry element-steps with a cut-off side A 2,306 of 2,306, B 1,154 of 1,258, C 1,154 of 1,154, W 2,306 of 2,306; on 8 (B) 1,258 of 1,258; on 4 none (both lie inside one process); all these runs PASS |
 | 9. More than one OpenMP thread with hand-overs | copies of A, C, E with `nomp = -1` and `levdbg = 3` on 4 processes, `OMP_NUM_THREADS=4` (two runs) and one thread | every log `used OMP threads: 4` (the one-thread run: 1); run 1 = run 2 = the one-thread run, every dump file byte-identical (A 12, C 16, E 12 files); hand-overs A 283 at a side, C 190 and 2 by position, E 10 and 39 |
@@ -1082,8 +1093,10 @@ processes crashed before, so it never showed. Likely mechanism, not proven: `get
 (`src/shyfem/iostr.f90`) opens the `.inf` on every process that calls it, so the other processes
 write over the start of rank 0's file; the same symptom as #220 (the simple sediment module).
 It changes no criterion above (none reads the `.inf` of a multi-process run; the serial `.inf` is
-byte-identical to the reference, AC6) and no Fortran was changed for it in this task. A draft issue
-text and the two `mm_lgr_a.inf` files are in `gates/t72/`.
+byte-identical to the reference, AC6) and no Fortran was changed for it in this task. The two
+`mm_lgr_a.inf` files (532 KB each) are not kept in the repository: a build before `309226f6` writes
+them again with `./check_lgr_mpi.sh mm_lgr_a 4 ids`; the draft issue text was not needed, the
+defect was fixed in Task 7.3.
 
 **Fixed in Task 7.3** (`drogue`): on several processes only rank 0 calls `getinfo` and writes the
 `lagrange_nbdy:` line, and the value is the sum of the counts of all processes (one `MPI_Allreduce`
@@ -1194,7 +1207,7 @@ States as of 2026-11-22 (`gh issue view`); every issue in the table is open unle
 | #225 | the random numbers are never seeded, so a run with the random walk is not reproducible (spec section 9) | Not addressed. Case D (the random walk) is therefore gated on what does not depend on the stream (AC4: ids and counts per block exact, every particle in the basin and in a valid layer), and its mean and spread are reported, not gated (AC5); it has no position floor. |
 | #226 | `lgr_output` looks up the coordinates of element 0 for deleted and decayed particles (spec section 9) | Not addressed. Decay (`ldecay > 0`) crashes in a serial run too (SIGSEGV in `xi_abc` ← `xi2xy` ← `lgr_output_fill`, reproduced in Task 7.1 and recorded on the issue); since stage 5 the serial and the MPI output share the record routine, so one fix covers both; on several processes `ldecay` stops at start-up (AC10). |
 | #227 | `itlin = 1` (semi-Lagrangian momentum advection) is unverified on several processes (spec section 9) | Outside this project; not addressed. |
-| #228 | the options that stop under MPI (spec section 9; tracking issue) | **The stops are in** (Task 7.1, AC10 above): `ilagr = 3`, `lbeach`, `artype`, `ldecay`, `lgrini`, `ised`, `ilarv`, `icnn`, `lgrpps`, `lgrtrj` stop at start-up on several processes with one message naming the option. What remains is the issue's purpose: each option needs its own test case and acceptance criterion before it moves to "works", and the issue's table should gain `ilagr = 3` (it stops too; its serial crash is #231). The last item of spec section 9 belongs here: `lgr_mpi_reduce_connect` sums the connectivity matrices in place every step (the connectivity row of the table). |
+| #228 | the options that stop under MPI (spec section 9; tracking issue) | **The stops are in** (Task 7.1, AC10 above): `ilagr = 3`, `lbeach`, `artype`, `ldecay`, `lgrini`, `ised`, `ilarv`, `icnn` (any value other than 0 since the final fix round), `lgrpps`, `lgrtrj`, and since the final fix round `rwhpar < 0` and `ipvert < -1`, stop at start-up on several processes with one message naming the option. What remains is the issue's purpose: each option needs its own test case and acceptance criterion before it moves to "works", and the issue's table should gain `ilagr = 3` (it stops too; its serial crash is #231). The last item of spec section 9 belongs here: `lgr_mpi_reduce_connect` sums the connectivity matrices in place every step (the connectivity row of the table). |
 | #230 | a 3D run with an open boundary differs between serial and MPI in its hydrodynamics (found in stage 1) | Not addressed (outside the particle module). Because of it case C is a closed 3D basin and there is no case F (spec section 10a). |
 | #231 | `ilagr = 3` crashes in a serial run (found in stage 1) | Not addressed; `ilagr = 3` stops on several processes (AC10), and serially it still crashes in the first release (the stops gate prints it as the serial row's own failure). |
 | #234 | the tracker read `ilhv` with a negative element number when a particle left the domain (found in stage 2) | **Fixed on the branch in stage 2** (Task 2.4, with two more reads of that kind and three declarations); serial files of A, B, C, E byte-identical with the fix. Main still has the defect until the merge. |
@@ -1203,3 +1216,85 @@ States as of 2026-11-22 (`gh issue view`); every issue in the table is open unle
 Known issues of the 4-process sweep (C4 below), outside the particle module: #216 (the tilt
 stop, by design), #218 (fixed on main in PR #219, a clear stop), #220 (simple sediment info lines
 from every rank), #222 (`shyelab -outformat nc` for EUTRO and mercury output).
+
+## Final fix round (2026-11-22, after the final review of the branch)
+
+**Measured** 2026-11-22 14:39 to 15:16 EET (from `date`) by the implementer of the fix round, on
+builds of the work tree of `lgr/s7-stops` (the Fortran of the round is commit `4145db7c`; OpenMPI
+`libmpi.so.40`; the tracked basin files). Commands in `testcases/examples/mar_menor`.
+
+**An abort instead of a bare `stop` on paths several processes run.** 41 bare `stop` statements
+(the start-up checks and allocations of `mod_lagrange_init`, the growth of the particle array, the
+tracker in `lagrange_vertical.f90`, the polygon release in `lagrange_init.f90`, `insert_particle`
+and the release helpers in `lagrange_inout.f90`, `lagrange` and `drogue`, and `lagr_vel` of the
+semi-Lagrangian advection) call `shympi_abort_internal` with the same message; on several processes
+every process now ends instead of one stopping and the others waiting. The `MPI_Allreduce` of
+`drogue` moved into the module (`lgr_mpi_global_count`). Neither changes a track: the debug dumps
+of A, B, C and E, serially and on 4 processes (`./check_lgr_mpi.sh CASE 4 part`), are
+byte-identical to those of `309226f6` (65 files of 65), `./check_lgr_serial.sh <wt-lgr-ref3>/bin`
+prints `SERIAL GUARD: PASS` (38 comparisons, all identical) and `./check_lgr_serial.sh repro`
+`REPRO: PASS`. A serial run that reaches one of these lines ends with exit 33 instead of 0 (the
+`lgrtrj` row of the stops below).
+
+**Two more options stop on several processes, and `icnn` on any value.** `rwhpar < 0` (the
+diffusivity taken from the local diffusivity of the element) and `ipvert < -1` (the random
+vertical release: `insert_particle_3d` draws a random depth with `random_number` for each of the
+`|ipvert|` particles of a release point in a basin with more than one layer and `ilagr = 2`;
+`ilagr = 3` stops anyway, and in a 2D basin or with `ilagr = 1` nothing is drawn, but the value
+stops the run there too) ran on several processes untested; no shipped test case sets either. The
+module switches connectivity on for any `icnn` other than 0, so the stop tests `/= 0`.
+`./check_lgr_mpi.sh mm_lgr_a NP stops`, NP 2 and 4: `LGR GATE: PASS`, 12 of 12 rows (exit 33, the
+message and the advice once each, no signal, no particle file); serially `rwhpar` (-1) and
+`ipvert` (-2) end, the other rows as in Task 7.1 except `lgrtrj`, which still prints `lgrlin and
+lgrtrj not allowed` but now ends through the abort, exit 33.
+
+**Review Focus 5, the global particle limit** (row "Focus 5" of the summary table;
+`docs/reviews/evidence/2026-11-lagrange-mpi/focus5_nbdymax.sh`, log `focus5_nbdymax.log` there).
+
+| `nbdymax` | 4 processes | 2 processes | Serial |
+|---|---|---|---|
+| 500 | exit 33, message once, abort line on 4 processes, not ended | exit 33, message once, abort line on 2 processes, not ended | message once, `STOP`, exit 0 |
+| 200 | the same | the same | the same |
+
+No run hung (timeout 300 s, every run ended at the first release) and no run printed a signal.
+On 4 processes the release puts 251, 252, 246 and 254 particles on the processes, so with 500 only
+the sum over the processes passes the limit (the global test of `lgr_mpi_assign_ids`), and with
+200 every process passes it by itself (the flag of `insert_particle`).
+
+**The CI gate's check 5 sees a hand-over regression.** Check 5 runs `mm_lgr_w` in mode `pos`, in
+mode `ids` with `LGR_LEVDBG=2` (the consistency check active at every step, silent in both runs),
+and in mode `handover --min-changed 1`. `./check_mpi.sh 2`: `MPI GATE: PASS` in 37 s (28 s with
+the version of `309226f6`); `./check_mpi.sh 4`: `MPI GATE: PASS` in 36 s (25 s): the round adds
+9 s on 2 and 11 s on 4 processes. Hand-over check of check 5: 46 changed-process pairs on 2 (all
+at distance 0), 113 on 4 (largest 5.96e-8 degrees against a threshold of 6e-7). The driver's mode
+`handover` now passes `--min-changed 1` itself on several processes (a `--min-changed` among the
+caller's arguments replaces it):
+
+| Case | 2 processes | 4 processes | 8 processes |
+|---|---|---|---|
+| A | PASS (1 changed-process pair) | PASS (192) | PASS (374) |
+| B | PASS (121) | PASS (1,119) | PASS (1,803) |
+| C | **FAIL with the default**: 0 changed-process pairs; no particle changes process at all on this partition (0 hand-overs at a side, 0 by position); PASS with `--min-changed 0` | PASS (171) | PASS (269) |
+| W | PASS (46) | PASS (113) | PASS (214) |
+
+Case C on 2 processes is an open question for the controller (keep the default and run that cell
+with `--min-changed 0`, or another rule); every other run passes, with the same groups as in the
+acceptance run.
+
+**`lgr_compare.py`: nothing compared is a failure.** A file without any output time cannot be read
+(exit 2, as before); two files whose output times hold no particle passed in both modes and now
+fail with `nothing compared: N output times in both files, no particle in them` (new lines of
+`test_lgr_compare.sh`; RED before the change, `LGR COMPARE TEST: PASS` after).
+
+**Other gates on the same build.** `./check_lgr_mpi.sh CASE 4 ids` and `pos` for A, B, C, E, W:
+PASS (10 of 10). Tool self-tests: `LGR COMPARE TEST: PASS`, `LGR DBG COMPARE TEST: PASS`,
+`LGMEAN SELFTEST: PASS`.
+
+**The evidence is in the repository.** The inputs, logs and one-off scripts that this file, the
+plan's amendments and the driver's floor table cite are in `docs/reviews/evidence/2026-11-lagrange-mpi/`
+(its README lists each file, who cites it and how to run it); the floor script is
+`testcases/examples/mar_menor/measure_lgr_floors.sh` and the bounds gate
+`testcases/examples/mar_menor/check_lgr_bounds.sh`. The floor script, run from the repository
+against the reference build for case A, gives the floor of the table again (78 / 2.9734e-3
+degrees, the same seven runs) and writes particle files byte-identical to the ones AC8 used
+(`floors_a_rerun.log`).

@@ -1,0 +1,161 @@
+build	folder	str	variant	class	rc	steps	detail
+default	mar_menor	mm_rst_write	ser	ENDED	0	576	
+default	mar_menor	mm_rst_write	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_cycle_write	ser	ENDED	0	576	
+default	mar_menor	mm_rst_cycle_write	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_periodic	ser	ENDED	0	288	
+default	mar_menor	mm_rst_periodic	mpi	ENDED	0	288	
+default	mar_menor	mm_rst_repeat	ser	ENDED	0	576	
+default	mar_menor	mm_rst_repeat	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_ssedi_write	ser	ENDED	0	576	
+default	mar_menor	mm_rst_ssedi_write	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_keps_write	ser	ENDED	0	288	
+default	mar_menor	mm_rst_keps_write	mpi	ENDED	0	288	
+default	weutro_box	eco_rst_part1	ser	STOP	0	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_rst_part1	mpi	STOP	1	0	STOP error stop ecological_module: ibio
+default	weutro_box	merc_rst_part1	ser	STOP	0	0	STOP error stop mercury_init: mercury module is not linked
+default	weutro_box	merc_rst_part1	mpi	STOP	1	0	STOP error stop mercury_init: mercury module is not linked
+default	restart_strip	strip_rst	ser	ENDED	0	12	
+default	restart_strip	strip_rst	mpi	STOP	33	0	 error stop handle_partition: too many MPI processes for this mesh
+default	channel_turb	gotm_gen_20	ser	ENDED	0	2880	
+default	channel_turb	gotm_gen_20	mpi	ENDED	0	2880	
+default	channel_turb	gotm_gen_40	ser	ENDED	0	2880	
+default	channel_turb	gotm_gen_40	mpi	ENDED	0	2880	
+default	channel_turb	gotm_ke1_20	ser	ENDED	0	2880	
+default	channel_turb	gotm_ke1_20	mpi	ENDED	0	2880	
+default	channel_turb	gotm_ke1_40	ser	ENDED	0	2880	
+default	channel_turb	gotm_ke1_40	mpi	ENDED	0	2880	
+default	channel_turb	gotm_ke2_20	ser	ENDED	0	2880	
+default	channel_turb	gotm_ke2_20	mpi	ENDED	0	2880	
+default	channel_turb	gotm_ke2_40	ser	ENDED	0	2880	
+default	channel_turb	gotm_ke2_40	mpi	ENDED	0	2880	
+default	channel_turb	keps_20	ser	ENDED	0	2880	
+default	channel_turb	keps_20	mpi	ENDED	0	2880	
+default	channel_turb	keps_40	ser	ENDED	0	2880	
+default	channel_turb	keps_40	mpi	ENDED	0	2880	
+default	mar_menor	mm_hyd_00	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_00	mpi	ENDED	0	1152	
+default	mar_menor	mm_hyd_01	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_01	mpi	ENDED	0	1152	
+default	mar_menor	mm_hyd_02	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_02	mpi	ENDED	0	1152	
+default	mar_menor	mm_hyd_03	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_03	mpi	ENDED	0	1152	
+default	mar_menor	mm_hyd_11	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_11	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_12a	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_12a	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_12b	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_12b	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_13	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_13	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_21	ser	ENDED	0	1152	
+default	mar_menor	mm_hyd_21	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_22	ser	STOP	0	197	STOP error stop setnod: open boundary node
+default	mar_menor	mm_hyd_22	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_22a	ser	ENDED	0	11733	
+default	mar_menor	mm_hyd_22a	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_22b	ser	ENDED	0	11520	
+default	mar_menor	mm_hyd_22b	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_23	ser	ENDED	0	11520	
+default	mar_menor	mm_hyd_23	mpi	STOP	33	0	 error stop ckbnds: general error
+default	mar_menor	mm_hyd_31	ser	ENDED	0	8640	
+default	mar_menor	mm_hyd_31	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_32a	ser	ENDED	0	8640	
+default	mar_menor	mm_hyd_32a	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_32b	ser	ENDED	0	8640	
+default	mar_menor	mm_hyd_32b	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_41	ser	STEPPING	124	1317	
+default	mar_menor	mm_hyd_41	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_42	ser	STEPPING	124	849	
+default	mar_menor	mm_hyd_42	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_43	ser	STEPPING	124	2549	
+default	mar_menor	mm_hyd_43	mpi	STOP	33	0	 boundary tilting (ktilt/ztilt) is not supported with MPI
+default	mar_menor	mm_hyd_assim	ser	ENDED	0	288	
+default	mar_menor	mm_hyd_assim	mpi	ENDED	0	288	
+default	mar_menor	mm_hyd_beach	ser	ENDED	0	288	
+default	mar_menor	mm_hyd_beach	mpi	ENDED	0	288	
+default	mar_menor	mm_hyd_beach_str	ser	ENDED	0	288	
+default	mar_menor	mm_hyd_beach_str	mpi	ENDED	0	288	
+default	mar_menor	mm_hyd_conz	ser	STEPPING	124	1057	
+default	mar_menor	mm_hyd_conz	mpi	STEPPING	124	291	
+default	mar_menor	mm_hyd_long	ser	ENDED	0	4032	
+default	mar_menor	mm_hyd_long	mpi	ENDED	0	4032	
+default	mar_menor	mm_lgr	ser	ENDED	0	1152	
+default	mar_menor	mm_lgr	mpi	ENDED	0	1152	
+default	mar_menor	mm_lgr_a	ser	ENDED	0	1152	
+default	mar_menor	mm_lgr_a	mpi	ENDED	0	1152	
+default	mar_menor	mm_lgr_b	ser	ENDED	0	576	
+default	mar_menor	mm_lgr_b	mpi	ENDED	0	576	
+default	mar_menor	mm_lgr_c	ser	ENDED	0	576	
+default	mar_menor	mm_lgr_c	mpi	ENDED	0	576	
+default	mar_menor	mm_lgr_e	ser	ENDED	0	1152	
+default	mar_menor	mm_lgr_e	mpi	ENDED	0	1152	
+default	mar_menor	mm_lgr_w	ser	ENDED	0	1152	
+default	mar_menor	mm_lgr_w	mpi	ENDED	0	1152	
+default	mar_menor	mm_rst_conflict	ser	ENDED	0	72	
+default	mar_menor	mm_rst_conflict	mpi	ENDED	0	72	
+default	mar_menor	mm_rst_cycle_read	ser	ENDED	0	576	
+default	mar_menor	mm_rst_cycle_read	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_read	ser	ENDED	0	576	
+default	mar_menor	mm_rst_read	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_read_mpi	ser	ENDED	0	576	
+default	mar_menor	mm_rst_read_mpi	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_read_periodic	ser	ENDED	0	216	
+default	mar_menor	mm_rst_read_periodic	mpi	ENDED	0	216	
+default	mar_menor	mm_rst_read_repeat	ser	ENDED	0	576	
+default	mar_menor	mm_rst_read_repeat	mpi	ENDED	0	576	
+default	mar_menor	mm_rst_read_trunc	ser	ENDED	0	1152	
+default	mar_menor	mm_rst_read_trunc	mpi	ENDED	0	1152	
+default	mar_menor	mm_rst_read_trunc72	ser	ENDED	0	1152	
+default	mar_menor	mm_rst_read_trunc72	mpi	ENDED	0	1152	
+default	mar_menor	mm_rst_ssedi_read	ser	ENDED	0	576	
+default	mar_menor	mm_rst_ssedi_read	mpi	ENDED	0	576	
+default	mar_menor_lagrange	mm_lgr_01	ser	ENDED	0	5760	
+default	mar_menor_lagrange	mm_lgr_01	mpi	STOP	33	0	 error stop ckbnds: general error
+default	restart_strip	strip_warm	ser	ENDED	0	12	
+default	restart_strip	strip_warm	mpi	STOP	33	0	 error stop handle_partition: too many MPI processes for this mesh
+default	venice_lagoon	venlag	ser	STEPPING	124	549	
+default	venice_lagoon	venlag	mpi	STEPPING	124	2237	
+default	venice_lagoon	venlag_assim	ser	ENDED	0	526	
+default	venice_lagoon	venlag_assim	mpi	ENDED	0	526	
+default	venice_lagoon	venlag_keps_smoke	ser	ENDED	0	503	
+default	venice_lagoon	venlag_keps_smoke	mpi	ENDED	0	503	
+default	venice_lagoon	venlag_smoke	ser	ENDED	0	526	
+default	venice_lagoon	venlag_smoke	mpi	ENDED	0	526	
+default	weutro_box	eco_2d	ser	STOP	0	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_2d	mpi	STOP	1	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_2d_mt	ser	STOP	0	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_2d_mt	mpi	STOP	1	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_3d	ser	STOP	0	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_3d	mpi	STOP	1	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_3d_light	ser	STOP	0	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_3d_light	mpi	STOP	1	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_3d_settle	ser	STOP	0	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_3d_settle	mpi	STOP	1	0	STOP error stop ecological_module: ibio
+default	weutro_box	eco_rst_part2	ser	OTHER	33	0	MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+default	weutro_box	eco_rst_part2	mpi	OTHER	33	0	MPI_ABORT was invoked on rank 3 in communicator MPI_COMM_WORLD
+default	weutro_box	merc_2d	ser	STOP	0	0	STOP error stop mercury_init: mercury module is not linked
+default	weutro_box	merc_2d	mpi	STOP	1	0	STOP error stop mercury_init: mercury module is not linked
+default	weutro_box	merc_rst_part2	ser	OTHER	33	0	MPI_ABORT was invoked on rank 0 in communicator MPI_COMM_WORLD
+default	weutro_box	merc_rst_part2	mpi	OTHER	33	0	MPI_ABORT was invoked on rank 1 in communicator MPI_COMM_WORLD
+eutro	weutro_box	eco_2d	ser	ENDED	0	576	
+eutro	weutro_box	eco_2d	mpi	ENDED	0	576	
+eutro	weutro_box	eco_2d_mt	ser	ENDED	0	576	
+eutro	weutro_box	eco_2d_mt	mpi	ENDED	0	576	
+eutro	weutro_box	eco_3d	ser	ENDED	0	576	
+eutro	weutro_box	eco_3d	mpi	ENDED	0	576	
+eutro	weutro_box	eco_3d_light	ser	ENDED	0	1152	
+eutro	weutro_box	eco_3d_light	mpi	ENDED	0	1152	
+eutro	weutro_box	eco_3d_settle	ser	ENDED	0	576	
+eutro	weutro_box	eco_3d_settle	mpi	ENDED	0	576	
+eutro	weutro_box	eco_rst_part1	ser	ENDED	0	288	
+eutro	weutro_box	eco_rst_part1	mpi	ENDED	0	288	
+eutro	weutro_box	eco_rst_part2	ser	ENDED	0	288	
+eutro	weutro_box	eco_rst_part2	mpi	ENDED	0	288	
+eutro	weutro_box	merc_2d	ser	ENDED	0	576	
+eutro	weutro_box	merc_2d	mpi	ENDED	0	576	
+eutro	weutro_box	merc_rst_part1	ser	ENDED	0	288	
+eutro	weutro_box	merc_rst_part1	mpi	ENDED	0	288	
+eutro	weutro_box	merc_rst_part2	ser	ENDED	0	288	
+eutro	weutro_box	merc_rst_part2	mpi	ENDED	0	288	

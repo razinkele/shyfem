@@ -1,0 +1,22 @@
+2026-11-22 14:59:23  floors: binary /home/razinka/wt-lgr-ref3/bin, inputs of 4145db7c, by key, in /tmp/lgrfloors.O2sjcb
+  mm_lgr_a.r0: ended
+  mm_lgr_a.r+1e-5: ended
+  mm_lgr_a.r-1e-5: ended
+  mm_lgr_a.r+7e-6: ended
+  mm_lgr_a.r-7e-6: ended
+  mm_lgr_a.r+4e-6: ended
+  mm_lgr_a.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_a  +1e-5       145       75   7.1812e-04   226800.0
+mm_lgr_a  -1e-5       145       78   1.6192e-03   295200.0
+mm_lgr_a  +7e-6       145       67   8.2368e-04   302400.0
+mm_lgr_a  -7e-6       145       76   2.9734e-03   295200.0
+mm_lgr_a  +4e-6       145       60   7.4387e-04   302400.0
+mm_lgr_a  -4e-6       145       51   2.9597e-03   295200.0
+mm_lgr_a  ENV                   78   2.9734e-03   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-22 15:00:02  comparisons and logs in:
+/tmp/lgrfloors.O2sjcb
+

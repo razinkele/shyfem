@@ -1,0 +1,25 @@
+2026-11-22 13:03:46 EET export of 3b460653 in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.8NDTBG, mode build
+MM_coarse.2.elem.grd MM_coarse.2.node.grd MM_coarse.4.elem.grd MM_coarse.4.node.grd MM_coarse.bas MM_coarse.grd MM_coarse_smooth.grd MM_geo.grd partition.2.txt partition.4.txt 
+13:05:29 CI build rc=0 in 103 s; libmpi.so.40: 1; bin/shyfem -> /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.8NDTBG/src/shyfem/shyfem; netcdf linked: 0
+shyfem: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.8NDTBG/src/shyfem/shyfem, shypre: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.8NDTBG/src/tools/shypre/shypre, mpirun: /usr/bin/mpirun, python3: /usr/bin/python3
+13:05:29 make init done; GRID/MM_geo.bas present before the gate: no
+13:05:29 === 1. mm_hyd_01: serial vs 4 processes
+13:05:35 1152 energy lines, largest relative difference 5.42e-06 (limit 1e-4)
+13:05:35 === 2. mm_hyd_11 (boundary tilting) must stop with a clear message
+13:05:35 stopped as expected:  boundary tilting (ktilt/ztilt) is not supported with MPI
+13:05:35 === 3. restart written and read on 4 processes
+13:05:36 mm_rst_write: ended
+13:05:38 mm_rst_read: ended
+13:05:38 === 4. a 6-node mesh on 4 processes must stop with a clear message
+13:05:38 stopped as expected: the mesh cannot be split into 4 domains:; 2 of them would have no nodes; the mesh has 6 nodes and 4 elements; use fewer MPI processes;
+13:05:38 === 5. mm_lgr_w (particles): particle file of 4 processes vs serial
+13:05:47 mm_lgr_w pos: floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 8 <= 37: ok
+13:05:47 mm_lgr_w pos: floor: largest distance at any output (t=327600.0): 0.000325978 <= 0.00432: ok
+13:05:47 mm_lgr_w pos: tt: particles whose tt differs (any output, any block): 0 <= 1: ok
+13:05:47 mm_lgr_w pos: LGR COMPARE: PASS (96 output times in A, 96 in B)
+13:05:55 mm_lgr_w ids: LGR COMPARE: PASS (96 output times in A, 96 in B)
+13:05:55 MPI GATE: PASS
+13:05:55 check_mpi.sh 4: exit 0, 26 s
+files made in GRID by the gate: MM_coarse.2.elem.grd MM_coarse.2.node.grd MM_coarse.4.elem.grd MM_coarse.4.node.grd MM_coarse.bas MM_coarse.grd MM_coarse_smooth.bas MM_coarse_smooth.grd MM_geo.bas MM_geo.grd partition.2.txt partition.4.txt shypre_geo.mpi.log 
+2026-11-22 13:05:55 EET done (/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.8NDTBG)
+ci exit 0

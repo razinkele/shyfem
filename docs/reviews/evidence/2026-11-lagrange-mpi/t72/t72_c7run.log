@@ -1,0 +1,56 @@
+scratch: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72c7run.uJmUed   head: 3b460653   binary sha256 68a77b5835b56175   2026-11-22 13:32:49 EET
+=== 13:32:49 spec section 7, case 7 (squares holding both elements of each side)
+-0.692030787 37.6623917 1
+-0.679030776 37.6623917 0
+-0.679030776 37.6753922 0
+-0.692030787 37.6753922 0
+-0.692030787 37.6623917 0
+-0.646306992 37.7123833 1
+-0.634307027 37.7123833 0
+-0.634307027 37.7243843 0
+-0.646306992 37.7243843 0
+-0.646306992 37.7123833 0
+mm_lgr_a   2 part     exit 0: LGR GATE: PASS
+    serial:  lgr_init_line: 150 3.13018507E-04 1.44457270E-03
+    serial:  elements fully in line: 2
+    serial:  elements to be checked: 17
+    serial:  lagr_init_all: 82 particles inserted
+    serial:  elements fully in line: 5
+    serial:  elements to be checked: 11
+    serial:  lagr_init_all: 52 particles inserted
+    release block: serial 134 entries, MPI 134 entries
+    point -0.685530782 37.6688919: serial (id, element) [(13, 1336), (73, 2512)]; MPI (id, element, process) [(13, 1336, 0), (73, 2512, 1)]
+      processes holding the copies: [0, 1]
+    point -0.640307009 37.7183838: serial (id, element) [(86, 446), (94, 451)]; MPI (id, element, process) [(86, 446, 1), (94, 451, 1)]
+      processes holding the copies: [1]
+    CASE 7 CHECK: PASS
+mm_lgr_a   2 ids      exit 0: LGR GATE: PASS
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+mm_lgr_a   4 part     exit 0: LGR GATE: PASS
+    serial:  lgr_init_line: 150 3.13018507E-04 1.44457270E-03
+    serial:  elements fully in line: 2
+    serial:  elements to be checked: 17
+    serial:  lagr_init_all: 82 particles inserted
+    serial:  elements fully in line: 5
+    serial:  elements to be checked: 11
+    serial:  lagr_init_all: 52 particles inserted
+    release block: serial 134 entries, MPI 134 entries
+    point -0.685530782 37.6688919: serial (id, element) [(13, 1336), (73, 2512)]; MPI (id, element, process) [(13, 1336, 0), (73, 2512, 0)]
+      processes holding the copies: [0]
+    point -0.640307009 37.7183838: serial (id, element) [(86, 446), (94, 451)]; MPI (id, element, process) [(86, 446, 0), (94, 451, 1)]
+      processes holding the copies: [0, 1]
+    CASE 7 CHECK: PASS
+mm_lgr_a   4 ids      exit 0: LGR GATE: PASS
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+=== 13:33:27 DONE (logs in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72c7run.uJmUed)
+c7run exit 0

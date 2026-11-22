@@ -1,0 +1,63 @@
+2026-11-22 04:04:23  floors: binary /home/razinka/wt-lgr-ref3/bin, inputs of 0fddec90, by key, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/floors.kiC6vo
+  mm_lgr_a.r+1e-5: ended
+  mm_lgr_a.r-1e-5: ended
+  mm_lgr_a.r0: ended
+  mm_lgr_a.r+7e-6: ended
+  mm_lgr_a.r-7e-6: ended
+  mm_lgr_a.r+4e-6: ended
+  mm_lgr_b.r+1e-5: ended
+  mm_lgr_b.r0: ended
+  mm_lgr_a.r-4e-6: ended
+  mm_lgr_b.r-1e-5: ended
+  mm_lgr_b.r+7e-6: ended
+  mm_lgr_b.r-7e-6: ended
+  mm_lgr_b.r+4e-6: ended
+  mm_lgr_b.r-4e-6: ended
+  mm_lgr_c.r0: ended
+  mm_lgr_c.r+1e-5: ended
+  mm_lgr_c.r-1e-5: ended
+  mm_lgr_c.r+7e-6: ended
+  mm_lgr_c.r-7e-6: ended
+  mm_lgr_c.r+4e-6: ended
+  mm_lgr_c.r-4e-6: ended
+  mm_lgr_e.r0: ended
+  mm_lgr_e.r+1e-5: ended
+  mm_lgr_e.r-1e-5: ended
+  mm_lgr_e.r+7e-6: ended
+  mm_lgr_e.r-7e-6: ended
+  mm_lgr_e.r+4e-6: ended
+  mm_lgr_e.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_a  +1e-5       145       75   7.1812e-04   226800.0
+mm_lgr_a  -1e-5       145       78   1.6192e-03   295200.0
+mm_lgr_a  +7e-6       145       67   8.2368e-04   302400.0
+mm_lgr_a  -7e-6       145       76   2.9734e-03   295200.0
+mm_lgr_a  +4e-6       145       60   7.4387e-04   302400.0
+mm_lgr_a  -4e-6       145       51   2.9597e-03   295200.0
+mm_lgr_a  ENV                   78   2.9734e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_b  +1e-5       408       48   1.8175e+02   169200.0
+mm_lgr_b  -1e-5       408       33   1.2944e+02   162000.0
+mm_lgr_b  +7e-6       408       28   1.8175e+02   169200.0
+mm_lgr_b  -7e-6       408       23   1.2944e+02   162000.0
+mm_lgr_b  +4e-6       408       21   1.0325e+02   169200.0
+mm_lgr_b  -4e-6       408       13   5.9000e+01   162000.0
+mm_lgr_b  ENV                   48   1.8175e+02   <- floor (envelope of 6 runs, limit 2)
+mm_lgr_c  +1e-5       648       19   2.0223e-04    93600.0
+mm_lgr_c  -1e-5       648       19   7.1106e-03    93600.0
+mm_lgr_c  +7e-6       648       17   2.0223e-04    93600.0
+mm_lgr_c  -7e-6       648       14   7.1106e-03    93600.0
+mm_lgr_c  +4e-6       648       12   7.3493e-05   165600.0
+mm_lgr_c  -4e-6       648       17   7.1106e-03    93600.0
+mm_lgr_c  ENV                   19   7.1106e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_e  +1e-5       145       26   4.2915e-03    25200.0
+mm_lgr_e  -1e-5       145       28   3.3197e-03    61200.0
+mm_lgr_e  +7e-6       145       29   4.2915e-03    25200.0
+mm_lgr_e  -7e-6       145       33   3.3197e-03    61200.0
+mm_lgr_e  +4e-6       145       27   3.2290e-03    61200.0
+mm_lgr_e  -4e-6       145       25   1.1024e-03    61200.0
+mm_lgr_e  ENV                   33   4.2915e-03   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-22 04:05:42  comparisons and logs in:
+/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/floors.kiC6vo
