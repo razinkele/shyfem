@@ -53,9 +53,11 @@
 # pos: lgr_compare.py --mode pos with the case's --tol and the same floors
 # (--max-beyond-last, --max-largest: particles of any block beyond --tol at
 # the last output, largest distance of any pair at any output; hl is then
-# compared only for pairs in the same element).  The ids per block, the
-# output times, layers, z, types, times, sinking and custom values gate
-# exactly as without floors.  mm_lgr has no floors: --tol pair by pair.
+# compared only for pairs in the same element) and the case's tt floor
+# (--max-tt-differ: particles whose time tt differs).  The ids per block,
+# the output times, layers, z, types, sinking and custom values gate
+# exactly as without floors.  mm_lgr has no floors: --tol pair by pair, tt
+# exact.
 # ids: lgr_compare.py --mode ids --same-counts --nel N --nlv L, with N and L
 # from the model header of the serial particle file (lgr_compare.py --dims:
 # the basin's element count and the number of layers).
@@ -133,13 +135,17 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E 4.2915e-3 -> 4.3e-3
 # (until Task 5.1 A and C were rounded down, 2.97e-3 and 7.1e-3, so that
 # perturbed serial runs exceeded them).  Never change a value to make a run
-# pass.  Mode pos uses the same floors on the particle file.
+# pass.  Mode pos uses the same floors on the particle file, and FLOOR_T,
+# the tt floor: the most particles whose time tt differs from the base run
+# in one of the six perturbed runs, measured on their particle files
+# (gates/floors_runs/ in the plan's workspace, lgr_compare.py --mode pos):
+# A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0.
 case "$CASE" in
-  mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3 ;;
-  mm_lgr_b) FLOOR_N=48; FLOOR_D=182 ;;
-  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3 ;;
-  mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3 ;;
-  *) FLOOR_N=""; FLOOR_D="" ;;
+  mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3; FLOOR_T=0 ;;
+  mm_lgr_b) FLOOR_N=48; FLOOR_D=182; FLOOR_T=2 ;;
+  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3; FLOOR_T=0 ;;
+  mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3; FLOOR_T=0 ;;
+  *) FLOOR_N=""; FLOOR_D=""; FLOOR_T="" ;;
 esac
 if [ "$MODE" = floor ] && [ -z "$FLOOR_N" ]; then
   echo "no position floor for $CASE (its random walk is never seeded, #225)"; usage
@@ -452,9 +458,10 @@ case "$MODE" in
       echo "  serial file:"; summary "$A"
       echo "  MPI file:";    summary "$B"
       if [ "$MODE" = pos ] && [ -n "$FLOOR_N" ]; then
-        echo "  floors of $CASE: beyond $TOL at the last output $FLOOR_N, largest distance at any output $FLOOR_D"
+        echo "  floors of $CASE: beyond $TOL at the last output $FLOOR_N, largest distance at any output $FLOOR_D, particles with another tt $FLOOR_T"
         python3 "$HERE/lgr_compare.py" "$A" "$B" --mode pos --tol "$TOL" \
-            --max-beyond-last "$FLOOR_N" --max-largest "$FLOOR_D" "$@"
+            --max-beyond-last "$FLOOR_N" --max-largest "$FLOOR_D" \
+            --max-tt-differ "$FLOOR_T" "$@"
         crc=$?
       elif [ "$MODE" = pos ]; then
         python3 "$HERE/lgr_compare.py" "$A" "$B" --mode pos --tol "$TOL" "$@"

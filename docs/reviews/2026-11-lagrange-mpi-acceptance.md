@@ -282,14 +282,18 @@ a relative +-1e-5, +-7e-6 and +-4e-6; the floor is the envelope of the six;
 compared with `lgr_dbg_compare.py part --by key`, limit 1e-5 degrees, case B
 2 m):
 
-| Case | Limit | Particles | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Floor: beyond / largest (table of the driver; measured envelope) |
-|---|---|---|---|---|---|
-| A | 1e-5 degrees | 145 | 51 to 78 | 7.2e-4 to 2.9734e-3 degrees | 78 / 2.98e-3 degrees (measured 2.9734e-3) |
-| B | 2 m | 408 | 13 to 48 | 59 to 181.75 m | 48 / 182 m (measured 181.75) |
-| C | 1e-5 degrees | 648 | 12 to 19 | 7.3e-5 to 7.1106e-3 degrees | 19 / 7.12e-3 degrees (measured 7.1106e-3) |
-| E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.2915e-3 degrees | 33 / 4.3e-3 degrees (measured 4.2915e-3) |
+| Case | Limit | Particles | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Particles with another `tt` (six runs, particle file) | Floor: beyond / largest / `tt` (table of the driver; measured envelope) |
+|---|---|---|---|---|---|---|
+| A | 1e-5 degrees | 145 | 51 to 78 | 7.2e-4 to 2.9734e-3 degrees | 0 | 78 / 2.98e-3 degrees (measured 2.9734e-3) / 0 (measured 0) |
+| B | 2 m | 408 | 13 to 48 | 59 to 181.75 m | 0 to 2 | 48 / 182 m (measured 181.75) / 2 (measured 2) |
+| C | 1e-5 degrees | 648 | 12 to 19 | 7.3e-5 to 7.1106e-3 degrees | 0 | 19 / 7.12e-3 degrees (measured 7.1106e-3) / 0 (measured 0) |
+| E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.2915e-3 degrees | 0 | 33 / 4.3e-3 degrees (measured 4.2915e-3) / 0 (measured 0) |
 
-The table values are the measured envelopes rounded up. Until Task 5.1 the driver held A 2.97e-3
+The table values are the measured envelopes rounded up. The `tt` floor (added in Task 5.1, used
+by the `pos` mode as `--max-tt-differ`) is the most particles whose time `tt` differs from the
+base run in one perturbed run, counted on the particle files of `gates/floors_runs/` with
+`lgr_compare.py --mode pos`: in case B two particles leave the basin one time step apart in
+three of the six runs (`+1e-5`, `+7e-6`, `+4e-6`). Until Task 5.1 the driver held A 2.97e-3
 and C 7.1e-3 (rounded down, below the measurement); the gates of stage 3 quoted below ran
 against those values and stay as recorded.
 
@@ -524,12 +528,12 @@ floor` and `mm_lgr_c 4 floor` with the new table: PASS (24 / 78, 4.34e-4 / 2.98e
 
 Self-check of the table: each of the 24 perturbed serial runs of Task 3.7
 (`gates/floors_runs/`) against its base run with `lgr_compare.py --mode pos` (`--tol 1e-5`,
-case B `--tol 2`) and the table's floors: both floor tests pass in all 24 (largest distances up
-to 2.97344e-3 in A, 181.75 m in B, 7.1106e-3 in C, 4.29153e-3 in E; the particle file gives the
-dump's values). 21 comparisons pass as a whole; the three case-B runs `+1e-5`, `+7e-6`, `+4e-6`
-fail only on the exact time `tt` of 2 particles each (exit times one step apart), and pass with
-`--max-tt-differ 2`. With the old table (A 2.97e-3, C 7.1e-3, rounded down) four of them
-exceeded the largest-distance floor.
+case B `--tol 2`) and the table's three floors (`--max-beyond-last`, `--max-largest`,
+`--max-tt-differ`): all 24 PASS (largest distances up to 2.97344e-3 in A, 181.75 m in B,
+7.1106e-3 in C, 4.29153e-3 in E, the dump's values; `tt` differing for 2 particles in B
+`+1e-5`, `+7e-6`, `+4e-6`, for none elsewhere). With the old table (A 2.97e-3, C 7.1e-3, rounded
+down, `tt` exact) seven of them failed. The `pos` runs above were rerun with the `tt` floor in
+the driver (B 2, A, C, E 0): all PASS, no `tt` differs in any of them.
 
 **AC7.** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`: `SERIAL GUARD: PASS`, every
 file identical (lgr.shy, hydro.shy, inf of A, B, C, E; hydro.shy, inf of D and of
