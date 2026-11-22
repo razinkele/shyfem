@@ -197,11 +197,17 @@
 !    move leaves where it reaches another side (above), at the end of
 !    side ii through the side that meets it there. That other side alone
 !    decides, not the rule that a side keeping the particle wins at a
-!    vertex: along a wall to its corner with an open boundary the
-!    particle leaves, while a move to the same end point from a start
-!    more than delta inside would be a vertex tie and keep it; along an
-!    open side to its corner with a wall the reverse. All of these lie
-!    within a few delta of the vertex. If it reaches no
+!    vertex. A move to the same end point from a start more than delta
+!    inside is decided by the side its segment reaches first: mostly that
+!    same other side (the same outcome), side ii if it reaches side ii
+!    first, and both sides together (a vertex, where a side that keeps
+!    the particle wins) only if the segment passes through the vertex.
+!    So the outcomes can differ in both directions: along a wall to its
+!    corner with an open boundary the particle leaves, while a start
+!    inside whose segment passes through the vertex keeps it; along an
+!    open side to its corner with a wall the particle stays, while a
+!    start inside that reaches the open side first leaves. All of these
+!    lie within a few delta of the vertex. If it reaches no
 !    other side (s_out >= 1) and the new point lies beyond the line of
 !    side ii (its raw area coordinate xi(ii) < 0, by any amount):
 !      - if the move goes outward (raw xi(ii) of the new point below that

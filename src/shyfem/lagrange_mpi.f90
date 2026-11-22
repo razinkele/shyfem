@@ -2483,7 +2483,9 @@
 	  do j = 1, 3
 	    if( j == ii ) cycle
 	    if( da(j) > -3.d0 ) bok = .false.
-	    if( db(j) > da(j) .and. sk(j)*dlen < 3.d0 ) bok = .false.
+	    if( db(j) > da(j) ) then		!goes out of side j: sk(j) set
+	      if( sk(j)*dlen < 3.d0 ) bok = .false.
+	    end if
 	  end do
 	  if( bok ) bok = along_ok(ii,xs(ii),ys(ii))
 	  if( bok ) then
@@ -2531,8 +2533,9 @@
 	  call clip(xs(ii),ys(ii),xb,yb,ii)
 	  bok = ( abs(da(ii)) <= 0.5d0 .and. abs(db(ii)) <= 0.5d0		&
      &		.and. da(i1) <= -2.d0 .and. da(i2) <= -2.d0 )
-	  if( bok ) bok = ( iex == i1 .and. sx*dlen >= 2.d0			&
-     &		.and. (1.d0-sx)*dlen >= 2.d0 .and. sgap >= 2.d0 )
+	  if( bok ) bok = ( iex == i1 )	!then sx and sgap are set
+	  if( bok ) bok = ( sx*dlen >= 2.d0 .and. (1.d0-sx)*dlen >= 2.d0	&
+     &		.and. sgap >= 2.d0 )
 	  if( bok ) then
 	    call one_move(7,kc,i1,xs(ii),ys(ii),xb,yb,real(xx),real(yx)	&
      &			,kind_ie(bopen(i1)),2)
@@ -2690,7 +2693,8 @@
 	  amin = min( amin, ang * 45.d0 / atan(1.d0) )
 	end do
 	delta = lgr_side_delta( real(cmax + hmax) )
-	wide_element = ( hmax > 0.d0 .and. ar / hmax >= 10.d0 * delta )
+	wide_element = .false.
+	if( hmax > 0.d0 ) wide_element = ( ar / hmax >= 10.d0 * delta )
 
 	end function wide_element
 
