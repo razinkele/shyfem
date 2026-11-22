@@ -10,7 +10,8 @@
 #         with one release polygon around the whole basin)
 #   NP    number of MPI processes of the second run
 #   MODE  flux   debug dump of the element fluxes, serial vs MPI
-#         part   debug dump of the particles (per output time), serial vs MPI
+#         part   debug dump of the particles (per output time), serial vs
+#                MPI, paired by key (by position for a dump without keys)
 #         handover  debug dump of the particles (as part), then the hand-over
 #                fidelity check of lgr_dbg_compare.py: --by key --handover,
 #                the particles that changed process against those that did
@@ -21,8 +22,9 @@
 #                replaces it
 #         pos    final particle file: positions against the case's floors
 #                (the table below, as floor), layers, types, times
-#         ids    final particle file: the ids, the counts per block
-#                (--same-counts), valid cells (--nel, --nlv of the basin)
+#         ids    final particle file: the ids of each block, the counts per
+#                block (--same-counts), valid cells (--nel, --nlv of the
+#                basin)
 #         perturb  two MPI runs (no serial run) with the debug dump, one
 #                plain and one with MALLOC_PERTURB_=85; every dump file of
 #                the two runs must be byte-identical (dependence of the
@@ -40,17 +42,24 @@
 #                sed, in this folder, with a run name of its own, removed at
 #                the end; lgrini and lgrtrj name a file that does not exist,
 #                the MPI run must stop before it is opened) is run on NP
-#                processes (NP > 1) and serially.  NP processes: a non-zero
-#                exit, the line "Lagrangian option NAME is not supported with
-#                MPI" and the line "run on one process, or remove NAME" once
-#                each, no SIGFPE, SIGSEGV or "Fortran runtime" line, no
-#                particle file.  Serial: the MPI message must never
-#                appear; the outcome (ended, or its own failure) is printed
-#                per row.  Needs no serial reference run.  The logs go to a
+#                processes (NP > 1) and serially, each with a timeout of
+#                600 s.  NP processes: a non-zero exit other than the
+#                timeout's 124, the line "Lagrangian option NAME is not
+#                supported with MPI" and the line "run on one process, or
+#                remove NAME" once each, no SIGFPE, SIGSEGV or "Fortran
+#                runtime" line, no particle file.  Serial: the MPI message
+#                must never appear; the outcome (ended, or its own failure,
+#                with its exit code) is printed per row; a serial run that
+#                times out fails the row (its outcome is unknown).  Needs no
+#                serial reference run.  The logs go to a
 #                folder made with mktemp under ${TMPDIR:-/tmp}: removed at
 #                the end when every row passed, kept (its path is printed)
 #                when a row failed.
 #
+# Every model run the driver launches (the serial run, the MPI run, both
+# MPI runs of perturb) has ended only if its launcher exits with 0 and its
+# log has "simulation end"; otherwise the gate fails.  Mode stops expects
+# a non-zero exit instead (see there).
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
 # temporary copy of the STR file with "levdbg = 3" right after the $para
@@ -75,10 +84,14 @@
 # every case; the per-case --tol below applies to pos and part only.
 # Limits: the geographic cases use --tol 1e-5, the Cartesian case mm_lgr_b
 # --tol 2 (for pos and part).  The flux comparison is relative and keeps
-# the default of lgr_dbg_compare.py.  Part uses --by nearest (pairs by
-# position; since Task 4.2 the ids equal those of the serial run, so --by id
-# or --by key can be given).  Arguments after MODE come last on the tool
-# command line and so replace the defaults, for example
+# the default of lgr_dbg_compare.py.  Part pairs the particles by their key
+# (--by key) when both dumps carry the six key columns, as every dump since
+# stage 3 does, and by position (--by nearest) for an older dump without
+# them (nearest pairs by position, which can pair a particle with another
+# one's partner, and above FULL_EDGES pairs of a time block it is only an
+# approximation of its own rule: see lgr_dbg_compare.py).  Arguments after
+# MODE come last on the tool command line and so replace the defaults, for
+# example
 #   ./check_lgr_mpi.sh mm_lgr_a 4 part --by id --tol 1e-3
 #
 # floor: the positions are held against floors measured on the serial
@@ -304,6 +317,15 @@ collect_dbg() {
 
 summary() { python3 "$HERE/lgr_compare.py" "$1" --summary 2>&1 | sed 's/^/    /'; }
 
+# dump_has_keys DIR: true if DIR has particle dumps and every particle line
+# of them has the 16 columns of a dump with the key (10 without it)
+dump_has_keys() {
+  local f n=0
+  for f in "$1"/lgrdbg.part.*.txt; do [ -e "$f" ] && n=$((n + 1)); done
+  [ "$n" -gt 0 ] || return 1
+  awk '!/^#/ && NF && NF != 16 { bad = 1; exit } END { exit bad }' "$1"/lgrdbg.part.*.txt
+}
+
 # selftest_check LOG NPROC: the side self-test of a levdbg = 3 run (see header)
 selftest_check() {
   local log="$1" np="$2" line n
@@ -520,7 +542,7 @@ if [ "$MODE" = stops ]; then
     expr="$(stops_expr "$opt")"
     sed -e "s/^\([ \t]*\)$CASE[ \t]*\$/\1$RUN/" -e "$expr" "$HERE/$CASE.str" > "$HERE/$RUN.str" \
       || { fail "cannot write $RUN.str"; continue; }
-    if cmp -s "$HERE/$CASE.str" "$HERE/$RUN.str"; then fail "$opt: the sed expression changed nothing"; fi
+    if sed -e "$expr" "$HERE/$CASE.str" | cmp -s - "$HERE/$CASE.str"; then fail "$opt: the sed expression changed nothing"; fi
     row_ok=1
     # --- NP processes
     timeout 600 nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$RUN.str" > "$SCR/$opt.np$NP.log" 2>&1
@@ -529,7 +551,8 @@ if [ "$MODE" = stops ]; then
     n2="$(grep -c "run on one process, or remove $lab" "$SCR/$opt.np$NP.log")"
     nbadsig="$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$SCR/$opt.np$NP.log")"
     nfile=0; [ -e "$HERE/$RUN.lgr.shy" ] && nfile=1
-    [ "$mrc" != 0 ] || { row_ok=0; echo "  $opt: $NP processes: exit code 0 (the run must stop)"; }
+    if [ "$mrc" = 124 ]; then row_ok=0; echo "  $opt: $NP processes: timed out after 600 s (exit 124; the run must stop promptly)"
+    elif [ "$mrc" = 0 ]; then row_ok=0; echo "  $opt: $NP processes: exit code 0 (the run must stop)"; fi
     [ "$n1" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: message seen $n1 times (expected once)"; }
     [ "$n2" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: 'run on one process' line seen $n2 times (expected once)"; }
     [ "$nbadsig" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: $nbadsig SIGFPE/SIGSEGV/Fortran runtime lines"; }
@@ -541,7 +564,10 @@ if [ "$MODE" = stops ]; then
     if grep -q 'is not supported with MPI' "$SCR/$opt.serial.log"; then
       row_ok=0; echo "  $opt: serial: the MPI message appears"
     fi
-    if grep -q 'simulation end' "$SCR/$opt.serial.log"; then sout="ended"
+    if [ "$src" = 124 ]; then
+      row_ok=0; sout="timed out after 600 s (exit 124)"
+      echo "  $opt: serial: timed out after 600 s (exit 124): its outcome is unknown"
+    elif grep -q 'simulation end' "$SCR/$opt.serial.log"; then sout="ended (exit $src)"
     elif grep -q 'Program received signal' "$SCR/$opt.serial.log"; then
       sout="own failure (exit $src): $(grep -m1 'Program received signal' "$SCR/$opt.serial.log" | cut -c1-60)"
     else sout="own failure (exit $src): $(grep -v '^[[:space:]]*$' "$SCR/$opt.serial.log" | tail -1 | cut -c1-70)"; fi
@@ -564,8 +590,10 @@ fi
 echo "=== 1. $CASE serial (mode $MODE)"
 clean_outputs
 nice -n 19 shyfem "$STR" > "$HERE/$CASE.serial.log" 2>&1
-if ! grep -q "simulation end" "$HERE/$CASE.serial.log"; then
+ser_rc=$?
+if [ "$ser_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.serial.log"; then
   tail -5 "$HERE/$CASE.serial.log"
+  fail "$CASE did not end serially (exit code $ser_rc)"
   echo "LGR GATE: FAIL"; exit 1
 fi
 for ext in lgr.shy hydro.shy inf; do
@@ -608,8 +636,13 @@ case "$MODE" in
     crc=$?
     ;;
   part)
+    # by key when both dumps carry the six key columns (every dump since
+    # stage 3), by position (--by nearest) for an older dump
+    BY=nearest
+    if dump_has_keys "$HERE/$CASE.serial.dbg" && dump_has_keys "$HERE/$CASE.np$NP.dbg"; then BY=key; fi
+    echo "  part: pairs --by $BY (a --by among the caller's arguments replaces it)"
     python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
-        --tol "$TOL" --by nearest "$@"
+        --tol "$TOL" --by "$BY" "$@"
     crc=$?
     ;;
   handover)
