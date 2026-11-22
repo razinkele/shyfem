@@ -423,7 +423,15 @@ unmatched particle, no layer or z difference):
   same place on 8 processes, against 536 and 561 in the two changed serial runs (708, 709 and
   713 rest there in all); the hand-over check passes on these dumps (rate of the changed group
   2.77e-3, of the stayed group 2.58e-3). This is consistent with the divergence the serial
-  floor shows, but "counts equal serial at every output" is not met in this run.
+  floor shows, but "counts equal serial at every output" is not met in this run. The same
+  copy on 4 processes, where the two dry elements lie inside one process (no cut-off side),
+  has the counts per class equal to serial at every output (no unmatched particle; at most 837
+  particles change process in one step), and 707 particles rest in the dry elements at the
+  end (684 at the serial place): both MPI runs have 3 or 4 fewer resting there than serial
+  (711), the changed serial runs 2 fewer and 2 more, so the cut-off side at the dry element is
+  not what makes the difference.
 - Case 8: elements 365 and 870 are dry (`iwegv = 3`) for the whole run in both meshes (case B:
-  1,258 dry element-steps, 1,154 of them these two; case C: 1,154). On 2, 3, 6 and 8 processes
-  (and 16 in case B) each has a cut-off side; on 4 processes they lie inside one process.
+  1,258 dry element-steps, 1,154 of them these two; case C: 1,154). On 2 processes each of them
+  has a cut-off side (shown by a temporary print); on 3, 6 and 8 processes (and 16 in case B)
+  the count of dry element-steps with a cut-off side is not 0 either; on 4 processes it is 0
+  (both lie inside one process).
