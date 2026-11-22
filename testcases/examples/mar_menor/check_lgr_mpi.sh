@@ -14,7 +14,11 @@
 #         handover  debug dump of the particles (as part), then the hand-over
 #                fidelity check of lgr_dbg_compare.py: --by key --handover,
 #                the particles that changed process against those that did
-#                not (--step 6e-8, case B 0.25: one single-precision step)
+#                not (--step 6e-8, case B 0.25: one single-precision step);
+#                for NP > 1 the driver passes --min-changed 1 (a check in
+#                which no particle changes process fails instead of passing
+#                silently); a --min-changed among the caller's arguments
+#                replaces it
 #         pos    final particle file: positions against the case's floors
 #                (the table below, as floor), layers, types, times
 #         ids    final particle file: the ids, the counts per block
@@ -27,6 +31,25 @@
 #                the case's --tol and its position floors (the table below):
 #                --max-beyond-last and --max-largest of lgr_dbg_compare.py
 #                (not for mm_lgr: its random walk is never seeded, #225)
+#         stops  (case mm_lgr_a only) the options that are not supported on
+#                several processes: for each of the twelve rows (ilagr3,
+#                lbeach, artype, ldecay, lgrini, ised, ilarv, icnn, lgrpps,
+#                lgrtrj, rwhpar = -1 in place of the case's rwhpar = 0,
+#                ipvert = -2) a scratch copy of the STR file with that
+#                option set (made by
+#                sed, in this folder, with a run name of its own, removed at
+#                the end; lgrini and lgrtrj name a file that does not exist,
+#                the MPI run must stop before it is opened) is run on NP
+#                processes (NP > 1) and serially.  NP processes: a non-zero
+#                exit, the line "Lagrangian option NAME is not supported with
+#                MPI" and the line "run on one process, or remove NAME" once
+#                each, no SIGFPE, SIGSEGV or "Fortran runtime" line, no
+#                particle file.  Serial: the MPI message must never
+#                appear; the outcome (ended, or its own failure) is printed
+#                per row.  Needs no serial reference run.  The logs go to a
+#                folder made with mktemp under ${TMPDIR:-/tmp}: removed at
+#                the end when every row passed, kept (its path is printed)
+#                when a row failed.
 #
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
@@ -46,7 +69,7 @@
 # Consistency check: whenever the driver sets levdbg (the dump modes, or
 # LGR_LEVDBG), the log of a run on several processes must hold no line of
 # lgr_mpi_check_consistency: it writes only when a check fails (and then
-# aborts the run) or when it is not active.
+# aborts the run).
 #
 # Note: flux uses the relative default limit of lgr_dbg_compare.py (1e-5) for
 # every case; the per-case --tol below applies to pos and part only.
@@ -74,7 +97,10 @@
 # exact.
 # ids: lgr_compare.py --mode ids --same-counts --nel N --nlv L, with N and L
 # from the model header of the serial particle file (lgr_compare.py --dims:
-# the basin's element count and the number of layers).
+# the basin's element count and the number of layers).  For NP > 1 it also
+# runs lgr_inf_compare.py on the two info files: as many energy lines (same
+# times) and the same lagrange_nbdy value (the global particle count) at
+# every step; for mm_lgr (unseeded random walk) the count must be 145.
 #
 # handover: the particles of the two runs are paired by their key (the last
 # six columns of the dump); the statistic and the rule (a jump test against
@@ -82,7 +108,11 @@
 # described in the docstring of lgr_dbg_compare.py.  The distances above the
 # limit of the part mode are printed, not gated.  Arguments after MODE come
 # last, so --step, --jump-factor, --jump-floor, --quantile and --min-changed
-# can be given or replaced.
+# can be given or replaced.  For NP > 1 the default is --min-changed 1 (at
+# least one pair of the "changed process" group).  Where a partition makes
+# no particle change process the default fails (case C on 2 processes with
+# the METIS partition of the development machine: no hand-over at all);
+# --min-changed 0 among the caller's arguments replaces it.
 #
 # Side self-test: every mode that runs at levdbg = 3 (flux, part, handover,
 # floor, perturb) requires of each log (serial and MPI; both MPI logs in perturb)
@@ -122,7 +152,7 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: [LGR_LEVDBG=2|3] $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|w|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb)"
+  echo "usage: [LGR_LEVDBG=2|3] $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|w|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb|stops)"
   exit 2
 }
 
@@ -135,7 +165,7 @@ case "$CASE" in
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
-case "$MODE" in flux|part|handover|floor|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+case "$MODE" in flux|part|handover|floor|pos|ids|perturb|stops) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
 LEVDBG_ENV="${LGR_LEVDBG:-}"
 if [ -n "$LEVDBG_ENV" ]; then
   case "$MODE" in pos|ids) ;; *) echo "LGR_LEVDBG applies to the modes pos and ids only"; usage ;; esac
@@ -146,21 +176,24 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # Position floors (mode floor): particles beyond --tol at the last output and
 # the largest distance at any output, each the envelope of six serial runs
 # whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
-# metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
-# section "Task 3.7", table "Position floors on the new reference" (measured
-# on /home/razinka/wt-lgr-ref3, commit 0fddec90; its log is
-# gates/floors_ref3.log in the plan's workspace).  The distances are the
+# metres for B), measured with measure_lgr_floors.sh (this folder).  Source:
+# docs/reviews/2026-11-lagrange-mpi-acceptance.md, section "Task 3.7", table
+# "Position floors on the new reference" (measured on the reference build
+# wt-lgr-ref3, commit 0fddec90; its log is floors_ref3.log in
+# docs/reviews/evidence/2026-11-lagrange-mpi/).  The distances are the
 # measured envelopes rounded UP, never below the measurement: A 2.9734e-3 ->
 # 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E 4.2915e-3 -> 4.3e-3
 # (until Task 5.1 A and C were rounded down, 2.97e-3 and 7.1e-3, so that
 # perturbed serial runs exceeded them).  Never change a value to make a run
 # pass.  Mode pos uses the same floors on the particle file, and FLOOR_T,
 # the tt floor: the most particles whose time tt differs from the base run
-# in one of the six perturbed runs, measured on their particle files
-# (gates/floors_runs/ in the plan's workspace, lgr_compare.py --mode pos):
+# in one of the six perturbed runs, measured on their particle files (the
+# files measure_lgr_floors.sh writes into lgr_runs/ of its scratch folder;
+# lgr_compare.py --mode pos):
 # A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0.
 # mm_lgr_w (Task 6.1, measured the same way on wt-lgr-ref3 with the inputs
-# of commit 6b514083, gates/floors_w.log): 37 / 4.3113e-3 -> 4.32e-3 / tt 1
+# of commit 6b514083, log floors_w.log in the same evidence folder):
+# 37 / 4.3113e-3 -> 4.32e-3 / tt 1
 # (particle 46 comes to rest in the dry element 870 in every run, at a time
 # tt between 327,900 and 329,100 s that differs by a few steps).
 case "$CASE" in
@@ -195,6 +228,11 @@ cleanup() {
   for f in "$HERE"/lgrdbg.*.txt; do
     [ -e "$f" ] && rm -f "$f"
   done
+  # scratch STR and outputs of mode stops (names carry this process id)
+  for f in "$HERE"/stops_*_$$.*; do
+    [ -e "$f" ] && rm -f "$f"
+  done
+  rm -f "$HERE/no_such_file_stops.lgr" "$HERE/no_such_file_stops.trj"
 }
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
@@ -345,7 +383,7 @@ key_check() {
 
 # consistency_check LOG NPROC: with levdbg set by the driver, a run on several
 # processes has the consistency check active, and the check writes a line
-# only when it fails or is not active (see header); no such line is allowed
+# only when it fails (see header); no such line is allowed
 consistency_check() {
   local log="$1" np="$2" n
   [ -n "$LEVDBG" ] && [ "$np" -gt 1 ] || return 0
@@ -436,6 +474,92 @@ if [ "$MODE" = perturb ]; then
   exit "$rc"
 fi
 
+#--- stops mode: options that stop on several processes ---------------------
+if [ "$MODE" = stops ]; then
+  [ "$CASE" = mm_lgr_a ] || { echo "mode stops needs the case mm_lgr_a"; usage; }
+  [ "$NP" -gt 1 ] || { echo "mode stops needs NP > 1"; usage; }
+  [ -z "$LEVDBG_ENV" ] || { echo "LGR_LEVDBG does not apply to mode stops"; usage; }
+  # one row: NAME, then the sed expression that sets it ("%" is no part of
+  # any text below); lines are added after "ilagr = 1" of the $lagrg section
+  ADD='s/^\([ \t]*\)ilagr = 1[ \t]*$/&\n\1'
+  STOPS_NAMES="ilagr3 lbeach artype ldecay lgrini ised ilarv icnn lgrpps lgrtrj rwhpar ipvert"
+  stops_expr() {
+    case "$1" in
+      ilagr3) echo 's/^\([ \t]*\)ilagr = 1[ \t]*$/\1ilagr = 3/' ;;
+      # the case sets rwhpar = 0 further down in $lagrg: replace that line
+      # (a line added after ilagr = 1 would be overridden by it)
+      rwhpar) echo 's/^\([ \t]*\)rwhpar = 0[ \t]*$/\1rwhpar = -1/' ;;
+      ipvert) echo "${ADD}ipvert = -2/" ;;
+      lbeach) echo "${ADD}lbeach = 0.5/" ;;
+      artype) echo "${ADD}artype = 1/" ;;
+      ldecay) echo "${ADD}ldecay = 3600/" ;;
+      lgrini) echo "${ADD}lgrini = 'no_such_file_stops.lgr'/" ;;
+      ised)   echo "${ADD}ised = 1/" ;;
+      ilarv)  echo "${ADD}ilarv = 1/" ;;
+      lgrtrj) echo "${ADD}lgrtrj = 'no_such_file_stops.trj'/" ;;
+      icnn)   echo '$a\\n$connec\n        icnn = 1\n$end' ;;
+      lgrpps) echo '$a\\n$bound1\n        kbound = 218\n        ibtyp = 3\n        boundn = '"'INPUT/river.txt'"'\n        lgrpps = 1\n$end' ;;
+    esac
+  }
+  # the text of the message names the option as written in the STR file
+  stops_label() {
+    case "$1" in
+      ilagr3) echo "ilagr = 3" ;;
+      icnn)   echo "icnn" ;;
+      rwhpar) echo "rwhpar < 0" ;;
+      ipvert) echo "ipvert < -1" ;;
+      *)      echo "$1" ;;
+    esac
+  }
+  SCR="$(mktemp -d "${TMPDIR:-/tmp}/lgrstops.XXXXXX")" || exit 1
+  [ "$(grep -c "^[[:space:]]*$CASE[[:space:]]*$" "$HERE/$CASE.str")" = 1 ] || { echo "LGR GATE FAIL: cannot find the run name line of $CASE.str"; exit 1; }
+  echo "=== stops: $CASE, $NP processes and serial (logs in $SCR)"
+  for opt in $STOPS_NAMES; do
+    RUN="stops_${opt}_$$"
+    lab="$(stops_label "$opt")"
+    expr="$(stops_expr "$opt")"
+    sed -e "s/^\([ \t]*\)$CASE[ \t]*\$/\1$RUN/" -e "$expr" "$HERE/$CASE.str" > "$HERE/$RUN.str" \
+      || { fail "cannot write $RUN.str"; continue; }
+    if cmp -s "$HERE/$CASE.str" "$HERE/$RUN.str"; then fail "$opt: the sed expression changed nothing"; fi
+    row_ok=1
+    # --- NP processes
+    timeout 600 nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$RUN.str" > "$SCR/$opt.np$NP.log" 2>&1
+    mrc=$?
+    n1="$(grep -c "Lagrangian option $lab is not supported with MPI" "$SCR/$opt.np$NP.log")"
+    n2="$(grep -c "run on one process, or remove $lab" "$SCR/$opt.np$NP.log")"
+    nbadsig="$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$SCR/$opt.np$NP.log")"
+    nfile=0; [ -e "$HERE/$RUN.lgr.shy" ] && nfile=1
+    [ "$mrc" != 0 ] || { row_ok=0; echo "  $opt: $NP processes: exit code 0 (the run must stop)"; }
+    [ "$n1" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: message seen $n1 times (expected once)"; }
+    [ "$n2" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: 'run on one process' line seen $n2 times (expected once)"; }
+    [ "$nbadsig" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: $nbadsig SIGFPE/SIGSEGV/Fortran runtime lines"; }
+    [ "$nfile" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: particle file written"; }
+    for f in "$HERE/$RUN".*; do [ "$f" = "$HERE/$RUN.str" ] || rm -f "$f"; done
+    # --- serial
+    timeout 600 nice -n 19 shyfem "$RUN.str" > "$SCR/$opt.serial.log" 2>&1
+    src=$?
+    if grep -q 'is not supported with MPI' "$SCR/$opt.serial.log"; then
+      row_ok=0; echo "  $opt: serial: the MPI message appears"
+    fi
+    if grep -q 'simulation end' "$SCR/$opt.serial.log"; then sout="ended"
+    elif grep -q 'Program received signal' "$SCR/$opt.serial.log"; then
+      sout="own failure (exit $src): $(grep -m1 'Program received signal' "$SCR/$opt.serial.log" | cut -c1-60)"
+    else sout="own failure (exit $src): $(grep -v '^[[:space:]]*$' "$SCR/$opt.serial.log" | tail -1 | cut -c1-70)"; fi
+    rm -f "$HERE/no_such_file_stops.lgr" "$HERE/no_such_file_stops.trj"	# a serial run may create it
+    for f in "$HERE/$RUN".*; do [ -e "$f" ] && rm -f "$f"; done
+    if [ "$row_ok" = 1 ]; then st=ok; else st=FAIL; rc=1; fi
+    echo "  $opt: $st; $NP processes exit $mrc, message x$n1, advice x$n2, signals $nbadsig, particle file $nfile; serial: $sout"
+  done
+  if [ "$rc" = 0 ]; then
+    rm -rf "$SCR"
+    echo "LGR GATE: PASS"
+  else
+    echo "logs of the failed rows kept in $SCR"
+    echo "LGR GATE: FAIL"
+  fi
+  exit "$rc"
+fi
+
 #--- 1. serial run -----------------------------------------------------------
 echo "=== 1. $CASE serial (mode $MODE)"
 clean_outputs
@@ -489,8 +613,19 @@ case "$MODE" in
     crc=$?
     ;;
   handover)
+    # on several processes at least one pair must change process (the
+    # caller's --min-changed comes later on the command line and wins)
+    MINCH=""
+    if [ "$NP" -gt 1 ]; then
+      MINCH="--min-changed 1"
+      case " $* " in
+        *" --min-changed "*|*" --min-changed="*)
+          echo "  hand-over check: the caller's --min-changed replaces the default 1" ;;
+        *) echo "  hand-over check: --min-changed 1 (default for $NP processes)" ;;
+      esac
+    fi
     python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
-        --tol "$TOL" --by key --handover --step "$STEP" "$@"
+        --tol "$TOL" --by key --handover --step "$STEP" $MINCH "$@"
     crc=$?
     ;;
   floor)
@@ -538,6 +673,18 @@ case "$crc" in
   1) fail "$MODE comparison found differences (tool exit code 1)" ;;
   *) fail "$MODE comparison could not be made (tool exit code $crc: unreadable or incomplete input, for example an MPI particle file without output times)" ;;
 esac
+
+# ids: also the info file (only rank 0 writes it, the global particle count)
+if [ "$MODE" = ids ] && [ "$NP" -gt 1 ]; then
+  INFARGS=""
+  [ "$CASE" = mm_lgr ] && INFARGS="--nbdy 145"
+  if [ -f "$HERE/$CASE.serial.inf" ] && [ -f "$HERE/$CASE.inf" ]; then
+    python3 "$HERE/lgr_inf_compare.py" "$HERE/$CASE.serial.inf" "$HERE/$CASE.inf" $INFARGS \
+      || fail "the info file of $NP processes differs from the serial one (lgr_inf_compare.py)"
+  else
+    fail "missing info file: serial $([ -f "$HERE/$CASE.serial.inf" ] && echo yes || echo NO), MPI $([ -f "$HERE/$CASE.inf" ] && echo yes || echo NO)"
+  fi
+fi
 
 if [ "$rc" = 0 ]; then echo "LGR GATE: PASS"; else echo "LGR GATE: FAIL"; fi
 exit "$rc"

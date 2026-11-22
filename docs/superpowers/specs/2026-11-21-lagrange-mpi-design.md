@@ -456,6 +456,12 @@ Found with the hand-over at a cut-off side (2026-11-21):
   particles that stay on their process (compared through a key that identifies a particle in
   both runs); crossing counts are compared at identical positions only; positions are held
   against the tracker's measured response to a relative 1e-5 change of the forcing.
+  **Owner decision (2026-11-22, after the final review): "Accept the replacement".** The
+  position limits of AC3 (1e-5 degrees, 2 m) and those of AC8 are replaced by the class floor
+  (see "Conservation, exact" as measured, below), the hand-over check (its rule is set by
+  replay, below) and the measured position floors (the plan's amendments after Tasks 3.4, 3.7
+  and stage 5; the acceptance file's AC3 and AC8 rows). The plan's rule that a limit is never
+  relaxed without the owner stands; this replacement has the owner's word.
 - **Issue #223, owner decision: fix now.** The fallback for a failed element search intersects
   the particle's move with the triangle of mesh nodes 1 to 3 instead of its own element. A serial
   run of the Stokes-drift case reaches it 156,864 times. On several processes those are other

@@ -71,7 +71,7 @@
 
         if( traj .ne. ' ' .and. line .ne. ' ') then
           write(*,*)'lgrlin and lgrtrj not allowed'
-          stop 'error stop lgr_init_shell'
+          call shympi_abort_internal('error stop lgr_init_shell')
         end if
 
         if( traj .ne. ' ' ) return
@@ -146,7 +146,7 @@
 	call lagbound_get_area(tot_area)
 	if( tot_area < 0. ) then
 	  write(6,*) 'area inside line: ',tot_area
-	  stop 'error stop lgr_init_line: negative area'
+	  call shympi_abort_internal('error stop lgr_init_line: negative area')
 	end if
         dxy = sqrt( tot_area / npoints )
 
@@ -167,7 +167,7 @@
 	if( nline .eq. 0 ) then
 	  write(6,*) 'no line found in file'
 	  write(6,*) 'cannot initialize particles'
-	  stop 'error stop lgr_init_line: no line'
+	  call shympi_abort_internal('error stop lgr_init_line: no line')
 	end if
 
 	end
@@ -337,7 +337,8 @@
 	call getfnm('lgrlin',line)
         iunit=ifileo(0,line,'form','old')
 
-	if( iunit .le. 0 ) stop 'error stop open_lagbound_file'
+	if( iunit .le. 0 ) call shympi_abort_internal(			&
+     &		'error stop open_lagbound_file')
 
 	end
 
@@ -398,7 +399,8 @@
 	  end if
 	  if( iflag .ne. 0 .and. n .gt. 0 ) exit	!not 1.point on 1.line
 	  n = n + 1
-	  if( n .gt. ndim ) stop 'error stop lagbound_read_next: ndim'
+	  if( n .gt. ndim ) call shympi_abort_internal(			&
+     &		'error stop lagbound_read_next: ndim')
 	  x(n) = xa
 	  y(n) = ya
 	end do
@@ -419,7 +421,8 @@
 
 	if( n .gt. 0 .and. n .lt. 3 ) then
 	  write(6,*) 'line has less then 3 vertices: ',iline,n
-	  stop 'error stop lagbound_read_next: degenerated line'
+	  call shympi_abort_internal(					&
+     &		'error stop lagbound_read_next: degenerated line')
 	else if( n .eq. 0 ) then
 	  lagbound_read_next = .false.
 	end if
@@ -492,7 +495,7 @@
 	do ie=1,nel
 	  nin = ieflag(ie)
 	  if( nin .lt. -1 .or. nin .gt. 1 ) then
-	    stop 'error stop lagbound_seed_particles'
+	    call shympi_abort_internal('error stop lagbound_seed_particles')
 	  end if
 	  nc(nin) = nc(nin) + 1
 	end do

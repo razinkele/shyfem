@@ -212,7 +212,7 @@
           nbdymax = nint(getpar('nbdymax'))
 	  if( nbdymax < 0 ) then
 	    write(6,*) 'parameter nbdymax is not set'
-	    stop 'error stop lagrange: nbdymax'
+	    call shympi_abort_internal('error stop lagrange: nbdymax')
 	  end if
 	  write(6,*) 
 	  write(6,*)'---------------------------------------------' 
@@ -517,12 +517,15 @@
 	subroutine drogue(dtime)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_global_count
+	use shympi, only : my_id, shympi_is_parallel
 
 	implicit none
 
 	double precision dtime	
 	integer nf,i,it,nuse
 	integer chunk
+	integer nbdyg
 	real dt
 
 	integer ndim
@@ -534,8 +537,16 @@
         double precision tempo
         double precision openmp_get_wtime
 
+! on several processes only rank 0 opens and writes the info file (every
+! other process would open NAME.inf again with status new), and it writes
+! the global number of particles
+
         if( iuinfo .eq. 0 ) then
-          call getinfo(iuinfo)  !unit number of info file
+          if( .not. shympi_is_parallel() ) then
+            call getinfo(iuinfo)  !unit number of info file
+          else if( my_id .eq. 0 ) then
+            call getinfo(iuinfo)  !unit number of info file
+          end if
         end if
 
         nf = 0
@@ -543,7 +554,8 @@
 	call get_timestep(dt)		!time to advect
 
 	call openmp_get_num_threads(nuse)
-	if( nuse .gt. ndim ) stop 'error stop drogue: too many processes'
+	if( nuse .gt. ndim ) call shympi_abort_internal(		&
+     &		'error stop drogue: too many processes')
 
         tempo = openmp_get_wtime()
 
@@ -563,7 +575,14 @@
 !	write(lunit,*) 'lagrangian: (tot,out,in) ',nbdy,nf,nbdy-nf
 !	write(lunit,'(a,i10,12i5)') 'parallel: ',nbdy,(ic(ii),ii=0,n-1)
 
-	write(iuinfo,*) 'lagrange_nbdy: ',nbdy
+	if( .not. shympi_is_parallel() ) then
+	  write(iuinfo,*) 'lagrange_nbdy: ',nbdy
+	else
+	  call lgr_mpi_global_count(nbdy,nbdyg)	!every process takes part
+	  if( my_id .eq. 0 ) then
+	    write(iuinfo,*) 'lagrange_nbdy: ',nbdyg
+	  end if
+	end if
 	!write(6,*) 'lagrange_nbdy: ',nbdy
 
 	end

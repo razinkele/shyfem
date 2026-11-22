@@ -1,0 +1,21 @@
+2026-11-22 11:20:56  floors: binary /home/razinka/wt-lgr-ref3/bin, inputs of 6b514083, by key, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/floors.0xWjQ5
+  mm_lgr_w.r+1e-5: ended
+  mm_lgr_w.r0: ended
+  mm_lgr_w.r-1e-5: ended
+  mm_lgr_w.r+7e-6: ended
+  mm_lgr_w.r+4e-6: ended
+  mm_lgr_w.r-7e-6: ended
+  mm_lgr_w.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_w  +1e-5        80       37   1.3841e-03   345600.0
+mm_lgr_w  -1e-5        80       34   3.7897e-03   345600.0
+mm_lgr_w  +7e-6        80       31   2.1493e-03   345600.0
+mm_lgr_w  -7e-6        80       28   1.3047e-03   327600.0
+mm_lgr_w  +4e-6        80       25   4.3113e-03   345600.0
+mm_lgr_w  -4e-6        80       23   1.1124e-03   327600.0
+mm_lgr_w  ENV                   37   4.3113e-03   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-22 11:21:13  comparisons and logs in:
+/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/floors.0xWjQ5

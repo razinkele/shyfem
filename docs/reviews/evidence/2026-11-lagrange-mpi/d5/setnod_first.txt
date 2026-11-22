@@ -1,0 +1,17 @@
+# mm_lgr_b on 4 processes with GRID/MM_coarse.bas from 'shypre -partition part_first.grd MM_coarse.grd'
+# (start binary 53cd0bb3, simulation start 2026-11-22 11:09:59; scratch copy of the test folder): the lines that matter
+105: partitiones contained in basin:            4
+106: using these partitiones...
+130: partition quality:    2.61700296    
+518: error for open boundary node
+519:           1          93          74         342         158           0
+520: the node is an inner node
+521: external node number :          158
+522: boundary flag :            0
+523: error for open boundary node
+524:           1          93          74          47         158           0
+525: the node is an inner node
+526: external node number :          158
+527: boundary flag :            0
+528:STOP error stop setnod: open boundary node
+529:STOP error stop setnod: open boundary node

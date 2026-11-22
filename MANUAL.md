@@ -1264,7 +1264,7 @@ The Biogeochemical Flux Model (experimental) — requires separate BFM library i
 
 ```
 $lagrg
-    ilagr = 3              ! 1=surface, 3=3D
+    ilagr = 1              ! 1=surface, 2=layers, 3=3D
     nbdymax = 100000       ! Maximum particles
     nbdy = 1000            ! Particles per release
     idtl = 3600            ! Release interval (s)
@@ -1275,6 +1275,8 @@ $end
 ```
 
 Particles can also be released at open boundaries using `lgrpps` in the boundary section.
+
+Lagrangian particle tracking runs on several MPI processes for the core options (see section 9.6): surface and layer tracking (`ilagr` 1 and 2), the horizontal random walk with a fixed diffusivity (`rwhpar` of 0 or more), Stokes drift (`stkpar`), release in polygons (`lgrlin`) or over the whole basin, and the particle file. Every other option stops the run at start-up on more than one process, with the message `Lagrangian option NAME is not supported with MPI`; run on one process or remove the option. The example above uses `ilagr = 1`; `ilagr = 3` is one of the options that stop, and a serial run with it crashed in the test cases (#231).
 
 ### 7.17 Water Renewal Time
 
@@ -1535,8 +1537,28 @@ Currently supported in MPI mode:
 - Open boundary conditions across domains
 - Output writing
 
-Not yet supported in MPI:
-- Lagrangian particle tracking (serial only)
+Lagrangian particle tracking (section 7.16) works on several processes for these options only:
+- `ilagr` 1 (surface) and 2 (layers), the horizontal random walk with a fixed diffusivity (`rwhpar` of 0 or more), Stokes drift
+- release in polygons (`lgrlin`) and over the whole basin, in the surface layer or in the layers (`ipvert` of -1 or more), the particle file
+
+Every option in the table below stops the run at start-up on more than one process (one message, exit code 33); with one process they work as before:
+
+| Option | Section | Stops when | Meaning |
+|---|---|---|---|
+| `ilagr` | `$lagrg` | `= 3` | vertical advection and diffusion |
+| `lbeach` | `$lagrg` | `> 0` | beaching on the shore |
+| `artype` | `$lagrg` | `/= -1` | transit time out of an area |
+| `ldecay` | `$lagrg` | `> 0` | decay of particles |
+| `lgrini` | `$lagrg` | file name given | initial distribution from a file |
+| `ised` | `$lagrg` | `> 0` | sediment module |
+| `ilarv` | `$lagrg` | `> 0` | larvae module |
+| `icnn` | `$connec` | `/= 0` | connectivity |
+| `lgrpps` | `$boundN` | `/= 0` on any boundary | continuous release at a boundary |
+| `lgrtrj` | `$lagrg` | file name given | release along a drifter trajectory |
+| `rwhpar` | `$lagrg` | `< 0` | horizontal diffusivity taken from the local diffusivity |
+| `ipvert` | `$lagrg` | `< -1` | random vertical release (random depths are drawn in a 3D run with `ilagr = 2`) |
+
+The hand-over of a particle between processes by its position assumes that neighbouring elements are of comparable size. On a new mesh, run once serially at `levdbg = 3` and check that the line `lgr relocation self-check` of the log reports `clear hits in a second element 0`.
 
 ### 9.7 MPI Notes
 

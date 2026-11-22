@@ -182,7 +182,8 @@
 	lmax_act = ilhv(ie)
 	if( lmax_act > lmax .or. lmax_act > nlev ) then
 	  write(6,*) 'nlev,lmax,lmax_act: ',nlev,lmax,lmax_act
-	  stop 'error stop lagr_layer_thickness: incompatible layers'
+	  call shympi_abort_internal(					&
+     &		'error stop lagr_layer_thickness: incompatible layers')
 	end if
 	lmax = lmax_act
 
@@ -471,7 +472,8 @@
 	  if( s > 1. ) then
 	    write(6,*) 's,t,th: ',s,t,th
 	    write(6,*) 'ds,sorig: ',ds,s-ds
-	    stop 'error stop track_xi: internal error (3)'
+	    call shympi_abort_internal(					&
+     &		'error stop track_xi: internal error (3)')
 	  end if
 	  xi = (1.-s)*xis + s*xie
 	  call track_xi_check('after advection track_xi 1',id,xi)
@@ -562,7 +564,7 @@
 	  write(6,*) 'tv,t ',tv,t
 	  write(6,*) 'dz,w,hd: ',dz,w,hd
 	  write(6,*) 'z,lb,lmax ',z,lb,lmax
-	  stop 'error stop track_xi: internal error (2)'
+	  call shympi_abort_internal('error stop track_xi: internal error (2)')
 	end if
 
 	!-----------------------------------------------
@@ -655,7 +657,8 @@
 	  write(6,*) 'xi not on side or impossible'
 	  write(6,*) ie,in,it
 	  write(6,*) xi
-	  stop 'error stop track_xi_next_element: erroneous xi'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_next_element: erroneous xi')
 	end if
 
 	!---------------------------------------
@@ -665,7 +668,8 @@
 	if( xi(ia1) /= 0. .or. abs(xi(ia2)+xi(ia3)-1.) > eps ) then
 	  write(6,*) ie,in,it,ia1
 	  write(6,*) xi
-	  stop 'error stop track_xi_next_element: erroneous xi sanity'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_next_element: erroneous xi sanity')
 	end if
 
 	!---------------------------------------
@@ -694,7 +698,8 @@
 	  write(6,*) ie,in,it,ia1,ieb
 	  write(6,*) xi
 	  write(6,*) (lgr_ieltv(ii,ieb),ii=1,3)
-	  stop 'error stop track_xi_next_element: erroneous ieltv'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_next_element: erroneous ieltv')
 	end if
 
 	!---------------------------------------
@@ -1159,7 +1164,8 @@
 
 	if( lb > lmax ) then
 	  write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
-	  stop 'error stop track_xi_get_vertical: no such layer'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_get_vertical: no such layer')
 	end if
 
 	hd = hl(lb)
@@ -1205,7 +1211,7 @@
 	  write(6,*) text
 	  write(6,*) id
 	  write(6,*) xi
-	  stop 'error stop track_xi_check: wrong xi'
+	  call shympi_abort_internal('error stop track_xi_check: wrong xi')
 	end if
 
 	end

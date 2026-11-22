@@ -734,9 +734,9 @@ This is exact for piecewise-linear velocity fields -- no trajectory integration 
 
 Five release modes: domain-wide grid seeding, polygon-based seeding, trajectory file replay, continuous boundary release, and connectivity station release. In MPI mode, particles are only released on the rank owning their element (`id_elem(1,ie) == my_id`).
 
-### 9.6 MPI Exchange (`lagrange_mpi.f90`, ~497 lines)
+### 9.6 MPI Exchange (`lagrange_mpi.f90`, ~6,200 lines)
 
-MPI support for particle migration between ranks. Added 2026.
+MPI support for particle tracking on several processes (module `mod_lagrange_mpi`). Added 2026, rebuilt for issue #217.
 
 ### Particle Data Structure (`lagrange_data.f90`)
 
@@ -759,44 +759,13 @@ type :: lagr_entry
 end type
 ```
 
-### Serialization Format (13 + ncust doubles per particle)
+### What Is Exchanged, and When
 
-| Index | Field |
-|---|---|
-| 1-3 | `xi(1:3)` barycentric coords |
-| 4 | `time` |
-| 5 | `z` |
-| 6 | `ie_global` |
-| 7 | layer |
-| 8 | id |
-| 9 | type |
-| 10 | sinking |
-| 11-12 | bitmap_in, bitmap_out |
-| 13 | ncust count |
-| 14..13+ncust | custom values |
-
-### Exchange Protocol (`lgr_mpi_exchange`)
-
-1. **Count**: `send_counts(irank)` per export
-2. **`MPI_Alltoall`**: exchange counts
-3. **Pack**: `lgr_mpi_pack_particle` into send buffer
-4. **`MPI_Alltoallv`**: exchange particle data
-5. **Unpack**: `lgr_mpi_unpack_particle` + `lgr_mpi_global_to_local_elem`
-6. **Mark dead**: set `ie = 0` for exported particles
-
-### Other Key Routines
-
-| Routine | Role |
-|---|---|
-| `lgr_mpi_init` | Allocate export arrays, set pack size |
-| `lgr_mpi_check_ghost(i, ie)` | Check `id_elem(1,ie) /= my_id`, mark for export |
-| `lgr_mpi_mark_export(i, dest)` | Thread-safe (`OMP CRITICAL`) export accumulation |
-| `lgr_mpi_gather_output(iu, dtime)` | `MPI_Gatherv` all particles to rank 0 for I/O |
-| `lgr_mpi_reduce_connect` | `MPI_Allreduce(SUM)` connectivity matrices |
+A particle lives on exactly one process. It is handed over with its whole record (`lgr_mpi_pack_particle`: both `lagr_body` parts, id, type, sinking velocity, the connectivity bitmaps, the custom values) when it reaches a side cut off by the partition, with the time left in the step, or when the element search at the end of a step cannot be decided on its process (`lgr_mpi_handover`); rank 0 writes the particle file in the serial layout from records that every process prepares (`lgr_mpi_output`). The design and its amendments are in `docs/superpowers/specs/2026-11-21-lagrange-mpi-design.md` and `docs/superpowers/plans/2026-11-21-lagrange-mpi.md`, the measured acceptance in `docs/reviews/2026-11-lagrange-mpi-acceptance.md`, and the contents list at the head of `lagrange_mpi.f90` names every routine.
 
 ### Integration Points
 
-- `lagrange_main.f90`: `lgr_mpi_init` at startup; `lgr_mpi_exchange` after `drogue(dtime)`; `lgr_mpi_gather_output` for I/O; `lgr_mpi_reduce_connect` before output
+- `lagrange_main.f90`: `lgr_mpi_check_supported` (options that stop on several processes) and `lgr_mpi_init` at startup; `lgr_mpi_handover(dtime)` and `lgr_mpi_check_consistency` after `drogue(dtime)`; `lgr_mpi_output` for the particle file; `lgr_mpi_reduce_connect` before output
 - `lagrange_init.f90`: Rank-aware particle release (`id_elem(1,ie) /= my_id` -> skip)
 - `lagrange_inout.f90`: Sets `ie_global = ip_int_elem(ie)` on particle insertion and file input
 

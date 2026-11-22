@@ -1,0 +1,12 @@
+2026-11-22 15:03:29 EET focus 5: commit 4145db7c, binary /home/razinka/wt-lgr/src/shyfem/shyfem, 4 processes, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/focus5.uWDxvf
+nbdymax = 500, 4 processes: ok; exit 33, message x1, 'error stop insert_particle: nbdy' x4, ended 0, signals 0
+nbdymax = 500, serial: ok; exit 0, message x1, 'error stop insert_particle: nbdy' x1, ended 0, signals 0
+nbdymax = 200, 4 processes: ok; exit 33, message x1, 'error stop insert_particle: nbdy' x4, ended 0, signals 0
+nbdymax = 200, serial: ok; exit 0, message x1, 'error stop insert_particle: nbdy' x1, ended 0, signals 0
+FOCUS 5: PASS
+2026-11-22 15:03:30 EET focus 5: commit 4145db7c, binary /home/razinka/wt-lgr/src/shyfem/shyfem, 2 processes, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/focus5.nJoy6v
+nbdymax = 500, 2 processes: ok; exit 33, message x1, 'error stop insert_particle: nbdy' x2, ended 0, signals 0
+nbdymax = 500, serial: ok; exit 0, message x1, 'error stop insert_particle: nbdy' x1, ended 0, signals 0
+nbdymax = 200, 2 processes: ok; exit 33, message x1, 'error stop insert_particle: nbdy' x2, ended 0, signals 0
+nbdymax = 200, serial: ok; exit 0, message x1, 'error stop insert_particle: nbdy' x1, ended 0, signals 0
+FOCUS 5: PASS

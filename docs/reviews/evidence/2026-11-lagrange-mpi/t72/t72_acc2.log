@@ -1,0 +1,101 @@
+scratch: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc2.kJVtfR   head: 3b460653   binary sha256 68a77b5835b56175   2026-11-22 13:27:28 EET
+=== 13:27:28 spec section 7, case 7: a release point on a side between elements of two processes
+-0.68953079 37.6648903 1
+-0.681530774 37.6648903 0
+-0.681530774 37.6728935 0
+-0.68953079 37.6728935 0
+-0.68953079 37.6648903 0
+-0.644307017 37.7143822 1
+-0.636307001 37.7143822 0
+-0.636307001 37.7223854 0
+-0.644307017 37.7223854 0
+-0.644307017 37.7143822 0
+mm_lgr_a   2 part     exit 0: LGR GATE: PASS
+    serial:  lgr_init_line: 150 1.28052023E-04 9.23948130E-04
+    serial:  lagr_init_all: 82 particles inserted
+    serial:  lagr_init_all: 57 particles inserted
+    release block: serial 139 entries, MPI 139 entries
+    point -0.685530782 37.6688919: serial (id, element) [(63, 2512)]; MPI (id, element, process) [(63, 2512, 1)]
+      serial run does not insert it in two elements
+      processes holding the copies: [1]
+    point -0.640307009 37.7183838: serial (id, element) [(85, 446)]; MPI (id, element, process) [(85, 446, 1)]
+      serial run does not insert it in two elements
+      processes holding the copies: [1]
+    CASE 7 CHECK: FAIL
+mm_lgr_a   2 ids      exit 0: LGR GATE: PASS
+        output times: 96
+        first output t=3600.0: active=139 inserted=139 exited=0; active ids 1..139
+        last output t=345600.0: active=139 inserted=0 exited=0; active ids 1..139
+        output times: 96
+        first output t=3600.0: active=139 inserted=139 exited=0; active ids 1..139
+        last output t=345600.0: active=139 inserted=0 exited=0; active ids 1..139
+mm_lgr_a   4 part     exit 0: LGR GATE: PASS
+    serial:  lgr_init_line: 150 1.28052023E-04 9.23948130E-04
+    serial:  lagr_init_all: 82 particles inserted
+    serial:  lagr_init_all: 57 particles inserted
+    release block: serial 139 entries, MPI 139 entries
+    point -0.685530782 37.6688919: serial (id, element) [(63, 2512)]; MPI (id, element, process) [(63, 2512, 0)]
+      serial run does not insert it in two elements
+      processes holding the copies: [0]
+    point -0.640307009 37.7183838: serial (id, element) [(85, 446)]; MPI (id, element, process) [(85, 446, 0)]
+      serial run does not insert it in two elements
+      processes holding the copies: [0]
+    CASE 7 CHECK: FAIL
+mm_lgr_a   4 ids      exit 0: LGR GATE: PASS
+        output times: 96
+        first output t=3600.0: active=139 inserted=139 exited=0; active ids 1..139
+        last output t=345600.0: active=139 inserted=0 exited=0; active ids 1..139
+        output times: 96
+        first output t=3600.0: active=139 inserted=139 exited=0; active ids 1..139
+        last output t=345600.0: active=139 inserted=0 exited=0; active ids 1..139
+=== 13:28:06 spec section 7, case 4: gates/d5/run_d5.sh HEAD
+run_d5.sh exit 0
+2026-11-22 13:28:06 EET d5: commit 3b460653, binary /home/razinka/wt-lgr/src/shyfem/shyfem, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/d5run.cDngfR
+second: largest sum of a boundary node below the limit: 358.38
+second: case-4 elements (open side on rank 1, interior node on rank 2): 8 [62, 168, 369, 512, 517, 518, 526, 537]
+second: nodes per rank: [349, 380, 323, 350]
+written part_second.grd
+ids: exit 0: LGR GATE: PASS
+partition:  partitiones contained in basin: 4; using these partitiones...;
+ lgr left the basin: particles 595, from an element whose main owner is another process: 274
+mm_lgr_b.np4.dbg: last output 172800.0: left 595 (per process {0: 1, 1: 320, 2: 274}); left an element whose main owner is another process: 274 (per process {2: 274})
+2026-11-22 13:28:12 EET d5 done (/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/d5run.cDngfR)
+=== 13:28:12 spec section 7, case 6: the dense copy of case B on 8 processes
+mm_lgr_b   8 part     exit 1: LGR GATE: FAIL
+=== 3. compare (part)
+part: serial /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc2.kJVtfR/case6/mm_lgr_b.serial.dbg, mpi /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449
+       time n_ser n_mpi D_ser D_mpi dupid unmat nan   max dist >tol lb!=  z!= ncr!= ncr-1 ie!= id!=
+        0.0 200001 200001     0     0     0     0   0  0.000e+00    0    0    0     0     0    0    0
+    21600.0 185864 185864 14137 14137     0     0   0  5.625e+01    6    0    0     1     0    2    0
+    43200.0 159791 159791 40210 40210     0     0   0  2.044e+01   23    0    0     8     0    3    0
+    64800.0 133905 133905 66096 66096     0     0   0  1.318e+02  118    0    0    13     0   11    0
+    86400.0 109274 109274 90727 90727     0     0   0  3.377e+02  258    0    0    29     0   23    0
+   108000.0 88831 88831 111170 111170     0     0   0  6.420e+02  352    0    0    35     0   24    0
+  unmatched key at time 129600.0: 1295 0.48317469628625531 0.46664220687131319 1 0.5 -300 only in the serial run, class P, other run: D
+   129600.0 81228 81227 118773 118774     0     1   0  4.619e+03  560    0    0    52     0   33    0 COUNT
+  unmatched key at time 151200.0: 1295 0.48317469628625531 0.46664220687131319 1 0.5 -300 only in the serial run, class P, other run: D
+   151200.0 80870 80869 119131 119132     0     1   0  9.014e+03  825    0    0    67     0   42    0 COUNT
+  unmatched key at time 172800.0: 1295 0.48317469628625531 0.46664220687131319 1 0.5 -300 only in the serial run, class P, other run: D
+   172800.0 80803 80802 119198 119199     0     1   0  1.152e+04 1178    0    0   101     0   66    0 COUNT
+  largest distance 1.1522e+04 at time 172800.0
+  totals over 9 outputs: unmatched 3, nan 0, beyond tol 3320, layer differs 0, z differs 0, ncross differs 306 (not gated), ncross unknown (-1) 0, element differs 204 (not gated), id differs 0 (not ga
+  ncross differs at distance 0: 0 (not gated); at a non-zero distance: 306 (never gated)
+lgr_dbg_compare part: FAIL
+LGR GATE FAIL: part comparison found differences (tool exit code 1)
+LGR GATE: FAIL
+lgr hand-over: particles handed over at a cut-off side: 377552, by position: 262, most hand-overs at a side of one particle in one step: 2, put back at a cut-off side for lack of a layer: 0, starting in an element held by three processes: at a side 10672, by p
+lgr hand-over: most particles changing process in one step: 1236, step ending at time 36900.0
+lgr dry elements: element-steps dry (counted by the main owner) 1258, dry with a cut-off side 1258
+lgr left the basin: particles 119199, from an element whose main owner is another process: 0
+lgr relocation by position: parked 40090 (diffusion 40090, Stokes 0; hit within the margin 39091, failed search 999), stayed 39091, kept for lack of a layer 0, went to another process 262, nobody answered 737, hit within the margin and nobody answered 0, key o
+consistency check lines in the MPI log: 0
+hand-over check on the dense dumps: exit 1
+  changed process, beyond the step: key 1722 0.50859217465955453 0.42962933889344868 1 0.5 -300, times 21600.0 -> 43200.0, ranks 2 -> 3, distance 2.5000e-01
+  changed process, beyond the step: key 1221 0.12716882720095177 0.35657304789591154 1 0.5 -300, times 21600.0 -> 43200.0, ranks 2 -> 3, distance 2.5000e-01
+  changed process, beyond the step: key 449 0.21464478575217072 0.090688030855744728 1 0.5 -300, times 21600.0 -> 43200.0, ranks 5 -> 1, distance 2.5000e-01
+  changed process, beyond the step: key 320 0.035604179715543673 0.49488261549928819 1 0.5 -300, times 21600.0 -> 43200.0, ranks 5 -> 1, distance 2.5000e-01
+  rule: jump test: largest changed-process distance 17.25 <= threshold 112.5 (2 x stayed largest 56.25, floor 10 steps 2.5): ok; count test: 855 beyond the step <= Poisson 99.9 % quantile 886 (mean 797.057): ok
+lgr_dbg_compare part: FAIL
+1,1G	/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc2.kJVtfR/case6
+=== 13:30:11 DONE (logs in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc2.kJVtfR)
+acc2 exit 0
