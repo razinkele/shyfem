@@ -1568,7 +1568,7 @@ The hand-over of a particle between processes by its position assumes that neigh
 
 - `-fopenmp` must be in link flags unconditionally (some `omp_*` calls exist even without OpenMP enabled)
 - Intel MPI's `mpi.mod` is incompatible with gfortran — always use OpenMPI with gfortran
-- Hybrid MPI+OpenMP is not recommended (MPI initialized with `MPI_THREAD_SERIALIZED`)
+- Hybrid MPI+OpenMP is not recommended (MPI initialized with `MPI_THREAD_FUNNELED`: only the main thread may make MPI calls)
 - Stack overflow with MPI: run `ulimit -s unlimited` before execution
 
 ---
