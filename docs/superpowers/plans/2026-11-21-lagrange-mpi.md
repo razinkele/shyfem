@@ -560,6 +560,17 @@ Detection: in `track_advect`, when the tracker returns a negative element, the s
 - [ ] **Step 2:** Review Focus 4: a copy of case A with `itranf` one hour after `itanf`. Expected: PASS; both files have no particle record before the release time.
 - [ ] **Step 3:** Record AC2, AC3, AC7, AC8 numbers in the acceptance document. Commit, push, open the stage PR: `test(lagrange): output edge cases under MPI (#217)`.
 
+
+> **Amended 2026-11-22, stage 5 as built (controller's rulings; the ledger has the evidence).**
+>
+> **Task 5.0** (added at the start of the stage): the eight convention points of the stage-3 Fortran review (an abort instead of a `stop` on a path every process runs, `intent` in `track_single` and `track_body_xi`, 14 MPI calls with their error codes checked, pi from `mod_physical_constants`, the part-dump unit closed, Makefile dependencies). No result changes.
+>
+> **Tasks 5.1 and 5.2 as built.** `lgr_mpi_output` writes the particle file from all processes: each process prepares the records of its active and exited particles; the inserted block comes only from release lists that the releasing process keeps (`lgr_mpi_keep_release`, called from `lgr_mpi_assign_ids`) and clears at each output, because a particle may be handed over before the first output and the receiver may not hold its release element; rank 0 gathers, orders each block by id and writes exactly what `lgr_output` writes, with global element numbers. Only rank 0 opens and writes the file (the unguarded `write(iu) ncust` on every process was what left `fort.20` and `fort.22`). A release that bypasses the id assignment (outside the scope on several processes) stops the run at the next output with a message instead of writing a wrong file. One process stays byte-identical to serial (AC7).
+>
+> **AC3 and AC8 as gated** (the 1e-5 limits of the spec are replaced as for the debug dump in stage 3): AC2 exact (`./check_lgr_mpi.sh CASE NP ids`); AC3 against the floors (`… pos`): the driver's table holds the measured envelopes of the six perturbed serial runs rounded UP — beyond the limit at the last output / largest distance at any output / particles with a different time `tt`: A 78 / 2.98e-3 degrees (measured 2.9734e-3) / 0; B 48 / 182 m (181.75) / 2; C 19 / 7.12e-3 degrees (7.1106e-3) / 0; E 33 / 4.3e-3 degrees (4.2915e-3) / 0. The inserted block is compared exactly in every field except the layer depth `hl`, which is computed at output time from the layer thickness and follows the water level (within `--tol-hl`, 1e-4; up to 1.9e-6 seen); the element of a pair at distance 0 is compared exactly in every block (a regression to local element numbers fails). AC8: an `lgrelab -lgmean` value of the MPI file passes if it is within the envelope of the same value of the six perturbed serial runs plus one unit of its last printed decimal (the printed means are rounded); `lgr_lgmean_compare.py`, which fails when nothing was compared.
+>
+> **The repeated-release copy** of Task 5.2 (case B with `idtl = '30m'`, 96,288 particles): the inserted blocks are exact at every output; positions are gated against that copy's own floors (measured on the reference: 1,258 beyond 2 m, 6,118 m, 75 different `tt`), not case B's, which were measured on one release of 1,003 particles. Its settings and floors are kept in the plan's workspace (`gates/case_b_idtl30m/`).
+
 ---
 
 ## Stage 6: random cases and Stokes drift through the output path

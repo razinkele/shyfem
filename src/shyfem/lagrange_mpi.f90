@@ -53,7 +53,9 @@
 ! lgr_mpi_resolve		resolution of the parked particles by position
 ! lgr_mpi_relocate_step		parkings of a step (levdbg >= 3)
 ! lgr_mpi_relocate_stats	counts of the element search (levdbg >= 3)
-! lgr_mpi_gather_output		gather particles to rank 0 for output
+! lgr_mpi_output		particle file on several processes, written by rank 0
+! lgr_mpi_gather_records	records of all processes on rank 0
+! lgr_mpi_keep_release		release records of a seeding call for the output
 ! lgr_mpi_reduce_connect	reduce connectivity matrices
 ! lgr_mpi_gather_global		global array on rank 0 from the owned entries
 ! lgr_mpi_global_area		total basin area as in a serial run
@@ -198,6 +200,25 @@
 	! lgr_mpi_assign_ids decides for all processes after the release
 	logical, save :: lgr_nbdymax_passed = .false.
 
+	! release records for the particle file on several processes
+	! (lgr_mpi_output): a particle can be handed over before the first
+	! output after its release to a process that does not hold its
+	! release element, so the process that releases it keeps, from the
+	! release on (lgr_mpi_keep_release, called by lgr_mpi_assign_ids), its
+	! id and its release record init (with ie the local release element,
+	! positive) until the next output, which writes and clears them:
+	! rel_id(1:n_rel), rel_body(1:n_rel). Kept only if the particle file
+	! is written (blgr_file, set by lagrange when it opens the file).
+	! lgr_nrel_total counts every release record taken on this process;
+	! its sum over the processes equals the global number of particles
+	! (nothing removes a particle on several processes; lgr_mpi_output
+	! stops the run if it does not)
+	logical, save :: blgr_file = .false.
+	integer, save :: n_rel = 0
+	integer, save :: lgr_nrel_total = 0
+	integer, save, allocatable :: rel_id(:)
+	type(lagr_body), save, allocatable :: rel_body(:)
+
 	! lookups (lgr_mpi_lookup_init): ip_int_elem and ip_int_node sorted,
 	! with the local numbers in the same order; elements of local node k:
 	! lgr_ne_list(lgr_ne_ptr(k)+1:lgr_ne_ptr(k+1))
@@ -279,6 +300,8 @@
 	if( nbad == 0 ) return
 
 	if( my_id == 0 ) flush(6)
+	! the MPI_Barrier calls before an abort are not checked: a barrier that
+	! fails right before the abort changes nothing (here and at the others)
 	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
 	call shympi_abort_internal('error stop lagrange: option not'	&
      &		//' supported with MPI')
@@ -531,8 +554,12 @@
 	! column q of nall/csall = what rank q has for every rank
 	call MPI_Allgather(lgr_nshare,nproc,MPI_INTEGER,			&
      &			nall,nproc,MPI_INTEGER,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allgather')
 	call MPI_Allgather(csum,nproc,MPI_INTEGER8,			&
      &			csall,nproc,MPI_INTEGER8,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allgather')
 
 	bbad = .false.
 	do q = 0, nproc-1
@@ -568,8 +595,12 @@
 	end do
 	call MPI_Allreduce(nd2,nd2g,1,MPI_INTEGER,MPI_SUM,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allreduce')
 	call MPI_Allreduce(nd3,nd3g,1,MPI_INTEGER,MPI_SUM,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_topology_init: MPI_Allreduce')
 
 	if( my_id == 0 ) then
 	  write(6,*) 'lgr topology: shared element lists consistent'
@@ -705,8 +736,12 @@
 	end if
 	call MPI_Allreduce(hash,hmin,1,MPI_INTEGER8,MPI_MIN,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(hash,hmax,1,MPI_INTEGER8,MPI_MAX,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	if( hmin < 0 .or. hmin /= hmax ) then
 	  if( my_id == 0 ) then
 	    write(6,*) 'lgr side table: nen3v_global missing or not the'	&
@@ -1091,12 +1126,20 @@
 
 	call MPI_Allreduce(ival,ivalg,6,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(lmin,lming,1,MPI_INTEGER,MPI_MIN		&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(lmax,lmaxg,1,MPI_INTEGER,MPI_MAX		&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	call MPI_Allreduce(dt,dtmax,1,MPI_DOUBLE_PRECISION,MPI_MAX	&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_table: MPI_Allreduce')
 	if( ivalg(1) == 0 ) lming = 0
 
 	if( my_id == 0 ) then
@@ -1184,11 +1227,15 @@
 	if( info(1) /= 0 ) ic = my_id
 	call MPI_Allreduce(ic,irmin,1,MPI_INTEGER,MPI_MIN			&
      &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_fail: MPI_Allreduce')
 	if( irmin >= n_threads ) return
 
 	iall = info
 	call MPI_Bcast(iall,lgr_side_nfo,MPI_INTEGER,irmin,MPI_COMM_WORLD	&
      &			,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_side_fail: MPI_Bcast')
 
 	select case( iall(1) )
 	case( 1 )
@@ -2699,6 +2746,8 @@
 
 	call MPI_Allreduce(ifield,ifmax,1,MPI_INTEGER,MPI_MAX,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_selftest_pack: MPI_Allreduce')
 
 	if( ifmax > 0 ) then
 	  if( ifield > 0 ) then
@@ -2968,6 +3017,8 @@
 	ibuf(7:11) = nskip(0:4)
 	call MPI_Allreduce(ibuf,isum,11,MPI_INTEGER,MPI_SUM,		&
      &			MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_selftest_side: MPI_Allreduce')
 
 	if( my_id == 0 ) then
 	  do k = 0, 4
@@ -3286,6 +3337,8 @@
 ! delta = lgr_side_delta of the largest absolute corner coordinate plus
 ! the longest side; amin returns its smallest interior angle (degrees)
 
+	use mod_physical_constants, only : pi_dp
+
 	logical :: wide_element
 	integer, intent(in) :: iel
 	double precision, intent(out) :: amin
@@ -3314,7 +3367,7 @@
 	  e2x = dble(x(k2)) - x(kk)
 	  e2y = dble(y(k2)) - y(kk)
 	  ang = atan2( abs(e1x*e2y-e1y*e2x), e1x*e2x+e1y*e2y )
-	  amin = min( amin, ang * 45.d0 / atan(1.d0) )
+	  amin = min( amin, ang * 180.d0 / pi_dp )
 	end do
 	delta = lgr_side_delta( real(cmax + hmax) )
 	wide_element = .false.
@@ -4990,11 +5043,54 @@
 
 !*******************************************************************
 
-	subroutine lgr_mpi_gather_output(iu, dtime)
+	subroutine lgr_mpi_output(iu, dtime)
 
-! gather all particles to rank 0 for trajectory output
+! particle file on several processes; collective: every process calls it
+! at every output time of the particle file (lagrange), also a process
+! without a particle. Rank 0 writes at dtime the three blocks of
+! lgr_output (active iwhat = 0, inserted -1, exited 1), each a header
+! (dtime, n, iwhat) and per particle the three records lgr_output writes
+! in a serial run, in the order of the ids: the order of a serial run,
+! whose slots hold the particles in the order of their ids (appended,
+! never removed). The other processes write nothing; they do not use iu
+! (the file is opened by rank 0 only, iu is not connected elsewhere).
+!
+! What each process contributes (lgr_output_record, lgr_output_fill):
+!   active   its particles with actual%ie > 0
+!   exited   its particles with actual%ie <= 0 (a particle that left
+!            stays on the process it left from, which holds that element)
+!   inserted the particles it released since the last output, from its
+!            release records (rel_id, rel_body; lgr_mpi_keep_release):
+!            x, y from the release coordinates in the release element,
+!            hl from that element's layers at dtime, as a serial run does.
+!            The particle may be on another process by now, so the type,
+!            the sinking and custom(1) (in every custom slot, as serial)
+!            of the particle at dtime, which a serial run writes here,
+!            are taken on rank 0 from the particle's own active or exited
+!            record
+! The element written is the global one (ip_int_elem, lgr_output_fill).
+! The inserted block comes only from the release records, never from
+! the sign of init%ie: a particle is listed once, by the process that
+! released it, and the list is cleared at every output.
+!
+! If no process holds a particle nothing is written (as lgr_output with
+! nbdy = 0); the processes decide together from the gathered counts.
+!
+! The run stops instead of writing a wrong file if
+!   - the global number of particles differs from the number of release
+!     records taken (lgr_nrel_total): particles were released by a
+!     release that does not pass lgr_mpi_assign_ids (continuous release,
+!     lgrtrj, lgrini; not supported on several processes), or removed
+!   - on rank 0: an id occurs twice among the active and exited records,
+!     or an inserted id occurs twice or is in neither block
+!
+! Memory: rank 0 holds the gathered records of the three blocks at once,
+! lgr_orec_base+ncust double precision values per record (88 bytes with
+! ncust = 1): at an output right after the release of all n particles of
+! a run, 2 n records (2 x 88 bytes x n, 35 MB for n = 200,001), plus its
+! own records and two integers per gathered record for the ordering
 
-	use shympi
+	use shympi, only : my_id, n_threads
 
 	implicit none
 
@@ -5003,85 +5099,295 @@
 	integer, intent(in) :: iu
 	double precision, intent(in) :: dtime
 
-	integer :: ierr, i, j, nproc, myrank
-	integer :: nbdy_local, nbdy_global, nbdy_save
-	integer, allocatable :: all_counts(:), all_data(:), displs(:)
-	double precision, allocatable :: local_buf(:), global_buf(:)
+	integer, parameter :: nval = 5	!per process: active, exited,
+					!inserted, particles, records taken
+	integer :: ival(nval), ntot(nval)
+	integer :: nrec, ip, k, ka, ke, ierr, nbad, iwhat
+	integer :: na, ne, ni		!records of this process
+	integer :: nga, nge, ngi	!records of all processes
+	integer :: ndup, nboth, nmiss
+	integer, allocatable :: iall(:,:)
+	integer, allocatable :: keya(:), keye(:), keyi(:)
+	integer, allocatable :: idxa(:), idxe(:), idxi(:)
+	double precision, allocatable :: rec(:)
+	double precision, allocatable :: bufa(:), bufe(:), bufi(:)
+	double precision, allocatable :: ga(:), ge(:), gi(:)
+	real :: c(ncust)
 
-	nproc = n_threads
-	myrank = my_id
+	nrec = lgr_orec_base + ncust
 
-	if( nproc <= 1 ) then
-	  call lgr_output(iu, dtime)
+!	--------------------------------------------
+!	counts of all processes
+!	--------------------------------------------
+
+	na = 0
+	ne = 0
+	do ip=1,nbdy
+	  if( lgr_ar(ip)%actual%ie > 0 ) then
+	    na = na + 1
+	  else
+	    ne = ne + 1
+	  end if
+	end do
+	ni = n_rel
+
+	ival = (/ na, ne, ni, nbdy, lgr_nrel_total /)
+	allocate(iall(nval,n_threads), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_output: allocation')
+	call MPI_Allgather(ival,nval,MPI_INTEGER,iall,nval,MPI_INTEGER	&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_output: MPI_Allgather')
+	ntot = sum(iall,dim=2)
+
+	if( ntot(4) /= ntot(5) ) then
+	  if( my_id == 0 ) then
+	    write(6,*) 'lgr_mpi_output: particles ',ntot(4)		&
+     &		,', release records taken ',ntot(5)
+	    write(6,*) 'particles were released (or removed) by an option'	&
+     &		//' that is not supported on several MPI processes'	&
+     &		//' (continuous release, lgrtrj, lgrini)'
+	    flush(6)
+	  end if
+	  call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
+	  call shympi_abort_internal('lgr_mpi_output: particles without'	&
+     &		//' a release record')
+	end if
+
+	if( ntot(4) == 0 ) then		!no particle anywhere: no output
+	  n_rel = 0
+	  deallocate(iall)
 	  return
 	end if
 
-	nbdy_local = nbdy
-	lgr_pack_size = lgr_pack_base + ncust
+!	--------------------------------------------
+!	records of this process
+!	--------------------------------------------
 
-	allocate(all_counts(0:nproc-1), stat=ierr)
-	if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
-	call MPI_Allgather(nbdy_local, 1, MPI_INTEGER,			&
-     &		all_counts, 1, MPI_INTEGER,				&
-     &		MPI_COMM_WORLD, ierr)
+	allocate(rec(nrec), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_output: allocation')
+	allocate(bufa(max(na*nrec,1)), bufe(max(ne*nrec,1))		&
+     &		, bufi(max(ni*nrec,1)), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_output: allocation')
 
-	nbdy_global = sum(all_counts)
-
-	! Pack local particles
-	allocate(local_buf(max(nbdy_local*lgr_pack_size,1)), stat=ierr)
-	if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
-	do i = 1, nbdy_local
-	  j = (i - 1) * lgr_pack_size
-	  call lgr_mpi_pack_particle(lgr_ar(i),				&
-     &		local_buf(j+1:j+lgr_pack_size))
+	ka = 0
+	ke = 0
+	do ip=1,nbdy
+	  if( lgr_ar(ip)%actual%ie > 0 ) then
+	    call lgr_output_record(ip,0,rec)
+	    bufa(ka*nrec+1:(ka+1)*nrec) = rec
+	    ka = ka + 1
+	  else
+	    call lgr_output_record(ip,1,rec)
+	    bufe(ke*nrec+1:(ke+1)*nrec) = rec
+	    ke = ke + 1
+	  end if
 	end do
 
-	! Compute displacements
-	allocate(displs(0:nproc-1), stat=ierr)
-	if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
-	allocate(all_data(0:nproc-1), stat=ierr)
-	if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
-	displs(0) = 0
-	do i = 0, nproc - 1
-	  all_data(i) = all_counts(i) * lgr_pack_size
-	end do
-	do i = 1, nproc - 1
-	  displs(i) = displs(i-1) + all_data(i-1)
+	c = 0.		!type, sinking, custom values: set on rank 0
+	do k=1,ni
+	  call lgr_output_fill(rel_body(k)%ie,rel_body(k)%xi		&
+     &		,rel_body(k)%z,rel_body(k)%l,rel_body(k)%time,rel_id(k)	&
+     &		,0,0.,c,rec)
+	  bufi((k-1)*nrec+1:k*nrec) = rec
 	end do
 
-	if( myrank == 0 ) then
-	  allocate(global_buf(max(nbdy_global*lgr_pack_size,1)),	&
-     &		stat=ierr)
-	  if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
-	else
-	  allocate(global_buf(1),stat=ierr)
-	  if (ierr /= 0) call shympi_abort_internal('lgr_mpi_gather: alloc')
-	end if
+!	--------------------------------------------
+!	all records on rank 0
+!	--------------------------------------------
 
-	call MPI_Gatherv(local_buf, nbdy_local*lgr_pack_size,		&
-     &		MPI_DOUBLE_PRECISION,					&
-     &		global_buf, all_data, displs,				&
-     &		MPI_DOUBLE_PRECISION,					&
-     &		0, MPI_COMM_WORLD, ierr)
+	call lgr_mpi_gather_records(na,nrec,bufa,iall(1,:),ntot(1),ga)
+	call lgr_mpi_gather_records(ne,nrec,bufe,iall(2,:),ntot(2),ge)
+	call lgr_mpi_gather_records(ni,nrec,bufi,iall(3,:),ntot(3),gi)
+	n_rel = 0			!written below, on rank 0
 
-	! Rank 0: unpack and write
-	if( myrank == 0 ) then
-	  nbdy_save = nbdy
-	  nbdy = nbdy_global
-	  call mod_lagrange_handle_alloc(nbdy)
-	  do i = 1, nbdy_global
-	    j = (i - 1) * lgr_pack_size
-	    call lgr_mpi_unpack_particle(global_buf(j+1:j		&
-     &			+lgr_pack_size), lgr_ar(i))
+!	--------------------------------------------
+!	rank 0: order by id, checks, inserted records completed
+!	--------------------------------------------
+
+	nga = ntot(1)
+	nge = ntot(2)
+	ngi = ntot(3)
+	nbad = 0
+	if( my_id == 0 ) then
+	  allocate(keya(max(nga,1)), idxa(max(nga,1)), keye(max(nge,1))	&
+     &		, idxe(max(nge,1)), keyi(max(ngi,1)), idxi(max(ngi,1))	&
+     &		, stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_output: allocation')
+	  call order_by_id(nga,ga,keya,idxa)
+	  call order_by_id(nge,ge,keye,idxe)
+	  call order_by_id(ngi,gi,keyi,idxi)
+
+	  ndup = count_dup(nga,keya) + count_dup(nge,keye)		&
+     &		+ count_dup(ngi,keyi)
+	  nboth = 0
+	  do k=1,nge
+	    if( lgr_mpi_bisect(nga,keya,keye(k)) > 0 ) nboth = nboth + 1
 	  end do
-	  call lgr_output(iu, dtime)
-	  nbdy = nbdy_save
-	  call mod_lagrange_handle_alloc(nbdy)
+	  nmiss = 0
+	  do k=1,ngi
+	    ip = lgr_mpi_bisect(nga,keya,keyi(k))
+	    if( ip > 0 ) then
+	      call complete_inserted(idxi(k),ga,idxa(ip))
+	    else
+	      ip = lgr_mpi_bisect(nge,keye,keyi(k))
+	      if( ip > 0 ) then
+	        call complete_inserted(idxi(k),ge,idxe(ip))
+	      else
+	        nmiss = nmiss + 1
+	      end if
+	    end if
+	  end do
+
+	  nbad = ndup + nboth + nmiss
+	  if( nbad > 0 ) then
+	    write(6,*) 'lgr_mpi_output: ids twice in a block ',ndup	&
+     &		,', ids both active and exited ',nboth			&
+     &		,', inserted ids in neither block ',nmiss
+	    flush(6)
+	  end if
 	end if
 
-	deallocate(local_buf, global_buf, all_counts, all_data, displs)
+	call MPI_Bcast(nbad,1,MPI_INTEGER,0,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_output: MPI_Bcast')
+	if( nbad > 0 ) call shympi_abort_internal('lgr_mpi_output: the'	&
+     &		//' particle records of the processes are inconsistent')
 
-	end subroutine lgr_mpi_gather_output
+!	--------------------------------------------
+!	rank 0: the three blocks as lgr_output writes them
+!	--------------------------------------------
+
+	if( my_id == 0 ) then
+	  iwhat = 0
+	  write(iu) dtime,nga,iwhat
+	  do k=1,nga
+	    rec = ga((idxa(k)-1)*nrec+1:idxa(k)*nrec)
+	    call lgr_output_write(iu,rec)
+	  end do
+	  iwhat = -1
+	  write(iu) dtime,ngi,iwhat
+	  do k=1,ngi
+	    rec = gi((idxi(k)-1)*nrec+1:idxi(k)*nrec)
+	    call lgr_output_write(iu,rec)
+	  end do
+	  iwhat = 1
+	  write(iu) dtime,nge,iwhat
+	  do k=1,nge
+	    rec = ge((idxe(k)-1)*nrec+1:idxe(k)*nrec)
+	    call lgr_output_write(iu,rec)
+	  end do
+	  deallocate(keya,idxa,keye,idxe,keyi,idxi)
+	end if
+
+	deallocate(iall,rec,bufa,bufe,bufi,ga,ge,gi)
+
+	contains
+
+!	--------------------------------------------
+
+	  subroutine order_by_id(n,g,key,idx)
+	  ! idx(1:n): the records of g in the order of their ids key(1:n)
+	  integer, intent(in) :: n
+	  double precision, intent(in) :: g(:)
+	  integer, intent(out) :: key(:)
+	  integer, intent(out) :: idx(:)
+	  integer :: j
+	  do j=1,n
+	    key(j) = nint(g((j-1)*nrec+1))
+	    idx(j) = j
+	  end do
+	  call lgr_mpi_sort_by_key(n,key,idx)
+	  end subroutine order_by_id
+
+	  function count_dup(n,key)
+	  ! ids that follow an equal id in the ordered key(1:n)
+	  integer :: count_dup
+	  integer, intent(in) :: n
+	  integer, intent(in) :: key(:)
+	  integer :: j
+	  count_dup = 0
+	  do j=2,n
+	    if( key(j) == key(j-1) ) count_dup = count_dup + 1
+	  end do
+	  end function count_dup
+
+	  subroutine complete_inserted(jins,g,jsrc)
+	  ! type, sinking and custom(1) in every custom slot of inserted
+	  ! record jins of gi from record jsrc of g (the particle's active
+	  ! or exited record at this output)
+	  integer, intent(in) :: jins
+	  double precision, intent(in) :: g(:)
+	  integer, intent(in) :: jsrc
+	  integer :: oi, os
+	  oi = (jins-1)*nrec
+	  os = (jsrc-1)*nrec
+	  gi(oi+2) = g(os+2)
+	  gi(oi+4) = g(os+4)
+	  gi(oi+lgr_orec_base+1:oi+nrec) = g(os+lgr_orec_base+1)
+	  end subroutine complete_inserted
+
+	end subroutine lgr_mpi_output
+
+!*******************************************************************
+
+	subroutine lgr_mpi_gather_records(n,nrec,buf,counts,nglob,g)
+
+! gathers on rank 0 the records of all processes (collective): this
+! process gives buf(1:n*nrec) (n records of nrec values), counts(1:nproc)
+! are the numbers of records of all processes (rank r in counts(r+1)),
+! nglob their sum. On rank 0, g(1:nglob*nrec) holds the records in rank
+! order; g is allocated here, with size 1 on the other processes and for
+! no record.
+
+	use shympi, only : my_id, n_threads
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, intent(in) :: n
+	integer, intent(in) :: nrec
+	double precision, intent(in) :: buf(:)
+	integer, intent(in) :: counts(:)
+	integer, intent(in) :: nglob
+	double precision, allocatable, intent(out) :: g(:)
+
+	integer :: ir, ierr
+	integer, allocatable :: icnt(:), idsp(:)
+
+	allocate(icnt(n_threads), idsp(n_threads), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_gather_records: allocation')
+	do ir=1,n_threads
+	  icnt(ir) = counts(ir) * nrec
+	end do
+	idsp(1) = 0
+	do ir=2,n_threads
+	  idsp(ir) = idsp(ir-1) + icnt(ir-1)
+	end do
+
+	if( my_id == 0 ) then
+	  allocate(g(max(nglob*nrec,1)), stat=ierr)
+	else
+	  allocate(g(1), stat=ierr)
+	end if
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_gather_records: allocation')
+
+	call MPI_Gatherv(buf,n*nrec,MPI_DOUBLE_PRECISION			&
+     &		,g,icnt,idsp,MPI_DOUBLE_PRECISION				&
+     &		,0,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_gather_records: MPI_Gatherv')
+
+	deallocate(icnt,idsp)
+
+	end subroutine lgr_mpi_gather_records
 
 !*******************************************************************
 
@@ -5365,6 +5671,9 @@
 ! (lgr_nbdymax_passed): rank 0 writes the message of insert_particle once,
 ! then every process stops (after the seeding call, not at the particle
 ! that passes the limit).
+!
+! At the end the release records of the new particles are kept for the
+! inserted block of the particle file (lgr_mpi_keep_release).
 
 	use shympi, only : shympi_is_parallel,my_id,id_elem,nel_global
 	use basin, only : nel
@@ -5486,11 +5795,65 @@
 
 	deallocate(icount,ioff)
 
+	call lgr_mpi_keep_release(nbdy_before)	!for lgr_mpi_output
+
 	end subroutine lgr_mpi_assign_ids
 
 !*******************************************************************
 
-	subroutine lgr_mpi_debug_dump(dtime,bpart_only)
+	subroutine lgr_mpi_keep_release(nbdy_before)
+
+! keeps the release records of the particles in the slots nbdy_before+1
+! ... nbdy (just released by this process, their ids final) for the
+! inserted block of the next output of the particle file (lgr_mpi_output;
+! see rel_id and rel_body at the top of the module): the id and the
+! release record init with ie = the local release element (init%ie is
+! negative until a serial output writes it; it is not changed here).
+! lgr_nrel_total counts the particles; the records are kept only if the
+! particle file is written (blgr_file). Several processes only.
+
+	implicit none
+
+	integer, intent(in) :: nbdy_before
+
+	integer :: i, nnew, nsize, ierr
+	integer, allocatable :: inew(:)
+	type(lagr_body), allocatable :: bnew(:)
+
+	nnew = nbdy - nbdy_before
+	if( nnew <= 0 ) return
+	lgr_nrel_total = lgr_nrel_total + nnew
+	if( .not. blgr_file ) return
+
+	if( .not. allocated(rel_id) ) then
+	  allocate(rel_id(max(nnew,1024)), rel_body(max(nnew,1024))	&
+     &		, stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_keep_release: allocation')
+	end if
+	if( n_rel + nnew > size(rel_id) ) then	!larger lists, entries copied
+	  nsize = max(2*size(rel_id), n_rel + nnew)
+	  allocate(inew(nsize), bnew(nsize), stat=ierr)
+	  if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_keep_release: allocation')
+	  inew(1:n_rel) = rel_id(1:n_rel)
+	  bnew(1:n_rel) = rel_body(1:n_rel)
+	  call move_alloc(inew,rel_id)
+	  call move_alloc(bnew,rel_body)
+	end if
+
+	do i=nbdy_before+1,nbdy
+	  n_rel = n_rel + 1
+	  rel_id(n_rel) = lgr_ar(i)%id
+	  rel_body(n_rel) = lgr_ar(i)%init
+	  rel_body(n_rel)%ie = abs(lgr_ar(i)%init%ie)
+	end do
+
+	end subroutine lgr_mpi_keep_release
+
+!*******************************************************************
+
+	subroutine lgr_mpi_debug_dump(dtime,bpart_only,bclose)
 
 ! debug dump of particles, side fluxes and node arrays (levdbg >= 3)
 !
@@ -5504,6 +5867,9 @@
 ! bpart_only (optional, default false): true for the call right after a
 ! release (before any tracking); it writes the particles only, never the
 ! flux, flux3 and node files
+!
+! bclose (optional, default false): true for the call at the end of the
+! particle run: it closes the part file, and later calls write nothing
 !
 ! lgrdbg.part.NN.txt: at every particle output and right after every
 ! release, one line per array entry
@@ -5550,6 +5916,7 @@
 
 	double precision, intent(in) :: dtime
 	logical, intent(in), optional :: bpart_only
+	logical, intent(in), optional :: bclose
 
 	double precision, parameter :: dtflux = 36000.d0 !fluxes after 10 h
 
@@ -5565,6 +5932,14 @@
 	character(len=1) :: what
 
 	if( icall < 0 ) return
+
+	if( present(bclose) ) then
+	  if( bclose ) then			!end of the particle run
+	    if( icall == 1 ) close(iupart)
+	    icall = -1			!no dump line after the close
+	    return
+	  end if
+	end if
 
 	if( icall == 0 ) then
 	  icall = -1
