@@ -182,7 +182,8 @@
 	lmax_act = ilhv(ie)
 	if( lmax_act > lmax .or. lmax_act > nlev ) then
 	  write(6,*) 'nlev,lmax,lmax_act: ',nlev,lmax,lmax_act
-	  stop 'error stop lagr_layer_thickness: incompatible layers'
+	  call shympi_abort_internal(					&
+     &		'error stop lagr_layer_thickness: incompatible layers')
 	end if
 	lmax = lmax_act
 
@@ -279,7 +280,12 @@
 !
 !************************************************************
 
-	subroutine track_xi(id,iel,lb,sv,xi,z,time)
+	subroutine track_xi(id,iel,lb,sv,xi,z,time,ncross,icut)
+
+! icut: if the particle stopped on a cut-off side of the MPI domain (side
+! table lgr_ieltv <= -1000) and goes on on another process, the side of
+! the element it started in (iel is then -that element, xi its position on
+! the side, as at an open boundary); 0 otherwise
 
 	use mod_lagrange
 
@@ -292,10 +298,12 @@
 	double precision, intent(inout) :: xi(3)	!natural coordinates in triangle
 	double precision, intent(inout) :: z	!rel vert pos: 0=top, 1=bottom
 	real, intent(inout) :: time
+	integer, intent(in) :: ncross		!element crossings left in time step
+	integer, intent(out) :: icut		!cut-off side reached (0: none)
 
 	logical bdebug
-	logical bsurf,bbott
-	integer iflux,lmax,ii
+	logical bsurf,bbott,bhas
+	integer iflux,lmax,ii,iside
 	integer ieorig,lborig
 	double precision s,alpha
 	double precision dist,dh,dv,ds
@@ -306,8 +314,8 @@
 	double precision xie(3)
 
 	logical track_xi_on_material_boundary
-	logical track_xi_has_layer
 
+	icut = 0			!before the first return
 	blgrdebug = id == 0
 	bdebug = blgrdebug
 
@@ -451,8 +459,9 @@
 	if( th == 0. ) then		!body not moving or laying on side
           if (vel > 0.) then
             xi = xie
-            call track_xi_next_element(iel,xi)    !for particles laying on side
-	    if( .not. track_xi_has_layer(iel,lb) ) then	!just do vert adv
+            call track_xi_next_element(iel,xi,id,ncross,iside)    !for particles laying on side
+	    call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+	    if( .not. bhas ) then	!just do vert adv
 	      iel = ieorig
 	      xi = xie
             end if
@@ -463,16 +472,18 @@
 	  if( s > 1. ) then
 	    write(6,*) 's,t,th: ',s,t,th
 	    write(6,*) 'ds,sorig: ',ds,s-ds
-	    stop 'error stop track_xi: internal error (3)'
+	    call shympi_abort_internal(					&
+     &		'error stop track_xi: internal error (3)')
 	  end if
 	  xi = (1.-s)*xis + s*xie
 	  call track_xi_check('after advection track_xi 1',id,xi)
 	else				!body reaches border of element
 	  xi = xie
 	  call track_xi_check('before advection track_xi 2',id,xi)
-	  call track_xi_next_element(iel,xi)
+	  call track_xi_next_element(iel,xi,id,ncross,iside)
 	  call track_xi_check('after advection track_xi 2',id,xi)
-	  if( .not. track_xi_has_layer(iel,lb) ) then	!just do vert adv
+	  call track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+	  if( .not. bhas ) then	!just do vert adv
 	    iel = ieorig
 	    xi = xie
 	    if( th == 0. ) then
@@ -553,7 +564,7 @@
 	  write(6,*) 'tv,t ',tv,t
 	  write(6,*) 'dz,w,hd: ',dz,w,hd
 	  write(6,*) 'z,lb,lmax ',z,lb,lmax
-	  stop 'error stop track_xi: internal error (2)'
+	  call shympi_abort_internal('error stop track_xi: internal error (2)')
 	end if
 
 	!-----------------------------------------------
@@ -564,28 +575,40 @@
 
 !************************************************************
 
-	subroutine track_xi_next_element(ie,xi)
+	subroutine track_xi_next_element(ie,xi,id,ncross,iside)
 
 ! copies internal coordinates to new element - avoid falling on vertex
+!
+! neighbours from the side table of the tracker, lgr_ieltv: a side without
+! a local neighbour (wall, open boundary, cut-off side <= -1000) is left
+! with ie = -ie and xi on that side of the old element; iside returns the
+! side used (for a particle on a vertex the one of the vertex pick), so
+! that the caller can tell a cut-off side from the others
 
 	use mod_lagrange
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 
 	implicit none
 
 	integer, intent(inout) :: ie
 	double precision, intent(inout) :: xi(3)
+	integer, intent(in) :: id		!id of particle
+	integer, intent(in) :: ncross		!element crossings left in time step
+	integer, intent(out) :: iside		!side of the old element used
 
 	logical bdebug
 	integer ii,in,it
 	integer ia1,ia2,ia3
 	integer ib1,ib2,ib3
 	integer ieb
-	double precision r,eps
+	double precision r,eps,u
 	double precision xiaux(3)
+
+	double precision track_xi_vertex_u
 
 	eps = 1.e-5
 	bdebug = blgrdebug
+	iside = 0
 
 	!---------------------------------------
 	! check xi - how many zeros
@@ -614,11 +637,8 @@
 	  ia3 = mod(ia2,3) + 1
 	else if( in == 2 ) then	!particle on vertex - must move
 	  if( bdebug ) write(6,*) 'in==2 ',xi
-	  r = 0.
-	  do while( r == 0. )
-	    call random_number(r)
-	    r = eps*(r-0.5)
-	  end do
+	  u = track_xi_vertex_u(id,lgr_step,ncross)	!never 0.5, so r /= 0
+	  r = eps*(u-0.5)
 	  it = 6 - it
 	  if( r < 0. ) then
 	    ia1 = mod(it+1,3) + 1
@@ -637,7 +657,8 @@
 	  write(6,*) 'xi not on side or impossible'
 	  write(6,*) ie,in,it
 	  write(6,*) xi
-	  stop 'error stop track_xi_next_element: erroneous xi'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_next_element: erroneous xi')
 	end if
 
 	!---------------------------------------
@@ -647,14 +668,16 @@
 	if( xi(ia1) /= 0. .or. abs(xi(ia2)+xi(ia3)-1.) > eps ) then
 	  write(6,*) ie,in,it,ia1
 	  write(6,*) xi
-	  stop 'error stop track_xi_next_element: erroneous xi sanity'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_next_element: erroneous xi sanity')
 	end if
 
 	!---------------------------------------
 	! look for neighboring element
 	!---------------------------------------
 
-	ieb = ieltv(ia1,ie)
+	iside = ia1
+	ieb = lgr_ieltv(ia1,ie)
 	if( ieb < 1 ) then	!no element or open boundary
 	  ie = -ie
 	  return
@@ -669,13 +692,14 @@
 	!---------------------------------------
 
 	do ii=1,3
-	  if( ieltv(ii,ieb) == ie ) exit
+	  if( lgr_ieltv(ii,ieb) == ie ) exit
 	end do
 	if( ii > 3 ) then
 	  write(6,*) ie,in,it,ia1,ieb
 	  write(6,*) xi
-	  write(6,*) (ieltv(ii,ieb),ii=1,3)
-	  stop 'error stop track_xi_next_element: erroneous ieltv'
+	  write(6,*) (lgr_ieltv(ii,ieb),ii=1,3)
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_next_element: erroneous ieltv')
 	end if
 
 	!---------------------------------------
@@ -702,11 +726,59 @@
 
 !************************************************************
 
+	function track_xi_vertex_u(id,istep,ncross)
+
+! value in (0,1) that picks the side a particle on a vertex moves to
+!
+! This is not a random number, on purpose. It replaces random_number,
+! whose generator was never seeded, so two runs of the same case
+! picked differently. The value depends only on the particle id, the
+! time step number and the crossings the particle has left in this
+! time step: every run and every number of MPI processes makes the
+! same pick, and two vertex events of one particle in one time step
+! get different values, so the particle cannot cycle.
+!
+! Integer arithmetic modulo the prime m = 2**31-1 in integer*8: all
+! products stay below 2**62, so no overflow and no floating point trap.
+! Each step h -> (a*h+k)**5 mod m is one to one in k (gcd(5,m-1) = 1),
+! so different crossing counts give different values.
+! u = (h+1)/(m+2) with 0 <= h < m: 0 < u < 1, and u /= 0.5 since m+2 is odd.
+
+	implicit none
+
+	double precision track_xi_vertex_u
+	integer, intent(in) :: id		!id of particle
+	integer, intent(in) :: istep		!time step number
+	integer, intent(in) :: ncross		!element crossings left in time step
+
+	integer(kind=8), parameter :: m = 2147483647_8	!prime 2**31-1
+	integer(kind=8), parameter :: a = 48271_8	!multiplier
+	integer(kind=8) h,h2,h4
+	integer(kind=8) k(2)
+	integer i
+
+	k(1) = modulo(int(istep,8),m)
+	k(2) = modulo(int(ncross,8),m)
+
+	h = modulo(int(id,8),m)
+	do i=1,2
+	  h = modulo(a*h+k(i),m)	!one to one in k(i)
+	  h2 = modulo(h*h,m)
+	  h4 = modulo(h2*h2,m)
+	  h = modulo(h4*h,m)		!h**5, one to one, mixes the bits
+	end do
+
+	track_xi_vertex_u = dble(h+1) / dble(m+2)
+
+	end
+
+!************************************************************
+
 	function track_xi_on_material_boundary(ie,xi)
 
-! checks if particle is on material boundary
+! checks if particle is on material boundary (side table lgr_ieltv)
 
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 
 	implicit none
 
@@ -719,7 +791,7 @@
 	track_xi_on_material_boundary = .false.
 
 	do ii=1,3
-	  if( xi(ii) == 0. .and. ieltv(ii,ie) == 0 ) then
+	  if( xi(ii) == 0. .and. lgr_ieltv(ii,ie) == 0 ) then
 	    track_xi_on_material_boundary = .true.
 	  end if
 	end do
@@ -737,7 +809,57 @@
 	logical track_xi_has_layer
 	integer, intent(in) :: iel,lb
 
-	track_xi_has_layer = ( ilhv(iel) >= lb )
+	if( iel < 1 ) then	!particle has left the domain: no layer to test
+	  track_xi_has_layer = .true.
+	else
+	  track_xi_has_layer = ( ilhv(iel) >= lb )
+	end if
+
+	end
+
+!************************************************************
+
+	subroutine track_xi_side_test(ieorig,iel,iside,lb,bhas,icut)
+
+! layer test of track_xi after track_xi_next_element moved a particle
+! from ieorig through side iside to iel; bhas false means the particle is
+! put back into ieorig (the caller does that)
+!
+! iel > 0: the element across has the layer (track_xi_has_layer)
+! iel < 1 at a cut-off side (lgr_ieltv(iside,ieorig) <= -1000): the
+!	element across is held by another process; its layers are
+!	lgr_side_lmax(iside,ieorig). With the layer the particle goes on
+!	there (icut = iside); without it it is put back as in a serial run
+!	(counted in lgr_nputback)
+! iel < 1 at any other side: the particle leaves the basin (bhas true)
+
+	use mod_lagrange_mpi, only : lgr_ieltv, lgr_side_lmax, lgr_nputback
+
+	implicit none
+
+	integer, intent(in) :: ieorig		!element the particle left
+	integer, intent(in) :: iel		!element from next_element
+	integer, intent(in) :: iside		!side of ieorig it used
+	integer, intent(in) :: lb		!layer of the particle
+	logical, intent(out) :: bhas		!false: put the particle back
+	integer, intent(inout) :: icut		!cut-off side (set if handed over)
+
+	logical track_xi_has_layer
+
+	if( iel < 1 .and. iside >= 1 .and. iside <= 3 ) then
+	  if( lgr_ieltv(iside,ieorig) <= -1000 ) then	!cut-off side
+	    bhas = ( lgr_side_lmax(iside,ieorig) >= lb )
+	    if( bhas ) then
+	      icut = iside
+	    else
+!$OMP ATOMIC
+	      lgr_nputback = lgr_nputback + 1
+	    end if
+	    return
+	  end if
+	end if
+
+	bhas = track_xi_has_layer(iel,lb)
 
 	end
 
@@ -896,10 +1018,11 @@
 
 	subroutine track_xi_get_flux(iel,lb,iflux,alpha,vel)
 
-! gets flux and vel information for element and layer
+! gets flux and vel information for element and layer (walls from the
+! side table lgr_ieltv)
 
 	use mod_lagrange
-	use mod_geom
+	use mod_lagrange_mpi, only : lgr_ieltv
 	use mod_hydro_vel
 
 	implicit none
@@ -924,7 +1047,7 @@
 	flux = flux3d(lb,:,iel)		!fluxes over side into element
 
 	do ii=1,3
-	  if( ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
+	  if( lgr_ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
 	    if( flux(ii) .ne. 0. ) then
 	      write(6,*) 'material boundary: ',iel,ii,flux(ii)
 	      flux(ii) = 0.
@@ -1041,7 +1164,8 @@
 
 	if( lb > lmax ) then
 	  write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
-	  stop 'error stop track_xi_get_vertical: no such layer'
+	  call shympi_abort_internal(					&
+     &		'error stop track_xi_get_vertical: no such layer')
 	end if
 
 	hd = hl(lb)
@@ -1087,7 +1211,7 @@
 	  write(6,*) text
 	  write(6,*) id
 	  write(6,*) xi
-	  stop 'error stop track_xi_check: wrong xi'
+	  call shympi_abort_internal('error stop track_xi_check: wrong xi')
 	end if
 
 	end

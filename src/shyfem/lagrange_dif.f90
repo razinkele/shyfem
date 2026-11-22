@@ -56,10 +56,20 @@
 !
 !************************************************************
 
-        subroutine diff_body(i,id,ty,x,y,z,xi,iel,lb,time)
+        subroutine diff_body(i,id,ty,x,y,z,xi,iel,lb,time,bresume,bpark)
 
 ! diffusion of one particle: internal coordinates for vertical
 !                            external coordinates for horizontal
+!
+! on several processes the element search of the horizontal step can
+! park the particle (lgr_mpi_locate): bpark is then true and diff_body
+! returns at once, the caller stores the particle's state and skips the
+! rest of the time step. The particle is resumed later (bresume true): the
+! vertical step and the entry test are not made again (they ran before
+! it was parked), the horizontal step continues after its search
+! (lag_diff_hor_resume), and the statements after it run as for any
+! other particle. Parking happens only on several processes, where
+! ilagr is 1 or 2 (ilagr = 3 stops there) and so bvdiff is false.
 
         use mod_lagrange
         use basin
@@ -76,6 +86,8 @@
         integer, intent(inout)	:: iel          !element number
         integer, intent(inout)	:: lb           !layer 
         real, intent(in)	:: time         !time to diffuse
+        logical, intent(in)	:: bresume      !resume a parked particle
+        logical, intent(out)	:: bpark        !parked in this call
 
 	integer			:: mode 	!type of diffusion scheme
 	real 			:: dtime
@@ -87,7 +99,14 @@
         integer, save 		:: nl = 0
         integer, save 		:: nu = 0
 
-        if( iel <= 0 .or. ty < 0) return     !particle out of domain or beached
+	bpark = .false.
+
+	if( bresume ) then		!parked: no vertical step (bvdiff false)
+	  if( bvdiff ) call shympi_abort_internal(			&
+     &		'diff_body: a parked particle with vertical diffusion')
+	else
+          if( iel <= 0 .or. ty < 0) return     !particle out of domain or beached
+	end if
 
 !---------------------------------------------------------------
 ! initialize
@@ -116,7 +135,12 @@
 !---------------------------------------------------------------
 
         if( bhdiff ) then
-	  call lag_diff_hor(id,time,lb,iel,x,y)
+	  if( bresume ) then
+	    call lag_diff_hor_resume(i,lb,iel,x,y)
+	  else
+	    call lag_diff_hor(i,id,time,lb,iel,x,y,bpark)
+	    if( bpark ) return		!parked: finished by lgr_mpi_handover
+	  end if
 	  xx = x
 	  yy = y
 	  call xy2xi(abs(iel),xx,yy,xi)
@@ -129,22 +153,27 @@
         if( bvdiff .and.  dtime > 0. ) then     !not finished diffusing
           if( n == 0 ) then
             nk = nk + 1
-            perc = (100.*nk)/idbdy
+            perc = 0.
+            if( idbdy > 0 ) perc = (100.*nk)/idbdy
             write(6,1000) 'warning particle dif',id,iel,n,dtime,perc
             !iel = -iel
           else if( iel < 1 ) then
             nl = nl + 1
-            perc = (100.*nl)/idbdy
+            perc = 0.
+            if( idbdy > 0 ) perc = (100.*nl)/idbdy
             write(6,1000) 'loosing particle dif',id,iel,n,dtime,perc
           else
             nu = nu + 1
-            perc = (100.*nu)/idbdy
+            perc = 0.
+            if( idbdy > 0 ) perc = (100.*nu)/idbdy
             write(6,1000) 'unknown error dif',id,iel,n,dtime,perc
           end if
         end if
 
         if( .not. bback ) then
-          if( iel.gt.0 .and. iarv(iel).eq.artype ) iel = -iel
+          if( iel.gt.0 ) then		!lag_diff_hor may return iel < 0
+            if( iarv(iel).eq.artype ) iel = -iel
+          end if
         end if
 
 !---------------------------------------------------------------
@@ -497,30 +526,42 @@
 !******************************************************************
 ! Horizontal diffusion of body id
 
-        subroutine lag_diff_hor(id,time,lb,iel,x,y)
+        subroutine lag_diff_hor(i,id,time,lb,iel,x,y,bpark)
+
+! the horizontal diffusion step: random displacement, element search of
+! the new point, and lag_diff_hor_end. On several processes the search
+! is lgr_mpi_locate, which can park the particle (bpark true: both points
+! are stored in its slot, x, y and iel are unchanged, the caller stops);
+! a serial run searches with find_elem_from_old as always (at levdbg >= 3
+! lgr_mpi_relocate_check checks the result, changing nothing)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : bmpi_lagr, blgr_dbg
+	use mod_lagrange_mpi, only : lgr_mpi_locate, lgr_mpi_relocate_check
         use mod_diff_visc_fric, only : difhv
 
         implicit none
         
+        integer, intent(in)             :: i    !particle number (slot)
         integer, intent(in)             :: id   !id of particle
         real, intent(in)		:: time !time to diffuse
 	integer, intent(in)		:: lb	!level
         integer, intent(inout)          :: iel  !element
         real, intent(inout)		:: x    !x-coordinate
         real, intent(inout)		:: y    !y-coordinate
+        logical, intent(out)		:: bpark !parked (several processes)
 
         real 				:: k     !diffusion coefficient 
         real				:: dx,dy !random displacement
 	real				:: xnew,ynew
         integer				:: ieold,ienew
-        logical				:: track_xi_has_layer
         integer, save			:: icall = 0	!initialization parameter
         logical, save 			:: bsphe
         integer       			:: isphe
         double precision 		:: ddx,ddy,xc,yc
         double precision 		:: dlat0,dlon0  !center of projection
+
+	bpark = .false.
 
 	if( icall == 0 ) then
           call get_coords_ev(isphe)
@@ -568,7 +609,39 @@
            ynew = yc
 	end if
 
-        call find_elem_from_old(ieold,xnew,ynew,ienew)
+	if( bmpi_lagr ) then
+	  call lgr_mpi_locate(i,1,ieold,x,y,xnew,ynew,ienew,bpark)
+	  if( bpark ) return	!parked: resumed by lag_diff_hor_resume
+	else
+          call find_elem_from_old(ieold,xnew,ynew,ienew)
+	  if( blgr_dbg ) call lgr_mpi_relocate_check(ieold,xnew,ynew,ienew)
+	end if
+
+	call lag_diff_hor_end(ieold,lb,ienew,x,y,xnew,ynew,iel)
+
+        end subroutine lag_diff_hor
+
+!******************************************************************
+
+        subroutine lag_diff_hor_end(ieold,lb,ienew,x,y,xnew,ynew,iel)
+
+! the end of the horizontal diffusion step after the element search of
+! the new point (xnew,ynew): ienew is the element found, 0 if none (then
+! the fallback particle_on_side runs on the old element ieold); the
+! particle takes the new point and element only if that element has its
+! layer lb, otherwise it keeps x, y and iel. Called by lag_diff_hor and,
+! for a parked particle, by lag_diff_hor_resume (several processes)
+
+        implicit none
+
+        integer, intent(in)		:: ieold     !element before the step
+	integer, intent(in)		:: lb        !level
+        integer, intent(inout)          :: ienew     !element found, 0 none
+        real, intent(inout)		:: x,y       !old point (new on return)
+        real, intent(inout)		:: xnew,ynew !new point
+        integer, intent(inout)          :: iel       !element (new on return)
+
+        logical				:: track_xi_has_layer
 
 	if (ienew == 0 ) then
 	   ienew = ieold
@@ -583,8 +656,55 @@
           y   = ynew
           iel = ienew
 	end if
-	 
-        end subroutine lag_diff_hor
+
+        end subroutine lag_diff_hor_end
+
+!******************************************************************
+
+        subroutine lag_diff_hor_resume(i,lb,iel,x,y)
+
+! the horizontal diffusion step of particle i, parked in its element
+! search (lgr_mpi_locate) and resolved by position (lgr_mpi_resolve):
+! continues after the search with the outcome in lgr_park_ie(i) and the
+! new point in lgr_park_xy(3:4,i); x, y are the old point (lgr_park_xy
+! (1:2,i), as the step had it) and iel the element it was parked in:
+!  > 0  the element found (a local element) has the particle's layer
+!       (tested by the asking process with the layer count of the
+!       answer): the particle takes the new point and element, the
+!       assignment of lag_diff_hor_end
+!   0   no element of the mesh contains the new point: lag_diff_hor_end
+!       with no element found (fallback on iel, then the layer test)
+!  -1   the element found lacks the layer: x, y and iel stay, the branch
+!       of lag_diff_hor_end that keeps them
+! nothing is drawn again: the displacement is in the stored new point
+
+	use mod_lagrange
+
+        implicit none
+
+        integer, intent(in)             :: i    !particle number (slot)
+	integer, intent(in)		:: lb	!level
+        integer, intent(inout)          :: iel  !element
+        real, intent(inout)		:: x    !x-coordinate
+        real, intent(inout)		:: y    !y-coordinate
+
+	real				:: xnew,ynew
+        integer				:: ieold,ienew
+
+	xnew = lgr_park_xy(3,i)
+	ynew = lgr_park_xy(4,i)
+	ienew = lgr_park_ie(i)
+	ieold = iel
+
+	if( ienew > 0 ) then		!found, has the layer
+          x   = xnew
+          y   = ynew
+          iel = ienew
+	else if( ienew == 0 ) then	!no element: fallback, layer test
+	  call lag_diff_hor_end(ieold,lb,ienew,x,y,xnew,ynew,iel)
+	end if				!-1: lacks the layer, keeps x, y, iel
+
+        end subroutine lag_diff_hor_resume
 
 !******************************************************************
 ! Randow walk with rnd having uniform distribution between -1 and 1

@@ -1,0 +1,88 @@
+scratch: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc3.mGuUOf   head: 3b460653   binary sha256 68a77b5835b56175   2026-11-22 13:30:23 EET
+=== 13:30:23 spec section 7, case 7 (squares holding both elements of each side)
+-0.692030787 37.6623917 1
+-0.679030776 37.6623917 0
+-0.679030776 37.6753922 0
+-0.692030787 37.6753922 0
+-0.692030787 37.6623917 0
+-0.646306992 37.7123833 1
+-0.634307027 37.7123833 0
+-0.634307027 37.7243843 0
+-0.646306992 37.7243843 0
+-0.646306992 37.7123833 0
+mm_lgr_a   2 part     exit 0: LGR GATE: PASS
+    serial:  lgr_init_line: 150 3.13018507E-04 1.44457270E-03
+    serial:  elements fully in line: 2
+    serial:  elements to be checked: 17
+    serial:  lagr_init_all: 82 particles inserted
+    serial:  elements fully in line: 5
+    serial:  elements to be checked: 11
+    serial:  lagr_init_all: 52 particles inserted
+    release block: serial 134 entries, MPI 134 entries
+    point -0.685530782 37.6688919: serial (id, element) [(73, 2512)]; MPI (id, element, process) [(73, 2512, 1)]
+      serial run does not insert it in two elements
+      processes holding the copies: [1]
+    point -0.640307009 37.7183838: serial (id, element) [(86, 446)]; MPI (id, element, process) [(86, 446, 1)]
+      serial run does not insert it in two elements
+      processes holding the copies: [1]
+    CASE 7 CHECK: FAIL
+mm_lgr_a   2 ids      exit 0: LGR GATE: PASS
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+mm_lgr_a   4 part     exit 0: LGR GATE: PASS
+    serial:  lgr_init_line: 150 3.13018507E-04 1.44457270E-03
+    serial:  elements fully in line: 2
+    serial:  elements to be checked: 17
+    serial:  lagr_init_all: 82 particles inserted
+    serial:  elements fully in line: 5
+    serial:  elements to be checked: 11
+    serial:  lagr_init_all: 52 particles inserted
+    release block: serial 134 entries, MPI 134 entries
+    point -0.685530782 37.6688919: serial (id, element) [(73, 2512)]; MPI (id, element, process) [(73, 2512, 0)]
+      serial run does not insert it in two elements
+      processes holding the copies: [0]
+    point -0.640307009 37.7183838: serial (id, element) [(86, 446)]; MPI (id, element, process) [(86, 446, 0)]
+      serial run does not insert it in two elements
+      processes holding the copies: [0]
+    CASE 7 CHECK: FAIL
+mm_lgr_a   4 ids      exit 0: LGR GATE: PASS
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+        output times: 96
+        first output t=3600.0: active=134 inserted=134 exited=0; active ids 1..134
+        last output t=345600.0: active=134 inserted=0 exited=0; active ids 1..134
+=== 13:31:02 AC5: a third serial run of case D
+S3 serial run: exit 0, ended 1
+ac5_stats exit 0
+S1       last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.2.ids.serial.lgr.shy
+S2       last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.4.ids.serial.lgr.shy
+np2      last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.2.ids.mpi.lgr.shy
+np4      last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.4.ids.mpi.lgr.shy
+S3       last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc3.mGuUOf/s3/mm_lgr.lgr.shy
+
+| Type | Value | S1 | S2 - S1 | np2 - S1 | np4 - S1 | S3 - S1 |
+|---|---|---|---|---|---|---|
+| 1 | particles | 49 | 49 | 49 | 49 | 49 |
+| 1 | mean x | -0.773895 | +9.256e-05 | +2.681e-03 (>3x) | -1.884e-03 (>3x) | -1.822e-03 (>3x) |
+| 1 | mean y | 37.690939 | -7.209e-03 | -1.170e-02 | -3.479e-03 | -3.481e-03 |
+| 1 | sd x | 0.025559 | +2.268e-03 | -1.919e-03 | +1.935e-03 | -1.265e-03 |
+| 1 | sd y | 0.038248 | -9.161e-03 | -1.732e-02 | -2.873e-03 | -4.950e-03 |
+| 2 | particles | 49 | 49 | 49 | 49 | 49 |
+| 2 | mean x | -0.799679 | +2.868e-04 | +5.401e-03 (>3x) | +3.707e-03 (>3x) | -2.516e-03 (>3x) |
+| 2 | mean y | 37.701615 | -5.403e-05 | +5.769e-05 | -1.618e-03 (>3x) | -1.076e-03 (>3x) |
+| 2 | sd x | 0.017041 | +1.891e-03 | -9.526e-04 | -1.223e-03 | -1.489e-03 |
+| 2 | sd y | 0.023179 | -1.057e-03 | +4.534e-04 | -2.392e-03 | -3.616e-03 (>3x) |
+| 3 | particles | 47 | 47 | 47 | 47 | 47 |
+| 3 | mean x | -0.782193 | +3.056e-03 | +9.559e-03 (>3x) | +4.253e-03 | +4.628e-03 |
+| 3 | mean y | 37.747496 | -5.436e-04 | +3.044e-03 (>3x) | -1.747e-04 | +4.277e-03 (>3x) |
+| 3 | sd x | 0.031215 | +1.595e-03 | -1.772e-03 | -3.301e-03 | +2.251e-03 |
+| 3 | sd y | 0.035495 | +3.048e-03 | +2.789e-03 | +3.497e-03 | +6.093e-03 |
+
+values of the MPI runs more than three times the serial-serial difference: 12 of 36
+=== 13:31:07 DONE (logs in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc3.mGuUOf)
+acc3 exit 0

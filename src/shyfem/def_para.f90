@@ -1445,7 +1445,8 @@
 ! \item as initial particle distribution (filename |lgrini|) at time
 !      |itlgin|. This file has the same format as the lagrangian output.
 ! \item at the open boundaries either as particles per second or per
-!      volume flux (parameter |lgrpps|).
+!      volume flux (parameter |lgrpps|). Not supported on several MPI
+!      processes: the run stops at start-up.
 ! \end{itemize}
 !
 ! |lgrlin| and |lgrtrj| are mutually exclusive. 
@@ -1474,6 +1475,8 @@
 !		\item[2] 2d lagrangian
 !		\item[3] 3d lagrangian
 !		\end{description}
+!		The value 3 is not supported on several MPI processes: the
+!		run stops at start-up.
 
 	call addpar('ilagr',0.)         !LAGR
 
@@ -1495,6 +1498,8 @@
 !		Its value can be specified in |rwhpar| and the units are 
 !		[m**2/s]. If |rwhpar<0| the diffusion parameter depends on
 !		the local diffusivity (see |idhtyp|) (Default 0)
+!		A value below 0 is not supported on several MPI processes:
+!		the run stops at start-up.
 
 	call addpar('rwhpar',0.)	!diffusion for lagrangian model
 
@@ -1531,6 +1536,9 @@
 !		\item[$>$ 0] release n particles regularly
 !		\item[$<$ 0] release n particles randomly
 !		\end{description}
+!		A value below -1 (the random release; the random depths are
+!		drawn in a 3D run with |ilagr| = 2) is not supported on
+!		several MPI processes: the run stops at start-up.
 
         call addpar('ipvert',0.)
 
@@ -1556,23 +1564,31 @@
 
 ! |lbeach|	Parameter to account for particles beaching on the shore. It 
 !		assumes values between 0 (no beaching) and 1 (Default 0).
+!		A value above 0 is not supported on several MPI processes:
+!		the run stops at start-up.
 
         call addpar('lbeach',0.)
 
 ! |lgrlin|	File name that contains closed lines of the area where
 !		the particles have to be released. If not given, the particles
-!		are released over the whole domain.
+!		are released over the whole domain. A line of the file
+!		that is not a point (a comment or footer line, a flag that
+!		is not an integer) stops the run with a message naming the
+!		file; text after the three values of a point is ignored.
 
         call addfnm('lgrlin',' ')
 
 ! |lgrtrj|	File name that contains a drifter trajectory with time 
 !		(yyyy-mm-dd::HH:MM:SS) and position (x and y) of release 
-!		of |nbdy| particles.
+!		of |nbdy| particles. Not supported on several MPI processes:
+!		the run stops at start-up.
 
         call addfnm('lgrtrj',' ')
 
 ! |lgrini|	File name that contains initial particle distribution.
 !		It has the same format as the lagrangian output.
+!		Not supported on several MPI processes: the run stops at
+!		start-up.
 
         call addfnm('lgrini',' ')
 
@@ -1585,15 +1601,33 @@
 !c a specified area. |artype| is the flag to detect the
 !c element outside the defined area. 
 !c Default = -1, i.e., no transit times are computed
+!c Any other value is not supported on several MPI processes: the run
+!c stops at start-up.
 
         call addpar('artype',-1.)
 
 !c still to be commented
 
         call addpar('lcust',0.)
+
+! |ldecay|	Decay time of the particles (Default 0, no decay).
+!		A value above 0 is not supported on several MPI processes:
+!		the run stops at start-up.
+
         call addpar('ldecay',0.)
+
         call addpar('ioil',0.)
+
+! |ilarv|	Switch for the larvae module (Default 0, off).
+!		A value above 0 is not supported on several MPI processes:
+!		the run stops at start-up.
+
         call addpar('ilarv',0.)
+
+! |ised|	Switch for the sediment module (Default 0, off).
+!		A value above 0 is not supported on several MPI processes:
+!		the run stops at start-up.
+
         call addpar('ised',0.)
 
 
@@ -2005,6 +2039,10 @@
 
         call sctpar('connec')          !sets default section
         call sctfnm('connec')
+
+! |icnn|	Number of stations for connectivity (experimental, Default
+!		0, off). Any other value is not supported on several MPI
+!		processes: the run stops at start-up.
 
 	call addpar('icnn',0.)	        !number of stations for connectivity
 

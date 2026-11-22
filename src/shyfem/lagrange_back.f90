@@ -242,7 +242,7 @@
              uadv(ie) = utlov(1,ie) - u_lag(ie) * zp
              vadv(ie) = vtlov(1,ie) - v_lag(ie) * zp
            else
-             stop 'error stop lagr_vel: ibtype'
+             call shympi_abort_internal('error stop lagr_vel: ibtype')
            end if
 
          end if

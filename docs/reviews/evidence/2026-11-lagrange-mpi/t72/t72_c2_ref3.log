@@ -1,0 +1,51 @@
+2026-11-22 13:02:32 EET export of ddf46f53 in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.lQUUSX, mode /home/razinka/wt-lgr-ref3/bin
+check_mpi.sh: the work tree's (uncommitted) copy
+MM_coarse.2.elem.grd MM_coarse.2.node.grd MM_coarse.4.elem.grd MM_coarse.4.node.grd MM_coarse.bas MM_coarse.grd MM_coarse_smooth.grd MM_geo.grd partition.2.txt partition.4.txt 
+shyfem: /home/razinka/wt-lgr-ref3/src/shyfem/shyfem, shypre: /home/razinka/wt-lgr-ref3/src/tools/shypre/shypre, mpirun: /usr/bin/mpirun, python3: /usr/bin/python3
+13:02:32 make init done; GRID/MM_geo.bas present before the gate: no
+13:02:32 === 1. mm_hyd_01: serial vs 4 processes
+13:02:38 1152 energy lines, largest relative difference 5.42e-06 (limit 1e-4)
+13:02:38 === 2. mm_hyd_11 (boundary tilting) must stop with a clear message
+13:02:38 stopped as expected:  boundary tilting (ktilt/ztilt) is not supported with MPI
+13:02:38 === 3. restart written and read on 4 processes
+13:02:39 mm_rst_write: ended
+13:02:40 mm_rst_read: ended
+13:02:40 === 4. a 6-node mesh on 4 processes must stop with a clear message
+13:02:41 stopped as expected: the mesh cannot be split into 4 domains:; 2 of them would have no nodes; the mesh has 6 nodes and 4 elements; use fewer MPI processes;
+13:02:41 === 5. mm_lgr_w (particles): particle file of 4 processes vs serial
+13:02:49 === 1. mm_lgr_w serial (mode pos)
+13:02:49   serial run ended
+13:02:49 === 2. mm_lgr_w on 4 processes
+13:02:49   MPI run ended
+13:02:49 === 3. compare (pos)
+13:02:49   serial file:
+13:02:49     output times: 96
+13:02:49     first output t=3600.0: active=80 inserted=80 exited=0; active ids 1..80
+13:02:49     last output t=345600.0: active=80 inserted=0 exited=0; active ids 1..80
+13:02:49   MPI file:
+13:02:49     cannot read file: no particle section found (ncust record + iwhat=0 block)
+13:02:49   floors of mm_lgr_w: beyond 1e-5 at the last output 37, largest distance at any output 4.32e-3, particles with another tt 1
+13:02:49 cannot read file: no particle section found (ncust record + iwhat=0 block)
+13:02:49 LGR GATE FAIL: pos comparison could not be made (tool exit code 2: unreadable or incomplete input, for example an MPI particle file without output times)
+13:02:49 LGR GATE: FAIL
+13:02:49 MPI GATE FAIL: mm_lgr_w: mode pos of check_lgr_mpi.sh failed on 4 processes (log: mm_lgr_w.pos.gate.log)
+13:02:58 === 1. mm_lgr_w serial (mode ids)
+13:02:58   serial run ended
+13:02:58 === 2. mm_lgr_w on 4 processes
+13:02:58   MPI run ended
+13:02:58 === 3. compare (ids)
+13:02:58   serial file:
+13:02:58     output times: 96
+13:02:58     first output t=3600.0: active=80 inserted=80 exited=0; active ids 1..80
+13:02:58     last output t=345600.0: active=80 inserted=0 exited=0; active ids 1..80
+13:02:58   MPI file:
+13:02:58     cannot read file: no particle section found (ncust record + iwhat=0 block)
+13:02:58   basin of the serial file: nkn 1402 nel 2545 nlv 1
+13:02:58 cannot read file: no particle section found (ncust record + iwhat=0 block)
+13:02:58 LGR GATE FAIL: ids comparison could not be made (tool exit code 2: unreadable or incomplete input, for example an MPI particle file without output times)
+13:02:58 LGR GATE: FAIL
+13:02:58 MPI GATE FAIL: mm_lgr_w: mode ids of check_lgr_mpi.sh failed on 4 processes (log: mm_lgr_w.ids.gate.log)
+13:02:58 MPI GATE: FAIL
+13:02:58 check_mpi.sh 4: exit 1, 26 s
+files made in GRID by the gate: MM_coarse.2.elem.grd MM_coarse.2.node.grd MM_coarse.4.elem.grd MM_coarse.4.node.grd MM_coarse.bas MM_coarse.grd MM_coarse_smooth.bas MM_coarse_smooth.grd MM_geo.bas MM_geo.grd partition.2.txt partition.4.txt shypre_geo.mpi.log 
+2026-11-22 13:02:58 EET done (/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72ci.lQUUSX)

@@ -1,0 +1,148 @@
+scratch: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm   head: 3b460653   2026-11-22 13:06:54 EET
+=== binary: /home/razinka/wt-lgr/src/shyfem/shyfem, sha256 68a77b5835b56175, libmpi.so.40: 1, built 2026-11-22 13:01:36; src changed since ddf46f53 (the built commit): 0 files
+GRID/MM_coarse.bas: the tracked file
+=== 13:06:54 tool self-tests: LGR COMPARE TEST: PASS / LGR DBG COMPARE TEST: PASS / LGMEAN SELFTEST: PASS (results 0 0 1 1 1 1 1 1 1 1 1; expected 0 0 1 1 1 1 1 1 1 1 1: within the envelope, one unit off with envelope 0, two units off in hl and in x, nothing compared, NaN, infinite, NaN in a perturbed run, too few and too many perturbed runs, unequal particle table)
+=== 13:10:03 AC6/AC7 serial guard vs ref3: SERIAL GUARD: PASS; DIFFERS lines: 0
+=== 13:11:06 repro: REPRO: PASS
+=== 13:11:34 MPI gate (check_mpi.sh 2, with check 5): MPI GATE: PASS
+=== 13:12:00 MPI gate (check_mpi.sh 4, with check 5): MPI GATE: PASS
+=== 13:12:00 AC1: flux (A, B, C on 2, 4)
+mm_lgr_a   2 flux     exit 0: LGR GATE: PASS
+mm_lgr_a   4 flux     exit 0: LGR GATE: PASS
+mm_lgr_b   2 flux     exit 0: LGR GATE: PASS
+mm_lgr_b   4 flux     exit 0: LGR GATE: PASS
+mm_lgr_c   2 flux     exit 0: LGR GATE: PASS
+mm_lgr_c   4 flux     exit 0: LGR GATE: PASS
+=== 13:12:59 AC2 ids and AC3 pos (particle file; A, B, C, E, W on 2, 4)
+mm_lgr_a   2 ids      exit 0: LGR GATE: PASS
+mm_lgr_a   2 pos      exit 0: LGR GATE: PASS
+mm_lgr_a   4 ids      exit 0: LGR GATE: PASS
+mm_lgr_a   4 pos      exit 0: LGR GATE: PASS
+mm_lgr_b   2 ids      exit 0: LGR GATE: PASS
+mm_lgr_b   2 pos      exit 0: LGR GATE: PASS
+mm_lgr_b   4 ids      exit 0: LGR GATE: PASS
+mm_lgr_b   4 pos      exit 0: LGR GATE: PASS
+mm_lgr_c   2 ids      exit 0: LGR GATE: PASS
+mm_lgr_c   2 pos      exit 0: LGR GATE: PASS
+mm_lgr_c   4 ids      exit 0: LGR GATE: PASS
+mm_lgr_c   4 pos      exit 0: LGR GATE: PASS
+mm_lgr_e   2 ids      exit 0: LGR GATE: PASS
+mm_lgr_e   2 pos      exit 0: LGR GATE: PASS
+mm_lgr_e   4 ids      exit 0: LGR GATE: PASS
+mm_lgr_e   4 pos      exit 0: LGR GATE: PASS
+mm_lgr_w   2 ids      exit 0: LGR GATE: PASS
+mm_lgr_w   2 pos      exit 0: LGR GATE: PASS
+mm_lgr_w   4 ids      exit 0: LGR GATE: PASS
+mm_lgr_w   4 pos      exit 0: LGR GATE: PASS
+=== 13:16:37 AC3 positions in the dump against the floors (A, B, C, E, W on 2, 4)
+mm_lgr_a   2 floor    exit 0: LGR GATE: PASS
+mm_lgr_a   4 floor    exit 0: LGR GATE: PASS
+mm_lgr_b   2 floor    exit 0: LGR GATE: PASS
+mm_lgr_b   4 floor    exit 0: LGR GATE: PASS
+mm_lgr_c   2 floor    exit 0: LGR GATE: PASS
+mm_lgr_c   4 floor    exit 0: LGR GATE: PASS
+mm_lgr_e   2 floor    exit 0: LGR GATE: PASS
+mm_lgr_e   4 floor    exit 0: LGR GATE: PASS
+mm_lgr_w   2 floor    exit 0: LGR GATE: PASS
+mm_lgr_w   4 floor    exit 0: LGR GATE: PASS
+=== 13:18:47 AC3 hand-over fidelity and AC11 (A, B, C, W on 2, 4; B on 8 for spec section 7 cases 1 and 8)
+mm_lgr_a   2 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 2.38419e-07 <= threshold 5.96046e-05 (2 x stayed largest 2.98023e-05, floor 10 steps 6e-07): ok; count test: 1 beyond the step <= Poisson 99.9 % qua
+mm_lgr_a   4 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 5.96046e-08 <= threshold 1.52588e-05 (2 x stayed largest 7.62939e-06, floor 10 steps 6e-07): ok; count test: 0 beyond the step <= Poisson 99.9 % qua
+mm_lgr_b   2 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 0 <= threshold 2.5 (2 x stayed largest 0.375, floor 10 steps 2.5): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 1 (mean 0.0170693): 
+mm_lgr_b   4 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 0.25 <= threshold 2.5 (2 x stayed largest 0.375, floor 10 steps 2.5): ok; count test: 1 beyond the step <= Poisson 99.9 % quantile 3 (mean 0.206557)
+mm_lgr_c   2 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 0 <= threshold 6e-07 (2 x stayed largest 2.38419e-07, floor 10 steps 6e-07): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 0 (mean 0)
+mm_lgr_c   4 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 5.96046e-08 <= threshold 6e-07 (2 x stayed largest 2.38419e-07, floor 10 steps 6e-07): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 
+mm_lgr_w   2 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 0 <= threshold 6e-07 (2 x stayed largest 2.38419e-07, floor 10 steps 6e-07): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 2 (mean 0.
+mm_lgr_w   4 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 5.96047e-08 <= threshold 6e-07 (2 x stayed largest 2.38419e-07, floor 10 steps 6e-07): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 
+mm_lgr_b   8 handover exit 0: LGR GATE: PASS
+        rule: jump test: largest changed-process distance 0.0625 <= threshold 2.5 (2 x stayed largest 0.375, floor 10 steps 2.5): ok; count test: 0 beyond the step <= Poisson 99.9 % quantile 4 (mean 0.54190
+=== 13:21:46 AC4: case D ids (LGR_LEVDBG=3) on 2, 4
+mm_lgr     2 ids      exit 0: LGR GATE: PASS
+mm_lgr     4 ids      exit 0: LGR GATE: PASS
+=== 13:22:31 AC5: case D mean and spread per type (not gated)
+AC5: exit 0
+S1       last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.2.ids.serial.lgr.shy
+S2       last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.4.ids.serial.lgr.shy
+np2      last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.2.ids.mpi.lgr.shy
+np4      last output t=345600.0, exited 0, types [1, 2, 3]: /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm/mm_lgr.4.ids.mpi.lgr.shy
+
+| Type | Value | S1 | S2 - S1 | np2 - S1 | np4 - S1 |
+|---|---|---|---|---|---|
+| 1 | particles | 49 | 49 | 49 | 49 |
+| 1 | mean x | -0.773895 | +9.256e-05 | +2.681e-03 (>3x) | -1.884e-03 (>3x) |
+| 1 | mean y | 37.690939 | -7.209e-03 | -1.170e-02 | -3.479e-03 |
+| 1 | sd x | 0.025559 | +2.268e-03 | -1.919e-03 | +1.935e-03 |
+| 1 | sd y | 0.038248 | -9.161e-03 | -1.732e-02 | -2.873e-03 |
+| 2 | particles | 49 | 49 | 49 | 49 |
+| 2 | mean x | -0.799679 | +2.868e-04 | +5.401e-03 (>3x) | +3.707e-03 (>3x) |
+| 2 | mean y | 37.701615 | -5.403e-05 | +5.769e-05 | -1.618e-03 (>3x) |
+| 2 | sd x | 0.017041 | +1.891e-03 | -9.526e-04 | -1.223e-03 |
+| 2 | sd y | 0.023179 | -1.057e-03 | +4.534e-04 | -2.392e-03 |
+| 3 | particles | 47 | 47 | 47 | 47 |
+| 3 | mean x | -0.782193 | +3.056e-03 | +9.559e-03 (>3x) | +4.253e-03 |
+| 3 | mean y | 37.747496 | -5.436e-04 | +3.044e-03 (>3x) | -1.747e-04 |
+| 3 | sd x | 0.031215 | +1.595e-03 | -1.772e-03 | -3.301e-03 |
+| 3 | sd y | 0.035495 | +3.048e-03 | +2.789e-03 | +3.497e-03 |
+
+values of the MPI runs more than three times the serial-serial difference: 7 of 24
+=== 13:22:31 AC8: lgrelab -lgmean, case A, serial against 2 and 4 processes, against the six perturbed serial runs
+AC8 2 processes: exit 0: type  column    values   max|ser-mpi|   max envelope within env within env+1u  beyond  LGMEAN COMPARE: PASS
+AC8 4 processes: exit 0: type  column    values   max|ser-mpi|   max envelope within env within env+1u  beyond  LGMEAN COMPARE: PASS
+AC8: the serial file equals the base run of floors_runs (byte for byte)
+=== 13:22:39 AC10: stops on 2 and 4
+mm_lgr_a   2 stops    exit 0: LGR GATE: PASS
+  ilagr3: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 136): Program received signal SIGFPE: Floating-point exception - e
+  lbeach: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  artype: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  ldecay: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 139): Program received signal SIGSEGV: Segmentation fault - invali
+  lgrini: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 2):  alloc_lagr:         1024        1024   7.90059566E-05
+  ised: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  ilarv: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  icnn: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 0):  connectivity: stations defined but no release
+  lgrpps: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 0):  Please change nbdymax in STR file
+  lgrtrj: ok; 2 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 0):  lgrlin and lgrtrj not allowed
+mm_lgr_a   4 stops    exit 0: LGR GATE: PASS
+  ilagr3: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 136): Program received signal SIGFPE: Floating-point exception - e
+  lbeach: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  artype: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  ldecay: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 139): Program received signal SIGSEGV: Segmentation fault - invali
+  lgrini: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 2):  alloc_lagr:         1024        1024   8.60020518E-05
+  ised: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  ilarv: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: ended
+  icnn: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 0):  connectivity: stations defined but no release
+  lgrpps: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 0):  Please change nbdymax in STR file
+  lgrtrj: ok; 4 processes exit 33, message x1, advice x1, signals 0, particle file 0; serial: own failure (exit 0):  lgrlin and lgrtrj not allowed
+=== 13:24:06 spec section 7, case 5 (ranks without particles) and the release split between processes (W)
+mm_lgr_a   4 part     exit 0: LGR GATE: PASS
+/home/razinka/wt-lgr/testcases/examples/mar_menor/mm_lgr_a.np4.dbg: release block t=0.0: 145 particles (ids 1..145, 145 distinct) on 4 processes, per process [0, 0, 49, 96]: more than one owner
+mm_lgr_w   2 part     exit 0: LGR GATE: PASS
+/home/razinka/wt-lgr/testcases/examples/mar_menor/mm_lgr_w.np2.dbg: release block t=0.0: 80 particles (ids 1..80, 80 distinct) on 2 processes, per process [40, 40]: more than one owner
+mm_lgr_w   4 part     exit 0: LGR GATE: PASS
+/home/razinka/wt-lgr/testcases/examples/mar_menor/mm_lgr_w.np4.dbg: release block t=0.0: 80 particles (ids 1..80, 80 distinct) on 4 processes, per process [20, 21, 19, 20]: more than one owner
+=== 13:25:06 perturbed twins (A, B, C, E, W on 4)
+mm_lgr_a   4 perturb  exit 0: LGR GATE: PASS
+mm_lgr_b   4 perturb  exit 0: LGR GATE: PASS
+mm_lgr_c   4 perturb  exit 0: LGR GATE: PASS
+mm_lgr_e   4 perturb  exit 0: LGR GATE: PASS
+mm_lgr_w   4 perturb  exit 0: LGR GATE: PASS
+=== 13:26:13 spec section 7, case 9: OpenMP (A, C, E with nomp = -1, levdbg = 3, 4 processes, OMP_NUM_THREADS=4; two runs and a one-thread run)
+mm_lgr_a: used OMP threads:  for simulation used OMP threads: 4,  for simulation used OMP threads: 4, one-thread run:  for simulation used OMP threads: 1; ended 1 1 1; dump files: 12 (one-thread 12); run 1 = run 2: 12; run 1 = one-thread: 12; hand-overs: side 283, position 0
+mm_lgr_c: used OMP threads:  for simulation used OMP threads: 4,  for simulation used OMP threads: 4, one-thread run:  for simulation used OMP threads: 1; ended 1 1 1; dump files: 16 (one-thread 16); run 1 = run 2: 16; run 1 = one-thread: 16; hand-overs: side 190, position 2
+mm_lgr_e: used OMP threads:  for simulation used OMP threads: 4,  for simulation used OMP threads: 4, one-thread run:  for simulation used OMP threads: 1; ended 1 1 1; dump files: 12 (one-thread 12); run 1 = run 2: 12; run 1 = one-thread: 12; hand-overs: side 10, position 39
+=== 13:26:59 consistency check: fault runs (case A, 4 processes, levdbg 2; each must abort with exit 33) and plain runs
+LGR_TEST_DROP=2: exit 33; ended 0; messages: error stop lgr_mpi_check_consistency: the particle state is inconsistent;lgr_mpi_check_consistency: particle count: process 0: in the domain 0, left 0, without an element 0, ids given;lgr_mpi_check_consistency: particle count: process 1: in the domain 0, left 0, without an element 0, ids given;
+LGR_TEST_DUP=2: exit 33; ended 0; messages: error stop lgr_mpi_check_consistency: the particle state is inconsistent;lgr_mpi_check_consistency: duplicate id 8 on processes 2 3;lgr_mpi_check_consistency: duplicate id: time 78900.0, 1 ids occur more than once (the first 1 listed);
+mm_lgr np2 levdbg 2: exit 0; ended 1; check messages 0; lost-particle lines 0
+mm_lgr np4 levdbg 2: exit 0; ended 1; check messages 0; lost-particle lines 0
+mm_lgr_e np4 levdbg 2: exit 0; ended 1; check messages 0; lost-particle lines 0
+status after: [ M CHANGELOG.md]
+=== 13:27:15 DONE (logs in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/t72acc.hjytLm)
+acc exit 0

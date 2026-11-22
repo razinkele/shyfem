@@ -411,6 +411,7 @@ cleanlinks:
 ../../lib/mod/mod_gotm_aux.mod: gotm_aux.o
 ../../lib/mod/mod_keps.mod: turbulence_util.o
 ../../lib/mod/mod_lagrange.mod: lagrange_data.o
+../../lib/mod/mod_lagrange_mpi.mod: lagrange_mpi.o
 ../../lib/mod/mod_nudge.mod: nudge.o
 ../../lib/mod/mod_parwaves.mod: waves_admin.o
 ../../lib/mod/mod_renewal_time.mod: water_ren_time.o
@@ -730,41 +731,63 @@ lagrange_back.o: ../../lib/mod/basin.mod \
 lagrange_connect.o: ../../lib/mod/basin.mod \
 		../../lib/mod/femtime.mod \
 		../../lib/mod/mod_debug.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/para.mod
 lagrange_cont.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_lagrange.mod 
 lagrange_decay.o: ../../lib/mod/femtime.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/mod_physical_constants.mod
+		../../lib/mod/mod_physical_constants.mod \
+		../../lib/mod/para.mod
 lagrange_dif.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod
 lagrange_flux.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/mod_layer_thickness.mod 
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/mod_layer_thickness.mod \
+		../../lib/mod/shympi.mod
 lagrange_init.o: ../../lib/mod/basin.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/shympi.mod \
+		../../lib/mod/para.mod
 lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/femtime.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod \
 		../../lib/mod/mod_layer_thickness.mod \
-		../../lib/mod/shyfile.mod 
+		../../lib/mod/shyfile.mod \
+		../../lib/mod/shympi.mod
 lagrange_larve.o: ../../lib/mod/mod_lagrange.mod
 lagrange_mpi.o: ../../lib/mod/basin.mod \
-		../../lib/mod/connectivity.mod \
+		../../lib/mod/connectivity.mod ../../lib/mod/evgeom.mod \
+		../../lib/mod/femtime.mod \
+		../../lib/mod/levels.mod \
+		../../lib/mod/mod_bnd.mod \
+		../../lib/mod/mod_bound_dynamic.mod \
+		../../lib/mod/mod_diff_visc_fric.mod \
+		../../lib/mod/mod_geom.mod \
+		../../lib/mod/mod_geom_dynamic.mod \
+		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/shympi.mod
+		../../lib/mod/mod_meteo.mod ../../lib/mod/para.mod \
+		../../lib/mod/shympi.mod \
+		../../lib/mod/mod_physical_constants.mod
 lagrange_main.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
 		../../lib/mod/lgr_sedim_module.mod \
 		../../lib/mod/mod_depth.mod \
 		../../lib/mod/mod_geom_dynamic.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/shyfile.mod ../../lib/mod/shympi.mod 
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/shyfile.mod ../../lib/mod/shympi.mod \
+		../../lib/mod/para.mod
 lagrange_sedim.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_bstress.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \
@@ -772,13 +795,14 @@ lagrange_sedim.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_sediment.mod 
 lagrange_stk.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_lagrange.mod \
-		../../lib/mod/mod_meteo.mod 
+		../../lib/mod/mod_lagrange_mpi.mod \
+		../../lib/mod/mod_meteo.mod
 lagrange_track.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_lagrange.mod 
 lagrange_util.o: ../../lib/mod/basin.mod ../../lib/mod/evgeom.mod \
-		../../lib/mod/mod_geom.mod 
+		../../lib/mod/mod_lagrange_mpi.mod
 lagrange_util_tr.o: ../../lib/mod/basin.mod
 lagrange_utils.o: ../../lib/mod/mod_lagrange.mod
 lagrange_vertical.o: ../../lib/mod/basin.mod \
@@ -787,7 +811,8 @@ lagrange_vertical.o: ../../lib/mod/basin.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro.mod \
 		../../lib/mod/mod_hydro_vel.mod \
-		../../lib/mod/mod_lagrange.mod 
+		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod
 line_admin.o: ../../lib/mod/basin.mod ../../lib/mod/mod_geom.mod
 lnkmpi.o: ../../lib/mod/basin.mod ../../lib/mod/mod_connect.mod \
 		../../lib/mod/mod_geom.mod \

@@ -71,7 +71,7 @@
 
         if( traj .ne. ' ' .and. line .ne. ' ') then
           write(*,*)'lgrlin and lgrtrj not allowed'
-          stop 'error stop lgr_init_shell'
+          call shympi_abort_internal('error stop lgr_init_shell')
         end if
 
         if( traj .ne. ' ' ) return
@@ -89,21 +89,31 @@
 	subroutine lgr_init_total(npoints)
 
 ! manages release of particles over whole domain
+!
+! the area is that of the whole basin also on more than one process
+! (lgr_mpi_global_area), so that the grid spacing is the serial one; after
+! the release the particles get the ids of a serial run
+! (lgr_mpi_assign_ids, on every process)
+
+	use mod_lagrange, only : nbdy
+	use mod_lagrange_mpi, only : lgr_mpi_global_area,lgr_mpi_assign_ids
 
 	implicit none
 
 	integer, intent(in) :: npoints
 
-	integer n
+	integer n,nbdy_before
 	real tot_area,dxy
 	real x(1),y(1)
 
-	call compute_total_area(tot_area)
+	call lgr_mpi_global_area(tot_area)
 	dxy = sqrt( tot_area / npoints )
 
 	n = -1
+	nbdy_before = nbdy
 	!call lagbound_seed_particles(dxy,n,x,y)	!should be the same
 	call lgr_init_all(dxy)
+	call lgr_mpi_assign_ids(nbdy_before)	!ids as in a serial run
 
 	end
 
@@ -113,6 +123,12 @@
 
 ! manages release of particles inside polygon(s)
 ! particles in different polygons have different types
+!
+! after each polygon the particles get the ids of a serial run
+! (lgr_mpi_assign_ids, on every process: every process reads all polygons)
+
+	use mod_lagrange, only : nbdy
+	use mod_lagrange_mpi, only : lgr_mpi_assign_ids
 
 	implicit none
 
@@ -123,14 +139,14 @@
 
 	real x(ndim),y(ndim)
 
-	integer iunit,n,nline
+	integer iunit,n,nline,nbdy_before
 	real tot_area,dxy
 	logical lagbound_read_next
 
 	call lagbound_get_area(tot_area)
 	if( tot_area < 0. ) then
 	  write(6,*) 'area inside line: ',tot_area
-	  stop 'error stop lgr_init_line: negative area'
+	  call shympi_abort_internal('error stop lgr_init_line: negative area')
 	end if
         dxy = sqrt( tot_area / npoints )
 
@@ -141,7 +157,9 @@
 	do while( lagbound_read_next(iunit,ndim,n,x,y) )
 	  nline = nline + 1
 	  write(6,*) 'new line read: ',nline,n
+	  nbdy_before = nbdy
 	  call lagbound_seed_particles(dxy,nline,n,x,y)
+	  call lgr_mpi_assign_ids(nbdy_before)	!ids as in a serial run
 	end do
 	call lagbound_close_file(iunit)
 	write(6,*) 'total number of lines read: ',nline
@@ -149,7 +167,7 @@
 	if( nline .eq. 0 ) then
 	  write(6,*) 'no line found in file'
 	  write(6,*) 'cannot initialize particles'
-	  stop 'error stop lgr_init_line: no line'
+	  call shympi_abort_internal('error stop lgr_init_line: no line')
 	end if
 
 	end
@@ -319,7 +337,8 @@
 	call getfnm('lgrlin',line)
         iunit=ifileo(0,line,'form','old')
 
-	if( iunit .le. 0 ) stop 'error stop open_lagbound_file'
+	if( iunit .le. 0 ) call shympi_abort_internal(			&
+     &		'error stop open_lagbound_file')
 
 	end
 
@@ -340,6 +359,10 @@
 	function lagbound_read_next(iunit,ndim,n,x,y)
 
 ! reads polygons from file
+!
+! the end of the file ends the list; a read error stops the run (every
+! process reads the file: an error taken for the end could let processes
+! release different polygons and reach different collective calls)
 
 	implicit none
 
@@ -351,6 +374,8 @@
 
 	integer iflag,ios
 	real xa,ya
+	character(len=256) :: fname
+	character(len=256) :: msg
 
 	integer isave,iline
 	real xsave,ysave
@@ -373,14 +398,24 @@
 	end if
 
 	do
-	  read(iunit,*,iostat=ios) xa,ya,iflag
-	  if( ios /= 0 ) then
-	    iflag = 0	!EOF or error reached, not start of new line
+	  msg = ' '
+	  read(iunit,*,iostat=ios,iomsg=msg) xa,ya,iflag
+	  if( ios > 0 ) then		!read error: stop every process
+	    fname = ' '
+	    inquire(unit=iunit,name=fname)
+	    write(6,*) 'lagbound_read_next: read error in file ',trim(fname)
+	    write(6,*) 'polygon ',iline+1,', after vertex ',n		&
+     &		,', iostat ',ios,': ',trim(msg)
+	    call shympi_abort_internal('error stop lagbound_read_next:'	&
+     &		//' read error in the release polygon file')
+	  else if( ios < 0 ) then	!end of file
+	    iflag = 0	!not start of new line
 	    exit
 	  end if
 	  if( iflag .ne. 0 .and. n .gt. 0 ) exit	!not 1.point on 1.line
 	  n = n + 1
-	  if( n .gt. ndim ) stop 'error stop lagbound_read_next: ndim'
+	  if( n .gt. ndim ) call shympi_abort_internal(			&
+     &		'error stop lagbound_read_next: ndim')
 	  x(n) = xa
 	  y(n) = ya
 	end do
@@ -401,7 +436,8 @@
 
 	if( n .gt. 0 .and. n .lt. 3 ) then
 	  write(6,*) 'line has less then 3 vertices: ',iline,n
-	  stop 'error stop lagbound_read_next: degenerated line'
+	  call shympi_abort_internal(					&
+     &		'error stop lagbound_read_next: degenerated line')
 	else if( n .eq. 0 ) then
 	  lagbound_read_next = .false.
 	end if
@@ -415,9 +451,15 @@
 	subroutine lagbound_seed_particles(dxy,iln,n,x,y)
 
 ! release in partial area
+!
+! on more than one process only the main owner of an element releases in
+! it, and the centre of the whole domain (n < 0) is that of the whole
+! basin (lgr_mpi_global_center)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_mpi_global_center
 	use basin, only : nkn,nel,ngr,mbw
+	use shympi, only : id_elem, my_id
 
 	implicit none
 
@@ -446,7 +488,7 @@
 !-----------------------------------------------------------------
 
 	if( n .lt. 0 ) then	!total domain
-	  call basin_center(x0,y0)
+	  call lgr_mpi_global_center(x0,y0)
 	else
 	  call xy_center(n,x,y,x0,y0)
 	end if
@@ -468,7 +510,7 @@
 	do ie=1,nel
 	  nin = ieflag(ie)
 	  if( nin .lt. -1 .or. nin .gt. 1 ) then
-	    stop 'error stop lagbound_seed_particles'
+	    call shympi_abort_internal('error stop lagbound_seed_particles')
 	  end if
 	  nc(nin) = nc(nin) + 1
 	end do
@@ -481,6 +523,8 @@
 
 	np = 0
         do ie=1,nel
+
+	  if( id_elem(1,ie) /= my_id ) cycle  !only release on owned elements
 
 	  ifl = ieflag(ie)
 	  if( ifl .ne. -1 ) then
@@ -524,7 +568,12 @@
 	subroutine lgr_init_all(dxy)
 
 ! release in total area
+!
+! on more than one process only the main owner of an element releases in
+! it, and the grid origin is the centre of the whole basin
+! (lgr_mpi_global_center), so that the grid points are the serial ones
 
+	use mod_lagrange_mpi, only : lgr_mpi_global_center
 	use basin, only : nkn,nel,ngr,mbw
 	use shympi, only : id_elem, my_id
 
@@ -548,7 +597,7 @@
 !------------------------------------------------------------------
 
 	nin = 0
-	call basin_center(x0,y0)
+	call lgr_mpi_global_center(x0,y0)
 
 	do ie=1,nel
 	  if( id_elem(1,ie) /= my_id ) cycle  !only release on owned elements
