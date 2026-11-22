@@ -20,6 +20,22 @@
 #             every thread wrote the same value, so no run shows it; it
 #             shows that the change of the initialisation (once, before the
 #             loop) leaves the result of 1 and 4 threads unchanged.
+#   decay     (#226) mm_lgr_a serially, once as it is and once with
+#             "ldecay = 86400." in $lagrg (decay of particles: at every
+#             step a particle decays when a random number exceeds
+#             exp(-age/ldecay); with idt = 300 s all 145 particles decay
+#             within five hours): the decay run must end (before #226 it stopped
+#             with SIGSEGV at the first output after a decay: the exited
+#             record read the coordinates of element 0).  Then
+#             lgr_compare.py's reader checks the two particle files: the
+#             decayed particles (exited in the decay run, not exited in the
+#             plain run at the same output) are at least one; every exited
+#             record of the decay run has an element in 1..nel and a
+#             position inside a triangle of GRID/MM_geo.grd (inside the
+#             basin), and a decayed particle keeps the same position at
+#             every output after it decayed (its last position); every
+#             active particle of the decay run has the same record as in
+#             the plain run (decay changes no other particle).
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -33,11 +49,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp) ;;
+  stk-omp|decay) ;;
   *) usage ;;
 esac
 
@@ -64,17 +80,18 @@ finish() {
   exit "$rc"
 }
 
-# with_para SRC DST LINE: copy of SRC.str with LINE right after its $para
-# line and the run name (third line of $title) set to DST
-with_para() {
-  awk -v line="$3" -v name="$2" '
+# with_line SRC DST SECTION LINE: copy of SRC.str with LINE right after
+# its $SECTION line and the run name (second line of $title) set to DST
+with_line() {
+  awk -v line="$4" -v name="$2" -v sect="$3" '
     /^\$title/ { t = 1; nt = 0 }
     t && !/^\$/ { nt++; if( nt == 2 ) { print "        " name; next } }
     /^\$end/ { t = 0 }
     { print }
-    !done && /^\$para[ \t\r]*$/ { print "        " line; done = 1 }
+    !done && $0 ~ "^\\$" sect "[ \t\r]*$" { print "        " line; done = 1 }
   ' "$W/$1.str" > "$W/$2.str"
 }
+with_para() { with_line "$1" "$2" para "$3"; }
 
 # run NAME LOG LAUNCHER...: run NAME.str in the scratch folder; true if
 # the launcher exited with 0 and the log has "simulation end"
@@ -120,5 +137,106 @@ if [ "$MODE" = stk-omp ]; then
     else fail "$v: particle file of 4 threads differs from 1 thread"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
     fi
   done
+  finish
+fi
+
+#=============================== decay (#226) ==============================
+if [ "$MODE" = decay ]; then
+  with_para mm_lgr_a dec_plain "levdbg = 0"
+  with_line mm_lgr_a dec_on lagrg "ldecay = 86400."
+  grep -q "ldecay = 86400." "$W/dec_on.str" || fail "no ldecay line in dec_on.str"
+  echo "=== mm_lgr_a serially, without and with ldecay = 86400."
+  run dec_plain dec_plain.log shyfem || fail "plain run did not end"
+  run dec_on dec_on.log shyfem || fail "decay run did not end"
+  if [ "$rc" = 0 ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/dec_plain.lgr.shy" "$W/dec_on.lgr.shy" "$W/GRID/MM_geo.grd" <<'EOF' || fail "particle file check"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+plain_path, dec_path, grd = sys.argv[2:5]
+nodes, elems = {}, []
+with open(grd) as fh:
+    for line in fh:
+        f = line.split()
+        if not f:
+            continue
+        if f[0] == "1":
+            nodes[int(f[1])] = (float(f[3]), float(f[4]))
+        elif f[0] == "2":
+            elems.append(tuple(int(v) for v in f[4:7]))
+tri = [(nodes[a], nodes[b], nodes[c]) for a, b, c in elems]
+
+def inside(x, y, eps=1e-6):
+    """True if (x, y) lies in a triangle of the mesh (barycentric, eps)."""
+    for (x1, y1), (x2, y2), (x3, y3) in tri:
+        if x < min(x1, x2, x3) - eps or x > max(x1, x2, x3) + eps:
+            continue
+        if y < min(y1, y2, y3) - eps or y > max(y1, y2, y3) + eps:
+            continue
+        d = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+        if d == 0.0:
+            continue
+        l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / d
+        l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / d
+        if min(l1, l2, 1.0 - l1 - l2) >= -1e-4:
+            return True
+    return False
+
+nel = len(elems)
+_, tp = lc.read_file(plain_path)
+_, td = lc.read_file(dec_path)
+ok = True
+mp = {t: b for t, b, _ in tp}
+first_pos = {}
+ndec_last = 0
+nbad_act = 0
+for t, b, _ in td:
+    if t not in mp:
+        print("  output t=%r of the decay run not in the plain run" % t)
+        ok = False
+        continue
+    ext_p = set(mp[t][1])
+    for pid, p in b[1].items():
+        if not 1 <= p["ie"] <= nel:
+            print("  t=%r exited id %d: element %d outside 1..%d" % (t, pid, p["ie"], nel))
+            ok = False
+        if not (math.isfinite(p["x"]) and math.isfinite(p["y"])) or not inside(p["x"], p["y"]):
+            print("  t=%r exited id %d: position %r %r not inside the basin" % (t, pid, p["x"], p["y"]))
+            ok = False
+        if pid in ext_p:
+            continue			# left the basin in the plain run too
+        if pid in first_pos:
+            if first_pos[pid] != (p["x"], p["y"], p["ie"]):
+                print("  t=%r decayed id %d moved: %r -> %r" % (t, pid, first_pos[pid], (p["x"], p["y"], p["ie"])))
+                ok = False
+        else:
+            first_pos[pid] = (p["x"], p["y"], p["ie"])
+    for pid, p in b[0].items():
+        q = mp[t][0].get(pid)
+        if q != p:
+            nbad_act += 1
+    last = t, b
+t, b = last
+ndec_last = len(set(b[1]) - set(mp[t][1]))
+print("  output times %d; at the last one (t=%r): active %d and exited %d in the decay run, active %d and exited %d in the plain run, decayed %d"
+      % (len(td), t, len(b[0]), len(b[1]), len(mp[t][0]), len(mp[t][1]), ndec_last))
+print("  decayed particles seen %d, every one at a fixed position inside the basin: %s"
+      % (len(first_pos), "yes" if ok else "NO"))
+for pid in sorted(first_pos)[:1]:
+    print("  example: id %d, exited record ie %d x %r y %r (inside: %s; the point 0,0: %s)"
+          % (pid, first_pos[pid][2], first_pos[pid][0], first_pos[pid][1],
+             inside(first_pos[pid][0], first_pos[pid][1]), inside(0.0, 0.0)))
+if ndec_last < 1:
+    print("  no decayed particle in the last output")
+    ok = False
+if nbad_act:
+    print("  active records that differ from the plain run: %d" % nbad_act)
+    ok = False
+else:
+    print("  active records of the decay run identical to the plain run")
+sys.exit(0 if ok else 1)
+EOF
+  fi
   finish
 fi

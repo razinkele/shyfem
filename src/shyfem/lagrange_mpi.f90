@@ -4298,7 +4298,9 @@
 ! processes with a cut-off side on each counts twice; lgr_ndry).
 ! A fourth line counts the particles that have left the basin (ie < 0;
 ! such a particle stays in the array of the process that carried it when
-! it left, with ie = -(the local element it left)) and, of them, those
+! it left, with ie = -(the local element it left); a decayed particle
+! would count here too, ie = -abs(ie) since #226, but ldecay stops on
+! several processes, #228) and, of them, those
 ! whose element left has another process as its main owner
 ! (id_elem(1,-ie) /= my_id: a mixed element held here but owned
 ! elsewhere; spec section 7, case 4), counted on the particle array now.
@@ -4378,9 +4380,11 @@
 ! decision is taken on reduced values, the same on every process. Checks:
 ! (a) particle count: the slots 1..nbdy of all processes, by class: in
 !     the domain (actual%ie > 0, beached ones included), left the basin
-!     (ie < 0: through an open boundary or into a transit element) and
-!     without an element (ie = 0: decayed, or inserted outside the mesh),
-!     summed over the processes, equal the number of particles released so
+!     (ie < 0: through an open boundary or into a transit element; a
+!     decayed particle also keeps -abs(ie) since #226, but ldecay stops on
+!     several processes, #228) and without an element (ie = 0: inserted
+!     outside the mesh), summed over the processes, equal the number of
+!     particles released so
 !     far, the ids given out (idbdy, global since lgr_mpi_assign_ids, the
 !     same on every process). A slot is removed only by the hand-over,
 !     which appends the particle on the receiving process in the same
@@ -5962,9 +5966,10 @@
 !   class P: element with only own nodes, M: mixed element (a vertex owned
 !   by another rank) this rank is the main owner of, G: mixed element
 !   owned elsewhere, D: entry with ie < 0, a particle that has left the
-!   basin (x = y = 0, ie_global = -global element; an entry with ie = 0
-!   would show ie_global = 0, but neither the tracker nor the hand-over
-!   makes one); lb = layer; ncross = lgr_ncross(i)
+!   basin (x = y = 0, ie_global = -global element; in a serial run a
+!   decayed particle shows the same since #226, ie = -abs(ie); an entry
+!   with ie = 0 would show ie_global = 0, but neither the tracker nor the
+!   hand-over makes one); lb = layer; ncross = lgr_ncross(i)
 !   (crossings of the last time step; for a particle handed over in that
 !   step the count of the whole step)
 !   The last six columns are the particle's key, the same in a serial run

@@ -1276,6 +1276,8 @@ $end
 
 Particles can also be released at open boundaries using `lgrpps` in the boundary section.
 
+With `ldecay` above 0 particles decay at random as they age: at every time step a particle decays when a random number exceeds exp(-age/`ldecay`), with its age in seconds since its release. The test is made at every step, so the survival depends on the time step as well as on `ldecay`: in the Mar Menor test case `mm_lgr_a` (`idt = 300`, `ldecay = 86400`) a fifth of the particles have decayed after one hour and all of them after five hours. A decayed particle is no longer tracked; it keeps its last element and is written in the exited block of the particle file at its last position at every output, as a particle that left the basin (before #226 a run with decay crashed at the first output after a particle decayed).
+
 Lagrangian particle tracking runs on several MPI processes for the core options (see section 9.6): surface and layer tracking (`ilagr` 1 and 2), the horizontal random walk with a fixed diffusivity (`rwhpar` of 0 or more), Stokes drift (`stkpar`), release in polygons (`lgrlin`) or over the whole basin, and the particle file. Every other option stops the run at start-up on more than one process, with the message `Lagrangian option NAME is not supported with MPI`; run on one process or remove the option. The example above uses `ilagr = 1`; `ilagr = 3` is one of the options that stop, and a serial run with it crashed in the test cases (#231).
 
 ### 7.17 Water Renewal Time
