@@ -756,6 +756,7 @@ lagrange_init.o: ../../lib/mod/basin.mod \
 lagrange_inout.o: ../../lib/mod/basin.mod \
 		../../lib/mod/femtime.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_lagrange.mod \
+		../../lib/mod/mod_lagrange_mpi.mod \
 		../../lib/mod/mod_layer_thickness.mod \
 		../../lib/mod/shyfile.mod 
 lagrange_larve.o: ../../lib/mod/mod_lagrange.mod

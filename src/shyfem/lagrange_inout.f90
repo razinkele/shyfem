@@ -74,10 +74,17 @@
 !
 ! tin is insert time - compute with rtime
 ! z = 0.5 (corresponding to larva in water)
+!
+! on several MPI processes the id given here (idbdy counted on this
+! process) is provisional: lgr_mpi_assign_ids, called after the seeding
+! call, gives the id of a serial run; and the limit nbdymax does not stop
+! here, it is only recorded (lgr_nbdymax_passed): lgr_mpi_assign_ids
+! stops the run on the global number of particles
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_nbdymax_passed
         use basin, only : neldi,iarv
-	use shympi, only : ip_int_elem
+	use shympi, only : ip_int_elem,shympi_is_parallel
 	use femtime
 
 	implicit none
@@ -110,7 +117,10 @@
 	nbdy = nbdy + 1
 	idbdy = idbdy + 1
 
-	if( nbdymax > 0 .and. nbdy .gt. nbdymax ) then
+	if( nbdymax > 0 .and. nbdy .gt. nbdymax				&
+     &			.and. shympi_is_parallel() ) then
+	  lgr_nbdymax_passed = .true.	!decided by lgr_mpi_assign_ids
+	else if( nbdymax > 0 .and. nbdy .gt. nbdymax ) then
 	  write(6,*) 'nbdymax = ',nbdymax
 	  write(6,*) 'Cannot insert more than nbdymax particles'
 	  write(6,*) 'Please change nbdymax in STR file'

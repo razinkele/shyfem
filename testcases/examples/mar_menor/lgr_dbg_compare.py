@@ -5,7 +5,7 @@ usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py node SERIAL_DIR MPI_DIR [--tol 1e-5]
        lgr_dbg_compare.py part SERIAL_DIR MPI_DIR --tol FLOAT
                           [--by {id|nearest|key}] [--first-only]
-                          [--ranks-empty-ok] [--ncross] [--elem]
+                          [--ranks-empty-ok] [--ncross] [--elem] [--ids]
                           [--handover [--step LENGTH] [--allow K]
                                       [--factor F] [--min-changed N]]
 
@@ -61,7 +61,14 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
                     particle is on exactly one process at a time; all process
                     files of a time block are read together.  A dump with
                     only the ten old columns still serves every other mode;
-                    with --by key it is an input error (exit 2).
+                    with --by key it is an input error (exit 2).  With --by
+                    key the table has a last column id!=: the pairs of the
+                    block whose ids differ; the totals line gives their sum.
+      --ids         (with --by key) a pair matched by key whose ids differ is
+                    a failure (a particle keeps its id, the one it has in a
+                    serial run).  Without --ids the count is printed and
+                    marked "(not gated)".  --ids without --by key is a usage
+                    error (exit 2).
       --ncross      a differing crossing count is a failure.  With --by key
                     only for a pair at distance exactly 0 (a particle that
                     moved differently can have crossed a different number of
@@ -113,7 +120,8 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
 Every mode exits 1 if the comparison fails (flux, node: any row off; part: a
 count or time mismatch, an unmatched particle, a NaN position, a distance
 above --tol, a differing layer or z, a duplicate id with --by id, a differing
-crossing count with --ncross, a differing element with --elem).
+crossing count with --ncross, a differing element with --elem, a differing id
+with --ids).
 
 Exit status: 0 = runs agree, 1 = they differ, 2 = a dump cannot be read.
 """
@@ -741,13 +749,13 @@ def cmd_part(args):
               % (len(only_s), len(only_m)))
         nfail += len(only_s) + len(only_m)
 
-    print("  %9s %5s %5s %5s %5s %5s %5s %3s %10s %4s %4s %4s %5s %5s %4s"
+    print("  %9s %5s %5s %5s %5s %5s %5s %3s %10s %4s %4s %4s %5s %5s %4s%s"
           % ("time", "n_ser", "n_mpi", "D_ser", "D_mpi", "dupid", "unmat",
              "nan", "max dist", ">tol", "lb!=", "z!=", "ncr!=", "ncr-1",
-             "ie!="))
+             "ie!=", " id!=" if args.by == "key" else ""))
     worst = (0.0, None)
     tot = dict.fromkeys(("unmat", "nan", "over", "lb", "z", "ncr", "unk",
-                         "ie", "ncr0", "ncrn"), 0)
+                         "ie", "ncr0", "ncrn", "id"), 0)
     for t in times:
         sa = [e for e in ser.get(t, []) if e[CLS] in ALIVE]
         ma = [e for e in mpi.get(t, []) if e[CLS] in ALIVE]
@@ -794,6 +802,7 @@ def cmd_part(args):
         nx0 = sum(1 for p in pairs if p[0][NCROSS] != -1 and p[1][NCROSS] != -1
                   and p[0][NCROSS] != p[1][NCROSS] and p[2] == 0)
         nxn = nx - nx0
+        nid = sum(1 for p in pairs if p[0][ID] != p[1][ID])
         note = ""
         bad = unmat + nnan
         if not args.handover:
@@ -810,10 +819,13 @@ def cmd_part(args):
         if args.by == "key":
             tot["ncr0"] += nx0
             tot["ncrn"] += nxn
+            tot["id"] += nid
         if args.ncross:
             bad += nx0 if args.by == "key" else nx
         if args.elem:
             bad += nie
+        if args.ids:
+            bad += nid
         nfail += bad
         for key, v in (("unmat", unmat), ("nan", nnan), ("over", nover),
                        ("lb", nlb), ("z", nz), ("ncr", nx), ("unk", nunk),
@@ -827,9 +839,10 @@ def cmd_part(args):
             mk = {e[KEY]: e[CLS] for e in mpi.get(t, [])}
             state_at[t] = {k: 1 for k in set(sk) & set(mk)}
         print("  %9.1f %5d %5d %5d %5d %5d %5d %3d %10.3e %4d %4d %4d %5d %5d"
-              " %4d%s"
+              " %4d%s%s"
               % (t, len(sa), len(ma), nd_s, nd_m, ndup, unmat, nnan, dmax,
-                 nover, nlb, nz, nx, nunk, nie, note))
+                 nover, nlb, nz, nx, nunk, nie,
+                 " %4d" % nid if args.by == "key" else "", note))
     if worst[1] is not None:
         print("  largest distance %.4e at time %.1f" % worst)
     ng = " (not gated)" if args.handover else ""
@@ -839,12 +852,17 @@ def cmd_part(args):
         ncr_note = " (gated at distance 0 only)"
     else:
         ncr_note = ""
+    id_note = ""
+    if args.by == "key":
+        id_note = (", id differs %d%s"
+                   % (tot["id"], "" if args.ids else " (not gated)"))
     print("  totals over %d outputs: unmatched %d, nan %d, beyond tol %d%s,"
           " layer differs %d%s, z differs %d%s, ncross differs %d%s,"
-          " ncross unknown (-1) %d, element differs %d%s"
+          " ncross unknown (-1) %d, element differs %d%s%s"
           % (len(times), tot["unmat"], tot["nan"], tot["over"], ng, tot["lb"],
              ng, tot["z"], ng, tot["ncr"], ncr_note,
-             tot["unk"], tot["ie"], "" if args.elem else " (not gated)"))
+             tot["unk"], tot["ie"], "" if args.elem else " (not gated)",
+             id_note))
     if args.by == "key":
         print("  ncross differs at distance 0: %d%s; at a non-zero distance:"
               " %d (never gated)"
@@ -887,6 +905,9 @@ def main(argv=None):
                    help="fail if a matched particle's crossing count differs")
     p.add_argument("--elem", action="store_true",
                    help="fail if a matched particle's global element differs")
+    p.add_argument("--ids", action="store_true",
+                   help="with --by key: fail if the ids of a pair matched by"
+                        " key differ")
     p.add_argument("--handover", action="store_true",
                    help="with --by key: compare the particles that changed"
                         " process with those that stayed")
@@ -909,6 +930,8 @@ def main(argv=None):
     if args.mode == "part":
         if args.handover and args.by != "key":
             ap.error("--handover needs --by key")
+        if args.ids and args.by != "key":
+            ap.error("--ids needs --by key")
         if args.handover and args.first_only:
             ap.error("--handover cannot be combined with --first-only")
         if args.min_changed < 0:

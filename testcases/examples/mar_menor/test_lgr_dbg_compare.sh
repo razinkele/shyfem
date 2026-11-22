@@ -99,12 +99,13 @@ def write_k(d, n, lines, key=True, ieg=lambda i, b: 7):
                 f.write('\n')
 
 def krun(name, n, ids, changed=(), off=None, cls=None, nc=None, key=True,
-         drop=(), extra=(), ieg=lambda i, b: 7):
+         drop=(), extra=(), ieg=lambda i, b: 7, idf=None):
     """Particles `ids` in both blocks.  An MPI run (n > 1) has particle i on
     rank 0 in block 0 and, if i is in `changed`, on rank n-1 in block 1 (else
     on rank 0).  off(i, b) -> (dx, dy) added to the position, cls(i, b) the
-    class, nc(i, b) the crossing count; drop = [(i, b)] entries left out,
-    extra = lines added."""
+    class, nc(i, b) the crossing count, idf(i, b) the id written (default
+    i; the key is always that of particle i); drop = [(i, b)] entries left
+    out, extra = lines added."""
     lines = []
     for i in ids:
         for b in (0, 1):
@@ -113,7 +114,8 @@ def krun(name, n, ids, changed=(), off=None, cls=None, nc=None, key=True,
             x, y = kbase(i, b)
             dx, dy = off(i, b) if off else (0.0, 0.0)
             rank = (n - 1) if (b == 1 and i in changed) else 0
-            lines.append((b, rank, cls(i, b) if cls else 'P', i, x + dx,
+            lines.append((b, rank, cls(i, b) if cls else 'P',
+                          idf(i, b) if idf else i, x + dx,
                           y + dy, nc(i, b) if nc else 1, kkey(i)))
     write_k(os.path.join(root, name), n, lines + list(extra), key, ieg)
 
@@ -167,9 +169,13 @@ krun('kextra', 2, I10, changed=range(1, 6),
 krun('kncr0', 2, I10, changed=range(1, 6), nc=lambda i, b: 2 if (b == 1 and i == 2) else 1)
 krun('kncrd', 2, I10, changed=range(1, 6), nc=lambda i, b: 2 if (b == 1 and i == 3) else 1,
      off=lambda i, b: (1e-3, 0.0) if (b == 1 and i == 3) else (0.0, 0.0))
-# the two ids differ in the MPI run (ids repeat across ranks at this stage)
-# while the keys are right: pairing by key does not look at the id
-krun('kid', 2, I10, changed=range(1, 6))
+# the ids of particles 3 and 4 are swapped in the MPI run, in both blocks,
+# while the keys are right: pairing by key does not look at the id, --ids does
+krun('kid', 2, I10, changed=range(1, 6),
+     idf=lambda i, b: {3: 4, 4: 3}.get(i, i))
+# particle 2 changes process and arrives with another id (99) in block 1
+krun('kidchg', 2, I10, changed=range(1, 6),
+     idf=lambda i, b: 99 if (i == 2 and b == 1) else i)
 
 # flux files: serial elements 1, 2; element 2 is mixed (rank 1 main owner)
 def write_flux(d, rank, n, rows):
@@ -256,8 +262,9 @@ check "flux off in the main owner's copy" 1 "mixed, main owner +3 +2 " flux "$t/
 check "flux file without data rows" 2 "no data rows" flux "$t/fser" "$t/fempty"
 
 # ---- particle key: --by key and the hand-over check
-# table columns: time n_ser n_mpi D_ser D_mpi dupid unmat nan max_dist >tol lb!= z!= ncr!= ncr-1 ie!=
-check "by key, matching runs" 0 "3600.0 +10 +10 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +0[^ 0-9].*ncross differs at distance 0: 0 \(not gated\); at a non-zero distance: 0" \
+# table columns: time n_ser n_mpi D_ser D_mpi dupid unmat nan max_dist >tol lb!= z!= ncr!= ncr-1 ie!= id!=
+# (the last column, id!=, only with --by key)
+check "by key, matching runs" 0 "3600.0 +10 +10 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +0 +0[^ 0-9].*ncross differs at distance 0: 0 \(not gated\); at a non-zero distance: 0" \
     part "$t/kser" "$t/kok" --tol 0 --by key
 check "by key, a changed particle is far away" 1 "7200.0 +10 +10 +0 +0 +0 +0 +0 +1.000e-03 +5 " \
     part "$t/kser" "$t/kjump" --tol 1e-5 --by key
@@ -331,6 +338,26 @@ check "hand-over, no pair at distance 0 at all" 1 "nothing was compared" \
     part "$t/kser" "$t/koff" --tol 1 --by key --handover
 check "hand-over with --first-only" 2 "cannot be combined with --first-only" \
     part "$t/kser" "$t/kok" --tol 0 --by key --handover --first-only
+
+# ---- --ids: the ids of the pairs matched by key
+check "by key, --ids, matching runs" 0 "3600.0 +10 +10 .* +0 +0[^ 0-9].*7200.0 +10 +10 .* +0 +0[^ 0-9].*element differs 0 \(not gated\), id differs 0[^ 0-9(]" \
+    part "$t/kser" "$t/kok" --tol 0 --by key --ids
+check "by key, ids swapped, not gated without --ids" 0 "3600.0 +10 +10 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +0 +2[^ 0-9].*7200.0 .* +0 +2[^ 0-9].*id differs 4 \(not gated\)" \
+    part "$t/kser" "$t/kid" --tol 0 --by key
+check "by key, ids swapped, gated with --ids" 1 "3600.0 +10 +10 .* +0 +2[^ 0-9].*7200.0 .* +0 +2[^ 0-9].*id differs 4[^ 0-9(]" \
+    part "$t/kser" "$t/kid" --tol 0 --by key --ids
+check "by key, --ids, id changed at a hand-over: counted in its block" 1 "3600.0 +10 +10 .* +0 +0[^ 0-9].*7200.0 +10 +10 .* +0 +1[^ 0-9].*id differs 1[^ 0-9(]" \
+    part "$t/kser" "$t/kidchg" --tol 0 --by key --ids
+check "hand-over --ids: id changed at a hand-over, gated" 1 "id differs 1[^ 0-9(].*: ok" \
+    part "$t/kser" "$t/kidchg" --tol 0 --by key --handover --ids
+check "hand-over without --ids: id changed, not gated" 0 "id differs 1 \(not gated\)" \
+    part "$t/kser" "$t/kidchg" --tol 0 --by key --handover
+check "by id has no id column" 0 "3600.0 +10 +10 +0 +0 +0 +0 +0 +0.000e\+00 +0 +0 +0 +0 +0 +0[^ 0-9]" \
+    part "$t/kser" "$t/kok" --tol 0 --by id
+check "--ids needs --by key" 2 "--ids needs --by key" \
+    part "$t/kser" "$t/kid" --tol 0 --by id --ids
+check "--ids needs --by key (nearest)" 2 "--ids needs --by key" \
+    part "$t/kser" "$t/kid" --tol 0 --ids
 
 if [ "$fail" -eq 0 ]; then echo "LGR DBG COMPARE TEST: PASS"; exit 0; fi
 echo "LGR DBG COMPARE TEST: FAIL"; exit 1

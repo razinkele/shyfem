@@ -47,6 +47,7 @@
 ! lgr_mpi_gather_global		global array on rank 0 from the owned entries
 ! lgr_mpi_global_area		total basin area as in a serial run
 ! lgr_mpi_global_center		basin centre as in a serial run
+! lgr_mpi_assign_ids		ids of a release as in a serial run, limit nbdymax
 ! lgr_mpi_debug_dump		text dump of particles, fluxes, node arrays
 ! lgr_mpi_debug_open		open one debug dump file
 ! lgr_mpi_ghost_nodes		number of vertices of an element owned elsewhere
@@ -98,6 +99,11 @@
 					     !lack of a layer (OMP atomic)
 
 	logical, save :: bmpi_lagr = .false.      !true if MPI active for lagrange
+
+	! limit nbdymax on several processes: insert_particle does not stop
+	! there, it only records that this process passed the limit by itself;
+	! lgr_mpi_assign_ids decides for all processes after the release
+	logical, save :: lgr_nbdymax_passed = .false.
 
 	! lookups (lgr_mpi_lookup_init): ip_int_elem and ip_int_node sorted,
 	! with the local numbers in the same order; elements of local node k:
@@ -3769,6 +3775,171 @@
 	deallocate(iglob,xloc,yloc,xglob,yglob)
 
 	end subroutine lgr_mpi_global_center
+
+!*******************************************************************
+
+	subroutine lgr_mpi_assign_ids(nbdy_before)
+
+! gives the particles of one seeding call the ids they have in a serial
+! run, and applies the limit nbdymax to the particles of the run. Called
+! on every process after each seeding call (lgr_init_all for the whole
+! basin, lagbound_seed_particles for one polygon); nbdy_before is the
+! number of particles the process held before the call. Collective: a
+! process that created no particle in the call takes part as well. In a
+! serial run it returns at once.
+!
+! In a serial run the ids follow the order of creation: in one seeding
+! call the elements in increasing number, in an element the order of the
+! loops (grid points, then one particle per layer at a point). On several
+! processes only the main owner of an element releases in it, so all new
+! particles of an element are on one process, in their order of creation
+! (slots nbdy_before+1 ... nbdy), and the global element number
+! (init%ie_global = ip_int_elem) is the serial element number. The key of
+! a new particle is (global release element, position among the new
+! particles of that element); the particle that is m-th in the global
+! order of the keys gets the id idbdy0 + m, where idbdy0 is the number of
+! ids given out before the call. The new particles are counted per global
+! element on each process, the counts summed over the processes
+! (MPI_Allreduce over nel_global entries: every process needs all the
+! offsets, the gather helper lgr_mpi_gather_global delivers to rank 0
+! only), and each process takes its offsets from the exclusive prefix sum
+! in global element order. Afterwards idbdy = idbdy0 + the global number
+! of new particles, on every process.
+!
+! insert_particle has advanced idbdy by one per particle on this process
+! (provisional ids), so idbdy0 = idbdy - (nbdy - nbdy_before). It must be
+! the same on every process; if not (ids were given out by a release that
+! does not pass here) the run stops.
+!
+! limit nbdymax (> 0): as in a serial run it limits the particles of the
+! run. On several processes insert_particle does not stop; here the run
+! stops if the global number of particles (nbdy summed over the
+! processes) exceeds nbdymax or a process passed it by itself
+! (lgr_nbdymax_passed): rank 0 writes the message of insert_particle once,
+! then every process stops (after the seeding call, not at the particle
+! that passes the limit).
+
+	use shympi, only : shympi_is_parallel,my_id,id_elem,nel_global
+	use basin, only : nel
+
+	implicit none
+
+	include 'mpif.h'
+
+	integer, intent(in) :: nbdy_before
+
+	integer :: i, ie, ieg, nnew, ntot, nc, ierr
+	integer :: idbdy0, idmin, idmax
+	integer :: ival(2), ivalg(2)	!particles held, limit passed
+	integer, allocatable :: icount(:), ioff(:)
+
+	if( .not. shympi_is_parallel() ) return
+
+	nnew = nbdy - nbdy_before
+	if( nnew < 0 ) call shympi_abort_internal			&
+     &		('lgr_mpi_assign_ids: fewer particles after the release')
+	idbdy0 = idbdy - nnew
+
+!	--------------------------------------------
+!	the same ids given out before the call on every process
+!	--------------------------------------------
+
+	call MPI_Allreduce(idbdy0,idmin,1,MPI_INTEGER,MPI_MIN		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_assign_ids: MPI_Allreduce')
+	call MPI_Allreduce(idbdy0,idmax,1,MPI_INTEGER,MPI_MAX		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_assign_ids: MPI_Allreduce')
+	if( idmin /= idmax ) then
+	  if( my_id == 0 ) then
+	    write(6,*) 'lgr_mpi_assign_ids: the ids given out before the'	&
+     &		//' release differ between the processes: ',idmin,idmax
+	    write(6,*) 'a release of particles that is not supported on'	&
+     &		//' several MPI processes has run'
+	    flush(6)
+	  end if
+	  call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
+	  call shympi_abort_internal('lgr_mpi_assign_ids: ids differ'	&
+     &		//' between processes')
+	end if
+
+!	--------------------------------------------
+!	limit nbdymax on the global number of particles
+!	--------------------------------------------
+
+	ival(1) = nbdy
+	ival(2) = 0
+	if( lgr_nbdymax_passed ) ival(2) = 1
+	call MPI_Allreduce(ival,ivalg,2,MPI_INTEGER,MPI_SUM		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_assign_ids: MPI_Allreduce')
+	if( nbdymax > 0 .and. ( ivalg(1) > nbdymax .or. ivalg(2) > 0 ) ) then
+	  if( my_id == 0 ) then		!the message of insert_particle
+	    write(6,*) 'nbdymax = ',nbdymax
+	    write(6,*) 'Cannot insert more than nbdymax particles'
+	    write(6,*) 'Please change nbdymax in STR file'
+	    flush(6)
+	  end if
+	  call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
+	  call shympi_abort_internal('error stop insert_particle: nbdy')
+	end if
+
+!	--------------------------------------------
+!	new particles per global element, summed over the processes
+!	--------------------------------------------
+
+	allocate(icount(nel_global), ioff(nel_global), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_assign_ids: allocation')
+
+	icount = 0
+	do i=nbdy_before+1,nbdy
+	  ieg = lgr_ar(i)%init%ie_global
+	  ie = -lgr_ar(i)%init%ie
+	  if( ieg < 1 .or. ieg > nel_global .or. ie < 1 .or. ie > nel ) then
+	    write(6,*) 'lgr_mpi_assign_ids: particle ',i,' release'	&
+     &		//' element ',ie,ieg
+	    call shympi_abort_internal('lgr_mpi_assign_ids: new'	&
+     &		//' particle without a release element')
+	  end if
+	  if( id_elem(1,ie) /= my_id ) then
+	    write(6,*) 'lgr_mpi_assign_ids: particle ',i,' release'	&
+     &		//' element ',ieg,' main owner ',id_elem(1,ie)
+	    call shympi_abort_internal('lgr_mpi_assign_ids: new'	&
+     &		//' particle in an element owned by another process')
+	  end if
+	  icount(ieg) = icount(ieg) + 1
+	end do
+
+	call MPI_Allreduce(icount,ioff,nel_global,MPI_INTEGER,MPI_SUM	&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_assign_ids: MPI_Allreduce')
+
+	ntot = 0			!exclusive prefix sum: ioff(ieg) =
+	do ieg=1,nel_global		!new particles in elements before ieg
+	  nc = ioff(ieg)
+	  ioff(ieg) = ntot
+	  ntot = ntot + nc
+	end do
+
+!	--------------------------------------------
+!	ids in the order of the keys, the global count
+!	--------------------------------------------
+
+	do i=nbdy_before+1,nbdy		!in order of creation
+	  ieg = lgr_ar(i)%init%ie_global
+	  ioff(ieg) = ioff(ieg) + 1
+	  lgr_ar(i)%id = idbdy0 + ioff(ieg)
+	end do
+	idbdy = idbdy0 + ntot
+
+	deallocate(icount,ioff)
+
+	end subroutine lgr_mpi_assign_ids
 
 !*******************************************************************
 

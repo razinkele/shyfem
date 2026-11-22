@@ -91,15 +91,18 @@
 ! manages release of particles over whole domain
 !
 ! the area is that of the whole basin also on more than one process
-! (lgr_mpi_global_area), so that the grid spacing is the serial one
+! (lgr_mpi_global_area), so that the grid spacing is the serial one; after
+! the release the particles get the ids of a serial run
+! (lgr_mpi_assign_ids, on every process)
 
-	use mod_lagrange_mpi, only : lgr_mpi_global_area
+	use mod_lagrange, only : nbdy
+	use mod_lagrange_mpi, only : lgr_mpi_global_area,lgr_mpi_assign_ids
 
 	implicit none
 
 	integer, intent(in) :: npoints
 
-	integer n
+	integer n,nbdy_before
 	real tot_area,dxy
 	real x(1),y(1)
 
@@ -107,8 +110,10 @@
 	dxy = sqrt( tot_area / npoints )
 
 	n = -1
+	nbdy_before = nbdy
 	!call lagbound_seed_particles(dxy,n,x,y)	!should be the same
 	call lgr_init_all(dxy)
+	call lgr_mpi_assign_ids(nbdy_before)	!ids as in a serial run
 
 	end
 
@@ -118,6 +123,12 @@
 
 ! manages release of particles inside polygon(s)
 ! particles in different polygons have different types
+!
+! after each polygon the particles get the ids of a serial run
+! (lgr_mpi_assign_ids, on every process: every process reads all polygons)
+
+	use mod_lagrange, only : nbdy
+	use mod_lagrange_mpi, only : lgr_mpi_assign_ids
 
 	implicit none
 
@@ -128,7 +139,7 @@
 
 	real x(ndim),y(ndim)
 
-	integer iunit,n,nline
+	integer iunit,n,nline,nbdy_before
 	real tot_area,dxy
 	logical lagbound_read_next
 
@@ -146,7 +157,9 @@
 	do while( lagbound_read_next(iunit,ndim,n,x,y) )
 	  nline = nline + 1
 	  write(6,*) 'new line read: ',nline,n
+	  nbdy_before = nbdy
 	  call lagbound_seed_particles(dxy,nline,n,x,y)
+	  call lgr_mpi_assign_ids(nbdy_before)	!ids as in a serial run
 	end do
 	call lagbound_close_file(iunit)
 	write(6,*) 'total number of lines read: ',nline
