@@ -609,9 +609,10 @@ or a trap.
 
 ## Task 6.1: cases D and E (AC4, AC5), a release polygon across all domains, spec section 7 case 4
 
-**Measured** 2026-11-22 11:07 to 11:37 EET (from `date`) by the implementer, on the stage-6
-branch (`lgr/s6-random`, from `b2f438fd`): the binary of the work tree with this task's
-statistic line (`lagrange_mpi.f90`, committed with this section; OpenMPI `libmpi.so.40`); the
+**Measured** 2026-11-22 11:09 to 11:44 EET (from `date` and the runs' `simulation start` lines)
+by the implementer, on the stage-6 branch (`lgr/s6-random`, from `b2f438fd`): the binary of the
+work tree with this task's statistic line (`lagrange_mpi.f90`, committed as `e5357166` with the
+first form of this section; OpenMPI `libmpi.so.40`); the
 floors of the new case on `/home/razinka/wt-lgr-ref3` (`0fddec90`) with the inputs of commit
 `6b514083`. Logs in the plan's workspace (`gates/`) and in the implementer's report.
 
@@ -761,10 +762,14 @@ elements of rank 2 with METIS (so no leaving is case 4 there: METIS on 4 process
   the consistency check silent); `floor` PASS (6 / 48 beyond 2 m, 36 / 182 m); `handover
   --min-changed 1` PASS (1,194 changed-process pairs, largest 0.25 m against 2.5 m). The new
   line: `lgr left the basin: particles 595, from an element whose main owner is another process:
-  274`; the dump gives the same 274 independently (`gates/d5_count.py`: particles of class D on
-  each process against the main owner in the flux dump): rank 2 carried them out of elements 62
-  (104), 369 (40), 512 (47), 526 (45), 537 (37) and 168 (1), all with main owner rank 1. With
-  METIS the same line reads 595 / 0.
+  274`; the dump gives the same 274 (`gates/d5_count.py`: particles of class D on each process
+  against the main owner in the flux dump): rank 2 carried them out of elements 62 (104), 369
+  (40), 512 (47), 526 (45), 537 (37) and 168 (1), all with main owner rank 1. The dump reads the
+  same particle state as the line, so it checks the counting and the main-owner lookup; the
+  premise of both (a particle that has left stays with the process that carried it out) holds in
+  the dump: each of the 595 keeps one process and one element over all its 18,904 rows of class
+  D. With METIS the same line reads 595 / 0. The whole D5 run from a commit, with the steps
+  above, is `gates/d5/run_d5.sh` (rerun at 11:44 on `e5357166`: PASS, 274).
 
 **Gates after the change** (same binary): `./check_lgr_mpi.sh CASE 4 ids` and `pos` for A, B, C
 and E PASS (A 24 / 78, 4.34e-4; B 5 / 48, 36 m; C 0 / 19, 9.9e-6; no `tt` difference);
