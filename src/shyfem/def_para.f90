@@ -1571,7 +1571,10 @@
 
 ! |lgrlin|	File name that contains closed lines of the area where
 !		the particles have to be released. If not given, the particles
-!		are released over the whole domain.
+!		are released over the whole domain. A line of the file
+!		that is not a point (a comment or footer line, a flag that
+!		is not an integer) stops the run with a message naming the
+!		file; text after the three values of a point is ignored.
 
         call addfnm('lgrlin',' ')
 
