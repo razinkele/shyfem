@@ -1297,4 +1297,16 @@ plan's amendments and the driver's floor table cite are in `docs/reviews/evidenc
 `testcases/examples/mar_menor/check_lgr_bounds.sh`. The floor script, run from the repository
 against the reference build for case A, gives the floor of the table again (78 / 2.9734e-3
 degrees, the same seven runs) and writes particle files byte-identical to the ones AC8 used
-(`floors_a_rerun.log`).
+(`floors_a_rerun.log`). The other moved scripts were run from the repository on the head
+`e4da5233` (15:23 to 15:32): `t72/t72_ci.sh build` (a tracked-files-only export, CI's own build
+command without NetCDF, `make init`, `bash check_mpi.sh 4`): check 5 with its new modes passes in
+CI's conditions (`pos` 8 / 37 and 3.26e-4 / 4.32e-3; `ids` with the consistency check silent; the
+hand-over check 113 changed-process pairs, largest 5.96e-8 degrees), `MPI GATE: PASS`, 41 s;
+`d5/run_d5.sh`: `ids` PASS, `lgr left the basin: particles 595, from an element whose main owner
+is another process: 274`, the dump count 274, and `part_second.grd` byte-identical to the kept
+one; `t72/t72_c7run.sh`: the release gate with ids and `ids` on 2 and 4 PASS, `CASE 7 CHECK:
+PASS` with the ids of the acceptance run (13 and 73, 86 and 94);
+`testcases/examples/mar_menor/check_lgr_bounds.sh` (no NetCDF flags): `BOUNDS GATE: PASS`, 19 runs
+without a runtime message, 413 compile lines with `-fcheck=bounds`. `t72_acc.sh`, `t72_acc2.sh`,
+`t72_acc3.sh` and `t72_sweep.sh` (20 to 35 minutes each) were checked for syntax and paths only;
+`t72_acc2.sh` and `t72_acc3.sh` share the copy and release-file code of `t72_c7run.sh`.
