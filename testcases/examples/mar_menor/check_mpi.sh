@@ -31,6 +31,11 @@
 #      (shypre -noopti MM_geo.grd).  Logs: mm_lgr_w.pos.gate.log,
 #      mm_lgr_w.ids.gate.log, mm_lgr_w.handover.gate.log, and those of the
 #      driver.
+# The runs of checks 1 to 3 on NP > 1 processes must also show NP
+# processes: the line "shympi initialized: ID NP" once from each rank 0
+# to NP-1 (an mpirun that does not match the binary's MPI, or a binary
+# without MPI, would run NP serial copies, which end and write the
+# serial results).
 #
 # Needs shyfem, shypre, mpirun and python3 on PATH (an OpenMPI build of
 # shyfem), and `make init` done.
@@ -42,11 +47,25 @@ cd "$(dirname "$0")" || exit 1
 rc=0
 fail() { echo "MPI GATE FAIL: $*"; rc=1; }
 mpi() { mpirun --oversubscribe -np "$NP" shyfem "$1.str" > "$1.mpi.log" 2>&1; }
+# ranks_ok LOG: for NP > 1, each of the NP ranks printed once "shympi
+# initialized: ID NP" (shympi_setup, src/utils/shympi/mpi_node.f90, only
+# in a parallel run). An mpirun that does not match the binary's MPI, or
+# a binary without MPI, runs NP serial copies that end and write the
+# serial results, and would pass the checks below.
+ranks_ok() {
+  [ "$NP" -gt 1 ] || return 0
+  awk -v np="$NP" '/shympi initialized:/ { n++; if ($4 == np && $3 >= 0 && $3 < np) seen[$3]++ }
+    END { ok = (n == np); for (i = 0; i < np; i++) if (seen[i] != 1) ok = 0; exit !ok }' "$1"
+}
+ranks_msg() { echo "$1: the log does not show $NP MPI processes ($(grep -c 'shympi initialized:' "$1") 'shympi initialized:' lines, expected one from each rank 0 to $((NP - 1)))"; }
 
 echo "=== 1. mm_hyd_01: serial vs $NP processes"
 if shyfem mm_hyd_01.str > mm_hyd_01.serial.log 2>&1 && grep -q "simulation end" mm_hyd_01.serial.log; then
   cp mm_hyd_01.inf mm_hyd_01.serial.inf
   if mpi mm_hyd_01 && grep -q "simulation end" mm_hyd_01.mpi.log; then
+    if ! ranks_ok mm_hyd_01.mpi.log; then
+      fail "$(ranks_msg mm_hyd_01.mpi.log)"
+    else
     python3 - mm_hyd_01.serial.inf mm_hyd_01.inf <<'PY' || fail "mm_hyd_01: energy lines differ between serial and MPI"
 import sys
 
@@ -69,6 +88,7 @@ worst = max(abs(x - y) / scale[j] for ra, rb in zip(a, b) for j, (x, y) in enume
 print(f"{len(a)} energy lines, largest relative difference {worst:.2e} (limit 1e-4)")
 sys.exit(0 if worst <= 1e-4 else 1)
 PY
+    fi
   else
     tail -5 mm_hyd_01.mpi.log; fail "mm_hyd_01 did not end on $NP processes"
   fi
@@ -81,6 +101,8 @@ if mpi mm_hyd_11; then
   fail "mm_hyd_11 ran on $NP processes: boundary tilting is serial only"
 elif [ "$(grep -c 'not supported with MPI' mm_hyd_11.mpi.log)" != 1 ]; then
   tail -5 mm_hyd_11.mpi.log; fail "mm_hyd_11 stopped without the 'not supported with MPI' message (or printed it more than once)"
+elif ! ranks_ok mm_hyd_11.mpi.log; then
+  fail "$(ranks_msg mm_hyd_11.mpi.log)"
 else
   echo "stopped as expected: $(grep 'not supported with MPI' mm_hyd_11.mpi.log | tr -s ' ')"
 fi
@@ -88,7 +110,7 @@ fi
 echo "=== 3. restart written and read on $NP processes"
 for sim in mm_rst_write mm_rst_read; do
   if mpi "$sim" && grep -q "simulation end" "$sim.mpi.log"; then
-    echo "$sim: ended"
+    if ranks_ok "$sim.mpi.log"; then echo "$sim: ended"; else fail "$(ranks_msg "$sim.mpi.log")"; fi
   else
     tail -5 "$sim.mpi.log"; fail "$sim did not end on $NP processes"
   fi
