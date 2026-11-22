@@ -143,6 +143,10 @@
 	!at start-up, outside any parallel region; only read by the steps
 	!(lag_stk, lag_diff_hor) inside the particle loop of drogue
         logical, save :: blgr_sphe = .false.
+	!negative vertical diffusivities set to 0 by diff_get_vert (OMP
+	!atomic in the particle loop; written once at the end of the particle
+	!run by lgr_vdiff_stats, #231)
+        integer(kind=8), save :: lgr_nvdiff_neg = 0
 
         integer, save :: ilagr                  !type of lagrangian simulation
         integer, save :: nbdy                   !total number of particles

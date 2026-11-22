@@ -417,25 +417,30 @@
 	zp = min(zp,htotz)
 	zp = max(zp,0.)
 
-	! exxpp is given nmax points of hle and wdr from index 0 on. With two
-	! or more layers nmax = lmax, the interfaces hle(0:lmax-1): the bottom
-	! interface hle(lmax) is not used, as always (kept: changing it would
-	! change every run with ilagr = 3). An element with one layer has the
-	! two interfaces hle(0:1); with nmax = lmax = 1 the linear interpolation
-	! (nintp = 2) moved its window to start one point before hle(0) and
-	! read the words before hle and wdr, and the run stopped with a
-	! division by zero in intp_neville (#231): nmax = 2 there
-	nmax = max(lmax,2)
+	! exxpp is given the nmax = lmax + 1 interfaces hle(0:lmax) of the
+	! element, from the surface to the bottom, with the diffusivities
+	! wdr(0:lmax) there, and interpolates linearly between the two
+	! interfaces around zp (0 <= zp <= htotz = hle(lmax)). Until #231 it
+	! was given nmax = lmax: the bottom interface was not used, so in the
+	! bottom layer the diffusivity was extrapolated from the two
+	! interfaces above (it could be negative, and its square root below
+	! stopped the run), and in an element with one layer the window
+	! started one point before hle(0) and read the words before hle and
+	! wdr (a division by zero in intp_neville)
+	nmax = lmax + 1
 	wdr(0:lmax) = wde(0:lmax,iel)
 	iact = 0
 	wdzp = exxpp(2,nmax,hle,wdr,zp,iact)
 
-	! below hle(lmax-1) the value is extrapolated from the two interfaces
-	! above (see above) and can be negative; its square root below then
-	! stopped the run (SIGFPE in a build that traps floating-point errors,
-	! the default one; #231). A negative value is taken as 0, no random
-	! step: only a step that stopped such a build changes
-	if( wdzp < 0. ) wdzp = 0.
+	! guard: an interpolation between the non-negative diffusivities of
+	! two interfaces is not negative; a negative value (none in the test
+	! cases; counted in lgr_nvdiff_neg and written at the end of the
+	! particle run by lgr_vdiff_stats) is taken as 0, no random step
+	if( wdzp < 0. ) then
+!$OMP ATOMIC
+	  lgr_nvdiff_neg = lgr_nvdiff_neg + 1
+	  wdzp = 0.
+	end if
 
 	!-----------------------------------------------
 	! compute vertical velocity due to diffusion
@@ -457,6 +462,28 @@
 
         end subroutine diff_get_vert
 
+
+!******************************************************************
+
+        subroutine lgr_vdiff_stats
+
+! writes once, at the end of the particle run, how often diff_get_vert
+! set a negative interpolated vertical diffusivity to 0 (#231); only in
+! a run with vertical diffusion (ilagr = 3, a serial run: ilagr = 3 stops
+! on several processes). Called by lagrange outside any parallel region
+
+        use mod_lagrange
+
+        implicit none
+
+        logical, save :: bdone = .false.
+
+        if( bdone .or. .not. bvdiff ) return
+        bdone = .true.
+        write(6,'(a,i0)') ' lgr vertical diffusion: negative'		&
+     &		//' diffusivities set to 0: ',lgr_nvdiff_neg
+
+        end subroutine lgr_vdiff_stats
 
 !******************************************************************
 ! Compute vertical diffusivity in element and random walk time step

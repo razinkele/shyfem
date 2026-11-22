@@ -362,6 +362,7 @@
 	end if
 	call lgr_mpi_relocate_step			!levdbg >= 3
 	if( dtime >= dtlend ) call lgr_mpi_relocate_stats	!once, levdbg >= 3
+	if( dtime >= dtlend ) call lgr_vdiff_stats	!once, ilagr = 3 only
 
 !---------------------------------------------------------------
 ! sediment module

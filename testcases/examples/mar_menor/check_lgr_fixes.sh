@@ -45,8 +45,12 @@
 #             called by diff_get_vert for a particle in an element with one
 #             layer, and with only that corrected, in diff_get_vert at the
 #             square root of a negative diffusivity extrapolated in the
-#             bottom layer of an element with two layers), and its particle
-#             file must hold only finite values,
+#             bottom layer of an element with two layers); its log line "lgr
+#             vertical diffusion: negative diffusivities set to 0: N" must
+#             have N = 0 (with the bottom interface in the interpolation no
+#             diffusivity is negative; a fix that only set the negative
+#             values to 0 gave about 1.07 million in one day); and its
+#             particle file must hold only finite values,
 #             active particles with an element in 1..nel, a layer in 1..nlv
 #             and a depth z in the layer within 0..1.
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
@@ -298,6 +302,10 @@ if [ "$MODE" = ilagr3 ]; then
   grep -q "tilt" "$W/lgr_ilagr3.str" && fail "tilt lines left in lgr_ilagr3.str"
   echo "=== mm_hyd_41 (no tilt, one day) with ilagr = 3, serially"
   run lgr_ilagr3 lgr_ilagr3.log shyfem || fail "the ilagr = 3 run did not end"
+  line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3.log")"
+  echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log}"
+  nneg="$(echo "$line" | sed -n 's/.*set to 0: *\([0-9][0-9]*\).*/\1/p')"
+  [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
 import math, struct, sys
