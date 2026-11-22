@@ -3,7 +3,8 @@
 
 usage: lgr_compare.py A.lgr.shy B.lgr.shy --mode {pos|ids} [--tol FLOAT]
                       [--tol-hl FLOAT] [--max-beyond-last N]
-                      [--max-largest D] [--same-counts] [--nel N --nlv N]
+                      [--max-largest D] [--max-tt-differ N]
+                      [--same-counts] [--nel N --nlv N]
        lgr_compare.py FILE.lgr.shy --summary
        lgr_compare.py FILE.lgr.shy --dims
 
@@ -26,6 +27,12 @@ Everything else gates as without the options (ids per block, output times,
 NaN positions, lb, z, type, tt, s, custom values).  A line "floor: ..."
 states each test with its value, its limit and its verdict.  Without the
 two options nothing changes.
+
+--max-tt-differ N (--mode pos only): a time tt that differs is then no
+failure by itself; the comparison fails if more than N particles (ids
+matched in the same block, at any output) have a different tt.  The count
+is printed per block and output ("tt differs K") and in a line "tt: ...".
+Without the option tt is compared exactly, as before.
 
 --dims prints "nkn N nel E nlv L" from the model header of the file (its
 third record: nkn, nel, npr, nlv, nvar); used to pass --nel and --nlv.
@@ -183,12 +190,13 @@ def exceeds(a, b, tol):
     return not abs(a - b) <= tol
 
 
-def compare_pos(pa, pb, tol, tol_hl, floor=False):
+def compare_pos(pa, pb, tol, tol_hl, floor=False, tt_floor=False):
     """Return (ok, onlyA, onlyB, max_dx, max_dy, lb_ok, z_ok, n_ie, detail,
-    dist, n_hl_skip): dist maps every common id to max(|dx|, |dy|) (NaN if
-    either is NaN); with floor a position beyond tol is no failure by itself
-    (NaN still is) and hl is compared only if ie is equal (n_hl_skip pairs
-    are left out)."""
+    dist, n_hl_skip, tt_ids): dist maps every common id to max(|dx|, |dy|)
+    (NaN if either is NaN); with floor a position beyond tol is no failure
+    by itself (NaN still is) and hl is compared only if ie is equal
+    (n_hl_skip pairs are left out); tt_ids are the common ids whose tt
+    differs, with tt_floor no failure by themselves (NaN still is)."""
     only_a = set(pa) - set(pb)
     only_b = set(pb) - set(pa)
     max_dx = max_dy = 0.0
@@ -196,6 +204,7 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False):
     n_ie = 0
     n_hl_skip = 0
     detail = []
+    tt_ids = set()
     dist = {}
     for pid in sorted(set(pa) & set(pb)):
         a, b = pa[pid], pb[pid]
@@ -221,7 +230,11 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False):
         if a["type"] != b["type"]:
             bad.append("type %d/%d" % (a["type"], b["type"]))
         if exceeds(a["tt"], b["tt"], 0.0):
-            bad.append("tt %r/%r" % (a["tt"], b["tt"]))
+            tt_ids.add(pid)
+            if not tt_floor:
+                bad.append("tt %r/%r" % (a["tt"], b["tt"]))
+            elif math.isnan(a["tt"]) or math.isnan(b["tt"]):
+                bad.append("tt NaN")
         if exceeds(a["s"], b["s"], 0.0):
             bad.append("s %.9g/%.9g" % (a["s"], b["s"]))
         if floor and a["ie"] != b["ie"]:
@@ -238,7 +251,7 @@ def compare_pos(pa, pb, tol, tol_hl, floor=False):
                           % (pid, "; ".join(bad), dx, dy, dz, a["lb"], b["lb"]))
     ok = not (only_a or only_b or detail)
     return (ok, only_a, only_b, max_dx, max_dy, lb_ok, z_ok, n_ie, detail,
-            dist, n_hl_skip)
+            dist, n_hl_skip, tt_ids)
 
 
 def floor_report(beyond_at, worst, args):
@@ -336,6 +349,8 @@ def run(args):
     map_a = {t[0]: t[1] for t in times_a}
     map_b = {t[0]: t[1] for t in times_b}
     floor = args.max_beyond_last is not None or args.max_largest is not None
+    tt_floor = args.max_tt_differ is not None
+    tt_all = set()           # ids whose tt differs at some output (tt floor)
     beyond_at = {}           # ids beyond --tol per shared time (floor test)
     worst = (0.0, None)      # largest distance at any output, its time
     for dtime in sorted(set(map_a) | set(map_b)):
@@ -357,7 +372,8 @@ def run(args):
             head = "t=%r %-8s nA=%d nB=%d" % (dtime, name, len(pa), len(pb))
             if args.mode == "pos":
                 (good, oa, ob, mdx, mdy, lbok, zok, n_ie, detail, dist,
-                 n_hl_skip) = compare_pos(pa, pb, args.tol, args.tol_hl, floor)
+                 n_hl_skip, tt_ids) = compare_pos(pa, pb, args.tol, args.tol_hl,
+                                                  floor, tt_floor)
                 tail = ""
                 if floor:
                     over = {pid for pid, d in dist.items() if not d <= args.tol}
@@ -368,6 +384,9 @@ def run(args):
                             worst = (d, dtime)
                     tail = (", beyond tol %d, hl not gated (ie differs) %d"
                             % (len(over), n_hl_skip))
+                if tt_floor:
+                    tt_all |= tt_ids
+                    tail += ", tt differs %d" % len(tt_ids)
                 print("%s only in A: %s only in B: %s max|dx|=%.4e max|dy|=%.4e "
                       "lb %s z %s ie differs (info): %d%s"
                       % (head, fmt_ids(oa), fmt_ids(ob), mdx, mdy,
@@ -396,6 +415,12 @@ def run(args):
                     ok = False
     if args.mode == "pos" and floor:
         ok = floor_report(beyond_at, worst, args) and ok
+    if args.mode == "pos" and tt_floor:
+        bad = len(tt_all) > args.max_tt_differ
+        print("tt: particles whose tt differs (any output, any block): %d %s %d: %s"
+              % (len(tt_all), ">" if bad else "<=", args.max_tt_differ,
+                 "FAIL" if bad else "ok"))
+        ok = ok and not bad
     print("LGR COMPARE: %s (%d output times in A, %d in B)"
           % ("PASS" if ok else "FAIL", len(times_a), len(times_b)))
     return 0 if ok else 1
@@ -418,6 +443,9 @@ def main():
     ap.add_argument("--max-largest", type=float, default=None,
                     help="--mode pos: floor test, fail if the largest distance at"
                          " any output exceeds D (or is NaN)")
+    ap.add_argument("--max-tt-differ", type=int, default=None,
+                    help="--mode pos: a differing time tt is no failure by itself;"
+                         " fail if more than N particles have a different tt")
     ap.add_argument("--same-counts", action="store_true",
                     help="--mode ids: also require equal counts per block")
     ap.add_argument("--nel", type=int, help="--mode ids: check 1 <= ie <= nel")
@@ -430,6 +458,10 @@ def main():
     if (args.max_beyond_last is not None or args.max_largest is not None) \
             and args.mode != "pos":
         ap.error("--max-beyond-last and --max-largest need --mode pos")
+    if args.max_tt_differ is not None and args.mode != "pos":
+        ap.error("--max-tt-differ needs --mode pos")
+    if args.max_tt_differ is not None and args.max_tt_differ < 0:
+        ap.error("--max-tt-differ must be >= 0")
     if args.max_beyond_last is not None and args.max_beyond_last < 0:
         ap.error("--max-beyond-last must be >= 0")
     if args.max_largest is not None and not args.max_largest >= 0:

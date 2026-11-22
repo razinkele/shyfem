@@ -37,8 +37,10 @@ def header(decoy, real=False):
     out += rec(struct.pack('<i', NCUST))
     return out
 
+CUR_TT = {}   # tt shift per id at the output being built (build's tt_shift)
+
 def particle(pid, x, y, z=-1.5, lb=1, ie=3, typ=1, hl=0.25):
-    r1 = struct.pack('<iidfi', pid, typ, 100.0 + pid, 0.5, ie)
+    r1 = struct.pack('<iidfi', pid, typ, 100.0 + pid + CUR_TT.get(pid, 0.0), 0.5, ie)
     r2 = struct.pack('<fffif', x, y, z, lb, hl)
     r3 = struct.pack('<%df' % NCUST, *([0.5 * pid] * NCUST))
     return rec(r1) + rec(r2) + rec(r3)
@@ -49,11 +51,14 @@ def block(dtime, iwhat, parts):
 
 def build(path, shift_id=None, drop_id=None, reverse=False, decoy=False,
           nan_id=None, type_id=None, times=(0.0, 3600.0), moves=None,
-          real=False):
+          real=False, tt_shift=None):
     # moves: {dtime: {id: (dx, ie, hl)}} shifts x of an active particle by
     # dx at that output and writes its element ie and its depth hl
+    # tt_shift: {dtime: {id: dt}} adds dt to the time tt of that particle
+    global CUR_TT
     out = header(decoy, real)
     for dtime in times:
+        CUR_TT = (tt_shift or {}).get(dtime, {})
         active = [(i, 0.1 * i, 0.2 * i) for i in range(1, 9)]
         inserted = [(i, 0.1 * i, 0.2 * i, -1.5, 1, 3) for i in (1, 2, 3)]
         exited = [(9, 0.9, 1.8, -1.5, 1, 4)]
@@ -94,6 +99,8 @@ build(d + '/t10_floor.lgr.shy', moves={0.0: {4: (8e-5, 3, 0.25)},
 # id 2 keeps its element at the last output but its depth hl differs
 build(d + '/t11_hl.lgr.shy', moves={3600.0: {2: (3e-5, 3, 0.75)}})
 build(d + '/t12_header.lgr.shy', real=True)
+# tt: id 5 at the first output; ids 5, 6 (active) and 9 (exited) at the last
+build(d + '/t13_tt.lgr.shy', tt_shift={0.0: {5: 300.0}, 3600.0: {5: 300.0, 6: 300.0, 9: 300.0}})
 with open(d + '/t1.lgr.shy', 'rb') as f:
     whole = f.read()
 with open(d + '/t9_truncated.lgr.shy', 'wb') as f:
@@ -156,6 +163,18 @@ check "missing id fails under the floors" 1 "only in A: 7" \
     "$t/t1.lgr.shy" "$t/t3_missing_id.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 100 --max-largest 1
 check "floor options need --mode pos" 2 "" \
     "$t/t1.lgr.shy" "$t/t1.lgr.shy" --mode ids --max-largest 1
+
+# --max-tt-differ: particles whose time tt differs, against a floor
+check "tt differs, exact by default" 1 "id 5 differs \(tt 105.0/405.0\)" \
+    "$t/t1.lgr.shy" "$t/t13_tt.lgr.shy" --mode pos --tol 0
+check "tt differs within the floor, counted per output" 0 "t=0.0 active .*, tt differs 1.*t=3600.0 active .*, tt differs 2.*t=3600.0 exited .*, tt differs 1.*tt: particles whose tt differs \(any output, any block\): 3 <= 3: ok" \
+    "$t/t1.lgr.shy" "$t/t13_tt.lgr.shy" --mode pos --tol 0 --max-tt-differ 3
+check "tt floor exceeded" 1 "tt: particles whose tt differs \(any output, any block\): 3 > 2: FAIL" \
+    "$t/t1.lgr.shy" "$t/t13_tt.lgr.shy" --mode pos --tol 0 --max-tt-differ 2
+check "tt floor together with the position floors" 0 "3 <= 3: ok" \
+    "$t/t1.lgr.shy" "$t/t13_tt.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 0 --max-largest 0 --max-tt-differ 3
+check "tt floor needs --mode pos" 2 "" \
+    "$t/t1.lgr.shy" "$t/t1.lgr.shy" --mode ids --max-tt-differ 1
 
 # --dims: nel and nlv of the model header
 check "dims of a model header" 0 "nkn 1402 nel 2545 nlv 19" "$t/t12_header.lgr.shy" --dims

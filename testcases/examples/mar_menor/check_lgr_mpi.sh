@@ -127,12 +127,17 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
 # metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
 # section "Task 3.7", table "Position floors on the new reference" (measured
-# on /home/razinka/wt-lgr-ref3, commit 0fddec90).  Never change a value to
-# make a run pass.  Mode pos uses the same floors on the particle file.
+# on /home/razinka/wt-lgr-ref3, commit 0fddec90; its log is
+# gates/floors_ref3.log in the plan's workspace).  The distances are the
+# measured envelopes rounded UP, never below the measurement: A 2.9734e-3 ->
+# 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E 4.2915e-3 -> 4.3e-3
+# (until Task 5.1 A and C were rounded down, 2.97e-3 and 7.1e-3, so that
+# perturbed serial runs exceeded them).  Never change a value to make a run
+# pass.  Mode pos uses the same floors on the particle file.
 case "$CASE" in
-  mm_lgr_a) FLOOR_N=78; FLOOR_D=2.97e-3 ;;
+  mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3 ;;
   mm_lgr_b) FLOOR_N=48; FLOOR_D=182 ;;
-  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.1e-3 ;;
+  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3 ;;
   mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3 ;;
   *) FLOOR_N=""; FLOOR_D="" ;;
 esac

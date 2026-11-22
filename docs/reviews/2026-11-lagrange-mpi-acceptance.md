@@ -282,12 +282,16 @@ a relative +-1e-5, +-7e-6 and +-4e-6; the floor is the envelope of the six;
 compared with `lgr_dbg_compare.py part --by key`, limit 1e-5 degrees, case B
 2 m):
 
-| Case | Limit | Particles | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Floor: beyond / largest |
+| Case | Limit | Particles | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Floor: beyond / largest (table of the driver; measured envelope) |
 |---|---|---|---|---|---|
-| A | 1e-5 degrees | 145 | 51 to 78 | 7.2e-4 to 2.97e-3 degrees | 78 / 2.97e-3 degrees |
-| B | 2 m | 408 | 13 to 48 | 59 to 182 m | 48 / 182 m |
-| C | 1e-5 degrees | 648 | 12 to 19 | 7.3e-5 to 7.1e-3 degrees | 19 / 7.1e-3 degrees |
-| E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.3e-3 degrees | 33 / 4.3e-3 degrees |
+| A | 1e-5 degrees | 145 | 51 to 78 | 7.2e-4 to 2.9734e-3 degrees | 78 / 2.98e-3 degrees (measured 2.9734e-3) |
+| B | 2 m | 408 | 13 to 48 | 59 to 181.75 m | 48 / 182 m (measured 181.75) |
+| C | 1e-5 degrees | 648 | 12 to 19 | 7.3e-5 to 7.1106e-3 degrees | 19 / 7.12e-3 degrees (measured 7.1106e-3) |
+| E | 1e-5 degrees | 145 | 25 to 33 | 1.1e-3 to 4.2915e-3 degrees | 33 / 4.3e-3 degrees (measured 4.2915e-3) |
+
+The table values are the measured envelopes rounded up. Until Task 5.1 the driver held A 2.97e-3
+and C 7.1e-3 (rounded down, below the measurement); the gates of stage 3 quoted below ran
+against those values and stay as recorded.
 
 Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on `/home/razinka/wt-lgr-ref3`, 28 runs, all ended; the gate script and its log are in the plan's workspace (`gates/floors.sh`, `gates/floors_ref3.log`).
 
@@ -315,9 +319,11 @@ answer; 39 went to another process on 4 and on 8 processes; the resolution costs
 5.4 s run on 4 processes and 0.26 s on 8.
 
 **Positions against the floors** (4 processes; beyond 1e-5 degrees, case B 2 m, at the last
-output / largest distance at any output): A 24 / 4.3e-4 degrees (floor 78 / 2.97e-3); B 5 / 36 m
-(floor 48 / 182 m); C 0 / 9.9e-6 degrees (floor 19 / 7.1e-3); E 16 / 1.2e-3 degrees (floor
-33 / 4.3e-3); on 2 and 8 processes E reaches 1.09e-3 degrees. No pair at distance 0 has a
+output / largest distance at any output): A 24 / 4.3e-4 degrees (floor 78 / 2.97e-3 then,
+measured 2.9734e-3, 2.98e-3 since Task 5.1); B 5 / 36 m (floor 48 / 182 m, measured 181.75 m);
+C 0 / 9.9e-6 degrees (floor 19 / 7.1e-3 then, measured 7.1106e-3, 7.12e-3 since Task 5.1);
+E 16 / 1.2e-3 degrees (floor 33 / 4.3e-3, measured 4.2915e-3); on 2 and 8 processes E reaches
+1.09e-3 degrees. No pair at distance 0 has a
 different crossing count.
 
 **The hand-over check, by replay** (`./check_lgr_mpi.sh CASE NP handover`; jump test: twice the
@@ -392,12 +398,12 @@ passes, and no process aborts or hangs.
 case B 2 m, at the last output / largest distance at any output; all twelve pass, no
 unmatched particle, no layer or z difference):
 
-| Case | 2 processes | 4 processes | 8 processes | Floor |
+| Case | 2 processes | 4 processes | 8 processes | Floor (then; measured envelope) |
 |---|---|---|---|---|
-| A | 25 / 4.38e-4 | 24 / 4.34e-4 | 27 / 4.35e-4 | 78 / 2.97e-3 degrees |
-| B | 5 / 103.25 m | 5 / 36 m | 4 / 103.25 m | 48 / 182 m |
-| C | 0 / 2.72e-5 | 0 / 9.89e-6 | 0 / 2.72e-5 | 19 / 7.1e-3 degrees |
-| E | 18 / 1.09e-3 | 16 / 1.16e-3 | 18 / 1.09e-3 | 33 / 4.3e-3 degrees |
+| A | 25 / 4.38e-4 | 24 / 4.34e-4 | 27 / 4.35e-4 | 78 / 2.97e-3 degrees (measured 2.9734e-3; 2.98e-3 since Task 5.1) |
+| B | 5 / 103.25 m | 5 / 36 m | 4 / 103.25 m | 48 / 182 m (measured 181.75) |
+| C | 0 / 2.72e-5 | 0 / 9.89e-6 | 0 / 2.72e-5 | 19 / 7.1e-3 degrees (measured 7.1106e-3; 7.12e-3 since Task 5.1) |
+| E | 18 / 1.09e-3 | 16 / 1.16e-3 | 18 / 1.09e-3 | 33 / 4.3e-3 degrees (measured 4.2915e-3) |
 
 **Spec section 7** (the statistic lines at `levdbg >= 3`):
 - Case 1: most hand-overs at a side of one particle in one step: 2 in case B on 4, 8 and 16
@@ -477,7 +483,10 @@ processes) of `a4335dfc` run without a runtime message or a trap.
 branch (`lgr/s5-output`): the gates on a build of the working tree that became commit
 `8113ed74` (the commit changes one comment line against it; its own build was checked at the
 end: case A on 4 processes writes the same particle file byte for byte, serial A is
-unchanged, `ids` B on 4 passes), OpenMPI `libmpi.so.40`.
+unchanged, `ids` B on 4 passes), OpenMPI `libmpi.so.40`. After the controller's rulings
+(09:50 to 09:56, tools only, same binary): AC8 within one printed digit of the envelope, `tt`
+counted against a floor for the one-off copy of case B, and the floor table rounded up; the
+numbers below are those of the reruns.
 
 **What changed.** On several processes `lagrange` calls `lgr_mpi_output` at every output time
 on every process; rank 0 gathers the records of the three blocks (active, inserted, exited),
@@ -494,29 +503,33 @@ and `... pos`; every inserted block equals serial exactly (largest |dx|, |dy| 0,
 differs) in all 12 runs, and in the active and exited blocks every pair at distance 0 has the
 same (global) element (A on 4: 9,933 pairs; B on 4: 46,690; the case-B copy below: 2,349,585):
 
-| Case | Processes | ids | pos | Beyond the limit at the last output / floor | Largest distance at any output / floor |
+| Case | Processes | ids | pos | Beyond the limit at the last output / floor | Largest distance at any output / floor (measured envelope) |
 |---|---|---|---|---|---|
-| A | 2 | PASS | PASS | 25 / 78 | 4.38e-4 / 2.97e-3 degrees |
-| A | 4 | PASS | PASS | 24 / 78 | 4.34e-4 / 2.97e-3 degrees |
-| A | 8 | PASS | PASS | 27 / 78 | 4.35e-4 / 2.97e-3 degrees |
-| B | 2 | PASS | PASS | 5 / 48 | 103 / 182 m |
-| B | 4 | PASS | PASS | 5 / 48 | 36 / 182 m |
-| B | 8 | PASS | PASS | 4 / 48 | 103 / 182 m |
-| C | 2 | PASS | PASS | 0 / 19 | 2.7e-5 / 7.1e-3 degrees |
-| C | 4 | PASS | PASS | 0 / 19 | 9.9e-6 / 7.1e-3 degrees |
-| C | 8 | PASS | PASS | 0 / 19 | 2.7e-5 / 7.1e-3 degrees |
-| E | 2 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
-| E | 4 | PASS | PASS | 16 / 33 | 1.16e-3 / 4.3e-3 degrees |
-| E | 8 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
+| A | 2 | PASS | PASS | 25 / 78 | 4.38e-4 / 2.98e-3 degrees (2.9734e-3) |
+| A | 4 | PASS | PASS | 24 / 78 | 4.34e-4 / 2.98e-3 degrees (2.9734e-3) |
+| A | 8 | PASS | PASS | 27 / 78 | 4.35e-4 / 2.98e-3 degrees (2.9734e-3) |
+| B | 2 | PASS | PASS | 5 / 48 | 103 / 182 m (181.75) |
+| B | 4 | PASS | PASS | 5 / 48 | 36 / 182 m (181.75) |
+| B | 8 | PASS | PASS | 4 / 48 | 103 / 182 m (181.75) |
+| C | 2 | PASS | PASS | 0 / 19 | 2.7e-5 / 7.12e-3 degrees (7.1106e-3) |
+| C | 4 | PASS | PASS | 0 / 19 | 9.9e-6 / 7.12e-3 degrees (7.1106e-3) |
+| C | 8 | PASS | PASS | 0 / 19 | 2.7e-5 / 7.12e-3 degrees (7.1106e-3) |
+| E | 2 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees (4.2915e-3) |
+| E | 4 | PASS | PASS | 16 / 33 | 1.16e-3 / 4.3e-3 degrees (4.2915e-3) |
+| E | 8 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees (4.2915e-3) |
 
-Applied to the particle files of the six perturbed serial runs of Task 3.7 (`gates/floors_runs/`,
-base against each), the same `pos` test fails four comparisons on the largest distance, because
-the table rounds two measured envelopes down: A `-7e-6` gives 2.97344e-3 against the table's
-2.97e-3 (envelope in `gates/floors_ref3.log`: 2.9734e-3), C `-1e-5`, `-7e-6` and `-4e-6` give
-7.1106e-3 against 7.1e-3 (envelope 7.1106e-3); the particle file gives the dump's values, so the
-dump's `floor` mode fails the same runs. In case B three runs fail on the time `tt` of one or two
-particles that leave the basin one time step apart (`tt` is compared exactly). The MPI runs above
-are far from both (largest distance at most 4.4e-4 degrees in A, 2.7e-5 in C).
+`tt` is compared exactly in all 24 runs (no `tt` difference). `./check_lgr_mpi.sh mm_lgr_a 4
+floor` and `mm_lgr_c 4 floor` with the new table: PASS (24 / 78, 4.34e-4 / 2.98e-3; 0 / 19,
+9.9e-6 / 7.12e-3).
+
+Self-check of the table: each of the 24 perturbed serial runs of Task 3.7
+(`gates/floors_runs/`) against its base run with `lgr_compare.py --mode pos` (`--tol 1e-5`,
+case B `--tol 2`) and the table's floors: both floor tests pass in all 24 (largest distances up
+to 2.97344e-3 in A, 181.75 m in B, 7.1106e-3 in C, 4.29153e-3 in E; the particle file gives the
+dump's values). 21 comparisons pass as a whole; the three case-B runs `+1e-5`, `+7e-6`, `+4e-6`
+fail only on the exact time `tt` of 2 particles each (exit times one step apart), and pass with
+`--max-tt-differ 2`. With the old table (A 2.97e-3, C 7.1e-3, rounded down) four of them
+exceeded the largest-distance floor.
 
 **AC7.** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`: `SERIAL GUARD: PASS`, every
 file identical (lgr.shy, hydro.shy, inf of A, B, C, E; hydro.shy, inf of D and of
@@ -535,15 +548,18 @@ in all 96 records, the three type files have the same times. Values beyond the e
 | 2 | 2 (1e-5 / 2e-5) | 0 (1e-5 / 1e-5) | 1 (0.001 / 0.004) | 0 | 0 | 0 |
 | 3 | 1 (1e-5 / 2e-5) | 0 (2e-5 / 3e-5) | 0 (0.030 / 0.032) | 0 | 0 | 0 |
 
-`LGMEAN COMPARE: FAIL` as the rule stands: 5 of the 1,728 values are beyond their envelope, each
-by one unit of the last printed decimal (1e-5 degrees, 1e-3 m), at times where all six perturbed
-runs print the same digits as the base (envelope 0); none is beyond the envelope plus one
-printed unit. Open for a ruling.
+Five of the 1,728 values are beyond their envelope, each by one unit of the last printed
+decimal (1e-5 degrees, 1e-3 m), at times where all six perturbed runs print the same digits as
+the base (envelope 0). Ruling (controller): a value passes if it is within the envelope plus one
+unit of its last printed decimal (the printed means are rounded; an envelope of 0 there is a
+rounding, not physics). With that rule (`lgr_lgmean_compare.py`, rerun 09:48): 1,728 values
+compared, 1,723 within the envelope, 1,728 within the envelope plus one unit, 0 beyond:
+`LGMEAN COMPARE: PASS`.
 
 **Edge cases (Task 5.2).** Case B with `idtl = '30m'` in `$lagrg` (and `nbdymax = 100000`; 96
 releases of 1,003 particles, 96,288 in all, two releases between outputs): every one of the 48
 inserted blocks holds exactly the ids released since the previous output, equal as sets in the
-serial and the 4-process file; `ids` on 4 PASS. `pos` on 4 FAILs: against case B's floors (202 >
+serial and the 4-process file; `ids` on 4 PASS. Against case B's floors `pos` on 4 fails (202 >
 48 beyond 2 m at the last output, 499 m > 182 m), which were measured on one release of 1,003
 particles, and on the time `tt` of 4 particles (one whose serial time stays while the MPI time
 advances, consistent with a particle resting in a dry element in one run only; two whose times
@@ -552,8 +568,15 @@ position). The copy's own floors measured the same way on `/home/razinka/wt-lgr-
 against six perturbed serial runs, particle file): 577 to 1,258 beyond 2 m at the last output,
 745 to 6,118 m largest distance, `tt` differing for 26 to 75 particles, 0 to 4 particles in
 another block (active in one run, exited in the other) at some output; the 4-process run is
-within all of them (202, 499 m, 4, 0). Open for a ruling (the exact
-`tt` of `pos`). Case A with `itranf` one hour after `itanf` (release at the first output time):
+within all of them (202, 499 m, 4, 0); with `tt` compared exactly the copy fails, as the
+perturbed serial runs do. Ruling (controller): the copy is a one-off configuration gated against its own
+floors (`gates/case_b_idtl30m/` in the plan's workspace: the STR file and the measured
+envelope), `lgr_compare.py --max-tt-differ N` counts the particles whose `tt` differs against a
+floor (without it `tt` stays exact; the shipped cases keep it exact). Rerun 09:50 to 09:54:
+`./check_lgr_mpi.sh mm_lgr_b 4 pos --max-beyond-last 1258 --max-largest 6118 --max-tt-differ
+75`: PASS (202, 499 m, 4); `ids` on 4: PASS; the 48 inserted blocks again exactly the ids
+released since the previous output, equal in both files (largest |dx|, |dy| 0, no element
+differs). Case A with `itranf` one hour after `itanf` (release at the first output time):
 `pos` and `ids` on 4 PASS, no output time before the release in either file; with `itranf` at
 01:30 (release between outputs) both files skip the 01:00 output (nothing written while no
 particle exists) and both PASS.

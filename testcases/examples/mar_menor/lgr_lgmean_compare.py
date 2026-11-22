@@ -18,14 +18,18 @@ distrubution over time" of lgrelab (per record: n_active, n_new, n_exit,
 n_beach, n_type) is equal line by line, and both runs have the same type
 files with the same times.  The values may differ by no more than the
 envelope of BASE against the perturbed runs PERT: for every type, time and
-column, |SERIAL - MPI| <= max over PERT of |BASE - PERT| (BASE and every
-PERT must have the structure of SERIAL).  The differences are taken on the
-printed decimals exactly (no rounding noise).  The tool prints one table row
-per type and column: values compared, the largest |SERIAL - MPI|, the
-largest envelope value, the values beyond the envelope (gated), and, for
-information only, the values beyond the envelope by more than one unit of
-the last printed decimal (beyond+1u: 1e-5 for x and y, 1e-3 for the
-others); then "LGMEAN COMPARE: PASS" or "FAIL".
+column, |SERIAL - MPI| <= max over PERT of |BASE - PERT| + one unit of the
+last printed decimal of the value (1e-5 for x and y, 1e-3 for the others;
+BASE and every PERT must have the structure of SERIAL).  The unit is
+allowed because the printed means are rounded: a difference far below the
+print resolution can flip the last digit, and where every perturbed run
+prints the base's digits the envelope is 0 by rounding.  The differences
+are taken on the printed decimals exactly (no rounding noise).  The tool
+prints one table row per type and column: values compared, the largest
+|SERIAL - MPI|, the largest envelope value, the values within the envelope,
+the values within the envelope plus one unit (these include the former),
+the values beyond (gated: must be 0); a row "all" sums the counts; then
+"LGMEAN COMPARE: PASS" or "FAIL".
 
 Exit status: 0 = pass, 1 = fail, 2 = an input cannot be read or lgrelab
 failed.
@@ -127,14 +131,15 @@ def compare(serial, mpi, base, perts):
         if msg:
             print("structure of %s differs from serial: %s" % (label, msg))
             return 1
-    print("%-5s %-8s %7s %14s %14s %7s %10s" % ("type", "column", "values",
-                                              "max|ser-mpi|", "max envelope",
-                                              "beyond", "beyond+1u"))
+    print("%-5s %-8s %7s %14s %14s %10s %13s %7s"
+          % ("type", "column", "values", "max|ser-mpi|", "max envelope",
+             "within env", "within env+1u", "beyond"))
+    tot = [0, 0, 0, 0]
     for typ in sorted(serial[1]):
         ncol = len(serial[1][typ][0][1]) if serial[1][typ] else 0
         for col in range(ncol):
             name = COLS[col] if col < len(COLS) else "c%d" % (col - len(COLS) + 1)
-            nval = nbad = nbad1 = 0
+            nval = nenv = nunit = nbad = 0
             dmax = emax = decimal.Decimal(0)
             for i, (_t, vs) in enumerate(serial[1][typ]):
                 d = abs(vs[col] - mpi[1][typ][i][1][col])
@@ -144,41 +149,55 @@ def compare(serial, mpi, base, perts):
                 nval += 1
                 dmax = max(dmax, d)
                 emax = max(emax, env)
-                if d > env:
+                if d <= env:
+                    nenv += 1
+                if d <= env + unit:
+                    nunit += 1
+                else:
                     nbad += 1
-                if d > env + unit:
-                    nbad1 += 1
-            print("%-5d %-8s %7d %14s %14s %7d %10d"
-                  % (typ, name, nval, dmax, emax, nbad, nbad1))
+            print("%-5d %-8s %7d %14s %14s %10d %13d %7d"
+                  % (typ, name, nval, dmax, emax, nenv, nunit, nbad))
+            tot = [tot[0] + nval, tot[1] + nenv, tot[2] + nunit, tot[3] + nbad]
             if nbad:
                 ok = False
+    print("%-14s %7d %30s %10d %13d %7d" % ("all", tot[0], "", tot[1], tot[2],
+                                           tot[3]))
     print("LGMEAN COMPARE: %s" % ("PASS" if ok else "FAIL"))
     return 0 if ok else 1
 
 
 def selftest():
-    """Synthetic outputs: one pass and one fail."""
+    """Synthetic outputs: values within the envelope and within one printed
+    unit of it pass, values two units beyond it fail."""
     tmp = tempfile.mkdtemp(prefix="lgmean_selftest.")
     try:
-        def make(name, x, y):
+        def make(name, x, y, hl=2.766):
             d = os.path.join(tmp, name)
             os.mkdir(d)
             with open(os.path.join(d, "lgrelab.out"), "w") as fh:
                 fh.write("    1  2009-01-01::01:00:00       145       145"
                          "         0         0         1\n")
             with open(os.path.join(d, "lagrange_mean_traj.1"), "w") as fh:
-                fh.write("2009-01-01::01:00:00 %13.5f %13.5f     2.766     0.045"
-                         "     0.000     0.000\n" % (x, y))
+                fh.write("2009-01-01::01:00:00 %13.5f %13.5f %9.3f     0.045"
+                         "     0.000     0.000\n" % (x, y, hl))
             return read_dir(d)
+        # envelope: x 2e-5, y 3e-5, hl 0 (all perturbed runs print the base's hl)
         base = make("base", -0.77963, 37.68299)
         perts = [make("p1", -0.77961, 37.68299), make("p2", -0.77963, 37.68302)]
         serial = make("serial", -0.77963, 37.68299)
-        good = compare(serial, make("good", -0.77965, 37.68296), base, perts)
-        bad = compare(serial, make("bad", -0.77966, 37.68299), base, perts)
+        res = [compare(serial, make("within", -0.77965, 37.68296), base, perts),
+               compare(serial, make("hl_one_unit", -0.77963, 37.68299, 2.767),
+                       base, perts),
+               compare(serial, make("hl_two_units", -0.77963, 37.68299, 2.768),
+                       base, perts),
+               compare(serial, make("x_two_units", -0.77967, 37.68299),
+                       base, perts)]
     finally:
         shutil.rmtree(tmp)
-    ok = good == 0 and bad == 1
-    print("LGMEAN SELFTEST: %s" % ("PASS" if ok else "FAIL"))
+    ok = res == [0, 0, 1, 1]
+    print("LGMEAN SELFTEST: %s (within the envelope %s, one unit off with envelope"
+          " 0 %s, two units off %s and %s; expected 0 0 1 1)"
+          % (("PASS" if ok else "FAIL",) + tuple(res)))
     return 0 if ok else 1
 
 
