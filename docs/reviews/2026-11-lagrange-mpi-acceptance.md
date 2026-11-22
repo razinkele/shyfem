@@ -491,7 +491,8 @@ model header of the serial file (nel 2545; nlv 1, case C 19).
 
 **AC2 (ids exact) and AC3 (positions against the floors)**, `./check_lgr_mpi.sh CASE NP ids`
 and `... pos`; every inserted block equals serial exactly (largest |dx|, |dy| 0, no element
-differs) in all 12 runs:
+differs) in all 12 runs, and in the active and exited blocks every pair at distance 0 has the
+same (global) element (A on 4: 9,933 pairs; B on 4: 46,690; the case-B copy below: 2,349,585):
 
 | Case | Processes | ids | pos | Beyond the limit at the last output / floor | Largest distance at any output / floor |
 |---|---|---|---|---|---|
@@ -509,12 +510,13 @@ differs) in all 12 runs:
 | E | 8 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
 
 Applied to the particle files of the six perturbed serial runs of Task 3.7 (`gates/floors_runs/`,
-base against each), the same `pos` test passes A, C and E except for the largest distance of
-two runs that exceed the rounded table value by less than float32 resolution (A `-7e-6`:
-2.97344e-3 against 2.97e-3, the measured envelope 2.9734e-3; C `-1e-5`, `-7e-6`, `-4e-6`:
-7.1106e-3 against 7.1e-3); in case B three runs fail on the time `tt` of one or two particles
-that leave the basin one time step apart (the time is compared exactly). The MPI runs above
-are far from both.
+base against each), the same `pos` test fails four comparisons on the largest distance, because
+the table rounds two measured envelopes down: A `-7e-6` gives 2.97344e-3 against the table's
+2.97e-3 (envelope in `gates/floors_ref3.log`: 2.9734e-3), C `-1e-5`, `-7e-6` and `-4e-6` give
+7.1106e-3 against 7.1e-3 (envelope 7.1106e-3); the particle file gives the dump's values, so the
+dump's `floor` mode fails the same runs. In case B three runs fail on the time `tt` of one or two
+particles that leave the basin one time step apart (`tt` is compared exactly). The MPI runs above
+are far from both (largest distance at most 4.4e-4 degrees in A, 2.7e-5 in C).
 
 **AC7.** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`: `SERIAL GUARD: PASS`, every
 file identical (lgr.shy, hydro.shy, inf of A, B, C, E; hydro.shy, inf of D and of
@@ -543,11 +545,14 @@ releases of 1,003 particles, 96,288 in all, two releases between outputs): every
 inserted blocks holds exactly the ids released since the previous output, equal as sets in the
 serial and the 4-process file; `ids` on 4 PASS. `pos` on 4 FAILs: against case B's floors (202 >
 48 beyond 2 m at the last output, 499 m > 182 m), which were measured on one release of 1,003
-particles, and on the time `tt` of 4 particles (resting in a dry element, or leaving one step
-apart). The copy's own floors measured the same way on `/home/razinka/wt-lgr-ref3` (base against
-six perturbed serial runs, particle file): 577 to 1,258 beyond 2 m at the last output, 745 to
-6,118 m largest distance, `tt` differing for 26 to 75 particles and 0 to 20 particles in another
-block; the 4-process run is within all of them (202, 499 m, 4, 0). Open for a ruling (the exact
+particles, and on the time `tt` of 4 particles (one whose serial time stays while the MPI time
+advances, consistent with a particle resting in a dry element in one run only; two whose times
+stay fixed in both runs at different values; one that leaves the basin one step later at the same
+position). The copy's own floors measured the same way on `/home/razinka/wt-lgr-ref3` (base
+against six perturbed serial runs, particle file): 577 to 1,258 beyond 2 m at the last output,
+745 to 6,118 m largest distance, `tt` differing for 26 to 75 particles, 0 to 4 particles in
+another block (active in one run, exited in the other) at some output; the 4-process run is
+within all of them (202, 499 m, 4, 0). Open for a ruling (the exact
 `tt` of `pos`). Case A with `itranf` one hour after `itanf` (release at the first output time):
 `pos` and `ids` on 4 PASS, no output time before the release in either file; with `itranf` at
 01:30 (release between outputs) both files skip the 01:00 output (nothing written while no
