@@ -14,9 +14,19 @@
 #   4. ../restart_strip (a 6-node mesh), when NP >= 3: stops with the
 #      "use fewer MPI processes" message and a non-zero exit, with no
 #      floating-point exception
+#   5. mm_lgr_w (Lagrangian particles, one release polygon around the
+#      whole basin, so that the release is split between processes on any
+#      partition): the particle file of NP processes against the serial one
+#      with check_lgr_mpi.sh, mode pos (positions against the floors
+#      measured on the serial reference, layers, types, times) and mode ids
+#      (the same ids in the same blocks at every output, counts per block,
+#      valid elements and layers).  The geographic basin GRID/MM_geo.bas,
+#      which `make init` does not build, is made first when it is missing
+#      (shypre -noopti MM_geo.grd).  Logs: mm_lgr_w.pos.gate.log and
+#      mm_lgr_w.ids.gate.log, and those of the driver.
 #
-# Needs shyfem, shypre and python3 on PATH, an MPI build, and `make init`
-# done.
+# Needs shyfem, shypre, mpirun and python3 on PATH (an OpenMPI build of
+# shyfem), and `make init` done.
 # Usage:  ./check_mpi.sh [NP]
 #------------------------------------------------------------------------
 set -u
@@ -93,6 +103,20 @@ else
   else
     echo "stopped as expected:$(grep -B3 'use fewer MPI processes' "$log" | tr -s ' ' | tr '\n' ';')"
   fi
+fi
+
+echo "=== 5. mm_lgr_w (particles): particle file of $NP processes vs serial"
+if [ ! -f GRID/MM_geo.bas ] && ! ( cd GRID && shypre -noopti MM_geo.grd > shypre_geo.mpi.log 2>&1 ); then
+  tail -5 GRID/shypre_geo.mpi.log; fail "shypre failed on GRID/MM_geo.grd"
+else
+  for mode in pos ids; do
+    log="mm_lgr_w.$mode.gate.log"
+    if bash check_lgr_mpi.sh mm_lgr_w "$NP" "$mode" > "$log" 2>&1; then
+      grep -E '^(floor|tt):|^LGR COMPARE' "$log" | sed "s/^/mm_lgr_w $mode: /"
+    else
+      tail -25 "$log"; fail "mm_lgr_w: mode $mode of check_lgr_mpi.sh failed on $NP processes (log: $log)"
+    fi
+  done
 fi
 
 if [ "$rc" = 0 ]; then echo "MPI GATE: PASS"; else echo "MPI GATE: FAIL"; fi
