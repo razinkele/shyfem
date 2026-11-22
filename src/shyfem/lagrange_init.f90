@@ -359,6 +359,10 @@
 	function lagbound_read_next(iunit,ndim,n,x,y)
 
 ! reads polygons from file
+!
+! the end of the file ends the list; a read error stops the run (every
+! process reads the file: an error taken for the end could let processes
+! release different polygons and reach different collective calls)
 
 	implicit none
 
@@ -370,6 +374,8 @@
 
 	integer iflag,ios
 	real xa,ya
+	character(len=256) :: fname
+	character(len=256) :: msg
 
 	integer isave,iline
 	real xsave,ysave
@@ -392,9 +398,18 @@
 	end if
 
 	do
-	  read(iunit,*,iostat=ios) xa,ya,iflag
-	  if( ios /= 0 ) then
-	    iflag = 0	!EOF or error reached, not start of new line
+	  msg = ' '
+	  read(iunit,*,iostat=ios,iomsg=msg) xa,ya,iflag
+	  if( ios > 0 ) then		!read error: stop every process
+	    fname = ' '
+	    inquire(unit=iunit,name=fname)
+	    write(6,*) 'lagbound_read_next: read error in file ',trim(fname)
+	    write(6,*) 'polygon ',iline+1,', after vertex ',n		&
+     &		,', iostat ',ios,': ',trim(msg)
+	    call shympi_abort_internal('error stop lagbound_read_next:'	&
+     &		//' read error in the release polygon file')
+	  else if( ios < 0 ) then	!end of file
+	    iflag = 0	!not start of new line
 	    exit
 	  end if
 	  if( iflag .ne. 0 .and. n .gt. 0 ) exit	!not 1.point on 1.line

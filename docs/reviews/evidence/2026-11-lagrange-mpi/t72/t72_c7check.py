@@ -5,7 +5,10 @@ usage: t72_c7check.py SERIAL_DBG MPI_DBG X Y [X Y ...]
 For each point: the (id, element) pairs of the serial run, and the (id,
 element, process) entries of the MPI run.  Exit 1 unless, for every point,
 the serial run has at least two entries in different elements and the MPI
-run has the same (id, element) pairs.
+run has the same (id, element) pairs, and at least one point has its copies
+on two different processes (the release across a process interface; not
+every point: the callers give points chosen for the partitions of two and
+of four processes, and one point need not span both).
 A particle's x, y in the dump come back from its internal coordinates in its
 element (xi2xy), so the copies of one point in two elements differ in the last
 bits: a point matches within TOL = 1e-5 degrees (the release spacing is about
@@ -38,6 +41,7 @@ def main():
     rs, rm = rows(sd), rows(md)
     print('release block: serial %d entries, MPI %d entries' % (len(rs), len(rm)))
     ok = True
+    cross = False
     for x, y in pts:
         s = sorted((i, ie) for i, xx, yy, ie, r in rs if abs(xx - x) < TOL and abs(yy - y) < TOL)
         m = sorted((i, ie, r) for i, xx, yy, ie, r in rm if abs(xx - x) < TOL and abs(yy - y) < TOL)
@@ -49,7 +53,14 @@ def main():
         if [(i, ie) for i, ie, _ in m] != s:
             print('  MPI entries differ from serial')
             ok = False
-        print('  processes holding the copies: %s' % sorted({r for _, _, r in m}))
+        ranks = sorted({r for _, _, r in m})
+        print('  processes holding the copies: %s' % ranks)
+        if len(ranks) >= 2:
+            cross = True
+    if not cross:
+        print('no point has its copies on two different processes: the release'
+              ' across a process interface was not tested')
+        ok = False
     print('CASE 7 CHECK: %s' % ('PASS' if ok else 'FAIL'))
     return 0 if ok else 1
 

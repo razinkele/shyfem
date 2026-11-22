@@ -36,7 +36,7 @@ if [ "$MODE" = build ]; then
   BIN="$R/bin"
   export PATH="/usr/bin:$BIN:$PATH"	# the order of the CI step
 else
-  BIN="$MODE"
+  BIN="$(cd "$MODE" && pwd)" || { echo "no folder $MODE"; exit 1; }	# absolute: the script changes folder
   export PATH="$BIN:/usr/bin:$PATH"
 fi
 echo "shyfem: $(readlink -f "$(command -v shyfem)"), shypre: $(readlink -f "$(command -v shypre)"), mpirun: $(command -v mpirun), python3: $(command -v python3)"
@@ -49,3 +49,4 @@ grc=${PIPESTATUS[0]}
 echo "$(date +%T) check_mpi.sh 4: exit $grc, $(( $(date +%s) - t0 )) s"
 echo "files made in GRID by the gate: $(cd GRID && ls | tr '\n' ' ')"
 echo "$(date '+%F %T %Z') done ($R)"
+exit "$grc"

@@ -19,6 +19,10 @@
 # repro (REPRO: PASS|FAIL): the cases a, b, c, e, w are run twice with the
 # current binary and the two CASE.lgr.shy files are compared with cmp.
 #
+# A run has ended only if its launcher (shyfem, or mpirun) exits with 0 and
+# its log has "simulation end"; any other run is a failure (in the guard
+# and in repro; a reference run of mm_lgr_01 that does not end makes that
+# check SKIPPED, as above).
 # The scratch copies are made with mktemp under ${TMPDIR:-/tmp} and removed
 # at the end.  Needs shyfem, mpirun (OpenMPI) and python3 on PATH, and
 # `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done.
@@ -72,10 +76,16 @@ cleanup() {
 trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
 
-# run_in DIR CASE LOG LAUNCHER...   run CASE.str in DIR, true if it ended
+# run_in DIR CASE LOG LAUNCHER...   run CASE.str in DIR; true if it ended:
+# the launcher exited with 0 and then the log has "simulation end"
 run_in() {
-  local dir="$1" case="$2" log="$3"; shift 3
+  local dir="$1" case="$2" log="$3" lrc; shift 3
   ( cd "$dir" && nice -n 19 "$@" "$case.str" > "$log" 2>&1 )
+  lrc=$?
+  if [ "$lrc" != 0 ]; then
+    echo "  $case: the launcher exited with code $lrc ($dir/$log)"
+    return 1
+  fi
   grep -q "simulation end" "$dir/$log"
 }
 

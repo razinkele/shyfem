@@ -51,6 +51,14 @@ particle whose tt differs is listed with both values ("tt a/b"; at most
 MAX_TT_LINES lines per block and output, the number left out is printed),
 within the floor or not.
 
+--mode ids compares, at every output time both files share, the ids of each
+block: an id that is in a block of one file and not in the same block of the
+other is a failure (also when the set of all ids and the counts per block
+agree, as when an active and an exited particle swap blocks), printed as
+"only in A: ... only in B: ..." on the block's line; then the ids of all
+blocks together.  --same-counts also requires equal counts per block,
+--nel and --nlv valid elements and layers in every block of both files.
+
 --dims prints "nkn N nel E nlv L" from the model header of the file (its
 third record: nkn, nel, npr, nlv, nvar); used to pass --nel and --nlv.
 
@@ -58,6 +66,10 @@ Nothing compared is a failure, in both modes: if the two files share no
 output time, or no particle is in any block of the output times they share,
 a line "nothing compared: ..." is printed and the comparison fails (a file
 without any output time cannot be read, exit 2).
+
+An output time that occurs twice in one file is a read error (exit 2): the
+model writes each output time once, and the comparison would otherwise use
+one of the two copies and leave the other out.
 
 Exit status: 0 = files agree, 1 = they differ, 2 = a file cannot be read.
 
@@ -201,6 +213,13 @@ def read_file(path):
                 i += 3
             blocks[iwhat] = parts
         times.append((dtime0, blocks, dups))
+    first = {}
+    for k, (dtime, _blocks, _dups) in enumerate(times, 1):
+        if dtime in first:
+            raise FormatError("%s: output time %r is written twice (outputs %d"
+                              " and %d); the format writes each output time once"
+                              % (path, dtime, first[dtime], k))
+        first[dtime] = k
     return ncust, times
 
 
@@ -469,6 +488,10 @@ def run(args):
                     line += " (count differs)"
                     if args.same_counts:
                         ok = False
+                oa, ob = set(pa) - set(pb), set(pb) - set(pa)
+                if oa or ob:
+                    line += " only in A: %s only in B: %s" % (fmt_ids(oa), fmt_ids(ob))
+                    ok = False
                 print(line)
         if args.mode == "ids":
             only_a, only_b = ids_a - ids_b, ids_b - ids_a

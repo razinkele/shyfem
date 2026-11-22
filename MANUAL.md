@@ -1541,6 +1541,8 @@ Lagrangian particle tracking (section 7.16) works on several processes for these
 - `ilagr` 1 (surface) and 2 (layers), the horizontal random walk with a fixed diffusivity (`rwhpar` of 0 or more), Stokes drift
 - release in polygons (`lgrlin`) and over the whole basin, in the surface layer or in the layers (`ipvert` of -1 or more), the particle file
 
+A line of the release polygon file (`lgrlin`) that is not a point, for example a comment or a footer line, or a flag that is not an integer, stops the run with a message naming the file, serially as on several processes. Such a line used to end the list of polygons silently, so the polygons after it were not released. Text after the three values of a point is ignored, as before; a last line with only two values is still taken as the end of the file.
+
 Every option in the table below stops the run at start-up on more than one process (one message, exit code 33); with one process they work as before:
 
 | Option | Section | Stops when | Meaning |

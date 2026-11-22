@@ -23,8 +23,11 @@
 # Per run: the exit code, how often "Cannot insert more than nbdymax
 # particles" appears (must be once), whether the run ended (it must not),
 # whether it hung (it must not), and SIGFPE/SIGSEGV/"Fortran runtime" lines
-# (must be none).  On NP processes the exit code must also be non-zero (a
-# serial STOP exits with 0).  Prints "FOCUS 5: PASS" or "FAIL" and exits 0
+# (must be none).  The exit code must be exact: on NP processes 33 (the
+# code shympi_abort_internal passes to MPI_ABORT in lgr_mpi_assign_ids; the
+# project requires Open MPI, whose mpirun returns it), serially 0 (the
+# serial stop is the Fortran "stop 'error stop insert_particle: nbdy'" of
+# insert_particle, which exits with 0).  Prints "FOCUS 5: PASS" or "FAIL" and exits 0
 # or 1; the scratch folder is removed after a PASS and kept (path printed)
 # after a FAIL.
 set -u
@@ -55,10 +58,10 @@ for lim in 500 200; do
     [ "$nmsg" = 1 ] || ok=0
     [ "$nend" = 0 ] || ok=0
     [ "$nsig" = 0 ] || ok=0
-    [ "$x" != 124 ] || ok=0
-    if [ "$mode" = np ] && [ "$x" = 0 ]; then ok=0; fi
+    if [ "$mode" = np ]; then want=33; else want=0; fi
+    [ "$x" = "$want" ] || ok=0
     [ "$ok" = 1 ] || rc=1
-    echo "nbdymax = $lim, $lab: $([ "$ok" = 1 ] && echo ok || echo FAIL); exit $x$([ "$x" = 124 ] && echo ' (timeout: hung)'), message x$nmsg, 'error stop insert_particle: nbdy' x$nabort, ended $nend, signals $nsig"
+    echo "nbdymax = $lim, $lab: $([ "$ok" = 1 ] && echo ok || echo FAIL); exit $x (expected $want)$([ "$x" = 124 ] && echo ' (timeout: hung)'), message x$nmsg, 'error stop insert_particle: nbdy' x$nabort, ended $nend, signals $nsig"
     rm -f mm_lgr_b.*.shy mm_lgr_b.inf
   done
 done

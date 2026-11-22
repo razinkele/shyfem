@@ -22,10 +22,14 @@
 # timeout of 1500 s and is niced.
 #
 # A run with a "Fortran runtime" line (the message of a failed bounds
-# check) is a finding; a run that does not end for another reason is listed
-# apart and is not a bounds finding.  Prints "BOUNDS GATE: PASS" or "FAIL"
-# (also FAIL when no compile line carried the flag) and exits 0 or 1; the
-# run logs stay in the scratch folder (its path is the last line).
+# check) is a finding.  A run counts as ended only if its launcher exits with
+# 0 and its log has "simulation end"; a run that does not end for another
+# reason (no end marker, a non-zero exit code, the timeout: exit 124) is
+# listed apart and is not a bounds finding, but it fails the gate as well:
+# a run that did not finish has not been checked.  Prints "BOUNDS GATE:
+# PASS" or "FAIL" (also FAIL when no compile line carried the flag) and
+# exits 0 or 1; the run logs stay in the scratch folder (its path is the
+# last line).
 #------------------------------------------------------------------------
 set -u
 H="${1:-HEAD}"
@@ -54,31 +58,35 @@ for c in mm_lgr_a mm_lgr_b mm_lgr_c; do
   awk '{ print } !done && /^\$para[ \t\r]*$/ { print "        levdbg = 3"; done = 1 }' $c.str > ${c}_dbg.str
 done
 nbad=0; nother=0
-report() { # name logfile : a bounds failure is a run with a Fortran runtime message; other non-ending runs are listed apart
+report() { # name logfile exitcode : a bounds failure is a run with a Fortran runtime message; other runs that did not end are listed apart
   local nrt; nrt=$(grep -c 'Fortran runtime' "$2")
   if [ "$nrt" != 0 ]; then
     nbad=$((nbad+1)); echo "$1: RUNTIME MESSAGE ($nrt)"
     grep -h -A1 '^At line' "$2" | grep -v '^--' | sort | uniq -c | cut -c1-190 | head -6
-  elif grep -q 'simulation end' "$2"; then
+  elif [ "$3" = 0 ] && grep -q 'simulation end' "$2"; then
     echo "$1: ended (0 runtime messages)"
   else
-    nother=$((nother+1)); echo "$1: did not end, no runtime message (not a bounds finding):"
+    nother=$((nother+1))
+    if [ "$3" = 124 ]; then echo "$1: TIMED OUT after 1500 s (exit 124), no runtime message (not a bounds finding):"
+    elif grep -q 'simulation end' "$2"; then echo "$1: wrote 'simulation end' but exited with code $3, no runtime message (not a bounds finding):"
+    else echo "$1: did not end (exit code $3), no runtime message (not a bounds finding):"; fi
     grep -m1 'Program received' "$2" | cut -c1-100
     grep -m1 -A4 'Backtrace for this error' "$2" | grep -o 'in [a-z_0-9]*_$\|at .*f90:[0-9]*' | head -3 | tr '\n' ' '; echo
     grep -m2 'error stop\|ERROR STOP' "$2" | cut -c1-120
   fi
 }
 for c in mm_lgr_a mm_lgr_b mm_lgr_c mm_lgr_e mm_lgr mm_lgr_a_dbg mm_lgr_b_dbg mm_lgr_c_dbg; do
-  timeout 1500 nice -n 19 shyfem $c.str > $c.ser.log 2>&1; report "serial $c" $c.ser.log
+  timeout 1500 nice -n 19 shyfem $c.str > $c.ser.log 2>&1; erc=$?; report "serial $c" $c.ser.log $erc
 done
 for run in "mm_lgr_a 8" "mm_lgr_a 4" "mm_lgr_a 3" "mm_lgr_b 4" "mm_lgr_c 4" "mm_lgr_c 3" "mm_lgr_e 4" "mm_lgr 4" "mm_lgr_a_dbg 4" "mm_lgr_b_dbg 4" "mm_lgr_c_dbg 4"; do
   set -- $run
-  timeout 1500 nice -n 19 mpirun --oversubscribe -np $2 shyfem $1.str > $1.np$2.log 2>&1; report "MPI $1 np$2" $1.np$2.log
+  timeout 1500 nice -n 19 mpirun --oversubscribe -np $2 shyfem $1.str > $1.np$2.log 2>&1; erc=$?; report "MPI $1 np$2" $1.np$2.log $erc
 done
 cd "$P" && git -C "$W" worktree remove --force "$P/wt" > "$P/wt_remove.log" 2>&1 && echo "throwaway work tree removed" || cat "$P/wt_remove.log"
 echo "runs with a runtime message: $nbad; runs that did not end for another reason: $nother; compile lines with the flag: $nflag"
 if [ "$nflag" = 0 ]; then echo "BOUNDS GATE: FAIL (the build was not bounds-checked)"; rc=1
-elif [ $nbad = 0 ]; then echo "BOUNDS GATE: PASS"; rc=0
-else echo "BOUNDS GATE: FAIL ($nbad runs)"; rc=1; fi
+elif [ $nbad != 0 ]; then echo "BOUNDS GATE: FAIL ($nbad runs with a runtime message; $nother runs that did not end for another reason)"; rc=1
+elif [ $nother != 0 ]; then echo "BOUNDS GATE: FAIL ($nother runs did not end: not a bounds finding, but those runs were not checked)"; rc=1
+else echo "BOUNDS GATE: PASS"; rc=0; fi
 echo "$(date +%H:%M:%S)  logs in $P/mm"
 exit "$rc"
