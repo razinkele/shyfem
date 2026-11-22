@@ -32,8 +32,9 @@
 #             plain run at the same output) are at least one; every exited
 #             record of the decay run has an element in 1..nel and a
 #             position inside a triangle of GRID/MM_geo.grd (inside the
-#             basin), and a decayed particle keeps the same position at
-#             every output after it decayed (its last position); every
+#             basin), and a decayed particle stays in the exited block of
+#             every later output with the same element and position (its
+#             last position); every
 #             active particle of the decay run has the same record as in
 #             the plain run (decay changes no other particle).
 #   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
@@ -52,7 +53,9 @@
 #             values to 0 gave about 1.07 million in one day); and its
 #             particle file must hold only finite values,
 #             active particles with an element in 1..nel, a layer in 1..nlv
-#             and a depth z in the layer within 0..1.
+#             and a depth z in the layer within 0..1.  A second run, 12
+#             hours with the end of the particle run itlend = 06:02:30
+#             (between two time steps), must write that line exactly once.
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -305,6 +308,10 @@ for t, b, _ in td:
         ok = False
         continue
     ext_p = set(mp[t][1])
+    lost = sorted(set(first_pos) - set(b[1]))
+    if lost:				# a decayed particle stays in the exited block
+        print("  t=%r decayed ids missing from the exited block: %s" % (t, lc.fmt_ids(lost)))
+        ok = False
     for pid, p in b[1].items():
         if not 1 <= p["ie"] <= nel:
             print("  t=%r exited id %d: element %d outside 1..%d" % (t, pid, p["ie"], nel))
@@ -406,6 +413,19 @@ if not times or nact == 0:
 sys.exit(0 if ok else 1)
 EOF
   fi
+  # the end of the particle run between two calls of lagrange: the line of
+  # the negative diffusivities must still be written (once)
+  sed -e "s/itend = '[^']*'/itend = '2009-01-01::12:00:00'/" \
+      -e 's/^\(\s*\)lgr_ilagr3\s*$/\1lgr_ilagr3_end/' \
+      -e "s/^\(\s*\)ilagr = 3 .*/&\n        itlend = '2009-01-01::06:02:30'/" \
+      "$W/lgr_ilagr3.str" > "$W/lgr_ilagr3_end.str"
+  grep -q "itlend = '2009-01-01::06:02:30'" "$W/lgr_ilagr3_end.str" || fail "no itlend line in lgr_ilagr3_end.str"
+  echo "=== the same, 12 hours, with itlend = 06:02:30 (between two time steps of 300 s)"
+  run lgr_ilagr3_end lgr_ilagr3_end.log shyfem || fail "the ilagr = 3 run with itlend did not end"
+  n="$(grep -c 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
+  line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
+  echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log} ($n line(s))"
+  [ "$n" = 1 ] || fail "the line of the negative diffusivities is written $n times with itlend between two steps, expected once"
   finish
 fi
 

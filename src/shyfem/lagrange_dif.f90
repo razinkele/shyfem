@@ -491,7 +491,9 @@
 ! writes once, at the end of the particle run, how often diff_get_vert
 ! set a negative interpolated vertical diffusivity to 0 (#231); only in
 ! a run with vertical diffusion (ilagr = 3, a serial run: ilagr = 3 stops
-! on several processes). Called by lagrange outside any parallel region
+! on several processes). Called by lagrange outside any parallel region:
+! after the step that reaches dtlend and at the first call after it (when
+! no step ends exactly at dtlend); bdone keeps the second call silent
 
         use mod_lagrange
 
