@@ -67,6 +67,19 @@ bash $E/d5/run_d5.sh
 bash $E/t72/t72_acc.sh /path/to/reference/bin /path/to/lgr_runs
 ```
 
+The other scripts of `t72/` take no arguments unless stated; they use the build of this
+checkout (`bin/`) and print the temporary folder they work in:
+
+```
+bash $E/t72/t72_ci.sh build          # export of HEAD, CI's build and steps (check_mpi.sh 4)
+bash $E/t72/t72_ci.sh /path/to/bin   # the same with a given build, no build step
+bash $E/t72/t72_acc2.sh              # spec section 7 cases 7, 4 and 6
+bash $E/t72/t72_c7run.sh             # case 7, the run of record
+bash $E/t72/t72_sweep.sh             # the 4-process sweep of every shipped STR file (long)
+python3 $E/t72/t72_extract.py LOGDIR # the acceptance table's values from t72_acc.sh's logs
+python3 $E/d5/winkv.py GRD PARTGRD   # replay of setnod's angle sum for a partition (#238)
+```
+
 `t72_acc.sh` runs every gate of the acceptance table (about 20 minutes on the
 development machine); `t72_sweep.sh` runs all shipped test cases serially and
 on 4 processes and builds a second binary with EUTRO and mercury (about 35

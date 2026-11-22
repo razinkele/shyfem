@@ -1277,9 +1277,10 @@ caller's arguments replaces it):
 | C | **FAIL with the default**: 0 changed-process pairs; no particle changes process at all on this partition (0 hand-overs at a side, 0 by position); PASS with `--min-changed 0` | PASS (171) | PASS (269) |
 | W | PASS (46) | PASS (113) | PASS (214) |
 
-Case C on 2 processes is an open question for the controller (keep the default and run that cell
-with `--min-changed 0`, or another rule); every other run passes, with the same groups as in the
-acceptance run.
+Case C on 2 processes: the controller's ruling (2026-11-22) keeps the driver's default, so that a
+hand-over check in which no particle changes process cannot pass silently, and runs that one cell
+with an explicit `--min-changed 0` (no hand-over can occur on this partition); every other run
+passes, with the same groups as in the acceptance run. The end-of-stage gate on the head ran it so.
 
 **`lgr_compare.py`: nothing compared is a failure.** A file without any output time cannot be read
 (exit 2, as before); two files whose output times hold no particle passed in both modes and now
@@ -1310,3 +1311,21 @@ PASS` with the ids of the acceptance run (13 and 73, 86 and 94);
 without a runtime message, 413 compile lines with `-fcheck=bounds`. `t72_acc.sh`, `t72_acc2.sh`,
 `t72_acc3.sh` and `t72_sweep.sh` (20 to 35 minutes each) were checked for syntax and paths only;
 `t72_acc2.sh` and `t72_acc3.sh` share the copy and release-file code of `t72_c7run.sh`.
+
+## End of stage 7 and of the final fix round: the final gates on the head
+
+**Measured** 2026-11-22 15:39 to 16:08 EET (from `date`) by the controller, on the head of the
+branch after the final review's fix round (`86834ad5`): a build with `-fcheck=bounds` (19 serial
+and MPI runs) and one with `COMPILER_PROFILE=CHECK` (A, B, C, E, W serially and on 4 processes)
+without a runtime message or a trap; on a clean build: tool self-tests PASS; serial guard against
+`wt-lgr-ref3` (commit `0fddec90`) PASS with no file differing, including the `mpirun -np 1`
+comparisons; repro PASS; MPI hydrodynamics gate PASS; flux A, B, C on 2, 3, 4, 6, 8 processes
+(15), hand-over check (13; case C on 2 processes with an explicit `--min-changed 0`), positions in
+the dump against the floors (12), perturbed twins (6), release gate with ids on 6 and 10
+processes, the particle file (ids and positions) for A, B, C, E and W on 2, 4 and 8 processes,
+case D's ids on 2, 4 and 8, case W's floor, hand-over check and release gate, the `stops` mode
+(12 rows): 95 gate runs PASS, none FAIL; AC8 PASS; `check_mpi.sh` on 2 and 4 processes (with
+check 5) `MPI GATE: PASS`; both fault runs of the consistency check abort with exit 33; plain
+runs of D, E on 4 and B on 8 processes at `levdbg = 2` end with the check silent. The acceptance
+table above was measured on `ddf46f53`; these gates repeat every criterion it can repeat on the
+head.
