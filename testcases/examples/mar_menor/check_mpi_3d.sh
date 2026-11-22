@@ -22,6 +22,10 @@
 #        19 levels of mm_hyd_41.str, GOTM (iturb = 1, gotmturb.nml of
 #        mm_hyd_41.str): a closed 3D basin, wind only
 #   k3d  the same with k-epsilon (iturb = 2)
+#   g3d6 g3d with ireib = 6 (czdef is the roughness length of the bottom
+#        friction): GOTM's bottom roughness then comes from the nodal
+#        average of model_bottom_z0 (src/shyfem/turbulence.f90), which
+#        had the same defect (#230)
 # Required: every run ends (exit code 0 and "simulation end" in its log,
 # timeout 1200 s each), and the files CASE.hydro.shy and, for c41,
 # mm_hyd_41.ts.shy and the extra-point file mm_hyd_41.ext of the
@@ -103,6 +107,9 @@ PY
 }
 mk3d g3d 1 || { echo "MPI 3D CHECK: FAIL (cannot make g3d.str)"; exit 1; }
 mk3d k3d 2 || { echo "MPI 3D CHECK: FAIL (cannot make k3d.str)"; exit 1; }
+sed -e 's/ireib = 5/ireib = 6/' -e 's/^        g3d$/        g3d6/' "$P/g3d.str" > "$P/g3d6.str"
+grep -q 'ireib = 6' "$P/g3d6.str" && grep -q '^        g3d6$' "$P/g3d6.str" \
+  || { echo "MPI 3D CHECK: FAIL (cannot make g3d6.str)"; exit 1; }
 
 #--- runs and comparison
 run() {  # CASE NP (NP 1: a plain run without mpirun)
@@ -166,7 +173,7 @@ extdiffs() {  # SERIAL_EXT MPI_EXT: the split series that differ, largest differ
   done
 }
 
-for c in c41 g3d k3d; do
+for c in c41 g3d k3d g3d6; do
   echo "=== $c"
   if ! run "$c" 1; then fail "$c: the serial run did not end"; continue; fi
   if ! run "$c" "$NP"; then fail "$c: the run on $NP processes did not end"; continue; fi
