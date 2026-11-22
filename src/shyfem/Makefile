@@ -765,9 +765,11 @@ lagrange_mpi.o: ../../lib/mod/basin.mod \
 		../../lib/mod/connectivity.mod ../../lib/mod/evgeom.mod \
 		../../lib/mod/femtime.mod \
 		../../lib/mod/levels.mod \
+		../../lib/mod/mod_bnd.mod \
 		../../lib/mod/mod_bound_dynamic.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \
 		../../lib/mod/mod_geom.mod \
+		../../lib/mod/mod_geom_dynamic.mod \
 		../../lib/mod/mod_hydro_vel.mod \
 		../../lib/mod/mod_lagrange.mod \
 		../../lib/mod/mod_meteo.mod ../../lib/mod/para.mod \

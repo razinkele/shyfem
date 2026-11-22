@@ -352,6 +352,7 @@
 
 	if( bmpi_lagr ) then
 	  call lgr_mpi_handover(dtime)
+	  call lgr_mpi_check_consistency(dtime)	!levdbg >= 2, aborts if wrong
 	  if( dtime >= dtlend ) call lgr_mpi_handover_stats !once, levdbg >= 3
 	end if
 	call lgr_mpi_relocate_step			!levdbg >= 3

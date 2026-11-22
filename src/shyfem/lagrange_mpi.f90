@@ -49,6 +49,7 @@
 ! lgr_mpi_handover		hand-over of the marked particles, in rounds
 ! lgr_mpi_handover_round	one round of the hand-over
 ! lgr_mpi_handover_stats	totals of the hand-over (levdbg >= 3)
+! lgr_mpi_check_consistency	built-in check of the particle state (levdbg >= 2)
 ! lgr_mpi_resolve		resolution of the parked particles by position
 ! lgr_mpi_relocate_step		parkings of a step (levdbg >= 3)
 ! lgr_mpi_relocate_stats	counts of the element search (levdbg >= 3)
@@ -111,6 +112,21 @@
 					     !over the steps (lgr_mpi_handover)
 	integer, save :: lgr_nputback = 0    !put back at a cut-off side for
 					     !lack of a layer (OMP atomic)
+	integer, save :: lgr_nhand3(2) = 0   !hand-overs (1 at a side, 2 by
+					     !position) that start in an element
+					     !held by three processes
+					     !(id_elem(0,ie) == 3)
+	integer, save :: lgr_nsent_round = 0 !particles this process sent in
+					     !the last round (side and position)
+	integer, save :: lgr_nchg_max = 0    !most particles changing process
+					     !in one step (all processes; the same
+					     !on every process)
+	double precision, save :: lgr_tchg_max = 0.d0 !end of that step
+	integer, save :: lgr_ndry(2) = 0     !at levdbg >= 3, element-steps:
+					     !1 dry elements (iwegv /= 0) this
+					     !process is the main owner of, 2 dry
+					     !held elements with a cut-off side
+					     !on this process (lgr_mpi_handover)
 
 	! hand-over by position (lgr_mpi_locate, lgr_mpi_park, lgr_mpi_resolve):
 	! the end of the horizontal diffusion step and of the Stokes drift step
@@ -163,6 +179,19 @@
 	double precision, save :: lgr_tres = 0.d0
 
 	logical, save :: bmpi_lagr = .false.      !true if MPI active for lagrange
+
+	! lgr_mpi_check_consistency is active (set by lgr_mpi_init: several
+	! processes, levdbg >= 2, no release that gives out no global ids)
+	logical, save :: blgr_chk = .false.
+
+	! test hooks of lgr_mpi_check_consistency (read once by lgr_mpi_init;
+	! inactive unless the environment variable names this process):
+	! LGR_TEST_DROP=R: process R skips its first arrival at a side in
+	! lgr_mpi_handover_round (the particle is lost); LGR_TEST_DUP=R:
+	! process R keeps the first particle it sends at a side (a copy stays
+	! in its slot, mark cleared). Each fires once in the whole run.
+	logical, save :: lgr_test_drop = .false.
+	logical, save :: lgr_test_dup = .false.
 
 	! limit nbdymax on several processes: insert_particle does not stop
 	! there, it only records that this process passed the limit by itself;
@@ -268,14 +297,30 @@
 ! test hook: if the environment variable LGR_TEST_SMALL_EXPORT is set to 1
 ! the lists of marks start with 2 entries instead of max(nbdymax,1024),
 ! so that their growth is exercised by a small run
+!
+! test hooks of lgr_mpi_check_consistency, read here once (several
+! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
+! the process whose rank is R (lgr_test_drop, lgr_test_dup; see
+! lgr_mpi_check_consistency); every other process ignores them
+!
+! decides at start-up whether lgr_mpi_check_consistency is active
+! (blgr_chk): several processes and levdbg >= 2, unless a release that
+! gives out no global ids is configured (file lgrini or lgrtrj set, or
+! lgrpps /= 0 on a boundary); then rank 0 writes once
+! " lgr_mpi_check_consistency: not active (release NAME is not supported
+! on several processes)", NAME the first of lgrini, lgrtrj, lgrpps set
 
 	use shympi
 	use para, only : getpar
+	use mod_bnd, only : nbc
 
 	implicit none
 
-	integer :: ierr, ndim, ist
+	integer :: ierr, ndim, ist, ios, ir, ibc
+	real :: pps
 	character(len=16) :: sval
+	character(len=6) :: crel
+	character(len=256) :: fname
 
 	lgr_pack_size = lgr_pack_base + ncust
 	bmpi_lagr = shympi_is_parallel()
@@ -304,6 +349,39 @@
 	n_export = 0
 	n_export_grow = 0
 	n_park = 0
+
+	call get_environment_variable('LGR_TEST_DROP',sval,status=ist)
+	if( ist == 0 ) then
+	  read(sval,*,iostat=ios) ir
+	  if( ios == 0 ) lgr_test_drop = ( ir == my_id )
+	end if
+	call get_environment_variable('LGR_TEST_DUP',sval,status=ist)
+	if( ist == 0 ) then
+	  read(sval,*,iostat=ios) ir
+	  if( ios == 0 ) lgr_test_dup = ( ir == my_id )
+	end if
+
+	blgr_chk = nint(getpar('levdbg')) >= 2
+	if( blgr_chk ) then
+	  crel = ' '
+	  call getfnm('lgrini',fname)
+	  if( fname /= ' ' ) crel = 'lgrini'
+	  if( crel == ' ' ) then
+	    call getfnm('lgrtrj',fname)
+	    if( fname /= ' ' ) crel = 'lgrtrj'
+	  end if
+	  do ibc = 1, nbc
+	    if( crel /= ' ' ) exit
+	    call get_bnd_par(ibc,'lgrpps',pps)
+	    if( pps /= 0. ) crel = 'lgrpps'
+	  end do
+	  if( crel /= ' ' ) then
+	    blgr_chk = .false.
+	    if( my_id == 0 ) write(6,'(a)') ' lgr_mpi_check_consistency: not'	&
+     &		//' active (release '//trim(crel)//' is not supported on'	&
+     &		//' several processes)'
+	  end if
+	end if
 
 	end subroutine lgr_mpi_init
 
@@ -3603,8 +3681,18 @@
 ! global), and every process aborts.
 !
 ! called after drogue, outside any parallel region, on every process
+!
+! statistics (lgr_mpi_handover_stats): the particles that change process
+! in the step, summed over the processes and the rounds (the number each
+! process sent in a round travels in the next round's reduction, so the
+! last one in the reduction that ends the loop), and their largest number
+! in one step; at levdbg >= 3 the dry elements of the step (iwegv /= 0,
+! counted once by the main owner) and the dry held elements that have a
+! cut-off side on this process (lgr_ndry)
 
-	use shympi, only : n_threads
+	use shympi, only : n_threads, my_id, id_elem
+	use basin, only : nel
+	use mod_geom_dynamic, only : iwegv
 
 	implicit none
 
@@ -3613,20 +3701,35 @@
 	double precision, intent(in) :: dtime
 
 	integer, parameter :: nround_cap = 102	!100 crossings, 2 parks
-	integer :: nloc(2), nglob(2), nround, nround_side, ierr
+	integer :: nloc(3), nglob(3), nround, nround_side, nchg, ie, ierr
 
 	if( n_threads <= 1 ) return
 
+	if( blgr_dbg ) then			!dry elements of the step
+	  do ie = 1, nel
+	    if( iwegv(ie) == 0 ) cycle
+	    if( id_elem(1,ie) == my_id ) lgr_ndry(1) = lgr_ndry(1) + 1
+	    if( any( lgr_ieltv(:,ie) <= -1000 ) ) then
+	      lgr_ndry(2) = lgr_ndry(2) + 1
+	    end if
+	  end do
+	end if
+
 	nround = 0
 	nround_side = 0
+	nchg = 0
 	lgr_npark_step = 0
+	lgr_nsent_round = 0
 	do
 	  nloc(1) = n_export
 	  nloc(2) = n_park
-	  call MPI_Allreduce(nloc,nglob,2,MPI_INTEGER,MPI_SUM		&
+	  nloc(3) = lgr_nsent_round		!sent in the round before
+	  lgr_nsent_round = 0
+	  call MPI_Allreduce(nloc,nglob,3,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	  if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_handover: MPI_Allreduce')
+	  nchg = nchg + nglob(3)
 	  if( nglob(1) == 0 .and. nglob(2) == 0 ) exit
 	  nround = nround + 1
 	  if( nround > nround_cap ) call shympi_abort_internal		&
@@ -3640,6 +3743,10 @@
 	! marks come before its parks): the last round with a side mark
 	lgr_nround_max = max(lgr_nround_max,nround_side)
 	lgr_npark_step_max = max(lgr_npark_step_max,lgr_npark_step)
+	if( nchg > lgr_nchg_max ) then
+	  lgr_nchg_max = nchg
+	  lgr_tchg_max = dtime
+	end if
 
 	end subroutine lgr_mpi_handover
 
@@ -3691,7 +3798,7 @@
 ! start of the step, as track_finish needs it
 
 	use shympi
-	use basin, only : nen3v
+	use basin, only : nen3v, nel
 
 	implicit none
 
@@ -3726,7 +3833,7 @@
 
 	integer :: nproc, lrecp, lrec, nside, npos, nmark, j, jj, i, k, r
 	integer :: ie, iside, ia2, ia3, ip, ierr, nreq, nrecv, nget
-	integer :: nstot, nrtot, nside_in
+	integer :: nstot, nrtot, nside_in, nrem
 	integer :: iega, kg1, kg2, kl1, kl2, ieb, nf, phase, lb, iw
 	integer :: nsend(0:n_threads-1), nrcv(0:n_threads-1)
 	integer :: soff(0:n_threads), roff(0:n_threads)
@@ -3846,6 +3953,7 @@
 	      call shympi_abort_internal				&
      &		('lgr_mpi_handover_round: marked particle changed')
 	    end if
+	    if( id_elem(0,ie) == 3 ) lgr_nhand3(1) = lgr_nhand3(1) + 1
 	    call lgr_mpi_pack_particle(lgr_ar(i),sbuf(ip+1:ip+lrecp))
 	    ia2 = mod(iside,3) + 1		!end nodes of side iside
 	    ia3 = mod(ia2,3) + 1
@@ -3865,6 +3973,10 @@
      &		('lgr_mpi_handover_round: parked particle changed')
 	    end if
 	    phase = lgr_marked(i) - 1
+	    ie = lgr_ar(i)%actual%ie		!element it was parked in
+	    if( ie >= 1 .and. ie <= nel ) then	!(lgr_mpi_resolve tested it)
+	      if( id_elem(0,ie) == 3 ) lgr_nhand3(2) = lgr_nhand3(2) + 1
+	    end if
 	    call lgr_mpi_pack_particle(lgr_ar(i),sbuf(ip+1:ip+lrecp))
 	    ip = ip + lrecp
 	    sbuf(ip+1) = dble(pos_elem(j))	!global element found
@@ -3921,8 +4033,24 @@
 	! 3. remove the sent particles, empty the lists
 	!-----------------------------------------------
 
-	call lgr_mpi_remove_list(nmark,key)	!key: the slots sent
+	nrem = nmark
+	if( lgr_test_dup ) then		!test hook: keep one particle sent
+	  do jj = 1, nmark		!the first one sent at a side
+	    if( ckind(jj) == 0 ) exit
+	  end do
+	  if( jj <= nmark ) then
+	    lgr_test_dup = .false.
+	    i = key(jj)
+	    lgr_marked(i) = 0		!the copy stays, not marked
+	    write(6,*) 'LGR_TEST_DUP: rank ',my_id,' keeps a copy of id '	&
+     &		,lgr_ar(i)%id,' sent at a side, time ',dtime
+	    key(jj:nmark-1) = key(jj+1:nmark)
+	    nrem = nmark - 1
+	  end if
+	end if
+	call lgr_mpi_remove_list(nrem,key)	!key: the slots sent
 	lgr_nhand = lgr_nhand + nside
+	lgr_nsent_round = nmark			!read by lgr_mpi_handover
 	n_export = 0
 
 	!-----------------------------------------------
@@ -3941,6 +4069,14 @@
 	nside_in = 0
 	do j = 1, nrtot
 	  ip = lrec*(j-1)
+	  if( lgr_test_drop ) then	!test hook: lose one arrival
+	    if( nint(rbuf(ip+lrecp+8)) == 0 ) then	!the first at a side
+	      lgr_test_drop = .false.
+	      write(6,*) 'LGR_TEST_DROP: rank ',my_id,' drops the arrival'	&
+     &		//' of id ',nint(rbuf(ip+15)),' at a side, time ',dtime
+	      cycle
+	    end if
+	  end if
 	  nbdy = nbdy + 1
 	  i = nbdy
 	  call lgr_mpi_unpack_particle(rbuf(ip+1:ip+lrecp),lgr_ar(i))
@@ -4063,6 +4199,15 @@
 ! one event further, so a particle sent at a side in round k is handed
 ! over at a side for the k-th time in that step; rounds that only resolve
 ! parked particles do not count.
+! The line goes on with the hand-overs (at a side, by position) that
+! start in an element held by three processes (id_elem(0,ie) == 3: the
+! element left at a side, the element a parked particle was in;
+! lgr_nhand3). A second line gives the most particles that changed
+! process in one step (both kinds, all processes and rounds; lgr_nchg_max)
+! and the end of that step; a third the dry element-steps (iwegv /= 0)
+! counted by the main owner, and the dry held elements with a cut-off side
+! (element-steps summed over the processes: an element shared by two
+! processes with a cut-off side on each counts twice; lgr_ndry).
 !
 ! called by lagrange after the step that reaches the end of the particle
 ! run and at the first call after it; only the first call writes (every
@@ -4074,7 +4219,8 @@
 
 	include 'mpif.h'
 
-	integer :: ival(3), ivalg(3), nrmax, ierr
+	integer, parameter :: nv = 7
+	integer :: ival(nv), ivalg(nv), nrmax, ierr
 	logical, save :: bdone = .false.	!totals written
 
 	if( .not. blgr_dbg .or. n_threads <= 1 ) return
@@ -4084,7 +4230,9 @@
 	ival(1) = lgr_nhand
 	ival(2) = lgr_nputback
 	ival(3) = lgr_nres_sent
-	call MPI_Allreduce(ival,ivalg,3,MPI_INTEGER,MPI_SUM		&
+	ival(4:5) = lgr_nhand3(1:2)
+	ival(6:7) = lgr_ndry(1:2)
+	call MPI_Allreduce(ival,ivalg,nv,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_handover_stats: MPI_Allreduce')
@@ -4094,15 +4242,307 @@
      &		('lgr_mpi_handover_stats: MPI_Allreduce')
 
 	if( my_id == 0 ) then
-	  write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr hand-over: particles'	&
-     &		//' handed over at a cut-off side: ',ivalg(1)		&
+	  write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0,a,i0)') ' lgr hand-over:'	&
+     &		//' particles handed over at a cut-off side: ',ivalg(1)	&
      &		,', by position: ',ivalg(3)				&
      &		,', most hand-overs at a side of one particle in one step: '	&
      &		,nrmax,', put back at a cut-off side for lack of a layer: '	&
-     &		,ivalg(2)
+     &		,ivalg(2),', starting in an element held by three'		&
+     &		//' processes: at a side ',ivalg(4),', by position ',ivalg(5)
+	  write(6,'(a,i0,a,f0.1)') ' lgr hand-over: most particles'	&
+     &		//' changing process in one step: ',lgr_nchg_max		&
+     &		,', step ending at time ',lgr_tchg_max
+	  write(6,'(a,i0,a,i0)') ' lgr dry elements: element-steps dry'	&
+     &		//' (counted by the main owner) ',ivalg(6)			&
+     &		,', dry with a cut-off side ',ivalg(7)
 	end if
 
 	end subroutine lgr_mpi_handover_stats
+
+!*******************************************************************
+
+	subroutine lgr_mpi_check_consistency(dtime)
+
+! built-in check of the particle state on several processes, active at
+! levdbg >= 2 (blgr_chk, decided by lgr_mpi_init); a no-op on one process
+! and at levdbg < 2, so a serial run is not changed. Called by lagrange
+! once per time step on every process, right after lgr_mpi_handover (the
+! rounds of the hand-over have ended). Collective: every process makes
+! the same calls in the same order, also one without particles, and every
+! decision is taken on reduced values, the same on every process. Checks:
+! (a) particle count: the slots 1..nbdy of all processes, by class: in
+!     the domain (actual%ie > 0, beached ones included), left the basin
+!     (ie < 0: through an open boundary or into a transit element) and
+!     without an element (ie = 0: decayed, or inserted outside the mesh),
+!     summed over the processes, equal the number of particles released so
+!     far, the ids given out (idbdy, global since lgr_mpi_assign_ids, the
+!     same on every process). A slot is removed only by the hand-over,
+!     which appends the particle on the receiving process in the same
+!     round; the particles put back at a cut-off side (lgr_nputback) stay
+!     in the domain, it counts events, not a class.
+! (b) every particle in the domain sits in an element this process holds
+!     (a local element number 1..nel), and every slot 1..nbdy holds a
+!     particle record (its custom values allocated: lgr_mpi_remove_particle
+!     frees them in the slot it vacates); and no slot carries a mark of the
+!     hand-over (lgr_marked /= 0: at a side or parked) after the rounds.
+! (c) no id occurs on two processes, and no id twice on one process. Exact:
+!     every process counts its slots per id in an array of length
+!     nid = max(idbdy, largest id), the arrays are summed (MPI_Allreduce),
+!     and an id with a sum above 1 is a duplicate; an id below 1 cannot be
+!     counted and is reported as out of range. Cost per step: two integer
+!     arrays of length nid per process (allocated and freed in the call),
+!     one MPI_Allreduce of nid integers and two of a few integers.
+! (a), (b) and (c) are evaluated every time. If any fails, rank 0 writes
+! every failing message with its numbers (the per-process values gathered
+! to rank 0), flushes, and after a barrier every process stops through
+! shympi_abort_internal; no process stops alone. Unlike the self-tests,
+! which only report, this check aborts: it compares exact counts of the
+! real particle state, so it has no false failure; a failure means the
+! state is wrong.
+!
+! test hooks (environment variables read once by lgr_mpi_init, inactive
+! unless set; mpirun passes a variable to the processes only with
+! -x NAME): LGR_TEST_DROP=R, LGR_TEST_DUP=R with R a rank number; process
+! R injects the fault once in the whole run, at its first hand-over at a
+! side, and writes one line when it does; every other process ignores the
+! variable. DROP: R skips its first arrival at a side in
+! lgr_mpi_handover_round (the particle is lost; (a) fails). DUP: R keeps
+! the first particle it sends at a side; the copy stays in its slot on the
+! side with its mark cleared ((a) and (c) fail).
+!
+! not active if a release that gives out no global ids is configured
+! (lgrini, lgrtrj, lgrpps on a boundary): lgr_mpi_init writes one line
+
+	use shympi, only : my_id, n_threads
+	use basin, only : nel
+
+	implicit none
+
+	include 'mpif.h'
+
+	double precision, intent(in) :: dtime
+
+	integer, parameter :: nv = 6		!counts summed over processes
+	integer, parameter :: ninf = 12		!per process, for the messages
+	integer, parameter :: ndl = 10		!duplicate ids listed
+	integer :: ival(nv), ivalg(nv), imx(3), imxg(3), info(ninf)
+	integer :: ldup(ndl), cdup(ndl)
+	integer :: i, ie, id, k, r, n, nid, ndup, nl, nheld, idbmin, idbmax
+	integer :: ierr
+	integer, allocatable :: icnt(:), icntg(:), infog(:,:), cdupg(:,:)
+	logical :: bfa, bfb1, bfb2, bfc1, bfc2
+	character(len=1000) :: line
+	character(len=16) :: buf
+
+	if( .not. blgr_chk ) return
+
+	!-----------------------------------------------
+	! own slots: classes, (b), ids below 1, largest id
+	!-----------------------------------------------
+
+	ival = 0
+	info = 0
+	imx(1) = idbdy
+	imx(2) = -idbdy
+	imx(3) = 0
+	do i = 1, nbdy
+	  ie = lgr_ar(i)%actual%ie
+	  id = lgr_ar(i)%id
+	  if( ie > 0 ) then
+	    ival(1) = ival(1) + 1
+	  else if( ie < 0 ) then
+	    ival(2) = ival(2) + 1
+	  else
+	    ival(3) = ival(3) + 1
+	  end if
+	  if( ie > nel .or. .not. allocated(lgr_ar(i)%custom) ) then
+	    ival(4) = ival(4) + 1
+	    if( ival(4) == 1 ) then
+	      info(5) = id
+	      info(6) = ie
+	    end if
+	  end if
+	  if( lgr_marked(i) /= 0 ) then
+	    ival(5) = ival(5) + 1
+	    if( ival(5) == 1 ) then
+	      info(8) = id
+	      info(9) = lgr_marked(i)
+	    end if
+	  end if
+	  if( id < 1 ) then
+	    ival(6) = ival(6) + 1
+	    if( ival(6) == 1 ) info(11) = id
+	  end if
+	  imx(3) = max(imx(3),id)
+	end do
+	info(1:3) = ival(1:3)
+	info(4) = ival(4)
+	info(7) = ival(5)
+	info(10) = ival(6)
+	info(12) = idbdy
+
+	call MPI_Allreduce(ival,ivalg,nv,MPI_INTEGER,MPI_SUM		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_check_consistency: MPI_Allreduce')
+	call MPI_Allreduce(imx,imxg,3,MPI_INTEGER,MPI_MAX			&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_check_consistency: MPI_Allreduce')
+	idbmax = imxg(1)
+	idbmin = -imxg(2)
+
+	!-----------------------------------------------
+	! (c) slots per id, summed over the processes
+	!-----------------------------------------------
+
+	nid = max(idbmax,imxg(3),1)	!the same on every process
+	allocate(icnt(nid), icntg(nid), stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_check_consistency: allocation')
+	icnt = 0
+	do i = 1, nbdy
+	  id = lgr_ar(i)%id
+	  if( id >= 1 .and. id <= nid ) then
+	    icnt(id) = icnt(id) + 1
+	  end if
+	end do
+	call MPI_Allreduce(icnt,icntg,nid,MPI_INTEGER,MPI_SUM		&
+     &			,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_check_consistency: MPI_Allreduce')
+	ndup = 0
+	nl = 0
+	ldup = 0
+	do id = 1, nid
+	  if( icntg(id) > 1 ) then
+	    ndup = ndup + 1
+	    if( nl < ndl ) then
+	      nl = nl + 1
+	      ldup(nl) = id
+	    end if
+	  end if
+	end do
+
+	!-----------------------------------------------
+	! decisions on reduced values only
+	!-----------------------------------------------
+
+	nheld = ivalg(1) + ivalg(2) + ivalg(3)
+	bfa = ( nheld /= idbmax .or. idbmin /= idbmax )
+	bfb1 = ( ivalg(4) > 0 )
+	bfb2 = ( ivalg(5) > 0 )
+	bfc1 = ( ndup > 0 )
+	bfc2 = ( ivalg(6) > 0 )
+
+	if( .not. ( bfa .or. bfb1 .or. bfb2 .or. bfc1 .or. bfc2 ) ) then
+	  deallocate(icnt,icntg)
+	  return
+	end if
+
+	!-----------------------------------------------
+	! a check failed: gather the details to rank 0, write, abort
+	!-----------------------------------------------
+
+	cdup = 0
+	do i = 1, nbdy
+	  id = lgr_ar(i)%id
+	  do k = 1, nl
+	    if( id == ldup(k) ) cdup(k) = cdup(k) + 1
+	  end do
+	end do
+
+	allocate(infog(ninf,0:n_threads-1), cdupg(ndl,0:n_threads-1)	&
+     &		, stat=ierr)
+	if (ierr /= 0) call shympi_abort_internal			&
+     &		('lgr_mpi_check_consistency: allocation')
+	call MPI_Gather(info,ninf,MPI_INTEGER,infog,ninf,MPI_INTEGER	&
+     &			,0,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_check_consistency: MPI_Gather')
+	call MPI_Gather(cdup,ndl,MPI_INTEGER,cdupg,ndl,MPI_INTEGER		&
+     &			,0,MPI_COMM_WORLD,ierr)
+	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
+     &		('lgr_mpi_check_consistency: MPI_Gather')
+
+	if( my_id == 0 ) then
+	  if( bfa ) then
+	    write(6,'(a,f0.1,a,i0,a,i0,a,i0,a,i0,a,i0)')			&
+     &		' lgr_mpi_check_consistency: particle count: time ',dtime	&
+     &		,', released (ids given out) ',idbmax,', held ',nheld	&
+     &		,' = in the domain ',ivalg(1),' + left ',ivalg(2)		&
+     &		,' + without an element ',ivalg(3)
+	    if( idbmin /= idbmax ) then
+	      write(6,'(a,i0,a,i0)') ' lgr_mpi_check_consistency: particle'	&
+     &		//' count: the ids given out differ between the processes: '	&
+     &		,idbmin,' to ',idbmax
+	    end if
+	    do r = 0, n_threads-1
+	      write(6,'(a,i0,a,i0,a,i0,a,i0,a,i0)') ' lgr_mpi_check_consistency:'	&
+     &		//' particle count: process ',r,': in the domain '		&
+     &		,infog(1,r),', left ',infog(2,r),', without an element '	&
+     &		,infog(3,r),', ids given out ',infog(12,r)
+	    end do
+	  end if
+	  if( bfb1 ) then
+	    write(6,'(a,f0.1,a,i0,a)') ' lgr_mpi_check_consistency: particle'	&
+     &		//' in an element not held: time ',dtime,', ',ivalg(4)	&
+     &		,' particles in the domain beyond the held elements or in'	&
+     &		//' slots without a particle record'
+	    do r = 0, n_threads-1
+	      if( infog(4,r) == 0 ) cycle
+	      write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr_mpi_check_consistency:'	&
+     &		//' particle in an element not held: process ',r,': '	&
+     &		,infog(4,r),', the first id ',infog(5,r),' element '	&
+     &		,infog(6,r)
+	    end do
+	  end if
+	  if( bfb2 ) then
+	    write(6,'(a,f0.1,a,i0,a)') ' lgr_mpi_check_consistency: mark'	&
+     &		//' left after the hand-over: time ',dtime,', ',ivalg(5)	&
+     &		,' slots'
+	    do r = 0, n_threads-1
+	      if( infog(7,r) == 0 ) cycle
+	      write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr_mpi_check_consistency:'	&
+     &		//' mark left after the hand-over: process ',r,': '		&
+     &		,infog(7,r),', the first id ',infog(8,r),' mark ',infog(9,r)
+	    end do
+	  end if
+	  if( bfc1 ) then
+	    write(6,'(a,f0.1,a,i0,a,i0,a)') ' lgr_mpi_check_consistency:'	&
+     &		//' duplicate id: time ',dtime,', ',ndup,' ids occur more'	&
+     &		//' than once (the first ',nl,' listed)'
+	    do k = 1, nl
+	      line = ' '
+	      do r = 0, n_threads-1
+	        do n = 1, cdupg(k,r)
+	          write(buf,'(1x,i0)') r
+	          line = trim(line)//trim(buf)
+	        end do
+	      end do
+	      write(6,'(a,i0,a,a)') ' lgr_mpi_check_consistency: duplicate'	&
+     &		//' id ',ldup(k),' on processes',trim(line)
+	    end do
+	  end if
+	  if( bfc2 ) then
+	    write(6,'(a,f0.1,a,i0,a)') ' lgr_mpi_check_consistency: id out'	&
+     &		//' of range: time ',dtime,', ',ivalg(6),' particles with'	&
+     &		//' an id below 1'
+	    do r = 0, n_threads-1
+	      if( infog(10,r) == 0 ) cycle
+	      write(6,'(a,i0,a,i0,a,i0)') ' lgr_mpi_check_consistency: id'	&
+     &		//' out of range: process ',r,': ',infog(10,r)		&
+     &		,', the first id ',infog(11,r)
+	    end do
+	  end if
+	  flush(6)
+	end if
+
+	call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
+	call shympi_abort_internal('error stop lgr_mpi_check_consistency:'	&
+     &		//' the particle state is inconsistent')
+
+	end subroutine lgr_mpi_check_consistency
 
 !*******************************************************************
 

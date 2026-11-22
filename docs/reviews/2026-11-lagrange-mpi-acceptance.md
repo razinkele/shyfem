@@ -340,3 +340,88 @@ processes no particle was parked with a local hit that no owner answered. Bounds
 `COMPILER_PROFILE=CHECK` builds of `7080cfef` run A, B, C and E serially and on 4 processes
 without a runtime message or a trap. With 4 OpenMP threads on 4 processes two runs are
 byte-identical to each other and to the one-thread run.
+
+## Task 3.6: consistency check, OpenMP, empty ranks, and the cases of spec section 7
+
+**Measured** 2026-11-22 06:52 to 07:23 EET (from `date`) by the implementer, on the binary built
+from this commit's source (parent `185321dd`), OpenMPI `libmpi.so.40`; the head binary of
+`185321dd` was kept aside for the baseline dumps.
+
+**What was added.** `lgr_mpi_check_consistency` (`src/shyfem/lagrange_mpi.f90`), called by
+`lagrange` once per step right after the hand-over, at `levdbg >= 2` on more than one process
+(a no-op serially). It checks (a) that the particles of all processes, in the domain
+(`ie > 0`), left (`ie < 0`) and without an element (`ie = 0`), add up to the ids given out
+(`idbdy`); (b) that every particle in the domain sits in a held element, every slot holds a
+record, and no hand-over mark is left; (c) that no id occurs twice, on one process or on two
+(exact: per-id counts summed over the processes). It aborts on every process after rank 0
+has written every failing message. It is not active, with one line at start-up, when
+`lgrini`, `lgrtrj` or `lgrpps` is set. The test hooks `LGR_TEST_DROP=R` / `LGR_TEST_DUP=R`
+make process R lose its first arrival at a side, or keep a copy of the first particle it sends
+at a side (passed with `mpirun -x NAME`).
+
+**Fault tests** (case A, 4 processes, `levdbg = 2`, R = 2):
+
+| Run | Before the check (hooks only) | With the check |
+|---|---|---|
+| `LGR_TEST_DROP=2` | ends normally, exit 0 (the hook's line: id 63 dropped at 49,500 s) | exit 33 at 49,500 s: `particle count: ... released (ids given out) 145, held 144`; all four processes stop |
+| `LGR_TEST_DUP=2` | ends normally, exit 0 (id 8 kept at 78,900 s) | exit 33 at 78,900 s: `particle count: ... held 146` and `duplicate id 8 on processes 2 3`; all four stop |
+
+A repeat gives the same messages; the same faults in cases B and C (R = 1 and 2) abort
+likewise. The clean runs at `levdbg = 2` end without a message: A, B, C, D, E on 4
+processes, A, B, C on 2 and 8. With `lgrpps` or `lgrtrj` set, the start-up line
+`lgr_mpi_check_consistency: not active (release lgrpps ...)` (or `lgrtrj`) appears once.
+
+**Tracks unchanged.** The dumps of A, B, C and E on 4 processes are byte-identical to those of
+the head binary (52 of 52 files); `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`
+prints `SERIAL GUARD: PASS` (32 files identical, none skipped), `repro` prints `REPRO: PASS`,
+`perturb` passes for A, B, C and E, and the hand-over check passes for A, B and C on 4 and 8
+processes.
+
+**OpenMP** (spec section 7, case 9; copies of A, C, E with `nomp = -1`, 4 processes,
+`OMP_NUM_THREADS=4`, `levdbg = 3`): every log has `used OMP threads: 4`; two runs are
+byte-identical to each other and to the one-thread run (A 12, C 16, E 12 files).
+
+**Empty ranks** (case 5): in case A on 4 processes ranks 0 and 1 release nothing (rank 2: 49,
+rank 3: 96 particles; rank 0 holds none in the whole run, rank 1 receives some later);
+`./check_lgr_mpi.sh mm_lgr_a 4 part --by key --tol 0 --first-only --elem --ranks-empty-ok`
+passes, and no process aborts or hangs.
+
+**Positions against the floors** (`./check_lgr_mpi.sh CASE NP floor`; beyond 1e-5 degrees,
+case B 2 m, at the last output / largest distance at any output; all twelve pass, no
+unmatched particle, no layer or z difference):
+
+| Case | 2 processes | 4 processes | 8 processes | Floor |
+|---|---|---|---|---|
+| A | 25 / 4.38e-4 | 24 / 4.34e-4 | 27 / 4.35e-4 | 78 / 2.97e-3 degrees |
+| B | 5 / 103.25 m | 5 / 36 m | 4 / 103.25 m | 48 / 182 m |
+| C | 0 / 2.72e-5 | 0 / 9.89e-6 | 0 / 2.72e-5 | 19 / 7.1e-3 degrees |
+| E | 18 / 1.09e-3 | 16 / 1.16e-3 | 18 / 1.09e-3 | 33 / 4.3e-3 degrees |
+
+**Spec section 7** (the statistic lines at `levdbg >= 3`):
+- Case 1: most hand-overs at a side of one particle in one step: 2 in case B on 4, 8 and 16
+  processes (the shipped time step).
+- Case 2: hand-overs that start in an element held by three processes: case B, at a side 14 on
+  4 processes, 25 on 6, 56 on 8, 221 on 16; case A on 6: 2; by position only in the dense copy
+  of case 6 (8 on 8 processes).
+- Case 4: particles that left through the open boundary at the end of case B: serial 595; on 4
+  processes 1, 12, 582, 0 (595); on 8 processes 13, 0, 0, 582, 0, 0, 0, 0 (595), the same ids.
+  None of them left from an element whose main owner is another process (on 2, 3, 4, 6, 8 and
+  16 processes and in the dense copy): the spec's form of case 4 does not occur in these runs.
+- Case 6: a copy of case B with `nbdy = 200000`, `nbdymax = 400000` (a ten times smaller
+  release spacing) and `idtlgr = '6h'` releases 200,001 particles; on 8 processes at most
+  1,236 particles change process in one step (the step ending at 36,900 s). No particle is
+  lost or duplicated (the check is active and silent; in the domain plus left = 200,001 at
+  every output). The counts per class do not equal serial at the last three outputs: one
+  particle that comes to rest in the permanently dry element 870 in the serial run is 0.0625 m
+  (one single-precision step) away at 24 h, after a hand-over between 18 and 24 h, misses the
+  element and has left at the open boundary by 36 h, so the part mode prints FAIL (COUNT at
+  129,600, 151,200 and 172,800 s; positions up to 11.5 km apart). Serial runs whose wind drag
+  is changed by a relative +-1e-5 change the class of 1 to 4 particles at the same outputs and
+  reach 18.6 km; 688 of the 711 particles resting in the dry elements at the end are at the
+  same place on 8 processes, against 536 and 561 in the two changed serial runs (708, 709 and
+  713 rest there in all); the hand-over check passes on these dumps (rate of the changed group
+  2.77e-3, of the stayed group 2.58e-3). This is consistent with the divergence the serial
+  floor shows, but "counts equal serial at every output" is not met in this run.
+- Case 8: elements 365 and 870 are dry (`iwegv = 3`) for the whole run in both meshes (case B:
+  1,258 dry element-steps, 1,154 of them these two; case C: 1,154). On 2, 3, 6 and 8 processes
+  (and 16 in case B) each has a cut-off side; on 4 processes they lie inside one process.

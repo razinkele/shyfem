@@ -9,6 +9,7 @@ usage: lgr_dbg_compare.py flux SERIAL_DIR MPI_DIR [--tol 1e-5]
                           [--handover [--step LENGTH] [--jump-factor J]
                                       [--jump-floor F] [--quantile Q]
                                       [--min-changed N]]
+                          [--max-beyond-last N] [--max-largest D]
 
 Each directory holds the files lgrdbg.KIND.NN.txt of one run (NN = rank),
 written by lgr_mpi_debug_dump (src/shyfem/lagrange_mpi.f90).  Every file
@@ -134,12 +135,26 @@ part  compares lgrdbg.part (class time id x y z lb ie_global rank ncross
                     case A on 4 ranks rank 0 holds no particle in the whole
                     run, also when the tracks equal serial); without the flag
                     it is listed as a note.
+      --max-beyond-last N, --max-largest D  (with --by key) the positions
+                    are held against floors instead of the limit pair by
+                    pair: a pair beyond --tol is then no failure by itself;
+                    the run fails if the number of matched pairs beyond --tol
+                    at the last output both runs share is greater than N
+                    (--max-beyond-last), or if the largest distance at any
+                    output is greater than D or NaN (--max-largest).  Either
+                    option alone, or both; everything else (counts, times,
+                    unmatched and duplicate keys, NaN positions, layer and z
+                    differences, --ncross, --elem, --ids) gates as without
+                    them.  A line "floor: ..." states each test with its
+                    value, its limit and its verdict.  Without the two
+                    options nothing changes.  check_lgr_mpi.sh mode floor
+                    passes the floors measured on the serial reference.
 
 Every mode exits 1 if the comparison fails (flux, node: any row off; part: a
 count or time mismatch, an unmatched particle, a NaN position, a distance
-above --tol, a differing layer or z, a duplicate id with --by id, a differing
-crossing count with --ncross, a differing element with --elem, a differing id
-with --ids).
+above --tol (or, with --max-beyond-last / --max-largest, a floor exceeded), a
+differing layer or z, a duplicate id with --by id, a differing crossing count
+with --ncross, a differing element with --elem, a differing id with --ids).
 
 Exit status: 0 = runs agree, 1 = they differ, 2 = a dump cannot be read.
 """
@@ -803,6 +818,8 @@ def cmd_part(args):
     nfail = 0
     pairs_at, state_at = {}, {}
     nlisted = 0              # unmatched keys printed (at most 10)
+    floor = args.max_beyond_last is not None or args.max_largest is not None
+    over_at = {}             # pairs beyond --tol per time (floor test)
 
     empty = [r for r, n in sorted(mentries.items()) if n == 0]
     if empty:
@@ -877,8 +894,11 @@ def cmd_part(args):
         nid = sum(1 for p in pairs if p[0][ID] != p[1][ID])
         note = ""
         bad = unmat + nnan
+        over_at[t] = nover
         if not args.handover:
-            bad += nover + nlb + nz
+            bad += nlb + nz
+            if not floor:
+                bad += nover
         if len(sa) != len(ma):
             bad += 1
             note += " COUNT"
@@ -918,6 +938,12 @@ def cmd_part(args):
     if worst[1] is not None:
         print("  largest distance %.4e at time %.1f" % worst)
     ng = " (not gated)" if args.handover else ""
+    if args.handover:
+        over_note = ng
+    elif floor:
+        over_note = " (not gated pair by pair: floor test)"
+    else:
+        over_note = ""
     if not args.ncross:
         ncr_note = " (not gated)"
     elif args.by == "key":
@@ -931,8 +957,8 @@ def cmd_part(args):
     print("  totals over %d outputs: unmatched %d, nan %d, beyond tol %d%s,"
           " layer differs %d%s, z differs %d%s, ncross differs %d%s,"
           " ncross unknown (-1) %d, element differs %d%s%s"
-          % (len(times), tot["unmat"], tot["nan"], tot["over"], ng, tot["lb"],
-             ng, tot["z"], ng, tot["ncr"], ncr_note,
+          % (len(times), tot["unmat"], tot["nan"], tot["over"], over_note,
+             tot["lb"], ng, tot["z"], ng, tot["ncr"], ncr_note,
              tot["unk"], tot["ie"], "" if args.elem else " (not gated)",
              id_note))
     if args.by == "key":
@@ -944,6 +970,37 @@ def cmd_part(args):
         groups, left_out, beyond_list, moved = handover_stats(
             times, pairs_at, state_at, args.step)
         nfail += handover_report(groups, left_out, beyond_list, moved, args)
+    if floor:
+        nfail += floor_report(times, ser, mpi, over_at, worst, args)
+    return nfail
+
+
+def floor_report(times, ser, mpi, over_at, worst, args):
+    """The floor tests of --max-beyond-last and --max-largest (see the
+    module docstring); print one line per test, return the failures."""
+    nfail = 0
+    if args.max_beyond_last is not None:
+        shared = [t for t in times if t in ser and t in mpi]
+        if not shared:
+            print("  floor: FAIL: no output time in both runs")
+            nfail += 1
+        else:
+            last = shared[-1]
+            n = over_at[last]
+            bad = n > args.max_beyond_last
+            print("  floor: pairs beyond --tol %g at the last output both runs"
+                  " share (time %.1f): %d %s %d: %s"
+                  % (args.tol, last, n, ">" if bad else "<=",
+                     args.max_beyond_last, "FAIL" if bad else "ok"))
+            nfail += 1 if bad else 0
+    if args.max_largest is not None:
+        big = worst[0]
+        bad = not big <= args.max_largest
+        at = "" if worst[1] is None else " (time %.1f)" % worst[1]
+        print("  floor: largest distance at any output%s: %.6g %s %g: %s"
+              % (at, big, ">" if bad else "<=", args.max_largest,
+                 "FAIL" if bad else "ok"))
+        nfail += 1 if bad else 0
     return nfail
 
 
@@ -1000,6 +1057,15 @@ def main(argv=None):
     p.add_argument("--min-changed", type=int, default=0,
                    help="--handover: fail if fewer than N pairs are in the"
                         " changed-process group (default 0)")
+    p.add_argument("--max-beyond-last", type=int, default=None,
+                   help="with --by key: floor test, fail if more than N"
+                        " matched pairs are beyond --tol at the last output"
+                        " both runs share (a pair beyond --tol is then no"
+                        " failure by itself)")
+    p.add_argument("--max-largest", type=float, default=None,
+                   help="with --by key: floor test, fail if the largest"
+                        " distance at any output exceeds D (a pair beyond"
+                        " --tol is then no failure by itself)")
     p.set_defaults(func=cmd_part)
     args = ap.parse_args(argv)
     if not args.tol >= 0:
@@ -1018,6 +1084,13 @@ def main(argv=None):
             ap.error("--step, --jump-factor and --jump-floor must be >= 0")
         if not 0 < args.quantile < 1:
             ap.error("--quantile must lie in (0, 1)")
+        if (args.max_beyond_last is not None or args.max_largest is not None) \
+                and args.by != "key":
+            ap.error("--max-beyond-last and --max-largest need --by key")
+        if args.max_beyond_last is not None and args.max_beyond_last < 0:
+            ap.error("--max-beyond-last must be >= 0")
+        if args.max_largest is not None and not args.max_largest >= 0:
+            ap.error("--max-largest must be >= 0")
     try:
         nfail = args.func(args)
     except DumpError as e:

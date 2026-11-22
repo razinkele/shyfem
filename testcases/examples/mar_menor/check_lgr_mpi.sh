@@ -20,6 +20,10 @@
 #                plain and one with MALLOC_PERTURB_=85; every dump file of
 #                the two runs must be byte-identical (dependence of the
 #                result on memory that malloc hands out)
+#         floor  debug dump of the particles (as part), compared by key with
+#                the case's --tol and its position floors (the table below):
+#                --max-beyond-last and --max-largest of lgr_dbg_compare.py
+#                (not for mm_lgr: its random walk is never seeded, #225)
 #
 # The serial outputs are renamed to CASE.serial.* (lgr.shy, hydro.shy, inf,
 # log); the MPI log is CASE.npN.log.  For flux and part the run uses a
@@ -38,6 +42,12 @@
 # command line and so replace the defaults, for example
 #   ./check_lgr_mpi.sh mm_lgr_a 4 part --by id --tol 1e-3
 #
+# floor: the positions are held against floors measured on the serial
+# reference instead of the limit pair by pair: the run fails if more pairs
+# are beyond --tol at the last output than the floor's count, or if the
+# largest distance at any output is above the floor's distance.  Arguments
+# after MODE come last, so a floor can be replaced for a trial run.
+#
 # handover: the particles of the two runs are paired by their key (the last
 # six columns of the dump); the statistic and the rule (a jump test against
 # the noise of the particles that stayed, and a Poisson count test) are
@@ -47,7 +57,7 @@
 # can be given or replaced.
 #
 # Side self-test: every mode that runs at levdbg = 3 (flux, part, handover,
-# perturb) requires of each log (serial and MPI; both MPI logs in perturb)
+# floor, perturb) requires of each log (serial and MPI; both MPI logs in perturb)
 # the summary line "lgr side fallback self-test: ok" and no line with
 # "lgr side fallback self-test: FAILED"; for mm_lgr_b the open-side count
 # of checks run (the "open N/M" field of the summary) must be above 0, and
@@ -84,7 +94,7 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|handover|pos|ids|perturb)"
+  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb)"
   exit 2
 }
 
@@ -97,8 +107,26 @@ case "$CASE" in
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
-case "$MODE" in flux|part|handover|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+case "$MODE" in flux|part|handover|floor|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
 if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
+
+# Position floors (mode floor): particles beyond --tol at the last output and
+# the largest distance at any output, each the envelope of six serial runs
+# whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
+# metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
+# section "Task 3.7", table "Position floors on the new reference" (measured
+# on /home/razinka/wt-lgr-ref3, commit 0fddec90).  Never change a value to
+# make a run pass.
+case "$CASE" in
+  mm_lgr_a) FLOOR_N=78; FLOOR_D=2.97e-3 ;;
+  mm_lgr_b) FLOOR_N=48; FLOOR_D=182 ;;
+  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.1e-3 ;;
+  mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3 ;;
+  *) FLOOR_N=""; FLOOR_D="" ;;
+esac
+if [ "$MODE" = floor ] && [ -z "$FLOOR_N" ]; then
+  echo "no position floor for $CASE (its random walk is never seeded, #225)"; usage
+fi
 
 #--- preconditions -------------------------------------------------------
 command -v shyfem  > /dev/null 2>&1 || { echo "LGR GATE FAIL: shyfem is not on PATH"; exit 1; }
@@ -126,7 +154,7 @@ trap 'cleanup; exit 130' INT TERM
 
 STR="$CASE.str"
 DUMP=0
-if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = handover ] || [ "$MODE" = perturb ]; then
+if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = handover ] || [ "$MODE" = floor ] || [ "$MODE" = perturb ]; then
   DUMP=1
   if grep -q '^[[:space:]]*levdbg' "$HERE/$CASE.str"; then
     echo "LGR GATE FAIL: $CASE.str already sets levdbg; refusing to add a second one"
@@ -390,6 +418,12 @@ case "$MODE" in
   handover)
     python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
         --tol "$TOL" --by key --handover --step "$STEP" "$@"
+    crc=$?
+    ;;
+  floor)
+    echo "  floors of $CASE: beyond $TOL at the last output $FLOOR_N, largest distance at any output $FLOOR_D"
+    python3 "$HERE/lgr_dbg_compare.py" part "$HERE/$CASE.serial.dbg" "$HERE/$CASE.np$NP.dbg" \
+        --tol "$TOL" --by key --max-beyond-last "$FLOOR_N" --max-largest "$FLOOR_D" "$@"
     crc=$?
     ;;
   pos|ids)

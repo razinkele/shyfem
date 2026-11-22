@@ -209,6 +209,12 @@ def kcnt_off(nch):
                          else (0.0, 0.0))
 krun('kcnt5', 2, I20, changed=range(1, 11), off=kcnt_off(5))
 krun('kcnt6', 2, I20, changed=range(1, 11), off=kcnt_off(6))
+# floors: at the last block (7200) particles 1, 2, 3 are 0.25 away; at the
+# first block (3600) particle 9 is 0.5 away (the largest at any output);
+# offsets of 2^-k give exact distances
+krun('kfloor', 2, I10, changed=range(1, 6),
+     off=lambda i, b: ((0.25, 0.0) if (b == 1 and i <= 3) else
+                       (0.5, 0.0) if (b == 0 and i == 9) else (0.0, 0.0)))
 
 # flux files: serial elements 1, 2; element 2 is mixed (rank 1 main owner)
 def write_flux(d, rank, n, rows):
@@ -431,6 +437,30 @@ check "--ids needs --by key" 2 "--ids needs --by key" \
     part "$t/kser" "$t/kid" --tol 0 --by id --ids
 check "--ids needs --by key (nearest)" 2 "--ids needs --by key" \
     part "$t/kser" "$t/kid" --tol 0 --ids
+
+# ---- floors: --max-beyond-last N and --max-largest D (with --by key)
+# kfloor: 3 pairs beyond 1e-5 at the last block (7200), 1 at the first; the
+# largest distance at any output is 0.5 (at 3600)
+check "floor, without the options every pair beyond --tol fails" 1 "3600.0 +10 +10 .* +5.000e-01 +1 .*7200.0 +10 +10 .* +2.500e-01 +3 .*beyond tol 4,.*FAIL" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key
+check "floor, beyond at the last output at the limit passes" 0 "beyond tol 4 \(not gated pair by pair: floor test\).*floor: pairs beyond --tol 1e-05 at the last output both runs share \(time 7200.0\): 3 <= 3: ok" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key --max-beyond-last 3
+check "floor, beyond at the last output above the limit fails" 1 "floor: pairs beyond --tol 1e-05 at the last output both runs share \(time 7200.0\): 3 > 2: FAIL" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key --max-beyond-last 2
+check "floor, largest at any output at the limit passes" 0 "floor: largest distance at any output \(time 3600.0\): 0.5 <= 0.5: ok" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key --max-largest 0.5
+check "floor, largest at any output above the limit fails" 1 "floor: largest distance at any output \(time 3600.0\): 0.5 > 0.4999: FAIL" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key --max-largest 0.4999
+check "floor, both at the limit pass" 0 "floor: pairs beyond .*: 3 <= 3: ok.*floor: largest .*: 0.5 <= 0.5: ok" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key --max-beyond-last 3 --max-largest 0.5
+check "floor, one of both above its limit fails" 1 "floor: pairs beyond .*: 3 <= 3: ok.*floor: largest .*: 0.5 > 0.25: FAIL" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by key --max-beyond-last 3 --max-largest 0.25
+check "floor, the structure still gates (a key left in one run)" 1 "7200.0 +9 +10 +1 +0 +0 +1 .*floor: .*ok" \
+    part "$t/kser_left" "$t/kok" --tol 0 --by key --max-beyond-last 0 --max-largest 0
+check "floor, --max-largest needs --by key" 2 "need --by key" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --by id --max-largest 1
+check "floor, --max-beyond-last needs --by key" 2 "need --by key" \
+    part "$t/kser" "$t/kfloor" --tol 1e-5 --max-beyond-last 1
 
 if [ "$fail" -eq 0 ]; then echo "LGR DBG COMPARE TEST: PASS"; exit 0; fi
 echo "LGR DBG COMPARE TEST: FAIL"; exit 1
