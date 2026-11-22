@@ -20,9 +20,14 @@ def rec(payload):
     n = struct.pack('<i', len(payload))
     return n + payload + n
 
-def header(decoy):
+def header(decoy, real=False):
     # arbitrary fake model header; the tool must not depend on its content
-    out = rec(b'FAKEHDR1' * 3) + rec(struct.pack('<8i', *range(8)))
+    # (real: the first three records of a model header, for --dims)
+    if real:
+        out = rec(struct.pack('<ii', 1617, 15)) + rec(struct.pack('<i', 3))
+        out += rec(struct.pack('<5i', 1402, 2545, 1, 19, 1))
+    else:
+        out = rec(b'FAKEHDR1' * 3) + rec(struct.pack('<8i', *range(8)))
     if decoy:
         # a 4-byte record followed by a 16-byte record with iwhat = 0,
         # but no consistent block behind it
@@ -32,9 +37,9 @@ def header(decoy):
     out += rec(struct.pack('<i', NCUST))
     return out
 
-def particle(pid, x, y, z=-1.5, lb=1, ie=3, typ=1):
+def particle(pid, x, y, z=-1.5, lb=1, ie=3, typ=1, hl=0.25):
     r1 = struct.pack('<iidfi', pid, typ, 100.0 + pid, 0.5, ie)
-    r2 = struct.pack('<fffif', x, y, z, lb, 0.25)
+    r2 = struct.pack('<fffif', x, y, z, lb, hl)
     r3 = struct.pack('<%df' % NCUST, *([0.5 * pid] * NCUST))
     return rec(r1) + rec(r2) + rec(r3)
 
@@ -43,13 +48,21 @@ def block(dtime, iwhat, parts):
         particle(*p) for p in parts)
 
 def build(path, shift_id=None, drop_id=None, reverse=False, decoy=False,
-          nan_id=None, type_id=None, times=(0.0, 3600.0)):
-    out = header(decoy)
+          nan_id=None, type_id=None, times=(0.0, 3600.0), moves=None,
+          real=False):
+    # moves: {dtime: {id: (dx, ie, hl)}} shifts x of an active particle by
+    # dx at that output and writes its element ie and its depth hl
+    out = header(decoy, real)
     for dtime in times:
         active = [(i, 0.1 * i, 0.2 * i) for i in range(1, 9)]
         inserted = [(i, 0.1 * i, 0.2 * i, -1.5, 1, 3) for i in (1, 2, 3)]
         exited = [(9, 0.9, 1.8, -1.5, 1, 4)]
-        active = [(i, x + 2e-5 if i == shift_id else x, y) for i, x, y in active]
+        if moves is not None:
+            mv = moves.get(dtime, {})
+            active = [(i, x + mv[i][0], y, -1.5, 1, mv[i][1], 1, mv[i][2])
+                      if i in mv else (i, x, y) for i, x, y in active]
+        active = [(i, x + 2e-5 if i == shift_id else x, y) + tuple(rest)
+                  for i, x, y, *rest in active]
         if nan_id is not None:
             active = [(i, float('nan') if i == nan_id else x, y) for i, x, y in active]
         if type_id is not None:
@@ -73,6 +86,14 @@ build(d + '/t5_decoy.lgr.shy', decoy=True)
 build(d + '/t6_one_time.lgr.shy', times=(0.0,))
 build(d + '/t7_nan.lgr.shy', nan_id=4)
 build(d + '/t8_type.lgr.shy', type_id=6)
+# floors: at the last output ids 2 and 5 move 3e-5 in their element, id 7
+# moves 5e-5 into element 4 with another depth; at the first output id 4
+# moves 8e-5 (the largest distance at any output)
+build(d + '/t10_floor.lgr.shy', moves={0.0: {4: (8e-5, 3, 0.25)},
+      3600.0: {2: (3e-5, 3, 0.25), 5: (3e-5, 3, 0.25), 7: (5e-5, 4, 0.75)}})
+# id 2 keeps its element at the last output but its depth hl differs
+build(d + '/t11_hl.lgr.shy', moves={3600.0: {2: (3e-5, 3, 0.75)}})
+build(d + '/t12_header.lgr.shy', real=True)
 with open(d + '/t1.lgr.shy', 'rb') as f:
     whole = f.read()
 with open(d + '/t9_truncated.lgr.shy', 'wb') as f:
@@ -113,6 +134,32 @@ check "summary of one file" 0 "output times: 2.*first output t=0.0: active=8 ins
     "$t/t1.lgr.shy" --summary
 check "decoy 4-byte record in the header" 0 "nA=8 nB=8" \
     "$t/t1.lgr.shy" "$t/t5_decoy.lgr.shy" --mode pos --tol 0
+
+# floors of --mode pos (--max-beyond-last, --max-largest)
+check "moved particles fail without the floor options" 1 "id 2 differs \(position\)" \
+    "$t/t1.lgr.shy" "$t/t10_floor.lgr.shy" --mode pos --tol 1e-5
+check "moved particles within both floors" 0 "floor: particles beyond --tol 1e-05 at the last output both files share \(t=3600.0\): 3 <= 3: ok.*floor: largest distance at any output \(t=0.0\): [78][.0-9]*e-05 <= 9e-05: ok" \
+    "$t/t1.lgr.shy" "$t/t10_floor.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 3 --max-largest 9e-5
+check "hl of a pair in another element is not gated under the floors" 0 "t=3600.0 active .*beyond tol 3, hl not gated \(ie differs\) 1" \
+    "$t/t1.lgr.shy" "$t/t10_floor.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 3 --max-largest 9e-5
+check "count floor exceeded" 1 "at the last output both files share \(t=3600.0\): 3 > 2: FAIL" \
+    "$t/t1.lgr.shy" "$t/t10_floor.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 2 --max-largest 9e-5
+check "distance floor exceeded" 1 "largest distance at any output \(t=0.0\): [78][.0-9]*e-05 > 7e-05: FAIL" \
+    "$t/t1.lgr.shy" "$t/t10_floor.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 3 --max-largest 7e-5
+check "distance floor alone" 0 "largest distance at any output" \
+    "$t/t1.lgr.shy" "$t/t10_floor.lgr.shy" --mode pos --tol 1e-5 --max-largest 9e-5
+check "hl differs in the same element under the floors" 1 "id 2 differs \(hl 0.25/0.75\)" \
+    "$t/t1.lgr.shy" "$t/t11_hl.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 10 --max-largest 1
+check "NaN position fails under the floors" 1 "id 4 differs \(position NaN\)" \
+    "$t/t1.lgr.shy" "$t/t7_nan.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 100 --max-largest 1
+check "missing id fails under the floors" 1 "only in A: 7" \
+    "$t/t1.lgr.shy" "$t/t3_missing_id.lgr.shy" --mode pos --tol 1e-5 --max-beyond-last 100 --max-largest 1
+check "floor options need --mode pos" 2 "" \
+    "$t/t1.lgr.shy" "$t/t1.lgr.shy" --mode ids --max-largest 1
+
+# --dims: nel and nlv of the model header
+check "dims of a model header" 0 "nkn 1402 nel 2545 nlv 19" "$t/t12_header.lgr.shy" --dims
+check "dims of a file without a model header" 2 "" "$t/t1.lgr.shy" --dims
 
 if [ "$fail" -eq 0 ]; then echo "LGR COMPARE TEST: PASS"; exit 0; fi
 echo "LGR COMPARE TEST: FAIL"; exit 1

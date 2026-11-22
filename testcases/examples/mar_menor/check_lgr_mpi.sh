@@ -14,8 +14,10 @@
 #                fidelity check of lgr_dbg_compare.py: --by key --handover,
 #                the particles that changed process against those that did
 #                not (--step 6e-8, case B 0.25: one single-precision step)
-#         pos    final particle file: positions, layers, types, times
-#         ids    final particle file: the ids, the counts, valid cells
+#         pos    final particle file: positions against the case's floors
+#                (the table below, as floor), layers, types, times
+#         ids    final particle file: the ids, the counts per block
+#                (--same-counts), valid cells (--nel, --nlv of the basin)
 #         perturb  two MPI runs (no serial run) with the debug dump, one
 #                plain and one with MALLOC_PERTURB_=85; every dump file of
 #                the two runs must be byte-identical (dependence of the
@@ -47,6 +49,16 @@
 # are beyond --tol at the last output than the floor's count, or if the
 # largest distance at any output is above the floor's distance.  Arguments
 # after MODE come last, so a floor can be replaced for a trial run.
+#
+# pos: lgr_compare.py --mode pos with the case's --tol and the same floors
+# (--max-beyond-last, --max-largest: particles of any block beyond --tol at
+# the last output, largest distance of any pair at any output; hl is then
+# compared only for pairs in the same element).  The ids per block, the
+# output times, layers, z, types, times, sinking and custom values gate
+# exactly as without floors.  mm_lgr has no floors: --tol pair by pair.
+# ids: lgr_compare.py --mode ids --same-counts --nel N --nlv L, with N and L
+# from the model header of the serial particle file (lgr_compare.py --dims:
+# the basin's element count and the number of layers).
 #
 # handover: the particles of the two runs are paired by their key (the last
 # six columns of the dump); the statistic and the rule (a jump test against
@@ -116,7 +128,7 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # metres for B).  Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md,
 # section "Task 3.7", table "Position floors on the new reference" (measured
 # on /home/razinka/wt-lgr-ref3, commit 0fddec90).  Never change a value to
-# make a run pass.
+# make a run pass.  Mode pos uses the same floors on the particle file.
 case "$CASE" in
   mm_lgr_a) FLOOR_N=78; FLOOR_D=2.97e-3 ;;
   mm_lgr_b) FLOOR_N=48; FLOOR_D=182 ;;
@@ -434,12 +446,28 @@ case "$MODE" in
     else
       echo "  serial file:"; summary "$A"
       echo "  MPI file:";    summary "$B"
-      if [ "$MODE" = pos ]; then
+      if [ "$MODE" = pos ] && [ -n "$FLOOR_N" ]; then
+        echo "  floors of $CASE: beyond $TOL at the last output $FLOOR_N, largest distance at any output $FLOOR_D"
+        python3 "$HERE/lgr_compare.py" "$A" "$B" --mode pos --tol "$TOL" \
+            --max-beyond-last "$FLOOR_N" --max-largest "$FLOOR_D" "$@"
+        crc=$?
+      elif [ "$MODE" = pos ]; then
         python3 "$HERE/lgr_compare.py" "$A" "$B" --mode pos --tol "$TOL" "$@"
+        crc=$?
       else
-        python3 "$HERE/lgr_compare.py" "$A" "$B" --mode ids "$@"
+        dims="$(python3 "$HERE/lgr_compare.py" "$A" --dims)"
+        NEL="$(echo "$dims" | sed -n 's/.* nel \([0-9][0-9]*\) .*/\1/p')"
+        NLV="$(echo "$dims" | sed -n 's/.* nlv \([0-9][0-9]*\)$/\1/p')"
+        if [ -z "$NEL" ] || [ -z "$NLV" ]; then
+          echo "  cannot read nel and nlv from the model header of $A: '$dims'"
+          crc=2
+        else
+          echo "  basin of the serial file: $dims"
+          python3 "$HERE/lgr_compare.py" "$A" "$B" --mode ids --same-counts \
+              --nel "$NEL" --nlv "$NLV" "$@"
+          crc=$?
+        fi
       fi
-      crc=$?
     fi
     ;;
 esac

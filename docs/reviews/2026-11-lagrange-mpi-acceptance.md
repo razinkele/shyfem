@@ -470,3 +470,92 @@ fault runs abort with exit 33 and the particle-count and duplicate-id messages; 
 D and E on 4 and B on 8 processes at `levdbg = 2` end with the check silent. A build with
 `-fcheck=bounds` (19 runs) and one with `COMPILER_PROFILE=CHECK` (A, B, C, E serially and on 4
 processes) of `a4335dfc` run without a runtime message or a trap.
+
+## Task 5.1 and 5.2: the particle file on several processes (AC2, AC3, AC7, AC8)
+
+**Measured** 2026-11-22 09:17 to 09:34 EET (from `date`) by the implementer, on the stage-5
+branch (`lgr/s5-output`): the gates on a build of the working tree that became commit
+`8113ed74` (the commit changes one comment line against it; its own build was checked at the
+end: case A on 4 processes writes the same particle file byte for byte, serial A is
+unchanged, `ids` B on 4 passes), OpenMPI `libmpi.so.40`.
+
+**What changed.** On several processes `lagrange` calls `lgr_mpi_output` at every output time
+on every process; rank 0 gathers the records of the three blocks (active, inserted, exited),
+orders each by id and writes them as `lgr_output` does; the inserted block comes from release
+records kept by the process that released the particles. Before, no particle record was written
+on several processes (`check_lgr_mpi.sh mm_lgr_a 4 pos` and `ids`: `no particle section found`,
+`LGR GATE: FAIL`). The driver's `pos` mode now holds the positions against the case's floors
+(`lgr_compare.py --max-beyond-last --max-largest`, the table of the `floor` mode; `hl` compared
+for pairs in the same element only), and `ids` runs with `--same-counts --nel --nlv` from the
+model header of the serial file (nel 2545; nlv 1, case C 19).
+
+**AC2 (ids exact) and AC3 (positions against the floors)**, `./check_lgr_mpi.sh CASE NP ids`
+and `... pos`; every inserted block equals serial exactly (largest |dx|, |dy| 0, no element
+differs) in all 12 runs:
+
+| Case | Processes | ids | pos | Beyond the limit at the last output / floor | Largest distance at any output / floor |
+|---|---|---|---|---|---|
+| A | 2 | PASS | PASS | 25 / 78 | 4.38e-4 / 2.97e-3 degrees |
+| A | 4 | PASS | PASS | 24 / 78 | 4.34e-4 / 2.97e-3 degrees |
+| A | 8 | PASS | PASS | 27 / 78 | 4.35e-4 / 2.97e-3 degrees |
+| B | 2 | PASS | PASS | 5 / 48 | 103 / 182 m |
+| B | 4 | PASS | PASS | 5 / 48 | 36 / 182 m |
+| B | 8 | PASS | PASS | 4 / 48 | 103 / 182 m |
+| C | 2 | PASS | PASS | 0 / 19 | 2.7e-5 / 7.1e-3 degrees |
+| C | 4 | PASS | PASS | 0 / 19 | 9.9e-6 / 7.1e-3 degrees |
+| C | 8 | PASS | PASS | 0 / 19 | 2.7e-5 / 7.1e-3 degrees |
+| E | 2 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
+| E | 4 | PASS | PASS | 16 / 33 | 1.16e-3 / 4.3e-3 degrees |
+| E | 8 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
+
+Applied to the particle files of the six perturbed serial runs of Task 3.7 (`gates/floors_runs/`,
+base against each), the same `pos` test passes A, C and E except for the largest distance of
+two runs that exceed the rounded table value by less than float32 resolution (A `-7e-6`:
+2.97344e-3 against 2.97e-3, the measured envelope 2.9734e-3; C `-1e-5`, `-7e-6`, `-4e-6`:
+7.1106e-3 against 7.1e-3); in case B three runs fail on the time `tt` of one or two particles
+that leave the basin one time step apart (the time is compared exactly). The MPI runs above
+are far from both.
+
+**AC7.** `./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`: `SERIAL GUARD: PASS`, every
+file identical (lgr.shy, hydro.shy, inf of A, B, C, E; hydro.shy, inf of D and of
+`mar_menor_lagrange/mm_lgr_01`), also every `mpirun -np 1` file; `./check_lgr_serial.sh repro`:
+`REPRO: PASS`.
+
+**AC8** (`lgr_lgmean_compare.py`: `lgrelab -lgmean` of the serial file and of the 4-process
+file of case A; the serial file is byte-identical to the base run of `gates/floors_runs/`; the
+allowed difference of each value is the envelope of the base against the six perturbed runs,
+value by value). The particle table (per record: active, new, exited, beached, types) is equal
+in all 96 records, the three type files have the same times. Values beyond the envelope:
+
+| Type | x | y | hl | age | sinking | c1 |
+|---|---|---|---|---|---|---|
+| 1 | 0 (max 1e-5 / envelope max 7e-5) | 1 (2e-5 / 7e-5) | 0 (0.025 / 0.030) | 0 | 0 | 0 |
+| 2 | 2 (1e-5 / 2e-5) | 0 (1e-5 / 1e-5) | 1 (0.001 / 0.004) | 0 | 0 | 0 |
+| 3 | 1 (1e-5 / 2e-5) | 0 (2e-5 / 3e-5) | 0 (0.030 / 0.032) | 0 | 0 | 0 |
+
+`LGMEAN COMPARE: FAIL` as the rule stands: 5 of the 1,728 values are beyond their envelope, each
+by one unit of the last printed decimal (1e-5 degrees, 1e-3 m), at times where all six perturbed
+runs print the same digits as the base (envelope 0); none is beyond the envelope plus one
+printed unit. Open for a ruling.
+
+**Edge cases (Task 5.2).** Case B with `idtl = '30m'` in `$lagrg` (and `nbdymax = 100000`; 96
+releases of 1,003 particles, 96,288 in all, two releases between outputs): every one of the 48
+inserted blocks holds exactly the ids released since the previous output, equal as sets in the
+serial and the 4-process file; `ids` on 4 PASS. `pos` on 4 FAILs: against case B's floors (202 >
+48 beyond 2 m at the last output, 499 m > 182 m), which were measured on one release of 1,003
+particles, and on the time `tt` of 4 particles (resting in a dry element, or leaving one step
+apart). The copy's own floors measured the same way on `/home/razinka/wt-lgr-ref3` (base against
+six perturbed serial runs, particle file): 577 to 1,258 beyond 2 m at the last output, 745 to
+6,118 m largest distance, `tt` differing for 26 to 75 particles and 0 to 20 particles in another
+block; the 4-process run is within all of them (202, 499 m, 4, 0). Open for a ruling (the exact
+`tt` of `pos`). Case A with `itranf` one hour after `itanf` (release at the first output time):
+`pos` and `ids` on 4 PASS, no output time before the release in either file; with `itranf` at
+01:30 (release between outputs) both files skip the 01:00 output (nothing written while no
+particle exists) and both PASS.
+
+**Unchanged.** The debug dumps of A, B, C and E on 4 processes are byte-identical to those of
+the stage-3 head `65064328`; `perturb` A, B, C, E on 4 PASS; `handover` B on 8 with
+`--min-changed 1` PASS (1,803 changed-process pairs). A 4-process run of case B with a
+continuous release (`lgrpps` on the river boundary; not supported on several processes) stops
+at the first output with exit 33 and the message "particles 1047, release records taken 1003";
+its file holds no particle record. No run on several processes leaves a `fort.NN` file.
