@@ -43,11 +43,14 @@
 #                the end; lgrini and lgrtrj name a file that does not exist,
 #                the MPI run must stop before it is opened) is run on NP
 #                processes (NP > 1) and serially, each with a timeout of
-#                600 s.  NP processes: a non-zero exit other than the
-#                timeout's 124, the line "Lagrangian option NAME is not
-#                supported with MPI" and the line "run on one process, or
-#                remove NAME" once each, no SIGFPE, SIGSEGV or "Fortran
-#                runtime" line, no particle file.  Serial: the MPI message
+#                600 s.  NP processes: exit code 33 exactly (the code
+#                shympi_abort_internal passes to MPI_ABORT; the project
+#                requires Open MPI, whose mpirun returns it; any other
+#                code, the timeout's 124 included, fails the row), the line
+#                "Lagrangian option NAME is not supported with MPI" and the
+#                line "run on one process, or remove NAME" once each, no
+#                SIGFPE, SIGSEGV or "Fortran runtime" line, no particle
+#                file.  Serial: the MPI message
 #                must never appear; the outcome (ended, or its own failure,
 #                with its exit code) is printed per row; a serial run that
 #                times out fails the row (its outcome is unknown).  Needs no
@@ -551,8 +554,8 @@ if [ "$MODE" = stops ]; then
     n2="$(grep -c "run on one process, or remove $lab" "$SCR/$opt.np$NP.log")"
     nbadsig="$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$SCR/$opt.np$NP.log")"
     nfile=0; [ -e "$HERE/$RUN.lgr.shy" ] && nfile=1
-    if [ "$mrc" = 124 ]; then row_ok=0; echo "  $opt: $NP processes: timed out after 600 s (exit 124; the run must stop promptly)"
-    elif [ "$mrc" = 0 ]; then row_ok=0; echo "  $opt: $NP processes: exit code 0 (the run must stop)"; fi
+    if [ "$mrc" = 124 ]; then row_ok=0; echo "  $opt: $NP processes: timed out after 600 s (exit 124; the run must stop promptly with exit 33)"
+    elif [ "$mrc" != 33 ]; then row_ok=0; echo "  $opt: $NP processes: exit code $mrc (expected 33, the abort code of shympi_abort_internal)"; fi
     [ "$n1" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: message seen $n1 times (expected once)"; }
     [ "$n2" = 1 ] || { row_ok=0; echo "  $opt: $NP processes: 'run on one process' line seen $n2 times (expected once)"; }
     [ "$nbadsig" = 0 ] || { row_ok=0; echo "  $opt: $NP processes: $nbadsig SIGFPE/SIGSEGV/Fortran runtime lines"; }

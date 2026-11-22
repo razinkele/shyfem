@@ -167,15 +167,20 @@ expect "mpi pos: the serial reference exits 1 after 'simulation end'" 1 "did not
 d=$(newdir m3) || exit 1
 expect "mpi pos: the MPI run exits 1 after 'simulation end'" 1 "LGR GATE: FAIL" \
   env FAKE_MPI_RC=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 1 pos
+# the stop on several processes is shympi_abort_internal's MPI_ABORT with
+# code 33, which Open MPI's mpirun returns: only 33 passes
 d=$(newdir m4) || exit 1
-expect "mpi stops: every row stops as expected" 0 "LGR GATE: PASS" \
-  env FAKE_STOPS=1 FAKE_MPI_RC=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
+expect "mpi stops: every row stops as expected (exit 33)" 0 "LGR GATE: PASS" \
+  env FAKE_STOPS=1 FAKE_MPI_RC=33 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
 d=$(newdir m5) || exit 1
 expect "mpi stops: the MPI runs time out after printing both lines" 1 "timed out after 600 s.*LGR GATE: FAIL" \
-  env FAKE_STOPS=1 FAKE_MPI_RC=1 FAKE_TIMEOUT=mpi bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
+  env FAKE_STOPS=1 FAKE_MPI_RC=33 FAKE_TIMEOUT=mpi bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
 d=$(newdir m6) || exit 1
 expect "mpi stops: the serial runs time out" 1 "serial: timed out after 600 s.*LGR GATE: FAIL" \
-  env FAKE_STOPS=1 FAKE_MPI_RC=1 FAKE_TIMEOUT=serial bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
+  env FAKE_STOPS=1 FAKE_MPI_RC=33 FAKE_TIMEOUT=serial bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
+d=$(newdir m7) || exit 1
+expect "mpi stops: both lines printed, then exit 1 instead of 33" 1 "exit code 1 \(expected 33.*LGR GATE: FAIL" \
+  env FAKE_STOPS=1 FAKE_MPI_RC=1 bash "$d/check_lgr_mpi.sh" mm_lgr_a 2 stops
 
 #--- check_lgr_bounds.sh in a throwaway repository --------------------------------
 repo="$tmp/repo"
