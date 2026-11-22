@@ -4261,19 +4261,26 @@
 ! counted by the main owner, and the dry held elements with a cut-off side
 ! (element-steps summed over the processes: an element shared by two
 ! processes with a cut-off side on each counts twice; lgr_ndry).
+! A fourth line counts the particles that have left the basin (ie < 0;
+! such a particle stays in the array of the process that carried it when
+! it left, with ie = -(the local element it left)) and, of them, those
+! whose element left has another process as its main owner
+! (id_elem(1,-ie) /= my_id: a mixed element held here but owned
+! elsewhere; spec section 7, case 4), counted on the particle array now.
 !
 ! called by lagrange after the step that reaches the end of the particle
 ! run and at the first call after it; only the first call writes (every
 ! process makes the same calls, so all take part in the same reduction)
 
-	use shympi, only : my_id, n_threads
+	use shympi, only : my_id, n_threads, id_elem
 
 	implicit none
 
 	include 'mpif.h'
 
-	integer, parameter :: nv = 7
+	integer, parameter :: nv = 9
 	integer :: ival(nv), ivalg(nv), nrmax, ierr
+	integer :: i, ie
 	logical, save :: bdone = .false.	!totals written
 
 	if( .not. blgr_dbg .or. n_threads <= 1 ) return
@@ -4285,6 +4292,14 @@
 	ival(3) = lgr_nres_sent
 	ival(4:5) = lgr_nhand3(1:2)
 	ival(6:7) = lgr_ndry(1:2)
+	ival(8:9) = 0			!left the basin: all, main owner elsewhere
+	do i=1,nbdy
+	  ie = lgr_ar(i)%actual%ie
+	  if( ie < 0 ) then
+	    ival(8) = ival(8) + 1
+	    if( id_elem(1,-ie) /= my_id ) ival(9) = ival(9) + 1
+	  end if
+	end do
 	call MPI_Allreduce(ival,ivalg,nv,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
@@ -4308,6 +4323,9 @@
 	  write(6,'(a,i0,a,i0)') ' lgr dry elements: element-steps dry'	&
      &		//' (counted by the main owner) ',ivalg(6)			&
      &		,', dry with a cut-off side ',ivalg(7)
+	  write(6,'(a,i0,a,i0)') ' lgr left the basin: particles '	&
+     &		,ivalg(8),', from an element whose main owner is another'	&
+     &		//' process: ',ivalg(9)
 	end if
 
 	end subroutine lgr_mpi_handover_stats

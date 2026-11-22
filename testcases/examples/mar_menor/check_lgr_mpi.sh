@@ -5,8 +5,9 @@
 #
 # Usage:  ./check_lgr_mpi.sh CASE NP MODE [EXTRA ARGS FOR THE TOOL ...]
 #
-#   CASE  mm_lgr_a | mm_lgr_b | mm_lgr_c | mm_lgr_e | mm_lgr
-#         (a, b, c, e are accepted as short names)
+#   CASE  mm_lgr_a | mm_lgr_b | mm_lgr_c | mm_lgr_e | mm_lgr_w | mm_lgr
+#         (a, b, c, e, w are accepted as short names; mm_lgr_w is case A
+#         with one release polygon around the whole basin)
 #   NP    number of MPI processes of the second run
 #   MODE  flux   debug dump of the element fluxes, serial vs MPI
 #         part   debug dump of the particles (per output time), serial vs MPI
@@ -33,6 +34,19 @@
 # line (the run name inside the file is unchanged, so the output names are
 # the same); the debug files of each run end up in CASE.serial.dbg/ and
 # CASE.npN.dbg/, both made fresh by every call.
+#
+# LGR_LEVDBG (environment variable, modes pos and ids only; unset by
+# default, and then nothing changes): 2 or 3 runs both runs at that levdbg
+# through the same temporary STR copy.  At 2 the built-in consistency check
+# (lgr_mpi_check_consistency) is active on several processes; at 3 also the
+# debug dump (kept in CASE.serial.dbg/ and CASE.npN.dbg/), the side
+# self-test and the re-location self-checks below, which are then required
+# as in the dump modes (the MPI log's "lgr relocation by position" line is
+# printed).  Example: LGR_LEVDBG=3 ./check_lgr_mpi.sh mm_lgr 4 ids
+# Consistency check: whenever the driver sets levdbg (the dump modes, or
+# LGR_LEVDBG), the log of a run on several processes must hold no line of
+# lgr_mpi_check_consistency: it writes only when a check fails (and then
+# aborts the run) or when it is not active.
 #
 # Note: flux uses the relative default limit of lgr_dbg_compare.py (1e-5) for
 # every case; the per-case --tol below applies to pos and part only.
@@ -108,20 +122,25 @@ cd "$HERE" || exit 1
 rc=0
 fail() { echo "LGR GATE FAIL: $*"; rc=1; }
 usage() {
-  echo "usage: $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb)"
+  echo "usage: [LGR_LEVDBG=2|3] $0 CASE NP MODE [tool args ...]   (CASE: mm_lgr_a|b|c|e|w|mm_lgr, MODE: flux|part|handover|floor|pos|ids|perturb)"
   exit 2
 }
 
 [ $# -ge 3 ] || usage
 CASE="$1"; NP="$2"; MODE="$3"; shift 3
 case "$CASE" in
-  a|b|c|e) CASE="mm_lgr_$CASE" ;;
-  mm_lgr_a|mm_lgr_b|mm_lgr_c|mm_lgr_e|mm_lgr) ;;
+  a|b|c|e|w) CASE="mm_lgr_$CASE" ;;
+  mm_lgr_a|mm_lgr_b|mm_lgr_c|mm_lgr_e|mm_lgr_w|mm_lgr) ;;
   *) echo "unknown case '$CASE'"; usage ;;
 esac
 case "$NP" in ''|*[!0-9]*) echo "NP must be a number"; usage ;; esac
 [ "$NP" -ge 1 ] || usage
 case "$MODE" in flux|part|handover|floor|pos|ids|perturb) ;; *) echo "unknown mode '$MODE'"; usage ;; esac
+LEVDBG_ENV="${LGR_LEVDBG:-}"
+if [ -n "$LEVDBG_ENV" ]; then
+  case "$MODE" in pos|ids) ;; *) echo "LGR_LEVDBG applies to the modes pos and ids only"; usage ;; esac
+  case "$LEVDBG_ENV" in 2|3) ;; *) echo "LGR_LEVDBG must be 2 or 3"; usage ;; esac
+fi
 if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 
 # Position floors (mode floor): particles beyond --tol at the last output and
@@ -140,11 +159,16 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # in one of the six perturbed runs, measured on their particle files
 # (gates/floors_runs/ in the plan's workspace, lgr_compare.py --mode pos):
 # A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0.
+# mm_lgr_w (Task 6.1, measured the same way on wt-lgr-ref3 with the inputs
+# of commit 6b514083, gates/floors_w.log): 37 / 4.3113e-3 -> 4.32e-3 / tt 1
+# (particle 46 comes to rest in the dry element 870 in every run, at a time
+# tt between 327,900 and 329,100 s that differs by a few steps).
 case "$CASE" in
   mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3; FLOOR_T=0 ;;
   mm_lgr_b) FLOOR_N=48; FLOOR_D=182; FLOOR_T=2 ;;
   mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3; FLOOR_T=0 ;;
   mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3; FLOOR_T=0 ;;
+  mm_lgr_w) FLOOR_N=37; FLOOR_D=4.32e-3; FLOOR_T=1 ;;
   *) FLOOR_N=""; FLOOR_D=""; FLOOR_T="" ;;
 esac
 if [ "$MODE" = floor ] && [ -z "$FLOOR_N" ]; then
@@ -176,9 +200,15 @@ trap cleanup EXIT
 trap 'cleanup; exit 130' INT TERM
 
 STR="$CASE.str"
-DUMP=0
+DUMP=0		# 1: the runs write the debug dump (levdbg = 3), kept and checked
+LEVDBG=""	# levdbg the driver sets in the temporary STR ("": none)
 if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = handover ] || [ "$MODE" = floor ] || [ "$MODE" = perturb ]; then
-  DUMP=1
+  DUMP=1; LEVDBG=3
+elif [ -n "$LEVDBG_ENV" ]; then
+  LEVDBG="$LEVDBG_ENV"
+  [ "$LEVDBG" = 3 ] && DUMP=1
+fi
+if [ -n "$LEVDBG" ]; then
   if grep -q '^[[:space:]]*levdbg' "$HERE/$CASE.str"; then
     echo "LGR GATE FAIL: $CASE.str already sets levdbg; refusing to add a second one"
     exit 1
@@ -188,9 +218,10 @@ if [ "$MODE" = flux ] || [ "$MODE" = part ] || [ "$MODE" = handover ] || [ "$MOD
     exit 1
   fi
   TMPSTR="$HERE/$CASE.lgrdbg.$$.str"
-  awk '{ print } !done && /^\$para[ \t\r]*$/ { print "        levdbg = 3"; done = 1 }' \
+  awk -v lv="$LEVDBG" '{ print } !done && /^\$para[ \t\r]*$/ { print "        levdbg = " lv; done = 1 }' \
       "$HERE/$CASE.str" > "$TMPSTR" || { echo "LGR GATE FAIL: cannot write $TMPSTR"; exit 1; }
   STR="$(basename "$TMPSTR")"
+  [ -n "$LEVDBG_ENV" ] && echo "  LGR_LEVDBG=$LEVDBG_ENV: both runs at levdbg = $LEVDBG"
 fi
 
 #--- helpers ---------------------------------------------------------------
@@ -312,6 +343,21 @@ key_check() {
   [ "$k" -eq 0 ] || fail "key order self-test: $k of $w walks wrong in $2"
 }
 
+# consistency_check LOG NPROC: with levdbg set by the driver, a run on several
+# processes has the consistency check active, and the check writes a line
+# only when it fails or is not active (see header); no such line is allowed
+consistency_check() {
+  local log="$1" np="$2" n
+  [ -n "$LEVDBG" ] && [ "$np" -gt 1 ] || return 0
+  n="$(grep -c 'lgr_mpi_check_consistency' "$log")"
+  if [ "$n" -gt 0 ]; then
+    fail "consistency check wrote $n lines in $log"
+    grep 'lgr_mpi_check_consistency' "$log" | sort -u | head -5 | sed 's/^/    /'
+  else
+    echo "  $(basename "$log"): consistency check (levdbg = $LEVDBG) silent"
+  fi
+}
+
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
   nlost() { grep -c 'loosing particle adv' "$1"; }
@@ -344,6 +390,7 @@ if [ "$MODE" = perturb ]; then
   echo "  plain run ended"
   selftest_check "$HERE/$CASE.np$NP.log" "$NP"
   relocation_check "$HERE/$CASE.np$NP.log" "$NP"
+  consistency_check "$HERE/$CASE.np$NP.log" "$NP"
 
   echo "=== 2. $CASE on $NP processes, MALLOC_PERTURB_=85"
   seen="$(probe perturbed)"; probe_rc=$?
@@ -365,6 +412,7 @@ if [ "$MODE" = perturb ]; then
   echo "  perturbed run ended"
   selftest_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
   relocation_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
+  consistency_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
 
   echo "=== 3. compare the dump files byte for byte"
   D1="$HERE/$CASE.np$NP.dbg"; D2="$HERE/$CASE.np$NP.perturb.dbg"
@@ -416,6 +464,7 @@ nice -n 19 mpirun --oversubscribe -np "$NP" shyfem "$STR" > "$HERE/$CASE.np$NP.l
 mpi_rc=$?
 if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; then
   tail -5 "$HERE/$CASE.np$NP.log"
+  grep 'lgr_mpi_check_consistency' "$HERE/$CASE.np$NP.log" | sort -u | head -5 | sed 's/^/    /'
   fail "$CASE did not end on $NP processes (exit code $mpi_rc)"
   echo "LGR GATE: FAIL"; exit 1
 fi
@@ -425,6 +474,7 @@ if [ "$DUMP" = 1 ]; then
   selftest_check "$HERE/$CASE.np$NP.log" "$NP"
   relocation_check "$HERE/$CASE.np$NP.log" "$NP"
 fi
+consistency_check "$HERE/$CASE.np$NP.log" "$NP"
 
 #--- 3. comparison ---------------------------------------------------------------
 echo "=== 3. compare ($MODE)"

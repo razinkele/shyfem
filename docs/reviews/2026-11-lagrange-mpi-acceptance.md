@@ -606,3 +606,172 @@ runs of the consistency check abort with exit 33; plain runs of D, E on 4 and B 
 at `levdbg = 2` end with the check silent. Builds with `-fcheck=bounds` and
 `COMPILER_PROFILE=CHECK` of `7d3ca548` (the Fortran of `fbc65b4b`) run without a runtime message
 or a trap.
+
+## Task 6.1: cases D and E (AC4, AC5), a release polygon across all domains, spec section 7 case 4
+
+**Measured** 2026-11-22 11:07 to 11:37 EET (from `date`) by the implementer, on the stage-6
+branch (`lgr/s6-random`, from `b2f438fd`): the binary of the work tree with this task's
+statistic line (`lagrange_mpi.f90`, committed with this section; OpenMPI `libmpi.so.40`); the
+floors of the new case on `/home/razinka/wt-lgr-ref3` (`0fddec90`) with the inputs of commit
+`6b514083`. Logs in the plan's workspace (`gates/`) and in the implementer's report.
+
+**What was added.** (1) Case `mm_lgr_w.str` (commit `6b514083`): case A with its three release
+polygons replaced by one rectangle around the whole geographic basin,
+`INPUT/release_area_whole.txt` (in `INPUT/` so that the floors script and the stage-end gates,
+which copy `GRID/` and `INPUT/`, pick it up); the release is the polygon path
+(`lagbound_seed_particles`; all 2,545 elements inside), 80 particles of type 1 (the spacing comes
+from the polygon's area, larger than the basin). It is in the driver's case list with floors, and
+in the serial guard and `repro`. (2) The driver's `LGR_LEVDBG=2|3` (modes `pos` and `ids` only,
+off by default): both runs at that `levdbg`, at 3 with the dump, the side self-test and the
+re-location self-checks; whenever the driver sets `levdbg`, a run on several processes must hold
+no line of `lgr_mpi_check_consistency` (it writes only when a check fails or is not active).
+(3) A fourth line of the hand-over statistic at `levdbg >= 3` on several processes: `lgr left
+the basin: particles N, from an element whose main owner is another process: M`, counted on the
+particle array at the end of the particle run (a particle that has left keeps `ie = -(local
+element it left)` on the process that carried it). With it the dumps of A, B, C and E on 4
+processes are byte-identical to those of the start binary (52 of 52 files); the logs differ only
+in the new line (sorted, clock and timing fields left out), serial logs not at all.
+
+**Case E (AC2, AC3)**, `./check_lgr_mpi.sh mm_lgr_e NP ids` and `... pos`: all six PASS; 145
+particles, none left, the inserted block exact, no `tt` difference:
+
+| Processes | ids | pos | Beyond 1e-5 degrees at the last output / floor | Largest distance at any output / floor |
+|---|---|---|---|---|
+| 2 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
+| 4 | PASS | PASS | 16 / 33 | 1.16e-3 / 4.3e-3 degrees |
+| 8 | PASS | PASS | 18 / 33 | 1.09e-3 / 4.3e-3 degrees |
+
+**Case D, AC4** (`mm_lgr.str`, random walk `rwhpar = 0.5`, never seeded, #225), `LGR_LEVDBG=3
+./check_lgr_mpi.sh mm_lgr NP ids` (`--same-counts --nel 2545 --nlv 1` from the model header of the
+serial file): PASS on 2, 4 and 8 processes. At each of the 96 outputs the ids of the three blocks
+equal serial, every active particle is in a valid element and layer, and the count per block
+equals serial (145 active, none left); the consistency check (active at `levdbg = 3`) is silent;
+the serial self-check of the search: 14,227 / 14,652 / 14,640 compared, 0 differing. The
+hand-over by position under a nonzero displacement (the MPI run's line `lgr relocation by
+position`; "nobody answered" = the point is outside the basin, treated as serially):
+
+| Processes | Parked | Stayed | Kept for lack of a layer | Went to another process | Nobody answered | Within the margin and nobody answered | Handed over at a cut-off side |
+|---|---|---|---|---|---|---|---|
+| 2 | 407 | 172 | 0 | 2 | 233 | 0 | 2 |
+| 4 | 425 | 174 | 0 | 62 | 189 | 0 | 220 |
+| 8 | 540 | 157 | 0 | 148 | 235 | 0 | 394 |
+
+**Case D, AC5** (not gated): per particle type at the last output (345,600 s; 49, 49 and 47
+particles, none left in any run), mean position and standard deviation in degrees, from two serial
+runs (S1, S2: the serial runs of the 2- and 4-process calls above) and the MPI runs; each MPI run
+as its difference from S1, next to S2 − S1, the spread of two runs of an unseeded random walk:
+
+| Type | Value | S1 | S2 − S1 | 2 processes − S1 | 4 processes − S1 | 8 processes − S1 |
+|---|---|---|---|---|---|---|
+| 1 | mean x | -0.773107 | +1.33e-3 | +1.39e-3 | -4.23e-3 (>3x) | +4.9e-5 |
+| 1 | mean y | 37.689160 | -3.56e-3 | +3.99e-3 | +1.6e-4 | -6.7e-4 |
+| 1 | sd x | 0.019991 | +8.60e-3 | +1.10e-2 | +7.90e-3 | +6.85e-3 |
+| 1 | sd y | 0.034156 | +7.7e-4 | +7.58e-3 (>3x) | +1.3e-4 | -6.8e-4 |
+| 2 | mean x | -0.798904 | +5.94e-3 | +7.9e-4 | +7.40e-3 | +3.08e-3 |
+| 2 | mean y | 37.699912 | -7.4e-4 | +1.82e-3 | -2.95e-3 (>3x) | +1.03e-3 |
+| 2 | sd x | 0.013537 | +6.2e-4 | +3.32e-3 (>3x) | +1.4e-4 | +3.37e-3 (>3x) |
+| 2 | sd y | 0.018030 | +3.12e-3 | +4.71e-3 | +5.75e-3 | +5.33e-3 |
+| 3 | mean x | -0.771329 | +2.11e-3 | -9.01e-3 (>3x) | -7.82e-3 (>3x) | -4.80e-3 |
+| 3 | mean y | 37.754691 | -8.66e-3 | -1.82e-2 | -6.62e-3 | -4.78e-3 |
+| 3 | sd x | 0.030718 | -4.43e-3 | +3.89e-3 | +1.45e-3 | -1.17e-3 |
+| 3 | sd y | 0.041406 | -3.65e-3 | +9.0e-4 | -6.29e-3 | -9.21e-3 |
+
+Seven of the 36 MPI differences are more than three times S2 − S1 for that value (marked). One
+serial pair is one sample of the spread: with the third serial run (that of the 8-process call,
+S3) the largest serial difference of each value (over S1, S2, S3) is 1.15e-3 to 1.39e-2 degrees,
+and none of the 36 MPI differences is more than three times it (type 3, mean x: S3 − S1 =
+-9.76e-3 against the 2-process run's -9.01e-3).
+
+**A release polygon across all domains** (`mm_lgr_w`; on this machine a release polygon of the
+shipped cases reaches two processes only on 6 of them, and another partitioner may cut
+differently). Particles of the polygon per process in the dump's release block (t = 0), and the
+release gate `./check_lgr_mpi.sh mm_lgr_w NP part --by key --tol 0 --first-only --elem
+--ranks-empty-ok --ids`:
+
+| Processes | Particles per process (rank 0, 1, ...) | Release gate |
+|---|---|---|
+| 2 | 40, 40 | PASS |
+| 3 | 29, 27, 24 | PASS |
+| 4 | 20, 21, 19, 20 | PASS |
+| 6 | 12, 12, 16, 13, 13, 14 | PASS |
+| 8 | 11, 11, 10, 9, 11, 8, 10, 10 | PASS |
+
+Floors of `mm_lgr_w` (`gates/floors.sh /home/razinka/wt-lgr-ref3/bin 6b514083 key 3 mm_lgr_w`,
+11:20:56 EET, seven runs, all ended; log `gates/floors_w.log`, particle files in
+`gates/floors_runs/`): beyond 1e-5 degrees at the last output 23 to 37, largest distance at any
+output 1.1124e-3 to 4.3113e-3 degrees; `tt` differs for 1 particle in each of the six runs
+(particle 46 comes to rest in the permanently dry element 870 in every run, at a time between
+327,900 and 329,100 s); class floor 0 (no particle unmatched at any output in the six dump
+comparisons; the same particle rests in the dry element in all seven runs; none leaves the closed
+basin). Driver table: 37 / 4.32e-3 degrees (measured 4.3113e-3) / `tt` 1. Self-check: each of the
+six perturbed runs against the base run passes `lgr_compare.py --mode pos` with the table's three
+floors and `lgr_dbg_compare.py part` with its two.
+
+| Processes | ids | pos: beyond / largest | floor: beyond / largest | handover: changed-process pairs, largest changed distance / threshold |
+|---|---|---|---|---|
+| 2 | PASS | PASS: 8 / 2.78e-3 | PASS: 8 / 2.78e-3 | PASS: 46, 0 / 6e-7 |
+| 4 | PASS | PASS: 8 / 3.3e-4 | PASS: 8 / 3.3e-4 | PASS: 113, 5.96e-8 / 6e-7 |
+| 8 | PASS | PASS: 8 / 2.78e-3 | PASS: 8 / 2.78e-3 | PASS: 214, 5.96e-8 / 6e-7 |
+
+(`handover` with `--min-changed 1` on 4 and 8 processes, as at the stage ends; no `tt` and no
+inserted-block difference in `pos`; the relocation lines: parked 519 to 520, nobody answered 479
+in each, as many as the serial run's failed searches, 479; went to another process 0, 1, 0.)
+
+**Spec section 7, case 4** (a particle leaving through the open boundary from a mixed element held
+by a process that is not its main owner). How a run takes a given partition: neither a build
+option nor an STR parameter. `shypre -partition FILE.grd BASIN.grd` (the node type of FILE.grd is
+the domain) writes the partition into the basin file; on NP processes `handle_partition`
+(`src/utils/shympi/mpi_basin.f90`) uses a partition contained in the basin when it has NP domains
+("partitiones contained in basin: 4 / using these partitiones..."), partitions with METIS when the
+basin holds none, and stops when the counts differ; a serial run ignores it (a serial run of case
+B with the partitioned basin is byte-identical to one with the same basin made without the
+partition). `check_part_basin` (`src/utils/shympi/mpi_node.f90`) has no caller, and the tracked
+`GRID/partition.2.txt`, `GRID/partition.4.txt` are statistics tables of a partition (domain,
+nodes, elements, ghosts), not assignments. The partition files (gates/d5/) are made from the
+tracked `GRID/MM_coarse.4.node.grd` (the METIS partition of this mesh on 4 processes) by
+`gates/d5_partition.py`, and the runs are in a scratch copy of the test folder whose
+`GRID/MM_coarse.bas` is rebuilt by `shypre -partition` (this basin differs from the tracked one
+in the 138 bytes `make init` changes, so the serial reference is the serial run of the same
+folder). Where particles leave: in the serial run all 595 leave through open sides between
+consecutive boundary nodes, 568 of them between nodes 163 and 177, whose elements are inner
+elements of rank 2 with METIS (so no leaving is case 4 there: METIS on 4 processes, 0 of 595).
+
+- First partition (open-boundary nodes 158..177 moved from rank 2 to rank 1, so that the 21
+  elements with an open side between them have their main owner on rank 1 and are held by rank
+  2): the run stops at start-up, before any particle exists, on two processes with `error stop
+  setnod: open boundary node` for external node 158 ("the node is an inner node"). Cause, in the
+  MPI layer of the hydrodynamics, not in the particle code: `setnod`
+  (`src/utils/shyutilmpi/topo_update.f90`) sums the angles of every local element at its nodes
+  on every process and then adds the ghost copies to the owner with
+  `shympi_exchange_and_sum_2d_nodes`, although with a node partition the owner already holds
+  every element around its own node; the angle of a shared node is counted once per holder, and
+  a node whose sum passes 359.99 degrees is classified inner. A replay of that sum from the
+  coordinates (`gates/d5/winkv.py`) names node 158 first for this partition, and 18 boundary
+  nodes in all (14 open-boundary nodes and the four below); for METIS on 4 processes it
+  predicts four material-boundary nodes classified inner (10, 16, 25, 32), which stops nothing
+  and so is not shown by a run (code present since the initial commit; a finding outside #217
+  for the owner).
+- Second partition (the first, with every interior node next to 158..177 also on rank 1, then
+  the interior nodes of the exit elements handed back to rank 2 one at a time, each kept only if
+  the replay leaves the classification as with METIS): 8 elements with an open side on rank 1
+  and the interior node on rank 2 (main owner rank 1, held by rank 2). It starts ("using these
+  partitiones", partition quality 2.85). Case B on 4 processes with it:
+  `LGR_LEVDBG=3 ./check_lgr_mpi.sh mm_lgr_b 4 ids` PASS (408 active and 595 left at the end, the
+  counts per block equal serial at all 48 outputs, 595 lines of particles leaving in both logs,
+  the consistency check silent); `floor` PASS (6 / 48 beyond 2 m, 36 / 182 m); `handover
+  --min-changed 1` PASS (1,194 changed-process pairs, largest 0.25 m against 2.5 m). The new
+  line: `lgr left the basin: particles 595, from an element whose main owner is another process:
+  274`; the dump gives the same 274 independently (`gates/d5_count.py`: particles of class D on
+  each process against the main owner in the flux dump): rank 2 carried them out of elements 62
+  (104), 369 (40), 512 (47), 526 (45), 537 (37) and 168 (1), all with main owner rank 1. With
+  METIS the same line reads 595 / 0.
+
+**Gates after the change** (same binary): `./check_lgr_mpi.sh CASE 4 ids` and `pos` for A, B, C
+and E PASS (A 24 / 78, 4.34e-4; B 5 / 48, 36 m; C 0 / 19, 9.9e-6; no `tt` difference);
+`perturb` A, B, C, E on 4 PASS (the consistency check silent in both runs of each);
+`./check_lgr_serial.sh /home/razinka/wt-lgr-ref3/bin`: `SERIAL GUARD: PASS`, every file identical
+(38 comparisons, with `mm_lgr_w`'s lgr.shy, hydro.shy and inf against the reference build and
+`mpirun -np 1`; nothing skipped); `./check_lgr_serial.sh repro`: `REPRO: PASS` (A, B, C, E, W).
+The driver's new paths: `LGR_LEVDBG=2 ./check_lgr_mpi.sh mm_lgr_a 4 ids` PASS with the check
+silent; with `LGR_TEST_DROP=2` as well the run aborts with exit 33 and the driver prints the
+check's particle-count lines and fails.
