@@ -376,6 +376,7 @@
 	real			:: wdzp		!vertical diffusivity at zp
 	double precision	:: dwd		!first derivative of diffusivity 
         integer 		:: iact         !element closest to xe
+        integer 		:: nmax         !points given to exxpp
         real 			:: exxpp        !extrapolated values
 	real			:: rs		!random number per sigma
 
@@ -416,9 +417,25 @@
 	zp = min(zp,htotz)
 	zp = max(zp,0.)
 
-	wdr = wde(0:lmax,iel)
+	! exxpp is given nmax points of hle and wdr from index 0 on. With two
+	! or more layers nmax = lmax, the interfaces hle(0:lmax-1): the bottom
+	! interface hle(lmax) is not used, as always (kept: changing it would
+	! change every run with ilagr = 3). An element with one layer has the
+	! two interfaces hle(0:1); with nmax = lmax = 1 the linear interpolation
+	! (nintp = 2) moved its window to start one point before hle(0) and
+	! read the words before hle and wdr, and the run stopped with a
+	! division by zero in intp_neville (#231): nmax = 2 there
+	nmax = max(lmax,2)
+	wdr(0:lmax) = wde(0:lmax,iel)
 	iact = 0
-	wdzp = exxpp(2,lmax,hle,wdr,zp,iact)
+	wdzp = exxpp(2,nmax,hle,wdr,zp,iact)
+
+	! below hle(lmax-1) the value is extrapolated from the two interfaces
+	! above (see above) and can be negative; its square root below then
+	! stopped the run (SIGFPE in a build that traps floating-point errors,
+	! the default one; #231). A negative value is taken as 0, no random
+	! step: only a step that stopped such a build changes
+	if( wdzp < 0. ) wdzp = 0.
 
 	!-----------------------------------------------
 	! compute vertical velocity due to diffusion

@@ -36,6 +36,19 @@
 #             every output after it decayed (its last position); every
 #             active particle of the decay run has the same record as in
 #             the plain run (decay changes no other particle).
+#   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
+#             ztilt), for one day, with a $lagrg section that sets ilagr = 3
+#             (vertical advection and diffusion), nbdymax = 20000, nbdy =
+#             300, idtl = 0, idtlgr = '1h', rwhpar = 0, ipvert = -1 (the
+#             reproducer of #231), serially: the run must end (before #231 it
+#             stopped with SIGFPE in its first particle step, in intp_neville
+#             called by diff_get_vert for a particle in an element with one
+#             layer, and with only that corrected, in diff_get_vert at the
+#             square root of a negative diffusivity extrapolated in the
+#             bottom layer of an element with two layers), and its particle
+#             file must hold only finite values,
+#             active particles with an element in 1..nel, a layer in 1..nlv
+#             and a depth z in the layer within 0..1.
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -49,18 +62,18 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | ilagr3"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay) ;;
+  stk-omp|decay|ilagr3) ;;
   *) usage ;;
 esac
 
 for t in shyfem mpirun python3; do
   command -v "$t" > /dev/null 2>&1 || { echo "$MODE: FAIL ($t is not on PATH)"; exit 1; }
 done
-for b in GRID/MM_geo.bas GRID/MM_coarse.bas; do
+for b in GRID/MM_geo.bas GRID/MM_coarse.bas GRID/MM_coarse_smooth.bas; do
   [ -f "$HERE/$b" ] || { echo "$MODE: FAIL ($b is missing: run 'make init' and '(cd GRID && shypre -noopti MM_geo.grd)' in $HERE)"; exit 1; }
 done
 
@@ -235,6 +248,62 @@ if nbad_act:
     ok = False
 else:
     print("  active records of the decay run identical to the plain run")
+sys.exit(0 if ok else 1)
+EOF
+  fi
+  finish
+fi
+
+#=============================== ilagr3 (#231) =============================
+if [ "$MODE" = ilagr3 ]; then
+  sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
+      -e 's/^\(\s*\)mm_hyd_41\s*$/\1lgr_ilagr3/' "$W/mm_hyd_41.str" > "$W/lgr_ilagr3.str"
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 20000\n        nbdy = 300  idtl = 0  idtlgr = %s\n        rwhpar = 0  ipvert = -1\n$end\n' "'1h'" >> "$W/lgr_ilagr3.str"
+  grep -q "lgr_ilagr3" "$W/lgr_ilagr3.str" || fail "run name not set in lgr_ilagr3.str"
+  grep -q "tilt" "$W/lgr_ilagr3.str" && fail "tilt lines left in lgr_ilagr3.str"
+  echo "=== mm_hyd_41 (no tilt, one day) with ilagr = 3, serially"
+  run lgr_ilagr3 lgr_ilagr3.log shyfem || fail "the ilagr = 3 run did not end"
+  if [ "$rc" = 0 ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
+import math, struct, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path = sys.argv[2]
+with open(path, "rb") as fh:
+    head = fh.read(4096)
+recs = []				# model header: (idshy, nvers), (ftype),
+pos = 0					# (nkn, nel, npr, nlv, nvar)
+for _ in range(3):
+    (n,) = struct.unpack_from("<i", head, pos)
+    recs.append((pos + 4, n))
+    pos += 8 + n
+if [r[1] for r in recs] != [8, 4, 20]:
+    print("  no model header in %s" % path)
+    sys.exit(1)
+nkn, nel, _npr, nlv, _nvar = struct.unpack_from("<5i", head, recs[2][0])
+_, times = lc.read_file(path)
+ok = True
+nact = 0
+for t, b, _ in times:
+    for w in lc.IWHAT_ORDER:
+        for pid, p in b[w].items():
+            vals = [p["x"], p["y"], p["z"], p["hl"], p["tt"], p["s"]] + list(p["c"])
+            if not all(math.isfinite(v) for v in vals):
+                print("  t=%r %s id %d: a value is not finite: %r" % (t, lc.BLOCK_NAME[w], pid, p))
+                ok = False
+    for pid, p in b[0].items():
+        nact += 1
+        if not 1 <= p["ie"] <= nel or not 1 <= p["lb"] <= nlv or not 0.0 <= p["z"] <= 1.0:
+            print("  t=%r active id %d: ie %d lb %d z %r outside 1..%d, 1..%d, 0..1"
+                  % (t, pid, p["ie"], p["lb"], p["z"], nel, nlv))
+            ok = False
+t, b, _ = times[-1]
+print("  output times %d (nel %d, nlv %d); last t=%r: active %d, exited %d; active records checked %d: %s"
+      % (len(times), nel, nlv, t, len(b[0]), len(b[1]), nact, "ok" if ok else "FAIL"))
+if not times or nact == 0:
+    ok = False
 sys.exit(0 if ok else 1)
 EOF
   fi
