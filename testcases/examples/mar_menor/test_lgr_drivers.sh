@@ -238,6 +238,10 @@ newdir_flx() {
   : > "$d/GRID/MM_coarse.bas"
   echo "$d"
 }
+if [ ! -f "$src/check_flux_sections_mpi.sh" ]; then
+  # an export of a commit before the driver existed: one FAIL line, then on
+  echo "FAIL: flux sections: $src has no check_flux_sections_mpi.sh (its rows are not run)"; fail=1
+else
 d=$(newdir_flx f1) || exit 1
 expect "flux sections on 2 processes: every run succeeds, both ranks report" 0 "FLUX SECTIONS: PASS" \
   bash "$d/check_flux_sections_mpi.sh" 2
@@ -258,6 +262,7 @@ expect "flux sections: the MPI flux file lacks a record" 1 "has records \(all, d
 d=$(newdir_flx f6) || exit 1
 expect "flux sections: the flux files hold a header and no time series" 1 "serial flux file has '1' data records, expected 576.*FLUX SECTIONS: FAIL" \
   env FAKE_FLX_NDATA=0 bash "$d/check_flux_sections_mpi.sh" 2
+fi
 
 #--- check_lgr_bounds.sh in a throwaway repository --------------------------------
 repo="$tmp/repo"
