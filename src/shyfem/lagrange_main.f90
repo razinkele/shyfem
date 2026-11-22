@@ -288,6 +288,7 @@
 	!totals of the hand-over, if no step ended exactly at dtlend (once)
 	if( bmpi_lagr .and. dtime > dtlend ) call lgr_mpi_handover_stats
 	if( dtime > dtlend ) call lgr_mpi_relocate_stats !once, levdbg >= 3
+	if( dtime > dtlend ) call lgr_vdiff_stats	!once, ilagr = 3 only
 
         if( dtime < dtlanf .or. dtime > dtlend ) return      
 
@@ -362,7 +363,7 @@
 	end if
 	call lgr_mpi_relocate_step			!levdbg >= 3
 	if( dtime >= dtlend ) call lgr_mpi_relocate_stats	!once, levdbg >= 3
-	if( dtime >= dtlend ) call lgr_vdiff_stats	!once, ilagr = 3 only
+	if( dtime >= dtlend ) call lgr_vdiff_stats	!once (also above), ilagr = 3
 
 !---------------------------------------------------------------
 ! sediment module
