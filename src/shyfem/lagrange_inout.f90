@@ -714,30 +714,26 @@
 ! mcg : suggests to write for each release a small file_ini.lgr
 ! ccf : new output format
 
+! the three records of a particle are prepared by lgr_output_record and
+! written by lgr_output_write (lgr_mpi_output writes the same records on
+! several processes)
+
 	use mod_lagrange
-	use mod_layer_thickness
-	use levels
 
 	implicit none
 
 	integer, intent(in) 		:: iu
 	double precision, intent(in)	:: dtime
 
-	integer 		:: i,ip,id,lb,l,ty,ii,ie
+	integer 		:: i,ip,ie
 	integer 		:: iwhat
 	integer			:: n_new  	!particles inserted
 	integer			:: n_act   	!particles inside the domain
 	integer			:: n_ext     	!particles exited the domain
-	real			:: x,y,z,s
-	real 			:: hl,ht,hr
-	double precision 	:: xx,yy
-        double precision 	:: xi(3)
-        double precision 	:: tt
-	real, allocatable	:: c(:)
+	double precision, allocatable	:: rec(:)
 	integer, allocatable	:: list_new(:)
 	integer, allocatable	:: list_ins(:)
 	integer, allocatable	:: list_ext(:)
-        integer, save 		:: icall = 0
 	integer			:: ierr
 
 !----------------------------------------------------------------
@@ -746,7 +742,7 @@
 
         if (nbdy == 0 ) return
 
-	allocate(c(ncust),stat=ierr)
+	allocate(rec(lgr_orec_base+ncust),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
 	allocate(list_new(nbdy),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
@@ -783,58 +779,22 @@
 	write(iu) dtime,n_act,iwhat
 
 	do i=1,n_act
-	  ip  = list_ins(i)
-	  ie  = lgr_ar(ip)%actual%ie
-          do ii=1,3
-            xi(ii) = lgr_ar(ip)%actual%xi(ii)
-          end do
-	  call xi2xy(abs(ie),xx,yy,xi)
-          x   = xx
-          y   = yy
-          z   = lgr_ar(ip)%actual%z
-	  lb  = lgr_ar(ip)%actual%l
-	  tt  = lgr_ar(ip)%actual%time
-	  id  = lgr_ar(ip)%id
-	  ty  = lgr_ar(ip)%type
-	  s   = lgr_ar(ip)%sinking
-	  c   = lgr_ar(ip)%custom
-
-	  call lgr_compute_depths(ie,lb,z,hl,ht,hr)
-
-	  write(iu) id,ty,tt,s,ie
-	  write(iu) x,y,z,lb,hl
-	  write(iu) (c(ii), ii=1,ncust)
+	  call lgr_output_record(list_ins(i),0,rec)
+	  call lgr_output_write(iu,rec)
 	end do
 
 !----------------------------------------------------------------
 ! write to file - inserted particles, iwhat = -1
 !----------------------------------------------------------------
-	
+
 	iwhat = -1
 	write(iu) dtime,n_new,iwhat
 
 	do i=1,n_new
 	  ip  = list_new(i)
 	  ie  = lgr_ar(ip)%init%ie
-          do ii=1,3
-            xi(ii) = lgr_ar(ip)%init%xi(ii)
-          end do
-	  call xi2xy(abs(ie),xx,yy,xi)
-          x   = xx
-          y   = yy
-          z   = lgr_ar(ip)%init%z
-	  lb  = lgr_ar(ip)%init%l
-	  tt  = lgr_ar(ip)%init%time
-	  id  = lgr_ar(ip)%id
-	  ty  = lgr_ar(ip)%type
-	  s   = lgr_ar(ip)%sinking
-	  c   = lgr_ar(ip)%custom(1)
-
-	  call lgr_compute_depths(ie,lb,z,hl,ht,hr)
-
-	  write(iu) id,ty,tt,s,abs(ie)
-	  write(iu) x,y,z,lb,hl
-	  write(iu) (c(ii), ii=1,ncust)
+	  call lgr_output_record(ip,-1,rec)
+	  call lgr_output_write(iu,rec)
 
 	  lgr_ar(ip)%init%ie = -ie
 	   !should we deleted the init information after writing it?
@@ -842,35 +802,16 @@
 
 !----------------------------------------------------------------
 ! write to file - exited particles, iwhat = 1
-! particles are then deleted by routine compress_particles 
+! particles are then deleted by routine compress_particles
 ! bcompress must be set to true
 !----------------------------------------------------------------
-	
+
 	iwhat = 1
 	write(iu) dtime,n_ext,iwhat
 
 	do i=1,n_ext
-	  ip  = list_ext(i)
-	  ie  = lgr_ar(ip)%actual%ie
-          do ii=1,3
-            xi(ii) = lgr_ar(ip)%actual%xi(ii)
-          end do
-	  call xi2xy(abs(ie),xx,yy,xi)
-          x   = xx
-          y   = yy
-          z   = lgr_ar(ip)%actual%z
-	  lb  = lgr_ar(ip)%actual%l
-          tt  = lgr_ar(ip)%actual%time
-	  id  = lgr_ar(ip)%id
-	  ty  = lgr_ar(ip)%type
-	  s   = lgr_ar(ip)%sinking
-	  c   = lgr_ar(ip)%custom(1)
-
-	  call lgr_compute_depths(ie,lb,z,hl,ht,hr)
-
-	  write(iu) id,ty,tt,s,abs(ie)
-	  write(iu) x,y,z,lb,hl
-	  write(iu) (c(ii), ii=1,ncust)
+	  call lgr_output_record(list_ext(i),1,rec)
+	  call lgr_output_write(iu,rec)
 
 	  !particles are deletedexit particles information after writing it
 	end do
@@ -880,6 +821,149 @@
 !----------------------------------------------------------------
 
 	end
+
+!*******************************************************************
+
+	subroutine lgr_output_record(ip,which,rec)
+
+! fills the output record rec (layout: lgr_orec_base in mod_lagrange) of
+! array entry ip as lgr_output writes it:
+!   which = 0   active: the actual position, element actual%ie > 0, all
+!               custom values
+!   which = -1  inserted: the release record init, element abs(init%ie)
+!   which = 1   exited: the actual position, element abs(actual%ie) (the
+!               element the particle left; 0 for a particle removed)
+! type and sinking are the particle's own (of the moment). As in the
+! serial code since the new output format, an inserted or an exited
+! record holds custom(1) in every custom slot (only the active record has
+! all custom values); this is reproduced here, not corrected
+
+	use mod_lagrange
+
+	implicit none
+
+	integer, intent(in) :: ip
+	integer, intent(in) :: which
+	double precision, intent(out) :: rec(lgr_orec_base+ncust)
+
+	type(lagr_body) :: b
+	real :: c(ncust)
+
+	select case( which )
+	case( 0 )
+	  b = lgr_ar(ip)%actual
+	  c = lgr_ar(ip)%custom(1:ncust)
+	case( -1 )
+	  b = lgr_ar(ip)%init
+	  c = lgr_ar(ip)%custom(1)
+	case( 1 )
+	  b = lgr_ar(ip)%actual
+	  c = lgr_ar(ip)%custom(1)
+	case default
+	  write(6,*) 'lgr_output_record: which = ',which
+	  call shympi_abort_internal('lgr_output_record: which')
+	end select
+
+	call lgr_output_fill(b%ie,b%xi,b%z,b%l,b%time,lgr_ar(ip)%id	&
+     &		,lgr_ar(ip)%type,real(lgr_ar(ip)%sinking),c,rec)
+
+	end subroutine lgr_output_record
+
+!*******************************************************************
+
+	subroutine lgr_output_fill(ie,xi,z,lb,tt,id,ty,s,c,rec)
+
+! fills an output record (layout: lgr_orec_base in mod_lagrange) from the
+! values of a particle: ie its local element (negative for the element a
+! particle left and for a release record not yet written, 0 for a
+! removed particle), xi its coordinates in that element, and z, lb, tt,
+! id, ty, s, c(1:ncust) as they are written. x, y and hl are computed here
+! (xi2xy, and lgr_compute_depths with the layer thickness of the moment)
+! as lgr_output always did; the element written is the global number
+! ip_int_elem(abs(ie)) (the local number in a serial run), 0 for ie = 0
+
+	use mod_lagrange
+	use shympi, only : ip_int_elem
+
+	implicit none
+
+	integer, intent(in) :: ie
+	double precision, intent(in) :: xi(3)
+	real, intent(in) :: z
+	integer, intent(in) :: lb
+	double precision, intent(in) :: tt
+	integer, intent(in) :: id
+	integer, intent(in) :: ty
+	real, intent(in) :: s
+	real, intent(in) :: c(ncust)
+	double precision, intent(out) :: rec(lgr_orec_base+ncust)
+
+	integer :: ieg,ii
+	real :: x,y,hl,ht,hr
+	double precision :: xx,yy
+
+	call xi2xy(abs(ie),xx,yy,xi)
+	x = xx
+	y = yy
+	call lgr_compute_depths(ie,lb,z,hl,ht,hr)
+	ieg = 0
+	if( ie /= 0 ) ieg = ip_int_elem(abs(ie))
+
+	rec(1) = dble(id)
+	rec(2) = dble(ty)
+	rec(3) = tt
+	rec(4) = dble(s)
+	rec(5) = dble(ieg)
+	rec(6) = dble(x)
+	rec(7) = dble(y)
+	rec(8) = dble(z)
+	rec(9) = dble(lb)
+	rec(10) = dble(hl)
+	do ii=1,ncust
+	  rec(lgr_orec_base+ii) = dble(c(ii))
+	end do
+
+	end subroutine lgr_output_fill
+
+!*******************************************************************
+
+	subroutine lgr_output_write(iu,rec)
+
+! writes an output record (lgr_output_fill) as the three Fortran records
+! of a particle in the lgr file, with the types lgr_output always wrote:
+! (id, type, time, sinking, element), (x, y, z, layer, hl), (custom values)
+
+	use mod_lagrange
+
+	implicit none
+
+	integer, intent(in) :: iu
+	double precision, intent(in) :: rec(lgr_orec_base+ncust)
+
+	integer :: id,ty,ie,lb,ii
+	double precision :: tt
+	real :: s,x,y,z,hl
+	real :: c(ncust)
+
+	id = nint(rec(1))
+	ty = nint(rec(2))
+	tt = rec(3)
+	s  = real(rec(4))
+	ie = nint(rec(5))
+	x  = real(rec(6))
+	y  = real(rec(7))
+	z  = real(rec(8))
+	lb = nint(rec(9))
+	hl = real(rec(10))
+	do ii=1,ncust
+	  c(ii) = real(rec(lgr_orec_base+ii))
+	end do
+
+	write(iu) id,ty,tt,s,ie
+	write(iu) x,y,z,lb,hl
+	write(iu) (c(ii), ii=1,ncust)
+
+	end subroutine lgr_output_write
 
 !*******************************************************************
 

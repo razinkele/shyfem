@@ -263,6 +263,10 @@
 
 !         ------------------------------------------------------
 !	  open output file and write ncust
+!	  (on several processes only rank 0 opens the file and writes its
+!	  header, shy_open_output_file; the unit iu is not connected on the
+!	  other processes, which never write to it: ncust here and the
+!	  particle records of lgr_mpi_output are written by rank 0 only)
 !         ------------------------------------------------------
 
           call init_output_d('itmlgr','idtlgr',da_lgr)
@@ -270,7 +274,8 @@
             call shyfem_init_lgr_file('lgr',nvar,b3d,id)
             da_lgr(4) = id
             call shy_get_iunit(id,iu)
-            write(iu) ncust
+            if( shympi_is_master() ) write(iu) ncust
+	    blgr_file = .true.	!release records kept for lgr_mpi_output
           end if
 	end if
          
@@ -388,9 +393,9 @@
 
         if( next_output_d(da_lgr) ) then
 	  call lgr_mpi_debug_dump(dtime)	!only at levdbg >= 3
-	  !on more than one process no particle records are written yet
-	  !(lgr_mpi_gather_output is broken, #217); the dump is the output
-	  if( .not. bmpi_lagr ) then
+	  if( bmpi_lagr ) then
+	    call lgr_mpi_output(iu,dtime)	!every process, rank 0 writes
+	  else
 	    call lgr_output(iu,dtime)
 	  end if
         end if

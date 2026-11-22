@@ -83,6 +83,14 @@
 	  
         type(lagr_entry), save, allocatable :: lgr_ar(:)
 
+	!output record of one particle (lgr_output_record, lgr_output_fill,
+	!lgr_output_write, lgr_mpi_output): the values of the three Fortran
+	!records a particle has in the lgr file, as double precision (exact
+	!for every value written): 1 id, 2 type, 3 time, 4 sinking,
+	!5 element, 6 x, 7 y, 8 z, 9 layer, 10 hl, then the ncust custom
+	!values in lgr_orec_base+1 ... lgr_orec_base+ncust
+	integer, parameter :: lgr_orec_base = 10
+
 	!element crossings used in the last time step, one per slot of lgr_ar
 	!(set to 0 by track_single and to the count by track_body_xi, on the
 	!process where the particle ends its step the count of the whole
