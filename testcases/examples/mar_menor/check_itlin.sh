@@ -16,10 +16,14 @@
 #      the back-tracking uses were allocated only in a particle run.
 #   2. serial, mm_hyd_22a (tide at the open boundary, river, wind, Coriolis,
 #      variable time step), one day, with "ilin = 0  itlin = 1": the run
-#      ends; the largest water level and speed of its hydro file are
-#      printed (there is no reference for itlin = 1 results: the numbers are
-#      plausibility only).  Before #227: the same crash; with the
-#      allocation alone it stopped at once in lagr_layer_thickness (the
+#      ends, and the largest |water level| and speed of its hydro file stay
+#      below 1 m and 5 m/s.  There is no reference for itlin = 1 results:
+#      the bounds only catch a return to garbage (measured: 0.18 m and
+#      0.51 m/s; the same case with ilin = 1, without its tilt, 0.16 m and
+#      1.0 m/s in 4 days; runs gone wrong reached 1.97 m and 9.9 m/s, the
+#      shipped case with itlin = 0, and 18 m and 62 m/s, mm_hyd_02 with
+#      itlin = 1 at a fixed 300 s step).  Before #227: the same crash; with
+#      the allocation alone it stopped at once in lagr_layer_thickness (the
 #      tracker's element number turned negative in the side tests made for
 #      the vertical weights).
 #   3. NP processes, the run of row 1: stops at start-up with exit code 33
@@ -41,12 +45,24 @@
 #      (the eight in the layer change of track_orig and track_line are
 #      shympi_abort_internal since #227).  This row reads the text, not a
 #      run: no run checked for #227 reaches those lines (no tracer of the
-#      2D runs changed layer; a 3D run with itlin = 1, mm_hyd_43 with
-#      "itlin = 1", blows up within three time steps, before any tracer
-#      changes layer).
+#      2D runs changed layer, and a 3D run stops at start-up, row 8).
 #   6. serial, mm_hyd_01 with "ilin = 0  itlin = 2" (no such option):
 #      stops with exit code 33 and "error stop set_explicit: no such
 #      option".  Before #227 a bare stop ended the run with exit code 0.
+#   7. serial, mm_hyd_01 on the geographic basin GRID/MM_geo with
+#      "ilin = 0  itlin = 1": stops at start-up with exit code 33, the line
+#      "option itlin = 1 (semi-Lagrangian advection of momentum) is not
+#      supported on a geographic (lat/lon) grid" and "use a Cartesian grid,
+#      or set itlin = 0" once each, no signal line (the back-tracking
+#      compares metres with degrees; before, mm_lgr_a, on the same basin,
+#      died with SIGFPE in dirz, and with that division avoided it ran to
+#      the end with 708,358 loop-limit messages).  The basin is made first
+#      when it is missing (shypre -noopti MM_geo.grd, as check_mpi.sh does).
+#   8. serial, mm_hyd_43 (3D) with "ilin = 0  itlin = 1": stops at start-up
+#      with exit code 33, "... is not supported in 3D (more than one
+#      layer)" and "run in 2D, or set itlin = 0" once each, no signal line
+#      (before, it blew up within three time steps with a bare stop in the
+#      layer thickness).
 #
 # Needs shyfem, shyelab and mpirun on PATH (an OpenMPI build) and
 # `make init` done.  Exit code 0 (ITLIN CHECK: PASS) or 1 (ITLIN CHECK:
@@ -84,9 +100,23 @@ mkstr() {
   sed -e "s/^\([ \t]*\)$src[ \t]*\$/\1$name/" "$@" "$src.str" > "$name.str"
 }
 ended() { [ "$1" = 0 ] && grep -q "simulation end" "$2"; }
-MSG="option itlin = 1 (semi-Lagrangian advection of momentum) is not supported with MPI"
 ADV="run on one process, or set itlin = 0"
 ITL='s/^\([ \t]*\)ilin = [01][ \t]*$/\1ilin = 0  itlin = 1/'
+
+# stopcheck ROW LOG EXIT TEXT ADVICE : a start-up stop with exit code 33,
+# the message and the advice once each, no signal or runtime-error line
+stopcheck() {
+  local row="$1" log="$2" r="$3" text="$4" adv="$5" n1 n2 nbad ok=1
+  n1=$(grep -c "option itlin = 1 (semi-Lagrangian advection of momentum) is not supported $text" "$log")
+  n2=$(grep -c "$adv" "$log")
+  nbad=$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$log")
+  [ "$r" = 33 ] || { ok=0; echo "  exit code $r (expected 33)"; }
+  [ "$n1" = 1 ] || { ok=0; echo "  message seen $n1 times (expected once)"; }
+  [ "$n2" = 1 ] || { ok=0; echo "  advice seen $n2 times (expected once)"; }
+  [ "$nbad" = 0 ] || { ok=0; echo "  $nbad SIGFPE/SIGSEGV/Fortran runtime lines"; }
+  if [ "$ok" = 1 ]; then echo "  stopped as expected: exit $r, message x$n1, advice x$n2"
+  else tail -3 "$log"; fail "row $row: no clean start-up stop"; fi
+}
 
 echo "=== 1. serial: mm_hyd_01 with ilin = 0, itlin = 1"
 R1="${TAG}_hyd01"
@@ -107,7 +137,9 @@ if mkstr mm_hyd_22a "$R2" -e "$ITL" -e "s/itend = '[^']*'/itend = '2009-01-02'/"
     ( cd "$SCR/split" && shyelab -split h.shy > split.log 2>&1 )
     z=$(cd "$SCR/split" && shyelab -write zeta.shy 2>/dev/null | awk '/l,ivar/{a=($5<0?-$5:$5); b=($7<0?-$7:$7); if(a>m)m=a; if(b>m)m=b} END{printf "%.3g", m}')
     s=$(cd "$SCR/split" && shyelab -write speed.shy 2>/dev/null | awk '/l,ivar/{if($7>m)m=$7} END{printf "%.3g", m}')
-    echo "  ended; largest |water level| $z m, largest speed $s m/s (plausibility only)"
+    if awk -v z="$z" -v s="$s" 'BEGIN{exit !(z != "" && s != "" && z+0 < 1 && s+0 < 5)}'; then
+      echo "  ended; largest |water level| $z m, largest speed $s m/s (bounds 1 m, 5 m/s; plausibility only)"
+    else fail "row 2: largest |water level| '$z' m, largest speed '$s' m/s (bounds 1 m, 5 m/s)"; fi
   else tail -3 "$SCR/2.log"; grep -m1 -A3 '^#3 ' "$SCR/2.log"; fail "row 2: the serial run did not end (exit $r)"; fi
 fi
 
@@ -115,15 +147,7 @@ echo "=== 3. $NP processes: mm_hyd_01 with ilin = 0, itlin = 1 must stop at star
 if [ -f "$R1.str" ]; then
   for f in "$R1".*; do [ "$f" = "$R1.str" ] || rm -f "$f"; done
   timeout 600 nice -n 10 mpirun --oversubscribe -np "$NP" shyfem "$R1.str" > "$SCR/3.log" 2>&1; r=$?
-  n1=$(grep -c "$MSG" "$SCR/3.log"); n2=$(grep -c "$ADV" "$SCR/3.log")
-  nbad=$(grep -c 'SIGFPE\|SIGSEGV\|Fortran runtime' "$SCR/3.log")
-  ok=1
-  [ "$r" = 33 ] || { ok=0; echo "  exit code $r (expected 33)"; }
-  [ "$n1" = 1 ] || { ok=0; echo "  message seen $n1 times (expected once)"; }
-  [ "$n2" = 1 ] || { ok=0; echo "  advice seen $n2 times (expected once)"; }
-  [ "$nbad" = 0 ] || { ok=0; echo "  $nbad SIGFPE/SIGSEGV/Fortran runtime lines"; }
-  if [ "$ok" = 1 ]; then echo "  stopped as expected: exit $r, message x$n1, advice x$n2"
-  else tail -3 "$SCR/3.log"; fail "row 3: no clean start-up stop on $NP processes"; fi
+  stopcheck 3 "$SCR/3.log" "$r" "with MPI" "$ADV"
 fi
 
 echo "=== 4. $NP processes: mm_hyd_01 (ilin = 1) with itlin = 1 must run"
@@ -156,6 +180,25 @@ if mkstr mm_hyd_01 "$R6" -e 's/^\([ \t]*\)ilin = 1[ \t]*$/\1ilin = 0  itlin = 2/
   n1=$(grep -c "error stop set_explicit: no such option" "$SCR/6.log")
   if [ "$r" = 33 ] && [ "$n1" -ge 1 ]; then echo "  stopped as expected: exit $r"
   else tail -3 "$SCR/6.log"; fail "row 6: exit $r, message seen $n1 times (expected exit 33 and the message)"; fi
+fi
+
+echo "=== 7. serial: mm_hyd_01 on the geographic basin with ilin = 0, itlin = 1 must stop"
+R7="${TAG}_hyd01geo"
+if [ ! -f GRID/MM_geo.bas ] && ! ( cd GRID && shypre -noopti MM_geo.grd > "$SCR/shypre_geo.log" 2>&1 ); then
+  tail -3 "$SCR/shypre_geo.log"; fail "row 7: shypre failed on GRID/MM_geo.grd"
+elif mkstr mm_hyd_01 "$R7" -e "$ITL" -e 's|^\([ \t]*\)GRID/MM_coarse[ \t]*$|\1GRID/MM_geo|'; then
+  grep -q "itlin = 1" "$R7.str" || fail "row 7: the sed expression set no itlin"
+  grep -q "GRID/MM_geo" "$R7.str" || fail "row 7: the sed expression set no geographic basin"
+  timeout 600 nice -n 10 shyfem "$R7.str" > "$SCR/7.log" 2>&1; r=$?
+  stopcheck 7 "$SCR/7.log" "$r" "on a geographic (lat/lon) grid" "use a Cartesian grid, or set itlin = 0"
+fi
+
+echo "=== 8. serial: mm_hyd_43 (3D) with ilin = 0, itlin = 1 must stop"
+R8="${TAG}_hyd43"
+if mkstr mm_hyd_43 "$R8" -e "$ITL"; then
+  grep -q "itlin = 1" "$R8.str" || fail "row 8: the sed expression set no itlin"
+  timeout 600 nice -n 10 shyfem "$R8.str" > "$SCR/8.log" 2>&1; r=$?
+  stopcheck 8 "$SCR/8.log" "$r" "in 3D (more than one layer)" "run in 2D, or set itlin = 0"
 fi
 
 if [ "$rc" = 0 ]; then rm -rf "$SCR"; echo "ITLIN CHECK: PASS"

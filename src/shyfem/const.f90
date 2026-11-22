@@ -194,8 +194,6 @@
 	call ckclos
 !	call ckoxy	!oxygen
 
-	call semi_lagrange_mpi_check	!itlin = 1 stops on several processes
-
 	ibarcl=nint(getpar('ibarcl'))
 	if( ibarcl == 0 ) then
 	  call putpar('itemp',0.)

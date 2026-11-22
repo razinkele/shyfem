@@ -1044,43 +1044,89 @@
 
 !******************************************************************
 
-	subroutine semi_lagrange_mpi_check
+	subroutine semi_lagrange_check
 
-! on more than one process the semi-Lagrangian advection of momentum
-! (ilin = 0 and itlin = 1) stops the run at start-up, before the first
-! time step (called by cstcheck on every process, after the STR file is
-! read). Its back-tracking follows one tracer per element on the mesh of
-! the process only: a tracer that reaches the edge of the domain of the
-! process stops there and its element gets no advective term, so the
-! result differs from the serial one (#227: on 2 and 4 processes the
-! water level of Mar Menor mm_hyd_22a without its boundary tilt differs
-! from the serial run by 0.05 m with itlin = 1, against 3e-6 m for the
-! same case with ilin = 1). Rank 0 writes the message and the advice once, then every
-! process stops through shympi_abort_internal (exit code 33 under Open
-! MPI). A serial run, and a run with ilin /= 0 (itlin is then not used),
-! are not affected.
+! the semi-Lagrangian advection of momentum (ilin = 0 and itlin = 1) is
+! supported only in a serial 2D run on a Cartesian grid; any other run
+! stops at start-up, before the first time step. Called by
+! shyfem_initialize on every process right after init_vertical, when the
+! type of coordinates (set_ev, adjust_spherical) and the number of layers
+! are known. Its back-tracking (back_trace with the old tracker
+! track_orig, track_line):
+!   - several processes: follows one tracer per element on the mesh of
+!     the process only; a tracer that reaches the edge of the domain of
+!     the process stops there and its element gets no advective term
+!     (#227: on 2 and 4 processes the water level of Mar Menor mm_hyd_22a
+!     without its boundary tilt differed from the serial run by 0.05 m
+!     with itlin = 1, against 3e-6 m for the same case with ilin = 1)
+!   - geographic grid (isphe = 1): compares the distance a tracer travels
+!     in a time step, in metres, with side lengths in degrees
+!   - 3D (more than one layer): only the first layer gets the term, which
+!     lagr_vel builds from the whole water depth, and a tracer that
+!     changes layer aborts (Mar Menor mm_hyd_43 with itlin = 1 blew up
+!     within three time steps)
+! For each case that applies rank 0 writes "option itlin = 1
+! (semi-Lagrangian advection of momentum) is not supported ..." and one
+! line of advice; then every process stops through shympi_abort_internal
+! (exit code 33). All processes see the same values (the STR file, the
+! basin's coordinate type, nlv_global), so they decide alike. A run with
+! ilin /= 0 (itlin is then not used) is not affected.
 
 	use shympi, only : shympi_is_parallel, shympi_is_master		&
-     &			,shympi_barrier
+     &			,shympi_barrier, nlv_global
 	use para, only : getpar
 
 	implicit none
 
-	if( .not. shympi_is_parallel() ) return
+	integer isphe,nbad
+
 	if( nint(getpar('ilin')) /= 0 ) return
 	if( nint(getpar('itlin')) /= 1 ) return
 
+	call get_coords_ev(isphe)
+
+	nbad = 0
+	if( shympi_is_parallel() ) then
+	  call semi_lagrange_unsupported('with MPI'			&
+     &		,'run on one process, or set itlin = 0')
+	end if
+	if( isphe == 1 ) then
+	  call semi_lagrange_unsupported('on a geographic (lat/lon) grid'	&
+     &		,'use a Cartesian grid, or set itlin = 0')
+	end if
+	if( nlv_global > 1 ) then
+	  call semi_lagrange_unsupported('in 3D (more than one layer)'	&
+     &		,'run in 2D, or set itlin = 0')
+	end if
+
+	if( nbad == 0 ) return
+
+	if( shympi_is_master() ) flush(6)
+	call shympi_barrier		!rank 0 has written
+	call shympi_abort_internal('error stop semi_lagrange_check:'	&
+     &		//' itlin = 1 needs a serial 2D run on a Cartesian grid')
+
+	contains
+
+	subroutine semi_lagrange_unsupported(where,advice)
+
+! counts the case and lets rank 0 name it
+
+	implicit none
+
+	character(len=*), intent(in) :: where
+	character(len=*), intent(in) :: advice
+
+	nbad = nbad + 1
 	if( shympi_is_master() ) then
 	  write(6,'(a)') ' option itlin = 1 (semi-Lagrangian advection of'	&
-     &		//' momentum) is not supported with MPI'
-	  write(6,'(a)') ' run on one process, or set itlin = 0'
-	  flush(6)
+     &		//' momentum) is not supported '//where
+	  write(6,'(a)') ' '//advice
 	end if
-	call shympi_barrier		!rank 0 has written
-	call shympi_abort_internal('error stop semi_lagrange_mpi_check:'	&
-     &		//' itlin = 1 needs a run on one process')
 
-	end
+	end subroutine semi_lagrange_unsupported
+
+	end subroutine semi_lagrange_check
 
 !******************************************************************
 
