@@ -174,7 +174,11 @@
 !  - a move that starts on side ii and goes straight out through it
 !    (never inside) crosses side ii at its start: the old point is
 !    returned exactly, and the kind of side ii decides as above (at an
-!    open boundary the particle leaves)
+!    open boundary the particle leaves). The point returned jumps at the
+!    edge of the band: a start within delta of side ii with an end more
+!    than delta beyond it returns the start point, even on a long,
+!    shallow move, while an end within delta (say 0.99 delta beyond)
+!    returns the end projected on side ii (below)
 !  - a move that leaves through a vertex (two sides it leaves through
 !    reach 0 within delta of s_out): the point at s_out is returned; a
 !    side that keeps the particle (wall, neighbour, cut-off side) wins
@@ -191,7 +195,13 @@
 !  - a move that runs along side ii (the old point and the new point both
 !    within delta of the line of side ii): side ii sets no limit, and the
 !    move leaves where it reaches another side (above), at the end of
-!    side ii through the side that meets it there. If it reaches no
+!    side ii through the side that meets it there. That other side alone
+!    decides, not the rule that a side keeping the particle wins at a
+!    vertex: along a wall to its corner with an open boundary the
+!    particle leaves, while a move to the same end point from a start
+!    more than delta inside would be a vertex tie and keep it; along an
+!    open side to its corner with a wall the reverse. All of these lie
+!    within a few delta of the vertex. If it reaches no
 !    other side (s_out >= 1) and the new point lies beyond the line of
 !    side ii (its raw area coordinate xi(ii) < 0, by any amount):
 !      - if the move goes outward (raw xi(ii) of the new point below that
@@ -205,17 +215,26 @@
 !    "Beyond" is any negative raw coordinate because a move that starts
 !    more than delta inside side ii and ends at the same new point leaves
 !    through side ii for any negative raw coordinate of its end (s_out is
-!    then < 1) and does not for a coordinate >= 0, so the start point
-!    cannot change the outcome; an exit needs an outward move because it
-!    is the one outcome that cannot be undone. (Along two sides at once,
-!    at a vertex: the side the new point is farther beyond; at an exact
-!    tie a side that keeps the particle.)
+!    then < 1) and does not for a coordinate >= 0, so for an outward move
+!    the start point does not change whether side ii is crossed. It does
+!    in two cases: a move that ends beyond the line only because it
+!    started beyond it (inward or parallel: no crossing, because an exit
+!    needs an outward move, the one outcome that cannot be undone), and
+!    a move along two sides at once, at a vertex (the side the new point
+!    is farther beyond is taken; at an exact tie a side that keeps the
+!    particle), where a start more than delta inside would be decided by
+!    the vertex rule above.
 !  - no side reached before s = 1 otherwise: the new point lies in the
 !    element by this arithmetic (all its raw area coordinates >= 0, or
 !    within delta of the line of a side the move runs along and not
 !    beyond it); it is returned with ie unchanged, no side is crossed
-! So no point returned lies beyond a side by more than rounding, except
-! the old point when the old point itself lies outside by more than delta.
+! A point returned lies beyond a side by no more than the rounding of
+! single precision, with two exceptions: a crossing returned for a move
+! that runs along a side inside the band and leaves through another side
+! can lie beyond the side it runs along by up to the band plus that
+! rounding (at most about 1.21 delta, 1.18 delta in geographic
+! coordinates, as measured by the review), and the old point is returned
+! as it is when it lies outside by more than delta.
 !
 ! Rounding: the arithmetic is in double precision from the single
 ! precision coordinates. delta = lgr_side_delta (mod_lagrange_mpi) of the

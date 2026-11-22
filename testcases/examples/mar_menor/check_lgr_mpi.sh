@@ -43,6 +43,13 @@
 # part mode are printed, not gated.  Arguments after MODE come last, so
 # --step, --allow and --factor can be replaced.
 #
+# Side self-test: every mode that runs at levdbg = 3 (flux, part, handover,
+# perturb) requires of each log (serial and MPI; both MPI logs in perturb)
+# the summary line "lgr side fallback self-test: ok" and no line with
+# "lgr side fallback self-test: FAILED"; for mm_lgr_b the open-side count
+# of checks run (the "open N/M" field of the summary) must be above 0, and
+# for an MPI run on more than one process the cut-off count likewise.
+#
 # perturb: the dumps of the second run go to CASE.npN.perturb.dbg/ and its log
 # is CASE.npN.perturb.log.  A PASS is weak evidence: the perturbation only
 # shows a dependence on memory that malloc hands out, and case A on 4
@@ -161,6 +168,31 @@ collect_dbg() {
 
 summary() { python3 "$HERE/lgr_compare.py" "$1" --summary 2>&1 | sed 's/^/    /'; }
 
+# selftest_check LOG NPROC: the side self-test of a levdbg = 3 run (see header)
+selftest_check() {
+  local log="$1" np="$2" line n
+  if grep -q 'lgr side fallback self-test: FAILED' "$log"; then
+    fail "side self-test FAILED in $log"
+    grep 'lgr side fallback self-test: FAILED' "$log" | head -5 | sed 's/^/    /'
+    return
+  fi
+  line="$(grep 'lgr side fallback self-test: ok' "$log" | tail -1)"
+  if [ -z "$line" ]; then
+    fail "no line 'lgr side fallback self-test: ok' in $log"; return
+  fi
+  echo "  $(basename "$log"):$(echo "$line" | sed 's/^ *//')"
+  if [ "$CASE" = mm_lgr_b ]; then
+    n="$(echo "$line" | sed -n 's/.* open \([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p')"
+    if [ -z "$n" ]; then fail "no open-side count of checks run in the self-test line of $log"
+    elif [ "$n" -eq 0 ]; then fail "open-side count of checks run is 0 in $log"; fi
+  fi
+  if [ "$np" -gt 1 ]; then
+    n="$(echo "$line" | sed -n 's/.* cut-off \([0-9][0-9]*\)\/[0-9][0-9]*.*/\1/p')"
+    if [ -z "$n" ]; then fail "no cut-off count of checks run in the self-test line of $log"
+    elif [ "$n" -eq 0 ]; then fail "cut-off count of checks run is 0 in $log"; fi
+  fi
+}
+
 #--- perturb mode: two MPI runs, plain and with MALLOC_PERTURB_=85 -------------
 if [ "$MODE" = perturb ]; then
   nlost() { grep -c 'loosing particle adv' "$1"; }
@@ -191,6 +223,7 @@ if [ "$MODE" = perturb ]; then
   fi
   collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  plain run ended"
+  selftest_check "$HERE/$CASE.np$NP.log" "$NP"
 
   echo "=== 2. $CASE on $NP processes, MALLOC_PERTURB_=85"
   seen="$(probe perturbed)"; probe_rc=$?
@@ -210,6 +243,7 @@ if [ "$MODE" = perturb ]; then
   fi
   collect_dbg "$CASE.np$NP.perturb.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
   echo "  perturbed run ended"
+  selftest_check "$HERE/$CASE.np$NP.perturb.log" "$NP"
 
   echo "=== 3. compare the dump files byte for byte"
   D1="$HERE/$CASE.np$NP.dbg"; D2="$HERE/$CASE.np$NP.perturb.dbg"
@@ -249,6 +283,7 @@ for ext in lgr.shy hydro.shy inf; do
 done
 collect_dbg "$CASE.serial.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  serial run ended"
+[ "$DUMP" = 1 ] && selftest_check "$HERE/$CASE.serial.log" 1
 
 #--- 2. MPI run ------------------------------------------------------------------
 echo "=== 2. $CASE on $NP processes"
@@ -262,6 +297,7 @@ if [ "$mpi_rc" != 0 ] || ! grep -q "simulation end" "$HERE/$CASE.np$NP.log"; the
 fi
 collect_dbg "$CASE.np$NP.dbg" || { echo "LGR GATE: FAIL"; exit 1; }
 echo "  MPI run ended"
+[ "$DUMP" = 1 ] && selftest_check "$HERE/$CASE.np$NP.log" "$NP"
 
 #--- 3. comparison ---------------------------------------------------------------
 echo "=== 3. compare ($MODE)"
