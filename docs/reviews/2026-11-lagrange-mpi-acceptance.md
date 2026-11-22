@@ -591,3 +591,18 @@ the stage-3 head `65064328`; `perturb` A, B, C, E on 4 PASS; `handover` B on 8 w
 continuous release (`lgrpps` on the river boundary; not supported on several processes) stops
 at the first output with exit 33 and the message "particles 1047, release records taken 1003";
 its file holds no particle record. No run on several processes leaves a `fort.NN` file.
+
+## End of stage 5: the final gates
+
+**Measured** 2026-11-22 10:33 to 10:52 EET (from `date`) by the controller, on a clean build of
+`fbc65b4b` (OpenMPI `libmpi.so.40`): tool self-tests PASS; serial guard against `wt-lgr-ref3`
+PASS, including the `mpirun -np 1` comparisons (AC7); repro PASS; MPI hydrodynamics gate PASS;
+flux A, B, C on 2, 3, 4, 6, 8 processes PASS (15); hand-over check PASS (13); positions in the
+debug dump against the floors A, B, C, E on 2, 4, 8 PASS (12); perturbed twins PASS (6); release
+gate with ids on 6 and 10 processes PASS; **the particle file: ids exact (AC2) and positions
+against the floors (AC3) for A, B, C and E on 2, 4 and 8 processes PASS (24)**; AC8
+(`lgrelab -lgmean`, case A on 4 processes against the six perturbed serial runs) PASS; both fault
+runs of the consistency check abort with exit 33; plain runs of D, E on 4 and B on 8 processes
+at `levdbg = 2` end with the check silent. Builds with `-fcheck=bounds` and
+`COMPILER_PROFILE=CHECK` of `7d3ca548` (the Fortran of `fbc65b4b`) run without a runtime message
+or a trap.
