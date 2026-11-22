@@ -343,9 +343,11 @@ byte-identical to each other and to the one-thread run.
 
 ## Task 3.6: consistency check, OpenMP, empty ranks, and the cases of spec section 7
 
-**Measured** 2026-11-22 06:52 to 07:23 EET (from `date`) by the implementer, on the binary built
-from this commit's source (parent `185321dd`), OpenMPI `libmpi.so.40`; the head binary of
-`185321dd` was kept aside for the baseline dumps.
+**Measured** 2026-11-22 06:52 to 07:34 EET (from `date`) by the implementer, on the binaries of
+the two commits of Task 3.6 on top of `185321dd` (`cd980bcd`, and the follow-up that counts
+the ids of check (c) over the ids given out; every run below was repeated on the follow-up's
+binary with the same results), OpenMPI `libmpi.so.40`; the head binary of `185321dd` was kept
+aside for the baseline dumps.
 
 **What was added.** `lgr_mpi_check_consistency` (`src/shyfem/lagrange_mpi.f90`), called by
 `lagrange` once per step right after the hand-over, at `levdbg >= 2` on more than one process

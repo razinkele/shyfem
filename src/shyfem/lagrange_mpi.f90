@@ -4286,12 +4286,14 @@
 !     frees them in the slot it vacates); and no slot carries a mark of the
 !     hand-over (lgr_marked /= 0: at a side or parked) after the rounds.
 ! (c) no id occurs on two processes, and no id twice on one process. Exact:
-!     every process counts its slots per id in an array of length
-!     nid = max(idbdy, largest id), the arrays are summed (MPI_Allreduce),
-!     and an id with a sum above 1 is a duplicate; an id below 1 cannot be
-!     counted and is reported as out of range. Cost per step: two integer
-!     arrays of length nid per process (allocated and freed in the call),
-!     one MPI_Allreduce of nid integers and two of a few integers.
+!     every process counts its slots per id over the ids given out so far,
+!     1..nid with nid = idbdy (the largest over the processes), in an array
+!     whose last entry nid+1 counts the ids outside 1..nid; the arrays are
+!     summed (MPI_Allreduce), an id with a sum above 1 is a duplicate, and
+!     an id outside 1..nid, which was never given out, is reported as out
+!     of range. Cost per step: two integer arrays of length nid+1 per
+!     process (allocated and freed in the call), one MPI_Allreduce of nid+1
+!     integers and two of a few integers.
 ! (a), (b) and (c) are evaluated every time. If any fails, rank 0 writes
 ! every failing message with its numbers (the per-process values gathered
 ! to rank 0), flushes, and after a barrier every process stops through
@@ -4322,13 +4324,13 @@
 
 	double precision, intent(in) :: dtime
 
-	integer, parameter :: nv = 6		!counts summed over processes
+	integer, parameter :: nv = 5		!counts summed over processes
 	integer, parameter :: ninf = 12		!per process, for the messages
 	integer, parameter :: ndl = 10		!duplicate ids listed
-	integer :: ival(nv), ivalg(nv), imx(3), imxg(3), info(ninf)
+	integer :: ival(nv), ivalg(nv), imx(2), imxg(2), info(ninf)
 	integer :: ldup(ndl), cdup(ndl)
 	integer :: i, ie, id, k, r, n, nid, ndup, nl, nheld, idbmin, idbmax
-	integer :: ierr
+	integer :: nout, ierr
 	integer, allocatable :: icnt(:), icntg(:), infog(:,:), cdupg(:,:)
 	logical :: bfa, bfb1, bfb2, bfc1, bfc2
 	character(len=1000) :: line
@@ -4337,14 +4339,13 @@
 	if( .not. blgr_chk ) return
 
 	!-----------------------------------------------
-	! own slots: classes, (b), ids below 1, largest id
+	! own slots: classes and (b)
 	!-----------------------------------------------
 
 	ival = 0
 	info = 0
 	imx(1) = idbdy
 	imx(2) = -idbdy
-	imx(3) = 0
 	do i = 1, nbdy
 	  ie = lgr_ar(i)%actual%ie
 	  id = lgr_ar(i)%id
@@ -4369,23 +4370,17 @@
 	      info(9) = lgr_marked(i)
 	    end if
 	  end if
-	  if( id < 1 ) then
-	    ival(6) = ival(6) + 1
-	    if( ival(6) == 1 ) info(11) = id
-	  end if
-	  imx(3) = max(imx(3),id)
 	end do
 	info(1:3) = ival(1:3)
 	info(4) = ival(4)
 	info(7) = ival(5)
-	info(10) = ival(6)
 	info(12) = idbdy
 
 	call MPI_Allreduce(ival,ivalg,nv,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_check_consistency: MPI_Allreduce')
-	call MPI_Allreduce(imx,imxg,3,MPI_INTEGER,MPI_MAX			&
+	call MPI_Allreduce(imx,imxg,2,MPI_INTEGER,MPI_MAX			&
      &			,MPI_COMM_WORLD,ierr)
 	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_check_consistency: MPI_Allreduce')
@@ -4396,8 +4391,8 @@
 	! (c) slots per id, summed over the processes
 	!-----------------------------------------------
 
-	nid = max(idbmax,imxg(3),1)	!the same on every process
-	allocate(icnt(nid), icntg(nid), stat=ierr)
+	nid = max(idbmax,1)		!the same on every process
+	allocate(icnt(nid+1), icntg(nid+1), stat=ierr)
 	if (ierr /= 0) call shympi_abort_internal			&
      &		('lgr_mpi_check_consistency: allocation')
 	icnt = 0
@@ -4405,12 +4400,17 @@
 	  id = lgr_ar(i)%id
 	  if( id >= 1 .and. id <= nid ) then
 	    icnt(id) = icnt(id) + 1
+	  else				!never given out
+	    icnt(nid+1) = icnt(nid+1) + 1
+	    if( icnt(nid+1) == 1 ) info(11) = id
 	  end if
 	end do
-	call MPI_Allreduce(icnt,icntg,nid,MPI_INTEGER,MPI_SUM		&
+	info(10) = icnt(nid+1)
+	call MPI_Allreduce(icnt,icntg,nid+1,MPI_INTEGER,MPI_SUM		&
      &			,MPI_COMM_WORLD,ierr)
 	if( ierr /= MPI_SUCCESS ) call shympi_abort_internal		&
      &		('lgr_mpi_check_consistency: MPI_Allreduce')
+	nout = icntg(nid+1)
 	ndup = 0
 	nl = 0
 	ldup = 0
@@ -4433,7 +4433,7 @@
 	bfb1 = ( ivalg(4) > 0 )
 	bfb2 = ( ivalg(5) > 0 )
 	bfc1 = ( ndup > 0 )
-	bfc2 = ( ivalg(6) > 0 )
+	bfc2 = ( nout > 0 )
 
 	if( .not. ( bfa .or. bfb1 .or. bfb2 .or. bfc1 .or. bfc2 ) ) then
 	  deallocate(icnt,icntg)
@@ -4525,9 +4525,9 @@
 	    end do
 	  end if
 	  if( bfc2 ) then
-	    write(6,'(a,f0.1,a,i0,a)') ' lgr_mpi_check_consistency: id out'	&
-     &		//' of range: time ',dtime,', ',ivalg(6),' particles with'	&
-     &		//' an id below 1'
+	    write(6,'(a,f0.1,a,i0,a,i0,a)') ' lgr_mpi_check_consistency: id'	&
+     &		//' out of range: time ',dtime,', ',nout,' particles with'	&
+     &		//' an id below 1 or above the ids given out (',idbmax,')'
 	    do r = 0, n_threads-1
 	      if( infog(10,r) == 0 ) cycle
 	      write(6,'(a,i0,a,i0,a,i0)') ' lgr_mpi_check_consistency: id'	&
