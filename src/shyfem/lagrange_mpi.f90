@@ -367,14 +367,19 @@
 
 	subroutine lgr_mpi_init
 
-! initializes the MPI buffers of the Lagrangian module; needs nbdymax and
-! ncust and the allocated particle array (called after the first
+! initializes the MPI buffers of the Lagrangian module; needs ncust and
+! the allocated particle array (called after the first
 ! particles are read), runs the self-tests of the particle record and of
 ! the side fallback particle_on_side at levdbg >= 3
 !
+! the lists of marks and of parked particles start with 1024 entries per
+! process, whatever nbdymax (the global limit of the release), and double
+! when full (lgr_mpi_grow_export, lgr_mpi_grow_park, inside the critical
+! section lgr_export)
+!
 ! test hook: if the environment variable LGR_TEST_SMALL_EXPORT is set to 1
-! the lists of marks start with 2 entries instead of max(nbdymax,1024),
-! so that their growth is exercised by a small run
+! the lists start with 2 entries instead of 1024, so that their growth is
+! exercised by a small run
 !
 ! test hooks of lgr_mpi_check_consistency, read here once (several
 ! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
@@ -405,7 +410,7 @@
 
 	if( .not. bmpi_lagr ) return
 
-	ndim = max(nbdymax, 1024)
+	ndim = 1024
 	call get_environment_variable('LGR_TEST_SMALL_EXPORT',sval,	&
      &			status=ist)
 	if( ist == 0 .and. trim(sval) == '1' ) ndim = 2
