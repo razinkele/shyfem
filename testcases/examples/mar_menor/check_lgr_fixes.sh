@@ -32,8 +32,9 @@
 #             plain run at the same output) are at least one; every exited
 #             record of the decay run has an element in 1..nel and a
 #             position inside a triangle of GRID/MM_geo.grd (inside the
-#             basin), and a decayed particle keeps the same position at
-#             every output after it decayed (its last position); every
+#             basin), and a decayed particle stays in the exited block of
+#             every later output with the same element and position (its
+#             last position); every
 #             active particle of the decay run has the same record as in
 #             the plain run (decay changes no other particle).
 #   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
@@ -250,6 +251,10 @@ for t, b, _ in td:
         ok = False
         continue
     ext_p = set(mp[t][1])
+    lost = sorted(set(first_pos) - set(b[1]))
+    if lost:				# a decayed particle stays in the exited block
+        print("  t=%r decayed ids missing from the exited block: %s" % (t, lc.fmt_ids(lost)))
+        ok = False
     for pid, p in b[1].items():
         if not 1 <= p["ie"] <= nel:
             print("  t=%r exited id %d: element %d outside 1..%d" % (t, pid, p["ie"], nel))
