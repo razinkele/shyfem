@@ -33,8 +33,10 @@
 # holds the barotropic nodal velocity of uvtop0 (same file), which had the
 # same defect (#230): with uvtopr alone fixed, the 2D velocity at the
 # extra point 'inlet' (node 58) was 0.014 m/s off on 4 processes.  The
-# .inf file is not compared: its energy lines are global sums, added in
-# another order on several processes.  When a file differs the largest
+# .inf file is not compared: with the output files byte-identical, its
+# global totals (total_volume and the temp and salt totals, one energy
+# line) still differ in the last printed digits on several processes;
+# that is not traced.  When a file differs the largest
 # difference of every variable is printed (needs shyelab, extelab and
 # python3 with netCDF4; without them only the first differing byte).
 #
