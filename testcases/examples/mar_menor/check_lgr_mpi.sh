@@ -224,27 +224,26 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # 37 / 4.3113e-3 -> 4.32e-3 / tt 1
 # (particle 46 comes to rest in the dry element 870 in every run, at a time
 # tt between 327,900 and 329,100 s that differs by a few steps).
-# mm_lgr (#225, PROPOSED 2026-11-22, awaiting the owner's approval: the
-# random walk, rwhpar = 0.5, repeatable since its draws come from
-# per-particle streams; measured the same way with the build of #225, bin
-# of wt-lgr on the inputs of commit b0cd1972, by key; log floors_mm_lgr.log
-# in the same evidence folder):
-# 82 / 1.4268e-1 -> 1.43e-1 / tt 0
-# (observed in the run with -1e-5: particle 40 is in another element than
-# in the base run from t = 162,000 s, stays in element 401 from t = 262,800
-# to 288,000 s while the base run's particle moves on, and is 0.143 degrees
-# away at t = 338,400 s; the envelope is of the size of the basin. Measured
-# against serial on 2, 4 and 8 processes: 0, 2 and 11 particles beyond
-# 1e-5 at the last output, largest distance 0, 1.4e-4 and 2.1e-2 degrees.
-# The binary of b0cd1972, whose walk is not seeded, fails it on 4: 145
-# particles, 0.211 degrees.)
+# mm_lgr (#225): 0 / 0 / tt 0, set by the owner on 2026-11-23 because
+# multi-process runs of the random walk (rwhpar = 0.5) equal the serial run:
+# since #225 every draw of a particle comes from its own stream, and with
+# the multi-process hydrodynamics byte-identical to serial (#230, #238) the
+# particle positions of 2, 4 and 8 processes equal the serial ones (0
+# particles beyond 1e-5, largest distance 0 at every output). A floor of 0
+# is exact: a distance of exactly 0 passes, any larger one fails (the tools
+# test "n > N" and "not d <= D", with None, not 0, for an unset floor). For
+# reference, the envelope of six serial runs with the wind drag changed by
+# up to a relative 1e-5 (measure_lgr_floors.sh with the build of #225 on the
+# inputs of commit b0cd1972, log floors_mm_lgr.log in the same evidence
+# folder) is 82 / 1.4268e-1 / tt 0: the random walk lets such a change grow
+# to the size of the basin.
 case "$CASE" in
   mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3; FLOOR_T=0 ;;
   mm_lgr_b) FLOOR_N=48; FLOOR_D=182; FLOOR_T=2 ;;
   mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3; FLOOR_T=0 ;;
   mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3; FLOOR_T=0 ;;
   mm_lgr_w) FLOOR_N=37; FLOOR_D=4.32e-3; FLOOR_T=1 ;;
-  mm_lgr)   FLOOR_N=82; FLOOR_D=1.43e-1; FLOOR_T=0 ;;	# PROPOSED (#225)
+  mm_lgr)   FLOOR_N=0; FLOOR_D=0; FLOOR_T=0 ;;	# owner, 2026-11-23 (#225)
   *) FLOOR_N=""; FLOOR_D=""; FLOOR_T="" ;;
 esac
 if [ "$MODE" = floor ] && [ -z "$FLOOR_N" ]; then
