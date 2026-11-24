@@ -195,6 +195,18 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
                 )
             )
 
+    # --- lgrseed: integer in [-2147483647, 2147483647] (lagrange_main.f90) ---
+    lgrseed = _num(sections, "lagrg", "lgrseed")
+    if lgrseed is not None and (lgrseed != int(lgrseed) or abs(lgrseed) > 2147483647):
+        msgs.append(
+            ValidationMessage(
+                "error",
+                f"lgrseed={lgrseed} is invalid — must be an integer from "
+                "-2147483647 to 2147483647",
+                "lgrseed",
+            )
+        )
+
     # --- Dependency: iturb valid range (turbulence.f90:105-114) ---
     if iturb is not None and isinstance(iturb, int) and iturb not in (0, 1, 2, 3):
         msgs.append(

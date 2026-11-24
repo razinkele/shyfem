@@ -2714,6 +2714,24 @@ def physics_server(
                         value=format_param_display(_shown(params, "idtlgr", 0)),
                     ),
                 ),
+                ui.column(
+                    4,
+                    # every random draw of a particle is a function of this
+                    # seed, the particle's id and the time step (def_para.f90)
+                    ui.input_numeric(
+                        "lgrseed",
+                        "Random seed (particles)",
+                        value=int(_shown(params, "lgrseed", 1)),
+                        min=-2147483647,
+                        max=2147483647,
+                        step=1,
+                    ),
+                    ui.p(
+                        "Seed of the particles' random draws; another value gives "
+                        "another realization. Integer, -2147483647 to 2147483647.",
+                        class_="form-text text-muted small",
+                    ),
+                ),
             ),
             ui.hr(),
             ui.h6("Connectivity Analysis", class_="text-muted"),

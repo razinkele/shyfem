@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — shyfem-ui
+
+- **Physics > Lagrangian: the particles' random seed (`lgrseed`).** Core 8.6.0 made every random draw of a particle a function of `lgrseed` (default 1), but the parameter catalog did not list it, so the page could neither show nor change it. The Lagrangian panel now has a "Random seed (particles)" field (integer, -2147483647 to 2147483647) that shows the stored value and writes only an edit, and the STR validator reports an out-of-range or non-integer `lgrseed` as an error, as the core stops on it (#259).
+
 ### Changed — Docs
 
 - **UI: PostgreSQL is declared unsupported.** SQLite is the supported database (owner decision, delegated, 2026-11-20). The app still accepts a `postgresql://` URL and the driver stays installed, but nothing deploys or tests it; `shyfem-ui/README.md` says so, and its server-mode example now uses an absolute SQLite path.

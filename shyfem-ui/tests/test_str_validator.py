@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 from shyfem_ui.services.str_validator import validate_str
 
 
@@ -135,6 +137,17 @@ class TestRangeValidation:
         msgs = validate_str({"para": {**self._VALID, "itdrag": 3, "iwave": 2}})
         errors = [m for m in msgs if m.level == "error" and "itdrag" in m.message]
         assert len(errors) == 0
+
+    @pytest.mark.parametrize("seed", [1, 0, -2147483647, 2147483647, 42])
+    def test_lgrseed_in_range_is_accepted(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        assert not [m for m in msgs if m.param == "lgrseed"]
+
+    @pytest.mark.parametrize("seed", [2147483648, -2147483648, 1.5, 1e10])
+    def test_lgrseed_out_of_range_or_fractional_is_rejected(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        errors = [m for m in msgs if m.level == "error" and m.param == "lgrseed"]
+        assert len(errors) == 1
 
 
 class TestLevelSystemValidation:
