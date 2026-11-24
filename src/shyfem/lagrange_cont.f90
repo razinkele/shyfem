@@ -279,6 +279,41 @@
 
 !*******************************************************************
 
+	subroutine lgr_selftest_segments
+
+! self-test of find_elems_to_segment (the elements of a boundary segment of
+! the continuous release, create_parts and get_bflux_ppv) at levdbg >= 3,
+! called once by lgr_mpi_init on every process (its own part of the mesh):
+! check_elems_to_segment compares the elements it gives for every side of
+! every element, in both directions, with the elements of the two nodes
+! found from nen3v alone (#252). Writes one line per process, and the
+! first wrong segment if any (internal node and element numbers; nside =
+! nwrong = -1 if its work arrays could not be allocated); never stops the
+! run.
+
+	use para, only : getpar
+	use shympi, only : my_id
+
+	implicit none
+
+	integer nside,nwrong
+	integer iwrong(6)
+
+	if( nint(getpar('levdbg')) < 3 ) return
+
+	call check_elems_to_segment(nside,nwrong,iwrong)
+	write(6,'(a,i0,a,i0,a,i0)') ' lgr self-test find_elems_to_segment:'	&
+     &		//' rank ',my_id,' segments ',nside,' wrong ',nwrong
+	if( nwrong > 0 ) then
+	  write(6,'(a,6(1x,i0))') ' lgr self-test find_elems_to_segment:'	&
+     &		//' first wrong k1 k2, found ie1 ie2, expected ie1 ie2:'	&
+     &		,iwrong
+	end if
+
+	end
+
+!*******************************************************************
+
 	subroutine create_parts(ity,np,k1,k2)
 
 ! the place on the segment and the time in the step are the draws of the

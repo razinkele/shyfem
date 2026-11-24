@@ -87,6 +87,37 @@
 #             and both runs stopped at the first output after 01:00 in
 #             xi_abc (xi2xy of element 0, the exited block of lgr_output):
 #             mm_lgr_a with SIGSEGV, mm_lgr_c with SIGFPE.
+#   segments  (#252) find_elems_to_segment (src/utils/shyutil/lnku.f90),
+#             the elements on the two sides of a segment k1-k2, used by the
+#             continuous release along a boundary (lgrpps: create_parts,
+#             get_bflux_ppv) and by shyplot's vertical sections.  1. its
+#             self-test at levdbg = 3 (lgr_selftest_segments, called by
+#             lgr_mpi_init: check_elems_to_segment compares its result for
+#             every side of every element, in both directions, with the
+#             elements of the two nodes found from nen3v alone, not from the
+#             lists it reads): mm_lgr_a for one hour, serially and on 4
+#             processes, every rank must write "lgr self-test
+#             find_elems_to_segment: rank R segments S wrong 0" once, and
+#             the serial run must check S = 6 x nel segments.  2. mm_lgr_a
+#             for six hours with no area release (idtl = -1) and a
+#             continuous release (lgrpps = 0.01) along the open boundary
+#             nodes 85 ... 99 of mm_hyd_12a, serially: the run must end,
+#             release at least 100 particles, and each particle's release
+#             record (inserted block) must lie on one of those boundary
+#             segments (within 2e-5 degrees, the single precision of the
+#             positions) and name as its element the element of that
+#             segment (the one element that has both nodes, found by a
+#             search of GRID/MM_geo.grd).  Only the part 85 ... 99 of the
+#             boundary list of mm_hyd_12a is used: the list skips the
+#             boundary nodes 13 (between 99 and 100) and 14 (between 162 and
+#             163), so its segments 99-100 and 162-163 are sides inside the
+#             mesh, and create_parts stops there with "error stop
+#             create_parts: error in boundary", before and after #252.
+#             Before #252 find_elems_to_segment read the element list of k2
+#             with the position of k2 in the list of k1: the self-test (with
+#             the three reads of the fix put back) gave 15266 wrong of 15270
+#             segments, and the binary of the commit before released 77 of
+#             219 particles in an element that does not hold their segment.
 #   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
 #             ztilt), for one day, with a $lagrg section that sets ilagr = 3
 #             (vertical advection and diffusion), nbdymax = 20000, nbdy =
@@ -194,9 +225,11 @@
 #             single saved stream: the binary of the commit before fails
 #             the first comparison of each part (and does not know
 #             lgrseed).  The continuous release along an open boundary
-#             (create_parts) is not run: on the only open boundary of the
-#             test meshes it stops with "error stop create_parts: error in
-#             boundary" (also before #225).
+#             (create_parts) is not run: along the whole open boundary of
+#             mm_hyd_12a it stops with "error stop create_parts: error in
+#             boundary" (also before #225, and after #252: the boundary list
+#             skips two boundary nodes, see mode segments, which releases
+#             along a part of it).
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -210,11 +243,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | ilagr3 | grow-fail | small-export | seed"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | grow-fail | small-export | seed"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|ilagr3|grow-fail|small-export|seed) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|grow-fail|small-export|seed) ;;
   *) usage ;;
 esac
 
@@ -553,6 +586,105 @@ print("  output times %d (nel %d, nlv %d), records %d: ids 1..%d from 02:00 on, 
 sys.exit(0 if ok and nrec > 0 else 1)
 EOF
   done
+  finish
+fi
+
+#=============================== segments (#252) ===========================
+if [ "$MODE" = segments ]; then
+  # 1. the self-test of find_elems_to_segment at levdbg = 3 (one hour of
+  #    mm_lgr_a), serially and on NP processes
+  sed -e 's/^\(\s*\)mm_lgr_a\s*$/\1sg_dbg/' -e 's/^\$para\s*$/$para\n        levdbg = 3/' \
+      -e "s/itend = '2009-01-05'/itend = '2009-01-01::01:00:00'/" "$W/mm_lgr_a.str" > "$W/sg_dbg.str"
+  for o in sg_dbg 'levdbg = 3' "itend = '2009-01-01::01:00:00'"; do
+    grep -qF -- "$o" "$W/sg_dbg.str" || fail "no '$o' in sg_dbg.str"
+  done
+  nel="$(awk '$1 == 2' "$W/GRID/MM_geo.grd" | wc -l)"
+  for np in 1 $NP; do
+    echo "=== mm_lgr_a, one hour, levdbg = 3, on $np process(es): self-test of find_elems_to_segment"
+    if [ $np = 1 ]; then run sg_dbg sg_dbg.np1.log shyfem || fail "the serial run did not end"
+    else run sg_dbg sg_dbg.np$np.log mpirun --oversubscribe -np $np shyfem || fail "the run on $np processes did not end"
+    fi
+    log="$W/sg_dbg.np$np.log"
+    grep 'lgr self-test find_elems_to_segment' "$log" | sort | sed 's/^ */  /'
+    for ((r = 0; r < np; r++)); do
+      line="$(grep "lgr self-test find_elems_to_segment: rank $r segments" "$log")"
+      [ -n "$line" ] || { fail "$np process(es): no self-test line of rank $r"; continue; }
+      [ "$(echo "$line" | wc -l)" = 1 ] || fail "$np process(es): rank $r wrote the self-test line more than once"
+      echo "$line" | grep -q ' wrong 0$' || fail "$np process(es): rank $r: wrong segments"
+    done
+    if [ $np = 1 ]; then
+      grep -q "rank 0 segments $((6 * nel)) wrong" "$log" || fail "serial: not 6 x nel = $((6 * nel)) segments checked"
+    fi
+  done
+
+  # 2. a continuous release (lgrpps) along the open boundary nodes 85 ... 99
+  #    of mm_hyd_12a (the part of its list whose segments are all boundary
+  #    sides), six hours, serially
+  sed -e 's/^\(\s*\)mm_lgr_a\s*$/\1sg_line/' -e "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" \
+      -e 's/^\(\s*\)idtl = 0\s*$/\1idtl = -1/' "$W/mm_lgr_a.str" > "$W/sg_line.str"
+  printf '\n$bound1\n        kbound = 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99\n        ibtyp = 1\n        boundn = %s\n        lgrpps = 0.01\n$end\n' \
+    "'INPUT/level_Mar_Menor.dat'" >> "$W/sg_line.str"
+  for o in sg_line "itend = '2009-01-01::06:00:00'" 'idtl = -1' 'lgrpps = 0.01'; do
+    grep -qF -- "$o" "$W/sg_line.str" || fail "no '$o' in sg_line.str"
+  done
+  echo "=== mm_lgr_a, six hours, continuous release (lgrpps = 0.01) along the boundary nodes 85 ... 99, serially"
+  if run sg_line sg_line.log shyfem; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/sg_line.lgr.shy" "$W/GRID/MM_geo.grd" <<'EOF' || fail "release elements"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path, grd = sys.argv[2], sys.argv[3]
+kb = list(range(85, 100))
+nodes, el = {}, {}
+with open(grd) as fh:
+    for line in fh:
+        f = line.split()
+        if f and f[0] == "1":
+            nodes[int(f[1])] = (float(f[3]), float(f[4]))
+        elif f and f[0] == "2":
+            el[int(f[1])] = [int(v) for v in f[4:7]]
+segs = list(zip(kb[:-1], kb[1:]))
+# the element of each segment, by search of the element list: exactly one
+# (a boundary side)
+segel = {}
+for a, c in segs:
+    es = [e for e, ns in el.items() if a in ns and c in ns]
+    if len(es) != 1:
+        print("  segment %d-%d: elements %r, not a boundary side" % (a, c, es))
+        sys.exit(1)
+    segel[(a, c)] = es[0]
+_, times = lc.read_file(path)
+n = nbad = 0
+for t, b, _ in times:
+    for pid, p in b[-1].items():	# release records (inserted block)
+        n += 1
+        x, y, ie = p["x"], p["y"], p["ie"]
+        best = None			# the segment the point lies on
+        for a, c in segs:
+            (x1, y1), (x2, y2) = nodes[a], nodes[c]
+            dx, dy = x2 - x1, y2 - y1
+            l2 = dx * dx + dy * dy
+            s = ((x - x1) * dx + (y - y1) * dy) / l2
+            d = abs((x - x1) * dy - (y - y1) * dx) / math.sqrt(l2)
+            if -1e-4 <= s <= 1.0 + 1e-4 and (best is None or d < best[0]):
+                best = (d, a, c)
+        # positions are single precision degrees: 2e-5 is about 2 m
+        if best is None or best[0] > 2e-5:
+            nbad += 1
+            if nbad <= 5:
+                print("  t=%r id %d: release point %r %r on no segment" % (t, pid, x, y))
+        elif ie != segel[(best[1], best[2])]:
+            nbad += 1
+            if nbad <= 5:
+                print("  t=%r id %d: released in element %d, its segment %d-%d has element %d"
+                      % (t, pid, ie, best[1], best[2], segel[(best[1], best[2])]))
+print("  particles released %d, not in the element of their boundary segment %d" % (n, nbad))
+sys.exit(0 if n >= 100 and nbad == 0 else 1)
+EOF
+  else
+    fail "the line release did not end"
+  fi
   finish
 fi
 

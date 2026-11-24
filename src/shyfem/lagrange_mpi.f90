@@ -397,8 +397,9 @@
 
 ! initializes the MPI buffers of the Lagrangian module; needs ncust and
 ! the allocated particle array (called after the first
-! particles are read), runs the self-tests of the particle record and of
-! the side fallback particle_on_side at levdbg >= 3
+! particles are read), runs the self-tests of the particle record, of
+! the side fallback particle_on_side and of find_elems_to_segment
+! (lgr_selftest_segments, #252) at levdbg >= 3
 !
 ! the lists of marks and of parked particles start with 1024 entries per
 ! process, whatever nbdymax (the global limit of the release), and double
@@ -438,6 +439,7 @@
 	call lgr_mpi_selftest_pack		!only at levdbg >= 3
 	call lgr_mpi_selftest_side		!only at levdbg >= 3
 	call lgr_mpi_selftest_key		!only at levdbg >= 3
+	call lgr_selftest_segments		!only at levdbg >= 3
 
 	if( .not. bmpi_lagr ) return
 

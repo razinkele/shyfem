@@ -53,6 +53,7 @@
 ! subroutine get_nodes_around(k,ndim,n,nodes) returns all nodes around node k
 !
 ! subroutine find_elems_to_segment(k1,k2,ie1,ie2) finds elements to segment
+! subroutine check_elems_to_segment(nside,nwrong,iwrong) checks it (#252)
 !
 ! notes :
 !
@@ -85,6 +86,7 @@
 ! 29.09.2020	ggu	added dimension check in get_nodes/elems_around()
 ! 22.04.2022	ggu	new locator functions using passed nen3v
 ! 07.11.2024	ggu	new framework for connection
+! 24.11.2026	arb	find_elems_to_segment reads the lists of k1 (#252)
 !
 !****************************************************************
 !****************************************************************
@@ -635,15 +637,20 @@
 	ie1 = 0
 	ie2 = 0
 	
+	! elist(i,k1) is the element in which nlist(i,k1) follows k1, and
+	! elist(i-1,k1) the one before it in the ring of k1. Until #252 the
+	! element lists were read at k = k2 (the node just found), an index
+	! into the list of k1 used in the list of k2: wrong elements wherever
+	! the two lists differ
 	n = nlist(0,k1)
 	do i=1,n
 	  k = nlist(i,k1)
 	  if( k .eq. k2 ) then
-	    ie1 = elist(i,k)
+	    ie1 = elist(i,k1)
 	    if( i == 1 ) then
-	      ie2 = elist(n,k)		!last element - if border is 0
+	      ie2 = elist(n,k1)		!last element - if border is 0
 	    else
-	      ie2 = elist(i-1,k)	!previous element
+	      ie2 = elist(i-1,k1)	!previous element
 	    end if
 	    exit
 	  end if
@@ -695,6 +702,109 @@
 	write(6,*) nen3v(:,ie1)
 	if( ie2 /= 0 ) write(6,*) nen3v(:,ie2)
 	stop 'error stop find_elems_to_segment: nodes not found'
+	end
+
+!****************************************************************
+
+	subroutine check_elems_to_segment(nside,nwrong,iwrong)
+
+! checks find_elems_to_segment against the elements of the nodes (#252):
+! for every side k1-k2 of every element ie (k2 the node after k1, so ie
+! lies to the left of k1-k2), ien is the other element that has both
+! nodes (0 if none: a boundary side), searched among the elements of k1
+! in a list built here from nen3v alone (not from the lists of mod_geom
+! that find_elems_to_segment reads). find_elems_to_segment(k1,k2) must
+! give (ie,ien), and find_elems_to_segment(k2,k1) must give (ien,ie), or
+! (ie,0) at a boundary side. nside is the number of segments checked (6
+! per element: each side in both directions; a side between two elements
+! is checked from both), nwrong the number of wrong results, iwrong(1:6)
+! the first wrong one (k1, k2, ie1, ie2 found, ie1, ie2 expected; 0 if
+! none). Uses the basin and the lists of mod_geom as they are (on several
+! processes the local ones); writes nothing, never stops: if its work
+! arrays cannot be allocated it returns nside = nwrong = -1.
+
+	use basin, only : nkn,nel,nen3v
+
+	implicit none
+
+	integer, intent(out) :: nside		!segments checked
+	integer, intent(out) :: nwrong		!wrong results
+	integer, intent(out) :: iwrong(6)	!first wrong result
+
+	integer ie,iee,ien,ii,j,k,k1,k2,idir,ka,kb,ie1,ie2,je1,je2,ierr
+	integer, allocatable :: ipf(:)		!first entry of a node in iel
+	integer, allocatable :: nfill(:)	!entries of a node filled
+	integer, allocatable :: iel(:)		!elements of the nodes
+
+	nside = 0
+	nwrong = 0
+	iwrong = 0
+
+	! elements of each node, from nen3v
+	allocate(ipf(nkn+1),nfill(nkn),iel(3*nel),stat=ierr)
+	if( ierr /= 0 ) then
+	  nside = -1
+	  nwrong = -1
+	  return
+	end if
+	nfill = 0
+	do ie=1,nel
+	  do ii=1,3
+	    k = nen3v(ii,ie)
+	    nfill(k) = nfill(k) + 1
+	  end do
+	end do
+	ipf(1) = 1
+	do k=1,nkn
+	  ipf(k+1) = ipf(k) + nfill(k)
+	end do
+	nfill = 0
+	do ie=1,nel
+	  do ii=1,3
+	    k = nen3v(ii,ie)
+	    iel(ipf(k)+nfill(k)) = ie
+	    nfill(k) = nfill(k) + 1
+	  end do
+	end do
+
+	do ie=1,nel
+	  do ii=1,3
+	    k1 = nen3v(ii,ie)
+	    k2 = nen3v(mod(ii,3)+1,ie)
+	    ien = 0
+	    do j=ipf(k1),ipf(k1+1)-1
+	      iee = iel(j)
+	      if( iee == ie ) cycle
+	      if( any(nen3v(:,iee) == k2) ) ien = iee
+	    end do
+	    do idir=1,2
+	      if( idir == 1 ) then
+	        ka = k1
+	        kb = k2
+	        je1 = ie
+	        je2 = ien
+	      else
+	        ka = k2
+	        kb = k1
+	        je1 = ien
+	        je2 = ie
+	        if( ien == 0 ) then		!boundary: the one element first
+	          je1 = ie
+	          je2 = 0
+	        end if
+	      end if
+	      call find_elems_to_segment(ka,kb,ie1,ie2)
+	      nside = nside + 1
+	      if( ie1 /= je1 .or. ie2 /= je2 ) then
+	        nwrong = nwrong + 1
+	        if( nwrong == 1 ) iwrong = (/ka,kb,ie1,ie2,je1,je2/)
+	      end if
+	    end do
+	  end do
+	end do
+
+	deallocate(ipf,nfill,iel)
+
 	end
 
 !****************************************************************

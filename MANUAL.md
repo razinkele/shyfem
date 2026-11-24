@@ -1274,7 +1274,7 @@ $lagrg
 $end
 ```
 
-Particles can also be released at open boundaries using `lgrpps` in the boundary section.
+Particles can also be released at open boundaries using `lgrpps` in the boundary section. Each particle starts in the element of the boundary side it is placed on (#252: until then the elements of a side were read from the element list of the wrong node, so that in the Mar Menor test 77 of 219 particles released along the boundary nodes 85 to 99 started in an element that does not hold their side). Every pair of consecutive nodes in the node list of such a boundary must be a side on the edge of the mesh, otherwise the run stops with `error stop create_parts: error in boundary` (the boundary list of the Mar Menor cases skips the boundary nodes 13 and 14, so a release along all of it stops).
 
 A release point that lies in no element of the mesh (today only a point of the trajectory file `lgrtrj` can) releases no particle: the particles it would have released take no id, and the log line `particles not released, point outside the mesh: N` gives their number for each such point (#247). Until then they were inserted without an element and the next output read the geometry of element 0 (the run stopped with SIGSEGV or SIGFPE).
 
