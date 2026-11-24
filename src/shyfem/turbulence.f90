@@ -76,6 +76,8 @@
 ! 02.05.2023    ggu     fix mpi bug for nlv==1
 ! 09.05.2023    lrp     introduce top layer index variable
 ! 06.06.2023    ggu     minor change writing n2max
+! 22.11.2026	arb	model_bottom_z0: owner's sums on a node partition (#230)
+! 22.11.2026	arb	bnstress: the same (#230)
 !
 !**************************************************************
 
@@ -1171,8 +1173,15 @@
 	    wsum(k) = wsum(k) + aj
 	  end do
 	end do
-	call shympi_exchange_and_sum_2d_nodes(z0n)
-	call shympi_exchange_and_sum_2d_nodes(wsum)
+	! partition on nodes: the ghost copies take the owner's sums,
+	! as in uvtopr (#230)
+	if( shympi_partition_on_elements() ) then
+	  call shympi_exchange_and_sum_2d_nodes(z0n)
+	  call shympi_exchange_and_sum_2d_nodes(wsum)
+	else
+	  call shympi_exchange_2d_node(z0n)
+	  call shympi_exchange_2d_node(wsum)
+	end if
 	where( wsum > 0. ) z0n = z0n / wsum
 
 	end
@@ -1230,8 +1239,13 @@
 
 !       shympi_elem: exchange taub
 !       for area as weight use surface value areakv(lmin,k)
-        !call shympi_comment('shympi_elem: exchange taub')
-        call shympi_exchange_and_sum_2d_nodes(taub)
+	! partition on nodes: the ghost copies take the owner's sums,
+	! as in uvtopr (#230)
+	if( shympi_partition_on_elements() ) then
+          call shympi_exchange_and_sum_2d_nodes(taub)
+	else
+	  call shympi_exchange_2d_node(taub)
+	end if
 
 !	---------------------------------------------------
 !	compute bottom stress

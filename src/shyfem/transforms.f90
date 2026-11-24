@@ -92,6 +92,8 @@
 ! 10.04.2022	ggu	ie_mpi and double in uvint (compiler issue with INTEL)
 ! 09.05.2023    lrp     introduce top layer index variable
 ! 05.06.2023    lrp     introduce z-star
+! 22.11.2026	arb	uvtopr: no exchange and sum on a node partition (#230)
+! 22.11.2026	arb	uvtop0: the same (#230)
 !
 !****************************************************************************
 
@@ -193,10 +195,17 @@
 	  end do
 	end do
 
-       !call shympi_comment('shympi_elem: exchange up0v, vp0v')
-        call shympi_exchange_and_sum_2d_nodes(up0v)
-        call shympi_exchange_and_sum_2d_nodes(vp0v)
-        call shympi_exchange_and_sum_2d_nodes(vv)
+	! partition on nodes: the ghost copies take the owner's sums,
+	! as in uvtopr (#230)
+	if( shympi_partition_on_elements() ) then
+          call shympi_exchange_and_sum_2d_nodes(up0v)
+          call shympi_exchange_and_sum_2d_nodes(vp0v)
+          call shympi_exchange_and_sum_2d_nodes(vv)
+	else
+	  call shympi_exchange_2d_node(up0v)
+	  call shympi_exchange_2d_node(vp0v)
+	  call shympi_exchange_2d_node(vv)
+	end if
 
 	where ( vv > 0. ) 
           up0v = up0v / vv
@@ -257,12 +266,21 @@
 	  end do
 	end do
 
-        !call shympi_comment('shympi_elem: exchange uprv, vprv')
-        call shympi_exchange_and_sum_3d_nodes(uprv)
-        call shympi_exchange_and_sum_3d_nodes(vprv)
-        call shympi_exchange_and_sum_3d_nodes(vv)
+	! partition on nodes: the owner of a node holds all its elements
+	! and has added them in the serial order (ip_sort_elem), so the
+	! ghost copies take its sums; adding the ghosts' partial sums to
+	! it (exchange and sum) counted shared elements twice (#230)
+	if( shympi_partition_on_elements() ) then
+          call shympi_exchange_and_sum_3d_nodes(uprv)
+          call shympi_exchange_and_sum_3d_nodes(vprv)
+          call shympi_exchange_and_sum_3d_nodes(vv)
+	else
+	  call shympi_exchange_3d_node(uprv)
+	  call shympi_exchange_3d_node(vprv)
+	  call shympi_exchange_3d_node(vv)
+	end if
 
-	where ( vv > 0. ) 
+	where ( vv > 0. )
 	  uprv = uprv / vv
 	  vprv = vprv / vv
 	end where

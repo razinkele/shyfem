@@ -29,6 +29,8 @@
 !
 ! subroutine setnod
 !			 sets array inodv
+! subroutine setnod_dump
+!			 debug dump of inodv (SHYFEM_SETNOD_DUMP)
 !
 ! revision log :
 !
@@ -62,6 +64,8 @@
 ! 28.05.2020	ggu	some more changes in constructing link structure
 ! 13.04.2022	ggu	new call to make_links (ibound)
 ! 07.11.2024	ggu	updated call to update_ielt()
+! 22.11.2026	arb	setnod: element angles added by the main owner (#238)
+! 22.11.2026	arb	setnod_dump: classification dump for the MPI test
 !
 !*****************************************************************
 
@@ -197,8 +201,16 @@
 	winkv = 0.
 
 ! sum angles
+!
+! on several processes an element is held by every process that has one
+! of its nodes, and the exchange below adds the partial sums of all the
+! processes that hold a node: only the main owner of an element
+! (id_elem(1,ie), as in the particle tracker) adds its angles: every
+! element enters each node's sum once, one process adds each contribution
+! as with the particle side fluxes of #217 (#238); serially it owns all
 
         do ie=1,nel
+          if( id_elem(1,ie) /= my_id ) cycle	!added by its main owner
           if(iwegv(ie).eq.0) then !element is in system
             do ii=1,3
               k=nen3v(ii,ie)
@@ -255,6 +267,8 @@
 	call shympi_exchange_2d_node(inodv)
 	!call shympi_barrier
 
+	call setnod_dump(winkv,0)	!only with SHYFEM_SETNOD_DUMP set
+
         return
    99   continue
         write(6,*) 'error for open boundary node'
@@ -269,8 +283,73 @@
         end if
         write(6,*) 'external node number : ',ipext(k)
         write(6,*) 'boundary flag : ',inodv(k)
+	call setnod_dump(winkv,k)	!only with SHYFEM_SETNOD_DUMP set
         stop 'error stop setnod: open boundary node'
         end
+
+!****************************************************************
+
+	subroutine setnod_dump(winkv,kstop)
+
+! debug dump of the node classification of setnod, read by the test
+! testcases/examples/mar_menor/check_setnod_mpi.sh (#238). Active only
+! when the environment variable SHYFEM_SETNOD_DUMP holds a file prefix:
+! then the first ncall_max calls of setnod write, on every process, one
+! line per local node (own and ghost nodes) to the file PREFIX.RANK.txt
+! (RANK = my_id, 0 on one process): the call number, the external node
+! number, inodv and the angle sum winkv (degrees).
+! kstop > 0: setnod is about to stop at the open boundary node kstop
+! (local number); the lines are the classification at that moment and
+! the file is closed.
+
+	use mod_geom_dynamic
+	use basin
+	use shympi
+
+	implicit none
+
+	double precision, intent(in) :: winkv(nkn)
+	integer, intent(in) :: kstop
+
+	integer, parameter :: ncall_max = 3
+	integer, save :: icall = 0
+	integer, save :: iu = 0
+	logical, save :: bdump = .false.
+	integer :: k, ist, ios
+	character(len=256) :: prefix
+	character(len=16) :: crank
+	integer ipext
+
+	if( icall >= ncall_max ) return
+	icall = icall + 1
+
+	if( icall == 1 ) then
+	  call get_environment_variable('SHYFEM_SETNOD_DUMP',prefix	&
+     &			,status=ist)
+	  bdump = ( ist == 0 )
+	  if( bdump ) bdump = ( len_trim(prefix) > 0 )
+	  if( bdump ) then
+	    write(crank,'(i0)') my_id
+	    open(newunit=iu,file=trim(prefix)//'.'//trim(crank)//'.txt'	&
+     &		,status='replace',action='write',iostat=ios)
+	    if( ios /= 0 ) call shympi_abort_internal			&
+     &		('setnod_dump: cannot open the file of SHYFEM_SETNOD_DUMP')
+	  end if
+	end if
+	if( .not. bdump ) return
+
+	if( kstop > 0 ) then
+	  write(iu,'(a,i0,a,i0)') '# call ',icall			&
+     &		,': setnod stops at the open boundary node ',ipext(kstop)
+	end if
+	do k=1,nkn
+	  write(iu,'(i2,i8,i6,f12.4)') icall,ipext(k),inodv(k),winkv(k)
+	end do
+	flush(iu)
+	if( kstop > 0 ) icall = ncall_max
+	if( icall >= ncall_max ) close(iu)
+
+	end
 
 !****************************************************************
 !****************************************************************
