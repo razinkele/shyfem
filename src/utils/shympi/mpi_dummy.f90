@@ -63,6 +63,7 @@
 ! 12.03.2024    ggu     double routines for shympi_g2l_array_fix_ird/2d_d
 ! 13.12.2024    ggu     error_stop() implemented
 ! 06.02.2025    ggu     new routines shympi_exchange_fix_node/elem()
+! 24.11.2026    arb     optional label in shympi_l2g_array_*() (#268)
 !
 !******************************************************************
 
@@ -1643,10 +1644,11 @@
 !******************************************************************
 !******************************************************************
 
-        subroutine shympi_l2g_array_3d_d(vals,val_out)
+        subroutine shympi_l2g_array_3d_d(vals,val_out,text)
 
-        double precision vals(:,:)
-        double precision val_out(:,:)
+        double precision, intent(in) :: vals(:,:)
+        double precision, intent(inout) :: val_out(:,:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1654,10 +1656,11 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_3d_r(vals,val_out)
+        subroutine shympi_l2g_array_3d_r(vals,val_out,text)
 
-        real vals(:,:)
-        real val_out(:,:)
+        real, intent(in) :: vals(:,:)
+        real, intent(inout) :: val_out(:,:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1665,10 +1668,11 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_3d_i(vals,val_out)
+        subroutine shympi_l2g_array_3d_i(vals,val_out,text)
 
-        integer vals(:,:)
-        integer val_out(:,:)
+        integer, intent(in) :: vals(:,:)
+        integer, intent(inout) :: val_out(:,:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1676,10 +1680,11 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_2d_r(vals,val_out)
+        subroutine shympi_l2g_array_2d_r(vals,val_out,text)
 
-        real vals(:)
-        real val_out(:)
+        real, intent(in) :: vals(:)
+        real, intent(inout) :: val_out(:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1687,10 +1692,11 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_2d_i(vals,val_out)
+        subroutine shympi_l2g_array_2d_i(vals,val_out,text)
 
-        integer vals(:)
-        integer val_out(:)
+        integer, intent(in) :: vals(:)
+        integer, intent(inout) :: val_out(:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1698,10 +1704,11 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_2d_d(vals,val_out)
+        subroutine shympi_l2g_array_2d_d(vals,val_out,text)
 
-        double precision vals(:)
-        double precision val_out(:)
+        double precision, intent(in) :: vals(:)
+        double precision, intent(inout) :: val_out(:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1709,11 +1716,12 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_fix_i(nfix,vals,val_out)
+        subroutine shympi_l2g_array_fix_i(nfix,vals,val_out,text)
 
-	integer nfix
-        integer vals(:,:)
-        integer val_out(:,:)
+	integer, intent(in) :: nfix
+        integer, intent(in) :: vals(:,:)
+        integer, intent(inout) :: val_out(:,:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1721,11 +1729,12 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_fix_r(nfix,vals,val_out)
+        subroutine shympi_l2g_array_fix_r(nfix,vals,val_out,text)
 
-	integer nfix
-        real vals(:,:)
-        real val_out(:,:)
+	integer, intent(in) :: nfix
+        real, intent(in) :: vals(:,:)
+        real, intent(inout) :: val_out(:,:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -1733,11 +1742,12 @@
 
 !*******************************
 
-        subroutine shympi_l2g_array_fix_d(nfix,vals,val_out)
+        subroutine shympi_l2g_array_fix_d(nfix,vals,val_out,text)
 
-	integer nfix
-        double precision vals(:,:)
-        double precision val_out(:,:)
+	integer, intent(in) :: nfix
+        double precision, intent(in) :: vals(:,:)
+        double precision, intent(inout) :: val_out(:,:)
+        character*(*), intent(in), optional :: text	!unused (serial)
 
 	val_out = vals
 
@@ -2286,6 +2296,14 @@
 	end do
 
 	end subroutine shympi_univocal_nodes
+
+!******************************************************************
+
+	subroutine shympi_check_owner_order
+
+! nothing to check with one domain (see mpi_node.f90, #268)
+
+	end subroutine shympi_check_owner_order
 
 !******************************************************************
 

@@ -74,6 +74,7 @@
 ! 07.12.2024    ggu     reduce only to root (not all)
 ! 01.04.2025    ggu     write subrange of variables
 ! 10.04.2025    ggu     new routine shyfem_init_scalar_fix_file() (nfix)
+! 24.11.2026    arb     output gathers labelled for the ghost check (#268)
 !
 ! contents :
 !
@@ -996,9 +997,11 @@
 
 	logical bdebug,b2d,bopen
 	integer ierr,nn,nl,i,ng,nfix
+	integer islash
 	real, allocatable :: cl(:,:),cg(:,:)
 	real, allocatable :: cl2d(:),cg2d(:)
 	character*256 file
+	character*300 label		!long enough for any file name
 
 	bdebug = .true.					!mpi_debug_ggguuu
 	bdebug = .false.				!mpi_debug_ggguuu
@@ -1080,16 +1083,22 @@
 
 	call trace_point('before shy_write_record')
 
+	! names the array in reports of the ghost check of the gather (#268)
+	call shy_get_filename(id,file)	!blank where the file is not open
+	islash = index(file,'/',back=.true.)
+	write(label,'(a,i0)') 'shy file ' // trim(file(islash+1:)) &
+     &				// ' var ',ivar
+
 	call shympi_operate_all(.false.)
 
 	if( m > 1 ) then
-	  call shympi_l2g_array(m,cl,cg)
+	  call shympi_l2g_array(m,cl,cg,label)
 	  call shy_write_record(id,dtime,ivar,belem,nn,m,lmax,nl,cg,ierr)
 	else if( b2d ) then
-	  call shympi_l2g_array(cl2d,cg2d)
+	  call shympi_l2g_array(cl2d,cg2d,label)
 	  call shy_write_record(id,dtime,ivar,belem,nn,1,1,1,cg2d,ierr)
 	else
-	  call shympi_l2g_array(cl,cg)
+	  call shympi_l2g_array(cl,cg,label)
 	  call shy_write_record(id,dtime,ivar,belem,nn,1,lmax,ng,cg,ierr)
 	end if
 

@@ -38,7 +38,12 @@
 # serial runs, from an mpirun that does not match the binary's MPI or a
 # binary without MPI, cannot pass); and the files CASE.hydro.shy and, for c41,
 # mm_hyd_41.ts.shy and the extra-point file mm_hyd_41.ext of the
-# NP-process run are byte-identical to the serial ones.  The .ext file
+# NP-process run are byte-identical to the serial ones; the NP-process
+# runs have the ghost check of the output gathers on (SHYFEM_GHOST_CHECK=1,
+# #268): their logs must say "ghost check of the output gathers is on"
+# and have no line "GHOST CHECK:" (a ghost copy out of step with its
+# owner, which the files no longer show since the gathers take the
+# owners' values only).  The .ext file
 # holds the barotropic nodal velocity of uvtop0 (same file), which had the
 # same defect (#230): with uvtopr alone fixed, the 2D velocity at the
 # extra point 'inlet' (node 58) was 0.014 m/s off on 4 processes.  The
@@ -148,7 +153,7 @@ run() {  # CASE NP (NP 1: a plain run without mpirun)
   if [ "$2" = 1 ]; then
     ( cd "$d" && timeout 1200 nice -n 10 shyfem "$1.str" < /dev/null > run.log 2>&1 )
   else
-    ( cd "$d" && timeout 1200 nice -n 10 mpirun --oversubscribe -np "$2" shyfem "$1.str" < /dev/null > run.log 2>&1 )
+    ( cd "$d" && SHYFEM_GHOST_CHECK=1 timeout 1200 nice -n 10 mpirun --oversubscribe -np "$2" shyfem "$1.str" < /dev/null > run.log 2>&1 )
   fi
   r=$?
   if [ "$r" != 0 ] || ! grep -q "simulation end" "$d/run.log"; then
@@ -162,7 +167,20 @@ run() {  # CASE NP (NP 1: a plain run without mpirun)
     echo "  expected one from each rank 0 to $(( $2 - 1 )) with $2 processes ($d/run.log)"
     return 1
   fi
+  if [ "$2" != 1 ] && ! grep -q 'ghost check of the output gathers is on' "$d/run.log"; then
+    echo "  the log does not say 'ghost check of the output gathers is on' ($d/run.log)"
+    return 1
+  fi
   return 0
+}
+ghosts() {  # CASE NP: no ghost copy out of step in the output gathers (#268)
+  local log="$P/$1.np$2/run.log" n
+  n="$(grep -c '^GHOST CHECK:' "$log")"
+  [ "$n" = 0 ] && return 0
+  # per array: the number of gathers (records) with ghost copies that differ
+  grep '^GHOST CHECK:' "$log" | grep 'ghost copies differ' \
+    | sed -E 's/\): [0-9]+ ghost copies differ.*/)/' | sort | uniq -c | sed 's/^/   /' | head -20
+  fail "$1 on $2 processes: $n GHOST CHECK lines, ghost copies out of step with their owners ($log)"
 }
 diffs() {  # SERIAL_SHY MPI_SHY: largest difference per variable
   local a="$1" b="$2" na nb
@@ -217,6 +235,7 @@ for c in c41 g3d k3d g3d6 g3da; do
   echo "=== $c"
   if ! run "$c" 1; then fail "$c: the serial run did not end"; continue; fi
   if ! run "$c" "$NP"; then fail "$c: the run on $NP processes did not end, or not on $NP processes (above)"; continue; fi
+  ghosts "$c" "$NP"
   files="$c.hydro.shy"
   [ "$c" = c41 ] && files="mm_hyd_41.hydro.shy mm_hyd_41.ts.shy mm_hyd_41.ext"
   for f in $files; do

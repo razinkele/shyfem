@@ -40,11 +40,16 @@
 # the serial bed sediment is not zero everywhere (otherwise the
 # comparison tests nothing); and no run leaves a file named fort.* in its
 # folder (the module wrote the debug file fort.778 from every process
-# at every step, issue #264).  When a file differs the largest difference
-# of every variable and the number of nodes that differ are printed
-# (needs shyelab and python3 with netCDF4; without them only the first
-# differing byte).  The .inf file is not compared: its sedimt: totals are
-# per process (#220).
+# at every step, issue #264).  The NP-process runs have the ghost check
+# of the output gathers on (SHYFEM_GHOST_CHECK=1, #268): their logs must
+# say "ghost check of the output gathers is on" and have no line
+# "GHOST CHECK:" (a ghost copy out of step with its owner; since #268 the
+# files get the owner's values only, so a stale ghost bed sediment no
+# longer shows in them, as it did for #262).  When a file differs the
+# largest difference of every variable and the number of nodes that
+# differ are printed (needs shyelab and python3 with netCDF4; without
+# them only the first differing byte).  The .inf file is not compared:
+# its sedimt: totals are per process (#220).
 #
 # Usage:  ./check_ssedi_mpi.sh [NP ...]
 # Needs shyfem, shypre, mpirun and python3 (with numpy) on PATH (an
@@ -103,7 +108,7 @@ run() {  # CASE NP (NP 1: a plain run without mpirun)
   if [ "$2" = 1 ]; then
     ( cd "$d" && timeout 600 nice -n 10 shyfem "$1.str" < /dev/null > run.log 2>&1 )
   else
-    ( cd "$d" && timeout 600 nice -n 10 mpirun --oversubscribe -np "$2" shyfem "$1.str" < /dev/null > run.log 2>&1 )
+    ( cd "$d" && SHYFEM_GHOST_CHECK=1 timeout 600 nice -n 10 mpirun --oversubscribe -np "$2" shyfem "$1.str" < /dev/null > run.log 2>&1 )
   fi
   r=$?
   if [ "$r" != 0 ] || ! grep -q "simulation end" "$d/run.log"; then
@@ -117,7 +122,20 @@ run() {  # CASE NP (NP 1: a plain run without mpirun)
     echo "  expected one from each rank 0 to $(( $2 - 1 )) with $2 processes ($d/run.log)"
     return 1
   fi
+  if [ "$2" != 1 ] && ! grep -q 'ghost check of the output gathers is on' "$d/run.log"; then
+    echo "  the log does not say 'ghost check of the output gathers is on' ($d/run.log)"
+    return 1
+  fi
   return 0
+}
+ghosts() {  # CASE NP: no ghost copy out of step in the output gathers (#268)
+  local log="$P/$1.np$2/run.log" n
+  n="$(grep -c '^GHOST CHECK:' "$log")"
+  [ "$n" = 0 ] && return 0
+  # per array: the number of gathers (records) with ghost copies that differ
+  grep '^GHOST CHECK:' "$log" | grep 'ghost copies differ' \
+    | sed -E 's/\): [0-9]+ ghost copies differ.*/)/' | sort | uniq -c | sed 's/^/   /' | head -20
+  fail "$1 on $2 processes: $n GHOST CHECK lines, ghost copies out of step with their owners ($log)"
 }
 noside() {  # CASE NP: no fort.* debug file in the run folder (#264)
   local side
@@ -203,6 +221,7 @@ PY
   for np in $NPS; do
     if ! run "$c" "$np"; then fail "$c: the run on $np processes did not end, or not on $np processes (above)"; continue; fi
     noside "$c" "$np"
+    ghosts "$c" "$np"
     for f in $files; do
       a="$P/$c.np1/$f"; b="$P/$c.np$np/$f"
       if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$c: $f missing or empty"; continue; fi

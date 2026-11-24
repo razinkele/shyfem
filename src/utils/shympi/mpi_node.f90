@@ -91,6 +91,7 @@
 ! 13.12.2024    ggu     error_stop() implemented
 ! 28.01.2025    ggu     compatibility for gfortran 4 inserted
 ! 06.02.2025    ggu     new routines shympi_exchange_fix_node/elem()
+! 24.11.2026    arb     output gathers take the owners' values, ghost check (#268)
 
 !******************************************************************
 
@@ -120,6 +121,15 @@
 
 	logical, save :: bmpi_skip = .true.		!skip if not bmpi
 	logical, save :: bextra_exchange = .false.	!deal with INTEL_BUG
+
+	! output gathers (shympi_l2g_array) take every node from its owner
+	! and every element from its main process; bghost_check compares the
+	! ghost copies with those values (environment SHYFEM_GHOST_CHECK or
+	! bmpi_debug); bghost_desync is a test hook (SHYFEM_GHOST_DESYNC)
+	! that changes every ghost copy in the gathered values (#268)
+	logical, save :: bghost_check = .false.
+	logical, save :: bghost_desync = .false.
+	integer, parameter :: nghost_show = 3	!mismatches shown per gather
 
 	integer, save :: i_code = 0
 	integer, save :: i_code_error = 33
@@ -708,6 +718,7 @@
 	    end if
 	  end if
 	  write(6,*) 'shympi initialized: ',my_id,n_threads,my_unit
+	  call shympi_ghost_check_init
 	else if( bmpi_debug ) then
 	  write(6,*) 'shympi initialized: ',my_id,n_threads
 	  write(6,*) 'shympi is not running in mpi mode'
@@ -728,6 +739,74 @@
 	!-----------------------------------------------------
 
 	end subroutine shympi_init
+
+!******************************************************************
+
+	subroutine shympi_ghost_check_init
+
+! reads the switches of the ghost check of the output gathers (#268)
+!
+! SHYFEM_GHOST_CHECK set (not empty, not 0): before an output gather
+!	(shympi_l2g_array) takes the owner's values, every ghost copy is
+!	compared with them; a mismatch is reported on unit 6 by the master
+!	(lines starting with "GHOST CHECK:"), the run goes on
+! SHYFEM_GHOST_DESYNC set: test hook, the master adds 1 to every ghost
+!	copy it has gathered before copying (model state is not touched),
+!	so that the check has something to report and a test can show that
+!	no ghost copy reaches the files
+
+	implicit none
+
+	integer iflag
+
+	! the master's environment decides for all processes: with the check
+	! on, the 3d gathers also gather the number of values each process
+	! sends (a collective call every process must make)
+
+	iflag = 0
+	if( shympi_env_is_set('SHYFEM_GHOST_CHECK') ) iflag = iflag + 1
+	if( shympi_env_is_set('SHYFEM_GHOST_DESYNC') ) iflag = iflag + 2
+	call shympi_bcast_scalar_i(iflag)
+	bghost_check = ( mod(iflag,2) == 1 )
+	bghost_desync = ( iflag >= 2 )
+
+	if( shympi_is_master() ) then
+	  if( bghost_check ) then
+	    write(6,*) 'ghost check of the output gathers is on' &
+     &			//' (SHYFEM_GHOST_CHECK)'
+	  end if
+	  if( bghost_desync ) then
+	    write(6,*) 'test hook SHYFEM_GHOST_DESYNC: the output gathers' &
+     &			//' change every ghost copy before copying'
+	  end if
+	end if
+
+	end subroutine shympi_ghost_check_init
+
+!******************************************************************
+
+	function shympi_env_is_set(name)
+
+! true if the environment variable name is set, not empty and not 0
+
+	implicit none
+
+	logical shympi_env_is_set
+	character*(*), intent(in) :: name
+
+	integer length,istatus
+	character*16 value
+
+	value = ' '
+	call get_environment_variable(name,value,length,istatus)
+	shympi_env_is_set = .false.
+	if( istatus == 0 .or. istatus == -1 ) then	!-1: value truncated
+	  if( length > 0 ) then
+	    shympi_env_is_set = ( value /= '0' )
+	  end if
+	end if
+
+	end function shympi_env_is_set
 
 !******************************************************************
 
@@ -2615,10 +2694,11 @@
 !******************************************************************
 !******************************************************************
 
-	subroutine shympi_l2g_array_2d_r(vals,val_out)
+	subroutine shympi_l2g_array_2d_r(vals,val_out,text)
 
-	real vals(:)
-	real val_out(:)
+	real, intent(in) :: vals(:)
+	real, intent(inout) :: val_out(:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer nous
@@ -2640,11 +2720,9 @@
 	call shympi_gather_array_2d_r(vals,val_domain)
 
 	if( bnode ) then
-	  call shympi_copy_2d_r(val_domain,nous,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_2d_r(val_domain,nous,val_out,.false.,text)
 	else if( belem ) then
-	  call shympi_copy_2d_r(val_domain,nous,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_2d_r(val_domain,nous,val_out,.true.,text)
 	else
 	  write(6,*) nous,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_2d_r: (1)')
@@ -2654,10 +2732,11 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_2d_i(vals,val_out)
+	subroutine shympi_l2g_array_2d_i(vals,val_out,text)
 
-	integer vals(:)
-	integer val_out(:)
+	integer, intent(in) :: vals(:)
+	integer, intent(inout) :: val_out(:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer nous
@@ -2679,11 +2758,9 @@
 	call shympi_gather_array_2d_i(vals,val_domain)
 
 	if( bnode ) then
-	  call shympi_copy_2d_i(val_domain,nous,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_2d_i(val_domain,nous,val_out,.false.,text)
 	else if( belem ) then
-	  call shympi_copy_2d_i(val_domain,nous,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_2d_i(val_domain,nous,val_out,.true.,text)
 	else
 	  call shympi_abort_internal('error stop shympi_l2g_array_2d_i: (1)')
 	end if
@@ -2692,10 +2769,11 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_2d_d(vals,val_out)
+	subroutine shympi_l2g_array_2d_d(vals,val_out,text)
 
-	double precision vals(:)
-	double precision val_out(:)
+	double precision, intent(in) :: vals(:)
+	double precision, intent(inout) :: val_out(:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer nous
@@ -2717,11 +2795,9 @@
 	call shympi_gather_array_2d_d(vals,val_domain)
 
 	if( bnode ) then
-	  call shympi_copy_2d_d(val_domain,nous,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_2d_d(val_domain,nous,val_out,.false.,text)
 	else if( belem ) then
-	  call shympi_copy_2d_d(val_domain,nous,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_2d_d(val_domain,nous,val_out,.true.,text)
 	else
 	  call shympi_abort_internal('error stop shympi_l2g_array_2d_d: (1)')
 	end if
@@ -2730,15 +2806,17 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_3d_r(vals,val_out)
+	subroutine shympi_l2g_array_3d_r(vals,val_out,text)
 
-	real vals(:,:)
-	real val_out(:,:)
+	real, intent(in) :: vals(:,:)
+	real, intent(inout) :: val_out(:,:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer noh,nov
 	integer nih,niv
 	integer ierr
+	integer nivs(n_threads)
 	real, allocatable :: val_domain(:,:,:)
 
 	if( bmpi_skip ) then
@@ -2764,12 +2842,15 @@
 
 	call shympi_gather_array_3d_r(vals,val_domain)
 
+	! the ghost check compares the values both processes have: a
+	! process with fewer levels sends zeros for the others (#268)
+	nivs = niv
+	if( shympi_ghost_check_on() ) call shympi_gather(niv,nivs)
+
 	if( bnode ) then
-	  call shympi_copy_3d_r(val_domain,nov,noh,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,.false.,text,nivs)
 	else if( belem ) then
-	  call shympi_copy_3d_r(val_domain,nov,noh,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,.true.,text,nivs)
 	else
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_3d_r: (1)')
@@ -2779,15 +2860,17 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_3d_i(vals,val_out)
+	subroutine shympi_l2g_array_3d_i(vals,val_out,text)
 
-	integer vals(:,:)
-	integer val_out(:,:)
+	integer, intent(in) :: vals(:,:)
+	integer, intent(inout) :: val_out(:,:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer noh,nov
 	integer nih,niv
 	integer ierr
+	integer nivs(n_threads)
 	integer, allocatable :: val_domain(:,:,:)
 
 	if( bmpi_skip ) then
@@ -2808,12 +2891,15 @@
 
 	call shympi_gather_array_3d_i(vals,val_domain)
 
+	! the ghost check compares the values both processes have: a
+	! process with fewer levels sends zeros for the others (#268)
+	nivs = niv
+	if( shympi_ghost_check_on() ) call shympi_gather(niv,nivs)
+
 	if( bnode ) then
-	  call shympi_copy_3d_i(val_domain,nov,noh,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,.false.,text,nivs)
 	else if( belem ) then
-	  call shympi_copy_3d_i(val_domain,nov,noh,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,.true.,text,nivs)
 	else
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_3d_i: (1)')
@@ -2823,15 +2909,17 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_3d_d(vals,val_out)
+	subroutine shympi_l2g_array_3d_d(vals,val_out,text)
 
-	double precision vals(:,:)
-	double precision val_out(:,:)
+	double precision, intent(in) :: vals(:,:)
+	double precision, intent(inout) :: val_out(:,:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer noh,nov
 	integer nih,niv
 	integer ierr
+	integer nivs(n_threads)
 	double precision, allocatable :: val_domain(:,:,:)
 
 	if( bmpi_skip ) then
@@ -2852,12 +2940,15 @@
 
 	call shympi_gather_array_3d_d(vals,val_domain)
 
+	! the ghost check compares the values both processes have: a
+	! process with fewer levels sends zeros for the others (#268)
+	nivs = niv
+	if( shympi_ghost_check_on() ) call shympi_gather(niv,nivs)
+
 	if( bnode ) then
-	  call shympi_copy_3d_d(val_domain,nov,noh,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,.false.,text,nivs)
 	else if( belem ) then
-	  call shympi_copy_3d_d(val_domain,nov,noh,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,.true.,text,nivs)
 	else
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_3d_d: (1)')
@@ -2867,11 +2958,12 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_fix_i(nfix,vals,val_out)
+	subroutine shympi_l2g_array_fix_i(nfix,vals,val_out,text)
 
-	integer nfix
-	integer vals(:,:)
-	integer val_out(:,:)
+	integer, intent(in) :: nfix
+	integer, intent(in) :: vals(:,:)
+	integer, intent(inout) :: val_out(:,:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer noh,nov
@@ -2904,11 +2996,9 @@
 	call shympi_gather_array_fix_i(nfix,vals,val_domain)
 
 	if( bnode ) then
-	  call shympi_copy_3d_i(val_domain,nov,noh,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,.false.,text)
 	else if( belem ) then
-	  call shympi_copy_3d_i(val_domain,nov,noh,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,.true.,text)
 	else
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_fix: (1)')
@@ -2918,11 +3008,12 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_fix_r(nfix,vals,val_out)
+	subroutine shympi_l2g_array_fix_r(nfix,vals,val_out,text)
 
-	integer nfix
-	real vals(:,:)
-	real val_out(:,:)
+	integer, intent(in) :: nfix
+	real, intent(in) :: vals(:,:)
+	real, intent(inout) :: val_out(:,:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer noh,nov
@@ -2955,11 +3046,9 @@
 	call shympi_gather_array_fix_r(nfix,vals,val_domain)
 
 	if( bnode ) then
-	  call shympi_copy_3d_r(val_domain,nov,noh,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,.false.,text)
 	else if( belem ) then
-	  call shympi_copy_3d_r(val_domain,nov,noh,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,.true.,text)
 	else
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_fix: (1)')
@@ -2969,11 +3058,12 @@
 
 !*******************************
 
-	subroutine shympi_l2g_array_fix_d(nfix,vals,val_out)
+	subroutine shympi_l2g_array_fix_d(nfix,vals,val_out,text)
 
-	integer nfix
-	double precision vals(:,:)
-	double precision val_out(:,:)
+	integer, intent(in) :: nfix
+	double precision, intent(in) :: vals(:,:)
+	double precision, intent(inout) :: val_out(:,:)
+	character*(*), intent(in), optional :: text	!for reports
 
 	logical bnode,belem
 	integer noh,nov
@@ -3006,11 +3096,9 @@
 	call shympi_gather_array_fix_d(nfix,vals,val_domain)
 
 	if( bnode ) then
-	  call shympi_copy_3d_d(val_domain,nov,noh,val_out &
-     &				,nkn_domains,nk_max,ip_int_nodes)
+	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,.false.,text)
 	else if( belem ) then
-	  call shympi_copy_3d_d(val_domain,nov,noh,val_out &
-     &				,nel_domains,ne_max,ip_int_elems)
+	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,.true.,text)
 	else
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_fix: (1)')
@@ -3398,147 +3486,579 @@
 !******************************************************************
 !******************************************************************
 
-	subroutine shympi_copy_2d_i(val_domain,nous,val_out &
-     &				,ndomains,nmax,ip_ints)
+!------------------------------------------------------------------
+! owner-only copy of the gathered local arrays into a global array
+!------------------------------------------------------------------
+!
+! val_domain(:,i,ia) holds item i of process ia-1 (node or element in
+! its local numbering), ip_int_nodes/ip_int_elems(i,ia) its global
+! internal number. A node belongs to one process, which holds it as one
+! of its own nodes; the others that hold it have a ghost copy. An
+! element can be held by up to three processes; its main process is
+! id_elem(1,ie). The local numbering puts the own nodes first
+! (1..nkn_unique, adjust_indices aborts otherwise) and the elements of
+! which the process is the main one first (1..nel_unique, ordered so by
+! adjust_indices); shympi_check_owner_order verifies both at set-up and
+! that these items cover every global item once.
+!
+! Only items 1..nkn_domains_u(ia) (nodes) or 1..nel_domains_u(ia)
+! (elements) are copied: the owner's value. Before #268 every local
+! item was copied in process order, so the copy of the highest process
+! won, and a ghost out of step with its owner overwrote the owner's
+! value in the output and restart files (#262).
+!
+! The ghost copies are compared with the owner's values when the check
+! is on (shympi_ghost_check_*). Only the master holds the gathered
+! values of all processes (the gather may go to the master only, see
+! shympi_operate_all), so the check and the test hook run there.
+!
+! A 2d array is passed on as a 3d array with one value per item
+! (sequence association of explicit-shape arrays).
+!------------------------------------------------------------------
 
-	integer val_domain(nn_max,n_threads)
-	integer nous
-	integer val_out(nous)
-	integer ndomains(n_threads)
-	integer nmax
-	integer ip_ints(nmax,n_threads)
+	subroutine shympi_copy_2d_i(val_domain,nous,val_out,belem,text)
 
-	integer ia,i,n,ip
+	integer, intent(in) :: nous
+	integer, intent(inout) :: val_domain(nn_max,n_threads)
+	integer, intent(inout) :: val_out(nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
 
-        do ia=1,n_threads
-          n=ndomains(ia)
-          do i=1,n
-            ip = ip_ints(i,ia)
-	    val_out(ip) = val_domain(i,ia)
-          end do
-        end do
+	call shympi_copy_3d_i(val_domain,1,nous,val_out,belem,text)
 
 	end subroutine shympi_copy_2d_i
 
 !*******************************
 
-	subroutine shympi_copy_2d_r(val_domain,nous,val_out &
-     &				,ndomains,nmax,ip_ints)
+	subroutine shympi_copy_2d_r(val_domain,nous,val_out,belem,text)
 
-	real val_domain(nn_max,n_threads)
-	integer nous
-	real val_out(nous)
-	integer ndomains(n_threads)
-	integer nmax
-	integer ip_ints(nmax,n_threads)
+	integer, intent(in) :: nous
+	real, intent(inout) :: val_domain(nn_max,n_threads)
+	real, intent(inout) :: val_out(nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
 
-	integer ia,i,n,ip
-
-        do ia=1,n_threads
-          n=ndomains(ia)
-          do i=1,n
-            ip = ip_ints(i,ia)
-	    val_out(ip) = val_domain(i,ia)
-          end do
-        end do
+	call shympi_copy_3d_r(val_domain,1,nous,val_out,belem,text)
 
 	end subroutine shympi_copy_2d_r
 
 !*******************************
 
-	subroutine shympi_copy_2d_d(val_domain,nous,val_out &
-     &				,ndomains,nmax,ip_ints)
+	subroutine shympi_copy_2d_d(val_domain,nous,val_out,belem,text)
 
-	double precision val_domain(nn_max,n_threads)
-	integer nous
-	double precision val_out(nous)
-	integer ndomains(n_threads)
-	integer nmax
-	integer ip_ints(nmax,n_threads)
+	integer, intent(in) :: nous
+	double precision, intent(inout) :: val_domain(nn_max,n_threads)
+	double precision, intent(inout) :: val_out(nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
 
-	integer ia,i,n,ip
-
-        do ia=1,n_threads
-          n=ndomains(ia)
-          do i=1,n
-            ip = ip_ints(i,ia)
-	    val_out(ip) = val_domain(i,ia)
-          end do
-        end do
+	call shympi_copy_3d_d(val_domain,1,nous,val_out,belem,text)
 
 	end subroutine shympi_copy_2d_d
 
 !*******************************
 
-	subroutine shympi_copy_3d_i(val_domain,nov,nous,val_out &
-     &				,ndomains,nmax,ip_ints)
+	subroutine shympi_copy_3d_i(val_domain,nov,nous,val_out,belem,text &
+     &					,nlocal)
 
-	integer nov,nous
-	integer val_domain(nov,nn_max,n_threads)
-	integer val_out(nov,nous)
-	integer ndomains(n_threads)
-	integer nmax
-	integer ip_ints(nmax,n_threads)
+	integer, intent(in) :: nov,nous
+	integer, intent(inout) :: val_domain(nov,nn_max,n_threads)
+	integer, intent(inout) :: val_out(nov,nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
+	integer, intent(in), optional :: nlocal(n_threads)	!values sent
 
-	integer ia,i,n,ip
+	integer ia,i,ip
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+
+	if( bghost_desync .and. my_id == 0 ) then	!test hook
+	  do ia=1,n_threads
+	    do i=nown(ia)+1,nall(ia)
+	      val_domain(:,i,ia) = val_domain(:,i,ia) + 1
+	    end do
+	  end do
+	end if
 
         do ia=1,n_threads
-          n=ndomains(ia)
-          do i=1,n
+          do i=1,nown(ia)
             ip = ip_ints(i,ia)
 	    val_out(:,ip) = val_domain(:,i,ia)
           end do
         end do
+
+	if( shympi_ghost_check_on() ) then
+	  call shympi_ghost_check_i(val_domain,nov,nous,val_out,belem,text &
+     &						,nlocal)
+	end if
 
 	end subroutine shympi_copy_3d_i
 
 !*******************************
 
-	subroutine shympi_copy_3d_r(val_domain,nov,nous,val_out &
-     &				,ndomains,nmax,ip_ints)
+	subroutine shympi_copy_3d_r(val_domain,nov,nous,val_out,belem,text &
+     &					,nlocal)
 
-	integer nov,nous
-	real val_domain(nov,nn_max,n_threads)
-	real val_out(nov,nous)
-	integer ndomains(n_threads)
-	integer nmax
-	integer ip_ints(nmax,n_threads)
+	integer, intent(in) :: nov,nous
+	real, intent(inout) :: val_domain(nov,nn_max,n_threads)
+	real, intent(inout) :: val_out(nov,nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
+	integer, intent(in), optional :: nlocal(n_threads)	!values sent
 
-	integer ia,i,n,ip
+	integer ia,i,ip
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+
+	if( bghost_desync .and. my_id == 0 ) then	!test hook
+	  do ia=1,n_threads
+	    do i=nown(ia)+1,nall(ia)
+	      val_domain(:,i,ia) = val_domain(:,i,ia) + 1.
+	    end do
+	  end do
+	end if
 
         do ia=1,n_threads
-          n=ndomains(ia)
-          do i=1,n
+          do i=1,nown(ia)
             ip = ip_ints(i,ia)
 	    val_out(:,ip) = val_domain(:,i,ia)
           end do
         end do
+
+	if( shympi_ghost_check_on() ) then
+	  call shympi_ghost_check_r(val_domain,nov,nous,val_out,belem,text &
+     &						,nlocal)
+	end if
 
 	end subroutine shympi_copy_3d_r
 
 !*******************************
 
-	subroutine shympi_copy_3d_d(val_domain,nov,nous,val_out &
-     &				,ndomains,nmax,ip_ints)
+	subroutine shympi_copy_3d_d(val_domain,nov,nous,val_out,belem,text &
+     &					,nlocal)
 
-	integer nov,nous
-	double precision val_domain(nov,nn_max,n_threads)
-	double precision val_out(nov,nous)
-	integer ndomains(n_threads)
-	integer nmax
-	integer ip_ints(nmax,n_threads)
+	integer, intent(in) :: nov,nous
+	double precision, intent(inout) :: val_domain(nov,nn_max,n_threads)
+	double precision, intent(inout) :: val_out(nov,nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
+	integer, intent(in), optional :: nlocal(n_threads)	!values sent
 
-	integer ia,i,n,ip
+	integer ia,i,ip
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+
+	if( bghost_desync .and. my_id == 0 ) then	!test hook
+	  do ia=1,n_threads
+	    do i=nown(ia)+1,nall(ia)
+	      val_domain(:,i,ia) = val_domain(:,i,ia) + 1.d0
+	    end do
+	  end do
+	end if
 
         do ia=1,n_threads
-          n=ndomains(ia)
-          do i=1,n
+          do i=1,nown(ia)
             ip = ip_ints(i,ia)
 	    val_out(:,ip) = val_domain(:,i,ia)
           end do
         end do
 
+	if( shympi_ghost_check_on() ) then
+	  call shympi_ghost_check_d(val_domain,nov,nous,val_out,belem,text &
+     &						,nlocal)
+	end if
+
 	end subroutine shympi_copy_3d_d
+
+!*******************************
+
+	subroutine shympi_l2g_index(belem,nown,nall,ip_ints)
+
+! own items (nown), all items (nall) of every process and their global
+! internal numbers (ip_ints), for nodes or elements
+
+	logical, intent(in) :: belem
+	integer, pointer, intent(out) :: nown(:),nall(:)
+	integer, pointer, intent(out) :: ip_ints(:,:)
+
+	if( belem ) then
+	  nown => nel_domains_u
+	  nall => nel_domains
+	  ip_ints => ip_int_elems
+	else
+	  nown => nkn_domains_u
+	  nall => nkn_domains
+	  ip_ints => ip_int_nodes
+	end if
+
+	end subroutine shympi_l2g_index
+
+!*******************************
+
+	function shympi_ghost_check_on()
+
+	logical shympi_ghost_check_on
+
+	shympi_ghost_check_on = ( bghost_check .or. bmpi_debug )
+
+	end function shympi_ghost_check_on
+
+!------------------------------------------------------------------
+! ghost == owner check of the output gathers (#268)
+!------------------------------------------------------------------
+!
+! On the master, after the owner-only copy: every ghost copy (an item
+! after the own ones of its process) is compared bit for bit with the
+! owner's value in val_out (with what the files get). A copy differs
+! when one of its nov values differs; the first nghost_show of them are
+! reported with the external node/element number, the first differing
+! value, the process of the copy and the owner, then the count. The run
+! goes on. For a 3d array (nlocal present) only the values that both
+! processes have are compared: a process with fewer levels than nov
+! sends zeros for the levels it does not have (below the bottom of its
+! nodes), which are no value of the owner to keep in step with.
+!------------------------------------------------------------------
+
+	subroutine shympi_ghost_check_i(val_domain,nov,nous,val_out &
+     &					,belem,text,nlocal)
+
+	integer, intent(in) :: nov,nous
+	integer, intent(in) :: val_domain(nov,nn_max,n_threads)
+	integer, intent(in) :: val_out(nov,nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
+	integer, intent(in), optional :: nlocal(n_threads)
+
+	integer ia,i,ip,l,lbad,nbad,lmax
+	integer, allocatable :: iowner(:)
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+	character*40 sghost,sowner
+
+	if( my_id /= 0 ) return
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+	call shympi_ghost_owners(belem,nous,iowner)
+
+	nbad = 0
+	do ia=1,n_threads
+	  do i=nown(ia)+1,nall(ia)
+	    ip = ip_ints(i,ia)
+	    lmax = nov
+	    if( present(nlocal) ) then	!values both processes have
+	      lmax = min(nov,nlocal(ia),nlocal(iowner(ip)+1))
+	    end if
+	    lbad = 0
+	    do l=1,lmax
+	      if( val_domain(l,i,ia) /= val_out(l,ip) ) then
+	        lbad = l
+	        exit
+	      end if
+	    end do
+	    if( lbad == 0 ) cycle
+	    nbad = nbad + 1
+	    if( nbad > nghost_show ) cycle
+	    write(sghost,'(i0)') val_domain(lbad,i,ia)
+	    write(sowner,'(i0)') val_out(lbad,ip)
+	    call shympi_ghost_report(belem,'integer',nov,ip,lbad &
+     &				,ia-1,iowner(ip),sghost,sowner,text)
+	  end do
+	end do
+
+	if( nbad > 0 ) then
+	  call shympi_ghost_summary(belem,'integer',nov,nbad,text)
+	end if
+
+	end subroutine shympi_ghost_check_i
+
+!*******************************
+
+	subroutine shympi_ghost_check_r(val_domain,nov,nous,val_out &
+     &					,belem,text,nlocal)
+
+	integer, intent(in) :: nov,nous
+	real, intent(in) :: val_domain(nov,nn_max,n_threads)
+	real, intent(in) :: val_out(nov,nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
+	integer, intent(in), optional :: nlocal(n_threads)
+
+	integer ia,i,ip,l,lbad,nbad,lmax
+	integer, allocatable :: iowner(:)
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+	character*40 sghost,sowner
+
+	if( my_id /= 0 ) return
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+	call shympi_ghost_owners(belem,nous,iowner)
+
+	nbad = 0
+	do ia=1,n_threads
+	  do i=nown(ia)+1,nall(ia)
+	    ip = ip_ints(i,ia)
+	    lmax = nov
+	    if( present(nlocal) ) then	!values both processes have
+	      lmax = min(nov,nlocal(ia),nlocal(iowner(ip)+1))
+	    end if
+	    lbad = 0
+	    do l=1,lmax			!bit for bit, as the files get them
+	      if( transfer(val_domain(l,i,ia),0) &
+     &			/= transfer(val_out(l,ip),0) ) then
+	        lbad = l
+	        exit
+	      end if
+	    end do
+	    if( lbad == 0 ) cycle
+	    nbad = nbad + 1
+	    if( nbad > nghost_show ) cycle
+	    write(sghost,'(es16.8)') val_domain(lbad,i,ia)
+	    write(sowner,'(es16.8)') val_out(lbad,ip)
+	    call shympi_ghost_report(belem,'real',nov,ip,lbad &
+     &				,ia-1,iowner(ip),sghost,sowner,text)
+	  end do
+	end do
+
+	if( nbad > 0 ) then
+	  call shympi_ghost_summary(belem,'real',nov,nbad,text)
+	end if
+
+	end subroutine shympi_ghost_check_r
+
+!*******************************
+
+	subroutine shympi_ghost_check_d(val_domain,nov,nous,val_out &
+     &					,belem,text,nlocal)
+
+	integer, intent(in) :: nov,nous
+	double precision, intent(in) :: val_domain(nov,nn_max,n_threads)
+	double precision, intent(in) :: val_out(nov,nous)
+	logical, intent(in) :: belem
+	character*(*), intent(in), optional :: text
+	integer, intent(in), optional :: nlocal(n_threads)
+
+	integer, parameter :: i8 = selected_int_kind(18)
+	integer ia,i,ip,l,lbad,nbad,lmax
+	integer, allocatable :: iowner(:)
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+	character*40 sghost,sowner
+
+	if( my_id /= 0 ) return
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+	call shympi_ghost_owners(belem,nous,iowner)
+
+	nbad = 0
+	do ia=1,n_threads
+	  do i=nown(ia)+1,nall(ia)
+	    ip = ip_ints(i,ia)
+	    lmax = nov
+	    if( present(nlocal) ) then	!values both processes have
+	      lmax = min(nov,nlocal(ia),nlocal(iowner(ip)+1))
+	    end if
+	    lbad = 0
+	    do l=1,lmax			!bit for bit, as the files get them
+	      if( transfer(val_domain(l,i,ia),0_i8) &
+     &			/= transfer(val_out(l,ip),0_i8) ) then
+	        lbad = l
+	        exit
+	      end if
+	    end do
+	    if( lbad == 0 ) cycle
+	    nbad = nbad + 1
+	    if( nbad > nghost_show ) cycle
+	    write(sghost,'(es25.16)') val_domain(lbad,i,ia)
+	    write(sowner,'(es25.16)') val_out(lbad,ip)
+	    call shympi_ghost_report(belem,'double',nov,ip,lbad &
+     &				,ia-1,iowner(ip),sghost,sowner,text)
+	  end do
+	end do
+
+	if( nbad > 0 ) then
+	  call shympi_ghost_summary(belem,'double',nov,nbad,text)
+	end if
+
+	end subroutine shympi_ghost_check_d
+
+!*******************************
+
+	subroutine shympi_ghost_owners(belem,nous,iowner)
+
+! process (0..n_threads-1) whose value the gather takes, per global item
+
+	logical, intent(in) :: belem
+	integer, intent(in) :: nous
+	integer, allocatable, intent(out) :: iowner(:)
+
+	integer ia,i,ip,ierr
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+
+	allocate(iowner(nous),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('shympi_ghost_owners: allocation failed')
+	end if
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+
+	iowner = -1
+	do ia=1,n_threads
+	  do i=1,nown(ia)
+	    ip = ip_ints(i,ia)
+	    iowner(ip) = ia - 1
+	  end do
+	end do
+
+	end subroutine shympi_ghost_owners
+
+!*******************************
+
+	subroutine shympi_ghost_report(belem,ctype,nov,ip,l &
+     &				,id_ghost,id_owner,sghost,sowner,text)
+
+! one line on a ghost copy that differs from the owner's value
+
+	logical, intent(in) :: belem
+	character*(*), intent(in) :: ctype
+	integer, intent(in) :: nov,ip,l
+	integer, intent(in) :: id_ghost,id_owner
+	character*(*), intent(in) :: sghost,sowner
+	character*(*), intent(in), optional :: text
+
+	integer iext
+	character*10 citem,cowner
+	character*256 line
+
+	if( belem ) then
+	  citem = 'element'
+	  cowner = 'main'
+	  iext = ip_ext_elem(ip)
+	else
+	  citem = 'node'
+	  cowner = 'owner'
+	  iext = ip_ext_node(ip)
+	end if
+
+	write(line,'(6(a,i0),a)') ' ' // trim(citem) // ' ' &
+     &		,iext,' (internal ',ip,') value ',l,'/',nov,': process ' &
+     &		,id_ghost,' has ' // trim(adjustl(sghost)) // ', ' &
+     &		// trim(cowner) // ' process ',id_owner,' has ' &
+     &		// trim(adjustl(sowner))
+	write(6,'(a)') 'GHOST CHECK: ' // trim(shympi_ghost_label(text)) &
+     &		// ' (' // trim(citem) // ', ' // trim(ctype) // '):' &
+     &		// trim(line)
+
+	end subroutine shympi_ghost_report
+
+!*******************************
+
+	subroutine shympi_ghost_summary(belem,ctype,nov,nbad,text)
+
+! the number of ghost copies that differ from the owner's values
+
+	logical, intent(in) :: belem
+	character*(*), intent(in) :: ctype
+	integer, intent(in) :: nov,nbad
+	character*(*), intent(in), optional :: text
+
+	character*10 citem,cowner
+	character*256 line
+
+	if( belem ) then
+	  citem = 'element'
+	  cowner = 'main'
+	else
+	  citem = 'node'
+	  cowner = 'owner'
+	end if
+
+	write(line,'(a,i0,a,i0,a,i0,a)') ' ',nbad,' ghost copies differ' &
+     &		// ' from the ' // trim(cowner) // ' process (',nov &
+     &		,' values per ' // trim(citem) // ', first ' &
+     &		,min(nbad,nghost_show),' shown)'
+	write(6,'(a)') 'GHOST CHECK: ' // trim(shympi_ghost_label(text)) &
+     &		// ' (' // trim(citem) // ', ' // trim(ctype) // '):' &
+     &		// trim(line)
+
+	end subroutine shympi_ghost_summary
+
+!*******************************
+
+	function shympi_ghost_label(text)
+
+	character*160 shympi_ghost_label
+	character*(*), intent(in), optional :: text
+
+	shympi_ghost_label = 'unlabelled gather'
+	if( present(text) ) then
+	  if( text /= ' ' ) shympi_ghost_label = text
+	end if
+
+	end function shympi_ghost_label
+
+!*******************************
+
+	subroutine shympi_check_owner_order
+
+! checks at set-up what the owner-only gathers (shympi_copy_*) need:
+! the own nodes come first in the local numbering (1..nkn_unique), the
+! elements whose main process (id_elem(1,ie)) is this one come first
+! (1..nel_unique), and the own items of all processes cover every
+! global node and element exactly once (#268)
+
+	integer ia,i,ip,k,ie,nbad,ierr
+	integer, allocatable :: icount(:)
+
+	nbad = 0
+	do k=1,nkn_local
+	  if( ( id_node(k) == my_id ) .neqv. ( k <= nkn_unique ) ) then
+	    nbad = nbad + 1
+	  end if
+	end do
+	do ie=1,nel_local
+	  if( ( id_elem(1,ie) == my_id ) .neqv. ( ie <= nel_unique ) ) then
+	    nbad = nbad + 1
+	  end if
+	end do
+	if( nbad > 0 ) then
+	  write(6,*) 'shympi_check_owner_order: ',my_id,nbad &
+     &			,' local items out of order'
+	  call shympi_abort_internal('error stop shympi_check_owner_order:' &
+     &			// ' own items do not come first')
+	end if
+
+	allocate(icount(max(nkn_global,nel_global)),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('shympi_check_owner_order: allocation failed')
+	end if
+
+	icount = 0
+	do ia=1,n_threads
+	  do i=1,nkn_domains_u(ia)
+	    ip = ip_int_nodes(i,ia)
+	    icount(ip) = icount(ip) + 1
+	  end do
+	end do
+	nbad = count( icount(1:nkn_global) /= 1 )
+
+	icount = 0
+	do ia=1,n_threads
+	  do i=1,nel_domains_u(ia)
+	    ip = ip_int_elems(i,ia)
+	    icount(ip) = icount(ip) + 1
+	  end do
+	end do
+	nbad = nbad + count( icount(1:nel_global) /= 1 )
+
+	if( nbad > 0 ) then
+	  write(6,*) 'shympi_check_owner_order: ',my_id,nbad &
+     &			,' global items without exactly one owner'
+	  call shympi_abort_internal('error stop shympi_check_owner_order:' &
+     &			// ' owners do not cover the basin')
+	end if
+
+	end subroutine shympi_check_owner_order
 
 !******************************************************************
 !******************************************************************

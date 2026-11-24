@@ -41,6 +41,7 @@
 ! 12.04.2023	ggu	protect from nkn == nel
 ! 21.11.2024	ggu	new call to check_partition() and write_partition()
 ! 23.11.2024	ggu	eliminate error stop in handle_partition()
+! 24.11.2026	arb	check the owner order the output gathers need (#268)
 
 ! notes :
 !
@@ -239,6 +240,8 @@
 	  nkn_cum_domains(i) = nkn_cum_domains(i-1) + nkn_domains(i)
 	  nel_cum_domains(i) = nel_cum_domains(i-1) + nel_domains(i)
 	end do
+
+	call shympi_check_owner_order	!what the output gathers need (#268)
 
 !	-----------------------------------------------------
 !	write to terminal and final check

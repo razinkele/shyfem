@@ -30,6 +30,7 @@
 ! modules for restart routines
 !
 ! 08.03.2025    ggu     extract module for restart routines
+! 24.11.2026    arb     gathered arrays labelled for the ghost check (#268)
 !
 ! notes :
 !
@@ -123,6 +124,7 @@
 	integer, save, allocatable :: ilhkrst(:)
 
 	logical, save :: bmaster = .false.
+	integer, save :: nitem_rst = 0	!arrays gathered in this record (#268)
 
         INTERFACE restart_write_value
         MODULE PROCEDURE   restart_write_value_scalar_i  &
@@ -201,6 +203,43 @@
 	
 !--------------------------------
 
+	subroutine restart_write_start
+
+! a restart record begins: its gathered arrays are counted again (#268)
+
+	nitem_rst = 0
+
+	end subroutine
+
+!--------------------------------
+
+	subroutine restart_gather_label(iu,label)
+
+! names the next gathered array of the restart record, for the ghost
+! check of the gather (shympi_l2g_array, #268): file and array number
+
+	integer, intent(in) :: iu
+	character*(*), intent(out) :: label
+
+	integer ios,islash
+	character*256 name
+	character*300 aux		!long enough for any file name
+
+	nitem_rst = nitem_rst + 1
+	name = ' '
+	if( bmaster ) then		!only the master has the file open
+	  inquire(unit=iu,name=name,iostat=ios)
+	  if( ios /= 0 ) name = ' '
+	end if
+	islash = index(name,'/',back=.true.)
+	write(aux,'(a,i0)') 'restart file ' // trim(name(islash+1:)) &
+     &			// ' array ',nitem_rst
+	label = aux			!as much as label holds
+
+	end subroutine
+
+!--------------------------------
+
 	subroutine restart_write_value_scalar_i(iu,ival)
 
 	integer iu
@@ -236,13 +275,14 @@
 
 	use shympi
 
-	integer iu
+	integer, intent(in) :: iu
 	integer ios
-	logical belem
-	integer array(:)
+	logical, intent(in) :: belem
+	integer, intent(in) :: array(:)
 
 	integer nn_global,nn
 	integer ierr
+	character*80 label
 	integer, allocatable :: garray(:)
 
 	if( bmpi ) then
@@ -250,7 +290,8 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  call shympi_l2g_array(array,garray)
+	  call restart_gather_label(iu,label)
+	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
 	    write(iu,iostat=ios) garray
 	    call restart_check_ios(ios,'restart_write_value_2d_i garray',.true.)
@@ -268,13 +309,14 @@
 
 	use shympi
 
-	integer iu
+	integer, intent(in) :: iu
 	integer ios
-	logical belem
-	real array(:)
+	logical, intent(in) :: belem
+	real, intent(in) :: array(:)
 
 	integer nn_global,nn
 	integer ierr
+	character*80 label
 	real, allocatable :: garray(:)
 
 	if( bmpi ) then
@@ -282,7 +324,8 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  call shympi_l2g_array(array,garray)
+	  call restart_gather_label(iu,label)
+	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
 	    write(iu,iostat=ios) garray
 	    call restart_check_ios(ios,'restart_write_value_2d_r garray',.true.)
@@ -300,13 +343,14 @@
 
 	use shympi
 
-	integer iu
+	integer, intent(in) :: iu
 	integer ios
-	logical belem
-	real array(:,:)
+	logical, intent(in) :: belem
+	real, intent(in) :: array(:,:)
 
 	integer nn_global,nv_global,nn
 	integer ierr
+	character*80 label
 	real, allocatable :: garray(:,:)
 
 	if( bmpi ) then
@@ -315,7 +359,8 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  call shympi_l2g_array(array,garray)
+	  call restart_gather_label(iu,label)
+	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
 	    write(iu,iostat=ios) garray
 	    call restart_check_ios(ios,'restart_write_value_3d_r garray',.true.)
@@ -333,13 +378,14 @@
 
 	use shympi
 
-	integer iu
+	integer, intent(in) :: iu
 	integer ios
-	logical belem
-	double precision array(:,:)
+	logical, intent(in) :: belem
+	double precision, intent(in) :: array(:,:)
 
 	integer nn_global,nv_global,nn
 	integer ierr
+	character*80 label
 	double precision, allocatable :: garray(:,:)
 
 	if( bmpi ) then
@@ -348,7 +394,8 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nv_global,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  call shympi_l2g_array(array,garray)
+	  call restart_gather_label(iu,label)
+	  call shympi_l2g_array(array,garray,label)
 	  if( bmaster ) then
 	    write(iu,iostat=ios) garray
 	    call restart_check_ios(ios,'restart_write_value_3d_d garray',.true.)
@@ -366,14 +413,15 @@
 
 	use shympi
 
-	integer iu
+	integer, intent(in) :: iu
 	integer ios
-	logical belem
-	integer nfix
-	real array(:,:)
+	logical, intent(in) :: belem
+	integer, intent(in) :: nfix
+	real, intent(in) :: array(:,:)
 
 	integer nn_global,nv_global,nn
 	integer ierr
+	character*80 label
 	real, allocatable :: garray(:,:)
 
 	if( bmpi ) then
@@ -384,7 +432,8 @@
 	  nn_global = get_nn_global(belem,nn)
 	  allocate(garray(nfix,nn_global),stat=ierr)
 	  if( ierr /= 0 ) stop 'error stop: allocation failed'
-	  call shympi_l2g_array(nfix,array,garray)
+	  call restart_gather_label(iu,label)
+	  call shympi_l2g_array(nfix,array,garray,label)
 	  if( bmaster ) then
 	    write(iu,iostat=ios) garray
 	    call restart_check_ios(ios,'restart_write_value_fix_r garray',.true.)
