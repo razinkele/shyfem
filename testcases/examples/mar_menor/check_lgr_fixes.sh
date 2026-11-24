@@ -188,24 +188,31 @@
 #             the linear profile on unequal layers, and so does the formula
 #             before #257.  2. The 3D case mm_hyd_41
 #             as in mode ilagr3 (no tilt, one day, ilagr = 3, nbdy = 300,
-#             rwhpar = 0, ipvert = -1) with iturb = 0 and diftur = 1.e-3,
-#             serially: the diffusivity is then the same at every
-#             interface (today GOTM's initial 1e-6 m2/s: handle_gotm_init,
-#             called at set-up whatever iturb, overwrites the diftur that
-#             set_eddy put in), so K'' = 0 and the random walk must take
-#             the model time step: the log line "lgr vertical diffusion:
+#             rwhpar = 0, ipvert = -1) with iturb = 0 and diftur = 1.e-3
+#             (and vistur = 1.e-3), serially: without turbulence closure
+#             the diffusivity is diftur at every interface for the whole
+#             run, so the walk's K (diftur + 1e-6/3, lag_vdiff_ele) is the
+#             same everywhere, K'' = 0, and the random walk must take the
+#             model time step: the log line "lgr vertical diffusion:
 #             random walk time step [s] min 300.000 mean 300.000, ...
 #             below the model step 0 over 100 sub-steps 0" (written once
-#             at the end, lgr_vdiff_stats).  Before #257 the "second
-#             derivative" was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2, about
-#             4 K/h**2, so the step was h**2/(400 K) also for a constant K:
-#             with the old formula (put back into the fixed code, whose
-#             statistics line it keeps) min 2 s and 2424 element steps
-#             below the model step, all of them over 100 sub-steps (dtvd
-#             under 3 s: elements with a very thin layer, where h**2/(400 K)
-#             is that small).  The code before #257 has neither the
-#             routine nor the line, so this mode cannot be red on it; its
-#             red evidence is the old formula put back.
+#             at the end, lgr_vdiff_stats).  Before #248 the run had
+#             diftur only in the particle step made at set-up: then
+#             handle_gotm_init, called whatever iturb, replaced it by
+#             GOTM's initial 1e-6, so the mode tested a constant K of
+#             1e-6 + 1e-6/3 instead of 1e-3 + 1e-6/3.  Before #257 the
+#             "second derivative" was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2,
+#             about 4 K/h**2, so the step was h**2/(400 K) also for a
+#             constant K: with the old formula put back into the fixed code
+#             (whose statistics line it keeps) the run gives min 2 s, mean
+#             16.6 s, 119.8 sub-steps per step and 700536 of 735505 element
+#             steps below the model step, all of them over 100 sub-steps
+#             (measured 2026-11-24 with #248; before #248, with K = 1e-6 +
+#             1e-6/3: min 2 s and 2424 element steps below the model step,
+#             all over 100 sub-steps, elements with a very thin layer,
+#             where h**2/(400 K) is that small).  The code before #257 has
+#             neither the routine nor the line, so this mode cannot be red
+#             on it; its red evidence is the old formula put back.
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -1077,7 +1084,7 @@ EOF
     grep -qF -- "$o" "$W/vdt_const.str" || fail "no '$o' in vdt_const.str"
   done
   grep -q "tilt" "$W/vdt_const.str" && fail "tilt lines left in vdt_const.str"
-  echo "=== mm_hyd_41 (no tilt, one day, iturb = 0: the same diffusivity at every interface) with ilagr = 3, serially"
+  echo "=== mm_hyd_41 (no tilt, one day, iturb = 0, diftur = 1.e-3 at every interface) with ilagr = 3, serially"
   if run vdt_const vdt_const.log shyfem; then
     line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
     echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
