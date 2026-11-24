@@ -207,8 +207,8 @@ for t, b, _ in times:
         r = rel[pid]
         if (p["x"], p["y"], p["ie"]) != (r["x"], r["y"], r["ie"]):
             nmove += 1
+    h = hist(b[0])		# every output: depths inside their column
     if 43200.0 <= t <= 86400.0:
-        h = hist(b[0])
         late.append((t, chi2(h), h))
 print("  still water: records that left their release position or element %d;"
       " depths outside their column %d" % (nmove, nout))

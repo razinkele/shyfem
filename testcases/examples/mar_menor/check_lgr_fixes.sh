@@ -963,8 +963,8 @@ if [ "$MODE" = ilagr3 ]; then
   mcall="$(printf '%s' "$l1" | sed -n 's/.*most calls in a step: *\([0-9][0-9]*\).*/\1/p')"
   ncap="$(printf '%s' "$l2" | sed -n 's/.*steps stopped at the cap of [0-9]* calls: *\([0-9][0-9]*\),.*/\1/p')"
   nend="$(printf '%s' "$l2" | sed -n 's/.*steps ended by 2 calls in a row that used no time: *\([0-9][0-9]*\),.*/\1/p')"
-  if [ -z "$mcall" ] || [ "$mcall" -le 100 ]; then
-    fail "most calls of lgr_diff_vert in a particle step ${mcall:-not reported}, expected more than 100 (the cap before #261)"
+  if [ -z "$mcall" ] || [ "$mcall" -le 100 ] || [ "$mcall" -gt 10000 ]; then
+    fail "most calls of lgr_diff_vert in a particle step ${mcall:-not reported}, expected more than 100 (the cap before #261) and at most 10000 (the cap)"
   fi
   if [ -z "$ncap" ] || [ "$ncap" -gt 10 ]; then
     fail "particle steps stopped at the cap ${ncap:-not reported}, expected at most 10 (measured 1)"
