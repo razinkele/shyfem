@@ -288,6 +288,7 @@
 	!totals of the hand-over, if no step ended exactly at dtlend (once)
 	if( bmpi_lagr .and. dtime > dtlend ) call lgr_mpi_handover_stats
 	if( dtime > dtlend ) call lgr_mpi_relocate_stats !once, levdbg >= 3
+	if( dtime > dtlend ) call lgr_vdiff_stats	!once, ilagr = 3 only
 
         if( dtime < dtlanf .or. dtime > dtlend ) return      
 
@@ -362,6 +363,7 @@
 	end if
 	call lgr_mpi_relocate_step			!levdbg >= 3
 	if( dtime >= dtlend ) call lgr_mpi_relocate_stats	!once, levdbg >= 3
+	if( dtime >= dtlend ) call lgr_vdiff_stats	!once (also above), ilagr = 3
 
 !---------------------------------------------------------------
 ! sediment module
@@ -435,11 +437,18 @@
 	implicit none
 
 	integer ifemop
+	integer isphe
 
         artype=getpar('artype')	!store special type in common block
         rwhpar=getpar('rwhpar')	!lagrangian diffusion
         stkpar=getpar('stkpar')	!stokes drift parameter
         dripar=getpar('dripar')	!drifter parameter
+
+	! type of coordinates, read once here (outside any parallel region)
+	! for lag_stk and lag_diff_hor, which run inside the OpenMP particle
+	! loop of drogue and only read blgr_sphe (#243)
+	call get_coords_ev(isphe)
+	blgr_sphe = isphe == 1
 
 	!lunit = ifemop('.lgi','form','new') !unit for lagrangian info
 	!if( lunit .le. 0 ) then
@@ -518,6 +527,7 @@
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_global_count
+	use mod_lagrange_mpi, only : lgr_mpi_list_check
 	use shympi, only : my_id, shympi_is_parallel
 
 	implicit none
@@ -568,6 +578,11 @@
 	end do
 
 !$OMP END PARALLEL DO
+
+	! a failure of the hand-over lists found inside the loop (a worker
+	! thread must not call MPI_ABORT) stops the run here, on the main
+	! thread, before the first collective call (#242); a no-op otherwise
+	call lgr_mpi_list_check('drogue, after the particle loop')
 
         tempo = openmp_get_wtime() - tempo
 !        write(88,*) 'tempo = ',tempo

@@ -474,7 +474,9 @@
 
 	subroutine delete_particle(ip)
 
-! deletes particle ip
+! deletes particle ip: it keeps its last element with a negative sign,
+! as a particle that left the basin (#226: with ie = 0 the output read the
+! coordinates of element 0); compress_particles treats ie <= 0 as free
 
 	use mod_lagrange
 
@@ -482,7 +484,9 @@
 
 	integer ip
 
-	if( lgr_ar(ip)%actual%ie .gt. 0 ) lgr_ar(ip)%actual%ie = 0
+	if( lgr_ar(ip)%actual%ie .gt. 0 ) then
+	  lgr_ar(ip)%actual%ie = -lgr_ar(ip)%actual%ie
+	end if
 
 	end
 
@@ -709,8 +713,11 @@
 
 ! outputs particles to file
 !
-! if body has exited the element its number is negativ (last element)
-! once it has been written to output with negative ie, it is set to 0
+! if body has exited the element its number is negativ (last element);
+! a particle that left the basin, decayed (lagrange_decay) or was deleted
+! (delete_particle) keeps it, and is written in the exited block at its
+! last position at every output (ie = 0 is only a particle inserted
+! where find_element found no element)
 
 ! mcg : 15/10/2015 write in v.5  hl = effective absolute depth 
 ! mcg : need to add more start info: level depth custom 
@@ -835,7 +842,9 @@
 !               custom values
 !   which = -1  inserted: the release record init, element abs(init%ie)
 !   which = 1   exited: the actual position, element abs(actual%ie) (the
-!               element the particle left; 0 for a particle removed)
+!               element the particle left, or the last element of a
+!               decayed or deleted particle, #226; 0 only for a particle
+!               inserted where find_element found no element)
 ! type and sinking are the particle's own (of the moment). As in the
 ! serial code since the new output format, an inserted or an exited
 ! record holds custom(1) in every custom slot (only the active record has
@@ -878,8 +887,10 @@
 
 ! fills an output record (layout: lgr_orec_base in mod_lagrange) from the
 ! values of a particle: ie its local element (negative for the element a
-! particle left and for a release record not yet written, 0 for a
-! removed particle), xi its coordinates in that element, and z, lb, tt,
+! particle left, the last element of a decayed or deleted particle and a
+! release record not yet written; 0 only for a particle inserted where
+! find_element found no element, which xi2xy cannot place: not changed
+! here, see #226), xi its coordinates in that element, and z, lb, tt,
 ! id, ty, s, c(1:ncust) as they are written. x, y and hl are computed here
 ! (xi2xy, and lgr_compute_depths with the layer thickness of the moment)
 ! as lgr_output always did; the element written is the global number

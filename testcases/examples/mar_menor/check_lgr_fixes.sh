@@ -1,0 +1,449 @@
+#!/bin/bash
+#------------------------------------------------------------------------
+# Checks of the fixes of the Lagrangian module that followed #217 (the
+# module on several MPI processes).  Each mode runs the model in a scratch
+# copy of this folder (made with mktemp under ${TMPDIR:-/tmp}, removed at
+# the end when the mode passes, kept with its path printed when it fails)
+# with the shyfem first on PATH, and prints "<MODE>: PASS" or "FAIL".
+#
+# Usage:  ./check_lgr_fixes.sh MODE
+#
+#   stk-omp   (#243) the Stokes drift case mm_lgr_e with 4 OpenMP threads
+#             (nomp = 4 in $para) and with 1 (nomp = 1), serially and on 4
+#             MPI processes: the four runs must end, the 4-thread logs must
+#             have the line "used OMP threads: 4" (the build compiles the
+#             OpenMP directives: -fopenmp is always in FFLAGS), and the
+#             particle file of 4 threads must be byte-identical (cmp) to
+#             that of 1 thread, serially and on 4 processes.  This check
+#             cannot fail on the data race it guards against (lag_stk set
+#             a saved flag on its first call inside the parallel loop):
+#             every thread wrote the same value, so no run shows it; it
+#             shows that the change of the initialisation (once, before the
+#             loop) leaves the result of 1 and 4 threads unchanged.
+#   decay     (#226) mm_lgr_a serially, once as it is and once with
+#             "ldecay = 86400." in $lagrg (decay of particles: at every
+#             step a particle decays when a random number exceeds
+#             exp(-age/ldecay); with idt = 300 s all 145 particles decay
+#             within five hours): the decay run must end (before #226 it stopped
+#             with SIGSEGV at the first output after a decay: the exited
+#             record read the coordinates of element 0).  Then
+#             lgr_compare.py's reader checks the two particle files: the
+#             decayed particles (exited in the decay run, not exited in the
+#             plain run at the same output) are at least one; every exited
+#             record of the decay run has an element in 1..nel and a
+#             position inside a triangle of GRID/MM_geo.grd (inside the
+#             basin), and a decayed particle stays in the exited block of
+#             every later output with the same element and position (its
+#             last position); every
+#             active particle of the decay run has the same record as in
+#             the plain run (decay changes no other particle).
+#   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
+#             ztilt), for one day, with a $lagrg section that sets ilagr = 3
+#             (vertical advection and diffusion), nbdymax = 20000, nbdy =
+#             300, idtl = 0, idtlgr = '1h', rwhpar = 0, ipvert = -1 (the
+#             reproducer of #231), serially: the run must end (before #231 it
+#             stopped with SIGFPE in its first particle step, in intp_neville
+#             called by diff_get_vert for a particle in an element with one
+#             layer, and with only that corrected, in diff_get_vert at the
+#             square root of a negative diffusivity extrapolated in the
+#             bottom layer of an element with two layers); its log line "lgr
+#             vertical diffusion: negative diffusivities set to 0: N" must
+#             have N = 0 (with the bottom interface in the interpolation no
+#             diffusivity is negative; a fix that only set the negative
+#             values to 0 gave about 1.07 million in one day); and its
+#             particle file must hold only finite values,
+#             active particles with an element in 1..nel, a layer in 1..nlv
+#             and a depth z in the layer within 0..1.  A second run, 12
+#             hours with the end of the particle run itlend = 06:02:30
+#             (between two time steps), must write that line exactly once.
+#   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
+#             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
+#             parked particles start with 2 entries, so they grow in the
+#             first steps) and the hook LGR_TEST_GROW_FAIL (the first
+#             enlargement of that list on every process takes the path of a
+#             failed allocate): mm_lgr_a with =export (the list of marks at
+#             sides; it parks nothing) and the Stokes drift case mm_lgr_e
+#             with =park (its list of marks never passes 2 entries on 4
+#             processes, its parkings do).  Each run has a
+#             timeout of 300 s and must stop with exit code 33 (the code
+#             shympi_abort_internal gives MPI_ABORT; Open MPI's mpirun
+#             returns it), with the message "lgr_mpi_grow_export:
+#             allocation" (or _park) and the line of the check made by the
+#             main thread after the particle loop ("lgr_mpi_list_check:"),
+#             with "used OMP threads: 4" in the log and no SIGSEGV, SIGFPE
+#             or "Fortran runtime" line.  Before #242 the grow routine
+#             called the abort itself, from whichever OpenMP thread held
+#             the critical section (MPI is initialised
+#             MPI_THREAD_FUNNELED): no such check line.
+#   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
+#             (its list of parked particles grows) on 4 MPI processes with
+#             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
+#             grow inside the OpenMP particle loop), at levdbg = 2 (the
+#             consistency check of every step is on): with 4 threads and
+#             with 1 thread, and with 1 thread without the hook.  The three
+#             runs must end, the consistency check must write nothing, the
+#             4-thread log must report 4 threads, and the particle file of
+#             4 threads must be byte-identical (cmp) to both 1-thread files.
+#             A fourth run, 4 threads at levdbg = 3, prints a line per
+#             growth with the OpenMP thread that made it: at least one
+#             growth must be counted (its particle file is not compared).
+#             This is not a red test of #242 (the growth itself was right
+#             before); it checks that the growth inside the loop, which had
+#             only run on one thread, gives the 1-thread result on 4.
+#
+# A run has ended only if its launcher exits with 0 and its log has
+# "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
+# and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here.
+# Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
+#------------------------------------------------------------------------
+set -u
+
+HERE="$(cd "$(dirname "$0")" && pwd)" || exit 1
+MODE="${1:-}"
+NP=4
+rc=0
+
+usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | small-export"; exit 2; }
+fail() { echo "  FAIL: $*"; rc=1; }
+
+case "$MODE" in
+  stk-omp|decay|ilagr3|grow-fail|small-export) ;;
+  *) usage ;;
+esac
+
+for t in shyfem mpirun python3; do
+  command -v "$t" > /dev/null 2>&1 || { echo "$MODE: FAIL ($t is not on PATH)"; exit 1; }
+done
+for b in GRID/MM_geo.bas GRID/MM_coarse.bas GRID/MM_coarse_smooth.bas; do
+  [ -f "$HERE/$b" ] || { echo "$MODE: FAIL ($b is missing: run 'make init' and '(cd GRID && shypre -noopti MM_geo.grd)' in $HERE)"; exit 1; }
+done
+
+SCR="$(mktemp -d "${TMPDIR:-/tmp}/lgr_fixes.XXXXXX")" || { echo "$MODE: FAIL (mktemp)"; exit 1; }
+cp -r "$HERE" "$SCR/mm" || { echo "$MODE: FAIL (cannot copy the test folder)"; exit 1; }
+W="$SCR/mm"
+rm -f "$W"/*.shy "$W"/*.inf "$W"/*.ext "$W"/*.log
+
+finish() {
+  if [ "$rc" = 0 ]; then
+    rm -rf "$SCR"
+    echo "$MODE: PASS"
+  else
+    echo "  logs kept in $SCR"
+    echo "$MODE: FAIL"
+  fi
+  exit "$rc"
+}
+
+# with_line SRC DST SECTION LINE: copy of SRC.str with LINE right after
+# its $SECTION line and the run name (second line of $title) set to DST
+with_line() {
+  awk -v line="$4" -v name="$2" -v sect="$3" '
+    /^\$title/ { t = 1; nt = 0 }
+    t && !/^\$/ { nt++; if( nt == 2 ) { print "        " name; next } }
+    /^\$end/ { t = 0 }
+    { print }
+    !done && $0 ~ "^\\$" sect "[ \t\r]*$" { print "        " line; done = 1 }
+  ' "$W/$1.str" > "$W/$2.str"
+}
+with_para() { with_line "$1" "$2" para "$3"; }
+
+# run NAME LOG LAUNCHER...: run NAME.str in the scratch folder; true if
+# the launcher exited with 0 and the log has "simulation end"
+run() {
+  local name="$1" log="$2" lrc; shift 2
+  ( cd "$W" && nice -n 10 "$@" "$name.str" > "$log" 2>&1 )
+  lrc=$?
+  if [ "$lrc" != 0 ]; then
+    echo "  $name: the launcher exited with code $lrc ($W/$log)"
+    tail -5 "$W/$log" | sed 's/^/    /'
+    return 1
+  fi
+  grep -q "simulation end" "$W/$log" || { echo "  $name: no 'simulation end' in $W/$log"; return 1; }
+}
+
+# threads LOG N: the log reports N OpenMP threads
+threads() {
+  local line
+  line="$(grep -m1 'used OMP threads' "$W/$1")"
+  echo "  $1: ${line:-no 'used OMP threads' line}"
+  echo "$line" | grep -q "used OMP threads: *$2\$" || fail "$1 does not report $2 OpenMP threads"
+}
+
+#=============================== stk-omp (#243) ============================
+if [ "$MODE" = stk-omp ]; then
+  for n in 1 4; do
+    with_para mm_lgr_e stk_t$n "nomp = $n"
+  done
+  for n in 1 4; do
+    echo "=== mm_lgr_e, $n OpenMP thread(s): serial and on $NP processes"
+    run stk_t$n stk_t$n.serial.log shyfem || fail "serial run with $n thread(s) did not end"
+    mv "$W/stk_t$n.lgr.shy" "$W/stk_t$n.serial.lgr.shy" 2> /dev/null
+    run stk_t$n stk_t$n.np$NP.log mpirun --oversubscribe -np $NP shyfem || fail "run on $NP processes with $n thread(s) did not end"
+    mv "$W/stk_t$n.lgr.shy" "$W/stk_t$n.np$NP.lgr.shy" 2> /dev/null
+  done
+  threads stk_t4.serial.log 4
+  threads stk_t4.np$NP.log 4
+  threads stk_t1.serial.log 1
+  for v in serial np$NP; do
+    a="$W/stk_t1.$v.lgr.shy"; b="$W/stk_t4.$v.lgr.shy"
+    if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$v: particle file missing"
+    elif cmp -s "$a" "$b"; then echo "  $v: particle file of 4 threads identical to 1 thread ($(stat -c %s "$a") bytes)"
+    else fail "$v: particle file of 4 threads differs from 1 thread"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+    fi
+  done
+  finish
+fi
+
+#=============================== decay (#226) ==============================
+if [ "$MODE" = decay ]; then
+  with_para mm_lgr_a dec_plain "levdbg = 0"
+  with_line mm_lgr_a dec_on lagrg "ldecay = 86400."
+  grep -q "ldecay = 86400." "$W/dec_on.str" || fail "no ldecay line in dec_on.str"
+  echo "=== mm_lgr_a serially, without and with ldecay = 86400."
+  run dec_plain dec_plain.log shyfem || fail "plain run did not end"
+  run dec_on dec_on.log shyfem || fail "decay run did not end"
+  if [ "$rc" = 0 ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/dec_plain.lgr.shy" "$W/dec_on.lgr.shy" "$W/GRID/MM_geo.grd" <<'EOF' || fail "particle file check"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+plain_path, dec_path, grd = sys.argv[2:5]
+nodes, elems = {}, []
+with open(grd) as fh:
+    for line in fh:
+        f = line.split()
+        if not f:
+            continue
+        if f[0] == "1":
+            nodes[int(f[1])] = (float(f[3]), float(f[4]))
+        elif f[0] == "2":
+            elems.append(tuple(int(v) for v in f[4:7]))
+tri = [(nodes[a], nodes[b], nodes[c]) for a, b, c in elems]
+
+def inside(x, y, eps=1e-6):
+    """True if (x, y) lies in a triangle of the mesh (barycentric, eps)."""
+    for (x1, y1), (x2, y2), (x3, y3) in tri:
+        if x < min(x1, x2, x3) - eps or x > max(x1, x2, x3) + eps:
+            continue
+        if y < min(y1, y2, y3) - eps or y > max(y1, y2, y3) + eps:
+            continue
+        d = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+        if d == 0.0:
+            continue
+        l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / d
+        l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / d
+        if min(l1, l2, 1.0 - l1 - l2) >= -1e-4:
+            return True
+    return False
+
+nel = len(elems)
+_, tp = lc.read_file(plain_path)
+_, td = lc.read_file(dec_path)
+ok = True
+mp = {t: b for t, b, _ in tp}
+first_pos = {}
+ndec_last = 0
+nbad_act = 0
+for t, b, _ in td:
+    if t not in mp:
+        print("  output t=%r of the decay run not in the plain run" % t)
+        ok = False
+        continue
+    ext_p = set(mp[t][1])
+    lost = sorted(set(first_pos) - set(b[1]))
+    if lost:				# a decayed particle stays in the exited block
+        print("  t=%r decayed ids missing from the exited block: %s" % (t, lc.fmt_ids(lost)))
+        ok = False
+    for pid, p in b[1].items():
+        if not 1 <= p["ie"] <= nel:
+            print("  t=%r exited id %d: element %d outside 1..%d" % (t, pid, p["ie"], nel))
+            ok = False
+        if not (math.isfinite(p["x"]) and math.isfinite(p["y"])) or not inside(p["x"], p["y"]):
+            print("  t=%r exited id %d: position %r %r not inside the basin" % (t, pid, p["x"], p["y"]))
+            ok = False
+        if pid in ext_p:
+            continue			# left the basin in the plain run too
+        if pid in first_pos:
+            if first_pos[pid] != (p["x"], p["y"], p["ie"]):
+                print("  t=%r decayed id %d moved: %r -> %r" % (t, pid, first_pos[pid], (p["x"], p["y"], p["ie"])))
+                ok = False
+        else:
+            first_pos[pid] = (p["x"], p["y"], p["ie"])
+    for pid, p in b[0].items():
+        q = mp[t][0].get(pid)
+        if q != p:
+            nbad_act += 1
+    last = t, b
+t, b = last
+ndec_last = len(set(b[1]) - set(mp[t][1]))
+print("  output times %d; at the last one (t=%r): active %d and exited %d in the decay run, active %d and exited %d in the plain run, decayed %d"
+      % (len(td), t, len(b[0]), len(b[1]), len(mp[t][0]), len(mp[t][1]), ndec_last))
+print("  decayed particles seen %d, every one at a fixed position inside the basin: %s"
+      % (len(first_pos), "yes" if ok else "NO"))
+for pid in sorted(first_pos)[:1]:
+    print("  example: id %d, exited record ie %d x %r y %r (inside: %s; the point 0,0: %s)"
+          % (pid, first_pos[pid][2], first_pos[pid][0], first_pos[pid][1],
+             inside(first_pos[pid][0], first_pos[pid][1]), inside(0.0, 0.0)))
+if ndec_last < 1:
+    print("  no decayed particle in the last output")
+    ok = False
+if nbad_act:
+    print("  active records that differ from the plain run: %d" % nbad_act)
+    ok = False
+else:
+    print("  active records of the decay run identical to the plain run")
+sys.exit(0 if ok else 1)
+EOF
+  fi
+  finish
+fi
+
+#=============================== ilagr3 (#231) =============================
+if [ "$MODE" = ilagr3 ]; then
+  sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
+      -e 's/^\(\s*\)mm_hyd_41\s*$/\1lgr_ilagr3/' "$W/mm_hyd_41.str" > "$W/lgr_ilagr3.str"
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 20000\n        nbdy = 300  idtl = 0  idtlgr = %s\n        rwhpar = 0  ipvert = -1\n$end\n' "'1h'" >> "$W/lgr_ilagr3.str"
+  grep -q "lgr_ilagr3" "$W/lgr_ilagr3.str" || fail "run name not set in lgr_ilagr3.str"
+  grep -q "tilt" "$W/lgr_ilagr3.str" && fail "tilt lines left in lgr_ilagr3.str"
+  echo "=== mm_hyd_41 (no tilt, one day) with ilagr = 3, serially"
+  run lgr_ilagr3 lgr_ilagr3.log shyfem || fail "the ilagr = 3 run did not end"
+  line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3.log")"
+  echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log}"
+  nneg="$(echo "$line" | sed -n 's/.*set to 0: *\([0-9][0-9]*\).*/\1/p')"
+  [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
+  if [ "$rc" = 0 ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
+import math, struct, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path = sys.argv[2]
+with open(path, "rb") as fh:
+    head = fh.read(4096)
+recs = []				# model header: (idshy, nvers), (ftype),
+pos = 0					# (nkn, nel, npr, nlv, nvar)
+for _ in range(3):
+    (n,) = struct.unpack_from("<i", head, pos)
+    recs.append((pos + 4, n))
+    pos += 8 + n
+if [r[1] for r in recs] != [8, 4, 20]:
+    print("  no model header in %s" % path)
+    sys.exit(1)
+nkn, nel, _npr, nlv, _nvar = struct.unpack_from("<5i", head, recs[2][0])
+_, times = lc.read_file(path)
+ok = True
+nact = 0
+for t, b, _ in times:
+    for w in lc.IWHAT_ORDER:
+        for pid, p in b[w].items():
+            vals = [p["x"], p["y"], p["z"], p["hl"], p["tt"], p["s"]] + list(p["c"])
+            if not all(math.isfinite(v) for v in vals):
+                print("  t=%r %s id %d: a value is not finite: %r" % (t, lc.BLOCK_NAME[w], pid, p))
+                ok = False
+    for pid, p in b[0].items():
+        nact += 1
+        if not 1 <= p["ie"] <= nel or not 1 <= p["lb"] <= nlv or not 0.0 <= p["z"] <= 1.0:
+            print("  t=%r active id %d: ie %d lb %d z %r outside 1..%d, 1..%d, 0..1"
+                  % (t, pid, p["ie"], p["lb"], p["z"], nel, nlv))
+            ok = False
+t, b, _ = times[-1]
+print("  output times %d (nel %d, nlv %d); last t=%r: active %d, exited %d; active records checked %d: %s"
+      % (len(times), nel, nlv, t, len(b[0]), len(b[1]), nact, "ok" if ok else "FAIL"))
+if not times or nact == 0:
+    ok = False
+sys.exit(0 if ok else 1)
+EOF
+  fi
+  # the end of the particle run between two calls of lagrange: the line of
+  # the negative diffusivities must still be written (once)
+  sed -e "s/itend = '[^']*'/itend = '2009-01-01::12:00:00'/" \
+      -e 's/^\(\s*\)lgr_ilagr3\s*$/\1lgr_ilagr3_end/' \
+      -e "s/^\(\s*\)ilagr = 3 .*/&\n        itlend = '2009-01-01::06:02:30'/" \
+      "$W/lgr_ilagr3.str" > "$W/lgr_ilagr3_end.str"
+  grep -q "itlend = '2009-01-01::06:02:30'" "$W/lgr_ilagr3_end.str" || fail "no itlend line in lgr_ilagr3_end.str"
+  echo "=== the same, 12 hours, with itlend = 06:02:30 (between two time steps of 300 s)"
+  run lgr_ilagr3_end lgr_ilagr3_end.log shyfem || fail "the ilagr = 3 run with itlend did not end"
+  n="$(grep -c 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
+  line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
+  echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log} ($n line(s))"
+  [ "$n" = 1 ] || fail "the line of the negative diffusivities is written $n times with itlend between two steps, expected once"
+  finish
+fi
+
+#=============================== grow-fail (#242) ==========================
+if [ "$MODE" = grow-fail ]; then
+  for L in export park; do
+    c=mm_lgr_a
+    [ "$L" = park ] && c=mm_lgr_e
+    with_para $c gf_$L "nomp = 4"
+    echo "=== $c on $NP processes x 4 threads, LGR_TEST_SMALL_EXPORT=1 LGR_TEST_GROW_FAIL=$L"
+    t0=$(date +%s)
+    ( cd "$W" && LGR_TEST_SMALL_EXPORT=1 LGR_TEST_GROW_FAIL=$L timeout 300 nice -n 10 \
+        mpirun --oversubscribe -np $NP -x LGR_TEST_SMALL_EXPORT -x LGR_TEST_GROW_FAIL \
+        shyfem gf_$L.str > gf_$L.log 2>&1 )
+    lrc=$?
+    log="$W/gf_$L.log"
+    echo "  exit code $lrc after $(( $(date +%s) - t0 )) s"
+    [ "$lrc" = 33 ] || fail "$L: exit code $lrc, expected 33"
+    threads gf_$L.log 4
+    grep -q "lgr_mpi_grow_$L: allocation" "$log" || fail "$L: no 'lgr_mpi_grow_$L: allocation' in the log"
+    if grep -q "lgr_mpi_list_check:" "$log"; then
+      grep "lgr_mpi_list_check:" "$log" | sort -u | head -4 | sed 's/^/  /'
+    else
+      fail "$L: no line of the check after the particle loop (lgr_mpi_list_check:)"
+    fi
+    grep -m3 "lgr_mpi_grow_$L: allocation\|REDTMP" "$log" | sed 's/^/  /'
+    if grep -q "SIGSEGV\|SIGFPE\|Fortran runtime" "$log"; then
+      fail "$L: crash line in the log"; grep -m3 "SIGSEGV\|SIGFPE\|Fortran runtime" "$log" | sed 's/^/    /'
+    fi
+    grep -q "simulation end" "$log" && fail "$L: the run ended instead of stopping"
+  done
+  finish
+fi
+
+#=============================== small-export (#242) =======================
+if [ "$MODE" = small-export ]; then
+  for c in mm_lgr_a mm_lgr_e; do
+    # se_${c}_t4 (4 threads, hook), _t1 (1 thread, hook), _t1n (1 thread,
+    # no hook), _t4d (4 threads, hook, levdbg = 3)
+    with_para $c se_${c}_t4x "nomp = 4"; with_line se_${c}_t4x se_${c}_t4 para "levdbg = 2"
+    with_para $c se_${c}_t1x "nomp = 1"; with_line se_${c}_t1x se_${c}_t1 para "levdbg = 2"
+    with_line se_${c}_t1x se_${c}_t1n para "levdbg = 2"
+    with_line se_${c}_t4x se_${c}_t4d para "levdbg = 3"
+    echo "=== $c on $NP processes, LGR_TEST_SMALL_EXPORT=1, levdbg = 2: 4 threads, 1 thread; 1 thread without the hook"
+    for v in t4 t1 t1n t4d; do		# the levdbg line of each run
+      want=2; [ $v = t4d ] && want=3
+      if grep -q "^ *levdbg = $want\s*$" "$W/se_${c}_$v.str"; then echo "  se_${c}_$v.str: levdbg = $want"
+      else fail "$c $v: no 'levdbg = $want' line in se_${c}_$v.str"
+      fi
+    done
+    for v in t4 t1 t4d; do
+      run se_${c}_$v se_${c}_$v.log env LGR_TEST_SMALL_EXPORT=1 \
+        mpirun --oversubscribe -np $NP -x LGR_TEST_SMALL_EXPORT shyfem || fail "$c $v: the run did not end"
+    done
+    run se_${c}_t1n se_${c}_t1n.log mpirun --oversubscribe -np $NP shyfem || fail "$c t1n: the run did not end"
+    threads se_${c}_t4.log 4
+    threads se_${c}_t1.log 1
+    for v in t4 t1 t1n t4d; do
+      n="$(grep -c 'lgr_mpi_check_consistency' "$W/se_${c}_$v.log")"
+      if [ "$n" -gt 0 ]; then fail "$c $v: consistency check wrote $n lines"
+      else echo "  se_${c}_$v.log: consistency check silent"
+      fi
+    done
+    for v in t1 t1n; do
+      a="$W/se_${c}_t4.lgr.shy"; b="$W/se_${c}_$v.lgr.shy"
+      if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$c: particle file missing (t4 or $v)"
+      elif cmp -s "$a" "$b"; then echo "  $c: particle file of 4 threads (hook) identical to $v ($(stat -c %s "$a") bytes)"
+      else fail "$c: particle file of 4 threads (hook) differs from $v"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+      fi
+    done
+    ng="$(grep -c 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log")"
+    nw="$(grep 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log" | grep -vc 'OpenMP thread *0$')"
+    echo "  $c, 4 threads at levdbg = 3: $ng growths of the lists, $nw of them made by an OpenMP thread other than 0"
+    grep 'lgr_mpi_grow_\(export\|park\): rank' "$W/se_${c}_t4d.log" | head -3 | sed 's/^/   /'
+    [ "$ng" -gt 0 ] || fail "$c: no growth of the lists at levdbg = 3"
+  done
+  finish
+fi

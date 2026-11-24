@@ -450,13 +450,18 @@
 ! the program does not check, if the value of xe
 ! is in the bounds of x(1) - x(nmax)
 ! eventually an extrapolated value is returned in exxpp
+!
+! x and y have their length nmax (they were declared x(1), y(1), the old
+! idiom for any length, which a bounds-checked build takes literally);
+! nmax must be at least nintp, so that the window x(nanf:nanf+nintp-1)
+! passed to intp_neville lies inside 1..nmax
 
 	implicit none
 
 	real exxpp	!extrapolated values
 	integer nintp	!number of values to use (4 for cubic, 2 for linear)
 	integer nmax	!length of data arrays
-        real x(1),y(1)	!data arrays
+        real x(nmax),y(nmax)	!data arrays
 	real xe		!x-value for which y-value has to be interpolated
 	integer iact	!element closest to xe (of last call on entry)
 			!must be 0 for initialization

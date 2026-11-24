@@ -1278,7 +1278,9 @@ $end
 
 Particles can also be released at open boundaries using `lgrpps` in the boundary section.
 
-Lagrangian particle tracking runs on several MPI processes for the core options (see section 9.6): surface and layer tracking (`ilagr` 1 and 2), the horizontal random walk with a fixed diffusivity (`rwhpar` of 0 or more), Stokes drift (`stkpar`), release in polygons (`lgrlin`) or over the whole basin, and the particle file. Every other option stops the run at start-up on more than one process, with the message `Lagrangian option NAME is not supported with MPI`; run on one process or remove the option. The example above uses `ilagr = 1`; `ilagr = 3` is one of the options that stop, and a serial run with it crashed in the test cases (#231).
+With `ldecay` above 0 particles decay at random as they age: at every time step a particle decays when a random number exceeds exp(-age/`ldecay`), with its age in seconds since its release. The test is made at every step, so the survival depends on the time step as well as on `ldecay`: in the Mar Menor test case `mm_lgr_a` (`idt = 300`, `ldecay = 86400`) a fifth of the particles have decayed after one hour and all of them after five hours. A decayed particle is no longer tracked; it keeps its last element and is written in the exited block of the particle file at its last position at every output, as a particle that left the basin (before #226 a run with decay crashed at the first output after a particle decayed).
+
+Lagrangian particle tracking runs on several MPI processes for the core options (see section 9.6): surface and layer tracking (`ilagr` 1 and 2), the horizontal random walk with a fixed diffusivity (`rwhpar` of 0 or more), Stokes drift (`stkpar`), release in polygons (`lgrlin`) or over the whole basin, and the particle file. Every other option stops the run at start-up on more than one process, with the message `Lagrangian option NAME is not supported with MPI`; run on one process or remove the option. The example above uses `ilagr = 1`; `ilagr = 3` is one of the options that stop. A serial run with `ilagr = 3` no longer stops in its first particle step (#231): the vertical diffusivity at a particle is now interpolated between the layer interfaces of its element down to the bottom. Until then the bottom interface was not used, so in the bottom layer the diffusivity was extrapolated from the two interfaces above (it could turn negative and stop the run), and an element with one layer read outside the arrays. Results of `ilagr = 3` runs change for particles in the bottom layer.
 
 ### 7.17 Water Renewal Time
 
@@ -1568,7 +1570,7 @@ The hand-over of a particle between processes by its position assumes that neigh
 
 - `-fopenmp` must be in link flags unconditionally (some `omp_*` calls exist even without OpenMP enabled)
 - Intel MPI's `mpi.mod` is incompatible with gfortran — always use OpenMPI with gfortran
-- Hybrid MPI+OpenMP is not recommended (MPI initialized with `MPI_THREAD_SERIALIZED`)
+- Hybrid MPI+OpenMP is not recommended (MPI initialized with `MPI_THREAD_FUNNELED`: only the main thread may make MPI calls)
 - Stack overflow with MPI: run `ulimit -s unlimited` before execution
 
 ---

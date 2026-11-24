@@ -74,9 +74,6 @@
         logical, intent(out)    :: bpark        !parked in this call
 
         real                    :: ttime
-        integer, save           :: icall = 0    !initialization parameter
-        logical, save           :: bsphe
-        integer                 :: isphe
 	integer			:: k,ii
 	real			:: wx,wy
         real                    :: dx,dy
@@ -86,16 +83,12 @@
         double precision        :: dlat0,dlon0  !center of projection
 
 !---------------------------------------------------------------
-! initialize
+! initialize (the type of coordinates, blgr_sphe, is set once by
+! lagr_init_common before the first particle loop: this routine runs
+! inside the OpenMP loop of drogue and writes no saved variable, #243)
 !---------------------------------------------------------------
 
 	bpark = .false.
-
-        if( icall == 0 ) then
-          call get_coords_ev(isphe)
-          bsphe = isphe .eq. 1
-          icall = 1
-        end if
 
 	if( bresume ) then		!parked: resumes after the search
 	  xnew = lgr_park_xy(3,i)
@@ -139,7 +132,7 @@
         xnew = x + dx
         ynew = y + dy
 
-        if ( bsphe ) then
+        if ( blgr_sphe ) then
            ddx = dx
            ddy = dy
            dlon0 = x

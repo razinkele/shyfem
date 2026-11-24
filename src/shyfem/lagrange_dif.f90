@@ -376,6 +376,7 @@
 	real			:: wdzp		!vertical diffusivity at zp
 	double precision	:: dwd		!first derivative of diffusivity 
         integer 		:: iact         !element closest to xe
+        integer 		:: nmax         !points given to exxpp
         real 			:: exxpp        !extrapolated values
 	real			:: rs		!random number per sigma
 
@@ -416,9 +417,30 @@
 	zp = min(zp,htotz)
 	zp = max(zp,0.)
 
-	wdr = wde(0:lmax,iel)
+	! exxpp is given the nmax = lmax + 1 interfaces hle(0:lmax) of the
+	! element, from the surface to the bottom, with the diffusivities
+	! wdr(0:lmax) there, and interpolates linearly between the two
+	! interfaces around zp (0 <= zp <= htotz = hle(lmax)). Until #231 it
+	! was given nmax = lmax: the bottom interface was not used, so in the
+	! bottom layer the diffusivity was extrapolated from the two
+	! interfaces above (it could be negative, and its square root below
+	! stopped the run), and in an element with one layer the window
+	! started one point before hle(0) and read the words before hle and
+	! wdr (a division by zero in intp_neville)
+	nmax = lmax + 1
+	wdr(0:lmax) = wde(0:lmax,iel)
 	iact = 0
-	wdzp = exxpp(2,lmax,hle,wdr,zp,iact)
+	wdzp = exxpp(2,nmax,hle,wdr,zp,iact)
+
+	! guard: an interpolation between the non-negative diffusivities of
+	! two interfaces is not negative; a negative value (none in the test
+	! cases; counted in lgr_nvdiff_neg and written at the end of the
+	! particle run by lgr_vdiff_stats) is taken as 0, no random step
+	if( wdzp < 0. ) then
+!$OMP ATOMIC
+	  lgr_nvdiff_neg = lgr_nvdiff_neg + 1
+	  wdzp = 0.
+	end if
 
 	!-----------------------------------------------
 	! compute vertical velocity due to diffusion
@@ -440,6 +462,30 @@
 
         end subroutine diff_get_vert
 
+
+!******************************************************************
+
+        subroutine lgr_vdiff_stats
+
+! writes once, at the end of the particle run, how often diff_get_vert
+! set a negative interpolated vertical diffusivity to 0 (#231); only in
+! a run with vertical diffusion (ilagr = 3, a serial run: ilagr = 3 stops
+! on several processes). Called by lagrange outside any parallel region:
+! after the step that reaches dtlend and at the first call after it (when
+! no step ends exactly at dtlend); bdone keeps the second call silent
+
+        use mod_lagrange
+
+        implicit none
+
+        logical, save :: bdone = .false.
+
+        if( bdone .or. .not. bvdiff ) return
+        bdone = .true.
+        write(6,'(a,i0)') ' lgr vertical diffusion: negative'		&
+     &		//' diffusivities set to 0: ',lgr_nvdiff_neg
+
+        end subroutine lgr_vdiff_stats
 
 !******************************************************************
 ! Compute vertical diffusivity in element and random walk time step
@@ -555,19 +601,14 @@
         real				:: dx,dy !random displacement
 	real				:: xnew,ynew
         integer				:: ieold,ienew
-        integer, save			:: icall = 0	!initialization parameter
-        logical, save 			:: bsphe
-        integer       			:: isphe
         double precision 		:: ddx,ddy,xc,yc
         double precision 		:: dlat0,dlon0  !center of projection
 
-	bpark = .false.
+	! the type of coordinates, blgr_sphe, is set once by lagr_init_common
+	! before the first particle loop: this routine runs inside the OpenMP
+	! loop of drogue and writes no saved variable (#243)
 
-	if( icall == 0 ) then
-          call get_coords_ev(isphe)
-          bsphe = isphe .eq. 1
-	  icall = 1
-	end if
+	bpark = .false.
 
         if( iel <= 0 ) return     !particle out of domain
 
@@ -599,8 +640,8 @@
         xnew = x + dx
         ynew = y + dy
 
-        if ( bsphe ) then
-           ddx = dx 
+        if ( blgr_sphe ) then
+           ddx = dx
 	   ddy = dy
            dlon0 = x
            dlat0 = y
