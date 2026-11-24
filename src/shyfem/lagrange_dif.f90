@@ -70,6 +70,10 @@
 ! (lag_diff_hor_resume), and the statements after it run as for any
 ! other particle. Parking happens only on several processes, where
 ! ilagr is 1 or 2 (ilagr = 3 stops there) and so bvdiff is false.
+!
+! an internal-error guard recorded inside the particle loop (#256:
+! lgr_internal_error, then lgr_internal_failed is true) returns at once;
+! the warning counters nk, nl, nu are shared by the threads (OMP atomic)
 
         use mod_lagrange
         use basin
@@ -96,6 +100,8 @@
         double precision 	:: xx,yy,zz
 
         integer			:: ndraw	!vertical draws made (#225)
+        integer			:: nc		!the counter after this particle
+        logical			:: lgr_internal_failed
 
         integer, save 		:: nk = 0
         integer, save 		:: nl = 0
@@ -104,8 +110,11 @@
 	bpark = .false.
 
 	if( bresume ) then		!parked: no vertical step (bvdiff false)
-	  if( bvdiff ) call shympi_abort_internal(			&
+	  if( bvdiff ) then
+	    call lgr_internal_error(					&
      &		'diff_body: a parked particle with vertical diffusion')
+	    return			!recorded in the loop
+	  end if
 	else
           if( iel <= 0 .or. ty < 0) return     !particle out of domain or beached
 	end if
@@ -135,6 +144,7 @@
             n = n - 1                   !decrement loop counter
           end do
           z = zz 
+          if( lgr_internal_failed() ) return	!recorded in the loop
         end if
 
 !---------------------------------------------------------------
@@ -159,20 +169,29 @@
 
         if( bvdiff .and.  dtime > 0. ) then     !not finished diffusing
           if( n == 0 ) then
+!$OMP ATOMIC CAPTURE
             nk = nk + 1
+            nc = nk
+!$OMP END ATOMIC
             perc = 0.
-            if( idbdy > 0 ) perc = (100.*nk)/idbdy
+            if( idbdy > 0 ) perc = (100.*nc)/idbdy
             write(6,1000) 'warning particle dif',id,iel,n,dtime,perc
             !iel = -iel
           else if( iel < 1 ) then
+!$OMP ATOMIC CAPTURE
             nl = nl + 1
+            nc = nl
+!$OMP END ATOMIC
             perc = 0.
-            if( idbdy > 0 ) perc = (100.*nl)/idbdy
+            if( idbdy > 0 ) perc = (100.*nc)/idbdy
             write(6,1000) 'loosing particle dif',id,iel,n,dtime,perc
           else
+!$OMP ATOMIC CAPTURE
             nu = nu + 1
+            nc = nu
+!$OMP END ATOMIC
             perc = 0.
-            if( idbdy > 0 ) perc = (100.*nu)/idbdy
+            if( idbdy > 0 ) perc = (100.*nc)/idbdy
             write(6,1000) 'unknown error dif',id,iel,n,dtime,perc
           end if
         end if
@@ -202,6 +221,10 @@
 
 ! the random draws are the particle's own (#225): lgr_random keyed on id,
 ! the time step and the site lgr_rnd_vdiff, numbered by ndraw
+!
+! an internal-error guard recorded inside the particle loop (#256:
+! lgr_internal_error here or in diff_get_vert) returns time = 0 (the
+! caller's loop ends) with defined values; the run stops after the loop
 
 	use mod_lagrange
 	use mod_lagrange_random, only : lgr_random, lgr_rnd_vdiff
@@ -229,6 +252,7 @@
 	logical 			:: bsurf,bbott
 	integer 			:: lmax
 	integer 			:: lborig
+	logical				:: lgr_internal_failed
 
 	blgrdebug = id == 0
 	bdebug = blgrdebug
@@ -236,6 +260,10 @@
 	lborig = lb
 
         call diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd,ndraw)
+	if( lgr_internal_failed() ) then	!recorded in the loop (#256)
+	  time = 0.
+	  return
+	end if
 	w = wd					!vertical velocity due to diffusion
 
 	!-----------------------------------------------
@@ -346,7 +374,11 @@
 	  write(6,*) 'tv,t ',tv,t
 	  write(6,*) 'dz,w,hd: ',dz,w,hd
 	  write(6,*) 'z,lb,lmax ',z,lb,lmax
-	  stop 'error stop lgr_diff_vert: internal error (2)'
+	  call lgr_internal_error(					&
+     &		'error stop lgr_diff_vert: internal error (2)')
+	  z = min(max(z,0.d0),1.d0)	!recorded in the loop
+	  time = 0.
+	  return
 	end if
 
 	!-----------------------------------------------
@@ -365,6 +397,8 @@
 
 ! the random draws are the particle's own (#225): lgr_random keyed on id,
 ! the time step and the site lgr_rnd_vdiff, numbered by ndraw
+!
+! the guard of the layer goes through lgr_internal_error (#256)
 
         use levels, only : nlvdi,nlv
         use basin
@@ -415,7 +449,12 @@
 
         if( lb > lmax ) then
           write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
-          stop 'error stop diff_get_vert: no such layer'
+          call lgr_internal_error(					&
+     &		'error stop diff_get_vert: no such layer')
+          dt = 0.			!recorded in the loop (#256): defined
+          hd = hl(lmax)			!values, the caller stops the particle
+          wd = 0.d0
+          return
         end if
 
 	!-----------------------------------------------

@@ -157,6 +157,10 @@
 	subroutine lagr_layer_thickness(ie,lmax,hl,htot,htotz)
 
 ! computes layer thickness for element ie
+!
+! the guard goes through lgr_internal_error (#256): recorded inside the
+! particle loop, the layers are limited to the dimension (defined values
+! for the caller; the run stops after the loop)
 
 	use mod_depth
 	use mod_hydro
@@ -181,8 +185,9 @@
 	lmax_act = ilhv(ie)
 	if( lmax_act > lmax .or. lmax_act > nlev ) then
 	  write(6,*) 'nlev,lmax,lmax_act: ',nlev,lmax,lmax_act
-	  call shympi_abort_internal(					&
+	  call lgr_internal_error(					&
      &		'error stop lagr_layer_thickness: incompatible layers')
+	  lmax_act = min(lmax_act,lmax,nlev)	!recorded in the loop
 	end if
 	lmax = lmax_act
 
@@ -285,6 +290,11 @@
 ! table lgr_ieltv <= -1000) and goes on on another process, the side of
 ! the element it started in (iel is then -that element, xi its position on
 ! the side, as at an open boundary); 0 otherwise
+!
+! an internal-error guard recorded inside the particle loop (#256: by
+! lgr_internal_error here or in a routine called here, then
+! lgr_internal_failed is true) ends the call with time = 0 and the values
+! the particle has (all defined); the run stops after the loop
 
 	use mod_lagrange
 
@@ -313,6 +323,7 @@
 	double precision xie(3)
 
 	logical track_xi_on_material_boundary
+	logical lgr_internal_failed
 
 	icut = 0			!before the first return
 	blgrdebug = id == 0
@@ -329,6 +340,10 @@
 	!-----------------------------------------------
 
 	call track_xi_get_vertical(id,iel,lb,lmax,hd,w)
+	if( lgr_internal_failed() ) then	!recorded in the loop (#256)
+	  time = 0.
+	  return
+	end if
 	w = w - sv				!total vertical velocity
 
 	!-----------------------------------------------
@@ -471,8 +486,10 @@
 	  if( s > 1. ) then
 	    write(6,*) 's,t,th: ',s,t,th
 	    write(6,*) 'ds,sorig: ',ds,s-ds
-	    call shympi_abort_internal(					&
+	    call lgr_internal_error(					&
      &		'error stop track_xi: internal error (3)')
+	    time = 0.			!recorded in the loop
+	    return
 	  end if
 	  xi = (1.-s)*xis + s*xie
 	  call track_xi_check('after advection track_xi 1',id,xi)
@@ -498,6 +515,10 @@
 	end if
 
 	call track_xi_check('after advection track_xi',id,xi)
+	if( lgr_internal_failed() ) then	!recorded in the loop (#256)
+	  time = 0.
+	  return
+	end if
 
 	if( bdebug ) then
 	  write(6,*) 'after horizontal advection'
@@ -563,7 +584,10 @@
 	  write(6,*) 'tv,t ',tv,t
 	  write(6,*) 'dz,w,hd: ',dz,w,hd
 	  write(6,*) 'z,lb,lmax ',z,lb,lmax
-	  call shympi_abort_internal('error stop track_xi: internal error (2)')
+	  call lgr_internal_error('error stop track_xi: internal error (2)')
+	  z = min(max(z,0.d0),1.d0)	!recorded in the loop
+	  time = 0.
+	  return
 	end if
 
 	!-----------------------------------------------
@@ -583,6 +607,11 @@
 ! with ie = -ie and xi on that side of the old element; iside returns the
 ! side used (for a particle on a vertex the one of the vertex pick), so
 ! that the caller can tell a cut-off side from the others
+!
+! a guard recorded inside the particle loop (lgr_internal_error, #256)
+! returns ie = -ie (the particle leaves the domain) and iside = 0; the
+! caller stops the particle (lgr_internal_failed), the run stops after the
+! loop
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_ieltv
@@ -656,8 +685,10 @@
 	  write(6,*) 'xi not on side or impossible'
 	  write(6,*) ie,in,it
 	  write(6,*) xi
-	  call shympi_abort_internal(					&
+	  call lgr_internal_error(					&
      &		'error stop track_xi_next_element: erroneous xi')
+	  ie = -ie			!recorded in the loop
+	  return
 	end if
 
 	!---------------------------------------
@@ -667,8 +698,10 @@
 	if( xi(ia1) /= 0. .or. abs(xi(ia2)+xi(ia3)-1.) > eps ) then
 	  write(6,*) ie,in,it,ia1
 	  write(6,*) xi
-	  call shympi_abort_internal(					&
+	  call lgr_internal_error(					&
      &		'error stop track_xi_next_element: erroneous xi sanity')
+	  ie = -ie			!recorded in the loop
+	  return
 	end if
 
 	!---------------------------------------
@@ -697,8 +730,11 @@
 	  write(6,*) ie,in,it,ia1,ieb
 	  write(6,*) xi
 	  write(6,*) (lgr_ieltv(ii,ieb),ii=1,3)
-	  call shympi_abort_internal(					&
+	  call lgr_internal_error(					&
      &		'error stop track_xi_next_element: erroneous ieltv')
+	  ie = -ie			!recorded in the loop
+	  iside = 0
+	  return
 	end if
 
 	!---------------------------------------
@@ -1163,8 +1199,11 @@
 
 	if( lb > lmax ) then
 	  write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
-	  call shympi_abort_internal(					&
+	  call lgr_internal_error(					&
      &		'error stop track_xi_get_vertical: no such layer')
+	  hd = hl(lmax)			!recorded in the loop (#256): defined
+	  w = 0.			!values, the caller stops the particle
+	  return
 	end if
 
 	hd = hl(lb)
@@ -1210,7 +1249,9 @@
 	  write(6,*) text
 	  write(6,*) id
 	  write(6,*) xi
-	  call shympi_abort_internal('error stop track_xi_check: wrong xi')
+	  ! recorded inside the particle loop (#256): the caller stops the
+	  ! particle (lgr_internal_failed); elsewhere it aborts at once
+	  call lgr_internal_error('error stop track_xi_check: wrong xi')
 	end if
 
 	end

@@ -193,6 +193,22 @@
 ! continuous release - works both for pps and ppv
 !
 ! replaces the routines above
+!
+! along a level or flux boundary the particles are released on the sides
+! of the basin boundary between consecutive nodes of kbound. Two
+! consecutive nodes that are not the ends of such a side (the list leaves
+! out boundary nodes between them: the side joining them is an inner side
+! of the mesh, or no side joins them; the Mar Menor sea boundary of the
+! test cases leaves out the nodes 13 and 14) are skipped: no particles
+! are released between them and, for lgrpps > 0, their distance is left
+! out of the length the release is spread over, so the boundary releases
+! the particles per second it is given. The first call writes a warning
+! for every pair skipped, and stops the run if a boundary with lgrpps has
+! two nodes or more and no side of the basin boundary between them
+! (lgr_release_line, #254). The hydrodynamics runs with such a list (the
+! Mar Menor cases do; the open boundary, bndo, only needs every node to
+! have a neighbour on the basin boundary in the list), so it is not
+! rejected
 
 	use mod_lagrange
 	use mod_lagrange_random, only : lgr_random_release
@@ -203,13 +219,19 @@
 	integer ibc,nk,i,ibtyp,np
 	real totdist,dxy,part,dt
 
-	logical bflux
+	logical bflux,bfirst
 	integer nbnds,nkbnds,kbnds,nbc
 	integer iptot
+	integer ie,ne
 	real rp,pps,q
 
 	real dist_node
 	real get_bflux_ppv
+
+	integer, save :: icall = 0
+
+	bfirst = ( icall == 0 )		!warnings of lgr_release_line
+	icall = 1
 
 	call get_timestep(dt)
 
@@ -227,13 +249,15 @@
 	  if( pps .gt. 0. ) then
 	   if( ibtyp .eq. 1 .or. ibtyp .eq. 2 ) then	!level or flux bnds
 
-	    call dist_total(ibc,totdist)
+	    call lgr_release_line(ibc,bfirst,totdist)
 
 	    iptot = 0
 	    rp = lgr_random_release()	! vary starting point of particles
 	    do i=2,nk
 	      k1 = kbnds(ibc,i-1)
 	      k2 = kbnds(ibc,i)
+	      call lgr_segment_elem(k1,k2,ie,ne)
+	      if( ne /= 1 ) cycle	!no side of the basin boundary: skipped
 	      if( bflux ) then
 		q = get_bflux_ppv(k1,k2)
 	      else
@@ -282,7 +306,8 @@
 	subroutine lgr_selftest_segments
 
 ! self-test of find_elems_to_segment (the elements of a boundary segment of
-! the continuous release, create_parts and get_bflux_ppv) at levdbg >= 3,
+! the continuous release: create_parts, get_bflux_ppv and lgr_release_line
+! take them through lgr_segment_elem, #254) at levdbg >= 3,
 ! called once by lgr_mpi_init on every process (its own part of the mesh):
 ! check_elems_to_segment compares the elements it gives for every side of
 ! every element, in both directions, with the elements of the two nodes
@@ -319,6 +344,10 @@
 ! the place on the segment and the time in the step are the draws of the
 ! particle(s) insert_particle_3d releases next (#225): lgr_random keyed on
 ! the first id it gives (idbdy+1; continuous release is serial only)
+!
+! k1-k2 must be a side of the basin boundary; the particles start in its
+! element (lgr_segment_elem, #254). lagr_continuous_release_pps_ppv
+! passes no other pair, so the stop is an internal error
 
 	use basin
 	use mod_lagrange, only : idbdy
@@ -327,12 +356,14 @@
 
 	implicit none
 
-	integer ity
-	integer np,k1,k2
+	integer, intent(in) :: ity		!type of the particles
+	integer, intent(in) :: np		!number of particles
+	integer, intent(in) :: k1,k2		!nodes of the side
 
-	integer i,ie1,ie2
+	integer i,ie1,ne
 	real x1,y1,x2,y2,dx,dy
 	real rl,rt,x,y
+	integer ipext
 
 	if( np .le. 0 ) return
 
@@ -344,10 +375,12 @@
 	dx = x2 - x1
 	dy = y2 - y1
 
-	call find_elems_to_segment(k1,k2,ie1,ie2)
-	if( ie1 .eq. 0 .or. ie2 .ne. 0 ) then
-	  write(6,*) k1,k2,ie1,ie2
-	  stop 'error stop create_parts: error in boundary'
+	call lgr_segment_elem(k1,k2,ie1,ne)
+	if( ne /= 1 ) then
+	  write(6,*) 'create_parts: nodes ',ipext(k1),ipext(k2)		&
+     &		,' elements with both nodes ',ne
+	  call shympi_abort_internal('error stop create_parts: error in'	&
+     &		//' boundary')
 	end if
 	  
 	!write(6,*) 'create_parts: ',np,k1,k2,ie1
@@ -367,26 +400,36 @@
 
 	function get_bflux_ppv(k1,k2)
 
+! flux into the basin over the side k1-k2 of the basin boundary: flux2d
+! of its element (lgr_segment_elem, #254) over the side opposite the
+! vertex that is neither k1 nor k2, whichever way the list runs.
+! lagr_continuous_release_pps_ppv passes no other pair, so the stop is an
+! internal error
+
 	use mod_lagrange
-	use mod_geom
+	use basin, only : nen3v
 
 	implicit none
 
 	real get_bflux_ppv
-	integer k1,k2
+	integer, intent(in) :: k1,k2		!nodes of the side
 
-	integer ie1,ie2,ii
+	integer ie1,ne,ii,i
+	integer ipext
 
-	integer inext
+	call lgr_segment_elem(k1,k2,ie1,ne)
 
-	call find_elems_to_segment(k1,k2,ie1,ie2)
-
-	if( ie1 .eq. 0 .or. ie2 .ne. 0 ) then
-	  write(6,*) 'k1,k2,ie1,ie2: ',k1,k2,ie1,ie2
-	  stop 'error stop get_bflux_ppv: nodes not at boundary'
+	if( ne /= 1 ) then
+	  write(6,*) 'get_bflux_ppv: nodes ',ipext(k1),ipext(k2)		&
+     &		,' elements with both nodes ',ne
+	  call shympi_abort_internal('error stop get_bflux_ppv: nodes'	&
+     &		//' not at boundary')
 	end if
 
-	ii = inext(k2,ie1)
+	ii = 0
+	do i=1,3
+	  if( nen3v(i,ie1) /= k1 .and. nen3v(i,ie1) /= k2 ) ii = i
+	end do
 
 	get_bflux_ppv = flux2d(ii,ie1)
 	
@@ -447,13 +490,15 @@
 	    kk = nen3v(ii,ie)
 	    if( kk .eq. k ) then
 	      n = n + 1
-	      if( n > ngr ) stop 'error stop find_elem_to_node: internal'
+	      if( n > ngr ) call shympi_abort_internal(			&
+     &		'error stop find_elem_to_node: internal')
 	      ielist(n) = ie
 	    end if
 	  end do
 	end do
 
-	if( n == 0 ) stop 'error stop find_elem_to_node: internal 2'
+	if( n == 0 ) call shympi_abort_internal(				&
+     &		'error stop find_elem_to_node: internal 2')
 
 	i = 1 + n*lgr_random_release()
 	if( i > n ) i = n
@@ -474,7 +519,8 @@
 	  end if
 	end do
 
-	if( n /= 1 ) stop 'error stop find_elem_to_node: internal 3'
+	if( n /= 1 ) call shympi_abort_internal(				&
+     &		'error stop find_elem_to_node: internal 3')
 
 	xs = xs / 2.
 	ys = ys / 2.
@@ -516,6 +562,98 @@
 	  call insert_particle_3d(ie,ity,rt,x,y)
 	  !write(55,*) 'gguuyy particle: ',ie,rt,x,y
 	end do
+
+	end
+
+!*******************************************************************
+
+	subroutine lgr_segment_elem(k1,k2,ie,ne)
+
+! what the pair of nodes k1, k2 (internal numbers) is for the release: ne
+! elements of the basin have both nodes, 0 if no side joins them, 1 if
+! k1-k2 is a side of the basin boundary (ie is then its element), 2 if it
+! is an inner side; ie = 0 unless ne = 1 (#254). The elements come from
+! find_elems_to_segment (fixed by #252 and checked at levdbg >= 3 by
+! lgr_selftest_segments), which gives one element at a boundary side, two
+! at an inner side and none if no side joins the nodes; this routine only
+! counts them
+
+	implicit none
+
+	integer, intent(in) :: k1,k2		!nodes of the segment
+	integer, intent(out) :: ie		!element of a boundary side, else 0
+	integer, intent(out) :: ne		!elements with both nodes
+
+	integer ie1,ie2
+
+	call find_elems_to_segment(k1,k2,ie1,ie2)
+
+	ne = 0
+	if( ie1 /= 0 ) ne = ne + 1
+	if( ie2 /= 0 ) ne = ne + 1
+	ie = 0
+	if( ne == 1 ) ie = max(ie1,ie2)
+
+	end
+
+!*******************************************************************
+
+	subroutine lgr_release_line(ibc,bwarn,totdist)
+
+! the length totdist of the sides of the basin boundary between
+! consecutive nodes of the level or flux boundary ibc (a pair of nodes
+! that is not the two ends of such a side is left out, lgr_segment_elem).
+! With bwarn (the first call of the release) it writes a warning for each
+! pair left out (external node numbers), and stops the run with a clear
+! message if the boundary has two nodes or more and no pair is a side of
+! the basin boundary: nothing could be released on it (#254). The sum
+! runs over the nodes in their order, so a list made of sides of the
+! basin boundary gives the length dist_total gave before
+
+	implicit none
+
+	integer, intent(in) :: ibc		!boundary
+	logical, intent(in) :: bwarn		!write the warnings, check
+	real, intent(out) :: totdist		!length of the boundary sides
+
+	integer nk,i,k1,k2,ie,ne,nside
+	integer nkbnds,kbnds,ipext
+	real dist_node
+
+	nk = nkbnds(ibc)
+
+	totdist = 0.
+	nside = 0
+	do i=2,nk
+	  k1 = kbnds(ibc,i-1)
+	  k2 = kbnds(ibc,i)
+	  call lgr_segment_elem(k1,k2,ie,ne)
+	  if( ne == 1 ) then
+	    totdist = totdist + dist_node(k1,k2)
+	    nside = nside + 1
+	  else if( bwarn ) then
+	    write(6,'(a,i0,a,i0,a,i0,a)') ' warning lagrange: boundary ',ibc	&
+     &		,' with lgrpps: nodes ',ipext(k1),' and ',ipext(k2)		&
+     &		,' of kbound are not the ends of one side of the basin'	&
+     &		//' boundary'
+	    if( ne == 2 ) then
+	      write(6,'(a)') '   (they are joined by an inner side: the list'	&
+     &		//' leaves out the boundary nodes between them);'
+	    else
+	      write(6,'(a)') '   (no side joins them);'
+	    end if
+	    write(6,'(a)') '   no particles are released between them, lgrpps'	&
+     &		//' applies to the other sides of the list'
+	  end if
+	end do
+
+	if( bwarn .and. nk > 1 .and. nside == 0 ) then
+	  write(6,'(a,i0,a)') ' lagrange: boundary ',ibc,' has lgrpps but no'	&
+     &		//' side of the basin boundary between consecutive nodes'	&
+     &		//' of kbound: nothing can be released on it'
+	  call shympi_abort_internal('error stop lgr_release_line: no'	&
+     &		//' boundary side to release on')
+	end if
 
 	end
 

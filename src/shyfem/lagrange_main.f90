@@ -549,7 +549,7 @@
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_global_count
-	use mod_lagrange_mpi, only : lgr_mpi_list_check
+	use mod_lagrange_mpi, only : lgr_mpi_list_check, lgr_omp_loop
 	use shympi, only : my_id, shympi_is_parallel
 
 	implicit none
@@ -591,6 +591,11 @@
 
         tempo = openmp_get_wtime()
 
+	! inside the loop an internal-error guard of the tracker records its
+	! failure instead of aborting when the loop runs on several threads
+	! (lgr_internal_error, #256)
+	lgr_omp_loop = .true.
+
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i,it)
 
 	do i=1,nbdy
@@ -601,9 +606,12 @@
 
 !$OMP END PARALLEL DO
 
-	! a failure of the hand-over lists found inside the loop (a worker
-	! thread must not call MPI_ABORT) stops the run here, on the main
-	! thread, before the first collective call (#242); a no-op otherwise
+	lgr_omp_loop = .false.
+
+	! a failure of the hand-over lists or an internal-error guard of the
+	! tracker found inside the loop (a worker thread must not call
+	! MPI_ABORT) stops the run here, on the main thread, before the first
+	! collective call (#242, #256); a no-op otherwise
 	call lgr_mpi_list_check('drogue, after the particle loop')
 
         tempo = openmp_get_wtime() - tempo
@@ -629,8 +637,14 @@
 	subroutine track_single(i,dt,dtime)
 
 ! advection of particles: advection, then everything after it
+!
+! after an internal-error guard of the tracker was recorded in the
+! particle loop (lgr_internal_failed, #256) the remaining particles of
+! the loop are skipped and the particle that hit it is not finished: the
+! run stops after the loop (lgr_mpi_list_check)
 
 	use mod_lagrange
+	use mod_lagrange_mpi, only : lgr_test_internal, lgr_mpi_test_internal
         use mod_geom_dynamic, only : iwegv
         use levels, only : nlv
 
@@ -645,12 +659,15 @@
         integer lmax                    !maximum layers in element (return)
         real hl(nlv)
         real htot,htotz
+	logical lgr_internal_failed
 
 !       call lagr_func(i) !lcust in str varying the variable typ(i) to check
 !	call lagr_surv(i)
 
 	lgr_ncross(i) = 0		!no crossing unless track_body_xi runs
 	lgr_marked(i) = 0		!not handed over unless the tracker marks it
+
+	if( lgr_internal_failed() ) return	!the run stops after the loop
 
 !---------------------------------------------------------------
 ! Get particle properties
@@ -673,8 +690,11 @@
 !---------------------------------------------------------------
 
 	tmax = dtime - lgr_ar(i)%actual%time
-	if( tmax .lt. 0. ) call shympi_abort_internal			&
-     &		('error stop drogue: internal error')
+	if( lgr_test_internal ) call lgr_mpi_test_internal(tmax) !test hook
+	if( tmax .lt. 0. ) then
+	  call lgr_internal_error('error stop drogue: internal error')
+	  return			!recorded in the loop: left out
+	end if
 	ttime = min(tmax,dt) 		!residual time for particle
 
 	t_left = ttime
@@ -688,6 +708,7 @@
 !---------------------------------------------------------------
 
 	call track_advect(i,t_left,n_left,dtime)
+	if( lgr_internal_failed() ) return	!the run stops after the loop
 	if( lgr_marked(i) == 0 ) call track_finish(i,0,dtime)
 
 	end	
@@ -901,6 +922,10 @@
 ! in the new element. The statements after the loop (crossing count, lost
 ! particle message, arrival flip) run on the process where the advection
 ! ends, as in a serial run.
+!
+! after an internal-error guard of the tracker was recorded in the
+! particle loop (lgr_internal_failed, #256) it returns at once; the
+! warning counters nk, nl, nu are shared by the threads (OMP atomic)
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_mpi_mark_side
@@ -928,6 +953,8 @@
 	real torig
 	real perc
 	double precision xx,yy,zz
+	integer nc			!the counter after this particle
+	logical lgr_internal_failed
 
 	integer, save :: nk = 0
 	integer, save :: nl = 0
@@ -957,6 +984,8 @@
 	    call lagr_connect_count(i,ie_to,ie_from,torig-ttime)
 	    call lagr_count(i,ie_to,ie_from,ttime)
 	  endif
+
+	  if( lgr_internal_failed() ) return	!the run stops after the loop
 
 	  if( icut > 0 ) then		!cut-off side: goes on elsewhere
 	    iel = ie_from		!element it is leaving, xi on side icut
@@ -994,20 +1023,29 @@
 
 	if( ttime > 0. ) then 		!not finished advecting
 	  if( n == 0 ) then
+!$OMP ATOMIC CAPTURE
 	    nk = nk + 1
+	    nc = nk
+!$OMP END ATOMIC
 	    perc = 0.
-	    if( idbdy > 0 ) perc = (100.*nk)/idbdy
+	    if( idbdy > 0 ) perc = (100.*nc)/idbdy
 	    write(6,1000) 'warning particle adv',id,iel,n,ttime,perc
 	    !iel = -iel
 	  else if( iel < 1 ) then
+!$OMP ATOMIC CAPTURE
 	    nl = nl + 1
+	    nc = nl
+!$OMP END ATOMIC
 	    perc = 0.
-	    if( idbdy > 0 ) perc = (100.*nl)/idbdy
+	    if( idbdy > 0 ) perc = (100.*nc)/idbdy
 	    write(6,1000) 'loosing particle adv',id,iel,n,ttime,perc
 	  else
+!$OMP ATOMIC CAPTURE
 	    nu = nu + 1
+	    nc = nu
+!$OMP END ATOMIC
 	    perc = 0.
-	    if( idbdy > 0 ) perc = (100.*nu)/idbdy
+	    if( idbdy > 0 ) perc = (100.*nc)/idbdy
 	    write(6,1000) 'unknown error adv',id,iel,n,ttime,perc
 	  end if
 	end if
@@ -1230,24 +1268,33 @@
 
 	subroutine lagr_count(i,ie_to,ie_from,time)
 
+! counts of the connectivity per element (called inside the particle loop
+! of drogue: the shared counts are OMP atomic; serial only, icnn stops on
+! several processes); the guard goes through lgr_internal_error (#256)
+
 	use mod_lagrange
 
 	implicit none
 
-	integer i
-	integer ie_to,ie_from
-	real time
+	integer, intent(in) :: i
+	integer, intent(in) :: ie_to,ie_from
+	real, intent(in) :: time
 
 	integer ic
 
 	if( ie_to .le. 0 ) return
-	if( ie_from .le. 0 ) stop 'error stop lagr_count: (1)'
+	if( ie_from .le. 0 ) then
+	  call lgr_internal_error('error stop lagr_count: (1)')
+	  return			!recorded in the loop: not counted
+	end if
 
 	ic = 1
 	if( ie_to == ie_from ) ic = 0
 
+!$OMP ATOMIC
 	i_count(ie_to) = i_count(ie_to) + ic
-	t_count(ie_from) = t_count(ie_from) + time
+!$OMP ATOMIC
+	t_count(ie_from) = t_count(ie_from) + dble(time)
 
 	end
 

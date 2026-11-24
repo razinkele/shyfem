@@ -490,6 +490,12 @@
 
 	subroutine lagr_connect_count(ibdy,ie_to,ie_from,time)
 
+! counts of the connectivity (called inside the particle loop of drogue:
+! the shared counts are OMP atomic; the particle's bitmaps are its own;
+! serial only, icnn stops on several processes). The guards go through
+! lgr_internal_error (#256): recorded inside the loop, nothing is counted
+! and the run stops after the loop
+
 	use mod_lagrange
 	use connectivity
 	use mod_debug
@@ -497,10 +503,10 @@
 
 	implicit none
 
-	integer ibdy		!number of particle
-	integer ie_to		!element into which particle enters
-	integer ie_from		!element from which particle came
-	real time		!time particle has stayed in ie_from
+	integer, intent(in) :: ibdy	!number of particle
+	integer, intent(in) :: ie_to	!element into which particle enters
+	integer, intent(in) :: ie_from	!element from which particle came
+	real, intent(in) :: time	!time particle has stayed in ie_from
 
 	integer ieext
 	logical bin,bout
@@ -513,11 +519,16 @@
 
 	if( .not. bconnect ) return
 	if( ie_to .le. 0 ) return
-	if( ie_from .le. 0 ) stop 'error stop lagr_connect_count: (1)'
+	if( ie_from .le. 0 ) then
+	  call lgr_internal_error('error stop lagr_connect_count: (1)')
+	  return			!recorded in the loop: not counted
+	end if
 
 	if( is_nan(time) ) then
 	  write(6,*) 'nan found: ',ibdy,ie_to,time
-	  stop 'error stop lagr_connect_count: time is nan'
+	  call lgr_internal_error(					&
+     &		'error stop lagr_connect_count: time is nan')
+	  return			!recorded in the loop: not counted
 	end if
 
 	!----------------------------------------------------------
@@ -530,7 +541,9 @@
 	  icc = 0
 	endif
 
+!$OMP ATOMIC
 	i_connect_total(ie_to) = i_connect_total(ie_to) + icc
+!$OMP ATOMIC
 	t_connect_total(ie_from) = t_connect_total(ie_from) + time
 
 	!----------------------------------------------------------
@@ -548,7 +561,8 @@
      &				,ibdy,ie_orig,ip_orig
 	  write(6,*) 'particle not coming from source: ' &
      &				,ibdy,ieext(ie_orig),ip_orig
-	  stop 'error stop lagr_connect_count: no source'
+	  call lgr_internal_error('error stop lagr_connect_count: no source')
+	  return			!recorded in the loop: not counted
 	end if
 
 	if( ip_to .le. 0 .and. ip_from .le. 0 ) return	!in no station
@@ -585,15 +599,19 @@
 
 	if( .not. bneverleft ) then	!particle has left orignal area - may count
 	  if( ip_to > 0 ) then
+!$OMP ATOMIC
 	    i_connect(ip_orig,ip_to) = i_connect(ip_orig,ip_to)+icc
 	  end if
 	  if( bfirstenter ) then
+!$OMP ATOMIC
 	    if_connect(ip_orig,ip_to) = if_connect(ip_orig,ip_to)+icc
 	  end if
 	  if( ip_from > 0 ) then
+!$OMP ATOMIC
 	    t_connect(ip_orig,ip_from) = t_connect(ip_orig,ip_from)+time
 	  end if
 	  if( bfirststay ) then
+!$OMP ATOMIC
 	    tf_connect(ip_orig,ip_from) = tf_connect(ip_orig,ip_from)+time
 	  end if
 !	 write(10,*)ibdy,ip_to,ip_orig,bfirststay,time
@@ -606,6 +624,7 @@
 	if( bfirstenter ) then
 	  tarrive = it - tinit 	!first arrival age
 !	  write(8,*) ibdy,tinit,it,tarrive,ip_orig,ip_to
+!$OMP ATOMIC
 	  agef_connect(ip_orig,ip_to) = agef_connect(ip_orig,ip_to) &
      &					+ tarrive
 	end if
