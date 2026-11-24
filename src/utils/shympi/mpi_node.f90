@@ -774,6 +774,9 @@
 	  if( bghost_check ) then
 	    write(6,*) 'ghost check of the output gathers is on' &
      &			//' (SHYFEM_GHOST_CHECK)'
+	  else if( bmpi_debug ) then	!shyfem -mpi_debug
+	    write(6,*) 'ghost check of the output gathers is on' &
+     &			//' (-mpi_debug)'
 	  end if
 	  if( bghost_desync ) then
 	    write(6,*) 'test hook SHYFEM_GHOST_DESYNC: the output gathers' &
@@ -2817,6 +2820,7 @@
 	integer nih,niv
 	integer ierr
 	integer nivs(n_threads)
+	integer, allocatable :: ncomp(:)
 	real, allocatable :: val_domain(:,:,:)
 
 	if( bmpi_skip ) then
@@ -2842,18 +2846,26 @@
 
 	call shympi_gather_array_3d_r(vals,val_domain)
 
-	! the ghost check compares the values both processes have: a
-	! process with fewer levels sends zeros for the others (#268)
+	! the ghost check (#268) compares a level array (nov is nlv_global
+	! or nlv_global+1) down to the bottom of each node or element
+	! (ncomp, from the owner's ilhkv or ilhv), any other array over the
+	! values both processes send (nivs: a process with fewer levels
+	! sends zeros for the others)
 	nivs = niv
-	if( shympi_ghost_check_on() ) call shympi_gather(niv,nivs)
+	if( shympi_ghost_check_on() ) then
+	  call shympi_gather(niv,nivs)
+	  if( bnode .or. belem ) call shympi_ghost_ncomp(belem,nov,noh,ncomp)
+	end if
 
-	if( bnode ) then
-	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,.false.,text,nivs)
-	else if( belem ) then
-	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,.true.,text,nivs)
-	else
+	if( .not. bnode .and. .not. belem ) then
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_3d_r: (1)')
+	else if( allocated(ncomp) ) then
+	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,belem,text &
+     &				,ncomp=ncomp)
+	else
+	  call shympi_copy_3d_r(val_domain,nov,noh,val_out,belem,text &
+     &				,nlocal=nivs)
 	end if
 
 	end subroutine shympi_l2g_array_3d_r
@@ -2871,6 +2883,7 @@
 	integer nih,niv
 	integer ierr
 	integer nivs(n_threads)
+	integer, allocatable :: ncomp(:)
 	integer, allocatable :: val_domain(:,:,:)
 
 	if( bmpi_skip ) then
@@ -2891,18 +2904,26 @@
 
 	call shympi_gather_array_3d_i(vals,val_domain)
 
-	! the ghost check compares the values both processes have: a
-	! process with fewer levels sends zeros for the others (#268)
+	! the ghost check (#268) compares a level array (nov is nlv_global
+	! or nlv_global+1) down to the bottom of each node or element
+	! (ncomp, from the owner's ilhkv or ilhv), any other array over the
+	! values both processes send (nivs: a process with fewer levels
+	! sends zeros for the others)
 	nivs = niv
-	if( shympi_ghost_check_on() ) call shympi_gather(niv,nivs)
+	if( shympi_ghost_check_on() ) then
+	  call shympi_gather(niv,nivs)
+	  if( bnode .or. belem ) call shympi_ghost_ncomp(belem,nov,noh,ncomp)
+	end if
 
-	if( bnode ) then
-	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,.false.,text,nivs)
-	else if( belem ) then
-	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,.true.,text,nivs)
-	else
+	if( .not. bnode .and. .not. belem ) then
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_3d_i: (1)')
+	else if( allocated(ncomp) ) then
+	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,belem,text &
+     &				,ncomp=ncomp)
+	else
+	  call shympi_copy_3d_i(val_domain,nov,noh,val_out,belem,text &
+     &				,nlocal=nivs)
 	end if
 
 	end subroutine shympi_l2g_array_3d_i
@@ -2920,6 +2941,7 @@
 	integer nih,niv
 	integer ierr
 	integer nivs(n_threads)
+	integer, allocatable :: ncomp(:)
 	double precision, allocatable :: val_domain(:,:,:)
 
 	if( bmpi_skip ) then
@@ -2940,18 +2962,26 @@
 
 	call shympi_gather_array_3d_d(vals,val_domain)
 
-	! the ghost check compares the values both processes have: a
-	! process with fewer levels sends zeros for the others (#268)
+	! the ghost check (#268) compares a level array (nov is nlv_global
+	! or nlv_global+1) down to the bottom of each node or element
+	! (ncomp, from the owner's ilhkv or ilhv), any other array over the
+	! values both processes send (nivs: a process with fewer levels
+	! sends zeros for the others)
 	nivs = niv
-	if( shympi_ghost_check_on() ) call shympi_gather(niv,nivs)
+	if( shympi_ghost_check_on() ) then
+	  call shympi_gather(niv,nivs)
+	  if( bnode .or. belem ) call shympi_ghost_ncomp(belem,nov,noh,ncomp)
+	end if
 
-	if( bnode ) then
-	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,.false.,text,nivs)
-	else if( belem ) then
-	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,.true.,text,nivs)
-	else
+	if( .not. bnode .and. .not. belem ) then
 	  write(6,*) noh,nov,nkn_global,nel_global
 	  call shympi_abort_internal('error stop shympi_l2g_array_3d_d: (1)')
+	else if( allocated(ncomp) ) then
+	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,belem,text &
+     &				,ncomp=ncomp)
+	else
+	  call shympi_copy_3d_d(val_domain,nov,noh,val_out,belem,text &
+     &				,nlocal=nivs)
 	end if
 
 	end subroutine shympi_l2g_array_3d_d
@@ -3559,7 +3589,7 @@
 !*******************************
 
 	subroutine shympi_copy_3d_i(val_domain,nov,nous,val_out,belem,text &
-     &					,nlocal)
+     &					,nlocal,ncomp)
 
 	integer, intent(in) :: nov,nous
 	integer, intent(inout) :: val_domain(nov,nn_max,n_threads)
@@ -3567,6 +3597,7 @@
 	logical, intent(in) :: belem
 	character*(*), intent(in), optional :: text
 	integer, intent(in), optional :: nlocal(n_threads)	!values sent
+	integer, intent(in), optional :: ncomp(nous)	!values to compare
 
 	integer ia,i,ip
 	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
@@ -3590,7 +3621,7 @@
 
 	if( shympi_ghost_check_on() ) then
 	  call shympi_ghost_check_i(val_domain,nov,nous,val_out,belem,text &
-     &						,nlocal)
+     &						,nlocal,ncomp)
 	end if
 
 	end subroutine shympi_copy_3d_i
@@ -3598,7 +3629,7 @@
 !*******************************
 
 	subroutine shympi_copy_3d_r(val_domain,nov,nous,val_out,belem,text &
-     &					,nlocal)
+     &					,nlocal,ncomp)
 
 	integer, intent(in) :: nov,nous
 	real, intent(inout) :: val_domain(nov,nn_max,n_threads)
@@ -3606,6 +3637,7 @@
 	logical, intent(in) :: belem
 	character*(*), intent(in), optional :: text
 	integer, intent(in), optional :: nlocal(n_threads)	!values sent
+	integer, intent(in), optional :: ncomp(nous)	!values to compare
 
 	integer ia,i,ip
 	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
@@ -3629,7 +3661,7 @@
 
 	if( shympi_ghost_check_on() ) then
 	  call shympi_ghost_check_r(val_domain,nov,nous,val_out,belem,text &
-     &						,nlocal)
+     &						,nlocal,ncomp)
 	end if
 
 	end subroutine shympi_copy_3d_r
@@ -3637,7 +3669,7 @@
 !*******************************
 
 	subroutine shympi_copy_3d_d(val_domain,nov,nous,val_out,belem,text &
-     &					,nlocal)
+     &					,nlocal,ncomp)
 
 	integer, intent(in) :: nov,nous
 	double precision, intent(inout) :: val_domain(nov,nn_max,n_threads)
@@ -3645,6 +3677,7 @@
 	logical, intent(in) :: belem
 	character*(*), intent(in), optional :: text
 	integer, intent(in), optional :: nlocal(n_threads)	!values sent
+	integer, intent(in), optional :: ncomp(nous)	!values to compare
 
 	integer ia,i,ip
 	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
@@ -3668,7 +3701,7 @@
 
 	if( shympi_ghost_check_on() ) then
 	  call shympi_ghost_check_d(val_domain,nov,nous,val_out,belem,text &
-     &						,nlocal)
+     &						,nlocal,ncomp)
 	end if
 
 	end subroutine shympi_copy_3d_d
@@ -3716,14 +3749,16 @@
 ! when one of its nov values differs; the first nghost_show of them are
 ! reported with the external node/element number, the first differing
 ! value, the process of the copy and the owner, then the count. The run
-! goes on. For a 3d array (nlocal present) only the values that both
-! processes have are compared: a process with fewer levels than nov
-! sends zeros for the levels it does not have (below the bottom of its
-! nodes), which are no value of the owner to keep in step with.
+! goes on. A 3d level array (ncomp present) is compared down to the
+! bottom of each node or element: the values below it are no state of
+! the node (a process with fewer levels than nov even sends zeros
+! there), so fill that differs between holders is not reported. Any
+! other 3d array (nlocal present) is compared over the values both
+! processes send.
 !------------------------------------------------------------------
 
 	subroutine shympi_ghost_check_i(val_domain,nov,nous,val_out &
-     &					,belem,text,nlocal)
+     &					,belem,text,nlocal,ncomp)
 
 	integer, intent(in) :: nov,nous
 	integer, intent(in) :: val_domain(nov,nn_max,n_threads)
@@ -3731,6 +3766,7 @@
 	logical, intent(in) :: belem
 	character*(*), intent(in), optional :: text
 	integer, intent(in), optional :: nlocal(n_threads)
+	integer, intent(in), optional :: ncomp(nous)
 
 	integer ia,i,ip,l,lbad,nbad,lmax
 	integer, allocatable :: iowner(:)
@@ -3750,6 +3786,7 @@
 	    if( present(nlocal) ) then	!values both processes have
 	      lmax = min(nov,nlocal(ia),nlocal(iowner(ip)+1))
 	    end if
+	    if( present(ncomp) ) lmax = min(lmax,ncomp(ip))	!to the bottom
 	    lbad = 0
 	    do l=1,lmax
 	      if( val_domain(l,i,ia) /= val_out(l,ip) ) then
@@ -3776,7 +3813,7 @@
 !*******************************
 
 	subroutine shympi_ghost_check_r(val_domain,nov,nous,val_out &
-     &					,belem,text,nlocal)
+     &					,belem,text,nlocal,ncomp)
 
 	integer, intent(in) :: nov,nous
 	real, intent(in) :: val_domain(nov,nn_max,n_threads)
@@ -3784,6 +3821,7 @@
 	logical, intent(in) :: belem
 	character*(*), intent(in), optional :: text
 	integer, intent(in), optional :: nlocal(n_threads)
+	integer, intent(in), optional :: ncomp(nous)
 
 	integer ia,i,ip,l,lbad,nbad,lmax
 	integer, allocatable :: iowner(:)
@@ -3803,6 +3841,7 @@
 	    if( present(nlocal) ) then	!values both processes have
 	      lmax = min(nov,nlocal(ia),nlocal(iowner(ip)+1))
 	    end if
+	    if( present(ncomp) ) lmax = min(lmax,ncomp(ip))	!to the bottom
 	    lbad = 0
 	    do l=1,lmax			!bit for bit, as the files get them
 	      if( transfer(val_domain(l,i,ia),0) &
@@ -3830,7 +3869,7 @@
 !*******************************
 
 	subroutine shympi_ghost_check_d(val_domain,nov,nous,val_out &
-     &					,belem,text,nlocal)
+     &					,belem,text,nlocal,ncomp)
 
 	integer, intent(in) :: nov,nous
 	double precision, intent(in) :: val_domain(nov,nn_max,n_threads)
@@ -3838,6 +3877,7 @@
 	logical, intent(in) :: belem
 	character*(*), intent(in), optional :: text
 	integer, intent(in), optional :: nlocal(n_threads)
+	integer, intent(in), optional :: ncomp(nous)
 
 	integer, parameter :: i8 = selected_int_kind(18)
 	integer ia,i,ip,l,lbad,nbad,lmax
@@ -3858,6 +3898,7 @@
 	    if( present(nlocal) ) then	!values both processes have
 	      lmax = min(nov,nlocal(ia),nlocal(iowner(ip)+1))
 	    end if
+	    if( present(ncomp) ) lmax = min(lmax,ncomp(ip))	!to the bottom
 	    lbad = 0
 	    do l=1,lmax			!bit for bit, as the files get them
 	      if( transfer(val_domain(l,i,ia),0_i8) &
@@ -3911,6 +3952,60 @@
 	end do
 
 	end subroutine shympi_ghost_owners
+
+!*******************************
+
+	subroutine shympi_ghost_ncomp(belem,nov,nous,ncomp)
+
+! for a level array (nov is nlv_global, levels 1..nlv, or nlv_global+1,
+! levels 0..nlv) the number of values of each global node or element
+! down to its bottom, from the owner's ilhkv (main process's ilhv);
+! not allocated for any other array. The values below the bottom are no
+! state of the node: the check leaves them out (#268). Collective (the
+! bottoms are gathered); ncomp is set on the master only.
+
+	use levels, only : ilhkv,ilhv
+
+	logical, intent(in) :: belem
+	integer, intent(in) :: nov,nous
+	integer, allocatable, intent(out) :: ncomp(:)
+
+	integer ia,i,ip,ioff,ierr
+	integer, allocatable :: lev_domain(:,:)
+	integer, pointer :: nown(:),nall(:),ip_ints(:,:)
+
+	if( nov == nlv_global ) then
+	  ioff = 0
+	else if( nov == nlv_global + 1 ) then
+	  ioff = 1
+	else
+	  return			!not a level array
+	end if
+
+	allocate(ncomp(nous),lev_domain(nn_max,n_threads),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('shympi_ghost_ncomp: allocation failed')
+	end if
+
+	if( belem ) then
+	  call shympi_gather_array_2d_i(ilhv,lev_domain)
+	else
+	  call shympi_gather_array_2d_i(ilhkv,lev_domain)
+	end if
+
+	ncomp = nov
+	if( my_id /= 0 ) return
+
+	call shympi_l2g_index(belem,nown,nall,ip_ints)
+
+	do ia=1,n_threads
+	  do i=1,nown(ia)
+	    ip = ip_ints(i,ia)
+	    ncomp(ip) = max(0,min(nov,lev_domain(i,ia)+ioff))
+	  end do
+	end do
+
+	end subroutine shympi_ghost_ncomp
 
 !*******************************
 
@@ -4732,7 +4827,20 @@
 
         subroutine shympi_set_debug(bdebug)
 
-        logical bdebug
+! bmpi_debug also turns on the ghost check of the output gathers (#268):
+! set before shympi_init (shyfem -mpi_debug), shympi_ghost_check_init
+! says so; set later, it is said here
+
+        logical, intent(in) :: bdebug
+
+	if( bdebug .and. .not. bmpi_debug ) then
+	  if( bmpi .and. .not. bghost_check ) then
+	    if( shympi_is_master() ) then
+	      write(6,*) 'ghost check of the output gathers is on' &
+     &			//' (shympi_set_debug)'
+	    end if
+	  end if
+	end if
 
         bmpi_debug = bdebug
 
