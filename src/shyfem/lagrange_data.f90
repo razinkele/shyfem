@@ -147,6 +147,10 @@
 	!atomic in the particle loop; written once at the end of the particle
 	!run by lgr_vdiff_stats, #231)
         integer(kind=8), save :: lgr_nvdiff_neg = 0
+	!particles not released because their release point lies in no
+	!element (insert_particle_3d, insert_particle; #247): counted, the
+	!release that asked for them reports the number (lgr_init_traj)
+        integer, save :: nlgr_outside = 0
 
         integer, save :: ilagr                  !type of lagrangian simulation
         integer, save :: nbdy                   !total number of particles

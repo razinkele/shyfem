@@ -191,11 +191,12 @@
 	real				:: x,y
 	integer				:: iunit,ierr,ierrp
 	integer				:: ie,n,i
+	integer				:: nbdy0,nout0	!before the release
         double precision, save		:: atime,atime0
 
         integer, save                   :: icall = 0
 
-	integer, save        		:: npoi,nt,ntot
+	integer, save        		:: npoi,nt
 	double precision, allocatable, save	:: dtimet(:)
         real, allocatable, save		:: xt(:),yt(:)
 	double precision, save		:: dtlast
@@ -214,7 +215,6 @@
           if( icall .eq. -1 ) return
 
           npoi = nint(getpar('nbdy'))
-          ntot = npoi*max(1,abs(ipvert))
 
           nt = 0
           ierr = 0
@@ -264,11 +264,20 @@
             x = xt(i)
             y = yt(i)
             call find_element(x,y,ie)
+            nbdy0 = nbdy
+            nout0 = nlgr_outside
             do n = 1,npoi
               call insert_particle_3d(ie,i,0.,x,y)
             end do
             call get_timeline(dtime,line)
-            write(6,*) 'new particles released: ',ntot,'at time: ',line
+            ! a point in no element releases nothing (#247): the count
+            if( nlgr_outside > nout0 ) then
+              write(6,*) 'particles not released, point outside the'	&
+     &			//' mesh: ',nlgr_outside-nout0,'at time: ',line	&
+     &			,' x,y: ',x,y
+            end if
+            write(6,*) 'new particles released: ',nbdy-nbdy0		&
+     &			,'at time: ',line
           end if
         end do
 

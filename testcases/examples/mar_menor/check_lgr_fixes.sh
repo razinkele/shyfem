@@ -69,6 +69,24 @@
 #             300 s 1469 of the 4952 particles were active after one hour
 #             (4134 expected) and none after three hours (2962 expected),
 #             with idt = 60 s 33 after one hour (4180 expected).
+#   outside   (#247) a release point that lies in no element releases
+#             nothing: mm_lgr_a (2D) and mm_lgr_c (3D, with ipvert = -3:
+#             three random depths per particle) for six hours, serially,
+#             with no area release (idtl = -1) and a trajectory release
+#             (lgrtrj, nbdy = 5 particles per point): at 01:00 a point east
+#             of the basin, outside the mesh, at 02:00 the centroid of
+#             element 1000.  Each run must end; its log must have the line
+#             "particles not released, point outside the mesh: N at time:
+#             2009-01-01::01:00:00" (N = 5, in 3D 15), and "new particles
+#             released: 0" at 01:00 and N at 02:00; in its particle file no
+#             output before 02:00 holds a particle, every output from 02:00
+#             holds exactly the ids 1 ... N (the skipped particles took no
+#             id), the release element of each is 1000, and every record of
+#             every block has an element in 1..nel and a layer in 1..nlv.
+#             Before #247 the point outside gave particles with element 0,
+#             and both runs stopped at the first output after 01:00 in
+#             xi_abc (xi2xy of element 0, the exited block of lgr_output):
+#             mm_lgr_a with SIGSEGV, mm_lgr_c with SIGFPE.
 #   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
 #             ztilt), for one day, with a $lagrg section that sets ilagr = 3
 #             (vertical advection and diffusion), nbdymax = 20000, nbdy =
@@ -192,11 +210,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | ilagr3 | grow-fail | small-export | seed"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | ilagr3 | grow-fail | small-export | seed"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|ilagr3|grow-fail|small-export|seed) ;;
+  stk-omp|decay|decay-rate|outside|ilagr3|grow-fail|small-export|seed) ;;
   *) usage ;;
 esac
 
@@ -457,6 +475,84 @@ for t in common:
 sys.exit(0 if ok else 1)
 EOF
   fi
+  finish
+fi
+
+#=============================== outside (#247) ============================
+if [ "$MODE" = outside ]; then
+  # trajectory file: 01:00 a point east of the basin (in no element of
+  # MM_geo, whose longitudes end at -0.6187), 02:00 the centroid of element
+  # 1000 (inside)
+  printf '2009-01-01::01:00:00 -0.50 37.75\n2009-01-01::02:00:00 -0.7127473 37.7160403\n' > "$W/traj_outside.txt"
+  for c in a c; do
+    sed -e "s/^\(\s*\)mm_lgr_$c\s*$/\1out_$c/" \
+        -e "s/itend = '[^']*'/itend = '2009-01-01::06:00:00'/" \
+        -e 's/^\(\s*\)idtl = 0\s*$/\1idtl = -1/' \
+        -e 's/^\(\s*\)nbdy = 150\s*$/\1nbdy = 5/' \
+        -e 's/^\(\s*\)ipvert = -1\s*$/\1ipvert = -3/' \
+        -e "s/^\(\s*\)lgrlin = .*/\1lgrtrj = 'traj_outside.txt'/" "$W/mm_lgr_$c.str" > "$W/out_$c.str"
+    for o in "out_$c" "itend = '2009-01-01::06:00:00'" 'idtl = -1' 'nbdy = 5' "lgrtrj = 'traj_outside.txt'"; do
+      grep -qF -- "$o" "$W/out_$c.str" || fail "no '$o' in out_$c.str"
+    done
+    grep -q 'lgrlin' "$W/out_$c.str" && fail "lgrlin left in out_$c.str"
+  done
+  grep -qF 'ipvert = -3' "$W/out_c.str" || fail "no 'ipvert = -3' in out_c.str"
+  # case, particles per point (nbdy = 5 calls, 3 random depths each in 3D)
+  for cn in "a 5" "c 15"; do
+    set -- $cn; c=$1; np=$2
+    echo "=== mm_lgr_$c serially (6 h, nbdy = 5$( [ $c = c ] && echo ', 3D, ipvert = -3')) with lgrtrj: a point outside the mesh at 01:00, one inside at 02:00"
+    run out_$c out_$c.log shyfem || { fail "out_$c: the run did not end"; continue; }
+    l1="$(grep -m1 'particles not released, point outside the mesh' "$W/out_$c.log")"
+    echo "  ${l1:-no line 'particles not released, point outside the mesh' in the log}"
+    echo "$l1" | grep -q "mesh: *$np at time: 2009-01-01::01:00:00" || fail "out_$c: no count $np of particles not released at 01:00"
+    l2="$(grep 'new particles released' "$W/out_$c.log" | tr -s ' ' | sed 's/^ //')"
+    echo "$l2" | sed 's/^/  /'
+    echo "$l2" | grep -q "released: 0 at time: 2009-01-01::01:00:00" || fail "out_$c: not 0 particles released at 01:00"
+    echo "$l2" | grep -q "released: $np at time: 2009-01-01::02:00:00" || fail "out_$c: not $np particles released at 02:00"
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/out_$c.lgr.shy" "$np" <<'EOF' || fail "out_$c: particle file check"
+import struct, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path, np = sys.argv[2], int(sys.argv[3])
+with open(path, "rb") as fh:
+    head = fh.read(4096)
+pos = 0
+recs = []
+for _ in range(3):			# model header: (idshy, nvers), (ftype),
+    (n,) = struct.unpack_from("<i", head, pos)	# (nkn, nel, npr, nlv, nvar)
+    recs.append((pos + 4, n))
+    pos += 8 + n
+nkn, nel, _npr, nlv, _nvar = struct.unpack_from("<5i", head, recs[2][0])
+_, times = lc.read_file(path)
+ok = True
+nrec = 0
+want = set(range(1, np + 1))
+for t, b, _ in times:
+    ids = set()
+    for w in lc.IWHAT_ORDER:
+        for pid, p in b[w].items():
+            nrec += 1
+            ids.add(pid)
+            if not 1 <= p["ie"] <= nel or not 1 <= p["lb"] <= nlv:
+                print("  t=%r %s id %d: element %d, layer %d outside 1..%d, 1..%d"
+                      % (t, lc.BLOCK_NAME[w], pid, p["ie"], p["lb"], nel, nlv))
+                ok = False
+    if t < 7200.0 and ids:
+        print("  t=%r (before the release inside, at 02:00): particles %s" % (t, lc.fmt_ids(ids)))
+        ok = False
+    if t >= 7200.0 and ids != want:
+        print("  t=%r: ids %s, expected 1..%d" % (t, lc.fmt_ids(ids), np))
+        ok = False
+    for pid, p in b[-1].items():
+        if p["ie"] != 1000:
+            print("  t=%r inserted id %d: release element %d, expected 1000" % (t, pid, p["ie"]))
+            ok = False
+print("  output times %d (nel %d, nlv %d), records %d: ids 1..%d from 02:00 on, every element in 1..nel: %s"
+      % (len(times), nel, nlv, nrec, np, "yes" if ok else "NO"))
+sys.exit(0 if ok and nrec > 0 else 1)
+EOF
+  done
   finish
 fi
 
