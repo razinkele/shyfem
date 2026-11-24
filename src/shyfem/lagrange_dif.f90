@@ -97,6 +97,7 @@
 ! the particle steps of that case, 87 s of 300 s not diffused on average)
 
         use mod_lagrange
+        use mod_lagrange_mpi, only : lgr_test_vdiff_end
         use basin
 
         implicit none
@@ -124,6 +125,7 @@
         real 			:: perc
         double precision 	:: xx,yy,zz
         logical			:: bstall	!ended by two such calls in a row
+        logical			:: btend	!walk ended by the test hook
 
         integer			:: ndraw	!vertical draws made (#225)
         integer			:: nc		!the counter after this particle
@@ -133,6 +135,7 @@
         integer, save 		:: nu = 0
 
 	bpark = .false.
+	btend = .false.
 
 	if( bresume ) then		!parked: no vertical step (bvdiff false)
 	  if( bvdiff ) then
@@ -166,7 +169,13 @@
 	  ! them are made in this loop (a particle with vertical diffusion is
 	  ! never parked: ilagr = 3 stops on several processes)
 	  ndraw = 0
+	  ! test hook LGR_TEST_VDIFF_END=N (#288): the walk of a particle
+	  ! whose id is a multiple of N ends at once, with its time left
+	  if( lgr_test_vdiff_end > 0 ) then
+	    btend = ( mod(id,lgr_test_vdiff_end) == 0 )
+	  end if
           do while ( dtime > 0. .and. n > 0 )
+            if( btend ) exit		!test hook: time left (#288)
             dtold = dtime
             call lgr_diff_vert(mode,id,iel,lb,zz,dtime,ndraw)
             if( lb < 1 ) exit
@@ -198,6 +207,11 @@
           if( nzero > 0 ) then
 !$OMP ATOMIC
             lgr_nvdiff_zero = lgr_nvdiff_zero + nzero
+          end if
+          ! test hook (#288): an id that is also a multiple of 2N leaves
+          ! the domain here
+          if( btend ) then
+            if( mod(id/lgr_test_vdiff_end,2) == 0 ) iel = -iel
           end if
         end if
 
