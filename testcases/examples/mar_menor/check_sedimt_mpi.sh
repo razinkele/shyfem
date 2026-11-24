@@ -106,7 +106,12 @@ elif ! awk '{ if ($3 + 0 != 0) m = 1; if ($4 + 0 != 0) s = 1 } END { exit !(m &&
 else
   echo "  serial: $(wc -l < "$P/np1/sedimt.txt") sedimt: lines, last: $(tail -1 "$P/np1/sedimt.txt")"
 fi
-files="$(cd "$P/np1" && ls sedimt*.shy)"
+# the output files every run must write (named, not listed from the
+# serial folder: a file the serial run did not write must fail the check)
+files="sedimt.conz.shy sedimt.fvl.shy sedimt.hydro.shy sedimt.set.shy"
+for f in $files; do
+  [ -s "$P/np1/$f" ] || fail "the serial run did not write $f (or it is empty)"
+done
 for np in $NPS; do
   if ! run "$np"; then fail "the run on $np processes did not end, or not on $np processes (above)"; continue; fi
   n="$(grep -c '^GHOST CHECK:' "$P/np$np/run.log")"
