@@ -431,11 +431,14 @@
 	if( ierr /= 0 ) then
 	  call shympi_abort_internal( &
      &		'domain_clusterization_ggu: allocation failed')
+	  return	!not reached: the abort ends every process
 	end if
 
 	nmax = 0
 	color = 0
 	colork = 0
+	colorl = 0
+	mark = 0
 
         print *,"  ----------- STARTING DOMAIN CLUSTERING -----------"
 
@@ -536,10 +539,9 @@
 	end do
 
 !	-------------------------------------------
-!	check that the local subsets are independent
+!	check that the local subsets are independent (mark is 0)
 !	-------------------------------------------
 
-	mark = 0
 	do ic=1,subset_num
 	  do n=1,subset_el(ic)
 	    ie = indipendent_subset(n,ic)
@@ -589,7 +591,7 @@
 
 	subroutine compute_ic_minmax(icmin,icmax)
 
-	integer icmin,icmax
+	integer, intent(out) :: icmin,icmax
 
 	integer ic,n
 	integer ncmin,ncmax
@@ -617,7 +619,7 @@
 
 	subroutine compute_subset_filling(nmax)
 
-	integer nmax
+	integer, intent(out) :: nmax
 
 	integer ie,ic,n
 
@@ -680,7 +682,7 @@
 
 	subroutine compute_color(ncolor,nmax)
 
-	integer ncolor,nmax
+	integer, intent(out) :: ncolor,nmax
 
 	integer ncol,ic_new,ic_old
 	integer ie_start,nemax
@@ -712,10 +714,10 @@
 
 	subroutine apply_one_color(ic_old,ic_new,ie_start,nemax,ncol)
 
-	integer ic_old,ic_new	!colors to use
-	integer ie_start	!starting point for ie
-	integer nemax		!at most color this number of elements
-	integer ncol		!how many elements colored
+	integer, intent(in) :: ic_old,ic_new	!colors to use
+	integer, intent(inout) :: ie_start	!starting point for ie
+	integer, intent(in) :: nemax		!at most color this number of elements
+	integer, intent(out) :: ncol		!how many elements colored
 
 	integer n,ie,iestride
 
@@ -745,9 +747,9 @@
 	function may_color(ie,ic_from,ic_to)
 
 	logical may_color
-	integer ic_from,ic_to
+	integer, intent(in) :: ie,ic_from,ic_to
 
-	integer ie,ires
+	integer ires
 	integer ii,k
 
 	may_color = .false.
@@ -768,7 +770,7 @@
 
 	subroutine color_elem(ie,ic_new)
 
-	integer ie,ic_new
+	integer, intent(in) :: ie,ic_new
 
 	integer ii,k,ic_old
 	integer col
@@ -937,6 +939,7 @@
 	allocate(iek(nemax,nkn),icek(nemax,nkn),stat=ierr)
 	if( ierr /= 0 ) then
 	  call shympi_abort_internal('subset_order_dump: allocation failed')
+	  return	!not reached: the abort ends every process
 	end if
 	nek = 0
 	do ic=1,subset_num
