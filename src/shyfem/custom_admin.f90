@@ -1765,8 +1765,12 @@
 	use mod_conz, only : cnv
 	use levels
 	use basin
+	use shympi, only : nkn_global,nkn_unique,ip_int_node		&
+     &			,shympi_is_master,shympi_array_reduce
 
         implicit none
+
+	external shympi_abort_internal	!external subroutine, not in shympi
 
 	real, save, allocatable :: conzs(:)
 	real, save, allocatable :: conza(:)
@@ -1777,6 +1781,7 @@
         real vol,conz,perc,wsink,dt,sed,h,r,cnew,rhos
 	real v1v(nkn)
         double precision mass,masss
+	double precision, allocatable :: masspn(:),masssn(:)
         double precision dtime
 
         real volnode,depnode
@@ -1839,7 +1844,6 @@
 
 	call get_act_dtime(dtime)
 	call get_timestep(dt)
-	call getinfo(iunit)
 
 	if( wsink .gt. 0. ) then
 	  l = 1
@@ -1865,24 +1869,54 @@
 ! compute total mass
 !------------------------------------------------------------
 
-        mass = 0.
-        masss = 0.
-        do k=1,nkn
+	! (#274) the totals of the whole basin, written once (as in
+	! simple_sedi, #220). Every process sums the nodes it owns
+	! (k <= nkn_unique; the ghost nodes belong to another process) into a
+	! value per node, the values are put at the global internal node
+	! number in an array that is zero elsewhere and summed over the
+	! processes (each element has one non-zero term, so the sum is exact),
+	! and the master adds them in the order of the nodes of a serial run
+	! and writes the line (getinfo opens the info file on whichever
+	! process calls it, so only the master calls it).
+
+	allocate(masspn(nkn_global),masssn(nkn_global),stat=ierr)
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop sedimt: allocation failed')
+	masspn = 0.
+	masssn = 0.
+
+        do k=1,nkn_unique
             lmax = ilhkv(k)
+	    mass = 0.
             do l=1,lmax
               vol = volnode(l,k,+1)
               conz = cnv(l,k)
               mass = mass + vol*conz
             end do
-	    masss = masss + conzs(k)
+	    masspn(ip_int_node(k)) = mass
+	    masssn(ip_int_node(k)) = conzs(k)
         end do
+
+	call shympi_array_reduce('sum',masspn)
+	call shympi_array_reduce('sum',masssn)
 
 !------------------------------------------------------------
 ! write total mass
 !------------------------------------------------------------
 
-        write(6,*) 'sedimt: ',dtime,mass,masss,mass+masss
-        write(iunit,*) 'sedimt: ',dtime,mass,masss,mass+masss
+	if( shympi_is_master() ) then
+	  mass = 0.
+	  masss = 0.
+	  do k=1,nkn_global
+	    mass = mass + masspn(k)
+	    masss = masss + masssn(k)
+	  end do
+	  call getinfo(iunit)
+          write(6,*) 'sedimt: ',dtime,mass,masss,mass+masss
+          write(iunit,*) 'sedimt: ',dtime,mass,masss,mass+masss
+	end if
+
+	deallocate(masspn,masssn)
 
 !------------------------------------------------------------
 ! write file
