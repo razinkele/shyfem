@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — Lagrangian
+
+- **A release larger than `nbdymax` stops with exit code 33, not 0 (#269).** `insert_particle` ended a serial run with a bare `stop` (exit code 0, so a script saw success); it now stops through `shympi_abort_internal` with the message `nbdymax = N`, the particles needed so far, and the advice to raise `nbdymax`. On several processes the stop already came from `lgr_mpi_assign_ids` (exit 33); its message now also gives the global number of particles needed. No result changes.
+
 ### Changed — Docs
 
 - **UI: PostgreSQL is declared unsupported.** SQLite is the supported database (owner decision, delegated, 2026-11-20). The app still accepts a `postgresql://` URL and the driver stays installed, but nothing deploys or tests it; `shyfem-ui/README.md` says so, and its server-mode example now uses an absolute SQLite path.

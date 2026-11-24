@@ -20,6 +20,11 @@
 #             every thread wrote the same value, so no run shows it; it
 #             shows that the change of the initialisation (once, before the
 #             loop) leaves the result of 1 and 4 threads unchanged.
+#   nbdymax   (#269) a release larger than nbdymax stops the run with exit
+#             code 33 and a message naming nbdymax and the particles needed,
+#             not with the exit code 0 of a bare stop: mm_lgr_a (150
+#             particles) with nbdymax = 100, serially and on 4 processes
+#             (there lgr_mpi_assign_ids decides on the global count).
 #   decay     (#226) mm_lgr_a serially, once as it is and once with
 #             "ldecay = 86400." in $lagrg (decay of particles with an
 #             e-folding time of one day, #246: of the 145 particles 2 are
@@ -379,11 +384,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 
@@ -1148,6 +1153,24 @@ if [ "$MODE" = int-fail ]; then
       fail "$n thread(s): crash line in the log"; grep -m3 "SIGSEGV\|SIGFPE\|Fortran runtime" "$log" | sed 's/^/    /'
     fi
     grep -q "simulation end" "$log" && fail "$n thread(s): the run ended instead of stopping"
+  done
+  finish
+fi
+
+#=============================== nbdymax (#269) ============================
+if [ "$MODE" = nbdymax ]; then
+  sed 's/^\([ \t]*nbdymax[ \t]*=[ \t]*\)5000/\1100/' "$W/mm_lgr_a.str" > "$W/nbm.str"
+  grep -q "nbdymax *= *100" "$W/nbm.str" || fail "nbdymax = 100 not set in nbm.str"
+  for np in 1 $NP; do
+    if [ "$np" = 1 ]; then launcher="shyfem"; else launcher="mpirun --oversubscribe -np $np shyfem"; fi
+    echo "=== mm_lgr_a with nbdymax = 100 (150 particles) on $np process(es)"
+    ( cd "$W" && timeout 300 nice -n 10 $launcher nbm.str > nbm_$np.log 2>&1 )
+    lrc=$?
+    echo "  exit code $lrc"
+    [ "$lrc" = 33 ] || fail "$np process(es): exit code $lrc, expected 33"
+    grep -m3 "nbdymax\|insert_particle" "$W/nbm_$np.log" | sed 's/^/  /'
+    grep -q "nbdymax" "$W/nbm_$np.log" || fail "$np process(es): no message naming nbdymax"
+    grep -q "simulation end" "$W/nbm_$np.log" && fail "$np process(es): the run ended instead of stopping"
   done
   finish
 fi

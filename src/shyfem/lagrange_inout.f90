@@ -141,7 +141,13 @@
 	  write(6,*) 'nbdymax = ',nbdymax
 	  write(6,*) 'Cannot insert more than nbdymax particles'
 	  write(6,*) 'Please change nbdymax in STR file'
-	  stop 'error stop insert_particle: nbdy'
+	  write(6,*) 'particles needed: at least ',nbdy
+	  ! not a bare stop (exit code 0, #269). Serial only: on several
+	  ! processes the limit is decided by lgr_mpi_assign_ids, and this
+	  ! routine is never called inside the OpenMP particle loop of
+	  ! drogue (the release and the seeding run on the main thread)
+	  call shympi_abort_internal('error stop insert_particle: nbdy'	&
+     &		//' (more particles than nbdymax, raise nbdymax)')
 	end if
 	call mod_lagrange_handle_alloc(nbdy)
 
