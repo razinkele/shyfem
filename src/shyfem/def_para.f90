@@ -1008,10 +1008,13 @@
 ! without turbulence closure (|iturb=0|, see below); the momentum and the
 ! transport of temperature, salinity and tracers add |vismol| and |difmol|
 ! to them. With the defaults (0) such a run therefore has the molecular
-! viscosity and diffusivity only. The vertical velocity of the
-! non-hydrostatic model and the stability index of the scalar transport
+! viscosity and diffusivity only. The vertical mixing of suspended
+! sediment (|isedi|) is |vistur| times a factor between 1 and 1.5 plus
+! |difmol|: it follows |vistur|, not |diftur|. The vertical velocity of
+! the non-hydrostatic model and the stability index of the scalar
+! transport (where the vertical diffusion counts only with |adpar| < 1)
 ! use |vistur| and |diftur| without the molecular parts, and the box and
-! offline files write them as they are.
+! offline files (3D runs) write them as they are.
 
         call addpar('difmol',1.0e-06)	!molecular vertical diffusivity
 	call addpar('diftur',0.)	!diffusion parameter (vertical), cvpar
@@ -1023,7 +1026,8 @@
 ! The parameter |iturb| defines what turbulence scheme is going to be used.
 ! A value of 0 uses no turbulence scheme: the viscosity and diffusivity
 ! are then |vistur| and |diftur| everywhere and for the whole run (also
-! after a restart, even from a run with GOTM), so set them for a 3D run.
+! after a restart, even from a run with GOTM), unless the turbulence is
+! read from an offline file, so set them for a 3D run.
 ! |iturb=1| uses the GOTM
 ! routines for turbulence. In order to use this value |SHYFEM| has to be
 ! compiled with GOTM support. |iturb=2| uses a k-epsilon module, and a value

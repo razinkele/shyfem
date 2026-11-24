@@ -405,8 +405,10 @@ hydrodynamic values differ by less than 1e-4; its six perturbed runs give
 **Why.** Case C (`mm_lgr_c`) is the one 3D particle case, and it runs without turbulence closure
 (`iturb = 0`). Until #248 `handle_gotm_init`, called at set-up whatever `iturb`, replaced the constant
 `vistur`/`diftur` that `set_eddy` puts into `visv`/`difv` by GOTM's initial 1e-6; with #248 they stay
-(0 by default, so the run has the molecular viscosity only). The currents of case C change (by up to
-3.5e-2 m/s, the water level by 1.1e-4 m), and so do its particles, so its floor was measured again.
+(0 by default, so the run has the molecular viscosity only). The velocities of case C change (by up
+to 3.24e-2 m/s in u and 2.14e-2 m/s in v, the water level by 1.15e-4 m: the nodal values of its
+`.hydro.shy`, converted with `shyelab -outformat nc`), and so do its particles, so its floor was
+measured again.
 Cases A, B, E, W and D are 2D and byte-identical before and after #248.
 
 **How.** `measure_lgr_floors.sh <bin> 7564a360 key 3 mm_lgr_c` with an OpenMPI build of #248 (the
