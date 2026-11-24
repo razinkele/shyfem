@@ -164,9 +164,8 @@
 #             single saved stream: the binary of the commit before fails
 #             the first comparison of each part (and does not know
 #             lgrseed).  The continuous release along an open boundary
-#             (create_parts) is not run: on the only open boundary of the
-#             test meshes it stops with "error stop create_parts: error in
-#             boundary" (also before #225).
+#             (create_parts) is not run here (until #254 it stopped on the
+#             only open boundary of the test meshes; mode bnd-release).
 #   sedbeach  (#225, review) the sediment step and beached particles:
 #             mm_lgr_a (2D: every element has one layer, so a particle is
 #             always in its bottom layer) with rwhpar = 0.5, ised = 1 (every
@@ -185,6 +184,39 @@
 #             1 of array 'tcd' below lower bound of 1"; the normal build
 #             read a value outside the array (no visible effect in this
 #             case, where the beached particles have z = 0.5).
+#   bnd-release (#254) the continuous release along an open boundary
+#             (lgrpps on a level boundary, create_parts), serially, on the
+#             geographic basin GRID/MM_geo (made with -noopti: its element
+#             numbers are those of MM_geo.grd): mm_lgr_a for two hours with
+#             no other release (nbdy = 0) and the sea boundary of the Mar
+#             Menor cases (kbound 85 ... 177 of mm_lgr_b, ibtyp = 1) with
+#             lgrpps = 0.2.  That list leaves out the boundary nodes 13 and
+#             14: of its 92 pairs of consecutive nodes 90 are sides of the
+#             basin boundary and 99-100 and 162-163 inner sides (the check
+#             counts them from MM_geo.grd).  The run must end, its log must
+#             warn about exactly those two pairs, and every particle of the
+#             inserted blocks of the particle file must start inside its
+#             element (barycentric weights >= -5e-3), on a side of that
+#             element (one weight within 5e-3 of 0) that is one of the 90
+#             sides of the list; each of the 90 sides must get a particle.
+#             The same for a release per volume of inflow, lgrpps =
+#             -0.00001 (get_bflux_ppv; only the sides with an inflow get
+#             particles, so it needs at least one particle, not one per
+#             side).
+#             A second run with kbound = 98 100 99 101 (no two consecutive
+#             nodes are the ends of a side of the basin boundary, while each
+#             node has a neighbour on the basin boundary in the list, as the
+#             open boundary of the hydrodynamics needs) must stop with
+#             "error stop lgr_release_line: no boundary side to release on",
+#             a non-zero exit code and no "simulation end".  Before #254
+#             the runs stopped with a bare stop, exit code 0 ("STOP error
+#             stop create_parts: error in boundary", for lgrpps < 0 "STOP
+#             error stop get_bflux_ppv: nodes not at boundary"; the release
+#             runs "did not end", the last gave exit code 0); and
+#             find_elems_to_segment (#252, fixed elsewhere) gave every
+#             segment the element of the next one, so the particles released
+#             before that stop started in an element that does not hold their
+#             point.
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -198,11 +230,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | int-fail | small-export | seed | sedbeach"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|ilagr3|grow-fail|int-fail|small-export|seed|sedbeach) ;;
+  stk-omp|decay|ilagr3|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release) ;;
   *) usage ;;
 esac
 
@@ -852,5 +884,136 @@ EOP
   elif [ "$rc" = 0 ]; then
     fail "no particle file"
   fi
+  finish
+fi
+
+#=============================== bnd-release (#254) ========================
+if [ "$MODE" = bnd-release ]; then
+  KB="$(awk '/^\$bound1/{b=1; next} b && /kbound/{k=1} b && /ibtyp/{exit} b && k {sub(/kbound *=/,""); printf "%s ", $0}' "$W/mm_lgr_b.str")"
+  echo "  kbound of mm_lgr_b: $(echo $KB | wc -w) nodes ($(echo $KB | cut -d' ' -f1) ... $(echo $KB | awk '{print $NF}'))"
+  # bnd_all: that list; bnd_two: four of its nodes in an order in which no
+  # two consecutive nodes are the ends of a side of the basin boundary
+  # (98-100, 100-99 inner side, 99-101), while every node still has a
+  # neighbour on the basin boundary in the list (the open boundary of the
+  # hydrodynamics, bndo, needs that)
+  # bnd_ppv: that list with lgrpps = -0.00001 (particles per cubic metre of
+  # the inflow over each side: get_bflux_ppv)
+  for c in all ppv two; do
+    k="$KB"
+    [ "$c" = two ] && k="98 100 99 101"
+    pps=0.2
+    [ "$c" = ppv ] && pps=-0.00001
+    sed -e "s/itend = '[^']*'/itend = '2009-01-01::02'/" -e 's/^\(\s*nbdy\s*=\s*\)150/\10/' \
+        -e '/lgrlin/d' -e "s/^\(\s*\)mm_lgr_a\s*$/\1bnd_$c/" "$W/mm_lgr_a.str" > "$W/bnd_$c.str"
+    # kbound in lines of 10 nodes (an STR line has at most 80 characters)
+    printf '\n$bound1\n        kbound = %s\n        ibtyp = 1\n        boundn = %s\n        lgrpps = %s\n$end\n' \
+      "$(echo $k | xargs -n 10 | sed '2,$s/^/                 /')" "'INPUT/level_Mar_Menor.dat'" "$pps" >> "$W/bnd_$c.str"
+    grep -q "bnd_$c" "$W/bnd_$c.str" || fail "run name not set in bnd_$c.str"
+    grep -q "nbdy *= *0" "$W/bnd_$c.str" || fail "nbdy = 0 not set in bnd_$c.str"
+  done
+
+  for c in all ppv; do
+  echo "=== mm_lgr_a for two hours, release along the Mar Menor sea boundary ($(grep -o 'lgrpps = .*' "$W/bnd_$c.str")), serially"
+  bend=1
+  run bnd_$c bnd_$c.log shyfem || { fail "$c: the boundary release run did not end"; bend=0; }
+  grep "warning lagrange: boundary" "$W/bnd_$c.log" | sed 's/^/  /'
+  nw="$(grep -c "warning lagrange: boundary 1 with lgrpps" "$W/bnd_$c.log")"
+  [ "$nw" = 2 ] || fail "$c: warnings of skipped pairs: $nw, expected 2"
+  for p in "99 and 100" "162 and 163"; do
+    grep -q "warning lagrange: boundary 1 with lgrpps: nodes $p of kbound" "$W/bnd_$c.log" \
+      || fail "$c: no warning for the pair $p"
+  done
+  if [ "$bend" = 0 ]; then
+    echo "  particle file not checked (the run did not end)"
+  elif [ -s "$W/bnd_$c.lgr.shy" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/bnd_$c.lgr.shy" "$W/GRID/MM_geo.grd" $c $KB <<'EOP' || fail "$c: start elements of the released particles"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path, grd, case = sys.argv[2:5]
+kb = [int(v) for v in sys.argv[5:]]
+nodes, elems = {}, {}
+with open(grd) as fh:
+    for line in fh:
+        f = line.split()
+        if not f:
+            continue
+        if f[0] == "1":
+            nodes[int(f[1])] = (float(f[3]), float(f[4]))
+        elif f[0] == "2":
+            elems[int(f[1])] = tuple(int(v) for v in f[4:7])
+owner = {}
+for ie, nn in elems.items():
+    for a in range(3):
+        owner.setdefault(frozenset((nn[a], nn[(a + 1) % 3])), []).append(ie)
+pairs = list(zip(kb[:-1], kb[1:]))
+sides = {frozenset(p) for p in pairs if len(owner.get(frozenset(p), [])) == 1}
+inner = [p for p in pairs if len(owner.get(frozenset(p), [])) != 1]
+print("  pairs of kbound %d: sides of the basin boundary %d, other pairs %s" % (len(pairs), len(sides), inner))
+ok = len(sides) == 90 and inner == [(99, 100), (162, 163)]
+if not ok:
+    print("  the list is not the one this check expects")
+
+TOL = 5e-3
+def weights(ie, x, y):
+    (x1, y1), (x2, y2), (x3, y3) = (nodes[k] for k in elems[ie])
+    d = (y2 - y3) * (x1 - x3) + (x3 - x2) * (y1 - y3)
+    l1 = ((y2 - y3) * (x - x3) + (x3 - x2) * (y - y3)) / d
+    l2 = ((y3 - y1) * (x - x3) + (x1 - x3) * (y - y3)) / d
+    return (l1, l2, 1.0 - l1 - l2)
+
+_, times = lc.read_file(path)
+seen, nins, nbad = {}, 0, 0
+per_side = dict.fromkeys(sides, 0)
+for t, b, _ in times:
+    for pid, p in b[-1].items():		# inserted block: release records
+        nins += 1
+        ie, x, y = p["ie"], p["x"], p["y"]
+        why = None
+        if ie not in elems:
+            why = "element %d not in 1..%d" % (ie, len(elems))
+        else:
+            w = weights(ie, x, y)
+            j = min(range(3), key=lambda a: abs(w[a]))
+            nn = elems[ie]
+            side = frozenset((nn[(j + 1) % 3], nn[(j + 2) % 3]))
+            if min(w) < -TOL:
+                why = "point outside its element %d (weights %s)" % (ie, w)
+            elif abs(w[j]) > TOL:
+                why = "point not on a side of its element %d (weights %s)" % (ie, w)
+            elif side not in per_side:
+                why = "on side %s of element %d, not a side of the list" % (sorted(side), ie)
+            else:
+                per_side[side] += 1
+        if why:
+            nbad += 1
+            if nbad <= 5:
+                print("  t=%r id %d: %s" % (t, pid, why))
+nempty = sorted(sorted(s) for s, n in per_side.items() if n == 0)
+print("  released particles %d, on a side of the list in its element: %d, wrong: %d"
+      % (nins, nins - nbad, nbad))
+print("  sides of the list with no particle: %d %s" % (len(nempty), nempty[:5]))
+# every side gets particles by length (lgrpps > 0); per volume (case ppv)
+# only the sides with an inflow do
+if nins == 0 or nbad or (nempty and case != "ppv"):
+    ok = False
+sys.exit(0 if ok else 1)
+EOP
+  else
+    fail "$c: no particle file"
+  fi
+  done
+
+  echo "=== the same with kbound = 98 100 99 101 (no side of the basin boundary: nothing to release on)"
+  ( cd "$W" && timeout 300 nice -n 10 shyfem bnd_two.str > bnd_two.log 2>&1 )
+  lrc=$?
+  echo "  exit code $lrc"
+  [ "$lrc" != 0 ] || fail "kbound = 98 100 99 101: exit code 0, expected non-zero"
+  grep -m3 "warning lagrange: boundary 1" "$W/bnd_two.log" | sed 's/^/  /'
+  grep -m2 "has lgrpps but no\|error stop lgr_release_line\|STOP" "$W/bnd_two.log" | sed 's/^/  /'
+  grep -q "error stop lgr_release_line: no boundary side to release on" "$W/bnd_two.log" \
+    || fail "kbound = 98 100 99 101: no 'error stop lgr_release_line: no boundary side to release on'"
+  grep -q "simulation end" "$W/bnd_two.log" && fail "kbound = 98 100 99 101: the run ended instead of stopping"
   finish
 fi
