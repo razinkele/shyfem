@@ -198,17 +198,28 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
 
     # --- lgrseed: integer in [-2147483647, 2147483647] (lagrange_main.f90) ---
     lgrseed = _num(sections, "lagrg", "lgrseed")
-    if lgrseed is not None and (
-        not math.isfinite(lgrseed) or not float(lgrseed).is_integer() or abs(lgrseed) > 2147483647
-    ):
-        msgs.append(
-            ValidationMessage(
-                "error",
-                f"lgrseed={lgrseed} is invalid — must be an integer from "
-                "-2147483647 to 2147483647",
-                "lgrseed",
+    if lgrseed is not None:
+        # an int of any size is judged as an int (float() overflows on one);
+        # a bool is an int here (True = 1, False = 0, both valid seeds)
+        if isinstance(lgrseed, int):
+            seed_bad = abs(lgrseed) > 2147483647
+        else:
+            seed_bad = (
+                not math.isfinite(lgrseed) or not lgrseed.is_integer() or abs(lgrseed) > 2147483647
             )
-        )
+        if seed_bad:
+            if isinstance(lgrseed, int) and abs(lgrseed) > 10**15:
+                shown = "(a very large integer)"  # %e / float() overflow on it
+            else:
+                shown = f"{lgrseed:.6g}" if isinstance(lgrseed, float) else str(lgrseed)
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    f"lgrseed={shown} is invalid — must be an integer from "
+                    "-2147483647 to 2147483647",
+                    "lgrseed",
+                )
+            )
 
     # --- Dependency: iturb valid range (turbulence.f90:105-114) ---
     if iturb is not None and isinstance(iturb, int) and iturb not in (0, 1, 2, 3):

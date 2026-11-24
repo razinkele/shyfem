@@ -149,6 +149,13 @@ class TestRangeValidation:
         errors = [m for m in msgs if m.level == "error" and m.param == "lgrseed"]
         assert len(errors) == 1
 
+    @pytest.mark.parametrize("seed", ["1" * 400, 10**400, -(10**400)])
+    def test_lgrseed_huge_integer_is_an_error_not_an_exception(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        # a 400-digit text also trips the 80-column STR line rule: count the range error only
+        errors = [m for m in msgs if m.param == "lgrseed" and "is invalid" in m.message]
+        assert len(errors) == 1
+
     @pytest.mark.parametrize("seed", [2147483648, -2147483648, 1.5, 1e10])
     def test_lgrseed_out_of_range_or_fractional_is_rejected(self, seed):
         msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
