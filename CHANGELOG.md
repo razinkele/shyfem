@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — Tools
+
+- **`shyelab -outformat nc` now converts EUTRO and mercury output (#222).** The ulva variables (741, 742) and the mercury variables (251-299) had no name in the NetCDF writer (`src/tools/shynetcdf/netcdf.f90`), NetCDF refused the empty name and `shyelab` left a 32-byte `out.nc` of zeros behind and exited 0. They now have names and units (`ulva_biomass`, `hg0_water`, ...), an id that still has no name gets `var_<id>` and a log line, and a failed NetCDF call removes the unfinished `out.nc` and exits with status 1 (it exited 0). Only the NetCDF writer changes: model results are unchanged. New gate `testcases/examples/weutro_box/check_nc.sh`.
+
 ### Fixed — MPI
 
 - **The `sedimt:` lines of the older routine `sedimt` (`icust = 82`, `custom_admin.f90`) are written once, with the totals of the whole basin (#274).** On several processes every process opened the `.inf` file and wrote its own line with the totals of its own domain (ghost nodes included), over each other; now each process sums the nodes it owns, the values are reduced to the global node order and the master adds them and writes the line (as for `issedi = 1`, #220). The `sedimt:` lines on one process are unchanged and those on 2 and 4 processes equal them (576 of 576 lines of the new `check_sedimt_mpi.sh`). Results: no change; the `.shy` files do not change; only the `.inf` and screen lines of `sedimt` on several processes change.

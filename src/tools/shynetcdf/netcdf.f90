@@ -132,6 +132,8 @@
 	integer, save :: ntime_recs = 0		!how many time records
 	logical, save :: btime_is_char = .false. !time is a string ... special
 
+	character*256, save :: nc_created_file = ' '	!file made by nf_create
+
 	logical, save :: bdebug_nc = .false.
 	logical, save :: bquiet_nc = .false.
 
@@ -223,6 +225,7 @@
 
 	retval = nf_create(FILE_NAME, nf_clobber, ncid)
 	call nc_handle_err(retval,'open_reg create')
+	nc_created_file = file_name	!remove it if a later nc call fails
 
 !-----------------------------------------
 ! Define the dimensions. The record dimension is defined to have
@@ -437,6 +440,7 @@
 
 	retval = nf_create(FILE_NAME, nf_clobber, ncid)
 	call nc_handle_err(retval,'open_fem')
+	nc_created_file = file_name	!remove it if a later nc call fails
 
 !-----------------------------------------
 ! Define the dimensions. The record dimension is defined to have
@@ -680,6 +684,7 @@
 
 	retval = nf_create(FILE_NAME, nf_clobber, ncid)
 	call nc_handle_err(retval,'open_fem')
+	nc_created_file = file_name	!remove it if a later nc call fails
 
 !-----------------------------------------
 ! Define the dimensions. The record dimension is defined to have
@@ -940,6 +945,7 @@
 
 	retval = nf_create(FILE_NAME, nf_clobber, ncid)
 	call nc_handle_err(retval,'open_ts')
+	nc_created_file = file_name	!remove it if a later nc call fails
 
 !-----------------------------------------
 ! Define the dimensions. The record dimension is defined to have
@@ -2957,19 +2963,31 @@
 
 	subroutine nc_handle_err(errcode,string)
 
-	use netcdf_params, only : nf_noerr,nf_strerror
+	use netcdf_params, only : nf_noerr,nf_strerror,nc_created_file
 
 	implicit none
 
 	integer errcode
 	character*(*), optional :: string
+	integer iu,ios
 
 	if( errcode .eq. nf_noerr ) return
 
 	if( present(string) ) write(6,*) trim(string)
 	write(6,*) 'Error: ', nf_strerror(errcode)
 
-	stop 'error stop nc_handle_err'
+	! do not leave a half defined (invalid) file behind (#222)
+
+	if( nc_created_file /= ' ' ) then
+	  open(newunit=iu,file=trim(nc_created_file),status='old' &
+     &			,iostat=ios)
+	  if( ios == 0 ) close(iu,status='delete')
+	  write(6,*) 'invalid netcdf file removed: ',trim(nc_created_file)
+	  nc_created_file = ' '
+	end if
+
+	write(6,*) 'error stop nc_handle_err'
+	call exit(1)
 	end
 
 !*****************************************************************
@@ -3473,6 +3491,98 @@
 	  units = 'kg/ms'
 	  cmin = 0.
 	  cmax = 0.
+	else if( ivar >= 251 .and. ivar <= 253 ) then	! mercury in water
+	  ! mercury.f90: epinit comment "Hg0,HgII,MeHg in water", mg/L = g/m3
+	  what = 'long_name'
+	  units = 'g m-3'
+	  cmin = 0.
+	  cmax = 0.
+	  if( ivar == 251 ) then
+	    name = 'hg0_water'
+	    std = 'elemental_mercury_Hg0_in_water'
+	  else if( ivar == 252 ) then
+	    name = 'hg2_water'
+	    std = 'divalent_mercury_HgII_in_water'
+	  else
+	    name = 'mehg_water'
+	    std = 'methylmercury_MeHg_in_water'
+	  end if
+	else if( ivar .eq. 271 .or. ivar .eq. 272 ) then	! mercury in sediment
+	  ! mercury.f90: esinit comment "HgII, MeHg in sediment [mg/kg]"
+	  what = 'long_name'
+	  units = 'mg kg-1'
+	  cmin = 0.
+	  cmax = 0.
+	  if( ivar == 271 ) then
+	    name = 'hg2_sediment'
+	    std = 'divalent_mercury_HgII_in_sediment'
+	  else
+	    name = 'mehg_sediment'
+	    std = 'methylmercury_MeHg_in_sediment'
+	  end if
+	else if( ivar .eq. 281 .or. ivar .eq. 282 ) then	! solids in water
+	  ! mercury.f90: emsolw(1)=silt, emsolw(2)=POM (merc_water4sed.f90), mg/L
+	  what = 'long_name'
+	  units = 'g m-3'
+	  cmin = 0.
+	  cmax = 0.
+	  if( ivar == 281 ) then
+	    name = 'silt_water'
+	    std = 'silt_concentration_in_water'
+	  else
+	    name = 'pom_water'
+	    std = 'particulate_organic_matter_concentration_in_water'
+	  end if
+	else if( ivar .eq. 291 .or. ivar .eq. 292 ) then	! solids in sediment
+	  ! mercury.f90: emsols(1)=silt, emsols(2)=POM (merc_sed4sed.f90), g/m3
+	  what = 'long_name'
+	  units = 'g m-3'
+	  cmin = 0.
+	  cmax = 0.
+	  if( ivar == 291 ) then
+	    name = 'silt_sediment'
+	    std = 'silt_concentration_in_sediment'
+	  else
+	    name = 'pom_sediment'
+	    std = 'particulate_organic_matter_concentration_in_sediment'
+	  end if
+	else if( ivar .eq. 297 ) then	! sea bed depth variation (mercury)
+	  name = 'sea_bed_depth_change'
+	  what = 'long_name'
+	  std = 'variation_of_the_sea_bed_depth_since_start'
+	  units = 'm'
+	  cmin = 0.
+	  cmax = 0.
+	else if( ivar .eq. 298 ) then	! active layer thickness (mercury)
+	  name = 'active_layer_thickness'
+	  what = 'long_name'
+	  std = 'thickness_of_the_active_sediment_layer'
+	  units = 'm'
+	  cmin = 0.
+	  cmax = 0.
+	else if( ivar .eq. 299 ) then	! bottom stress (mercury)
+	  name = 'mercury_bottom_stress'
+	  what = 'long_name'
+	  std = 'bottom_stress_used_by_the_mercury_model'
+	  units = 'Pa'
+	  cmin = 0.
+	  cmax = 0.
+	else if( ivar .eq. 741 ) then	! ulva biomass (weutro)
+	  ! bio3d.f90 "ulva biomass"; weutro_ulva.f90 Wdt = dry weight, g/m3
+	  name = 'ulva_biomass'
+	  what = 'long_name'
+	  std = 'ulva_dry_weight_biomass'
+	  units = 'g m-3'
+	  cmin = 0.
+	  cmax = 0.
+	else if( ivar .eq. 742 ) then	! ulva quota (weutro)
+	  ! bio3d.f90 "ulva quota"; weutro_ulva.f90 Quota = intratissual N
+	  name = 'ulva_nitrogen_quota'
+	  what = 'long_name'
+	  std = 'ulva_intratissue_nitrogen_quota'
+	  units = 'gN gdw-1'
+	  cmin = 0.
+	  cmax = 0.
 	else if( ivar .eq. 0 ) then	! no variable description
 	  write(6,*) 'unknown variable: ',ivar
 	  stop 'error stop nc_init_variable'
@@ -3481,6 +3591,10 @@
 	  call make_unknown_variable_name(ivar,string)
 	  !write(string,'(i4)') ivar
 	  !string = adjustl(string)
+	  if( string == ' ' ) then	!not in the string table either
+	    write(string,'(a,i0)') 'var_',ivar
+	    write(6,*) 'generated variable name: ',ivar,trim(string)
+	  end if
 	  name = string
 	  what = 'long_name'
 	  std = string
