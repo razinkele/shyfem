@@ -17,7 +17,10 @@
 #   2. serial, mm_hyd_22a (tide at the open boundary, river, wind, Coriolis,
 #      variable time step), one day, with "ilin = 0  itlin = 1": the run
 #      ends, and the largest |water level| and speed of its hydro file stay
-#      below 1 m and 5 m/s.  There is no reference for itlin = 1 results:
+#      below 1 m and 5 m/s.  The values come from shyelab -split and
+#      -write; each command must succeed and give at least one record with
+#      numeric values, or the row fails (an empty or unreadable hydro file
+#      cannot pass as 0).  There is no reference for itlin = 1 results:
 #      the bounds only catch a return to garbage (measured: 0.18 m and
 #      0.51 m/s; the same case with ilin = 1, without its tilt, 0.16 m and
 #      1.0 m/s in 4 days; runs gone wrong reached 1.97 m and 9.9 m/s, the
@@ -43,7 +46,8 @@
 #      #227 too, and fails if the stop of row 3 catches a run it must not.
 #   5. source: src/shyfem/lagrange_track.f90 has no bare stop statement
 #      (the eight in the layer change of track_orig and track_line are
-#      shympi_abort_internal since #227).  This row reads the text, not a
+#      shympi_abort_internal since #227; the file must define track_orig
+#      and track_line once each).  This row reads the text, not a
 #      run: no run checked for #227 reaches those lines (no tracer of the
 #      2D runs changed layer, and a 3D run stops at start-up, row 8).
 #   6. serial, mm_hyd_01 with "ilin = 0  itlin = 2" (no such option):
@@ -118,6 +122,29 @@ stopcheck() {
   else tail -3 "$log"; fail "row $row: no clean start-up stop"; fi
 }
 
+# recmax FILE MODE : the largest value over the record lines
+# ("l,ivar,min,aver,max") that "shyelab -write FILE" prints in $SCR/split;
+# MODE abs: largest |min| or |max|, MODE max: largest max.  Prints the value
+# and returns 0 only if shyelab exits with 0 and at least one record line
+# was read whose min and max are numbers; otherwise prints nothing and
+# returns 1 (a missing, empty or unreadable file, or a NaN, can then not
+# pass as 0; a real 0 still passes).  The output of shyelab is kept in
+# $SCR/split/write_FILE.log.
+recmax() {
+  local f="$1" mode="$2"
+  ( cd "$SCR/split" && shyelab -write "$f" > "write_$f.log" 2>&1 ) || return 1
+  awk -v mode="$mode" '
+    BEGIN { num = "^[-+]?([0-9]+[.]?[0-9]*|[.][0-9]+)([eE][-+]?[0-9]+)?$" }
+    /l,ivar,min,aver,max/ {
+      if( $5 !~ num || $7 !~ num ) { bad = 1; next }
+      a = ($5 < 0 ? -$5 : $5); b = ($7 < 0 ? -$7 : $7)
+      v = (mode == "abs" ? (a > b ? a : b) : $7 + 0)
+      if( n == 0 || v > m ) m = v
+      n++
+    }
+    END { if( n == 0 || bad ) exit 1; printf "%.3g", m }' "$SCR/split/write_$f.log"
+}
+
 echo "=== 1. serial: mm_hyd_01 with ilin = 0, itlin = 1"
 R1="${TAG}_hyd01"
 if mkstr mm_hyd_01 "$R1" -e "$ITL"; then
@@ -133,13 +160,18 @@ if mkstr mm_hyd_22a "$R2" -e "$ITL" -e "s/itend = '[^']*'/itend = '2009-01-02'/"
   grep -q "itlin = 1" "$R2.str" || fail "row 2: the sed expression set no itlin"
   timeout 900 nice -n 10 shyfem "$R2.str" > "$SCR/2.log" 2>&1; r=$?
   if ended "$r" "$SCR/2.log"; then
-    mkdir -p "$SCR/split" && cp "$R2.hydro.shy" "$SCR/split/h.shy"
-    ( cd "$SCR/split" && shyelab -split h.shy > split.log 2>&1 )
-    z=$(cd "$SCR/split" && shyelab -write zeta.shy 2>/dev/null | awk '/l,ivar/{a=($5<0?-$5:$5); b=($7<0?-$7:$7); if(a>m)m=a; if(b>m)m=b} END{printf "%.3g", m}')
-    s=$(cd "$SCR/split" && shyelab -write speed.shy 2>/dev/null | awk '/l,ivar/{if($7>m)m=$7} END{printf "%.3g", m}')
-    if awk -v z="$z" -v s="$s" 'BEGIN{exit !(z != "" && s != "" && z+0 < 1 && s+0 < 5)}'; then
+    mkdir -p "$SCR/split"
+    if ! cp "$R2.hydro.shy" "$SCR/split/h.shy"; then
+      fail "row 2: cannot copy $R2.hydro.shy"
+    elif ! ( cd "$SCR/split" && shyelab -split h.shy > split.log 2>&1 ); then
+      tail -3 "$SCR/split/split.log"; fail "row 2: shyelab -split failed"
+    elif ! z=$(recmax zeta.shy abs); then
+      fail "row 2: no usable water level record (none, or a value that is not a number) from shyelab -split/-write of $R2.hydro.shy (logs in $SCR/split)"
+    elif ! s=$(recmax speed.shy max); then
+      fail "row 2: no usable speed record (none, or a value that is not a number) from shyelab -split/-write of $R2.hydro.shy (logs in $SCR/split)"
+    elif awk -v z="$z" -v s="$s" 'BEGIN{exit !(z+0 < 1 && s+0 < 5)}'; then
       echo "  ended; largest |water level| $z m, largest speed $s m/s (bounds 1 m, 5 m/s; plausibility only)"
-    else fail "row 2: largest |water level| '$z' m, largest speed '$s' m/s (bounds 1 m, 5 m/s)"; fi
+    else fail "row 2: largest |water level| $z m, largest speed $s m/s (bounds 1 m, 5 m/s)"; fi
   else tail -3 "$SCR/2.log"; grep -m1 -A3 '^#3 ' "$SCR/2.log"; fail "row 2: the serial run did not end (exit $r)"; fi
 fi
 
@@ -161,7 +193,12 @@ if mkstr mm_hyd_01 "$R4" -e 's/^\([ \t]*\)ilin = 1[ \t]*$/\1ilin = 1  itlin = 1/
 fi
 
 echo "=== 5. source: no bare stop in lagrange_track.f90"
+nsub=$(grep -ciE "^[[:space:]]*subroutine (track_orig|track_line)[[:space:]]*\(" "$SRC" 2>/dev/null)
 if [ ! -f "$SRC" ]; then fail "row 5: $SRC not found"
+elif [ "$nsub" != 2 ]; then
+  # the text read must be the tracker: an unreadable or wrong file would
+  # otherwise count no stop statement and pass
+  fail "row 5: $SRC does not hold track_orig and track_line once each (found ${nsub:-none})"
 else
   # code part of each line (text after ! removed, a blank put in front),
   # then a stop statement: the word stop followed by a quoted text or by
