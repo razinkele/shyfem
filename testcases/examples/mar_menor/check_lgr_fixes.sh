@@ -69,6 +69,23 @@
 #             300 s 1469 of the 4952 particles were active after one hour
 #             (4134 expected) and none after three hours (2962 expected),
 #             with idt = 60 s 33 after one hour (4180 expected).
+#             Part 2, restart: mm_lgr (random walk rwhpar = 0.5) with
+#             "ldecay = 3600." for six hours, particle output every 300 s,
+#             serially: the run that went on, the same run to 01:00 with a
+#             restart file (idtrst = -1), and a run from 01:00 with that
+#             restart file and its particle file (lgrini, itlgin = 01:00,
+#             nbdy = 0).  At least one particle must decay in the first step
+#             after the restart in the run that went on, and at every output
+#             of the restarted run the active particles must be those of the
+#             run that went on, each record equal (the exited block is not
+#             compared: lgrini reads only the active particles).  The
+#             particle file resets a particle's age (init%time is the
+#             restart time), but the restarted run's first call of lagrange
+#             is at the restart time itself (age 0: no draw, and the record
+#             already holds that step's decay), and from the next step on
+#             every particle draws over a full step with the keys of the
+#             run that went on (measured: 56 active at 01:00, 51 at 01:05,
+#             the same 51 in the restarted run, 60 outputs equal).
 #   outside   (#247) a release point that lies in no element releases
 #             nothing: mm_lgr_a (2D) and mm_lgr_c (3D, with ipvert = -3:
 #             three random depths per particle) for six hours, serially,
@@ -550,6 +567,88 @@ for t in common:
     print("    t = %4.1f h  fractions %.4f / %.4f  (%+.2f)%s" % (t / 3600.0, n1 / r1, n2 / r2, z, "  BEYOND 4" if bad else ""))
 sys.exit(0 if ok else 1)
 EOF
+  fi
+
+  # 2. a run restarted from its particle file decays as the run that went
+  #    on: mm_lgr (random walk), ldecay = 3600., six hours, output every
+  #    300 s; the run that went on, the same run to 01:00 with a restart
+  #    file, and a run from 01:00 with that restart file and particle file
+  setname_dr() {
+    awk -v name="$2" '
+      /^\$title/ { t = 1; nt = 0 }
+      t && !/^\$/ { nt++; if( nt == 2 ) { print "        " name; next } }
+      /^\$end/ { t = 0 }
+      { print }
+    ' "$W/$1.str" > "$W/$2.str"
+  }
+  sed -e 's/^\(\s*\)rwhpar = .*/&\n\1ldecay = 3600./' -e "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" \
+      -e "s/idtlgr = '1h'/idtlgr = '300s'/" "$W/mm_lgr.str" > "$W/drr_base.str"
+  setname_dr drr_base drr_a
+  sed -e "s/itend = '2009-01-01::06:00:00'/itend = '2009-01-01::01:00:00'/" \
+      -e 's/^\$para[ \t]*$/$para\n        idtrst = -1\n        itmrst = -1/' "$W/drr_a.str" > "$W/drr_w1.str"
+  setname_dr drr_w1 drr_w
+  sed -e "s/itanf = '2009-01-01'/itanf = '2009-01-01::01:00:00'/" \
+      -e 's/^\$para[ \t]*$/$para\n        itrst = -1\n        ityrst = 1/' \
+      -e "s/^\\([ \t]*\\)nbdy = 150[ \t]*$/\\1nbdy = 0\n\\1lgrini = 'drr_w.lgr.shy'\n\\1itlgin = '2009-01-01::01:00:00'/" \
+      -e "s/^\\\$name[ \t]*$/\$name\n        restrt = 'drr_w.rst'/" "$W/drr_a.str" > "$W/drr_r1.str"
+  setname_dr drr_r1 drr_r
+  for o in 'ldecay = 3600.' "idtlgr = '300s'" "itend = '2009-01-01::06:00:00'"; do
+    grep -qF -- "$o" "$W/drr_a.str" || fail "no '$o' in drr_a.str"
+  done
+  for o in "itend = '2009-01-01::01:00:00'" 'idtrst = -1'; do
+    grep -qF -- "$o" "$W/drr_w.str" || fail "no '$o' in drr_w.str"
+  done
+  for o in "itanf = '2009-01-01::01:00:00'" 'itrst = -1' 'nbdy = 0' "lgrini = 'drr_w.lgr.shy'" "itlgin = '2009-01-01::01:00:00'" "restrt = 'drr_w.rst'"; do
+    grep -qF -- "$o" "$W/drr_r.str" || fail "no '$o' in drr_r.str"
+  done
+  echo "=== mm_lgr, ldecay = 3600., restarted at 01:00 from its particle and restart files"
+  for r in drr_a drr_w drr_r; do run $r $r.log shyfem || fail "$r: the run did not end"; done
+  grep -q 'initializing lagrangian from file' "$W/drr_r.log" || fail "the restarted run did not read the particle file"
+  grep -q 'A restart has been performed' "$W/drr_r.log" || fail "the restarted run did not read the restart file"
+  if [ -s "$W/drr_a.lgr.shy" ] && [ -s "$W/drr_r.lgr.shy" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/drr_a.lgr.shy" "$W/drr_r.lgr.shy" <<'EOF' || fail "the restarted run decays otherwise than the run that went on"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+def load(path):
+    _, times = lc.read_file(path)
+    return {t: b for t, b, _ in times}
+
+full, rest = load(sys.argv[2]), load(sys.argv[3])
+ok = True
+t0, t1 = 3600.0, 3900.0			# the restart and the first step after it
+if t0 not in full or t1 not in full:
+    print("  the run that went on has no output at %r or %r" % (t0, t1))
+    sys.exit(1)
+n0, n1 = len(full[t0][0]), len(full[t1][0])
+print("  the run that went on: active %d at the restart (01:00), %d one step later" % (n0, n1))
+if n1 >= n0:
+    print("  no particle decayed in the first step after the restart: the check would not see a missing draw")
+    ok = False
+nout = nrec = ndiff = 0
+for t in sorted(rest):
+    nout += 1
+    a, b = full.get(t), rest[t]
+    if a is None:
+        print("  output t=%r of the restarted run not in the run that went on" % t)
+        ok = False
+        continue
+    if set(a[0]) != set(b[0]):
+        ndiff += 1
+        if ndiff <= 3:
+            print("  t=%r: active ids differ (only in the run that went on %s, only in the restarted run %s)"
+                  % (t, lc.fmt_ids(set(a[0]) - set(b[0])), lc.fmt_ids(set(b[0]) - set(a[0]))))
+    for pid in set(a[0]) & set(b[0]):
+        nrec += 1
+        if a[0][pid] != b[0][pid]:
+            ndiff += 1
+print("  restarted run: %d outputs, %d active records compared with the run that went on, %d differences"
+      % (nout, nrec, ndiff))
+sys.exit(0 if ok and ndiff == 0 and nrec > 0 else 1)
+EOF
+  else
+    fail "particle file missing (drr_a or drr_r)"
   fi
   finish
 fi

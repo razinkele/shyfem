@@ -92,6 +92,12 @@
 ! exp(-age/ldecay), with a new draw, so the survival after t was about
 ! exp(-t**2/(2*ldecay*dt)) and depended on the time step.
 !
+! after a restart from a particle file (lgrini) init%time is the restart
+! time: the first call, at the restart time itself, draws nothing (dta =
+! 0; the record read already holds that step), and every later step is a
+! full step drawn with the keys of the run that went on, so the restarted
+! run decays as that run (check_lgr_fixes.sh decay-rate, part 2)
+!
 ! a decayed particle keeps its last element with a negative sign
 ! (ie = -abs(ie)), as a particle that left the basin and one that died in
 ! lagr_surv: it is not tracked any more and the output writes its last
