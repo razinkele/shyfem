@@ -29,12 +29,16 @@
 #     release: twice the mean depth of the particles released in the
 #     element; every depth read lies in 0 ... that column depth);
 #   - the release histogram (20 bins of relative depth, depth / column
-#     depth) is exactly uniform (chi-square 0);
+#     depth) is exactly uniform (chi-square 0), and no particle is lost:
+#     every output holds all released particles as active ones;
 #   - the walk ran: the mean |dz| of the particles over the first hour
 #     (from the release, 300 s before 00:00, to the output at 01:00, T =
-#     3900 s) is at least 0.15 sqrt(2 K T).  A walk that never moves
-#     keeps the uniform release and passes the chi-square test, so this
-#     test is what makes that one meaningful;
+#     3900 s), and over every later hour (T = 3600 s), is at least 0.15
+#     sqrt(2 K T).  A walk that never moves keeps the uniform release
+#     and passes the chi-square test, so this test is what makes that one
+#     meaningful; and the two lines of the walk's particle steps (#261)
+#     show calls >= particle steps >= 39960 x 288 and no step stopped at
+#     the cap or ended by two calls in a row that used no time;
 #   - well mixed: the mean chi-square of the 20-bin histogram of the
 #     active particles over the hourly outputs 12:00 ... 24:00 is at most
 #     31 (19 degrees of freedom: 19 +- 6 per output if well mixed).
@@ -53,12 +57,16 @@
 # diffusivity K, reflected at the surface and bottom, would give 0.41:
 # here the walk spreads the particles more slowly than that, before and
 # after #284; the variance of the hourly displacement of particles far
-# from the surface and bottom is about 0.75 of 2 K T.)
+# from the surface and bottom is about 0.75 of 2 K T, issue #287.)
 # On origin/main the particles drift to the bottom (11 % too few in the
-# upper 15 % of the column, 10 % too many in the lower 15 %): after a
-# particle crossed an interface lgr_diff_vert went on with the thickness
-# of the layer it left, and a call that stopped at an interface counted
-# the time tv in which it had diffused for tv**2/dt.
+# upper 15 % of the column, 10 % too many in the lower 15 %).  Of the two
+# defects of lgr_diff_vert, the first drove them down: after a particle
+# crossed an interface it went on with the thickness of the layer it left
+# (with only the second fixed the upper / lower 15 % are at 0.842 /
+# 1.130 of uniform).  The second, a call that stopped at an interface
+# counted the time tv in which it had diffused for tv**2/dt, alone drove
+# them up (with only the first fixed: 1.045 / 0.979), so it partly masked
+# the first.
 #
 # Usage:  ./check_lgr_wellmixed.sh
 # Needs shyfem and python3 on PATH and `make init` done.  The scratch
@@ -134,8 +142,20 @@ for s in $SEEDS; do
   echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
   echo "$line" | grep -Eq 'min 300\.0* mean 300\.0*,.* below the model step 0( |$)' \
     || fail "$c: the diffusivity is not constant over the depth (random walk time step below 300 s)"
-  # information only: the calls of the walk (#261)
-  grep 'lgr vertical diffusion: \(particle steps\|steps stopped\)' "$log" | sed 's/^/  /'
+  # the walk's particle steps (#261): it ran in every step, to the end
+  l1="$(grep 'lgr vertical diffusion: particle steps:' "$log")"
+  l2="$(grep 'lgr vertical diffusion: steps stopped at the cap of' "$log")"
+  echo "  ${l1:-no line 'lgr vertical diffusion: particle steps:' in the log}"
+  echo "  ${l2:-no line 'lgr vertical diffusion: steps stopped at the cap of' in the log}"
+  nst="$(printf '%s' "$l1" | sed -n 's/.*particle steps: *\([0-9][0-9]*\),.*/\1/p')"
+  ncl="$(printf '%s' "$l1" | sed -n 's/.*, calls: *\([0-9][0-9]*\),.*/\1/p')"
+  ncap="$(printf '%s' "$l2" | sed -n 's/.*steps stopped at the cap of [0-9]* calls: *\([0-9][0-9]*\),.*/\1/p')"
+  nend="$(printf '%s' "$l2" | sed -n 's/.*steps ended by 2 calls in a row that used no time: *\([0-9][0-9]*\),.*/\1/p')"
+  if [ -z "$nst" ] || [ -z "$ncl" ] || [ "$nst" -lt $((39960 * 288)) ] || [ "$ncl" -lt "$nst" ]; then
+    fail "$c: particle steps ${nst:-not reported} and calls ${ncl:-not reported}, expected calls >= particle steps >= 39960 x 288"
+  fi
+  [ "${ncap:-x}" = 0 ] || fail "$c: particle steps stopped at the cap ${ncap:-not reported}, expected 0"
+  [ "${nend:-x}" = 0 ] || fail "$c: particle steps ended by two calls in a row that used no time ${nend:-not reported}, expected 0"
   PYTHONDONTWRITEBYTECODE=1 python3 - "$HERE" "$P/$c.lgr.shy" "$CHI2MAX" "$DZFLOOR" <<'EOF' || fail "$c: see above"
 import math, sys
 sys.path.insert(0, sys.argv[1])
@@ -179,7 +199,10 @@ def chi2(h):
 
 c0 = chi2(hist(rel))
 late = []
+nlost = 0
 for t, b, _ in times:
+    if len(b[0]) != len(rel) or b[1]:
+        nlost += 1
     for pid, p in b[0].items():
         r = rel[pid]
         if (p["x"], p["y"], p["ie"]) != (r["x"], r["y"], r["ie"]):
@@ -191,6 +214,10 @@ print("  still water: records that left their release position or element %d;"
       " depths outside their column %d" % (nmove, nout))
 if nmove or nout:
     print("  FAIL: the water is not still (the column depth of the release does not apply)")
+    ok = False
+print("  outputs that do not hold all %d particles as active ones: %d" % (len(rel), nlost))
+if nlost:
+    print("  FAIL: particles lost (the chi-square would leave them out)")
     ok = False
 print("  release: chi-square %.3f" % c0)
 if c0 != 0.0:
@@ -207,6 +234,32 @@ print("  the walk ran: mean |dz| over the first %.0f s %.4f m = %.3f sqrt(2 K T)
 if not dz >= dzfloor * s:
     print("  FAIL: the particles did not move (a walk that never moves keeps the uniform release)")
     ok = False
+# and over every later hour
+rmin = None
+prev = None
+for t, b, _ in times:
+    if prev is not None and b[0]:
+        dt = t - prev[0]
+        n = 0
+        acc = 0.0
+        for pid, p in b[0].items():
+            q = prev[1].get(pid)
+            if q is not None:
+                acc += abs(p["hl"] - q["hl"])
+                n += 1
+        r = (acc / n if n else 0.0) / math.sqrt(2.0 * K * dt)
+        if rmin is None or r < rmin[0]:
+            rmin = (r, prev[0], t)
+    prev = (t, b[0])
+if rmin is None:
+    print("  FAIL: no two outputs to compare")
+    ok = False
+else:
+    print("  and over every later hour: smallest mean |dz| %.3f sqrt(2 K T) (%.0f ... %.0f s)"
+          % rmin)
+    if not rmin[0] >= dzfloor:
+        print("  FAIL: the particles stopped moving")
+        ok = False
 
 # well mixed: mean chi-square over 12:00 ... 24:00
 if len(late) != 13:
