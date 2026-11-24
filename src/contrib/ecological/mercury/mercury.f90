@@ -40,6 +40,7 @@
 ! ...                   according to element type--> node
 ! 22.11.2020    ggu     some more on restart
 ! 21.03.2023    ggu     cleaning code
+! 24.11.2026    arb     no headers for station debug files (#264)
 !
 !********************************************************************
 !
@@ -233,7 +234,6 @@
 
         real, save :: rkpar,difmol
         integer, save :: icall = 0
-        integer fortfilenum
         integer itype
          
 !------------------------------------------------------------------
@@ -455,22 +455,9 @@
         tday = it / 86400. + t0         !time in days, FEM 0 is day t0
 
 
-       if( it .le.dtime0+dt ) then
-         do fortfilenum=250,282
-            write(fortfilenum, &
-     &       "(2(a10,','),4(a15,','))") &
-     &       'it','kext','wdepth','silt_w','POM_w','tauB'
-         end do
-       endif
-
-
-       if( it .le.dtime0+dt ) then
-         do fortfilenum=350,382
-            write(fortfilenum, &
-     &       "(2(a10,','),4(a15,','))") &
-     &       'it','kext','wdepth','Hgod','Hg2','MeHg'
-         end do
-       endif
+! the header lines of the station debug files fort.250 to fort.282 and
+! fort.350 to fort.382, written at the first step by every process,
+! were removed with those files (#264)
 
 !	-------------------------------------------------------------------
 !	loop on elements for reactor
