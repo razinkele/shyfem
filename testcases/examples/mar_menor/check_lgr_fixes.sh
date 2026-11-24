@@ -293,7 +293,9 @@
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
-# and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here.
+# and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here;
+# mode vdiff-dt also gfortran on PATH and the source tree three levels up
+# (../../../src/shyfem/lagrange_dif.f90, as in a checkout).
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
