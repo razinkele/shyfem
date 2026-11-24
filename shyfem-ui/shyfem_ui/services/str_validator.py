@@ -4,6 +4,7 @@ Checks Fortran parameter interdependencies and reports
 errors (missing required params) and warnings (likely misconfigurations).
 """
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -192,6 +193,38 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
                     "warning",
                     f"ilagr={ilagr} active but $lagrg section missing",
                     "ilagr",
+                )
+            )
+
+    # --- lgrseed: integer in [-2147483647, 2147483647] (lagrange_main.f90) ---
+    lgrseed = _get(sections, "lagrg", "lgrseed")
+    if lgrseed is not None:
+        # an int of any size is judged as an int (float() overflows on one);
+        # a bool is an int here (True = 1, False = 0, both valid seeds);
+        # a present value that is not a number (text, a list) is an error
+        if isinstance(lgrseed, int):
+            seed_bad = abs(lgrseed) > 2147483647
+        elif isinstance(lgrseed, float):
+            seed_bad = (
+                not math.isfinite(lgrseed) or not lgrseed.is_integer() or abs(lgrseed) > 2147483647
+            )
+        else:
+            seed_bad = True
+        if seed_bad:
+            if isinstance(lgrseed, int) and abs(lgrseed) > 10**15:
+                shown = "(a very large integer)"  # %e / float() overflow on it
+            elif isinstance(lgrseed, float):
+                shown = f"{lgrseed:.6g}"
+            elif isinstance(lgrseed, (list, tuple)):
+                shown = " ".join(str(v) for v in lgrseed)[:40]
+            else:
+                shown = str(lgrseed)[:40]
+            msgs.append(
+                ValidationMessage(
+                    "error",
+                    f"lgrseed={shown} is invalid — must be an integer from "
+                    "-2147483647 to 2147483647",
+                    "lgrseed",
                 )
             )
 

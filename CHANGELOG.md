@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added — shyfem-ui
+
+- **Physics > Lagrangian: the particles' random seed (`lgrseed`).** Core 8.6.0 made every random draw of a particle a function of `lgrseed` (default 1), but the parameter catalog did not list it, so the page could neither show nor change it. The Lagrangian panel now has a "Random seed (particles)" field (integer, -2147483647 to 2147483647) that shows the stored value and writes only an edit, and the STR validator reports an out-of-range or non-integer `lgrseed` as an error, as the core stops on it (#259).
+
 ### Fixed — Sediment
 
 - **The `sedimt:` lines of the info file are written once, with the totals of the whole basin (#220).** With `issedi = 1` on several processes every process opened the `.inf` file and wrote its own line, over each other (the energy lines of the first hours were lost, and the totals were those of one domain). Now the master writes the line; the totals are summed over the nodes each process owns, in the order of a serial run's nodes, and the serial and the parallel lines are the same in practice: the totals are now summed per node, then over the nodes, which can differ from the old running sum in the last bits, but the six printed digits did not change in the cases run (576 of 576 lines of `mm_rst_ssedi_write` and of `mm_rst_ssedi_read` on 2 and 4 processes, and against the old serial lines). The `.shy` and `.rst` files do not change.

@@ -334,6 +334,35 @@ def _shown(params: dict, key: str, fallback: object) -> object:
     return fallback if value is None or value == "" else value
 
 
+def _lgrseed_field(params: dict):
+    """The lgrseed input and its help text.
+
+    A text field, like idtlgr: it shows the stored value exactly as the STR
+    spells it, so a fractional (``1.5``), non-numeric or multi-value stored
+    value is neither truncated nor a render error, and an untouched save
+    writes nothing (the save compares it with the same display text). The
+    validator reports a value the core would reject. Absent shows the
+    default, 1.
+    """
+    # every random draw of a particle is a function of this seed, the
+    # particle's id and the time step (def_para.f90)
+    return ui.TagList(
+        ui.input_text(
+            "lgrseed",
+            "Random seed (particles, integer)",
+            value=format_param_display(_shown(params, "lgrseed", 1)),
+        ),
+        ui.p(
+            "Seed of the particles' random draws; another value gives "
+            "another realization. Integer, -2147483647 to 2147483647. "
+            "A particle's draws depend on the seed, its id and the time "
+            "step, so a run gives the same particles on any number of "
+            "OpenMP threads and MPI processes.",
+            class_="form-text text-muted small",
+        ),
+    )
+
+
 _IMETOUT_FIELDS = ("wind", "heat", "rain", "ice", "hflx")  # imetout positions 1..5
 
 
@@ -2713,6 +2742,10 @@ def physics_server(
                         "Lagrangian output interval (s or e.g. 1h)",
                         value=format_param_display(_shown(params, "idtlgr", 0)),
                     ),
+                ),
+                ui.column(
+                    4,
+                    _lgrseed_field(params),
                 ),
             ),
             ui.hr(),
