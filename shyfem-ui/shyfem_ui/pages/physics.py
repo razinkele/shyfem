@@ -2730,8 +2730,8 @@ def physics_server(
                         "Seed of the particles' random draws; another value gives "
                         "another realization. Integer, -2147483647 to 2147483647. "
                         "A particle's draws depend on the seed, its id and the time "
-                        "step, so a run repeats on any number of threads and "
-                        "processes and after a restart.",
+                        "step, so a run gives the same particles on any number of "
+                        "OpenMP threads and MPI processes.",
                         class_="form-text text-muted small",
                     ),
                 ),
