@@ -41,6 +41,8 @@
 ! 13.03.2019	ggu	changed VERS_7_5_61
 ! 24.11.2026	arb	colors made on the global mesh: every process has
 !			the element colors of a serial run (#263)
+! 24.11.2026	arb	subset_order_dump: debug dump of the element order
+!			at the own nodes (SHYFEM_SUBSET_DUMP, #263)
 !
 !***********************************************************
 !***********************************************************
@@ -71,6 +73,8 @@
       !call domain_clusterization_eric
       call domain_clusterization_ggu
       !call domain_clusterization_dummy
+
+      call subset_order_dump	!only with SHYFEM_SUBSET_DUMP set
 
       end subroutine domain_clusterization
 
@@ -880,6 +884,90 @@
 !	-------------------------------------------
 
 	end subroutine domain_clusterization_dummy
+
+!***********************************************************
+
+	subroutine subset_order_dump
+
+! debug dump of the order in which the subset loops (conz3d_omp, and
+! hydro_zeta with every solver but PETSc) reach the elements around each
+! own node, read by the test
+! testcases/examples/mar_menor/check_subset_order_mpi.sh (#263). Active
+! only when the environment variable SHYFEM_SUBSET_DUMP holds a file
+! prefix: then every process writes PREFIX.RANK.txt (RANK = my_id, 0 on
+! one process), one line per own node (the nodes whose sums those loops
+! use): the external node number, the number of its elements and, in the
+! order the loops reach them, the external number and the subset (color)
+! of each element. Written once, at start-up.
+
+	use basin
+	use shympi
+
+	implicit none
+
+	integer :: ic,j,ie,ii,k,i,n,ntot,nemax
+	integer :: ist,ios,iu,ierr
+	integer, allocatable :: nek(:)		!elements found per node
+	integer, allocatable :: iek(:,:)	!elements in loop order
+	integer, allocatable :: icek(:,:)	!their subset
+	character(len=256) :: prefix
+	character(len=16) :: crank
+	integer ipext,ieext
+
+	call get_environment_variable('SHYFEM_SUBSET_DUMP',prefix,status=ist)
+	if( ist /= 0 ) return
+	if( len_trim(prefix) == 0 ) return
+
+	ntot = nkn
+	if( shympi_partition_on_nodes() ) ntot = nkn_unique
+
+	allocate(nek(nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('subset_order_dump: allocation failed')
+	end if
+	nek = 0
+	do ie=1,nel
+	  do ii=1,3
+	    k = nen3v(ii,ie)
+	    nek(k) = nek(k) + 1
+	  end do
+	end do
+	nemax = maxval(nek)
+
+	allocate(iek(nemax,nkn),icek(nemax,nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('subset_order_dump: allocation failed')
+	end if
+	nek = 0
+	do ic=1,subset_num
+	  do j=1,subset_el(ic)
+	    ie = indipendent_subset(j,ic)
+	    do ii=1,3
+	      k = nen3v(ii,ie)
+	      n = nek(k) + 1
+	      nek(k) = n
+	      iek(n,k) = ie
+	      icek(n,k) = ic
+	    end do
+	  end do
+	end do
+
+	write(crank,'(i0)') my_id
+	open(newunit=iu,file=trim(prefix)//'.'//trim(crank)//'.txt'	&
+     &		,status='replace',action='write',iostat=ios)
+	if( ios /= 0 ) then
+	  call shympi_abort_internal				&
+     &		('subset_order_dump: cannot open the file of SHYFEM_SUBSET_DUMP')
+	end if
+	do k=1,ntot
+	  write(iu,'(i9,i4,*(i10,i4))') ipext(k),nek(k)			&
+     &		,(ieext(iek(i,k)),icek(i,k),i=1,nek(k))
+	end do
+	close(iu)
+
+	deallocate(nek,iek,icek)
+
+	end subroutine subset_order_dump
 
 !==================================================================
         end module mod_subset
