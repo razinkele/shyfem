@@ -165,7 +165,8 @@ flux3d layer 1):
 The controller measured these rows on the stage-1 head (`7a819806`) on
 2026-11-21. The rows of case B were measured with the basin file that
 `make init` builds, the table above with the tracked file; the two files
-differ in 138 bytes and give slightly different runs of case B.
+differed in 138 bytes and give slightly different runs of case B (since
+#251 the tracked file is the one `make init` builds).
 
 **Other checks**
 
@@ -335,7 +336,8 @@ and B run to the end serially and on 4 processes; on 4 processes case B runs
 `-fcheck=bounds` runs the 19 serial and MPI runs of the bounds gate without a
 runtime message.
 
-**Position floors on the new reference** (`testcases/examples/mar_menor/measure_lgr_floors.sh`,
+**Position floors on the new reference** (superseded for case B by the re-measurement on the
+rebuilt basin below, #251) (`testcases/examples/mar_menor/measure_lgr_floors.sh`,
 then `floors.sh` in the plan's working folder; log `docs/reviews/evidence/2026-11-lagrange-mpi/floors_ref3.log`:
 a serial run against six serial runs whose wind drag is changed by
 a relative +-1e-5, +-7e-6 and +-4e-6; the floor is the envelope of the six;
@@ -831,9 +833,9 @@ partition). `check_part_basin` (`src/utils/shympi/mpi_node.f90`) has no caller, 
 nodes, elements, ghosts), not assignments. The partition files (`docs/reviews/evidence/2026-11-lagrange-mpi/d5/part_first.grd`, `part_second.grd`) are made from the
 tracked `GRID/MM_coarse.4.node.grd` (the METIS partition of this mesh on 4 processes) by
 `d5/d5_partition.py` of the same folder, and the runs are in a scratch copy of the test folder whose
-`GRID/MM_coarse.bas` is rebuilt by `shypre -partition` (this basin differs from the tracked one
-in the 138 bytes `make init` changes, so the serial reference is the serial run of the same
-folder). Where particles leave: in the serial run all 595 leave through open sides between
+`GRID/MM_coarse.bas` is rebuilt by `shypre -partition` (this basin differed from the tracked one
+of that time in the 138 bytes `make init` changed, so the serial reference is the serial run of
+the same folder; since #251 the tracked basin is today's `shypre` output). Where particles leave: in the serial run all 595 leave through open sides between
 consecutive boundary nodes, 568 of them between nodes 163 and 177, whose elements are inner
 elements of rank 2 with METIS (so no leaving is case 4 there: METIS on 4 processes, 0 of 595).
 
