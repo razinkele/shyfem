@@ -2307,6 +2307,18 @@
 
 !******************************************************************
 
+	function shympi_ghost_check_on()
+
+! no ghost copies with one domain (see mpi_node.f90, #268)
+
+	logical shympi_ghost_check_on
+
+	shympi_ghost_check_on = .false.
+
+	end function shympi_ghost_check_on
+
+!******************************************************************
+
         subroutine check_part_basin(what)
 
         use basin

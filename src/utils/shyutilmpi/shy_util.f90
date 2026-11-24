@@ -1084,10 +1084,13 @@
 	call trace_point('before shy_write_record')
 
 	! names the array in reports of the ghost check of the gather (#268)
-	call shy_get_filename(id,file)	!blank where the file is not open
-	islash = index(file,'/',back=.true.)
-	write(label,'(a,i0)') 'shy file ' // trim(file(islash+1:)) &
+	label = ' '
+	if( shympi_ghost_check_on() ) then
+	  call shy_get_filename(id,file)	!blank where the file is not open
+	  islash = index(file,'/',back=.true.)
+	  write(label,'(a,i0)') 'shy file ' // trim(file(islash+1:)) &
      &				// ' var ',ivar
+	end if
 
 	call shympi_operate_all(.false.)
 

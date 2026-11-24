@@ -216,7 +216,10 @@
 	subroutine restart_gather_label(iu,label)
 
 ! names the next gathered array of the restart record, for the ghost
-! check of the gather (shympi_l2g_array, #268): file and array number
+! check of the gather (shympi_l2g_array, #268): file and array number;
+! blank when the check is off
+
+	use shympi, only : shympi_ghost_check_on
 
 	integer, intent(in) :: iu
 	character*(*), intent(out) :: label
@@ -226,6 +229,9 @@
 	character*300 aux		!long enough for any file name
 
 	nitem_rst = nitem_rst + 1
+	label = ' '
+	if( .not. shympi_ghost_check_on() ) return	!no label needed
+
 	name = ' '
 	if( bmaster ) then		!only the master has the file open
 	  inquire(unit=iu,name=name,iostat=ios)
