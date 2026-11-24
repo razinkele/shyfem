@@ -66,6 +66,7 @@
 ! 07.11.2024	ggu	updated call to update_ielt()
 ! 22.11.2026	arb	setnod: element angles added by the main owner (#238)
 ! 22.11.2026	arb	setnod_dump: classification dump for the MPI test
+! 24.11.2026	arb	setnod: no goto, error stop ends every process (#258)
 !
 !*****************************************************************
 
@@ -257,7 +258,25 @@
             do ii=1,n
               k=kbnds(ibc,ii)
 	      if( k <= 0 ) cycle
-              if(inodv(k).ne.-1) goto 99
+              if(inodv(k).ne.-1) then	!must be a boundary node
+                write(6,*) 'error for open boundary node'
+	        write(6,*) ibc,n,ii,k,ipext(k),inodv(k)
+                if( inodv(k) .eq. 0 ) then
+                  write(6,*) 'the node is an inner node'
+                else if( inodv(k) .eq. -2 ) then
+                  write(6,*) 'the node is not in the system (dry)'
+                else
+                  write(6,*) 'the node has already been flagged as an'
+                  write(6,*) 'open boundary node (listed twice?)'
+                end if
+                write(6,*) 'external node number : ',ipext(k)
+                write(6,*) 'boundary flag : ',inodv(k)
+	        call setnod_dump(winkv,k)	!only with SHYFEM_SETNOD_DUMP
+	        ! only the processes that hold the node get here; the
+	        ! others wait in the exchange below: end them all (#258)
+	        call shympi_abort_internal(				&
+     &			'error stop setnod: open boundary node')
+              end if
               inodv(k)=ibc
             end do
           end if
@@ -269,22 +288,6 @@
 
 	call setnod_dump(winkv,0)	!only with SHYFEM_SETNOD_DUMP set
 
-        return
-   99   continue
-        write(6,*) 'error for open boundary node'
-	write(6,*) ibc,n,ii,k,ipext(k),inodv(k)
-        if( inodv(k) .eq. 0 ) then
-          write(6,*) 'the node is an inner node'
-        else if( inodv(k) .eq. -2 ) then
-          write(6,*) 'the node is not in the system (dry)'
-        else
-          write(6,*) 'the node has already been flagged as an'
-          write(6,*) 'open boundary node (listed twice?)'
-        end if
-        write(6,*) 'external node number : ',ipext(k)
-        write(6,*) 'boundary flag : ',inodv(k)
-	call setnod_dump(winkv,k)	!only with SHYFEM_SETNOD_DUMP set
-        stop 'error stop setnod: open boundary node'
         end
 
 !****************************************************************

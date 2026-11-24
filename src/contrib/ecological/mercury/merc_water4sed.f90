@@ -32,6 +32,7 @@
 !
 ! 30.05.2018	dmc&gir	integration of the 0d module into SHYFEM
 ! 10.07.2019	clr	3d sinking, debug
+! 24.11.2026	arb	station debug files fort.247, fort.250-282 removed (#264)
 !
 ! notes :
 !
@@ -83,7 +84,6 @@
       real Dssink,Dpsink,Dsink     !Sink of silt (Dssink), POM (Dpsink)and sum (Dsink) [g/s]
 
       integer ipext,ipint,kext     !nodes external and internal numbers
-      integer fortfilenum, iter
       logical constant_parameters
 
 !	variables
@@ -218,86 +218,10 @@
 !        stop
         end if
 
-      iter=nint(tday*86400.)
-
-      if (MOD (iter,1800) .EQ. 0) then
-           kext=ipext(k)
-           fortfilenum=-1
-           if(kext==3985)then       !ve8 closer
-               fortfilenum=250 
-           elseif(kext==3986) then  !ve8  
-               fortfilenum=251
-           elseif(kext==3988) then  !ve8
-               fortfilenum=252
-           elseif(kext==4007) then  !ve8
-               fortfilenum=253
-           elseif(kext==3763) then  !ve7 
-               fortfilenum=254
-           elseif(kext==3765) then  !ve7
-               fortfilenum=255
-           elseif(kext==3764)then   !ve7
-               fortfilenum=256
-           elseif(kext==3762) then  !ve7 closer
-               fortfilenum=257
-           else if(kext==2150)then  !ve6 closer
-               fortfilenum=258
-           elseif(kext==2009) then  !ve6
-               fortfilenum=259
-           elseif(kext==2359) then  !ve6
-               fortfilenum=260
-           elseif(kext==2358) then  !ve6
-               fortfilenum=261
-           elseif(kext==2341) then  !ve5 closer
-               fortfilenum=262
-           elseif(kext==2408) then  !ve5
-               fortfilenum=263
-           elseif(kext==2191)then   !ve5
-               fortfilenum=264
-           elseif(kext==2192) then  !ve5
-               fortfilenum=265
-           elseif(kext==2654)then   !ve4 closer
-               fortfilenum=266
-           elseif(kext==2505) then  !ve4
-               fortfilenum=267
-           elseif(kext==2655) then  !ve4
-               fortfilenum=268
-           elseif(kext==2653) then  !ve4
-               fortfilenum=269
-           else if(kext==1372)then  !ve3 closer
-               fortfilenum=270
-           elseif(kext==1375) then  !ve3
-               fortfilenum=271
-           elseif(kext==1331) then  !ve3
-               fortfilenum=272
-           elseif(kext==1378) then  !ve3
-               fortfilenum=273
-           elseif(kext==4347) then  !ve3
-               fortfilenum=247
-             elseif(kext==3216) then  !ve2 closer
-               fortfilenum=275
-           elseif(kext==3057)then   !ve2
-               fortfilenum=276
-           elseif(kext==2953) then  !ve2
-               fortfilenum=277 
-           elseif(kext==3217) then  !ve2
-               fortfilenum=278
-           elseif(kext==2405) then  !ve1
-               fortfilenum=279
-           elseif(kext==2407)then   !ve1
-               fortfilenum=280
-           elseif(kext==2284) then  !ve1 closer
-               fortfilenum=281
-           elseif(kext==2404) then  !ve1
-               fortfilenum=282
-           endif
-           if(fortfilenum.ge.0)then
-!               if(fortfilenum==250)
-!     +             write(*,*) 'stamp to file 250... at iter=',iter,
-!     +             ', tday=', tday
-               write(fortfilenum,"(2(i10,','),4(f15.7,','))")  &
-     &         iter,kext,wdepth, Sw, POMw, taub
-           endif
-         endif
+! the station side files fort.247 and fort.250 to fort.282 (every half
+! hour, at nodes of the Venice lagoon given by external number, from
+! every process that held the node) were debug output that nothing
+! read: removed (#264)
 
 
 !      write(*,*) 'iteration', iter

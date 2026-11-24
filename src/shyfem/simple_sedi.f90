@@ -41,6 +41,8 @@
 ! 14.02.2019	ggu	changed VERS_7_5_56
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 20.02.2020	ggu	new routine compute_bottom_flux()
+! 24.11.2026	arb	compute_bottom_flux, in_area: owner's values on ghosts (#262)
+! 24.11.2026	arb	no more debug file fort.778 (#264)
 !
 ! notes :
 !
@@ -293,8 +295,6 @@
         write(iunit,1200) ' sedimt: ',aline,mass,masss,mass+masss
  1200	format(a,a,4e14.6)
 
-	call convert_bottom_sediments(.true.)
-
 !------------------------------------------------------------
 ! write accumulated bottom sediments
 !------------------------------------------------------------
@@ -324,11 +324,12 @@
 ! computes areas that are considered inside basin
 
 	use basin
+	use shympi
 
 	implicit none
 
-	integer iout_area
-	integer inarea(nkn)
+	integer, intent(in) :: iout_area
+	integer, intent(out) :: inarea(nkn)
 
 	integer ie,k,ii,ia
 
@@ -344,6 +345,14 @@
           end if
         end do
 
+	! a ghost node sees only the elements its process holds: take the
+	! owner's flag, as set_ilhkv does with ilhkv (#262)
+	if( shympi_partition_on_elements() ) then
+	  call shympi_exchange_2d_nodes_max(inarea)
+	else
+	  call shympi_exchange_2d_node(inarea)
+	end if
+
 	end
 
 !*****************************************************************
@@ -356,24 +365,44 @@
 	use mod_conz
 	use mod_layer_thickness	
 	use evgeom
+	use shympi
 
 	implicit none
 
-	real dt
-	real fflux(nkn)
+	real, intent(in) :: dt
+	real, intent(out) :: fflux(nkn)
 
-	integer k,ia,lmax,ie,ii
+	integer k,ia,lmax,ie,ii,ie_mpi
+	integer ierr
 	real alpha,f,conz
 	real area
 	real tau,r,h
 	real taubot(nkn)
 	real aux(nkn)
+	integer, save, allocatable :: ie_serial(:)	!elements, serial order
+
+	! the elements in the order of their global internal number
+	! (ip_int_elem): a serial run adds them at a node in that order
+	! (1 to nel), so the owner of a node adds its ring in the serial
+	! order; serially ip_int_elem(ie) = ie and nothing changes (#262);
+	! made again if the number of elements changes
+	if( allocated(ie_serial) ) then
+	  if( size(ie_serial) /= nel ) deallocate(ie_serial)
+	end if
+	if( .not. allocated(ie_serial) ) then
+	  allocate(ie_serial(nel),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('compute_bottom_flux: allocation failed')
+	  end if
+	  call isort(nel,ip_int_elem,ie_serial)
+	end if
 
 	call bottom_stress(taubot)
 	aux = 0.
 	fflux = 0.
 
-	do ie=1,nel
+	do ie_mpi=1,nel
+	  ie = ie_serial(ie_mpi)
 	  area = 4.*ev(10,ie)
 	  ia = iarv(ie)
 	  lmax = ilhv(ie)
@@ -389,6 +418,21 @@
 	    aux(k) = aux(k) + area
 	  end do
 	end do
+
+	! partition on nodes: the owner of a node holds all its elements and
+	! has added them in the serial order, so the ghost copies take its
+	! values (as in uvtopr, #230); without the exchange a ghost node kept
+	! the mean of the elements its process holds, and its bed sediment and
+	! bottom concentration, computed from that flux, were written to the
+	! output and restart files (the gather takes the ghost copies too) and
+	! fed the next transport step (#262)
+	if( shympi_partition_on_elements() ) then
+	  call shympi_exchange_and_sum_2d_nodes(fflux)
+	  call shympi_exchange_and_sum_2d_nodes(aux)
+	else
+	  call shympi_exchange_2d_node(fflux)
+	  call shympi_exchange_2d_node(aux)
+	end if
 
 	where( aux > 0. ) fflux = fflux / aux
 
@@ -518,10 +562,14 @@
 
 !*****************************************************************
 
-	subroutine convert_bottom_sediments(bcheck)
+	subroutine convert_bottom_sediments
 
 ! converts conza to conzs and conzh
-! if bcheck is true, only checks if consistent
+!
+! not called at present: simple_sedi called it in a check mode that
+! wrote the largest differences between conzs, conzh and the values
+! converted from conza to fort.778, on every process and every time
+! step; nothing read that file and the check was removed (#264)
 
 	use basin
 	use levels
@@ -529,12 +577,9 @@
 
 	implicit none
 
-	logical bcheck
-
 	integer k,lmax
 	real h,vol
-	real smax,hmax,vmax
-	real auxs(nkn),auxh(nkn),auxv(nkn)
+	real auxs(nkn),auxh(nkn)
 
 	real depnode,volnode
 
@@ -549,20 +594,11 @@
 
 	  auxs(k) = conza(k)*vol/h
 	  auxh(k) = conza(k)/rhos
-	  auxv(k) = vol/h
 
         end do
 
-	if( bcheck ) then
-	  smax = maxval(abs(auxs-conzs))
-	  hmax = maxval(abs(auxh-conzh))
-	  vmax = maxval(abs(auxv))
-	  write(778,*) smax,hmax,vmax
-	  call flush(778)
-	else
-	  conzs = auxs
-	  conzh = auxh
-	end if
+	conzs = auxs
+	conzh = auxh
 
 	end
 
