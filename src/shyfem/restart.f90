@@ -100,6 +100,7 @@
 ! 26.01.2025    ggu     fix mpi bug for ibfm /= 0 (only master writes)
 ! 08.03.2025    ggu     extracted mod_restart in its own file
 ! 09.03.2025    ggu     call shympi_barrier after finishing restart file
+! 24.11.2026    arb     restart_write_start: labels of the ghost check (#268)
 !
 ! notes :
 !
@@ -666,6 +667,7 @@
         nvers = nvmax
 	b3d = nlv_global > 1
 	bmaster = shympi_is_master()
+	call restart_write_start	!labels of the ghost check (#268)
 
 	ibarcl = nint(getpar('ibarcl'))
 	iconz = nint(getpar('iconz'))

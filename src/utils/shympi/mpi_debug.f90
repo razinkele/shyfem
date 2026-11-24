@@ -35,6 +35,7 @@
 ! 28.04.2023    ggu     update function calls for belem
 ! 07.06.2023    ggu     make sure shympi_write_debug_init() is called
 ! 05.04.2024    ggu     new routines shympi_print_elem_...()
+! 24.11.2026    arb     debug record gathers labelled for the ghost check (#268)
 !
 !******************************************************************
 
@@ -233,9 +234,9 @@
 
 	use shympi
 
-	character*(*) text
-	logical belem
-	integer array(:)
+	character*(*), intent(in) :: text
+	logical, intent(in) :: belem
+	integer, intent(in) :: array(:)
 
 	integer nn,nn_global,lmax
 	integer ierr
@@ -256,7 +257,7 @@
 
 	allocate(garray(nn_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(array,garray)
+	call shympi_l2g_array(array,garray,'debug record '//trim(text))
 
 	if( .not. shympi_is_master() ) return
 
@@ -277,9 +278,9 @@
 
 	use shympi
 
-	character*(*) text
-	logical belem
-	real array(:)
+	character*(*), intent(in) :: text
+	logical, intent(in) :: belem
+	real, intent(in) :: array(:)
 
 	integer nn,nn_global,lmax
 	integer ierr
@@ -300,7 +301,7 @@
 
 	allocate(garray(nn_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(array,garray)
+	call shympi_l2g_array(array,garray,'debug record '//trim(text))
 
 	if( .not. shympi_is_master() ) return
 
@@ -321,9 +322,9 @@
 
 	use shympi
 
-	character*(*) text
-	logical belem
-	integer array(:,:)
+	character*(*), intent(in) :: text
+	logical, intent(in) :: belem
+	integer, intent(in) :: array(:,:)
 
 	integer nv,nn,nn_global,lmax
 	integer ierr
@@ -353,7 +354,7 @@
 
 	allocate(garray(lmax,nn_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(array,garray)
+	call shympi_l2g_array(array,garray,'debug record '//trim(text))
 
 	if( .not. shympi_is_master() ) return
 
@@ -374,9 +375,9 @@
 
 	use shympi
 
-	character*(*) text
-	logical belem
-	real array(:,:)
+	character*(*), intent(in) :: text
+	logical, intent(in) :: belem
+	real, intent(in) :: array(:,:)
 
 	integer nv,nn,nn_global,lmax
 	integer ierr
@@ -406,7 +407,7 @@
 
 	allocate(garray(lmax,nn_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(array,garray)
+	call shympi_l2g_array(array,garray,'debug record '//trim(text))
 
 	if( .not. shympi_is_master() ) return
 
@@ -427,9 +428,9 @@
 
 	use shympi
 
-	character*(*) text
-	logical belem
-	double precision array(:,:)
+	character*(*), intent(in) :: text
+	logical, intent(in) :: belem
+	double precision, intent(in) :: array(:,:)
 
 	integer nv,nn,nn_global,lmax
 	integer ierr
@@ -459,7 +460,7 @@
 
 	allocate(garray(lmax,nn_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(array,garray)
+	call shympi_l2g_array(array,garray,'debug record '//trim(text))
 
 	if( .not. shympi_is_master() ) return
 
@@ -480,10 +481,10 @@
 
 	use shympi
 
-	integer nfix
-	character*(*) text
-	logical belem
-	real array(:,:)
+	integer, intent(in) :: nfix
+	character*(*), intent(in) :: text
+	logical, intent(in) :: belem
+	real, intent(in) :: array(:,:)
 
 	integer nv,nn,nn_global,lmax
 	integer ierr
@@ -509,7 +510,8 @@
 
 	allocate(garray(lmax,nn_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(nfix,array,garray)
+	call shympi_l2g_array(nfix,array,garray &
+     &			,'debug record '//trim(text))
 
 	if( .not. shympi_is_master() ) return
 

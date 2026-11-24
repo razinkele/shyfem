@@ -42,6 +42,7 @@
 ! 23.10.2023    ggu     in exchange_areas() eliminated dependency from evgeom
 ! 13.04.2024    ggu     introduced buffer_tripple_in, elim hydro dependency
 ! 21.11.2024    ggu     test for external neigbor was wrong
+! 24.11.2026    arb     find_elem_id gathers only the main process (#268)
 !
 !******************************************************************
 
@@ -555,24 +556,34 @@
 
 	implicit none
 
-	integer nexch,itr
-	integer iexch(nexch,itr)
+	integer, intent(in) :: nexch,itr
+	integer, intent(inout) :: iexch(nexch,itr)
 
 	integer i,iext,ide,ie,iee,iint,lmax
 	integer ii,ineib,iemax,ia
 	integer ierr
-	integer, allocatable :: id_elem_g(:,:)
+	integer, allocatable :: id_main(:)	!main process of local elements
+	integer, allocatable :: id_main_g(:)	!main process of all elements
 	integer, allocatable :: ilhv_g(:)
 
 !------------------------------------------------------------
 ! allocate global arrays
 !------------------------------------------------------------
 
-	allocate(id_elem_g(0:3,nel_global),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	allocate(id_main(nel_local),id_main_g(nel_global),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal('find_elem_id: allocation failed')
+	end if
 	allocate(ilhv_g(nel_global),stat=ierr)
 	if( ierr /= 0 ) stop 'error stop: allocation failed'
-	call shympi_l2g_array(4,id_elem,id_elem_g)
+
+	! only the main process id_elem(1,ie) is needed: it is the same on
+	! every process that holds the element, whereas id_elem(2:3,ie) of a
+	! tripple-point element lists the other two processes in another
+	! order on each of them, which the ghost check of the gather would
+	! report (#268)
+	id_main(:) = id_elem(1,1:nel_local)
+	call shympi_l2g_array(id_main,id_main_g)
 	call shympi_l2g_array(ilhv,ilhv_g)
 
 !------------------------------------------------------------
@@ -587,7 +598,7 @@
 	  do ie=1,nel_global
 	    if( ip_ext_elem(ie) == iext ) then
 	      iee = ie		!global internal element number of neibor
-	      ide = id_elem_g(1,iee)
+	      ide = id_main_g(iee)
 	      lmax = ilhv_g(iee)
 	    end if
 	  end do
