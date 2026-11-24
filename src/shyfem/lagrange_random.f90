@@ -81,6 +81,7 @@
 ! lgr_rand_r		single precision value in (0,1) of the same keys
 ! lgr_rnd_index		draw index of a site and a count
 ! lgr_random		single precision draw of a particle in this step
+! lgr_random_dp		the same draw in double precision
 ! lgr_random_release	next draw of the release stream of this step
 ! lgr_random_set_seed	sets the seed (lgrseed)
 ! lgr_random_set_step	sets the step key from the absolute time
@@ -126,7 +127,7 @@
      &		,(/2,8/))
 
 	public :: lgr_rand_u, lgr_rand_r, lgr_rnd_index
-	public :: lgr_random, lgr_random_release
+	public :: lgr_random, lgr_random_dp, lgr_random_release
 	public :: lgr_random_set_seed, lgr_random_set_step
 	public :: lgr_threefry4x32, lgr_rnd_words
 	public :: lgr_rnd_bits_u, lgr_rnd_bits_r
@@ -358,6 +359,26 @@
      &				,lgr_rnd_index(isite,n))
 
 	end function lgr_random
+
+!*******************************************************************
+
+	pure function lgr_random_dp(id,isite,n)
+
+! double precision draw in (0,1) of particle id in the current step: the
+! value of the same keys as lgr_random (which keeps the high 23 bits of
+! its first word), with 52 bits, for a test against a small probability
+! (decay: the probability of a step can be far below 2**-23, #246);
+! reads only the seed and the step key, as lgr_random
+
+	implicit none
+
+	double precision :: lgr_random_dp
+	integer, intent(in) :: id,isite,n
+
+	lgr_random_dp = lgr_rand_u(lgr_rnd_seed,id,lgr_rnd_step		&
+     &				,lgr_rnd_index(isite,n))
+
+	end function lgr_random_dp
 
 !*******************************************************************
 

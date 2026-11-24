@@ -21,10 +21,10 @@
 #             shows that the change of the initialisation (once, before the
 #             loop) leaves the result of 1 and 4 threads unchanged.
 #   decay     (#226) mm_lgr_a serially, once as it is and once with
-#             "ldecay = 86400." in $lagrg (decay of particles: at every
-#             step a particle decays when a random number exceeds
-#             exp(-age/ldecay); with idt = 300 s all 145 particles decay
-#             within five hours): the decay run must end (before #226 it stopped
+#             "ldecay = 86400." in $lagrg (decay of particles with an
+#             e-folding time of one day, #246: of the 145 particles 2 are
+#             left after the four days of the run; before #246 all of them
+#             had decayed within five hours): the decay run must end (before #226 it stopped
 #             with SIGSEGV at the first output after a decay: the exited
 #             record read the coordinates of element 0).  Then
 #             lgr_compare.py's reader checks the two particle files: the
@@ -37,6 +37,38 @@
 #             last position); every
 #             active particle of the decay run has the same record as in
 #             the plain run (decay changes no other particle).
+#   decay-rate (#246) the survival of decay is exp(-t/ldecay) whatever the
+#             time step: mm_lgr_a for six hours with about 5000 particles
+#             (nbdy = 5000, nbdymax = 20000) and "ldecay = 21600." (six
+#             hours), serially, once with idt = 300 s and once with idt =
+#             60 s.  The release must hold at least 4000 particles.  At
+#             every output (hourly, t = ldecay/2 and t = ldecay among them)
+#             the number of active particles n of each run must be within 4
+#             standard deviations of its expectation E = sum of
+#             exp(-age/ldecay) over the released particles (age = output
+#             time - release time of the particle, the time of its record
+#             in the inserted block; variance sum of p (1 - p)); and the two
+#             runs must agree: the difference of their survival fractions,
+#             each less its expected fraction E/N (which takes the release
+#             time, one time step before the first call, into account), must
+#             be within 4 standard deviations of that difference, taken as
+#             for independent runs.  The two runs are not fully independent:
+#             the step key of a draw is the absolute time of the step, so at
+#             the times both runs have a step (every 300 s) a particle draws
+#             the same number in both (tested against 1 - exp(-300/ldecay)
+#             and 1 - exp(-60/ldecay)); this correlation makes the true
+#             spread of the difference smaller than the bound assumes, so
+#             the comparison is looser than 4 standard deviations.  mm_lgr_a
+#             has no open boundary, so a particle leaves the active block
+#             only by decaying.  The seed is fixed, so the numbers are the
+#             same in every run (with the seeds 2 to 7, idt = 300 s, the
+#             count after six hours was within 1.5 standard deviations of
+#             its expectation, of either sign).  Before #246 every step
+#             tested the survival of the whole age, exp(-age/ldecay), with a
+#             new draw (survival about exp(-t**2/(2 ldecay dt))): with idt =
+#             300 s 1469 of the 4952 particles were active after one hour
+#             (4134 expected) and none after three hours (2962 expected),
+#             with idt = 60 s 33 after one hour (4180 expected).
 #   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
 #             ztilt), for one day, with a $lagrg section that sets ilagr = 3
 #             (vertical advection and diffusion), nbdymax = 20000, nbdy =
@@ -160,11 +192,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | small-export | seed"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | ilagr3 | grow-fail | small-export | seed"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|ilagr3|grow-fail|small-export|seed) ;;
+  stk-omp|decay|decay-rate|ilagr3|grow-fail|small-export|seed) ;;
   *) usage ;;
 esac
 
@@ -350,6 +382,78 @@ if nbad_act:
     ok = False
 else:
     print("  active records of the decay run identical to the plain run")
+sys.exit(0 if ok else 1)
+EOF
+  fi
+  finish
+fi
+
+#=============================== decay-rate (#246) =========================
+if [ "$MODE" = decay-rate ]; then
+  for dt in 300 60; do
+    sed -e "s/^\(\s*\)mm_lgr_a\s*$/\1dr_$dt/" \
+        -e "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" \
+        -e "s/idt = '300s'/idt = '${dt}s'/" \
+        -e 's/^\(\s*\)nbdymax = 5000\s*$/\1nbdymax = 20000/' \
+        -e 's/^\(\s*\)nbdy = 150\s*$/\1nbdy = 5000\n\1ldecay = 21600./' "$W/mm_lgr_a.str" > "$W/dr_$dt.str"
+    for o in "dr_$dt" "itend = '2009-01-01::06:00:00'" "idt = '${dt}s'" 'nbdymax = 20000' 'nbdy = 5000' 'ldecay = 21600.'; do
+      grep -qF -- "$o" "$W/dr_$dt.str" || fail "no '$o' in dr_$dt.str"
+    done
+  done
+  for dt in 300 60; do
+    echo "=== mm_lgr_a serially, six hours, about 5000 particles, ldecay = 21600., idt = $dt s"
+    run dr_$dt dr_$dt.log shyfem || fail "the run with idt = $dt s did not end"
+    nrel="$(sed -n 's/.*new particles released: *\([0-9][0-9]*\).*/\1/p' "$W/dr_$dt.log" | head -1)"
+    echo "  particles released: ${nrel:-none}"
+    [ "${nrel:-0}" -ge 4000 ] || fail "idt = $dt s: ${nrel:-no} particles released, expected at least 4000"
+  done
+  if [ "$rc" = 0 ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/dr_300.lgr.shy" "$W/dr_60.lgr.shy" <<'EOF' || fail "survival check"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+LDECAY = 21600.0
+NSIG = 4.0
+
+def survival(path):
+    """Per output time: (t, active, released, expected E, variance V)."""
+    _, times = lc.read_file(path)
+    rel = {}				# id -> release time (inserted block)
+    out = []
+    for t, b, _ in times:
+        for pid, p in b[-1].items():
+            rel[pid] = p["tt"]
+        if set(b[0]) - set(rel):
+            raise SystemExit("  %s t=%r: an active particle without a release record" % (path, t))
+        ps = [math.exp(-(t - tr) / LDECAY) for tr in rel.values()]
+        out.append((t, len(b[0]), len(rel), sum(ps), sum(p * (1.0 - p) for p in ps)))
+    return out
+
+ok = True
+runs = {dt: survival(path) for dt, path in ((300, sys.argv[2]), (60, sys.argv[3]))}
+for dt, rows in runs.items():
+    print("  idt = %d s: output time, active / released, expected, (active - expected) in standard deviations" % dt)
+    for t, n, nrel, e, v in rows:
+        z = (n - e) / math.sqrt(v) if v > 0 else float("inf")
+        bad = not abs(z) <= NSIG
+        ok = ok and not bad
+        print("    t = %4.1f h  %5d / %d  expected %8.1f  (%+.2f)%s" % (t / 3600.0, n, nrel, e, z, "  BEYOND 4" if bad else ""))
+by_t = {dt: {r[0]: r for r in rows} for dt, rows in runs.items()}
+common = sorted(set(by_t[300]) & set(by_t[60]))
+if len(common) < 6:
+    print("  the two runs share %d output times, expected 6" % len(common))
+    ok = False
+print("  idt = 300 s against 60 s: survival fraction less its expectation, difference in standard deviations")
+for t in common:
+    _, n1, r1, e1, v1 = by_t[300][t]
+    _, n2, r2, e2, v2 = by_t[60][t]
+    d = (n1 - e1) / r1 - (n2 - e2) / r2
+    sd = math.sqrt(v1 / r1 ** 2 + v2 / r2 ** 2)
+    z = d / sd if sd > 0 else float("inf")
+    bad = not abs(z) <= NSIG
+    ok = ok and not bad
+    print("    t = %4.1f h  fractions %.4f / %.4f  (%+.2f)%s" % (t / 3600.0, n1 / r1, n2 / r2, z, "  BEYOND 4" if bad else ""))
 sys.exit(0 if ok else 1)
 EOF
   fi
