@@ -360,6 +360,44 @@ against those values and stay as recorded.
 
 Case C's largest distance appears in the three runs with a smaller drag: from 22 h on the run leaves the serial track, the largest distance grows to 7.1e-3 degrees at 26 h and then does not change to the end (a particle that comes to rest away from its serial position); the three others reach at most 2.0e-4 degrees. Before the correction a single run per change gave A 74 / 6.7e-4, B 44 / 147 m, C 19 / 7.2e-5 (at the last output only) and E 0 (the old fallback pinned E's particles); those numbers are superseded. Measured 2026-11-22 04:04 EET on the reference build `wt-lgr-ref3`, 28 runs, all ended; the script is `testcases/examples/mar_menor/measure_lgr_floors.sh` and its log `docs/reviews/evidence/2026-11-lagrange-mpi/floors_ref3.log` (the particle files of the runs are made again by the script: for case A the seven files of a rerun on 2026-11-22 are byte-identical to the ones used here, log `floors_a_rerun.log` of the same folder).
 
+### Position floors re-measured on the rebuilt basin (#251), 2026-11-24
+
+**Why.** The tracked `testcases/examples/mar_menor/GRID/MM_coarse.bas` was written by `shypre`
+before the exact decimal parsing of `istod` (`9abe01a4`, 2026-10-16); since then `shypre MM_coarse.grd`
+writes 46 of its 2,545 element depths one unit in the last place lower (sha256 `ed71feb3…`, the tracked
+file `1cb7ef14…`). Until #251 `make init` rebuilt the file, so CI and every tree that ran it used the
+rebuilt basin while the floors above were measured on the tracked one. The owner decided to replace the
+tracked basin with today's output (commit `5ebf495b`) and to measure the floors again on it.
+
+**How.** `measure_lgr_floors.sh <bin> 5ebf495b key 3 "mm_lgr_a mm_lgr_b mm_lgr_c mm_lgr_e mm_lgr_w"`
+with an OpenMPI build of `9147b517` (the Fortran of `37f08788`, release 8.6.0), 13:23 to 13:25 EET,
+35 runs, all ended; the `tt` counts with `lgr_compare.py --mode pos` on the particle files of the runs.
+A control with the same build on the old tracked basin (inputs of `9147b517`) followed at 13:25. Log:
+`docs/reviews/evidence/2026-11-lagrange-mpi/floors_basin251.log`.
+
+| Case | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Particles with another `tt` | Floor before (`0fddec90`, old basin) | Floor now (8.6.0, rebuilt basin) |
+|---|---|---|---|---|---|
+| A | 51 to 78 | 7.2e-4 to 2.9734e-3 degrees | 0 | 78 / 2.98e-3 / 0 | 78 / 2.98e-3 / 0 (unchanged) |
+| B | 11 to 44 (was 13 to 48) | 89.3 to 181.75 m (was 59 to 181.75) | 0 to 2 | 48 / 182 m / 2 | **44** / 182 m (measured 181.75) / 2 |
+| C | 12 to 19 | 7.3e-5 to 7.1106e-3 degrees | 0 | 19 / 7.12e-3 / 0 | 19 / 7.12e-3 / 0 (unchanged) |
+| E | 25 to 33 | 1.1e-3 to 4.2915e-3 degrees | 0 | 33 / 4.3e-3 / 0 | 33 / 4.3e-3 / 0 (unchanged) |
+| W | 23 to 37 | 1.1e-3 to 4.3113e-3 degrees | 1 | 37 / 4.32e-3 / 1 | 37 / 4.32e-3 / 1 (unchanged) |
+| D (`mm_lgr`) | not measured | | | 0 / 0 / 0 (owner) | 0 / 0 / 0 (owner; unchanged) |
+
+Counts as measured, distances rounded up as before. **What moved them: the basin alone, and only in
+case B.** With the same build on the old basin every row of the control equals `floors_ref3.log` and
+`floors_w.log`, and its 35 particle files equal those of the reference runs (`lgr_compare.py --mode pos
+--tol 0`; the files differ only in the version string of the header), so 8.6.0's serial changes since
+`0fddec90` change none of these runs. Cases A, C, E, W and D read `GRID/MM_geo.bas` (built from
+`MM_geo.grd`, not tracked, not touched by #251): the particle and hydrodynamic files of the 28 runs of
+A, C, E and W are byte-identical on both basins (D was not run here). Case B reads `MM_coarse.bas`; in its base run 33 of the 408 particles are elsewhere at the last
+output (2 of them by more than 2 m), the largest distance at any output is 14.75 m (at 45 h), and the
+hydrodynamic values differ by less than 1e-4; its six perturbed runs give
++1e-5 44 (was 48), -1e-5 36 (33), +7e-6 30 (28), -7e-6 21 (23; largest 102.31 m, was 129.44),
++4e-6 20 (21), -4e-6 11 (13; largest 89.31 m, was 59.0); the largest of the six stays 181.75 m and the
+`tt` count stays 2 in the same three runs. On the particle file (what the `pos` mode compares) B gives
+10 to 43 particles beyond 2 m and the same largest distances, within the floor.
+
 ## Task 3.5: the hand-over by position (AC11) and the hand-over check
 
 **Measured** 2026-11-22 05:00 to 06:45 EET (from `date`) by the implementer and the controller,

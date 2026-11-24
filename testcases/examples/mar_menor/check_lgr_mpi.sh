@@ -204,26 +204,29 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # Position floors (mode floor): particles beyond --tol at the last output and
 # the largest distance at any output, each the envelope of six serial runs
 # whose wind drag is changed by up to a relative 1e-5 (degrees for A, C, E,
-# metres for B), measured with measure_lgr_floors.sh (this folder).  Source:
-# docs/reviews/2026-11-lagrange-mpi-acceptance.md, section "Task 3.7", table
-# "Position floors on the new reference" (measured on the reference build
-# wt-lgr-ref3, commit 0fddec90; its log is floors_ref3.log in
-# docs/reviews/evidence/2026-11-lagrange-mpi/).  The distances are the
-# measured envelopes rounded UP, never below the measurement: A 2.9734e-3 ->
-# 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E 4.2915e-3 -> 4.3e-3
-# (until Task 5.1 A and C were rounded down, 2.97e-3 and 7.1e-3, so that
-# perturbed serial runs exceeded them).  Never change a value to make a run
-# pass.  Mode pos uses the same floors on the particle file, and FLOOR_T,
-# the tt floor: the most particles whose time tt differs from the base run
-# in one of the six perturbed runs, measured on their particle files (the
-# files measure_lgr_floors.sh writes into lgr_runs/ of its scratch folder;
-# lgr_compare.py --mode pos):
-# A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0.
-# mm_lgr_w (Task 6.1, measured the same way on wt-lgr-ref3 with the inputs
-# of commit 6b514083, log floors_w.log in the same evidence folder):
-# 37 / 4.3113e-3 -> 4.32e-3 / tt 1
-# (particle 46 comes to rest in the dry element 870 in every run, at a time
-# tt between 327,900 and 329,100 s that differs by a few steps).
+# W, metres for B), measured with measure_lgr_floors.sh (this folder).
+# Source: docs/reviews/2026-11-lagrange-mpi-acceptance.md, section "Task
+# 3.7", "Position floors re-measured on the rebuilt basin (#251)": measured
+# on 2026-11-24 with the build of 37f08788 (release 8.6.0) on the inputs of
+# commit 5ebf495b (GRID/MM_coarse.bas as today's shypre writes it); log
+# floors_basin251.log in docs/reviews/evidence/2026-11-lagrange-mpi/.  The
+# counts are as measured: A 78, B 44, C 19, E 33, W 37.  The distances are
+# the measured envelopes rounded UP, never below the measurement: A
+# 2.9734e-3 -> 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E
+# 4.2915e-3 -> 4.3e-3, W 4.3113e-3 -> 4.32e-3.  History: before #251 the
+# table came from the reference build wt-lgr-ref3 (0fddec90) on the old
+# tracked basin (logs floors_ref3.log, and floors_w.log for W) and was the
+# same except B 48 (the basin moved only B, the one case that reads
+# MM_coarse.bas); until Task 5.1 A and C were rounded down, 2.97e-3 and
+# 7.1e-3, so that perturbed serial runs exceeded them.  Never change a value
+# to make a run pass.  Mode pos uses the same floors on the particle file,
+# and FLOOR_T, the tt floor: the most particles whose time tt differs from
+# the base run in one of the six perturbed runs, measured on their particle
+# files (the files measure_lgr_floors.sh writes into lgr_runs/ of its
+# scratch folder; lgr_compare.py --mode pos):
+# A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0,
+# W 1 (particle 46 comes to rest in the dry element 870 in every run, at a
+# time tt between 327,900 and 329,100 s that differs by a few steps).
 # mm_lgr (#225): 0 / 0 / tt 0, set by the owner on 2026-11-23 because
 # multi-process runs of the random walk (rwhpar = 0.5) equal the serial run:
 # since #225 every draw of a particle comes from its own stream, and with
@@ -236,10 +239,11 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # up to a relative 1e-5 (measure_lgr_floors.sh with the build of #225 on the
 # inputs of commit b0cd1972, log floors_mm_lgr.log in the same evidence
 # folder) is 82 / 1.4268e-1 / tt 0: the random walk lets such a change grow
-# to the size of the basin.
+# to the size of the basin.  mm_lgr reads GRID/MM_geo.bas, which the
+# rebuild of #251 does not touch, so the owner's 0 / 0 / 0 stands.
 case "$CASE" in
   mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3; FLOOR_T=0 ;;
-  mm_lgr_b) FLOOR_N=48; FLOOR_D=182; FLOOR_T=2 ;;
+  mm_lgr_b) FLOOR_N=44; FLOOR_D=182; FLOOR_T=2 ;;
   mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3; FLOOR_T=0 ;;
   mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3; FLOOR_T=0 ;;
   mm_lgr_w) FLOOR_N=37; FLOOR_D=4.32e-3; FLOOR_T=1 ;;
