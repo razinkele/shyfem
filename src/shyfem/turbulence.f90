@@ -78,6 +78,7 @@
 ! 06.06.2023    ggu     minor change writing n2max
 ! 22.11.2026	arb	model_bottom_z0: owner's sums on a node partition (#230)
 ! 22.11.2026	arb	bnstress: the same (#230)
+! 24.11.2026	arb	handle_gotm_init: visv/difv only with iturb > 0 (#248)
 !
 !**************************************************************
 
@@ -723,16 +724,26 @@
 	subroutine handle_gotm_init
 
 ! handles initialization of gotm
+!
+! The GOTM arrays are initialized (or read from the restart file) whatever
+! iturb is. visv/difv are set from them only with a turbulence closure
+! (iturb > 0): with iturb <= 0 (no closure, as in turb_closure) visv/difv
+! keep the constant vistur/diftur that set_eddy put in (#248). Before,
+! they were replaced by GOTM's initial 1e-6 (or, on a restart from a GOTM
+! run, by its last profile, never updated after), so vistur and diftur
+! had no effect with iturb = 0.
 
 	use basin
 	use levels
 	use mod_gotm_aux
 	use mod_diff_visc_fric
+	use para
 
 	implicit none
 
 	logical bdebug
 	integer k,l,lmax,lmin,laux
+	integer iturb
 	integer, save :: iudbg = 0
 	integer, save :: icall = 0
 
@@ -756,6 +767,9 @@
         if( .not. rst_use_restart(8) ) then
 	  call gotm_internal_init
         end if
+
+	iturb = nint(getpar('iturb'))
+	if( iturb <= 0 ) return		!no closure: keep vistur/diftur (#248)
 
 	visv = 0.
 	difv = 0.

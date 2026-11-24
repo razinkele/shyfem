@@ -1,0 +1,76 @@
+2026-11-24 15:35:59  floors: binary /home/razinka/wt-p6/bin, inputs of 7564a360, by key, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/p6.Iz8d/tmp/lgrfloors.wjKjh6
+  mm_lgr_c.r+1e-5: ended
+  mm_lgr_c.r-1e-5: ended
+  mm_lgr_c.r0: ended
+  mm_lgr_c.r-7e-6: ended
+  mm_lgr_c.r+7e-6: ended
+  mm_lgr_c.r+4e-6: ended
+  mm_lgr_c.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_c  +1e-5       648       25   1.4794e-04   165600.0
+mm_lgr_c  -1e-5       648       22   3.9029e-04   162000.0
+mm_lgr_c  +7e-6       648       23   1.4257e-04   165600.0
+mm_lgr_c  -7e-6       648       21   2.2840e-04   133200.0
+mm_lgr_c  +4e-6       648       14   1.3745e-04   165600.0
+mm_lgr_c  -4e-6       648       15   2.2840e-04   133200.0
+mm_lgr_c  ENV                   25   3.9029e-04   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-24 15:36:46  comparisons and logs in:
+/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/p6.Iz8d/tmp/lgrfloors.wjKjh6
+
+# tt floor (#248): lgr_compare.py BASE PERTURBED --mode pos --tol 1e-5 --max-beyond-last 100000 --max-largest 1e6 --max-tt-differ 100000 on lgr_runs/ of the folder above, base mm_lgr_c.r0 (limits set so that nothing gates: the lines give the counts)
+## mm_lgr_c.r+1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 25 <= 100000: ok
+floor: largest distance at any output (t=165600.0): 0.000147939 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r-1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 22 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 0.000390291 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r+7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 23 <= 100000: ok
+floor: largest distance at any output (t=165600.0): 0.000142574 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r-7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 21 <= 100000: ok
+floor: largest distance at any output (t=133200.0): 0.000228405 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r+4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 14 <= 100000: ok
+floor: largest distance at any output (t=165600.0): 0.000137448 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r-4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 15 <= 100000: ok
+floor: largest distance at any output (t=133200.0): 0.000228405 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+
+# control (#248): the same script and inputs with an OpenMPI build of origin/main c917d27e (before #248), case mm_lgr_c: its rows equal those of floors_basin251.log (19 / 7.1106e-3), so #248 alone moved the floor
+2026-11-24 15:37:16  floors: binary /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/p6.Iz8d/ref/bin, inputs of 7564a360, by key, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/p6.Iz8d/tmp/lgrfloors.zzDzJF
+  mm_lgr_c.r-1e-5: ended
+  mm_lgr_c.r0: ended
+  mm_lgr_c.r+1e-5: ended
+  mm_lgr_c.r+7e-6: ended
+  mm_lgr_c.r-7e-6: ended
+  mm_lgr_c.r+4e-6: ended
+  mm_lgr_c.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_c  +1e-5       648       19   2.0223e-04    93600.0
+mm_lgr_c  -1e-5       648       19   7.1106e-03    93600.0
+mm_lgr_c  +7e-6       648       17   2.0223e-04    93600.0
+mm_lgr_c  -7e-6       648       14   7.1106e-03    93600.0
+mm_lgr_c  +4e-6       648       12   7.3493e-05   165600.0
+mm_lgr_c  -4e-6       648       17   7.1106e-03    93600.0
+mm_lgr_c  ENV                   19   7.1106e-03   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-24 15:37:54  comparisons and logs in:
+/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/p6.Iz8d/tmp/lgrfloors.zzDzJF

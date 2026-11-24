@@ -209,21 +209,28 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # 3.7", "Position floors re-measured on the rebuilt basin (#251)": measured
 # on 2026-11-24 with the build of 37f08788 (release 8.6.0) on the inputs of
 # commit 5ebf495b (GRID/MM_coarse.bas as today's shypre writes it); log
-# floors_basin251.log in docs/reviews/evidence/2026-11-lagrange-mpi/.  The
-# counts are as measured: A 78, B 44, C 19, E 33, W 37.  The distances are
-# the measured envelopes rounded UP, never below the measurement: A
-# 2.9734e-3 -> 2.98e-3, B 181.75 -> 182, C 7.1106e-3 -> 7.12e-3, E
-# 4.2915e-3 -> 4.3e-3, W 4.3113e-3 -> 4.32e-3.  History: before #251 the
-# table came from the reference build wt-lgr-ref3 (0fddec90) on the old
-# tracked basin (logs floors_ref3.log, and floors_w.log for W) and was the
-# same except B 48 (the basin moved only B, the one case that reads
-# MM_coarse.bas); until Task 5.1 A and C were rounded down, 2.97e-3 and
-# 7.1e-3, so that perturbed serial runs exceeded them.  Never change a value
-# to make a run pass.  Mode pos uses the same floors on the particle file,
-# and FLOOR_T, the tt floor: the most particles whose time tt differs from
-# the base run in one of the six perturbed runs, measured on their particle
-# files (the files measure_lgr_floors.sh writes into lgr_runs/ of its
-# scratch folder; lgr_compare.py --mode pos):
+# floors_basin251.log in docs/reviews/evidence/2026-11-lagrange-mpi/.  Case
+# C (3D, iturb = 0) was measured again on 2026-11-24 for #248 (vistur and
+# diftur, 0 by default, now act with iturb = 0 instead of GOTM's 1e-6, so
+# its velocities and particles change) with the build of #248 on its inputs
+# (commit 7564a360), section "Position floor of case C re-measured for
+# #248" of the same file, log floors_vistur248.log.  The counts are as
+# measured: A 78, B 44, C 25, E 33, W 37.  The distances are the measured
+# envelopes rounded UP, never below the measurement: A 2.9734e-3 ->
+# 2.98e-3, B 181.75 -> 182, C 3.9029e-4 -> 3.91e-4, E 4.2915e-3 -> 4.3e-3,
+# W 4.3113e-3 -> 4.32e-3 (C before #248: 19 / 7.1106e-3 -> 7.12e-3).
+# History: before #251 the table came from the reference build
+# wt-lgr-ref3 (0fddec90) on the old tracked basin (logs floors_ref3.log,
+# and floors_w.log for W) and was that of #251 except B 48 (the basin moved
+# only B, the one case that reads MM_coarse.bas); #248 then moved only C
+# (19 / 7.12e-3 to 25 / 3.91e-4, above); until Task 5.1 A and C were
+# rounded down, 2.97e-3 and 7.1e-3, so that perturbed serial runs exceeded
+# them.  Never change a value to make a run pass.  Mode pos uses the same
+# floors on the particle file, and FLOOR_T, the tt floor: the most
+# particles whose time tt differs from the base run in one of the six
+# perturbed runs, measured on their particle files (the files
+# measure_lgr_floors.sh writes into lgr_runs/ of its scratch folder;
+# lgr_compare.py --mode pos):
 # A 0, B 2 (particles that leave the basin one time step apart), C 0, E 0,
 # W 1 (particle 46 comes to rest in the dry element 870 in every run, at a
 # time tt between 327,900 and 329,100 s that differs by a few steps).
@@ -244,7 +251,7 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 case "$CASE" in
   mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3; FLOOR_T=0 ;;
   mm_lgr_b) FLOOR_N=44; FLOOR_D=182; FLOOR_T=2 ;;
-  mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3; FLOOR_T=0 ;;
+  mm_lgr_c) FLOOR_N=25; FLOOR_D=3.91e-4; FLOOR_T=0 ;;
   mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3; FLOOR_T=0 ;;
   mm_lgr_w) FLOOR_N=37; FLOOR_D=4.32e-3; FLOOR_T=1 ;;
   mm_lgr)   FLOOR_N=0; FLOOR_D=0; FLOOR_T=0 ;;	# owner, 2026-11-23 (#225)
