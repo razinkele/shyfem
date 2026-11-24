@@ -41,6 +41,7 @@
 ! 14.02.2019	ggu	changed VERS_7_5_56
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 20.02.2020	ggu	new routine compute_bottom_flux()
+! 24.11.2026	arb	compute_bottom_flux, in_area: owner's values on ghosts (#262)
 !
 ! notes :
 !
@@ -324,11 +325,12 @@
 ! computes areas that are considered inside basin
 
 	use basin
+	use shympi
 
 	implicit none
 
-	integer iout_area
-	integer inarea(nkn)
+	integer, intent(in) :: iout_area
+	integer, intent(out) :: inarea(nkn)
 
 	integer ie,k,ii,ia
 
@@ -344,6 +346,14 @@
           end if
         end do
 
+	! a ghost node sees only the elements its process holds: take the
+	! owner's flag, as set_ilhkv does with ilhkv (#262)
+	if( shympi_partition_on_elements() ) then
+	  call shympi_exchange_2d_nodes_max(inarea)
+	else
+	  call shympi_exchange_2d_node(inarea)
+	end if
+
 	end
 
 !*****************************************************************
@@ -356,24 +366,40 @@
 	use mod_conz
 	use mod_layer_thickness	
 	use evgeom
+	use shympi
 
 	implicit none
 
-	real dt
-	real fflux(nkn)
+	real, intent(in) :: dt
+	real, intent(out) :: fflux(nkn)
 
-	integer k,ia,lmax,ie,ii
+	integer k,ia,lmax,ie,ii,ie_mpi
+	integer ierr
 	real alpha,f,conz
 	real area
 	real tau,r,h
 	real taubot(nkn)
 	real aux(nkn)
+	integer, save, allocatable :: ie_serial(:)	!elements, serial order
+
+	! the elements in the order of their global internal number
+	! (ip_int_elem): a serial run adds them at a node in that order
+	! (1 to nel), so the owner of a node adds its ring in the serial
+	! order; serially ip_int_elem(ie) = ie and nothing changes (#262)
+	if( .not. allocated(ie_serial) ) then
+	  allocate(ie_serial(nel),stat=ierr)
+	  if( ierr /= 0 ) then
+	    call shympi_abort_internal('compute_bottom_flux: allocation failed')
+	  end if
+	  call isort(nel,ip_int_elem,ie_serial)
+	end if
 
 	call bottom_stress(taubot)
 	aux = 0.
 	fflux = 0.
 
-	do ie=1,nel
+	do ie_mpi=1,nel
+	  ie = ie_serial(ie_mpi)
 	  area = 4.*ev(10,ie)
 	  ia = iarv(ie)
 	  lmax = ilhv(ie)
@@ -389,6 +415,21 @@
 	    aux(k) = aux(k) + area
 	  end do
 	end do
+
+	! partition on nodes: the owner of a node holds all its elements and
+	! has added them in the serial order, so the ghost copies take its
+	! values (as in uvtopr, #230); without the exchange a ghost node kept
+	! the mean of the elements its process holds, and its bed sediment and
+	! bottom concentration, computed from that flux, were written to the
+	! output and restart files (the gather takes the ghost copies too) and
+	! fed the next transport step (#262)
+	if( shympi_partition_on_elements() ) then
+	  call shympi_exchange_and_sum_2d_nodes(fflux)
+	  call shympi_exchange_and_sum_2d_nodes(aux)
+	else
+	  call shympi_exchange_2d_node(fflux)
+	  call shympi_exchange_2d_node(aux)
+	end if
 
 	where( aux > 0. ) fflux = fflux / aux
 
