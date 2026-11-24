@@ -32,6 +32,7 @@
 ! lgr_mpi_grow_export		enlarge the lists of marks
 ! lgr_mpi_list_fail		record a failure of the lists found in the particle loop
 ! lgr_mpi_list_check		abort on a recorded failure (main thread, after the loop)
+! lgr_mpi_test_internal		test hook of the internal-error guards (#256)
 ! lgr_mpi_search_key		place of an element in find_elem_from_old's search
 ! lgr_mpi_selftest_key		self-test of the key against that search
 ! lgr_mpi_clear_of_sides	point clear of an element's sides by the margin
@@ -68,6 +69,11 @@
 ! lgr_mpi_debug_open		open one debug dump file
 ! lgr_mpi_ghost_nodes		number of vertices of an element owned elsewhere
 ! lgr_mpi_bisect		position of a key in a sorted list
+!
+! outside the module (#256):
+!
+! lgr_internal_error		internal-error guard: record in the loop, else abort
+! lgr_internal_failed		an internal error was recorded in the loop
 
 	module mod_lagrange_mpi
 
@@ -217,11 +223,33 @@
 	! the particle loop and before every collective call of the
 	! hand-over. lgr_list_fail: 0 none, 1 allocation in
 	! lgr_mpi_grow_export, 2 allocation in lgr_mpi_grow_park, 3 argument
-	! check of lgr_mpi_mark_side, 4 argument check of lgr_mpi_park;
-	! lgr_list_info: the slot of the particle, four values of the message
-	! and the OpenMP thread that found it
+	! check of lgr_mpi_mark_side, 4 argument check of lgr_mpi_park, 5 an
+	! internal-error guard of the tracker (lgr_internal_error, #256: its
+	! message in lgr_list_msg); lgr_list_info: the slot of the particle,
+	! four values of the message and the OpenMP thread that found it
 	integer, save :: lgr_list_fail = 0
 	integer, save :: lgr_list_info(6) = 0
+	character(len=80), save :: lgr_list_msg = ' '
+
+	! internal-error guards of the tracker reached inside the OpenMP
+	! particle loop of drogue (#256): lgr_omp_loop is true while that loop
+	! runs (set and cleared by drogue, outside the parallel region); a
+	! guard hit there by a team of more than one thread is recorded by
+	! lgr_internal_error (kind 5 above, and lgr_internal_flag = 1, written
+	! and read with OMP ATOMIC: lgr_internal_failed) and the run stops in
+	! lgr_mpi_list_check after the loop; anywhere else the guard aborts at
+	! once, as before
+	logical, save :: lgr_omp_loop = .false.
+	integer, save :: lgr_internal_flag = 0
+
+	! test hook of the internal-error guards (read once by lgr_mpi_init,
+	! also in a serial run; mpirun passes it with -x NAME):
+	! LGR_TEST_INTERNAL_FAIL=1 gives the first particle that a thread other
+	! than 0 of the particle loop takes on each process (thread 0 if the
+	! loop runs on one thread) a negative travel time, so that the guard of
+	! track_single fires once (lgr_mpi_test_internal, #256)
+	logical, save :: lgr_test_internal = .false.
+	integer, save :: lgr_test_internal_n = 0
 
 	! limit nbdymax on several processes: insert_particle does not stop
 	! there, it only records that this process passed the limit by itself;
@@ -412,6 +440,10 @@
 ! allocate once (lgr_mpi_grow_export, lgr_mpi_grow_park: the run stops
 ! through lgr_mpi_list_check on the main thread, #242)
 !
+! test hook LGR_TEST_INTERNAL_FAIL=1, read here once, in a serial run too:
+! makes the internal-error guard of track_single fire once per process
+! (lgr_mpi_test_internal, #256)
+!
 ! test hooks of lgr_mpi_check_consistency, read here once (several
 ! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
 ! the process whose rank is R (lgr_test_drop, lgr_test_dup; see
@@ -438,6 +470,10 @@
 	call lgr_mpi_selftest_pack		!only at levdbg >= 3
 	call lgr_mpi_selftest_side		!only at levdbg >= 3
 	call lgr_mpi_selftest_key		!only at levdbg >= 3
+
+	call get_environment_variable('LGR_TEST_INTERNAL_FAIL',sval	&
+     &			,status=ist)
+	lgr_test_internal = ( ist == 0 .and. trim(sval) == '1' )
 
 	if( .not. bmpi_lagr ) return
 
@@ -1934,21 +1970,24 @@
 
 !*******************************************************************
 
-	subroutine lgr_mpi_list_fail(kind,i,i1,i2,i3,i4)
+	subroutine lgr_mpi_list_fail(kind,i,i1,i2,i3,i4,msg)
 
-! records a failure of the lists of marks or of parked particles (kind:
-! see lgr_list_fail at the top of the module) found for the particle in
-! slot i, with four values for the message and the OpenMP thread that
-! found it; only the first failure of this process is kept. Called inside
-! the critical section lgr_export, inside the particle loop of drogue or
-! outside any parallel region; it makes no MPI call (#242: a worker thread
-! must not, MPI_THREAD_FUNNELED). lgr_mpi_list_check reports and aborts
+! records a failure of the lists of marks or of parked particles, or an
+! internal-error guard of the tracker (kind: see lgr_list_fail at the top
+! of the module) found for the particle in slot i, with four values for
+! the message, the OpenMP thread that found it and, for kind 5, the
+! message the guard aborts with (msg); only the first failure of this
+! process is kept. Called inside the critical section lgr_export, inside
+! the particle loop of drogue or outside any parallel region; it makes no
+! MPI call (#242: a worker thread must not, MPI_THREAD_FUNNELED).
+! lgr_mpi_list_check reports and aborts
 
 	implicit none
 
-	integer, intent(in) :: kind		!1 to 4
+	integer, intent(in) :: kind		!1 to 5
 	integer, intent(in) :: i		!particle (slot)
 	integer, intent(in) :: i1, i2, i3, i4	!values of the message
+	character(len=*), intent(in), optional :: msg	!abort message (kind 5)
 
 	integer :: ith
 
@@ -1956,6 +1995,8 @@
 	call openmp_get_thread_num(ith)
 	lgr_list_fail = kind
 	lgr_list_info = (/ i, i1, i2, i3, i4, ith /)
+	lgr_list_msg = ' '
+	if( present(msg) ) lgr_list_msg = msg
 
 	end subroutine lgr_mpi_list_fail
 
@@ -1967,12 +2008,13 @@
 ! after its particle loop (before the global count, its first collective
 ! call) and by lgr_mpi_handover before the collective call of every
 ! round (the marks and parkings of the step 5 of the round before). If a
-! failure of the lists was recorded on this process (lgr_mpi_list_fail),
-! writes what failed and stops every process through
-! shympi_abort_internal with the message of the routine that found it;
-! the other processes wait in their next collective call until MPI_ABORT
-! ends them. Nothing is recorded in a run that works: then it returns at
-! once and changes nothing (#242)
+! failure of the lists, or an internal-error guard of the tracker hit in
+! the particle loop (kind 5, #256), was recorded on this process
+! (lgr_mpi_list_fail), writes what failed and stops every process
+! through shympi_abort_internal with the message of the routine that
+! found it; the other processes wait in their next collective call until
+! MPI_ABORT ends them. Nothing is recorded in a run that works: then it
+! returns at once and changes nothing (#242)
 
 	use shympi, only : my_id
 
@@ -2020,6 +2062,13 @@
 	  flush(6)
 	  call shympi_abort_internal('lgr_mpi_park: not a parking of a'	&
      &		//' parallel run')
+	case( 5 )
+	  write(6,'(a,i0,a,i0,a)') ' lgr_mpi_list_check: rank ',my_id		&
+     &		,' ('//where//'): an internal error found in the particle'	&
+     &		//' loop by OpenMP thread ',k(6),', the run stops with its'	&
+     &		//' message:'
+	  flush(6)
+	  call shympi_abort_internal(trim(lgr_list_msg))
 	case default
 	  write(6,*) 'lgr_mpi_list_check: rank ',my_id,' kind '		&
      &		,lgr_list_fail
@@ -2027,6 +2076,44 @@
 	end select
 
 	end subroutine lgr_mpi_list_check
+
+!*******************************************************************
+
+	subroutine lgr_mpi_test_internal(tmax)
+
+! test hook LGR_TEST_INTERNAL_FAIL=1 (lgr_test_internal, read once by
+! lgr_mpi_init; never written after that): called by track_single, inside
+! the particle loop of drogue, with the travel time of the particle. The
+! first particle a thread other than 0 takes on this process (in a loop
+! run by one thread: the first particle) gets tmax = -1, so that the
+! internal-error guard of track_single fires once per process; the count
+! of takers is an OMP atomic capture. A run without the hook returns at
+! once (#256)
+
+	implicit none
+
+	real, intent(inout) :: tmax		!travel time of the particle
+
+	integer :: ith, n
+	logical :: openmp_in_parallel
+
+	if( .not. lgr_test_internal ) return
+
+	call openmp_get_thread_num(ith)
+	if( ith == 0 .and. openmp_in_parallel() ) return
+
+!$OMP ATOMIC CAPTURE
+	n = lgr_test_internal_n
+	lgr_test_internal_n = lgr_test_internal_n + 1
+!$OMP END ATOMIC
+
+	if( n == 0 ) then
+	  write(6,'(a,i0)') ' lgr_mpi_test_internal: travel time set'	&
+     &		//' negative by OpenMP thread ',ith
+	  tmax = -1.
+	end if
+
+	end subroutine lgr_mpi_test_internal
 
 !*******************************************************************
 
@@ -6388,3 +6475,75 @@
 !*******************************************************************
 
 	end module mod_lagrange_mpi
+
+!*******************************************************************
+!*******************************************************************
+!*******************************************************************
+! the internal-error guards of the tracker (#256), outside the module so
+! that every Lagrangian file can call them, also lagrange_connect.f90
+! (mod_lagrange_mpi uses its module connectivity)
+!*******************************************************************
+
+	subroutine lgr_internal_error(message)
+
+! an internal-error guard of the tracker (a programming error or a
+! corrupt state, never the input) has failed. Inside the OpenMP particle
+! loop of drogue (lgr_omp_loop) run by more than one thread, the calling
+! thread may be a worker, which must not call MPI_ABORT (MPI is
+! initialised MPI_THREAD_FUNNELED): the failure and its message are
+! recorded (lgr_mpi_list_fail, kind 5, inside the critical section
+! lgr_export; lgr_internal_flag = 1) and the routine returns, so that its
+! caller leaves the particle with defined values and the tracker stops
+! (lgr_internal_failed); the main thread aborts with the message in
+! lgr_mpi_list_check after the loop, before any collective call.
+! Anywhere else (a loop on one thread, the hand-over, the release) it
+! aborts at once through shympi_abort_internal, as the guard did before
+! (#256). Must not be called inside the critical section lgr_export
+
+	use mod_lagrange_mpi, only : lgr_omp_loop, lgr_internal_flag
+	use mod_lagrange_mpi, only : lgr_mpi_list_fail
+
+	implicit none
+
+	character(len=*), intent(in) :: message	!message of the abort
+
+	logical :: openmp_in_parallel
+
+	if( .not. lgr_omp_loop ) then
+	  call shympi_abort_internal(message)
+	else if( .not. openmp_in_parallel() ) then
+	  call shympi_abort_internal(message)
+	end if
+
+!$OMP CRITICAL (lgr_export)
+	call lgr_mpi_list_fail(5,0,0,0,0,0,message)
+!$OMP END CRITICAL (lgr_export)
+!$OMP ATOMIC WRITE
+	lgr_internal_flag = 1
+
+	end subroutine lgr_internal_error
+
+!*******************************************************************
+
+	function lgr_internal_failed()
+
+! true if an internal-error guard of the tracker was recorded in the
+! particle loop on this process (lgr_internal_error, #256): the tracker
+! then leaves its particle at once with defined values, and track_single
+! skips the remaining particles of the loop. OMP atomic read, called from
+! any thread; always false in a run that works
+
+	use mod_lagrange_mpi, only : lgr_internal_flag
+
+	implicit none
+
+	logical :: lgr_internal_failed
+
+	integer :: n
+
+!$OMP ATOMIC READ
+	n = lgr_internal_flag
+
+	lgr_internal_failed = ( n /= 0 )
+
+	end function lgr_internal_failed

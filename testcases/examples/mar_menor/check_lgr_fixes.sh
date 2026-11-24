@@ -75,6 +75,26 @@
 #             called the abort itself, from whichever OpenMP thread held
 #             the critical section (MPI is initialised
 #             MPI_THREAD_FUNNELED): no such check line.
+#   int-fail  (#256) the internal-error guards of the tracker reached
+#             inside the OpenMP particle loop of drogue: mm_lgr_a on 4 MPI
+#             processes with the hook LGR_TEST_INTERNAL_FAIL=1 (the first
+#             particle that a thread other than 0 takes on each process
+#             gets a negative travel time, so that the guard of
+#             track_single, "error stop drogue: internal error", fires once
+#             per process), with 4 OpenMP threads (nomp = 4) and with 1
+#             (nomp = 1).  Each run has a timeout of 300 s and must stop
+#             with exit code 33 and the guard's message, with no SIGSEGV,
+#             SIGFPE or "Fortran runtime" line and no "simulation end".
+#             The 4-thread run must report 4 threads, the hook must fire on
+#             a thread other than 0 (line "lgr_mpi_test_internal: ...
+#             OpenMP thread N") and the run must stop through the check
+#             the main thread makes after the loop (line
+#             "lgr_mpi_list_check: ... an internal error found in the
+#             particle loop").  Before #256 the guard called the abort
+#             itself, from the worker thread (MPI_THREAD_FUNNELED): no such
+#             check line.  The 1-thread run must stop in the guard itself,
+#             as before #256 (no check line: a loop on one thread runs on
+#             the main thread).
 #   small-export (#242) mm_lgr_a (its list of marks grows) and mm_lgr_e
 #             (its list of parked particles grows) on 4 MPI processes with
 #             LGR_TEST_SMALL_EXPORT=1 (both lists start with 2 entries and
@@ -178,11 +198,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | small-export | seed | sedbeach"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | int-fail | small-export | seed | sedbeach"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|ilagr3|grow-fail|small-export|seed|sedbeach) ;;
+  stk-omp|decay|ilagr3|grow-fail|int-fail|small-export|seed|sedbeach) ;;
   *) usage ;;
 esac
 
@@ -474,6 +494,45 @@ if [ "$MODE" = grow-fail ]; then
       fail "$L: crash line in the log"; grep -m3 "SIGSEGV\|SIGFPE\|Fortran runtime" "$log" | sed 's/^/    /'
     fi
     grep -q "simulation end" "$log" && fail "$L: the run ended instead of stopping"
+  done
+  finish
+fi
+
+#=============================== int-fail (#256) ===========================
+if [ "$MODE" = int-fail ]; then
+  for n in 4 1; do
+    with_para mm_lgr_a if_t$n "nomp = $n"
+    echo "=== mm_lgr_a on $NP processes x $n thread(s), LGR_TEST_INTERNAL_FAIL=1"
+    t0=$(date +%s)
+    ( cd "$W" && LGR_TEST_INTERNAL_FAIL=1 timeout 300 nice -n 10 \
+        mpirun --oversubscribe -np $NP -x LGR_TEST_INTERNAL_FAIL \
+        shyfem if_t$n.str > if_t$n.log 2>&1 )
+    lrc=$?
+    log="$W/if_t$n.log"
+    echo "  exit code $lrc after $(( $(date +%s) - t0 )) s"
+    [ "$lrc" = 33 ] || fail "$n thread(s): exit code $lrc, expected 33"
+    threads if_t$n.log $n
+    grep -m2 "lgr_mpi_test_internal:" "$log" | sed 's/^/  /'
+    grep -q "lgr_mpi_test_internal:" "$log" || fail "$n thread(s): the hook did not fire"
+    grep -q "error stop drogue: internal error" "$log" \
+      || fail "$n thread(s): no 'error stop drogue: internal error' in the log"
+    if [ "$n" = 4 ]; then
+      grep -q "lgr_mpi_test_internal:.*OpenMP thread 0$" "$log" \
+        && fail "4 threads: the hook fired on thread 0"
+      if grep -q "lgr_mpi_list_check:.*internal error found in the particle loop" "$log"; then
+        grep "lgr_mpi_list_check:" "$log" | sort -u | head -4 | sed 's/^/  /'
+      else
+        fail "4 threads: no line of the check after the particle loop (lgr_mpi_list_check:)"
+      fi
+    else
+      grep -q "lgr_mpi_list_check:" "$log" \
+        && fail "1 thread: a check line, expected the abort in the guard itself"
+    fi
+    grep -m2 "error stop drogue: internal error" "$log" | sed 's/^/  /'
+    if grep -q "SIGSEGV\|SIGFPE\|Fortran runtime" "$log"; then
+      fail "$n thread(s): crash line in the log"; grep -m3 "SIGSEGV\|SIGFPE\|Fortran runtime" "$log" | sed 's/^/    /'
+    fi
+    grep -q "simulation end" "$log" && fail "$n thread(s): the run ended instead of stopping"
   done
   finish
 fi
