@@ -26,6 +26,9 @@
 # that is about 1e-3 (K = 10: 3e-3).  A fixed model passes every time.
 #
 # Usage:  ./check_partition_file.sh [K [NP]]
+# The balance window is set for mm_hyd_00 on NP = 4 (the default), the
+# only NP checked; with many more processes a legitimate METIS partition
+# can fall outside 90 ... 110 percent.
 # Needs shyfem and mpirun on PATH (an OpenMPI build); `make init` first.
 # The runs are made in a folder from mktemp -d under ${TMPDIR:-/tmp},
 # INPUT and GRID are linked, nothing in this folder changes.  The folder
@@ -58,6 +61,7 @@ for i in $(seq 1 "$K"); do
       "$HERE/$STR" > "$d/$STR"
   if ! grep -q "2009-01-01::01:00:00" "$d/$STR"; then
     echo "PARTITION FILE: FAIL (cannot shorten the run: itend not found)"
+    rm -rf "$WORK"
     exit 1
   fi
   ( cd "$d" && timeout 300 mpirun --oversubscribe -np "$NP" shyfem "$STR" \
