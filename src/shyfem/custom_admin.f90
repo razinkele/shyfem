@@ -1770,6 +1770,8 @@
 
         implicit none
 
+	external shympi_abort_internal	!external subroutine, not in shympi
+
 	real, save, allocatable :: conzs(:)
 	real, save, allocatable :: conza(:)
 	real, save, allocatable :: conzh(:)

@@ -101,8 +101,8 @@ if ! run 1; then fail "the serial run did not end (above)"; echo "$P"; exit 1; f
 grep ' sedimt: ' "$P/np1/sedimt.inf" > "$P/np1/sedimt.txt" 2> /dev/null
 if [ ! -s "$P/np1/sedimt.txt" ]; then
   fail "no sedimt: line in the serial info file ($P/np1/sedimt.inf)"
-elif ! awk '{ if ($4 + 0 != 0 || $5 + 0 != 0) ok = 1 } END { exit !ok }' "$P/np1/sedimt.txt"; then
-  fail "the serial sedimt: totals are all zero (nothing is tested)"
+elif ! awk '{ if ($3 + 0 != 0) m = 1; if ($4 + 0 != 0) s = 1 } END { exit !(m && s) }' "$P/np1/sedimt.txt"; then
+  fail "the serial sedimt: suspended mass (column 3) or bed sediment (column 4) is zero in every line (nothing is tested)"
 else
   echo "  serial: $(wc -l < "$P/np1/sedimt.txt") sedimt: lines, last: $(tail -1 "$P/np1/sedimt.txt")"
 fi
