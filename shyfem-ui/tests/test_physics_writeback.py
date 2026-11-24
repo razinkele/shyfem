@@ -340,3 +340,25 @@ def test_lgrseed_large_integer_is_written_as_a_plain_integer(seed):
     assert working.get_param("lagrg", "lgrseed") == seed
     assert isinstance(working.get_param("lagrg", "lgrseed"), int)
     assert f"lgrseed = {seed}\n" in StrParser.generate(working)
+
+
+def _lgrseed_rendered_value(text: str) -> str:
+    sf = StrParser.parse(text)
+    html = str(physics._lgrseed_field(build_panel_params(sf, "lagrangian")))
+    return re.search(r'id="lgrseed"[^>]*value="([^"]*)"', html).group(1)
+
+
+@pytest.mark.parametrize(
+    "stored, shown", [("42", "42"), ("-7", "-7"), ("1.5", "1.5"), ("abc", "abc"), ("1 2", "1 2")]
+)
+def test_lgrseed_field_shows_the_stored_value_and_an_untouched_save_keeps_it(stored, shown):
+    """The old int(...) showed 1.5 as 1 (the save then rewrote it) and raised on text."""
+    text = _LGRSEED.replace("lgrseed = 42", f"lgrseed = {stored}")
+    assert _lgrseed_rendered_value(text) == shown
+    working, errors = _save(text)
+    assert errors == []
+    assert StrParser.generate(working) == text
+
+
+def test_lgrseed_field_shows_the_default_when_absent():
+    assert _lgrseed_rendered_value(_LGRSEED.replace("        lgrseed = 42\n", "")) == "1"

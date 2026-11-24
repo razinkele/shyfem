@@ -156,6 +156,16 @@ class TestRangeValidation:
         errors = [m for m in msgs if m.param == "lgrseed" and "is invalid" in m.message]
         assert len(errors) == 1
 
+    @pytest.mark.parametrize("seed", ["abc", [1, 2], ["a", 2], "1 2", ""])
+    def test_lgrseed_present_but_not_a_number_is_one_error(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        errors = [m for m in msgs if m.level == "error" and m.param == "lgrseed"]
+        assert len(errors) == 1
+
+    def test_lgrseed_absent_is_valid(self):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1}})
+        assert not [m for m in msgs if m.param == "lgrseed"]
+
     @pytest.mark.parametrize("seed", [2147483648, -2147483648, 1.5, 1e10])
     def test_lgrseed_out_of_range_or_fractional_is_rejected(self, seed):
         msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
