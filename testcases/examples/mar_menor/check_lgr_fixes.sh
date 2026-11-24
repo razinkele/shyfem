@@ -290,6 +290,24 @@
 #             boundary" (also before #225, and after #252: the boundary list
 #             skips two boundary nodes, see mode segments, which releases
 #             along a part of it).
+#   sedbeach  (#225, review) the sediment step and beached particles:
+#             mm_lgr_a (2D: every element has one layer, so a particle is
+#             always in its bottom layer) with rwhpar = 0.5, ised = 1 (every
+#             particle gets a sediment class as its type and a settling
+#             velocity) and lbeach = 1 (a particle on a material side
+#             beaches: lag_beach negates its type), serially.  The run must
+#             end with no "Fortran runtime" or signal line; the particle
+#             file must hold beached particles (negative type), each of
+#             which reached lgr_sediment with that negative type (in the
+#             domain, in its bottom layer, settling velocity above 0); and
+#             each beached particle must keep its record (position, layer,
+#             z) at every output after it beached.  Before the fix
+#             lgr_sediment used the negative type as the sediment class:
+#             with -fcheck=bounds (COMPILER_PROFILE=CHECK) the run stopped
+#             in its first quarter of an hour with "Index '-3' of dimension
+#             1 of array 'tcd' below lower bound of 1"; the normal build
+#             read a value outside the array (no visible effect in this
+#             case, where the beached particles have z = 0.5).
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
@@ -305,11 +323,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | small-export | seed"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | small-export | seed | sedbeach"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|small-export|seed) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|small-export|seed|sedbeach) ;;
   *) usage ;;
 esac
 
@@ -1306,6 +1324,53 @@ sys.exit(0 if nrep == 0 and ndiff == 0 and nrec > 0 else 1)
 EOP
   else
     fail "particle file missing (q_a or q_r)"
+  fi
+  finish
+fi
+
+#=============================== sedbeach (#225, review) ===================
+if [ "$MODE" = sedbeach ]; then
+  sed -e 's/^\([ \t]*\)rwhpar = 0[ \t]*$/\1rwhpar = 0.5\n\1ised = 1\n\1lbeach = 1/' \
+      "$W/mm_lgr_a.str" > "$W/sb_base.str"
+  for o in 'rwhpar = 0.5' 'ised = 1' 'lbeach = 1'; do
+    grep -q "^ *$o\$" "$W/sb_base.str" || fail "no line '$o' in sb_base.str"
+  done
+  with_para sb_base sb "levdbg = 0"
+  echo "=== mm_lgr_a (2D) with ised = 1 and lbeach = 1, serially"
+  run sb sb.log shyfem || fail "the run did not end"
+  if grep -q 'Fortran runtime\|Program received signal\|SIGSEGV\|SIGFPE' "$W/sb.log"; then
+    fail "run-time error or signal in the log"
+    grep -m3 -A1 'At line\|Fortran runtime\|Program received signal' "$W/sb.log" | sed 's/^/    /'
+  fi
+  if [ "$rc" = 0 ] && [ -s "$W/sb.lgr.shy" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/sb.lgr.shy" <<'EOP' || fail "particle file check"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+_, times = lc.read_file(sys.argv[2])
+first = {}
+nrec = nmoved = nsink0 = 0
+for t, b, _ in times:
+    for pid, p in b[0].items():		# active particles
+        if p["type"] >= 0:
+            continue
+        nrec += 1
+        if p["s"] == 0.0:
+            nsink0 += 1
+        rec = (p["x"], p["y"], p["z"], p["lb"], p["ie"])
+        if pid in first and first[pid] != rec:
+            nmoved += 1
+            if nmoved <= 3:
+                print("  t=%r id %d: beached record changed %r -> %r" % (t, pid, first[pid], rec))
+        first.setdefault(pid, rec)
+print("  beached particles %d (records %d, with settling velocity 0: %d),"
+      " records changed after beaching %d" % (len(first), nrec, nsink0, nmoved))
+ok = len(first) > 0 and nmoved == 0 and nsink0 == 0
+sys.exit(0 if ok else 1)
+EOP
+  elif [ "$rc" = 0 ]; then
+    fail "no particle file"
   fi
   finish
 fi
