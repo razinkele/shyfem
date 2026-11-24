@@ -80,6 +80,15 @@
 ! call, gives the id of a serial run; and the limit nbdymax does not stop
 ! here, it is only recorded (lgr_nbdymax_passed): lgr_mpi_assign_ids
 ! stops the run on the global number of particles
+!
+! a release point that lies in no element (ie = 0 and find_element finds
+! none) gives no particle (#247): it takes no slot and no id, and is only
+! counted in nlgr_outside (the release reports it). Before, the particle
+! was inserted with ie = 0 and the output read the geometry of element 0
+! (SIGSEGV in mm_lgr_a with a trajectory point outside the basin). On
+! several processes no caller passes ie = 0 (lgrtrj stops at start-up,
+! the polygon and basin releases pass an element the process owns), so
+! the ids stay those of a serial run
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_nbdymax_passed
@@ -114,6 +123,14 @@
 	bdebug = .false.
 	lmytype = .false.
 
+	if( ie .eq. 0 ) then
+	  call find_element(x,y,ie)
+	end if
+	if( ie <= 0 ) then		!in no element: not inserted (#247)
+	  nlgr_outside = nlgr_outside + 1
+	  return
+	end if
+
 	nbdy = nbdy + 1
 	idbdy = idbdy + 1
 
@@ -130,13 +147,6 @@
 
         lgr_ar(nbdy)%init%time = t_act - dt_act*(1.-rtime)
         lgr_ar(nbdy)%actual%time = lgr_ar(nbdy)%init%time
-
-	if( ie .eq. 0 ) then
-	  call find_element(x,y,ie)
-	end if
-	if( ie .eq. 0 ) then
-	  write(6,*) 'inserting particle with ie = 0'
-	end if
 
 	!call lagr_connect_get_station(ie,ip,z)	!connectivity (z is color)
 
@@ -288,6 +298,12 @@
 ! keyed on the id it receives: lgr_release_depth, right after its
 ! insertion (a serial run gives the final id there) and again in
 ! lgr_mpi_assign_ids once the ids of a serial run are given
+!
+! a point that lies in no element (ie = 0 and find_element finds none)
+! releases nothing (#247): the particles it would have released are
+! counted in nlgr_outside (one, n = abs(itype), or for itype = -1 one per
+! layer lintop ... linbot of the deepest column, nlv) and the routine
+! returns before it reads the layers of an element
 
 	logical b2d,bdebug
 	integer n,lmax,l,i
@@ -301,6 +317,23 @@
 	real htot,htotz
 
 	bdebug = .false.
+
+	if( ie == 0 ) call find_element(x,y,ie)
+	if( ie <= 0 ) then		!in no element: nothing released (#247)
+	  n = 1
+	  if( .not. ( blgrsurf .or. nlv <= 1 .or. ipvert == 0 ) ) then
+	    if( ipvert == -1 ) then
+	      linf = linbot
+	      if( linf > nlv .or. linf == 0 ) linf = nlv
+	      lsrf = max(1,lintop)
+	      n = max(0,linf-lsrf+1)
+	    else
+	      n = abs(ipvert)
+	    end if
+	  end if
+	  nlgr_outside = nlgr_outside + n
+	  return
+	end if
 
 	lmax = ilhv(ie)
 	linf = linbot	 

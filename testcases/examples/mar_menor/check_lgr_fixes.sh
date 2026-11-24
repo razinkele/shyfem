@@ -21,10 +21,10 @@
 #             shows that the change of the initialisation (once, before the
 #             loop) leaves the result of 1 and 4 threads unchanged.
 #   decay     (#226) mm_lgr_a serially, once as it is and once with
-#             "ldecay = 86400." in $lagrg (decay of particles: at every
-#             step a particle decays when a random number exceeds
-#             exp(-age/ldecay); with idt = 300 s all 145 particles decay
-#             within five hours): the decay run must end (before #226 it stopped
+#             "ldecay = 86400." in $lagrg (decay of particles with an
+#             e-folding time of one day, #246: of the 145 particles 2 are
+#             left after the four days of the run; before #246 all of them
+#             had decayed within five hours): the decay run must end (before #226 it stopped
 #             with SIGSEGV at the first output after a decay: the exited
 #             record read the coordinates of element 0).  Then
 #             lgr_compare.py's reader checks the two particle files: the
@@ -37,6 +37,106 @@
 #             last position); every
 #             active particle of the decay run has the same record as in
 #             the plain run (decay changes no other particle).
+#   decay-rate (#246) the survival of decay is exp(-t/ldecay) whatever the
+#             time step: mm_lgr_a for six hours with about 5000 particles
+#             (nbdy = 5000, nbdymax = 20000) and "ldecay = 21600." (six
+#             hours), serially, once with idt = 300 s and once with idt =
+#             60 s.  The release must hold at least 4000 particles.  At
+#             every output (hourly, t = ldecay/2 and t = ldecay among them)
+#             the number of active particles n of each run must be within 4
+#             standard deviations of its expectation E = sum of
+#             exp(-age/ldecay) over the released particles (age = output
+#             time - release time of the particle, the time of its record
+#             in the inserted block; variance sum of p (1 - p)); and the two
+#             runs must agree: the difference of their survival fractions,
+#             each less its expected fraction E/N (which takes the release
+#             time, one time step before the first call, into account), must
+#             be within 4 standard deviations of that difference, taken as
+#             for independent runs.  The two runs are not fully independent:
+#             the step key of a draw is the absolute time of the step, so at
+#             the times both runs have a step (every 300 s) a particle draws
+#             the same number in both (tested against 1 - exp(-300/ldecay)
+#             and 1 - exp(-60/ldecay)); this correlation makes the true
+#             spread of the difference smaller than the bound assumes, so
+#             the comparison is looser than 4 standard deviations.  mm_lgr_a
+#             has no open boundary, so a particle leaves the active block
+#             only by decaying.  The seed is fixed, so the numbers are the
+#             same in every run (with the seeds 2 to 7, idt = 300 s, the
+#             count after six hours was within 1.5 standard deviations of
+#             its expectation, of either sign).  Before #246 every step
+#             tested the survival of the whole age, exp(-age/ldecay), with a
+#             new draw (survival about exp(-t**2/(2 ldecay dt))): with idt =
+#             300 s 1469 of the 4952 particles were active after one hour
+#             (4134 expected) and none after three hours (2962 expected),
+#             with idt = 60 s 33 after one hour (4180 expected).
+#             Part 2, restart: mm_lgr (random walk rwhpar = 0.5) with
+#             "ldecay = 3600." for six hours, particle output every 300 s,
+#             serially: the run that went on, the same run to 01:00 with a
+#             restart file (idtrst = -1), and a run from 01:00 with that
+#             restart file and its particle file (lgrini, itlgin = 01:00,
+#             nbdy = 0).  At least one particle must decay in the first step
+#             after the restart in the run that went on, and at every output
+#             of the restarted run the active particles must be those of the
+#             run that went on, each record equal (the exited block is not
+#             compared: lgrini reads only the active particles).  The
+#             particle file resets a particle's age (init%time is the
+#             restart time), but the restarted run's first call of lagrange
+#             is at the restart time itself (age 0: no draw, and the record
+#             already holds that step's decay), and from the next step on
+#             every particle draws over a full step with the keys of the
+#             run that went on (measured: 56 active at 01:00, 51 at 01:05,
+#             the same 51 in the restarted run, 60 outputs equal).
+#   outside   (#247) a release point that lies in no element releases
+#             nothing: mm_lgr_a (2D) and mm_lgr_c (3D, with ipvert = -3:
+#             three random depths per particle) for six hours, serially,
+#             with no area release (idtl = -1) and a trajectory release
+#             (lgrtrj, nbdy = 5 particles per point): at 01:00 a point east
+#             of the basin, outside the mesh, at 02:00 the centroid of
+#             element 1000.  Each run must end; its log must have the line
+#             "particles not released, point outside the mesh: N at time:
+#             2009-01-01::01:00:00" (N = 5, in 3D 15), and "new particles
+#             released: 0" at 01:00 and N at 02:00; in its particle file no
+#             output before 02:00 holds a particle, every output from 02:00
+#             holds exactly the ids 1 ... N (the skipped particles took no
+#             id), the release element of each is 1000, and every record of
+#             every block has an element in 1..nel and a layer in 1..nlv.
+#             Before #247 the point outside gave particles with element 0,
+#             and both runs stopped at the first output after 01:00 in
+#             xi_abc (xi2xy of element 0, the exited block of lgr_output):
+#             mm_lgr_a with SIGSEGV, mm_lgr_c with SIGFPE.
+#   segments  (#252) find_elems_to_segment (src/utils/shyutil/lnku.f90),
+#             the elements on the two sides of a segment k1-k2, used by the
+#             continuous release along a boundary (lgrpps: create_parts,
+#             get_bflux_ppv) and by shyplot's vertical sections.  1. its
+#             self-test at levdbg = 3 (lgr_selftest_segments, called by
+#             lgr_mpi_init: check_elems_to_segment compares its result for
+#             every side of every element, in both directions, with the
+#             elements of the two nodes found from nen3v alone, not from the
+#             lists it reads): mm_lgr_a for one hour, serially and on 4
+#             processes, every rank must write "lgr self-test
+#             find_elems_to_segment: rank R segments S wrong 0" once, and
+#             the serial run must check S = 6 x nel segments.  2. mm_lgr_a
+#             for six hours with no area release (idtl = -1) and a
+#             continuous release (lgrpps = 0.01) along the open boundary
+#             nodes 85 ... 99 of mm_hyd_12a, serially: the run must end,
+#             release at least 100 particles, and each particle's release
+#             record (inserted block) must lie on one of those boundary
+#             segments (within 2e-5 degrees, the single precision of the
+#             positions) and name as its element the element of that
+#             segment (the one element that has both nodes, found by a
+#             search of GRID/MM_geo.grd).  Only the part 85 ... 99 of the
+#             boundary list of mm_hyd_12a is used: the list skips the
+#             boundary nodes 13 (between 99 and 100) and 14 (between 162 and
+#             163), so its segments 99-100 and 162-163 are sides inside the
+#             mesh: create_parts stopped there with "error stop
+#             create_parts: error in boundary" before and after #252, until
+#             #254, which skips them with a warning (mode bnd-release
+#             releases along the whole list).
+#             Before #252 find_elems_to_segment read the element list of k2
+#             with the position of k2 in the list of k1: the self-test (with
+#             the three reads of the fix put back) gave 15266 wrong of 15270
+#             segments, and the binary of the commit before released 77 of
+#             219 particles in an element that does not hold their segment.
 #   ilagr3    (#231) the 3D case mm_hyd_41 without its tilt lines (ktilt,
 #             ztilt), for one day, with a $lagrg section that sets ilagr = 3
 #             (vertical advection and diffusion), nbdymax = 20000, nbdy =
@@ -53,9 +153,52 @@
 #             values to 0 gave about 1.07 million in one day); and its
 #             particle file must hold only finite values,
 #             active particles with an element in 1..nel, a layer in 1..nlv
-#             and a depth z in the layer within 0..1.  A second run, 12
+#             and a depth z in the layer within 0..1 (the line of the random
+#             walk time step of the run, #257, is printed for information:
+#             min 2 s, mean 33.5 s, 41.7 sub-steps per 300 s step, 66071 of
+#             735505 element steps over 100 sub-steps; before #257 mean
+#             24.9 s, 98.4 sub-steps, 396008 over 100).  A second run, 12
 #             hours with the end of the particle run itlend = 06:02:30
 #             (between two time steps), must write that line exactly once.
+#   vdiff-dt  (#257) the time step of the vertical random walk follows the
+#             curvature of the diffusivity.  Visser (1997) requires the
+#             step to be much smaller than min 1/|K''| over the water
+#             column; lag_vdiff_ele takes 1/100 of that, dtvd = 1/(100
+#             max|K''|) (at least 2 s), with K'' the second derivative of
+#             the diffusivity K over the layer interfaces of the element
+#             (lgr_vdiff_curvature).  1. lgr_vdiff_curvature, cut out of
+#             src/shyfem/lagrange_dif.f90 and compiled on its own with a
+#             small test program (gfortran, -ffpe-trap=zero,invalid,
+#             overflow): on six unequal layers (1, 2, 4, 0.5, 3, 1.5 m) a
+#             quadratic K must give K'' = 2c at every interface (within
+#             1e-3 relative; the bottom one extrapolated), a linear K 0
+#             (within 1e-7) and a constant K exactly 0; two layers give the
+#             value of interface 1 at the bottom too; a layer of zero
+#             thickness must set bzero (then lag_vdiff_ele takes the
+#             smallest step) without a division by zero.  A second
+#             difference with one spacing, (K(l+1) - 2 K(l) + K(l-1))/hl(l)
+#             **2 (the sign fixed, the spacing not), fails the quadratic and
+#             the linear profile on unequal layers, and so does the formula
+#             before #257.  2. The 3D case mm_hyd_41
+#             as in mode ilagr3 (no tilt, one day, ilagr = 3, nbdy = 300,
+#             rwhpar = 0, ipvert = -1) with iturb = 0 and diftur = 1.e-3,
+#             serially: the diffusivity is then the same at every
+#             interface (today GOTM's initial 1e-6 m2/s: handle_gotm_init,
+#             called at set-up whatever iturb, overwrites the diftur that
+#             set_eddy put in), so K'' = 0 and the random walk must take
+#             the model time step: the log line "lgr vertical diffusion:
+#             random walk time step [s] min 300.000 mean 300.000, ...
+#             below the model step 0 over 100 sub-steps 0" (written once
+#             at the end, lgr_vdiff_stats).  Before #257 the "second
+#             derivative" was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2, about
+#             4 K/h**2, so the step was h**2/(400 K) also for a constant K:
+#             with the old formula (put back into the fixed code, whose
+#             statistics line it keeps) min 2 s and 2424 element steps
+#             below the model step, all of them over 100 sub-steps (dtvd
+#             under 3 s: elements with a very thin layer, where h**2/(400 K)
+#             is that small).  The code before #257 has neither the
+#             routine nor the line, so this mode cannot be red on it; its
+#             red evidence is the old formula put back.
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -164,8 +307,12 @@
 #             single saved stream: the binary of the commit before fails
 #             the first comparison of each part (and does not know
 #             lgrseed).  The continuous release along an open boundary
-#             (create_parts) is not run here (until #254 it stopped on the
-#             only open boundary of the test meshes; mode bnd-release).
+#             (create_parts) is not run here: until #254 it stopped along
+#             the whole open boundary of mm_hyd_12a with "error stop
+#             create_parts: error in boundary" (also before #225, and after
+#             #252: the boundary list skips two boundary nodes); mode
+#             segments releases along a part of it, mode bnd-release along
+#             all of it.
 #   sedbeach  (#225, review) the sediment step and beached particles:
 #             mm_lgr_a (2D: every element has one layer, so a particle is
 #             always in its bottom layer) with rwhpar = 0.5, ised = 1 (every
@@ -212,15 +359,17 @@
 #             the runs stopped with a bare stop, exit code 0 ("STOP error
 #             stop create_parts: error in boundary", for lgrpps < 0 "STOP
 #             error stop get_bflux_ppv: nodes not at boundary"; the release
-#             runs "did not end", the last gave exit code 0); and
-#             find_elems_to_segment (#252, fixed elsewhere) gave every
-#             segment the element of the next one, so the particles released
-#             before that stop started in an element that does not hold their
-#             point.
+#             runs "did not end", the last gave exit code 0; measured
+#             before #252 was merged here); and before #252
+#             find_elems_to_segment gave every segment of this list the
+#             element of the next one, so the particles released before that
+#             stop started in an element that does not hold their point.
 #
 # A run has ended only if its launcher exits with 0 and its log has
 # "simulation end".  Needs shyfem, mpirun (Open MPI) and python3 on PATH,
-# and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here.
+# and `make init` plus (cd GRID && shypre -noopti MM_geo.grd) done here;
+# mode vdiff-dt also gfortran on PATH and the source tree three levels up
+# (../../../src/shyfem/lagrange_dif.f90, as in a checkout).
 # Exit code 0 on PASS, 1 on FAIL, 2 on a usage error.
 #------------------------------------------------------------------------
 set -u
@@ -230,11 +379,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | ilagr3 | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|ilagr3|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release) ;;
   *) usage ;;
 esac
 
@@ -426,6 +575,337 @@ EOF
   finish
 fi
 
+#=============================== decay-rate (#246) =========================
+if [ "$MODE" = decay-rate ]; then
+  for dt in 300 60; do
+    sed -e "s/^\(\s*\)mm_lgr_a\s*$/\1dr_$dt/" \
+        -e "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" \
+        -e "s/idt = '300s'/idt = '${dt}s'/" \
+        -e 's/^\(\s*\)nbdymax = 5000\s*$/\1nbdymax = 20000/' \
+        -e 's/^\(\s*\)nbdy = 150\s*$/\1nbdy = 5000\n\1ldecay = 21600./' "$W/mm_lgr_a.str" > "$W/dr_$dt.str"
+    for o in "dr_$dt" "itend = '2009-01-01::06:00:00'" "idt = '${dt}s'" 'nbdymax = 20000' 'nbdy = 5000' 'ldecay = 21600.'; do
+      grep -qF -- "$o" "$W/dr_$dt.str" || fail "no '$o' in dr_$dt.str"
+    done
+  done
+  for dt in 300 60; do
+    echo "=== mm_lgr_a serially, six hours, about 5000 particles, ldecay = 21600., idt = $dt s"
+    run dr_$dt dr_$dt.log shyfem || fail "the run with idt = $dt s did not end"
+    nrel="$(sed -n 's/.*new particles released: *\([0-9][0-9]*\).*/\1/p' "$W/dr_$dt.log" | head -1)"
+    echo "  particles released: ${nrel:-none}"
+    [ "${nrel:-0}" -ge 4000 ] || fail "idt = $dt s: ${nrel:-no} particles released, expected at least 4000"
+  done
+  if [ "$rc" = 0 ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/dr_300.lgr.shy" "$W/dr_60.lgr.shy" <<'EOF' || fail "survival check"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+LDECAY = 21600.0
+NSIG = 4.0
+
+def survival(path):
+    """Per output time: (t, active, released, expected E, variance V)."""
+    _, times = lc.read_file(path)
+    rel = {}				# id -> release time (inserted block)
+    out = []
+    for t, b, _ in times:
+        for pid, p in b[-1].items():
+            rel[pid] = p["tt"]
+        if set(b[0]) - set(rel):
+            raise SystemExit("  %s t=%r: an active particle without a release record" % (path, t))
+        ps = [math.exp(-(t - tr) / LDECAY) for tr in rel.values()]
+        out.append((t, len(b[0]), len(rel), sum(ps), sum(p * (1.0 - p) for p in ps)))
+    return out
+
+ok = True
+runs = {dt: survival(path) for dt, path in ((300, sys.argv[2]), (60, sys.argv[3]))}
+for dt, rows in runs.items():
+    print("  idt = %d s: output time, active / released, expected, (active - expected) in standard deviations" % dt)
+    for t, n, nrel, e, v in rows:
+        z = (n - e) / math.sqrt(v) if v > 0 else float("inf")
+        bad = not abs(z) <= NSIG
+        ok = ok and not bad
+        print("    t = %4.1f h  %5d / %d  expected %8.1f  (%+.2f)%s" % (t / 3600.0, n, nrel, e, z, "  BEYOND 4" if bad else ""))
+by_t = {dt: {r[0]: r for r in rows} for dt, rows in runs.items()}
+common = sorted(set(by_t[300]) & set(by_t[60]))
+if len(common) < 6:
+    print("  the two runs share %d output times, expected 6" % len(common))
+    ok = False
+print("  idt = 300 s against 60 s: survival fraction less its expectation, difference in standard deviations")
+for t in common:
+    _, n1, r1, e1, v1 = by_t[300][t]
+    _, n2, r2, e2, v2 = by_t[60][t]
+    d = (n1 - e1) / r1 - (n2 - e2) / r2
+    sd = math.sqrt(v1 / r1 ** 2 + v2 / r2 ** 2)
+    z = d / sd if sd > 0 else float("inf")
+    bad = not abs(z) <= NSIG
+    ok = ok and not bad
+    print("    t = %4.1f h  fractions %.4f / %.4f  (%+.2f)%s" % (t / 3600.0, n1 / r1, n2 / r2, z, "  BEYOND 4" if bad else ""))
+sys.exit(0 if ok else 1)
+EOF
+  fi
+
+  # 2. a run restarted from its particle file decays as the run that went
+  #    on: mm_lgr (random walk), ldecay = 3600., six hours, output every
+  #    300 s; the run that went on, the same run to 01:00 with a restart
+  #    file, and a run from 01:00 with that restart file and particle file
+  setname_dr() {
+    awk -v name="$2" '
+      /^\$title/ { t = 1; nt = 0 }
+      t && !/^\$/ { nt++; if( nt == 2 ) { print "        " name; next } }
+      /^\$end/ { t = 0 }
+      { print }
+    ' "$W/$1.str" > "$W/$2.str"
+  }
+  sed -e 's/^\(\s*\)rwhpar = .*/&\n\1ldecay = 3600./' -e "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" \
+      -e "s/idtlgr = '1h'/idtlgr = '300s'/" "$W/mm_lgr.str" > "$W/drr_base.str"
+  setname_dr drr_base drr_a
+  sed -e "s/itend = '2009-01-01::06:00:00'/itend = '2009-01-01::01:00:00'/" \
+      -e 's/^\$para[ \t]*$/$para\n        idtrst = -1\n        itmrst = -1/' "$W/drr_a.str" > "$W/drr_w1.str"
+  setname_dr drr_w1 drr_w
+  sed -e "s/itanf = '2009-01-01'/itanf = '2009-01-01::01:00:00'/" \
+      -e 's/^\$para[ \t]*$/$para\n        itrst = -1\n        ityrst = 1/' \
+      -e "s/^\\([ \t]*\\)nbdy = 150[ \t]*$/\\1nbdy = 0\n\\1lgrini = 'drr_w.lgr.shy'\n\\1itlgin = '2009-01-01::01:00:00'/" \
+      -e "s/^\\\$name[ \t]*$/\$name\n        restrt = 'drr_w.rst'/" "$W/drr_a.str" > "$W/drr_r1.str"
+  setname_dr drr_r1 drr_r
+  for o in 'ldecay = 3600.' "idtlgr = '300s'" "itend = '2009-01-01::06:00:00'"; do
+    grep -qF -- "$o" "$W/drr_a.str" || fail "no '$o' in drr_a.str"
+  done
+  for o in "itend = '2009-01-01::01:00:00'" 'idtrst = -1'; do
+    grep -qF -- "$o" "$W/drr_w.str" || fail "no '$o' in drr_w.str"
+  done
+  for o in "itanf = '2009-01-01::01:00:00'" 'itrst = -1' 'nbdy = 0' "lgrini = 'drr_w.lgr.shy'" "itlgin = '2009-01-01::01:00:00'" "restrt = 'drr_w.rst'"; do
+    grep -qF -- "$o" "$W/drr_r.str" || fail "no '$o' in drr_r.str"
+  done
+  echo "=== mm_lgr, ldecay = 3600., restarted at 01:00 from its particle and restart files"
+  for r in drr_a drr_w drr_r; do run $r $r.log shyfem || fail "$r: the run did not end"; done
+  grep -q 'initializing lagrangian from file' "$W/drr_r.log" || fail "the restarted run did not read the particle file"
+  grep -q 'A restart has been performed' "$W/drr_r.log" || fail "the restarted run did not read the restart file"
+  if [ -s "$W/drr_a.lgr.shy" ] && [ -s "$W/drr_r.lgr.shy" ]; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/drr_a.lgr.shy" "$W/drr_r.lgr.shy" <<'EOF' || fail "the restarted run decays otherwise than the run that went on"
+import sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+def load(path):
+    _, times = lc.read_file(path)
+    return {t: b for t, b, _ in times}
+
+full, rest = load(sys.argv[2]), load(sys.argv[3])
+ok = True
+t0, t1 = 3600.0, 3900.0			# the restart and the first step after it
+if t0 not in full or t1 not in full:
+    print("  the run that went on has no output at %r or %r" % (t0, t1))
+    sys.exit(1)
+n0, n1 = len(full[t0][0]), len(full[t1][0])
+print("  the run that went on: active %d at the restart (01:00), %d one step later" % (n0, n1))
+if n1 >= n0:
+    print("  no particle decayed in the first step after the restart: the check would not see a missing draw")
+    ok = False
+nout = nrec = ndiff = 0
+for t in sorted(rest):
+    nout += 1
+    a, b = full.get(t), rest[t]
+    if a is None:
+        print("  output t=%r of the restarted run not in the run that went on" % t)
+        ok = False
+        continue
+    if set(a[0]) != set(b[0]):
+        ndiff += 1
+        if ndiff <= 3:
+            print("  t=%r: active ids differ (only in the run that went on %s, only in the restarted run %s)"
+                  % (t, lc.fmt_ids(set(a[0]) - set(b[0])), lc.fmt_ids(set(b[0]) - set(a[0]))))
+    for pid in set(a[0]) & set(b[0]):
+        nrec += 1
+        if a[0][pid] != b[0][pid]:
+            ndiff += 1
+print("  restarted run: %d outputs, %d active records compared with the run that went on, %d differences"
+      % (nout, nrec, ndiff))
+sys.exit(0 if ok and ndiff == 0 and nrec > 0 else 1)
+EOF
+  else
+    fail "particle file missing (drr_a or drr_r)"
+  fi
+  finish
+fi
+
+#=============================== outside (#247) ============================
+if [ "$MODE" = outside ]; then
+  # trajectory file: 01:00 a point east of the basin (in no element of
+  # MM_geo, whose longitudes end at -0.6187), 02:00 the centroid of element
+  # 1000 (inside)
+  printf '2009-01-01::01:00:00 -0.50 37.75\n2009-01-01::02:00:00 -0.7127473 37.7160403\n' > "$W/traj_outside.txt"
+  for c in a c; do
+    sed -e "s/^\(\s*\)mm_lgr_$c\s*$/\1out_$c/" \
+        -e "s/itend = '[^']*'/itend = '2009-01-01::06:00:00'/" \
+        -e 's/^\(\s*\)idtl = 0\s*$/\1idtl = -1/' \
+        -e 's/^\(\s*\)nbdy = 150\s*$/\1nbdy = 5/' \
+        -e 's/^\(\s*\)ipvert = -1\s*$/\1ipvert = -3/' \
+        -e "s/^\(\s*\)lgrlin = .*/\1lgrtrj = 'traj_outside.txt'/" "$W/mm_lgr_$c.str" > "$W/out_$c.str"
+    for o in "out_$c" "itend = '2009-01-01::06:00:00'" 'idtl = -1' 'nbdy = 5' "lgrtrj = 'traj_outside.txt'"; do
+      grep -qF -- "$o" "$W/out_$c.str" || fail "no '$o' in out_$c.str"
+    done
+    grep -q 'lgrlin' "$W/out_$c.str" && fail "lgrlin left in out_$c.str"
+  done
+  grep -qF 'ipvert = -3' "$W/out_c.str" || fail "no 'ipvert = -3' in out_c.str"
+  # case, particles per point (nbdy = 5 calls, 3 random depths each in 3D)
+  for cn in "a 5" "c 15"; do
+    set -- $cn; c=$1; np=$2
+    echo "=== mm_lgr_$c serially (6 h, nbdy = 5$( [ $c = c ] && echo ', 3D, ipvert = -3')) with lgrtrj: a point outside the mesh at 01:00, one inside at 02:00"
+    run out_$c out_$c.log shyfem || { fail "out_$c: the run did not end"; continue; }
+    l1="$(grep -m1 'particles not released, point outside the mesh' "$W/out_$c.log")"
+    echo "  ${l1:-no line 'particles not released, point outside the mesh' in the log}"
+    echo "$l1" | grep -q "mesh: *$np at time: 2009-01-01::01:00:00" || fail "out_$c: no count $np of particles not released at 01:00"
+    l2="$(grep 'new particles released' "$W/out_$c.log" | tr -s ' ' | sed 's/^ //')"
+    echo "$l2" | sed 's/^/  /'
+    echo "$l2" | grep -q "released: 0 at time: 2009-01-01::01:00:00" || fail "out_$c: not 0 particles released at 01:00"
+    echo "$l2" | grep -q "released: $np at time: 2009-01-01::02:00:00" || fail "out_$c: not $np particles released at 02:00"
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/out_$c.lgr.shy" "$np" <<'EOF' || fail "out_$c: particle file check"
+import struct, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path, np = sys.argv[2], int(sys.argv[3])
+with open(path, "rb") as fh:
+    head = fh.read(4096)
+pos = 0
+recs = []
+for _ in range(3):			# model header: (idshy, nvers), (ftype),
+    (n,) = struct.unpack_from("<i", head, pos)	# (nkn, nel, npr, nlv, nvar)
+    recs.append((pos + 4, n))
+    pos += 8 + n
+nkn, nel, _npr, nlv, _nvar = struct.unpack_from("<5i", head, recs[2][0])
+_, times = lc.read_file(path)
+ok = True
+nrec = 0
+want = set(range(1, np + 1))
+for t, b, _ in times:
+    ids = set()
+    for w in lc.IWHAT_ORDER:
+        for pid, p in b[w].items():
+            nrec += 1
+            ids.add(pid)
+            if not 1 <= p["ie"] <= nel or not 1 <= p["lb"] <= nlv:
+                print("  t=%r %s id %d: element %d, layer %d outside 1..%d, 1..%d"
+                      % (t, lc.BLOCK_NAME[w], pid, p["ie"], p["lb"], nel, nlv))
+                ok = False
+    if t < 7200.0 and ids:
+        print("  t=%r (before the release inside, at 02:00): particles %s" % (t, lc.fmt_ids(ids)))
+        ok = False
+    if t >= 7200.0 and ids != want:
+        print("  t=%r: ids %s, expected 1..%d" % (t, lc.fmt_ids(ids), np))
+        ok = False
+    for pid, p in b[-1].items():
+        if p["ie"] != 1000:
+            print("  t=%r inserted id %d: release element %d, expected 1000" % (t, pid, p["ie"]))
+            ok = False
+print("  output times %d (nel %d, nlv %d), records %d: ids 1..%d from 02:00 on, every element in 1..nel: %s"
+      % (len(times), nel, nlv, nrec, np, "yes" if ok else "NO"))
+sys.exit(0 if ok and nrec > 0 else 1)
+EOF
+  done
+  finish
+fi
+
+#=============================== segments (#252) ===========================
+if [ "$MODE" = segments ]; then
+  # 1. the self-test of find_elems_to_segment at levdbg = 3 (one hour of
+  #    mm_lgr_a), serially and on NP processes
+  sed -e 's/^\(\s*\)mm_lgr_a\s*$/\1sg_dbg/' -e 's/^\$para\s*$/$para\n        levdbg = 3/' \
+      -e "s/itend = '2009-01-05'/itend = '2009-01-01::01:00:00'/" "$W/mm_lgr_a.str" > "$W/sg_dbg.str"
+  for o in sg_dbg 'levdbg = 3' "itend = '2009-01-01::01:00:00'"; do
+    grep -qF -- "$o" "$W/sg_dbg.str" || fail "no '$o' in sg_dbg.str"
+  done
+  nel="$(awk '$1 == 2' "$W/GRID/MM_geo.grd" | wc -l)"
+  for np in 1 $NP; do
+    echo "=== mm_lgr_a, one hour, levdbg = 3, on $np process(es): self-test of find_elems_to_segment"
+    if [ $np = 1 ]; then run sg_dbg sg_dbg.np1.log shyfem || fail "the serial run did not end"
+    else run sg_dbg sg_dbg.np$np.log mpirun --oversubscribe -np $np shyfem || fail "the run on $np processes did not end"
+    fi
+    log="$W/sg_dbg.np$np.log"
+    grep 'lgr self-test find_elems_to_segment' "$log" | sort | sed 's/^ */  /'
+    for ((r = 0; r < np; r++)); do
+      line="$(grep "lgr self-test find_elems_to_segment: rank $r segments" "$log")"
+      [ -n "$line" ] || { fail "$np process(es): no self-test line of rank $r"; continue; }
+      [ "$(echo "$line" | wc -l)" = 1 ] || fail "$np process(es): rank $r wrote the self-test line more than once"
+      echo "$line" | grep -q ' wrong 0$' || fail "$np process(es): rank $r: wrong segments"
+    done
+    if [ $np = 1 ]; then
+      grep -q "rank 0 segments $((6 * nel)) wrong" "$log" || fail "serial: not 6 x nel = $((6 * nel)) segments checked"
+    fi
+  done
+
+  # 2. a continuous release (lgrpps) along the open boundary nodes 85 ... 99
+  #    of mm_hyd_12a (the part of its list whose segments are all boundary
+  #    sides), six hours, serially
+  sed -e 's/^\(\s*\)mm_lgr_a\s*$/\1sg_line/' -e "s/itend = '2009-01-05'/itend = '2009-01-01::06:00:00'/" \
+      -e 's/^\(\s*\)idtl = 0\s*$/\1idtl = -1/' "$W/mm_lgr_a.str" > "$W/sg_line.str"
+  printf '\n$bound1\n        kbound = 85 86 87 88 89 90 91 92 93 94 95 96 97 98 99\n        ibtyp = 1\n        boundn = %s\n        lgrpps = 0.01\n$end\n' \
+    "'INPUT/level_Mar_Menor.dat'" >> "$W/sg_line.str"
+  for o in sg_line "itend = '2009-01-01::06:00:00'" 'idtl = -1' 'lgrpps = 0.01'; do
+    grep -qF -- "$o" "$W/sg_line.str" || fail "no '$o' in sg_line.str"
+  done
+  echo "=== mm_lgr_a, six hours, continuous release (lgrpps = 0.01) along the boundary nodes 85 ... 99, serially"
+  if run sg_line sg_line.log shyfem; then
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/sg_line.lgr.shy" "$W/GRID/MM_geo.grd" <<'EOF' || fail "release elements"
+import math, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+path, grd = sys.argv[2], sys.argv[3]
+kb = list(range(85, 100))
+nodes, el = {}, {}
+with open(grd) as fh:
+    for line in fh:
+        f = line.split()
+        if f and f[0] == "1":
+            nodes[int(f[1])] = (float(f[3]), float(f[4]))
+        elif f and f[0] == "2":
+            el[int(f[1])] = [int(v) for v in f[4:7]]
+segs = list(zip(kb[:-1], kb[1:]))
+# the element of each segment, by search of the element list: exactly one
+# (a boundary side)
+segel = {}
+for a, c in segs:
+    es = [e for e, ns in el.items() if a in ns and c in ns]
+    if len(es) != 1:
+        print("  segment %d-%d: elements %r, not a boundary side" % (a, c, es))
+        sys.exit(1)
+    segel[(a, c)] = es[0]
+_, times = lc.read_file(path)
+n = nbad = 0
+for t, b, _ in times:
+    for pid, p in b[-1].items():	# release records (inserted block)
+        n += 1
+        x, y, ie = p["x"], p["y"], p["ie"]
+        best = None			# the segment the point lies on
+        for a, c in segs:
+            (x1, y1), (x2, y2) = nodes[a], nodes[c]
+            dx, dy = x2 - x1, y2 - y1
+            l2 = dx * dx + dy * dy
+            s = ((x - x1) * dx + (y - y1) * dy) / l2
+            d = abs((x - x1) * dy - (y - y1) * dx) / math.sqrt(l2)
+            if -1e-4 <= s <= 1.0 + 1e-4 and (best is None or d < best[0]):
+                best = (d, a, c)
+        # positions are single precision degrees: 2e-5 is about 2 m
+        if best is None or best[0] > 2e-5:
+            nbad += 1
+            if nbad <= 5:
+                print("  t=%r id %d: release point %r %r on no segment" % (t, pid, x, y))
+        elif ie != segel[(best[1], best[2])]:
+            nbad += 1
+            if nbad <= 5:
+                print("  t=%r id %d: released in element %d, its segment %d-%d has element %d"
+                      % (t, pid, ie, best[1], best[2], segel[(best[1], best[2])]))
+print("  particles released %d, not in the element of their boundary segment %d" % (n, nbad))
+sys.exit(0 if n >= 100 and nbad == 0 else 1)
+EOF
+  else
+    fail "the line release did not end"
+  fi
+  finish
+fi
+
 #=============================== ilagr3 (#231) =============================
 if [ "$MODE" = ilagr3 ]; then
   sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
@@ -440,6 +920,8 @@ if [ "$MODE" = ilagr3 ]; then
   echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log}"
   nneg="$(echo "$line" | sed -n 's/.*set to 0: *\([0-9][0-9]*\).*/\1/p')"
   [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
+  line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/lgr_ilagr3.log")"
+  [ -n "$line" ] && echo "  $line"	# information only (#257)
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
 import math, struct, sys
@@ -496,6 +978,107 @@ EOF
   line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
   echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log} ($n line(s))"
   [ "$n" = 1 ] || fail "the line of the negative diffusivities is written $n times with itlend between two steps, expected once"
+  finish
+fi
+
+#=============================== vdiff-dt (#257) ===========================
+if [ "$MODE" = vdiff-dt ]; then
+  # 1. lgr_vdiff_curvature compiled on its own (no model run)
+  echo "=== lgr_vdiff_curvature on its own: quadratic, linear and constant K on unequal layers, a layer of zero thickness"
+  SRCF="$HERE/../../../src/shyfem/lagrange_dif.f90"
+  if ! command -v gfortran > /dev/null 2>&1; then
+    fail "gfortran is not on PATH"
+  elif [ ! -f "$SRCF" ]; then
+    fail "no $SRCF"
+  else
+    awk '/^[ \t]*subroutine lgr_vdiff_curvature/,/^[ \t]*end subroutine lgr_vdiff_curvature/' "$SRCF" > "$W/vcurv.f90"
+    grep -q 'end subroutine lgr_vdiff_curvature' "$W/vcurv.f90" || fail "lgr_vdiff_curvature not found in $SRCF"
+    cat > "$W/vcurv_test.f90" <<'EOF'
+	program vcurv_test
+! K = a + b z + c z**2 at the interfaces z of unequal layers: K'' must be
+! 2c at every interface (the bottom one extrapolated), 0 for a linear and
+! for a constant K; a layer of zero thickness sets bzero (no division)
+	implicit none
+	integer, parameter :: n = 6
+	real, parameter :: a = 1.e-3, b = 2.e-4, c = 5.e-5
+	real :: hl(n), z(0:n), wd(0:n)
+	double precision :: d2(n)
+	logical :: bz
+	integer :: l, nfail, icase
+	character(len=40) :: aname
+	nfail = 0
+	hl = (/ 1., 2., 4., 0.5, 3., 1.5 /)
+	z(0) = 0.
+	do l = 1,n
+	  z(l) = z(l-1) + hl(l)
+	end do
+	do icase = 1,3
+	  if( icase == 1 ) then
+	    wd = a + b*z + c*z*z
+	    aname = 'quadratic K, expected 2c = 1e-4'
+	  else if( icase == 2 ) then
+	    wd = a + b*z
+	    aname = 'linear K, expected 0'
+	  else
+	    wd = a
+	    aname = 'constant K, expected 0'
+	  end if
+	  call lgr_vdiff_curvature(n,hl,wd,d2,bz)
+	  write(6,'(2x,a,a,6es11.3)') trim(aname),':',d2
+	  do l = 1,n
+	    if( icase == 1 ) then
+	      if( abs(d2(l)-2.d0*c) > 1.d-3*2.d0*c ) nfail = nfail + 1
+	    else if( icase == 2 ) then
+	      if( abs(d2(l)) > 1.d-3*2.d0*c ) nfail = nfail + 1
+	    else
+	      if( d2(l) /= 0.d0 ) nfail = nfail + 1
+	    end if
+	  end do
+	  if( bz ) nfail = nfail + 1
+	end do
+	! two layers: the interface 1, and the bottom one takes its value
+	wd(0:2) = a + b*z(0:2) + c*z(0:2)**2
+	call lgr_vdiff_curvature(2,hl(1:2),wd(0:2),d2(1:2),bz)
+	write(6,'(2x,a,2es11.3)') 'two layers, quadratic K:',d2(1:2)
+	if( abs(d2(1)-2.d0*c) > 1.d-3*2.d0*c .or. d2(2) /= d2(1) ) nfail = nfail + 1
+	if( bz ) nfail = nfail + 1
+	! a layer of zero thickness
+	hl(3) = 0.
+	call lgr_vdiff_curvature(n,hl,wd,d2,bz)
+	write(6,'(2x,a,l2)') 'a layer of zero thickness: bzero',bz
+	if( .not. bz ) nfail = nfail + 1
+	if( any(d2 /= 0.d0) ) nfail = nfail + 1
+	write(6,'(2x,a,i0)') 'failed checks: ',nfail
+	if( nfail > 0 ) stop 1
+	end program vcurv_test
+EOF
+    if ( cd "$W" && gfortran -ffpe-trap=zero,invalid,overflow -o vcurv_test vcurv_test.f90 vcurv.f90 > vcurv_build.log 2>&1 ); then
+      ( cd "$W" && ./vcurv_test ) || fail "lgr_vdiff_curvature: wrong second derivatives"
+    else
+      fail "the test of lgr_vdiff_curvature does not compile"; sed 's/^/    /' "$W/vcurv_build.log" | head -5
+    fi
+  fi
+
+  # 2. a model run with the same diffusivity at every interface
+  sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
+      -e 's/^\(\s*\)mm_hyd_41\s*$/\1vdt_const/' \
+      -e 's/^\(\s*\)iturb = 1 /\1iturb = 0 /' \
+      -e 's/^\(\s*\)iturb = 0 .*/&\n\1diftur = 1.e-3   vistur = 1.e-3/' "$W/mm_hyd_41.str" > "$W/vdt_const.str"
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 20000\n        nbdy = 300  idtl = 0  idtlgr = %s\n        rwhpar = 0  ipvert = -1\n$end\n' "'1h'" >> "$W/vdt_const.str"
+  for o in vdt_const 'iturb = 0' 'diftur = 1.e-3' 'ilagr = 3'; do
+    grep -qF -- "$o" "$W/vdt_const.str" || fail "no '$o' in vdt_const.str"
+  done
+  grep -q "tilt" "$W/vdt_const.str" && fail "tilt lines left in vdt_const.str"
+  echo "=== mm_hyd_41 (no tilt, one day, iturb = 0: the same diffusivity at every interface) with ilagr = 3, serially"
+  if run vdt_const vdt_const.log shyfem; then
+    line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
+    echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
+    echo "$line" | grep -q 'min 300\.000* mean 300\.000*,' || fail "the random walk time step is not the model time step (300 s) everywhere"
+    echo "$line" | grep -q ' below the model step 0 over 100 sub-steps 0$' || fail "element steps with a random walk time step below the model step"
+  else
+    fail "the run did not end"
+  fi
   finish
 fi
 

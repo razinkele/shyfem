@@ -303,6 +303,42 @@
 
 !*******************************************************************
 
+	subroutine lgr_selftest_segments
+
+! self-test of find_elems_to_segment (the elements of a boundary segment of
+! the continuous release: create_parts, get_bflux_ppv and lgr_release_line
+! take them through lgr_segment_elem, #254) at levdbg >= 3,
+! called once by lgr_mpi_init on every process (its own part of the mesh):
+! check_elems_to_segment compares the elements it gives for every side of
+! every element, in both directions, with the elements of the two nodes
+! found from nen3v alone (#252). Writes one line per process, and the
+! first wrong segment if any (internal node and element numbers; nside =
+! nwrong = -1 if its work arrays could not be allocated); never stops the
+! run.
+
+	use para, only : getpar
+	use shympi, only : my_id
+
+	implicit none
+
+	integer nside,nwrong
+	integer iwrong(6)
+
+	if( nint(getpar('levdbg')) < 3 ) return
+
+	call check_elems_to_segment(nside,nwrong,iwrong)
+	write(6,'(a,i0,a,i0,a,i0)') ' lgr self-test find_elems_to_segment:'	&
+     &		//' rank ',my_id,' segments ',nside,' wrong ',nwrong
+	if( nwrong > 0 ) then
+	  write(6,'(a,6(1x,i0))') ' lgr self-test find_elems_to_segment:'	&
+     &		//' first wrong k1 k2, found ie1 ie2, expected ie1 ie2:'	&
+     &		,iwrong
+	end if
+
+	end
+
+!*******************************************************************
+
 	subroutine create_parts(ity,np,k1,k2)
 
 ! the place on the segment and the time in the step are the draws of the
@@ -533,15 +569,14 @@
 
 	subroutine lgr_segment_elem(k1,k2,ie,ne)
 
-! the elements of the basin that have both nodes k1 and k2 (internal
-! numbers): ne of them, 0 if no side joins the two nodes, 1 if k1-k2 is a
-! side of the basin boundary (ie is then its element), 2 if it is an
-! inner side; ie = 0 unless ne = 1. Found from nen3v among the elements
-! around k1 (get_elems_around), not with find_elems_to_segment, which
-! until #252 paired an index into the lists of k1 with the lists of k2
-! and gave the element of the neighbouring segment (#254)
-
-	use basin, only : nen3v, ngr
+! what the pair of nodes k1, k2 (internal numbers) is for the release: ne
+! elements of the basin have both nodes, 0 if no side joins them, 1 if
+! k1-k2 is a side of the basin boundary (ie is then its element), 2 if it
+! is an inner side; ie = 0 unless ne = 1 (#254). The elements come from
+! find_elems_to_segment (fixed by #252 and checked at levdbg >= 3 by
+! lgr_selftest_segments), which gives one element at a boundary side, two
+! at an inner side and none if no side joins the nodes; this routine only
+! counts them
 
 	implicit none
 
@@ -549,20 +584,15 @@
 	integer, intent(out) :: ie		!element of a boundary side, else 0
 	integer, intent(out) :: ne		!elements with both nodes
 
-	integer j,n,iee
-	integer elems(ngr)
+	integer ie1,ie2
 
-	ie = 0
+	call find_elems_to_segment(k1,k2,ie1,ie2)
+
 	ne = 0
-	call get_elems_around(k1,ngr,n,elems)
-	do j=1,n
-	  iee = elems(j)
-	  if( any( nen3v(:,iee) == k2 ) ) then
-	    ne = ne + 1
-	    ie = iee
-	  end if
-	end do
-	if( ne /= 1 ) ie = 0
+	if( ie1 /= 0 ) ne = ne + 1
+	if( ie2 /= 0 ) ne = ne + 1
+	ie = 0
+	if( ne == 1 ) ie = max(ie1,ie2)
 
 	end
 

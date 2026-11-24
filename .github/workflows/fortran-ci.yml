@@ -165,6 +165,11 @@ jobs:
         # runs a particle case (mm_lgr_w) on 4 processes against the
         # serial one: ids, positions against the measured floors, and
         # the hand-over check, with the consistency check active (#217).
+        # Checks 6-9 require multi-process runs to equal serial byte for
+        # byte (#238, #230, #227): 3D runs with GOTM and k-epsilon
+        # (check_mpi_3d.sh), the node classes of every process
+        # (check_setnod_mpi.sh), flux sections (check_flux_sections_mpi.sh)
+        # and the semi-Lagrangian option, itlin = 1 (check_itlin.sh).
         # The 4-process sweep of 2026-11-21 found
         # every one of these classes only by accident, because nothing
         # here ran a case other than mm_hyd_00.
@@ -175,8 +180,9 @@ jobs:
 
       - name: MPI 3D run (Venice smoke, 4 processes)
         # The only shipped case on the 3D baroclinic + GOTM + wet/dry +
-        # heat path. Its results differ from serial on tidal-flat nodes
-        # (wet/dry timing), so this step only checks that it ends.
+        # heat path. Since #253 its 4-process results equal the serial
+        # ones byte for byte (sweep of 2026-11-24); this step only checks
+        # that it ends (a serial run here would double the step's time).
         run: |
           export PATH="/usr/bin:$GITHUB_WORKSPACE/bin:$PATH"
           cd testcases/examples/venice_lagoon
