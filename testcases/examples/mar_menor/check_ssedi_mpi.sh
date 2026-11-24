@@ -37,8 +37,10 @@
 # both cases and the restart file of the write case are byte-identical
 # to the serial ones; the last record of the restart file is the bed
 # sediment of every node (1402 reals) and is compared on its own as well;
-# and the serial bed sediment is not zero everywhere (otherwise the
-# comparison tests nothing).  When a file differs the largest difference
+# the serial bed sediment is not zero everywhere (otherwise the
+# comparison tests nothing); and no run leaves a file named fort.* in its
+# folder (the module wrote the debug file fort.778 from every process
+# at every step, issue #264).  When a file differs the largest difference
 # of every variable and the number of nodes that differ are printed
 # (needs shyelab and python3 with netCDF4; without them only the first
 # differing byte).  The .inf file is not compared: its sedimt: totals are
@@ -117,6 +119,12 @@ run() {  # CASE NP (NP 1: a plain run without mpirun)
   fi
   return 0
 }
+noside() {  # CASE NP: no fort.* debug file in the run folder (#264)
+  local side
+  side="$(cd "$P/$1.np$2" && ls -d fort.* 2> /dev/null)"
+  [ -z "$side" ] && return 0
+  fail "$1 on $2 process(es) left the side files $(echo $side)"
+}
 diffs() {  # SERIAL_SHY MPI_SHY: largest difference and nodes that differ, per variable
   local a="$1" b="$2" na nb
   if ! command -v shyelab > /dev/null 2>&1 || ! python3 -c 'import netCDF4' 2> /dev/null; then
@@ -174,6 +182,7 @@ for c in write read; do
     [ "$c" = write ] && break
     continue
   fi
+  noside "$c" 1
   files="mm_rst_ssedi_$c.hydro.shy mm_rst_ssedi_$c.conz.shy mm_rst_ssedi_$c.ssed.shy mm_rst_ssedi_$c.csed.shy"
   if [ "$c" = write ]; then
     files="$files mm_rst_ssedi_write.rst"
@@ -193,6 +202,7 @@ PY
   fi
   for np in $NPS; do
     if ! run "$c" "$np"; then fail "$c: the run on $np processes did not end, or not on $np processes (above)"; continue; fi
+    noside "$c" "$np"
     for f in $files; do
       a="$P/$c.np1/$f"; b="$P/$c.np$np/$f"
       if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$c: $f missing or empty"; continue; fi

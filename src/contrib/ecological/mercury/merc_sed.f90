@@ -26,6 +26,7 @@
 ! revision log :
 !
 ! 20.12.2019	ggu	changed VERS_7_5_67
+! 24.11.2026	arb	station debug files fort.450-482 removed (#264)
 
          subroutine mercury_sed_react(dtday, &
      &                          k,temp,area,C,Cw, &
@@ -128,11 +129,9 @@
       real ksmet, ksdem, Qbac
       real Eadem, tkel, tkref, R, Rcal, deltat
       real cksmet,sksme, cksdem, sksdem
-      real add1,add2
 !
 !       deposition terms
 !
-      integer fortfilenum
       integer ipext,ipint,kext     !nodes external and internal
 
 !	------------------------------------------------------
@@ -545,9 +544,6 @@
       MeHgD = (MeHgCl + MeHgdoc) ! [ug m-3(w+s)] or [ng l-1] 
       MeHgpw  = MeHgD/por
 
-      add1 = Hgpsilt/silt    !-- NO, viene molto diverso
-      add2 = Hg2POM/POM
-
       Hg2sed = Hg2P/(silt+POM)
       MeHgsed = MeHgP/(silt+POM)
 
@@ -586,83 +582,9 @@
 ! --------------------------------------------------------
 !--------------------------------------------------
 
-          if (k .GE. 1) then
-           kext=ipext(k)
-           fortfilenum=-1
-           if(kext==3985)then
-               fortfilenum=450
-           elseif(kext==3986) then
-               fortfilenum=451
-           elseif(kext==3982) then
-               fortfilenum=452
-           elseif(kext==4007) then
-               fortfilenum=453
-           elseif(kext==3763) then
-               fortfilenum=454
-           elseif(kext==3765) then
-               fortfilenum=455
-           elseif(kext==3764)then
-               fortfilenum=456
-           elseif(kext==3762) then
-               fortfilenum=457
-           else if(kext==2150)then
-               fortfilenum=458
-           elseif(kext==2009) then
-               fortfilenum=459
-           elseif(kext==2359) then
-               fortfilenum=460
-           elseif(kext==2358) then
-               fortfilenum=461
-           elseif(kext==2341) then
-               fortfilenum=462
-           elseif(kext==2408) then
-               fortfilenum=463
-           elseif(kext==2191)then
-               fortfilenum=464
-           elseif(kext==2192) then
-               fortfilenum=465
-           elseif(kext==2654)then
-               fortfilenum=466
-           elseif(kext==2505) then
-                fortfilenum=467
-           elseif(kext==2655) then
-               fortfilenum=468
-          elseif(kext==2653) then
-               fortfilenum=469
-           else if(kext==1372)then
-               fortfilenum=470
-           elseif(kext==1375) then
-               fortfilenum=471
-           elseif(kext==1331) then
-               fortfilenum=472
-           elseif(kext==1378) then
-               fortfilenum=473
-           elseif(kext==3216) then
-               fortfilenum=475
-           elseif(kext==3057)then
-               fortfilenum=476
-           elseif(kext==2953) then
-               fortfilenum=477
-           elseif(kext==3217) then
-               fortfilenum=478
-           elseif(kext==2405) then
-               fortfilenum=479
-           elseif(kext==2407)then
-               fortfilenum=480
-           elseif(kext==2284) then
-               fortfilenum=481
-           elseif(kext==2404) then
-               fortfilenum=482
-           endif
-           if(fortfilenum.ge.0)then
-!               if(fortfilenum==450)
-!     +             write(*,*) 'stamp to file 350... at iter=',iter,
-!     +             ', tday=', tday
-               write(fortfilenum,"(7(f20.7,','))") &
-     &         Hg2sed,hgit,mehgt,silt,POM,add1,add2
-! Hg2sed, MeHgsed,Hg2pw,MeHgpw
-           endif
-         endif
+! the station side files fort.450 to fort.482 (every step, at nodes of
+! the Venice lagoon given by external number, from every process that
+! held the node) were debug output that nothing read: removed (#264)
 
       end 
 !	

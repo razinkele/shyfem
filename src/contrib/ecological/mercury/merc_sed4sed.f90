@@ -32,6 +32,7 @@
 ! 30.05.2018	dmc&gir	integration of the 0d module into SHYFEM
 ! 15.07.2019	gir&clr	sediment active layer added (Carniello et al., 2012)
 ! 24.02.2020    dmc	read variable tCE(k) according to the element type
+! 24.11.2026	arb	debug files fort.664, 665, 997-999 removed (#264)
 !
 ! notes :
 !
@@ -243,11 +244,9 @@
        POMm = POM*sed_vol_old                                 
 !       
 
-       if (ipext(k) .EQ. 1372) then
-       write(665,*) Bvels,Bvelp,Bsflux,Bpflux, 'Sed_4Merc_SED' 
-       write(664,*) silt, POM, 'sed4Merc_SED'
-!       write(486,*) Dssink_sum, Dpsink_sum, 'sed4Merc_Sed'
-       end if 
+! the side files fort.664 and fort.665 (node 1372 by external number,
+! every step, from every process that held it) were debug output that
+! nothing read: removed (#264)
       
         CS(1)=silt            ![g/m3]
         CS(2)=POM             ![g/m3]
@@ -339,13 +338,8 @@
        call shympi_abort_internal('error stop sed4merc_sed: POMSed<0')
        end if
 
-       if (ipext(k) .EQ. 1372) then
-         write(999,*) ipext(k), Sres,Dssink_sum,Bvels
-       elseif(ipext(k) .EQ. 3057) then
-         write(998,*) ipext(k),Sres,Dssink_sum,Bvels
-      elseif(ipext(k) .EQ. 2654) then
-         write(997,*) ipext(k),Sres,Dssink_sum,Bvels
-       end if
+! the side files fort.997 to fort.999 (nodes 2654, 3057 and 1372 by
+! external number, likewise) were removed with them (#264)
 
 
 !        call merc_euler (2,dt,sed_vol_old,cs,cold,cds)

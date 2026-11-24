@@ -42,6 +42,7 @@
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 20.02.2020	ggu	new routine compute_bottom_flux()
 ! 24.11.2026	arb	compute_bottom_flux, in_area: owner's values on ghosts (#262)
+! 24.11.2026	arb	no more debug file fort.778 (#264)
 !
 ! notes :
 !
@@ -293,8 +294,6 @@
         !write(iunit,*) 'sedimt: ',dtime,mass,masss,mass+masss
         write(iunit,1200) ' sedimt: ',aline,mass,masss,mass+masss
  1200	format(a,a,4e14.6)
-
-	call convert_bottom_sediments(.true.)
 
 !------------------------------------------------------------
 ! write accumulated bottom sediments
@@ -559,10 +558,14 @@
 
 !*****************************************************************
 
-	subroutine convert_bottom_sediments(bcheck)
+	subroutine convert_bottom_sediments
 
 ! converts conza to conzs and conzh
-! if bcheck is true, only checks if consistent
+!
+! not called at present: simple_sedi called it in a check mode that
+! wrote the largest differences between conzs, conzh and the values
+! converted from conza to fort.778, on every process and every time
+! step; nothing read that file and the check was removed (#264)
 
 	use basin
 	use levels
@@ -570,12 +573,9 @@
 
 	implicit none
 
-	logical bcheck
-
 	integer k,lmax
 	real h,vol
-	real smax,hmax,vmax
-	real auxs(nkn),auxh(nkn),auxv(nkn)
+	real auxs(nkn),auxh(nkn)
 
 	real depnode,volnode
 
@@ -590,20 +590,11 @@
 
 	  auxs(k) = conza(k)*vol/h
 	  auxh(k) = conza(k)/rhos
-	  auxv(k) = vol/h
 
         end do
 
-	if( bcheck ) then
-	  smax = maxval(abs(auxs-conzs))
-	  hmax = maxval(abs(auxh-conzh))
-	  vmax = maxval(abs(auxv))
-	  write(778,*) smax,hmax,vmax
-	  call flush(778)
-	else
-	  conzs = auxs
-	  conzh = auxh
-	end if
+	conzs = auxs
+	conzh = auxh
 
 	end
 
