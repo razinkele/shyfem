@@ -73,7 +73,26 @@
 !
 ! an internal-error guard recorded inside the particle loop (#256:
 ! lgr_internal_error, then lgr_internal_failed is true) returns at once;
-! the warning counters nk, nl, nu are shared by the threads (OMP atomic)
+! the warning counters nl, nu are shared by the threads (OMP atomic)
+!
+! the vertical walk makes at most lgr_nvdiff_max calls of lgr_diff_vert
+! in a step (#261). A call ends at dtvd or where the particle reaches an
+! interface of its layer, so the calls of a step grow with the
+! diffusivity, not only with T/dtvd (at most 150 at T = 300 s: dtvd >= 2
+! s): up to 481 in mm_hyd_41 with ilagr = 3 (one day). A step that
+! reaches the cap stops there. The time of a call that stops at an
+! interface can fall below the resolution of the single-precision time
+! left, which then does not change: such a call is counted and the walk
+! goes on (it moved the particle onto the interface, and the next call
+! has the whole next layer before it), but a second such call in a row
+! ends the step (a thin layer crossed in less than that resolution) instead
+! of letting it burn the cap. The steps stopped at the cap and those
+! ended so are counted with the time not diffused (OMP atomic, as the
+! calls and draws of every step) and written once at the end by
+! lgr_vdiff_stats; nothing is written in the loop. Until #261 the cap was
+! 100 calls, and every step that reached it wrote a line from inside the
+! particle loop (59859 lines, 7.7 % of the particle steps of that case,
+! 87 s of 300 s not diffused on average)
 
         use mod_lagrange
         use basin
@@ -95,15 +114,19 @@
 
 	integer			:: mode 	!type of diffusion scheme
 	real 			:: dtime
-        integer 		:: n
+	real 			:: dtold	!time left before the call
+        integer 		:: n		!calls left (#261)
+        integer 		:: ncall	!calls made in the step
+        integer 		:: nzero	!calls that used no time
+        integer 		:: nzrow	!of those, the last ones in a row
         real 			:: perc
         double precision 	:: xx,yy,zz
+        logical			:: bstall	!ended by two such calls in a row
 
         integer			:: ndraw	!vertical draws made (#225)
         integer			:: nc		!the counter after this particle
         logical			:: lgr_internal_failed
 
-        integer, save 		:: nk = 0
         integer, save 		:: nl = 0
         integer, save 		:: nu = 0
 
@@ -123,9 +146,12 @@
 ! initialize
 !---------------------------------------------------------------
 
-        n = 100         !maximum loop count
+        n = lgr_nvdiff_max	!maximum loop count (#261)
         zz = z
 	dtime = time
+	bstall = .false.
+	nzero = 0
+	nzrow = 0
 
 !---------------------------------------------------------------
 ! vertical diffusion 
@@ -139,12 +165,38 @@
 	  ! never parked: ilagr = 3 stops on several processes)
 	  ndraw = 0
           do while ( dtime > 0. .and. n > 0 )
+            dtold = dtime
             call lgr_diff_vert(mode,id,iel,lb,zz,dtime,ndraw)
             if( lb < 1 ) exit
             n = n - 1                   !decrement loop counter
+            if( dtime < dtold ) then
+              nzrow = 0
+            else			!no time used (#261): the second in a
+              nzero = nzero + 1		!row ends the step
+              nzrow = nzrow + 1
+              if( nzrow >= 2 ) then
+                bstall = .true.
+                exit
+              end if
+            end if
           end do
           z = zz 
           if( lgr_internal_failed() ) return	!recorded in the loop
+	  ! the calls and draws of this step (#261), written at the end
+	  ! by lgr_vdiff_stats
+          ncall = lgr_nvdiff_max - n
+!$OMP ATOMIC
+          lgr_nvdiff_steps = lgr_nvdiff_steps + 1
+!$OMP ATOMIC
+          lgr_nvdiff_calls = lgr_nvdiff_calls + ncall
+!$OMP ATOMIC
+          lgr_nvdiff_mcall = max(lgr_nvdiff_mcall,ncall)
+!$OMP ATOMIC
+          lgr_nvdiff_mdraw = max(lgr_nvdiff_mdraw,ndraw)
+          if( nzero > 0 ) then
+!$OMP ATOMIC
+            lgr_nvdiff_zero = lgr_nvdiff_zero + nzero
+          end if
         end if
 
 !---------------------------------------------------------------
@@ -168,15 +220,16 @@
 !---------------------------------------------------------------
 
         if( bvdiff .and.  dtime > 0. ) then     !not finished diffusing
-          if( n == 0 ) then
-!$OMP ATOMIC CAPTURE
-            nk = nk + 1
-            nc = nk
-!$OMP END ATOMIC
-            perc = 0.
-            if( idbdy > 0 ) perc = (100.*nc)/idbdy
-            write(6,1000) 'warning particle dif',id,iel,n,dtime,perc
-            !iel = -iel
+          if( bstall ) then		!no time used twice (#261): counted
+!$OMP ATOMIC
+            lgr_nvdiff_stall = lgr_nvdiff_stall + 1
+!$OMP ATOMIC
+            lgr_tvdiff_stall = lgr_tvdiff_stall + dtime
+          else if( n == 0 ) then	!the cap (#261): counted only
+!$OMP ATOMIC
+            lgr_nvdiff_cap = lgr_nvdiff_cap + 1
+!$OMP ATOMIC
+            lgr_tvdiff_cap = lgr_tvdiff_cap + dtime
           else if( iel < 1 ) then
 !$OMP ATOMIC CAPTURE
             nl = nl + 1
@@ -533,9 +586,17 @@
 ! the smallest dtvd, the mean of the step a particle uses (dtvd, at most
 ! the model step), the mean number of sub-steps per model step, and the
 ! number of element steps with dtvd below the model step and of those
-! with more than 100 sub-steps (diff_body stops after 100 calls of
-! lgr_diff_vert in a step, so there a particle diffuses for less than the
-! step); only in
+! with more sub-steps than the cap of lgr_nvdiff_max calls of
+! lgr_diff_vert in a particle step (until #261 the cap was 100, and this
+! count was that of the element steps over 100 sub-steps); and the vertical
+! walk of the particle steps (#261, diff_body): their number, the calls of
+! lgr_diff_vert, the most calls and the most random draws in one particle
+! step (the draws of a step are numbered in a block of 2**24 of
+! lgr_random: with at most lgr_nvdiff_max calls of 1 uniform draw and 2
+! per trial of rgauss, 4/pi trials on average, about 3.55 per call), the
+! particle steps stopped at the cap and those ended by two calls in a
+! row that left the single-precision time unchanged, each with the time
+! not diffused, and all calls that left it unchanged; only in
 ! a run with vertical diffusion (ilagr = 3, a serial run: ilagr = 3 stops
 ! on several processes). Called by lagrange outside any parallel region:
 ! after the step that reaches dtlend and at the first call after it (when
@@ -553,15 +614,29 @@
      &		//' diffusivities set to 0: ',lgr_nvdiff_neg
 	! the random walk time step of lag_vdiff_ele (#257)
 	if( lgr_dtvd_n > 0 ) then
-          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0,a,i0)')		&
+          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0,a,i0,a,i0)')	&
      &		' lgr vertical diffusion: random walk time step [s]'	&
      &		//' min ',lgr_dtvd_min					&
      &		,' mean ',lgr_dtvd_sum/lgr_dtvd_n			&
      &		,', sub-steps per step ',dble(lgr_dtvd_nstep)/lgr_dtvd_n	&
      &		,', element steps ',lgr_dtvd_n				&
      &		,' below the model step ',lgr_dtvd_nsub			&
-     &		,' over 100 sub-steps ',lgr_dtvd_n100
+     &		,' over ',lgr_nvdiff_max,' sub-steps ',lgr_dtvd_ncap
 	end if
+	! the vertical walk of the particle steps (#261)
+	write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr vertical diffusion:'	&
+     &		//' particle steps ',lgr_nvdiff_steps			&
+     &		,' calls ',lgr_nvdiff_calls				&
+     &		,' most calls in a step ',lgr_nvdiff_mcall		&
+     &		,' most draws in a step ',lgr_nvdiff_mdraw
+	write(6,'(a,i0,a,i0,a,g0.6,a,i0,a,g0.6,a,i0)')			&
+     &		' lgr vertical diffusion:'				&
+     &		//' steps stopped at the cap of ',lgr_nvdiff_max		&
+     &		,' calls ',lgr_nvdiff_cap				&
+     &		,' time not diffused [s] ',lgr_tvdiff_cap		&
+     &		,' steps ended by 2 calls that used no time ',lgr_nvdiff_stall	&
+     &		,' time not diffused [s] ',lgr_tvdiff_stall		&
+     &		,' calls that used no time ',lgr_nvdiff_zero
 
         end subroutine lgr_vdiff_stats
 
@@ -660,8 +735,8 @@
 	  lgr_dtvd_nstep = lgr_dtvd_nstep + ceiling(time/min(dtd,time))
 	  lgr_dtvd_n = lgr_dtvd_n + 1
 	  if( dtd < time ) lgr_dtvd_nsub = lgr_dtvd_nsub + 1
-	  if( ceiling(time/min(dtd,time)) > 100 ) then
-	    lgr_dtvd_n100 = lgr_dtvd_n100 + 1
+	  if( ceiling(time/min(dtd,time)) > lgr_nvdiff_max ) then
+	    lgr_dtvd_ncap = lgr_dtvd_ncap + 1
 	  end if
 	end do
 

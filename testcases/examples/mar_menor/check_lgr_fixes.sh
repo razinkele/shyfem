@@ -164,9 +164,15 @@
 #             walk time step of the run, #257, is printed for information:
 #             min 2 s, mean 33.5 s, 41.7 sub-steps per 300 s step, 66071 of
 #             735505 element steps over 100 sub-steps; before #257 mean
-#             24.9 s, 98.4 sub-steps, 396008 over 100).  A second run, 12
-#             hours with the end of the particle run itlend = 06:02:30
-#             (between two time steps), must write that line exactly once.
+#             24.9 s, 98.4 sub-steps, 396008 over 100; since #261 that count
+#             is of the element steps over the cap of 10000 calls, 0; and so
+#             are the two lines of the particle steps, #261: their calls,
+#             the most calls and draws in one step, the steps stopped at the
+#             cap and those ended by two calls in a row that used no time,
+#             and the calls that used no time).  A second
+#             run, 12 hours with the end of the particle run itlend =
+#             06:02:30 (between two time steps), must write the line of the
+#             negative diffusivities exactly once.
 #   vdiff-dt  (#257) the time step of the vertical random walk follows the
 #             curvature of the diffusivity.  Visser (1997) requires the
 #             step to be much smaller than min 1/|K''| over the water
@@ -195,8 +201,9 @@
 #             same everywhere, K'' = 0, and the random walk must take the
 #             model time step: the log line "lgr vertical diffusion:
 #             random walk time step [s] min 300.000 mean 300.000, ...
-#             below the model step 0 over 100 sub-steps 0" (written once
-#             at the end, lgr_vdiff_stats).  Before #248 the run had
+#             below the model step 0 over 10000 sub-steps 0" (written once
+#             at the end, lgr_vdiff_stats; the count after "over" is the
+#             cap of the calls of a particle step, 100 until #261).  Before #248 the run had
 #             diftur only in the particle step made at set-up: then
 #             handle_gotm_init, called whatever iturb, replaced it by
 #             GOTM's initial 1e-6, so the mode tested a constant K of
@@ -936,6 +943,8 @@ if [ "$MODE" = ilagr3 ]; then
   [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
   line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/lgr_ilagr3.log")"
   [ -n "$line" ] && echo "  $line"	# information only (#257)
+  grep 'lgr vertical diffusion: \(particle steps\|steps stopped\)' "$W/lgr_ilagr3.log" \
+    | sed 's/^/  /'			# information only (#261)
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
 import math, struct, sys
@@ -1089,7 +1098,7 @@ EOF
     line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
     echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
     echo "$line" | grep -q 'min 300\.000* mean 300\.000*,' || fail "the random walk time step is not the model time step (300 s) everywhere"
-    echo "$line" | grep -q ' below the model step 0 over 100 sub-steps 0$' || fail "element steps with a random walk time step below the model step"
+    echo "$line" | grep -q ' below the model step 0 over [0-9][0-9]* sub-steps 0$' || fail "element steps with a random walk time step below the model step"
   else
     fail "the run did not end"
   fi
