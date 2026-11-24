@@ -4,6 +4,7 @@ Checks Fortran parameter interdependencies and reports
 errors (missing required params) and warnings (likely misconfigurations).
 """
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -197,7 +198,9 @@ def validate_str(sections: dict) -> list[ValidationMessage]:
 
     # --- lgrseed: integer in [-2147483647, 2147483647] (lagrange_main.f90) ---
     lgrseed = _num(sections, "lagrg", "lgrseed")
-    if lgrseed is not None and (lgrseed != int(lgrseed) or abs(lgrseed) > 2147483647):
+    if lgrseed is not None and (
+        not math.isfinite(lgrseed) or not float(lgrseed).is_integer() or abs(lgrseed) > 2147483647
+    ):
         msgs.append(
             ValidationMessage(
                 "error",

@@ -331,3 +331,12 @@ def test_lgrseed_edit_is_written_and_absent_default_writes_nothing():
     working, errors = _save(_LGRSEED.replace("        lgrseed = 42\n", ""))
     assert errors == []
     assert working.get_param("lagrg", "lgrseed") is None
+
+
+@pytest.mark.parametrize("seed", [2147483647, -2147483647])
+def test_lgrseed_large_integer_is_written_as_a_plain_integer(seed):
+    working, errors = _save(_LGRSEED, {"lgrseed": str(seed)})
+    assert errors == []
+    assert working.get_param("lagrg", "lgrseed") == seed
+    assert isinstance(working.get_param("lagrg", "lgrseed"), int)
+    assert f"lgrseed = {seed}\n" in StrParser.generate(working)

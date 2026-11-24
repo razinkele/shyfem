@@ -2728,7 +2728,10 @@ def physics_server(
                     ),
                     ui.p(
                         "Seed of the particles' random draws; another value gives "
-                        "another realization. Integer, -2147483647 to 2147483647.",
+                        "another realization. Integer, -2147483647 to 2147483647. "
+                        "A particle's draws depend on the seed, its id and the time "
+                        "step, so a run repeats on any number of threads and "
+                        "processes and after a restart.",
                         class_="form-text text-muted small",
                     ),
                 ),
