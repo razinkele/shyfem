@@ -1003,6 +1003,15 @@
 !		(Default 1.0e-06)
 ! |vistur|	Vertical turbulent viscosity parameter for momentum.
 !		(Default 0)
+!
+! |vistur| and |diftur| are the constant turbulent values of a run
+! without turbulence closure (|iturb=0|, see below); the momentum and the
+! transport of temperature, salinity and tracers add |vismol| and |difmol|
+! to them. With the defaults (0) such a run therefore has the molecular
+! viscosity and diffusivity only. The vertical velocity of the
+! non-hydrostatic model and the stability index of the scalar transport
+! use |vistur| and |diftur| without the molecular parts, and the box and
+! offline files write them as they are.
 
         call addpar('difmol',1.0e-06)	!molecular vertical diffusivity
 	call addpar('diftur',0.)	!diffusion parameter (vertical), cvpar
@@ -1012,11 +1021,14 @@
 ! Instead of setting fixed values for viscosity and diffusivity, these
 ! parameters can also be computed by a turbulence closure scheme. 
 ! The parameter |iturb| defines what turbulence scheme is going to be used.
-! A value of 0 uses no turbulence scheme. In this case be sure that 
-! |vistur| and |diftur| have been set manually. |iturb=1| uses the GOTM
+! A value of 0 uses no turbulence scheme: the viscosity and diffusivity
+! are then |vistur| and |diftur| everywhere and for the whole run (also
+! after a restart, even from a run with GOTM), so set them for a 3D run.
+! |iturb=1| uses the GOTM
 ! routines for turbulence. In order to use this value |SHYFEM| has to be
 ! compiled with GOTM support. |iturb=2| uses a k-epsilon module, and a value
-! of 3 uses the Munk-Anderson model. In a neutral open-channel benchmark
+! of 3 uses the Munk-Anderson model, which scales |vistur| and |diftur|
+! with the Richardson number. In a neutral open-channel benchmark
 ! (docs/reviews/2026-10-18-keps-vs-gotm-benchmark.md) |iturb=2| matches the
 ! standard k-epsilon of GOTM (near the bed 0.82 and 0.84 of the log law with
 ! 20 and 40 layers, over the depth within 2\% of the log-wake profile),
