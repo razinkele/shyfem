@@ -3,7 +3,7 @@
 **System of HydrodYnamic Finite Element Modules**
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![SHYFEM core](https://img.shields.io/badge/SHYFEM%20core-8.5.3-green)](https://github.com/razinkele/shyfem/releases/tag/v8.5.3)
+[![SHYFEM core](https://img.shields.io/badge/SHYFEM%20core-8.6.0-green)](https://github.com/razinkele/shyfem/releases/tag/v8.6.0)
 [![shyfem-ui](https://img.shields.io/badge/shyfem--ui-0.8.4-blue)](https://github.com/razinkele/shyfem/releases/tag/shyfem-ui-v0.8.4)
 ![Fortran](https://img.shields.io/badge/Fortran-90%2F95%2B-purple)
 
@@ -123,7 +123,7 @@ bin/            Executables and helper scripts
 
 SHYFEM uses [Semantic Versioning](https://semver.org/). The Fortran **core** and the Python **UI** are versioned **independently**.
 
-**Core** --- currently `8.5.3`, tag `v8.5.3`:
+**Core** --- currently `8.6.0`, tag `v8.6.0`:
 
 - `VERSION` --- primary version record
 - `src/utils/shyutil/version.f90` --- compiled into the binary
@@ -134,9 +134,9 @@ SHYFEM uses [Semantic Versioning](https://semver.org/). The Fortran **core** and
 # Set UI-only [Unreleased] entries aside first and put them back under the new
 # [Unreleased] heading before committing; tag vX.Y.Z on the release PR's merge
 # commit (UI untouched):
-make bump-patch   # 8.5.3 -> 8.5.4
-make bump-minor   # 8.5.3 -> 8.6.0
-make bump-major   # 8.5.3 -> 9.0.0
+make bump-patch   # 8.6.0 -> 8.6.1
+make bump-minor   # 8.6.0 -> 8.7.0
+make bump-major   # 8.6.0 -> 9.0.0
 ```
 
 **UI** --- currently `0.8.4`, tag `shyfem-ui-v0.8.4`:
