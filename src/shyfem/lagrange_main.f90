@@ -608,6 +608,12 @@
 
 	lgr_omp_loop = .false.
 
+	! the events of the vertical walk counted in the loop (#288: until then
+	! they wrote their lines from the worker threads), written here by the
+	! main thread before the check below stops the run after an internal
+	! error found in the loop; nothing if none was counted
+	call lgr_vdiff_events
+
 	! a failure of the hand-over lists or an internal-error guard of the
 	! tracker found inside the loop (a worker thread must not call
 	! MPI_ABORT) stops the run here, on the main thread, before the first
