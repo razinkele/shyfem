@@ -80,6 +80,15 @@
 ! call, gives the id of a serial run; and the limit nbdymax does not stop
 ! here, it is only recorded (lgr_nbdymax_passed): lgr_mpi_assign_ids
 ! stops the run on the global number of particles
+!
+! a release point that lies in no element (ie = 0 and find_element finds
+! none) gives no particle (#247): it takes no slot and no id, and is only
+! counted in nlgr_outside (the release reports it). Before, the particle
+! was inserted with ie = 0 and the output read the geometry of element 0
+! (SIGSEGV in mm_lgr_a with a trajectory point outside the basin). On
+! several processes no caller passes ie = 0 (lgrtrj stops at start-up,
+! the polygon and basin releases pass an element the process owns), so
+! the ids stay those of a serial run
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_nbdymax_passed
@@ -114,6 +123,14 @@
 	bdebug = .false.
 	lmytype = .false.
 
+	if( ie .eq. 0 ) then
+	  call find_element(x,y,ie)
+	end if
+	if( ie <= 0 ) then		!in no element: not inserted (#247)
+	  nlgr_outside = nlgr_outside + 1
+	  return
+	end if
+
 	nbdy = nbdy + 1
 	idbdy = idbdy + 1
 
@@ -130,13 +147,6 @@
 
         lgr_ar(nbdy)%init%time = t_act - dt_act*(1.-rtime)
         lgr_ar(nbdy)%actual%time = lgr_ar(nbdy)%init%time
-
-	if( ie .eq. 0 ) then
-	  call find_element(x,y,ie)
-	end if
-	if( ie .eq. 0 ) then
-	  write(6,*) 'inserting particle with ie = 0'
-	end if
 
 	!call lagr_connect_get_station(ie,ip,z)	!connectivity (z is color)
 
@@ -174,7 +184,9 @@
 	  pt = iarv(ie) !use type of element ie
 	end if 
 
-	call lgr_set_properties(bsedim,blarvae,boilsim,pt,ps,pc,nc)
+	! the sediment class is drawn with the particle's id (#225); on several
+	! processes this id is provisional, but ised stops there at start-up
+	call lgr_set_properties(idbdy,bsedim,blarvae,boilsim,pt,ps,pc,nc)
         allocate( lgr_ar(nbdy)%custom(nc),stat=ierr )
         if( ierr /= 0 ) call shympi_abort_internal(			&
      &		'error stop: allocation failed')
@@ -281,10 +293,21 @@
 ! itype > 0	release n particles regularly
 ! itype < 0	release n particles randomly
 ! itype == -1	release particles in every layer
+!
+! the random depth of a particle (itype < -1) is its own draw (#225),
+! keyed on the id it receives: lgr_release_depth, right after its
+! insertion (a serial run gives the final id there) and again in
+! lgr_mpi_assign_ids once the ids of a serial run are given
+!
+! a point that lies in no element (ie = 0 and find_element finds none)
+! releases nothing (#247): the particles it would have released are
+! counted in nlgr_outside (one, n = abs(itype), or for itype = -1 one per
+! layer lintop ... linbot of the deepest column, nlv) and the routine
+! returns before it reads the layers of an element
 
 	logical b2d,bdebug
 	integer n,lmax,l,i
-	real h,dh,hact,r
+	real h,dh,hact
 	integer itype	!type of vertical distribution
 	integer lb	!layer [1-lmax]
 	integer linf	!bottom layer [1-lmax]
@@ -294,6 +317,23 @@
 	real htot,htotz
 
 	bdebug = .false.
+
+	if( ie == 0 ) call find_element(x,y,ie)
+	if( ie <= 0 ) then		!in no element: nothing released (#247)
+	  n = 1
+	  if( .not. ( blgrsurf .or. nlv <= 1 .or. ipvert == 0 ) ) then
+	    if( ipvert == -1 ) then
+	      linf = linbot
+	      if( linf > nlv .or. linf == 0 ) linf = nlv
+	      lsrf = max(1,lintop)
+	      n = max(0,linf-lsrf+1)
+	    else
+	      n = abs(ipvert)
+	    end if
+	  end if
+	  nlgr_outside = nlgr_outside + n
+	  return
+	end if
 
 	lmax = ilhv(ie)
 	linf = linbot	 
@@ -352,18 +392,104 @@
 	do i=1,n
 	  if( itype > 0 ) then
 	    hact = hact + dh		!regular subdivision
-	  else
-	    call random_number(r)	!randomly seed
-	    hact = r*h
+	    call find_vertical_position(lmax,hl,hact,lb,z)
+	    call insert_particle(ie,ity,lb,rtime,x,y,z)
+	    if( bdebug ) write(6,*) '   ',i,hact,lb,z
+	  else				!random depth, drawn with the id
+	    lb = 1
+	    z = 0.5
+	    call insert_particle(ie,ity,lb,rtime,x,y,z)
+	    call lgr_release_depth(nbdy)
+	    if( bdebug ) write(6,*) '   ',i,lgr_ar(nbdy)%actual%l	&
+     &				,lgr_ar(nbdy)%actual%z
 	  end if
-	  call find_vertical_position(lmax,hl,hact,lb,z)
-	  call insert_particle(ie,ity,lb,rtime,x,y,z)
-	  if( bdebug ) write(6,*) '   ',i,hact,lb,z
 	end do
 	
 	!-------------------------------------------------
 	! end of routine
 	!-------------------------------------------------
+
+	end
+
+!*******************************************************************
+
+	function lgr_random_depth_release()
+
+! true if insert_particle_3d draws a random depth for each particle it
+! releases: ipvert < -1 in a basin with more than one layer and ilagr /= 1
+! (its branches: surface layer for ilagr = 1, a 2D basin or ipvert = 0;
+! every layer for ipvert = -1; regular depths for ipvert > 0)
+
+	use mod_lagrange
+	use levels, only : nlv
+
+	implicit none
+
+	logical lgr_random_depth_release
+
+	lgr_random_depth_release = ipvert < -1 .and. .not. blgrsurf		&
+     &				.and. nlv > 1
+
+	end
+
+!*******************************************************************
+
+	subroutine lgr_release_depth(ip)
+
+! random depth of particle ip at its release (ipvert < -1, see
+! insert_particle_3d): the depth below the surface is r*h, h the depth of
+! its element of release down to the bottom of layer linbot (as
+! insert_particle_3d computes it) and r the particle's draw (#225),
+! lgr_random keyed on its id, the time step and the site lgr_rnd_relz.
+! Sets the layer and the position in the layer of init and actual.
+!
+! called by insert_particle_3d right after the insertion (in a serial run
+! the id is final there) and, on several processes, by lgr_mpi_assign_ids
+! for each new particle once it has the id of a serial run (the id given
+! by insert_particle is provisional there): the depth is a function of the
+! id, so the second call gives the serial depth. Called in the time step
+! of the release, outside any parallel region: the element's layers are
+! those of the insertion. (On several processes ipvert < -1 still stops at
+! start-up, lgr_mpi_check_supported, so that call is not run today.)
+
+	use mod_lagrange
+	use levels
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_relz
+
+	implicit none
+
+	integer, intent(in) :: ip	!slot of the particle
+
+	integer ie,lmax,linf,l,lb
+	real h,hact,r,z
+	real hl(nlv)
+	real htot,htotz
+
+	ie = -lgr_ar(ip)%init%ie	!element of release (positive)
+	if( ie <= 0 ) return
+
+	lmax = ilhv(ie)
+	linf = linbot
+	if( linf .gt. lmax ) then
+	  linf = lmax
+	else if ( linf .eq. 0 ) then
+	  linf = lmax
+	end if
+
+	call lagr_layer_thickness(ie,lmax,hl,htot,htotz)
+	h = 0.
+	do l=1,linf
+	  h = h + hl(l)
+	end do
+
+	r = lgr_random(lgr_ar(ip)%id,lgr_rnd_relz,0)
+	hact = r*h
+	call find_vertical_position(lmax,hl,hact,lb,z)
+
+	lgr_ar(ip)%init%l = lb
+	lgr_ar(ip)%init%z = z
+	lgr_ar(ip)%actual%l = lb
+	lgr_ar(ip)%actual%z = z
 
 	end
 
@@ -539,6 +665,18 @@
 ! TO BE DONE
 	subroutine lgr_input_shell
 
+! initial distribution of particles from a particle file (lgrini): the
+! active particles of the record at time itlgin, with their ids
+!
+! the counter of the ids given out (idbdy) is moved past every id of the
+! file up to that record, of all three blocks (active, inserted, exited:
+! a particle that left the basin had an id too), so that a release after
+! the restart gives the ids the run that went on gives. Before, idbdy
+! stayed 0 and the next release gave the ids 1, 2, ... again, and since the
+! random draws of a particle are keyed on its id (#225) two particles with
+! one id would draw the same numbers. Serial only (lgrini stops on several
+! processes, lgr_mpi_check_supported).
+
 	use mod_lagrange
 	use shympi, only : ip_int_elem
         use shyfile
@@ -562,8 +700,10 @@
 	integer				:: iu
         integer                         :: iwhat
         integer                         :: ierr
+	integer				:: idmax	!largest id of the file
+	integer				:: iwhat2
 	double precision 		:: xi(3)
-	double precision 		:: dtime,ditime
+	double precision 		:: dtime,ditime,ditime2
 	double precision 		:: dtlgin
         character*20                    :: aline
 	character*256 			:: ifile
@@ -601,6 +741,7 @@
         !--------------------------------------------------------------
         ! loop over records
         !--------------------------------------------------------------
+        idmax = 0
         do
           !----------------------------------------------------------------
           ! read lgr data block --> active particles (use only these particles)
@@ -612,25 +753,39 @@
      &          ,ida,tya,tta,sa,iea,xa,ya,za,lba,hla,ca)
           call lgr_get_block(iu,n_act,ncust, &
      &                  ida,tya,tta,sa,iea,xa,ya,za,lba,hla,ca)
-          if( ditime == dtlgin ) exit
+          do i=1,n_act
+            idmax = max(idmax,ida(i))
+          end do
+          if( ditime == dtlgin ) then
+            ! the inserted and exited blocks of this record (ids too)
+            do ic=1,2
+              call lgr_peek_block_header(iu,ditime2,n_aux,iwhat2,ierr)
+              if( ierr /= 0 ) exit
+              if( ditime2 /= dtlgin .or. iwhat2 == 0 ) exit !next record
+              call lgr_block_max_id(iu,idmax)
+            end do
+            exit
+          end if
           !----------------------------------------------------------------
-          ! skip data block --> inserted particles
+          ! data block --> inserted particles (only their ids)
           !----------------------------------------------------------------
           call lgr_peek_block_header(iu,ditime,n_aux,iwhat,ierr)
           if( ierr /= 0 ) exit
-          call lgr_skip_block(iu,n_aux,ncust)
+          call lgr_block_max_id(iu,idmax)
           !----------------------------------------------------------------
-          ! skip data block --> exited particles
+          ! data block --> exited particles (only their ids)
           !----------------------------------------------------------------
           call lgr_peek_block_header(iu,ditime,n_aux,iwhat,ierr)
           if( ierr /= 0 ) exit
-          call lgr_skip_block(iu,n_aux,ncust)
+          call lgr_block_max_id(iu,idmax)
         end do
 
         if( ditime /= dtlgin ) then
 	  write(6,*) 'cannot find time record: ',dtlgin
 	  stop 'error stop lgr_input_shell: no such time record'
         end if
+
+	idbdy = max(idbdy,idmax)	!ids of new particles follow the file's
 
         call get_act_dtime(dtime)
 
@@ -683,6 +838,46 @@
         call shy_close(id)
 
 	write(6,*) 'finished initializing lagrangian from file'
+	write(6,*) 'particles read: ',n_act,'  largest id in the file: '	&
+     &			,idmax
+
+	end
+
+!*******************************************************************
+
+	subroutine lgr_block_max_id(iu,idmax)
+
+! reads the next data block of a particle file (its header and the three
+! records of each particle) and raises idmax to the largest id in it; only
+! the id is taken from each particle (the rest of a record is skipped)
+
+	implicit none
+
+	integer, intent(in) :: iu		!unit of the particle file
+	integer, intent(inout) :: idmax		!largest id so far
+
+	double precision atime
+	integer nn,iwhat,i,idp,ios
+
+	read(iu,iostat=ios) atime,nn,iwhat
+	if( ios /= 0 ) then
+	  write(6,*) 'lgr_block_max_id: iostat ',ios
+	  call shympi_abort_internal('error stop lgr_block_max_id:'	&
+     &		//' cannot read a block header of the particle file')
+	end if
+
+	do i=1,nn
+	  read(iu,iostat=ios) idp		!first value: the id
+	  if( ios == 0 ) read(iu,iostat=ios)	!coordinates
+	  if( ios == 0 ) read(iu,iostat=ios)	!custom values
+	  if( ios /= 0 ) then
+	    write(6,*) 'lgr_block_max_id: particle ',i,' of ',nn		&
+     &			,', iostat ',ios
+	    call shympi_abort_internal('error stop lgr_block_max_id:'	&
+     &		//' cannot read a particle of the particle file')
+	  end if
+	  idmax = max(idmax,idp)
+	end do
 
 	end
 

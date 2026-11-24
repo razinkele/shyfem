@@ -31,13 +31,35 @@
 #      (shypre -noopti MM_geo.grd).  Logs: mm_lgr_w.pos.gate.log,
 #      mm_lgr_w.ids.gate.log, mm_lgr_w.handover.gate.log, and those of the
 #      driver.
+#   6. check_mpi_3d.sh NP: 3D runs with GOTM and k-epsilon (open boundary,
+#      closed basins, ireib = 6, two area codes), serial against NP
+#      processes, byte for byte (#230); PASS line "MPI 3D CHECK: PASS"
+#   7. check_setnod_mpi.sh: node classification and angle sums of setnod on
+#      2, 4 and 8 processes (it chooses its own counts, not NP) and on the
+#      two hand-written partitions of docs/reviews/evidence/2026-11-lagrange-mpi/d5,
+#      against the serial run (#238); PASS line "SETNOD TEST: PASS"
+#   8. check_flux_sections_mpi.sh NP: the flux file of 129 flux sections
+#      on NP processes byte-identical to the serial one (#238); PASS line
+#      "FLUX SECTIONS: PASS"
+#   9. check_itlin.sh NP: the semi-Lagrangian option itlin = 1 (serial runs
+#      end and stay bounded; on NP processes and on a geographic grid it
+#      stops with a clear message) (#227); PASS line "ITLIN CHECK: PASS"
+#   Checks 6 to 9 are separate scripts in this folder; each counts as
+#   passed only when it exits with 0 and prints its own PASS line (the
+#   whole line, anywhere in its output) (log: NAME.gate.log, with NAME = mpi_3d, setnod, flux_sections,
+#   itlin; the wall time of each is printed).  A failure of one makes
+#   "MPI GATE: FAIL" and names the check.  They need what the scripts
+#   themselves need: shyelab and shypre on PATH, python3 (with netCDF4 only
+#   for the optional variable-by-variable report of check 6), git (check 7
+#   finds the d5 partitions through the checkout); they work in scratch
+#   folders and find their inputs relative to their own folder.
 # The runs of checks 1 to 3 on NP > 1 processes must also show NP
 # processes: the line "shympi initialized: ID NP" once from each rank 0
 # to NP-1 (an mpirun that does not match the binary's MPI, or a binary
 # without MPI, would run NP serial copies, which end and write the
 # serial results).
 #
-# Needs shyfem, shypre, mpirun and python3 on PATH (an OpenMPI build of
+# Needs shyfem, shypre, shyelab, mpirun and python3 on PATH (an OpenMPI build of
 # shyfem), and `make init` done.
 # Usage:  ./check_mpi.sh [NP]
 #------------------------------------------------------------------------
@@ -153,6 +175,46 @@ else
     fi
   done
 fi
+
+# sub_check N NAME PASSLINE SCRIPT [ARGS...]: run a separate check script of
+# this folder; passed only on exit 0 and PASSLINE as a line of its output
+# (check_mpi_3d.sh and check_setnod_mpi.sh print the path of their scratch
+# folder after it).  The scratch folder of a passed check is removed; that
+# of a failed one is kept and named in the log.
+sub_check() {
+  local n="$1" name="$2" pass="$3" script="$4" log t0 st last
+  shift 4
+  log="$name.gate.log"
+  t0=$(date +%s)
+  if ! [ -f "$script" ]; then
+    fail "check $n ($name): $script is missing"
+    return
+  fi
+  bash "$script" "$@" > "$log" 2>&1 < /dev/null; st=$?
+  echo "check $n ($script $*): exit $st, $(( $(date +%s) - t0 )) s"
+  if [ "$st" = 0 ] && grep -qxF "$pass" "$log"; then
+    echo "check $n: $pass"
+    last=$(tail -n 1 "$log")
+    case "$last" in
+      */mpi3d.*|*/setnod.*)   # the sub-script's own scratch folder, directly in TMPDIR
+        if [ "${last%/*}" = "${TMPDIR:-/tmp}" ] && [ -d "$last" ]; then rm -rf "$last"; fi ;;
+    esac
+  else
+    tail -n 25 "$log"; fail "check $n ($name): $script did not end with exit 0 and '$pass' (log: $log)"
+  fi
+}
+
+echo "=== 6. 3D runs with GOTM and k-epsilon: $NP processes vs serial, byte for byte"
+sub_check 6 mpi_3d "MPI 3D CHECK: PASS" check_mpi_3d.sh "$NP"
+
+echo "=== 7. node classification (setnod) on 2, 4 and 8 processes and two hand-written partitions"
+sub_check 7 setnod "SETNOD TEST: PASS" check_setnod_mpi.sh
+
+echo "=== 8. flux sections: flux file of $NP processes vs serial, byte for byte"
+sub_check 8 flux_sections "FLUX SECTIONS: PASS" check_flux_sections_mpi.sh "$NP"
+
+echo "=== 9. semi-Lagrangian advection of momentum (itlin = 1)"
+sub_check 9 itlin "ITLIN CHECK: PASS" check_itlin.sh "$NP"
 
 if [ "$rc" = 0 ]; then echo "MPI GATE: PASS"; else echo "MPI GATE: FAIL"; fi
 exit "$rc"

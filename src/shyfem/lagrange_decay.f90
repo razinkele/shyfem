@@ -79,6 +79,25 @@
 
 ! applies decay to all particles
 !
+! decay with the e-folding time ldecay [s] (#246): in each time step a
+! particle decays with the probability 1 - exp(-dta/ldecay), dta the part
+! of the step it has lived (the step dt_act, or its age t_act - init%time
+! if it was released inside the step), so that after a time t since its
+! release a particle has survived with the probability exp(-t/ldecay)
+! whatever the time step. The test is the particle's own draw (#225):
+! lgr_random_dp, keyed on its id, the time step and the site
+! lgr_rnd_decay, in double precision (the probability of a step can lie
+! below the 2**-23 that a single precision draw resolves). Before #246
+! every step tested the survival of the particle's whole age,
+! exp(-age/ldecay), with a new draw, so the survival after t was about
+! exp(-t**2/(2*ldecay*dt)) and depended on the time step.
+!
+! after a restart from a particle file (lgrini) init%time is the restart
+! time: the first call, at the restart time itself, draws nothing (dta =
+! 0; the record read already holds that step), and every later step is a
+! full step drawn with the keys of the run that went on, so the restarted
+! run decays as that run (check_lgr_fixes.sh decay-rate, part 2)
+!
 ! a decayed particle keeps its last element with a negative sign
 ! (ie = -abs(ie)), as a particle that left the basin and one that died in
 ! lagr_surv: it is not tracked any more and the output writes its last
@@ -86,18 +105,16 @@
 ! the coordinates of element 0)
 
 	use mod_lagrange
-	use femtime
+	use femtime, only : t_act,dt_act
+	use mod_lagrange_random, only : lgr_random_dp, lgr_rnd_decay
 
         implicit none
 
-	real ldecay
+	real, intent(in) :: ldecay	!e-folding time of the decay [s]
 
-	real tdd    !probability of survival
-        real age    !age of particle
-        real nmb    !probability
+	double precision dta	!part of the step the particle has lived [s]
+	double precision pdec	!probability to decay in this step
         integer i
-
-	real ggrand
 
 	integer, save :: iwarn1 = 0
 
@@ -110,11 +127,12 @@
         end if
 
         do i=1,nbdy
-          age=it-lgr_ar(i)%init%time
-          tdd=exp(-age/ldecay)
-          nmb=ggrand(2387)
-          if(nmb.gt.tdd) then			! set as if out of domain
-	    lgr_ar(i)%actual%ie = -abs(lgr_ar(i)%actual%ie)
+	  if( lgr_ar(i)%actual%ie <= 0 ) cycle	!already out, no draw
+          dta = min(dt_act,t_act-lgr_ar(i)%init%time)
+	  if( dta <= 0.d0 ) cycle		!released at the end of the step
+          pdec = 1.d0 - exp(-dta/ldecay)
+          if( lgr_random_dp(lgr_ar(i)%id,lgr_rnd_decay,0) < pdec ) then
+	    lgr_ar(i)%actual%ie = -abs(lgr_ar(i)%actual%ie)	!out of domain
 	  end if
         end do
 
@@ -135,6 +153,7 @@
 
 	use mod_lagrange
 	use femtime
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_decay
 
         implicit none
 
@@ -144,8 +163,6 @@
         real nmb
         real tdd
         integer n,i
-
-	real ggrand
 
 	integer, save :: iwarn2 = 0
 
@@ -162,7 +179,7 @@
 
         rdc=1-(1/tdd)
 
-        nmb=ggrand(2387)
+        nmb=lgr_random(lgr_ar(n)%id,lgr_rnd_decay,0)	!own draw (#225)
 
         if(nmb.le.rdc) then			! set as if out of domain
 	  lgr_ar(n)%actual%ie = -abs(lgr_ar(n)%actual%ie)	! last element (#226)

@@ -70,6 +70,7 @@
 ! continuous release - number of particles depends on volume flux
 
 	use mod_lagrange
+	use mod_lagrange_random, only : lgr_random_release
 
 	implicit none
 
@@ -83,7 +84,6 @@
 	integer nptot,iptot
 	real rp
 
-	real ggrand
 	real get_bflux_ppv
 
 	call get_timestep(dt)
@@ -101,7 +101,7 @@
 	  if( ibtyp .eq. 1 ) then	!only for level boundaries
 
 	    iptot = 0
-	    rp = ggrand(77)		! vary starting point of particles
+	    rp = lgr_random_release()	! vary starting point of particles
 	    do i=2,nk
 	      k1 = kbnds(ibc,i-1)
 	      k2 = kbnds(ibc,i)
@@ -133,6 +133,7 @@
 ! continuous release - number of particles is independent of boundary length
 
 	use mod_lagrange
+	use mod_lagrange_random, only : lgr_random_release
 
 	implicit none
 
@@ -144,8 +145,6 @@
 	integer iptot
 	real rp,pps,q
 	real dist_node
-
-	real ggrand
 
 	call get_timestep(dt)
 
@@ -162,7 +161,7 @@
 	    call dist_total(ibc,totdist)
 
 	    iptot = 0
-	    rp = ggrand(77)		! vary starting point of particles
+	    rp = lgr_random_release()	! vary starting point of particles
 	    do i=2,nk
 	      k1 = kbnds(ibc,i-1)
 	      k2 = kbnds(ibc,i)
@@ -196,6 +195,7 @@
 ! replaces the routines above
 
 	use mod_lagrange
+	use mod_lagrange_random, only : lgr_random_release
 
 	implicit none
 
@@ -210,7 +210,6 @@
 
 	real dist_node
 	real get_bflux_ppv
-	real ggrand
 
 	call get_timestep(dt)
 
@@ -231,7 +230,7 @@
 	    call dist_total(ibc,totdist)
 
 	    iptot = 0
-	    rp = ggrand(77)		! vary starting point of particles
+	    rp = lgr_random_release()	! vary starting point of particles
 	    do i=2,nk
 	      k1 = kbnds(ibc,i-1)
 	      k2 = kbnds(ibc,i)
@@ -253,7 +252,7 @@
 	   else if( ibtyp .eq. 3 ) then		!release on nodes
 
 	    iptot = 0
-	    rp = ggrand(77)		! vary starting point of particles
+	    rp = lgr_random_release()	! vary starting point of particles
 	    do i=1,nk
 	      k = kbnds(ibc,i)
 	      if( bflux ) then
@@ -280,9 +279,51 @@
 
 !*******************************************************************
 
+	subroutine lgr_selftest_segments
+
+! self-test of find_elems_to_segment (the elements of a boundary segment of
+! the continuous release, create_parts and get_bflux_ppv) at levdbg >= 3,
+! called once by lgr_mpi_init on every process (its own part of the mesh):
+! check_elems_to_segment compares the elements it gives for every side of
+! every element, in both directions, with the elements of the two nodes
+! found from nen3v alone (#252). Writes one line per process, and the
+! first wrong segment if any (internal node and element numbers; nside =
+! nwrong = -1 if its work arrays could not be allocated); never stops the
+! run.
+
+	use para, only : getpar
+	use shympi, only : my_id
+
+	implicit none
+
+	integer nside,nwrong
+	integer iwrong(6)
+
+	if( nint(getpar('levdbg')) < 3 ) return
+
+	call check_elems_to_segment(nside,nwrong,iwrong)
+	write(6,'(a,i0,a,i0,a,i0)') ' lgr self-test find_elems_to_segment:'	&
+     &		//' rank ',my_id,' segments ',nside,' wrong ',nwrong
+	if( nwrong > 0 ) then
+	  write(6,'(a,6(1x,i0))') ' lgr self-test find_elems_to_segment:'	&
+     &		//' first wrong k1 k2, found ie1 ie2, expected ie1 ie2:'	&
+     &		,iwrong
+	end if
+
+	end
+
+!*******************************************************************
+
 	subroutine create_parts(ity,np,k1,k2)
 
+! the place on the segment and the time in the step are the draws of the
+! particle(s) insert_particle_3d releases next (#225): lgr_random keyed on
+! the first id it gives (idbdy+1; continuous release is serial only)
+
 	use basin
+	use mod_lagrange, only : idbdy
+	use mod_lagrange_random, only : lgr_random
+	use mod_lagrange_random, only : lgr_rnd_relpos, lgr_rnd_reltime
 
 	implicit none
 
@@ -292,8 +333,6 @@
 	integer i,ie1,ie2
 	real x1,y1,x2,y2,dx,dy
 	real rl,rt,x,y
-
-	real ggrand
 
 	if( np .le. 0 ) return
 
@@ -314,8 +353,8 @@
 	!write(6,*) 'create_parts: ',np,k1,k2,ie1
 
 	do i=1,np
-	  rl = ggrand(77)
-	  rt = ggrand(77)
+	  rl = lgr_random(idbdy+1,lgr_rnd_relpos,0)
+	  rt = lgr_random(idbdy+1,lgr_rnd_reltime,0)
 	  x = x1 + rl*dx
 	  y = y1 + rl*dy
 	  call insert_particle_3d(ie1,ity,rt,x,y)
@@ -385,8 +424,10 @@
 	subroutine find_elem_to_node(k,iee,x,y)
 
 	use basin
+	use mod_lagrange_random, only : lgr_random_release
 
 ! be sure particle is in an element
+! (the element is drawn from the release stream of the step, #225)
 
 	implicit none
 
@@ -397,7 +438,6 @@
 	integer ie,ii,kk,n,i
 	real xs,ys,alpha
 	integer ielist(ngr)
-	real ggrand
 
 	n = 0
 	alpha = 0.99
@@ -415,7 +455,7 @@
 
 	if( n == 0 ) stop 'error stop find_elem_to_node: internal 2'
 
-	i = 1 + n*ggrand(77)
+	i = 1 + n*lgr_random_release()
 	if( i > n ) i = n
 
 	iee = ielist(i)
@@ -449,6 +489,14 @@
 	subroutine release_on_point(ity,ppts,ie,x,y,n)
 
 ! release from one point - works for 2D
+!
+! the number of particles is drawn from the release stream of the step,
+! the time in the step of each particle with the first id that
+! insert_particle_3d gives it (idbdy+1) (#225; serial only)
+
+	use mod_lagrange, only : idbdy
+	use mod_lagrange_random, only : lgr_random, lgr_random_release
+	use mod_lagrange_random, only : lgr_rnd_reltime
 
 	implicit none
 
@@ -460,12 +508,11 @@
 
 	integer i
 	real rt
-	real ggrand
 
-	n = ppts + ggrand(77)			!particles to release
+	n = ppts + lgr_random_release()		!particles to release
 
 	do i=1,n
-	  rt = ggrand(77)			!vary time
+	  rt = lgr_random(idbdy+1,lgr_rnd_reltime,0)	!vary time
 	  call insert_particle_3d(ie,ity,rt,x,y)
 	  !write(55,*) 'gguuyy particle: ',ie,rt,x,y
 	end do
