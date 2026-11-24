@@ -25,6 +25,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Three flaky tests made deterministic.** The box-model timeout test raced a real 2-second build against a 1-second timeout (#201); the queued-job exit-status test read the job's database row before the detached supervisor had written it (#202); and two browser tests failed in pairs because a modal's Close was clicked while Bootstrap was still showing it, which it ignores, leaving a backdrop over the next test (#205: `conftest.wait_modal_shown`).
 - **UI CI: the unit tests run again, and the Docker image builds.** Since 2026-10-29 the unit job stopped while collecting `tests/test_downloads.py`: starlette's test client needs the `httpx2` package, which nothing declared, so not one unit test ran in CI. `httpx2` is now a `[dev]` dependency. The Docker build broke the same day because `pyproject.toml` pins shiny-deckgl to a git tag and the build image had no `git`: the builder stage now installs `git`, and the final stage no longer installs every dependency a second time.
 
+### Fixed — Test cases
+
+- **`make init` in the Mar Menor test cases keeps the tracked basin `GRID/MM_coarse.bas` (#251).** It rebuilt the file with `shypre` every time, and since the exact decimal parsing of `istod` (9abe01a4, 2026-10-16) `shypre` writes 46 of its 2,545 element depths one unit in the last place lower (nodes, elements, numbering and coordinates are the same), so every tree that ran `make init`, CI included, was left with a modified tracked file and ran the cases on another basin than the one the particle floors and the #217 acceptance were measured on. `make init` (also in `mar_menor_lagrange`, whose `GRID` links there) now builds it only when it is missing, and `make cleanbas` keeps it; to rebuild it with the current `shypre`, delete it first. CI's Mar Menor steps therefore run on the tracked basin now. The new `testcases/examples/mar_menor/check_make_init.sh` checks this (CI does not run it).
+
 ---
 
 ## [8.6.0] — 2026-11-24

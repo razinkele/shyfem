@@ -37,8 +37,20 @@ depend: nothing
 
 #-----------------------------------------------------------
 
+# GRID/$(GRID).bas is tracked (the cases, the particle floors and the #217
+# acceptance were measured on it) and is built only when it is missing:
+# shypre of today writes a slightly different file (46 element depths one
+# unit in the last place lower since the exact decimal parsing of 9abe01a4),
+# so rebuilding it would modify the tracked file and change results (#251).
+# To rebuild it on purpose: rm GRID/$(GRID).bas; make init
+# (check_make_init.sh checks init and cleanbas)
+
 init:
-	cd GRID; shypre $(GRID).grd
+	@cd GRID && if [ -f $(GRID).bas ]; then \
+	  echo "GRID/$(GRID).bas exists (tracked): kept, not rebuilt"; \
+	else \
+	  echo "cd GRID; shypre $(GRID).grd"; shypre $(GRID).grd; \
+	fi
 	cd GRID; shypre $(GRID1).grd
 
 run_all: init
@@ -60,8 +72,9 @@ clean:
 
 cleanall: clean cleansims cleanzip cleanfigs cleanbas
 
+# keeps the tracked GRID/$(GRID).bas (see init)
 cleanbas:
-	-rm -f GRID/*.bas
+	-rm -f $(filter-out GRID/$(GRID).bas,$(wildcard GRID/*.bas))
 	-rm -f GRID/errout.dat
 
 cleanfigs:
