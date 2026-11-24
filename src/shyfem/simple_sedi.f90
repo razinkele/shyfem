@@ -144,12 +144,15 @@
 	use levels
 	use basin
 	use simple_sediments
+	use shympi, only : nkn_global,nkn_unique,ip_int_node		&
+     &			,shympi_is_master,shympi_array_reduce
 
         use para
         implicit none
 
         integer ie,ii,k,lmax,l,ia
-	integer iunit
+	integer iunit,ierr
+	double precision, allocatable :: masspn(:),masssn(:)
         logical bnoret
         real vol,conz,perc,dt,sed,h,r,cnew
         double precision mass,masss
@@ -176,7 +179,6 @@
         bnoret = iout_area >= 0		!set concentrations out of domain to 0
 
 	call get_timestep(dt)
-	call getinfo(iunit)
 	call get_act_dtime(dtime)
 	call get_timeline(dtime,aline)
 
@@ -278,21 +280,48 @@
 ! total mass
 !------------------------------------------------------------
 
-        mass = 0.
-        masss = 0.
-        do k=1,nkn
+	! (#220) the totals of the whole basin, written once. Every process
+	! sums the nodes it owns (k <= nkn_unique; the ghost nodes belong to
+	! another process) into a value per node, the values are put at the
+	! global internal node number in an array that is zero elsewhere and
+	! summed over the processes (each element has one non-zero term, so
+	! the sum is exact), and the master adds them in the order of the
+	! nodes of a serial run. The info file is opened and written by the
+	! master only (getinfo opens it on whichever process calls it).
+
+	allocate(masspn(nkn_global),masssn(nkn_global),stat=ierr)
+	if( ierr /= 0 ) call shympi_abort_internal(			&
+     &		'error stop simple_sedi: allocation failed')
+	masspn = 0.
+	masssn = 0.
+
+        do k=1,nkn_unique
             lmax = ilhkv(k)
+	    mass = 0.
             do l=1,lmax
               vol = volnode(l,k,+1)
               conz = cnv(l,k)
               mass = mass + vol*conz
             end do
-	    masss = masss + conzs(k)
+	    masspn(ip_int_node(k)) = mass
+	    masssn(ip_int_node(k)) = conzs(k)
         end do
 
-        !write(6,*) 'sedimt: ',dtime,mass,masss,mass+masss
-        !write(iunit,*) 'sedimt: ',dtime,mass,masss,mass+masss
-        write(iunit,1200) ' sedimt: ',aline,mass,masss,mass+masss
+	call shympi_array_reduce('sum',masspn)
+	call shympi_array_reduce('sum',masssn)
+
+	if( shympi_is_master() ) then
+	  mass = 0.
+	  masss = 0.
+	  do k=1,nkn_global
+	    mass = mass + masspn(k)
+	    masss = masss + masssn(k)
+	  end do
+	  call getinfo(iunit)
+          write(iunit,1200) ' sedimt: ',aline,mass,masss,mass+masss
+	end if
+
+	deallocate(masspn,masssn)
  1200	format(a,a,4e14.6)
 
 !------------------------------------------------------------
