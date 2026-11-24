@@ -1,0 +1,381 @@
+2026-11-24 13:23:14  floors: binary /home/razinka/wt-p3/bin, inputs of 5ebf495b, by key, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/basinfl.MiSMFe/lgrfloors.5VLVTh
+  mm_lgr_a.r+1e-5: ended
+  mm_lgr_a.r0: ended
+  mm_lgr_a.r-1e-5: ended
+  mm_lgr_a.r-7e-6: ended
+  mm_lgr_a.r+7e-6: ended
+  mm_lgr_a.r+4e-6: ended
+  mm_lgr_b.r0: ended
+  mm_lgr_b.r+1e-5: ended
+  mm_lgr_a.r-4e-6: ended
+  mm_lgr_b.r-1e-5: ended
+  mm_lgr_b.r+7e-6: ended
+  mm_lgr_b.r-7e-6: ended
+  mm_lgr_b.r+4e-6: ended
+  mm_lgr_b.r-4e-6: ended
+  mm_lgr_c.r0: ended
+  mm_lgr_c.r+1e-5: ended
+  mm_lgr_c.r-1e-5: ended
+  mm_lgr_c.r+7e-6: ended
+  mm_lgr_c.r-7e-6: ended
+  mm_lgr_c.r+4e-6: ended
+  mm_lgr_c.r-4e-6: ended
+  mm_lgr_e.r0: ended
+  mm_lgr_e.r+1e-5: ended
+  mm_lgr_e.r-1e-5: ended
+  mm_lgr_e.r+7e-6: ended
+  mm_lgr_e.r-7e-6: ended
+  mm_lgr_w.r0: ended
+  mm_lgr_e.r+4e-6: ended
+  mm_lgr_w.r+1e-5: ended
+  mm_lgr_e.r-4e-6: ended
+  mm_lgr_w.r-1e-5: ended
+  mm_lgr_w.r+7e-6: ended
+  mm_lgr_w.r-7e-6: ended
+  mm_lgr_w.r+4e-6: ended
+  mm_lgr_w.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_a  +1e-5       145       75   7.1812e-04   226800.0
+mm_lgr_a  -1e-5       145       78   1.6192e-03   295200.0
+mm_lgr_a  +7e-6       145       67   8.2368e-04   302400.0
+mm_lgr_a  -7e-6       145       76   2.9734e-03   295200.0
+mm_lgr_a  +4e-6       145       60   7.4387e-04   302400.0
+mm_lgr_a  -4e-6       145       51   2.9597e-03   295200.0
+mm_lgr_a  ENV                   78   2.9734e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_b  +1e-5       408       44   1.8175e+02   169200.0
+mm_lgr_b  -1e-5       408       36   1.2944e+02   162000.0
+mm_lgr_b  +7e-6       408       30   1.8175e+02   169200.0
+mm_lgr_b  -7e-6       408       21   1.0231e+02   162000.0
+mm_lgr_b  +4e-6       408       20   1.0325e+02   169200.0
+mm_lgr_b  -4e-6       408       11   8.9313e+01   162000.0
+mm_lgr_b  ENV                   44   1.8175e+02   <- floor (envelope of 6 runs, limit 2)
+mm_lgr_c  +1e-5       648       19   2.0223e-04    93600.0
+mm_lgr_c  -1e-5       648       19   7.1106e-03    93600.0
+mm_lgr_c  +7e-6       648       17   2.0223e-04    93600.0
+mm_lgr_c  -7e-6       648       14   7.1106e-03    93600.0
+mm_lgr_c  +4e-6       648       12   7.3493e-05   165600.0
+mm_lgr_c  -4e-6       648       17   7.1106e-03    93600.0
+mm_lgr_c  ENV                   19   7.1106e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_e  +1e-5       145       26   4.2915e-03    25200.0
+mm_lgr_e  -1e-5       145       28   3.3197e-03    61200.0
+mm_lgr_e  +7e-6       145       29   4.2915e-03    25200.0
+mm_lgr_e  -7e-6       145       33   3.3197e-03    61200.0
+mm_lgr_e  +4e-6       145       27   3.2290e-03    61200.0
+mm_lgr_e  -4e-6       145       25   1.1024e-03    61200.0
+mm_lgr_e  ENV                   33   4.2915e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_w  +1e-5        80       37   1.3841e-03   345600.0
+mm_lgr_w  -1e-5        80       34   3.7897e-03   345600.0
+mm_lgr_w  +7e-6        80       31   2.1493e-03   345600.0
+mm_lgr_w  -7e-6        80       28   1.3047e-03   327600.0
+mm_lgr_w  +4e-6        80       25   4.3113e-03   345600.0
+mm_lgr_w  -4e-6        80       23   1.1124e-03   327600.0
+mm_lgr_w  ENV                   37   4.3113e-03   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-24 13:24:53  comparisons and logs in:
+/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/basinfl.MiSMFe/lgrfloors.5VLVTh
+
+# tt floor (#251): lgr_compare.py BASE PERTURBED --mode pos --tol TOL (1e-5, case B 2) --max-beyond-last 100000 --max-largest 1e6 --max-tt-differ 100000 on lgr_runs/ of the folder above, base CASE.r0 (limits set so that nothing gates: the lines give the counts)
+## mm_lgr_a.r+1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 75 <= 100000: ok
+floor: largest distance at any output (t=226800.0): 0.000718117 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_a.r-1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 78 <= 100000: ok
+floor: largest distance at any output (t=295200.0): 0.00161922 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_a.r+7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 67 <= 100000: ok
+floor: largest distance at any output (t=302400.0): 0.000823677 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_a.r-7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 76 <= 100000: ok
+floor: largest distance at any output (t=295200.0): 0.00297344 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_a.r+4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 60 <= 100000: ok
+floor: largest distance at any output (t=302400.0): 0.000743866 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_a.r-4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 51 <= 100000: ok
+floor: largest distance at any output (t=295200.0): 0.00295967 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_b.r+1e-5.lgr.shy
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 43 <= 100000: ok
+floor: largest distance at any output (t=169200.0): 181.75 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 2 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r-1e-5.lgr.shy
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 34 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 129.438 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r+7e-6.lgr.shy
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 29 <= 100000: ok
+floor: largest distance at any output (t=169200.0): 181.75 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 2 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r-7e-6.lgr.shy
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 20 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 102.312 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r+4e-6.lgr.shy
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 19 <= 100000: ok
+floor: largest distance at any output (t=169200.0): 103.25 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 2 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r-4e-6.lgr.shy
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 10 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 89.3125 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r+1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 19 <= 100000: ok
+floor: largest distance at any output (t=93600.0): 0.000202179 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r-1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 19 <= 100000: ok
+floor: largest distance at any output (t=93600.0): 0.0071106 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r+7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 17 <= 100000: ok
+floor: largest distance at any output (t=93600.0): 0.000202179 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r-7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 14 <= 100000: ok
+floor: largest distance at any output (t=93600.0): 0.0071106 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r+4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 12 <= 100000: ok
+floor: largest distance at any output (t=165600.0): 7.34925e-05 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_c.r-4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=172800.0): 17 <= 100000: ok
+floor: largest distance at any output (t=93600.0): 0.0071106 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_e.r+1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 26 <= 100000: ok
+floor: largest distance at any output (t=25200.0): 0.00429153 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_e.r-1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 28 <= 100000: ok
+floor: largest distance at any output (t=61200.0): 0.00331974 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_e.r+7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 29 <= 100000: ok
+floor: largest distance at any output (t=25200.0): 0.00429153 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_e.r-7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 33 <= 100000: ok
+floor: largest distance at any output (t=61200.0): 0.00331974 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_e.r+4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 27 <= 100000: ok
+floor: largest distance at any output (t=61200.0): 0.00322902 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_e.r-4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 25 <= 100000: ok
+floor: largest distance at any output (t=61200.0): 0.00110245 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_w.r+1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 37 <= 100000: ok
+floor: largest distance at any output (t=345600.0): 0.00138414 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 1 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_w.r-1e-5.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 34 <= 100000: ok
+floor: largest distance at any output (t=345600.0): 0.00378972 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 1 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_w.r+7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 31 <= 100000: ok
+floor: largest distance at any output (t=345600.0): 0.00214928 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 1 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_w.r-7e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 28 <= 100000: ok
+floor: largest distance at any output (t=327600.0): 0.00130475 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 1 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_w.r+4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 25 <= 100000: ok
+floor: largest distance at any output (t=345600.0): 0.00431126 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 1 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+## mm_lgr_w.r-4e-6.lgr.shy
+floor: particles beyond --tol 1e-05 at the last output both files share (t=345600.0): 23 <= 100000: ok
+floor: largest distance at any output (t=327600.0): 0.0011124 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 1 <= 100000: ok
+LGR COMPARE: PASS (96 output times in A, 96 in B)
+
+# control (#251): the same build on the old tracked basin (inputs of 9147b517, GRID/MM_coarse.bas sha256 1cb7ef14...), to tell the basin from 8.6.0's serial changes since 0fddec90
+2026-11-24 13:25:40  floors: binary /home/razinka/wt-p3/bin, inputs of 9147b517, by key, in /tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/basinfl.MiSMFe/lgrfloors.OWN3aw
+  mm_lgr_a.r0: ended
+  mm_lgr_a.r+1e-5: ended
+  mm_lgr_a.r-1e-5: ended
+  mm_lgr_a.r+7e-6: ended
+  mm_lgr_a.r+4e-6: ended
+  mm_lgr_a.r-7e-6: ended
+  mm_lgr_b.r0: ended
+  mm_lgr_b.r+1e-5: ended
+  mm_lgr_a.r-4e-6: ended
+  mm_lgr_b.r+7e-6: ended
+  mm_lgr_b.r-1e-5: ended
+  mm_lgr_b.r-7e-6: ended
+  mm_lgr_b.r-4e-6: ended
+  mm_lgr_b.r+4e-6: ended
+  mm_lgr_c.r0: ended
+  mm_lgr_c.r+1e-5: ended
+  mm_lgr_c.r-1e-5: ended
+  mm_lgr_c.r+7e-6: ended
+  mm_lgr_c.r-7e-6: ended
+  mm_lgr_c.r+4e-6: ended
+  mm_lgr_c.r-4e-6: ended
+  mm_lgr_e.r0: ended
+  mm_lgr_e.r+1e-5: ended
+  mm_lgr_e.r-1e-5: ended
+  mm_lgr_e.r+7e-6: ended
+  mm_lgr_e.r-7e-6: ended
+  mm_lgr_w.r0: ended
+  mm_lgr_e.r+4e-6: ended
+  mm_lgr_w.r+1e-5: ended
+  mm_lgr_e.r-4e-6: ended
+  mm_lgr_w.r-1e-5: ended
+  mm_lgr_w.r+7e-6: ended
+  mm_lgr_w.r-7e-6: ended
+  mm_lgr_w.r+4e-6: ended
+  mm_lgr_w.r-4e-6: ended
+
+case      rel       pairs beyond_last      largest    at_time
+mm_lgr_a  +1e-5       145       75   7.1812e-04   226800.0
+mm_lgr_a  -1e-5       145       78   1.6192e-03   295200.0
+mm_lgr_a  +7e-6       145       67   8.2368e-04   302400.0
+mm_lgr_a  -7e-6       145       76   2.9734e-03   295200.0
+mm_lgr_a  +4e-6       145       60   7.4387e-04   302400.0
+mm_lgr_a  -4e-6       145       51   2.9597e-03   295200.0
+mm_lgr_a  ENV                   78   2.9734e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_b  +1e-5       408       48   1.8175e+02   169200.0
+mm_lgr_b  -1e-5       408       33   1.2944e+02   162000.0
+mm_lgr_b  +7e-6       408       28   1.8175e+02   169200.0
+mm_lgr_b  -7e-6       408       23   1.2944e+02   162000.0
+mm_lgr_b  +4e-6       408       21   1.0325e+02   169200.0
+mm_lgr_b  -4e-6       408       13   5.9000e+01   162000.0
+mm_lgr_b  ENV                   48   1.8175e+02   <- floor (envelope of 6 runs, limit 2)
+mm_lgr_c  +1e-5       648       19   2.0223e-04    93600.0
+mm_lgr_c  -1e-5       648       19   7.1106e-03    93600.0
+mm_lgr_c  +7e-6       648       17   2.0223e-04    93600.0
+mm_lgr_c  -7e-6       648       14   7.1106e-03    93600.0
+mm_lgr_c  +4e-6       648       12   7.3493e-05   165600.0
+mm_lgr_c  -4e-6       648       17   7.1106e-03    93600.0
+mm_lgr_c  ENV                   19   7.1106e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_e  +1e-5       145       26   4.2915e-03    25200.0
+mm_lgr_e  -1e-5       145       28   3.3197e-03    61200.0
+mm_lgr_e  +7e-6       145       29   4.2915e-03    25200.0
+mm_lgr_e  -7e-6       145       33   3.3197e-03    61200.0
+mm_lgr_e  +4e-6       145       27   3.2290e-03    61200.0
+mm_lgr_e  -4e-6       145       25   1.1024e-03    61200.0
+mm_lgr_e  ENV                   33   4.2915e-03   <- floor (envelope of 6 runs, limit 1e-5)
+mm_lgr_w  +1e-5        80       37   1.3841e-03   345600.0
+mm_lgr_w  -1e-5        80       34   3.7897e-03   345600.0
+mm_lgr_w  +7e-6        80       31   2.1493e-03   345600.0
+mm_lgr_w  -7e-6        80       28   1.3047e-03   327600.0
+mm_lgr_w  +4e-6        80       25   4.3113e-03   345600.0
+mm_lgr_w  -4e-6        80       23   1.1124e-03   327600.0
+mm_lgr_w  ENV                   37   4.3113e-03   <- floor (envelope of 6 runs, limit 1e-5)
+FLOORS: complete
+
+2026-11-24 13:27:28  comparisons and logs in:
+/tmp/claude-1000/-home-razinka-shyfem/6f1c0651-7dd1-449f-9b48-6cb7e179f7a3/scratchpad/basinfl.MiSMFe/lgrfloors.OWN3aw
+
+# tt of case B on the old basin (same command as above, lgr_runs/ of the control folder)
+## mm_lgr_b.r+1e-5.lgr.shy (old basin)
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 46 <= 100000: ok
+floor: largest distance at any output (t=169200.0): 181.75 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 2 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r-1e-5.lgr.shy (old basin)
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 33 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 129.438 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r+7e-6.lgr.shy (old basin)
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 27 <= 100000: ok
+floor: largest distance at any output (t=169200.0): 181.75 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 2 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r-7e-6.lgr.shy (old basin)
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 23 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 129.438 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r+4e-6.lgr.shy (old basin)
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 21 <= 100000: ok
+floor: largest distance at any output (t=169200.0): 103.25 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 2 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+## mm_lgr_b.r-4e-6.lgr.shy (old basin)
+floor: particles beyond --tol 2 at the last output both files share (t=172800.0): 13 <= 100000: ok
+floor: largest distance at any output (t=162000.0): 59 <= 1e+06: ok
+tt: particles whose tt differs (any output, any block): 0 <= 100000: ok
+LGR COMPARE: PASS (48 output times in A, 48 in B)
+
+# control against the runs of floors_ref3.log (build 0fddec90, folder floors.kiC6vo) and floors_w.log (folder floors.0xWjQ5), same names:
+# lgr_compare.py REF CONTROL --mode pos --tol 0, every run of A, B, C, E, W (35 pairs):
+  a.r0 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  a.r+1e-5 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  a.r-1e-5 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  a.r+7e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  a.r-7e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  a.r+4e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  a.r-4e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  b.r0 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  b.r+1e-5 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  b.r-1e-5 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  b.r+7e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  b.r-7e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  b.r+4e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  b.r-4e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r0 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r+1e-5 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r-1e-5 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r+7e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r-7e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r+4e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  c.r-4e-6 LGR COMPARE: PASS (48 output times in A, 48 in B)
+  e.r0 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  e.r+1e-5 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  e.r-1e-5 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  e.r+7e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  e.r-7e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  e.r+4e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  e.r-4e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r0 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r+1e-5 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r-1e-5 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r+7e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r-7e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r+4e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+  w.r-4e-6 LGR COMPARE: PASS (96 output times in A, 96 in B)
+# (the files differ only in the version string of the header, 8.5.3 - 2026-11-20 against 8.6.0 - 2026-11-24)
+# new basin against the control (cmp, particle file and hydrodynamic file of every run): A, C, E, W byte-identical (they read GRID/MM_geo.bas,
+# which is not tracked and is built in the scratch folder); every run of B (it reads GRID/MM_coarse.bas) differs

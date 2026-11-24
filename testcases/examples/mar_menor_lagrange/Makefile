@@ -38,8 +38,15 @@ depend: nothing
 
 #-----------------------------------------------------------
 
+# GRID is a link to ../$(BASE_DIR)/GRID, whose $(GRID).bas is tracked: it is
+# built only when it is missing, as in ../$(BASE_DIR)/Makefile (#251)
+
 init: links
-	cd GRID; shypre $(GRID).grd
+	@cd GRID && if [ -f $(GRID).bas ]; then \
+	  echo "GRID/$(GRID).bas exists (tracked): kept, not rebuilt"; \
+	else \
+	  echo "cd GRID; shypre $(GRID).grd"; shypre $(GRID).grd; \
+	fi
 	cd GRID; shypre $(GRID1).grd
 
 links:
@@ -68,8 +75,9 @@ clean:
 
 cleanall: clean cleansims cleanzip cleanfigs cleanbas cleanlinks
 
+# keeps the tracked GRID/$(GRID).bas of ../$(BASE_DIR) (see init)
 cleanbas:
-	-rm -f GRID/*.bas
+	-rm -f $(filter-out GRID/$(GRID).bas,$(wildcard GRID/*.bas))
 	-rm -f GRID/errout.dat
 
 cleanfigs:
