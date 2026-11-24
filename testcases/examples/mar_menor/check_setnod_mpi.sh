@@ -26,7 +26,8 @@
 # as the serial run does, at the first three calls of setnod (two at
 # start-up, one in the first time step), and that its angle sum is the
 # serial one within 1e-3 degrees (so an element counted twice is found
-# also at a node whose class it does not change, such as an inner node).
+# also at a node whose class it does not change, such as an inner node);
+# both angle sums must be finite (a NaN would pass that comparison).
 #
 # The classification is read from the debug dump of setnod: with the
 # environment variable SHYFEM_SETNOD_DUMP=PREFIX every process writes
@@ -173,6 +174,7 @@ while read -r name np basin; do
   ARGS+=("$name" "$np" "$P/run_$name")
 done <<< "$RUNS"
 python3 - "$HERE/GRID/MM_coarse.grd" "$P/run_serial" "${ARGS[@]}" <<'PY' || rc=1
+import math
 import os
 import sys
 
@@ -203,7 +205,11 @@ def read(path):
             p = line.split()
             if len(p) != 4:
                 continue
-            val[(int(p[0]), int(p[1]))] = (int(p[2]), float(p[3]))
+            try:
+                ang = float(p[3])
+            except ValueError:		# e.g. the asterisks of an overflow
+                ang = float('nan')
+            val[(int(p[0]), int(p[1]))] = (int(p[2]), ang)
     return val, notes
 
 
@@ -222,6 +228,11 @@ nclass = {}
 for (c, k), (v, a) in ser.items():
     if c == 1:
         nclass[name(v)] = nclass.get(name(v), 0) + 1
+# a NaN would pass every tolerance comparison below
+nonfin = sorted({k for (c, k), (v, a) in ser.items() if not math.isfinite(a)})
+if nonfin:
+    print('  serial: angle sum not finite at %d nodes (first %s)' % (len(nonfin), nonfin[:10]))
+    bad = True
 print('  serial: %d nodes, %s' % (len(mesh), ', '.join('%s %d' % kv for kv in sorted(nclass.items()))))
 
 for i in range(0, len(rest), 3):
@@ -229,6 +240,7 @@ for i in range(0, len(rest), 3):
     ncmp, wrong, calls_bad, stops = 0, {}, [], []
     seen = {c: set() for c in range(1, NCALL + 1)}	# nodes held, per call
     nang, kang, dang = 0, set(), 0.0	# angle sums off by more than ATOL
+    nfin, kfin = 0, set()		# angle sums that are not finite
     for r in range(np_):
         path = os.path.join(d, 'setnod.%d.txt' % r)
         if not os.path.isfile(path):
@@ -256,16 +268,20 @@ for i in range(0, len(rest), 3):
             sv, sa = ser[(c, k)]
             if v != sv:
                 wrong.setdefault(k, []).append((r, c, v, a, sa))
-            if abs(a - sa) > ATOL:
+            if not (math.isfinite(a) and math.isfinite(sa)):
+                # a NaN passes "abs(a - sa) > ATOL" as false
+                nfin += 1
+                kfin.add(k)
+            elif abs(a - sa) > ATOL:
                 nang += 1
                 kang.add(k)
                 dang = max(dang, abs(a - sa))
     covered = all(seen[c] == mesh for c in seen)
-    ok = not wrong and not calls_bad and covered and nang == 0
+    ok = not wrong and not calls_bad and covered and nang == 0 and nfin == 0
     print('  %-8s %d processes: node copies compared %d, nodes held (calls %s) %s of %d, misclassified nodes %d,'
-          ' angle sums off by more than %g deg: %d copies of %d nodes (largest %.4f): %s'
+          ' angle sums off by more than %g deg: %d copies of %d nodes (largest %.4f), not finite: %d copies of %d nodes: %s'
           % (run, np_, ncmp, '/'.join(str(c) for c in seen), '/'.join(str(len(seen[c])) for c in seen),
-             len(mesh), len(wrong), ATOL, nang, len(kang), dang, 'ok' if ok else 'FAIL'))
+             len(mesh), len(wrong), ATOL, nang, len(kang), dang, nfin, len(kfin), 'ok' if ok else 'FAIL'))
     for s in stops:
         print('      ' + s)
     for s in calls_bad:

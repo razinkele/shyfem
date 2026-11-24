@@ -171,7 +171,14 @@
 	  yn=y1-(rr*abs(ay))
 	 endif
 	else
-	 a=cy/cx
+	 ! a is used for its sign only; retta sets cx = 0 for an exactly
+	 ! horizontal side (ay = 0), where both branches below give the
+	 ! same point: avoid the division by zero
+	 if( cx == 0. ) then
+	   a = 1.
+	 else
+	   a=cy/cx
+	 end if
 
 	 if(a.ge.0)then
 	  if(x2.gt.x1)then

@@ -161,7 +161,10 @@ jobs:
         # check_mpi.sh compares a 4-process run with the serial one
         # (energy lines), checks that a serial-only feature (boundary
         # tilting) and a mesh too small for 4 domains each stop with their
-        # clear message, and writes and reads a restart on 4 processes.
+        # clear message, writes and reads a restart on 4 processes, and
+        # runs a particle case (mm_lgr_w) on 4 processes against the
+        # serial one: ids, positions against the measured floors, and
+        # the hand-over check, with the consistency check active (#217).
         # The 4-process sweep of 2026-11-21 found
         # every one of these classes only by accident, because nothing
         # here ran a case other than mm_hyd_00.
