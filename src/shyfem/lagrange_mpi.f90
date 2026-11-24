@@ -6113,6 +6113,7 @@
 	    write(6,*) 'nbdymax = ',nbdymax
 	    write(6,*) 'Cannot insert more than nbdymax particles'
 	    write(6,*) 'Please change nbdymax in STR file'
+	    write(6,*) 'particles needed: at least ',ivalg(1)
 	    flush(6)
 	  end if
 	  call MPI_Barrier(MPI_COMM_WORLD,ierr)	!rank 0 has written
