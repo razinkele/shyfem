@@ -43,6 +43,15 @@
 # of a run with a hand-written partition says "using these partitiones"
 # (the partition of the basin was used), the log of a METIS run does not.
 #
+# The error path (issue #258): a level boundary (ibtyp 1) through the
+# inner node 857 must stop the run serially and on 4 processes (METIS)
+# with exit code 33 (shympi_abort_internal) and the lines "the node is an
+# inner node" and "error stop setnod: open boundary node" in the log,
+# within 120 s.  Before #258 setnod ended there with a bare stop: exit
+# code 0 serially, and on 4 processes only the processes that hold the
+# node stopped while the others waited in the next exchange (mpirun saw
+# a process exit without MPI_Finalize and gave exit code 1).
+#
 # Usage:  ./check_setnod_mpi.sh
 # Needs shyfem, shypre, mpirun and python3 on PATH (an OpenMPI build).
 # Works in a folder made with mktemp -d under ${TMPDIR:-/tmp}: GRID/
@@ -305,6 +314,41 @@ for i in range(0, len(rest), 3):
     bad = bad or not ok
 sys.exit(1 if bad else 0)
 PY
+
+#--- the error path (#258): an open level boundary through an inner node
+echo "=== error path: a level boundary (ibtyp 1) through the inner node 857"
+sed -e '/^\$bound1$/,/^\$end$/d' -e '/^\$bound2$/,/^\$end$/d' -e 's/^        setnod$/        setnod_err/' \
+  "$P/setnod.str" > "$P/setnod_err.str"
+cat >> "$P/setnod_err.str" <<'EOF'
+$bound1
+        kbound = 857
+        ibtyp = 1
+        boundn = 'INPUT/level_Mar_Menor.dat'
+$end
+EOF
+if [ "$(grep -c '^\$bound' "$P/setnod_err.str")" != 1 ] || ! grep -q '^        setnod_err$' "$P/setnod_err.str"; then
+  fail "cannot make setnod_err.str"
+else
+  for np in 1 4; do
+    d="$P/err_np$np"
+    mkdir "$d" && ln -s ../grid_metis "$d/GRID" && ln -s "$HERE/INPUT" "$d/INPUT" && cp "$P/setnod_err.str" "$d/" \
+      || { fail "error path: cannot set up $d"; continue; }
+    if [ "$np" = 1 ]; then
+      ( cd "$d" && timeout 120 nice -n 10 shyfem setnod_err.str < /dev/null > run.log 2>&1 )
+    else
+      ( cd "$d" && timeout 120 nice -n 10 mpirun --oversubscribe -np "$np" shyfem setnod_err.str < /dev/null > run.log 2>&1 )
+    fi
+    r=$?
+    if [ "$r" = 33 ] && grep -q 'the node is an inner node' "$d/run.log" \
+       && grep -q 'error stop setnod: open boundary node' "$d/run.log"; then
+      echo "  $np process(es): stopped with exit code 33 at the inner node"
+    else
+      echo "  $np process(es): exit code $r (expected 33); log lines:"
+      grep -E 'error stop|the node is|MPI_ABORT|exited|STOP' "$d/run.log" | sort | uniq -c | sed 's/^/      /'
+      fail "error path on $np process(es): exit code $r, not 33 with the setnod message (log $d/run.log)"
+    fi
+  done
+fi
 
 if [ "$rc" = 0 ]; then echo "SETNOD TEST: PASS"; else echo "SETNOD TEST: FAIL"; fi
 echo "$P"
