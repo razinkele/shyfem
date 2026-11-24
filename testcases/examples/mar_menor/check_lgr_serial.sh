@@ -10,14 +10,19 @@
 #   - the current binary (shyfem first on PATH, run in this folder),
 #   - the current binary under "mpirun -np 1" (scratch copy), and
 #   - the reference binary REF_BIN_DIR/shyfem (scratch copy)
-# are compared byte by byte with cmp.  For mm_lgr (random walk on) and
-# ../mar_menor_lagrange/mm_lgr_01 only CASE.hydro.shy and CASE.inf are
-# compared.  mm_lgr_01 needs its own setup (make links, run in the scratch
-# copy); if it cannot be set up or run the check is reported as SKIPPED and
-# the final line reads "SERIAL GUARD: PASS (1 check skipped)".
+# are compared byte by byte with cmp.  For mm_lgr (random walk on) the
+# files CASE.hydro.shy and CASE.inf are compared with both, CASE.lgr.shy
+# only with the "mpirun -np 1" run: the draws of the random walk come from
+# per-particle streams since #225, so a reference binary from before #225
+# draws differently.  For ../mar_menor_lagrange/mm_lgr_01 only
+# CASE.hydro.shy and CASE.inf are compared.  mm_lgr_01 needs its own setup
+# (make links, run in the scratch copy); if it cannot be set up or run the
+# check is reported as SKIPPED and the final line reads "SERIAL GUARD: PASS
+# (1 check skipped)".
 #
-# repro (REPRO: PASS|FAIL): the cases a, b, c, e, w are run twice with the
-# current binary and the two CASE.lgr.shy files are compared with cmp.
+# repro (REPRO: PASS|FAIL): the cases a, b, c, e, w and mm_lgr (random walk
+# rwhpar = 0.5, repeatable since #225) are run twice with the current binary
+# and the two CASE.lgr.shy files are compared with cmp.
 #
 # A run has ended only if its launcher (shyfem, or mpirun) exits with 0 and
 # its log has "simulation end"; any other run is a failure (in the guard
@@ -100,7 +105,7 @@ ALLCASES="mm_lgr_a mm_lgr_b mm_lgr_c mm_lgr_e mm_lgr_w"
 #=============================== repro =====================================
 if [ "$ARG" = repro ]; then
   SCR="$(mktemp -d "${TMPDIR:-/tmp}/lgr_repro.XXXXXX")" || { echo "REPRO FAIL: mktemp failed"; exit 1; }
-  for c in $ALLCASES; do
+  for c in $ALLCASES mm_lgr; do
     echo "=== $c: two runs with the current binary"
     rm -f "$HERE/$c.lgr.shy"
     if ! run_in "$HERE" "$c" "$c.log" shyfem; then
@@ -133,12 +138,13 @@ for v in np1 ref cur; do
 done
 
 # check_files LABEL FILE... : cmp file of the current run against the two others
+# (OTHERS, default "np1 ref", names the runs to compare with)
 check_files() {
   local c="$1" f other name ext; shift
   for ext in "$@"; do
     f="$HERE/$c.$ext"
     if [ ! -f "$f" ]; then echo "  $c.$ext: MISSING in the current run"; fail "$c.$ext missing"; continue; fi
-    for other in np1 ref; do
+    for other in ${OTHERS:-np1 ref}; do
       name="$SCR/$other/$FOLDER/$c.$ext"
       if [ ! -f "$name" ]; then echo "  $c.$ext vs $other: MISSING"; fail "$c.$ext missing in $other run"
       elif cmp -s "$f" "$name"; then echo "  $c.$ext vs $other: identical"
@@ -168,13 +174,16 @@ n=0
 for c in $ALLCASES mm_lgr; do
   n=$((n + 1))
   if [ "$c" = mm_lgr ]; then
-    echo "=== $n. mm_lgr (random walk on): hydro.shy and inf only"
+    echo "=== $n. mm_lgr (random walk on): hydro.shy and inf; lgr.shy against np1 only"
     exts="hydro.shy inf"
   else
     echo "=== $n. $c: lgr.shy, hydro.shy and inf"
     exts="lgr.shy hydro.shy inf"
   fi
-  if run_three "$c"; then check_files "$c" $exts; fi
+  if run_three "$c"; then
+    check_files "$c" $exts
+    [ "$c" = mm_lgr ] && OTHERS=np1 check_files "$c" lgr.shy
+  fi
 done
 
 #--- ../mar_menor_lagrange/mm_lgr_01 (own setup, scratch copies only) -----------

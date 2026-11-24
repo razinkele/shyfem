@@ -103,11 +103,16 @@
 !*******************************************************************
 ! assign sediment class, settlign velocity and grainsize to particle
 ! called by subroutine lgr_set_properties
+! the class is the particle's own draw (#225): lgr_random keyed on its id,
+! the time step and the site lgr_rnd_sedclass
 
-        subroutine lgr_set_sedim(sc,sv,sg,nc)
+        subroutine lgr_set_sedim(id,sc,sv,sg,nc)
+
+        use mod_lagrange_random, only : lgr_random, lgr_rnd_sedclass
 
         implicit none
 
+        integer, intent(in)           :: id	!id of the particle
         integer, intent(out)          :: sc	!sediment class
         double precision, intent(out) :: sv	!settling velocity [m/s]
 	real, intent(out)             :: sg	!sediment grainsize
@@ -143,7 +148,7 @@
 ! Get random weighted index from array
 !----------------------------------------------------------------
 
-        call random_number(r)
+        r = lgr_random(id,lgr_rnd_sedclass,0)
 	na = r*nperc + 1
 	na = min(nperc,na)
 	nr = array(na)
@@ -172,6 +177,19 @@
 ! if tau > tce       particle on bottom could be resuspended 
 !
 ! Probablility of deposition/erosion is function of tau
+!
+! the draw of a particle is its own (#225): lgr_random keyed on its id, the
+! time step and the site lgr_rnd_sedim
+!
+! the type of a particle is its sediment class (1 ... nls, lgr_set_sedim);
+! a deposited particle has the layer -1, not another type. A negative type
+! marks a beached particle (lag_beach sets ty = -ty): it sits on the shore
+! and moves no more (track_body_xi, diff_body and lag_stk skip it), so it
+! neither deposits nor is eroded and is skipped here. Before, its negative
+! type was used as the class and tcd(nr) was read outside the array (a
+! run-time error with -fcheck=bounds, a value from outside tcd otherwise).
+! Any other type outside 1 ... nls (a particle file of a run without
+! sediment read with lgrini) stops the run.
 
 	subroutine lgr_sediment
 
@@ -182,6 +200,7 @@
 	use levels
 	use mod_bstress, only : taubot
 	use mod_sediment, only : isedi
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_sedim
 
 	implicit none
 
@@ -222,18 +241,25 @@
           id = lgr_ar(i)%id
 	  ie   = lgr_ar(i)%actual%ie
           if ( ie < 1 ) cycle
+	  nr   = lgr_ar(i)%type		!sediment class id, < 0 if beached
+	  if ( nr < 0 ) cycle		!beached: on the shore (see above)
           lmax = ilhv(ie)
 	  lb   = lgr_ar(i)%actual%l		!layer were particle is located
 	  if ( lb > 0 .and. lb /= lmax ) cycle	!skip if particle is not on bottom layer 
 	  sv   = lgr_ar(i)%sinking
 	  if ( sv == 0.d0 ) cycle	!skip if it has settling velocity = 0
           z    = lgr_ar(i)%actual%z	!rel. depth   0=surface  1=bottom
-	  nr   = lgr_ar(i)%type		!sediment class id
+	  if ( nr < 1 .or. nr > nls ) then
+	    write(6,*) 'lgr_sediment: particle ',id,' has the type ',nr	&
+     &			,', not a sediment class 1 ... ',nls
+	    call shympi_abort_internal('error stop lgr_sediment: particle'	&
+     &		//' type is not a sediment class')
+	  end if
 	  tcdp = tcd(nr)		!deposition threshold
           xi   = lgr_ar(i)%actual%xi(:)
           ii   = nen3v(:,ie)
           tau  = sum(taubot(ii)*xi)	!bottom stress at particle position
-          call random_number(r)		!random number
+          r = lgr_random(id,lgr_rnd_sedim,0)	!random number
 
 !         -----------------------------------------------------
 !         Deposition of particle 

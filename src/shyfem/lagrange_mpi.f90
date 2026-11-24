@@ -315,10 +315,11 @@
 !                 untested on several processes)
 !   ipvert < -1   nint(getpar('ipvert')), $lagrg, as lagrange reads it
 !                 (random vertical release: insert_particle_3d draws a
-!                 random depth with random_number for each of the
-!                 abs(ipvert) particles of a release point when the basin
-!                 has more than one layer and ilagr = 2 (ilagr = 3 stops
-!                 above); in a 2D basin or with ilagr = 1 nothing is drawn,
+!                 random depth for each of the abs(ipvert) particles of a
+!                 release point when the basin has more than one layer and
+!                 ilagr = 2 (ilagr = 3 stops above), keyed on the id the
+!                 particle receives, also through lgr_mpi_assign_ids
+!                 (#225); in a 2D basin or with ilagr = 1 nothing is drawn,
 !                 but the value stops the run there too; untested on
 !                 several processes)
 
@@ -396,8 +397,9 @@
 
 ! initializes the MPI buffers of the Lagrangian module; needs ncust and
 ! the allocated particle array (called after the first
-! particles are read), runs the self-tests of the particle record and of
-! the side fallback particle_on_side at levdbg >= 3
+! particles are read), runs the self-tests of the particle record, of
+! the side fallback particle_on_side and of find_elems_to_segment
+! (lgr_selftest_segments, #252) at levdbg >= 3
 !
 ! the lists of marks and of parked particles start with 1024 entries per
 ! process, whatever nbdymax (the global limit of the release), and double
@@ -437,6 +439,7 @@
 	call lgr_mpi_selftest_pack		!only at levdbg >= 3
 	call lgr_mpi_selftest_side		!only at levdbg >= 3
 	call lgr_mpi_selftest_key		!only at levdbg >= 3
+	call lgr_selftest_segments		!only at levdbg >= 3
 
 	if( .not. bmpi_lagr ) return
 
@@ -5951,6 +5954,12 @@
 ! then every process stops (after the seeding call, not at the particle
 ! that passes the limit).
 !
+! A release with random depths (ipvert < -1, lgr_random_depth_release)
+! draws the depth of each new particle again with the id it has now
+! (lgr_release_depth): the depth is a function of the id (#225), and the id
+! insert_particle gave is provisional. ipvert < -1 still stops at start-up
+! on several processes (lgr_mpi_check_supported), so this is not run today.
+!
 ! At the end the release records of the new particles are kept for the
 ! inserted block of the particle file (lgr_mpi_keep_release).
 
@@ -5967,6 +5976,7 @@
 	integer :: idbdy0, idmin, idmax
 	integer :: ival(2), ivalg(2)	!particles held, limit passed
 	integer, allocatable :: icount(:), ioff(:)
+	logical, external :: lgr_random_depth_release
 
 	if( .not. shympi_is_parallel() ) return
 
@@ -6073,6 +6083,14 @@
 	idbdy = idbdy0 + ntot
 
 	deallocate(icount,ioff)
+
+	! random depths drawn again with the ids of a serial run (#225), before
+	! the release records are kept
+	if( lgr_random_depth_release() ) then
+	  do i=nbdy_before+1,nbdy
+	    call lgr_release_depth(i)
+	  end do
+	end if
 
 	call lgr_mpi_keep_release(nbdy_before)	!for lgr_mpi_output
 
