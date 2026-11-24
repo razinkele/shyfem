@@ -43,8 +43,11 @@
 # at every step, issue #264).  When a file differs the largest difference
 # of every variable and the number of nodes that differ are printed
 # (needs shyelab and python3 with netCDF4; without them only the first
-# differing byte).  The .inf file is not compared: its sedimt: totals are
-# per process (#220).
+# differing byte).  The sedimt: lines of the .inf file (the totals of
+# suspended and bed sediment) are compared as text with the serial ones
+# (#220): same number of lines, every line identical (they were written
+# by every process, over each other, with the totals of the process's
+# own nodes).
 #
 # Usage:  ./check_ssedi_mpi.sh [NP ...]
 # Needs shyfem, shypre, mpirun and python3 (with numpy) on PATH (an
@@ -203,6 +206,19 @@ PY
   for np in $NPS; do
     if ! run "$c" "$np"; then fail "$c: the run on $np processes did not end, or not on $np processes (above)"; continue; fi
     noside "$c" "$np"
+    # the sedimt: lines of the info file, once and as in the serial run (#220)
+    ia="$P/$c.np1/mm_rst_ssedi_$c.inf"; ib="$P/$c.np$np/mm_rst_ssedi_$c.inf"
+    grep ' sedimt: ' "$ia" > "$P/$c.np1/sedimt.txt" 2> /dev/null
+    grep ' sedimt: ' "$ib" > "$P/$c.np$np/sedimt.txt" 2> /dev/null
+    if [ ! -s "$P/$c.np1/sedimt.txt" ]; then
+      fail "$c: no sedimt: line in the serial info file"
+    elif cmp -s "$P/$c.np1/sedimt.txt" "$P/$c.np$np/sedimt.txt"; then
+      echo "  np $np  sedimt: lines of the info file: identical ($(wc -l < "$P/$c.np1/sedimt.txt") lines)"
+    else
+      echo "  np $np  sedimt: lines of the info file: DIFFER (serial $(wc -l < "$P/$c.np1/sedimt.txt") lines, here $(wc -l < "$P/$c.np$np/sedimt.txt"))"
+      diff "$P/$c.np1/sedimt.txt" "$P/$c.np$np/sedimt.txt" | head -4 | sed 's/^/    /'
+      fail "$c: the sedimt: lines of the info file differ between serial and $np processes"
+    fi
     for f in $files; do
       a="$P/$c.np1/$f"; b="$P/$c.np$np/$f"
       if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "$c: $f missing or empty"; continue; fi

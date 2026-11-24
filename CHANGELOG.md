@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — Sediment
+
+- **The `sedimt:` lines of the info file are written once, with the totals of the whole basin (#220).** With `issedi = 1` on several processes every process opened the `.inf` file and wrote its own line, over each other (the energy lines of the first hours were lost, and the totals were those of one domain). Now the master writes the line; the totals are summed over the nodes each process owns, in the order of a serial run's nodes, and the serial and the parallel lines are identical (576 of 576 lines of `mm_rst_ssedi_write` on 2 and 4 processes). The `.shy` and `.rst` files do not change.
+
 ### Fixed — Lagrangian
 
 - **A release larger than `nbdymax` stops with exit code 33, not 0 (#269).** `insert_particle` ended a serial run with a bare `stop` (exit code 0, so a script saw success); it now stops through `shympi_abort_internal` with the message `nbdymax = N`, the particles needed so far, and the advice to raise `nbdymax`. On several processes the stop already came from `lgr_mpi_assign_ids` (exit 33); its message now also gives the global number of particles needed. No result changes.
