@@ -489,7 +489,14 @@
         subroutine lgr_vdiff_stats
 
 ! writes once, at the end of the particle run, how often diff_get_vert
-! set a negative interpolated vertical diffusivity to 0 (#231); only in
+! set a negative interpolated vertical diffusivity to 0 (#231), and the
+! random walk time step over the elements and steps of the run (#257):
+! the smallest dtvd, the mean of the step a particle uses (dtvd, at most
+! the model step), the mean number of sub-steps per model step, and the
+! number of element steps with dtvd below the model step and of those
+! with more than 100 sub-steps (diff_body stops after 100 calls of
+! lgr_diff_vert in a step, so there a particle diffuses for less than the
+! step); only in
 ! a run with vertical diffusion (ilagr = 3, a serial run: ilagr = 3 stops
 ! on several processes). Called by lagrange outside any parallel region:
 ! after the step that reaches dtlend and at the first call after it (when
@@ -505,6 +512,17 @@
         bdone = .true.
         write(6,'(a,i0)') ' lgr vertical diffusion: negative'		&
      &		//' diffusivities set to 0: ',lgr_nvdiff_neg
+	! the random walk time step of lag_vdiff_ele (#257)
+	if( lgr_dtvd_n > 0 ) then
+          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0,a,i0)')		&
+     &		' lgr vertical diffusion: random walk time step [s]'	&
+     &		//' min ',lgr_dtvd_min					&
+     &		,' mean ',lgr_dtvd_sum/lgr_dtvd_n			&
+     &		,', sub-steps per step ',dble(lgr_dtvd_nstep)/lgr_dtvd_n	&
+     &		,', element steps ',lgr_dtvd_n				&
+     &		,' below the model step ',lgr_dtvd_nsub			&
+     &		,' over 100 sub-steps ',lgr_dtvd_n100
+	end if
 
         end subroutine lgr_vdiff_stats
 
@@ -530,7 +548,6 @@
         double precision        :: dwd2(nlv)    !second derivative of diffusivity 
         real                    :: dmax
 	real			:: dtd		!random walk time step
-        real			:: hd		!layer thickness
         integer 		:: lmax 	!maximum layers in element
 	real, parameter 	:: dtmin = 2.0	!minimum time step
 	real, parameter 	:: difmol = 1.0e-06
@@ -567,12 +584,33 @@
 	!write(6,*) 'wde ',wde(0:lmax,ie)
 	  !-----------------------------------------------
 	  ! Compute random walk time step 1/(100*dwd2)
+	  !
+	  ! dwd2(l) is the second derivative of the diffusivity K at the
+	  ! interface l (between the layers l and l+1) and the time step of the
+	  ! random walk 1/(100*max|dwd2|): the criterion of Visser (1997, Mar
+	  ! Ecol Prog Ser 158, 275-281, doi:10.3354/meps158275), dt much
+	  ! smaller than min 1/|K''| over the water column, so that K is about
+	  ! linear over one random step. The second difference on the
+	  ! interfaces l-1, l, l+1, spaced hl(l) and hl(l+1) (#257):
+	  !   2/(hl(l)+hl(l+1)) * ( (K(l+1)-K(l))/hl(l+1) - (K(l)-K(l-1))/hl(l) )
+	  ! exact for a quadratic K, (K(l+1) - 2 K(l) + K(l-1))/h**2 for equal
+	  ! layers. Until #257 it was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2, about
+	  ! 4 K/h**2, a sum of positive values instead of a curvature, so the
+	  ! step was about h**2/(400 K) even where K is constant or linear
+	  ! (mm_hyd_41 with ilagr = 3, one day: a mean step of 24.9 s and 98.4
+	  ! sub-steps per 300 s step before, 33.5 s and 41.7 after).
 	  !-----------------------------------------------
 	  dtd = time
 	  if ( lmax > 1 ) then
  	    do l = 1,lmax-1
-              hd = hl(l)
-	      dwd2(l) = (wde(l+1,ie) + 2.*wde(l,ie) + wde(l-1,ie))/(hd*hd)
+	      dwd2(l) = 0.
+	      if( hl(l) > 0. ) then
+	        if( hl(l+1) > 0. ) then
+	          dwd2(l) = 2.d0/(hl(l)+hl(l+1)) *			&
+     &			( (wde(l+1,ie)-wde(l,ie))/hl(l+1)		&
+     &			 -(wde(l,ie)-wde(l-1,ie))/hl(l) )
+	        end if
+	      end if
 	    end do
 	!write(6,*) 'hl ',hl(1:lmax)
 	!write(6,*) 'dwd2 ',dwd2(1:lmax)
@@ -586,6 +624,17 @@
             dtd = max(dtmin, dtd)
 	  end if
 	  dtvd(ie) = dtd
+
+	  ! statistics (#257): the step a particle uses, min(dtvd,time), and
+	  ! the sub-steps lgr_diff_vert makes with it in a model step
+	  lgr_dtvd_min = min(lgr_dtvd_min,dtd)
+	  lgr_dtvd_sum = lgr_dtvd_sum + min(dtd,time)
+	  lgr_dtvd_nstep = lgr_dtvd_nstep + ceiling(time/min(dtd,time))
+	  lgr_dtvd_n = lgr_dtvd_n + 1
+	  if( dtd < time ) lgr_dtvd_nsub = lgr_dtvd_nsub + 1
+	  if( ceiling(time/min(dtd,time)) > 100 ) then
+	    lgr_dtvd_n100 = lgr_dtvd_n100 + 1
+	  end if
 	end do
 
 	end subroutine lag_vdiff_ele

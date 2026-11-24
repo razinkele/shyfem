@@ -134,9 +134,37 @@
 #             values to 0 gave about 1.07 million in one day); and its
 #             particle file must hold only finite values,
 #             active particles with an element in 1..nel, a layer in 1..nlv
-#             and a depth z in the layer within 0..1.  A second run, 12
+#             and a depth z in the layer within 0..1 (the line of the random
+#             walk time step of the run, #257, is printed for information:
+#             min 2 s, mean 33.5 s, 41.7 sub-steps per 300 s step, 66071 of
+#             735505 element steps over 100 sub-steps; before #257 mean
+#             24.9 s, 98.4 sub-steps, 396008 over 100).  A second run, 12
 #             hours with the end of the particle run itlend = 06:02:30
 #             (between two time steps), must write that line exactly once.
+#   vdiff-dt  (#257) the time step of the vertical random walk follows the
+#             curvature of the diffusivity: lag_vdiff_ele takes dtvd =
+#             1/(100 max|K''|) (the criterion of Visser 1997, dt << min
+#             1/|K''|), K'' the second difference of the diffusivity K over
+#             the layer interfaces of the element.  The 3D case mm_hyd_41
+#             as in mode ilagr3 (no tilt, one day, ilagr = 3, nbdy = 300,
+#             rwhpar = 0, ipvert = -1) with iturb = 0 and diftur = 1.e-3,
+#             serially: the diffusivity is then the same at every
+#             interface (today GOTM's initial 1e-6 m2/s: handle_gotm_init,
+#             called at set-up whatever iturb, overwrites the diftur that
+#             set_eddy put in), so K'' = 0 and the random walk must take
+#             the model time step: the log line "lgr vertical diffusion:
+#             random walk time step [s] min 300.000 mean 300.000, ...
+#             below the model step 0 over 100 sub-steps 0" (written once
+#             at the end, lgr_vdiff_stats).  Before #257 the "second
+#             derivative" was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2, about
+#             4 K/h**2, so the step was h**2/(400 K) also for a constant K:
+#             with the old formula (put back into the fixed code, whose
+#             statistics line it keeps) min 2 s and 2424 element steps
+#             below the model step, all of them over 100 sub-steps (dtvd
+#             under 3 s: elements with a very thin layer, where h**2/(400 K)
+#             is that small).  The binary of the commit before has no such
+#             line, so this mode cannot be red on it; its red evidence is
+#             the old formula put back.
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -243,11 +271,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | grow-fail | small-export | seed"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | small-export | seed"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|grow-fail|small-export|seed) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|small-export|seed) ;;
   *) usage ;;
 esac
 
@@ -702,6 +730,8 @@ if [ "$MODE" = ilagr3 ]; then
   echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log}"
   nneg="$(echo "$line" | sed -n 's/.*set to 0: *\([0-9][0-9]*\).*/\1/p')"
   [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
+  line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/lgr_ilagr3.log")"
+  [ -n "$line" ] && echo "  $line"	# information only (#257)
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
 import math, struct, sys
@@ -758,6 +788,30 @@ EOF
   line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
   echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log} ($n line(s))"
   [ "$n" = 1 ] || fail "the line of the negative diffusivities is written $n times with itlend between two steps, expected once"
+  finish
+fi
+
+#=============================== vdiff-dt (#257) ===========================
+if [ "$MODE" = vdiff-dt ]; then
+  sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
+      -e 's/^\(\s*\)mm_hyd_41\s*$/\1vdt_const/' \
+      -e 's/^\(\s*\)iturb = 1 /\1iturb = 0 /' \
+      -e 's/^\(\s*\)iturb = 0 .*/&\n\1diftur = 1.e-3   vistur = 1.e-3/' "$W/mm_hyd_41.str" > "$W/vdt_const.str"
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 20000\n        nbdy = 300  idtl = 0  idtlgr = %s\n        rwhpar = 0  ipvert = -1\n$end\n' "'1h'" >> "$W/vdt_const.str"
+  for o in vdt_const 'iturb = 0' 'diftur = 1.e-3' 'ilagr = 3'; do
+    grep -qF -- "$o" "$W/vdt_const.str" || fail "no '$o' in vdt_const.str"
+  done
+  grep -q "tilt" "$W/vdt_const.str" && fail "tilt lines left in vdt_const.str"
+  echo "=== mm_hyd_41 (no tilt, one day, iturb = 0: the same diffusivity at every interface) with ilagr = 3, serially"
+  if run vdt_const vdt_const.log shyfem; then
+    line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
+    echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
+    echo "$line" | grep -q 'min 300\.000* mean 300\.000*,' || fail "the random walk time step is not the model time step (300 s) everywhere"
+    echo "$line" | grep -q ' below the model step 0 over 100 sub-steps 0$' || fail "element steps with a random walk time step below the model step"
+  else
+    fail "the run did not end"
+  fi
   finish
 fi
 

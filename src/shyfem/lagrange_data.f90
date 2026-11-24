@@ -147,6 +147,18 @@
 	!atomic in the particle loop; written once at the end of the particle
 	!run by lgr_vdiff_stats, #231)
         integer(kind=8), save :: lgr_nvdiff_neg = 0
+	!random walk time step of lag_vdiff_ele over the elements and steps
+	!of the particle run (outside any parallel region; written once at
+	!the end by lgr_vdiff_stats, #257): smallest dtvd, sum of the step a
+	!particle uses (dtvd, at most the model step), sum of the sub-steps
+	!that makes in a model step, number of element steps, of those with
+	!dtvd below the model step and of those with more than 100 sub-steps
+	!(diff_body makes at most 100 calls of lgr_diff_vert in a step)
+        real, save :: lgr_dtvd_min = huge(1.)
+        double precision, save :: lgr_dtvd_sum = 0.d0
+        integer(kind=8), save :: lgr_dtvd_nstep = 0
+        integer(kind=8), save :: lgr_dtvd_n = 0, lgr_dtvd_nsub = 0
+        integer(kind=8), save :: lgr_dtvd_n100 = 0
 	!particles not released because their release point lies in no
 	!element (insert_particle_3d, insert_particle; #247): counted, the
 	!release that asked for them reports the number (lgr_init_traj)
