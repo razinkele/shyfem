@@ -39,6 +39,8 @@
 ! 16.11.2015	ggu	changed VERS_7_3_14
 ! 16.02.2019	ggu	changed VERS_7_5_60
 ! 13.03.2019	ggu	changed VERS_7_5_61
+! 24.11.2026	arb	colors made on the global mesh: every process has
+!			the element colors of a serial run (#263)
 !
 !***********************************************************
 !***********************************************************
@@ -376,7 +378,25 @@
 
 	subroutine domain_clusterization_ggu
 
+! colors the elements (no two elements of one color share a node) and
+! fills the subsets with the local elements of every color
+!
+! The colors are made on the global mesh (nen3v_global) and every local
+! element takes the color of its global element (ip_int_elem), so that
+! each process has the colors of a serial run (#263). conz3d_omp (and
+! hydro_zeta, with every solver but PETSc) adds the contributions of the
+! elements around a node subset after subset, and an element of a subset
+! gives a node at most one contribution, so the colors alone decide the
+! order of the additions at a node. With colors
+! made on the local domain of each process a node got them in another
+! order than in a serial run: the double precision sums differed in the
+! last bits and the scalars, cast to single precision, now and then
+! rounded to the next value. In a serial run the global mesh is the local
+! mesh (ip_int_elem(ie) = ie) and the colors are the same as before.
+
 	use basin
+	use shympi, only : nkn_global,nel_global,nen3v_global	&
+     &			,ip_int_node,ip_int_elem
 
 	implicit none
 
@@ -384,12 +404,30 @@
         !integer,save,allocatable,dimension(:)   :: subset_el !elems in subset
         !integer,save,allocatable,dimension(:,:) :: indipendent_subset !elems
 
-	integer ie
+	integer ie,ii,k,ieg
 	integer ncol,nmax,ncolor,naver
 	integer ic,n,ntot
 	integer ierr
-	integer colork(nkn)
-	integer color(nel)
+	integer nkg,neg			!nodes and elements of the global mesh
+	integer, allocatable :: colork(:)	!colors on global node (bits)
+	integer, allocatable :: color(:)	!color of global element
+	integer, allocatable :: colorl(:)	!color of local element
+	integer, allocatable :: mark(:)		!last color on local node
+
+	nkg = nkn_global
+	neg = nel_global
+
+	if( size(nen3v_global,1) /= 3 .or. size(nen3v_global,2) /= neg ) then
+	  write(6,*) 'nen3v_global: ',shape(nen3v_global),' nel_global: ',neg
+	  call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: nen3v_global is not global')
+	end if
+
+	allocate(colork(nkg),color(neg),colorl(nel),mark(nkn),stat=ierr)
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: allocation failed')
+	end if
 
 	nmax = 0
 	color = 0
@@ -398,11 +436,33 @@
         print *,"  ----------- STARTING DOMAIN CLUSTERING -----------"
 
 !	-------------------------------------------
-!	color elements
+!	check that every local element is its global element
+!	-------------------------------------------
+
+	do ie=1,nel
+	  ieg = ip_int_elem(ie)
+	  if( ieg < 1 .or. ieg > neg ) then
+	    write(6,*) 'local element, global element: ',ie,ieg,neg
+	    call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: global element out of range')
+	  end if
+	  do ii=1,3
+	    if( ip_int_node(nen3v(ii,ie)) /= nen3v_global(ii,ieg) ) then
+	      write(6,*) 'local element, global element: ',ie,ieg
+	      write(6,*) 'local nodes as global: ',ip_int_node(nen3v(:,ie))
+	      write(6,*) 'global nodes: ',nen3v_global(:,ieg)
+	      call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: local and global element differ')
+	    end if
+	  end do
+	end do
+
+!	-------------------------------------------
+!	color the elements of the global mesh
 !	-------------------------------------------
 
 	call compute_color(ncolor,nmax)
-	naver = nint(nel/float(ncolor))
+	naver = nint(neg/float(ncolor))
 	write(6,*) 'ncolor=',ncolor,' average=',naver,' nmax=',nmax
 
 !	-------------------------------------------
@@ -411,10 +471,13 @@
 
 	subset_num = ncolor
 	allocate(subset_el(subset_num),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: allocation failed')
+	end if
 	subset_el = 0
 
-	call compute_subset_filling(nmax)	!sets subset_el
+	call compute_subset_filling(nmax)	!sets subset_el (global)
 
 !	-------------------------------------------
 !	adjust colors
@@ -429,24 +492,63 @@
 	call check_color
 
 !	-------------------------------------------
+!	local elements take the color of their global element
+!	-------------------------------------------
+
+	do ie=1,nel
+	  colorl(ie) = color(ip_int_elem(ie))
+	end do
+
+!	-------------------------------------------
 !	transfer complete information to arrays
 !	-------------------------------------------
 
-	call compute_subset_filling(nmax)	!sets subset_el
+	nmax = 0
+	subset_el = 0
+	do ie=1,nel
+	  ic = colorl(ie)
+	  subset_el(ic) = subset_el(ic) + 1
+	  nmax = max(nmax,subset_el(ic))
+	end do
+
 	allocate(indipendent_subset(nmax,subset_num),stat=ierr)
-	if( ierr /= 0 ) stop 'error stop: allocation failed'
+	if( ierr /= 0 ) then
+	  call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: allocation failed')
+	end if
 	subset_el = 0
 	indipendent_subset = 0
 
 	do ie=1,nel
-	  ic = color(ie)
+	  ic = colorl(ie)
 	  n = subset_el(ic) + 1
 	  if( n > nmax ) then
 	    write(6,*) 'n,nmax: ',n,nmax
-	    stop 'error stop domain_clusterization_ggu: intern (1)'
+	    call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: intern (1)')
 	  end if
 	  indipendent_subset(n,ic) = ie
 	  subset_el(ic) = n
+	end do
+
+!	-------------------------------------------
+!	check that the local subsets are independent
+!	-------------------------------------------
+
+	mark = 0
+	do ic=1,subset_num
+	  do n=1,subset_el(ic)
+	    ie = indipendent_subset(n,ic)
+	    do ii=1,3
+	      k = nen3v(ii,ie)
+	      if( mark(k) == ic ) then
+	        write(6,*) 'subset, element, node: ',ic,ie,k
+	        call shympi_abort_internal( &
+     &		  'domain_clusterization_ggu: local subset not independent')
+	      end if
+	      mark(k) = ic
+	    end do
+	  end do
 	end do
 
 !	-------------------------------------------
@@ -467,12 +569,15 @@
 	if( ntot /= nel ) then
 	  write(6,*) 'ntot,nel: ',ntot,nel
 	  write(6,*) 'error in total length of subsets'
-	  stop 'error stop domain_clusterization_ggu: internal error (1)'
+	  call shympi_abort_internal( &
+     &		'domain_clusterization_ggu: internal error (1)')
 	end if
 
 !	-------------------------------------------
 !	end of routine
 !	-------------------------------------------
+
+	deallocate(colork,color,colorl,mark)
 
 	contains
 
@@ -485,7 +590,7 @@
 	integer ic,n
 	integer ncmin,ncmax
 
-	ncmin = nel
+	ncmin = neg
 	ncmax = 0
 	icmin = 0
 	icmax = 0
@@ -515,7 +620,7 @@
 	nmax = 0
 	subset_el = 0
 
-	do ie=1,nel
+	do ie=1,neg
 	  ic = color(ie)
 	  n = subset_el(ic) + 1
 	  nmax = max(nmax,n)
@@ -538,7 +643,7 @@
 	bdebug = .false.
 	ie_start = 0
 	ncolor = subset_num
-	naver = nint(nel/float(ncolor))
+	naver = nint(neg/float(ncolor))
 	icmax = 1
 	icmin = ncolor
 
@@ -580,14 +685,16 @@
 	ic_new = 0
 	ic_old = 0
 	ie_start = 0
-	nemax = nel
+	nemax = neg
 
 	color = 0
 	colork = 0
 
-	do 
+	do
 	  ic_new = ic_new + 1
-	  if( ic_new > 31 ) stop 'error stop compute_color: no more bytes'
+	  if( ic_new > 31 ) then
+	    call shympi_abort_internal('compute_color: no more bytes')
+	  end if
 	  call apply_one_color(ic_old,ic_new,ie_start,nemax,ncol)
 	  nmax = max(nmax,ncol)
 	  if( ncol == 0 ) exit		!everything colored
@@ -615,10 +722,10 @@
 
 	do
 	  n = n + 1
-	  if( n > nel ) exit
+	  if( n > neg ) exit
 	  if( ncol >= nemax ) exit
 	  ie = ie + iestride
-	  if( ie > nel ) ie = mod(ie,nel)
+	  if( ie > neg ) ie = mod(ie,neg)
 	  if( may_color(ie,ic_old,ic_new) ) then
 	    ncol = ncol + 1
 	    call color_elem(ie,ic_new)
@@ -643,7 +750,7 @@
 
 	if( color(ie) /= ic_from ) return
 	do ii=1,3
-	  k = nen3v(ii,ie)
+	  k = nen3v_global(ii,ie)
 	  ires = ibits(colork(k),ic_to,1)
 	  !if( colork(k) /= 0 ) return
 	  if( ires /= 0 ) return
@@ -665,7 +772,7 @@
 	ic_old = color(ie)
 	color(ie) = ic_new
 	do ii=1,3
-	  k = nen3v(ii,ie)
+	  k = nen3v_global(ii,ie)
 	  col = colork(k)
 	  col = ibclr(col,ic_old)
 	  col = ibset(col,ic_new)
@@ -684,10 +791,10 @@
 
 	berror = .false.
 
-	do ie=1,nel
+	do ie=1,neg
 	  ic = color(ie)
 	  do ii=1,3
-	    k = nen3v(ii,ie)
+	    k = nen3v_global(ii,ie)
 	    col = colork(k)
 	    ires = ibits(col,ic,1)
 	    if( ires == 0 ) then
@@ -699,7 +806,7 @@
 	  end do
 	end do
 
-	do k=1,nkn
+	do k=1,nkg
 	  if( colork(k) /= 0 ) then
 	    write(6,*) 'still color on node: ',k,colork(k)
 	    berror = .true.
@@ -707,7 +814,7 @@
 	end do
 
 	if( berror ) then
-	  stop 'error stop check_color: internal error (1)'
+	  call shympi_abort_internal('check_color: internal error (1)')
 	else
 	  write(6,*) 'check_color passed...'
 	end if
