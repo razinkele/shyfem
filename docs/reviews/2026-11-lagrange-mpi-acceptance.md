@@ -400,6 +400,35 @@ hydrodynamic values differ by less than 1e-4; its six perturbed runs give
 `tt` count stays 2 in the same three runs. On the particle file (what the `pos` mode compares) B gives
 10 to 43 particles beyond 2 m and the same largest distances, within the floor.
 
+### Position floor of case C re-measured for #248, 2026-11-24
+
+**Why.** Case C (`mm_lgr_c`) is the one 3D particle case, and it runs without turbulence closure
+(`iturb = 0`). Until #248 `handle_gotm_init`, called at set-up whatever `iturb`, replaced the constant
+`vistur`/`diftur` that `set_eddy` puts into `visv`/`difv` by GOTM's initial 1e-6; with #248 they stay
+(0 by default, so the run has the molecular viscosity only). The currents of case C change (by up to
+3.5e-2 m/s, the water level by 1.1e-4 m), and so do its particles, so its floor was measured again.
+Cases A, B, E, W and D are 2D and byte-identical before and after #248.
+
+**How.** `measure_lgr_floors.sh <bin> 7564a360 key 3 mm_lgr_c` with an OpenMPI build of #248 (the
+Fortran of `7564a360`), 15:35 to 15:36 EET, 7 runs, all ended; the `tt` counts with `lgr_compare.py
+--mode pos` on the particle files of the runs. A control with an OpenMPI build of origin/main `c917d27e`
+(before #248) on the same inputs followed at 15:37. Log:
+`docs/reviews/evidence/2026-11-lagrange-mpi/floors_vistur248.log`.
+
+| Case | Beyond the limit at the last output (six runs) | Largest distance at any output (six runs) | Particles with another `tt` | Floor before (8.6.0 and origin/main) | Floor now (#248) |
+|---|---|---|---|---|---|
+| C | 14 to 25 (was 12 to 19) | 1.37e-4 to 3.9029e-4 degrees (was 7.3e-5 to 7.1106e-3) | 0 | 19 / 7.12e-3 / 0 | **25** / **3.91e-4** (measured 3.9029e-4) / 0 |
+
+Count as measured, distance rounded up as before. **What moved it: #248 alone.** The control's rows equal
+those of case C in `floors_basin251.log` row for row (19 / 7.1106e-3). With #248 the base run is another
+run: 632 of its 648 particles are elsewhere at the last output, by up to 3.73e-2 degrees. Its six perturbed
+runs give +1e-5 25, -1e-5 22, +7e-6 23, -7e-6 21, +4e-6 14, -4e-6 15 particles beyond 1e-5 degrees at the
+last output, the largest distance 3.9029e-4 degrees (run -1e-5, at 45 h); the particle that came to rest
+7.1e-3 degrees from its serial position in three runs before #248 does not do so now, hence the much smaller
+distance floor. On the particle file (what the `pos` mode compares) C gives the same counts and distances.
+`./check_lgr_mpi.sh mm_lgr_c 4 floor` and `... pos` pass with the new floor (0 particles beyond the limit,
+largest distance 0: the 4-process run equals the serial one).
+
 ## Task 3.5: the hand-over by position (AC11) and the hand-over check
 
 **Measured** 2026-11-22 05:00 to 06:45 EET (from `date`) by the implementer and the controller,

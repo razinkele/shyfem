@@ -41,7 +41,9 @@
 # the repository) on the serial reference build of commit 0fddec90; they
 # were measured again on 2026-11-24 for the rebuilt basin (#251) with the
 # build of 37f08788 (release 8.6.0) on the inputs of commit 5ebf495b
-# (floors_basin251.log); the logs are in
+# (floors_basin251.log), and case C once more on 2026-11-24 for #248
+# with the build of #248 on the inputs of commit 7564a360
+# (floors_vistur248.log); the logs are in
 # docs/reviews/evidence/2026-11-lagrange-mpi/.
 # Exit code 0 when every run ended and every comparison gave a result
 # (FLOORS: complete), 1 otherwise.
