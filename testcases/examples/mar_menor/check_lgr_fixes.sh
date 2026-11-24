@@ -142,10 +142,25 @@
 #             hours with the end of the particle run itlend = 06:02:30
 #             (between two time steps), must write that line exactly once.
 #   vdiff-dt  (#257) the time step of the vertical random walk follows the
-#             curvature of the diffusivity: lag_vdiff_ele takes dtvd =
-#             1/(100 max|K''|) (the criterion of Visser 1997, dt << min
-#             1/|K''|), K'' the second difference of the diffusivity K over
-#             the layer interfaces of the element.  The 3D case mm_hyd_41
+#             curvature of the diffusivity.  Visser (1997) requires the
+#             step to be much smaller than min 1/|K''| over the water
+#             column; lag_vdiff_ele takes 1/100 of that, dtvd = 1/(100
+#             max|K''|) (at least 2 s), with K'' the second derivative of
+#             the diffusivity K over the layer interfaces of the element
+#             (lgr_vdiff_curvature).  1. lgr_vdiff_curvature, cut out of
+#             src/shyfem/lagrange_dif.f90 and compiled on its own with a
+#             small test program (gfortran, -ffpe-trap=zero,invalid,
+#             overflow): on six unequal layers (1, 2, 4, 0.5, 3, 1.5 m) a
+#             quadratic K must give K'' = 2c at every interface (within
+#             1e-3 relative; the bottom one extrapolated), a linear K 0
+#             (within 1e-7) and a constant K exactly 0; two layers give the
+#             value of interface 1 at the bottom too; a layer of zero
+#             thickness must set bzero (then lag_vdiff_ele takes the
+#             smallest step) without a division by zero.  A second
+#             difference with one spacing, (K(l+1) - 2 K(l) + K(l-1))/hl(l)
+#             **2 (the sign fixed, the spacing not), fails the quadratic and
+#             the linear profile on unequal layers, and so does the formula
+#             before #257.  2. The 3D case mm_hyd_41
 #             as in mode ilagr3 (no tilt, one day, ilagr = 3, nbdy = 300,
 #             rwhpar = 0, ipvert = -1) with iturb = 0 and diftur = 1.e-3,
 #             serially: the diffusivity is then the same at every
@@ -162,9 +177,9 @@
 #             statistics line it keeps) min 2 s and 2424 element steps
 #             below the model step, all of them over 100 sub-steps (dtvd
 #             under 3 s: elements with a very thin layer, where h**2/(400 K)
-#             is that small).  The binary of the commit before has no such
-#             line, so this mode cannot be red on it; its red evidence is
-#             the old formula put back.
+#             is that small).  The code before #257 has neither the
+#             routine nor the line, so this mode cannot be red on it; its
+#             red evidence is the old formula put back.
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -793,6 +808,83 @@ fi
 
 #=============================== vdiff-dt (#257) ===========================
 if [ "$MODE" = vdiff-dt ]; then
+  # 1. lgr_vdiff_curvature compiled on its own (no model run)
+  echo "=== lgr_vdiff_curvature on its own: quadratic, linear and constant K on unequal layers, a layer of zero thickness"
+  SRCF="$HERE/../../../src/shyfem/lagrange_dif.f90"
+  if ! command -v gfortran > /dev/null 2>&1; then
+    fail "gfortran is not on PATH"
+  elif [ ! -f "$SRCF" ]; then
+    fail "no $SRCF"
+  else
+    awk '/^[ \t]*subroutine lgr_vdiff_curvature/,/^[ \t]*end subroutine lgr_vdiff_curvature/' "$SRCF" > "$W/vcurv.f90"
+    grep -q 'end subroutine lgr_vdiff_curvature' "$W/vcurv.f90" || fail "lgr_vdiff_curvature not found in $SRCF"
+    cat > "$W/vcurv_test.f90" <<'EOF'
+	program vcurv_test
+! K = a + b z + c z**2 at the interfaces z of unequal layers: K'' must be
+! 2c at every interface (the bottom one extrapolated), 0 for a linear and
+! for a constant K; a layer of zero thickness sets bzero (no division)
+	implicit none
+	integer, parameter :: n = 6
+	real, parameter :: a = 1.e-3, b = 2.e-4, c = 5.e-5
+	real :: hl(n), z(0:n), wd(0:n)
+	double precision :: d2(n)
+	logical :: bz
+	integer :: l, nfail, icase
+	character(len=40) :: aname
+	nfail = 0
+	hl = (/ 1., 2., 4., 0.5, 3., 1.5 /)
+	z(0) = 0.
+	do l = 1,n
+	  z(l) = z(l-1) + hl(l)
+	end do
+	do icase = 1,3
+	  if( icase == 1 ) then
+	    wd = a + b*z + c*z*z
+	    aname = 'quadratic K, expected 2c = 1e-4'
+	  else if( icase == 2 ) then
+	    wd = a + b*z
+	    aname = 'linear K, expected 0'
+	  else
+	    wd = a
+	    aname = 'constant K, expected 0'
+	  end if
+	  call lgr_vdiff_curvature(n,hl,wd,d2,bz)
+	  write(6,'(2x,a,a,6es11.3)') trim(aname),':',d2
+	  do l = 1,n
+	    if( icase == 1 ) then
+	      if( abs(d2(l)-2.d0*c) > 1.d-3*2.d0*c ) nfail = nfail + 1
+	    else if( icase == 2 ) then
+	      if( abs(d2(l)) > 1.d-3*2.d0*c ) nfail = nfail + 1
+	    else
+	      if( d2(l) /= 0.d0 ) nfail = nfail + 1
+	    end if
+	  end do
+	  if( bz ) nfail = nfail + 1
+	end do
+	! two layers: the interface 1, and the bottom one takes its value
+	wd(0:2) = a + b*z(0:2) + c*z(0:2)**2
+	call lgr_vdiff_curvature(2,hl(1:2),wd(0:2),d2(1:2),bz)
+	write(6,'(2x,a,2es11.3)') 'two layers, quadratic K:',d2(1:2)
+	if( abs(d2(1)-2.d0*c) > 1.d-3*2.d0*c .or. d2(2) /= d2(1) ) nfail = nfail + 1
+	if( bz ) nfail = nfail + 1
+	! a layer of zero thickness
+	hl(3) = 0.
+	call lgr_vdiff_curvature(n,hl,wd,d2,bz)
+	write(6,'(2x,a,l2)') 'a layer of zero thickness: bzero',bz
+	if( .not. bz ) nfail = nfail + 1
+	if( any(d2 /= 0.d0) ) nfail = nfail + 1
+	write(6,'(2x,a,i0)') 'failed checks: ',nfail
+	if( nfail > 0 ) stop 1
+	end program vcurv_test
+EOF
+    if ( cd "$W" && gfortran -ffpe-trap=zero,invalid,overflow -o vcurv_test vcurv_test.f90 vcurv.f90 > vcurv_build.log 2>&1 ); then
+      ( cd "$W" && ./vcurv_test ) || fail "lgr_vdiff_curvature: wrong second derivatives"
+    else
+      fail "the test of lgr_vdiff_curvature does not compile"; sed 's/^/    /' "$W/vcurv_build.log" | head -5
+    fi
+  fi
+
+  # 2. a model run with the same diffusivity at every interface
   sed -e '/^\s*ztilt\s*=/d' -e '/^\s*ktilt\s*=/d' \
       -e "s/itend = '[^']*'/itend = '2009-01-02'/" \
       -e 's/^\(\s*\)mm_hyd_41\s*$/\1vdt_const/' \

@@ -547,6 +547,7 @@
         real                    :: wdl
         double precision        :: dwd2(nlv)    !second derivative of diffusivity 
         real                    :: dmax
+	logical			:: bzero	!a layer of zero thickness
 	real			:: dtd		!random walk time step
         integer 		:: lmax 	!maximum layers in element
 	real, parameter 	:: dtmin = 2.0	!minimum time step
@@ -585,43 +586,31 @@
 	  !-----------------------------------------------
 	  ! Compute random walk time step 1/(100*dwd2)
 	  !
-	  ! dwd2(l) is the second derivative of the diffusivity K at the
-	  ! interface l (between the layers l and l+1) and the time step of the
-	  ! random walk 1/(100*max|dwd2|): the criterion of Visser (1997, Mar
-	  ! Ecol Prog Ser 158, 275-281, doi:10.3354/meps158275), dt much
-	  ! smaller than min 1/|K''| over the water column, so that K is about
-	  ! linear over one random step. The second difference on the
-	  ! interfaces l-1, l, l+1, spaced hl(l) and hl(l+1) (#257):
-	  !   2/(hl(l)+hl(l+1)) * ( (K(l+1)-K(l))/hl(l+1) - (K(l)-K(l-1))/hl(l) )
-	  ! exact for a quadratic K, (K(l+1) - 2 K(l) + K(l-1))/h**2 for equal
-	  ! layers. Until #257 it was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2, about
-	  ! 4 K/h**2, a sum of positive values instead of a curvature, so the
-	  ! step was about h**2/(400 K) even where K is constant or linear
+	  ! dwd2(l) is the second derivative K'' of the diffusivity K at the
+	  ! interface l (lgr_vdiff_curvature, #257). Visser (1997, Mar Ecol
+	  ! Prog Ser 158, 275-281, doi:10.3354/meps158275) requires the time
+	  ! step of the random walk to be much smaller than min 1/|K''| over
+	  ! the water column; this code takes 1/100 of that, 1/(100 max|K''|),
+	  ! at least dtmin (and at most the model step where it is used,
+	  ! diff_get_vert). An element with a layer of zero thickness gets
+	  ! dtmin: K'' cannot be computed there (and across a jump of K over no
+	  ! distance it is unbounded), so the smallest step is taken. Until #257
+	  ! the "second derivative" was (K(l+1) + 2 K(l) + K(l-1))/hl(l)**2,
+	  ! about 4 K/h**2, a sum of positive values instead of a curvature, so
+	  ! the step was about h**2/(400 K) even where K is constant or linear
 	  ! (mm_hyd_41 with ilagr = 3, one day: a mean step of 24.9 s and 98.4
 	  ! sub-steps per 300 s step before, 33.5 s and 41.7 after).
 	  !-----------------------------------------------
 	  dtd = time
 	  if ( lmax > 1 ) then
- 	    do l = 1,lmax-1
-	      dwd2(l) = 0.
-	      if( hl(l) > 0. ) then
-	        if( hl(l+1) > 0. ) then
-	          dwd2(l) = 2.d0/(hl(l)+hl(l+1)) *			&
-     &			( (wde(l+1,ie)-wde(l,ie))/hl(l+1)		&
-     &			 -(wde(l,ie)-wde(l-1,ie))/hl(l) )
-	        end if
-	      end if
-	    end do
-	!write(6,*) 'hl ',hl(1:lmax)
-	!write(6,*) 'dwd2 ',dwd2(1:lmax)
-            dwd2(lmax) = dwd2(lmax-1)
-            if ( lmax > 2 ) dwd2(lmax) = dwd2(lmax-1) +  &
-     &  		(dwd2(lmax-1)-dwd2(lmax-2))/hl(lmax-1)*hl(lmax)
-  
-	!write(6,*) 'dwd2 ',dwd2(1:lmax)
-   	    dmax = maxval(abs(dwd2(1:lmax)))
-  	    if ( dmax /= 0. ) dtd = 1./(100.*dmax)
-            dtd = max(dtmin, dtd)
+	    call lgr_vdiff_curvature(lmax,hl,wde(0:lmax,ie),dwd2,bzero)
+	    if( bzero ) then
+	      dtd = dtmin		!a layer of zero thickness
+	    else
+   	      dmax = maxval(abs(dwd2(1:lmax)))
+  	      if ( dmax /= 0. ) dtd = 1./(100.*dmax)
+              dtd = max(dtmin, dtd)
+	    end if
 	  end if
 	  dtvd(ie) = dtd
 
@@ -638,6 +627,52 @@
 	end do
 
 	end subroutine lag_vdiff_ele
+
+!******************************************************************
+
+	subroutine lgr_vdiff_curvature(lmax,hl,wd,dwd2,bzero)
+
+! second derivative K'' of the diffusivity wd(0:lmax) of a column at its
+! interfaces 1 ... lmax (#257), for the time step of the vertical random
+! walk (lag_vdiff_ele). Interface l lies between the layers l and l+1, so
+! the interfaces l-1, l, l+1 are spaced hl(l) and hl(l+1); for l = 1 ...
+! lmax-1 the second difference over these unequal spacings
+!   2/(hl(l)+hl(l+1)) * ( (K(l+1)-K(l))/hl(l+1) - (K(l)-K(l-1))/hl(l) )
+! exact for a quadratic K ((K(l+1) - 2 K(l) + K(l-1))/h**2 for equal
+! layers); at the bottom interface lmax the value is extrapolated linearly
+! from the two interfaces above (the value at lmax-1 if lmax = 2). If a
+! layer used has zero (or negative) thickness bzero is true and dwd2 is
+! left at 0 (the caller then takes its smallest step): no division by a
+! zero thickness. Needs lmax >= 2. Self-contained (no module), so that
+! check_lgr_fixes.sh vdiff-dt can compile and test it on its own.
+
+	implicit none
+
+	integer, intent(in)		:: lmax		!layers of the column
+	real, intent(in)		:: hl(lmax)	!layer thickness
+	real, intent(in)		:: wd(0:lmax)	!diffusivity at interfaces
+	double precision, intent(out)	:: dwd2(lmax)	!second derivative
+	logical, intent(out)		:: bzero	!a layer of zero thickness
+
+	integer l
+
+	dwd2 = 0.d0
+	bzero = .false.
+
+	do l = 1,lmax
+	  if( hl(l) <= 0. ) bzero = .true.
+	end do
+	if( bzero ) return
+
+	do l = 1,lmax-1
+	  dwd2(l) = 2.d0/(hl(l)+hl(l+1)) *				&
+     &		( (wd(l+1)-wd(l))/hl(l+1) - (wd(l)-wd(l-1))/hl(l) )
+	end do
+	dwd2(lmax) = dwd2(lmax-1)
+	if ( lmax > 2 ) dwd2(lmax) = dwd2(lmax-1) +			&
+     &		(dwd2(lmax-1)-dwd2(lmax-2))/hl(lmax-1)*hl(lmax)
+
+	end subroutine lgr_vdiff_curvature
 
 !******************************************************************
 ! Horizontal diffusion of body id
