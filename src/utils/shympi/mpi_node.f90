@@ -759,9 +759,13 @@
 
 	integer iflag
 
-	! the master's environment decides for all processes: with the check
-	! on, the 3d gathers also gather the number of values each process
-	! sends (a collective call every process must make)
+	! the master's environment decides for all processes (broadcast
+	! below); -mpi_debug (bmpi_debug, set on every process from the same
+	! command line) also turns the check on.  With the check on, the 3d
+	! gathers also gather the number of values each process sends and,
+	! for level arrays, the owners' bottom levels (shympi_ghost_ncomp):
+	! collective calls every process must make, so the switch must be
+	! the same on every process
 
 	iflag = 0
 	if( shympi_env_is_set('SHYFEM_GHOST_CHECK') ) iflag = iflag + 1
@@ -3963,6 +3967,11 @@
 ! not allocated for any other array. The values below the bottom are no
 ! state of the node: the check leaves them out (#268). Collective (the
 ! bottoms are gathered); ncomp is set on the master only.
+! A level array is recognised by its size alone, which is the same on
+! every process (it is the MPI count of the gather): another array of
+! that first dimension (e.g. nfix values) is then compared only down to
+! the bottom, which can hide a desync below it but never reports a false
+! one and cannot make the processes call different collectives.
 
 	use levels, only : ilhkv,ilhv
 
