@@ -33,7 +33,6 @@
 #         floor  debug dump of the particles (as part), compared by key with
 #                the case's --tol and its position floors (the table below):
 #                --max-beyond-last and --max-largest of lgr_dbg_compare.py
-#                (not for mm_lgr: its random walk is never seeded, #225)
 #         stops  (case mm_lgr_a only) the options that are not supported on
 #                several processes: for each of the twelve rows (ilagr3,
 #                lbeach, artype, ldecay, lgrini, ised, ilarv, icnn, lgrpps,
@@ -122,14 +121,14 @@
 # compared only for pairs in the same element) and the case's tt floor
 # (--max-tt-differ: particles whose time tt differs).  The ids per block,
 # the output times, layers, z, types, sinking and custom values gate
-# exactly as without floors.  mm_lgr has no floors: --tol pair by pair, tt
-# exact.
+# exactly as without floors.
 # ids: lgr_compare.py --mode ids --same-counts --nel N --nlv L, with N and L
 # from the model header of the serial particle file (lgr_compare.py --dims:
 # the basin's element count and the number of layers).  For NP > 1 it also
 # runs lgr_inf_compare.py on the two info files: as many energy lines (same
 # times) and the same lagrange_nbdy value (the global particle count) at
-# every step; for mm_lgr (unseeded random walk) the count must be 145.
+# every step; for mm_lgr (random walk, closed basin) the count must also be
+# 145 at every step.
 #
 # handover: the particles of the two runs are paired by their key (the last
 # six columns of the dump); the statistic and the rule (a jump test against
@@ -225,16 +224,30 @@ if [ "$CASE" = mm_lgr_b ]; then TOL=2; STEP=0.25; else TOL=1e-5; STEP=6e-8; fi
 # 37 / 4.3113e-3 -> 4.32e-3 / tt 1
 # (particle 46 comes to rest in the dry element 870 in every run, at a time
 # tt between 327,900 and 329,100 s that differs by a few steps).
+# mm_lgr (#225): 0 / 0 / tt 0, set by the owner on 2026-11-23 because
+# multi-process runs of the random walk (rwhpar = 0.5) equal the serial run:
+# since #225 every draw of a particle comes from its own stream, and with
+# the multi-process hydrodynamics byte-identical to serial (#230, #238) the
+# particle positions of 2, 4 and 8 processes equal the serial ones (0
+# particles beyond 1e-5, largest distance 0 at every output). A floor of 0
+# is exact: a distance of exactly 0 passes, any larger one fails (the tools
+# test "n > N" and "not d <= D", with None, not 0, for an unset floor). For
+# reference, the envelope of six serial runs with the wind drag changed by
+# up to a relative 1e-5 (measure_lgr_floors.sh with the build of #225 on the
+# inputs of commit b0cd1972, log floors_mm_lgr.log in the same evidence
+# folder) is 82 / 1.4268e-1 / tt 0: the random walk lets such a change grow
+# to the size of the basin.
 case "$CASE" in
   mm_lgr_a) FLOOR_N=78; FLOOR_D=2.98e-3; FLOOR_T=0 ;;
   mm_lgr_b) FLOOR_N=48; FLOOR_D=182; FLOOR_T=2 ;;
   mm_lgr_c) FLOOR_N=19; FLOOR_D=7.12e-3; FLOOR_T=0 ;;
   mm_lgr_e) FLOOR_N=33; FLOOR_D=4.3e-3; FLOOR_T=0 ;;
   mm_lgr_w) FLOOR_N=37; FLOOR_D=4.32e-3; FLOOR_T=1 ;;
+  mm_lgr)   FLOOR_N=0; FLOOR_D=0; FLOOR_T=0 ;;	# owner, 2026-11-23 (#225)
   *) FLOOR_N=""; FLOOR_D=""; FLOOR_T="" ;;
 esac
 if [ "$MODE" = floor ] && [ -z "$FLOOR_N" ]; then
-  echo "no position floor for $CASE (its random walk is never seeded, #225)"; usage
+  echo "no position floor for $CASE"; usage
 fi
 
 #--- preconditions -------------------------------------------------------

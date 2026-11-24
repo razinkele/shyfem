@@ -7,9 +7,9 @@ usage: lgr_inf_compare.py SERIAL.inf MPI.inf [--nbdy N]
 Gate: the two files hold the same number of "energy:" lines with the same
 times, the same number of "lagrange_nbdy:" lines, and the lagrange_nbdy
 values are equal line by line (the global number of particles at every step).
-With --nbdy N (case mm_lgr, whose unseeded random walk can change the
-trajectories but not the count) every lagrange_nbdy value of both files must
-be N instead of being equal line by line.
+With --nbdy N (case mm_lgr, a random walk in a closed basin: no particle
+leaves) every lagrange_nbdy value of both files must be N instead of being
+equal line by line.
 
 Exit code 0 (identical), 1 (differences), 2 (a file is unreadable or holds no
 lagrange_nbdy line).

@@ -87,6 +87,7 @@
 
 	use mod_lagrange
 	use femtime
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_decay
 
         implicit none
 
@@ -96,8 +97,6 @@
         real age    !age of particle
         real nmb    !probability
         integer i
-
-	real ggrand
 
 	integer, save :: iwarn1 = 0
 
@@ -112,7 +111,9 @@
         do i=1,nbdy
           age=it-lgr_ar(i)%init%time
           tdd=exp(-age/ldecay)
-          nmb=ggrand(2387)
+          ! the particle's own draw (#225): its id, the time step, the
+          ! site lgr_rnd_decay (a particle already out draws to no effect)
+          nmb=lgr_random(lgr_ar(i)%id,lgr_rnd_decay,0)
           if(nmb.gt.tdd) then			! set as if out of domain
 	    lgr_ar(i)%actual%ie = -abs(lgr_ar(i)%actual%ie)
 	  end if
@@ -135,6 +136,7 @@
 
 	use mod_lagrange
 	use femtime
+	use mod_lagrange_random, only : lgr_random, lgr_rnd_decay
 
         implicit none
 
@@ -144,8 +146,6 @@
         real nmb
         real tdd
         integer n,i
-
-	real ggrand
 
 	integer, save :: iwarn2 = 0
 
@@ -162,7 +162,7 @@
 
         rdc=1-(1/tdd)
 
-        nmb=ggrand(2387)
+        nmb=lgr_random(lgr_ar(n)%id,lgr_rnd_decay,0)	!own draw (#225)
 
         if(nmb.le.rdc) then			! set as if out of domain
 	  lgr_ar(n)%actual%ie = -abs(lgr_ar(n)%actual%ie)	! last element (#226)
