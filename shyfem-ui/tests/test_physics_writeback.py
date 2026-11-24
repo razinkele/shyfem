@@ -295,3 +295,70 @@ def test_a_failed_panel_skips_only_the_inputs_it_renders():
     assert errors == []
     assert skipped.get_param("para", "ilin") == 0
     assert working.get_param("para", "ilin") == 1
+
+
+_LGRSEED = """$para
+        itanf = 0       itend = 3600    idt = 60
+$end
+$lagrg
+        ilagr = 1
+        lgrseed = 42
+$end
+"""
+
+
+def test_lgrseed_is_in_the_catalog_and_the_lagrangian_panel():
+    assert COMMON_PARAMS["lagrg"]["lgrseed"][1:3] == ("int", 1)
+    sf = StrParser.parse(_LGRSEED)
+    assert build_panel_params(sf, "lagrangian")["lgrseed"] == 42
+
+
+def test_lgrseed_round_trips_byte_exact_and_untouched_save_writes_nothing():
+    sf = StrParser.parse(_LGRSEED)
+    assert StrParser.generate(sf) == _LGRSEED
+    working, errors = _save(_LGRSEED)
+    assert errors == []
+    assert working.get_param("lagrg", "lgrseed") == 42
+    assert StrParser.generate(working) == _LGRSEED
+
+
+def test_lgrseed_edit_is_written_and_absent_default_writes_nothing():
+    working, errors = _save(_LGRSEED, {"lgrseed": "-7"})
+    assert errors == []
+    assert working.get_param("lagrg", "lgrseed") == -7
+    assert "lgrseed = -7" in StrParser.generate(working)
+    # absent key: the field shows the default 1 and an untouched save adds nothing
+    working, errors = _save(_LGRSEED.replace("        lgrseed = 42\n", ""))
+    assert errors == []
+    assert working.get_param("lagrg", "lgrseed") is None
+
+
+@pytest.mark.parametrize("seed", [2147483647, -2147483647])
+def test_lgrseed_large_integer_is_written_as_a_plain_integer(seed):
+    working, errors = _save(_LGRSEED, {"lgrseed": str(seed)})
+    assert errors == []
+    assert working.get_param("lagrg", "lgrseed") == seed
+    assert isinstance(working.get_param("lagrg", "lgrseed"), int)
+    assert f"lgrseed = {seed}\n" in StrParser.generate(working)
+
+
+def _lgrseed_rendered_value(text: str) -> str:
+    sf = StrParser.parse(text)
+    html = str(physics._lgrseed_field(build_panel_params(sf, "lagrangian")))
+    return re.search(r'id="lgrseed"[^>]*value="([^"]*)"', html).group(1)
+
+
+@pytest.mark.parametrize(
+    "stored, shown", [("42", "42"), ("-7", "-7"), ("1.5", "1.5"), ("abc", "abc"), ("1 2", "1 2")]
+)
+def test_lgrseed_field_shows_the_stored_value_and_an_untouched_save_keeps_it(stored, shown):
+    """The old int(...) showed 1.5 as 1 (the save then rewrote it) and raised on text."""
+    text = _LGRSEED.replace("lgrseed = 42", f"lgrseed = {stored}")
+    assert _lgrseed_rendered_value(text) == shown
+    working, errors = _save(text)
+    assert errors == []
+    assert StrParser.generate(working) == text
+
+
+def test_lgrseed_field_shows_the_default_when_absent():
+    assert _lgrseed_rendered_value(_LGRSEED.replace("        lgrseed = 42\n", "")) == "1"

@@ -1008,6 +1008,13 @@ COMMON_PARAMS: dict[str, dict[str, ParamInfo]] = {
         "idtl": _p("Particle release interval", "int", 0, "s", ">0"),
         "ipvert": _p("Vertical distribution", "int", 0, "", "0=surface, >0=regular, <0=random"),
         "lbeach": _p("Beaching probability", "float", 0.0, "", "[0-1]"),
+        "lgrseed": _p(
+            "Seed of the particles' random numbers",
+            "int",
+            1,
+            "",
+            "integer, -2147483647 to 2147483647",
+        ),
         "ldecay": _p("Particle decay time", "float", 0.0, "s", "0=no decay"),
         "ioil": _p("Oil spill simulation", "int", 0, "", "0=off, 1=on"),
         "ilarv": _p("Larval behavior module", "int", 0, "", "0=off, 1=on"),

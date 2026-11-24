@@ -2,6 +2,8 @@
 
 import re
 
+import pytest
+
 from shyfem_ui.services.str_validator import validate_str
 
 
@@ -135,6 +137,40 @@ class TestRangeValidation:
         msgs = validate_str({"para": {**self._VALID, "itdrag": 3, "iwave": 2}})
         errors = [m for m in msgs if m.level == "error" and "itdrag" in m.message]
         assert len(errors) == 0
+
+    @pytest.mark.parametrize("seed", [1, 0, -2147483647, 2147483647, 42])
+    def test_lgrseed_in_range_is_accepted(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        assert not [m for m in msgs if m.param == "lgrseed"]
+
+    @pytest.mark.parametrize("seed", ["inf", "-inf", "nan"])
+    def test_lgrseed_non_finite_is_an_error_not_an_exception(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        errors = [m for m in msgs if m.level == "error" and m.param == "lgrseed"]
+        assert len(errors) == 1
+
+    @pytest.mark.parametrize("seed", ["1" * 400, 10**400, -(10**400)])
+    def test_lgrseed_huge_integer_is_an_error_not_an_exception(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        # a 400-digit text also trips the 80-column STR line rule: count the range error only
+        errors = [m for m in msgs if m.param == "lgrseed" and "is invalid" in m.message]
+        assert len(errors) == 1
+
+    @pytest.mark.parametrize("seed", ["abc", [1, 2], ["a", 2], "1 2", ""])
+    def test_lgrseed_present_but_not_a_number_is_one_error(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        errors = [m for m in msgs if m.level == "error" and m.param == "lgrseed"]
+        assert len(errors) == 1
+
+    def test_lgrseed_absent_is_valid(self):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1}})
+        assert not [m for m in msgs if m.param == "lgrseed"]
+
+    @pytest.mark.parametrize("seed", [2147483648, -2147483648, 1.5, 1e10])
+    def test_lgrseed_out_of_range_or_fractional_is_rejected(self, seed):
+        msgs = validate_str({"para": self._VALID, "lagrg": {"ilagr": 1, "lgrseed": seed}})
+        errors = [m for m in msgs if m.level == "error" and m.param == "lgrseed"]
+        assert len(errors) == 1
 
 
 class TestLevelSystemValidation:
