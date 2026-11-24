@@ -52,15 +52,24 @@
 	subroutine back_trace(uadv,vadv)
 
 ! handles lagrangian backtracing
+!
+! used by the semi-Lagrangian advection of momentum (itlin = 1), also in
+! a run without particles (ilagr = 0): the arrays of the module it uses
+! (side lengths, fluxes, the back-tracking positions) are allocated here
+! (mod_lagrange_init returns at once when the particle module has done
+! it). The back-tracking keeps its own position: it does not touch the
+! particle array lgr_ar.
 
 	use mod_lagrange
 	use basin, only : nkn,nel,ngr,mbw
+	use levels, only : nlv
 
 	implicit none
 
-                
-	real uadv(1), vadv(1)
-        
+	real, intent(out) :: uadv(nel), vadv(nel)
+
+	call mod_lagrange_init(nel,nlv)	!allocates if not yet done
+
 	bback = .true.
 	nback = nel
 
@@ -78,32 +87,39 @@
         
         subroutine bar_ie
 
-! initializes particles at baricenter
+! initializes particles at baricenter, in the middle of the first layer
+! (z_back = 0.5: 0 is the top, 1 the bottom of the layer)
 
 	use mod_lagrange
 
         implicit none
-        
+
         integer i
         real xb,yb
-        
+
         do i=1,nback
           call baric(i,xb,yb)
           x_back(i)=xb
           y_back(i)=yb
-          ie_back(i)=i                   
+          z_back(i)=0.5
+          ie_back(i)=i
         end do
 
-        end 
+        end
 
 !**********************************************************************
 
 	subroutine drogue_back
 
+! tracks the back-tracking particles of bar_ie for one time step
+!
+! one particle per element, in the first layer (set_semi_lagrange uses
+! the first layer only); the particle number i is passed as its id
+
 	use mod_lagrange
 
 	implicit none
-	
+
 	integer i,ie,id,lb
 	real x,y,z
 	real dt,ttime
@@ -113,24 +129,23 @@
         do i=1,nback
           x  = x_back(i)
           y  = y_back(i)
-          z  = lgr_ar(i)%actual%z
-          lb = lgr_ar(i)%actual%l
+          z  = z_back(i)
+          lb = 1
 
           ie = ie_back(i)
-	  id = lgr_ar(i)%id
+	  id = i
 
 	  ttime=dt
           call track_body(i,id,x,y,z,lb,ie,ttime)
 
           x_back(i) = x
           y_back(i) = y
-          lgr_ar(i)%actual%z = z
-          lgr_ar(i)%actual%l = lb
+          z_back(i) = z
 
           ie_back(i) = ie
         end do
 
-	end	
+	end
 
 !**********************************************************************
 
@@ -146,11 +161,8 @@
 
         implicit none
 
-	real uadv(1), vadv(1)
+	real, intent(out) :: uadv(nel), vadv(nel)
 
-                
-       
-        
 
        
         real x,y

@@ -373,6 +373,7 @@
 	call trace_point('handle depth and vertical stuff')
 	call adjust_depth	!adjusts hm3v
 	call init_vertical	!makes nlv,hlv,hldv,ilhv,ilhkv, adjusts hm3v
+	call semi_lagrange_check	!itlin = 1: serial 2D Cartesian runs only
 
 !-----------------------------------------------------------
 ! allocates arrays
