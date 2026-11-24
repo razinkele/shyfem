@@ -1611,6 +1611,9 @@
         call addpar('lcust',0.)
 
 ! |ldecay|	Decay time of the particles (Default 0, no decay).
+!		A decayed particle is no longer tracked and is written
+!		in the exited block of the particle file at its last
+!		position, as a particle that left the basin.
 !		A value above 0 is not supported on several MPI processes:
 !		the run stops at start-up.
 

@@ -78,6 +78,12 @@
         subroutine lagrange_decay(ldecay)
 
 ! applies decay to all particles
+!
+! a decayed particle keeps its last element with a negative sign
+! (ie = -abs(ie)), as a particle that left the basin and one that died in
+! lagr_surv: it is not tracked any more and the output writes its last
+! position in the exited block (#226; before, ie = 0 made the output read
+! the coordinates of element 0)
 
 	use mod_lagrange
 	use femtime
@@ -107,7 +113,9 @@
           age=it-lgr_ar(i)%init%time
           tdd=exp(-age/ldecay)
           nmb=ggrand(2387)
-          if(nmb.gt.tdd) lgr_ar(i)%actual%ie = 0	! set as if out of domain
+          if(nmb.gt.tdd) then			! set as if out of domain
+	    lgr_ar(i)%actual%ie = -abs(lgr_ar(i)%actual%ie)
+	  end if
         end do
 
         end
@@ -156,7 +164,9 @@
 
         nmb=ggrand(2387)
 
-        if(nmb.le.rdc) lgr_ar(n)%actual%ie = 0	! set as if out of domain
+        if(nmb.le.rdc) then			! set as if out of domain
+	  lgr_ar(n)%actual%ie = -abs(lgr_ar(n)%actual%ie)	! last element (#226)
+	end if
 
         end
 
@@ -233,7 +243,7 @@
 	if( psurv .le. 0 ) then	!particle is dead
 	  icount = icount+1 
 !	  write(77,*) it,i,icount,deltat
-	  lgr_ar(i)%actual%ie = -lgr_ar(i)%actual%ie
+	  lgr_ar(i)%actual%ie = -abs(lgr_ar(i)%actual%ie)	!stays out (#226)
 	endif
 
 	end 
