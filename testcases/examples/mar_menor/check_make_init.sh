@@ -5,12 +5,14 @@
 # Usage:  ./check_make_init.sh
 #
 # GRID/MM_coarse.bas is a tracked file: the Mar Menor cases read it, and the
-# particle floors and the #217 acceptance were measured on it.  shypre of
-# today does not write the same file from GRID/MM_coarse.grd: since
-# 9abe01a4 (exact decimal parsing in istod) 46 element depths come out one
-# unit in the last place lower.  A `make init` that ran shypre on
-# MM_coarse.grd therefore left every tree with a modified tracked file, and
-# the results of a tree depended on whether it had run `make init`.
+# particle floors are measured on it.  A `make init` that ran shypre on
+# MM_coarse.grd rewrote it whenever shypre wrote other bytes: after 9abe01a4
+# (exact decimal parsing in istod) 46 element depths came out one unit in
+# the last place lower, so every tree was left with a modified tracked file
+# and its results depended on whether it had run `make init`.  The tracked
+# file has since been rebuilt with that shypre (2026-11-24), so check 5
+# below (the real shypre) passes today even for a `make init` that rebuilds
+# the file; checks 1 and 4 (the stand-in shypre) still catch that.
 #
 # Checked in scratch copies of this folder's Makefile and GRID/ (and of
 # ../mar_menor_lagrange, whose GRID is a link to this folder's), with a

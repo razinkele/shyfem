@@ -37,11 +37,12 @@ depend: nothing
 
 #-----------------------------------------------------------
 
-# GRID/$(GRID).bas is tracked (the cases, the particle floors and the #217
-# acceptance were measured on it) and is built only when it is missing:
-# shypre of today writes a slightly different file (46 element depths one
-# unit in the last place lower since the exact decimal parsing of 9abe01a4),
-# so rebuilding it would modify the tracked file and change results (#251).
+# GRID/$(GRID).bas is tracked (the cases and the particle floors are
+# measured on it) and is built only when it is missing: a shypre that
+# writes other bytes would otherwise modify the tracked file and change
+# results (#251: after the exact decimal parsing of 9abe01a4 shypre wrote
+# 46 element depths one unit in the last place lower than the tracked file,
+# until the file was rebuilt with it on 2026-11-24).
 # To rebuild it on purpose: rm GRID/$(GRID).bas; make init
 # (check_make_init.sh checks init and cleanbas)
 
