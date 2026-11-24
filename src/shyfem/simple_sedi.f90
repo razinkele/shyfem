@@ -384,7 +384,11 @@
 	! the elements in the order of their global internal number
 	! (ip_int_elem): a serial run adds them at a node in that order
 	! (1 to nel), so the owner of a node adds its ring in the serial
-	! order; serially ip_int_elem(ie) = ie and nothing changes (#262)
+	! order; serially ip_int_elem(ie) = ie and nothing changes (#262);
+	! made again if the number of elements changes
+	if( allocated(ie_serial) ) then
+	  if( size(ie_serial) /= nel ) deallocate(ie_serial)
+	end if
 	if( .not. allocated(ie_serial) ) then
 	  allocate(ie_serial(nel),stat=ierr)
 	  if( ierr /= 0 ) then

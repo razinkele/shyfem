@@ -53,7 +53,7 @@
 # built there with shypre, the STR files are made there from this
 # folder's), so nothing in this folder changes.  The folder is kept (its
 # path is the last line).  Prints "SSEDI MPI CHECK: PASS" or "SSEDI MPI
-# CHECK: FAIL" and exits 0 or 1.  Takes about 30 s for 2 and 4.
+# CHECK: FAIL" and exits 0 or 1.  Takes about 17 s for 2 and 4.
 #------------------------------------------------------------------------
 set -u
 NPS="${*:-2 4}"
