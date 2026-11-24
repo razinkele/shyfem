@@ -162,11 +162,24 @@
 #             active particles with an element in 1..nel, a layer in 1..nlv
 #             and a depth z in the layer within 0..1 (the line of the random
 #             walk time step of the run, #257, is printed for information:
-#             min 2 s, mean 33.5 s, 41.7 sub-steps per 300 s step, 66071 of
-#             735505 element steps over 100 sub-steps; before #257 mean
-#             24.9 s, 98.4 sub-steps, 396008 over 100).  A second run, 12
-#             hours with the end of the particle run itlend = 06:02:30
-#             (between two time steps), must write that line exactly once.
+#             min 2 s, mean 33.5 s, 41.7 sub-steps per 300 s step; before
+#             #257 mean 24.9 s, 98.4 sub-steps).  The cap of the calls of
+#             lgr_diff_vert in a particle step (#261): the log must hold no
+#             line "warning particle dif" (written from inside the OpenMP
+#             particle loop for every step that reached the cap until
+#             #261), and each of the two lines of the particle steps once,
+#             "lgr vertical diffusion: particle steps: ..., most calls in a
+#             step: M, ..." with M > 100 (the cap before #261; measured
+#             10000, about 19000 with no cap) and "... steps stopped at the
+#             cap of 10000 calls: N, ...; steps ended by 2 calls in a row
+#             that used no time: E, ..." with N <= 10 (measured 1 of 777212
+#             particle steps, 142 s not diffused) and E = 0.  Before #261
+#             the log has 59859 lines "warning particle dif" and neither
+#             line; with the cap put back to 100 (lgr_nvdiff_max) M = 100
+#             and N = 59618.  A second run, 12 hours with the end of the
+#             particle run itlend = 06:02:30 (between two time steps), must
+#             write the line of the negative diffusivities and the two lines
+#             of the particle steps exactly once each.
 #   vdiff-dt  (#257) the time step of the vertical random walk follows the
 #             curvature of the diffusivity.  Visser (1997) requires the
 #             step to be much smaller than min 1/|K''| over the water
@@ -195,8 +208,9 @@
 #             same everywhere, K'' = 0, and the random walk must take the
 #             model time step: the log line "lgr vertical diffusion:
 #             random walk time step [s] min 300.000 mean 300.000, ...
-#             below the model step 0 over 100 sub-steps 0" (written once
-#             at the end, lgr_vdiff_stats).  Before #248 the run had
+#             below the model step 0" (written once at the end,
+#             lgr_vdiff_stats; until #261 the line went on with "over 100
+#             sub-steps 0", which the check accepts).  Before #248 the run had
 #             diftur only in the particle step made at set-up: then
 #             handle_gotm_init, called whatever iturb, replaced it by
 #             GOTM's initial 1e-6, so the mode tested a constant K of
@@ -936,6 +950,26 @@ if [ "$MODE" = ilagr3 ]; then
   [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
   line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/lgr_ilagr3.log")"
   [ -n "$line" ] && echo "  $line"	# information only (#257)
+  # the cap of the calls of a particle step (#261)
+  nwarn="$(grep -c 'warning particle dif' "$W/lgr_ilagr3.log")"
+  echo "  lines 'warning particle dif' (written in the particle loop until #261): $nwarn"
+  [ "$nwarn" = 0 ] || fail "$nwarn lines 'warning particle dif' in the log, expected none"
+  l1="$(grep 'lgr vertical diffusion: particle steps:' "$W/lgr_ilagr3.log")"
+  l2="$(grep 'lgr vertical diffusion: steps stopped at the cap of' "$W/lgr_ilagr3.log")"
+  echo "  ${l1:-no line 'lgr vertical diffusion: particle steps:' in the log}"
+  echo "  ${l2:-no line 'lgr vertical diffusion: steps stopped at the cap of' in the log}"
+  [ "$(printf '%s' "$l1" | grep -c .)" = 1 ] || fail "the line of the particle steps is not written once"
+  [ "$(printf '%s' "$l2" | grep -c .)" = 1 ] || fail "the line of the steps stopped at the cap is not written once"
+  mcall="$(printf '%s' "$l1" | sed -n 's/.*most calls in a step: *\([0-9][0-9]*\).*/\1/p')"
+  ncap="$(printf '%s' "$l2" | sed -n 's/.*steps stopped at the cap of [0-9]* calls: *\([0-9][0-9]*\),.*/\1/p')"
+  nend="$(printf '%s' "$l2" | sed -n 's/.*steps ended by 2 calls in a row that used no time: *\([0-9][0-9]*\),.*/\1/p')"
+  if [ -z "$mcall" ] || [ "$mcall" -le 100 ] || [ "$mcall" -gt 10000 ]; then
+    fail "most calls of lgr_diff_vert in a particle step ${mcall:-not reported}, expected more than 100 (the cap before #261) and at most 10000 (the cap)"
+  fi
+  if [ -z "$ncap" ] || [ "$ncap" -gt 10 ]; then
+    fail "particle steps stopped at the cap ${ncap:-not reported}, expected at most 10 (measured 1)"
+  fi
+  [ "${nend:-x}" = 0 ] || fail "particle steps ended by two calls in a row that used no time ${nend:-not reported}, expected 0"
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
 import math, struct, sys
@@ -992,6 +1026,11 @@ EOF
   line="$(grep -m1 'lgr vertical diffusion: negative diffusivities set to 0:' "$W/lgr_ilagr3_end.log")"
   echo "  ${line:-no line 'lgr vertical diffusion: negative diffusivities set to 0:' in the log} ($n line(s))"
   [ "$n" = 1 ] || fail "the line of the negative diffusivities is written $n times with itlend between two steps, expected once"
+  for t in 'particle steps:' 'steps stopped at the cap of'; do
+    n="$(grep -c "lgr vertical diffusion: $t" "$W/lgr_ilagr3_end.log")"
+    echo "  lines 'lgr vertical diffusion: $t': $n"
+    [ "$n" = 1 ] || fail "the line 'lgr vertical diffusion: $t' is written $n times with itlend between two steps, expected once"
+  done
   finish
 fi
 
@@ -1089,7 +1128,7 @@ EOF
     line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
     echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
     echo "$line" | grep -q 'min 300\.000* mean 300\.000*,' || fail "the random walk time step is not the model time step (300 s) everywhere"
-    echo "$line" | grep -q ' below the model step 0 over 100 sub-steps 0$' || fail "element steps with a random walk time step below the model step"
+    echo "$line" | grep -Eq ' below the model step 0( over 100 sub-steps 0)?$' || fail "element steps with a random walk time step below the model step"
   else
     fail "the run did not end"
   fi

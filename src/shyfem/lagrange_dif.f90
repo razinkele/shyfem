@@ -73,7 +73,28 @@
 !
 ! an internal-error guard recorded inside the particle loop (#256:
 ! lgr_internal_error, then lgr_internal_failed is true) returns at once;
-! the warning counters nk, nl, nu are shared by the threads (OMP atomic)
+! the warning counters nl, nu are shared by the threads (OMP atomic)
+!
+! the vertical walk makes at most lgr_nvdiff_max calls of lgr_diff_vert
+! in a step (#261). A call ends at dtvd or where the particle reaches an
+! interface of its layer, so the calls of a step grow with the
+! diffusivity, not only with T/dtvd (at most 150 at T = 300 s: dtvd >= 2
+! s): in mm_hyd_41 with ilagr = 3 (one day, GOTM gives up to 49 m2/s) a
+! step needs up to about 19000 calls (481 before #284, which counts less
+! time for a call that stops at an interface), and one step of 777212
+! reaches the cap (142 s of 300 s not diffused). A step that reaches the
+! cap stops there. The time of a call that stops at an interface can fall
+! below the resolution of the single-precision time left, which then does
+! not change: such a call is counted and the walk goes on (it moved the
+! particle onto the interface, and the next call has the whole next layer
+! before it), but a second such call in a row ends the step (a thin layer
+! crossed in less than that resolution) instead of letting it burn the
+! cap. The steps stopped at the cap and those ended so are counted with
+! the time not diffused (OMP atomic, as the calls and draws of every step)
+! and written once at the end by lgr_vdiff_stats; nothing is written in
+! the loop. Until #261 the cap was 100 calls, and every step that reached
+! it wrote a line from inside the particle loop (59859 lines, 7.7 % of
+! the particle steps of that case, 87 s of 300 s not diffused on average)
 
         use mod_lagrange
         use basin
@@ -95,15 +116,19 @@
 
 	integer			:: mode 	!type of diffusion scheme
 	real 			:: dtime
-        integer 		:: n
+	real 			:: dtold	!time left before the call
+        integer 		:: n		!calls left (#261)
+        integer 		:: ncall	!calls made in the step
+        integer 		:: nzero	!calls that used no time
+        integer 		:: nzrow	!of those, the last ones in a row
         real 			:: perc
         double precision 	:: xx,yy,zz
+        logical			:: bstall	!ended by two such calls in a row
 
         integer			:: ndraw	!vertical draws made (#225)
         integer			:: nc		!the counter after this particle
         logical			:: lgr_internal_failed
 
-        integer, save 		:: nk = 0
         integer, save 		:: nl = 0
         integer, save 		:: nu = 0
 
@@ -123,9 +148,12 @@
 ! initialize
 !---------------------------------------------------------------
 
-        n = 100         !maximum loop count
+        n = lgr_nvdiff_max	!maximum loop count (#261)
         zz = z
 	dtime = time
+	bstall = .false.
+	nzero = 0
+	nzrow = 0
 
 !---------------------------------------------------------------
 ! vertical diffusion 
@@ -139,12 +167,38 @@
 	  ! never parked: ilagr = 3 stops on several processes)
 	  ndraw = 0
           do while ( dtime > 0. .and. n > 0 )
+            dtold = dtime
             call lgr_diff_vert(mode,id,iel,lb,zz,dtime,ndraw)
             if( lb < 1 ) exit
             n = n - 1                   !decrement loop counter
+            if( dtime < dtold ) then
+              nzrow = 0
+            else			!no time used (#261): the second in a
+              nzero = nzero + 1		!row ends the step
+              nzrow = nzrow + 1
+              if( nzrow >= 2 ) then
+                bstall = .true.
+                exit
+              end if
+            end if
           end do
           z = zz 
           if( lgr_internal_failed() ) return	!recorded in the loop
+	  ! the calls and draws of this step (#261), written at the end
+	  ! by lgr_vdiff_stats
+          ncall = lgr_nvdiff_max - n
+!$OMP ATOMIC
+          lgr_nvdiff_steps = lgr_nvdiff_steps + 1
+!$OMP ATOMIC
+          lgr_nvdiff_calls = lgr_nvdiff_calls + ncall
+!$OMP ATOMIC
+          lgr_nvdiff_mcall = max(lgr_nvdiff_mcall,ncall)
+!$OMP ATOMIC
+          lgr_nvdiff_mdraw = max(lgr_nvdiff_mdraw,ndraw)
+          if( nzero > 0 ) then
+!$OMP ATOMIC
+            lgr_nvdiff_zero = lgr_nvdiff_zero + nzero
+          end if
         end if
 
 !---------------------------------------------------------------
@@ -168,15 +222,16 @@
 !---------------------------------------------------------------
 
         if( bvdiff .and.  dtime > 0. ) then     !not finished diffusing
-          if( n == 0 ) then
-!$OMP ATOMIC CAPTURE
-            nk = nk + 1
-            nc = nk
-!$OMP END ATOMIC
-            perc = 0.
-            if( idbdy > 0 ) perc = (100.*nc)/idbdy
-            write(6,1000) 'warning particle dif',id,iel,n,dtime,perc
-            !iel = -iel
+          if( bstall ) then		!no time used twice (#261): counted
+!$OMP ATOMIC
+            lgr_nvdiff_stall = lgr_nvdiff_stall + 1
+!$OMP ATOMIC
+            lgr_tvdiff_stall = lgr_tvdiff_stall + dtime
+          else if( n == 0 ) then	!the cap (#261): counted only
+!$OMP ATOMIC
+            lgr_nvdiff_cap = lgr_nvdiff_cap + 1
+!$OMP ATOMIC
+            lgr_tvdiff_cap = lgr_tvdiff_cap + dtime
           else if( iel < 1 ) then
 !$OMP ATOMIC CAPTURE
             nl = nl + 1
@@ -225,6 +280,34 @@
 ! an internal-error guard recorded inside the particle loop (#256:
 ! lgr_internal_error here or in diff_get_vert) returns time = 0 (the
 ! caller's loop ends) with defined values; the run stops after the loop
+!
+! a call moves the particle with the velocity w of diff_get_vert for dt =
+! min(dtvd,time), or until it reaches an interface of its layer (or the
+! surface or bottom) after the time tv < dt, where it stops. Two
+! corrections keep the walk well mixed (#284):
+! - a particle that starts on an interface and moves into the next layer
+!   moves with the thickness of the layer it enters (hda, hdb of
+!   diff_get_vert); it used that of the layer it left (hd), so in Mar
+!   Menor, where the layers thicken downward, particles drifted down;
+! - a call that stops at an interface after the time tv has moved w tv,
+!   with the variance 2 K tv**2/dt (w has the variance 2 K/dt), which a
+!   Brownian path with the diffusivity K would reach in the time
+!   tv**2/dt: that is the time it now counts (it counted tv, the time in
+!   which such a path reaches 2 K tv). This keeps a uniform distribution
+!   uniform, but it is not an exact time: the walk still spreads the
+!   particles more slowly than K (the variance of their hourly
+!   displacement far from the surface and bottom is about 0.75 of 2 K T
+!   in the case below, before and after #284; issue #287).
+!   Alone, the first defect drove particles down and the second up, so
+!   the second partly masked the first.
+! Mar Menor, mm_hyd_41 without tilt in still water, K = diftur = 1e-2
+! m2/s over the whole column, 39960 particles released uniformly over the
+! depth, one day (check_lgr_wellmixed.sh): mean chi-square of 20 bins of
+! relative depth over hours 12 to 24 (19 +- 6 if well mixed) 331 and 313
+! before (lgrseed 1, 2; 11 % too few particles in the upper 15 % of the
+! column, 10 % too many in the lower 15 %), with the thickness alone 54
+! and 56, with the time alone 606 and 563, with both 20 and 19. Not well
+! mixed yet where K changes smoothly over the depth (#286)
 
 	use mod_lagrange
 	use mod_lagrange_random, only : lgr_random, lgr_rnd_vdiff
@@ -244,6 +327,8 @@
 	double precision 		:: w	!vertical velocity
         double precision                :: wd   !vertical velocity from diffusivity
         double precision                :: hd   !layer thickness
+        double precision                :: hda  !thickness of layer above
+        double precision                :: hdb  !thickness of layer below
 	double precision 		:: dz	!vertical displacement
 	double precision 		:: dv	!potential vertical dispacement
 	double precision 		:: t,tv,tt
@@ -259,7 +344,8 @@
 
 	lborig = lb
 
-        call diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd,ndraw)
+        call diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,hda,hdb	&
+     &				,wd,ndraw)
 	if( lgr_internal_failed() ) then	!recorded in the loop (#256)
 	  time = 0.
 	  return
@@ -279,10 +365,12 @@
 	if ( w > 0.d0 .and. z == 0.d0 ) then
 	  lb = lb - 1
 	  z  = 1.d0
+	  hd = hda		!the thickness of the layer entered (#284)
 	end if
 	if ( w < 0.d0 .and. z == 1.d0 ) then
 	  lb = lb + 1
 	  z  = 0.d0
+	  hd = hdb		!the thickness of the layer entered (#284)
 	end if
 
 	!-----------------------------------------------
@@ -332,6 +420,7 @@
 	    z = rr
 	    t = tt
 	  else
+	    t = tv*tv/dt	!stopped at tv: the time of its variance (#284)
  	    if( w > 0. ) then
 	      if( lb > 1 ) then
 	        lb = lb - 1
@@ -393,12 +482,17 @@
 !       2 diffusive random walk (Visser 1997)
 !       3 Milstein scheme (Grawe 2010)
 
-        subroutine diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,wd,ndraw)
+        subroutine diff_get_vert(mode,id,iel,lb,z,time,dt,lmax,hd,hda,hdb	&
+     &				,wd,ndraw)
 
 ! the random draws are the particle's own (#225): lgr_random keyed on id,
 ! the time step and the site lgr_rnd_vdiff, numbered by ndraw
 !
 ! the guard of the layer goes through lgr_internal_error (#256)
+!
+! hda and hdb are the thicknesses of the layers above and below lb (0 at
+! the surface and at the bottom), for a particle of lgr_diff_vert that
+! leaves its interface into one of them (#284)
 
         use levels, only : nlvdi,nlv
         use basin
@@ -416,6 +510,8 @@
 	real, intent(out)		:: dt	!random walk time step
         integer, intent(out)		:: lmax !maximum layers in element
         double precision, intent(out)	:: hd   !layer thickness
+        double precision, intent(out)	:: hda  !thickness of layer above
+        double precision, intent(out)	:: hdb  !thickness of layer below
         double precision, intent(out)  	:: wd  	!vertical velocity due to diffusion
 	integer, intent(inout)		:: ndraw !draws of the particle's
 						 !vertical diffusion in the step
@@ -453,6 +549,8 @@
      &		'error stop diff_get_vert: no such layer')
           dt = 0.			!recorded in the loop (#256): defined
           hd = hl(lmax)			!values, the caller stops the particle
+          hda = hd
+          hdb = hd
           wd = 0.d0
           return
         end if
@@ -461,6 +559,10 @@
 	! get derivative of diffusivity on layer lb
 	!-----------------------------------------------
         hd = hl(lb)
+	hda = 0.d0
+	if( lb > 1 ) hda = hl(lb-1)
+	hdb = 0.d0
+	if( lb < lmax ) hdb = hl(lb+1)
 	dwd = (wde(lb,iel) - wde(lb-1,iel)) / hd
 
 	!-----------------------------------------------
@@ -532,10 +634,17 @@
 ! random walk time step over the elements and steps of the run (#257):
 ! the smallest dtvd, the mean of the step a particle uses (dtvd, at most
 ! the model step), the mean number of sub-steps per model step, and the
-! number of element steps with dtvd below the model step and of those
-! with more than 100 sub-steps (diff_body stops after 100 calls of
-! lgr_diff_vert in a step, so there a particle diffuses for less than the
-! step); only in
+! number of element steps with dtvd below the model step (until #261 also
+! the element steps over 100 sub-steps, the cap of the calls of a
+! particle step then; the cap is now on the next lines); and the vertical
+! walk of the particle steps (#261, diff_body): their number, the calls of
+! lgr_diff_vert, the most calls and the most random draws in one particle
+! step (the draws of a step are numbered in a block of 2**24 of
+! lgr_random: with at most lgr_nvdiff_max calls of 1 uniform draw and 2
+! per trial of rgauss, 4/pi trials on average, about 3.55 per call), the
+! particle steps stopped at the cap and those ended by two calls in a
+! row that left the single-precision time unchanged, each with the time
+! not diffused, and all calls that left it unchanged; only in
 ! a run with vertical diffusion (ilagr = 3, a serial run: ilagr = 3 stops
 ! on several processes). Called by lagrange outside any parallel region:
 ! after the step that reaches dtlend and at the first call after it (when
@@ -553,15 +662,29 @@
      &		//' diffusivities set to 0: ',lgr_nvdiff_neg
 	! the random walk time step of lag_vdiff_ele (#257)
 	if( lgr_dtvd_n > 0 ) then
-          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0,a,i0)')		&
+          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0)')			&
      &		' lgr vertical diffusion: random walk time step [s]'	&
      &		//' min ',lgr_dtvd_min					&
      &		,' mean ',lgr_dtvd_sum/lgr_dtvd_n			&
      &		,', sub-steps per step ',dble(lgr_dtvd_nstep)/lgr_dtvd_n	&
      &		,', element steps ',lgr_dtvd_n				&
-     &		,' below the model step ',lgr_dtvd_nsub			&
-     &		,' over 100 sub-steps ',lgr_dtvd_n100
+     &		,' below the model step ',lgr_dtvd_nsub
 	end if
+	! the vertical walk of the particle steps (#261)
+	write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr vertical diffusion:'	&
+     &		//' particle steps: ',lgr_nvdiff_steps			&
+     &		,', calls: ',lgr_nvdiff_calls				&
+     &		,', most calls in a step: ',lgr_nvdiff_mcall		&
+     &		,', most draws in a step: ',lgr_nvdiff_mdraw
+	write(6,'(a,i0,a,i0,a,g0.6,a,i0,a,g0.6,a,i0)')			&
+     &		' lgr vertical diffusion:'				&
+     &		//' steps stopped at the cap of ',lgr_nvdiff_max		&
+     &		,' calls: ',lgr_nvdiff_cap				&
+     &		,', time not diffused [s]: ',lgr_tvdiff_cap		&
+     &		,'; steps ended by 2 calls in a row that used no time: '	&
+     &		,lgr_nvdiff_stall					&
+     &		,', time not diffused [s]: ',lgr_tvdiff_stall		&
+     &		,'; calls that used no time: ',lgr_nvdiff_zero
 
         end subroutine lgr_vdiff_stats
 
@@ -660,9 +783,6 @@
 	  lgr_dtvd_nstep = lgr_dtvd_nstep + ceiling(time/min(dtd,time))
 	  lgr_dtvd_n = lgr_dtvd_n + 1
 	  if( dtd < time ) lgr_dtvd_nsub = lgr_dtvd_nsub + 1
-	  if( ceiling(time/min(dtd,time)) > 100 ) then
-	    lgr_dtvd_n100 = lgr_dtvd_n100 + 1
-	  end if
 	end do
 
 	end subroutine lag_vdiff_ele

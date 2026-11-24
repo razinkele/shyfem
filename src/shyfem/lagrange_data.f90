@@ -151,14 +151,35 @@
 	!of the particle run (outside any parallel region; written once at
 	!the end by lgr_vdiff_stats, #257): smallest dtvd, sum of the step a
 	!particle uses (dtvd, at most the model step), sum of the sub-steps
-	!that makes in a model step, number of element steps, of those with
-	!dtvd below the model step and of those with more than 100 sub-steps
-	!(diff_body makes at most 100 calls of lgr_diff_vert in a step)
+	!that makes in a model step, number of element steps and of those
+	!with dtvd below the model step (until #261 also of those with more
+	!than 100 sub-steps, then the cap of the calls of a particle step)
         real, save :: lgr_dtvd_min = huge(1.)
         double precision, save :: lgr_dtvd_sum = 0.d0
         integer(kind=8), save :: lgr_dtvd_nstep = 0
         integer(kind=8), save :: lgr_dtvd_n = 0, lgr_dtvd_nsub = 0
-        integer(kind=8), save :: lgr_dtvd_n100 = 0
+	!the vertical walk of a particle step (diff_body, #261): at most
+	!lgr_nvdiff_max calls of lgr_diff_vert (100 until #261, which stopped
+	!about 8 % of the particle steps of the ilagr = 3 reproducer short of
+	!the step, each with a line written from inside the particle loop).
+	!Counted in the particle loop (OMP atomic) and written once at the
+	!end by lgr_vdiff_stats: the particle steps and calls, the most calls
+	!and the most random draws in one particle step (the draws of a step
+	!are numbered in a block of 2**24, lgr_random), the steps that reached
+	!the cap and those ended by two calls in a row that left the time
+	!unchanged (their time below the resolution of the single-precision
+	!time left), each with the time it did not diffuse, and all calls
+	!that left it unchanged
+	integer, parameter :: lgr_nvdiff_max = 10000
+        integer(kind=8), save :: lgr_nvdiff_steps = 0
+        integer(kind=8), save :: lgr_nvdiff_calls = 0
+        integer, save :: lgr_nvdiff_mcall = 0
+        integer, save :: lgr_nvdiff_mdraw = 0
+        integer(kind=8), save :: lgr_nvdiff_cap = 0
+        double precision, save :: lgr_tvdiff_cap = 0.d0
+        integer(kind=8), save :: lgr_nvdiff_stall = 0
+        double precision, save :: lgr_tvdiff_stall = 0.d0
+        integer(kind=8), save :: lgr_nvdiff_zero = 0
 	!particles not released because their release point lies in no
 	!element (insert_particle_3d, insert_particle; #247): counted, the
 	!release that asked for them reports the number (lgr_init_traj)
