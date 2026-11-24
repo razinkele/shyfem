@@ -892,6 +892,8 @@ $para
 $end
 ```
 
+`itlin = 1` (semi-Lagrangian) works only in a serial 2D run on a Cartesian grid. With `ilin = 0` and `itlin = 1` a run stops at start-up with `option itlin = 1 (semi-Lagrangian advection of momentum) is not supported ...` and one line of advice when it runs on more than one process (`... with MPI`), on a geographic lat/lon grid (`... on a geographic (lat/lon) grid`) or with more than one layer (`... in 3D (more than one layer)`).
+
 When using nonlinear advection, variable time stepping is recommended:
 
 ```
@@ -1748,7 +1750,7 @@ This metadata is used for both the UI forms and parameter validation.
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `ilin` | int | 1 | Advective terms (0=nonlinear, 1=linearized/off) |
-| `itlin` | int | 0 | Advection scheme (0=FE, 1=semi-Lagrangian) |
+| `itlin` | int | 0 | Advection scheme (0=FE, 1=semi-Lagrangian; 1 only for serial 2D runs on a Cartesian grid, other runs stop at start-up) |
 | `iclin` | int | 0 | Continuity linearization (0=nonlinear, 1=linear) |
 | `itsplt` | int | 0 | Time step mode (0=constant, 1=splitting, 2=free, 3=fractional) |
 | `coumax` | float | 1.0 | Maximum Courant number |

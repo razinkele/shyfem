@@ -80,7 +80,6 @@
 	end if
 
 	ii = mod(is_in,3) + 1
-	write(6,*) 'gguuut: ',ie,l0,ii,a_in
 	call getzvel_point(ie,l0,ii,a_in,win)
 
 	ii = mod(is_out,3) + 1

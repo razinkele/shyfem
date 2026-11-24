@@ -25,7 +25,13 @@
 #   g3d6 g3d with ireib = 6 (czdef is the roughness length of the bottom
 #        friction): GOTM's bottom roughness then comes from the nodal
 #        average of model_bottom_z0 (src/shyfem/turbulence.f90), which
-#        had the same defect (#230)
+#        had the same defect (#230); with one czdef everywhere the mean is
+#        that value for any weights, so only the rounding can differ
+#   g3da g3d6 with a $area section that gives the two area codes of
+#        GRID/MM_geo.grd (0: 1,036 elements, 1: 1,509) different
+#        roughness lengths (2.5e-3 and 2.5e-2 m): at a node between the
+#        two areas the weights decide the mean, so elements counted
+#        twice change the roughness itself
 # Required: every run ends (exit code 0 and "simulation end" in its log,
 # timeout 1200 s each); the log of an NP-process run has the line
 # "shympi initialized: ID NP" once from each rank 0 to NP-1 (so that NP
@@ -120,6 +126,13 @@ mk3d k3d 2 || { echo "MPI 3D CHECK: FAIL (cannot make k3d.str)"; exit 1; }
 sed -e 's/ireib = 5/ireib = 6/' -e 's/^        g3d$/        g3d6/' "$P/g3d.str" > "$P/g3d6.str"
 grep -q 'ireib = 6' "$P/g3d6.str" && grep -q '^        g3d6$' "$P/g3d6.str" \
   || { echo "MPI 3D CHECK: FAIL (cannot make g3d6.str)"; exit 1; }
+# the area codes the roughness of g3da relies on
+[ "$(awk '$1 == 2 { a[$3] = 1 } END { s = ""; for (k = 0; k < 10; k++) if (k in a) s = s k; print s }' "$HERE/GRID/MM_geo.grd")" = 01 ] \
+  || { echo "MPI 3D CHECK: FAIL (GRID/MM_geo.grd does not have the two area codes 0 and 1)"; exit 1; }
+{ sed -e 's/^        g3d6$/        g3da/' "$P/g3d6.str"
+  printf '\n$area\n        0  2.5e-3\n        1  2.5e-2\n$end\n'; } > "$P/g3da.str"
+grep -q '^        g3da$' "$P/g3da.str" && grep -q '^\$area$' "$P/g3da.str" \
+  || { echo "MPI 3D CHECK: FAIL (cannot make g3da.str)"; exit 1; }
 
 #--- runs and comparison
 # ranks_ok LOG NP: each of the NP ranks printed once "shympi initialized:
@@ -200,7 +213,7 @@ extdiffs() {  # SERIAL_EXT MPI_EXT: the split series that differ, largest differ
   done
 }
 
-for c in c41 g3d k3d g3d6; do
+for c in c41 g3d k3d g3d6 g3da; do
   echo "=== $c"
   if ! run "$c" 1; then fail "$c: the serial run did not end"; continue; fi
   if ! run "$c" "$NP"; then fail "$c: the run on $NP processes did not end, or not on $NP processes (above)"; continue; fi
@@ -218,6 +231,14 @@ for c in c41 g3d k3d g3d6; do
     fi
   done
 done
+
+# the $area section of g3da must have changed the serial run (otherwise
+# g3da is g3d6 again and tests nothing more)
+a="$P/g3d6.np1/g3d6.hydro.shy"; b="$P/g3da.np1/g3da.hydro.shy"
+if [ -s "$a" ] && [ -s "$b" ]; then
+  if cmp -s "$a" "$b"; then fail "g3da: the serial run equals g3d6's (the \$area roughness had no effect)"
+  else echo "  g3da serial differs from g3d6 serial (the \$area roughness acts)"; fi
+fi
 
 if [ "$rc" = 0 ]; then echo "MPI 3D CHECK: PASS"; else echo "MPI 3D CHECK: FAIL"; fi
 echo "$P"
