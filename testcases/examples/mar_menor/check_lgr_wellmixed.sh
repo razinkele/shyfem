@@ -132,7 +132,7 @@ for s in $SEEDS; do
   grep -q "diftur *= *0\.100000E-01" "$log" || fail "$c: the log does not list diftur = 0.100000E-01"
   line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$log")"
   echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
-  echo "$line" | grep -q 'min 300\.000* mean 300\.000*,.* below the model step 0 ' \
+  echo "$line" | grep -Eq 'min 300\.0* mean 300\.0*,.* below the model step 0( |$)' \
     || fail "$c: the diffusivity is not constant over the depth (random walk time step below 300 s)"
   # information only: the calls of the walk (#261)
   grep 'lgr vertical diffusion: \(particle steps\|steps stopped\)' "$log" | sed 's/^/  /'

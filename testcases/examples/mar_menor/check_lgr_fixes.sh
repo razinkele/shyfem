@@ -201,9 +201,9 @@
 #             same everywhere, K'' = 0, and the random walk must take the
 #             model time step: the log line "lgr vertical diffusion:
 #             random walk time step [s] min 300.000 mean 300.000, ...
-#             below the model step 0 over 10000 sub-steps 0" (written once
-#             at the end, lgr_vdiff_stats; the count after "over" is the
-#             cap of the calls of a particle step, 100 until #261).  Before #248 the run had
+#             below the model step 0" (written once at the end,
+#             lgr_vdiff_stats; until #261 the line went on with "over 100
+#             sub-steps 0", which the check accepts).  Before #248 the run had
 #             diftur only in the particle step made at set-up: then
 #             handle_gotm_init, called whatever iturb, replaced it by
 #             GOTM's initial 1e-6, so the mode tested a constant K of
@@ -943,7 +943,7 @@ if [ "$MODE" = ilagr3 ]; then
   [ "${nneg:-x}" = 0 ] || fail "negative interpolated diffusivities: ${nneg:-not reported}, expected 0"
   line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/lgr_ilagr3.log")"
   [ -n "$line" ] && echo "  $line"	# information only (#257)
-  grep 'lgr vertical diffusion: \(particle steps\|steps stopped\)' "$W/lgr_ilagr3.log" \
+  grep 'lgr vertical diffusion: \(particle steps:\|steps stopped\)' "$W/lgr_ilagr3.log" \
     | sed 's/^/  /'			# information only (#261)
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
@@ -1098,7 +1098,7 @@ EOF
     line="$(grep -m1 'lgr vertical diffusion: random walk time step' "$W/vdt_const.log")"
     echo "  ${line:-no line 'lgr vertical diffusion: random walk time step' in the log}"
     echo "$line" | grep -q 'min 300\.000* mean 300\.000*,' || fail "the random walk time step is not the model time step (300 s) everywhere"
-    echo "$line" | grep -q ' below the model step 0 over [0-9][0-9]* sub-steps 0$' || fail "element steps with a random walk time step below the model step"
+    echo "$line" | grep -Eq ' below the model step 0( over 100 sub-steps 0)?$' || fail "element steps with a random walk time step below the model step"
   else
     fail "the run did not end"
   fi

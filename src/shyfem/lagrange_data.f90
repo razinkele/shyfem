@@ -151,14 +151,13 @@
 	!of the particle run (outside any parallel region; written once at
 	!the end by lgr_vdiff_stats, #257): smallest dtvd, sum of the step a
 	!particle uses (dtvd, at most the model step), sum of the sub-steps
-	!that makes in a model step, number of element steps, of those with
-	!dtvd below the model step and of those with more sub-steps than the
-	!cap lgr_nvdiff_max (below)
+	!that makes in a model step, number of element steps and of those
+	!with dtvd below the model step (until #261 also of those with more
+	!than 100 sub-steps, then the cap of the calls of a particle step)
         real, save :: lgr_dtvd_min = huge(1.)
         double precision, save :: lgr_dtvd_sum = 0.d0
         integer(kind=8), save :: lgr_dtvd_nstep = 0
         integer(kind=8), save :: lgr_dtvd_n = 0, lgr_dtvd_nsub = 0
-        integer(kind=8), save :: lgr_dtvd_ncap = 0
 	!the vertical walk of a particle step (diff_body, #261): at most
 	!lgr_nvdiff_max calls of lgr_diff_vert (100 until #261, which stopped
 	!about 8 % of the particle steps of the ilagr = 3 reproducer short of

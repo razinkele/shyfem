@@ -291,9 +291,15 @@
 !   Menor, where the layers thicken downward, particles drifted down;
 ! - a call that stops at an interface after the time tv has moved w tv,
 !   with the variance 2 K tv**2/dt (w has the variance 2 K/dt), which a
-!   Brownian path with the diffusivity K reaches in the time tv**2/dt:
-!   that is the time it counts; it counted tv, so the walk diffused with
-!   the variance 2 K tv**2/dt in the time tv instead of 2 K tv.
+!   Brownian path with the diffusivity K would reach in the time
+!   tv**2/dt: that is the time it now counts (it counted tv, the time in
+!   which such a path reaches 2 K tv). This keeps a uniform distribution
+!   uniform, but it is not an exact time: the walk still spreads the
+!   particles more slowly than K (the variance of their hourly
+!   displacement far from the surface and bottom is about 0.75 of 2 K T
+!   in the case below, before and after #284; issue #287).
+!   Alone, the first defect drove particles down and the second up, so
+!   the second partly masked the first.
 ! Mar Menor, mm_hyd_41 without tilt in still water, K = diftur = 1e-2
 ! m2/s over the whole column, 39960 particles released uniformly over the
 ! depth, one day (check_lgr_wellmixed.sh): mean chi-square of 20 bins of
@@ -628,10 +634,9 @@
 ! random walk time step over the elements and steps of the run (#257):
 ! the smallest dtvd, the mean of the step a particle uses (dtvd, at most
 ! the model step), the mean number of sub-steps per model step, and the
-! number of element steps with dtvd below the model step and of those
-! with more sub-steps than the cap of lgr_nvdiff_max calls of
-! lgr_diff_vert in a particle step (until #261 the cap was 100, and this
-! count was that of the element steps over 100 sub-steps); and the vertical
+! number of element steps with dtvd below the model step (until #261 also
+! the element steps over 100 sub-steps, the cap of the calls of a
+! particle step then; the cap is now on the next lines); and the vertical
 ! walk of the particle steps (#261, diff_body): their number, the calls of
 ! lgr_diff_vert, the most calls and the most random draws in one particle
 ! step (the draws of a step are numbered in a block of 2**24 of
@@ -657,29 +662,29 @@
      &		//' diffusivities set to 0: ',lgr_nvdiff_neg
 	! the random walk time step of lag_vdiff_ele (#257)
 	if( lgr_dtvd_n > 0 ) then
-          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0,a,i0,a,i0)')	&
+          write(6,'(a,g0.6,a,g0.6,a,f0.3,a,i0,a,i0)')			&
      &		' lgr vertical diffusion: random walk time step [s]'	&
      &		//' min ',lgr_dtvd_min					&
      &		,' mean ',lgr_dtvd_sum/lgr_dtvd_n			&
      &		,', sub-steps per step ',dble(lgr_dtvd_nstep)/lgr_dtvd_n	&
      &		,', element steps ',lgr_dtvd_n				&
-     &		,' below the model step ',lgr_dtvd_nsub			&
-     &		,' over ',lgr_nvdiff_max,' sub-steps ',lgr_dtvd_ncap
+     &		,' below the model step ',lgr_dtvd_nsub
 	end if
 	! the vertical walk of the particle steps (#261)
 	write(6,'(a,i0,a,i0,a,i0,a,i0)') ' lgr vertical diffusion:'	&
-     &		//' particle steps ',lgr_nvdiff_steps			&
-     &		,' calls ',lgr_nvdiff_calls				&
-     &		,' most calls in a step ',lgr_nvdiff_mcall		&
-     &		,' most draws in a step ',lgr_nvdiff_mdraw
+     &		//' particle steps: ',lgr_nvdiff_steps			&
+     &		,', calls: ',lgr_nvdiff_calls				&
+     &		,', most calls in a step: ',lgr_nvdiff_mcall		&
+     &		,', most draws in a step: ',lgr_nvdiff_mdraw
 	write(6,'(a,i0,a,i0,a,g0.6,a,i0,a,g0.6,a,i0)')			&
      &		' lgr vertical diffusion:'				&
      &		//' steps stopped at the cap of ',lgr_nvdiff_max		&
-     &		,' calls ',lgr_nvdiff_cap				&
-     &		,' time not diffused [s] ',lgr_tvdiff_cap		&
-     &		,' steps ended by 2 calls that used no time ',lgr_nvdiff_stall	&
-     &		,' time not diffused [s] ',lgr_tvdiff_stall		&
-     &		,' calls that used no time ',lgr_nvdiff_zero
+     &		,' calls: ',lgr_nvdiff_cap				&
+     &		,', time not diffused [s]: ',lgr_tvdiff_cap		&
+     &		,'; steps ended by 2 calls in a row that used no time: '	&
+     &		,lgr_nvdiff_stall					&
+     &		,', time not diffused [s]: ',lgr_tvdiff_stall		&
+     &		,'; calls that used no time: ',lgr_nvdiff_zero
 
         end subroutine lgr_vdiff_stats
 
@@ -778,9 +783,6 @@
 	  lgr_dtvd_nstep = lgr_dtvd_nstep + ceiling(time/min(dtd,time))
 	  lgr_dtvd_n = lgr_dtvd_n + 1
 	  if( dtd < time ) lgr_dtvd_nsub = lgr_dtvd_nsub + 1
-	  if( ceiling(time/min(dtd,time)) > lgr_nvdiff_max ) then
-	    lgr_dtvd_ncap = lgr_dtvd_ncap + 1
-	  end if
 	end do
 
 	end subroutine lag_vdiff_ele
