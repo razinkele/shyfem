@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed — Lagrangian
 
-- **A release larger than `nbdymax` stops with exit code 33, not 0 (#269).** `insert_particle` ended a serial run with a bare `stop` (exit code 0, so a script saw success); it now stops through `shympi_abort_internal` with the message `nbdymax = N`, the particles needed so far, and the advice to raise `nbdymax`. On several processes the stop already came from `lgr_mpi_assign_ids` (exit 33); its message now also gives the global number of particles needed. No result changes.
+- **A release or a particle file larger than `nbdymax` stops with exit code 33, not 0 (#269).** `insert_particle` ended a serial run with a bare `stop` (exit code 0, so a script saw success); it now stops through `shympi_abort_internal` with the message `nbdymax = N`, the particles needed so far, and the advice to raise `nbdymax`. The same stop for a particle file read with `lgrini` (`lgr_input_shell`, serial only). On several processes the stop already came from `lgr_mpi_assign_ids` (exit 33); its message now also gives the global number of particles needed. No result changes.
 
 ### Changed — Docs
 

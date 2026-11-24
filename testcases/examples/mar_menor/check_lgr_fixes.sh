@@ -24,7 +24,9 @@
 #             code 33 and a message naming nbdymax and the particles needed,
 #             not with the exit code 0 of a bare stop: mm_lgr_a (150
 #             particles) with nbdymax = 100, serially and on 4 processes
-#             (there lgr_mpi_assign_ids decides on the global count).
+#             (there lgr_mpi_assign_ids decides on the global count); and
+#             a particle file of 150 particles read by lgrini with
+#             nbdymax = 100 (lgr_input_shell, serial only).
 #   decay     (#226) mm_lgr_a serially, once as it is and once with
 #             "ldecay = 86400." in $lagrg (decay of particles with an
 #             e-folding time of one day, #246: of the 145 particles 2 are
@@ -1168,10 +1170,33 @@ if [ "$MODE" = nbdymax ]; then
     lrc=$?
     echo "  exit code $lrc"
     [ "$lrc" = 33 ] || fail "$np process(es): exit code $lrc, expected 33"
-    grep -m3 "nbdymax\|insert_particle" "$W/nbm_$np.log" | sed 's/^/  /'
-    grep -q "nbdymax" "$W/nbm_$np.log" || fail "$np process(es): no message naming nbdymax"
+    grep -m4 "Cannot insert more than nbdymax\|particles needed\|error stop insert_particle" "$W/nbm_$np.log" | sed 's/^/  /'
+    grep -q "Cannot insert more than nbdymax particles" "$W/nbm_$np.log" || fail "$np process(es): no 'Cannot insert more than nbdymax particles'"
+    grep -q "particles needed: at least" "$W/nbm_$np.log" || fail "$np process(es): no 'particles needed: at least' line"
+    grep -q "error stop insert_particle: nbdy" "$W/nbm_$np.log" || fail "$np process(es): no 'error stop insert_particle: nbdy' abort message"
     grep -q "simulation end" "$W/nbm_$np.log" && fail "$np process(es): the run ended instead of stopping"
   done
+  # a particle file with more particles than nbdymax (lgr_input_shell,
+  # serial only: lgrini stops at start-up on several processes)
+  echo "=== a particle file of 150 particles read with nbdymax = 100"
+  with_para mm_lgr_a nbm_w "itend = '2009-01-01::02:00:00'"
+  run nbm_w nbm_w.log shyfem || fail "the run that makes the particle file did not end"
+  sed -e 's/^\([ \t]*\)nbdymax[ \t]*=[ \t]*5000/\1nbdymax = 100/' \
+      -e 's/^\([ \t]*\)nbdy[ \t]*=[ \t]*150[ \t]*$/\1nbdy = 0\n\1lgrini = '"'nbm_w.lgr.shy'"'\n\1itlgin = '"'2009-01-01::01:00:00'"'/' \
+      "$W/mm_lgr_a.str" > "$W/nbm_r.str"
+  for o in "nbdymax = 100" "nbdy = 0" "lgrini = 'nbm_w.lgr.shy'"; do
+    grep -qF -- "$o" "$W/nbm_r.str" || fail "no '$o' in nbm_r.str"
+  done
+  ( cd "$W" && timeout 300 nice -n 10 shyfem nbm_r.str > nbm_r.log 2>&1 )
+  lrc=$?
+  echo "  exit code $lrc"
+  [ "$lrc" = 33 ] || fail "particle file: exit code $lrc, expected 33"
+  grep -q "initializing lagrangian from file" "$W/nbm_r.log" || fail "particle file: the run did not read the particle file"
+  grep -m4 "Cannot insert more than nbdymax\|particles needed\|error stop lgr_input_shell" "$W/nbm_r.log" | sed 's/^/  /'
+  grep -q "Cannot insert more than nbdymax particles" "$W/nbm_r.log" || fail "particle file: no 'Cannot insert more than nbdymax particles'"
+  grep -q "particles needed: at least" "$W/nbm_r.log" || fail "particle file: no 'particles needed: at least' line"
+  grep -q "error stop lgr_input_shell: nbdy" "$W/nbm_r.log" || fail "particle file: no 'error stop lgr_input_shell: nbdy' abort message"
+  grep -q "simulation end" "$W/nbm_r.log" && fail "particle file: the run ended instead of stopping"
   finish
 fi
 

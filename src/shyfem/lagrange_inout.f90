@@ -804,7 +804,10 @@
 	  write(6,*) 'nbdymax = ',nbdymax
 	  write(6,*) 'Cannot insert more than nbdymax particles'
 	  write(6,*) 'Please change nbdymax in STR file'
-	  stop 'error stop lgr_input_shell: nbdy'
+	  write(6,*) 'particles needed: at least ',ntot
+	  ! not a bare stop (exit code 0, #269); lgrini is serial only
+	  call shympi_abort_internal('error stop lgr_input_shell: nbdy'	&
+     &		//' (more particles than nbdymax, raise nbdymax)')
 	end if
 	call mod_lagrange_handle_alloc(ntot)
 
