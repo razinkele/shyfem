@@ -251,6 +251,23 @@
 	logical, save :: lgr_test_internal = .false.
 	integer, save :: lgr_test_internal_n = 0
 
+	! test hook of the vertical walk of diff_body (read once by
+	! lgr_mpi_init, also in a serial run; never written after that):
+	! LGR_TEST_VDIFF_END=N (N >= 1) ends the walk of a particle whose id
+	! is a multiple of N at once, in every step, with all its time left,
+	! as a walk that left its layers would end (the exit lb < 1 of
+	! diff_body); if its id is also a multiple of 2N the particle leaves
+	! the domain there (iel = -iel). This reaches the two branches of
+	! diff_body for a walk that ended with time left (the particle out of
+	! the domain, "loosing particle dif", and the cause unknown, "unknown
+	! error dif"), which no run reaches: since #261 the walk ends only
+	! with no time left, at the cap of its calls or by two calls in a row
+	! that used no time, and lgr_diff_vert never sets lb < 1 (#288). 0:
+	! off. The particles are chosen by their id, so the same ones on any
+	! number of threads; with ilagr 1 or 2 (no vertical walk) it does
+	! nothing
+	integer, save :: lgr_test_vdiff_end = 0
+
 	! limit nbdymax on several processes: insert_particle does not stop
 	! there, it only records that this process passed the limit by itself;
 	! lgr_mpi_assign_ids decides for all processes after the release
@@ -445,6 +462,11 @@
 ! makes the internal-error guard of track_single fire once per process
 ! (lgr_mpi_test_internal, #256)
 !
+! test hook LGR_TEST_VDIFF_END=N, read here once, in a serial run too:
+! ends the vertical walk of the particles whose id is a multiple of N
+! with their time left (lgr_test_vdiff_end, diff_body, #288); the master
+! writes a line when it is on
+!
 ! test hooks of lgr_mpi_check_consistency, read here once (several
 ! processes only): LGR_TEST_DROP=R and LGR_TEST_DUP=R arm the fault on
 ! the process whose rank is R (lgr_test_drop, lgr_test_dup; see
@@ -476,6 +498,17 @@
 	call get_environment_variable('LGR_TEST_INTERNAL_FAIL',sval	&
      &			,status=ist)
 	lgr_test_internal = ( ist == 0 .and. trim(sval) == '1' )
+
+	call get_environment_variable('LGR_TEST_VDIFF_END',sval,status=ist)
+	if( ist == 0 ) then
+	  read(sval,*,iostat=ios) ir
+	  if( ios == 0 ) lgr_test_vdiff_end = max(ir,0)
+	end if
+	if( lgr_test_vdiff_end > 0 .and. shympi_is_master() ) then
+	  write(6,'(a,i0,a)') ' test hook LGR_TEST_VDIFF_END: the vertical'	&
+     &		//' walk of the particles whose id is a multiple of '	&
+     &		,lgr_test_vdiff_end,' ends at once with its time left'
+	end if
 
 	if( .not. bmpi_lagr ) return
 

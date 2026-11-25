@@ -748,7 +748,8 @@ lagrange_dif.o: ../../lib/mod/basin.mod ../../lib/mod/femtime.mod \
 		../../lib/mod/mod_diff_visc_fric.mod \
 		../../lib/mod/mod_lagrange.mod \
 		../../lib/mod/mod_lagrange_mpi.mod \
-		../../lib/mod/mod_lagrange_random.mod
+		../../lib/mod/mod_lagrange_random.mod \
+		../../lib/mod/shympi.mod
 lagrange_flux.o: ../../lib/mod/basin.mod ../../lib/mod/levels.mod \
 		../../lib/mod/mod_geom.mod \
 		../../lib/mod/mod_hydro.mod \

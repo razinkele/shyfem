@@ -180,6 +180,43 @@
 #             particle run itlend = 06:02:30 (between two time steps), must
 #             write the line of the negative diffusivities and the two lines
 #             of the particle steps exactly once each.
+#   vdiff-events (#288) nothing is written from inside the OpenMP particle
+#             loop for a vertical walk of diff_body that ended with time
+#             left: the particle out of the domain ("loosing particle dif"
+#             until #288) or the cause unknown ("unknown error dif"), one
+#             line per particle step written by the worker threads until
+#             #288.  No run reaches these branches (since #261 the walk ends
+#             only with no time left, at the cap or by two calls in a row
+#             that used no time, and lgr_diff_vert never sets lb < 1), so
+#             the mode uses the test hook LGR_TEST_VDIFF_END=10 (read once
+#             at start-up, lgr_mpi_init): the walk of a particle whose id is
+#             a multiple of 10 ends at once, in every step, with its whole
+#             time left; one whose id is also a multiple of 20 leaves the
+#             domain there.  Case: mm_hyd_41 in still water (as in
+#             check_lgr_wellmixed.sh: no tilt, wind, heat flux or rain,
+#             boundaries closed, iturb = 0, diftur = 1.e-2) for two hours,
+#             ilagr = 3, nbdy = 300 released at the start (idtl = 0), rwhpar
+#             = 0 (no particle moves horizontally), ipvert = -1, output every
+#             hour, nomp = -1 in $para, serially, once with OMP_NUM_THREADS
+#             = 1 and once with 4.  Each run must end, report its threads
+#             ("used OMP threads: N") and acknowledge the hook.  From its
+#             particle file the check takes the released ids R and expects
+#             L = the ids of R that are multiples of 20 (lost in the first
+#             step) and U = the odd multiples of 10 (walk ended in every
+#             step); from the .inf file the particle steps P (the lines
+#             "lagrange_nbdy:" with particles).  The log must hold no line
+#             "loosing particle dif" or "unknown error dif"; one line "lgr
+#             vertical diffusion: lost with time left: |L| in the step to
+#             ..., |L| in the run ...; first: id min(L), ..." and P lines
+#             "lgr vertical diffusion: walk ended with time left, cause
+#             unknown: |U| in the step to ..., k|U| in the run ...; first: id
+#             min(U), ..." (k = 1 ... P); the particle file must end with
+#             exactly L exited and every other id of R active.  The two
+#             runs must write the same summary lines and byte-identical
+#             particle files (cmp).  With the hook alone (the code before
+#             #288) the runs write |L| lines "loosing particle dif" and P|U|
+#             lines "unknown error dif" from inside the loop, and no
+#             summary line.
 #   vdiff-dt  (#257) the time step of the vertical random walk follows the
 #             curvature of the diffusivity.  Visser (1997) requires the
 #             step to be much smaller than min 1/|K''| over the water
@@ -407,11 +444,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 
@@ -1031,6 +1068,129 @@ EOF
     echo "  lines 'lgr vertical diffusion: $t': $n"
     [ "$n" = 1 ] || fail "the line 'lgr vertical diffusion: $t' is written $n times with itlend between two steps, expected once"
   done
+  finish
+fi
+
+#=============================== vdiff-events (#288) =======================
+if [ "$MODE" = vdiff-events ]; then
+  HOOK=10
+  # mm_hyd_41 in still water (the edits of check_lgr_wellmixed.sh), two
+  # hours, with the $lagrg section and nomp = -1 (threads from
+  # OMP_NUM_THREADS)
+  sed -e '/^[[:space:]]*ztilt[[:space:]]*=/d' -e '/^[[:space:]]*ktilt[[:space:]]*=/d' \
+      -e "s/itend = '[^']*'/itend = '2009-01-01::02:00:00'/" \
+      -e 's/^\([[:space:]]*\)mm_hyd_41[[:space:]]*$/\1vdev/' \
+      -e 's/^\([[:space:]]*\)ibarcl = 3/\1ibarcl = 0/' \
+      -e 's/^\([[:space:]]*\)iturb = 1      ievap = 1 /\1iturb = 0      ievap = 0 /' \
+      -e 's/^\([[:space:]]*\)iturb = 0 .*/&\n\1diftur = 1.e-2   vistur = 1.e-3/' \
+      -e 's/^\([[:space:]]*\)ibtyp = [13][[:space:]]*$/\1ibtyp = 0/' \
+      -e '/^[[:space:]]*wind[[:space:]]*=/d' -e '/^[[:space:]]*qflux[[:space:]]*=/d' \
+      -e '/^[[:space:]]*rain[[:space:]]*=/d' "$W/mm_hyd_41.str" > "$W/vdev0.str"
+  printf '\n$lagrg\n        ilagr = 3   nbdymax = 20000\n        nbdy = 300  idtl = 0  idtlgr = %s\n        rwhpar = 0  ipvert = -1\n$end\n' "'1h'" >> "$W/vdev0.str"
+  for t in 1 4; do
+    with_para vdev0 vdev_t$t "nomp = -1"
+  done
+  for o in "itend = '2009-01-01::02:00:00'" 'ibarcl = 0' 'iturb = 0      ievap = 0' 'diftur = 1.e-2' 'nomp = -1' 'ilagr = 3'; do
+    grep -qF -- "$o" "$W/vdev_t4.str" || fail "vdev_t4.str: no '$o'"
+  done
+  [ "$(grep -c 'ibtyp = 0' "$W/vdev_t4.str")" = 2 ] || fail "vdev_t4.str: the boundaries are not closed"
+  grep -q 'tilt\|wind\|qflux\|rain\|ibtyp = [13]' "$W/vdev_t4.str" && fail "vdev_t4.str: forcing or tilt lines left"
+  grep -q "^[[:space:]]*vdev_t4[[:space:]]*\$" "$W/vdev_t4.str" || fail "vdev_t4.str: run name not set"
+  [ "$rc" = 0 ] || finish
+  for t in 1 4; do
+    echo "=== mm_hyd_41 in still water, two hours, ilagr = 3, LGR_TEST_VDIFF_END=$HOOK, OMP_NUM_THREADS=$t, serially"
+    run vdev_t$t vdev_t$t.log env LGR_TEST_VDIFF_END=$HOOK OMP_NUM_THREADS=$t shyfem \
+      || fail "the run with $t thread(s) did not end"
+    threads vdev_t$t.log $t
+    grep -q "test hook LGR_TEST_VDIFF_END: .* multiple of $HOOK " "$W/vdev_t$t.log" \
+      || fail "$t thread(s): the log does not acknowledge the test hook LGR_TEST_VDIFF_END"
+    PYTHONDONTWRITEBYTECODE=1 python3 - "$W" vdev_t$t "$HOOK" <<'EOF' || fail "$t thread(s): see above"
+import os, re, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+w, name, hook = sys.argv[1], sys.argv[2], int(sys.argv[3])
+ok = True
+_, times = lc.read_file(os.path.join(w, name + ".lgr.shy"))
+rel = set()				# released ids (inserted blocks)
+for t, b, _ in times:
+    rel.update(b[-1].keys())
+lost = sorted(i for i in rel if i % (2 * hook) == 0)
+unkn = sorted(i for i in rel if i % hook == 0 and i % (2 * hook) != 0)
+t, b, _ = times[-1]
+act, ext = set(b[0].keys()), set(b[1].keys())
+print("  released %d particles; expected: lost %d (first id %s), walks ended in every step %d (first id %s)"
+      % (len(rel), len(lost), lost[0] if lost else "-", len(unkn), unkn[0] if unkn else "-"))
+print("  last output t=%r: active %d, exited %d" % (t, len(act), len(ext)))
+if not lost or not unkn:
+    print("  FAIL: the release gives no particle to the hook")
+    ok = False
+if ext != set(lost) or act != rel - set(lost):
+    print("  FAIL: the exited particles are not exactly the ids that are multiples of %d" % (2 * hook))
+    ok = False
+# particle steps: the lines lagrange_nbdy of the .inf file with particles
+npass = 0
+with open(os.path.join(w, name + ".inf")) as fh:
+    for line in fh:
+        f = line.split()
+        if len(f) == 2 and f[0] == "lagrange_nbdy:" and int(f[1]) > 0:
+            npass += 1
+print("  particle steps (lines lagrange_nbdy: in %s.inf): %d" % (name, npass))
+if npass < 2:
+    print("  FAIL: fewer than 2 particle steps")
+    ok = False
+with open(os.path.join(w, name + ".log"), errors="replace") as fh:
+    log = fh.read().split("\n")
+nper = [sum(1 for l in log if s in l) for s in ("loosing particle dif", "unknown error dif")]
+print("  lines written from inside the particle loop: 'loosing particle dif' %d, 'unknown error dif' %d"
+      % tuple(nper))
+if sum(nper) > 0:
+    print("  FAIL: %d lines written from inside the particle loop, one per particle step"
+          " (the summary lines expected instead)" % sum(nper))
+    ok = False
+pat = r"(\d+) in the step to (\S+), (\d+) in the run \(.*\); first: id (\d+),"
+kinds = (("lost with time left", lost, 1),
+         ("walk ended with time left, cause unknown", unkn, npass))
+for text, ids, nexp in kinds:
+    lines = [l for l in log if "lgr vertical diffusion: " + text + ":" in l]
+    print("  summary lines 'lgr vertical diffusion: %s:': %d (expected %d)" % (text, len(lines), nexp))
+    for l in lines[:2] + (["    ..."] if len(lines) > 3 else []) + lines[2:][-1:]:
+        print("    " + l.strip())
+    if len(lines) != nexp:
+        print("  FAIL: %d summary lines, expected %d" % (len(lines), nexp))
+        ok = False
+        continue
+    for k, l in enumerate(lines, 1):
+        m = re.search("lgr vertical diffusion: " + re.escape(text) + ": " + pat, l)
+        if not m:
+            print("  FAIL: cannot read the line %r" % l.strip())
+            ok = False
+            continue
+        n, ntot, first = int(m.group(1)), int(m.group(3)), int(m.group(4))
+        if n != len(ids) or ntot != k * len(ids) or first != ids[0]:
+            print("  FAIL: step %d: %d in the step, %d in the run, first id %d;"
+                  " expected %d, %d, %d" % (k, n, ntot, first, len(ids), k * len(ids), ids[0]))
+            ok = False
+sys.exit(0 if ok else 1)
+EOF
+  done
+  # the same summary lines and the same particle file on 1 and 4 threads
+  for t in 1 4; do
+    grep 'lgr vertical diffusion: lost with time left:\|lgr vertical diffusion: walk ended with time left' \
+      "$W/vdev_t$t.log" > "$W/vdev_t$t.summary"
+  done
+  if [ ! -s "$W/vdev_t1.summary" ]; then
+    fail "no summary lines to compare"
+  elif cmp -s "$W/vdev_t1.summary" "$W/vdev_t4.summary"; then
+    echo "  summary lines of 4 threads identical to 1 thread ($(wc -l < "$W/vdev_t1.summary") lines)"
+  else
+    fail "the summary lines of 4 threads differ from 1 thread"; diff "$W/vdev_t1.summary" "$W/vdev_t4.summary" | head -4 | sed 's/^/    /'
+  fi
+  a="$W/vdev_t1.lgr.shy"; b="$W/vdev_t4.lgr.shy"
+  if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "particle file missing"
+  elif cmp -s "$a" "$b"; then echo "  particle file of 4 threads identical to 1 thread ($(stat -c %s "$a") bytes)"
+  else fail "the particle file of 4 threads differs from 1 thread"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+  fi
   finish
 fi
 

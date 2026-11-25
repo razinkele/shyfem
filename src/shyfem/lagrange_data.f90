@@ -180,6 +180,34 @@
         integer(kind=8), save :: lgr_nvdiff_stall = 0
         double precision, save :: lgr_tvdiff_stall = 0.d0
         integer(kind=8), save :: lgr_nvdiff_zero = 0
+	!events of the vertical walk in the particle loop of drogue, which
+	!until #288 wrote their lines from the worker threads: 1 a walk of
+	!diff_body that ended with time left and the particle out of the
+	!domain ("loosing particle dif"), 2 one that ended with time left
+	!for no known reason ("unknown error dif"), 3 a depth z outside 0..1
+	!after a call of lgr_diff_vert (its internal error (2)), 4 a layer
+	!below the bottom of the element in diff_get_vert ("no such layer");
+	!3 and 4 stop the run (lgr_internal_error). lgr_vdiff_event counts
+	!them in the loop (OMP atomic, lgr_vdev_n) and keeps the values of
+	!the event of a kind with the lowest key (the slot of the particle
+	!for 1 and 2, the first in the order of a serial loop; the id for 3
+	!and 4) in the critical section lgr_vdev, entered only for an event:
+	!lgr_vdev_ival the id, element and calls left (1, 2) or the id,
+	!element, layer and layers of the element (3, 4), lgr_vdev_dval the
+	!time left (1, 2) or tv, t, dz, w, hd and z of lgr_diff_vert (3).
+	!For 1 and 2 the counts and the events kept are the same on any
+	!number of threads; for 3 and 4 not: after the first internal error
+	!the other threads leave their particles (lgr_internal_failed), so
+	!the count and the event kept depend on the scheduling (on one
+	!thread the run aborts at the first one in the order of the loop),
+	!which is harmless, as the run stops.
+	!lgr_vdiff_events writes and clears them after the loop (drogue, in
+	!every pass with an event); lgr_vdev_ntot sums each kind over the run
+        integer, save :: lgr_vdev_n(4) = 0
+        integer(kind=8), save :: lgr_vdev_ntot(4) = 0
+        integer, save :: lgr_vdev_key(4) = huge(1)
+        integer, save :: lgr_vdev_ival(4,4) = 0
+        double precision, save :: lgr_vdev_dval(6,4) = 0.d0
 	!particles not released because their release point lies in no
 	!element (insert_particle_3d, insert_particle; #247): counted, the
 	!release that asked for them reports the number (lgr_init_traj)
