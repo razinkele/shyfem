@@ -1070,7 +1070,7 @@
 	use mod_ts
 	use mod_hydro_vel
 	use mod_hydro
-	use levels, only : nlvdi,nlv,hlv,ilhv,ilhkv
+	use levels, only : nlvdi,nlv,ilhv,ilhkv
 	use basin
 	use mod_restart
 	use shympi
