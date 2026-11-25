@@ -329,8 +329,20 @@
 #             interpolation of the walk before, exxpp, divides 0/0).  And
 #             for 2001 depths from -3 H to 3 H on layers (1, 2, 0, 3): a
 #             layer of non-zero thickness, z in 0 ... 1, and the depth of
-#             (lb, z) equal to the folded d.  Before #286 neither routine
-#             exists (the walk stopped at every interface).
+#             (lb, z) equal to the folded d.  These layers and interfaces
+#             are exact in single precision, so z never leaves 0 ... 1
+#             there even without the clamp of lgr_walk_locate; diff_body
+#             builds the interfaces as a single-precision running sum, where
+#             hle(l) - hle(l-1) can exceed hl(l).  So the interfaces of
+#             layers (0.1, 0.2, 0.3, 0.4) and of 0.1 + 0.01 l (l = 1 ...
+#             50) are built that way and each is located: lb = l and z in 0
+#             ... 1 at every one (without the clamp z exceeds 1 by a
+#             rounding at 1 and 22 of them, 1 + 3.7e-8 and 1 + 8.0e-7; a
+#             real z of 1.000001 makes track_xi stop the run); the program
+#             also requires that the unclamped value exceeds 1 at one
+#             interface at least, or the case no longer tests the clamp.
+#             Before #286 neither routine exists (the walk stopped at
+#             every interface).
 #   grow-fail (#242) on 4 MPI processes with 4 OpenMP threads each (nomp =
 #             4), with LGR_TEST_SMALL_EXPORT=1 (the lists of marks and of
 #             parked particles start with 2 entries, so they grow in the
@@ -1623,8 +1635,9 @@ if [ "$MODE" = walk-fold ]; then
 ! below d, z = (d - top)/thickness, 0.5 if every layer has zero thickness
 	implicit none
 	real :: hl(4), hle(0:4), wd(0:4)
-	double precision :: d, z, dd, zd, ak
-	integer :: lb, nfail, i, nbad
+	real :: hs(50), he(0:50)
+	double precision :: d, z, dd, zd, ak, zmax
+	integer :: lb, nfail, i, nbad, icase, n, l, nraw
 	nfail = 0
 	! layers (1, 2, 0, 3) m: interfaces 0, 1, 3, 3, 6, H = 6
 	hl = (/ 1., 2., 0., 3. /)
@@ -1682,6 +1695,47 @@ if [ "$MODE" = walk-fold ]; then
      &		,ak,', expected K(3) =',dble(wd(3))
 	  if( abs(ak-wd(3)) > 1.d-6*wd(3) ) nfail = nfail + 1
 	end if
+	! the interfaces as diff_body builds them, a single-precision running
+	! sum: hle(l) - hle(l-1) can exceed hl(l), so at an interface, d =
+	! hle(l), (d - hle(l-1))/hl(l) can exceed 1 by a rounding. The clamp
+	! of lgr_walk_locate must keep z in 0 ... 1 (a real z of 1.000001 makes
+	! track_xi stop the run) and lb must be l. nraw counts the interfaces
+	! where the unclamped value exceeds 1: at least one, or the case no
+	! longer tests the clamp
+	do icase = 1,2
+	  if( icase == 1 ) then
+	    n = 4
+	    hs(1:4) = (/ 0.1, 0.2, 0.3, 0.4 /)
+	  else
+	    n = 50
+	    do l = 1,n
+	      hs(l) = 0.1 + 0.01*l
+	    end do
+	  end if
+	  he(0) = 0.
+	  do l = 1,n
+	    he(l) = he(l-1) + hs(l)
+	  end do
+	  nraw = 0
+	  nbad = 0
+	  zmax = 0.d0
+	  do l = 0,n
+	    if( l > 0 ) then
+	      if( (dble(he(l))-he(l-1))/hs(l) > 1.d0 ) nraw = nraw + 1
+	    end if
+	    call lgr_walk_locate(n,hs(1:n),he(0:n),dble(he(l)),lb,z)
+	    zmax = max(zmax,z)
+	    if( z < 0.d0 .or. z > 1.d0 ) nbad = nbad + 1
+	    if( lb /= max(l,1) ) nbad = nbad + 1
+	  end do
+	  write(6,'(2x,a,i0,a,i0,a,i0,a,es10.3)')				&
+     &		'single-precision running sum of ',n			&
+     &		,' layers, at every interface: unclamped value > 1 at ',nraw	&
+     &		,', z outside 0 ... 1 or wrong layer at ',nbad		&
+     &		,', max z - 1 ',zmax-1.d0
+	  if( nbad > 0 ) nfail = nfail + 1
+	  if( nraw == 0 ) nfail = nfail + 1
+	end do
 	write(6,'(2x,a,i0)') 'failed checks: ',nfail
 	if( nfail > 0 ) stop 1
 	contains
