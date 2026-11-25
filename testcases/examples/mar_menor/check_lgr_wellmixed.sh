@@ -151,9 +151,12 @@
 #                           parabolic     147.2   124.6   128.1   0.844
 #                           gotm           17.6    20.8    19.0   0.981
 # The walk of #286 made 112.6 calls per particle step in mode linear
-# (most 1501 in a step; the gradient term of the step set it in 735504
-# element steps, its floor 0.2 s in 23575), 426.5 in parabolic (700536,
-# 65889) and 162.8 in gotm (528351, 35052), and no step reached the cap;
+# (most 1501 in a step; the gradient term of the step set it in 650603
+# element steps, its floor 0.2 s in 23575; 650603 is also the number of
+# element steps below the model step in that run, which N cannot exceed:
+# the first count, 735504, took the curvature step uncapped at the model
+# step), 426.5 in parabolic (700536, 65889) and 162.8 in gotm (528007,
+# 35052), and no step reached the cap;
 # the walk before 2.55 in linear and 76.8 in parabolic (34103497 with
 # these hooks).  The measurements of #286, an in-model histogram of the
 # same relative depths on a debug build of 97a7ad46, gave with the walk

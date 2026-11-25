@@ -162,21 +162,38 @@
 #             active particles with an element in 1..nel, a layer in 1..nlv
 #             and a depth z in the layer within 0..1 (the line of the random
 #             walk time step of the run, #257, is printed for information:
-#             min 2 s, mean 33.5 s, 41.7 sub-steps per 300 s step; before
-#             #257 mean 24.9 s, 98.4 sub-steps).  The cap of the calls of
-#             lgr_diff_vert in a particle step (#261): the log must hold no
-#             line "warning particle dif" (written from inside the OpenMP
-#             particle loop for every step that reached the cap until
-#             #261), and each of the two lines of the particle steps once,
-#             "lgr vertical diffusion: particle steps: ..., most calls in a
-#             step: M, ..." with M > 100 (the cap before #261; measured
-#             10000, about 19000 with no cap) and "... steps stopped at the
-#             cap of 10000 calls: N, ...; steps ended by 2 calls in a row
-#             that used no time: E, ..." with N <= 10 (measured 1 of 777212
-#             particle steps, 142 s not diffused) and E = 0.  Before #261
-#             the log has 59859 lines "warning particle dif" and neither
-#             line; with the cap put back to 100 (lgr_nvdiff_max) M = 100
-#             and N = 59618.  A second run, 12 hours with the end of the
+#             with the walk of #286 min 0.2 s (the floor of its gradient
+#             term), mean 14.1 s, 168.7 sub-steps per 300 s step and 726266
+#             of 735505 element steps below the model step; with the
+#             curvature rule alone, min 2 s, mean 33.5 s, 41.7 sub-steps;
+#             before #257 mean 24.9 s, 98.4 sub-steps).  The cap of the
+#             calls of lgr_diff_vert in a particle step (#261, #286): the
+#             log must hold no line "warning particle dif" (written from
+#             inside the OpenMP particle loop for every step that reached
+#             the cap until #261), and each of the two lines of the
+#             particle steps once, "lgr vertical diffusion: particle steps:
+#             ..., most calls in a step: M, ..." with 100 < M <= 1501 and
+#             "... steps stopped at the cap of 10000 calls: N, ...; steps
+#             ended by 2 calls in a row that used no time: E, ..." with N =
+#             0 and E = 0.  The walk of #286 (lgr_diff_vert) makes ceiling(
+#             T/dtvd) calls in a step of T s, one displacement each and none
+#             ended at an interface, so the calls are not capped by the
+#             layers any more: measured 119714348 calls in 772898 particle
+#             steps, 154.9 per step (the reproducer of #286 gave 154.8),
+#             most 1501 in a step, N = 0 at T = 300 s and E = 0.  The bound
+#             1501 is ceiling(300/0.2) = 1500 for the floor of the gradient
+#             term, 0.2 s, plus one call for the single-precision rounding of
+#             the time left; M must exceed 100, the cap before #261.  The
+#             walk before #286 ended a call at each layer interface: M
+#             10000 (the cap), N = 1 of 777212 particle steps, 142 s not
+#             diffused.  Before #261 the log has 59859 lines "warning
+#             particle dif" and neither line; with the cap put back to 100
+#             (lgr_nvdiff_max) and the old walk M = 100 and N = 59618; with
+#             the cap at 100 and the walk of #286 (a throwaway build, same
+#             case) the run ends, with no line "warning particle dif" or
+#             any other line from the loop: M = 100, N = 154604 of 769401
+#             particle steps, 26.7 million s not diffused, E = 0.  A second
+#             run, 12 hours with the end of the
 #             particle run itlend = 06:02:30 (between two time steps), must
 #             write the line of the negative diffusivities and the two lines
 #             of the particle steps exactly once each.
@@ -185,9 +202,11 @@
 #             left: the particle out of the domain ("loosing particle dif"
 #             until #288) or the cause unknown ("unknown error dif"), one
 #             line per particle step written by the worker threads until
-#             #288.  No run reaches these branches (since #261 the walk ends
-#             only with no time left, at the cap or by two calls in a row
-#             that used no time, and lgr_diff_vert never sets lb < 1), so
+#             #288.  No run reaches these branches (the walk of #286 makes
+#             one displacement per call and no call ends where the particle
+#             reaches a layer interface, the surface or the bed, so the walk
+#             ends only with no time left, at the cap or by two calls in a
+#             row that used no time, and lgr_diff_vert never sets lb < 1), so
 #             the mode uses the test hook LGR_TEST_VDIFF_END=10 (read once
 #             at start-up, lgr_mpi_init): the walk of a particle whose id is
 #             a multiple of 10 ends at once, in every step, with its whole
@@ -1114,12 +1133,10 @@ if [ "$MODE" = ilagr3 ]; then
   mcall="$(printf '%s' "$l1" | sed -n 's/.*most calls in a step: *\([0-9][0-9]*\).*/\1/p')"
   ncap="$(printf '%s' "$l2" | sed -n 's/.*steps stopped at the cap of [0-9]* calls: *\([0-9][0-9]*\),.*/\1/p')"
   nend="$(printf '%s' "$l2" | sed -n 's/.*steps ended by 2 calls in a row that used no time: *\([0-9][0-9]*\),.*/\1/p')"
-  if [ -z "$mcall" ] || [ "$mcall" -le 100 ] || [ "$mcall" -gt 10000 ]; then
-    fail "most calls of lgr_diff_vert in a particle step ${mcall:-not reported}, expected more than 100 (the cap before #261) and at most 10000 (the cap)"
+  if [ -z "$mcall" ] || [ "$mcall" -le 100 ] || [ "$mcall" -gt 1501 ]; then
+    fail "most calls of lgr_diff_vert in a particle step ${mcall:-not reported}, expected more than 100 (the cap before #261) and at most 1501 (ceiling(300/0.2) + 1; measured 1501)"
   fi
-  if [ -z "$ncap" ] || [ "$ncap" -gt 10 ]; then
-    fail "particle steps stopped at the cap ${ncap:-not reported}, expected at most 10 (measured 1)"
-  fi
+  [ "${ncap:-x}" = 0 ] || fail "particle steps stopped at the cap ${ncap:-not reported}, expected 0 (T = 300 s needs at most 1501 calls; measured 0)"
   [ "${nend:-x}" = 0 ] || fail "particle steps ended by two calls in a row that used no time ${nend:-not reported}, expected 0"
   if [ "$rc" = 0 ]; then
     PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$W/lgr_ilagr3.lgr.shy" <<'EOF' || fail "particle file check"
