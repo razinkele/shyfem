@@ -217,6 +217,43 @@
 #             #288) the runs write |L| lines "loosing particle dif" and P|U|
 #             lines "unknown error dif" from inside the loop, and no
 #             summary line.
+#   adv-events (#294) nothing is written from inside the OpenMP particle
+#             loop for an advection that ended with time left or for a flux
+#             over a wall side: until #294 track_body_xi wrote a line
+#             "loosing particle adv" (and "warning particle adv", "unknown
+#             error adv") for each such particle step and track_xi_get_flux
+#             a line "material boundary:" for each such call, from the
+#             worker threads; now they are counted and written once per
+#             pass, "lgr advection: lost with time left: N in the step to
+#             TIME, M in the run (...); first: id, element, crossings left,
+#             time left [s]" and "lgr advection: flux over a wall side set
+#             to 0: N ...; first: id, element, layer, side, flux".  Case
+#             mm_lgr_b as it is (two days, ilagr = 1, about 1000 particles
+#             released at the start, rwhpar = 0, an open boundary: a
+#             particle leaves the domain only by advection, at the open
+#             boundary), with nomp = -1 in $para: serially with
+#             OMP_NUM_THREADS = 1 and with 4, and with nomp = 2 on 4 MPI
+#             processes.  Each run must end and report its threads.  No
+#             log may hold one of the six old per-particle lines (also "vel
+#             < 0" and "warning: wrong layer").  In each run every kind of
+#             summary line ("lgr advection: ...") has at most one line per
+#             pass (per process on several processes, each with its rank),
+#             and its "in the run" count is the sum of its counts so far.
+#             Serially the particle file is the oracle of the lost
+#             particles: at each output the lost particles counted in the
+#             steps up to its time ("in the run") are exactly the exited
+#             particles of that output (only advection takes a particle out
+#             here), the first id of a step is one of the particles that
+#             exited by the next output and not by the one before, its
+#             element is negative and it had time and crossings left; the
+#             flux lines must exist.  The runs on 1 and 4 threads must write
+#             the same summary lines and byte-identical particle files
+#             (cmp); on 4 processes the counts of each kind and step summed
+#             over the ranks must equal the serial ones.  Before #294 the
+#             serial run writes 595 lines "loosing particle adv" and 121
+#             "material boundary:", and no summary line; with #294 the
+#             summary lines count 595 lost particles and 121 fluxes in the
+#             run.
 #   vdiff-dt  (#257) the time step of the vertical random walk follows the
 #             curvature of the diffusivity.  Visser (1997) requires the
 #             step to be much smaller than min 1/|K''| over the water
@@ -444,11 +481,11 @@ MODE="${1:-}"
 NP=4
 rc=0
 
-usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
+usage() { echo "usage: $0 stk-omp | decay | decay-rate | outside | segments | ilagr3 | vdiff-events | adv-events | vdiff-dt | grow-fail | int-fail | small-export | seed | sedbeach | bnd-release | nbdymax"; exit 2; }
 fail() { echo "  FAIL: $*"; rc=1; }
 
 case "$MODE" in
-  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
+  stk-omp|decay|decay-rate|outside|segments|ilagr3|vdiff-events|adv-events|vdiff-dt|grow-fail|int-fail|small-export|seed|sedbeach|bnd-release|nbdymax) ;;
   *) usage ;;
 esac
 
@@ -1191,6 +1228,164 @@ EOF
     fail "the summary lines of 4 threads differ from 1 thread"; diff "$W/vdev_t1.summary" "$W/vdev_t4.summary" | head -4 | sed 's/^/    /'
   fi
   a="$W/vdev_t1.lgr.shy"; b="$W/vdev_t4.lgr.shy"
+  if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "particle file missing"
+  elif cmp -s "$a" "$b"; then echo "  particle file of 4 threads identical to 1 thread ($(stat -c %s "$a") bytes)"
+  else fail "the particle file of 4 threads differs from 1 thread"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
+  fi
+  finish
+fi
+
+#=============================== adv-events (#294) =========================
+if [ "$MODE" = adv-events ]; then
+  # mm_lgr_b as it is, with the threads from OMP_NUM_THREADS (serial runs)
+  # or two threads per process (nomp = 2, the run on NP processes)
+  with_para mm_lgr_b advb "nomp = -1"
+  with_para mm_lgr_b advb_mpi "nomp = 2"
+  for f in advb advb_mpi; do
+    grep -q "^[[:space:]]*$f[[:space:]]*\$" "$W/$f.str" || fail "$f.str: run name not set"
+    grep -q "ilagr = 1" "$W/$f.str" || fail "$f.str: no 'ilagr = 1'"
+  done
+  [ "$rc" = 0 ] || finish
+  for t in 1 4; do
+    echo "=== mm_lgr_b, OMP_NUM_THREADS=$t, serially"
+    run advb advb_t$t.log env OMP_NUM_THREADS=$t shyfem || fail "the run with $t thread(s) did not end"
+    mv "$W/advb.lgr.shy" "$W/advb_t$t.lgr.shy" 2> /dev/null
+    threads advb_t$t.log $t
+  done
+  echo "=== mm_lgr_b, 2 OpenMP threads, on $NP processes"
+  run advb_mpi advb_np$NP.log mpirun --oversubscribe -np $NP shyfem || fail "the run on $NP processes did not end"
+  threads advb_np$NP.log 2
+  STR_ITANF="$(sed -n "s/.*itanf = '\([^']*\)'.*/\1/p" "$W/advb.str" | head -1)"
+  PYTHONDONTWRITEBYTECODE=1 python3 - "$W" "$STR_ITANF" "$NP" <<'EOF' || fail "see above"
+import datetime, os, re, sys
+sys.path.insert(0, sys.argv[1])
+import lgr_compare as lc
+
+w, itanf, np_ = sys.argv[1], sys.argv[2], int(sys.argv[3])
+t0 = datetime.datetime.strptime(itanf[:10], "%Y-%m-%d")
+ok = True
+def bad(msg):
+    global ok
+    print("  FAIL: " + msg)
+    ok = False
+
+OLD = ("loosing particle adv", "warning particle adv", "unknown error adv",
+       "material boundary:", "vel < 0", "warning: wrong layer")
+LOST, WALL = "lost with time left", "flux over a wall side set to 0"
+pat = re.compile(r"^ lgr advection:(?: rank (\d+):)? (.+?): (\d+) in the step to (\S+?)"
+                 r"(?:, (\d+) in the run \([\d.]+ % of the \d+ particles released\))?; first: (.*)$")
+
+def read_log(name):
+    """the summary lines of a log: {(rank, kind): [(step, n, ntot, first)]}"""
+    with open(os.path.join(w, name), errors="replace") as fh:
+        log = fh.read().split("\n")
+    nold = [sum(1 for l in log if s in l) for s in OLD]
+    print("  %s: lines written from inside the particle loop: %s" % (name,
+          ", ".join("'%s' %d" % (s, n) for s, n in zip(OLD, nold))))
+    if sum(nold) > 0:
+        bad("%s: %d lines written from inside the particle loop, one per particle step"
+            " (the summary lines expected instead)" % (name, sum(nold)))
+    ev, lines = {}, [l for l in log if l.startswith(" lgr advection:")]
+    for l in lines:
+        m = pat.match(l)
+        if not m:
+            bad("%s: cannot read the line %r" % (name, l))
+            continue
+        rank = int(m.group(1)) if m.group(1) is not None else -1
+        step = datetime.datetime.strptime(m.group(4), "%Y-%m-%d::%H:%M:%S")
+        first = dict((f.rsplit(" ", 1)[0].strip(), f.rsplit(" ", 1)[1]) for f in m.group(6).split(", "))
+        ntot = int(m.group(5)) if m.group(5) is not None else None
+        ev.setdefault((rank, m.group(2)), []).append(((step - t0).total_seconds(), int(m.group(3)), ntot, first))
+    for (rank, kind), es in sorted(ev.items()):
+        steps = [e[0] for e in es]
+        tot = 0
+        for s, n, ntot, _ in es:
+            tot += n
+            if ntot != tot:
+                bad("%s rank %d '%s': step %r: %r in the run, expected %d" % (name, rank, kind, s, ntot, tot))
+                break
+        if steps != sorted(set(steps)):
+            bad("%s rank %d '%s': more than one line in a pass" % (name, rank, kind))
+        print("    %s%s: %d lines (passes), %d events in the run"
+              % (name, "" if rank < 0 else " rank %d" % rank, len(es), tot) + " '%s'" % kind)
+    return ev, lines
+
+ev1, lines1 = read_log("advb_t1.log")
+ev4, lines4 = read_log("advb_t4.log")
+evm, _ = read_log("advb_np%d.log" % np_)
+
+# serial: the particle file is the oracle of the lost particles
+_, times = lc.read_file(os.path.join(w, "advb_t1.lgr.shy"))
+lost = ev1.get((-1, LOST), [])
+wall = ev1.get((-1, WALL), [])
+if not lost:
+    bad("no summary line '%s'" % LOST)
+if not wall:
+    bad("no summary line '%s'" % WALL)
+if any(r >= 0 for r, _ in ev1):
+    bad("a serial line has a rank")
+nout = 0
+for t, b, _ in times:
+    ext = set(b[1].keys())
+    upto = [e for e in lost if e[0] <= t]
+    nrun = upto[-1][2] if upto else 0
+    if nrun != len(ext):
+        nout += 1
+        if nout <= 3:
+            bad("output t=%r: %d lost in the run, %d exited particles in the particle file" % (t, nrun, len(ext)))
+if nout > 3:
+    bad("... and %d more outputs (of %d) where the two differ" % (nout - 3, len(times)))
+# the first of each step: exited by the next output, not by the one before
+outs = [(t, set(b[1].keys())) for t, b, _ in times]
+nchk = 0
+for s, n, ntot, first in lost:
+    after = [e for t, e in outs if t >= s]
+    before = [e for t, e in outs if t < s]
+    i = int(first["id"])
+    if not after or i not in after[0] or (before and i in before[-1]):
+        bad("step %r: first id %d did not exit between the outputs around the step" % (s, i))
+    if int(first["element"]) >= 0 or not 0 < int(first["crossings left"]) <= 100 \
+            or not float(first["time left [s]"]) > 0:
+        bad("step %r: first %r: not out of the domain with time and crossings left" % (s, first))
+    nchk += 1
+if lost:
+    t, b, _ = times[-1]
+    print("  serial: %d lost in the run (%d steps checked), %d exited at the last output t=%r;"
+          " %d fluxes over a wall side in the run" % (lost[-1][2], nchk, len(b[1]), t,
+          wall[-1][2] if wall else 0))
+    print("    " + [l for l in lines1 if LOST in l][0].strip())
+    if wall:
+        print("    " + [l for l in lines1 if WALL in l][0].strip())
+
+# 1 and 4 threads: the same summary lines
+if not lines1:
+    bad("no summary lines to compare")
+elif lines1 != lines4:
+    bad("the summary lines of 4 threads differ from 1 thread")
+else:
+    print("  summary lines of 4 threads identical to 1 thread (%d lines)" % len(lines1))
+
+# several processes: each line with its rank; per kind and step the sum
+# over the ranks equals the serial count
+if any(r < 0 for r, _ in evm):
+    bad("a line of the run on %d processes has no rank" % np_)
+ser = dict(((k, s), n) for (r, k), es in ev1.items() for s, n, _, _ in es)
+par = {}
+for (r, k), es in evm.items():
+    for s, n, _, _ in es:
+        par[(k, s)] = par.get((k, s), 0) + n
+if not ser:
+    bad("no serial counts to compare with the run on %d processes" % np_)
+elif ser != par:
+    diff = sorted(set(ser) ^ set(par)) + sorted(x for x in set(ser) & set(par) if ser[x] != par[x])
+    bad("the counts summed over the %d ranks differ from the serial ones (%d steps, first %r)"
+        % (np_, len(diff), diff[:1]))
+else:
+    print("  %d processes: the counts of %d kind(s) and steps summed over %d rank(s) equal the serial ones"
+          % (np_, len(set(k for k, _ in ser)), len(set(r for r, _ in evm))))
+sys.exit(0 if ok else 1)
+EOF
+  a="$W/advb_t1.lgr.shy"; b="$W/advb_t4.lgr.shy"
   if [ ! -s "$a" ] || [ ! -s "$b" ]; then fail "particle file missing"
   elif cmp -s "$a" "$b"; then echo "  particle file of 4 threads identical to 1 thread ($(stat -c %s "$a") bytes)"
   else fail "the particle file of 4 threads differs from 1 thread"; cmp "$a" "$b" | head -1 | sed 's/^/    /'
