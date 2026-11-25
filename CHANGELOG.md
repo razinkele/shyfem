@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed — Tools
+
+- **`shyelab -outformat nc` now converts EUTRO and mercury output (#222).** The ulva variables (741, 742) and the mercury variables (251-299) had no name in the NetCDF writer (`src/tools/shynetcdf/netcdf.f90`), NetCDF refused the empty name and `shyelab` left a 32-byte `out.nc` of zeros behind and exited 0. They now have names and units (`ulva_biomass`, `hg0_water`, ...), an id that still has no name gets `var_<id>` and a log line, and a failed NetCDF call removes the unfinished `out.nc` and exits with status 1 (it exited 0). Only the NetCDF writer changes: model results are unchanged. New gate `testcases/examples/weutro_box/check_nc.sh`.
+
 ### Fixed — MPI
 
 - **MPI: `partition.N.elem.grd` is the same file at every run (#279).** At the start of a run on several processes every process wrote the partition files into the same folder at once, and the element partition held by the master was not the one the other processes held (`check_partition` works on the basin of the master and leaves the element areas there different: 478 / 549 / 594 / 924 elements per domain instead of 637 / 638 / 638 / 632), so the file got the content of whichever writer came last: 4 different files in 10 runs of `mm_hyd_00` on 4 processes. The master alone now writes the files, with the element partition of METIS (so the log lines `Grid with partition on ...` appear once, not once per process). The node partition the model uses was always the same and nothing reads these files: no result changes (`.shy`, `.rst`, particle and `.inf` files byte-identical to before). The new `testcases/examples/mar_menor/check_partition_file.sh` runs the case 12 times and requires one md5 for every `partition.*` file.
