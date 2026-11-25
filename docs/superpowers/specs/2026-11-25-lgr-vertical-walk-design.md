@@ -1,6 +1,6 @@
 # Design: a new vertical random walk for `ilagr = 3` (#286, #287, #283 part 1, #299)
 
-Status: DRAFT, to be checked by a builder and then approved by the owner. The gradient step's constants (f and its floor, §5.2) are the **owner's open decision**: the measurement found no setting that meets both the accuracy margin and the 2x budget (reportMwalk2.md). Everything else is filled from that measurement.
+Status: DRAFT, to be checked by a builder and then approved by the owner. The gradient step's constants are the owner's decision of 2026-11-25: setting **B07**, f = 0.07 and a 0.2 s floor, with the walk-only budget **≤ 2.1x** (§2, §5.2). The measurement found no setting that met both the accuracy margin and 2x (reportMwalk2.md).
 
 ## 1. Intent
 
@@ -34,7 +34,7 @@ The owner's decision is to fix all four in **one change**, so that `ilagr = 3` r
 - restarts (#303, #304).
 
 **Anti-goals.** The change fails, even if it works, if:
-- it costs more than **2x** today's walk. The owner said "up to 2x slower is fine". The design reads that as the walk's own cost (walk-only), which is stricter than the whole run; the owner confirms the reading with the constants. The reference cases are the `check_lgr_fixes.sh ilagr3` reproducer and the particle-heavy GOTM case without advection (39,960 particles). The ratio depends on the case: on the #299 forced case it is about 1.5x, and on the parabolic test profile 2.2–3.1x (computed, not timed);
+- the walk's own cost (walk-only) is more than **2.1x** today's walk on either reference case, timed on the production code. The owner said "up to 2x slower is fine" and confirmed that this means the walk's own cost, not the whole run. On 2026-11-25 they accepted up to about 2.1x, because the chosen setting measured 2.06–2.08x on the prototype. The reference cases are the `check_lgr_fixes.sh ilagr3` reproducer and the particle-heavy GOTM case without advection (39,960 particles). The ratio depends on the case: on the #299 forced case it is about 1.5x, and on the parabolic test profile 2.2–3.1x (computed, not timed);
 - anything is written or aborted inside the OpenMP particle loop;
 - a new gate can pass or fail by seed luck. Seeds are fixed, and limits are set from the measured seed-to-seed spread;
 - the old walk is kept as an option (approach B was declined).
@@ -95,7 +95,7 @@ The prototype is `lgr_diff_vert_last` on `investigate/lgr-vdiff-cap`. It recompu
 dtvd(ie) = min(T, d_curv, max(g_floor, d_grad)), where:
 - **d_curv** = max(2 s, 1/(100·max|K″|)). This is today's rule (#257) with today's 2 s floor, unchanged. A lower curvature floor (0.5 s, setting A2) changed nothing measurable.
 - **d_grad** = f·min over layers of K_min,l/K′_l². The condition keeps the drift K′·dt small against the scale K/K′ over which K changes. Visser (1997) states only the curvature condition, so the code comment must not attribute this one to him. It is applied per layer, including in one-layer columns. A layer with K′ = 0 adds no limit, so at constant K the walk takes the model step.
-- **f and g_floor: the owner's open decision** (see "The constants" below).
+- **f = 0.07 and g_floor = 0.2 s** (setting B07, the owner's choice; see "The constants" below).
 - A layer of zero thickness keeps today's rule: the smallest step (2 s).
 
 **At constant K** every candidate setting gives a particle file byte-identical to plain N2 and makes exactly 1 call per step (still water, K = 1e-2, default levels).
@@ -112,6 +112,7 @@ dtvd(ie) = min(T, d_curv, max(g_floor, d_grad)), where:
 - B07 passes every test and misses the cost limit by 3–4 %.
 - A1 is within cost and misses only the GOTM margin. Its worst seed is 24.7. At 3 seeds the GOTM range runs 2.7–8.1 within a cell, so whether A1 really needs a margin it lacks is unresolved.
 - The per-call cost comes from the prototype, which recomputes the column structure on every call (§5.1). The production walk computes it once per particle step, so its cost has to be re-measured in the build.
+- **Owner's decision (2026-11-25): B07**, with the walk-only budget raised to about 2.1x if production timing is still over 2x. The walk's own cost is the measure, not the whole run. If production timing exceeds 2.1x on either reference case, the builder stops and reports instead of retuning f or the floor. *(My call.)*
 
 ### 5.3 The bed velocity (#299, `lagrange_vertical.f90`)
 In the **bottom layer only**, a particle's vertical velocity is linear in z:
@@ -162,7 +163,7 @@ Show this with both binaries and `cmp`.
 **Cost**, reported in the PR:
 - calls per step and user CPU on the two reference cases (§2), against main, whole run and walk-only;
 - sequential runs, median of 3, at low load;
-- the walk-only ratio must meet the budget the owner sets with the constants.
+- the walk-only ratio must be ≤ 2.1x on both reference cases (§2).
 
 The measurement's method is kept in reportMwalk2.md §E: walk-only = (user − fixed part) / (S − fixed part), where the fixed part is the same run at constant K.
 
