@@ -127,7 +127,6 @@
 
         logical, parameter :: blgrxi = .true.   !new version with xi coords
 
-        logical, save :: blgrdebug = .false.
         logical, save :: blgrsurf = .false.
         logical, save :: blgr2d = .false.
         logical, save :: bconnect = .false.
@@ -180,34 +179,98 @@
         integer(kind=8), save :: lgr_nvdiff_stall = 0
         double precision, save :: lgr_tvdiff_stall = 0.d0
         integer(kind=8), save :: lgr_nvdiff_zero = 0
-	!events of the vertical walk in the particle loop of drogue, which
-	!until #288 wrote their lines from the worker threads: 1 a walk of
-	!diff_body that ended with time left and the particle out of the
-	!domain ("loosing particle dif"), 2 one that ended with time left
-	!for no known reason ("unknown error dif"), 3 a depth z outside 0..1
-	!after a call of lgr_diff_vert (its internal error (2)), 4 a layer
-	!below the bottom of the element in diff_get_vert ("no such layer");
-	!3 and 4 stop the run (lgr_internal_error). lgr_vdiff_event counts
-	!them in the loop (OMP atomic, lgr_vdev_n) and keeps the values of
-	!the event of a kind with the lowest key (the slot of the particle
-	!for 1 and 2, the first in the order of a serial loop; the id for 3
-	!and 4) in the critical section lgr_vdev, entered only for an event:
-	!lgr_vdev_ival the id, element and calls left (1, 2) or the id,
-	!element, layer and layers of the element (3, 4), lgr_vdev_dval the
-	!time left (1, 2) or tv, t, dz, w, hd and z of lgr_diff_vert (3).
-	!For 1 and 2 the counts and the events kept are the same on any
-	!number of threads; for 3 and 4 not: after the first internal error
-	!the other threads leave their particles (lgr_internal_failed), so
-	!the count and the event kept depend on the scheduling (on one
-	!thread the run aborts at the first one in the order of the loop),
-	!which is harmless, as the run stops.
-	!lgr_vdiff_events writes and clears them after the loop (drogue, in
-	!every pass with an event); lgr_vdev_ntot sums each kind over the run
-        integer, save :: lgr_vdev_n(4) = 0
-        integer(kind=8), save :: lgr_vdev_ntot(4) = 0
-        integer, save :: lgr_vdev_key(4) = huge(1)
-        integer, save :: lgr_vdev_ival(4,4) = 0
-        double precision, save :: lgr_vdev_dval(6,4) = 0.d0
+	!true while the OpenMP particle loop of drogue runs (set and cleared
+	!by drogue, outside the parallel region); read by lgr_internal_error
+	!(#256) and lgr_event (#288, #294): there a team of more than one
+	!thread records, anywhere else they write or abort at once. Here and
+	!not in mod_lagrange_mpi since #294, so that lgr_event (below) can
+	!read it; mod_lagrange_mpi passes it on to its users
+	logical, save :: lgr_omp_loop = .false.
+	!events of the tracker found by the particles in the particle loop
+	!of drogue, which until #288 (the vertical walk) and #294 (the
+	!advection, the layers, the connectivity, the element search) wrote
+	!their lines from the worker threads. lgr_event records one: it is
+	!counted (OMP atomic, lgr_ev_n) and the values of the event of its
+	!kind with the lowest key (the id of the particle, the slot for 1
+	!and 2, the element for 11), the first in the order of a serial
+	!loop, are kept in the critical section lgr_ev, entered only for an
+	!event: up to lgr_ev_ni integer values (lgr_ev_ival), lgr_ev_nd real
+	!values (lgr_ev_dval) and a text (lgr_ev_text). lgr_events writes,
+	!for each kind with events, one line with the events of the pass and
+	!the values of the first, and clears them: once per pass, at its end
+	!(lagrange, after the particle loop and the hand-over), and before
+	!the run stops (lgr_mpi_list_check, and lgr_event for a kind that
+	!stops the run when its error aborts at once). Each process writes
+	!its own lines, on several processes with its rank, and makes no
+	!collective call. lgr_ev_ntot sums each kind over the run. What each
+	!kind writes is in lgr_event_desc. The kinds (in parentheses the
+	!line each wrote until then; "stops" marks an internal error, after
+	!which lgr_internal_error stops the run):
+	! 1, 2 diff_body: the walk ended with time left, the particle out of
+	!      the domain ("loosing particle dif") or the cause unknown
+	!      ("unknown error dif")
+	! 3    lgr_diff_vert: a depth outside 0..1, stops
+	! 4    diff_get_vert: a layer below the bottom of the element, stops
+	! 5    track_body_xi: the element crossings used up with time left
+	!      ("warning particle adv")
+	! 6    track_body_xi: out of the domain with time left ("loosing
+	!      particle adv")
+	! 7    track_body_xi: time left, the cause unknown ("unknown error
+	!      adv")
+	! 8    track_xi_get_flux: a flux over a wall side, set to 0
+	!      ("material boundary:")
+	! 9    track_xi: a negative velocity ("vel < 0")
+	! 10   track_xi_adjust_layer: a layer below the bottom of the element
+	!      entered, set to its bottom layer ("warning: wrong layer")
+	! 11   lagr_layer_thickness: incompatible layers, stops
+	! 12   track_xi: internal error (3), stops
+	! 13   track_xi: a depth outside 0..1, internal error (2), stops
+	! 14   track_xi_next_element: erroneous xi, stops
+	! 15   track_xi_next_element: erroneous xi sanity, stops
+	! 16   track_xi_next_element: erroneous ieltv, stops
+	! 17   track_xi_get_vertical: no such layer, stops
+	! 18   track_xi_check: wrong xi, stops
+	! 19   lagr_connect_count: time is nan, stops
+	! 20   lagr_connect_count: particle not coming from a source, stops
+	! 21   lgr_mpi_locate: no old element, stops
+	!For the kinds that do not stop the run the counts and the events
+	!kept are the same on any number of threads (the key orders them; the
+	!events of one particle come from one thread, in order). For those
+	!that stop it not: after the first internal error the other threads
+	!leave their particles (lgr_internal_failed), so the count and the
+	!event kept depend on the scheduling (on one thread the run aborts
+	!at the first one in the order of the loop), which is harmless, as
+	!the run stops
+	integer, parameter :: lgr_ev_vd_lost = 1
+	integer, parameter :: lgr_ev_vd_unknown = 2
+	integer, parameter :: lgr_ev_vd_depth = 3
+	integer, parameter :: lgr_ev_vd_layer = 4
+	integer, parameter :: lgr_ev_adv_cross = 5
+	integer, parameter :: lgr_ev_adv_lost = 6
+	integer, parameter :: lgr_ev_adv_unknown = 7
+	integer, parameter :: lgr_ev_wall_flux = 8
+	integer, parameter :: lgr_ev_vel_neg = 9
+	integer, parameter :: lgr_ev_wrong_layer = 10
+	integer, parameter :: lgr_ev_layers = 11
+	integer, parameter :: lgr_ev_xi_int3 = 12
+	integer, parameter :: lgr_ev_xi_depth = 13
+	integer, parameter :: lgr_ev_next_xi = 14
+	integer, parameter :: lgr_ev_next_sanity = 15
+	integer, parameter :: lgr_ev_next_ieltv = 16
+	integer, parameter :: lgr_ev_vert_layer = 17
+	integer, parameter :: lgr_ev_xi_check = 18
+	integer, parameter :: lgr_ev_conn_nan = 19
+	integer, parameter :: lgr_ev_conn_source = 20
+	integer, parameter :: lgr_ev_locate = 21
+	integer, parameter :: lgr_nev = 21		!kinds
+	integer, parameter :: lgr_ev_ni = 9		!integer values of a kind
+	integer, parameter :: lgr_ev_nd = 6		!real values of a kind
+        integer, save :: lgr_ev_n(lgr_nev) = 0
+        integer(kind=8), save :: lgr_ev_ntot(lgr_nev) = 0
+        integer, save :: lgr_ev_key(lgr_nev) = huge(1)
+        integer, save :: lgr_ev_ival(lgr_ev_ni,lgr_nev) = 0
+        double precision, save :: lgr_ev_dval(lgr_ev_nd,lgr_nev) = 0.d0
+        character(len=40), save :: lgr_ev_text(lgr_nev) = ' '
 	!particles not released because their release point lies in no
 	!element (insert_particle_3d, insert_particle; #247): counted, the
 	!release that asked for them reports the number (lgr_init_traj)
@@ -474,6 +537,308 @@
         nbdy_lagr = nbdy
 
         end subroutine mod_lagrange_init_body
+
+!******************************************************************
+
+        subroutine lgr_event(kind,key,ival,dval,text)
+
+! records an event of the tracker (#288, #294; the kinds and the arrays
+! are described above at lgr_ev_n): called by any thread, inside the
+! particle loop of drogue or outside any parallel region; writes nothing
+! there, except for a kind that stops the run outside an active parallel
+! region (see below). The event is counted (OMP atomic); its values
+! replace those kept for its kind if its key is lower (critical section
+! lgr_ev, entered only for an event, which is rare). lgr_events writes
+! them at the end of the pass.
+! A kind that stops the run is followed by lgr_internal_error, which
+! aborts at once outside an active parallel region (outside the loop, or
+! a loop on one thread, run by the main thread): there the events are
+! written at once (lgr_events), as their lines were before #288 and #294
+! Must not be called inside the critical section lgr_ev
+
+        implicit none
+
+        integer, intent(in)			:: kind	!1 ... lgr_nev
+        integer, intent(in)			:: key	!lowest kept
+        integer, intent(in)			:: ival(:) !integer values
+        double precision, intent(in), optional	:: dval(:) !real values
+        character(len=*), intent(in), optional	:: text	!text of the site
+
+        integer				:: ni,nd
+        logical				:: brun,bfix,bnow
+        character(len=32)		:: chead
+        character(len=80)		:: ctext
+        character(len=20)		:: cname(lgr_ev_ni+lgr_ev_nd)
+        logical				:: openmp_in_parallel
+
+!$OMP ATOMIC
+        lgr_ev_n(kind) = lgr_ev_n(kind) + 1
+
+!$OMP CRITICAL (lgr_ev)
+        if( key < lgr_ev_key(kind) ) then
+          lgr_ev_key(kind) = key
+          lgr_ev_ival(:,kind) = 0
+          ni = min(size(ival),lgr_ev_ni)
+          lgr_ev_ival(1:ni,kind) = ival(1:ni)
+          lgr_ev_dval(:,kind) = 0.d0
+          if( present(dval) ) then
+            nd = min(size(dval),lgr_ev_nd)
+            lgr_ev_dval(1:nd,kind) = dval(1:nd)
+          end if
+          lgr_ev_text(kind) = ' '
+          if( present(text) ) lgr_ev_text(kind) = text
+        end if
+!$OMP END CRITICAL (lgr_ev)
+
+        call lgr_event_desc(kind,chead,ctext,brun,ni,nd,cname,bfix)
+        if( brun ) return		!written at the end of the pass
+        bnow = .not. lgr_omp_loop
+        if( .not. bnow ) bnow = .not. openmp_in_parallel()
+        if( bnow ) call lgr_events	!lgr_internal_error aborts next
+
+        end subroutine lgr_event
+
+!******************************************************************
+
+        subroutine lgr_event_desc(kind,chead,ctext,brun,ni,nd,cname,bfix)
+
+! what lgr_events writes for an event of kind (#288, #294): the line is
+!   "<chead>:[ rank R:] <ctext>[ (<text of the site>)]: N in the step
+!   to TIME[, M in the run (P % of the I particles released)]; first:
+!   <name> <value>, <name> <value>, ..."
+! with N the events of the pass and the values of the first event kept;
+! the part in the run (the events of the run, their percentage in the
+! particles released, idbdy) only for a kind that does not stop the run
+! (brun). The values are the ni integer values, then the nd real values
+! (with three decimals if bfix, else in full precision, g0), named by
+! cname(1:ni+nd); a value named "of" follows the one before with no comma
+! (layer L of N). The lines of the kinds 1 to 4 are those of #288
+
+        implicit none
+
+        integer, intent(in)		:: kind
+        character(len=*), intent(out)	:: chead	!what found it
+        character(len=*), intent(out)	:: ctext	!the event
+        logical, intent(out)		:: brun		!the run goes on
+        integer, intent(out)		:: ni		!integer values
+        integer, intent(out)		:: nd		!real values
+        character(len=*), intent(out)	:: cname(:)	!their names
+        logical, intent(out)		:: bfix		!real values with f.3
+
+        character(len=*), parameter	:: cadv = 'lgr advection'
+        character(len=*), parameter	:: cvd = 'lgr vertical diffusion'
+
+        chead = cadv
+        brun = .false.
+        ni = 0
+        nd = 0
+        cname = ' '
+        bfix = .false.
+
+        select case( kind )
+        case( lgr_ev_vd_lost, lgr_ev_vd_unknown, lgr_ev_adv_cross	&
+     &		, lgr_ev_adv_lost, lgr_ev_adv_unknown )
+          brun = .true.
+          ni = 3
+          nd = 1
+          bfix = .true.
+          cname(1:4) = [character(len=20) :: 'id','element'		&
+     &			,'calls left','time left [s]']
+          select case( kind )
+          case( lgr_ev_vd_lost )
+            chead = cvd
+            ctext = 'lost with time left'
+          case( lgr_ev_vd_unknown )
+            chead = cvd
+            ctext = 'walk ended with time left, cause unknown'
+          case( lgr_ev_adv_cross )
+            ctext = 'element crossings used up with time left'
+          case( lgr_ev_adv_lost )
+            ctext = 'lost with time left'
+          case default
+            ctext = 'advection ended with time left, cause unknown'
+          end select
+          if( kind >= lgr_ev_adv_cross ) cname(3) = 'crossings left'
+        case( lgr_ev_vd_depth, lgr_ev_xi_depth )
+          ni = 4
+          nd = 6
+          cname(1:10) = [character(len=20) :: 'id','element','layer'	&
+     &			,'of','tv','t','dz','w','hd','z']
+          if( kind == lgr_ev_vd_depth ) then
+            chead = cvd
+            ctext = 'depth outside 0..1 after a call of lgr_diff_vert'
+          else
+            ctext = 'depth outside 0..1 in track_xi'
+          end if
+        case( lgr_ev_vd_layer, lgr_ev_vert_layer )
+          ni = 4
+          cname(1:4) = [character(len=20) :: 'id','element','layer','of']
+          if( kind == lgr_ev_vd_layer ) then
+            chead = cvd
+            ctext = 'no such layer in diff_get_vert'
+          else
+            ctext = 'no such layer in track_xi_get_vertical'
+          end if
+        case( lgr_ev_wall_flux )
+          brun = .true.
+          ni = 4
+          nd = 1
+          cname(1:5) = [character(len=20) :: 'id','element','layer'	&
+     &			,'side','flux']
+          ctext = 'flux over a wall side set to 0'
+        case( lgr_ev_vel_neg )
+          brun = .true.
+          ni = 4
+          nd = 4
+          cname(1:8) = [character(len=20) :: 'id','element','layer'	&
+     &			,'of','vel','flux 1','flux 2','flux 3']
+          ctext = 'negative velocity in track_xi'
+        case( lgr_ev_wrong_layer )
+          brun = .true.
+          ni = 4
+          cname(1:4) = [character(len=20) :: 'id','element','layer','of']
+          ctext = 'layer below the bottom of the element entered,'	&
+     &		//' put in its bottom layer'
+        case( lgr_ev_layers )
+          chead = 'lgr layers'
+          ni = 4
+          cname(1:4) = [character(len=20) :: 'element','nlev','lmax'	&
+     &			,'lmax_act']
+          ctext = 'incompatible layers in lagr_layer_thickness'
+        case( lgr_ev_xi_int3 )
+          ni = 2
+          nd = 5
+          cname(1:7) = [character(len=20) :: 'id','element','s','t'	&
+     &			,'th','ds','sorig']
+          ctext = 'internal error (3) of track_xi'
+        case( lgr_ev_next_xi, lgr_ev_next_sanity, lgr_ev_next_ieltv )
+          nd = 3
+          if( kind == lgr_ev_next_xi ) then
+            ni = 4
+            ctext = 'erroneous xi in track_xi_next_element'
+          else if( kind == lgr_ev_next_sanity ) then
+            ni = 5
+            ctext = 'erroneous xi sanity in track_xi_next_element'
+          else
+            ni = 9
+            ctext = 'erroneous ieltv in track_xi_next_element'
+          end if
+          cname(1:9) = [character(len=20) :: 'id','element','in','it'	&
+     &			,'ia1','ieb','ieltv 1','ieltv 2','ieltv 3']
+          cname(ni+1:ni+3) = [character(len=20) :: 'xi 1','xi 2','xi 3']
+        case( lgr_ev_xi_check )
+          ni = 1
+          nd = 3
+          cname(1:4) = [character(len=20) :: 'id','xi 1','xi 2','xi 3']
+          ctext = 'wrong xi in track_xi_check'
+        case( lgr_ev_conn_nan )
+          chead = 'lgr connectivity'
+          ni = 3
+          nd = 1
+          cname(1:4) = [character(len=20) :: 'id','slot','element'	&
+     &			,'time']
+          ctext = 'time is nan in lagr_connect_count'
+        case( lgr_ev_conn_source )
+          chead = 'lgr connectivity'
+          ni = 5
+          cname(1:5) = [character(len=20) :: 'id','slot'		&
+     &			,'element of origin','external element','station']
+          ctext = 'particle not coming from a source in'		&
+     &		//' lagr_connect_count'
+        case( lgr_ev_locate )
+          chead = 'lgr element search'
+          ni = 3
+          cname(1:3) = [character(len=20) :: 'slot','phase','element']
+          ctext = 'no old element in lgr_mpi_locate'
+        case default
+          ctext = 'unknown kind of event'
+        end select
+
+        end subroutine lgr_event_desc
+
+!******************************************************************
+
+        subroutine lgr_events
+
+! writes the events of the tracker recorded by lgr_event (#288, #294;
+! the line of a kind: lgr_event_desc) and clears the counts of the pass;
+! writes nothing when nothing was recorded. Called by the main thread
+! outside any parallel region: by lagrange once per pass, at its end
+! (after the particle loop of drogue and the hand-over), by
+! lgr_mpi_list_check before it stops the run (after an internal error
+! found in the particle loop), and by lgr_event before an internal error
+! aborts at once.
+! No collective call: each process writes its own events, on several
+! processes with its rank, so a process with none writes nothing and
+! waits for nobody
+
+        use shympi, only : my_id, shympi_is_parallel
+
+        implicit none
+
+        integer				:: k,j,ni,nd
+        logical				:: brun,bfix
+        double precision		:: dtime
+        double precision		:: perc
+        character(len=20)		:: aline
+        character(len=24)		:: crank
+        character(len=32)		:: cnum
+        character(len=32)		:: chead
+        character(len=80)		:: ctext
+        character(len=20)		:: cname(lgr_ev_ni+lgr_ev_nd)
+        character(len=1024)		:: line
+
+        if( all( lgr_ev_n == 0 ) ) return
+
+        call get_act_dtime(dtime)
+        call get_timeline(dtime,aline)
+        crank = ' '
+        if( shympi_is_parallel() ) write(crank,'(a,i0,a)') ' rank ',my_id,':'
+
+        do k=1,lgr_nev
+          if( lgr_ev_n(k) == 0 ) cycle
+          call lgr_event_desc(k,chead,ctext,brun,ni,nd,cname,bfix)
+          lgr_ev_ntot(k) = lgr_ev_ntot(k) + lgr_ev_n(k)
+          line = ' '//trim(chead)//':'//trim(crank)//' '//trim(ctext)
+          if( lgr_ev_text(k) /= ' ' ) then
+            line = trim(line)//' ('//trim(lgr_ev_text(k))//')'
+          end if
+          write(cnum,'(i0)') lgr_ev_n(k)
+          line = trim(line)//': '//trim(cnum)//' in the step to '	&
+     &		//trim(aline)
+          if( brun ) then
+            perc = 0.d0
+            if( idbdy > 0 ) perc = (100.d0*lgr_ev_ntot(k))/idbdy
+            write(cnum,'(i0)') lgr_ev_ntot(k)
+            line = trim(line)//', '//trim(cnum)//' in the run ('
+            write(cnum,'(f16.2)') perc
+            line = trim(line)//trim(adjustl(cnum))//' % of the '
+            write(cnum,'(i0)') idbdy
+            line = trim(line)//' '//trim(cnum)//' particles released)'
+          end if
+          line = trim(line)//'; first:'
+          do j=1,ni+nd
+            if( j <= ni ) then
+              write(cnum,'(i0)') lgr_ev_ival(j,k)
+            else if( bfix ) then
+              write(cnum,'(f16.3)') lgr_ev_dval(j-ni,k)
+            else
+              write(cnum,'(g0)') lgr_ev_dval(j-ni,k)
+            end if
+            if( j > 1 ) then
+              if( cname(j) /= 'of' ) line = trim(line)//','
+            end if
+            line = trim(line)//' '//trim(cname(j))//' '			&
+     &		//trim(adjustl(cnum))
+          end do
+          write(6,'(a)') trim(line)
+        end do
+        flush(6)
+
+        lgr_ev_n = 0
+        lgr_ev_key = huge(1)
+
+        end subroutine lgr_events
 
 !==================================================================
         end module mod_lagrange

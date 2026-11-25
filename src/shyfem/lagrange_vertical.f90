@@ -160,11 +160,14 @@
 !
 ! the guard goes through lgr_internal_error (#256): recorded inside the
 ! particle loop, the layers are limited to the dimension (defined values
-! for the caller; the run stops after the loop)
+! for the caller; the run stops after the loop); its values go to
+! lgr_event (lgr_ev_layers, #294: until then written from inside the
+! loop)
 
 	use mod_depth
 	use mod_hydro
 	use levels
+	use mod_lagrange, only : lgr_event, lgr_ev_layers
 
 	implicit none
 
@@ -184,7 +187,7 @@
         call get_zadapt_info(ie,nadapt,hadapt) 
 	lmax_act = ilhv(ie)
 	if( lmax_act > lmax .or. lmax_act > nlev ) then
-	  write(6,*) 'nlev,lmax,lmax_act: ',nlev,lmax,lmax_act
+	  call lgr_event(lgr_ev_layers,ie,(/ie,nlev,lmax,lmax_act/))
 	  call lgr_internal_error(					&
      &		'error stop lagr_layer_thickness: incompatible layers')
 	  lmax_act = min(lmax_act,lmax,nlev)	!recorded in the loop
@@ -294,7 +297,13 @@
 ! an internal-error guard recorded inside the particle loop (#256: by
 ! lgr_internal_error here or in a routine called here, then
 ! lgr_internal_failed is true) ends the call with time = 0 and the values
-! the particle has (all defined); the run stops after the loop
+! the particle has (all defined); the run stops after the loop. The
+! values of the guards, and a negative velocity (which the computation
+! of track_xi_get_flux never gives), go to lgr_event (#294: until then
+! they were written from inside the loop). The debug lines (bdebug) are
+! off at compile time: until #294 bdebug was true for a particle with id
+! 0, which no release gives (ids start at 1), and it was set through the
+! module variable blgrdebug, written by every thread of the loop
 
 	use mod_lagrange
 
@@ -310,9 +319,9 @@
 	integer, intent(in) :: ncross		!element crossings left in time step
 	integer, intent(out) :: icut		!cut-off side reached (0: none)
 
-	logical bdebug
+	logical, parameter :: bdebug = .false.	!debug lines (#294)
 	logical bsurf,bbott,bhas
-	integer iflux,lmax,ii,iside
+	integer iflux,lmax,iside
 	integer ieorig,lborig
 	double precision s,alpha
 	double precision dist,dh,dv,ds
@@ -326,8 +335,7 @@
 	logical lgr_internal_failed
 
 	icut = 0			!before the first return
-	blgrdebug = id == 0
-	bdebug = blgrdebug
+	dz = 0.d0			!defined for the guard (2) below
 
 	ieorig = iel
 	lborig = lb
@@ -370,12 +378,12 @@
 	! gets flux and vel information for element and layer
 	!-----------------------------------------------
 
-	call track_xi_get_flux(iel,lb,iflux,alpha,vel)
+	call track_xi_get_flux(id,iel,lb,iflux,alpha,vel)
 
-	if( vel < 0.d0 ) then
-	  write(6,*) 'vel < 0'
-	  write(6,*) vel,iel,lb,lmax
-	  write(6,*) (flux3d(lb,ii,iel),ii=1,3)
+	if( vel < 0.d0 ) then		!counted (#294)
+	  call lgr_event(lgr_ev_vel_neg,id,(/id,iel,lb,lmax/)		&
+     &		,(/vel,dble(flux3d(lb,1,iel)),dble(flux3d(lb,2,iel))	&
+     &		,dble(flux3d(lb,3,iel))/))
 	end if
 
 	!-----------------------------------------------
@@ -484,8 +492,7 @@
 	  ds = (1.-s)*t/th
 	  s = s + ds
 	  if( s > 1. ) then
-	    write(6,*) 's,t,th: ',s,t,th
-	    write(6,*) 'ds,sorig: ',ds,s-ds
+	    call lgr_event(lgr_ev_xi_int3,id,(/id,iel/),(/s,t,th,ds,s-ds/))
 	    call lgr_internal_error(					&
      &		'error stop track_xi: internal error (3)')
 	    time = 0.			!recorded in the loop
@@ -580,10 +587,8 @@
 	end if
 
 	if( z < 0. .or. z > 1. ) then
-	  write(6,*) 'id,iel ',id,iel
-	  write(6,*) 'tv,t ',tv,t
-	  write(6,*) 'dz,w,hd: ',dz,w,hd
-	  write(6,*) 'z,lb,lmax ',z,lb,lmax
+	  call lgr_event(lgr_ev_xi_depth,id,(/id,iel,lb,lmax/)		&
+     &			,(/tv,t,dz,w,hd,z/))
 	  call lgr_internal_error('error stop track_xi: internal error (2)')
 	  z = min(max(z,0.d0),1.d0)	!recorded in the loop
 	  time = 0.
@@ -611,7 +616,9 @@
 ! a guard recorded inside the particle loop (lgr_internal_error, #256)
 ! returns ie = -ie (the particle leaves the domain) and iside = 0; the
 ! caller stops the particle (lgr_internal_failed), the run stops after the
-! loop
+! loop. The values of the guards go to lgr_event (#294: until then they
+! were written from inside the loop); the debug lines are off at compile
+! time (bdebug, see track_xi)
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_ieltv
@@ -624,7 +631,7 @@
 	integer, intent(in) :: ncross		!element crossings left in time step
 	integer, intent(out) :: iside		!side of the old element used
 
-	logical bdebug
+	logical, parameter :: bdebug = .false.	!debug lines (#294)
 	integer ii,in,it
 	integer ia1,ia2,ia3
 	integer ib1,ib2,ib3
@@ -635,7 +642,6 @@
 	double precision track_xi_vertex_u
 
 	eps = 1.e-5
-	bdebug = blgrdebug
 	iside = 0
 
 	!---------------------------------------
@@ -681,10 +687,8 @@
 	    xi(ia2) = r
 	    xi(ia3) = 1. - r
 	  end if
-	else
-	  write(6,*) 'xi not on side or impossible'
-	  write(6,*) ie,in,it
-	  write(6,*) xi
+	else				!xi not on side or impossible
+	  call lgr_event(lgr_ev_next_xi,id,(/id,ie,in,it/),xi)
 	  call lgr_internal_error(					&
      &		'error stop track_xi_next_element: erroneous xi')
 	  ie = -ie			!recorded in the loop
@@ -696,8 +700,7 @@
 	!---------------------------------------
 
 	if( xi(ia1) /= 0. .or. abs(xi(ia2)+xi(ia3)-1.) > eps ) then
-	  write(6,*) ie,in,it,ia1
-	  write(6,*) xi
+	  call lgr_event(lgr_ev_next_sanity,id,(/id,ie,in,it,ia1/),xi)
 	  call lgr_internal_error(					&
      &		'error stop track_xi_next_element: erroneous xi sanity')
 	  ie = -ie			!recorded in the loop
@@ -727,9 +730,8 @@
 	  if( lgr_ieltv(ii,ieb) == ie ) exit
 	end do
 	if( ii > 3 ) then
-	  write(6,*) ie,in,it,ia1,ieb
-	  write(6,*) xi
-	  write(6,*) (lgr_ieltv(ii,ieb),ii=1,3)
+	  call lgr_event(lgr_ev_next_ieltv,id,(/id,ie,in,it,ia1,ieb		&
+     &		,lgr_ieltv(1,ieb),lgr_ieltv(2,ieb),lgr_ieltv(3,ieb)/),xi)
 	  call lgr_internal_error(					&
      &		'error stop track_xi_next_element: erroneous ieltv')
 	  ie = -ie			!recorded in the loop
@@ -905,8 +907,15 @@
 ! adjusts layer when passing from one element to the next
 !
 ! is only temporary - must also adjust w
+!
+! called inside the particle loop of drogue (track_xi) and by the
+! hand-over (lgr_mpi_handover_round): a layer below the bottom of the
+! element is an event of lgr_event (lgr_ev_wrong_layer: counted, the
+! first kept, written at the end of the pass; #294: until then a line
+! "warning: wrong layer" from inside the loop)
 
 	use levels
+	use mod_lagrange, only : lgr_event, lgr_ev_wrong_layer
 
 	implicit none
 
@@ -928,9 +937,9 @@
 	!z = z2
 
 	if( lb > lmax ) then
+	  call lgr_event(lgr_ev_wrong_layer,id,(/id,iel,lb,lmax/))
 	  lb = lmax
 	  z = 1.
-	  write(6,*) 'warning: wrong layer: ',iel,lb,lmax
 	end if
 
 	end
@@ -1051,10 +1060,16 @@
 !************************************************************
 !************************************************************
 
-	subroutine track_xi_get_flux(iel,lb,iflux,alpha,vel)
+	subroutine track_xi_get_flux(id,iel,lb,iflux,alpha,vel)
 
 ! gets flux and vel information for element and layer (walls from the
 ! side table lgr_ieltv)
+!
+! a flux over a wall side is set to 0 and is an event of lgr_event
+! (lgr_ev_wall_flux: counted, the first kept, written at the end of the
+! pass; #294: until then a line "material boundary:" from inside the
+! particle loop); the debug lines are off at compile time (bdebug, see
+! track_xi)
 
 	use mod_lagrange
 	use mod_lagrange_mpi, only : lgr_ieltv
@@ -1062,19 +1077,18 @@
 
 	implicit none
 
+	integer, intent(in) :: id		!id of particle
 	integer, intent(in) :: iel		!element number
 	integer, intent(in) :: lb		!layer
 	integer, intent(out) :: iflux		!node of flux line
 	double precision, intent(out) :: alpha	!fraction of opsosite side
 	double precision, intent(out) :: vel	!velocity in element (always positive)
 
-	logical bdebug
+	logical, parameter :: bdebug = .false.	!debug lines (#294)
 	integer ii,in,io,nn,no,inext,imax
 	real az,azt,u,v
 	double precision flux(3)
 	double precision fp,fm,fmmax,fact
-
-	bdebug = blgrdebug
 
 	az = azlgr
 	azt = 1. - az
@@ -1083,8 +1097,8 @@
 
 	do ii=1,3
 	  if( lgr_ieltv(ii,iel) .eq. 0 ) then	!closed boundary - set to 0
-	    if( flux(ii) .ne. 0. ) then
-	      write(6,*) 'material boundary: ',iel,ii,flux(ii)
+	    if( flux(ii) .ne. 0. ) then	!counted (#294)
+	      call lgr_event(lgr_ev_wall_flux,id,(/id,iel,lb,ii/),(/flux(ii)/))
 	      flux(ii) = 0.
 	    end if
 	  end if
@@ -1176,9 +1190,13 @@
 
 	subroutine track_xi_get_vertical(id,iel,lb,lmax,hd,w)
 
+! the guard of the layer goes through lgr_internal_error (#256), its
+! values through lgr_event (lgr_ev_vert_layer, #294)
+
 	use mod_hydro_vel
 	use levels, only : nlvdi,nlv
 	use basin
+	use mod_lagrange, only : lgr_event, lgr_ev_vert_layer
 
 	implicit none
 
@@ -1198,7 +1216,7 @@
 	call lagr_layer_thickness(iel,lmax,hl,htot,htotz)
 
 	if( lb > lmax ) then
-	  write(6,*) 'id,iel,l,lmax: ',id,iel,lb,lmax
+	  call lgr_event(lgr_ev_vert_layer,id,(/id,iel,lb,lmax/))
 	  call lgr_internal_error(					&
      &		'error stop track_xi_get_vertical: no such layer')
 	  hd = hl(lmax)			!recorded in the loop (#256): defined
@@ -1224,6 +1242,11 @@
 
 	subroutine track_xi_check(text,id,xi)
 
+! the guard of xi goes through lgr_internal_error (#256), its values and
+! the text of the caller through lgr_event (lgr_ev_xi_check, #294)
+
+	use mod_lagrange, only : lgr_event, lgr_ev_xi_check
+
 	implicit none
 
 	character*(*), intent(in) :: text
@@ -1246,9 +1269,7 @@
 	if( abs(tot-1.d0) > eps ) berror = .true.
 
 	if( berror ) then
-	  write(6,*) text
-	  write(6,*) id
-	  write(6,*) xi
+	  call lgr_event(lgr_ev_xi_check,id,(/id/),xi,text)
 	  ! recorded inside the particle loop (#256): the caller stops the
 	  ! particle (lgr_internal_failed); elsewhere it aborts at once
 	  call lgr_internal_error('error stop track_xi_check: wrong xi')

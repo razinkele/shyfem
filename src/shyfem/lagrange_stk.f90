@@ -81,6 +81,7 @@
         integer                 :: ienew
         double precision        :: ddx,ddy,xc,yc
         double precision        :: dlat0,dlon0  !center of projection
+        logical                 :: lgr_internal_failed
 
 !---------------------------------------------------------------
 ! initialize (the type of coordinates, blgr_sphe, is set once by
@@ -145,6 +146,7 @@
 	if( bmpi_lagr ) then
 	  call lgr_mpi_locate(i,2,iel,x,y,xnew,ynew,ienew,bpark)
 	  if( bpark ) return	!parked: resumed with bresume
+	  if( lgr_internal_failed() ) return	!the run stops after the loop
 	else
           call find_elem_from_old(iel,xnew,ynew,ienew)
 	  if( blgr_dbg ) call lgr_mpi_relocate_check(iel,xnew,ynew,ienew)
