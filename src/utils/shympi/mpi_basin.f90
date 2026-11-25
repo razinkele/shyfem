@@ -1217,6 +1217,13 @@
 	  end if
 	  elem_part = area_elem
 	  call check_partition(area_node,area_elem,bdebug_grd,ierr1,ierr2)
+	  !test hook (#290): SHYFEM_PARTITION_CHECK set makes every process
+	  !report how many elements check_partition changed in area_elem
+	  !(none must be: it works on a copy of the areas and gives them back)
+	  if( shympi_env_is_set('SHYFEM_PARTITION_CHECK') ) then
+	    write(6,*) 'PARTITION CHECK: process ',my_id,' elements changed ' &
+     &			,count( area_elem /= elem_part ),' of ',nel
+	  end if
 	  if( shympi_is_master() ) then
 	    call write_partition_to_grd(grdname,bdebug_grd &
      &				,nparts,area_node,elem_part)

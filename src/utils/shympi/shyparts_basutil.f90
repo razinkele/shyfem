@@ -171,6 +171,8 @@
 	save_nen3v = nen3v
 	save_xgv = xgv
 	save_ygv = ygv
+	save_iarv = iarv		!restored by restore_old_basin (#290)
+	save_iarnv = iarnv
 
 	nen3v(:,1:ne) = nenv(:,1:ne)
 
@@ -279,6 +281,8 @@
 	ipev = save_ipev
 	xgv = save_xgv
 	ygv = save_ygv
+	iarv = save_iarv
+	iarnv = save_iarnv
 
 	end subroutine
 
