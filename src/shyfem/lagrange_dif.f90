@@ -713,7 +713,7 @@
 	  call lgr_vdiff_gradstep(lmax,hl,wde(0:lmax,ie),lgr_vdiff_facg,dtg)
 	  if( dtg < dtd ) then
 	    dtn = min(dtd,max(lgr_vdiff_dtming,dtg))
-	    if( dtn < dtd ) then		!the gradient term lowered it
+	    if( dtn < min(dtd,time) ) then	!the gradient term lowered the step used
 	      lgr_dtvd_ngrad = lgr_dtvd_ngrad + 1
 	      if( dtn == lgr_vdiff_dtming ) lgr_dtvd_nfloor = lgr_dtvd_nfloor + 1
 	    end if
